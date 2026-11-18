@@ -7,8 +7,8 @@ use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, MODIFIED_NOTE};
 use brick_compile::connect::{
-    record_json, ConnectorExtractor, PartRecords, PrimitiveConnectors, PrimitiveTable,
-    ShadowPatches, ShadowSnaps, TierRecord,
+    record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
+    PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, TierRecord,
 };
 use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
@@ -18,7 +18,7 @@ use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
-use brick_compile_cli::{verified_patch_paths, LazyLibrary};
+use brick_compile_cli::{shadow_texts, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const DISCLAIMER: &str =
@@ -71,6 +71,7 @@ struct Args {
     omr: PathBuf,
     palette: PathBuf,
     primitives: PathBuf,
+    inferred: PathBuf,
     shadow: PathBuf,
     patches: PathBuf,
     out: PathBuf,
@@ -100,6 +101,7 @@ fn parse_args() -> Result<Args, String> {
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
+        inferred: take("--inferred")?.into(),
         shadow: take("--shadow")?.into(),
         patches: take("--patches")?.into(),
         out: take("--out")?.into(),
@@ -848,12 +850,23 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
     let verified = verified_patch_paths(&patch_manifest);
+    let inferred: Value = serde_json::from_slice(
+        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
+    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
+        "{}: cavityProbe must be a part path",
+        args.inferred.display()
+    ))?;
+    let vocabulary =
+        SectionVocabulary::from_metas(shadow_texts(&args.shadow).iter().map(String::as_str));
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
             files: &patch_files,
             verified: &verified,
         }),
         PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&primitive_table)?),
+        InferredFeatures::new(&library, vocabulary, probe_part)?,
     );
     let indexes = connector_records(&mut extractor, &parts, &args.out)?;
     let connectivity_source = &palette["connectivitySource"];

@@ -449,6 +449,8 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     palette,
     "--primitives",
     join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
+    "--inferred",
+    join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
     "--shadow",
     bundleConnectivityRoot,
     "--patches",

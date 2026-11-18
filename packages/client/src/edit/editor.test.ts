@@ -819,6 +819,7 @@ function refusedBake(fileName: string): ImportResult {
       unknownColors: [],
       directColors: [],
       compileRounds: 0,
+      withoutConnectorRecords: [],
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
@@ -830,6 +831,7 @@ function refusedBake(fileName: string): ImportResult {
     ldrawColor: new Uint32Array(),
     matrices: new Float32Array(),
     compiled: [],
+    connectors: [],
     bake: null,
   };
 }

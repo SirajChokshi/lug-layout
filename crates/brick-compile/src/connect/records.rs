@@ -51,7 +51,7 @@ fn unreadable_name(reason: Unreadable) -> &'static str {
 pub fn is_connectivity(source: Source) -> bool {
     match source {
         Source::Shadow | Source::Patch => true,
-        Source::Primitive => false,
+        Source::Primitive | Source::Inferred => false,
     }
 }
 
@@ -59,6 +59,7 @@ pub fn source_code(source: Source) -> u8 {
     match source {
         Source::Shadow => 1,
         Source::Primitive => 2,
+        Source::Inferred => 4,
         Source::Patch => 8,
     }
 }
