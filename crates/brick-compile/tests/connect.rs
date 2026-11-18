@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use brick_compile::affine::Vec3;
+use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
@@ -11,7 +11,7 @@ use brick_compile::connect::{
     SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
     CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
-use brick_compile::ends::{read_end, End, Reading};
+use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::technic::is_circular_primitive;
@@ -1458,30 +1458,76 @@ fn an_end_is_closed_only_by_geometry_between_its_radius_and_a_female_reach() {
 #[test]
 fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip() {
     let library = pinned("ldraw");
-    let triangles = |part: &str| {
-        Flattener::new(&library, Lod::Standard, &[])
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/shadow-patches/manifest.json"),
+        )
+        .expect("patch manifest reads"),
+    )
+    .expect("patch manifest parses");
+    let upstream: Vec<(String, String)> = manifest["patches"]
+        .as_array()
+        .expect("patches")
+        .iter()
+        .filter(|entry| entry["feature"] == "measuredCaps")
+        .map(|entry| {
+            let lines: Vec<&str> = entry["upstream"]["snaps"]
+                .as_array()
+                .expect("recorded upstream snaps")
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            (
+                format!("parts/{}.dat", entry["part"].as_str().expect("part")),
+                lines.join("\n"),
+            )
+        })
+        .collect();
+    let shadow = memory(
+        &upstream
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    let handle_ends = |part: &str| -> Vec<(Vec<f64>, [bool; 2])> {
+        let triangles: Vec<Triangle> = Flattener::new(&library, Lod::Standard, &[])
             .flatten(part)
             .expect("part flattens")
             .triangles
+            .iter()
+            .map(|t| Triangle {
+                points: t.points.map(|p| Affine::LDRAW_TO_Y_UP.apply(p)),
+                ..*t
+            })
+            .collect();
+        let closed = |end: &End| matches!(read_end(&triangles, end), Reading::Blocked(_));
+        ShadowSnaps::new(&library, &shadow)
+            .snaps(part)
+            .connectors
+            .iter()
+            .filter_map(|c| match &c.shape {
+                Shape::Cylinder {
+                    gender: Gender::Male,
+                    slide: true,
+                    sections,
+                    ..
+                } => Some((c, sections.iter().map(|s| s.length).collect::<Vec<_>>())),
+                _ => None,
+            })
+            .flat_map(|(c, lengths)| {
+                cylinder_ends(c)
+                    .into_iter()
+                    .map(move |ends| (lengths.clone(), ends.each_ref().map(closed)))
+            })
+            .collect()
     };
-    let wand = triangles("parts/36752a.dat");
-    let handle_end = |y: f64, outward: f64, radius: f64| End {
-        point: [0.0, y, 0.0],
-        outward: [0.0, outward, 0.0],
-        radius,
-    };
-    assert_eq!(read_end(&wand, &handle_end(-6.0, 1.0, 4.0)), Reading::Free);
     assert_eq!(
-        read_end(&wand, &handle_end(-32.0, -1.0, 2.75)),
-        Reading::Free
+        handle_ends("parts/36752a.dat"),
+        vec![(vec![6.0, 20.0], [false, false])]
     );
-    let sextant = triangles("parts/30154.dat");
-    assert!(matches!(
-        read_end(&sextant, &handle_end(28.0, -1.0, 4.0)),
-        Reading::Blocked(_)
-    ));
     assert_eq!(
-        read_end(&sextant, &handle_end(40.0, 1.0, 4.0)),
-        Reading::Free
+        handle_ends("parts/30154.dat"),
+        vec![(vec![8.0], [true, true]), (vec![12.0], [true, false])]
     );
 }
