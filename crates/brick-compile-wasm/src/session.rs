@@ -11,7 +11,7 @@ use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileError, CompileOptions, Lod, TechnicPrimitives};
+use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
@@ -275,7 +275,7 @@ fn compile(
             Ok(comparison) => InlineOutcome::measured(pair, &comparison),
             Err(error) => InlineOutcome::Failed {
                 pair,
-                failure: Failure::from(&CompileError::Flatten(error)),
+                failure: Failure::from(&error),
             },
         });
     }

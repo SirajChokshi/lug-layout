@@ -4,8 +4,9 @@ import { TrackGraph } from "@brr/domain";
 import {
   SIM_TICK_HZ,
   POSE_FLOATS_PER_VEHICLE,
-  SimSession,
+  createSimSession,
   simTrackFromGraph,
+  type SimSession,
   type OpenEndRule,
   type VehicleSpec,
 } from "@brr/sim";
@@ -89,7 +90,7 @@ function session(
     accelerationLduPerS2: 150,
     brakingLduPerS2: 300,
   };
-  return new SimSession({
+  return createSimSession({
     track,
     capacity: { trains: fronts.length, vehicles: fronts.length },
     trains: fronts.map(([edge, offsetLdu]) => ({ spec, placement: { edge, offsetLdu } })),
@@ -116,7 +117,7 @@ it(
       );
       run(autopilot, AUTOPILOT_MINUTES);
       expect(autopilot.simulation.separationCounters[0]).toBe(0);
-      for (const arrivals of autopilot.simulation.blocks?.arrivals ?? []) {
+      for (const arrivals of autopilot.simulation.keeper?.arrivals ?? []) {
         expect(arrivals).toBeGreaterThanOrEqual(MIN_ARRIVALS_PER_TRAIN);
       }
     }
@@ -203,8 +204,8 @@ it("keeps routed trains to their stops under the derail rule: one arrives at a s
     run(toStub, 1);
     const ahead = toStub.simulation;
     expect(ahead.derailed(0)).toBe(false);
-    expect(ahead.blocks?.routeState(0)).toBe("arrived");
-    expect(ahead.blocks?.arrivals[0]).toBe(1);
+    expect(ahead.keeper?.routeState(0)).toBe("arrived");
+    expect(ahead.keeper?.arrivals[0]).toBe(1);
     expect(ahead.overrunLdu(0)).toBe(0);
 
     const behind = session(OPEN_LINE, [[2 * lastPlacement, 300]], null, openEnds);
@@ -212,7 +213,7 @@ it("keeps routed trains to their stops under the derail rule: one arrives at a s
     run(behind, 1);
     const reversed = behind.simulation;
     expect(reversed.derailed(0)).toBe(false);
-    expect(reversed.blocks?.routeState(0)).toBe("arrived");
-    expect(reversed.blocks?.arrivals[0]).toBe(1);
+    expect(reversed.keeper?.routeState(0)).toBe("arrived");
+    expect(reversed.keeper?.arrivals[0]).toBe(1);
   }
 });
