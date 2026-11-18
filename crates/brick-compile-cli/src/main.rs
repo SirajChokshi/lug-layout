@@ -804,3 +804,49 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::rail_head_texts;
+    use serde_json::json;
+
+    fn rail(heads: serde_json::Value) -> serde_json::Value {
+        json!({ "rails": [{ "part": "custom-rail.dat", "railHeads": heads }] })
+    }
+
+    #[test]
+    fn a_rail_is_read_from_its_head_whose_from_is_a_positive_decimal() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "46.9", "to": "53.1" }
+        ]));
+        let rails = rail_head_texts(&geometry).expect("the rail has a positive head");
+        let head = &rails[0];
+        assert_eq!(
+            (
+                head.rail_part.as_str(),
+                head.inner.as_str(),
+                head.outer.as_str()
+            ),
+            ("ldraw:custom-rail", "46.9", "53.1")
+        );
+    }
+
+    #[test]
+    fn a_head_above_zero_is_positive_however_small_its_float_would_be() {
+        let tiny = format!("0.{}1", "0".repeat(399));
+        let geometry = rail(json!([{ "from": tiny, "to": "6.2" }]));
+        let rails = rail_head_texts(&geometry).expect("a head above zero is positive");
+        assert_eq!(rails[0].inner, tiny);
+    }
+
+    #[test]
+    fn a_rail_whose_heads_start_at_zero_or_below_is_refused() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "0", "to": "6.2" },
+            { "from": "0.000", "to": "6.2" }
+        ]));
+        assert!(rail_head_texts(&geometry).is_err());
+    }
+}

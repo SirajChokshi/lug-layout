@@ -145,7 +145,10 @@ export function floorExactRational(value: ExactRational): bigint {
 }
 
 export function ceilExactRational(value: ExactRational): bigint {
-  return -floorExactRational({ numerator: -value.numerator, denominator: value.denominator });
+  const quotient = value.numerator / value.denominator;
+  return value.numerator > 0n && quotient * value.denominator !== value.numerator
+    ? quotient + 1n
+    : quotient;
 }
 
 export function compareExactRational(a: ExactRational, b: ExactRational): -1 | 0 | 1 {
