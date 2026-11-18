@@ -1,7 +1,9 @@
 mod common;
 
 use brick_compile::affine::Affine;
-use brick_compile::cover::{model_cover, CoverInstance, ModelCells, Opacity, PartSolid, StudShape};
+use brick_compile::cover::{
+    model_cover, CoverInstance, CoverShard, ModelCells, Opacity, PartSolid, StudShape,
+};
 use brick_compile::{compile_part, CompileOptions};
 use common::fixture_library;
 
@@ -34,9 +36,16 @@ fn cells_of(part: &str) -> ModelCells {
         part: 0,
         studs: &studs,
     }];
-    model_cover(&instances, &solids, &Opacity::new([]), Some(phase), STUD)
-        .cells
-        .expect("a lattice phase gives cells")
+    model_cover(
+        &instances,
+        &solids,
+        &Opacity::new([]),
+        Some(phase),
+        STUD,
+        CoverShard::WHOLE,
+    )
+    .cells
+    .expect("a lattice phase gives cells")
 }
 
 #[test]

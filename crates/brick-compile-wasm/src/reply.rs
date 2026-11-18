@@ -49,6 +49,8 @@ pub enum Reply {
     },
     #[serde(rename = "need")]
     Need { paths: Vec<String> },
+    #[serde(rename = "complete")]
+    Complete,
     #[serde(rename = "baked")]
     Baked {
         instances: usize,

@@ -59,6 +59,21 @@ export interface TrackEnd {
   readonly heading: number;
 }
 
+export interface ModelTrack {
+  readonly pieces: number;
+  readonly runFrame: number;
+  readonly offField: number;
+  readonly unanchored: number;
+}
+
+export interface PlayState {
+  readonly status: string;
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly bogiesOff: number;
+  readonly derailSpeed: number;
+}
+
 export interface TrackCounts {
   readonly pieces: number;
   readonly openEnds: number;
@@ -355,6 +370,34 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async modelTrack(): Promise<ModelTrack> {
+    const panel = this.page.locator("section.track-panel");
+    return {
+      pieces: Number(await panel.getAttribute("data-model-pieces")),
+      runFrame: Number(await panel.getAttribute("data-run-frame-pieces")),
+      offField: Number(await panel.getAttribute("data-off-field")),
+      unanchored: Number(await panel.getAttribute("data-unanchored")),
+    };
+  }
+
+  async startPlay(): Promise<void> {
+    await this.page.keyboard.press("Shift+P");
+    await this.page.waitForSelector('section.play-panel[data-play-status="running"]');
+  }
+
+  async playState(): Promise<PlayState> {
+    const panel = this.page.locator("section.play-panel");
+    const read = async (name: string): Promise<string> =>
+      (await panel.getAttribute(`data-${name}`)) ?? "";
+    return {
+      status: await read("play-status"),
+      xLdu: Number(await read("train-x")),
+      zLdu: Number(await read("train-z")),
+      bogiesOff: Number(await read("bogies-off")),
+      derailSpeed: Number(await read("derail-speed")),
     };
   }
 

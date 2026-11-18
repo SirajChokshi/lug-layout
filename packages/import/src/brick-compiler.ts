@@ -1,7 +1,9 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
 import {
   CompilerBake,
+  CompilerBakeNeeds,
   CompilerCompile,
+  type BakeShard,
   CompilerError,
   CompilerModelRead,
   StudioRead,
@@ -40,7 +42,10 @@ export interface ModelRead {
   readonly looseGeometry: ReadonlyArray<LooseGeometry>;
   readonly instancePart: Uint32Array;
   readonly instanceColor: Uint32Array;
-  readonly instanceMatrix: Float32Array;
+  readonly instanceTransform: Float64Array;
+  readonly instanceSubmodel: Int32Array;
+  readonly submodelParent: Int32Array;
+  readonly submodelMatrix: Float64Array;
 }
 
 export interface LibraryFiles {
@@ -85,6 +90,7 @@ export interface BakeRequest {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly vehicles: CompilerVehicles | null;
+  readonly shard?: BakeShard;
 }
 
 export interface BakedModel {
@@ -103,6 +109,10 @@ export interface BakeFailure {
 }
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
+
+export type BakeNeedsRequest = Pick<BakeRequest, "source" | "drawn" | "studPrimitives">;
+
+export type BakeNeeds = { readonly status: "complete" } | Need;
 
 interface Response {
   readonly header: unknown;
@@ -287,7 +297,10 @@ export class BrickCompiler {
       looseGeometry: read.looseGeometry,
       instancePart: new Uint32Array(bytesOf(body, read.blobs, "instancePart")),
       instanceColor: new Uint32Array(bytesOf(body, read.blobs, "instanceColor")),
-      instanceMatrix: new Float32Array(bytesOf(body, read.blobs, "instanceMatrix")),
+      instanceTransform: new Float64Array(bytesOf(body, read.blobs, "instanceTransform")),
+      instanceSubmodel: new Int32Array(bytesOf(body, read.blobs, "instanceSubmodel")),
+      submodelParent: new Int32Array(bytesOf(body, read.blobs, "submodelParent")),
+      submodelMatrix: new Float64Array(bytesOf(body, read.blobs, "submodelMatrix")),
     };
   }
 
@@ -313,6 +326,15 @@ export class BrickCompiler {
         return { ...outcome, glb: body.slice(offset, offset + length) };
       }),
     };
+  }
+
+  bakeNeeds(request: BakeNeedsRequest, library: LibraryFiles): BakeNeeds {
+    const { header } = this.call(
+      { op: "bakeNeeds", studPrimitives: request.studPrimitives },
+      { source: utf8.encode(request.source), drawn: request.drawn },
+      library,
+    );
+    return decodedOrThrow(decode(CompilerBakeNeeds, header), "brick-compile bakeNeeds");
   }
 
   bake(request: BakeRequest, library: LibraryFiles): BakeOutcome {

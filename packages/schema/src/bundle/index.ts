@@ -1,4 +1,12 @@
-import { pose16, ZETA16_COEFFICIENT_COUNT, ZETA16_ORDER, zeta16, type Zeta16 } from "@brr/math";
+import {
+  isCanonicalExactDecimalText,
+  isCanonicalExactRationalText,
+  pose16,
+  ZETA16_COEFFICIENT_COUNT,
+  ZETA16_ORDER,
+  zeta16,
+  type Zeta16,
+} from "@brr/math";
 import * as v from "valibot";
 
 const MATRIX_FLOATS = 12;
@@ -14,6 +22,28 @@ const StudPhase = v.pipe(Integer, v.minValue(0), v.maxValue(STUD_PHASES - 1));
 const IntegerString = v.pipe(v.string(), v.regex(/^-?\d+$/u));
 const Zeta16Coefficients = v.pipe(v.array(IntegerString), v.length(ZETA16_COEFFICIENT_COUNT));
 const Matrix = v.pipe(v.array(Finite), v.length(MATRIX_FLOATS));
+
+export const ExactDecimalText = v.pipe(
+  v.string(),
+  v.check(
+    (text) => isCanonicalExactDecimalText(text),
+    "must be an exact decimal written canonically",
+  ),
+  v.description(
+    "an exact decimal in LDU, written canonically: an optional minus, the integer digits, and a fractional part with no trailing zeros; read with @brr/math parseExactDecimal",
+  ),
+);
+export type ExactDecimalText = v.InferOutput<typeof ExactDecimalText>;
+
+export const ExactRationalText = v.pipe(
+  v.unknown(),
+  v.check((text) => isCanonicalExactRationalText(text), "must be a reduced exact rational"),
+  v.object({ numerator: v.string(), denominator: v.string() }),
+  v.description(
+    "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseExactRational",
+  ),
+);
+export type ExactRationalText = v.InferOutput<typeof ExactRationalText>;
 
 export function encodeZeta16(value: Zeta16): string[] {
   return value.map((coefficient) => coefficient.toString());
@@ -485,7 +515,9 @@ export const CompilerVehicles = v.object({
     wheels: v.array(v.string()),
     couplers: v.array(v.string()),
   }),
-  railHeads: v.array(v.object({ railPart: v.string(), inner: Finite, outer: Finite })),
+  railHeads: v.array(
+    v.object({ railPart: v.string(), inner: ExactDecimalText, outer: ExactDecimalText }),
+  ),
 });
 export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
 
@@ -707,6 +739,16 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const BakeShard = v.pipe(
+  v.strictObject({ from: Count, to: Count, of: Count, visibilityOnly: v.boolean() }),
+  v.check(
+    (shard) => shard.from <= shard.to && shard.to <= shard.of && shard.of > 0,
+    "a bake shard is a slice of the candidates",
+  ),
+  v.readonly(),
+);
+export type BakeShard = v.InferOutput<typeof BakeShard>;
+
 export const CompilerRequest = v.variant("op", [
   v.strictObject({ op: v.literal("readModel") }),
   v.strictObject({ op: v.literal("readStudio") }),
@@ -722,11 +764,16 @@ export const CompilerRequest = v.variant("op", [
     ),
   }),
   v.strictObject({
+    op: v.literal("bakeNeeds"),
+    studPrimitives: StringList,
+  }),
+  v.strictObject({
     op: v.literal("bake"),
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
     translucentColors: v.pipe(v.array(Count), v.readonly()),
     vehicles: v.nullable(CompilerVehicles),
+    shard: v.exactOptional(BakeShard),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -846,6 +893,12 @@ export const CompilerBaked = v.object({
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
 
+export const CompilerBakeNeeds = v.variant("status", [
+  v.object({ status: v.literal("complete") }),
+  CompilerNeed,
+]);
+export type CompilerBakeNeeds = v.InferOutput<typeof CompilerBakeNeeds>;
+
 export const CompilerBake = v.variant("status", [
   CompilerBaked,
   CompilerNeed,
@@ -865,6 +918,38 @@ function vehicleInstances(vehicle: ModelVehicle): ReadonlyArray<number> {
     ),
   ];
 }
+
+export const MODEL_ROOT = -1;
+
+export interface SubmodelTreeArrays {
+  readonly parent: ArrayLike<number>;
+  readonly matrices: ArrayLike<number>;
+  readonly ofPart: ArrayLike<number>;
+}
+
+function isInstanceIndex(value: number | undefined, below: number): boolean {
+  return value !== undefined && Number.isInteger(value) && value >= MODEL_ROOT && value < below;
+}
+
+export function submodelTreeFits(tree: SubmodelTreeArrays, instanceCount: number): boolean {
+  const count = tree.parent.length;
+  if (tree.matrices.length !== count * MATRIX_FLOATS || tree.ofPart.length !== instanceCount) {
+    return false;
+  }
+  for (let n = 0; n < count; n++) {
+    if (!isInstanceIndex(tree.parent[n], n)) return false;
+  }
+  for (let i = 0; i < instanceCount; i++) {
+    if (!isInstanceIndex(tree.ofPart[i], count)) return false;
+  }
+  return true;
+}
+
+export const SubmodelTree = v.object({
+  parent: v.array(Integer),
+  matrices: v.array(Finite),
+  ofPart: v.array(Integer),
+});
 
 export const ModelFile = v.pipe(
   v.object({
@@ -886,13 +971,20 @@ export const ModelFile = v.pipe(
       color: v.array(Integer),
       matrix: v.array(Finite),
     }),
+    partTransforms: v.array(Finite),
+    submodels: SubmodelTree,
   }),
   v.check(
-    ({ parts, instances }) =>
+    ({ parts, instances, partTransforms }) =>
       instances.part.length === instances.color.length &&
       instances.matrix.length === instances.part.length * MATRIX_FLOATS &&
+      partTransforms.length === instances.part.length * MATRIX_FLOATS &&
       instances.part.every((index) => index < parts.length),
     "model instance arrays are inconsistent",
+  ),
+  v.check(
+    ({ instances, submodels }) => submodelTreeFits(submodels, instances.part.length),
+    "model sub-model tree is inconsistent",
   ),
   v.check(
     ({ parts, shapes }) =>

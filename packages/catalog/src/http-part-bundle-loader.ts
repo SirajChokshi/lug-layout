@@ -523,6 +523,13 @@ function partModel(file: ModelFile): PartModel {
     partIndex: Uint16Array.from(file.instances.part),
     ldrawColor: Uint32Array.from(file.instances.color),
     matrices: Float32Array.from(file.instances.matrix),
+    partTransforms: Float64Array.from(file.partTransforms),
+    submodels: {
+      count: file.submodels.parent.length,
+      parent: Int32Array.from(file.submodels.parent),
+      matrices: Float64Array.from(file.submodels.matrices),
+      ofPart: Int32Array.from(file.submodels.ofPart),
+    },
     vehicles: file.vehicles.map((vehicle) => ({
       ...vehicle,
       body: Uint32Array.from(vehicle.body),

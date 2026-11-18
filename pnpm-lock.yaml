@@ -223,6 +223,9 @@ importers:
       '@brr/catalog':
         specifier: workspace:*
         version: link:../catalog
+      '@brr/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@brr/schema':
         specifier: workspace:*
         version: link:../schema
@@ -408,6 +411,9 @@ importers:
       '@brr/import':
         specifier: workspace:*
         version: link:../../import
+      '@brr/rpc':
+        specifier: workspace:*
+        version: link:../../rpc
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
@@ -415,9 +421,18 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../../config
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../schema
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
       typescript:
         specifier: 7.0.2
         version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@22.20.5)(happy-dom@21.0.4)(vite@8.3.8(@types/node@22.20.5)(esbuild@0.28.2))
 
   packages/workers/sim-worker:
     dependencies:
