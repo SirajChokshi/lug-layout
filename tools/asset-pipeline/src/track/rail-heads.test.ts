@@ -12,7 +12,6 @@ import type { ExactPlacement, ExactVec3 } from "../ldraw/exact-walk.ts";
 import { LdrawLibrary } from "../ldraw/library.ts";
 import { flatPolygons, onRailHead, railHeadsAtEnd, railSection, scanEndAt } from "./rail-heads.ts";
 
-const INWARD_LDU = 20;
 const root = mkdtempSync(join(tmpdir(), "rail-heads-"));
 mkdirSync(join(root, "parts"), { recursive: true });
 mkdirSync(join(root, "p"), { recursive: true });
@@ -84,7 +83,7 @@ describe("rail heads", () => {
 
   it("find the rail centres exactly where the scan line crosses the heads", () => {
     if (heads === null) throw new Error("the custom rail has no rail pair");
-    const section = railSection(heads, end, INWARD_LDU);
+    const section = railSection(heads, end);
     if (section === null) throw new Error("the scan line finds no rail pair");
     const [nearCentre, farCentre] = section.railCentresLdu;
     const halfSpacing = exactRational(10003n, 200n);
@@ -105,7 +104,7 @@ describe("rail heads", () => {
     const split = railHeadsAtEnd(flatPolygons(library, "custom-split-rail"), end);
     if (split === null) throw new Error("the split rail has no rail pair");
     expect(formatExactDecimal(split.topY)).toBe("-16.5");
-    const section = railSection(split, end, INWARD_LDU);
+    const section = railSection(split, end);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });
@@ -114,7 +113,7 @@ describe("rail heads", () => {
     const long = railHeadsAtEnd(flatPolygons(library, "custom-long-rail"), end);
     if (long === null) throw new Error("the long rail has no rail pair");
     expect(formatExactDecimal(long.topY)).toBe("-16");
-    const section = railSection(long, end, INWARD_LDU);
+    const section = railSection(long, end);
     if (section === null) throw new Error("the scan line finds no rail pair");
     expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });

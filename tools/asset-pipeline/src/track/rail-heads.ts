@@ -16,7 +16,7 @@ import {
 import { exactPolygons, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
-export const RAIL_SECTION_INWARD_LDU = STUD_LDU;
+const RAIL_SECTION_INWARD_LDU = exactRational(BigInt(STUD_LDU), 1n);
 
 export interface PlanPoint {
   readonly x: number;
@@ -135,7 +135,7 @@ function levelScansFromTop(
 }
 
 export function railHeadsAtEnd(flat: ReadonlyArray<FlatPolygon>, end: ScanEnd): RailHeads | null {
-  const levelScans = levelScansFromTop(flat, scanLine(end, RAIL_SECTION_INWARD_LDU));
+  const levelScans = levelScansFromTop(flat, scanLine(end));
   for (const run of adjacentRunsSmallestFirst(levelScans)) {
     const [top] = run;
     if (top === undefined) continue;
@@ -261,21 +261,17 @@ function offsetAcross(
   return divideExactRational(cross(sub(point, centre), direction), cross(normal, direction));
 }
 
-function scanLine(end: ScanEnd, inwardLdu: number): ScanLine {
+function scanLine(end: ScanEnd): ScanLine {
   const direction = headingDirection(end.heading);
   const normal = headingNormal(end.heading);
-  const inward = exactRationalFromFloat64(inwardLdu);
   const start = exactPlanPoint(end.origin);
   const centre = {
-    x: addExactRational(start.x, multiplyExactRational(direction.x, inward)),
-    z: addExactRational(start.z, multiplyExactRational(direction.z, inward)),
+    x: addExactRational(start.x, multiplyExactRational(direction.x, RAIL_SECTION_INWARD_LDU)),
+    z: addExactRational(start.z, multiplyExactRational(direction.z, RAIL_SECTION_INWARD_LDU)),
   };
-  const [first, second] = end.endSleeperExtremes.map((extreme) =>
-    offsetAcross(extreme, centre, normal, direction),
-  );
-  if (first === undefined || second === undefined) {
-    throw new Error("an end sleeper has no extremes");
-  }
+  const [leastExtreme, greatestExtreme] = end.endSleeperExtremes;
+  const first = offsetAcross(leastExtreme, centre, normal, direction);
+  const second = offsetAcross(greatestExtreme, centre, normal, direction);
   const endSleeperSpan = { from: lesser(first, second), to: greater(first, second) };
   return { centre, normal, endSleeperSpan };
 }
@@ -322,6 +318,6 @@ function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSecti
   };
 }
 
-export function railSection(heads: RailHeads, end: ScanEnd, inwardLdu: number): RailSection | null {
-  return railSectionFromIntervals(scanIntervals(heads.polygons, scanLine(end, inwardLdu)));
+export function railSection(heads: RailHeads, end: ScanEnd): RailSection | null {
+  return railSectionFromIntervals(scanIntervals(heads.polygons, scanLine(end)));
 }

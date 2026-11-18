@@ -40,7 +40,6 @@ import type { LdrawLibrary } from "../ldraw/library.ts";
 import { metaValues } from "../ldraw/parse.ts";
 import {
   flatPolygons,
-  RAIL_SECTION_INWARD_LDU,
   railHeadsAtEnd,
   railSection,
   scanEndAt,
@@ -379,7 +378,7 @@ export function buildTrackPiece(
   if (referenceScan === undefined) throw new Error(`${part}: no reference end`);
   const heads = railHeadsAtEnd(flatPolygons(library, part), referenceScan);
   if (heads === null) throw new Error(`${part}: no rail pair at the reference end`);
-  const sections = scanEnds.map((scan) => railSection(heads, scan, RAIL_SECTION_INWARD_LDU));
+  const sections = scanEnds.map((scan) => railSection(heads, scan));
   const referenceSection = sections[0];
   if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
   const halfSpacing = exactRationalToFloat64(referenceSection.railHalfSpacingLdu);
