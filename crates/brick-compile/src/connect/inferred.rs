@@ -44,7 +44,7 @@ pub enum Uninferred {
     UnknownFacing { radius: f64 },
     OpenArc { radius: f64 },
     Unflattened,
-    Oversized { cells: f64 },
+    Oversized { squares: f64 },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -506,40 +506,39 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             .map(Issue::from)
             .collect();
         let malformed = !issues.is_empty();
-        let prepared =
-            match flattened {
-                Err(_) => {
-                    issues.push(Issue::Uninferred {
-                        origin: [0.0; 3],
-                        reason: Uninferred::Unflattened,
-                    });
-                    Prepared {
-                        solid: None,
-                        runs: Vec::new(),
-                        issues,
-                    }
-                }
-                Ok(_) if malformed => Prepared {
+        let prepared = match flattened {
+            Err(_) => {
+                issues.push(Issue::Uninferred {
+                    origin: [0.0; 3],
+                    reason: Uninferred::Unflattened,
+                });
+                Prepared {
                     solid: None,
                     runs: Vec::new(),
                     issues,
-                },
-                Ok(flattened) => {
-                    let placed = self.placed(path, &mut issues);
-                    let solid = Solid::new(&flattened.triangles, placed.surfaces);
-                    issues.extend(solid.largest_oversized().map(|(origin, cells)| {
-                        Issue::Uninferred {
-                            origin,
-                            reason: Uninferred::Oversized { cells },
-                        }
-                    }));
-                    Prepared {
-                        solid: (!solid.is_empty()).then_some(solid),
-                        runs: placed.runs,
-                        issues,
-                    }
                 }
-            };
+            }
+            Ok(_) if malformed => Prepared {
+                solid: None,
+                runs: Vec::new(),
+                issues,
+            },
+            Ok(flattened) => {
+                let placed = self.placed(path, &mut issues);
+                let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                issues.extend(solid.largest_oversized().map(|(origin, squares)| {
+                    Issue::Uninferred {
+                        origin,
+                        reason: Uninferred::Oversized { squares },
+                    }
+                }));
+                Prepared {
+                    solid: (!solid.is_empty()).then_some(solid),
+                    runs: placed.runs,
+                    issues,
+                }
+            }
+        };
         let prepared = Rc::new(prepared);
         self.prepared = Some((path.to_string(), Rc::clone(&prepared)));
         prepared

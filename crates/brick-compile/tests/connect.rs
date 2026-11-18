@@ -1967,8 +1967,8 @@ fn geometry_too_large_for_the_cell_index_is_reported_once_and_probed_where_it_ma
             .filter_map(|issue| match issue {
                 Issue::Uninferred {
                     origin,
-                    reason: Uninferred::Oversized { cells },
-                } => Some((*origin, *cells)),
+                    reason: Uninferred::Oversized { squares },
+                } => Some((*origin, *squares)),
                 _ => None,
             })
             .collect()
