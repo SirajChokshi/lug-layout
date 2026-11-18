@@ -16,9 +16,11 @@ pub mod model;
 pub mod occlusion;
 pub mod studio;
 pub mod surface;
+pub mod technic;
 pub mod vehicle;
 pub mod voxel;
 pub mod zip;
 
 pub use compile::{compile_part, CompileError, CompileOptions, CompiledPart};
 pub use flatten::{Library, Lod};
+pub use technic::TechnicPrimitives;
