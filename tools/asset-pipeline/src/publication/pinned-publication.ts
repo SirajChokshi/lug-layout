@@ -427,8 +427,17 @@ export async function readPointer<TManifest>(
   return bytes === undefined ? null : adapter.decode(bytes);
 }
 
-function pointed<TManifest>(pointer: PublicationPointer<TManifest>): TManifest[] {
-  return pointer.previous === null ? [pointer.current] : [pointer.current, pointer.previous];
+async function keptManifests<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  pointer: PublicationPointer<TManifest>,
+): Promise<TManifest[]> {
+  const kept: TManifest[] = [];
+  const previous = pointer.previous === null ? [] : [pointer.previous];
+  const candidates = [pointer.current, ...previous, ...(await adapter.retained())];
+  for (const manifest of candidates) {
+    if (!kept.some((known) => adapter.sameManifest(known, manifest))) kept.push(manifest);
+  }
+  return kept;
 }
 
 const HEX = /^[0-9a-f]+$/u;
@@ -552,7 +561,7 @@ export async function verifyServedPointer<TManifest>(
   });
   if (pointer === null) return [`${adapter.key} is not served`];
   const problems: string[] = [];
-  for (const manifest of pointed(pointer)) {
+  for (const manifest of await keptManifests(adapter, pointer)) {
     const listed = await adapter
       .references(manifest, read)
       .catch((error: unknown): ManifestReferences => {
@@ -588,7 +597,7 @@ export async function pruneUnreferenced<TManifest>(
   }
   const pointer = adapter.decode(pointerBytes);
   const live = new Set<string>();
-  for (const manifest of [...pointed(pointer), ...(await adapter.retained())]) {
+  for (const manifest of await keptManifests(adapter, pointer)) {
     const { indexes, files } = await adapter.references(manifest, read);
     for (const key of indexes) live.add(key);
     for (const file of files) live.add(file.key);
@@ -658,7 +667,7 @@ async function verifyPointerCommand<TPin, TManifest>(
     return;
   }
   process.stdout.write(
-    `${baseUrl}: the current and previous manifests ${commands.pointer.key} names, and ${scope === "all" ? "every file they reference" : "their index files"}, match their pins and SHA-256 digests\n`,
+    `${baseUrl}: the current and previous manifests ${commands.pointer.key} names, and ${scope === "all" ? "every file they reference" : "their index files"}, and every manifest the adapter retains, match their pins and SHA-256 digests\n`,
   );
 }
 

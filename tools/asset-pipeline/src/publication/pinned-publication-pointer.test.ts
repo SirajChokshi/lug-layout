@@ -239,14 +239,20 @@ it("a dry run deletes nothing and lists exactly what the prune then deletes", as
   expect(real.deleted).toBe(dry.doomed.length);
 });
 
-it("keeps every file of a manifest the adapter retains, beside the current and previous manifests", async () => {
+it("keeps and verifies every file of a manifest the adapter retains, beside the current and previous manifests", async () => {
   const { store, oldest } = await threeReleases();
   const retaining = { ...pointer, retained: async () => [oldest.pin.index] };
+  const read = (key: string) => store.get(key);
 
   const pruned = await pruneUnreferenced(retaining, store, false);
+  const intact = await verifyServedPointer(retaining, read, "all");
+  store.objects.set(leafKey("a"), new TextEncoder().encode("tampered"));
+  const tampered = await verifyServedPointer(retaining, read, "all");
 
   expect(pruned.deleted).toBe(0);
   expect(oldest.keys.every((key) => store.objects.has(key))).toBe(true);
+  expect(intact).toEqual([]);
+  expect(tampered).toEqual([`${leafKey("a")} differs from its SHA-256`]);
 });
 
 it("refuses and deletes nothing when the manifests reference nothing", async () => {

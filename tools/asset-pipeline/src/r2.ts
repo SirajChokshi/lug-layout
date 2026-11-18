@@ -136,6 +136,18 @@ const XML_ENTITIES: Readonly<Record<string, string>> = {
 const DECIMAL = 10;
 const HEXADECIMAL = 16;
 
+const LAST_CODE_POINT = 0x10ffff;
+const FIRST_SURROGATE = 0xd800;
+const LAST_SURROGATE = 0xdfff;
+
+function isXmlCharacter(codePoint: number): boolean {
+  return (
+    codePoint > 0 &&
+    codePoint <= LAST_CODE_POINT &&
+    (codePoint < FIRST_SURROGATE || codePoint > LAST_SURROGATE)
+  );
+}
+
 function xmlCharacter(reference: string): string {
   const named = XML_ENTITIES[reference];
   if (named !== undefined) return named;
@@ -147,7 +159,9 @@ function xmlCharacter(reference: string): string {
       : decimal !== undefined
         ? Number.parseInt(decimal, DECIMAL)
         : undefined;
-  if (codePoint === undefined) throw new Error(`unrecognised XML reference ${reference}`);
+  if (codePoint === undefined || !isXmlCharacter(codePoint)) {
+    throw new Error(`unrecognised XML reference ${reference}`);
+  }
   return String.fromCodePoint(codePoint);
 }
 

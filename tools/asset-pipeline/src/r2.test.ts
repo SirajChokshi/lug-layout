@@ -76,6 +76,7 @@ const XML_ENTITIES: ReadonlyArray<readonly [string, string]> = [
   ["'", "&#x27;"],
   ["ü", "&#252;"],
   ["€", "&euro;"],
+  ["¤", "&#x110000;"],
 ];
 
 function escaped(text: string): string {
@@ -169,11 +170,17 @@ describe("R2ObjectStore listing and deletion", () => {
     });
   });
 
-  it("refuses a listing with an XML reference it cannot decode instead of guessing the key", async () => {
-    await withBucket(["p/€"], async (store) => {
-      await expect(store.list("p/")).rejects.toThrow("unrecognised XML reference &euro;");
-    });
-  });
+  it.each([
+    ["p/€", "&euro;"],
+    ["p/¤", "&#x110000;"],
+  ])(
+    "refuses a listing whose key %s comes back with the reference %s, instead of guessing it",
+    async (key, reference) => {
+      await withBucket([key], async (store) => {
+        await expect(store.list("p/")).rejects.toThrow(`unrecognised XML reference ${reference}`);
+      });
+    },
+  );
 
   it("refuses a listing truncated without a continuation token instead of returning part of it", async () => {
     await withBucket(
