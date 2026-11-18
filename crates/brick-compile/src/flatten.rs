@@ -55,6 +55,25 @@ pub enum FlattenError {
     TooDeep { path: String },
 }
 
+pub fn resolve_reference<L: Library + ?Sized>(
+    library: &L,
+    lod: Lod,
+    reference: &str,
+) -> Option<String> {
+    let reference = ldraw::normalize_reference(reference);
+    let low = format!("p/8/{reference}");
+    let candidates = [
+        (lod != Lod::Standard).then_some(low),
+        Some(format!("parts/{reference}")),
+        Some(format!("p/{reference}")),
+        Some(reference.clone()),
+    ];
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|path| library.source(path).is_some())
+}
+
 pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
@@ -81,18 +100,7 @@ impl<'a, L: Library> Flattener<'a, L> {
     }
 
     pub fn resolve(&self, reference: &str) -> Option<String> {
-        let reference = ldraw::normalize_reference(reference);
-        let low = format!("p/8/{reference}");
-        let candidates = [
-            (self.lod != Lod::Standard).then_some(low),
-            Some(format!("parts/{reference}")),
-            Some(format!("p/{reference}")),
-            Some(reference.clone()),
-        ];
-        candidates
-            .into_iter()
-            .flatten()
-            .find(|path| self.library.source(path).is_some())
+        resolve_reference(self.library, self.lod, reference)
     }
 
     fn load(&mut self, path: &str, out: &mut Flattened) -> Option<Rc<LdrawFile>> {
