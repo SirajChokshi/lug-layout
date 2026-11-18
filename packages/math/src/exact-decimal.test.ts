@@ -88,9 +88,10 @@ describe("exact decimals", () => {
     expect(isCanonicalExactDecimalText(`0.${"0".repeat(1099)}1`)).toBe(false);
   });
 
-  it("refuse anything but a string as canonical text", () => {
+  it("refuse anything but a string as a literal or as canonical text", () => {
     for (const notText of [46.9, 469n, null, undefined, { text: "46.9" }]) {
       expect(isCanonicalExactDecimalText(notText)).toBe(false);
+      expect(() => decimal(notText)).toThrow("a decimal literal is a string");
     }
   });
 

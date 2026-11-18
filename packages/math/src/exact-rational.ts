@@ -14,7 +14,8 @@ const INTEGER_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
 const MAX_DIGITS = 1200;
 const TERM_LIMIT = 10n ** BigInt(MAX_DIGITS);
-const OPERAND_LIMIT = 10n ** BigInt(2 * MAX_DIGITS + 1);
+const UNREDUCED_DIGITS = 2 * MAX_DIGITS + 1;
+const UNREDUCED_LIMIT = 10n ** BigInt(UNREDUCED_DIGITS);
 const SIXTEENTHS_PER_LDU = 16n;
 const SIGNIFICAND_BITS = 53;
 const GUARD_BITS = 2;
@@ -58,8 +59,10 @@ function bitLength(value: bigint): number {
 
 export function exactRational(numerator: bigint, denominator: bigint): ExactRational {
   if (denominator === 0n) throw new Error("an exact rational has a nonzero denominator");
-  if (magnitude(numerator) >= OPERAND_LIMIT || magnitude(denominator) >= OPERAND_LIMIT) {
-    throw new Error(`an exact rational writes more than ${MAX_DIGITS} digits in a term`);
+  if (magnitude(numerator) >= UNREDUCED_LIMIT || magnitude(denominator) >= UNREDUCED_LIMIT) {
+    throw new Error(
+      `an exact rational's unreduced terms have more than ${UNREDUCED_DIGITS} digits`,
+    );
   }
   const sign = denominator < 0n ? -1n : 1n;
   const divisor = greatestCommonDivisor(numerator, denominator);

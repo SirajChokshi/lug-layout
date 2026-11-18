@@ -63,7 +63,8 @@ function literalParts(text: string): LiteralParts | null {
   };
 }
 
-export function parseExactDecimal(text: ExactDecimalText): ExactDecimal {
+export function parseExactDecimal(text: unknown): ExactDecimal {
+  if (typeof text !== "string") throw new Error("a decimal literal is a string");
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
