@@ -70,7 +70,6 @@ const PLACED = "client: PlacedChunks";
 const WORLD = "domain: World";
 const OCCUPANCY = "domain: OccupancyGrid";
 const HISTORY = "domain: EditHistory";
-const SOURCES = "render: chunk, vehicle and ghost sources";
 const INSTANCES = "render: instance matrices and colours";
 const SCENE = "render: scene objects";
 const GEOMETRY = "render: geometry";
@@ -109,7 +108,7 @@ const RULES: OwnerRules = {
     [
       "ThreeSceneBackend",
       new Map([
-        ...fields(SOURCES, ["chunkSources", "vehicleSources", "ghostSource"]),
+        ...fields(INSTANCES, ["ghostPage"]),
         ...fields(GEOMETRY, ["detailedLevel", "farLevel", "farModelGeometries", "partBounds"]),
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
@@ -117,6 +116,7 @@ const RULES: OwnerRules = {
     ["Editor", fields(PART_MESHES, ["placeables", "palette", "slots", "modelPlaceables"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
     ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
+    ["ChunkRecord", fields(INSTANCES, ["page"])],
     ["Mesh", fields(GEOMETRY, ["geometry"])],
     [
       "InstancedMesh",
