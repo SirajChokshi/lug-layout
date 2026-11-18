@@ -58,6 +58,7 @@ const paletteModels = (
     readonly models: ReadonlyArray<PaletteModel>;
   }
 ).models;
+const BRICK_2X4_STUDS = 8;
 
 interface Manifest {
   readonly source: { readonly repo: string; readonly commit: string; readonly root: string };
@@ -187,6 +188,133 @@ const pinnedMirror: FetchFunction = async (url) => {
     () => new Response(null, { status: HTTP_NOT_FOUND }),
   );
 };
+
+const CA_LICENSE = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt";
+
+function customHub(name: string, extra: ReadonlyArray<string>): string {
+  return [
+    `0 Custom round hub ${name}`,
+    `0 Name: ${name}`,
+    "0 Author: synthetic test fixture",
+    CA_LICENSE,
+    "0 BFC CERTIFY CCW",
+    "1 16 0 20 0 20 0 0 0 -20 0 0 0 20 box5.dat",
+    "0 BFC INVERTNEXT",
+    "1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat",
+    "4 16 -6 20 20 -6 20 -20 -20 20 -20 -20 20 20",
+    "4 16 20 20 20 20 20 -20 6 20 -20 6 20 20",
+    ...extra,
+  ].join("\n");
+}
+
+const SLIVER = "3 16 0 20 0 40000000000000000 20 0 0 20 1";
+
+const customParts = new Map([
+  ["parts/zz-custom-round-hub.dat", customHub("zz-custom-round-hub.dat", [])],
+  [
+    "parts/zz-custom-nonfinite.dat",
+    customHub("zz-custom-nonfinite.dat", [
+      "3 16 0 20 0 1e400 20 0 0 20 1",
+      "1 16 0 0 0 NaN 0 0 0 1 0 0 0 1 stud.dat",
+    ]),
+  ],
+  [
+    "parts/zz-custom-unparsed.dat",
+    customHub("zz-custom-unparsed.dat", ["3 16 0 20 0 abc 20 0 0 20 1"]),
+  ],
+  ["parts/zz-custom-absurd-sliver.dat", customHub("zz-custom-absurd-sliver.dat", [SLIVER])],
+  [
+    "parts/zz-custom-composed-beyond.dat",
+    customHub("zz-custom-composed-beyond.dat", [
+      "1 16 3000000000000 0 0 1 0 0 0 1 0 0 0 1 s/zz-custom-far-sliver.dat",
+    ]),
+  ],
+  [
+    "parts/s/zz-custom-far-sliver.dat",
+    [
+      "0 Custom far sliver",
+      "0 Name: s/zz-custom-far-sliver.dat",
+      CA_LICENSE,
+      "0 BFC CERTIFY CCW",
+      "3 16 0 0 0 1 0 0 0 0 1",
+    ].join("\n"),
+  ],
+]);
+
+const customMirror: FetchFunction = async (url) => {
+  const path = /\/ldraw\/(?<path>.+)$/u.exec(url)?.groups?.["path"];
+  const custom = path === undefined ? undefined : customParts.get(path);
+  return custom === undefined ? pinnedMirror(url) : new Response(custom);
+};
+
+const malformedModel = [
+  "0 FILE malformed-custom.ldr",
+  "0 Malformed custom parts beside an official brick and a well-formed custom hub",
+  "0 Name: malformed-custom.ldr",
+  "0 Author: synthetic test fixture",
+  CA_LICENSE,
+  "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 1 80 0 0 1 0 0 0 1 0 0 0 1 zz-custom-round-hub.dat",
+  "1 2 160 0 0 1 0 0 0 1 0 0 0 1 zz-custom-nonfinite.dat",
+  "1 2 240 0 0 1 0 0 0 1 0 0 0 1 zz-custom-unparsed.dat",
+  "1 2 320 0 0 1 0 0 0 1 0 0 0 1 zz-custom-absurd-sliver.dat",
+  "1 2 400 0 0 1 0 0 0 1 0 0 0 1 zz-custom-composed-beyond.dat",
+  "1 1 0 0 120 1 0 0 0 1 0 0 0 1 9997-1 - 3001.dat",
+  "0 NOFILE",
+  "0 FILE 9997-1 - 3001.dat",
+  "0 Brick  2 x  4 copy with an absurd sliver",
+  "0 Name: 9997-1 - 3001.dat",
+  "0 Author: synthetic test fixture",
+  CA_LICENSE,
+  "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\3001s01.dat",
+  SLIVER,
+  "0 NOFILE",
+].join("\n");
+
+it(
+  "refuses each custom part with malformed geometry before drawing it, and imports and bakes the rest of the model",
+  async () => {
+    const result = await importWith(customMirror, "malformed-custom.mpd", malformedModel);
+
+    expect(
+      result.report.parts.map((part) => [
+        part.reference,
+        part.kind,
+        part.kind === "malformed" ? part.findings : [],
+      ]),
+    ).toEqual([
+      ["3001.dat", "bundle", []],
+      ["zz-custom-round-hub.dat", "compiled", []],
+      [
+        "zz-custom-nonfinite.dat",
+        "malformed",
+        [{ file: "parts/zz-custom-nonfinite.dat", kind: "nonFinite" }],
+      ],
+      [
+        "zz-custom-unparsed.dat",
+        "malformed",
+        [{ file: "parts/zz-custom-unparsed.dat", kind: "unparsed" }],
+      ],
+      [
+        "zz-custom-absurd-sliver.dat",
+        "malformed",
+        [{ file: "parts/zz-custom-absurd-sliver.dat", kind: "unresolvable" }],
+      ],
+      [
+        "zz-custom-composed-beyond.dat",
+        "malformed",
+        [{ file: "parts/zz-custom-composed-beyond.dat", kind: "unresolvable" }],
+      ],
+      ["9997-1 - 3001.dat", "malformed", [{ file: "9997-1 - 3001.dat", kind: "unresolvable" }]],
+    ]);
+    expect(result.partIds).toEqual(["ldraw:3001", "ldraw:zz-custom-round-hub"]);
+    expect(result.instanceCount).toBe(2);
+    expect(result.compiled.map((part) => part.partId)).toEqual(["ldraw:zz-custom-round-hub"]);
+    expect(result.report.bakeIssue).toBeNull();
+    expect(result.bake?.studCover.studs).toBe(BRICK_2X4_STUDS);
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 it("draws bundle parts and reports, without drawing, a part the library lacks and a colour LDConfig lacks", async () => {
   const text = [

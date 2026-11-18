@@ -17,6 +17,7 @@ import { isDirectColor } from "@brr/catalog/colors";
 import {
   submodelTreeFits,
   type CompilerVehicles,
+  type MalformedFinding,
   type PrimitiveConnectorTable,
 } from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
@@ -69,6 +70,11 @@ export type PartResolution =
       readonly maxMeasuredDistanceLdu: number;
       readonly surfaceWithinWeld: boolean;
       readonly weldEpsilonLdu: number;
+    })
+  | (Counted & {
+      readonly kind: "malformed";
+      readonly findings: ReadonlyArray<MalformedFinding>;
+      readonly message: string;
     })
   | (Counted & { readonly kind: "failed"; readonly message: string });
 
@@ -455,6 +461,13 @@ function failureResolution(
         ...counted,
         gate: failure.kind,
         path: failure.path ?? counted.official,
+        message: failure.message,
+      };
+    case "malformed":
+      return {
+        kind: "malformed",
+        ...counted,
+        findings: failure.findings ?? [],
         message: failure.message,
       };
     case "tooDeep":

@@ -137,6 +137,8 @@ function reportedReason(part: PartResolution): string | null {
       return `part refused by the ${part.gate} gate (not drawn)`;
     case "inlineDiffers":
       return "inline copy of an official part that differs from it (not drawn)";
+    case "malformed":
+      return "part with malformed geometry, refused before meshing (not drawn)";
     default: {
       const unhandled: never = part;
       throw new Error(`unhandled part resolution ${String(unhandled)}`);
