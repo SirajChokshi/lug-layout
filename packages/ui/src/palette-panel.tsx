@@ -201,8 +201,8 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
       </ul>
       <p className="palette-hint">
         Pick a piece, then click to lay it. Near an open end it attaches exactly. Q swings it onto
-        its next end, R turns it 22.5° on open ground, X swaps a switch between left and right.
-        Click a laid switch to throw it.
+        its next end, R turns it a quarter turn on the studs of open ground, X swaps a switch
+        between left and right. Click a laid switch to throw it.
       </p>
       {snapshot.trackNotDrawable.length > 0 && (
         <p className="palette-note" data-not-drawable={snapshot.trackNotDrawable.length}>

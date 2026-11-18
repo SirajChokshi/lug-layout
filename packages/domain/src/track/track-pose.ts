@@ -2,13 +2,19 @@ import {
   HALF_TURN_16,
   attachPose16,
   composePose16,
+  isLatticePose16,
+  nearestQuarterTurn16,
   normalizeHeading16,
   pose16,
   rotateZeta16,
   subtractZeta16,
+  zeta16,
+  zeta16ToStuds,
   type Pose16,
   type Zeta16,
 } from "@brr/math";
+
+const LATTICE_ENDS_OF_A_SEATED_BODY = 2;
 
 export interface TrackPieceDef {
   readonly id: string;
@@ -45,6 +51,26 @@ export function trackMove(piece: TrackPieceDef, from: number, to: number): Track
     delta: rotateZeta16(subtractZeta16(exit.position, entry.position), frame),
     turn: normalizeHeading16(frame + exit.heading),
   };
+}
+
+export function seatsOnStuds(piece: TrackPieceDef): boolean {
+  return piece.connectors.filter(isLatticePose16).length >= LATTICE_ENDS_OF_A_SEATED_BODY;
+}
+
+function nearestLatticePosition(value: Zeta16): Zeta16 {
+  const studs = zeta16ToStuds(value);
+  const x = BigInt(Math.round(studs.x));
+  const z = BigInt(Math.round(studs.z));
+  return zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n]);
+}
+
+export function freePlacement(piece: TrackPieceDef, held: number, free: Pose16): Pose16 {
+  const end = connector(piece, held);
+  const attached = attachPose16(end, free);
+  if (!seatsOnStuds(piece) || isLatticePose16(attached)) return attached;
+  const heading = nearestQuarterTurn16(attached.heading);
+  const ideal = subtractZeta16(free.position, rotateZeta16(end.position, heading));
+  return pose16(nearestLatticePosition(ideal), heading);
 }
 
 export function connectorPose(placed: PlacedPiece, index: number): Pose16 {

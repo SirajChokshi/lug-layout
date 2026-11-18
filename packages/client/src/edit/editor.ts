@@ -40,7 +40,16 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
 } from "@brr/domain";
-import { BRICK_LDU, CHUNK_LDU, PLATE_LDU, STUD_LDU, ZETA16_ORDER, pose16, zeta16 } from "@brr/math";
+import {
+  BRICK_LDU,
+  CHUNK_LDU,
+  PLATE_LDU,
+  QUARTER_TURN_16,
+  STUD_LDU,
+  ZETA16_ORDER,
+  pose16,
+  zeta16,
+} from "@brr/math";
 import {
   CAMERA_FOV_DEGREES,
   RAY_FLOATS,
@@ -2548,7 +2557,10 @@ export class Editor implements IEditor {
     if (held) {
       this.held =
         held.snap?.end === null || !held.snap
-          ? { ...held, heading: (held.heading + direction + ZETA16_ORDER) % ZETA16_ORDER }
+          ? {
+              ...held,
+              heading: (held.heading + direction * QUARTER_TURN_16 + ZETA16_ORDER) % ZETA16_ORDER,
+            }
           : { ...held, connector: held.connector + direction };
       this.showHeldPiece();
       return;

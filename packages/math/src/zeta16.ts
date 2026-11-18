@@ -10,7 +10,8 @@ export interface PlaneStuds {
 
 export const ZETA16_ZERO: Zeta16 = [0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
 
-const STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
+const COS_EIGHTH_TURN = Math.cos(Math.PI / 8);
+const SIN_EIGHTH_TURN = Math.sin(Math.PI / 8);
 
 function coefficientAt(value: ReadonlyArray<bigint>, power: number): bigint {
   const coefficient = value[power];
@@ -66,11 +67,30 @@ export function zeta16Equals(a: Zeta16, b: Zeta16): boolean {
 }
 
 export function zeta16ToStuds(value: Zeta16): PlaneStuds {
-  let x = 0;
-  let z = 0;
-  value.forEach((coefficient, power) => {
-    x += Number(coefficient) * Math.cos(power * STEP_RADIANS);
-    z += Number(coefficient) * Math.sin(power * STEP_RADIANS);
-  });
-  return { x, z };
+  const [c0, c1, c2, c3, c4, c5, c6, c7] = value;
+  return {
+    x:
+      Number(c0) +
+      Number(c1 - c7) * COS_EIGHTH_TURN +
+      Number(c2 - c6) * Math.SQRT1_2 +
+      Number(c3 - c5) * SIN_EIGHTH_TURN,
+    z:
+      Number(c4) +
+      Number(c3 + c5) * COS_EIGHTH_TURN +
+      Number(c2 + c6) * Math.SQRT1_2 +
+      Number(c1 + c7) * SIN_EIGHTH_TURN,
+  };
+}
+
+const ZETA16_ONE: Zeta16 = [1n, 0n, 0n, 0n, 0n, 0n, 0n, 0n];
+
+const HEADING_DIRECTIONS: ReadonlyArray<PlaneStuds> = Array.from(
+  { length: ZETA16_ORDER },
+  (_unused, heading) => zeta16ToStuds(rotateZeta16(ZETA16_ONE, heading)),
+);
+
+export function zeta16Direction(heading: number): PlaneStuds {
+  const direction = HEADING_DIRECTIONS[normalizeHeading16(heading)];
+  if (!direction) throw new Error(`no ζ₁₆ direction for heading ${heading}`);
+  return direction;
 }

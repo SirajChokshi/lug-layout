@@ -3,6 +3,7 @@ import {
   attachPose16,
   composePose16,
   HALF_TURN_16,
+  isLatticePose16,
   pose16,
   pose16Equals,
   POSE16_IDENTITY,
@@ -18,6 +19,7 @@ import {
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
   ZETA16_ZERO,
+  zeta16Direction,
   zeta16Equals,
   zeta16ToStuds,
   type Zeta16,
@@ -71,8 +73,73 @@ describe("ℤ[ζ₁₆] ring", () => {
     }
   });
 
+  it("puts a lattice value on whole studs exactly, however far from the origin", () => {
+    const far = 2n ** 40n;
+    for (const [x, z] of [
+      [0n, 1n],
+      [1n, 0n],
+      [-3n, 7n],
+      [far, -far],
+      [-far + 1n, far - 1n],
+      [123_456_789n, -987_654_321n],
+    ] as const) {
+      expect(zeta16ToStuds(zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n]))).toEqual({
+        x: Number(x),
+        z: Number(z),
+      });
+    }
+  });
+
+  it("a quarter turn maps the plane point (x, z) to exactly (−z, x)", () => {
+    for (const [a] of samples) {
+      const far = zeta16(a.position.map((c) => c * 1_000_003n));
+      for (const value of [a.position, far]) {
+        const plane = zeta16ToStuds(value);
+        const turned = zeta16ToStuds(rotateZeta16(value, ZETA16_ORDER / 4));
+        expect(turned.x).toBe(-plane.z);
+        expect(turned.z).toBe(plane.x);
+      }
+    }
+  });
+
+  it("gives every heading its unit direction, exactly on the axes at quarter turns", () => {
+    for (let steps = 0; steps < ZETA16_ORDER; steps++) {
+      const direction = zeta16Direction(steps);
+      expect(direction.x).toBeCloseTo(Math.cos(steps * STEP_RADIANS), 14);
+      expect(direction.z).toBeCloseTo(Math.sin(steps * STEP_RADIANS), 14);
+    }
+    expect([0, 4, 8, 12].map(zeta16Direction)).toEqual([
+      { x: 1, z: 0 },
+      { x: 0, z: 1 },
+      { x: -1, z: 0 },
+      { x: 0, z: -1 },
+    ]);
+  });
+
   it("rejects a value that is not eight coefficients", () => {
     expect(() => zeta16([1n, 2n, 3n])).toThrow("needs 8 coefficients, got 3");
+  });
+});
+
+function latticeAt(coefficients: ReadonlyArray<bigint>, facing: number): boolean {
+  return isLatticePose16(pose16(zeta16(coefficients), facing));
+}
+
+describe("lattice poses", () => {
+  it("are whole-stud ζ⁰ and ζ⁴ positions facing a quarter turn, and nothing else", () => {
+    for (const facing of [0, 4, 8, 12, 16, -4]) {
+      expect(latticeAt([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n], facing)).toBe(true);
+      expect(latticeAt([32n, 0n, 0n, 0n, -48n, 0n, 0n, 0n], facing)).toBe(true);
+    }
+    for (const facing of [1, 2, 3, 7, 9, 15]) {
+      expect(latticeAt([32n, 0n, 0n, 0n, -48n, 0n, 0n, 0n], facing)).toBe(false);
+    }
+    for (const power of [1, 2, 3, 5, 6, 7]) {
+      const offLattice = Array.from({ length: ZETA16_COEFFICIENT_COUNT }, (_, k) =>
+        k === power ? 1n : 0n,
+      );
+      expect(latticeAt(offLattice, 0)).toBe(false);
+    }
   });
 });
 

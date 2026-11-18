@@ -249,9 +249,89 @@ it("marks a drag target as joining only when the closure solver finds an exact j
   expect(exact.target).toEqual({ end: expect.any(Number), joins: true });
 });
 
-function latticePose(x: number, z: number) {
-  return pose16(zeta16([BigInt(x), 0n, 0n, 0n, BigInt(z), 0n, 0n, 0n]), 0);
+function latticePose(x: number, z: number, heading = 0) {
+  return pose16(zeta16([BigInt(x), 0n, 0n, 0n, BigInt(z), 0n, 0n, 0n]), heading);
 }
+
+const DRAG_DIRECTIONS = 48;
+const DRAG_STUDS = 150;
+const QUARTER_TURN_STEPS = 4;
+
+it("starts a run drawn on open ground on the studs, facing a quarter turn, at any drag angle", async () => {
+  const bundle = await container
+    .get(PART_BUNDLE_LOADER)
+    .load("standard", (part) => part.role === "track");
+  const offGrid: string[] = [];
+  for (let i = 0; i < DRAG_DIRECTIONS; i++) {
+    const angle = ((i + 0.25) * 2 * Math.PI) / DRAG_DIRECTIONS;
+    const run = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    run.beginDrag(0, 0, 0, 0);
+    run.moveDrag(Math.cos(angle) * DRAG_STUDS * STUD_LDU, Math.sin(angle) * DRAG_STUDS * STUD_LDU);
+    expect(run.endDrag().laid).toBeGreaterThan(0);
+    const start = run.openEnds().find((end) => end.xLdu === 0 && end.zLdu === 0);
+    if (start?.heading === undefined || start.heading % QUARTER_TURN_STEPS !== 0) {
+      offGrid.push(`${((angle * 180) / Math.PI).toFixed(1)}°: ${JSON.stringify(start)}`);
+    }
+  }
+  expect(offGrid).toEqual([]);
+});
+
+const BASEPLATE_STUD_PHASE_LDU = STUD_LDU / 2;
+
+function onStudGrid(ldu: number): boolean {
+  return (((ldu - BASEPLATE_STUD_PHASE_LDU) % STUD_LDU) + STUD_LDU) % STUD_LDU === 0;
+}
+
+it("puts the studs of straights, switches and the crossing exactly on the baseplate's stud grid, near the origin and a million studs out", async () => {
+  const bundle = await container
+    .get(PART_BUNDLE_LOADER)
+    .load("standard", (part) => part.role === "track");
+  const yard = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const nowhere = 1e12;
+  const seated = yard.pieceParts().filter((part) => part.piece.kind !== "curve");
+  expect(new Set(seated.map((part) => part.piece.kind))).toEqual(
+    new Set(["straight", "switch", "crossing"]),
+  );
+  for (const part of seated) {
+    part.def.connectors.forEach((_end, held) => {
+      for (const [x, z] of [
+        [0, 0],
+        [7, -3],
+        [1_000_003, -999_999],
+      ] as const) {
+        for (let heading = 0; heading < 16; heading += QUARTER_TURN_STEPS) {
+          const free = latticePose(x, z, heading);
+          const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
+          expect(snap.end).toBeNull();
+          yard.placePiece(part.catalogIndex, snap.placement);
+        }
+      }
+    });
+  }
+  const offGrid: string[] = [];
+  let checked = 0;
+  for (const key of yard.chunkKeys()) {
+    const chunk = yard.chunkInstances(key);
+    if (!chunk) continue;
+    for (let i = 0; i < chunk.count; i++) {
+      const part = bundle.parts[chunk.partIndex[i] ?? 0];
+      if (!part) continue;
+      const m = chunk.matrices.subarray(i * INSTANCE_MATRIX_FLOATS);
+      for (let s = 0; s < part.studPrimitiveIndex.length; s++) {
+        const stud = part.studMatrices.subarray(s * INSTANCE_MATRIX_FLOATS);
+        const px = stud[3] ?? 0;
+        const pz = stud[11] ?? 0;
+        if (!onStudGrid(px) || !onStudGrid(pz)) continue;
+        const x = chunk.originX + (m[0] ?? 0) * px + (m[2] ?? 0) * pz + (m[3] ?? 0);
+        const z = chunk.originZ + (m[8] ?? 0) * px + (m[10] ?? 0) * pz + (m[11] ?? 0);
+        checked++;
+        if (!onStudGrid(x) || !onStudGrid(z)) offGrid.push(`${part.id} stud at ${x}, ${z}`);
+      }
+    }
+  }
+  expect(offGrid.slice(0, 5)).toEqual([]);
+  expect(checked).toBeGreaterThan(seated.length * 100);
+});
 
 it("lays a passing siding from the real 9V switches that closes exactly and keeps every join when thrown", async () => {
   const bundle = await container
