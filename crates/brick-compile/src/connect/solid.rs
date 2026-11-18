@@ -286,9 +286,16 @@ fn plan_area(polygon: &[Local]) -> f64 {
     twice
 }
 
+fn bounds_reach(polygon: &[Local], point: [f64; 2]) -> bool {
+    (0..2).all(|k| {
+        polygon.iter().any(|p| p[k] <= point[k] + IDENTIFY_LDU)
+            && polygon.iter().any(|p| p[k] >= point[k] - IDENTIFY_LDU)
+    })
+}
+
 fn contains(polygon: &[Local], point: [f64; 2]) -> bool {
     let area = plan_area(polygon);
-    if polygon.len() < 3 || area == 0.0 {
+    if polygon.len() < 3 || area == 0.0 || !bounds_reach(polygon, point) {
         return false;
     }
     polygon.iter().enumerate().all(|(k, a)| {
@@ -330,6 +337,13 @@ fn point_segment(p: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
 }
 
 fn segments_cross(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> bool {
+    let apart = |k: usize| {
+        a[k].min(b[k]) > c[k].max(d[k]) + IDENTIFY_LDU
+            || c[k].min(d[k]) > a[k].max(b[k]) + IDENTIFY_LDU
+    };
+    if apart(0) || apart(1) {
+        return false;
+    }
     let side = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
         (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
     };

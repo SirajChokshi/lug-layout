@@ -994,6 +994,61 @@ fn a_cavity_is_placed_only_where_its_free_travel_centres_the_stud_on_the_grid_po
     );
 }
 
+fn custom_slot(half_length: i32, wall_lines: &[i32]) -> String {
+    let (w, d) = (30, 10);
+    let mut text = String::from("0 Custom Slot\n0 BFC CERTIFY CCW\n");
+    text += &format!("1 16 0 8 0 {w} 0 0 0 -8 0 0 0 {d} box5.dat\n");
+    text += &format!("0 BFC INVERTNEXT\n1 16 0 8 0 {half_length} 0 0 0 -4 0 0 0 6 box5.dat\n");
+    let xs = [-w, -half_length, half_length, w];
+    let zs = [-d, -6, 6, d];
+    for a in 0..3 {
+        for b in 0..3 {
+            if a == 1 && b == 1 {
+                continue;
+            }
+            let (x0, x1, z0, z1) = (xs[a], xs[a + 1], zs[b], zs[b + 1]);
+            text += &format!("4 16 {x1} 8 {z1} {x1} 8 {z0} {x0} 8 {z0} {x0} 8 {z1}\n");
+        }
+    }
+    for x in wall_lines {
+        text += &format!("3 16 {x} 8 21 {x} 4 27 {x} 4 90\n");
+    }
+    text
+}
+
+#[test]
+fn a_wall_off_to_the_side_does_not_stop_a_stud_sliding_toward_its_line() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/slot.dat", custom_slot(16, &[])),
+            ("parts/walled.dat", custom_slot(16, &[-10, 10])),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut at_mouth = |path: &str| -> (Vec<Uninferred>, usize) {
+        let inference = inferred.infer(path);
+        let reasons = inference
+            .issues
+            .iter()
+            .filter_map(|issue| match issue {
+                Issue::Uninferred { origin, reason } if *origin == [0.0, 8.0, 0.0] => Some(*reason),
+                _ => None,
+            })
+            .collect();
+        let receptors = faces_of(&inference.connectors)
+            .iter()
+            .filter(|f| f.gender == Gender::Female && f.origin[0] == 0.0 && f.origin[2] == 0.0)
+            .count();
+        (reasons, receptors)
+    };
+    let open = at_mouth("parts/slot.dat");
+    assert_eq!(open, (vec![Uninferred::SlidingCavity], 0));
+    assert_eq!(at_mouth("parts/walled.dat"), open);
+}
+
 fn female_faces(connectors: &[Connector]) -> Vec<MatingFace> {
     let mut found: Vec<MatingFace> = faces_of(connectors)
         .into_iter()
