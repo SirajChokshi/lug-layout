@@ -20,6 +20,7 @@ export interface PartConnectors {
   readonly sectionCode: Uint8Array;
   readonly sectionSize: Float64Array;
   readonly sectionLength: Float64Array;
+  readonly piece: Uint16Array;
   readonly freeFace: Uint32Array;
   readonly freeOrigin: Float64Array;
   readonly freeAxis: Float64Array;
@@ -59,6 +60,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     sectionCode: new Uint8Array(sections),
     sectionSize: new Float64Array(sections),
     sectionLength: new Float64Array(sections),
+    piece: new Uint16Array(faces),
     freeFace: new Uint32Array(free),
     freeOrigin: new Float64Array(free * VECTOR_FLOATS),
     freeAxis: new Float64Array(free * VECTOR_FLOATS),
@@ -84,6 +86,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     out.sectionCode.set(columns.sectionCode, section);
     out.sectionSize.set(columns.sectionSize, section);
     out.sectionLength.set(columns.sectionLength, section);
+    out.piece.set(columns.piece, face);
     out.freeFace.set(
       loose.face.map((index) => index + face),
       freeAt,

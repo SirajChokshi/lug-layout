@@ -79,6 +79,7 @@ const FACE_COLUMNS = [
   "sectionCode",
   "sectionSize",
   "sectionLength",
+  "piece",
 ] as const;
 
 function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRecordFile>): void {

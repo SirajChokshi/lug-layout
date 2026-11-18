@@ -97,6 +97,7 @@ function connectorRecord(license: string, tier: number) {
       sectionCode: [0],
       sectionSize: [6],
       sectionLength: [8],
+      piece: [0],
     },
     free: { face: [] as number[], origin: [] as number[], axis: [] as number[] },
     unreadable: [] as string[],

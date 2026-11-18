@@ -6,11 +6,12 @@ use serde_json::Value;
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Library, Lod};
 use crate::ldraw::{self, Line};
+use crate::pieces::{PieceMap, PieceNumbering};
 
 use super::meta::{parse_metas, Meta};
 use super::{
-    column, finished, length, placed, translation, Caps, Connector, Gender, Issue, Scaling,
-    Section, SectionShape, Shape, Source, Status,
+    column, finished, joined_pieces, length, translation, Caps, Connector, Gender, Issue, Scaling,
+    Section, SectionShape, Shape, Source, Status, Traced,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -98,12 +99,13 @@ struct PlacedEnd {
     primitive: String,
     end: HoleEnd,
     placement: Affine,
+    trail: Vec<u32>,
 }
 
 #[derive(Default)]
 struct Found {
-    connectors: Vec<Connector>,
-    where_open: Vec<Connector>,
+    connectors: Vec<Traced>,
+    where_open: Vec<Traced>,
     ends: Vec<PlacedEnd>,
     cylinders: Vec<Affine>,
 }
@@ -133,6 +135,7 @@ pub struct PrimitiveConnectors<'a, L: Library + ?Sized> {
     library: &'a L,
     table: PrimitiveTable,
     found: HashMap<String, Rc<Found>>,
+    numbering: PieceNumbering<'a, L>,
 }
 
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
@@ -152,7 +155,7 @@ fn inward(end: &PlacedEnd) -> Vec3 {
     unit(column(&end.placement, 1))
 }
 
-fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
+fn through(a: &PlacedEnd, b: &PlacedEnd, pieces: &PieceMap) -> Connector {
     let along = inward(a);
     let scale_a = length(column(&a.placement, 1));
     let scale_b = length(column(&b.placement, 1));
@@ -201,6 +204,7 @@ fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
         },
         placement,
         grid: None,
+        pieces: joined_pieces(&[pieces.piece(&a.trail)], &[pieces.piece(&b.trail)]),
     }
 }
 
@@ -242,7 +246,12 @@ fn bore_is_drawn(a: &PlacedEnd, b: &PlacedEnd, cylinders: &[Affine]) -> bool {
     covered >= to - COAXIAL_LDU
 }
 
-fn paired(ends: &[PlacedEnd], cylinders: &[Affine], issues: &mut Vec<Issue>) -> Vec<Connector> {
+fn paired(
+    ends: &[PlacedEnd],
+    cylinders: &[Affine],
+    pieces: &PieceMap,
+    issues: &mut Vec<Issue>,
+) -> Vec<Connector> {
     let mut used = vec![false; ends.len()];
     let mut out = Vec::new();
     for (i, a) in ends.iter().enumerate() {
@@ -274,7 +283,7 @@ fn paired(ends: &[PlacedEnd], cylinders: &[Affine], issues: &mut Vec<Issue>) -> 
                 used[i] = true;
                 used[j] = true;
                 if bore_is_drawn(a, &ends[j], cylinders) {
-                    out.push(through(a, &ends[j]));
+                    out.push(through(a, &ends[j], pieces));
                 } else {
                     issues.push(Issue::UndrawnHoleInterior {
                         primitive: a.primitive.clone(),
@@ -297,14 +306,23 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
             library,
             table,
             found: HashMap::new(),
+            numbering: PieceNumbering::new(library),
         }
     }
 
     pub fn connectors(&mut self, path: &str) -> (Vec<Connector>, Vec<Issue>) {
         let found = self.find(path, 0);
+        let pieces = self.numbering.map(path);
         let mut issues = Vec::new();
-        let mut raw = found.connectors.clone();
-        raw.extend(paired(&found.ends, &found.cylinders, &mut issues));
+        let mut raw: Vec<Connector> = found
+            .connectors
+            .iter()
+            .map(|traced| Connector {
+                pieces: vec![pieces.piece(&traced.trail)],
+                ..traced.connector.clone()
+            })
+            .collect();
+        raw.extend(paired(&found.ends, &found.cylinders, &pieces, &mut issues));
         let connectors = raw
             .iter()
             .map(|connector| finished(connector, &mut issues))
@@ -314,11 +332,15 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
 
     pub fn where_open(&mut self, path: &str) -> Vec<Connector> {
         let found = self.find(path, 0);
+        let pieces = self.numbering.map(path);
         let mut ignored = Vec::new();
         found
             .where_open
             .iter()
-            .map(|connector| finished(connector, &mut ignored))
+            .map(|traced| Connector {
+                pieces: vec![pieces.piece(&traced.trail)],
+                ..finished(&traced.connector, &mut ignored)
+            })
             .flat_map(|connector| {
                 let offsets = connector
                     .grid
@@ -346,25 +368,29 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
         let mut out = Found::default();
         if depth <= MAX_DEPTH {
             if let Some(source) = self.library.source(path) {
-                for line in ldraw::parse(source).lines {
-                    let Line::Subfile {
-                        matrix, reference, ..
-                    } = line
-                    else {
-                        continue;
-                    };
+                let subfiles =
+                    ldraw::parse(source)
+                        .lines
+                        .into_iter()
+                        .filter_map(|line| match line {
+                            Line::Subfile {
+                                matrix, reference, ..
+                            } => Some((matrix, reference)),
+                            _ => None,
+                        });
+                for (ordinal, (matrix, reference)) in (0u32..).zip(subfiles) {
                     let Some(child) = resolve_reference(self.library, Lod::Standard, &reference)
                     else {
                         continue;
                     };
+                    let template =
+                        |c: &Connector| Traced::declared(c.clone()).through(ordinal, &matrix);
                     if let Some(templates) = self.table.connectors.get(&child) {
-                        out.connectors
-                            .extend(templates.iter().map(|c| placed(c, &matrix)));
+                        out.connectors.extend(templates.iter().map(template));
                         continue;
                     }
                     if let Some(templates) = self.table.where_open.get(&child) {
-                        out.where_open
-                            .extend(templates.iter().map(|c| placed(c, &matrix)));
+                        out.where_open.extend(templates.iter().map(template));
                     }
                     if is_cylinder_primitive(&child) {
                         out.cylinders.push(matrix);
@@ -375,17 +401,23 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                             primitive: child.clone(),
                             end: *end,
                             placement: matrix,
+                            trail: vec![ordinal],
                         });
                         continue;
                     }
                     let inner = self.find(&child, depth + 1);
                     out.connectors
-                        .extend(inner.connectors.iter().map(|c| placed(c, &matrix)));
+                        .extend(inner.connectors.iter().map(|c| c.through(ordinal, &matrix)));
                     out.where_open
-                        .extend(inner.where_open.iter().map(|c| placed(c, &matrix)));
-                    out.ends.extend(inner.ends.iter().map(|e| PlacedEnd {
-                        placement: matrix.then(&e.placement),
-                        ..e.clone()
+                        .extend(inner.where_open.iter().map(|c| c.through(ordinal, &matrix)));
+                    out.ends.extend(inner.ends.iter().map(|e| {
+                        PlacedEnd {
+                            placement: matrix.then(&e.placement),
+                            trail: std::iter::once(ordinal)
+                                .chain(e.trail.iter().copied())
+                                .collect(),
+                            ..e.clone()
+                        }
                     }));
                     out.cylinders
                         .extend(inner.cylinders.iter().map(|c| matrix.then(c)));

@@ -56,6 +56,7 @@ pub struct RoundSurface {
     pub full: bool,
     pub arcs: Vec<(f64, f64)>,
     pub facing: Option<f64>,
+    pub piece: u16,
 }
 
 impl RoundSurface {
@@ -151,6 +152,7 @@ struct Facet {
     low: Vec3,
     high: Vec3,
     owner: Option<usize>,
+    piece: u16,
 }
 
 struct SlabPolygon {
@@ -463,10 +465,10 @@ fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
 }
 
 impl Solid {
-    pub fn new(triangles: &[Triangle], surfaces: Vec<RoundSurface>) -> Self {
+    pub fn new(triangles: &[Triangle], pieces: &[u16], surfaces: Vec<RoundSurface>) -> Self {
         let mut columns: [HashMap<(i64, i64), Vec<u32>>; 3] = Default::default();
         let mut facets = Vec::with_capacity(triangles.len());
-        for triangle in triangles {
+        for (triangle, &piece) in triangles.iter().zip(pieces) {
             let [a, b, c] = triangle.points;
             let normal = cross(sub(b, a), sub(c, a));
             if normal == [0.0; 3] {
@@ -489,6 +491,7 @@ impl Solid {
                 low,
                 high,
                 owner: None,
+                piece,
             });
         }
         let mut solid = Solid {
@@ -605,6 +608,69 @@ impl Solid {
         self.facets[facet]
             .owner
             .is_some_and(|owner| surfaces.contains(&owner))
+    }
+
+    pub fn contributors(&self, probe: &Probe, range: (f64, f64), floor: Option<f64>) -> Vec<u16> {
+        let reach = probe.radius + IDENTIFY_LDU;
+        let coaxial = self.exact(probe, reach);
+        let mut pieces: Vec<u16> = Vec::new();
+        let walls = (-IDENTIFY_LDU, range.1);
+        for index in self.near(probe, reach) {
+            if self.owned_by(index as usize, &coaxial) {
+                continue;
+            }
+            let facet = &self.facets[index as usize];
+            let (low, high) = self.depth_range(probe, facet);
+            if high < walls.0 || low > walls.1 {
+                continue;
+            }
+            let clipped = slab_clip(self.polygon(probe, facet), walls.0, walls.1);
+            if !clipped.is_empty() && nearest_radius(&clipped) <= reach {
+                pieces.push(facet.piece);
+            }
+        }
+        for &index in &coaxial {
+            let surface = &self.surfaces[index];
+            let (low, high) = surface.depths(probe);
+            if high >= walls.0 && low <= walls.1 && surface.nearest_from(probe.center()) <= reach {
+                pieces.push(surface.piece);
+            }
+        }
+        if let Some(depth) = floor {
+            pieces.extend(self.floor_pieces(probe, probe.radius - IDENTIFY_LDU, depth));
+        }
+        pieces.sort_unstable();
+        pieces.dedup();
+        pieces
+    }
+
+    fn floor_pieces(&self, probe: &Probe, inside: f64, depth: f64) -> Vec<u16> {
+        let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
+        let mut pieces = Vec::new();
+        for index in self.near(probe, inside + IDENTIFY_LDU) {
+            if self.owned_by(index as usize, &coaxial) {
+                continue;
+            }
+            let facet = &self.facets[index as usize];
+            if self.depth_range(probe, facet).1 < -IDENTIFY_LDU {
+                continue;
+            }
+            let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
+            if first_depth(&polygon, inside).is_some_and(|d| d <= depth + IDENTIFY_LDU) {
+                pieces.push(facet.piece);
+            }
+        }
+        for &index in &coaxial {
+            let surface = &self.surfaces[index];
+            let (low, high) = surface.depths(probe);
+            if surface.nearest_from(probe.center()) < inside
+                && high >= -IDENTIFY_LDU
+                && low.max(-IDENTIFY_LDU) <= depth + IDENTIFY_LDU
+            {
+                pieces.push(surface.piece);
+            }
+        }
+        pieces
     }
 
     pub fn floor(&self, probe: &Probe, inside: f64) -> Floor {
