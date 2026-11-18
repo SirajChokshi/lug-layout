@@ -1,7 +1,7 @@
-import { SIXTEENTHS_PER_LDU } from "@brr/math";
+import { CERTIFIED_RESIDUAL_LIMIT_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import { AXIS_FREE, AXIS_NEG_Z, VECTOR_FLOATS, axisDimension } from "./connector-table.ts";
 
-export const IDENTIFICATION_RESIDUAL_LDU = 0.0005;
+export const IDENTIFICATION_RESIDUAL_LDU = CERTIFIED_RESIDUAL_LIMIT_LDU;
 export const MODEL_ROOT = -1;
 export const NO_FRAME = -2;
 export const TRANSFORM_FLOATS = 12;
