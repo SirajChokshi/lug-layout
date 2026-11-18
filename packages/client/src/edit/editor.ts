@@ -23,6 +23,7 @@ import { MergedParts } from "./merged-parts.ts";
 import { PartMeshStream, type MeshProgress } from "./part-mesh-stream.ts";
 import {
   BomCounter,
+  WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
   RoadNetwork,
@@ -80,9 +81,10 @@ import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { modelLabel, withoutYear } from "../catalog/model-label.ts";
 import {
   heldPieces,
+  heldRuns,
   latticeFrame,
   modelTrackEnds,
-  type HeldTrackPiece,
+  type FramedTrackPiece,
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import { placeableVolumes } from "../connect/placeable-volumes.ts";
@@ -333,6 +335,7 @@ export interface TrackPieceView {
 export interface TrackView {
   readonly pieces: number;
   readonly modelPieces: number;
+  readonly runFramePieces: number;
   readonly offField: number;
   readonly unanchored: number;
   readonly bom: ReadonlyArray<TrackBomLine>;
@@ -1557,6 +1560,7 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       pieces: track.pieceCount,
       modelPieces: inModels.pieces,
+      runFramePieces: inModels.runFrame,
       offField: inModels.offField,
       unanchored: inModels.unanchored,
       bom: this.bomLines(track),
@@ -2677,40 +2681,50 @@ export class Editor implements IEditor, IEditedWorld {
 
   private modelTrackCounts(): {
     readonly pieces: number;
+    readonly runFrame: number;
     readonly offField: number;
     readonly unanchored: number;
   } {
     let pieces = 0;
+    let runFrame = 0;
     let offField = 0;
     let unanchored = 0;
     for (const model of this.placed.models()) {
       const track = this.trackOf(model.placeable);
       pieces += track?.pieces.length ?? 0;
+      for (const run of track?.runs ?? []) runFrame += run.pieces.length;
       for (const piece of track?.uncertified ?? []) {
         if (piece.reason === "noAnchor") unanchored++;
         else offField++;
       }
     }
-    return { pieces, offField, unanchored };
+    return { pieces, runFrame, offField, unanchored };
   }
 
   private syncModelTrack(): void {
     const drawing = this.track;
     if (!drawing) return;
-    const carrying = this.placed
-      .models()
-      .filter((model) => (this.trackOf(model.placeable)?.pieces.length ?? 0) > 0);
+    const carrying = this.placed.models().filter((model) => {
+      const track = this.trackOf(model.placeable);
+      return (track?.pieces.length ?? 0) + (track?.runs.length ?? 0) > 0;
+    });
     const unchanged =
       carrying.length === this.heldTrackModels.length &&
       carrying.every((model, i) => model === this.heldTrackModels[i]);
     if (unchanged) return;
     this.heldTrackModels = carrying;
-    const held: HeldTrackPiece[] = [];
+    const held: FramedTrackPiece[] = [];
+    let nextRunFrame = WORLD_TRACK_FRAME.id + 1;
     for (const model of carrying) {
       const track = this.trackOf(model.placeable);
       const { x, z, yPlates, rot } = model.handle;
       const frame = latticeFrame(x, z, rot);
-      if (track && frame) held.push(...heldPieces(track, frame, yPlates));
+      if (!track || !frame) continue;
+      held.push(
+        ...heldPieces(track, frame, yPlates),
+        ...heldRuns(track, frame, yPlates, nextRunFrame),
+      );
+      nextRunFrame += track.runs.length;
     }
     drawing.syncHeld(held);
     this.showTrackEnds(null);

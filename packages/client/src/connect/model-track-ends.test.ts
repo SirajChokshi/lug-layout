@@ -6,6 +6,7 @@ import {
 } from "@brr/catalog";
 import { MateReport, ModelConnectors } from "@brr/domain";
 import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
   STUD_LDU,
   ZETA16_STEP_RADIANS,
   addZeta16,
@@ -27,12 +28,25 @@ import { TrackDrawing } from "../edit/track-drawing.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { TRACK_FAMILY } from "./finders.ts";
-import { modelTrackEnds, type TrackInstances } from "./model-track-ends.ts";
+import {
+  heldRuns,
+  latticeFrame,
+  modelTrackEnds,
+  type ModelTrackEnds,
+  type TrackInstances,
+} from "./model-track-ends.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const FLOAT_LDU = 1e-6;
 const OFF_FIELD_RADIANS = (0.1 * Math.PI) / 180;
 const PRINTED_DECIMALS = 3;
+const RESIDUAL_LIMIT_STUDS = CERTIFIED_RESIDUAL_LIMIT_LDU / STUD_LDU;
+const INSIDE_THE_JOIN_LOOKUP_LDU = 0.0009;
+const OUTSIDE_THE_JOIN_LOOKUP_LDU = 0.003;
+const AGAINST_IT_LDU = -0.0002;
+const OFF_THE_FIELD_LDU = { x: 0.0003, z: -0.0002 };
+const CIRCLE_CURVES = 16;
+const TURNED_A_STEP = 1;
 const CURVE_PART = "ldraw:74747";
 const STRAIGHT_PART = "ldraw:74746";
 const NEAREST_ELEMENT_TO_A_STUD_POINT = zeta16([-21n, -20n, 59n, -20n, -21n, 10n, 0n, -10n]);
@@ -146,6 +160,28 @@ function chain(start: Pose16, partIds: ReadonlyArray<string>): Array<readonly [s
   return pieces;
 }
 
+function printed(instances: TrackInstances): TrackInstances {
+  return {
+    ...instances,
+    matrices: instances.matrices.map((entry) => Number(entry.toFixed(PRINTED_DECIMALS))),
+  };
+}
+
+function turnedCircle(): Array<readonly [string, Pose16]> {
+  return chain(
+    pose16(STUD_POINT, TURNED_A_STEP),
+    Array.from({ length: CIRCLE_CURVES }, () => CURVE_PART),
+  );
+}
+
+function inRunFrames(ends: ModelTrackEnds): TrackDrawing {
+  const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const identity = latticeFrame(0, 0, 0);
+  if (!identity) throw new Error("the origin is not a lattice frame");
+  drawing.syncHeld(heldRuns(ends, identity, 0, 1));
+  return drawing;
+}
+
 function turnedAboutItsOrigin(matrices: Float64Array, instance: number, radians: number): void {
   const o = instance * INSTANCE_MATRIX_FLOATS;
   const cos = Math.cos(radians);
@@ -222,12 +258,7 @@ describe("modelTrackEnds", () => {
   it("identifies a run written with every matrix entry rounded to three decimals exactly as at full precision", () => {
     const instances = asModel(cornerRun());
     const exact = modelTrackEnds(instances, bundle.parts, bundle.trackCatalog);
-    const printed = instances.matrices.map((entry) => Number(entry.toFixed(PRINTED_DECIMALS)));
-    const ends = modelTrackEnds(
-      { ...instances, matrices: printed },
-      bundle.parts,
-      bundle.trackCatalog,
-    );
+    const ends = modelTrackEnds(printed(instances), bundle.parts, bundle.trackCatalog);
     expect(ends.uncertified).toEqual([]);
     expect(ends.pieces).toHaveLength(exact.pieces.length);
     ends.pieces.forEach((piece, i) => {
@@ -272,6 +303,100 @@ describe("modelTrackEnds", () => {
     if (!lone) throw new Error("no piece laid");
     const ends = modelTrackEnds(writtenAt([lone]), bundle.parts, bundle.trackCatalog);
     expect(ends.uncertified).toEqual([{ partId: CURVE_PART, reason: "noAnchor" }]);
+  });
+
+  it("identifies a 22.5°-turned circle written at three decimals in one run frame with its exact relative poses", () => {
+    const circle = turnedCircle();
+    const ends = modelTrackEnds(printed(writtenAt(circle)), bundle.parts, bundle.trackCatalog);
+    expect(ends.pieces).toEqual([]);
+    expect(ends.uncertified).toEqual([]);
+    const [run] = ends.runs;
+    if (!run) throw new Error("no run frame");
+    const root = circle[0]?.[1];
+    if (!root) throw new Error("no root piece");
+    const truth = circle.map(([, pose]) => `${pose.heading}:${pose.position.join(",")}`).toSorted();
+    const shifted = run.pieces
+      .map((piece) => {
+        const at = addZeta16(piece.placement.position, root.position);
+        return `${piece.placement.heading}:${at.join(",")}`;
+      })
+      .toSorted();
+    expect(shifted).toEqual(truth);
+    const rootStuds = zeta16ToStuds(root.position);
+    expect(Math.abs(run.originStuds.x - rootStuds.x)).toBeLessThanOrEqual(RESIDUAL_LIMIT_STUDS);
+    expect(Math.abs(run.originStuds.z - rootStuds.z)).toBeLessThanOrEqual(RESIDUAL_LIMIT_STUDS);
+    const drawing = inRunFrames(ends);
+    expect([drawing.joinedPairs(), drawing.openEnds().length]).toEqual([CIRCLE_CURVES, 0]);
+  });
+
+  it("refuses a whole run frame when no one translation fits it, though a moved piece still joins, and splits it when a join breaks", () => {
+    const moved = (shifts: ReadonlyArray<readonly [number, number]>): ModelTrackEnds => {
+      const matrices = Float64Array.from(writtenAt(turnedCircle()).matrices);
+      for (let i = 0; i < CIRCLE_CURVES; i++) {
+        matrices[i * INSTANCE_MATRIX_FLOATS + 3] =
+          (matrices[i * INSTANCE_MATRIX_FLOATS + 3] ?? 0) + OFF_THE_FIELD_LDU.x;
+        matrices[i * INSTANCE_MATRIX_FLOATS + 11] =
+          (matrices[i * INSTANCE_MATRIX_FLOATS + 11] ?? 0) + OFF_THE_FIELD_LDU.z;
+      }
+      for (const [piece, shiftLdu] of shifts) {
+        const o = piece * INSTANCE_MATRIX_FLOATS + 3;
+        matrices[o] = (matrices[o] ?? 0) + shiftLdu;
+      }
+      const instances = { ...writtenAt(turnedCircle()), matrices };
+      return modelTrackEnds(instances, bundle.parts, bundle.trackCatalog);
+    };
+    expect(moved([]).runs.map((run) => run.pieces.length)).toEqual([CIRCLE_CURVES]);
+    const inside = moved([
+      [0, INSIDE_THE_JOIN_LOOKUP_LDU],
+      [CIRCLE_CURVES / 2, AGAINST_IT_LDU],
+    ]);
+    expect(inside.runs).toEqual([]);
+    expect(inside.uncertified.map((piece) => piece.reason)).toEqual(
+      Array.from({ length: CIRCLE_CURVES }, () => "contradiction"),
+    );
+    const outside = moved([[0, OUTSIDE_THE_JOIN_LOOKUP_LDU]]);
+    expect(outside.runs.map((run) => run.pieces.length)).toEqual([CIRCLE_CURVES - 1]);
+    expect(outside.uncertified).toEqual([{ partId: CURVE_PART, reason: "noAnchor" }]);
+    expect(inRunFrames(outside).openEnds()).toHaveLength(2);
+  });
+
+  it("refuses a whole run frame when one of its ends has two partners, as a duplicated piece gives", () => {
+    const circle = turnedCircle();
+    const duplicated = circle[0];
+    if (!duplicated) throw new Error("no piece to duplicate");
+    const ends = modelTrackEnds(
+      printed(writtenAt([...circle, duplicated])),
+      bundle.parts,
+      bundle.trackCatalog,
+    );
+    expect(ends.runs).toEqual([]);
+    expect(ends.uncertified.map((piece) => piece.reason)).toEqual(
+      Array.from({ length: CIRCLE_CURVES + 1 }, () => "contradiction"),
+    );
+  });
+
+  it("never joins a run frame's end to another run frame or to world track at the same exact pose", () => {
+    const open = chain(pose16(STUD_POINT, TURNED_A_STEP), [CURVE_PART, CURVE_PART, CURVE_PART]);
+    const ends = modelTrackEnds(printed(writtenAt(open)), bundle.parts, bundle.trackCatalog);
+    const [run] = ends.runs;
+    const first = run?.pieces[0];
+    if (!run || !first) throw new Error("no run frame");
+    const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const identity = latticeFrame(0, 0, 0);
+    if (!identity) throw new Error("the origin is not a lattice frame");
+    drawing.syncHeld([...heldRuns(ends, identity, 0, 1), ...heldRuns(ends, identity, 0, 2)]);
+    const internalJoins = 2 * (run.pieces.length - 1);
+    expect(drawing.joinedPairs()).toBe(internalJoins);
+    const straight = catalogPiece(STRAIGHT_PART);
+    const runEnd = composePose16(
+      first.placement,
+      catalogPiece(CURVE_PART).connectors[0]?.pose ?? first.placement,
+    );
+    const exit = straight.connectors[1]?.pose;
+    if (!exit) throw new Error("the straight has no exit");
+    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd));
+    expect(drawing.joinedPairs()).toBe(internalJoins);
+    expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });
 
   it("joins a model's track to another model's exactly where the laid run continues", () => {

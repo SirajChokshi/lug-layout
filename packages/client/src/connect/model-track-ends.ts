@@ -1,5 +1,10 @@
 import type { PartShapeAsset } from "@brr/catalog";
-import { NEAR_MISS_RADIUS_LDU, type TrackEnd } from "@brr/domain";
+import {
+  NEAR_MISS_RADIUS_LDU,
+  WORLD_TRACK_FRAME,
+  type TrackEnd,
+  type TrackFrame,
+} from "@brr/domain";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   HALF_TURN_16,
@@ -50,6 +55,15 @@ export interface HeldTrackPiece {
   readonly yPlates: number;
 }
 
+export interface FramedTrackPiece extends HeldTrackPiece {
+  readonly frame: TrackFrame;
+}
+
+export interface TrackRun {
+  readonly pieces: ReadonlyArray<HeldTrackPiece>;
+  readonly originStuds: PlaneStuds;
+}
+
 export type UncertifiedReason = "notFlat" | "noAnchor" | "overLimit" | "contradiction";
 
 export interface UncertifiedPiece {
@@ -60,7 +74,19 @@ export interface UncertifiedPiece {
 export interface ModelTrackEnds {
   readonly pieces: ReadonlyArray<HeldTrackPiece>;
   readonly openEnds: ReadonlyArray<TrackEnd>;
+  readonly runs: ReadonlyArray<TrackRun>;
   readonly uncertified: ReadonlyArray<UncertifiedPiece>;
+}
+
+interface Placements {
+  readonly outcomes: Array<Pose16 | UncertifiedReason>;
+  readonly unanchoredOnly: Uint8Array;
+}
+
+interface RunFrame {
+  readonly members: ReadonlyArray<number>;
+  readonly relative: ReadonlyArray<Pose16>;
+  readonly originStuds: PlaneStuds;
 }
 
 interface PieceOfPart {
@@ -283,10 +309,7 @@ class EndIndex {
   }
 }
 
-function certifiedPlacements(
-  candidates: ReadonlyArray<Candidate>,
-): Array<Pose16 | UncertifiedReason> {
-  const index = new EndIndex(candidates);
+function certifiedPlacements(candidates: ReadonlyArray<Candidate>, index: EndIndex): Placements {
   const placements: Array<Pose16 | null> = candidates.map(() => null);
   const ambiguous = new Uint8Array(candidates.length);
   const overLimit = new Uint8Array(candidates.length);
@@ -438,10 +461,13 @@ function certifiedPlacements(
     placements[a] = anchor.pose;
     settleByVote(spread(a), before);
   }
-  return placements.map((placement, i) => {
+  const unanchoredOnly = new Uint8Array(candidates.length);
+  const outcomes = placements.map((placement, i): Pose16 | UncertifiedReason => {
     if (!placement) {
       if (ambiguous[i]) return "contradiction";
-      return overLimit[i] || missesACertifiedNeighbour(i) ? "overLimit" : "noAnchor";
+      if (overLimit[i]) return "overLimit";
+      unanchoredOnly[i] = 1;
+      return missesACertifiedNeighbour(i) ? "overLimit" : "noAnchor";
     }
     const absolute = anchors[i]?.pose;
     const agreed =
@@ -449,6 +475,97 @@ function certifiedPlacements(
       implied(i).every((option) => pose16Equals(option, placement));
     return agreed ? placement : "contradiction";
   });
+  return { outcomes, unanchoredOnly };
+}
+
+function runPartners(
+  candidates: ReadonlyArray<Candidate>,
+  index: EndIndex,
+  eligible: Uint8Array,
+): ReadonlyArray<ReadonlyArray<ReadonlyArray<readonly [number, number]>>> {
+  return candidates.map((candidate, i) =>
+    candidate.piece.connectors.map((connector, c) => {
+      const partners: Array<readonly [number, number]> = [];
+      if (!eligible[i]) return partners;
+      const e = c * END_FLOATS;
+      const facing = normalizeHeading16(candidate.heading + connector.heading);
+      index.near(candidate.ends[e] ?? 0, candidate.ends[e + 1] ?? 0, (j, d) => {
+        const other = candidates[j];
+        const theirs = other?.piece.connectors[d];
+        if (j === i || !eligible[j] || !other || !theirs || other.plates !== candidate.plates) {
+          return;
+        }
+        const opposite = normalizeHeading16(facing - other.heading - theirs.heading);
+        if (opposite === HALF_TURN_16) partners.push([j, d]);
+      });
+      return partners;
+    }),
+  );
+}
+
+function runFrames(
+  candidates: ReadonlyArray<Candidate>,
+  index: EndIndex,
+  eligible: Uint8Array,
+): { readonly runs: ReadonlyArray<RunFrame>; readonly contradicted: Uint8Array } {
+  const partners = runPartners(candidates, index, eligible);
+  const contradicted = new Uint8Array(candidates.length);
+  partners.forEach((ends, i) => {
+    for (const end of ends) {
+      if (end.length <= 1) continue;
+      contradicted[i] = 1;
+      for (const [j] of end) contradicted[j] = 1;
+    }
+  });
+  const relative: Array<Pose16 | null> = candidates.map(() => null);
+  const runs: RunFrame[] = [];
+  candidates.forEach((root, r) => {
+    if (!eligible[r] || relative[r]) return;
+    relative[r] = pose16(latticePoint(0, 0), root.heading);
+    const members = [r];
+    let consistent = true;
+    for (let q = 0; q < members.length; q++) {
+      const i = members[q] ?? 0;
+      const at = relative[i];
+      const candidate = candidates[i];
+      if (!at || !candidate) continue;
+      candidate.piece.connectors.forEach((connector, c) => {
+        for (const [j, d] of partners[i]?.[c] ?? []) {
+          const theirs = candidates[j]?.piece.connectors[d];
+          if (!theirs) continue;
+          const implied = attachPose16(theirs, composePose16(at, connector));
+          const known = relative[j];
+          if (!known) {
+            relative[j] = implied;
+            members.push(j);
+          } else if (!pose16Equals(known, implied)) consistent = false;
+        }
+      });
+    }
+    if (members.length < 2) return;
+    const box = { lowX: -Infinity, highX: Infinity, lowZ: -Infinity, highZ: Infinity };
+    for (const i of members) {
+      const at = relative[i];
+      const candidate = candidates[i];
+      if (!at || !candidate) continue;
+      const offset = zeta16ToStuds(at.position);
+      box.lowX = Math.max(box.lowX, candidate.placement.x - offset.x - RESIDUAL_LIMIT_STUDS);
+      box.highX = Math.min(box.highX, candidate.placement.x - offset.x + RESIDUAL_LIMIT_STUDS);
+      box.lowZ = Math.max(box.lowZ, candidate.placement.z - offset.z - RESIDUAL_LIMIT_STUDS);
+      box.highZ = Math.min(box.highZ, candidate.placement.z - offset.z + RESIDUAL_LIMIT_STUDS);
+    }
+    const fits = box.lowX <= box.highX && box.lowZ <= box.highZ;
+    if (!consistent || !fits || members.some((i) => contradicted[i])) {
+      for (const i of members) contradicted[i] = 1;
+      return;
+    }
+    runs.push({
+      members,
+      relative: members.map((i) => relative[i] ?? pose16(latticePoint(0, 0), 0)),
+      originStuds: { x: (box.lowX + box.highX) / 2, z: (box.lowZ + box.highZ) / 2 },
+    });
+  });
+  return { runs, contradicted };
 }
 
 function pointKey(end: TrackEnd): string {
@@ -475,13 +592,19 @@ export function modelTrackEnds(
     if (typeof candidate === "string") uncertified.push({ partId: part.id, reason: candidate });
     else candidates.push(candidate);
   }
+  const index = new EndIndex(candidates);
+  const { outcomes, unanchoredOnly } = certifiedPlacements(candidates, index);
+  const { runs, contradicted } = runFrames(candidates, index, unanchoredOnly);
+  const inRun = new Uint8Array(candidates.length);
+  for (const run of runs) for (const i of run.members) inRun[i] = 1;
   const pieces: HeldTrackPiece[] = [];
   const ends: TrackEnd[] = [];
-  certifiedPlacements(candidates).forEach((placement, i) => {
+  outcomes.forEach((placement, i) => {
     const candidate = candidates[i];
-    if (!candidate) return;
+    if (!candidate || inRun[i]) return;
     if (typeof placement === "string") {
-      uncertified.push({ partId: candidate.partId, reason: placement });
+      const reason = contradicted[i] ? "contradiction" : placement;
+      uncertified.push({ partId: candidate.partId, reason });
       return;
     }
     pieces.push({
@@ -490,7 +613,11 @@ export function modelTrackEnds(
       yPlates: candidate.plates,
     });
     for (const connector of candidate.piece.connectors) {
-      ends.push({ pose: composePose16(placement, connector), yPlates: candidate.plates });
+      ends.push({
+        pose: composePose16(placement, connector),
+        yPlates: candidate.plates,
+        frame: WORLD_TRACK_FRAME,
+      });
     }
   });
   const atPoint = new Map<string, TrackEnd[]>();
@@ -505,19 +632,51 @@ export function modelTrackEnds(
         (other) => other !== end && posesJoin16(end.pose, other.pose),
       ),
   );
-  return { pieces, openEnds, uncertified };
+  const trackRuns = runs.map((run): TrackRun => ({
+    originStuds: run.originStuds,
+    pieces: run.members.map((i, k) => ({
+      catalogIndex: candidates[i]?.piece.catalogIndex ?? 0,
+      placement: run.relative[k] ?? pose16(latticePoint(0, 0), 0),
+      yPlates: candidates[i]?.plates ?? 0,
+    })),
+  }));
+  return { pieces, openEnds, runs: trackRuns, uncertified };
 }
 
 export function heldPieces(
   track: ModelTrackEnds,
   frame: Pose16,
   yPlates: number,
-): ReadonlyArray<HeldTrackPiece> {
+): ReadonlyArray<FramedTrackPiece> {
   return track.pieces.map((piece) => ({
     catalogIndex: piece.catalogIndex,
     placement: composePose16(frame, piece.placement),
     yPlates: yPlates + piece.yPlates,
+    frame: WORLD_TRACK_FRAME,
   }));
+}
+
+export function heldRuns(
+  track: ModelTrackEnds,
+  frame: Pose16,
+  yPlates: number,
+  firstFrameId: number,
+): ReadonlyArray<FramedTrackPiece> {
+  const facing = zeta16Direction(frame.heading);
+  return track.runs.flatMap((run, r) => {
+    const { x, z } = run.originStuds;
+    const runFrame: TrackFrame = {
+      id: firstFrameId + r,
+      xLdu: (facing.x * x - facing.z * z) * STUD_LDU,
+      zLdu: (facing.z * x + facing.x * z) * STUD_LDU,
+    };
+    return run.pieces.map((piece) => ({
+      catalogIndex: piece.catalogIndex,
+      placement: composePose16(frame, piece.placement),
+      yPlates: yPlates + piece.yPlates,
+      frame: runFrame,
+    }));
+  });
 }
 
 export function latticeFrame(xLdu: number, zLdu: number, rot: number): Pose16 | null {

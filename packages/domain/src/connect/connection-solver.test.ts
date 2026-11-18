@@ -13,7 +13,7 @@ import {
   subtractZeta16,
   zeta16,
 } from "@brr/math";
-import type { TrackEnd } from "../track/end-gaps.ts";
+import { WORLD_TRACK_FRAME, type TrackEnd } from "../track/end-gaps.ts";
 import { CandidatePoses, type LatticePose, type SnapWindow } from "./candidate-poses.ts";
 import { ConnectionSolver } from "./connection-solver.ts";
 import {
@@ -1159,7 +1159,11 @@ function trackModel(ends: ReadonlyArray<TrackEnd>): ModelConnectors {
 }
 
 function end(coefficients: ReadonlyArray<number>, heading: number, yPlates = 0): TrackEnd {
-  return { pose: pose16(zeta16(coefficients.map((c) => BigInt(c))), heading), yPlates };
+  return {
+    pose: pose16(zeta16(coefficients.map((c) => BigInt(c))), heading),
+    yPlates,
+    frame: WORLD_TRACK_FRAME,
+  };
 }
 
 function placedEnd(at: LatticePose, local: TrackEnd): TrackEnd {
@@ -1167,10 +1171,22 @@ function placedEnd(at: LatticePose, local: TrackEnd): TrackEnd {
     zeta16([at.x / STUD_LDU, 0, 0, 0, at.z / STUD_LDU, 0, 0, 0].map(BigInt)),
     -4 * at.rot,
   );
-  return { pose: composePose16(frame, local.pose), yPlates: local.yPlates + at.yPlates };
+  return {
+    pose: composePose16(frame, local.pose),
+    yPlates: local.yPlates + at.yPlates,
+    frame: WORLD_TRACK_FRAME,
+  };
 }
 
 describe("ConnectionSolver with track ends", () => {
+  it("refuses a run-frame end as a model connector, so it can never join another model's track", () => {
+    const inRun: TrackEnd = {
+      ...end([16, 0, 0, 0, 0, 0, 0, 0], 0),
+      frame: { id: 1, xLdu: 0, zLdu: 0 },
+    };
+    expect(() => trackModel([inRun])).toThrow(RangeError);
+  });
+
   it("joins track ends exactly where their ℤ[ζ₁₆] poses meet, including off-lattice curve ends", () => {
     const solver = new ConnectionSolver([new TrackEndFinder()]);
     const curveExit = [0, 0, 0, 40, -40, 0, 0, 0];
@@ -1242,6 +1258,7 @@ describe("ConnectionSolver with track ends", () => {
           facing,
         ),
         yPlates: target.yPlates - at.yPlates,
+        frame: WORLD_TRACK_FRAME,
       };
       const noise = randomEnd();
       const counted = matesAt(solver, trackModel([aimed, noise]), at);
