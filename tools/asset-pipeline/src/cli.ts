@@ -2,6 +2,7 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  TablePlane,
   TrackCatalog,
   type CatalogSourceUse,
   type CrosswalkFile,
@@ -364,9 +365,12 @@ async function addVerifiedFacts(directory: string): Promise<void> {
     throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
   const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
+  const geometryPath = join(repoRoot, BUNDLE_DATA_FILES.geometry);
+  const geometry: Record<string, unknown> = JSON.parse(await readFile(geometryPath, "utf8"));
+  const tablePlane = decodedOrThrow(decode(TablePlane, geometry["tablePlane"]), geometryPath);
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane }, null, 2)}\n`,
   );
 }
 

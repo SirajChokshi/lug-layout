@@ -577,6 +577,12 @@ export type BundleThumbnail = v.InferOutput<typeof BundleThumbnail>;
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
+export const TablePlane = v.object({
+  part: v.string(),
+  depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
+});
+export type TablePlane = v.InferOutput<typeof TablePlane>;
+
 export const BundleIndex = v.object({
   bundleVersion: v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/u)),
   unit: v.literal("LDU"),
@@ -597,6 +603,7 @@ export const BundleIndex = v.object({
   }),
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
+  tablePlane: TablePlane,
   compiler: v.nullable(BundleCompiler),
   crosswalk: FileRef,
   partTable: FileRef,
@@ -772,6 +779,7 @@ export const CompilerRequest = v.variant("op", [
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
     translucentColors: v.pipe(v.array(Count), v.readonly()),
+    tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
   }),

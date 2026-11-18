@@ -56,6 +56,7 @@ pub enum Operation {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent_colors: Vec<u32>,
+        table_depth_ldu: f64,
         vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
     },

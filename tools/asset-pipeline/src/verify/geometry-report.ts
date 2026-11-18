@@ -25,7 +25,19 @@ const LDCAD_TRACK = ["53400", "32087"];
 const ENTRY_HEADING_STEPS = ZETA16_ORDER / 2;
 const STRAIGHT_HEADING_STEPS = 0;
 const RAIL_SECTION_X = 20;
-const BASEPLATES = ["3811", "3857", "3867", "4186", "782", "44336", "2358", "610", "606", "30225b"];
+const TABLE_REFERENCE_BASEPLATE = "3811";
+const BASEPLATES = [
+  TABLE_REFERENCE_BASEPLATE,
+  "3857",
+  "3867",
+  "4186",
+  "782",
+  "44336",
+  "2358",
+  "610",
+  "606",
+  "30225b",
+];
 const ROAD_STUD_ZONES = ["44336", "44341", "44342", "44343", "2358", "610", "606", "30225b"];
 const ROAD_MARKINGS = ["44336p01", "44336p04"];
 const RECESSED_ROAD_PLATES = ["69958", "71772", "71772p01"];
@@ -60,6 +72,9 @@ export function buildGeometryReport(
   const official = new Map(
     OFFICIAL_TRACK.map((part) => [part, reportTrackEnds(libraries.official, part, markers)]),
   );
+  const baseplates = BASEPLATES.map((part) => measureBaseplate(libraries.official, part));
+  const reference = baseplates.find((plate) => plate.part === TABLE_REFERENCE_BASEPLATE);
+  if (!reference) throw new Error(`${TABLE_REFERENCE_BASEPLATE} was not measured`);
   return {
     trackEnds: [...official.values()],
     ldcadTrackSnapCrossCheck: LDCAD_TRACK.map((part) =>
@@ -78,7 +93,8 @@ export function buildGeometryReport(
       measureRails(libraries.official, "74746", RAIL_SECTION_X),
       measureRails(libraries.official, "53401", RAIL_SECTION_X),
     ],
-    baseplates: BASEPLATES.map((part) => measureBaseplate(libraries.official, part)),
+    baseplates,
+    tablePlane: { part: reference.part, depthBelowTopLdu: reference.thicknessLdu },
     roadStudZones: ROAD_STUD_ZONES.map((part) =>
       measureStudZones(libraries.official, part, topStudPrimitives),
     ),

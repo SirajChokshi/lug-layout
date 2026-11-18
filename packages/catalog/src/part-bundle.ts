@@ -145,7 +145,7 @@ export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
 
 export type PartBundle = Pick<
   BundleManifest,
-  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes"
+  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes" | "tablePlane"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
@@ -171,6 +171,7 @@ export interface ImportContext {
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
 }
 
