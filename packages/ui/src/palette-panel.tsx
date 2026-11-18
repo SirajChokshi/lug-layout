@@ -26,12 +26,12 @@ import {
   type PaletteColors,
   type PaletteEntry,
   type PaletteRow,
-  type PaletteSearchSnapshot,
   type PaletteSection,
   type PaletteTab,
 } from "@brr/client";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
+import { usePaletteSearchSnapshot } from "./use-palette-search.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const THUMBNAIL_SLOT_PX = 52;
@@ -584,13 +584,6 @@ function usePaletteMemory(memory: IPaletteMemory) {
   return useSyncExternalStore(
     (listener) => memory.subscribe(listener),
     () => memory.snapshot(),
-  );
-}
-
-function usePaletteSearchSnapshot(search: IPaletteSearch): PaletteSearchSnapshot {
-  return useSyncExternalStore(
-    (listener) => search.subscribe(listener),
-    () => search.snapshot(),
   );
 }
 

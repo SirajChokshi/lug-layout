@@ -1,4 +1,6 @@
 import { inject, injectable } from "inversify";
+import { searchPalette, type PaletteResult } from "../commands/command-search.ts";
+import type { CommandId } from "../commands/editor-commands.ts";
 import {
   TRACK_ITEM_ID,
   type CatalogItemView,
@@ -40,6 +42,11 @@ export interface PaletteSection {
   readonly unmade: ReadonlyArray<PaletteRow>;
 }
 
+export type PaletteFind = (
+  query: string,
+  enabled: (id: CommandId) => boolean,
+) => ReadonlyArray<PaletteResult>;
+
 export interface PaletteSearchSnapshot {
   readonly query: string;
   readonly tab: PaletteTab;
@@ -48,6 +55,7 @@ export interface PaletteSearchSnapshot {
   readonly hits: ReadonlyArray<PaletteRow>;
   readonly counts: ReadonlyMap<PaletteTab, number>;
   readonly status: CatalogSearchStatus;
+  readonly find: PaletteFind;
 }
 
 export interface IPaletteSearch {
@@ -182,8 +190,9 @@ export class PaletteSearch implements IPaletteSearch {
 
   private searched(): PaletteSearchSnapshot {
     const { query, tab, color } = this;
-    const { index } = this.indexed;
-    const favorites = new Set(this.memory.snapshot().favorites);
+    const { catalog, index } = this.indexed;
+    const { favorites: favoriteKeys, recents } = this.memory.snapshot();
+    const favorites = new Set(favoriteKeys);
     const isFavorite = (hit: { readonly entry: PaletteEntry }): boolean =>
       favorites.has(hit.entry.key);
     const results = paletteResults(
@@ -208,6 +217,8 @@ export class PaletteSearch implements IPaletteSearch {
         ["favorites", index.search(query, "all").filter(isFavorite).length],
       ]),
       status: results.status,
+      find: (findQuery, enabled) =>
+        searchPalette(findQuery, { catalog, index, recent: recents, enabled }),
     };
   }
 }

@@ -21,9 +21,11 @@ import {
   EDITOR,
   PALETTE_DRAG,
   PALETTE_MEMORY,
+  PALETTE_MEMORY_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
 } from "../tokens.ts";
+import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -202,6 +204,27 @@ describe("palette search over the editor's catalog", () => {
     expect(hitKeys(search.snapshot())).toContain(TRACK_ITEM_ID);
     search.setQuery(BASEPLATE_32);
     expect(hitKeys(search.snapshot())).not.toContain(TRACK_ITEM_ID);
+  }, 120_000);
+});
+
+describe("find palette", () => {
+  it("ranks parts on the palette's own index and opens on the recents the palette memory keeps", async () => {
+    const { container } = await startEditor();
+    container.rebind(PALETTE_MEMORY_STORE).toConstantValue({
+      load: () => ({ ...EMPTY_PALETTE_MEMORY, recents: [CROSSROADS, GREEN_BASEPLATE] }),
+      save: () => {},
+    });
+    const search = container.get(PALETTE_SEARCH);
+    const foundItems = (query: string): ReadonlyArray<string> =>
+      search
+        .snapshot()
+        .find(query, () => true)
+        .flatMap((result) => (result.kind === "item" ? [result.item.id] : []));
+
+    expect(foundItems("")).toEqual([CROSSROADS, GREEN_BASEPLATE]);
+    expect(foundItems(STRAIGHT_9V)).toContain(TRACK_ITEM_ID);
+    container.get(PALETTE_MEMORY).forgetRecents();
+    expect(foundItems("")).toEqual([]);
   }, 120_000);
 });
 
