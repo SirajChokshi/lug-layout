@@ -415,7 +415,7 @@ fn surrounds_center(points: &[Vec3]) -> bool {
 }
 
 fn unit_round(source: &str) -> Option<UnitRound> {
-    let file = ldraw::parse(source);
+    let file = ldraw::parse_exact(source);
     let mut certified = false;
     let mut winding = Winding::Ccw;
     let mut polygons: Vec<(Vec<Vec3>, bool, Winding)> = Vec::new();
@@ -756,7 +756,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 let mut certified = false;
                 let mut invert_next = false;
                 let mut ordinal: u32 = 0;
-                let file = ldraw::parse(source);
+                let file = ldraw::parse_exact(source);
                 for (line, exact) in file.lines.into_iter().zip(file.exact) {
                     let exact_matrix = match exact {
                         ExactNumbers::Matrix(numbers) => {

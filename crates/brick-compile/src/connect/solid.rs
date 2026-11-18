@@ -1150,7 +1150,7 @@ impl Solid {
             }
             let ends: Option<Vec<Approximate>> = shifted
                 .iter()
-                .map(|p| Approximate::of(p[0], p[1], FLOAT_ERROR_LDU))
+                .map(|p| Approximate::of(p[0], p[1], CERTAIN_LDU))
                 .collect();
             approximate.push(approximate_span(ends?)?);
         }

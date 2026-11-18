@@ -161,6 +161,14 @@ fn parse_meta(tokens: &[&str], header: &mut Header) -> Option<Line> {
 const SUBFILE_NUMBER_COUNT: usize = 12;
 
 pub fn parse(source: &str) -> LdrawFile {
+    parse_lines(source, false)
+}
+
+pub fn parse_exact(source: &str) -> LdrawFile {
+    parse_lines(source, true)
+}
+
+fn parse_lines(source: &str, keeps_exact: bool) -> LdrawFile {
     let mut header = Header::default();
     let mut lines = Vec::new();
     let mut exact = Vec::new();
@@ -197,7 +205,9 @@ pub fn parse(source: &str) -> LdrawFile {
             _ => None,
         };
         if let Some(line) = parsed {
-            exact.push(exact_line(kind, rest));
+            if keeps_exact {
+                exact.push(exact_line(kind, rest));
+            }
             lines.push(line);
         }
     }

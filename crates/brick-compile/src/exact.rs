@@ -335,7 +335,7 @@ impl ExactAffine {
 
 pub type Direction = [Exact; 2];
 
-pub const TURNS: i32 = 48;
+const TURNS: i32 = 48;
 
 const IDENTIFY_LDU: f64 = 0.0005;
 const CERTIFIED_CROSS: f64 = 1e-12;
@@ -367,13 +367,13 @@ fn turns_identifiable(radius: f64) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Identified {
+enum Identified {
     Turn(i32),
     Raw,
     Unsure,
 }
 
-pub fn identify_turn(x: f64, y: f64, uncertainty: f64) -> Identified {
+fn identify_turn(x: f64, y: f64, uncertainty: f64) -> Identified {
     let radius = crate::trig::planar_length(x, y);
     if !turns_identifiable(radius + uncertainty) {
         return Identified::Raw;
@@ -476,7 +476,7 @@ fn turn_versus(turn: i32, direction: &Direction) -> Ordering {
     }
 }
 
-pub fn bearing_order(a: &Bearing, b: &Bearing) -> Ordering {
+fn bearing_order(a: &Bearing, b: &Bearing) -> Ordering {
     match (a, b) {
         (Bearing::Turn(x), Bearing::Turn(y)) => signed_turn(*x).cmp(&signed_turn(*y)),
         (Bearing::Raw(x), Bearing::Raw(y)) => angle_order(x, y),
@@ -494,36 +494,43 @@ fn class(direction: &Direction) -> u8 {
     }
 }
 
-pub fn cross(a: &Direction, b: &Direction) -> Exact {
+fn cross(a: &Direction, b: &Direction) -> Exact {
     a[0].mul(&b[1]).sub(&a[1].mul(&b[0]))
 }
 
-pub fn dot(a: &Direction, b: &Direction) -> Exact {
+fn dot(a: &Direction, b: &Direction) -> Exact {
     a[0].mul(&b[0]).add(&a[1].mul(&b[1]))
 }
 
-pub fn is_origin(direction: &Direction) -> bool {
+fn is_origin(direction: &Direction) -> bool {
     direction[0].is_zero() && direction[1].is_zero()
 }
 
-pub fn angle_order(a: &Direction, b: &Direction) -> Ordering {
+fn angle_order(a: &Direction, b: &Direction) -> Ordering {
     class(a).cmp(&class(b)).then_with(|| cross(b, a).sign())
+}
+
+fn opposite(bearing: &Bearing) -> Bearing {
+    match bearing {
+        Bearing::Turn(turn) => Bearing::Turn((turn + TURNS / 2).rem_euclid(TURNS)),
+        Bearing::Raw(d) => Bearing::Raw([d[0].neg(), d[1].neg()]),
+    }
 }
 
 pub fn span(bearings: Vec<Bearing>) -> Option<Arc> {
     let mut sorted = bearings;
     sorted.sort_by(bearing_order);
-    let angles: Vec<f64> = sorted.iter().map(Bearing::angle).collect();
-    let count = angles.len();
-    let gap = |k: usize| {
-        if k + 1 == count {
-            angles[0] + std::f64::consts::TAU - angles[k]
-        } else {
-            angles[k + 1] - angles[k]
-        }
-    };
-    let widest = (0..count).max_by(|a, b| gap(*a).total_cmp(&gap(*b)))?;
-    let low = sorted[(widest + 1) % count].clone();
+    let count = sorted.len();
+    let first = sorted.first()?.clone();
+    let widest = (0..count)
+        .find(|&k| {
+            let (low, high) = (&sorted[k], &sorted[(k + 1) % count]);
+            let across = opposite(low);
+            contains(&(low.clone(), high.clone()), &across)
+                && bearing_order(&across, high) != Ordering::Equal
+        })
+        .unwrap_or(count - 1);
+    let low = sorted.get((widest + 1) % count).cloned().unwrap_or(first);
     let high = sorted.swap_remove(widest);
     Some((low, high))
 }

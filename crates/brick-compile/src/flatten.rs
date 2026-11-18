@@ -200,7 +200,12 @@ impl<'a, L: Library> Flattener<'a, L> {
         if let Some(file) = self.parsed.get(path) {
             return Some(Rc::clone(file));
         }
-        let file = Rc::new(ldraw::parse(self.library.source(path)?));
+        let source = self.library.source(path)?;
+        let file = Rc::new(if self.exact {
+            ldraw::parse_exact(source)
+        } else {
+            ldraw::parse(source)
+        });
         self.parsed.insert(path.to_string(), Rc::clone(&file));
         Some(file)
     }
@@ -288,7 +293,8 @@ impl<'a, L: Library> Flattener<'a, L> {
         let mut winding = Winding::Ccw;
         let mut invert_next = false;
         let mut ordinal: u32 = 0;
-        for (line, exact) in file.lines.iter().zip(&file.exact) {
+        for (index, line) in file.lines.iter().enumerate() {
+            let exact = file.exact.get(index).unwrap_or(&ExactNumbers::Unavailable);
             match line {
                 Line::Certify(w) => {
                     certified = true;
