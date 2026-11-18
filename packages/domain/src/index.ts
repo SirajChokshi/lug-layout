@@ -202,8 +202,11 @@ export {
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
+  SOURCE_PATCH,
   SOURCE_PRIMITIVE,
   SOURCE_SHADOW,
+  STATUS_UNVERIFIED,
+  STATUS_VERIFIED,
 } from "./connect/connector-table.ts";
 export {
   CAP_FAR,
