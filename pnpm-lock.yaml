@@ -223,6 +223,9 @@ importers:
       '@brr/catalog':
         specifier: workspace:*
         version: link:../catalog
+      '@brr/domain':
+        specifier: workspace:*
+        version: link:../domain
       '@brr/schema':
         specifier: workspace:*
         version: link:../schema

@@ -32,6 +32,10 @@ export function transferablesOf(model: ImportResult): Transferable[] {
     model.partIndex.buffer,
     model.ldrawColor.buffer,
     model.matrices.buffer,
+    model.partTransforms.buffer,
+    model.submodels.parent.buffer,
+    model.submodels.matrices.buffer,
+    model.submodels.ofPart.buffer,
     ...model.compiled.map((part) => part.glb.buffer),
     ...(bake
       ? [

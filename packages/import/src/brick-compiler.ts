@@ -40,7 +40,10 @@ export interface ModelRead {
   readonly looseGeometry: ReadonlyArray<LooseGeometry>;
   readonly instancePart: Uint32Array;
   readonly instanceColor: Uint32Array;
-  readonly instanceMatrix: Float32Array;
+  readonly instanceTransform: Float64Array;
+  readonly instanceSubmodel: Int32Array;
+  readonly submodelParent: Int32Array;
+  readonly submodelMatrix: Float64Array;
 }
 
 export interface LibraryFiles {
@@ -287,7 +290,10 @@ export class BrickCompiler {
       looseGeometry: read.looseGeometry,
       instancePart: new Uint32Array(bytesOf(body, read.blobs, "instancePart")),
       instanceColor: new Uint32Array(bytesOf(body, read.blobs, "instanceColor")),
-      instanceMatrix: new Float32Array(bytesOf(body, read.blobs, "instanceMatrix")),
+      instanceTransform: new Float64Array(bytesOf(body, read.blobs, "instanceTransform")),
+      instanceSubmodel: new Int32Array(bytesOf(body, read.blobs, "instanceSubmodel")),
+      submodelParent: new Int32Array(bytesOf(body, read.blobs, "submodelParent")),
+      submodelMatrix: new Float64Array(bytesOf(body, read.blobs, "submodelMatrix")),
     };
   }
 
