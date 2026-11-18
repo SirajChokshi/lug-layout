@@ -213,7 +213,10 @@ This comes from connection rules §4.3, generalized for D3.
   - **Printed precision of real files:**
     - Files that print 6 decimals are identified completely.
     - At 3 decimals, every run with an axis-aligned piece on the lattice is identified: the R40 circle 16 of 16, and a quarter-turned 117-piece set 117 of 117.
-    - A run turned off the quarter turns as a whole has no seat and no window anchor, so it is reported `noAnchor`.
+    - **Known limit:** a run turned off the quarter turns as a whole has no seat.
+      - At 3 or 4 decimals it has no window anchor either, so it is reported `noAnchor`.
+      - At 5 decimals it is identified only when two window anchors happen to agree. In the 117-piece set that happened for one arrangement (33 pieces), and for none of the 22 such runs in the 1,020-piece layout.
+      - At 6 decimals it is identified.
     - No piece is identified at a wrong pose in any of these cases.
 - Every track part's connector poses are **imported from data and tested against the field at build time. Nothing is hand-coded.**
 
