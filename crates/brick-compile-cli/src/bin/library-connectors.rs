@@ -5,14 +5,13 @@ use std::process::ExitCode;
 use brick_compile::connect::{
     is_connectivity, mating_faces, record_json, source_code, ConnectorExtractor, Extraction,
     InferredFeatures, PartRecords, PrimitiveConnectors, PrimitiveTable, ShadowPatches, ShadowSnaps,
-    TierRecord,
+    TierRecord, CONNECTIVITY_LICENSE,
 };
 use brick_compile::ldraw::parse;
 use brick_compile::Library;
 use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
-const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 const PATCH_MANIFEST: &str = "manifest.json";
 const PART_FOLDER: &str = "parts";
 const PART_EXTENSION: &str = ".dat";

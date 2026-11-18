@@ -21,8 +21,9 @@ pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
     is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+    CONNECTIVITY_LICENSE,
 };
-pub use shadow::{ShadowPatches, ShadowSnaps};
+pub use shadow::{patch_path, verified_patch_paths, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;

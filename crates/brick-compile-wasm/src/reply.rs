@@ -69,6 +69,12 @@ pub enum Reply {
 }
 
 #[derive(Serialize)]
+pub struct InferredRecords {
+    pub connectivity: Option<serde_json::Value>,
+    pub connectors: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     name: String,
@@ -163,7 +169,7 @@ pub enum PartOutcome {
         file: String,
         header: Section,
         files: usize,
-        connectors: Option<serde_json::Value>,
+        connectors: Option<InferredRecords>,
     },
     Need {
         reference: String,
