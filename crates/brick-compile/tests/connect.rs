@@ -1400,3 +1400,26 @@ fn the_48723_bore_measures_as_round_sections_then_axle_lobes() {
     );
     assert_eq!(measured(None).last(), Some(&section(round(4.0), 3.0)));
 }
+
+#[test]
+fn a_bore_through_a_cone_flange_measures_its_cylinder_wall_only() {
+    let library = pinned("ldraw");
+    let records = |reference: &str| is_circular_primitive(reference);
+    let wheel = Flattener::new(&library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten("parts/50254.dat")
+        .expect("50254 flattens");
+    let hole = BoreAxis {
+        point: [0.0, 0.0, 8.0],
+        direction: [0.0, 0.0, -1.0],
+        from: 0.0,
+        to: 10.0,
+    };
+    assert_eq!(
+        bore_sections(&wheel.triangles, &wheel.spans, &hole, None),
+        Ok(vec![BoreSection {
+            shape: BoreShape::Round { radius: 4.0 },
+            length: 10.0
+        }])
+    );
+}
