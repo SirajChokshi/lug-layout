@@ -46,9 +46,11 @@ import {
   type PlanOverlay,
   type RebaseEvent,
   type SceneBackendConfig,
+  type IThumbnailRenderer,
   type StudInstances,
   type TrackEndKind,
   type TrackEndMarker,
+  type ThumbnailRequest,
   type WorldBox,
 } from "../scene-backend.ts";
 import {
@@ -414,8 +416,20 @@ class FarModelNode {
   ) {}
 }
 
+interface ThumbnailStage {
+  readonly canvas: HTMLCanvasElement;
+  readonly renderer: WebGPURenderer;
+  readonly scene: Scene;
+  readonly camera: PerspectiveCamera;
+}
+
+const THUMBNAIL_FOV_DEGREES = 30;
+const THUMBNAIL_VIEW = new Vector3(0.9, 0.85, 1.15).normalize();
+const THUMBNAIL_MARGIN = 1.04;
+const THUMBNAIL_DEPTH_SLACK = 2;
+
 @injectable()
-export class ThreeSceneBackend implements ISceneBackend {
+export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private renderer: WebGPURenderer | undefined;
   private readonly scene = new Scene();
   private readonly perspective = new PerspectiveCamera(
@@ -425,6 +439,7 @@ export class ThreeSceneBackend implements ISceneBackend {
     CAMERA_FAR_LDU,
   );
   private materials = new PlasticMaterials(false, 1);
+  private thumbnailStage: Promise<ThumbnailStage> | undefined;
   private ghostMaterials = new PlasticMaterials(false, GHOST_OPACITY);
   private look: LookSettings = {
     plastic: false,
@@ -1624,6 +1639,57 @@ export class ThreeSceneBackend implements ISceneBackend {
 
   rebaseLog(): ReadonlyArray<RebaseEvent> {
     return this.rebases;
+  }
+
+  async renderThumbnail({ model, box, sizePx }: ThumbnailRequest): Promise<string> {
+    const stage = await (this.thumbnailStage ??= this.createThumbnailStage());
+    stage.renderer.setSize(sizePx, sizePx, false);
+    const group = new Group();
+    this.addInstances(group, undefined, undefined, model, this.materials);
+    group.position.set(
+      -(box.minX + box.maxX) / 2,
+      -(box.minY + box.maxY) / 2,
+      -(box.minZ + box.maxZ) / 2,
+    );
+    stage.scene.add(group);
+    const radius = Math.hypot(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ) / 2;
+    const distance =
+      (radius * THUMBNAIL_MARGIN) / Math.sin((THUMBNAIL_FOV_DEGREES * Math.PI) / 360);
+    const { camera } = stage;
+    camera.position.copy(THUMBNAIL_VIEW).multiplyScalar(distance);
+    camera.near = Math.max(1, distance - radius * THUMBNAIL_DEPTH_SLACK);
+    camera.far = distance + radius * THUMBNAIL_DEPTH_SLACK;
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    stage.renderer.render(stage.scene, camera);
+    const url = stage.canvas.toDataURL("image/png");
+    stage.scene.remove(group);
+    disposeInstancedChildren(group);
+    return url;
+  }
+
+  private async createThumbnailStage(): Promise<ThumbnailStage> {
+    const canvas = document.createElement("canvas");
+    const renderer = new WebGPURenderer({ canvas, alpha: true, antialias: true, forceWebGL: true });
+    await renderer.init();
+    renderer.setPixelRatio(1);
+    renderer.setClearColor(0x000000, 0);
+    const scene = new Scene();
+    const sun = new DirectionalLight(
+      0xffffff,
+      this.look.plastic ? PLASTIC_SUN_INTENSITY : SUN_INTENSITY,
+    );
+    sun.position.copy(SUN_DIRECTION);
+    scene.add(sun);
+    if (this.look.plastic) {
+      scene.environment = skyEnvironment(renderer);
+      scene.environmentIntensity = ENVIRONMENT_INTENSITY;
+      scene.add(new HemisphereLight(FILL_SKY_COLOR, FILL_GROUND_COLOR, FILL_INTENSITY));
+    } else {
+      scene.add(new HemisphereLight(SKY_COLOR, GROUND_BOUNCE_COLOR, HEMISPHERE_INTENSITY));
+    }
+    const camera = new PerspectiveCamera(THUMBNAIL_FOV_DEGREES, 1, 1, CAMERA_FAR_LDU);
+    return { canvas, renderer, scene, camera };
   }
 
   resize(width: number, height: number): void {

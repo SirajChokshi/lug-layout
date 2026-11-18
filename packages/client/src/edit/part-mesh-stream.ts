@@ -16,6 +16,7 @@ export class PartMeshStream {
   private readonly wanted = new Set<number>();
   private readonly loaded = new Set<number>();
   private readonly failed = new Set<number>();
+  private readonly fetches = new Map<number, Promise<void>>();
   private readonly farWanted = new Set<number>();
   private farFiles: ReadonlyMap<string, string> | null = null;
   private pending: PartMeshUpdate[] = [];
@@ -43,9 +44,15 @@ export class PartMeshStream {
       const file = this.files.get(index);
       if (file === undefined) continue;
       this.wanted.add(index);
-      void this.fetch(index, "detailed", this.lod, file, priority);
+      this.fetches.set(index, this.fetch(index, "detailed", this.lod, file, priority));
     }
     this.onProgress(this.progress());
+  }
+
+  async whenLoaded(indices: ReadonlySet<number>, priority: FetchPriority): Promise<void> {
+    this.request(indices, priority);
+    await Promise.all([...indices].map((index) => this.fetches.get(index)));
+    this.flush();
   }
 
   useFarFiles(farFiles: ReadonlyMap<string, string>): void {
@@ -93,12 +100,15 @@ export class PartMeshStream {
   private scheduleFlush(): void {
     if (this.flushScheduled) return;
     this.flushScheduled = true;
-    setTimeout(() => {
-      this.flushScheduled = false;
-      const updates = this.pending;
-      this.pending = [];
-      this.backend.setPartMeshes(updates);
-      this.onProgress(this.progress());
-    }, 0);
+    setTimeout(() => this.flush(), 0);
+  }
+
+  private flush(): void {
+    this.flushScheduled = false;
+    if (this.pending.length === 0) return;
+    const updates = this.pending;
+    this.pending = [];
+    this.backend.setPartMeshes(updates);
+    this.onProgress(this.progress());
   }
 }

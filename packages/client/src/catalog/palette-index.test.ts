@@ -14,7 +14,11 @@ function plate(
   kind: "baseplate" | "road-plate",
   studs: number,
   colors: ReadonlyArray<CatalogItemView["color"] & object>,
-  produced: { readonly rebrickable?: string; readonly elements?: Record<number, string[]> } = {},
+  produced: {
+    readonly rebrickable?: string;
+    readonly elements?: Record<number, string[]>;
+    readonly display?: number;
+  } = {},
 ): ReadonlyArray<CatalogItemView> {
   return colors.map((color) => ({
     id: `ldraw:${id}@${color.code}`,
@@ -29,6 +33,7 @@ function plate(
     thumbnail: null,
     aliases: produced.rebrickable ? [produced.rebrickable] : [],
     elements: produced.elements?.[color.code] ?? [],
+    displayColor: produced.display === color.code,
   }));
 }
 
@@ -36,6 +41,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
   ...plate("4186", "Baseplate 48 x 48", "baseplate", 48, [GREEN, TAN, LIGHT_GREY]),
   ...plate("3811", "Baseplate 32 x 32", "baseplate", 32, [GREEN, DARK_GREEN, TAN, DARK_GREY], {
     elements: { [GREEN.code]: ["381128", "4219692"], [TAN.code]: ["4106730"] },
+    display: DARK_GREY.code,
   }),
   ...plate("3867", "Baseplate 16 x 16", "baseplate", 16, [GREEN, DARK_GREY]),
   ...plate("44336p03", "Baseplate 32 x 32 Road 6-Stud Runway", "road-plate", 32, [DARK_GREY], {
@@ -57,6 +63,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     thumbnail: null,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
   {
     id: "track:lego-9v",
@@ -71,6 +78,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     thumbnail: null,
     aliases: [],
     elements: [],
+    displayColor: false,
   },
 ];
 
@@ -163,4 +171,17 @@ it("offers each colour the parts come in once, with how many parts, colours befo
   const [sixteen] = index.entries("baseplates").filter((entry) => entry.key === "ldraw:3867");
   expect(sixteen && itemInColor(sixteen, TAN.code)).toBeUndefined();
   expect(sixteen && itemInColor(sixteen, GREEN.code)?.id).toBe("ldraw:3867@2");
+});
+
+it("defaults a part to the current colour, else its display colour, else its section's commonest", () => {
+  const items = (key: string) =>
+    index.entries("all").find((entry) => entry.key === key)?.items ?? [];
+  const pick = (key: string, current: number | null) => index.defaultItem(items(key), current)?.id;
+  expect(items("ldraw:4186")[0]?.color?.name).toBe("Tan");
+  expect(pick("ldraw:4186", null)).toBe("ldraw:4186@2");
+  expect(pick("ldraw:3811", null)).toBe("ldraw:3811@72");
+  expect(pick("ldraw:3811", TAN.code)).toBe("ldraw:3811@19");
+  expect(pick("ldraw:3867", TAN.code)).toBe("ldraw:3867@2");
+  const [searched] = index.search("4186", "all");
+  expect(searched && index.defaultItem(searched.items, null)?.id).toBe("ldraw:4186@2");
 });

@@ -143,6 +143,16 @@ export interface PlanOverlay {
   readonly active: boolean;
 }
 
+export interface ThumbnailRequest {
+  readonly model: ChunkInstances;
+  readonly box: WorldBox;
+  readonly sizePx: number;
+}
+
+export interface IThumbnailRenderer {
+  renderThumbnail(request: ThumbnailRequest): Promise<string>;
+}
+
 export interface ISceneBackend {
   init(config: SceneBackendConfig): Promise<BackendInfo>;
   setPalette(palette: PartPalette): void;
