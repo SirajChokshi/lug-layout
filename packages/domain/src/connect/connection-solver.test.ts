@@ -799,10 +799,12 @@ describe("SnapMating", () => {
     expect(mating.freedom(STUD, PLATE_RECEPTOR, 0, AXIS_NEG_Y)).toEqual({
       spins: true,
       axis: AXIS_POS_Y,
+      pivots: false,
     });
     expect(mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_ROUND, 6), 0, AXIS_NEG_X)).toEqual({
       spins: true,
       axis: AXIS_POS_X,
+      pivots: false,
     });
     expect(
       mating.freedom(peg(SECTION_AXLE, 6), through(SECTION_AXLE, 6), 0, AXIS_POS_X).spins,
@@ -837,6 +839,14 @@ function facePair(axis: number): ConnectorTable {
 }
 
 describe("zero-length grouped faces", () => {
+  it("leave a face-contact mate free about its own axis and the vertical through the face, unlike an inserted one", () => {
+    expect(mating.freedom(face(FACE_TOKEN), face(FACE_TOKEN), 0, AXIS_NEG_X)).toEqual({
+      spins: true,
+      axis: AXIS_POS_X,
+      pivots: true,
+    });
+  });
+
   it("engage only at offset 0 and only with the same group token", () => {
     expect(mating.offsets(face(FACE_TOKEN), face(FACE_TOKEN))).toEqual(Int32Array.from([0]));
     expect(mating.engages(face(FACE_TOKEN), face("token-other"), 0)).toBe(false);

@@ -68,6 +68,7 @@ function axisLine(axis: number): number {
 export interface MateFreedom {
   readonly spins: boolean;
   readonly axis: number;
+  readonly pivots: boolean;
 }
 
 export class SnapMating {
@@ -98,12 +99,15 @@ export class SnapMating {
       );
     }
     const shapes = this.shapes;
-    let spins = true;
-    this.overlaps(maleShape, femaleShape, offset, (m, f) => {
-      if (locksRotation(shapes.maleCode(m), shapes.femaleCode(f))) spins = false;
-      return spins;
+    let locked = false;
+    let inserted = false;
+    this.overlaps(maleShape, femaleShape, offset, (m, f, shared) => {
+      if (shared === 0) return true;
+      inserted = true;
+      locked ||= locksRotation(shapes.maleCode(m), shapes.femaleCode(f));
+      return true;
     });
-    return { spins, axis: axisLine(maleAxis) };
+    return { spins: !locked, axis: axisLine(maleAxis), pivots: !inserted };
   }
 
   private engagedOffsets(male: number, female: number): Int32Array {
@@ -153,7 +157,7 @@ export class SnapMating {
     male: number,
     female: number,
     offset: number,
-    visit: (maleSection: number, femaleSection: number) => boolean,
+    visit: (maleSection: number, femaleSection: number, shared: number) => boolean,
   ): boolean {
     const shapes = this.shapes;
     let m = shapes.firstSection(male);
@@ -167,7 +171,7 @@ export class SnapMating {
     while (m < maleEnd && f < femaleEnd) {
       const shared = Math.min(maleTo, femaleTo) - Math.max(maleFrom, femaleFrom);
       const degenerate = maleTo === maleFrom || femaleTo === femaleFrom;
-      if ((shared > 0 || (shared === 0 && degenerate)) && !visit(m, f)) return false;
+      if ((shared > 0 || (shared === 0 && degenerate)) && !visit(m, f, shared)) return false;
       if (maleTo <= femaleTo) {
         m++;
         maleFrom = maleTo;
