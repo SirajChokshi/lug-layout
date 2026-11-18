@@ -13,7 +13,7 @@ import {
   exactRationalFromDecimal,
   exactRationalFromFloat64,
   exactRationalFromSixteenths,
-  exactRationalToNumber,
+  exactRationalToFloat64,
   subtractExactRational,
 } from "./exact-rational.ts";
 
@@ -44,7 +44,7 @@ describe("exact rationals", () => {
     1.7976931348623157e308,
     123456789.125,
   ])("round-trip the Float64 %s bit for bit", (value) => {
-    expect(Object.is(exactRationalToNumber(exactRationalFromFloat64(value)), value)).toBe(true);
+    expect(Object.is(exactRationalToFloat64(exactRationalFromFloat64(value)), value)).toBe(true);
   });
 
   it("read negative zero as zero", () => {
@@ -62,15 +62,15 @@ describe("exact rationals", () => {
       [123456789, 1000],
     ];
     for (const [numerator, denominator] of pairs) {
-      expect(exactRationalToNumber(exactRational(BigInt(numerator), BigInt(denominator)))).toBe(
+      expect(exactRationalToFloat64(exactRational(BigInt(numerator), BigInt(denominator)))).toBe(
         numerator / denominator,
       );
     }
     for (const integer of [2n ** 53n + 1n, 2n ** 53n + 3n, -(2n ** 54n + 2n), 10n ** 30n + 7n]) {
-      expect(exactRationalToNumber(exactRational(integer, 1n))).toBe(Number(integer));
+      expect(exactRationalToFloat64(exactRational(integer, 1n))).toBe(Number(integer));
     }
-    expect(exactRationalToNumber(exactRational(1n, 2n ** 1075n))).toBe(0);
-    expect(exactRationalToNumber(exactRational(3n, 2n ** 1076n))).toBe(5e-324);
+    expect(exactRationalToFloat64(exactRational(1n, 2n ** 1075n))).toBe(0);
+    expect(exactRationalToFloat64(exactRational(3n, 2n ** 1076n))).toBe(5e-324);
   });
 
   it("take the mean of two contact radii exactly", () => {
@@ -133,9 +133,17 @@ describe("exact rationals", () => {
       { numerator: "-0", denominator: "1" },
       { numerator: "1.5", denominator: "2" },
       { numerator: "1", denominator: "3".repeat(1201) },
+      { numerator: `1${"0".repeat(1200)}`, denominator: "1" },
     ]) {
       expect(() => parseExactRational(text)).toThrow("is not a reduced exact rational");
     }
+  });
+
+  it("read back a numerator of the full digit bound whatever its sign", () => {
+    const longest = `-1${"0".repeat(1199)}`;
+    expect(
+      formatExactRational(parseExactRational({ numerator: longest, denominator: "1" })),
+    ).toEqual({ numerator: longest, denominator: "1" });
   });
 
   it("take Int32 sixteenths only", () => {

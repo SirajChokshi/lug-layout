@@ -67,7 +67,7 @@ export {
   exactRationalFromDecimal,
   exactRationalFromFloat64,
   exactRationalFromSixteenths,
-  exactRationalToNumber,
+  exactRationalToFloat64,
   subtractExactRational,
   type ExactRational,
   type ExactRationalText,

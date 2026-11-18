@@ -12,10 +12,16 @@ const MAX_EXPONENT_MAGNITUDE = 1100;
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 
 export function exactDecimal(coefficient: bigint, places: number): ExactDecimal {
-  if (!Number.isSafeInteger(places) || places < 0) {
-    throw new Error(`${places} is not a count of decimal places`);
+  if (!Number.isSafeInteger(places) || places < 0 || places >= MAX_LITERAL_DIGITS) {
+    throw new Error(`${places} is not a count of decimal places below ${MAX_LITERAL_DIGITS}`);
   }
-  return normalized(coefficient, places);
+  const value = normalized(coefficient, places);
+  if (canonicalDigits(value) > MAX_LITERAL_DIGITS) {
+    throw new Error(
+      `${coefficient} × 10^-${places} writes canonically with more than ${MAX_LITERAL_DIGITS} digits`,
+    );
+  }
+  return value;
 }
 
 function normalized(coefficient: bigint, places: number): ExactDecimal {
@@ -36,7 +42,7 @@ interface LiteralParts {
   readonly negative: boolean;
   readonly digits: string;
   readonly fractionDigits: number;
-  readonly shift: number;
+  readonly exponent: number;
 }
 
 function literalParts(text: string): LiteralParts | null {
@@ -44,15 +50,15 @@ function literalParts(text: string): LiteralParts | null {
   if (match === null) return null;
   const [, sign = "", whole = "", fraction = "", bareFraction = "", exponent = "0"] = match;
   const digits = `${whole}${fraction}${bareFraction}`;
-  const shift = Number(exponent);
-  if (digits.length > MAX_LITERAL_DIGITS || !(Math.abs(shift) <= MAX_EXPONENT_MAGNITUDE)) {
+  const power = Number(exponent);
+  if (digits.length > MAX_LITERAL_DIGITS || !(Math.abs(power) <= MAX_EXPONENT_MAGNITUDE)) {
     return null;
   }
   return {
     negative: sign === "-",
     digits: digits === "" ? "0" : digits,
     fractionDigits: fraction.length + bareFraction.length,
-    shift,
+    exponent: power,
   };
 }
 
@@ -63,7 +69,7 @@ export function parseExactDecimal(text: string): ExactDecimal {
       `"${text}" is not a decimal literal of at most ${MAX_LITERAL_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
     );
   }
-  const places = parts.fractionDigits - parts.shift;
+  const places = parts.fractionDigits - parts.exponent;
   const significant = parts.digits.replace(/^0+/u, "");
   if (places < 0 && significant.length - places > MAX_LITERAL_DIGITS) {
     throw new Error(`"${text}" writes canonically with more than ${MAX_LITERAL_DIGITS} digits`);

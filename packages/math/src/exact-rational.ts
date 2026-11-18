@@ -155,7 +155,7 @@ export function parseExactRational(text: ExactRationalText): ExactRational {
   return { numerator: BigInt(text.numerator), denominator: BigInt(text.denominator) };
 }
 
-export function exactRationalToNumber(value: ExactRational): number {
+export function exactRationalToFloat64(value: ExactRational): number {
   if (value.numerator === 0n) return 0;
   const numerator = magnitude(value.numerator);
   const shift = bitLength(numerator) - bitLength(value.denominator) - SIGNIFICAND_BITS - GUARD_BITS;

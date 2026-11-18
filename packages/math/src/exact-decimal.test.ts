@@ -39,6 +39,8 @@ describe("exact decimals", () => {
     expect(exactDecimal(4690n, 2)).toEqual(decimal("46.9"));
     expect(exactDecimal(0n, 7)).toEqual(decimal("0"));
     expect(() => exactDecimal(1n, -1)).toThrow("is not a count of decimal places");
+    expect(() => exactDecimal(1n, 1100)).toThrow("is not a count of decimal places");
+    expect(() => exactDecimal(10n ** 1100n, 0)).toThrow("writes canonically with more than");
   });
 
   it("compare by value, whatever the written places", () => {
@@ -72,6 +74,7 @@ describe("exact decimals", () => {
     }
     expect(() => decimal("1e-1100")).toThrow("writes canonically with more than");
     expect(isCanonicalExactDecimalText("1e-1100")).toBe(false);
+    expect(() => decimal("1e1100")).toThrow("writes canonically with more than");
     expect(isCanonicalExactDecimalText(`0.${"0".repeat(1099)}1`)).toBe(false);
   });
 
