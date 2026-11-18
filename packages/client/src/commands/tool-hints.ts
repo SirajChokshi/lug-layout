@@ -37,13 +37,24 @@ function pieces(count: number): string {
 
 function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   const title = `Laying ${pieces(drag.pieces)}`;
+  const refused = "Nothing to lay";
   switch (drag.closure) {
     case "exact":
       return { tone: "track", title, detail: "release to join the open end exactly" };
     case "impossible":
-      return { tone: "warn", title, detail: "no exact join reaches here, so release lays nothing" };
+      return {
+        tone: "warn",
+        title: refused,
+        detail: "no exact join reaches here, so release lays nothing",
+      };
+    case "blocked":
+      return {
+        tone: "warn",
+        title: refused,
+        detail: "every exact join here is blocked, so release lays nothing",
+      };
     case "limit":
-      return { tone: "warn", title, detail: "the join search ran out of time here" };
+      return { tone: "warn", title: refused, detail: "the join search ran out of time here" };
     case null:
       return {
         tone: "track",

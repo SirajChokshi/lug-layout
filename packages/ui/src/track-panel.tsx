@@ -36,6 +36,8 @@ function closureText(drag: TrackDragView): string {
       return "joins the open end exactly";
     case "impossible":
       return "no exact join exists with any run of 9V straights and R40 curves: release lays nothing";
+    case "blocked":
+      return "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
     case "limit":
       return "the search hit its time limit before finding an exact join: release lays nothing";
     case null:
@@ -91,6 +93,8 @@ function commitText(track: TrackView): string {
       return "laid with an open end";
     case "refused-impossible":
       return "refused: no exact join exists";
+    case "refused-blocked":
+      return "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
     case "switch-straight":
