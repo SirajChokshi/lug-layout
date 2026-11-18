@@ -26,6 +26,16 @@ jobs:
           terraform_version: 1.17.2
           terraform_wrapper: false
       - run: pnpm install --frozen-lockfile
+      - id: bundle-key
+        run: |
+          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
+          input_key=${manifest_file#manifest.}
+          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
+      - id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/asset-pipeline/dist/bundle
+          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
       - uses: actions/cache@v4
         with:
           path: |
@@ -44,6 +54,11 @@ jobs:
       - run: pnpm check:rust
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm turbo run typecheck test build
+      - uses: actions/cache/save@v4
+        if: ${{ !cancelled() && steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
+        with:
+          path: tools/asset-pipeline/dist/bundle
+          key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
       - run: pnpm e2e
       - uses: actions/upload-artifact@v4
         if: failure()
