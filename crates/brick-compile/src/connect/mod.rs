@@ -530,7 +530,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
             .extend(inferred.issues.into_iter().filter(|issue| match issue {
                 Issue::Uninferred {
                     origin,
-                    reason: Uninferred::LooseCavity { .. } | Uninferred::SlidingCavity,
+                    reason:
+                        Uninferred::LooseCavity { .. }
+                        | Uninferred::SlidingCavity
+                        | Uninferred::OffCentreCavity { .. },
                 } => {
                     let entrance = MatingFace {
                         source: Source::Inferred,

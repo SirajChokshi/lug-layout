@@ -6,6 +6,7 @@ use crate::lattice::STUD_LDU;
 
 pub const IDENTIFY_LDU: f64 = 0.0005;
 pub const HALF_GRID_LDU: f64 = STUD_LDU / 2.0;
+const TRAVEL_PRECISION_LDU: f64 = IDENTIFY_LDU / 64.0;
 
 type Local = [f64; 3];
 
@@ -165,6 +166,13 @@ pub struct Slab {
     polygons: Vec<SlabPolygon>,
     cells: HashMap<(i64, i64), Vec<u32>>,
     extent: ([i64; 2], [i64; 2]),
+}
+
+struct Surroundings<'s> {
+    polygons: Vec<Vec<Local>>,
+    surfaces: Vec<&'s RoundSurface>,
+    center: [f64; 2],
+    clearance: f64,
 }
 
 pub struct Solid {
@@ -788,7 +796,13 @@ impl Solid {
         }
     }
 
-    pub fn confined(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> bool {
+    fn surroundings(
+        &self,
+        probe: &Probe,
+        range: (f64, f64),
+        steps: &[[f64; 2]],
+        clearance: f64,
+    ) -> Surroundings<'_> {
         let longest = steps.iter().map(|s| s[0].hypot(s[1])).fold(0.0, f64::max);
         let reach = probe.radius + longest + IDENTIFY_LDU;
         let exact = self.exact(probe, reach);
@@ -814,15 +828,55 @@ impl Solid {
                 high >= range.0 && low <= range.1
             })
             .collect();
-        let inside = probe.radius - IDENTIFY_LDU;
-        steps.iter().all(|&to| {
-            polygons
+        Surroundings {
+            polygons,
+            surfaces,
+            center: probe.center(),
+            clearance,
+        }
+    }
+
+    fn sweep_collides(&self, around: &Surroundings, to: [f64; 2]) -> bool {
+        around
+            .polygons
+            .iter()
+            .any(|polygon| polygon_segment_distance(polygon, to) < around.clearance)
+            || around
+                .surfaces
                 .iter()
-                .any(|polygon| polygon_segment_distance(polygon, to) < inside)
-                || surfaces
-                    .iter()
-                    .any(|surface| self.swept_reach(surface, probe.center(), to) < inside)
-        })
+                .any(|surface| self.swept_reach(surface, around.center, to) < around.clearance)
+    }
+
+    pub fn confined(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> bool {
+        let around = self.surroundings(probe, range, steps, probe.radius - IDENTIFY_LDU);
+        steps.iter().all(|&to| self.sweep_collides(&around, to))
+    }
+
+    pub fn travel(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> Vec<f64> {
+        let around = self.surroundings(probe, range, steps, probe.radius);
+        steps
+            .iter()
+            .map(|&step| {
+                let length = step[0].hypot(step[1]);
+                let contact = IDENTIFY_LDU / length;
+                if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
+                    return 0.0;
+                }
+                if !self.sweep_collides(&around, step) {
+                    return f64::INFINITY;
+                }
+                let (mut free, mut blocked) = (contact, 1.0);
+                while (blocked - free) * length > TRAVEL_PRECISION_LDU {
+                    let middle = 0.5 * (free + blocked);
+                    if self.sweep_collides(&around, [step[0] * middle, step[1] * middle]) {
+                        blocked = middle;
+                    } else {
+                        free = middle;
+                    }
+                }
+                free * length
+            })
+            .collect()
     }
 
     pub fn bore_continues_outward(&self, probe: &Probe) -> bool {

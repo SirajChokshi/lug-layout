@@ -34,6 +34,7 @@ pub enum Uninferred {
     UnidentifiedOrigin,
     LooseCavity { clearance: f64 },
     SlidingCavity,
+    OffCentreCavity { offset: f64 },
     EntranceInsideCavity,
     SleeveOfReceptor,
     UnpairedThroughCavity { radius: f64 },
@@ -174,6 +175,7 @@ enum Probed {
     Through,
     Loose(f64),
     Sliding,
+    OffCentre(f64),
     Rejected,
 }
 
@@ -900,6 +902,9 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         if !solid.confined(probe, range, &LATTICE_STEPS) {
             return Probed::Sliding;
         }
+        if let Some(offset) = off_centre(&solid.travel(probe, range, &LATTICE_STEPS)) {
+            return Probed::OffCentre(offset);
+        }
         if floor.depth.is_infinite() {
             Probed::Through
         } else {
@@ -1005,6 +1010,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 Probed::Sliding => inference.issues.push(Issue::Uninferred {
                     origin: probe.entrance,
                     reason: Uninferred::SlidingCavity,
+                }),
+                Probed::OffCentre(offset) => inference.issues.push(Issue::Uninferred {
+                    origin: probe.entrance,
+                    reason: Uninferred::OffCentreCavity { offset },
                 }),
                 Probed::Through => through.push(*probe),
                 Probed::Blind(depth) => blind.push((*probe, depth)),
@@ -1189,6 +1198,25 @@ fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run>
 
 fn outward_wall(surface: &RoundSurface) -> bool {
     surface.is_wall() && surface.facing == Some(1.0)
+}
+
+fn off_centre(travel: &[f64]) -> Option<f64> {
+    let opposite = |a: [f64; 2], b: [f64; 2]| a[0] == -b[0] && a[1] == -b[1];
+    let mut worst: Option<f64> = None;
+    for (i, step) in LATTICE_STEPS.iter().enumerate() {
+        for (j, other) in LATTICE_STEPS.iter().enumerate().skip(i + 1) {
+            if !opposite(*step, *other) {
+                continue;
+            }
+            let (forward, back) = (travel[i], travel[j]);
+            let offset = (forward - back).abs() / 2.0;
+            if forward.min(back) <= IDENTIFY_LDU || offset <= IDENTIFY_LDU {
+                continue;
+            }
+            worst = Some(worst.map_or(offset, |w: f64| w.max(offset)));
+        }
+    }
+    worst
 }
 
 fn cylinder(

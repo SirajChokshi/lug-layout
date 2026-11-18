@@ -888,6 +888,57 @@ fn inferred_origins_identify_to_sixteenths_or_stay_off_lattice_and_reported() {
 }
 
 #[test]
+fn a_cavity_whose_contacts_centre_the_stud_off_its_grid_point_is_reported_not_placed() {
+    let shift = 0.0625;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/custom.dat", custom_plate(4, 4, &[])),
+            (
+                "parts/shifted.dat",
+                format!(
+                    "0 Shifted\n0 BFC CERTIFY CCW\n1 16 {shift} 0 0 1 0 0 0 1 0 0 0 1 custom.dat\n"
+                ),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let inference = inferred.infer("parts/shifted.dat");
+    let faces = faces_of(&inference.connectors);
+    assert!(faces.iter().any(|f| f.gender == Gender::Female));
+    assert!(faces.iter().all(|f| {
+        let steps = (f.origin[0] - shift) / 10.0;
+        (steps - steps.round()).abs() <= 1e-9
+    }));
+    let mut off_centre: Vec<[f64; 3]> = inference
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin,
+                reason: Uninferred::OffCentreCavity { offset },
+            } if origin[0].abs() == 10.0 => {
+                assert!((offset - shift).abs() <= 1e-4, "{offset}");
+                Some(*origin)
+            }
+            _ => None,
+        })
+        .collect();
+    off_centre.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+    assert_eq!(
+        off_centre,
+        vec![
+            [-10.0, 8.0, -30.0],
+            [-10.0, 8.0, 30.0],
+            [10.0, 8.0, -30.0],
+            [10.0, 8.0, 30.0]
+        ]
+    );
+}
+
+#[test]
 fn a_stud_tube_supplies_its_four_diagonal_receptors_only_where_they_are_open() {
     let mut off_centre = custom_plate(2, 2, &[]);
     off_centre = off_centre.replace(
