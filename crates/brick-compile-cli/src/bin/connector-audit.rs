@@ -332,7 +332,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
     match reason {
         Uninferred::UnidentifiedSize { .. } => "size or length not in the section vocabulary",
         Uninferred::UnidentifiedOrigin => "origin not on the 1/16-LDU grid",
-        Uninferred::LooseCavity { .. } => "probe free and enclosed but touching nothing",
+        Uninferred::LooseCavity { .. } => {
+            "probe free, blocked along the four lattice axes, touching nothing"
+        }
         Uninferred::UnpairedThroughCavity { .. } => "through cavity whose far end was not probed",
         Uninferred::TiltedRound { .. } => "round feature on a tilted axis",
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",

@@ -514,13 +514,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             let (rx, rz, height) = (norm(c0), norm(c2), norm(c1));
             let circular = rx > 0.0
                 && height > 0.0
-                && (rx - rz).abs() <= IDENTIFY_LDU * rx.max(1.0)
+                && (rx - rz).abs() <= IDENTIFY_LDU
                 && dot(c0, c2).abs() <= IDENTIFY_LDU * rx * rz
                 && dot(c0, c1).abs() <= IDENTIFY_LDU * rx * height
                 && dot(c2, c1).abs() <= IDENTIFY_LDU * rz * height;
-            if !circular {
+            let Some(to_unit) = m.inverse().filter(|_| circular) else {
                 continue;
-            }
+            };
             let is_wall = round.unit.shape == UnitShape::Wall;
             let full = covers_circle(&round.unit.arcs, 0.0);
             let mut worth_reporting = |issues: &mut Vec<Issue>, reason: Uninferred| {
@@ -586,6 +586,11 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 full,
                 arcs: arcs.clone(),
                 facing,
+                to_unit,
+                unit_radii: match round.unit.shape {
+                    UnitShape::Wall => (1.0, 1.0),
+                    UnitShape::Annulus { inner, outer } => (inner, outer),
+                },
             });
             if !is_wall {
                 continue;
@@ -725,11 +730,18 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             (IDENTIFY_LDU, reach - IDENTIFY_LDU),
             probe.radius + HALF_GRID_LDU,
         );
-        if !nearest.is_finite() || !solid.enclosed(walls, center, outward_wall) {
+        if !nearest.is_finite() {
             return Probed::Rejected;
         }
         if nearest > probe.radius + IDENTIFY_LDU {
-            return Probed::Loose(nearest - probe.radius);
+            return if solid.blocked_on_axes(walls, center, outward_wall) {
+                Probed::Loose(nearest - probe.radius)
+            } else {
+                Probed::Rejected
+            };
+        }
+        if !solid.enclosed(walls, center, outward_wall) {
+            return Probed::Rejected;
         }
         if floor.depth.is_infinite() {
             Probed::Through

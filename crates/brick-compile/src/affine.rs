@@ -73,4 +73,34 @@ impl Affine {
             .then(self)
             .then(&Affine::LDRAW_TO_Y_UP)
     }
+
+    pub fn inverse(&self) -> Option<Affine> {
+        let m = &self.m;
+        let determinant = self.determinant();
+        if determinant.abs() < f64::EPSILON {
+            return None;
+        }
+        let r = |a: usize, b: usize, c: usize, d: usize| (m[a] * m[b] - m[c] * m[d]) / determinant;
+        let linear = [
+            r(5, 10, 6, 9),
+            r(2, 9, 1, 10),
+            r(1, 6, 2, 5),
+            r(6, 8, 4, 10),
+            r(0, 10, 2, 8),
+            r(2, 4, 0, 6),
+            r(4, 9, 5, 8),
+            r(1, 8, 0, 9),
+            r(0, 5, 1, 4),
+        ];
+        let t = [m[3], m[7], m[11]];
+        let mut out = [0.0; 12];
+        for row in 0..3 {
+            let [a, b, c] = [linear[row * 3], linear[row * 3 + 1], linear[row * 3 + 2]];
+            out[row * 4] = a;
+            out[row * 4 + 1] = b;
+            out[row * 4 + 2] = c;
+            out[row * 4 + 3] = -(a * t[0] + b * t[1] + c * t[2]);
+        }
+        Some(Affine { m: out })
+    }
 }

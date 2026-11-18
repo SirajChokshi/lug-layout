@@ -436,36 +436,6 @@ fn up_of(matrix: &Affine) -> Vec3 {
     unit([matrix.m[1], matrix.m[5], matrix.m[9]])
 }
 
-fn inverse(matrix: &Affine) -> Option<Affine> {
-    let m = &matrix.m;
-    let determinant = matrix.determinant();
-    if determinant.abs() < f64::EPSILON {
-        return None;
-    }
-    let r = |a: usize, b: usize, c: usize, d: usize| (m[a] * m[b] - m[c] * m[d]) / determinant;
-    let linear = [
-        r(5, 10, 6, 9),
-        r(2, 9, 1, 10),
-        r(1, 6, 2, 5),
-        r(6, 8, 4, 10),
-        r(0, 10, 2, 8),
-        r(2, 4, 0, 6),
-        r(4, 9, 5, 8),
-        r(1, 8, 0, 9),
-        r(0, 5, 1, 4),
-    ];
-    let t = translation(matrix);
-    let mut out = [0.0; 12];
-    for row in 0..3 {
-        let [a, b, c] = [linear[row * 3], linear[row * 3 + 1], linear[row * 3 + 2]];
-        out[row * 4] = a;
-        out[row * 4 + 1] = b;
-        out[row * 4 + 2] = c;
-        out[row * 4 + 3] = -(a * t[0] + b * t[1] + c * t[2]);
-    }
-    Some(Affine { m: out })
-}
-
 fn world_box(instance: &CoverInstance, solid: &PartSolid) -> [Vec3; 2] {
     let mut bounds = Bounds::EMPTY;
     for i in 0..8 {
@@ -517,7 +487,7 @@ impl<'a> ModelSolids<'a> {
             .zip(boxes)
             .enumerate()
             .map(|(i, (instance, [min, max]))| {
-                let inverse = inverse(instance.matrix)?;
+                let inverse = instance.matrix.inverse()?;
                 let lo = min.map(|v| broad_cell(v - WELD_EPSILON_LDU));
                 let hi = max.map(|v| broad_cell(v + WELD_EPSILON_LDU));
                 for x in lo[0]..=hi[0] {

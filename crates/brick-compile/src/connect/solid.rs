@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::affine::Vec3;
+use crate::affine::{Affine, Vec3};
 use crate::flatten::Triangle;
 use crate::lattice::STUD_LDU;
 
@@ -55,6 +55,8 @@ pub struct RoundSurface {
     pub full: bool,
     pub arcs: Vec<(f64, f64)>,
     pub facing: Option<f64>,
+    pub to_unit: Affine,
+    pub unit_radii: (f64, f64),
 }
 
 impl RoundSurface {
@@ -87,34 +89,34 @@ impl RoundSurface {
         }
     }
 
-    fn radius_of(&self, p: Vec3) -> f64 {
-        let (i, j) = plan_axes(self.axis);
-        (p[i] - self.center[0]).hypot(p[j] - self.center[1])
+    fn unit_point(&self, p: Vec3) -> (f64, f64) {
+        let q = self.to_unit.apply(p);
+        (q[0].hypot(q[2]), q[1])
     }
 
     fn holds(&self, p: Vec3) -> bool {
-        let rho = self.radius_of(p);
-        let slack = |radius: f64| IDENTIFY_LDU * radius.max(1.0);
+        let (rho, height) = self.unit_point(p);
+        let (inner, outer) = self.unit_radii;
         match self.shape {
-            RoundShape::Wall { radius, from, to } => {
-                (rho - radius).abs() <= slack(radius)
-                    && p[self.axis] >= from - IDENTIFY_LDU
-                    && p[self.axis] <= to + IDENTIFY_LDU
+            RoundShape::Wall { .. } => {
+                (rho - 1.0).abs() <= IDENTIFY_LDU
+                    && (-IDENTIFY_LDU..=1.0 + IDENTIFY_LDU).contains(&height)
             }
-            RoundShape::Annulus { inner, outer, at } => {
-                (p[self.axis] - at).abs() <= IDENTIFY_LDU
-                    && rho >= inner - slack(inner)
-                    && rho <= outer + slack(outer)
+            RoundShape::Annulus { .. } => {
+                height.abs() <= IDENTIFY_LDU
+                    && (inner - IDENTIFY_LDU..=outer + IDENTIFY_LDU).contains(&rho)
             }
         }
     }
 
     fn on_circle(&self, p: Vec3) -> bool {
-        let rho = self.radius_of(p);
-        let on = |radius: f64| (rho - radius).abs() <= IDENTIFY_LDU * radius.max(1.0);
+        let (rho, _) = self.unit_point(p);
+        let (inner, outer) = self.unit_radii;
         match self.shape {
-            RoundShape::Wall { radius, .. } => on(radius),
-            RoundShape::Annulus { inner, outer, .. } => on(inner) || on(outer),
+            RoundShape::Wall { .. } => (rho - 1.0).abs() <= IDENTIFY_LDU,
+            RoundShape::Annulus { .. } => {
+                (rho - inner).abs() <= IDENTIFY_LDU || (rho - outer).abs() <= IDENTIFY_LDU
+            }
         }
     }
 
@@ -721,7 +723,28 @@ impl Solid {
         polygons.chain(analytic).fold(f64::INFINITY, f64::min)
     }
 
-    pub fn enclosed(
+    fn coaxial_arcs(
+        &self,
+        slab: &Slab,
+        probe: &Probe,
+        coaxial: &[usize],
+        ignores: &impl Fn(&RoundSurface) -> bool,
+    ) -> Option<Vec<(f64, f64)>> {
+        let mut arcs = Vec::new();
+        for &index in coaxial {
+            let surface = &self.surfaces[index];
+            if ignores(surface) || !Self::in_slab(slab, surface, probe) {
+                continue;
+            }
+            if surface.full || surface.nearest() == 0.0 {
+                return None;
+            }
+            arcs.extend(surface.arcs.iter().copied());
+        }
+        Some(arcs)
+    }
+
+    pub fn blocked_on_axes(
         &self,
         slab: &Slab,
         center: [f64; 2],
@@ -729,19 +752,22 @@ impl Solid {
     ) -> bool {
         let probe = axis_probe(slab.axis, center, slab.at, slab.inward);
         let coaxial = self.coaxial(&probe);
-        let mut arcs = Vec::new();
-        for &index in &coaxial {
-            let surface = &self.surfaces[index];
-            if ignores(surface) || !Self::in_slab(slab, surface, &probe) {
-                continue;
-            }
-            if surface.full || surface.nearest() == 0.0 {
-                return true;
-            }
-            arcs.extend(surface.arcs.iter().copied());
-        }
+        let Some(arcs) = self.coaxial_arcs(slab, &probe, &coaxial, &ignores) else {
+            return true;
+        };
+        self.rays_blocked(slab, center, &coaxial, &arcs, &ignores)
+    }
+
+    fn rays_blocked(
+        &self,
+        slab: &Slab,
+        center: [f64; 2],
+        coaxial: &[usize],
+        arcs: &[(f64, f64)],
+        ignores: &impl Fn(&RoundSurface) -> bool,
+    ) -> bool {
         if slab.polygons.is_empty() {
-            return covers_circle(&arcs, 0.0);
+            return false;
         }
         let home = [cell(center[0]), cell(center[1])];
         let blocks = |polygon: &SlabPolygon| {
@@ -759,13 +785,32 @@ impl Solid {
                 }
             })
         };
-        for direction in [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]] {
-            if !covered_by_coaxial(direction)
-                && !Self::ray_hits(slab, home, center, direction, &blocks)
-            {
-                return false;
-            }
+        [[1.0, 0.0], [-1.0, 0.0], [0.0, 1.0], [0.0, -1.0]]
+            .into_iter()
+            .all(|direction| {
+                covered_by_coaxial(direction)
+                    || Self::ray_hits(slab, home, center, direction, &blocks)
+            })
+    }
+
+    pub fn enclosed(
+        &self,
+        slab: &Slab,
+        center: [f64; 2],
+        ignores: impl Fn(&RoundSurface) -> bool,
+    ) -> bool {
+        let probe = axis_probe(slab.axis, center, slab.at, slab.inward);
+        let coaxial = self.coaxial(&probe);
+        let Some(mut arcs) = self.coaxial_arcs(slab, &probe, &coaxial, &ignores) else {
+            return true;
+        };
+        if slab.polygons.is_empty() {
+            return covers_circle(&arcs, 0.0);
         }
+        if !self.rays_blocked(slab, center, &coaxial, &arcs, &ignores) {
+            return false;
+        }
+        let home = [cell(center[0]), cell(center[1])];
         let rings = (0..2)
             .map(|k| (home[k] - slab.extent.0[k]).max(slab.extent.1[k] - home[k]))
             .max()
@@ -773,6 +818,7 @@ impl Solid {
             .max(0);
         let mut seen = vec![false; slab.polygons.len()];
         let mut checked = 0;
+        let mut next_check = 0;
         for ring in 0..=rings {
             for x in home[0] - ring..=home[0] + ring {
                 for y in home[1] - ring..=home[1] + ring {
@@ -801,11 +847,15 @@ impl Solid {
                     }
                 }
             }
-            if arcs.len() > checked {
+            let due = ring == rings || ring == next_check;
+            if due && arcs.len() > checked {
                 if covers_circle(&arcs, 0.0) {
                     return true;
                 }
                 checked = arcs.len();
+            }
+            if ring == next_check {
+                next_check = (next_check * 2).max(1);
             }
         }
         false
