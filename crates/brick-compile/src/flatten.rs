@@ -10,6 +10,10 @@ const MAX_DEPTH: usize = 64;
 
 pub trait Library {
     fn source(&self, path: &str) -> Option<&str>;
+
+    fn parsed(&self, path: &str) -> Option<Rc<LdrawFile>> {
+        self.source(path).map(|text| Rc::new(ldraw::parse(text)))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -122,7 +126,7 @@ impl<'a, L: Library> Flattener<'a, L> {
         if let Some(file) = self.parsed.get(path) {
             return Some(Rc::clone(file));
         }
-        let file = Rc::new(ldraw::parse(self.library.source(path)?));
+        let file = self.library.parsed(path)?;
         self.parsed.insert(path.to_string(), Rc::clone(&file));
         Some(file)
     }

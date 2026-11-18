@@ -26,6 +26,54 @@ interface AxisHit {
   readonly residual: number;
 }
 
+const PAIR_WINDOW_SLACK = 1e-9;
+
+interface PairTable {
+  readonly fractions: Float64Array;
+  readonly first: Int32Array;
+  readonly second: Int32Array;
+}
+
+const pairTables = new Map<string, PairTable>();
+
+function fraction(value: number): number {
+  return value - Math.floor(value);
+}
+
+function pairTable(b1: number, b2: number, bound: number): PairTable {
+  const key = `${b1}:${b2}:${bound}`;
+  const cached = pairTables.get(key);
+  if (cached) return cached;
+  const side = 2 * bound + 1;
+  const count = side * side;
+  const order = Array.from({ length: count }, (_, i) => i);
+  const values = new Float64Array(count);
+  for (let i = 0; i < count; i++) {
+    const first = Math.floor(i / side) - bound;
+    const second = (i % side) - bound;
+    values[i] = fraction(first * b1 + second * b2);
+  }
+  order.sort((a, b) => (values[a] ?? 0) - (values[b] ?? 0));
+  const table: PairTable = {
+    fractions: Float64Array.from(order, (i) => values[i] ?? 0),
+    first: Int32Array.from(order, (i) => Math.floor(i / side) - bound),
+    second: Int32Array.from(order, (i) => (i % side) - bound),
+  };
+  pairTables.set(key, table);
+  return table;
+}
+
+function firstAtLeast(sorted: Float64Array, value: number): number {
+  let low = 0;
+  let high = sorted.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((sorted[middle] ?? 0) < value) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
 function axisHits(
   target: number,
   basis: readonly [number, number, number],
@@ -34,17 +82,36 @@ function axisHits(
 ): ReadonlyArray<AxisHit> {
   const hits: AxisHit[] = [];
   const [b1, b2, b3] = basis;
-  for (let first = -bound; first <= bound; first += 1) {
-    for (let second = -bound; second <= bound; second += 1) {
-      for (let third = -bound; third <= bound; third += 1) {
-        const irrational = first * b1 + second * b2 + third * b3;
-        const rational = Math.round(target - irrational);
-        if (Math.abs(rational) > bound) continue;
-        const residual = Math.abs(target - irrational - rational);
-        if (residual <= tolerance) hits.push({ rational, first, second, third, residual });
-      }
+  const table = pairTable(b1, b2, bound);
+  const window = tolerance + PAIR_WINDOW_SLACK;
+  const consider = (index: number, third: number): void => {
+    const first = table.first[index] ?? 0;
+    const second = table.second[index] ?? 0;
+    const irrational = first * b1 + second * b2 + third * b3;
+    const rational = Math.round(target - irrational);
+    if (Math.abs(rational) > bound) return;
+    const residual = Math.abs(target - irrational - rational);
+    if (residual <= tolerance) hits.push({ rational, first, second, third, residual });
+  };
+  const scan = (low: number, high: number, third: number): void => {
+    const end = firstAtLeast(table.fractions, high);
+    for (let index = firstAtLeast(table.fractions, low); index < end; index++) {
+      consider(index, third);
     }
+  };
+  for (let third = -bound; third <= bound; third += 1) {
+    if (2 * window >= 1) {
+      scan(0, Number.POSITIVE_INFINITY, third);
+      continue;
+    }
+    const wanted = fraction(target - third * b3);
+    scan(Math.max(0, wanted - window), wanted + window, third);
+    if (wanted - window < 0) scan(1 + wanted - window, 1, third);
+    if (wanted + window >= 1) scan(0, wanted + window - 1, third);
   }
+  hits.sort(
+    (a: AxisHit, b: AxisHit) => a.first - b.first || a.second - b.second || a.third - b.third,
+  );
   return hits;
 }
 

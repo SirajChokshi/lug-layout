@@ -10,6 +10,7 @@ import {
   type ModelSection,
   type ModelVehicle,
   type PartRole,
+  type PartRolling,
   type PartTechnic,
   type ProducedColors,
   type TrackEnd,
@@ -51,6 +52,7 @@ export interface PartShapeAsset {
   readonly studColors: Uint16Array;
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
+  readonly rolling: PartRolling | null;
 }
 
 export interface PartAsset extends PartShapeAsset {
@@ -208,6 +210,7 @@ export interface IPartBundleLoader {
   loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord>;
   loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord>;
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh>;
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void;
   loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null>;
   loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>>;
   loadManifest(lod: BundleLod): Promise<BundleManifest>;

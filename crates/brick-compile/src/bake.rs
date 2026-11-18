@@ -1,8 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
-use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart};
-use crate::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
+use crate::cover::{
+    model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
+};
 use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
 use crate::model::ModelInstance;
@@ -114,6 +116,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
+            rolling_mode: RollingMode::Skip,
             stud_primitives,
             unofficial_allowlist,
         };
@@ -182,6 +185,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         &mut self,
         drawn: &[ModelInstance],
         lattice: Option<&ModelLattice>,
+        shard: CoverShard,
     ) -> Result<ModelCover, BakeError> {
         let slots = self.slots(drawn)?;
         let instances: Vec<CoverInstance> = drawn
@@ -200,6 +204,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             &self.opacity,
             lattice.map(|lattice| lattice.phase),
             self.stud_shape,
+            shard,
         ))
     }
 

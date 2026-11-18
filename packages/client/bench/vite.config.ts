@@ -8,7 +8,11 @@ export default defineConfig({
     minify: false,
     emptyOutDir: true,
     rollupOptions: {
-      input: ["bench/large-layout.bench.ts", "bench/layout-memory.bench.ts"],
+      input: [
+        "bench/large-layout.bench.ts",
+        "bench/layout-memory.bench.ts",
+        "bench/needed-meshes.bench.ts",
+      ],
     },
   },
   ssr: { noExternal: [/^@brr\//] },

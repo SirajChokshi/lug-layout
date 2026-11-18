@@ -22,6 +22,7 @@ export class TrackGraph {
   readonly endZLdu: Float64Array;
   readonly endHeading: Uint8Array;
   readonly endYPlates: Int16Array;
+  readonly endFrame: Uint32Array;
   readonly edgePlacement: Int32Array;
   readonly edgeRoute: Int32Array;
   readonly edgeFromEnd: Int32Array;
@@ -52,12 +53,14 @@ export class TrackGraph {
     const endZLdu = new Float64Array(endTotal);
     const endHeading = new Uint8Array(endTotal);
     const endYPlates = new Int16Array(endTotal);
+    const endFrame = new Uint32Array(endTotal);
     const poses: Pose16[] = [];
     const byPosition = new Map<string, number[]>();
 
     for (let p = 0; p < placementCount; p++) {
       const first = endStart[p] ?? 0;
       const last = endStart[p + 1] ?? 0;
+      const frame = layout.frame(p);
       for (let end = first; end < last; end++) {
         const connector = end - first;
         const yPlates = layout.endYPlates(p, connector);
@@ -66,11 +69,12 @@ export class TrackGraph {
         poses.push(pose);
         endPlacement[end] = p;
         endConnector[end] = connector;
-        endXLdu[end] = studs.x * STUD_LDU;
-        endZLdu[end] = studs.z * STUD_LDU;
+        endXLdu[end] = studs.x * STUD_LDU + frame.xLdu;
+        endZLdu[end] = studs.z * STUD_LDU + frame.zLdu;
         endHeading[end] = pose.heading;
         endYPlates[end] = yPlates;
-        const key = endKey(pose, yPlates);
+        endFrame[end] = frame.id;
+        const key = endKey(pose, yPlates, frame.id);
         const group = byPosition.get(key);
         if (group) group.push(end);
         else byPosition.set(key, [end]);
@@ -175,6 +179,7 @@ export class TrackGraph {
     this.endZLdu = endZLdu;
     this.endHeading = endHeading;
     this.endYPlates = endYPlates;
+    this.endFrame = endFrame;
     this.edgePlacement = edgePlacement;
     this.edgeRoute = edgeRoute;
     this.edgeFromEnd = edgeFromEnd;
@@ -249,6 +254,6 @@ export class TrackGraph {
   }
 }
 
-function endKey(pose: Pose16, yPlates: number): string {
-  return `${yPlates}:${pose.position.join(",")}`;
+function endKey(pose: Pose16, yPlates: number, frame: number): string {
+  return `${frame}:${yPlates}:${pose.position.join(",")}`;
 }

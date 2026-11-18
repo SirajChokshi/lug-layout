@@ -44,6 +44,7 @@ class StubSceneBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
