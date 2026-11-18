@@ -85,8 +85,6 @@ export {
   regionOriginZ,
   roomRect,
   studsInside,
-  subtractRect,
-  uncoveredBy,
   type LduRect,
   type MmRect,
   type PlanFootprint,
@@ -97,8 +95,6 @@ export {
 } from "./plan/plan-region.ts";
 export {
   checkPlan,
-  nearestTableLdu,
-  overhangLdu,
   placementInRegion,
   regionOf,
   uncheckedPlan,
@@ -110,15 +106,6 @@ export {
   type PlanRuleId,
   type TableTop,
 } from "./plan/plan-rules.ts";
-export {
-  crossing,
-  PLATES_PER_BRICK,
-  rampRises,
-  riserCourses,
-  type CrossingVerdict,
-  type RiserCourses,
-  type TrackSpan,
-} from "./track/elevation.ts";
 export {
   drawingKit,
   MAX_TURN_CURVES,
@@ -172,7 +159,6 @@ export {
   INHERITED_COLOR,
   resolveLines,
   toCatalog,
-  totalQuantity,
   type CatalogBom,
   type CatalogLine,
   type CatalogSystem,

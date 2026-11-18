@@ -108,24 +108,3 @@ export function rectContains(outer: LduRect, inner: LduRect): boolean {
     inner.maxZ <= outer.maxZ
   );
 }
-
-export function subtractRect(from: LduRect, cut: LduRect): LduRect[] {
-  if (!rectsOverlap(from, cut)) return [from];
-  const pieces: LduRect[] = [];
-  if (from.minX < cut.minX) pieces.push({ ...from, maxX: cut.minX });
-  if (cut.maxX < from.maxX) pieces.push({ ...from, minX: cut.maxX });
-  const minX = Math.max(from.minX, cut.minX);
-  const maxX = Math.min(from.maxX, cut.maxX);
-  if (from.minZ < cut.minZ) pieces.push({ minX, maxX, minZ: from.minZ, maxZ: cut.minZ });
-  if (cut.maxZ < from.maxZ) pieces.push({ minX, maxX, minZ: cut.maxZ, maxZ: from.maxZ });
-  return pieces;
-}
-
-export function uncoveredBy(rect: LduRect, covers: ReadonlyArray<LduRect>): LduRect[] {
-  let remaining: LduRect[] = [rect];
-  for (const cover of covers) {
-    remaining = remaining.flatMap((piece) => subtractRect(piece, cover));
-    if (remaining.length === 0) break;
-  }
-  return remaining;
-}

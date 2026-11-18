@@ -253,12 +253,6 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 
-.catalog-group h3 {
-  margin: 8px 0 4px;
-  font-size: 12px;
-  color: #556;
-}
-
 .palette-search {
   width: 100%;
   box-sizing: border-box;

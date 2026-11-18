@@ -121,7 +121,3 @@ export function toCatalog(
   );
   return { system, lines: sorted, unmapped };
 }
-
-export function totalQuantity(lines: ReadonlyArray<{ readonly quantity: number }>): number {
-  return lines.reduce((sum, line) => sum + line.quantity, 0);
-}

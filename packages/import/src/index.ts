@@ -43,7 +43,6 @@ export {
   type ImportReport,
   type ImportTimings,
   type PartResolution,
-  type PartResolutionKind,
 } from "./model-import.ts";
 export {
   transferablesOf,
