@@ -178,7 +178,7 @@ export function findZeta16Representation(
   const exact = zeta16ToStuds(best);
   return {
     coefficients: best,
-    residual: Math.hypot(exact.x - point.x, exact.z - point.y),
+    residual: Math.max(Math.abs(exact.x - point.x), Math.abs(exact.z - point.y)),
     solutionCount: solutions.length,
   };
 }
