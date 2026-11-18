@@ -3,6 +3,7 @@ import { defineConfig } from "@playwright/test";
 const PORT = 4173;
 const BASE_URL = `http://127.0.0.1:${PORT}/`;
 const chromePath = process.env["CHROME"];
+const SWIFTSHADER_PIXEL_RATIO = 0.5;
 
 export default defineConfig({
   testDir: "tests",
@@ -18,7 +19,7 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     viewport: { width: 1600, height: 900 },
-    deviceScaleFactor: 1,
+    deviceScaleFactor: SWIFTSHADER_PIXEL_RATIO,
     screenshot: "only-on-failure",
     trace: "retain-on-failure",
     launchOptions: {
