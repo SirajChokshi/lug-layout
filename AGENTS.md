@@ -14,6 +14,7 @@ The source of truth is `docs/architecture.md`. Section numbers like "§14" refer
 7. **Whole models only.** We never do brick-level editing. Imported models are immutable.
 8. **Official LEGO track only, for now.** Third-party track must stay addable through `PartSource` plus `TrackProfile`, with no core changes.
 9. **Merge only with evidence in the PR:** screenshots, video, or measured performance or correctness numbers. Tests you wrote never count. Never push to `main`; the owner merges. When fixing forward, don't add overly specific tests. See `.cursor/rules/merge-evidence.mdc`.
+10. **Real-world compatibility.** Connections come from real part geometry (studs, anti-studs, pins, holes, axles, clips, bars), never from knowing the set, category, prefab or model. Any user-made Studio or LDraw file (a custom MILS module, modular, track container or anything else) must connect to everything else exactly as the physical bricks would. No per-set or per-category special cases and no hand-tuned offsets. Tests and evidence must include custom inputs, not only curated official sets. If geometry data is missing, fix the pipeline instead of adding a rule. Reviewers request changes on violations. See `.cursor/rules/real-world-compatibility.mdc`.
 
 ## Layout
 ```

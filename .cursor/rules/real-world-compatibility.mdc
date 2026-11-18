@@ -1,0 +1,24 @@
+---
+description: Connections come from real part geometry, never from knowing the set, category or model; custom Studio/LDraw files must connect like the physical bricks
+alwaysApply: true
+---
+
+# Real-world compatibility (owner requirement, 2026-11-17)
+
+Applies to every feature that places, snaps, connects or validates parts or models.
+
+- **Connections come from real part geometry:** studs, anti-studs, pins, holes, axles, clips, bars and hinges, read from LDraw. Never from knowing what set, category, palette kind, profile or model something is.
+- **Any user-made Studio or LDraw file connects like the physical bricks would.** A custom MILS module, a custom modular, a track container or anything else must snap and join to everything else exactly as the real bricks would. No per-set, per-category or prefab special cases, and no hand-tuned offsets standing in for geometry.
+- **Tests prove behaviour on arbitrary and custom inputs,** not only on curated official sets and generated templates. A feature that only works for known models isn't done.
+- **Missing geometry is a pipeline bug.** If the data needed to connect something is missing, fix the data pipeline. Don't add a rule that hides the gap.
+
+## What counts as a violation
+- Branching connection, snap, support, collision or join logic on `kind`, `cityRole`, a palette section, a profile name, a set number or a part number.
+- Connection data that exists only for bundle parts, OMR sets or generated templates, so the same bricks in an imported file behave differently.
+- Recipes or offsets copied from one official model and applied wherever a category appears.
+- Evidence or tests that use only official sets, generated modules or the curated catalog.
+
+## Reviewing
+- Reviewers request changes on any of the violations above, including in PRs approved before this rule.
+- A PR that adds or changes placement, snapping, connection or validation must show it working on at least one custom input: an imported `.ldr`, `.mpd` or `.io` that isn't a palette item, or a synthetic model built from official parts. The custom input goes in the PR evidence and in the tests.
+- When a PR extends a mechanism that only some placeables get, say so in the review and link the gap. Don't approve it as done.
