@@ -96,7 +96,7 @@ export interface TrainPools {
   readonly plates: ReadonlyArray<Block>;
   readonly spacers: ReadonlyArray<Block>;
   readonly bearings: ReadonlyArray<Block>;
-  readonly pivots: ReadonlyArray<Block>;
+  readonly pivotPlates: ReadonlyArray<Block>;
   readonly axles: ReadonlyArray<AxlePart>;
   readonly pins: ReadonlyArray<PinPart>;
   readonly wheels: ReadonlyArray<WheelPart>;
@@ -106,7 +106,6 @@ export interface TrainPools {
 }
 
 const LIBRARY_PART_PREFIX = /^parts\//u;
-const STUD_PRIMITIVE_PREFIX = "";
 const ROUND_OUTLINE_TOLERANCE = 0.02;
 const OUTER_PRIMITIVE_FRACTION = 0.9;
 const CONTACT_FRACTION = 0.5;
@@ -133,7 +132,7 @@ function has(closure: ReadonlySet<string>, family: keyof typeof PRIMITIVE_FAMILI
 }
 
 function hasStud(closure: ReadonlySet<string>, studNames: ReadonlyArray<string>): boolean {
-  return studNames.some((name) => closure.has(STUD_PRIMITIVE_PREFIX + name));
+  return studNames.some((name) => closure.has(name));
 }
 
 function centreOf(reading: PartReading): Vec3 {
@@ -377,7 +376,7 @@ export async function trainPools(
   const plates: Block[] = [];
   const spacers: Block[] = [];
   const bearings: Block[] = [];
-  const pivots: Block[] = [];
+  const pivotPlates: Block[] = [];
   for (const reading of blocks.values()) {
     const block = blockOf(reading, holeFit);
     if (!block) continue;
@@ -389,7 +388,7 @@ export async function trainPools(
     if (roundHoles.length !== block.holes.length || roundHoles.length === 0) continue;
     if (roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
     if (block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
-      pivots.push(block);
+      pivotPlates.push(block);
     }
   }
 
@@ -451,7 +450,7 @@ export async function trainPools(
   );
   const extra = await reader.read(constituentReferences);
   const readings = new Map<string, PartReading>(extra);
-  for (const pool of [plates, spacers, bearings, pivots]) {
+  for (const pool of [plates, spacers, bearings, pivotPlates]) {
     for (const block of pool) {
       const reading = blocks.get(block.reference);
       if (reading) readings.set(block.reference, reading);
@@ -464,7 +463,7 @@ export async function trainPools(
     plates,
     spacers,
     bearings,
-    pivots,
+    pivotPlates,
     axles,
     pins,
     wheels,

@@ -152,7 +152,7 @@ export async function runTrains(
       plates: pools.plates.length,
       spacers: pools.spacers.length,
       bearings: pools.bearings.length,
-      "pivot plates": pools.pivots.length,
+      "pivot plates": pools.pivotPlates.length,
       axles: pools.axles.length,
       pins: pools.pins.length,
       wheels: pools.wheels.length,

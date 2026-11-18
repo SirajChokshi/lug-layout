@@ -130,7 +130,7 @@ export function bogieWithAxles(
   return hungAxles ? { hung, axles: hungAxles } : null;
 }
 
-export function ends(
+function ends(
   context: RecipeContext,
   carrier: Carrier,
   unit: string,
@@ -162,7 +162,7 @@ function third(carrier: Carrier, part: 0 | 1 | 2): readonly [number, number] {
   return [carrier.x0 + step * part, carrier.x0 + step * (part + 1)];
 }
 
-export function half(carrier: Carrier, part: 0 | 1): readonly [number, number] {
+function half(carrier: Carrier, part: 0 | 1): readonly [number, number] {
   const middle = (carrier.x0 + carrier.x1) / 2;
   return part === 0 ? [carrier.x0, middle] : [middle, carrier.x1];
 }

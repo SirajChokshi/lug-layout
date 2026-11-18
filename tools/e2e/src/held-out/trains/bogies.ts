@@ -1,6 +1,12 @@
 import { type SeededRandom } from "../generator.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import { type PivotOption, pivotOptions, pivotPartAxles, stackAt } from "./pivot-stacks.ts";
+import {
+  type PivotOption,
+  pivotOptions,
+  pivotPartAxles,
+  stackAt,
+  stackWithHoleAt,
+} from "./pivot-stacks.ts";
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
@@ -79,7 +85,7 @@ export function hangBogie(
     const checkpoint = model.checkpoint();
     if (request.join === "rigid") {
       if (!onLattice(xCorner, body.x0) || !onLattice(zCorner, body.z0)) continue;
-      const placed = clearStackUnder(
+      const placed = stackUnderBody(
         model,
         pools,
         random,
@@ -128,7 +134,7 @@ export function hangBogie(
     const bogiePlates = plates - bodyPlates;
     const bodyIndices: number[] = [];
     for (const pivot of pivots) {
-      const placed = clearStackUnder(
+      const placed = stackUnderBody(
         model,
         pools,
         random,
@@ -158,7 +164,7 @@ export function hangBogie(
       null,
     );
     const bogieBottom = bogieTop - bogiePlates * PLATE_LDU;
-    const pivotPins = pivots.map((pivot) => {
+    const pivotParts = pivots.map((pivot) => {
       const index = placeAlong(
         model,
         axle,
@@ -191,7 +197,7 @@ export function hangBogie(
       pivots,
       bodyIndices,
       bogieIndices,
-      pivotPins,
+      pivotParts,
       request.unitBogie,
     );
     if (pivoted && !model.collidesSince(checkpoint)) return pivoted;
@@ -244,7 +250,7 @@ function finishBogie(
   pivots: ReadonlyArray<readonly [number, number]>,
   bodyIndices: ReadonlyArray<number>,
   bogieIndices: ReadonlyArray<number>,
-  pivotPins: ReadonlyArray<number>,
+  pivotParts: ReadonlyArray<number>,
   unit: string,
 ): HungBogie | null {
   const index = bogieIndices.at(-1);
@@ -264,11 +270,11 @@ function finishBogie(
     pivots,
     bodyIndices,
     bogieIndices,
-    pivotParts: pivotPins,
+    pivotParts,
   };
 }
 
-function clearStackUnder(
+function stackUnderBody(
   model: TrainModel,
   pools: TrainPools,
   random: SeededRandom,
@@ -278,43 +284,23 @@ function clearStackUnder(
   plates: number,
   unit: string,
 ): { readonly indices: ReadonlyArray<number>; readonly bottom: number } | null {
-  for (const option of random.shuffled(options)) {
-    const checkpoint = model.checkpoint();
-    const placed = pivotStackUnder(model, pools, random, body, option, pivot, plates, unit);
-    if (placed && !model.collidesSince(checkpoint)) return placed;
-    model.rollback(checkpoint);
-  }
-  return null;
-}
-
-function pivotStackUnder(
-  model: TrainModel,
-  pools: TrainPools,
-  random: SeededRandom,
-  body: Carrier,
-  option: PivotOption,
-  pivot: readonly [number, number],
-  plates: number,
-  unit: string,
-): { readonly indices: ReadonlyArray<number>; readonly bottom: number } | null {
-  const [length, width] = footprint(option.block, option.turns);
-  for (const hole of random.shuffled(option.holes)) {
-    const corner = [pivot[0] - hole[0], pivot[1] - hole[1]] as const;
-    if (!onLattice(corner[0], body.x0) || !onLattice(corner[1], body.z0)) continue;
-    if (corner[0] < body.x0 || corner[0] + length * STUD_LDU > body.x1) continue;
-    if (corner[1] < body.z0 || corner[1] + width * STUD_LDU > body.z1) continue;
-    const indices = stackAt(
-      model,
-      pools,
-      option,
-      corner,
-      body.bottom,
-      plates,
-      pickColor(random, pools),
-      unit,
-      body.index,
-    );
-    return { indices, bottom: body.bottom - plates * PLATE_LDU };
-  }
-  return null;
+  const stack = stackWithHoleAt(
+    model,
+    pools,
+    random,
+    options,
+    pivot,
+    body.bottom,
+    plates,
+    body.x0,
+    body.z0,
+    (box) =>
+      box.min[0] >= body.x0 &&
+      box.max[0] <= body.x1 &&
+      box.min[2] >= body.z0 &&
+      box.max[2] <= body.z1,
+    unit,
+    body.index,
+  );
+  return stack ? { indices: stack.indices, bottom: body.bottom - plates * PLATE_LDU } : null;
 }

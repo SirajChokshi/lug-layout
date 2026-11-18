@@ -25,7 +25,7 @@ export interface PivotOption {
 }
 
 export function pivotOptions(pools: TrainPools): ReadonlyArray<PivotOption> {
-  return pools.pivots.flatMap((block) =>
+  return pools.pivotPlates.flatMap((block) =>
     [0, 1].map((turns) => {
       const rotation = yaw(turns);
       const box = rotatedBounds(block.bounds, rotation);

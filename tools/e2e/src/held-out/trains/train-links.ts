@@ -72,7 +72,7 @@ function wagon(
   return hung ? { car, axles: hung } : null;
 }
 
-export function lowestWheel(wagons: ReadonlyArray<Wagon>): number {
+function lowestWheel(wagons: ReadonlyArray<Wagon>): number {
   return Math.min(
     ...wagons.flatMap((each) => each.axles.map((axle) => axle.wheelset.y - axle.radius)),
   );

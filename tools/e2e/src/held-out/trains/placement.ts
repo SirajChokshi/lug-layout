@@ -54,7 +54,7 @@ export function rotatedBounds(box: Box, rotation: Mat3): Box {
   return transformedBox(box, rotation, [0, 0, 0]);
 }
 
-export function reading(pools: TrainPools, reference: string): PartReading {
+function reading(pools: TrainPools, reference: string): PartReading {
   const found = pools.readings.get(reference);
   if (!found) throw new Error(`no reading for ${reference}`);
   return found;

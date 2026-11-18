@@ -89,7 +89,7 @@ function accessorArray(glb: Glb, index: number): Float32Array | Uint32Array {
   }
 }
 
-export function triangles(glb: Glb): Float32Array {
+function triangles(glb: Glb): Float32Array {
   const out: number[] = [];
   for (const mesh of glb.json.meshes) {
     for (const primitive of mesh.primitives) {

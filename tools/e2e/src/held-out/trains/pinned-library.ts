@@ -93,7 +93,7 @@ export function subfileLines(text: string): ReadonlyArray<SubfileLine> {
   return out;
 }
 
-export function references(text: string): string[] {
+function references(text: string): string[] {
   const out: string[] = [];
   for (const line of text.split("\n")) {
     const fields = line.trim().split(FIELDS);
