@@ -1,0 +1,309 @@
+{
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_036_shoppingcenter.mpd",
+      "sha256": "65d4a87cade6b1e43c5659dddc6b7e90596f77485df7987489132410d5a58271",
+      "bytes": 127858
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_062_officebuildinglarge.mpd",
+      "sha256": "86696f3c1551d9249a191dfea56da2d5734ca7a341f00da34dec6e75aa41d7d9",
+      "bytes": 102335
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_031_carriagehouse.mpd",
+      "sha256": "f75396c56a14f8aedde70dfae697b6339299c0c82d61a014cae71abf28d8addd",
+      "bytes": 86079
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_035_petrolstation.mpd",
+      "sha256": "b5be630b79119a6d4056a5a59aae70cea7f44286461410274a99765873f16345",
+      "bytes": 56092
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_021_houseporchyard.mpd",
+      "sha256": "5c03a09fe433d6573cf5bc9b6e242c3d34199bac8377f53a80790d8906683670",
+      "bytes": 53501
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_007_firecompany.mpd",
+      "sha256": "6e1d2f26b22bf8b0b48703bbb1e8f70ad0cf08b15b9ed828db8c5c13de503479",
+      "bytes": 47021
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_076_gradeschool.mpd",
+      "sha256": "e1e4be42f334a23374da286715e45a5989656f3e5da1abe00f619167d45714a3",
+      "bytes": 38946
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_012_triplex.mpd",
+      "sha256": "0fce9e56ee9294de3676be079ece2d921b9ee49c532524878da7abd0e5cd6b5f",
+      "bytes": 36903
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_039_tanmosque.mpd",
+      "sha256": "09e7254f53610a9a80f169cfab8c748c6eb52d4b6d0f7d9b0ca292c0334d8b2b",
+      "bytes": 35271
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_034_blueapartments.mpd",
+      "sha256": "bee71b501136d621bde0362a9c21f0d025e215b84a8b0dd54934a7de2b95e8de",
+      "bytes": 33108
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_068_warehousesmall.mpd",
+      "sha256": "da9475023b91180beed0f91681df7682905e64402878b16c1930a0eb34c50e0c",
+      "bytes": 32095
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_023_missionstylehouse.mpd",
+      "sha256": "7d3adadeb24d47198ead0227d9b0e896c9e01cdd8855951a5c84314103942e6e",
+      "bytes": 31930
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_087_citydepot.mpd",
+      "sha256": "ee62e41d475136eb80e5cca9824dfe32e64f8ccafbc96d42da49c52875b3df37",
+      "bytes": 28247
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_002_townhall.mpd",
+      "sha256": "0fe5f067523e1e7f3fd4364a5353c978112d3156c07e6e188d584d1c414eafd7",
+      "bytes": 26861
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_052_newspaperoffice.mpd",
+      "sha256": "23485e307ddc2af65cc5115b3cdc08855dce9a998f42b7cc6971fb504a2ee19f",
+      "bytes": 26584
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_009_miningfacility.mpd",
+      "sha256": "1e77898cebe210d311a3ba81958582a1b86fba7af42b03951eabcfc576190ddf",
+      "bytes": 24605
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_014_watertower.mpd",
+      "sha256": "c0d6dfb0e1564a3110f80d3ae862489d61e7b8bba1fc5ec25c32c41471f30e6c",
+      "bytes": 21840
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_074_mediumfactory.mpd",
+      "sha256": "3ad2ed03cc65f072a857434287191c6bbc9cf6867948fa56591589cd60a66d4d",
+      "bytes": 21539
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_032_grocerystore.mpd",
+      "sha256": "3320caeec6072551e18634e1c17f97023f8315676cf4d5d9940fe4d9adbda032",
+      "bytes": 19508
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_059_restaraunt.mpd",
+      "sha256": "4cd9ecb155e23f185d9d126e0280a3f4d586fab012735c9a9f1a3cbcca1c44a5",
+      "bytes": 18657
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_020_baitshop.mpd",
+      "sha256": "5f675dfdb021cfc892f7bf916bb711f362a2b7ed0148bc0e25be7ded41fcc01c",
+      "bytes": 16042
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/building_086_redfactory.mpd",
+      "sha256": "0f5306685af1353421aa475a9113d55f4dac9919af9bb72e43cbcfcb1f83990d",
+      "bytes": 15535
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/vehicle_045_redpassengertrain.mpd",
+      "sha256": "6f3d514ab32692b5c8e078e086095d2787648de3fbb7f3199302bfc1110c3dbf",
+      "bytes": 25135
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/vehicle_071_cranerailcar.mpd",
+      "sha256": "96fe96a57884a733576d62f02f4b54090dd334e9fbbde34d68b1b002f0491da4",
+      "bytes": 24439
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/rail_crossing_double_base.ldr",
+      "sha256": "6fa33a44c0e5c1f4ba3c40c7e6c5675b96f0a866b1808ac9ad3d9d8af8d8100f",
+      "bytes": 16144
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/block_base_011.ldr",
+      "sha256": "00f4130f3f4932c75fbf8d1f1193df206e568a1bfed7b922594791fed5672270",
+      "bytes": 14578
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/block_base_031.ldr",
+      "sha256": "2b0e5cf201616be039b913f5b73f74910480c88e91b80aeef6e4ea921e4e3392",
+      "bytes": 19464
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Datsville/bb7d1f2e88083c5787f64bfd8b59481ebdd9481e/models_source/infrastructure_airportrunway.mpd",
+      "sha256": "468f3fe2e6c8795138991551eca3ed5a04fbaf18af4a0041e57dd33dcd206659",
+      "bytes": 17671
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Mike-LDraw-Models/297d61649caf6f3994a3d73caf7a67b5358a3860/source/ldr_high_tech_lab_old.mpd",
+      "sha256": "4d010baa90002c7636d105d4b01cdc405bc8103025aab41bf653fccb003ccc68",
+      "bytes": 20854
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Mike-LDraw-Models/297d61649caf6f3994a3d73caf7a67b5358a3860/source/ldr_yellow_castle_old.mpd",
+      "sha256": "efadf4559b9b9082d66d6452fca0ae84938b316f37bff55e4b738519b1e143d6",
+      "bytes": 18957
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Mike-LDraw-Models/297d61649caf6f3994a3d73caf7a67b5358a3860/source/ldr_dune_rover_new.mpd",
+      "sha256": "3ae34842de5ce105f46d9f01d2c7c668497cdcbe02e29550f87b89725c991860",
+      "bytes": 6723
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Mike-LDraw-Models/297d61649caf6f3994a3d73caf7a67b5358a3860/source/ldr_small_shuttle_old.mpd",
+      "sha256": "415d9f382b4474d007c14c7ba390f2649c3c0c5d502145449c60bcd1122ca267",
+      "bytes": 5424
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mjhorvath/Mike-LDraw-Models/297d61649caf6f3994a3d73caf7a67b5358a3860/source/ldr_androbot_mech_new.mpd",
+      "sha256": "4456b62b9bd1628dcbb48316561841e98a1b49f767dd662d4ff517cb7066c23a",
+      "bytes": 16913
+    },
+    {
+      "url": "https://raw.githubusercontent.com/elfprince13/-Talent-Clarf-Tower/1af9574b86fa225b3cfd86777c319a89b2677206/ClarfTower.mpd",
+      "sha256": "634b13ae42a6c2c5cbe1fe81aec179e0d77761240c6552c5313c47abe066c15b",
+      "bytes": 46190
+    },
+    {
+      "url": "https://raw.githubusercontent.com/elfprince13/-DRoP-Hatching-Grounds/b7e553e49f3547f85f0248460a4b7835f7697c09/HatchingGrounds.mpd",
+      "sha256": "4301f5b8700891e54adf1ce284bc8ad61af9f23e04508db602ed4e51de651f47",
+      "bytes": 30779
+    },
+    {
+      "url": "https://raw.githubusercontent.com/josch/lego-summertree/57b7f87fce792322d9a6fa2691749f7e12648b41/tree.mpd",
+      "sha256": "b99767a08cda884d81692471b1470276fad5cdaeee38df5b31c1a56bdca6c207",
+      "bytes": 18503
+    },
+    {
+      "url": "https://raw.githubusercontent.com/felipesanches/LBA-LEGO/65a471d1781c3a21c1540cbce721f4413dbdb700/baldinos_house/Baldinos_House.ldr",
+      "sha256": "1f7ff3cf5782462bec0ae941e21cf214a26fd8c84a3350d6ab21e0740321242e",
+      "bytes": 92648
+    },
+    {
+      "url": "https://raw.githubusercontent.com/felipesanches/LBA-LEGO/65a471d1781c3a21c1540cbce721f4413dbdb700/chezluc/lba2-chez-luc.ldr",
+      "sha256": "50b93252e1de18a479fafc906c90f181cfa292967cd93c864fdf161d2c5bda17",
+      "bytes": 237875
+    },
+    {
+      "url": "https://raw.githubusercontent.com/rioforce/Adventures-in-LEGO-Hospital/b887f4c7c66215571baaac7a47691c9bf486c795/res/brickmodels/Island%20Elevator.ldr",
+      "sha256": "31100ccd4ae091e45ddcaf3291928010679f075593b89953b65f5d474f63aef6",
+      "bytes": 9210
+    },
+    {
+      "url": "https://raw.githubusercontent.com/rioforce/Adventures-in-LEGO-Hospital/b887f4c7c66215571baaac7a47691c9bf486c795/res/brickmodels/LEGO%20Island%20Ambulance.ldr",
+      "sha256": "53509c2c312ab5e4c208f98e366ac10a896d98dc6b60397c3f6ff7044ff702a2",
+      "bytes": 5452
+    },
+    {
+      "url": "https://raw.githubusercontent.com/jhdavis789/asml-twinscan-lego-moc/188d4b2ecb8820028263d22bc2ff0e894e92d04e/asml_exe5000c.ldr",
+      "sha256": "9257e9edc65bec13bf2b6109d99b5e498587d066600e0598fc1b255b67f9ea6d",
+      "bytes": 34462
+    },
+    {
+      "url": "https://raw.githubusercontent.com/zsdonghao/lego-zoo/bc32b953c4d46c0394fb694cff4136e6f6070e39/poke%20ball/POKEMON%20BALL.ldr",
+      "sha256": "a72e7f0055c05fc3a8b6a00857d9d9fa6d2fdfe20fe958cab615166d6129399c",
+      "bytes": 22324
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mrkrstphr/ldr-files/4b5cae92f06f704a4e86e45b7b57793cb183a696/models/BrickLink%20Designer%20Program/910009%20Lego%20Store%20Modular.ldr",
+      "sha256": "df4c8a7ef8cf06d56cd02ac3799b0d272d8414513151800ca76e8c0339c8e658",
+      "bytes": 125807
+    },
+    {
+      "url": "https://raw.githubusercontent.com/brickcamp/site/0ffda1aa61860f988acb07b76abc8e86a3f827f5/content/entries/00xx/0035/model.ldr",
+      "sha256": "025ef137e8c3a8c456c2e57da8bdeb00cd1d27baeae7f9dc7ac841b5a6a79ef2",
+      "bytes": 10180
+    },
+    {
+      "url": "https://raw.githubusercontent.com/brickcamp/site/0ffda1aa61860f988acb07b76abc8e86a3f827f5/content/entries/00xx/0057/model.ldr",
+      "sha256": "7c7a1645534eaf3f7e1979cb1a2a1aea86051300ec7eb8dc76a76c3662cb5623",
+      "bytes": 18012
+    },
+    {
+      "url": "https://raw.githubusercontent.com/brickcamp/site/0ffda1aa61860f988acb07b76abc8e86a3f827f5/content/entries/00xx/0031/model.ldr",
+      "sha256": "372317faa38804e5da1633777876a61a278c12f8994490f48bda21435c34d1b7",
+      "bytes": 7242
+    },
+    {
+      "url": "https://raw.githubusercontent.com/CrispStrobe/brickwright-lite/3039ab7327f87819144d0d9a4a87b6ba420c8125/overlay/scratch-gui/static/sim-lab/models/sarrus-lift.ldr",
+      "sha256": "ba09d8660e926ea41d925e9e617e8d746c036b67b83dcccf1e7a66126ea9ed59",
+      "bytes": 12111
+    },
+    {
+      "url": "https://raw.githubusercontent.com/anteloc/ldraw-nova/d1e93d73f6ffe6955caa90953a98a0c90fbd5c5c/examples/archive/building-atlas/railway-station/railway-station.mpd",
+      "sha256": "b95d8a6c2aae52dd6518874591e9c18ddeee1a19571600a849f1d4d52f8fe4f4",
+      "bytes": 36269
+    },
+    {
+      "url": "https://raw.githubusercontent.com/anteloc/ldraw-nova/d1e93d73f6ffe6955caa90953a98a0c90fbd5c5c/examples/archive/building-atlas/fire-station/fire-station.mpd",
+      "sha256": "1343ba5dde6f20790d64e78f93540a906a16e73fbdbd8f19c254d8fb6ada9a68",
+      "bytes": 33002
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Aircoookie/FireStation/8ce688a2fda2021510b8971b8f5b53881858fb94/FireStation.io",
+      "sha256": "127aa2a8f411c8078a4ec7b5ee689962005ea5af2fc589bb24b3e82424337488",
+      "bytes": 453447
+    },
+    {
+      "url": "https://raw.githubusercontent.com/shamx9ir/lego-moc/d4a60fecc00e9ff2f068098d37612803c1a05640/sailboat/sailboat.io",
+      "sha256": "2ffcef23cf5138e2c5d3e711e1e3b5e555e9d8aea677fa9ce5208fbcfadfb77c",
+      "bytes": 8402
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cyriac/brick-ideas/5daea1759f9a582a8f5ac874b0de566b2bd3e7f2/black-cat/black-cat.io",
+      "sha256": "e991101642612d26ca460407be122357522296026eda410cf2bc99d5770f3941",
+      "bytes": 47470
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cyriac/brick-ideas/5daea1759f9a582a8f5ac874b0de566b2bd3e7f2/whale/whale.io",
+      "sha256": "dab2fc4946e766256284ac4efdaea0ce12f7bcb5699ad3c55f2a2c6b3aa9262e",
+      "bytes": 51451
+    },
+    {
+      "url": "https://raw.githubusercontent.com/cyriac/brick-ideas/5daea1759f9a582a8f5ac874b0de566b2bd3e7f2/recliner/recliner.io",
+      "sha256": "d76c2fbbfe5acaf1ad6463621ed82157fbf0313fd8160cadd1104017d843610a",
+      "bytes": 57243
+    },
+    {
+      "url": "https://raw.githubusercontent.com/legojunat/dr18/0fe9f894ee2a53567f63fbb186b52b75b7251407/model/dr18.io",
+      "sha256": "45eade303baa538387cfec786fddeaab547c694e024e2ac75a0c68b94e1ab4f0",
+      "bytes": 649020
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mark-macbeth/lego/d97c706654786bd573261697c8e7706c4e72b2bc/models/manta/manta.io",
+      "sha256": "74b9591f6e991b9ad9e0efe51491e9c6f6f5500b06c32e463431eb1527e2edc1",
+      "bytes": 343858
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mark-macbeth/lego/d97c706654786bd573261697c8e7706c4e72b2bc/models/ground/container-loader.io",
+      "sha256": "868118fb9c7cd6ae992eece4b1a144ccbb3c2121fc7813e4df8f5e50c8f6fef2",
+      "bytes": 394494
+    },
+    {
+      "url": "https://raw.githubusercontent.com/mark-macbeth/lego/d97c706654786bd573261697c8e7706c4e72b2bc/models/galaxy-explorer/galaxy-explorer.io",
+      "sha256": "f4806b9b728fdbfa69452f4214770bb3a0d1a92669026fc985ca20ba830b6115",
+      "bytes": 319330
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nikoloda/Studio_Center_of_Mass_Calculator/756a890df8b6ffb948a8e99ae978d33d10dd7afa/samples/brick_test.io",
+      "sha256": "98466cd55002751dcfa2ddd521a6894fa4bae2d5d0ced620651e58b4860627f3",
+      "bytes": 28417
+    },
+    {
+      "url": "https://raw.githubusercontent.com/joyedit/Brickwright/acfbcb4831b3f7eba3663982b82e92b87d119656/samples/cottage.ldr",
+      "sha256": "8a691f00117e28d77c462d8cf44469b8ce4748851294b9b08770437c641f405d",
+      "bytes": 1894
+    },
+    {
+      "url": "https://raw.githubusercontent.com/Xaxis/brickworks/ef83af88f7fa5d2156174493da63816786b512bf/tools/web/gallery_seeds/working_windmill.ldr",
+      "sha256": "adf3d240fbfd95e26126a7dda9c0bbf5d57834e428549d967778666638844a51",
+      "bytes": 12182
+    }
+  ]
+}
