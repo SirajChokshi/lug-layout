@@ -420,8 +420,8 @@ it("lists every bundle model with running gear as a train of its own, in bundle 
 
   expect(setup?.models.map((model) => [model.name, model.label])).toEqual([
     ["10133-1", "10133-1 Burlington Northern Santa Fe Locomotive (2004)"],
-    ["10205-1", "10205-1"],
-    [STUDLESS_SET, STUDLESS_SET],
+    ["10205-1", "10205-1 Locomotive (2002)"],
+    [STUDLESS_SET, `${STUDLESS_SET} Tanker (2001)`],
   ]);
   play.offer(setup);
   expect(play.snapshot().trainModel).toBe("10133-1");
