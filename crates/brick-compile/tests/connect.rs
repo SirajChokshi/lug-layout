@@ -635,11 +635,16 @@ fn custom_plate(columns: i32, rows: i32, hollow: &[(i32, i32)]) -> String {
     let (w, d) = (10 * columns, 10 * rows);
     let (wi, di) = (w - 4, d - 4);
     let mut text = String::from("0 Custom Plate\n0 BFC CERTIFY CCW\n");
-    for i in 1..columns {
-        for j in 1..rows {
-            let (x, z) = (-w + 20 * i, -d + 20 * j);
-            text += &format!("1 16 {x} 4 {z} 1 0 0 0 -1 0 0 0 1 stud4.dat\n");
-        }
+    let interior = |count: i32, half: i32| (1..count).map(move |k| -half + 20 * k);
+    let supports: Vec<(i32, i32, &str)> = if rows == 1 {
+        interior(columns, w).map(|x| (x, 0, "stud3.dat")).collect()
+    } else {
+        interior(columns, w)
+            .flat_map(|x| interior(rows, d).map(move |z| (x, z, "stud4.dat")))
+            .collect()
+    };
+    for (x, z, support) in supports {
+        text += &format!("1 16 {x} 4 {z} 1 0 0 0 -1 0 0 0 1 {support}\n");
     }
     text += &format!("0 BFC INVERTNEXT\n1 16 0 8 0 {wi} 0 0 0 -4 0 0 0 {di} box5.dat\n");
     text += &format!("4 16 {w} 8 {d} {wi} 8 {di} -{wi} 8 {di} -{w} 8 {d}\n");
@@ -656,6 +661,31 @@ fn custom_plate(columns: i32, rows: i32, hollow: &[(i32, i32)]) -> String {
                 "stud.dat"
             };
             text += &format!("1 16 {x} 0 {z} 1 0 0 0 1 0 0 0 1 {stud}\n");
+        }
+    }
+    text
+}
+
+fn custom_pockets(count: i32, half_length: f64) -> String {
+    let (w, d) = (10 * count, 10);
+    let mut text = String::from("0 Custom Pockets\n0 BFC CERTIFY CCW\n");
+    text += &format!("1 16 0 8 0 {w} 0 0 0 -8 0 0 0 {d} box5.dat\n");
+    let centres: Vec<f64> = (0..count).map(|k| f64::from(-w + 10 + 20 * k)).collect();
+    let mut xs = vec![f64::from(-w)];
+    for &c in &centres {
+        text +=
+            &format!("0 BFC INVERTNEXT\n1 16 {c} 8 0 {half_length} 0 0 0 -4 0 0 0 6 box5.dat\n");
+        xs.extend([c - half_length, c + half_length]);
+    }
+    xs.push(f64::from(w));
+    let zs = [-10.0, -6.0, 6.0, 10.0];
+    for a in 0..xs.len() - 1 {
+        for b in 0..zs.len() - 1 {
+            if a % 2 == 1 && b == 1 {
+                continue;
+            }
+            let (x0, x1, z0, z1) = (xs[a], xs[a + 1], zs[b], zs[b + 1]);
+            text += &format!("4 16 {x1} 8 {z1} {x1} 8 {z0} {x0} 8 {z0} {x0} 8 {z1}\n");
         }
     }
     text
@@ -705,7 +735,8 @@ fn round_face(gender: Gender, origin: [f64; 3], axis_y: i64, radius: f64, length
 }
 
 #[test]
-fn a_custom_plate_gets_its_studs_anti_studs_tube_interiors_and_hollow_stud_bore_from_geometry() {
+fn a_custom_plate_gets_its_studs_tube_interiors_and_hollow_stud_bore_and_reports_tube_gap_cavities()
+{
     let hollow = (-30, -30);
     let library = with_parts(
         pinned("ldraw"),
@@ -725,9 +756,6 @@ fn a_custom_plate_gets_its_studs_anti_studs_tube_interiors_and_hollow_stud_bore_
     for &x in &lattice {
         for &z in &lattice {
             expected.push(round_face(Gender::Male, [x, 0.0, -z], 1, 6.0, 4.0));
-            if x.abs() == 30.0 || z.abs() == 30.0 {
-                expected.push(round_face(Gender::Female, [x, -8.0, -z], -1, 6.0, 4.0));
-            }
         }
     }
     for x in [-20.0, 0.0, 20.0] {
@@ -769,11 +797,36 @@ fn a_custom_plate_gets_its_studs_anti_studs_tube_interiors_and_hollow_stud_bore_
             [10.0, 8.0, 10.0]
         ]
     );
+    let to_tube = 10.0 - (14f64.powi(2) - 10f64.powi(2)).sqrt();
+    let mut against_walls: Vec<[f64; 3]> = inference
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin,
+                reason: Uninferred::OffCentreCavity { offset },
+            } => {
+                assert!((offset - to_tube / 2.0).abs() <= 1e-4, "{offset}");
+                Some(*origin)
+            }
+            _ => None,
+        })
+        .collect();
+    against_walls.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+    let mut walls = Vec::new();
+    for &x in &lattice {
+        for &z in &lattice {
+            if x.abs() == 30.0 || z.abs() == 30.0 {
+                walls.push([x, 8.0, z]);
+            }
+        }
+    }
+    assert_eq!(against_walls, walls);
 }
 
 #[test]
 fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
-    let mut plate = custom_plate(2, 2, &[]);
+    let mut plate = custom_plate(3, 1, &[]);
     plate += "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/marker.dat\n";
     let library = with_parts(
         pinned("ldraw"),
@@ -787,12 +840,12 @@ fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
         &[
             (
                 "parts/s/marker.dat",
-                "0 !LDCAD SNAP_CYL [id=gone] [gender=F] [caps=one] [secs=R 6 4] [pos=-10 8 -10]\n"
+                "0 !LDCAD SNAP_CYL [id=gone] [gender=F] [caps=one] [secs=R 6 4] [pos=-20 8 0]\n"
                     .to_string(),
             ),
             (
                 "parts/custom.dat",
-                "0 !LDCAD SNAP_CLEAR [id=gone]\n0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=10 8 10]\n"
+                "0 !LDCAD SNAP_CLEAR [id=gone]\n0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=20 8 0]\n"
                     .to_string(),
             ),
         ],
@@ -818,17 +871,16 @@ fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
             .map(|r| (r.0, r.2))
             .collect()
     };
-    assert_eq!(at([10.0, -8.0, -10.0]), vec![(Source::Shadow, SQUARE)]);
-    assert_eq!(at([-10.0, -8.0, 10.0]), vec![]);
-    assert_eq!(at([10.0, -8.0, 10.0]), vec![(Source::Inferred, ROUND)]);
-    assert_eq!(at([-10.0, -8.0, -10.0]), vec![(Source::Inferred, ROUND)]);
+    assert_eq!(at([20.0, -8.0, 0.0]), vec![(Source::Shadow, SQUARE)]);
+    assert_eq!(at([-20.0, -8.0, 0.0]), vec![]);
     assert_eq!(at([0.0, -8.0, 0.0]), vec![(Source::Inferred, ROUND)]);
+    assert_eq!(receptors.len(), 2);
     let males: Vec<Source> = faces_of(&extraction.connectors)
         .into_iter()
         .filter(|f| f.gender == Gender::Male)
         .map(|f| f.source)
         .collect();
-    assert_eq!(males, vec![Source::Shadow; 4]);
+    assert_eq!(males, vec![Source::Shadow; 5]);
     assert!(extraction.issues.iter().any(|issue| matches!(
         issue,
         Issue::SectionDisagreement {
@@ -888,16 +940,16 @@ fn inferred_origins_identify_to_sixteenths_or_stay_off_lattice_and_reported() {
 }
 
 #[test]
-fn a_cavity_whose_contacts_centre_the_stud_off_its_grid_point_is_reported_not_placed() {
+fn a_cavity_is_placed_only_where_its_free_travel_centres_the_stud_on_the_grid_point() {
     let shift = 0.0625;
     let library = with_parts(
         pinned("ldraw"),
         &[
-            ("parts/custom.dat", custom_plate(4, 4, &[])),
+            ("parts/pockets.dat", custom_pockets(3, 6.2)),
             (
                 "parts/shifted.dat",
                 format!(
-                    "0 Shifted\n0 BFC CERTIFY CCW\n1 16 {shift} 0 0 1 0 0 0 1 0 0 0 1 custom.dat\n"
+                    "0 Shifted\n0 BFC CERTIFY CCW\n1 16 {shift} 0 0 1 0 0 0 1 0 0 0 1 pockets.dat\n"
                 ),
             ),
         ],
@@ -905,21 +957,30 @@ fn a_cavity_whose_contacts_centre_the_stud_off_its_grid_point_is_reported_not_pl
     let shadow = pinned("ldcad-shadow");
     let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
         .expect("the pinned stud measures");
-    let inference = inferred.infer("parts/shifted.dat");
-    let faces = faces_of(&inference.connectors);
-    assert!(faces.iter().any(|f| f.gender == Gender::Female));
-    assert!(faces.iter().all(|f| {
-        let steps = (f.origin[0] - shift) / 10.0;
-        (steps - steps.round()).abs() <= 1e-9
-    }));
-    let mut off_centre: Vec<[f64; 3]> = inference
+    let receptors = |connectors: &[Connector]| -> Vec<[f64; 3]> {
+        let mut found: Vec<[f64; 3]> = faces_of(connectors)
+            .into_iter()
+            .filter(|f| f.gender == Gender::Female)
+            .map(|f| f.origin)
+            .collect();
+        found.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
+        found
+    };
+    let centred = inferred.infer("parts/pockets.dat");
+    assert_eq!(
+        receptors(&centred.connectors),
+        vec![[-20.0, -8.0, 0.0], [0.0, -8.0, 0.0], [20.0, -8.0, 0.0]]
+    );
+    let shifted = inferred.infer("parts/shifted.dat");
+    assert_eq!(receptors(&shifted.connectors), Vec::<[f64; 3]>::new());
+    let mut off_centre: Vec<[f64; 3]> = shifted
         .issues
         .iter()
         .filter_map(|issue| match issue {
             Issue::Uninferred {
                 origin,
                 reason: Uninferred::OffCentreCavity { offset },
-            } if origin[0].abs() == 10.0 => {
+            } => {
                 assert!((offset - shift).abs() <= 1e-4, "{offset}");
                 Some(*origin)
             }
@@ -929,12 +990,7 @@ fn a_cavity_whose_contacts_centre_the_stud_off_its_grid_point_is_reported_not_pl
     off_centre.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
     assert_eq!(
         off_centre,
-        vec![
-            [-10.0, 8.0, -30.0],
-            [-10.0, 8.0, 30.0],
-            [10.0, 8.0, -30.0],
-            [10.0, 8.0, 30.0]
-        ]
+        vec![[-20.0, 8.0, 0.0], [0.0, 8.0, 0.0], [20.0, 8.0, 0.0]]
     );
 }
 

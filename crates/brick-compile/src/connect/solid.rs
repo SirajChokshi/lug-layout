@@ -859,13 +859,14 @@ impl Solid {
             .map(|&step| {
                 let length = step[0].hypot(step[1]);
                 let contact = IDENTIFY_LDU / length;
-                if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
-                    return 0.0;
-                }
-                if !self.sweep_collides(&around, step) {
-                    return f64::INFINITY;
-                }
-                let (mut free, mut blocked) = (contact, 1.0);
+                let (mut free, mut blocked) =
+                    if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
+                        (0.0, contact)
+                    } else if self.sweep_collides(&around, step) {
+                        (contact, 1.0)
+                    } else {
+                        return f64::INFINITY;
+                    };
                 while (blocked - free) * length > TRAVEL_PRECISION_LDU {
                     let middle = 0.5 * (free + blocked);
                     if self.sweep_collides(&around, [step[0] * middle, step[1] * middle]) {

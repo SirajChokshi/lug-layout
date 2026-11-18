@@ -1201,22 +1201,20 @@ fn outward_wall(surface: &RoundSurface) -> bool {
 }
 
 fn off_centre(travel: &[f64]) -> Option<f64> {
-    let opposite = |a: [f64; 2], b: [f64; 2]| a[0] == -b[0] && a[1] == -b[1];
-    let mut worst: Option<f64> = None;
-    for (i, step) in LATTICE_STEPS.iter().enumerate() {
-        for (j, other) in LATTICE_STEPS.iter().enumerate().skip(i + 1) {
-            if !opposite(*step, *other) {
-                continue;
-            }
-            let (forward, back) = (travel[i], travel[j]);
-            let offset = (forward - back).abs() / 2.0;
-            if forward.min(back) <= IDENTIFY_LDU || offset <= IDENTIFY_LDU {
-                continue;
-            }
-            worst = Some(worst.map_or(offset, |w: f64| w.max(offset)));
-        }
-    }
-    worst
+    let opposite = |a: &[f64; 2], b: &[f64; 2]| a[0] == -b[0] && a[1] == -b[1];
+    let worst = LATTICE_STEPS
+        .iter()
+        .enumerate()
+        .flat_map(|(i, step)| {
+            LATTICE_STEPS
+                .iter()
+                .enumerate()
+                .skip(i + 1)
+                .filter(move |(_, other)| opposite(step, other))
+                .map(move |(j, _)| (travel[i] - travel[j]).abs() / 2.0)
+        })
+        .fold(0.0, f64::max);
+    (worst > IDENTIFY_LDU).then_some(worst)
 }
 
 fn cylinder(
