@@ -89,6 +89,7 @@ export interface BakeRequest {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
   readonly shard?: BakeShard;
 }

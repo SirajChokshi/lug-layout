@@ -19,6 +19,7 @@ interface Manifest {
     readonly unofficialAllowlist: ReadonlyArray<string>;
     readonly vehicles?: NonNullable<BakeRequest["vehicles"]>;
   };
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
 
 const GLB_HEADER_BYTES = 12;
@@ -236,6 +237,7 @@ for (const model of standardManifest.models) {
     studPrimitives: standardManifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: standardManifest.compiler.unofficialAllowlist,
     translucentColors,
+    tableDepthLdu: standardManifest.tablePlane.depthBelowTopLdu,
     vehicles: standardManifest.compiler.vehicles ?? null,
   };
   let baked = baker.bake(request, library);

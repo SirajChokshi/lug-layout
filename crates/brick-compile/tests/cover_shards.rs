@@ -1,5 +1,8 @@
 mod common;
 
+use std::fs;
+use std::path::Path;
+
 use brick_compile::affine::Affine;
 use brick_compile::cover::{
     model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
@@ -24,6 +27,17 @@ const SLICINGS: [&[(usize, usize)]; 3] = [
     &[(0, 1), (1, 3), (3, 5)],
     &[(0, 1), (1, 3), (3, 5), (5, 7)],
 ];
+
+fn table_depth() -> f64 {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/verified-facts/geometry.json");
+    let geometry: serde_json::Value =
+        serde_json::from_slice(&fs::read(path).expect("geometry facts are readable"))
+            .expect("geometry facts are JSON");
+    geometry["tablePlane"]["depthBelowTopLdu"]
+        .as_f64()
+        .expect("geometry facts record the table plane depth")
+}
 
 fn placed(x: f64, y: f64, z: f64, quarter: bool) -> Affine {
     let (c, s) = if quarter { (0.0, 1.0) } else { (1.0, 0.0) };
@@ -115,7 +129,19 @@ fn baking_a_custom_pile_in_slices_hides_exactly_what_baking_it_whole_hides() {
     let opacity = Opacity::new([CLEAR]);
     let first_stud = instances[0].matrix.then(&instances[0].studs[0]);
     let phase = [first_stud.m[3], first_stud.m[11]].map(|at| at.rem_euclid(20.0) as u32);
-    let cover = |shard| model_cover(&instances, &solids, &opacity, Some(phase), STUD, shard);
+    let lattice = Some((phase, first_stud.m[7]));
+    let table_depth = table_depth();
+    let cover = |shard| {
+        model_cover(
+            &instances,
+            &solids,
+            &opacity,
+            lattice,
+            STUD,
+            shard,
+            table_depth,
+        )
+    };
 
     let whole = cover(CoverShard::WHOLE);
     let hidden = whole.covered_count();
