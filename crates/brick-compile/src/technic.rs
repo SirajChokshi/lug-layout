@@ -4,7 +4,7 @@ use std::ops::Range;
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{is_circular_primitive, ReferenceSpan, Triangle};
+use crate::flatten::{ReferenceSpan, Triangle, VisitedFile};
 
 pub const STEPS_PER_LDU: i32 = 16;
 const IDENTIFY_LDU: f64 = 0.0005;
@@ -22,6 +22,18 @@ pub struct TechnicPrimitives {
     pub holes: Vec<String>,
     pub pins: Vec<String>,
     pub axle_ends: Vec<String>,
+}
+
+pub fn is_circular_primitive(reference: &str) -> bool {
+    let name = reference.rsplit('/').next().unwrap_or(reference);
+    let Some((numerator, rest)) = name.split_once('-') else {
+        return false;
+    };
+    let denominator: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    !numerator.is_empty()
+        && numerator.chars().all(|c| c.is_ascii_digit())
+        && !denominator.is_empty()
+        && rest[denominator.len()..].starts_with(|c: char| c.is_ascii_alphabetic())
 }
 
 impl TechnicPrimitives {
@@ -57,13 +69,21 @@ impl TechnicPrimitives {
         self.holes.is_empty() && self.pins.is_empty() && self.axle_ends.is_empty()
     }
 
-    pub fn names(&self) -> Vec<String> {
-        self.holes
-            .iter()
-            .chain(&self.pins)
-            .chain(&self.axle_ends)
-            .cloned()
-            .collect()
+    pub fn appear_in(&self, files: &[VisitedFile]) -> bool {
+        files.iter().any(|file| {
+            file.path.starts_with(PRIMITIVE_FOLDER)
+                && self
+                    .names()
+                    .any(|name| file.path.rsplit('/').next() == Some(name.as_str()))
+        })
+    }
+
+    pub fn shape_reference(&self, reference: &str) -> bool {
+        self.names().any(|name| name == reference) || is_circular_primitive(reference)
+    }
+
+    fn names(&self) -> impl Iterator<Item = &String> {
+        self.holes.iter().chain(&self.pins).chain(&self.axle_ends)
     }
 }
 

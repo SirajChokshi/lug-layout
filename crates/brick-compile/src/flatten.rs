@@ -59,24 +59,6 @@ pub struct Flattened {
     pub spans: Vec<ReferenceSpan>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SpanRecording<'a> {
-    pub named: &'a [String],
-    pub circular: bool,
-}
-
-pub fn is_circular_primitive(reference: &str) -> bool {
-    let name = reference.rsplit('/').next().unwrap_or(reference);
-    let Some((numerator, rest)) = name.split_once('-') else {
-        return false;
-    };
-    let denominator: String = rest.chars().take_while(char::is_ascii_digit).collect();
-    !numerator.is_empty()
-        && numerator.chars().all(|c| c.is_ascii_digit())
-        && !denominator.is_empty()
-        && rest[denominator.len()..].starts_with(|c: char| c.is_ascii_alphabetic())
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FlattenError {
     Unresolved { reference: String, from: String },
@@ -106,7 +88,7 @@ pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
     stud_primitives: &'a [String],
-    recording: SpanRecording<'a>,
+    records_span: Option<&'a dyn Fn(&str) -> bool>,
     parsed: HashMap<String, Rc<LdrawFile>>,
     first_unresolved: Option<FlattenError>,
 }
@@ -125,20 +107,15 @@ impl<'a, L: Library> Flattener<'a, L> {
             library,
             lod,
             stud_primitives,
-            recording: SpanRecording::default(),
+            records_span: None,
             parsed: HashMap::new(),
             first_unresolved: None,
         }
     }
 
-    pub fn recording(mut self, recording: SpanRecording<'a>) -> Self {
-        self.recording = recording;
+    pub fn recording_spans(mut self, records_span: &'a dyn Fn(&str) -> bool) -> Self {
+        self.records_span = Some(records_span);
         self
-    }
-
-    fn records(&self, reference: &str) -> bool {
-        self.recording.named.iter().any(|name| name == reference)
-            || (self.recording.circular && is_circular_primitive(reference))
     }
 
     pub fn resolve(&self, reference: &str) -> Option<String> {
@@ -286,7 +263,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                     };
                     let first = out.triangles.len();
                     self.walk(&child_path, &child, &child_frame, out)?;
-                    if self.records(reference) {
+                    if self.records_span.is_some_and(|records| records(reference)) {
                         out.spans.push(ReferenceSpan {
                             reference: reference.clone(),
                             path: child_path,

@@ -1,9 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{
-    FlattenError, Flattened, Flattener, Library, Lod, SpanRecording, StudReference,
-};
+use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference};
 use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
@@ -110,12 +108,7 @@ pub fn compile_part<L: Library>(
     reference: &str,
     options: &CompileOptions,
 ) -> Result<CompiledPart, CompileError> {
-    let technic_names = options.technic.names();
-    let mut flattener =
-        Flattener::new(library, options.lod, &options.stud_primitives).recording(SpanRecording {
-            named: &technic_names,
-            circular: false,
-        });
+    let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives);
     let path =
         flattener
             .resolve(reference)
@@ -135,10 +128,10 @@ pub fn compile_part<L: Library>(
         *edge = edge.map(to_y_up);
     }
     let mesh = mesh::build(&flattened.triangles, &flattened.hard_edges);
-    let technic = if flattened.spans.is_empty() {
-        None
+    let technic = if options.technic.appear_in(&flattened.files) {
+        technic_features(library, &path, &options.technic, &mesh)?
     } else {
-        technic_features(library, &path, &options.technic, &technic_names, &mesh)?
+        None
     };
     let studs = flattened
         .studs
@@ -164,17 +157,14 @@ fn technic_features<L: Library>(
     library: &L,
     path: &str,
     primitives: &TechnicPrimitives,
-    names: &[String],
     mesh: &Mesh,
 ) -> Result<Option<TechnicPart>, CompileError> {
     let Some([min, max]) = mesh.bounds() else {
         return Ok(None);
     };
+    let shape_reference = |reference: &str| primitives.shape_reference(reference);
     let mut flattened = Flattener::new(library, Lod::Standard, &[])
-        .recording(SpanRecording {
-            named: names,
-            circular: true,
-        })
+        .recording_spans(&shape_reference)
         .flatten(path)
         .map_err(CompileError::Flatten)?;
     for triangle in &mut flattened.triangles {
