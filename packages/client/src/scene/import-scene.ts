@@ -282,7 +282,6 @@ export class ImportScene implements IImportScene {
         },
         bundle.parts,
         colors,
-        undefined,
       ),
     }));
     return showChunks(this.backend, bundle, undefined, colors, chunks, {

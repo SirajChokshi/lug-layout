@@ -468,6 +468,5 @@ function rigidChunk(rigid: RigidBodyInstances, model: PlayModel, setup: PlaySetu
     { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices: rigid.matrices },
     setup.parts,
     setup.colors,
-    undefined,
   );
 }

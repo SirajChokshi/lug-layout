@@ -1,11 +1,4 @@
-import type {
-  BackendInfo,
-  FrameStats,
-  IViewerScene,
-  PlacementDump,
-  RebaseEvent,
-  SceneSummary,
-} from "@brr/client";
+import type { BackendInfo, FrameStats, IViewerScene, RebaseEvent, SceneSummary } from "@brr/client";
 import { FrameCoverage } from "./frame-coverage.ts";
 import { measureFrames, type FrameTimings } from "./measure-frames.ts";
 import { memoryReport, type MemoryReport } from "./memory-report.ts";
@@ -44,7 +37,6 @@ export interface ViewerResult {
   readonly drawCalls: number;
   readonly drawnTriangles: number;
   readonly userAgent: string;
-  readonly worldPlacements: PlacementDump | null;
   readonly rebases: ReadonlyArray<RebaseEvent>;
 }
 
@@ -52,7 +44,6 @@ export async function runViewer(
   scene: IViewerScene,
   canvas: HTMLCanvasElement,
   params: ViewerParams,
-  placements: (() => PlacementDump) | null,
   onReport: (report: ViewerReport) => void,
   onResult: (result: ViewerResult) => void,
   onError: (error: unknown) => void,
@@ -128,7 +119,6 @@ export async function runViewer(
       drawCalls: timings.medianDrawCalls,
       drawnTriangles: timings.medianDrawnTriangles,
       userAgent: navigator.userAgent,
-      worldPlacements: placements ? placements() : null,
       rebases: scene.backend.rebaseLog(),
     });
     return;

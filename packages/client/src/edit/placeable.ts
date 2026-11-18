@@ -426,7 +426,7 @@ export function modelPlaceable(
   const partBoxes = instanceBoxes(local, parts);
   const isModule = role === "mils-module";
   const id = isModule ? `generated:${name}` : `omr:${name}`;
-  const studs = withStuds(local, parts, colors, undefined, model.studCover).studs;
+  const studs = withStuds(local, parts, colors, model.studCover).studs;
   const module = isModule ? moduleSurface(local, partBoxes, model.ldrawColor, parts, name) : null;
   if (module) requireOnlyTrackPastModuleEdges(local, partBoxes, parts, module, name);
   const restPlates = (cells.restY - restingOn) / PLATE_LDU;
@@ -481,7 +481,7 @@ export function partPlaceable(
   const box = shiftedBox(part.boundsMin, part.boundsMax, shift);
   const partBoxes = instanceBoxes(local, parts);
   const isRoad = part.role === "road";
-  const studs = withStuds(local, parts, colors, undefined).studs;
+  const studs = withStuds(local, parts, colors).studs;
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,

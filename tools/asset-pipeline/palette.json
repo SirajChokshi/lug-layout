@@ -899,46 +899,6 @@
         "ldraw": 72,
         "source": "32087 element 4493794 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
       }
-    },
-    {
-      "id": "3001",
-      "role": "wall"
-    },
-    {
-      "id": "3003",
-      "role": "wall"
-    },
-    {
-      "id": "3004",
-      "role": "wall"
-    },
-    {
-      "id": "3009",
-      "role": "wall"
-    },
-    {
-      "id": "3010",
-      "role": "wall"
-    },
-    {
-      "id": "3020",
-      "role": "roof"
-    },
-    {
-      "id": "3022",
-      "role": "roof"
-    },
-    {
-      "id": "3024",
-      "role": "detail"
-    },
-    {
-      "id": "3062b",
-      "role": "detail"
-    },
-    {
-      "id": "3068b",
-      "role": "detail"
     }
   ],
   "omrSource": {

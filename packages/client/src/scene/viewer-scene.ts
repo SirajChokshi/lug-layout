@@ -5,7 +5,6 @@ import {
   type ModelFarMesh,
   type PartAsset,
   type PartBundle,
-  type PartFilter,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
 import type { BundleLod, ModelSection } from "@brr/schema/bundle";
@@ -16,13 +15,6 @@ import {
   type LdrawColor,
   type PartPalette,
 } from "@brr/render";
-
-const CATALOG_ROLES: ReadonlySet<string> = new Set(["ground", "road"]);
-
-const hasSceneColor: PartFilter = (part) =>
-  !CATALOG_ROLES.has(part.role) || part.displayColor !== undefined;
-
-export const PALETTE_PARTS: PartFilter = (part) => part.role !== "model" && hasSceneColor(part);
 
 export interface SceneSummary {
   readonly bundleVersion: string;
@@ -173,7 +165,7 @@ function partPalette(
   };
 }
 
-export interface SummarySource {
+interface SummarySource {
   readonly bundleVersion: string;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
@@ -265,7 +257,7 @@ export function showChunks(
   );
 }
 
-export function summarizeChunks(
+function summarizeChunks(
   source: SummarySource,
   chunks: ReadonlyArray<KeyedChunk>,
   model: ModelCredit | null,

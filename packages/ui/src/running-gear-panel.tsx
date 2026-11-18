@@ -6,7 +6,7 @@ import {
   type IRunningGear,
   type RunningGearSource,
 } from "@brr/client";
-import { useState, useSyncExternalStore, type ReactNode } from "react";
+import { memo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 const GROUP_FILLS = ["#f2a541", "#4a90d9", "#5cb85c", "#b06ab3"];
 const BODY_FILL = "#c9ced6";
@@ -247,9 +247,7 @@ function Editor({
           ["Effective", specText(view.spec)],
         ]}
       />
-      <p className="gear-hint">
-        Click a part in the plan view to move it between the body and the bogies.
-      </p>
+      <p>Click a part in the plan view to move it between the body and the bogies.</p>
       <PlanView gear={gear} view={view} />
       <SideView view={view} />
       {view.pivots.map((pivot, b) => (
@@ -286,13 +284,11 @@ function Editor({
         </div>
       ))}
       {obsolete.length > 0 && (
-        <p className="gear-note">
-          The coupling magnets come from parts LDraw marks obsolete: {obsolete.join(", ")}.
-        </p>
+        <p>The coupling magnets come from parts LDraw marks obsolete: {obsolete.join(", ")}.</p>
       )}
       {view.savedOverrideRefused && (
         <p className="error">
-          The saved override for this vehicle cannot run, so the run uses the detected gear instead.
+          The saved override for this vehicle cannot run, so play uses the detected gear instead.
         </p>
       )}
       {view.issues.map((issue) => (
@@ -319,14 +315,8 @@ function Editor({
         >
           Reset this vehicle to detected
         </button>
-        <button
-          type="button"
-          disabled={snapshot.dirty || snapshot.busy}
-          onClick={() => window.location.reload()}
-        >
-          Apply and restart run
-        </button>
       </div>
+      <p>A saved override takes effect the next time play starts.</p>
     </>
   );
 }
@@ -337,7 +327,11 @@ const SOURCE_LABELS: Readonly<Record<RunningGearSource, string>> = {
   "override refused": " (override refused, running detected gear)",
 };
 
-export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
+export const RunningGearPanel = memo(function RunningGearPanel({
+  gear,
+}: {
+  readonly gear: IRunningGear;
+}) {
   const snapshot = useSyncExternalStore(
     (listener) => gear.subscribe(listener),
     () => gear.snapshot(),
@@ -354,8 +348,8 @@ export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
     ? `${snapshot.selected.model}#${snapshot.selected.vehicle}`
     : "";
   return (
-    <aside className="gear-panel" aria-label="Running gear">
-      <h2>Running gear</h2>
+    <details className="gear-panel">
+      <summary>Running gear</summary>
       <select
         value={selectedKey}
         onChange={(event) => {
@@ -375,6 +369,6 @@ export function RunningGearPanel({ gear }: { readonly gear: IRunningGear }) {
       {snapshot.storeProblem && <p className="error">{snapshot.storeProblem}</p>}
       {snapshot.error && <p className="error">{snapshot.error}</p>}
       {snapshot.view && <Editor gear={gear} snapshot={snapshot} view={snapshot.view} />}
-    </aside>
+    </details>
   );
-}
+});
