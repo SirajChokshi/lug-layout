@@ -22,6 +22,7 @@ function customBrick(
     `0 Custom brick ${name} written for the custom parts test`,
     `0 Name: ${name}`,
     "0 Author: lug-layout e2e (generated at test time) [James Jessiman]",
+    "0 !LDRAW_ORG Unofficial_Part",
     ...(license === null ? [] : [`0 !LICENSE ${license}`]),
     "0 !HISTORY 2026-11-18 [lug-layout] Modified from LDraw parts/3001.dat: renamed",
     ...geometry,
@@ -62,7 +63,7 @@ async function openReport(page: Page, file: string) {
   return status;
 }
 
-test("custom parts with a CA licence header are drawn, badged and stacked on, and one without is reported, from an MPD and a Studio file", async ({
+test("Unofficial_Part custom parts with a CA licence header are drawn, badged and stacked on, and the same part without one is reported, from an MPD and a Studio file", async ({
   page,
 }) => {
   const geometry = await brickGeometry();
@@ -79,6 +80,7 @@ test("custom parts with a CA licence header are drawn, badged and stacked on, an
   const custom = mpdReport.locator('[data-kind="custom"]');
   await expect(custom).toHaveCount(1);
   await expect(custom).toContainText("mybrick.dat");
+  await expect(custom).toContainText("Unofficial_Part");
   await expect(custom.locator('[data-badge="custom"]')).toBeVisible();
   await expect(custom.locator('[data-kind="inferredConnectors"]')).toContainText("unverified");
   await expect(mpdReport.locator('.not-drawn [data-kind="customRefused"]')).toContainText(

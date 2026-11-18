@@ -127,10 +127,12 @@ async function importWith(
   fetchUrl: FetchFunction,
   fileName: string,
   text: string,
+  unofficialAllowlist: ReadonlyArray<string> = [],
 ): Promise<ImportResult> {
   const { compiler, mirror, connectors, job } = await importContext(fetchUrl);
   return new ModelImportEngine(compiler, mirror, connectors, () => 0).importText({
     ...job,
+    unofficialAllowlist,
     fileName,
     text,
   });
@@ -178,7 +180,7 @@ it("draws bundle parts and reports, without drawing, a part the library lacks an
   expect(result.partIds).toEqual(["ldraw:3001"]);
 });
 
-it("draws a CA-licensed custom part without an LDRAW_ORG line as custom, refuses Unofficial_Part custom parts with the inline difference kept, reports loose model geometry, and draws a copy whose quads only start elsewhere", async () => {
+it("draws CA-licensed custom parts from the file as custom whatever their LDRAW_ORG, keeps an inline copy's measured difference, reports loose model geometry, and draws a copy whose quads only start elsewhere", async () => {
   const result = await importWith(
     pinnedMirror,
     "critic-gap.mpd",
@@ -189,37 +191,36 @@ it("draws a CA-licensed custom part without an LDRAW_ORG line as custom, refuses
   expect(parts.map((part) => [part.reference, part.kind, part.instances])).toEqual([
     ["3001.dat", "bundle", 1],
     ["mycustom.dat", "custom", 1],
-    ["mycustom2.dat", "customRefused", 1],
-    ["9999-1 - 3001.dat", "customRefused", 1],
+    ["mycustom2.dat", "custom", 1],
+    ["9999-1 - 3001.dat", "custom", 1],
     ["9998-1 - 3001.dat", "bundle", 1],
   ]);
-  const custom = parts[1];
-  if (custom?.kind !== "custom") throw new Error("mycustom.dat is not drawn as custom");
-  expect(custom.partId).toMatch(customIdPattern("mycustom.dat"));
-  expect(custom).toMatchObject({ origin: "mpd", difference: null });
-  expect(custom.header).toMatchObject({ author: "critic", license: CC_BY_4 });
-  expect(parts[2]).toMatchObject({
-    origin: "mpd",
-    gate: "unofficial",
-    path: "mycustom2.dat",
-    difference: null,
-  });
-  expect(parts[3]).toMatchObject({
+  const custom = parts.flatMap((part) => (part.kind === "custom" ? [part] : []));
+  expect(custom.map((part) => part.partId)).toEqual([
+    expect.stringMatching(customIdPattern("mycustom.dat")),
+    expect.stringMatching(customIdPattern("mycustom2.dat")),
+    expect.stringMatching(customIdPattern("9999-1 - 3001.dat")),
+  ]);
+  expect(custom.map((part) => [part.origin, part.header.ldrawOrg, part.header.license])).toEqual([
+    ["mpd", null, CC_BY_4],
+    ["mpd", "Unofficial_Part", CC_BY_4],
+    ["inlineDiffers", "Unofficial_Part", CC_BY_4],
+  ]);
+  expect(custom[2]).toMatchObject({
     official: "3001.dat",
-    origin: "inlineDiffers",
-    gate: "unofficial",
     difference: { colorsMatch: false, inlineColors: [RED, YELLOW], officialColors: [MAIN_COLOUR] },
   });
   expect(parts[4]).toMatchObject({ official: "3001.dat", partId: "ldraw:3001" });
   expect(result.report.looseGeometry).toEqual([
     { section: "critic-gap.ldr", triangles: 0, quads: 1, occurrences: 1 },
   ]);
-  expect(result.instanceCount).toBe(3);
-  expect(result.partIds).toEqual(["ldraw:3001", custom.partId]);
-  expect(result.compiled.map((part) => part.partId)).toEqual([custom.partId]);
+  expect(result.instanceCount).toBe(5);
+  expect(result.partIds).toEqual(["ldraw:3001", ...custom.map((part) => part.partId)]);
+  expect(result.compiled.map((part) => part.partId)).toEqual(custom.map((part) => part.partId));
+  expect(result.report.bakeIssue).toBeNull();
 });
 
-it("reports an inline copy with a hole in a large face, and draws only the file's own official part", async () => {
+it("draws an inline copy with a hole in a large face as custom, keeping the measured hole", async () => {
   const result = await importWith(
     pinnedMirror,
     "critic-gap-3.mpd",
@@ -228,13 +229,13 @@ it("reports an inline copy with a hole in a large face, and draws only the file'
   const parts = result.report.parts;
 
   expect(parts.map((part) => [part.reference, part.kind, part.instances])).toEqual([
-    ["9996-1 - 3001.dat", "customRefused", 1],
+    ["9996-1 - 3001.dat", "custom", 1],
     ["3001.dat", "bundle", 1],
   ]);
-  const hole = parts[0]?.kind === "customRefused" ? parts[0].difference : null;
+  const hole = parts[0]?.kind === "custom" ? parts[0].difference : null;
   expect(hole?.colorsMatch && !hole.surfaceWithinWeld).toBe(true);
   expect(hole && hole.maxMeasuredDistanceLdu > hole.weldEpsilonLdu).toBe(true);
-  expect(result.instanceCount).toBe(1);
+  expect(result.instanceCount).toBe(2);
 });
 
 function customFile(name: string, license: string | null, body: ReadonlyArray<string>): string[] {
@@ -266,16 +267,55 @@ function modelOf(references: ReadonlyArray<string>, files: ReadonlyArray<string[
 }
 
 const TRIANGLE = "3 16 0 0 0 20 0 0 0 0 20";
+const UNOFFICIAL_PART = "0 !LDRAW_ORG Unofficial_Part";
+const LIBRARY_UNOFFICIAL = "parts/library-unofficial.dat";
+
+const mirrorWithAnUnofficialPart: FetchFunction = async (url) =>
+  url.endsWith(`/ldraw/${LIBRARY_UNOFFICIAL}`)
+    ? new Response(
+        customFile("library-unofficial.dat", CC_BY_4, [UNOFFICIAL_PART, TRIANGLE])
+          .slice(1, -1)
+          .join("\n"),
+      )
+    : pinnedMirror(url);
+
+it("keeps the unofficial allowlist for a part reached through the library, used directly or from a custom part", async () => {
+  const text = modelOf(
+    ["library-unofficial.dat", "reaches-library.dat"],
+    [
+      customFile("reaches-library.dat", CC_BY_4, [
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 library-unofficial.dat",
+      ]),
+    ],
+  );
+
+  const refused = await importWith(mirrorWithAnUnofficialPart, "custom-parts.mpd", text);
+  const allowed = await importWith(mirrorWithAnUnofficialPart, "custom-parts.mpd", text, [
+    LIBRARY_UNOFFICIAL,
+  ]);
+
+  expect(refused.report.parts).toMatchObject([
+    { reference: "library-unofficial.dat", kind: "rejected", gate: "unofficial" },
+    {
+      reference: "reaches-library.dat",
+      kind: "customRefused",
+      gate: "unofficial",
+      path: LIBRARY_UNOFFICIAL,
+    },
+  ]);
+  expect(allowed.report.parts.map((part) => part.kind)).toEqual(["compiled", "custom"]);
+});
 const OTHER_TRIANGLE = "3 16 0 0 0 40 0 0 0 0 40";
 
-it("refuses a custom part without a CA licence header, and one whose own sub-file has none, naming that sub-file", async () => {
+it("refuses a custom part without a CA licence header whatever its LDRAW_ORG, and one whose own sub-file has none, naming that sub-file", async () => {
   const result = await importWith(
     pinnedMirror,
     "custom-parts.mpd",
     modelOf(
-      ["unlicensed.dat", "licensed-top.dat"],
+      ["unlicensed.dat", "unofficial-unlicensed.dat", "licensed-top.dat"],
       [
         customFile("unlicensed.dat", null, [TRIANGLE]),
+        customFile("unofficial-unlicensed.dat", null, [UNOFFICIAL_PART, TRIANGLE]),
         customFile("licensed-top.dat", CC_BY_4, ["1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\inner.dat"]),
         customFile("s/inner.dat", null, [TRIANGLE]),
       ],
@@ -284,6 +324,12 @@ it("refuses a custom part without a CA licence header, and one whose own sub-fil
 
   expect(result.report.parts).toMatchObject([
     { reference: "unlicensed.dat", kind: "customRefused", gate: "license", path: "unlicensed.dat" },
+    {
+      reference: "unofficial-unlicensed.dat",
+      kind: "customRefused",
+      gate: "license",
+      path: "unofficial-unlicensed.dat",
+    },
     { reference: "licensed-top.dat", kind: "customRefused", gate: "license", path: "s/inner.dat" },
   ]);
   expect(result.instanceCount).toBe(0);

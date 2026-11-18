@@ -241,6 +241,7 @@ interface CustomPass {
   readonly parts: ReadonlyArray<PartResolution>;
   readonly compiled: ReadonlyMap<string, CustomCompiled>;
   readonly bakeSource: string;
+  readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly rounds: number;
 }
 
@@ -326,7 +327,7 @@ export class ModelImportEngine {
     });
     const custom = await this.compileCustom(job, library, resolved, customFiles);
     const assembled = assemble(job, read, custom.parts, outcomes, custom);
-    const baked = await this.bakeDrawn(job, library, assembled.drawn, custom.bakeSource);
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, custom);
     const loads = await Promise.all(
       assembled.result.partIds.map((partId): Promise<ConnectorLoad> | ConnectorLoad => {
         const compiled = custom.compiled.get(partId);
@@ -394,7 +395,13 @@ export class ModelImportEngine {
       if (closure !== null) candidates.push({ index, origin, closure });
     }
     if (candidates.length === 0) {
-      return { parts, compiled: new Map(), bakeSource: job.text, rounds: 0 };
+      return {
+        parts,
+        compiled: new Map(),
+        bakeSource: job.text,
+        unofficialAllowlist: job.unofficialAllowlist,
+        rounds: 0,
+      };
     }
     for (const { closure } of candidates) {
       for (const [path, text] of closure.files) {
@@ -403,10 +410,12 @@ export class ModelImportEngine {
       }
     }
     const references = candidates.map((candidate) => candidate.closure.path);
+    const usersOwnFiles = candidates.flatMap((candidate) => [...candidate.closure.files.keys()]);
+    const unofficialAllowlist = [...job.unofficialAllowlist, ...usersOwnFiles];
     const { outcomes, rounds } = await this.compileReferences(job, library, {
       references,
       infer: references,
-      unofficialAllowlist: job.unofficialAllowlist,
+      unofficialAllowlist,
     });
     const resolved = [...parts];
     const compiled = new Map<string, CustomCompiled>();
@@ -447,7 +456,13 @@ export class ModelImportEngine {
         difference: inlineDifference(part),
       };
     }
-    return { parts: resolved, compiled, bakeSource: renameReferences(job.text, renames), rounds };
+    return {
+      parts: resolved,
+      compiled,
+      bakeSource: renameReferences(job.text, renames),
+      unofficialAllowlist,
+      rounds,
+    };
   }
 
   private async compileReferences(
@@ -502,16 +517,16 @@ export class ModelImportEngine {
     job: ImportJob,
     library: ImportLibrary,
     drawn: Uint8Array,
-    source: string,
+    { bakeSource, unofficialAllowlist }: Pick<CustomPass, "bakeSource" | "unofficialAllowlist">,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) return { bake: null, issue: "nothing in the file is drawn", rounds: 0 };
     for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
       const outcome = this.compiler.bake(
         {
-          source,
+          source: bakeSource,
           drawn,
           studPrimitives: job.studPrimitives,
-          unofficialAllowlist: job.unofficialAllowlist,
+          unofficialAllowlist,
           translucentColors: job.translucentColors,
           vehicles: job.vehicles,
         },
@@ -523,7 +538,7 @@ export class ModelImportEngine {
           return { bake, issue: null, rounds };
         }
         case "failed":
-          return { bake: null, issue: outcome.message, rounds };
+          return { bake: null, issue: withoutReservedPaths(outcome.message), rounds };
         case "need":
           await this.fetchNeeded(library, new Set(outcome.paths));
           break;

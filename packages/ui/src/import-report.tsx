@@ -40,7 +40,7 @@ function refusalText(part: RefusedCustomPart): string {
     case "license":
       return `${origin}: ${part.path} carries no CA licence header (CC BY 4.0, CC BY 2.0 or CCAL 2.0), so it is reported and not drawn.`;
     case "unofficial":
-      return `${origin}: ${part.path} declares an Unofficial LDraw org, and unofficial parts are drawn only from the allowlist.`;
+      return `${origin}: it reaches ${part.path} in the LDraw library, which declares an Unofficial LDraw org, and library parts that do are drawn only from the allowlist.`;
     case "unresolved":
     case "tooDeep":
       return `${origin}: it does not compile. ${part.message}`;
@@ -164,7 +164,8 @@ function CustomParts({ parts }: { readonly parts: ReadonlyArray<CustomPart> }) {
               custom
             </span>{" "}
             <code>{part.reference}</code> ×{part.instances}: {part.header.title || part.file}, by{" "}
-            {part.header.author || "no author given"}, {part.header.license ?? "no licence"};{" "}
+            {part.header.author || "no author given"}, {part.header.license ?? "no licence"}
+            {part.header.ldrawOrg ? `, ${part.header.ldrawOrg}` : ""};{" "}
             {CUSTOM_ORIGIN_TEXT[part.origin]}.{" "}
             {part.difference ? `${differenceText(part.difference, part.official)} ` : ""}Drawn on
             this device only; the parts list shows it as custom, never as a buyable part.{" "}
