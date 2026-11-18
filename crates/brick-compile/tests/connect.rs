@@ -4,8 +4,9 @@ use std::path::{Path, PathBuf};
 
 use brick_compile::affine::Vec3;
 use brick_compile::connect::{
-    Caps, Connector, ConnectorExtractor, Gender, Issue, PrimitiveConnectors, PrimitiveTable,
-    Section, SectionShape, ShadowSnaps, Shape, Source,
+    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Issue, MatingFace,
+    PrimitiveConnectors, PrimitiveTable, Section, SectionShape, ShadowSnaps, Shape, Source,
+    Unreadable, CAP_FAR, CAP_ROOT, ROUND,
 };
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::Library;
@@ -408,5 +409,156 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
                 outer * step.1[0]
             );
         }
+    }
+}
+
+fn faces_of(connectors: &[Connector]) -> Vec<MatingFace> {
+    connectors
+        .iter()
+        .flat_map(|c| mating_faces(c).expect("a readable snap"))
+        .collect()
+}
+
+#[test]
+fn a_stud_is_attached_only_at_its_root_so_a_deep_blind_receptor_takes_it() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow");
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let plate = faces_of(&snaps.snaps("parts/3020.dat").connectors);
+    let brick = faces_of(&snaps.snaps("parts/3003.dat").connectors);
+    let stud = plate
+        .iter()
+        .find(|f| f.gender == Gender::Male)
+        .expect("3020 has studs");
+    let receptor = brick
+        .iter()
+        .find(|f| {
+            f.gender == Gender::Female
+                && f.sections
+                    == vec![FaceSection {
+                        code: ROUND,
+                        size: 6.0,
+                        length: 20.0,
+                    }]
+        })
+        .expect("3003 has 20 LDU deep round receptors");
+    assert_eq!(stud.caps, CAP_ROOT);
+    assert_eq!(
+        stud.sections,
+        vec![FaceSection {
+            code: ROUND,
+            size: 6.0,
+            length: 4.0
+        }]
+    );
+    assert_eq!((stud.axis, stud.origin[1]), ([0.0, 1.0, 0.0], 0.0));
+    assert_eq!(receptor.caps, CAP_FAR);
+    assert_eq!(
+        (receptor.axis, receptor.origin[1]),
+        ([0.0, -1.0, 0.0], -24.0)
+    );
+}
+
+#[test]
+fn caps_read_as_attached_male_ends_and_blind_female_ends() {
+    let cases: [(&str, Vec<(Vec3, Vec3, u8, Vec<f64>)>); 7] = [
+        (
+            "[gender=M] [caps=one] [secs=R 6 4]",
+            vec![([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], CAP_ROOT, vec![4.0])],
+        ),
+        (
+            "[gender=M] [caps=B] [secs=R 4.5 2   R 4 15.5]",
+            vec![(
+                [0.0, 17.5, 0.0],
+                [0.0, -1.0, 0.0],
+                CAP_ROOT,
+                vec![15.5, 2.0],
+            )],
+        ),
+        (
+            "[gender=M] [caps=two] [secs=R 4 8] [center=true]",
+            vec![(
+                [0.0, -4.0, 0.0],
+                [0.0, 1.0, 0.0],
+                CAP_ROOT | CAP_FAR,
+                vec![8.0],
+            )],
+        ),
+        (
+            "[gender=F] [caps=one] [secs=R 6 4]",
+            vec![([0.0, 0.0, 0.0], [0.0, -1.0, 0.0], CAP_FAR, vec![4.0])],
+        ),
+        (
+            "[gender=F] [caps=A] [secs=R 6 4]",
+            vec![([0.0, 4.0, 0.0], [0.0, 1.0, 0.0], CAP_FAR, vec![4.0])],
+        ),
+        (
+            "[gender=F] [caps=none] [secs=R 8 2   R 6 16   R 8 4] [center=true]",
+            vec![
+                ([0.0, -11.0, 0.0], [0.0, -1.0, 0.0], 0, vec![2.0, 16.0, 4.0]),
+                ([0.0, 11.0, 0.0], [0.0, 1.0, 0.0], 0, vec![4.0, 16.0, 2.0]),
+            ],
+        ),
+        (
+            "[radius=4] [length=8] [center=true]",
+            vec![
+                ([0.0, -4.0, 0.0], [0.0, -1.0, 0.0], 0, vec![8.0]),
+                ([0.0, 4.0, 0.0], [0.0, 1.0, 0.0], 0, vec![8.0]),
+            ],
+        ),
+    ];
+    for (descriptor, expected) in cases {
+        let kind = if descriptor.starts_with("[radius") {
+            "SNAP_CLP"
+        } else {
+            "SNAP_CYL"
+        };
+        let library = memory(&[("parts/part.dat", "0 Part\n")]);
+        let text = format!("0 !LDCAD {kind} {descriptor}\n");
+        let shadow = memory(&[("parts/part.dat", &text)]);
+        let connectors = ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/part.dat")
+            .connectors;
+        let found: Vec<(Vec3, Vec3, u8, Vec<f64>)> = faces_of(&connectors)
+            .into_iter()
+            .map(|f| {
+                (
+                    f.origin,
+                    f.axis,
+                    f.caps,
+                    f.sections.iter().map(|s| s.length).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(found, expected, "{descriptor}");
+    }
+    for (kind, descriptor, unreadable) in [
+        (
+            "SNAP_CYL",
+            "[gender=F] [caps=two] [secs=R 6 4]",
+            Unreadable::ClosedAtBothEnds,
+        ),
+        (
+            "SNAP_FGR",
+            "[genderOfs=M] [seq=4 4 4] [radius=4]",
+            Unreadable::FingerHinge,
+        ),
+        (
+            "SNAP_GEN",
+            "[gender=M] [bounding=sph 8]",
+            Unreadable::Generic,
+        ),
+    ] {
+        let library = memory(&[("parts/part.dat", "0 Part\n")]);
+        let text = format!("0 !LDCAD {kind} {descriptor}\n");
+        let shadow = memory(&[("parts/part.dat", &text)]);
+        let connectors = ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/part.dat")
+            .connectors;
+        assert_eq!(
+            mating_faces(&connectors[0]),
+            Err(unreadable),
+            "{descriptor}"
+        );
     }
 }

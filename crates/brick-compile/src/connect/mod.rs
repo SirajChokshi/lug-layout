@@ -1,3 +1,4 @@
+mod faces;
 mod meta;
 mod primitive;
 mod shadow;
@@ -7,6 +8,10 @@ use std::collections::HashMap;
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
 
+pub use faces::{
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARED_FAR_END,
+    FLARED_NEAR_END, ROUND, SQUARE,
+};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use shadow::ShadowSnaps;
