@@ -4,6 +4,7 @@ import type {
   BundleLod,
   BundleModelEntry,
   NotDrawnSection,
+  ProducedColors,
 } from "@brr/schema/bundle";
 import {
   BUNDLE_BASE_URL,
@@ -166,6 +167,8 @@ export interface CatalogItemView {
   readonly studsWide: number;
   readonly studsDeep: number;
   readonly thumbnail: string | null;
+  readonly aliases: ReadonlyArray<string>;
+  readonly elements: ReadonlyArray<string>;
 }
 
 export interface LatencySample {
@@ -713,9 +716,11 @@ function catalogItem(
   placeable: Placeable,
   colors: ReadonlyArray<BundleColor>,
   thumbnails: ReadonlyMap<string, string>,
+  produced: ProducedColors | undefined,
 ): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
+  const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
   return {
     id: placeable.id,
     label: placeable.label,
@@ -727,6 +732,9 @@ function catalogItem(
     studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
     studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
     thumbnail: thumbnails.get(placeable.id) ?? null,
+    aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
+    elements:
+      produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
   };
 }
 
@@ -735,12 +743,13 @@ function placeableSlot(
   model: string | null,
   colors: ReadonlyArray<BundleColor>,
   thumbnails: ReadonlyMap<string, string>,
+  produced: ProducedColors | undefined = undefined,
 ): CatalogSlot {
   return {
     id: placeable.id,
     group: placeable.group,
     worldColor: placeable.worldColor,
-    view: catalogItem(placeable, colors, thumbnails),
+    view: catalogItem(placeable, colors, thumbnails, produced),
     model,
     credit: placeable.credit,
   };
@@ -769,6 +778,8 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       studsWide: aabb ? studsAcross(aabb.min[0], aabb.max[0]) : 0,
       studsDeep: aabb ? studsAcross(aabb.min[2], aabb.max[2]) : 0,
       thumbnail: thumbnails.get(id) ?? null,
+      aliases: [],
+      elements: [],
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -1122,10 +1133,11 @@ export class Editor implements IEditor {
       .filter((part) => part.role === "road")
       .map((part) => shapeOf(part.id));
     const placeables: Array<Placeable | null> = [...groundParts, ...roadParts].flatMap((part) => {
-      if (part.producedColors.length === 0) {
+      const produced = part.producedColors?.colors ?? [];
+      if (produced.length === 0) {
         throw new Error(`${part.id} has no produced colour in the bundle`);
       }
-      return part.producedColors.map((code) =>
+      return produced.map(({ ldraw: code }) =>
         partPlaceable(
           part,
           palette.indexOf(part.id),
@@ -1137,7 +1149,17 @@ export class Editor implements IEditor {
       );
     });
     const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
-      placeable ? [placeableSlot(placeable, null, index.colors, thumbnails)] : [],
+      placeable
+        ? [
+            placeableSlot(
+              placeable,
+              null,
+              index.colors,
+              thumbnails,
+              shapeOf(placeable.group).producedColors,
+            ),
+          ]
+        : [],
     );
     const records = new Map(startRecords.map((record) => [record.entry.name, record]));
     const skipped: SkippedModel[] = [];
@@ -1458,6 +1480,8 @@ export class Editor implements IEditor {
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
       thumbnail: null,
+      aliases: [],
+      elements: [],
     };
   }
 
@@ -1480,6 +1504,8 @@ export class Editor implements IEditor {
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
         thumbnail: null,
+        aliases: [],
+        elements: [],
       };
     });
   }

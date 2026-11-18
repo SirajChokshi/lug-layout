@@ -328,7 +328,7 @@ export class LayoutScene implements ILayoutScene {
     const color = bundle.colors.find((c) => c.name === BASEPLATE_COLOR_NAME);
     if (!part || !color)
       throw new Error(`the bundle has no ${BASEPLATE_ID} or ${BASEPLATE_COLOR_NAME}`);
-    if (!part.producedColors.includes(color.code)) {
+    if (!part.producedColors?.colors.some((produced) => produced.ldraw === color.code)) {
       throw new Error(`${BASEPLATE_ID} was never produced in ${BASEPLATE_COLOR_NAME}`);
     }
     return partPlaceable(
