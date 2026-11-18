@@ -1,3 +1,11 @@
+import {
+  compareExactRational,
+  exactRational,
+  exactRationalToFloat64,
+  formatExactRational,
+  type ExactRational,
+  type ExactRationalText,
+} from "@brr/math";
 import type { TrackPathSegment } from "@brr/schema/bundle";
 import { onRailHead, type PlanPoint, type RailHeads } from "./rail-heads.ts";
 
@@ -5,7 +13,7 @@ const SAMPLE_STEP_LDU = 2;
 const ENDPOINT_TOLERANCE_LDU = 1e-6;
 const DEGENERATE_SEGMENT_LDU = 1e-6;
 const ANGLE_EPSILON = 1e-9;
-const MINIMUM_RAIL_COVERAGE = 0.8;
+const MINIMUM_RAIL_COVERAGE = exactRational(4n, 5n);
 
 export type PathFamily =
   | "straight"
@@ -29,8 +37,11 @@ export interface FittedPath {
   readonly family: PathFamily;
   readonly segments: ReadonlyArray<TrackPathSegment>;
   readonly lengthLdu: number;
-  readonly railCoverage: readonly [number, number];
-  readonly rejected: ReadonlyArray<{ readonly family: PathFamily; readonly railCoverage: number }>;
+  readonly railCoverage: readonly [ExactRationalText, ExactRationalText];
+  readonly rejected: ReadonlyArray<{
+    readonly family: PathFamily;
+    readonly worseRailCoverage: ExactRationalText;
+  }>;
 }
 
 function wrapAngle(angle: number): number {
@@ -149,7 +160,7 @@ function railCoverage(
   start: RoutePose,
   segments: ReadonlyArray<TrackPathSegment>,
   halfSpacing: number,
-): readonly [number, number] {
+): readonly [ExactRational, ExactRational] {
   const samples = samplePath(start, segments, SAMPLE_STEP_LDU);
   const covered = [0, 0];
   for (const sample of samples) {
@@ -161,7 +172,16 @@ function railCoverage(
       if (onRailHead(heads, point)) covered[index] = (covered[index] ?? 0) + 1;
     });
   }
-  return [(covered[0] ?? 0) / samples.length, (covered[1] ?? 0) / samples.length];
+  const sampleCount = BigInt(samples.length);
+  return [
+    exactRational(BigInt(covered[0] ?? 0), sampleCount),
+    exactRational(BigInt(covered[1] ?? 0), sampleCount),
+  ];
+}
+
+function worseRailCoverage(coverage: readonly [ExactRational, ExactRational]): ExactRational {
+  const [first, second] = coverage;
+  return compareExactRational(first, second) <= 0 ? first : second;
 }
 
 export function fitRoutePath(
@@ -198,12 +218,20 @@ export function fitRoutePath(
       candidate,
       coverage: railCoverage(heads, toPartFromLocal, local, candidate.segments, halfSpacing),
     }))
-    .toSorted((p, q) => Math.min(...q.coverage) - Math.min(...p.coverage));
+    .toSorted((p, q) =>
+      compareExactRational(worseRailCoverage(q.coverage), worseRailCoverage(p.coverage)),
+    );
   const [best, ...rest] = scored;
-  if (best === undefined || Math.min(...best.coverage) < MINIMUM_RAIL_COVERAGE) {
+  if (
+    best === undefined ||
+    compareExactRational(worseRailCoverage(best.coverage), MINIMUM_RAIL_COVERAGE) < 0
+  ) {
     throw new Error(
       `${label}: no path family keeps both rails on rail heads (${scored
-        .map((s) => `${s.candidate.family} ${Math.min(...s.coverage).toFixed(3)}`)
+        .map(
+          (s) =>
+            `${s.candidate.family} ${exactRationalToFloat64(worseRailCoverage(s.coverage)).toFixed(3)}`,
+        )
         .join(", ")})`,
     );
   }
@@ -211,10 +239,10 @@ export function fitRoutePath(
     family: best.candidate.family,
     segments: best.candidate.segments,
     lengthLdu: best.candidate.segments.reduce((sum, segment) => sum + segmentLength(segment), 0),
-    railCoverage: best.coverage,
+    railCoverage: [formatExactRational(best.coverage[0]), formatExactRational(best.coverage[1])],
     rejected: rest.map((s) => ({
       family: s.candidate.family,
-      railCoverage: Math.min(...s.coverage),
+      worseRailCoverage: formatExactRational(worseRailCoverage(s.coverage)),
     })),
   };
 }

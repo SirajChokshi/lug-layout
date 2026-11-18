@@ -235,7 +235,17 @@ fn vehicle_signatures(palette: &Value) -> Result<VehicleSignatures, String> {
     })
 }
 
-fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
+fn is_positive_decimal(text: &str) -> bool {
+    !text.starts_with('-') && text.bytes().any(|digit| (b'1'..=b'9').contains(&digit))
+}
+
+struct RailHeadText {
+    rail_part: String,
+    inner: String,
+    outer: String,
+}
+
+fn rail_head_texts(geometry: &Value) -> Result<Vec<RailHeadText>, String> {
     geometry["rails"]
         .as_array()
         .ok_or("geometry.rails must be an array")?
@@ -247,18 +257,19 @@ fn rail_head_bands(geometry: &Value) -> Result<Vec<RailHeadBand>, String> {
             let heads = rail["railHeads"]
                 .as_array()
                 .ok_or("rails[].railHeads must be an array")?;
+            let text = |head: &Value, end: &str| {
+                head[end].as_str().map(str::to_string).ok_or(format!(
+                    "rail {part}: railHeads[].{end} must be a decimal string"
+                ))
+            };
             let outward = heads
                 .iter()
-                .find(|head| head["from"].as_f64().is_some_and(|from| from > 0.0))
+                .find(|head| head["from"].as_str().is_some_and(is_positive_decimal))
                 .ok_or(format!("rail {part} has no rail head on the +z side"))?;
-            Ok(RailHeadBand {
+            Ok(RailHeadText {
                 rail_part: format!("ldraw:{}", stem(part)),
-                inner: outward["from"]
-                    .as_f64()
-                    .ok_or("railHeads[].from must be a number")?,
-                outer: outward["to"]
-                    .as_f64()
-                    .ok_or("railHeads[].to must be a number")?,
+                inner: text(outward, "from")?,
+                outer: text(outward, "to")?,
             })
         })
         .collect()
@@ -473,14 +484,18 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let signatures = vehicle_signatures(&palette)?;
-    let rails = rail_head_bands(&geometry)?;
+    let rail_texts = rail_head_texts(&geometry)?;
+    let rails = rail_texts
+        .iter()
+        .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut compiler = compiler;
     if let Some(entry) = compiler.as_object_mut() {
         entry.insert(
             "vehicles".into(),
             json!({
                 "parts": palette["vehicleParts"],
-                "railHeads": rails
+                "railHeads": rail_texts
                     .iter()
                     .map(|rail| json!({ "railPart": rail.rail_part, "inner": rail.inner, "outer": rail.outer }))
                     .collect::<Vec<_>>(),
@@ -797,5 +812,51 @@ fn main() -> ExitCode {
             eprintln!("brick-compile: {message}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::rail_head_texts;
+    use serde_json::json;
+
+    fn rail(heads: serde_json::Value) -> serde_json::Value {
+        json!({ "rails": [{ "part": "custom-rail.dat", "railHeads": heads }] })
+    }
+
+    #[test]
+    fn a_rail_is_read_from_its_head_whose_from_is_a_positive_decimal() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "46.9", "to": "53.1" }
+        ]));
+        let rails = rail_head_texts(&geometry).expect("the rail has a positive head");
+        let head = &rails[0];
+        assert_eq!(
+            (
+                head.rail_part.as_str(),
+                head.inner.as_str(),
+                head.outer.as_str()
+            ),
+            ("ldraw:custom-rail", "46.9", "53.1")
+        );
+    }
+
+    #[test]
+    fn a_head_above_zero_is_positive_however_small_its_float_would_be() {
+        let tiny = format!("0.{}1", "0".repeat(399));
+        let geometry = rail(json!([{ "from": tiny, "to": "6.2" }]));
+        let rails = rail_head_texts(&geometry).expect("a head above zero is positive");
+        assert_eq!(rails[0].inner, tiny);
+    }
+
+    #[test]
+    fn a_rail_whose_heads_start_at_zero_or_below_is_refused() {
+        let geometry = rail(json!([
+            { "from": "-53.1", "to": "-46.9" },
+            { "from": "0", "to": "6.2" },
+            { "from": "0.000", "to": "6.2" }
+        ]));
+        assert!(rail_head_texts(&geometry).is_err());
     }
 }

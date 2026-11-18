@@ -1,4 +1,12 @@
-import { pose16, ZETA16_COEFFICIENT_COUNT, ZETA16_ORDER, zeta16, type Zeta16 } from "@brr/math";
+import {
+  isCanonicalExactDecimalText,
+  isCanonicalExactRationalText,
+  pose16,
+  ZETA16_COEFFICIENT_COUNT,
+  ZETA16_ORDER,
+  zeta16,
+  type Zeta16,
+} from "@brr/math";
 import * as v from "valibot";
 
 const MATRIX_FLOATS = 12;
@@ -14,6 +22,28 @@ const StudPhase = v.pipe(Integer, v.minValue(0), v.maxValue(STUD_PHASES - 1));
 const IntegerString = v.pipe(v.string(), v.regex(/^-?\d+$/u));
 const Zeta16Coefficients = v.pipe(v.array(IntegerString), v.length(ZETA16_COEFFICIENT_COUNT));
 const Matrix = v.pipe(v.array(Finite), v.length(MATRIX_FLOATS));
+
+export const ExactDecimalText = v.pipe(
+  v.string(),
+  v.check(
+    (text) => isCanonicalExactDecimalText(text),
+    "must be an exact decimal written canonically",
+  ),
+  v.description(
+    "an exact decimal in LDU, written canonically: an optional minus, the integer digits, and a fractional part with no trailing zeros; read with @brr/math parseExactDecimal",
+  ),
+);
+export type ExactDecimalText = v.InferOutput<typeof ExactDecimalText>;
+
+export const ExactRationalText = v.pipe(
+  v.unknown(),
+  v.check((text) => isCanonicalExactRationalText(text), "must be a reduced exact rational"),
+  v.object({ numerator: v.string(), denominator: v.string() }),
+  v.description(
+    "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseExactRational",
+  ),
+);
+export type ExactRationalText = v.InferOutput<typeof ExactRationalText>;
 
 export function encodeZeta16(value: Zeta16): string[] {
   return value.map((coefficient) => coefficient.toString());
@@ -388,7 +418,9 @@ export const CompilerVehicles = v.object({
     wheels: v.array(v.string()),
     couplers: v.array(v.string()),
   }),
-  railHeads: v.array(v.object({ railPart: v.string(), inner: Finite, outer: Finite })),
+  railHeads: v.array(
+    v.object({ railPart: v.string(), inner: ExactDecimalText, outer: ExactDecimalText }),
+  ),
 });
 export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
 

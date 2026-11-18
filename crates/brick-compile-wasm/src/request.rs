@@ -102,8 +102,8 @@ struct VehicleParts {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RailHead {
     rail_part: String,
-    inner: f64,
-    outer: f64,
+    inner: String,
+    outer: String,
 }
 
 impl VehicleInputs {
@@ -117,14 +117,10 @@ impl VehicleInputs {
         }
     }
 
-    pub fn rails(&self) -> Vec<RailHeadBand> {
+    pub fn rails(&self) -> Result<Vec<RailHeadBand>, String> {
         self.rail_heads
             .iter()
-            .map(|rail| RailHeadBand {
-                rail_part: rail.rail_part.clone(),
-                inner: rail.inner,
-                outer: rail.outer,
-            })
+            .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
             .collect()
     }
 }
