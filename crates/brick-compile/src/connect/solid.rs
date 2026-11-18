@@ -73,6 +73,20 @@ impl RoundSurface {
         }
     }
 
+    fn nearest_from(&self, center: [f64; 2]) -> f64 {
+        let apart = (self.center[0] - center[0]).hypot(self.center[1] - center[1]);
+        match self.shape {
+            RoundShape::Wall { radius, .. } => (apart - radius).abs(),
+            RoundShape::Annulus { inner, outer, .. } => {
+                if apart <= IDENTIFY_LDU {
+                    inner
+                } else {
+                    (inner - apart).max(apart - outer).max(0.0)
+                }
+            }
+        }
+    }
+
     fn radius_of(&self, p: Vec3) -> f64 {
         let (i, j) = plan_axes(self.axis);
         (p[i] - self.center[0]).hypot(p[j] - self.center[1])
@@ -159,6 +173,7 @@ pub struct Solid {
     columns: [HashMap<(i64, i64), Vec<u32>>; 3],
     surfaces: Vec<RoundSurface>,
     axes: HashMap<(usize, i64, i64), Vec<usize>>,
+    walls: [HashMap<(i64, i64), Vec<usize>>; 3],
 }
 
 fn axis_key(value: f64) -> i64 {
@@ -433,6 +448,7 @@ impl Solid {
             columns,
             surfaces: Vec::new(),
             axes: HashMap::new(),
+            walls: Default::default(),
         };
         for (index, surface) in surfaces.iter().enumerate() {
             let probe = axis_probe(surface.axis, surface.center, 0.0, 1.0);
@@ -447,6 +463,19 @@ impl Solid {
             }
         }
         for (index, surface) in surfaces.iter().enumerate() {
+            if let RoundShape::Wall { radius, .. } = surface.shape {
+                if surface.full {
+                    for x in cell(surface.center[0] - radius)..=cell(surface.center[0] + radius) {
+                        for y in cell(surface.center[1] - radius)..=cell(surface.center[1] + radius)
+                        {
+                            solid.walls[surface.axis]
+                                .entry((x, y))
+                                .or_default()
+                                .push(index);
+                        }
+                    }
+                }
+            }
             solid
                 .axes
                 .entry((
@@ -509,6 +538,21 @@ impl Solid {
         out
     }
 
+    fn exact(&self, probe: &Probe, reach: f64) -> Vec<usize> {
+        let center = probe.center();
+        let mut out = self.coaxial(probe);
+        for x in cell(center[0] - reach)..=cell(center[0] + reach) {
+            for y in cell(center[1] - reach)..=cell(center[1] + reach) {
+                if let Some(found) = self.walls[probe.axis].get(&(x, y)) {
+                    out.extend_from_slice(found);
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
     fn owned_by(&self, facet: usize, surfaces: &[usize]) -> bool {
         self.facets[facet]
             .owner
@@ -516,7 +560,7 @@ impl Solid {
     }
 
     pub fn floor(&self, probe: &Probe, inside: f64) -> Floor {
-        let coaxial = self.coaxial(probe);
+        let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
         let mut depth = f64::INFINITY;
         let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
         for index in self.near(probe, inside + IDENTIFY_LDU) {
@@ -539,7 +583,7 @@ impl Solid {
         for &index in &coaxial {
             let surface = &self.surfaces[index];
             let (low, high) = surface.depths(probe);
-            if surface.nearest() >= inside || high < -IDENTIFY_LDU {
+            if surface.nearest_from(probe.center()) >= inside || high < -IDENTIFY_LDU {
                 continue;
             }
             let d = low.max(-IDENTIFY_LDU);
@@ -652,7 +696,7 @@ impl Solid {
     }
 
     pub fn nearest(&self, probe: &Probe, range: (f64, f64), reach: f64) -> f64 {
-        let coaxial = self.coaxial(probe);
+        let coaxial = self.exact(probe, reach);
         let polygons = self
             .near(probe, reach)
             .into_iter()
@@ -673,7 +717,7 @@ impl Solid {
                 let (low, high) = surface.depths(probe);
                 high >= range.0 && low <= range.1
             })
-            .map(RoundSurface::nearest);
+            .map(|surface| surface.nearest_from(probe.center()));
         polygons.chain(analytic).fold(f64::INFINITY, f64::min)
     }
 

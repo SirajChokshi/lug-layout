@@ -227,17 +227,17 @@ fn agrees(feature: Feature, at: &Affine, connectors: &[Connector]) -> bool {
     })
 }
 
-fn tube_receptor(at: &Affine, faces: &[MatingFace]) -> Option<Source> {
+fn on_tube_axis(at: &Affine, face: &MatingFace) -> bool {
     let origin = y_up_point(translation(at));
-    let out = unit(y_up_point(column(at, 1)));
-    faces
-        .iter()
-        .find(|f| {
-            f.gender == Gender::Female
-                && norm(sub(f.origin, origin)) <= SAME_LDU
-                && dot(f.axis, out) >= 1.0 - PARALLEL
-        })
-        .map(|f| f.source)
+    let along = unit(y_up_point(column(at, 1)));
+    let v = sub(face.origin, origin);
+    face.gender == Gender::Female
+        && dot(face.axis, along).abs() >= 1.0 - PARALLEL
+        && norm(sub(v, along.map(|c| c * dot(v, along)))) <= SAME_LDU
+}
+
+fn tube_receptor(at: &Affine, faces: &[MatingFace]) -> Option<Source> {
+    faces.iter().find(|f| on_tube_axis(at, f)).map(|f| f.source)
 }
 
 fn sections_key(connector: &Connector) -> String {
@@ -452,6 +452,7 @@ struct Oracle {
     curated_by_family: BTreeMap<String, [usize; 2]>,
     inferred_by_family: BTreeMap<String, [usize; 2]>,
     agreement: BTreeMap<&'static str, usize>,
+    unmatched: BTreeMap<&'static str, usize>,
     false_positive_parts: BTreeMap<String, usize>,
 }
 
@@ -790,6 +791,13 @@ fn run() -> Result<(), String> {
         if extraction.connectors.is_empty() && cell.examples_without.len() < EXAMPLES {
             cell.examples_without.push(part.clone());
         }
+        let mut found = Vec::new();
+        features(&library, &path, &Affine::IDENTITY, 0, &mut found);
+        let tubes_here: Vec<Affine> = found
+            .iter()
+            .filter(|(feature, _, _)| *feature == Feature::Tube)
+            .map(|(_, _, at)| *at)
+            .collect();
         if extraction.curated {
             let curated_faces = faces_of(&extraction.connectors, Some(Source::Shadow));
             let alone_faces = faces_of(&alone, None);
@@ -815,7 +823,18 @@ fn run() -> Result<(), String> {
                             .or_default() += 1;
                     }
                     None => {
-                        *oracle.false_positive_parts.entry(part.clone()).or_default() += 1;
+                        let at_tube = tubes_here.iter().any(|at| on_tube_axis(at, face));
+                        let curator_covers_gender =
+                            curated_faces.iter().any(|f| f.gender == face.gender);
+                        let kind = match (at_tube, curator_covers_gender) {
+                            (true, _) => "tube interior (tier 1's tube snap is commented out)",
+                            (false, false) => "gap fill: tier 1 has no face of this gender",
+                            (false, true) => "unmatched where tier 1 covers this gender",
+                        };
+                        *oracle.unmatched.entry(kind).or_default() += 1;
+                        if !at_tube && curator_covers_gender {
+                            *oracle.false_positive_parts.entry(part.clone()).or_default() += 1;
+                        }
                     }
                 }
             }
@@ -863,8 +882,6 @@ fn run() -> Result<(), String> {
                 "tier4Issues": alone_issues.iter().map(|i| format!("{i:?}")).collect::<Vec<_>>(),
             }));
         }
-        let mut found = Vec::new();
-        features(&library, &path, &Affine::IDENTITY, 0, &mut found);
         for (feature, primitive, at) in found {
             if feature == Feature::Tube {
                 let verdict = match (tube_receptor(&at, &all_faces), extraction.curated) {
@@ -953,6 +970,13 @@ fn run() -> Result<(), String> {
     let mut false_positive_parts: Vec<(String, usize)> =
         oracle.false_positive_parts.clone().into_iter().collect();
     false_positive_parts.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    let disagreeing = oracle
+        .unmatched
+        .get("unmatched where tier 1 covers this gender")
+        .copied()
+        .unwrap_or(0);
+    let strict_precision =
+        oracle.inferred_matching as f64 / (oracle.inferred_matching + disagreeing).max(1) as f64;
     let tier4 = json!({
         "coverageByCategory": coverage.iter().map(|(k, c)| json!({
             "category": k,
@@ -972,10 +996,12 @@ fn run() -> Result<(), String> {
             "inferredFaces": oracle.inferred,
             "inferredFacesAtATier1Face": oracle.inferred_matching,
             "precision": oracle.inferred_matching as f64 / oracle.inferred.max(1) as f64,
+            "unmatchedInferredFaces": oracle.unmatched.iter().map(|(k, v)| json!({ "kind": k, "count": v })).collect::<Vec<_>>(),
+            "precisionWhereTier1CoversTheGender": strict_precision,
             "inferredByFamily": oracle.inferred_by_family.iter().map(|(k, v)| json!({ "family": k, "inferred": v[0], "atATier1Face": v[1] })).collect::<Vec<_>>(),
             "tier1ByFamily": oracle.curated_by_family.iter().map(|(k, v)| json!({ "family": k, "tier1": v[0], "alsoInferred": v[1], "recall": v[1] as f64 / v[0].max(1) as f64 })).collect::<Vec<_>>(),
             "sectionsAtMatchedFaces": oracle.agreement.iter().map(|(k, v)| json!({ "kind": k, "count": v })).collect::<Vec<_>>(),
-            "partsWithMostUnmatchedInferredFaces": false_positive_parts.iter().take(40).map(|(p, n)| json!({ "part": p, "unmatched": n })).collect::<Vec<_>>(),
+            "partsWithMostUnmatchedInferredFacesWhereTier1CoversTheGender": false_positive_parts.iter().take(40).map(|(p, n)| json!({ "part": p, "unmatched": n })).collect::<Vec<_>>(),
         },
         "tubeInteriors": table(tubes),
         "tubeInteriorExamplesWithoutReceptor": tube_examples,
