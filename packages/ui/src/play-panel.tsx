@@ -38,15 +38,12 @@ interface PlayPanelProps {
 
 export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
-  const trains = editor.playSetup()?.models;
-  useEffect(() => {
-    play.offer(trains ?? []);
-  }, [play, trains]);
   useEffect(() => {
     followWith(camera, play, true);
     return () => play.follow(null);
   }, [camera, play]);
   const running = snapshot.status === "running";
+  const trains = running ? undefined : editor.playSetup()?.models;
   const busy = snapshot.status === "loading";
   const derailed = snapshot.derailSpeedLduPerS > 0;
   const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;

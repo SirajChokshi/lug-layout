@@ -396,8 +396,7 @@ it("offers exactly the placed models with running gear as trains under their pal
   const openPlay = async () => {
     startPlay(editor, play);
     await vi.waitFor(() => expect(play.snapshot().status).toBe("error"));
-    const { trainModel, error } = play.snapshot();
-    return { trainModel, error };
+    return play.snapshot().error;
   };
   const noTrack = expect.stringContaining("Lay some track first");
 
@@ -427,15 +426,12 @@ it("offers exactly the placed models with running gear as trains under their pal
     playAfterDelete,
     deleteUndone,
   }).toEqual({
-    nothingPlaced: {
-      trains: [],
-      play: { trainModel: null, error: "No train is placed on the layout." },
-    },
+    nothingPlaced: { trains: [], play: "No train is placed on the layout." },
     setPlaced: [],
     myOwnTrainPlaced: ["10205-1"],
     allPlaced: [locomotiveLabel, "10205-1"],
     locomotiveDeleted: ["10205-1"],
-    playAfterDelete: { trainModel: "10205-1", error: noTrack },
+    playAfterDelete: noTrack,
     deleteUndone: [locomotiveLabel, "10205-1"],
   });
 }, 120_000);
