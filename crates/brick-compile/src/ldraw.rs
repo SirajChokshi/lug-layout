@@ -80,11 +80,12 @@ fn parse_numbers<const N: usize>(tokens: &[&str]) -> Option<[f64; N]> {
 }
 
 fn exact_numbers<const N: usize>(tokens: &[&str]) -> Option<[Decimal; N]> {
-    let mut out = [Decimal::parse("0")?; N];
-    for (slot, token) in out.iter_mut().zip(tokens.get(..N)?) {
-        *slot = Decimal::parse(token)?;
-    }
-    Some(out)
+    let tokens = tokens.get(..N)?;
+    let parsed: Vec<Decimal> = tokens
+        .iter()
+        .map(|t| Decimal::parse(t))
+        .collect::<Option<_>>()?;
+    parsed.try_into().ok()
 }
 
 fn exact_line(kind: &str, rest: &[&str]) -> ExactNumbers {
@@ -92,10 +93,20 @@ fn exact_line(kind: &str, rest: &[&str]) -> ExactNumbers {
     let found = match kind {
         "1" => exact_numbers::<SUBFILE_NUMBER_COUNT>(numbers)
             .map(|n| ExactNumbers::Matrix(Box::new(n))),
-        "3" => exact_numbers::<9>(numbers)
-            .map(|n| ExactNumbers::Points(n.chunks(3).map(|p| [p[0], p[1], p[2]]).collect())),
-        "4" => exact_numbers::<12>(numbers)
-            .map(|n| ExactNumbers::Points(n.chunks(3).map(|p| [p[0], p[1], p[2]]).collect())),
+        "3" => exact_numbers::<9>(numbers).map(|n| {
+            ExactNumbers::Points(
+                n.chunks(3)
+                    .map(|p| [p[0].clone(), p[1].clone(), p[2].clone()])
+                    .collect(),
+            )
+        }),
+        "4" => exact_numbers::<12>(numbers).map(|n| {
+            ExactNumbers::Points(
+                n.chunks(3)
+                    .map(|p| [p[0].clone(), p[1].clone(), p[2].clone()])
+                    .collect(),
+            )
+        }),
         _ => None,
     };
     found.unwrap_or(ExactNumbers::Unavailable)

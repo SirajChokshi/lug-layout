@@ -66,7 +66,7 @@ pub struct ExactTriangle {
 
 impl ExactTriangle {
     pub fn points(&self) -> [ExactVec3; 3] {
-        self.points.map(|point| self.frame.apply(&point))
+        std::array::from_fn(|k| self.frame.apply(&self.points[k]))
     }
 }
 
@@ -416,7 +416,7 @@ fn exact_points(exact: &ExactNumbers, corners: [usize; 3]) -> Option<[[Decimal; 
     let ExactNumbers::Points(points) = exact else {
         return None;
     };
-    let [a, b, c] = corners.map(|k| points.get(k).copied());
+    let [a, b, c] = corners.map(|k| points.get(k).cloned());
     Some([a?, b?, c?])
 }
 
@@ -451,7 +451,8 @@ fn emit(
         Exactness::Matrix(matrix) => out.exact.push(local.map(|local| ExactTriangle {
             frame: Rc::clone(matrix),
             points: if clockwise {
-                [local[0], local[2], local[1]]
+                let [a, b, c] = local;
+                [a, c, b]
             } else {
                 local
             },

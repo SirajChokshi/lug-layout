@@ -2,12 +2,14 @@ use std::cell::OnceCell;
 use std::collections::HashMap;
 
 use crate::affine::Vec3;
-use crate::exact::{
-    approximate_span, approximately_covers, clip_between, contains as arc_contains,
-    covers_circle as covers_exactly, ray_crosses, span, touches_origin, Approximate,
-    ApproximateArc, Arc, Bearing, Direction, Exact, ExactVec3, Homogeneous,
+use crate::circle::{
+    approximate_span, approximately_covers, contains as arc_contains,
+    covers_circle as covers_exactly, span, Approximate, ApproximateSpan, ArcSpan, Bearing,
+    Direction,
 };
+use crate::exact::{Exact, ExactVec3};
 use crate::flatten::{ExactTriangle, Triangle};
+use crate::homogeneous::{clip_between, ray_crosses, touches_origin, Homogeneous};
 use crate::lattice::STUD_LDU;
 use crate::trig::planar_length;
 
@@ -63,7 +65,7 @@ pub struct RoundSurface {
     pub center: [f64; 2],
     pub shape: RoundShape,
     pub full: bool,
-    pub arcs: Option<Vec<Arc>>,
+    pub arcs: Option<Vec<ArcSpan>>,
     pub facing: Option<f64>,
     pub piece: u16,
 }
@@ -806,7 +808,12 @@ impl Solid {
         (!clipped.is_empty()).then(|| clipped.iter().map(|p| p.relative(axes, center)).collect())
     }
 
-    fn polygon_arc(&self, slab: &Slab, index: usize, directions: Vec<Direction>) -> Option<Arc> {
+    fn polygon_arc(
+        &self,
+        slab: &Slab,
+        index: usize,
+        directions: Vec<Direction>,
+    ) -> Option<ArcSpan> {
         let weights = slab.clipped[index].get()?;
         span(
             directions
@@ -978,7 +985,7 @@ impl Solid {
         probe: &Probe,
         coaxial: &[usize],
         ignores: &impl Fn(&RoundSurface) -> bool,
-    ) -> Option<Vec<Arc>> {
+    ) -> Option<Vec<ArcSpan>> {
         let mut arcs = Vec::new();
         for &index in coaxial {
             let surface = &self.surfaces[index];
@@ -1017,7 +1024,7 @@ impl Solid {
         &self,
         around: &Around,
         coaxial: &[usize],
-        arcs: &[Arc],
+        arcs: &[ArcSpan],
         ignores: &impl Fn(&RoundSurface) -> bool,
     ) -> bool {
         let Around { slab, center, .. } = *around;
@@ -1108,11 +1115,11 @@ impl Solid {
         around: &Around,
         probe: &Probe,
         coaxial: &[usize],
-        arcs: &[Arc],
+        arcs: &[ArcSpan],
         ignores: &impl Fn(&RoundSurface) -> bool,
     ) -> Option<bool> {
         let slab = around.slab;
-        let mut approximate: Vec<ApproximateArc> = arcs
+        let mut approximate: Vec<ApproximateSpan> = arcs
             .iter()
             .map(|(low, high)| {
                 (

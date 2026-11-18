@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use brick_compile::exact::{covers_circle, Bearing, Decimal, Direction, Exact};
+use brick_compile::circle::{covers_circle, Bearing, Direction};
+use brick_compile::exact::{Decimal, Exact};
 use serde_json::Value;
 
 fn exact(text: &str) -> Exact {
@@ -29,10 +30,8 @@ fn text<'v>(case: &'v Value, field: &str) -> &'v str {
 fn decimals_parse_compare_and_compute_as_the_shared_vectors_say() {
     let vectors = vectors();
     for case in cases(&vectors, "parse") {
-        assert_eq!(
-            exact(text(case, "text")).canonical(),
-            text(case, "canonical")
-        );
+        let parsed = Decimal::parse(text(case, "text")).map(|d| d.exact().canonical());
+        assert_eq!(parsed.as_deref(), case["canonical"].as_str(), "{case}");
     }
     for case in cases(&vectors, "compare") {
         let expected = case["order"].as_i64().expect("an order").cmp(&0);

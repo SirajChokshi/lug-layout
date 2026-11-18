@@ -5,9 +5,8 @@ use std::rc::Rc;
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::exact::{
-    covers_circle as covers_exactly, span, Arc, Bearing, Decimal, Direction, Exact, ExactAffine,
-};
+use crate::circle::{covers_circle as covers_exactly, span, ArcSpan, Bearing, Direction};
+use crate::exact::{Decimal, Exact, ExactAffine};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
 use crate::ldraw::{self, ExactNumbers, Line, Winding};
 use crate::pieces::{PieceMap, PieceNumbering, NO_PIECE};
@@ -235,7 +234,7 @@ enum UnitShape {
 #[derive(Debug)]
 struct UnitRound {
     shape: UnitShape,
-    arcs: Option<Vec<Arc>>,
+    arcs: Option<Vec<ArcSpan>>,
     facing: Option<f64>,
 }
 
@@ -265,7 +264,7 @@ struct Run {
 struct Band {
     from: f64,
     to: f64,
-    arcs: Option<Vec<Arc>>,
+    arcs: Option<Vec<ArcSpan>>,
     center: [f64; 2],
     exact_center: Option<Direction>,
     radius: f64,
@@ -518,7 +517,7 @@ fn unit_round(source: &str) -> Option<UnitRound> {
     })
 }
 
-fn arc_length(arcs: &[Arc]) -> f64 {
+fn arc_length(arcs: &[ArcSpan]) -> f64 {
     use std::f64::consts::TAU;
     arcs.iter()
         .map(|(low, high)| (low.angle(), high.angle()))
@@ -875,37 +874,36 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     });
             let (i, j) = plan_axes(axis);
             let center = [t[i], t[j]];
-            let arcs: Option<Vec<Arc>> =
-                round
-                    .exact
-                    .as_ref()
-                    .zip(round.unit.arcs.as_ref())
-                    .map(|(matrix, unit_arcs)| {
-                        let (c0, c2) = (matrix.column(0), matrix.column(2));
-                        let map = |end: &Bearing| -> Bearing {
-                            let Bearing::Raw(d) = end else {
-                                return end.clone();
-                            };
-                            Bearing::identify(
-                                [
-                                    c0[i].mul(&d[0]).add(&c2[i].mul(&d[1])),
-                                    c0[j].mul(&d[0]).add(&c2[j].mul(&d[1])),
-                                ],
-                                1.0,
-                            )
+            let arcs: Option<Vec<ArcSpan>> = round
+                .exact
+                .as_ref()
+                .zip(round.unit.arcs.as_ref())
+                .map(|(matrix, unit_arcs)| {
+                    let (c0, c2) = (matrix.column(0), matrix.column(2));
+                    let map = |end: &Bearing| -> Bearing {
+                        let Bearing::Raw(d) = end else {
+                            return end.clone();
                         };
-                        let turning = c0[i].mul(&c2[j]).sub(&c0[j].mul(&c2[i])).sign();
-                        unit_arcs
-                            .iter()
-                            .map(|(low, high)| {
-                                if turning == Ordering::Greater {
-                                    (map(low), map(high))
-                                } else {
-                                    (map(high), map(low))
-                                }
-                            })
-                            .collect()
-                    });
+                        Bearing::identify(
+                            [
+                                c0[i].mul(&d[0]).add(&c2[i].mul(&d[1])),
+                                c0[j].mul(&d[0]).add(&c2[j].mul(&d[1])),
+                            ],
+                            1.0,
+                        )
+                    };
+                    let turning = c0[i].mul(&c2[j]).sub(&c0[j].mul(&c2[i])).sign();
+                    unit_arcs
+                        .iter()
+                        .map(|(low, high)| {
+                            if turning == Ordering::Greater {
+                                (map(low), map(high))
+                            } else {
+                                (map(high), map(low))
+                            }
+                        })
+                        .collect()
+                });
             let exact_center: Option<Direction> = round.exact.as_ref().map(|matrix| {
                 let t = matrix.translation();
                 [t[i].clone(), t[j].clone()]
