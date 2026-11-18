@@ -36,6 +36,7 @@ pub struct UnreadEnds {
 pub struct BandPlace {
     pub axis: usize,
     pub at: Option<[i32; 2]>,
+    pub radii: Option<[Option<i32>; 2]>,
     pub ends: UnreadEnds,
 }
 
@@ -141,6 +142,9 @@ impl BandPlace {
         if let Some(at) = self.at {
             out["at"] = json!(at);
         }
+        if let Some(radii) = self.radii {
+            out["radii"] = json!(radii);
+        }
         out
     }
 }
@@ -236,7 +240,7 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
             }
         }
     }
-    for reading in mesh.unexplained_revolutions(roundness, &explained) {
+    for reading in mesh.vertex_revolutions(roundness, &explained) {
         match reading {
             BandReading::NotRound | BandReading::Inward => {}
             BandReading::Unread(band) => unread.push(band),
@@ -319,21 +323,26 @@ fn offset(p: [f64; 2], centre: [f64; 2]) -> [f64; 2] {
     [p[0] - centre[0], p[1] - centre[1]]
 }
 
-fn angle_key(v: [f64; 2]) -> f64 {
+const ON_THE_CENTRE: f64 = -1.0;
+const QUARTER_TURN: f64 = 1.0;
+
+fn quarter_turns_from_x(v: [f64; 2]) -> f64 {
     let spread = v[0].abs() + v[1].abs();
     if spread == 0.0 {
-        return -1.0;
+        return ON_THE_CENTRE;
     }
     let toward_x = v[0] / spread;
     if v[1] >= 0.0 {
-        1.0 - toward_x
+        QUARTER_TURN - toward_x
     } else {
-        3.0 + toward_x
+        3.0 * QUARTER_TURN + toward_x
     }
 }
 
 fn by_angle(a: [f64; 2], b: [f64; 2]) -> Ordering {
-    angle_key(a).total_cmp(&angle_key(b))
+    quarter_turns_from_x(a)
+        .total_cmp(&quarter_turns_from_x(b))
+        .then((a[0] * a[0] + a[1] * a[1]).total_cmp(&(b[0] * b[0] + b[1] * b[1])))
 }
 
 fn turn_cosine(a: [f64; 2], b: [f64; 2]) -> f64 {
@@ -567,7 +576,7 @@ impl<'a> Mesh<'a> {
         rings
     }
 
-    fn facing(&self, triangles: &[usize], radial: impl Fn(Vec3, Vec3) -> f64) -> Orientation {
+    fn orientation(&self, triangles: &[usize], radial: impl Fn(Vec3, Vec3) -> f64) -> Orientation {
         let mut outward = false;
         let mut inward = false;
         for &t in triangles {
@@ -589,11 +598,7 @@ impl<'a> Mesh<'a> {
         }
     }
 
-    fn unexplained_revolutions(
-        &self,
-        roundness: Roundness,
-        explained: &[bool],
-    ) -> Vec<BandReading> {
+    fn vertex_revolutions(&self, roundness: Roundness, explained: &[bool]) -> Vec<BandReading> {
         let member: Vec<bool> = self
             .triangles
             .iter()
@@ -608,12 +613,12 @@ impl<'a> Mesh<'a> {
         })
         .into_iter()
         .filter(|component| component.len() >= roundness.coarse_facets)
-        .filter_map(|component| self.unexplained_revolution(&component, roundness))
+        .filter_map(|component| self.vertex_revolution(&component, roundness))
         .flatten()
         .collect()
     }
 
-    fn unexplained_revolution(
+    fn vertex_revolution(
         &self,
         component: &[usize],
         roundness: Roundness,
@@ -646,69 +651,51 @@ impl<'a> Mesh<'a> {
                 .then(a.1[1].total_cmp(&b.1[1]))
         });
         points.dedup();
-        let lo = points.first()?.0;
-        let hi = points.last()?.0;
-        let place = |centre: [f64; 2]| BandPlace {
-            axis,
-            at: on_line(centre),
-            ends: UnreadEnds::of(lo, hi),
-        };
-        let facing_about = |centre: [f64; 2]| {
-            self.facing(component, |normal, at| {
+        let orientation_about = |centre: [f64; 2]| {
+            self.orientation(component, |normal, at| {
                 normal[plane[0]] * (at[plane[0]] - centre[0])
                     + normal[plane[1]] * (at[plane[1]] - centre[1])
             })
         };
         let Some(profile) = Profile::through_full_rings(&points, roundness) else {
             let centre = coaxial_centre(&points, 0.0).or_else(|| one_circle(&points))?;
-            return Some(match facing_about(centre) {
-                Orientation::Inward => vec![],
-                Orientation::Unknown => {
-                    vec![BandReading::Unread(UnreadBand::Facing(place(centre)))]
-                }
-                Orientation::Outward => {
-                    vec![BandReading::Unread(UnreadBand::Irregular(place(centre)))]
-                }
-            });
+            let place = BandPlace {
+                axis,
+                at: identified_at(centre),
+                radii: None,
+                ends: UnreadEnds::of(points.first()?.0, points.last()?.0),
+            };
+            return Some(vec![match orientation_about(centre) {
+                Orientation::Inward => BandReading::Inward,
+                Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(place)),
+                Orientation::Outward => BandReading::Unread(UnreadBand::Irregular(place)),
+            }]);
         };
-        let centre = profile.centre;
-        Some(match facing_about(centre) {
-            Orientation::Inward => vec![],
-            Orientation::Unknown => vec![BandReading::Unread(UnreadBand::Facing(place(centre)))],
-            Orientation::Outward if profile.facets() < roundness.standard_facets => {
-                vec![BandReading::Unread(UnreadBand::Faceted(place(centre)))]
-            }
-            Orientation::Outward => profile
+        let orientation = orientation_about(profile.centre);
+        let centres: Vec<[f64; 2]> = profile
+            .rings
+            .iter()
+            .map(|ring| ring.circle.centre)
+            .collect();
+        let facets = profile.facets();
+        Some(
+            profile
                 .rings
                 .windows(2)
                 .map(|pair| {
-                    let (lo, hi) = (pair[0].along, pair[1].along);
-                    let ends = UnreadEnds::of(lo, hi);
-                    let radii =
-                        [pair[0].circle.radius, pair[1].circle.radius].map(sixteenths::identified);
-                    match (on_line(centre), radii) {
-                        (None, _) => BandReading::Unread(UnreadBand::Centre {
-                            axis,
-                            radii: Some(radii),
-                            ends,
-                        }),
-                        (Some(at), [Some(r0), Some(r1)]) => BandReading::Read(ReadBand {
-                            axis,
-                            at,
-                            lo,
-                            hi,
-                            radii: [r0, r1],
-                        }),
-                        (Some(at), _) => BandReading::Unread(UnreadBand::Radius {
-                            axis,
-                            at,
-                            radii,
-                            ends,
-                        }),
+                    BandCandidate {
+                        axis,
+                        lo: pair[0].along,
+                        hi: pair[1].along,
+                        centres: centres.clone(),
+                        radii: [Some(pair[0].circle.radius), Some(pair[1].circle.radius)],
+                        facets,
+                        orientation,
                     }
+                    .closed_reading(roundness)
                 })
                 .collect(),
-        })
+        )
     }
 
     fn tilted_revolution(
@@ -746,12 +733,12 @@ impl<'a> Mesh<'a> {
         });
         points.dedup();
         let centre = coaxial_centre(&points, scatter * size).or_else(|| one_circle(&points))?;
-        let facing = self.facing(component, |normal, at| {
+        let orientation = self.orientation(component, |normal, at| {
             let r = offset(projected(at), centre);
             let n = projected(normal);
             n[0] * r[0] + n[1] * r[1]
         });
-        (facing != Orientation::Inward).then_some(BandReading::Unread(UnreadBand::Unoriented))
+        (orientation != Orientation::Inward).then_some(BandReading::Unread(UnreadBand::Unoriented))
     }
 }
 
@@ -805,12 +792,6 @@ impl Profile {
             }
         }
         let centre = rings.first()?.circle.centre;
-        if rings
-            .iter()
-            .any(|ring| planar_distance(ring.circle.centre, centre) >= ring.circle.sagitta)
-        {
-            return None;
-        }
         let on_segments = rings.windows(2).all(|pair| {
             let [low, high] = [&pair[0], &pair[1]];
             let sagitta = low.circle.sagitta.min(high.circle.sagitta);
@@ -821,7 +802,7 @@ impl Profile {
             };
             points
                 .iter()
-                .filter(|(t, _)| *t > low.along && *t < high.along)
+                .filter(|(t, _)| *t >= low.along && *t <= high.along)
                 .all(|&(t, p)| (planar_distance(p, centre) - radius_at(t)).abs() < sagitta)
         });
         on_segments.then_some(Profile { centre, rings })
@@ -832,7 +813,7 @@ impl Profile {
     }
 }
 
-fn on_line(centre: [f64; 2]) -> Option<[i32; 2]> {
+fn identified_at(centre: [f64; 2]) -> Option<[i32; 2]> {
     match centre.map(sixteenths::identified) {
         [Some(a), Some(b)] => Some([a, b]),
         _ => None,
@@ -1069,7 +1050,7 @@ impl Ring {
 }
 
 struct ClosedCircles {
-    centre: [f64; 2],
+    centres: Vec<[f64; 2]>,
     radii: [f64; 2],
     denser_ring: usize,
 }
@@ -1077,12 +1058,13 @@ struct ClosedCircles {
 impl ClosedCircles {
     fn turn_cosine(&self, rings: &[Ring; 2]) -> f64 {
         let ring = &rings[self.denser_ring];
+        let centre = self.centres[0];
         ring.chords
             .iter()
             .map(|&(a, b)| {
                 turn_cosine(
-                    offset(ring.points[a], self.centre),
-                    offset(ring.points[b], self.centre),
+                    offset(ring.points[a], centre),
+                    offset(ring.points[b], centre),
                 )
             })
             .fold(f64::INFINITY, f64::min)
@@ -1094,6 +1076,93 @@ enum BandReading {
     Inward,
     Unread(UnreadBand),
     Read(ReadBand),
+}
+
+struct BandCandidate {
+    axis: usize,
+    lo: f64,
+    hi: f64,
+    centres: Vec<[f64; 2]>,
+    radii: [Option<f64>; 2],
+    facets: usize,
+    orientation: Orientation,
+}
+
+impl BandCandidate {
+    fn at(&self) -> Option<[i32; 2]> {
+        let (first, rest) = self.centres.split_first()?;
+        let at = identified_at(*first)?;
+        rest.iter()
+            .all(|&centre| identified_at(centre) == Some(at))
+            .then_some(at)
+    }
+
+    fn identified_radii(&self) -> [Option<i32>; 2] {
+        self.radii
+            .map(|radius| radius.and_then(sixteenths::identified))
+    }
+
+    fn ends(&self) -> UnreadEnds {
+        UnreadEnds::of(self.lo, self.hi)
+    }
+
+    fn place(&self) -> BandPlace {
+        BandPlace {
+            axis: self.axis,
+            at: self.at(),
+            radii: self
+                .radii
+                .iter()
+                .any(Option::is_some)
+                .then(|| self.identified_radii()),
+            ends: self.ends(),
+        }
+    }
+
+    fn open_reading(&self) -> BandReading {
+        match self.orientation {
+            Orientation::Inward => BandReading::Inward,
+            Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
+            Orientation::Outward => BandReading::Unread(UnreadBand::Partial(self.place())),
+        }
+    }
+
+    fn closed_reading(&self, roundness: Roundness) -> BandReading {
+        match self.orientation {
+            Orientation::Inward => BandReading::Inward,
+            Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place())),
+            Orientation::Outward if self.facets < roundness.standard_facets => {
+                BandReading::Unread(UnreadBand::Faceted(self.place()))
+            }
+            Orientation::Outward => self.identified(),
+        }
+    }
+
+    fn identified(&self) -> BandReading {
+        let radii = self.identified_radii();
+        let Some(at) = self.at() else {
+            return BandReading::Unread(UnreadBand::Centre {
+                axis: self.axis,
+                radii: Some(radii),
+                ends: self.ends(),
+            });
+        };
+        match radii {
+            [Some(r0), Some(r1)] => BandReading::Read(ReadBand {
+                axis: self.axis,
+                at,
+                lo: self.lo,
+                hi: self.hi,
+                radii: [r0, r1],
+            }),
+            _ => BandReading::Unread(UnreadBand::Radius {
+                axis: self.axis,
+                at,
+                radii,
+                ends: self.ends(),
+            }),
+        }
+    }
 }
 
 struct Span {
@@ -1169,81 +1238,88 @@ impl<'a> Strip<'a> {
         let (circle, _) = self.rings[denser_ring].circle()?;
         let mut radii = [0.0; 2];
         radii[denser_ring] = circle.radius;
+        let mut centres = vec![circle.centre];
         let other = &self.rings[1 - denser_ring];
         if other.is_apex() {
             if planar_distance(other.points[0], circle.centre) >= circle.sagitta {
                 return None;
             }
+            centres.push(other.points[0]);
         } else {
+            let about_common = Circle::about(
+                &other.points,
+                &other.chords,
+                circle.centre,
+                other.circumradius(circle.centre),
+            )?;
             let (own, _) = other.circle()?;
-            if planar_distance(own.centre, circle.centre) >= circle.sagitta.min(own.sagitta) {
+            radii[1 - denser_ring] = own.radius;
+            centres.push(own.centre);
+            if (about_common.radius - own.radius).abs() >= about_common.sagitta {
                 return None;
             }
-            radii[1 - denser_ring] = own.radius;
         }
         Some(ClosedCircles {
-            centre: circle.centre,
+            centres,
             radii,
             denser_ring,
         })
     }
 
-    fn facing_about(&self, centre: [f64; 2]) -> Orientation {
+    fn orientation_about(&self, centre: [f64; 2]) -> Orientation {
         let plane = across(self.axis);
-        self.mesh.facing(&self.triangles, |normal, at| {
+        self.mesh.orientation(&self.triangles, |normal, at| {
             normal[plane[0]] * (at[plane[0]] - centre[0])
                 + normal[plane[1]] * (at[plane[1]] - centre[1])
         })
     }
 
-    fn goes_around(&self, roundness: Roundness) -> Option<[f64; 2]> {
-        let ring = self.rings.iter().max_by_key(|r| r.points.len())?;
+    fn candidate(&self, centres: Vec<[f64; 2]>, radii: [Option<f64>; 2]) -> BandCandidate {
+        let orientation = self.orientation_about(centres[0]);
+        BandCandidate {
+            axis: self.axis,
+            lo: self.lo,
+            hi: self.hi,
+            centres,
+            radii,
+            facets: self.facets(),
+            orientation,
+        }
+    }
+
+    fn goes_around(&self, roundness: Roundness) -> Option<BandCandidate> {
+        let denser_ring = usize::from(self.rings[1].points.len() > self.rings[0].points.len());
+        let ring = &self.rings[denser_ring];
         if ring.points.len() < roundness.coarse_facets {
             return None;
         }
         let (circle, _) = ring.circle()?;
-        let other = &self.rings[usize::from(std::ptr::eq(ring, &self.rings[0]))];
-        let other_on_circle = other.points.is_empty()
-            || other.chords.is_empty()
-            || Circle::about(
+        let other = &self.rings[1 - denser_ring];
+        let mut radii = [None; 2];
+        radii[denser_ring] = Some(circle.radius);
+        if !other.points.is_empty() && !other.chords.is_empty() {
+            let about_common = Circle::about(
                 &other.points,
                 &other.chords,
                 circle.centre,
                 other.circumradius(circle.centre),
-            )
-            .is_some();
+            )?;
+            radii[1 - denser_ring] = Some(about_common.radius);
+        }
         let around = ring.around(circle.centre);
         let goes_round = (0..around.len()).all(|i| {
             let (a, b) = (around[i], around[(i + 1) % around.len()]);
             a[0] * b[1] - a[1] * b[0] > 0.0 && turn_cosine(a, b) >= roundness.coarse_turn_cosine
         });
-        (other_on_circle && goes_round).then_some(circle.centre)
-    }
-
-    fn place(&self, centre: Option<[f64; 2]>) -> BandPlace {
-        BandPlace {
-            axis: self.axis,
-            at: centre.and_then(on_line),
-            ends: UnreadEnds::of(self.lo, self.hi),
-        }
+        goes_round.then(|| self.candidate(vec![circle.centre], radii))
     }
 
     fn reading(&self, roundness: Roundness) -> BandReading {
         if self.is_closed() {
             return self.closed_reading(roundness);
         }
-        let Some(centre) = self.goes_around(roundness) else {
-            return BandReading::NotRound;
-        };
-        match self.facing_about(centre) {
-            Orientation::Unknown => {
-                BandReading::Unread(UnreadBand::Facing(self.place(Some(centre))))
-            }
-            Orientation::Inward => BandReading::Inward,
-            Orientation::Outward => {
-                BandReading::Unread(UnreadBand::Partial(self.place(Some(centre))))
-            }
-        }
+        self.goes_around(roundness)
+            .map_or(BandReading::NotRound, |candidate| candidate.open_reading())
     }
 
     fn closed_reading(&self, roundness: Roundness) -> BandReading {
@@ -1253,51 +1329,24 @@ impl<'a> Strip<'a> {
         let Some(circles) = self.closed_circles() else {
             let denser_ring = self.rings.iter().max_by_key(|r| r.points.len());
             let centre = denser_ring.map_or([0.0; 2], |r| r.extents().0);
-            return match self.facing_about(centre) {
+            let ends = UnreadEnds::of(self.lo, self.hi);
+            return match self.orientation_about(centre) {
                 Orientation::Inward => BandReading::Inward,
-                Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(self.place(None))),
-                Orientation::Outward => BandReading::Unread(self.centre_unread(None)),
+                Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(BandPlace {
+                    axis: self.axis,
+                    at: None,
+                    radii: None,
+                    ends,
+                })),
+                Orientation::Outward => BandReading::Unread(UnreadBand::Centre {
+                    axis: self.axis,
+                    radii: None,
+                    ends,
+                }),
             };
         };
-        let place = self.place(Some(circles.centre));
-        match self.facing_about(circles.centre) {
-            Orientation::Unknown => BandReading::Unread(UnreadBand::Facing(place)),
-            Orientation::Inward => BandReading::Inward,
-            Orientation::Outward if self.facets() < roundness.standard_facets => {
-                BandReading::Unread(UnreadBand::Faceted(place))
-            }
-            Orientation::Outward => self.identified(&circles),
-        }
-    }
-
-    fn identified(&self, circles: &ClosedCircles) -> BandReading {
-        let radii = circles.radii.map(sixteenths::identified);
-        let Some(at) = on_line(circles.centre) else {
-            return BandReading::Unread(self.centre_unread(Some(radii)));
-        };
-        match radii {
-            [Some(r0), Some(r1)] => BandReading::Read(ReadBand {
-                axis: self.axis,
-                at,
-                lo: self.lo,
-                hi: self.hi,
-                radii: [r0, r1],
-            }),
-            _ => BandReading::Unread(UnreadBand::Radius {
-                axis: self.axis,
-                at,
-                radii,
-                ends: UnreadEnds::of(self.lo, self.hi),
-            }),
-        }
-    }
-
-    fn centre_unread(&self, radii: Option<[Option<i32>; 2]>) -> UnreadBand {
-        UnreadBand::Centre {
-            axis: self.axis,
-            radii,
-            ends: UnreadEnds::of(self.lo, self.hi),
-        }
+        self.candidate(circles.centres, circles.radii.map(Some))
+            .closed_reading(roundness)
     }
 }
 

@@ -407,6 +407,7 @@ export const UnreadBand = v.pipe(
       reason: v.picklist(["faceted", "partial", "facing", "irregular"]),
       axis: RollingAxis,
       at: v.optional(RollingAt),
+      radii: v.optional(EndRadii),
       ...UnreadEnds,
     }),
   ]),
@@ -416,7 +417,7 @@ export const UnreadBand = v.pipe(
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not (`radii` holds null for that end). width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from`, `to` and `radii` appear wherever they identified",
+    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;

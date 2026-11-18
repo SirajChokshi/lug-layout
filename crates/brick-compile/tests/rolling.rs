@@ -176,6 +176,15 @@ fn custom_wheel() -> String {
         oblique_top: 0.25,
         ..Band::along(0, at(0.0, -40.0, 60.0), 40.0, 50.0, [8.0, 8.0])
     };
+    let cone_cut_on_every_meridian = Band {
+        meridian_cuts: Some([41.0, 0.5]),
+        ..Band::along(0, at(0.0, -40.0, -20.0), 40.0, 50.0, [8.0, 6.0])
+    };
+    let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
+    let oblique_cut_after_a_read_band = Band {
+        oblique_top: 0.25,
+        ..Band::along(0, at(0.0, -80.0, 0.0), 45.0, 50.0, [8.0, 8.0])
+    };
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     let tilted = Band {
         axis: [diagonal, diagonal, 0.0],
@@ -195,6 +204,9 @@ fn custom_wheel() -> String {
         notched,
         cut_on_every_meridian,
         cut_obliquely,
+        cone_cut_on_every_meridian,
+        read_before_an_oblique_cut,
+        oblique_cut_after_a_read_band,
         tilted,
     ];
     let body: String = bands.iter().map(Band::lines).collect();
@@ -264,7 +276,9 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
         vec![
             surface(0, [12.0, 0.0], -4.0, 6.0, [20.0, 20.0]),
             surface(0, [12.0, 0.0], 6.0, 8.0, [20.0, 24.0]),
+            surface(0, [40.0, 20.0], 40.0, 50.0, [8.0, 6.0]),
             surface(0, [40.0, 60.0], 40.0, 50.0, [8.0, 8.0]),
+            surface(0, [80.0, 0.0], 40.0, 45.0, [8.0, 8.0]),
             surface(1, [-60.0, 0.0], 0.0, 8.0, [10.0, 10.0]),
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
         ]
@@ -285,10 +299,32 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "to": 128
             },
             { "reason": "width", "axis": 1, "at": [960, -960], "radii": [160, 160], "from": 0 },
-            { "reason": "faceted", "axis": 2, "at": [960, 0], "from": -160, "to": 0 },
-            { "reason": "partial", "axis": 0, "at": [192, -960], "from": 320, "to": 480 },
-            { "reason": "facing", "axis": 2, "at": [-960, 640], "from": -160, "to": 0 },
+            {
+                "reason": "faceted",
+                "axis": 2,
+                "at": [960, 0],
+                "radii": [160, 160],
+                "from": -160,
+                "to": 0
+            },
+            {
+                "reason": "partial",
+                "axis": 0,
+                "at": [192, -960],
+                "radii": [160, 160],
+                "from": 320,
+                "to": 480
+            },
+            {
+                "reason": "facing",
+                "axis": 2,
+                "at": [-960, 640],
+                "radii": [160, 160],
+                "from": -160,
+                "to": 0
+            },
             { "reason": "irregular", "axis": 0, "at": [640, -960], "from": 640, "to": 832 },
+            { "reason": "irregular", "axis": 0, "at": [1280, 0], "from": 720, "to": 832 },
         ])
     );
 }

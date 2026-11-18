@@ -16,20 +16,20 @@ describe("PartRolling", () => {
         [tread],
         [
           { reason: "unoriented", axis: 0, at: [0, 0] },
-          { reason: "centre", axis: 2, at: [0, 0], from: -96 },
+          { reason: "centre", axis: 2, at: [0, 0], radii: [336, null], from: -96 },
           { reason: "radius", axis: 2, at: [0, 0], radii: [336, null] },
           { reason: "width", axis: 2, at: [0, 0], radii: [160, 160], from: -96 },
-          { reason: "partial", axis: 1 },
+          { reason: "partial", axis: 1, radii: [160, 160] },
         ],
       ),
     );
     if (!decoded.ok) throw new Error(JSON.stringify(decoded.issues));
     expect(decoded.value.unread).toEqual([
       { reason: "unoriented" },
-      { reason: "centre", axis: 2, from: -96 },
+      { reason: "centre", axis: 2, radii: [336, null], from: -96 },
       { reason: "radius", axis: 2, at: [0, 0], radii: [336, null] },
       { reason: "width", axis: 2, at: [0, 0], radii: [160, 160], from: -96 },
-      { reason: "partial", axis: 1 },
+      { reason: "partial", axis: 1, radii: [160, 160] },
     ]);
   });
 
