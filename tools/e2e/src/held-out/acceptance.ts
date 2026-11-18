@@ -1,11 +1,11 @@
 import type { FetchFunction, ImportResult } from "@brr/import";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { collisions, pinContacts, translated, type Vec3 } from "./assembly.ts";
 import type { Bundle } from "./bundle.ts";
 import { NO_IMPORTED_PLACEMENT } from "./checks.ts";
 import type { ModulePair } from "./generator.ts";
 import { importThroughWorkerPath, type ImportOutcome } from "./import-path.ts";
+import { scenarioProblems, shiftedPoseContacts } from "./pair-scenario.ts";
 
 export interface Criterion {
   readonly label: string;
@@ -85,49 +85,6 @@ function importedCleanly(outcome: ImportOutcome): ImportResult | null {
   if (outcome.kind !== "imported") return null;
   const failed = outcome.result.report.parts.some((part) => part.kind === "failed");
   return failed || outcome.result.instanceCount === 0 ? null : outcome.result;
-}
-
-function scenarioProblems(pair: ModulePair): string[] {
-  const problems: string[] = [];
-  const { subject, partner, partnerOffset, alongEdge } = pair;
-  if (pair.pins === 0) problems.push("the subject has no pin on its paired edge");
-  if (collisions(subject.assembly) !== 0) problems.push("the subject's own parts collide");
-  if (collisions(partner.assembly) !== 0) problems.push("the partner's own parts collide");
-  const aligned = translated(partner.assembly, partnerOffset);
-  if (collisions(subject.assembly, aligned) !== 0) {
-    problems.push("subject and partner collide at the aligned pose");
-  }
-  const atAligned = pinContacts(subject.assembly, aligned);
-  if (atAligned.inHole !== pair.pins) {
-    problems.push(
-      `only ${atAligned.inHole} of ${pair.pins} pins sit in partner holes when aligned`,
-    );
-  }
-  for (const sign of [1, -1]) {
-    const shift: Vec3 = [
-      partnerOffset[0] + sign * alongEdge[0],
-      partnerOffset[1] + sign * alongEdge[1],
-      partnerOffset[2] + sign * alongEdge[2],
-    ];
-    if (pinContacts(subject.assembly, translated(partner.assembly, shift)).colliding === 0) {
-      problems.push(`one stud ${sign > 0 ? "forward" : "back"} along the edge, no pin collides`);
-    }
-  }
-  return problems;
-}
-
-function shiftedContacts(pair: ModulePair): string {
-  return [1, -1]
-    .map((sign) => {
-      const shift: Vec3 = [
-        pair.partnerOffset[0] + sign * pair.alongEdge[0],
-        pair.partnerOffset[1] + sign * pair.alongEdge[1],
-        pair.partnerOffset[2] + sign * pair.alongEdge[2],
-      ];
-      const contacts = pinContacts(pair.subject.assembly, translated(pair.partner.assembly, shift));
-      return `${contacts.colliding} of ${contacts.pins} pins hit the partner's solid edge ${sign > 0 ? "one way" : "the other"}`;
-    })
-    .join(", ");
 }
 
 async function sourceFiles(directory: string): Promise<string[]> {
@@ -215,7 +172,7 @@ export async function runAcceptance(inputs: AcceptanceInputs): Promise<Acceptanc
       {
         label: "Refused one stud off",
         passed: false,
-        detail: `${blocked}. Expected, from geometry: ${shiftedContacts(pair)}`,
+        detail: `${blocked}. Expected, from geometry: at each pose at least one pin collides or misses a hole. ${shiftedPoseContacts(pair)}`,
       },
       {
         label: "Identical under a random rename of the file, model name and submodel names",
