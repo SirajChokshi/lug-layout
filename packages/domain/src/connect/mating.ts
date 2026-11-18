@@ -87,6 +87,11 @@ function axisLine(axis: number): number {
   }
 }
 
+export const SPAN_FROM = 0;
+export const SPAN_TO = 1;
+export const SPAN_WIDEST = 2;
+export const SPAN_FLOATS = 3;
+
 function addRange(ranges: number[], from: number, to: number): void {
   const last = ranges.length - 1;
   if (last > 0 && (ranges[last] ?? 0) + 1 >= from) {
@@ -148,6 +153,21 @@ export class SnapMating {
     return false;
   }
 
+  engagedSpan(
+    maleShape: number,
+    femaleShape: number,
+    offsetSixteenths: number,
+    out: Float64Array,
+  ): void {
+    const shapes = this.shapes;
+    const maleSixteenths = shapes.length(maleShape) * SIXTEENTHS_PER_LDU;
+    const femaleSixteenths = shapes.length(femaleShape) * SIXTEENTHS_PER_LDU;
+    out[SPAN_FROM] = Math.max(0, offsetSixteenths);
+    out[SPAN_TO] = Math.min(maleSixteenths, offsetSixteenths + femaleSixteenths);
+    out[SPAN_WIDEST] =
+      Math.max(this.widestMale(maleShape), this.widestFemale(femaleShape)) * SIXTEENTHS_PER_LDU;
+  }
+
   freedom(
     maleShape: number,
     femaleShape: number,
@@ -170,6 +190,26 @@ export class SnapMating {
       return true;
     });
     return { spins: !locked, axis: axisLine(maleAxis), freeAboutVertical: !inserted };
+  }
+
+  private widestMale(shape: number): number {
+    const shapes = this.shapes;
+    const first = shapes.firstSection(shape);
+    let widest = 0;
+    for (let s = first; s < first + shapes.sectionCount(shape); s++) {
+      widest = Math.max(widest, shapes.maleSize(s));
+    }
+    return widest;
+  }
+
+  private widestFemale(shape: number): number {
+    const shapes = this.shapes;
+    const first = shapes.firstSection(shape);
+    let widest = 0;
+    for (let s = first; s < first + shapes.sectionCount(shape); s++) {
+      widest = Math.max(widest, shapes.femaleSize(s));
+    }
+    return widest;
   }
 
   private engagedRanges(male: number, female: number): Int32Array {

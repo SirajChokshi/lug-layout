@@ -23,6 +23,7 @@ import {
   type SubmodelInstances,
 } from "./submodel-frames.ts";
 
+export const NO_INSTANCE = -1;
 const X = 0;
 const Y = 1;
 const Z = 2;
@@ -101,12 +102,14 @@ interface TrackEnds {
   readonly heading: Uint8Array;
   readonly position: Int32Array;
   readonly yPlates: Int32Array;
+  readonly instance: Int32Array;
 }
 
 function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
   const heading = new Uint8Array(ends.length);
   const position = new Int32Array(ends.length * ZETA16_COEFFICIENT_COUNT);
   const yPlates = new Int32Array(ends.length);
+  const instance = new Int32Array(ends.length).fill(NO_INSTANCE);
   for (let e = 0; e < ends.length; e++) {
     const end = ends[e];
     if (!end) continue;
@@ -115,6 +118,14 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
     }
     heading[e] = end.pose.heading;
     yPlates[e] = end.yPlates;
+    if (end.instance !== undefined) {
+      if (!Number.isInteger(end.instance) || end.instance < 0) {
+        throw new RangeError(
+          `track end ${e} names instance ${end.instance}, not an instance index`,
+        );
+      }
+      instance[e] = end.instance;
+    }
     for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
       const coefficient = Number(end.pose.position[k] ?? 0n);
       if (Math.abs(coefficient) >= INT32_LIMIT) {
@@ -123,7 +134,7 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
       position[e * ZETA16_COEFFICIENT_COUNT + k] = coefficient;
     }
   }
-  return { heading, position, yPlates };
+  return { heading, position, yPlates, instance };
 }
 
 class InternalMates {
@@ -387,6 +398,7 @@ export class ModelConnectors {
     readonly trackHeading: Uint8Array,
     readonly trackPosition: Int32Array,
     readonly trackYPlates: Int32Array,
+    readonly trackInstance: Int32Array,
   ) {}
 
   static fromParts(
@@ -486,6 +498,7 @@ export class ModelConnectors {
       track.heading,
       track.position,
       track.yPlates,
+      track.instance,
     );
   }
 }
