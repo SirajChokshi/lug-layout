@@ -12,8 +12,10 @@ import type { TrackEnd } from "../src/track/end-gaps.ts";
 import {
   AXIS_NEG_X,
   AXIS_NEG_Y,
+  AXIS_NEG_Z,
   AXIS_POS_X,
   AXIS_POS_Y,
+  AXIS_POS_Z,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -26,7 +28,14 @@ import { TrackEndFinder } from "../src/connect/track-end-finder.ts";
 import { MateReport } from "../src/connect/mate-report.ts";
 import { SnapMating } from "../src/connect/mating.ts";
 import { ModelConnectors } from "../src/connect/model-connectors.ts";
-import { CAP_FAR, CAP_ROOT, SECTION_ROUND, SnapShapes } from "../src/connect/snap-shapes.ts";
+import {
+  CAP_FAR,
+  CAP_ROOT,
+  SECTION_AXLE,
+  SECTION_ROUND,
+  SECTION_SQUARE,
+  SnapShapes,
+} from "../src/connect/snap-shapes.ts";
 
 const BASEPLATE_STUDS = 32;
 const BASEPLATES_PER_SIDE = 44;
@@ -49,6 +58,114 @@ function receptor(depth: number): number {
   return shapes.intern(CAP_FAR, false, [SECTION_ROUND], [STUD_RADIUS], [depth]);
 }
 const HALF = STUD_LDU / 2;
+const BAR_RADIUS = 4;
+const CLIP_LENGTH = 4;
+const BAR = shapes.intern(CAP_ROOT, true, [SECTION_ROUND], [BAR_RADIUS], [STUD_LDU]);
+const CLIP = shapes.intern(0, false, [SECTION_ROUND], [BAR_RADIUS], [CLIP_LENGTH]);
+const TUBE_RADIUS = 8;
+const AXLE_SIZE = 4;
+const STUD_5 = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [STUD_RADIUS], [5]);
+const SQUARE_RECEPTOR = shapes.intern(
+  CAP_FAR,
+  false,
+  [SECTION_SQUARE],
+  [STUD_RADIUS],
+  [STUD_REACH],
+);
+const COUNTERBORED_RECEPTOR = shapes.intern(
+  CAP_FAR,
+  false,
+  [SECTION_ROUND, SECTION_ROUND],
+  [TUBE_RADIUS, STUD_RADIUS],
+  [8, STUD_LDU],
+);
+const TUBE = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [TUBE_RADIUS], [STUD_LDU]);
+const SHORT_BAR = shapes.intern(
+  CAP_ROOT,
+  true,
+  [SECTION_ROUND, SECTION_ROUND],
+  [BAR_RADIUS, BAR_RADIUS],
+  [4, 4],
+);
+const STUBBY_BAR = shapes.intern(
+  CAP_ROOT,
+  true,
+  [SECTION_ROUND, SECTION_ROUND],
+  [BAR_RADIUS, BAR_RADIUS],
+  [3, 4],
+);
+const PIN_HOLE_SHORT = shapes.intern(0, false, [SECTION_ROUND], [STUD_RADIUS], [8]);
+const BAR_HOLDER = shapes.intern(
+  0,
+  true,
+  [SECTION_ROUND, SECTION_SQUARE],
+  [BAR_RADIUS, BAR_RADIUS],
+  [10, 10],
+);
+const BAR_SOCKET = shapes.intern(
+  0,
+  true,
+  [SECTION_SQUARE, SECTION_ROUND],
+  [BAR_RADIUS, BAR_RADIUS],
+  [10, 10],
+);
+const BAR_12 = shapes.intern(CAP_ROOT, true, [SECTION_ROUND], [BAR_RADIUS], [12]);
+const AXLE_HOLE = shapes.intern(0, true, [SECTION_AXLE], [AXLE_SIZE], [10]);
+const AXLE = shapes.intern(CAP_ROOT, true, [SECTION_AXLE], [AXLE_SIZE], [44]);
+const TUBE_SLEEVE = shapes.intern(
+  0,
+  true,
+  [SECTION_ROUND, SECTION_ROUND, SECTION_ROUND],
+  [BAR_RADIUS, BAR_RADIUS, BAR_RADIUS],
+  [6, 8, 6],
+);
+const MODULAR_STUDS = 32;
+const MODULAR_FLOORS = 3;
+const FLOOR_LDU = 320;
+const BAND_LDU = 32;
+const FACADE_ROWS = 40;
+const ON_STUD_UP = 0;
+const ON_STUD_DOWN = 1;
+const OFF_STUD_UP = 2;
+const OFF_STUD_DOWN = 3;
+const FACADE_OUT = 4;
+const FACADE_IN = 5;
+const MODULAR_MIX: ReadonlyArray<
+  readonly [count: number, shape: number, placement: number, band: number]
+> = [
+  [1484, STUD, ON_STUD_UP, 0],
+  [91, STUD_5, ON_STUD_UP, 1],
+  [54, SHORT_BAR, ON_STUD_UP, 2],
+  [35, STUBBY_BAR, ON_STUD_UP, 3],
+  [1480, receptor(PLATE_CAVITY), ON_STUD_DOWN, 0],
+  [249, SQUARE_RECEPTOR, ON_STUD_DOWN, 4],
+  [182, COUNTERBORED_RECEPTOR, ON_STUD_DOWN, 5],
+  [100, receptor(BRICK_CAVITY), ON_STUD_DOWN, 6],
+  [1460, TUBE, OFF_STUD_DOWN, 7],
+  [91, SQUARE_RECEPTOR, OFF_STUD_DOWN, 8],
+  [72, receptor(PLATE_CAVITY), OFF_STUD_DOWN, 9],
+  [1359, STUD, OFF_STUD_UP, 3],
+  [44, STUD, FACADE_OUT, 0],
+  [38, BAR_12, FACADE_OUT, 1],
+  [12, AXLE, FACADE_OUT, 2],
+  [126, PIN_HOLE_SHORT, FACADE_IN, 3],
+  [35, receptor(PLATE_CAVITY), FACADE_IN, 4],
+  [40, BAR_HOLDER, FACADE_IN, 5],
+  [40, BAR_SOCKET, FACADE_IN, 6],
+  [28, AXLE_HOLE, FACADE_IN, 7],
+  [17, TUBE_SLEEVE, FACADE_IN, 8],
+];
+const FLUSH_SIDES = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
+const WALL_STUDS = 32;
+const WALL_ROWS = 10;
+const WALLS = 16;
+const WALL_SPACING_STUDS = 64;
+const WALL_CURSOR_SPREAD_STUDS = 4;
 const HOVER_POSITIONS = 256;
 const HOVER_CALLS = 2_000;
 const WARMUP_CALLS = 200;
@@ -58,6 +175,7 @@ const LOAD_RUNS = 20;
 const TOWER_COLUMNS = 100;
 const TOWER_HEIGHT = 30;
 const MATRIX_FLOATS = 12;
+const QUARTER_TURN_COUNT = 4;
 const SEED = 0x5eed;
 
 let state = SEED;
@@ -101,6 +219,92 @@ function slab(
     axis,
     new Float32Array(count * 3),
   );
+}
+
+type Spec = readonly [shape: number, gender: number, x: number, y: number, z: number, axis: number];
+
+function connectors(specs: ReadonlyArray<Spec>): ConnectorTable {
+  const count = specs.length;
+  const origin = new Float32Array(count * 3);
+  specs.forEach(([, , x, y, z], n) => origin.set([x, y, z], n * 3));
+  return new ConnectorTable(
+    Uint16Array.from(specs, ([shape]) => shape),
+    Uint8Array.from(specs, ([, gender]) => gender),
+    new Uint8Array(count).fill(SOURCE_SHADOW),
+    new Uint8Array(count).fill(STATUS_VERIFIED),
+    origin,
+    Int8Array.from(specs, (spec) => spec[5]),
+    new Float32Array(count * 3),
+  );
+}
+
+function modular(): ConnectorTable {
+  const width = MODULAR_STUDS * STUD_LDU;
+  const cells = MODULAR_STUDS * MODULAR_STUDS;
+  const brick = BRICK_PLATES * PLATE_LDU;
+  const specs: Spec[] = [];
+  MODULAR_MIX.forEach(([count, shape, placement, band], kind) => {
+    const male =
+      placement === ON_STUD_UP ||
+      placement === OFF_STUD_UP ||
+      placement === FACADE_OUT ||
+      shape === TUBE;
+    const gender = male ? GENDER_MALE : GENDER_FEMALE;
+    for (let k = 0; k < count; k++) {
+      if (placement === FACADE_OUT || placement === FACADE_IN) {
+        const along = ((k * 7 + kind * 13) % MODULAR_STUDS) * STUD_LDU + HALF;
+        const y = ((k * 3 + band) % FACADE_ROWS) * brick + brick / 2;
+        const outward = placement === FACADE_OUT;
+        const face = outward ? 0 : width;
+        specs.push(
+          k % 2 === 0
+            ? [shape, gender, face, y, along, outward ? AXIS_NEG_X : AXIS_POS_X]
+            : [shape, gender, along, y, face, outward ? AXIS_NEG_Z : AXIS_POS_Z],
+        );
+        continue;
+      }
+      const floor = k % MODULAR_FLOORS;
+      const y = floor * FLOOR_LDU + band * BAND_LDU;
+      const step = Math.floor(k / MODULAR_FLOORS) * 37 + kind * 101;
+      const up = placement === ON_STUD_UP || placement === OFF_STUD_UP;
+      const axis = up ? AXIS_POS_Y : AXIS_NEG_Y;
+      if (placement === ON_STUD_UP || placement === ON_STUD_DOWN) {
+        const cell = step % (cells / 2);
+        const row = Math.floor(cell / (MODULAR_STUDS / 2));
+        const column = (cell % (MODULAR_STUDS / 2)) * 2 + ((row + (up ? 0 : 1)) % 2);
+        specs.push([shape, gender, column * STUD_LDU + HALF, y, row * STUD_LDU + HALF, axis]);
+        continue;
+      }
+      const cell = step % cells;
+      specs.push([
+        shape,
+        gender,
+        (cell % MODULAR_STUDS) * STUD_LDU,
+        y,
+        Math.floor(cell / MODULAR_STUDS) * STUD_LDU,
+        axis,
+      ]);
+    }
+  });
+  return connectors(specs);
+}
+
+function railFace(
+  shape: number,
+  gender: number,
+  facing: number,
+  end: number,
+  endY: number,
+): ConnectorTable {
+  const brick = BRICK_PLATES * PLATE_LDU;
+  const specs: Spec[] = [];
+  for (let i = 0; i < WALL_STUDS; i++) {
+    const x = i * STUD_LDU + HALF;
+    for (let r = 0; r < WALL_ROWS; r++)
+      specs.push([shape, gender, x, r * brick + brick / 2, 0, facing]);
+    specs.push([shape, gender, x, endY, HALF, end]);
+  }
+  return connectors(specs);
 }
 
 function baseplate(): ConnectorTable {
@@ -325,6 +529,10 @@ const hovered = [
   ["16-stud track piece (2 ends)", track],
   ["32×32 plate", one(slab(32, 32, PLATE_LDU, PLATE_CAVITY, true))],
   ["64×64 plate", one(slab(64, 64, PLATE_LDU, PLATE_CAVITY, true))],
+  [
+    "synthetic modular with 10185-1's connector mix (studs, tubes, pins in holes, bars in clips, axles through holes)",
+    one(modular()),
+  ],
 ] as const;
 
 let checksum = 0;
@@ -348,6 +556,86 @@ for (const [label, piece] of hovered) {
     `| evaluate: ${label} at the cursor pose | ${evaluate.p50.toFixed(4)} | ${evaluate.p95.toFixed(4)} | ${evaluate.gcs} | ${evaluate.heapGrowthBytes} |`,
   );
 }
+
+const street = new ConnectionSolver([
+  new LatticeStudFinder(mating),
+  new SparseConnectorFinder(mating),
+  new TrackEndFinder(),
+]);
+const neighbour = one(modular());
+const centre = (MODULAR_STUDS * STUD_LDU) / 2;
+street.insert(neighbour, { x: centre, z: centre, yPlates: 0, rot: 0 });
+const flushWindows = FLUSH_SIDES.length * QUARTER_TURN_COUNT;
+function aimFlush(k: number): void {
+  const side = FLUSH_SIDES[Math.floor(k / QUARTER_TURN_COUNT) % FLUSH_SIDES.length] ?? [1, 0];
+  window.x = centre + side[0] * MODULAR_STUDS * STUD_LDU;
+  window.z = centre + side[1] * MODULAR_STUDS * STUD_LDU;
+  window.yPlates = 0;
+  window.rot = k % QUARTER_TURN_COUNT;
+}
+const flushRank = await timed(HOVER_CALLS, WARMUP_CALLS, (k) => {
+  aimFlush(k);
+  street.rank(neighbour, window, candidates);
+  checksum += candidates.votes[0] ?? 0;
+});
+const flushPoses = candidates.count;
+const flushEvaluate = await timed(HOVER_CALLS, WARMUP_CALLS, (k) => {
+  aimFlush(k);
+  best.x = window.x;
+  best.z = window.z;
+  best.yPlates = window.yPlates;
+  best.rot = window.rot;
+  street.evaluate(neighbour, best, report);
+  checksum += report.count;
+});
+window.rot = 0;
+best.rot = 0;
+rows.push(
+  `| rank: synthetic modular flush beside another, ${flushWindows} windows (4 sides × 4 turns), ${flushPoses} poses | ${flushRank.p50.toFixed(4)} | ${flushRank.p95.toFixed(4)} | ${flushRank.gcs} | ${flushRank.heapGrowthBytes} |`,
+  `| evaluate: synthetic modular flush beside another, at each window pose | ${flushEvaluate.p50.toFixed(4)} | ${flushEvaluate.p95.toFixed(4)} | ${flushEvaluate.gcs} | ${flushEvaluate.heapGrowthBytes} |`,
+);
+
+const yard = new ConnectionSolver([
+  new LatticeStudFinder(mating),
+  new SparseConnectorFinder(mating),
+  new TrackEndFinder(),
+]);
+const clipWall = one(
+  railFace(CLIP, GENDER_FEMALE, AXIS_POS_Z, AXIS_POS_Y, WALL_ROWS * BRICK_PLATES * PLATE_LDU),
+);
+const barPanel = one(railFace(BAR, GENDER_MALE, AXIS_NEG_Z, AXIS_NEG_Y, 0));
+for (let w = 0; w < WALLS; w++) {
+  yard.insert(clipWall, { x: w * WALL_SPACING_STUDS * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+}
+const wallCursorX = new Int32Array(HOVER_POSITIONS);
+for (let k = 0; k < HOVER_POSITIONS; k++) {
+  const spread =
+    Math.floor(random() * (2 * WALL_CURSOR_SPREAD_STUDS + 1)) - WALL_CURSOR_SPREAD_STUDS;
+  wallCursorX[k] = (Math.floor(random() * WALLS) * WALL_SPACING_STUDS + spread) * STUD_LDU;
+}
+function aimAtWall(k: number): void {
+  window.x = wallCursorX[k % HOVER_POSITIONS] ?? 0;
+  window.z = 0;
+  window.yPlates = 0;
+}
+const slideRank = await timed(HOVER_CALLS, WARMUP_CALLS, (k) => {
+  aimAtWall(k);
+  yard.rank(barPanel, window, candidates);
+  checksum += candidates.votes[0] ?? 0;
+});
+const slidePoses = candidates.count;
+const slideEvaluate = await timed(HOVER_CALLS, WARMUP_CALLS, (k) => {
+  aimAtWall(k);
+  best.x = window.x;
+  best.z = window.z;
+  best.yPlates = window.yPlates;
+  yard.evaluate(barPanel, best, report);
+  checksum += report.count;
+});
+rows.push(
+  `| rank: ${WALL_STUDS}-stud bar panel (${barPanel.count} sliding bars) in front of ${WALLS} clip walls (${clipWall.count} clips each), ${slidePoses} poses | ${slideRank.p50.toFixed(4)} | ${slideRank.p95.toFixed(4)} | ${slideRank.gcs} | ${slideRank.heapGrowthBytes} |`,
+  `| evaluate: bar panel at the cursor pose, bars sliding in clips | ${slideEvaluate.p50.toFixed(4)} | ${slideEvaluate.p95.toFixed(4)} | ${slideEvaluate.gcs} | ${slideEvaluate.heapGrowthBytes} |`,
+);
 
 const edit = new Pose();
 const editCycle = await timed(EDIT_CYCLES, WARMUP_CALLS, (k) => {
