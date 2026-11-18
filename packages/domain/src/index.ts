@@ -146,12 +146,21 @@ export {
   solveClosure,
   UNLIMITED_BUDGET,
   type ClosureResult,
+  type ClosureSite,
   type SearchBudget,
 } from "./track/closure.ts";
+export {
+  NO_OBSTACLE,
+  TrackClearance,
+  footprintOutline,
+  type PlacementFrame,
+  type TrackOutlineSource,
+} from "./track/track-clearance.ts";
 export {
   FOOTPRINT_FLOATS,
   HEADING_FOOTPRINT_FLOATS,
   headingFootprints,
+  planHull,
   verticalRange,
 } from "./track/heading-footprints.ts";
 export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";

@@ -11,24 +11,27 @@ import {
 } from "@brr/math";
 import type { DrawingKit } from "./drawing-kit.ts";
 import { layMoves, type TrackMove } from "./track-pose.ts";
-import { closureWithinTurns, type TrackRun, type TrackSegment } from "./track-solver.ts";
+import { clearClosure, type ClosureSite } from "./clear-closure.ts";
+import { Deadline, UNLIMITED_BUDGET, type SearchBudget } from "./search-deadline.ts";
+import {
+  closuresWithinTurns,
+  fewestWithinTurns,
+  runOfMoves,
+  type TrackRun,
+} from "./track-solver.ts";
 
-export interface SearchBudget {
-  readonly now: () => number;
-  readonly limitMs: number;
-}
-
-export const UNLIMITED_BUDGET: SearchBudget = { now: () => 0, limitMs: Number.POSITIVE_INFINITY };
+export { UNLIMITED_BUDGET, type SearchBudget } from "./search-deadline.ts";
+export type { ClosureSite } from "./clear-closure.ts";
 
 export type ClosureResult =
   | { readonly kind: "exact"; readonly run: TrackRun }
   | { readonly kind: "impossible" }
+  | { readonly kind: "blocked" }
   | { readonly kind: "limit" };
 
 const BASIS = ZETA16_COEFFICIENT_COUNT;
 const EDGES = ZETA16_ORDER;
 const BOX_SIZES: ReadonlyArray<number> = [8, 16, 32, 64, 128, 256];
-const BUDGET_CHECK_NODES = 256;
 const PAIR_FILL_PIECES = 4;
 
 interface Arc {
@@ -70,27 +73,6 @@ interface Crossings {
   readonly pieces: number;
   readonly edges: Int32Array;
   readonly straights: Int32Array;
-}
-
-class Deadline {
-  private nodes = 0;
-  expired = false;
-  private readonly started: number;
-
-  constructor(private readonly budget: SearchBudget) {
-    this.started = budget.now();
-  }
-
-  tick(): boolean {
-    this.nodes++;
-    if (this.nodes % BUDGET_CHECK_NODES === 0) this.check();
-    return this.expired;
-  }
-
-  check(): boolean {
-    if (this.budget.now() - this.started > this.budget.limitMs) this.expired = true;
-    return this.expired;
-  }
 }
 
 function chordsOf(kit: DrawingKit): ReadonlyArray<Float64Array> | undefined {
@@ -421,26 +403,6 @@ function trailMoves(
   return moves;
 }
 
-function segmentsOf(kit: DrawingKit, moves: ReadonlyArray<TrackMove>): TrackRun {
-  const segments: TrackSegment[] = [];
-  for (const move of moves) {
-    const lastSegment = segments.at(-1);
-    if (move === kit.straight) {
-      if (lastSegment?.kind === "straight")
-        segments[segments.length - 1] = { kind: "straight", count: lastSegment.count + 1 };
-      else segments.push({ kind: "straight", count: 1 });
-    } else {
-      const sign = move === kit.left ? 1 : -1;
-      if (lastSegment?.kind === "turn" && lastSegment.sign === sign) {
-        segments[segments.length - 1] = { kind: "turn", sign, curves: lastSegment.curves + 1 };
-      } else {
-        segments.push({ kind: "turn", sign, curves: 1 });
-      }
-    }
-  }
-  return { segments, pieces: moves.length };
-}
-
 function completeClosure(
   kit: DrawingKit,
   start: Pose16,
@@ -474,7 +436,31 @@ function completeClosure(
   if (!posesJoin16(layMoves(start, moves).end, goal)) {
     throw new Error("the complete closure laid a run that does not join its goal");
   }
-  return { kind: "exact", run: segmentsOf(kit, moves) };
+  return { kind: "exact", run: runOfMoves(kit, moves) };
+}
+
+interface Algebraic {
+  readonly result: ClosureResult;
+  readonly fewestPieces: number;
+  readonly withinTurns: ReadonlyArray<TrackRun>;
+}
+
+function algebraicClosure(
+  kit: DrawingKit,
+  start: Pose16,
+  goal: Pose16,
+  deadline: Deadline,
+): Algebraic {
+  const withinTurns = closuresWithinTurns(kit, start, goal);
+  const simple = fewestWithinTurns(withinTurns);
+  const complete = completeClosure(kit, start, goal, deadline);
+  const fewestPieces =
+    complete.kind === "exact" ? Math.min(complete.run.pieces, simple?.pieces ?? Infinity) : 0;
+  if (!simple) return { result: complete, fewestPieces, withinTurns };
+  if (complete.kind === "exact" && complete.run.pieces < simple.pieces) {
+    return { result: complete, fewestPieces, withinTurns };
+  }
+  return { result: { kind: "exact", run: simple }, fewestPieces, withinTurns };
 }
 
 export function solveClosure(
@@ -482,11 +468,18 @@ export function solveClosure(
   start: Pose16,
   goal: Pose16,
   budget: SearchBudget = UNLIMITED_BUDGET,
+  site?: ClosureSite,
 ): ClosureResult {
-  const deadline = new Deadline(budget);
-  const simple = closureWithinTurns(kit, start, goal);
-  const complete = completeClosure(kit, start, goal, deadline);
-  if (!simple) return complete;
-  if (complete.kind === "exact" && complete.run.pieces < simple.pieces) return complete;
-  return { kind: "exact", run: simple };
+  const { result, fewestPieces, withinTurns } = algebraicClosure(
+    kit,
+    start,
+    goal,
+    new Deadline(budget),
+  );
+  if (!site || result.kind === "impossible") return result;
+  return clearClosure(kit, start, goal, site, {
+    run: result.kind === "exact" ? result.run : null,
+    fewestPieces,
+    withinTurns,
+  });
 }
