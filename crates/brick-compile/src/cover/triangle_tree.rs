@@ -182,6 +182,27 @@ impl TriangleTree {
         }
     }
 
+    pub fn walk(&self, mut enter: impl FnMut(&Bounds, Option<Range<usize>>) -> bool) {
+        let mut stack = Vec::new();
+        if !self.nodes.is_empty() {
+            stack.push(0);
+        }
+        while let Some(node) = stack.pop() {
+            let TreeNode { bounds, link } = &self.nodes[node];
+            match *link {
+                Link::Leaf { first, count } => {
+                    enter(bounds, Some(first..first + count));
+                }
+                Link::Branch { upper, .. } => {
+                    if enter(bounds, None) {
+                        stack.push(upper);
+                        stack.push(node + 1);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn each_leaf(&self, mut visit: impl FnMut(Range<usize>, &[Bounds])) {
         let mut ancestors = Vec::new();
         if !self.nodes.is_empty() {
