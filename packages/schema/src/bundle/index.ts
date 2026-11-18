@@ -601,6 +601,88 @@ export type BundleThumbnail = v.InferOutput<typeof BundleThumbnail>;
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
+export const CONNECTIVITY_LICENSE = "CC BY-SA 4.0";
+export const CONNECTOR_SOURCE = { shadow: 1, primitive: 2, inferred: 4, patch: 8 } as const;
+export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
+  CONNECTOR_SOURCE.shadow,
+  CONNECTOR_SOURCE.patch,
+];
+const AXIS_FREE = -1;
+const AXIS_LAST = 5;
+const VECTOR_FLOATS = 3;
+
+export const ConnectorPackage = v.picklist(["connectivity", "connectors"]);
+export type ConnectorPackage = v.InferOutput<typeof ConnectorPackage>;
+
+const ConnectorFaces = v.object({
+  gender: v.array(v.picklist([0, 1])),
+  source: v.array(v.picklist(Object.values(CONNECTOR_SOURCE))),
+  status: v.array(v.picklist([0, 1])),
+  caps: v.array(Count),
+  slide: v.array(v.boolean()),
+  group: v.array(v.string()),
+  origin: v.array(Integer),
+  axis: v.array(v.pipe(Integer, v.minValue(AXIS_FREE), v.maxValue(AXIS_LAST))),
+  sectionStart: v.array(Count),
+  sectionCount: v.array(Count),
+  sectionCode: v.array(Count),
+  sectionSize: v.array(Finite),
+  sectionLength: v.array(Finite),
+});
+
+const ConnectorFreeFaces = v.object({
+  face: v.array(Count),
+  origin: v.array(Finite),
+  axis: v.array(Finite),
+});
+
+export const UnreadableConnector = v.picklist(["fingerHinge", "generic", "closedAtBothEnds"]);
+export type UnreadableConnector = v.InferOutput<typeof UnreadableConnector>;
+
+export const ConnectorRecordFile = v.pipe(
+  v.object({
+    part: v.string(),
+    license: v.string(),
+    faces: ConnectorFaces,
+    free: ConnectorFreeFaces,
+    unreadable: v.array(UnreadableConnector),
+  }),
+  v.check(({ faces, free }) => {
+    const count = faces.gender.length;
+    const perFace = [
+      faces.source,
+      faces.status,
+      faces.caps,
+      faces.slide,
+      faces.group,
+      faces.axis,
+      faces.sectionStart,
+      faces.sectionCount,
+    ];
+    const sections = faces.sectionCode.length;
+    return (
+      perFace.every((column) => column.length === count) &&
+      faces.origin.length === count * VECTOR_FLOATS &&
+      faces.sectionSize.length === sections &&
+      faces.sectionLength.length === sections &&
+      faces.sectionStart.every((start, i) => start + (faces.sectionCount[i] ?? 0) <= sections) &&
+      free.origin.length === free.face.length * VECTOR_FLOATS &&
+      free.axis.length === free.face.length * VECTOR_FLOATS &&
+      free.face.every((face) => face < count && faces.axis[face] === AXIS_FREE)
+    );
+  }, "connector record arrays are inconsistent"),
+);
+export type ConnectorRecordFile = v.InferOutput<typeof ConnectorRecordFile>;
+
+export const ConnectorIndexFile = v.object({
+  package: ConnectorPackage,
+  licenses: v.array(v.string()),
+  attribution: v.array(v.string()),
+  source: BundleSource,
+  parts: v.record(v.string(), v.nullable(FileRef)),
+});
+export type ConnectorIndexFile = v.InferOutput<typeof ConnectorIndexFile>;
+
 export const TablePlane = v.object({
   part: v.string(),
   depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
@@ -629,6 +711,8 @@ export const BundleIndex = v.object({
   trackShapes: v.array(TrackShape),
   tablePlane: TablePlane,
   compiler: v.nullable(BundleCompiler),
+  connectors: FileRef,
+  connectivity: FileRef,
   crosswalk: FileRef,
   partTable: FileRef,
   creditTable: FileRef,

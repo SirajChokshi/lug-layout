@@ -1,3 +1,4 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import type { ImportJob } from "@brr/import";
 import {
   BundleIndex,
@@ -19,6 +20,7 @@ export interface Bundle {
   readonly version: string;
   readonly source: ImportJob["source"];
   readonly compiler: WebAssembly.Module;
+  readonly connectors: ConnectorRecords;
   readonly parts: ReadonlyMap<string, ManifestPart>;
   readonly colors: ReadonlyArray<BundleColor>;
   readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
@@ -46,6 +48,10 @@ export async function openBundle(root: string): Promise<Bundle> {
     version: index.bundleVersion,
     source: index.source,
     compiler: await WebAssembly.compile(wasm),
+    connectors: new ConnectorRecords(
+      async (path) => JSON.parse(await readFile(join(directory, path), "utf8")),
+      { connectivity: index.connectivity.file, connectors: index.connectors.file },
+    ),
     parts: new Map(table.parts.map((part) => [part.id, part])),
     colors: index.colors,
     bricklinkParts: crosswalk.bricklinkParts,

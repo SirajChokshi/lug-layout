@@ -1,4 +1,10 @@
 import {
+  ConnectorRecords,
+  type ConnectorIndexPaths,
+  type PackageAttribution,
+  type PartConnectors,
+} from "./connector-records.ts";
+import {
   ALPHA_OPAQUE,
   BundleIndex,
   CreditTableFile,
@@ -83,6 +89,16 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
   };
 }
 
+function connectorIndexPaths(
+  lod: BundleLod,
+  index: Pick<BundleIndex, "connectors" | "connectivity">,
+): ConnectorIndexPaths {
+  return {
+    connectivity: `${lod}/${index.connectivity.file}`,
+    connectors: `${lod}/${index.connectors.file}`,
+  };
+}
+
 @injectable()
 export class HttpAssetFetcher implements IAssetFetcher {
   constructor(@inject(BUNDLE_BASE_URL) private readonly baseUrl: string) {}
@@ -115,6 +131,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+  private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
   private resolvedManifest: Promise<ResolvedManifest> | undefined;
 
   constructor(
@@ -330,6 +347,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       bundleVersion: manifest.bundleVersion,
       source: manifest.source,
       compilerPath: `${lod}/${manifest.compiler.file}`,
+      connectorIndexes: connectorIndexPaths(lod, manifest),
       unofficialAllowlist: manifest.compiler.unofficialAllowlist,
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
       primitives: manifest.compiler.primitives ?? null,
@@ -341,6 +359,29 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
     };
+  }
+
+  private records(lod: BundleLod): Promise<ConnectorRecords> {
+    let records = this.connectorRecords.get(lod);
+    if (records === undefined) {
+      records = this.loadIndex(lod).then(
+        (index) =>
+          new ConnectorRecords(
+            async (path) => JSON.parse(await this.fetcher.text(path)),
+            connectorIndexPaths(lod, index),
+          ),
+      );
+      this.connectorRecords.set(lod, records);
+    }
+    return records;
+  }
+
+  async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return (await this.records(lod)).load(partId);
+  }
+
+  async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return (await this.records(lod)).connectivityAttribution();
   }
 
   async loadPartSet(

@@ -16,7 +16,7 @@ import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as v from "valibot";
-import { BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
+import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
 import {
   bundleBuildKey,
@@ -38,6 +38,7 @@ import {
 import {
   catalogSourceDirectory,
   fetchAuditInputs,
+  fetchConnectivity,
   fetchCatalogSources,
   fetchClosure,
   modelPath,
@@ -49,8 +50,10 @@ import {
   verifyAuditInputs,
   verifyCatalogSources,
   verifyClosure,
+  verifyConnectivity,
   verifyModels,
   type CatalogLock,
+  type ConnectivityLock,
   type InputLock,
   type ModelRoots,
 } from "./fetch-ldraw.ts";
@@ -88,6 +91,7 @@ const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
+const bundleConnectivityRoot = join(repoRoot, ".cache", "ldcad-shadow-bundle");
 const omrRoot = join(repoRoot, ".cache", "omr");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
@@ -141,6 +145,11 @@ async function fetchCommand(): Promise<void> {
     inferred.cavityProbe,
     inferred.axleProbe,
   ]);
+  const connectivity = await fetchConnectivity(
+    palette.connectivitySource,
+    Object.keys(closure.files),
+    bundleConnectivityRoot,
+  );
   const audit = await fetchAuditInputs(
     palette,
     auditRoot,
@@ -148,7 +157,7 @@ async function fetchCommand(): Promise<void> {
     inferred.vocabularySnaps,
   );
   const catalog = await fetchCatalogSources(palette.catalogSources, catalogRoot);
-  const lock: InputLock = { ...closure, audit, catalog };
+  const lock: InputLock = { ...closure, connectivity, audit, catalog };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   await writeAttribution(lock, palette);
   process.stdout.write(`pinned ${Object.keys(lock.files).length} files\n`);
@@ -165,6 +174,13 @@ async function writeAttribution(lock: InputLock, palette: Palette): Promise<void
 
 async function attributionCommand(): Promise<void> {
   await writeAttribution(await readLock(), await readPalette(palettePath));
+}
+
+function connectivityLock(lock: InputLock): ConnectivityLock {
+  if (lock.connectivity === undefined) {
+    throw new Error("ldraw.lock.json pins no LDCad connectivity; run fetch-ldraw");
+  }
+  return lock.connectivity;
 }
 
 function catalogLock(lock: InputLock): CatalogLock {
@@ -192,6 +208,12 @@ async function restoreCommand(): Promise<void> {
   const lock = await readLock();
   const targets = [
     { name: "bundle closure", source: lock.source, files: lock.files, directory: ldrawRoot },
+    {
+      name: "LDCad connectivity",
+      source: connectivityLock(lock).source,
+      files: connectivityLock(lock).files,
+      directory: bundleConnectivityRoot,
+    },
     ...(lock.audit === undefined
       ? []
       : [
@@ -225,6 +247,11 @@ async function verifyCommand(): Promise<void> {
   const lock = await readLock();
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
+    ...(await verifyConnectivity(
+      connectivityLock(lock),
+      palette.connectivitySource,
+      bundleConnectivityRoot,
+    )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
@@ -446,6 +473,12 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     palette,
     "--primitives",
     join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
+    "--inferred",
+    join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
+    "--shadow",
+    bundleConnectivityRoot,
+    "--patches",
+    join(repoRoot, BUNDLE_DATA_DIRECTORIES.shadowPatches),
     "--out",
     out,
     "--lod",

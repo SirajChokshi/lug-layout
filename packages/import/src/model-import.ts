@@ -1,3 +1,4 @@
+import type { PartConnectors } from "@brr/catalog/connector-records";
 import type {
   BakedModel,
   BakeOutcome,
@@ -103,6 +104,7 @@ export interface ImportReport {
   readonly unknownColors: ReadonlyArray<ColorIssue>;
   readonly directColors: ReadonlyArray<number>;
   readonly compileRounds: number;
+  readonly withoutConnectorRecords: ReadonlyArray<string>;
   readonly bakeRounds: number;
   readonly bakeIssue: string | null;
   readonly bakeHelpersFailed: number;
@@ -136,8 +138,13 @@ export interface ImportResult {
   readonly partTransforms: Float64Array;
   readonly submodels: ImportedSubmodels;
   readonly compiled: ReadonlyArray<CompiledGlb>;
+  readonly connectors: ReadonlyArray<PartConnectors | null>;
   readonly bake: ModelBake | null;
   readonly studio?: StudioReport;
+}
+
+export interface PartConnectorSource {
+  load(partId: string): Promise<PartConnectors | null>;
 }
 
 const MAX_COMPILE_ROUNDS = 64;
@@ -210,10 +217,15 @@ interface ImportLibrary extends LibraryFiles {
 }
 
 interface Assembled {
-  readonly result: Omit<ImportResult, "bake" | "report"> & {
+  readonly result: Omit<ImportResult, "bake" | "report" | "connectors"> & {
     readonly report: Omit<
       ImportReport,
-      "bakeRounds" | "bakeIssue" | "bakeHelpersFailed" | "fetched" | "timings"
+      | "bakeRounds"
+      | "bakeIssue"
+      | "bakeHelpersFailed"
+      | "fetched"
+      | "timings"
+      | "withoutConnectorRecords"
     >;
   };
   readonly drawn: Uint8Array;
@@ -234,6 +246,7 @@ export class ModelImportEngine {
   constructor(
     private readonly compiler: BrickCompiler,
     private readonly mirror: LdrawMirror,
+    private readonly connectors: PartConnectorSource,
     private readonly now: () => number,
     private readonly helpers: ReadonlyArray<IBakeHelper>,
   ) {}
@@ -263,12 +276,19 @@ export class ModelImportEngine {
     });
     const assembled = assemble(job, read, parts, outcomes);
     const baked = await this.bakeDrawn(job, library, assembled.drawn);
+    const connectors = await Promise.all(
+      assembled.result.partIds.map((partId) => this.connectors.load(partId)),
+    );
     const bakedAt = this.now();
     return {
       ...assembled.result,
+      connectors,
       bake: baked.bake,
       report: {
         ...assembled.result.report,
+        withoutConnectorRecords: assembled.result.partIds.filter(
+          (_, index) => connectors[index] === null,
+        ),
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,

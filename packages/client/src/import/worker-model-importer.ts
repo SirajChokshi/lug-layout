@@ -62,13 +62,12 @@ export class WorkerModelImporter implements IModelImporter {
     transfer: Transferable[] = [],
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
-    const compilerUrl = new URL(
-      context.compilerPath,
-      new URL(this.bundleBaseUrl.replace(/\/?$/u, "/")),
-    ).href;
+    const bundleBase = new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
     return this.workers.run(
       {
-        compilerUrl,
+        compilerUrl: new URL(context.compilerPath, bundleBase).href,
+        bundleBaseUrl: bundleBase.href,
+        connectorIndexes: context.connectorIndexes,
         ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
         input,
       },

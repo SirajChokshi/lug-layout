@@ -1,8 +1,10 @@
+import { CONNECTIVITY_LICENSE, CONNECTOR_SOURCE } from "@brr/schema/bundle";
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+import { CA_LICENSE_LINES } from "./verify/license-audit.ts";
 import { encodePng } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
@@ -63,7 +65,50 @@ function compiledManifest() {
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
     creditTable: { file: "credits.json" },
+    connectors: { file: "connector-index.json" },
+    connectivity: { file: "connectivity-index.json" },
     thumbnails: [] as Array<{ item: string; file: string }>,
+  };
+}
+
+const BRICK = "ldraw:3001";
+const [PART_LICENSE = ""] = CA_LICENSE_LINES;
+
+function connectorRecord(license: string, tier: number) {
+  return {
+    part: BRICK,
+    license,
+    faces: {
+      gender: [0],
+      source: [tier],
+      status: [0],
+      caps: [0],
+      slide: [false],
+      group: [""],
+      origin: [0, 0, 0],
+      axis: [0],
+      sectionStart: [0],
+      sectionCount: [1],
+      sectionCode: [0],
+      sectionSize: [6],
+      sectionLength: [8],
+    },
+    free: { face: [] as number[], origin: [] as number[], axis: [] as number[] },
+    unreadable: [] as string[],
+  };
+}
+
+function connectorIndex(
+  pkg: "connectivity" | "connectors",
+  licenses: string[],
+  attribution: string[],
+) {
+  return {
+    package: pkg,
+    licenses,
+    attribution,
+    source,
+    parts: { [BRICK]: { file: `${pkg}-3001.json` } } as Record<string, { file: string } | null>,
   };
 }
 
@@ -156,6 +201,10 @@ interface CompiledBundle {
   readonly model: ReturnType<typeof modelFile>;
   readonly crosswalk: ReturnType<typeof crosswalkFile>;
   readonly parts: Array<Record<string, unknown>>;
+  readonly connectivityIndex: ReturnType<typeof connectorIndex>;
+  readonly connectivityRecord: ReturnType<typeof connectorRecord>;
+  readonly connectorIndex: ReturnType<typeof connectorIndex>;
+  readonly connectorRecord: ReturnType<typeof connectorRecord>;
   readonly files: Map<string, Buffer>;
 }
 
@@ -171,9 +220,26 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     model: modelFile(),
     crosswalk: crosswalkFile(),
     parts: [],
+    connectivityIndex: connectorIndex(
+      "connectivity",
+      [CONNECTIVITY_LICENSE],
+      ["LDCad Shadow Library by Roland Melkert"],
+    ),
+    connectivityRecord: connectorRecord(CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow),
+    connectorIndex: connectorIndex("connectors", [PART_LICENSE], []),
+    connectorRecord: connectorRecord(PART_LICENSE, CONNECTOR_SOURCE.primitive),
     files: new Map<string, Buffer>(),
   };
   edit(bundle);
+  const connectorFiles = {
+    "connectivity-index.json": bundle.connectivityIndex,
+    "connectivity-3001.json": bundle.connectivityRecord,
+    "connector-index.json": bundle.connectorIndex,
+    "connectors-3001.json": bundle.connectorRecord,
+  };
+  for (const [name, value] of Object.entries(connectorFiles)) {
+    await writeFile(join(directory, name), JSON.stringify(value));
+  }
   await writeFile(join(directory, MANIFEST_FILE), JSON.stringify(bundle.manifest));
   await writeFile(join(directory, "stud.glb"), glb(bundle.gltf));
   await writeFile(join(directory, "model-scene.json"), JSON.stringify(bundle.model));
@@ -200,7 +266,71 @@ afterEach(async () => {
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 5 } });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 9 } });
+  });
+
+  it("points each connector index at the content-addressed record of its part", async () => {
+    const { directory } = await publish(() => undefined);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    for (const [pkg, written] of [
+      ["connectivity", connectorRecord(CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow)],
+      ["connectors", connectorRecord(PART_LICENSE, CONNECTOR_SOURCE.primitive)],
+    ] as const) {
+      const index = JSON.parse(await readFile(join(directory, manifest[pkg].file), "utf8"));
+      const { file } = index.parts[BRICK];
+      expect(file).toMatch(new RegExp(`^${pkg}-3001\\.[0-9a-f]{16}\\.json$`, "u"));
+      expect(JSON.parse(await readFile(join(directory, file), "utf8"))).toEqual(written);
+    }
+  });
+
+  it.each([
+    {
+      file: "a tier 1 face in the connectors package",
+      edit: ({ connectorRecord: record }: CompiledBundle) => {
+        record.faces.source[0] = CONNECTOR_SOURCE.shadow;
+      },
+      refusal: `ldraw:3001's connector record carries 1 tier 1 faces, which belong only in the ${CONNECTIVITY_LICENSE} connectivity package`,
+    },
+    {
+      file: "a primitive face in the connectivity package",
+      edit: ({ connectivityRecord: record }: CompiledBundle) => {
+        record.faces.source[0] = CONNECTOR_SOURCE.primitive;
+      },
+      refusal: "ldraw:3001's connectivity record carries 1 faces from outside tier 1",
+    },
+    {
+      file: "a connectivity package under another licence",
+      edit: ({ connectivityIndex: index, connectivityRecord: record }: CompiledBundle) => {
+        index.licenses = [PART_LICENSE];
+        record.license = PART_LICENSE;
+      },
+      refusal: `the connectivity package declares ["${PART_LICENSE}"], not only ${CONNECTIVITY_LICENSE}`,
+    },
+    {
+      file: "a connectivity package without attribution",
+      edit: ({ connectivityIndex: index }: CompiledBundle) => {
+        index.attribution = [];
+      },
+      refusal: "the connectivity package names no attribution",
+    },
+    {
+      file: "a connector record under a licence other than an LDraw CA licence",
+      edit: ({ connectorIndex: index, connectorRecord: record }: CompiledBundle) => {
+        index.licenses = ["Not redistributable : see NonCAreadme.txt"];
+        record.license = "Not redistributable : see NonCAreadme.txt";
+      },
+      refusal:
+        "the connectors package declares Not redistributable : see NonCAreadme.txt, which is not an LDraw CA licence",
+    },
+    {
+      file: "a record filed under another part",
+      edit: ({ connectorIndex: index }: CompiledBundle) => {
+        index.parts = { "ldraw:3002": index.parts[BRICK] ?? null };
+      },
+      refusal: "the connectors index files ldraw:3001 under ldraw:3002",
+    },
+  ])("refuses $file", async ({ edit, refusal }) => {
+    await expect(publish(edit)).rejects.toThrow(refusal);
   });
 
   it("points every record at the content-addressed GLB of its parts", async () => {
@@ -272,7 +402,7 @@ describe("publishBundle", () => {
 
   it("publishes each thumbnail in thumb/ under its content address", async () => {
     const { directory, published } = await publish(withThumbnail(png(THUMBNAIL_PX)));
-    expect(published.files).toBe(6);
+    expect(published.files).toBe(10);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const [thumbnail] = manifest.thumbnails;
     expect(thumbnail.item).toBe("ldraw:3811@2");
