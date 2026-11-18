@@ -21,7 +21,7 @@ pub use faces::{
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
-pub use shadow::ShadowSnaps;
+pub use shadow::{ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -32,6 +32,13 @@ pub enum Source {
     Shadow,
     Primitive,
     Inferred,
+    Patch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Status {
+    Verified,
+    Unverified,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -215,6 +222,7 @@ pub(crate) fn linear_part(placement: &Affine) -> [f64; 9] {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connector {
     pub source: Source,
+    pub status: Status,
     pub id: Option<String>,
     pub group: Option<String>,
     pub shape: Shape,
@@ -367,7 +375,7 @@ fn finished(connector: &Connector, issues: &mut Vec<Issue>) -> Connector {
 enum Slot {
     Lattice {
         polarity: u8,
-        origin: [i64; 3],
+        sixteenths: [i64; 3],
         axis: u8,
     },
     Free {
@@ -449,7 +457,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
-                    origin: [x, y, z],
+                    sixteenths: [x, y, z],
                     axis,
                 },
                 _ => Slot::Free {
@@ -501,7 +509,7 @@ fn face_slot(face: &MatingFace) -> Slot {
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
-            origin: [x, y, z],
+            sixteenths: [x, y, z],
             axis,
         },
         _ => Slot::Free {
@@ -621,9 +629,13 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 } => {
                     let entrance = MatingFace {
                         source: Source::Inferred,
+                        status: Status::Unverified,
+                        group: None,
                         gender: Gender::Female,
                         origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
                         axis: [0.0; 3],
+                        sixteenths: None,
+                        direction: None,
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,
