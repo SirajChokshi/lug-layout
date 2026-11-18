@@ -50,12 +50,10 @@ export type {
   EditorStatus,
   HistoryView,
   HoverView,
-  ExportedWorld,
   FrameMeasurement,
   IEditor,
   LatencySample,
   ModelBakeView,
-  ModelFileInput,
   ModelImportStatus,
   ModelImportView,
   RoadIssueView,
@@ -66,7 +64,6 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
-  SaveState,
   SelectionView,
   SkippedCatalogModel,
   TrackBomLine,
@@ -74,8 +71,13 @@ export type {
   TrackPieceView,
   TrackSolveStats,
   TrackView,
-  WorldFileView,
 } from "./edit/editor.ts";
+export type {
+  ExportedWorld,
+  ModelFileInput,
+  SaveState,
+  WorldFileView,
+} from "./edit/world-session.ts";
 export type { RoadShape } from "@brr/domain";
 export type {
   RoadKitView,

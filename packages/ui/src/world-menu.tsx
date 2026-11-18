@@ -155,6 +155,7 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
     readOnly ||
     world?.save === "failed" ||
     snapshot.fileError !== null ||
+    snapshot.catalogError !== null ||
     modelImport?.status === "importing" ||
     modelImport?.status === "refused";
   useUnloadGuard(snapshot.unsavedEdits);
@@ -308,6 +309,7 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
       </div>
       {modelImport && <ModelImportStatus view={modelImport} />}
       {snapshot.fileError !== null && <p className="error">{snapshot.fileError}</p>}
+      {snapshot.catalogError !== null && <p className="error">{snapshot.catalogError}</p>}
     </details>
   );
 }
