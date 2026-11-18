@@ -9,7 +9,7 @@ use brick_compile::connect::{
     SectionVocabulary, ShadowSnaps, Shape, Source, Uninferred, Unreadable, CAP_FAR, CAP_ROOT,
     ROUND, SQUARE,
 };
-use brick_compile::lattice::Malformation;
+use brick_compile::lattice::{Malformation, STUD_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::Library;
 use serde_json::{json, Value};
@@ -1337,6 +1337,8 @@ fn a_stub_notched_along_one_arm_side_is_not_taken_for_an_axle() {
     assert_eq!(male_axles("parts/notched.dat"), 0);
 }
 
+const CUSTOM_AXLE_STUB: &str = "0 Custom Stub\n0 BFC CERTIFY CCW\n1 16 0 8 0 20 0 0 0 -8 0 0 0 20 box5.dat\n4 16 20 8 20 20 8 -20 -20 8 -20 -20 8 20\n1 16 0 0 0 1 0 0 0 -20 0 0 0 1 axlehol8.dat\n1 16 0 -20 0 1 0 0 0 1 0 0 0 1 axleend.dat\n";
+
 #[test]
 fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
     let turn = 0.5f64.sqrt();
@@ -1358,11 +1360,7 @@ fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
                 "parts/round.dat",
                 custom_hub("0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat"),
             ),
-            (
-                "parts/stub.dat",
-                "0 Custom Stub\n0 BFC CERTIFY CCW\n1 16 0 8 0 20 0 0 0 -8 0 0 0 20 box5.dat\n4 16 20 8 20 20 8 -20 -20 8 -20 -20 8 20\n1 16 0 0 0 1 0 0 0 -20 0 0 0 1 axlehol8.dat\n1 16 0 -20 0 1 0 0 0 1 0 0 0 1 axleend.dat\n"
-                    .to_string(),
-            ),
+            ("parts/stub.dat", CUSTOM_AXLE_STUB.to_string()),
         ],
     );
     let shadow = pinned("ldcad-shadow");
@@ -1411,6 +1409,97 @@ fn custom_parts_get_axle_holes_and_axles_from_their_geometry() {
         (face.gender, face.origin, face.sections[0].length),
         (Gender::Male, [0.0, 0.0, 0.0], 20.0)
     );
+}
+
+#[test]
+fn an_axle_end_flush_with_a_plate_that_never_reaches_it_is_still_an_axle_end() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/stub.dat", CUSTOM_AXLE_STUB.to_string()),
+            (
+                "parts/stub-beside-a-plate.dat",
+                "0 Stub Beside A Plate\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 stub.dat\n1 16 45 -20 15 1 0 0 0 1 0 0 0 1 3710.dat\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let mut male_axles = |path: &str| {
+        let connectors: Vec<Connector> = inferred
+            .infer(path)
+            .connectors
+            .into_iter()
+            .filter(|c| {
+                matches!(&c.shape, Shape::Cylinder { gender: Gender::Male, sections, .. }
+                    if sections[0].shape == SectionShape::Axle)
+            })
+            .collect();
+        face_keys(&connectors)
+    };
+    let alone = male_axles("parts/stub.dat");
+    assert_eq!(alone.len(), 1);
+    assert_eq!(male_axles("parts/stub-beside-a-plate.dat"), alone);
+}
+
+fn custom_pocket(half_width: f64) -> String {
+    let (w, o, d, h) = (half_width, 40.0, 8.0, 16.0);
+    let quads = [
+        [[-o, 0.0, -o], [o, 0.0, -o], [w, 0.0, -w], [-w, 0.0, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [o, 0.0, o], [-o, 0.0, o]],
+        [[-o, 0.0, -o], [-w, 0.0, -w], [-w, 0.0, w], [-o, 0.0, o]],
+        [[w, 0.0, -w], [o, 0.0, -o], [o, 0.0, o], [w, 0.0, w]],
+        [[-w, 0.0, -w], [w, 0.0, -w], [w, d, -w], [-w, d, -w]],
+        [[-w, 0.0, w], [w, 0.0, w], [w, d, w], [-w, d, w]],
+        [[-w, 0.0, -w], [-w, 0.0, w], [-w, d, w], [-w, d, -w]],
+        [[w, 0.0, -w], [w, 0.0, w], [w, d, w], [w, d, -w]],
+        [[-w, d, -w], [w, d, -w], [w, d, w], [-w, d, w]],
+        [[-o, 0.0, -o], [o, 0.0, -o], [o, h, -o], [-o, h, -o]],
+        [[-o, 0.0, o], [o, 0.0, o], [o, h, o], [-o, h, o]],
+        [[-o, 0.0, -o], [-o, 0.0, o], [-o, h, o], [-o, h, -o]],
+        [[o, 0.0, -o], [o, 0.0, o], [o, h, o], [o, h, -o]],
+        [[-o, h, -o], [o, h, -o], [o, h, o], [-o, h, o]],
+    ];
+    let mut text = String::from("0 Custom Pocket\n0 BFC NOCERTIFY\n");
+    for quad in quads {
+        let points: Vec<String> = quad
+            .iter()
+            .map(|p| format!("{} {} {}", p[0], p[1], p[2]))
+            .collect();
+        text += &format!("4 16 {}\n", points.join(" "));
+    }
+    text
+}
+
+#[test]
+fn a_wall_half_a_stud_from_the_stud_probe_within_identification_bounds_its_loose_cavity() {
+    let stud_radius = 6.0;
+    let wall = stud_radius + STUD_LDU / 2.0 + 0.0003;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[("parts/pocket.dat", custom_pocket(wall))],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let at_the_centre: Vec<f64> = inferred
+        .infer("parts/pocket.dat")
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin: [0.0, 0.0, 0.0],
+                reason: Uninferred::LooseCavity { clearance },
+            } => Some(*clearance),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(at_the_centre.len(), 1, "{at_the_centre:?}");
+    assert!((at_the_centre[0] - (wall - stud_radius)).abs() <= 1e-9);
 }
 
 const ROUND_HOLE: &str = "0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -16 0 0 0 6 4-4cyli.dat";
@@ -1911,7 +2000,7 @@ fn tiers_one_and_two_drop_and_report_references_they_cannot_place_and_keep_the_r
 }
 
 #[test]
-fn geometry_too_large_for_the_cell_index_is_reported_once_and_probed_where_it_matters() {
+fn geometry_over_the_square_budget_is_reported_once_and_probed_where_it_matters() {
     let top_ring: String = hub_ring(0, 20, 6)
         .lines()
         .map(|line| {
@@ -1967,8 +2056,8 @@ fn geometry_too_large_for_the_cell_index_is_reported_once_and_probed_where_it_ma
             .filter_map(|issue| match issue {
                 Issue::Uninferred {
                     origin,
-                    reason: Uninferred::Oversized { cells },
-                } => Some((*origin, *cells)),
+                    reason: Uninferred::Oversized { squares },
+                } => Some((*origin, *squares)),
                 _ => None,
             })
             .collect()
@@ -1977,7 +2066,7 @@ fn geometry_too_large_for_the_cell_index_is_reported_once_and_probed_where_it_ma
     let hub = inferred.infer("parts/hub.dat");
     assert_eq!(face_keys(&hub.connectors), hub_face);
     assert!(oversized(&hub).is_empty());
-    let across = |half: f64| 2.0 * half / 10.0 + 1.0;
+    let across = |half: f64| 2.0 * half / (STUD_LDU / 2.0) + 1.0;
     let over_facet = inferred.infer("parts/hub-over-a-huge-facet.dat");
     assert_eq!(face_keys(&over_facet.connectors), hub_face);
     assert_eq!(

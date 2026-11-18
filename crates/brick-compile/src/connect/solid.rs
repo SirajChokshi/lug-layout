@@ -347,6 +347,21 @@ type LineKey = (LineUse, usize, [u64; 2], [u64; 2]);
 
 type PlanBox = [[f64; 2]; 2];
 
+fn reach_box(center: [f64; 2], reach: f64) -> PlanBox {
+    [center.map(|c| c - reach), center.map(|c| c + reach)]
+}
+
+fn intersection(a: &PlanBox, b: &PlanBox) -> PlanBox {
+    [
+        [0, 1].map(|k| a[0][k].max(b[0][k])),
+        [0, 1].map(|k| a[1][k].min(b[1][k])),
+    ]
+}
+
+fn meets(low: [f64; 2], high: [f64; 2], query: &PlanBox) -> bool {
+    (0..2).all(|k| query[0][k] <= high[k] && low[k] <= query[1][k])
+}
+
 struct Column {
     cells: Cells<(i64, i64), DepthBands>,
     oversized: DepthBands,
@@ -354,12 +369,14 @@ struct Column {
 }
 
 pub struct Solid {
+    cell: CellSize,
     facets: Vec<Facet>,
     depths: [OnceCell<DepthBands>; 3],
     lines: RefCell<Cells<LineKey, Rc<DepthBands>>>,
     no_line: Rc<DepthBands>,
     bounds: (Vec3, Vec3),
     columns: [OnceCell<Column>; 3],
+    occupied: [OnceCell<SquareSet>; 3],
     surfaces: Vec<RoundSurface>,
     axes: Cells<(usize, i64, i64), Vec<usize>>,
     walls: [Cells<(i64, i64), Vec<usize>>; 3],
@@ -382,25 +399,40 @@ fn cross(a: Vec3, b: Vec3) -> Vec3 {
     ]
 }
 
-fn cell(value: f64) -> i64 {
+const PLAN_BUDGET: f64 = 65_536.0;
+
+type SquareSet = HashSet<(i64, i64), BuildHasherDefault<CellHasher>>;
+
+fn square(value: f64) -> i64 {
     (value / HALF_GRID_LDU).floor() as i64
 }
 
-const OVERSIZED_CELLS: f64 = 65_536.0;
-
-fn cells_across(low: f64, high: f64) -> f64 {
-    (high / HALF_GRID_LDU).floor() - (low / HALF_GRID_LDU).floor() + 1.0
+fn squares_across(low: [f64; 2], high: [f64; 2]) -> f64 {
+    (0..2)
+        .map(|k| (high[k] / HALF_GRID_LDU).floor() - (low[k] / HALF_GRID_LDU).floor() + 1.0)
+        .product()
 }
 
-fn plan_cells(low: [f64; 2], high: [f64; 2]) -> f64 {
-    cells_across(low[0], high[0]) * cells_across(low[1], high[1])
-}
-
-fn beyond_cell_budget(low: [f64; 2], high: [f64; 2]) -> bool {
+fn beyond_budget(low: [f64; 2], high: [f64; 2]) -> bool {
     !matches!(
-        plan_cells(low, high).partial_cmp(&OVERSIZED_CELLS),
+        squares_across(low, high).partial_cmp(&PLAN_BUDGET),
         Some(std::cmp::Ordering::Less | std::cmp::Ordering::Equal)
     )
+}
+
+#[derive(Clone, Copy)]
+struct CellSize(f64);
+
+impl CellSize {
+    const CANONICAL: CellSize = CellSize(HALF_GRID_LDU);
+
+    fn key(self, value: f64) -> i64 {
+        (value / self.0).floor() as i64
+    }
+
+    fn window(self, center: [f64; 2], reach: f64) -> [[i64; 2]; 2] {
+        center.map(|c| [self.key(c - reach), self.key(c + reach)])
+    }
 }
 
 fn window_cells(window: [[i64; 2]; 2]) -> f64 {
@@ -410,7 +442,7 @@ fn window_cells(window: [[i64; 2]; 2]) -> f64 {
 }
 
 fn sparser_than<V>(cells: &Cells<(i64, i64), V>, span: f64) -> bool {
-    span > (cells.len() as f64).max(OVERSIZED_CELLS)
+    span > (cells.len() as f64).max(PLAN_BUDGET)
 }
 
 fn in_window<'a, V>(
@@ -471,10 +503,6 @@ fn angular_span(center: [f64; 2], bounds: PlanBounds) -> Option<(f64, f64)> {
     ];
     span_of(&corners.map(|p| p[1].atan2(p[0])))
         .filter(|&(from, to)| (to - from).rem_euclid(TAU) < FRAC_PI_2)
-}
-
-fn cell_ranges_meet(low: [f64; 2], high: [f64; 2], window: [[i64; 2]; 2]) -> bool {
-    (0..2).all(|k| cell(low[k]) <= window[k][1] && cell(high[k]) >= window[k][0])
 }
 
 pub const SIXTEENTHS_PER_LDU: f64 = 16.0;
@@ -897,6 +925,19 @@ fn axis_probe(axis: usize, center: [f64; 2], along: f64, inward: f64) -> Probe {
 
 impl Solid {
     pub fn new(triangles: &[Triangle], surfaces: Vec<RoundSurface>) -> Self {
+        Self::indexed(triangles, surfaces, CellSize::CANONICAL)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_cell_size(
+        triangles: &[Triangle],
+        surfaces: Vec<RoundSurface>,
+        size: f64,
+    ) -> Self {
+        Self::indexed(triangles, surfaces, CellSize(size))
+    }
+
+    fn indexed(triangles: &[Triangle], surfaces: Vec<RoundSurface>, cell: CellSize) -> Self {
         let mut facets = Vec::with_capacity(triangles.len());
         for triangle in triangles {
             let [a, b, c] = triangle.points;
@@ -924,12 +965,14 @@ impl Solid {
             },
         );
         let mut solid = Solid {
+            cell,
             facets,
             depths: Default::default(),
             lines: RefCell::default(),
             no_line: Rc::new(DepthBands::new(Vec::new(), |_| 0.0, |_| 0.0)),
             bounds,
             columns: Default::default(),
+            occupied: Default::default(),
             surfaces: Vec::new(),
             axes: Cells::default(),
             walls: Default::default(),
@@ -954,12 +997,12 @@ impl Solid {
             if let RoundShape::Wall { radius, .. } = surface.shape {
                 let low = surface.center.map(|c| c - radius);
                 let high = surface.center.map(|c| c + radius);
-                if surface.full && beyond_cell_budget(low, high) {
+                if surface.full && beyond_budget(low, high) {
                     solid.oversized_walls[surface.axis].push(index);
                 } else if surface.full {
-                    for x in cell(surface.center[0] - radius)..=cell(surface.center[0] + radius) {
-                        for y in cell(surface.center[1] - radius)..=cell(surface.center[1] + radius)
-                        {
+                    let window = cell.window(surface.center, radius);
+                    for x in window[0][0]..=window[0][1] {
+                        for y in window[1][0]..=window[1][1] {
                             solid.walls[surface.axis]
                                 .entry((x, y))
                                 .or_default()
@@ -1005,21 +1048,21 @@ impl Solid {
 
     fn oversized_on(&self, facet: &Facet, axis: usize) -> bool {
         let (low, high) = self.plan_box(facet, axis);
-        beyond_cell_budget(low, high)
+        beyond_budget(low, high)
     }
 
     pub fn largest_oversized(&self) -> Option<(Vec3, f64)> {
         let facets = self.facets.iter().filter_map(|facet| {
-            let cells = (0..3)
+            let squares = (0..3)
                 .map(|axis| {
                     let (low, high) = self.plan_box(facet, axis);
-                    plan_cells(low, high)
+                    squares_across(low, high)
                 })
                 .fold(0.0, f64::max);
             (0..3).any(|axis| self.oversized_on(facet, axis)).then(|| {
                 let centroid =
                     [0, 1, 2].map(|k| facet.points.iter().map(|p| p[k]).sum::<f64>() / 3.0);
-                (centroid, cells)
+                (centroid, squares)
             })
         });
         let walls = self.oversized_walls.iter().flatten().filter_map(|&index| {
@@ -1030,7 +1073,7 @@ impl Solid {
             let low = surface.center.map(|c| c - radius);
             let high = surface.center.map(|c| c + radius);
             let origin = axis_probe(surface.axis, surface.center, from, 1.0).entrance;
-            Some((origin, plan_cells(low, high)))
+            Some((origin, squares_across(low, high)))
         });
         facets
             .chain(walls)
@@ -1050,8 +1093,8 @@ impl Solid {
                     oversized.push(index as u32);
                     continue;
                 }
-                for x in cell(facet.low[i])..=cell(facet.high[i]) {
-                    for y in cell(facet.low[j])..=cell(facet.high[j]) {
+                for x in self.cell.key(facet.low[i])..=self.cell.key(facet.high[i]) {
+                    for y in self.cell.key(facet.low[j])..=self.cell.key(facet.high[j]) {
                         cells.entry((x, y)).or_default().push(index as u32);
                     }
                 }
@@ -1064,6 +1107,39 @@ impl Solid {
                 has_oversized: !oversized.is_empty(),
                 oversized: self.bands(axis, oversized),
             }
+        })
+    }
+
+    fn occupied(&self, axis: usize) -> &SquareSet {
+        self.occupied[axis].get_or_init(|| {
+            let mut occupied = SquareSet::default();
+            let mut cover = |low: [f64; 2], high: [f64; 2]| {
+                for x in square(low[0])..=square(high[0]) {
+                    for y in square(low[1])..=square(high[1]) {
+                        occupied.insert((x, y));
+                    }
+                }
+            };
+            for facet in &self.facets {
+                if !self.oversized_on(facet, axis) {
+                    let (low, high) = self.plan_box(facet, axis);
+                    cover(low, high);
+                }
+            }
+            let oversized_walls = &self.oversized_walls[axis];
+            for (index, surface) in self.surfaces.iter().enumerate() {
+                if surface.axis != axis || oversized_walls.contains(&index) {
+                    continue;
+                }
+                cover(surface.center, surface.center);
+                if let (true, RoundShape::Wall { radius, .. }) = (surface.full, surface.shape) {
+                    cover(
+                        surface.center.map(|c| c - radius),
+                        surface.center.map(|c| c + radius),
+                    );
+                }
+            }
+            occupied
         })
     }
 
@@ -1171,17 +1247,12 @@ impl Solid {
         plan: Option<&PlanBox>,
         found: &mut impl FnMut(u32) -> bool,
     ) -> bool {
-        let (i, j) = plan_axes(axis);
         let low_of = |index: u32| self.facets[index as usize].low[axis];
         bands.starting_before((from, to), low_of, &mut |index| {
             let facet = &self.facets[index as usize];
-            let meets = |plan: &PlanBox| {
-                plan[0][0] <= facet.high[i]
-                    && facet.low[i] <= plan[1][0]
-                    && plan[0][1] <= facet.high[j]
-                    && facet.low[j] <= plan[1][1]
-            };
-            !(facet.high[axis] >= from && plan.is_none_or(meets)) || found(index)
+            let (low, high) = self.plan_box(facet, axis);
+            !(facet.high[axis] >= from && plan.is_none_or(|plan| meets(low, high, plan)))
+                || found(index)
         })
     }
 
@@ -1201,28 +1272,22 @@ impl Solid {
         plan: Option<&PlanBox>,
         mut found: impl FnMut(u32) -> bool,
     ) -> bool {
-        let (i, j) = plan_axes(probe.axis);
         let (from, to) = Self::world_window(probe, depths);
         let column = self.column(probe.axis);
-        let window = [i, j].map(|k| {
-            [
-                cell(probe.entrance[k] - reach),
-                cell(probe.entrance[k] + reach),
-            ]
-        });
+        let center = probe.center();
+        let within = reach_box(center, reach);
+        let query = plan.map_or(within, |plan| intersection(plan, &within));
+        let window = self.cell.window(center, reach);
         let indexed = in_window(&column.cells, window, |bands| {
-            self.meeting(bands, probe.axis, (from, to), plan, &mut found)
+            self.meeting(bands, probe.axis, (from, to), Some(&query), &mut found)
         });
         indexed
             && self.meeting(
                 &column.oversized,
                 probe.axis,
                 (from, to),
-                plan,
-                &mut |index| {
-                    let (low, high) = self.plan_box(&self.facets[index as usize], probe.axis);
-                    !cell_ranges_meet(low, high, window) || found(index)
-                },
+                Some(&query),
+                &mut found,
             )
     }
 
@@ -1337,22 +1402,26 @@ impl Solid {
     fn exact(&self, probe: &Probe, reach: f64) -> Vec<usize> {
         let center = probe.center();
         let mut out = self.coaxial(probe);
-        let window = center.map(|c| [cell(c - reach), cell(c + reach)]);
+        let query = reach_box(center, reach);
+        let near = |&index: &usize| {
+            let surface = &self.surfaces[index];
+            let radius = surface.reach();
+            meets(
+                surface.center.map(|c| c - radius),
+                surface.center.map(|c| c + radius),
+                &query,
+            )
+        };
+        let window = self.cell.window(center, reach);
         in_window(&self.walls[probe.axis], window, |found| {
-            out.extend_from_slice(found);
+            out.extend(found.iter().copied().filter(near));
             true
         });
         out.extend(
             self.oversized_walls[probe.axis]
                 .iter()
                 .copied()
-                .filter(|&index| {
-                    let surface = &self.surfaces[index];
-                    let radius = surface.reach();
-                    let low = surface.center.map(|c| c - radius);
-                    let high = surface.center.map(|c| c + radius);
-                    cell_ranges_meet(low, high, window)
-                }),
+                .filter(near),
         );
         out.sort_unstable();
         out.dedup();
@@ -1447,7 +1516,9 @@ impl Solid {
                 return true;
             }
             let clipped = slab_clip(self.polygon(probe, facet), range.0, range.1);
-            clipped.iter().all(|p| p[0].hypot(p[1]) <= beyond)
+            clipped.is_empty()
+                || nearest_radius(&clipped) > reach
+                || clipped.iter().all(|p| p[0].hypot(p[1]) <= beyond)
         })
     }
 
@@ -1539,12 +1610,12 @@ impl Solid {
         let mut extent = ([i64::MAX; 2], [i64::MIN; 2]);
         for (index, polygon) in polygons.iter().enumerate() {
             let PlanBounds { low, high } = polygon.bounds;
-            if beyond_cell_budget(low, high) {
+            if beyond_budget(low, high) {
                 oversized_polygons.push(index as u32);
                 continue;
             }
-            let low = low.map(cell);
-            let high = high.map(cell);
+            let low = low.map(|v| self.cell.key(v));
+            let high = high.map(|v| self.cell.key(v));
             for k in 0..2 {
                 extent.0[k] = extent.0[k].min(low[k]);
                 extent.1[k] = extent.1[k].max(high[k]);
@@ -1592,14 +1663,18 @@ impl Solid {
             .collect();
         candidates.sort_by(|a, b| a.0.total_cmp(&b.0));
         for (gap, index) in candidates {
-            if gap > best + IDENTIFY_LDU {
+            if gap > best.min(reach) + IDENTIFY_LDU {
                 break;
             }
             if let Some(radius) = self.slab_radius(probe, &self.facets[index as usize], range) {
                 best = best.min(radius);
             }
         }
-        best
+        if best <= reach {
+            best
+        } else {
+            f64::INFINITY
+        }
     }
 
     pub fn comes_within(
@@ -1813,7 +1888,7 @@ impl Solid {
         if slab.polygons.is_empty() {
             return false;
         }
-        let home = [cell(center[0]), cell(center[1])];
+        let home = [self.cell.key(center[0]), self.cell.key(center[1])];
         let blocks = |polygon: &SlabPolygon| {
             !self.facets[polygon.facet]
                 .owner
@@ -1869,7 +1944,7 @@ impl Solid {
                 return true;
             }
         }
-        let home = [cell(center[0]), cell(center[1])];
+        let home = [self.cell.key(center[0]), self.cell.key(center[1])];
         let home_group = home.map(group_of);
         let mut groups: Vec<(Nearness, &CellGroup)> = slab
             .groups()
@@ -2066,23 +2141,17 @@ impl Solid {
                 .collect();
         }
         let pad = (reach / HALF_GRID_LDU).ceil() as i64 + 1;
-        let mut live: HashSet<(i64, i64), BuildHasherDefault<CellHasher>> = HashSet::default();
-        let mut seed = |(x, y): (i64, i64)| {
-            for a in (x - pad).max(range[0][0])..=(x + pad).min(range[0][1]) {
-                for b in (y - pad).max(range[1][0])..=(y + pad).min(range[1][1]) {
+        let mut live = SquareSet::default();
+        for &(x, y) in self.occupied(plane.axis) {
+            for a in x.saturating_sub(pad).max(range[0][0])..=x.saturating_add(pad).min(range[0][1])
+            {
+                for b in
+                    y.saturating_sub(pad).max(range[1][0])..=y.saturating_add(pad).min(range[1][1])
+                {
                     live.insert((a, b));
                 }
             }
-        };
-        column.cells.keys().copied().for_each(&mut seed);
-        self.walls[plane.axis].keys().copied().for_each(&mut seed);
-        self.surfaces
-            .iter()
-            .enumerate()
-            .filter(|(index, surface)| {
-                surface.axis == plane.axis && !oversized_walls.contains(index)
-            })
-            .for_each(|(_, surface)| seed((cell(surface.center[0]), cell(surface.center[1]))));
+        }
         let mut live: Vec<(i64, i64)> = live.into_iter().collect();
         live.sort_unstable();
         live.into_iter().map(point).collect()
@@ -2198,7 +2267,7 @@ mod tests {
         };
         let reach = 1500.0;
         let window = 2.0 * reach / HALF_GRID_LDU + 1.0;
-        assert!(window * window > OVERSIZED_CELLS);
+        assert!(window * window > PLAN_BUDGET);
         let mut visited = Vec::new();
         solid.each(&probe, reach, (0.0, 10.0), None, |facet| {
             visited.push(facet);
@@ -2272,6 +2341,58 @@ mod tests {
         let seeded = solid.grid(&plane, 25.0);
         assert!(!seeded.is_empty());
         assert!(seeded.iter().all(|point| point[1].abs() > 700.0));
+    }
+
+    #[test]
+    fn probes_are_seeded_where_geometry_lies_whatever_the_index_cell_size() {
+        let flats = [(-800.0, 1.0), (0.0, 400.0), (800.0, 1.0)];
+        let triangles = flats.map(|(x, half)| flat(x, 0.0, half));
+        let boxes = flats.map(|(x, half)| [[-half, x - half], [half, x + half]]);
+        let reach = 25.0;
+        let gap = |point: [f64; 2]| {
+            boxes
+                .iter()
+                .map(|plan| {
+                    (0..2)
+                        .map(|k| (plan[0][k] - point[k]).max(point[k] - plan[1][k]).max(0.0))
+                        .fold(0.0, f64::max)
+                })
+                .fold(f64::INFINITY, f64::min)
+        };
+        let seeded = |size: f64| {
+            let solid = Solid::with_cell_size(&triangles, vec![huge_ring()], size);
+            let plane = solid
+                .planes()
+                .into_iter()
+                .find(|plane| plane.axis == 1)
+                .expect("the flats share a plane");
+            let lattice = |low: f64, high: f64| {
+                (low / HALF_GRID_LDU).ceil() as i64..=(high / HALF_GRID_LDU).floor() as i64
+            };
+            let near: Vec<[f64; 2]> = lattice(plane.min[0], plane.max[0])
+                .flat_map(|a| {
+                    lattice(plane.min[1], plane.max[1])
+                        .map(move |b| [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU])
+                })
+                .filter(|&point| gap(point) <= reach)
+                .collect();
+            (solid.grid(&plane, reach), near)
+        };
+        let (canonical, _) = seeded(HALF_GRID_LDU);
+        for size in [2.5, 5.0, HALF_GRID_LDU, 20.0, 40.0] {
+            let (found, near) = seeded(size);
+            assert!(
+                near.iter().all(|point| found.contains(point)),
+                "cell size {size}"
+            );
+            assert!(
+                found
+                    .iter()
+                    .all(|&point| gap(point) <= reach + 3.0 * HALF_GRID_LDU),
+                "cell size {size}"
+            );
+            assert_eq!(found, canonical, "cell size {size}");
+        }
     }
 
     fn toward(degrees: f64, radius: f64) -> [f64; 2] {
@@ -2394,5 +2515,89 @@ mod tests {
         assert!(encloses_centre(&[gap.as_slice(), &behind].concat()));
         let short = upright(toward(150.0, 600.0), toward(200.0, 600.0));
         assert!(!encloses_centre(&[gap.as_slice(), &short].concat()));
+    }
+
+    fn level_triangle(points: [[f64; 2]; 3], y: f64) -> Triangle {
+        Triangle {
+            color: 16,
+            points: points.map(|p| [p[0], y, p[1]]),
+            double_sided: true,
+        }
+    }
+
+    const CELL_SIZES: [f64; 4] = [2.5, 5.0, HALF_GRID_LDU, 20.0];
+
+    #[test]
+    fn a_query_finds_what_meets_its_reach_whatever_the_index_cell_size() {
+        let near = level_triangle([[3.0, 0.0], [4.0, 0.0], [3.0, 1.0]], 5.0);
+        let past_the_reach = level_triangle([[8.0, 0.0], [9.0, 0.0], [8.0, 1.0]], 5.0);
+        let ring = RoundSurface {
+            center: [8.5, 0.0],
+            shape: RoundShape::Wall {
+                radius: 2.0,
+                from: 0.0,
+                to: 10.0,
+            },
+            ..huge_ring()
+        };
+        for size in CELL_SIZES {
+            let solid = Solid::with_cell_size(
+                &[near.clone(), past_the_reach.clone()],
+                vec![ring.clone()],
+                size,
+            );
+            let mut found = Vec::new();
+            solid.each(&vertical_probe(0.0), 6.0, (0.0, 10.0), None, |facet| {
+                found.push(solid.facets[facet as usize].points);
+                true
+            });
+            assert_eq!(found, vec![near.points], "cell size {size}");
+            let walls = |reach: f64| -> Vec<[f64; 2]> {
+                solid
+                    .exact(&vertical_probe(0.0), reach)
+                    .into_iter()
+                    .map(|index| solid.surfaces[index].center)
+                    .collect()
+            };
+            assert!(walls(6.0).is_empty(), "cell size {size}");
+            assert_eq!(walls(7.0), vec![ring.center], "cell size {size}");
+        }
+    }
+
+    #[test]
+    fn a_coplanar_face_that_never_reaches_the_axle_leaves_its_end_free() {
+        let reach = 6.0 + IDENTIFY_LDU;
+        let end = level_triangle([[-1.0, -1.0], [1.0, -1.0], [0.0, 1.0]], 0.0);
+        let corner = level_triangle([[5.0, 5.0], [6.0, 5.0], [6.0, 6.0]], 0.0);
+        let flush = level_triangle([[5.0, -0.5], [9.0, -0.5], [9.0, 0.5]], 0.0);
+        let free = Solid::new(&[end.clone(), corner.clone()], Vec::new());
+        assert!(!free.section_reaches(
+            &vertical_probe(0.0),
+            (-IDENTIFY_LDU, IDENTIFY_LDU),
+            reach,
+            reach
+        ));
+        let joined = Solid::new(&[end, corner, flush], Vec::new());
+        assert!(joined.section_reaches(
+            &vertical_probe(0.0),
+            (-IDENTIFY_LDU, IDENTIFY_LDU),
+            reach,
+            reach
+        ));
+    }
+
+    #[test]
+    fn nothing_beyond_a_probes_reach_is_its_nearest_wall() {
+        let reach = 6.0 + HALF_GRID_LDU + IDENTIFY_LDU;
+        let corner = upright([13.0, 12.0], [12.0, 13.0]);
+        let inside = upright([12.0, -3.0], [12.0, 3.0]);
+        let range = (IDENTIFY_LDU, 10.0 - IDENTIFY_LDU);
+        let nearest = |solid: Solid| solid.nearest(&vertical_probe(0.0), range, reach);
+        assert!(nearest(Solid::new(&corner, Vec::new())).is_infinite());
+        assert!(nearest(Solid::new(&[], vec![huge_ring()])).is_infinite());
+        assert_eq!(
+            nearest(Solid::new(&[corner, inside].concat(), vec![huge_ring()])),
+            12.0
+        );
     }
 }
