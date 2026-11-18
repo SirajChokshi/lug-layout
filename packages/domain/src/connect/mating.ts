@@ -27,14 +27,17 @@ function inside(inner: number, outer: number): number {
   return inner === outer ? TOUCHING : MISFIT;
 }
 
+function hasReading(code: number): boolean {
+  return code === SECTION_ROUND || code === SECTION_AXLE || code === SECTION_SQUARE;
+}
+
 function containment(
   maleCode: number,
   maleSize: number,
   femaleCode: number,
   femaleSize: number,
 ): number {
-  const symmetric =
-    maleCode === SECTION_ROUND || maleCode === SECTION_AXLE || maleCode === SECTION_SQUARE;
+  const symmetric = hasReading(maleCode);
   if (femaleCode === SECTION_AXLE) {
     return maleCode === SECTION_AXLE ? inside(maleSize, femaleSize) : MISFIT;
   }
@@ -117,11 +120,75 @@ export class SnapMating {
       low = femaleLength <= maleLength ? 0 : Math.ceil(maleLength - femaleLength);
       high = femaleLength <= maleLength ? Math.floor(maleLength - femaleLength) : 0;
     }
+    const candidates: number[] = [];
+    for (let d = low; d <= high; d++) candidates.push(d);
+    this.pushBoundaryMeetings(male, female, candidates);
+    candidates.sort((a, b) => a - b);
     const valid: number[] = [];
-    for (let d = low; d <= high; d++) {
-      if (this.stopsAllow(male, female, d) && this.contains(male, female, d)) valid.push(d);
+    for (let i = 0; i < candidates.length; i++) {
+      const d = candidates[i] ?? 0;
+      if (i > 0 && d === candidates[i - 1]) continue;
+      if (!this.stopsAllow(male, female, d) || !this.contains(male, female, d)) continue;
+      if ((d >= low && d <= high) || this.seated(male, female, d)) valid.push(d);
     }
     return valid.length === 0 ? NO_OFFSETS : Int32Array.from(valid);
+  }
+
+  private pushBoundaryMeetings(male: number, female: number, out: number[]): void {
+    const shapes = this.shapes;
+    let maleAt = 0;
+    for (let m = 0; m <= shapes.sectionCount(male); m++) {
+      if (m > 0) maleAt += shapes.span(shapes.firstSection(male) + m - 1);
+      let femaleAt = 0;
+      for (let f = 0; f <= shapes.sectionCount(female); f++) {
+        if (f > 0) femaleAt += shapes.span(shapes.firstSection(female) + f - 1);
+        const d = maleAt - femaleAt;
+        if (Number.isInteger(d)) out.push(d);
+      }
+    }
+  }
+
+  private seated(male: number, female: number, offset: number): boolean {
+    const shapes = this.shapes;
+    const femaleFar = offset + shapes.length(female);
+    const maleLength = shapes.length(male);
+    if ((shapes.caps(female) & CAP_FAR) !== 0 && femaleFar <= maleLength) return true;
+    if ((shapes.caps(male) & CAP_FAR) !== 0 && femaleFar >= maleLength) return true;
+    return this.meetsBlockingSection(male, female, offset);
+  }
+
+  private meetsBlockingSection(male: number, female: number, offset: number): boolean {
+    const shapes = this.shapes;
+    let maleFrom = 0;
+    for (
+      let m = shapes.firstSection(male);
+      m < shapes.firstSection(male) + shapes.sectionCount(male);
+      m++
+    ) {
+      const maleTo = maleFrom + shapes.span(m);
+      let femaleFrom = offset;
+      for (
+        let f = shapes.firstSection(female);
+        f < shapes.firstSection(female) + shapes.sectionCount(female);
+        f++
+      ) {
+        const femaleTo = femaleFrom + shapes.span(f);
+        const meeting = maleTo === femaleFrom || femaleTo === maleFrom;
+        if (meeting && this.blocks(m, f)) return true;
+        femaleFrom = femaleTo;
+      }
+      maleFrom = maleTo;
+    }
+    return false;
+  }
+
+  private blocks(m: number, f: number): boolean {
+    const shapes = this.shapes;
+    const code = shapes.maleCode(m);
+    if (!hasReading(code) || !hasReading(shapes.femaleCode(f))) return false;
+    return (
+      containment(code, shapes.maleSize(m), shapes.femaleCode(f), shapes.femaleSize(f)) === MISFIT
+    );
   }
 
   private stopsAllow(male: number, female: number, offset: number): boolean {

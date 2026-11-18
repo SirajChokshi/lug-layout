@@ -821,6 +821,22 @@ describe("SnapMating", () => {
     expect(mating.engages(grouped(CAP_ROOT, "token-a"), PLATE_RECEPTOR, 0)).toBe(false);
     expect(mating.engages(STUD, grouped(CAP_FAR, "token-a"), 0)).toBe(false);
   });
+
+  it("seats a male wherever the next move along the axis meets a section that doesn't fit or a stop", () => {
+    const collaredPin = shape(0, false, [
+      [SECTION_ROUND, 6, 4],
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+    ]);
+    expect(mating.offsets(collaredPin, through(SECTION_ROUND, 6))).toEqual(
+      Int32Array.from([-4, 6]),
+    );
+    const shallowReceptor = shape(CAP_FAR, false, [[SECTION_ROUND, 6, 2]]);
+    expect(mating.offsets(STUD, shallowReceptor)).toEqual(Int32Array.from([2]));
+    const barHeldAtBothEnds = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 4, 12]]);
+    const sleeve = shape(0, false, [[SECTION_ROUND, 4, 4]]);
+    expect(mating.offsets(barHeldAtBothEnds, sleeve)).toEqual(Int32Array.from([0, 8]));
+  });
 });
 
 const FACE_TOKEN = "token-face";
