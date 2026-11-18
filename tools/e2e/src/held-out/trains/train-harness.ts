@@ -5,6 +5,13 @@ import type { RailHeadBands } from "./placement.ts";
 import { trainPools } from "./train-pools.ts";
 import { type GeneratedTrain, generateTrains } from "./trains.ts";
 import { bundlePartId } from "@brr/import";
+import {
+  compareExactDecimal,
+  EXACT_DECIMAL_ZERO,
+  parseExactDecimal,
+  exactRationalFromDecimal,
+  exactRationalToFloat64,
+} from "@brr/math";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Bundle } from "../bundle.ts";
@@ -19,7 +26,7 @@ const MS_PER_SECOND = 1000;
 interface RailFacts {
   readonly rails: ReadonlyArray<{
     readonly part: string;
-    readonly railHeads: ReadonlyArray<{ readonly from: number; readonly to: number }>;
+    readonly railHeads: ReadonlyArray<{ readonly from: string; readonly to: string }>;
   }>;
 }
 
@@ -41,13 +48,19 @@ export interface TrainRun {
   };
 }
 
+function ldu(text: string): number {
+  return exactRationalToFloat64(exactRationalFromDecimal(parseExactDecimal(text)));
+}
+
 async function railBands(repoRoot: string): Promise<ReadonlyArray<RailHeadBands>> {
   const facts = JSON.parse(await readFile(join(repoRoot, GEOMETRY_FACTS), "utf8")) as RailFacts;
   return facts.rails.map((rail) => {
-    const outer = rail.railHeads.find((band) => band.from > 0);
+    const outer = rail.railHeads.find(
+      (band) => compareExactDecimal(parseExactDecimal(band.from), EXACT_DECIMAL_ZERO) > 0,
+    );
     if (!outer)
       throw new Error(`${GEOMETRY_FACTS} gives ${rail.part} no rail head on the positive side`);
-    return { part: rail.part, inner: outer.from, outer: outer.to };
+    return { part: rail.part, inner: ldu(outer.from), outer: ldu(outer.to) };
   });
 }
 
