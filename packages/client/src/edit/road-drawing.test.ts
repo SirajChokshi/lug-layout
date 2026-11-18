@@ -37,8 +37,8 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
-const PLACED_MODEL_NAME = "mils-plain";
-const PLACED_MODEL = `generated:${PLACED_MODEL_NAME}`;
+const PLACED_MODEL_NAME = "10185-1";
+const PLACED_MODEL = `omr:${PLACED_MODEL_NAME}`;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
