@@ -28,7 +28,30 @@ struct HoleEnd {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PrimitiveTable {
     connectors: HashMap<String, Vec<Connector>>,
+    where_open: HashMap<String, Vec<Connector>>,
     hole_ends: HashMap<String, HoleEnd>,
+}
+
+fn snap_list(entry: &Value, key: &str, file: &str) -> Result<Option<Vec<Connector>>, String> {
+    let Some(snaps) = entry[key].as_array() else {
+        return Ok(None);
+    };
+    let mut connectors = Vec::new();
+    for snap in snaps {
+        let line = snap
+            .as_str()
+            .ok_or(format!("{file}: {key} must be strings"))?;
+        for parsed in parse_metas(&format!("0 !LDCAD {line}")) {
+            match parsed.map_err(|e| format!("{file}: {e:?}"))?.meta {
+                Meta::Snap(connector) => connectors.push(Connector {
+                    source: Source::Primitive,
+                    ..connector
+                }),
+                _ => return Err(format!("{file}: only snap descriptors are allowed")),
+            }
+        }
+    }
+    Ok(Some(connectors))
 }
 
 fn number(value: &Value, key: &str, entry: &str) -> Result<f64, String> {
@@ -48,23 +71,11 @@ impl PrimitiveTable {
                 .as_str()
                 .ok_or("primitive table: every entry needs a file")?
                 .to_string();
-            if let Some(snaps) = entry["snaps"].as_array() {
-                let mut connectors = Vec::new();
-                for snap in snaps {
-                    let line = snap
-                        .as_str()
-                        .ok_or(format!("{file}: snaps must be strings"))?;
-                    for parsed in parse_metas(&format!("0 !LDCAD {line}")) {
-                        match parsed.map_err(|e| format!("{file}: {e:?}"))?.meta {
-                            Meta::Snap(connector) => connectors.push(Connector {
-                                source: Source::Primitive,
-                                ..connector
-                            }),
-                            _ => return Err(format!("{file}: only snap descriptors are allowed")),
-                        }
-                    }
-                }
+            if let Some(connectors) = snap_list(entry, "snaps", &file)? {
                 table.connectors.insert(file.clone(), connectors);
+            }
+            if let Some(connectors) = snap_list(entry, "whereOpen", &file)? {
+                table.where_open.insert(file.clone(), connectors);
             }
             let hole = &entry["holeEnd"];
             if hole.is_object() {
@@ -92,6 +103,7 @@ struct PlacedEnd {
 #[derive(Default)]
 struct Found {
     connectors: Vec<Connector>,
+    where_open: Vec<Connector>,
     ends: Vec<PlacedEnd>,
     cylinders: Vec<Affine>,
 }
@@ -299,6 +311,33 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
         (connectors, issues)
     }
 
+    pub fn where_open(&mut self, path: &str) -> Vec<Connector> {
+        let found = self.find(path, 0);
+        let mut ignored = Vec::new();
+        found
+            .where_open
+            .iter()
+            .map(|connector| finished(connector, &mut ignored))
+            .flat_map(|connector| {
+                let offsets = connector
+                    .grid
+                    .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
+                offsets.into_iter().map(move |offset| {
+                    let at = connector.placement.apply(offset);
+                    let mut m = connector.placement.m;
+                    m[3] = at[0] + 0.0;
+                    m[7] = at[1] + 0.0;
+                    m[11] = at[2] + 0.0;
+                    Connector {
+                        placement: Affine { m },
+                        grid: None,
+                        ..connector.clone()
+                    }
+                })
+            })
+            .collect()
+    }
+
     fn find(&mut self, path: &str, depth: usize) -> Rc<Found> {
         if let Some(found) = self.found.get(path) {
             return Rc::clone(found);
@@ -322,6 +361,10 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                             .extend(templates.iter().map(|c| placed(c, &matrix)));
                         continue;
                     }
+                    if let Some(templates) = self.table.where_open.get(&child) {
+                        out.where_open
+                            .extend(templates.iter().map(|c| placed(c, &matrix)));
+                    }
                     if is_cylinder_primitive(&child) {
                         out.cylinders.push(matrix);
                         continue;
@@ -337,6 +380,8 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                     let inner = self.find(&child, depth + 1);
                     out.connectors
                         .extend(inner.connectors.iter().map(|c| placed(c, &matrix)));
+                    out.where_open
+                        .extend(inner.where_open.iter().map(|c| placed(c, &matrix)));
                     out.ends.extend(inner.ends.iter().map(|e| PlacedEnd {
                         placement: matrix.then(&e.placement),
                         ..e.clone()
