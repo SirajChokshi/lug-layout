@@ -1,0 +1,26 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "license": "Derived from the geometry of LDraw primitives (CC BY 4.0, LDraw.org Parts Library)",
+  "primitives": [
+    {
+      "file": "p/stud3a.dat",
+      "title": "Stud Tube Solid without Base Edges",
+      "snaps": ["SNAP_CYL [gender=M] [caps=one] [secs=R 4 4] [scale=YOnly]"],
+      "derivation": "4-4cyli radius 4 from y=0 to y=-4, closed by 4-4disc at y=-4 and open at y=0; parts scale it along Y (3700 references it at -1.5)"
+    },
+    {
+      "file": "p/peghole.dat",
+      "title": "Peg Hole End",
+      "holeEnd": {
+        "counterbore": { "radius": 8, "length": 2 },
+        "boreRadius": 6
+      },
+      "derivation": "inward 4-4cyli radius 8 from y=0 to y=2; 4-4ring3 scaled 2 at y=2 spans radius 6 to 8, so the bore beyond it is radius 6; two ends facing each other on one axis bound a through hole"
+    }
+  ]
+}
