@@ -308,7 +308,9 @@ export class PlanService implements IPlanService {
       checks.flatMap((c) => c.issues.flatMap((issue) => issue.placements.map(placementId))),
     );
     this.backend.setIssueBoxes(
-      placements.filter((p) => flagged.has(placementId(p.key))).map((p) => p.box),
+      flagged.size === 0
+        ? []
+        : placements.filter((p) => flagged.has(placementId(p.key))).map((p) => p.box),
     );
   }
 }

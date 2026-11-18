@@ -197,12 +197,13 @@ export class ModuleLayout {
       edges: ReadonlyArray<ModuleEdge>;
     }> = [];
     let offGrid = 0;
+    const previous = this.placements;
     const placements = new Map<PlacedModel, GridPlacement>();
     for (const model of models) {
       const surface = model.placeable.module;
       if (!surface) continue;
       const { x, z, rot } = model.handle;
-      const placement = this.placement(surface, x, z, rot);
+      const placement = previous.get(model) ?? this.placement(surface, x, z, rot);
       if (!placement) {
         offGrid++;
         continue;
