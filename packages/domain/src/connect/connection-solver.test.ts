@@ -454,10 +454,12 @@ describe("ConnectionSolver with lattice studs", () => {
     "reports each mate's sources as a bitmask of both tiers, and unverified if either side is: %s",
     (_, placed, held, expected) => {
       const engine = allFamilies();
-      engine.insert(single(withProvenance(baseplate(2, 2), ...placed)), pose(0, 0, 0));
-      engine.insert(single(withProvenance(edgeHoles(), ...placed)), pose(0, 0, 0));
-      const plate = single(withProvenance(block(2, 2, PLATE_LDU, PLATE_RECEPTOR), ...held));
-      const pins = single(withProvenance(edgePins(), ...held));
+      engine.insert(single(withProvenance(baseplate(2, 2), placed[0], placed[1])), pose(0, 0, 0));
+      engine.insert(single(withProvenance(edgeHoles(), placed[0], placed[1])), pose(0, 0, 0));
+      const plate = single(
+        withProvenance(block(2, 2, PLATE_LDU, PLATE_RECEPTOR), held[0], held[1]),
+      );
+      const pins = single(withProvenance(edgePins(), held[0], held[1]));
       for (const [piece, at] of [
         [plate, pose(0, 0, 0)],
         [pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0)],
