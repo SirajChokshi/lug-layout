@@ -841,10 +841,10 @@ describe("zero-length grouped faces", () => {
   });
 
   it("keep a face's own male and female exposed, and mate two faces that meet with opposed axes", () => {
-    const end = single(facePair(AXIS_POS_X));
-    expect([end.count, end.internalMates]).toEqual([2, 0]);
+    const carEnd = single(facePair(AXIS_POS_X));
+    expect([carEnd.count, carEnd.internalMates]).toEqual([2, 0]);
     const engine = allFamilies();
-    engine.insert(end, pose(0, 0, 0));
+    engine.insert(carEnd, pose(0, 0, 0));
     const facing = single(facePair(AXIS_NEG_X));
     expect(matesAt(engine, facing, pose(0, 0, 0))).toBe(2);
     expect(matesAt(engine, facing, pose(STUD_LDU, 0, 0))).toBe(0);
