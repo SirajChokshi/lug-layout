@@ -9,11 +9,6 @@ import type {
   VehicleSpec,
 } from "@brr/sim";
 
-export interface ConsistEntry {
-  readonly model: string;
-  readonly reversed: boolean;
-}
-
 export interface RigidBodyInstances {
   readonly instances: Uint32Array;
   readonly matrices: Float32Array;

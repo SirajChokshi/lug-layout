@@ -212,7 +212,7 @@ describe("publishBundle", () => {
       const part = {
         id: "ldraw:3001",
         path: "parts/3001.dat",
-        role: "detail",
+        role: "model",
         file: "3001.glb",
         title: "Brick 2 x 4",
         ldrawCategory: "Brick",

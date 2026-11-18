@@ -4,11 +4,13 @@ import {
   startPlay,
   type IEditor,
   type IEditorCamera,
+  type IRunningGear,
   type ITrainPlay,
   type PlaySnapshot,
 } from "@brr/client";
 import { useEffect } from "react";
 import { shortcutText } from "./keys.tsx";
+import { RunningGearPanel } from "./running-gear-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 
 function followWith(camera: IEditorCamera, play: ITrainPlay, on: boolean): void {
@@ -30,10 +32,11 @@ interface PlayPanelProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
   readonly play: ITrainPlay;
+  readonly runningGear: IRunningGear;
   readonly ready: boolean;
 }
 
-export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
+export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
   useEffect(() => {
     if (ready) play.offer(editor.playSetup());
@@ -164,6 +167,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
             {shortcutText("stop-train")} stops, {shortcutText("rerail")} rerails. Going the other
             way brakes, stops and reverses. Click a switch on the layout to throw it.
           </p>
+          <RunningGearPanel gear={runningGear} />
         </div>
       )}
     </section>
