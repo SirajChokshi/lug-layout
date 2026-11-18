@@ -240,7 +240,7 @@ export class SparseConnectorFinder implements MateFinder {
             n++;
             out?.push(
               i,
-              Math.max(ownSource, this.slotSource[slot] ?? 0),
+              ownSource | (this.slotSource[slot] ?? 0),
               Math.max(ownStatus, this.slotStatus[slot] ?? 0),
             );
           }

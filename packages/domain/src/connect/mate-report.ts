@@ -22,7 +22,7 @@ export class MateReport {
     return this.connectors;
   }
 
-  get source(): Uint8Array {
+  get sourceMask(): Uint8Array {
     return this.sources;
   }
 
@@ -38,10 +38,10 @@ export class MateReport {
     this.size = 0;
   }
 
-  push(connector: number, source: number, status: number): void {
+  push(connector: number, sourceMask: number, status: number): void {
     if (this.size === this.connectors.length) this.grow();
     this.connectors[this.size] = connector;
-    this.sources[this.size] = source;
+    this.sources[this.size] = sourceMask;
     this.statuses[this.size] = status;
     this.size++;
   }

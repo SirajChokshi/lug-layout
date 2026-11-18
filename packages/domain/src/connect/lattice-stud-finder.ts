@@ -142,7 +142,7 @@ export class LatticeStudFinder implements MateFinder {
             if (!level?.has(x, z)) continue;
             out.push(
               i,
-              Math.max(ownSource, provenanceSource(provenance)),
+              ownSource | provenanceSource(provenance),
               Math.max(ownStatus, provenanceStatus(provenance)),
             );
           }

@@ -430,19 +430,19 @@ describe("ConnectionSolver with lattice studs", () => {
       "the placed side inferred",
       [SOURCE_INFERRED, VERIFIED],
       [SOURCE_SHADOW, VERIFIED],
-      [SOURCE_INFERRED, VERIFIED],
+      [SOURCE_INFERRED | SOURCE_SHADOW, VERIFIED],
     ],
     [
       "the held side inferred",
       [SOURCE_SHADOW, VERIFIED],
       [SOURCE_INFERRED, VERIFIED],
-      [SOURCE_INFERRED, VERIFIED],
+      [SOURCE_SHADOW | SOURCE_INFERRED, VERIFIED],
     ],
     [
       "the placed side an unverified patch",
       [SOURCE_PATCH, UNVERIFIED],
       [SOURCE_SHADOW, VERIFIED],
-      [SOURCE_PATCH, UNVERIFIED],
+      [SOURCE_PATCH | SOURCE_SHADOW, UNVERIFIED],
     ],
     [
       "the held side unverified",
@@ -451,7 +451,7 @@ describe("ConnectionSolver with lattice studs", () => {
       [SOURCE_SHADOW, UNVERIFIED],
     ],
   ] as const)(
-    "reports each mate's weaker tier and its status, unverified if either side is: %s",
+    "reports each mate's sources as a bitmask of both tiers, and unverified if either side is: %s",
     (_, placed, held, expected) => {
       const engine = allFamilies();
       engine.insert(single(withProvenance(baseplate(2, 2), ...placed)), pose(0, 0, 0));
@@ -464,7 +464,7 @@ describe("ConnectionSolver with lattice studs", () => {
       ] as const) {
         const report = evaluated(engine, piece, at);
         expect(report.count).toBe(4);
-        expect(Array.from(report.source.subarray(0, report.count))).toEqual(
+        expect(Array.from(report.sourceMask.subarray(0, report.count))).toEqual(
           Array(4).fill(expected[0]),
         );
         expect(Array.from(report.status.subarray(0, report.count))).toEqual(
