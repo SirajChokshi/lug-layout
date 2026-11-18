@@ -79,6 +79,7 @@ function grid(
     origin,
     new Int8Array(count).fill(axis),
     new Float32Array(count * 3),
+    new Uint16Array(count),
   );
 }
 
