@@ -59,6 +59,8 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
         studsWide: 0,
         studsDeep: 0,
         thumbnail: null,
+        aliases: [],
+        elements: [],
       },
     ],
     roadKit: "road",
