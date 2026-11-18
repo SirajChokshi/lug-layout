@@ -35,6 +35,7 @@ export interface LdrawComponent {
 
 export interface LdrawPartFacts {
   readonly title: string;
+  readonly category?: string;
   readonly keywords: ReadonlyArray<string>;
   readonly ldrawOrg: string;
   readonly components: ReadonlyArray<LdrawComponent>;
@@ -69,7 +70,7 @@ function expandsToComponents(facts: LdrawPartFacts | undefined): boolean {
   return (facts?.ldrawOrg.split(/\s+/u) ?? []).some((kind) => EXPANDED_ORG_KINDS.has(kind));
 }
 
-function movedTarget(facts: LdrawPartFacts | undefined): string | undefined {
+export function movedTarget(facts: LdrawPartFacts | undefined): string | undefined {
   if (!facts?.title.startsWith(MOVED_PREFIX)) return undefined;
   return facts.title
     .slice(MOVED_PREFIX.length)
