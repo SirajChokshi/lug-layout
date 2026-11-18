@@ -1265,6 +1265,8 @@ export class Editor implements IEditor {
       partIndex: Uint16Array.from(result.partIndex),
       ldrawColor: result.ldrawColor,
       matrices: result.matrices,
+      partTransforms: result.partTransforms,
+      submodels: result.submodels,
       vehicles: bake.vehicles,
     };
     const id = importRef(file.sha256);

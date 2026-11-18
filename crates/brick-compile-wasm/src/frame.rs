@@ -64,7 +64,7 @@ macro_rules! little_endian {
     };
 }
 
-little_endian!(i16, u32, f32);
+little_endian!(i16, i32, u32, f32, f64);
 
 #[derive(Default)]
 pub struct Body {
