@@ -743,7 +743,7 @@ function placeableSlot(
   placeable: Placeable,
   colors: ReadonlyArray<BundleColor>,
   thumbnails: ReadonlyMap<string, string>,
-  part: PartShapeAsset,
+  part: PartShapeAsset | undefined,
 ): CatalogSlot {
   return {
     id: placeable.id,
@@ -1258,7 +1258,7 @@ export class Editor implements IEditor {
     this.bakes.set(id, model);
     this.importedFiles.set(file.sha256, file);
     this.placeables.push(placeable);
-    const slot = placeableSlot(placeable, null, this.bundleColors, new Map());
+    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots = [...this.slots, slot];
     const credits = this.state.credits;
     this.update({
