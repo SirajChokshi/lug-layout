@@ -16,6 +16,7 @@ import {
   subtractExactRational,
 } from "./exact-rational.ts";
 
+const SIXTEENTH_IN_TEN_THOUSANDTHS = 625;
 const fromDecimal = (text: string) => exactRationalFromDecimal(parseExactDecimal(text));
 
 describe("exact rationals", () => {
@@ -115,6 +116,7 @@ describe("exact rationals", () => {
       { numerator: "1", denominator: "0" },
       { numerator: "-0", denominator: "1" },
       { numerator: "1.5", denominator: "2" },
+      { numerator: "1", denominator: "3".repeat(1201) },
     ]) {
       expect(() => parseExactRational(text)).toThrow("is not a reduced exact rational");
     }
@@ -140,7 +142,7 @@ describe("exact rationals", () => {
     ).toBe(0);
     for (let sixteenths = 740; sixteenths <= 760; sixteenths += 1) {
       for (const text of ["46.25", "46.875", "46.9", "47", "47.3125", "-46.9"]) {
-        const asDecimal = parseExactDecimal(String(sixteenths / 16));
+        const asDecimal = parseExactDecimal(`${sixteenths * SIXTEENTH_IN_TEN_THOUSANDTHS}e-4`);
         expect(
           compareExactRational(exactRationalFromSixteenths(sixteenths), fromDecimal(text)),
         ).toBe(compareExactDecimal(asDecimal, parseExactDecimal(text)));

@@ -57,6 +57,17 @@ describe("exact decimals", () => {
     expect(isCanonicalExactDecimal(text)).toBe(false);
   });
 
+  it("write every value it reads in a form it reads back", () => {
+    for (const literal of ["1e-1099", "-9.5e1098", `0.${"0".repeat(1097)}25`]) {
+      const canonical = formatExactDecimal(decimal(literal));
+      expect(isCanonicalExactDecimal(canonical)).toBe(true);
+      expect(formatExactDecimal(decimal(canonical))).toBe(canonical);
+    }
+    expect(() => decimal("1e-1100")).toThrow("writes canonically with more than");
+    expect(isCanonicalExactDecimal("1e-1100")).toBe(false);
+    expect(isCanonicalExactDecimal(`0.${"0".repeat(1099)}1`)).toBe(false);
+  });
+
   it("call only the written form canonical", () => {
     expect(["46.9", "-0.5", "250", "0"].map(isCanonicalExactDecimal)).toEqual([
       true,

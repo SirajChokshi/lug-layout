@@ -12,6 +12,7 @@ export interface ExactRationalText {
 
 const INTEGER_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
+const MAX_TEXT_DIGITS = 1200;
 const SIXTEENTHS_PER_LDU = 16n;
 const SIGNIFICAND_BITS = 53;
 const GUARD_BITS = 2;
@@ -31,7 +32,11 @@ function magnitude(value: bigint): bigint {
 function greatestCommonDivisor(a: bigint, b: bigint): bigint {
   let x = magnitude(a);
   let y = magnitude(b);
-  while (y !== 0n) [x, y] = [y, x % y];
+  while (y !== 0n) {
+    const remainder = x % y;
+    x = y;
+    y = remainder;
+  }
   return x;
 }
 
@@ -64,7 +69,7 @@ export function exactRationalFromSixteenths(sixteenths: number): ExactRational {
 }
 
 export function exactRationalFromDecimal(value: ExactDecimal): ExactRational {
-  return exactRational(value.units, 10n ** BigInt(value.places));
+  return exactRational(value.coefficient, 10n ** BigInt(value.places));
 }
 
 export function exactRationalFromFloat64(value: number): ExactRational {
@@ -120,7 +125,12 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
 }
 
 export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
-  if (!INTEGER_TEXT.test(text.numerator) || !POSITIVE_INTEGER_TEXT.test(text.denominator)) {
+  if (
+    text.numerator.length > MAX_TEXT_DIGITS + 1 ||
+    text.denominator.length > MAX_TEXT_DIGITS ||
+    !INTEGER_TEXT.test(text.numerator) ||
+    !POSITIVE_INTEGER_TEXT.test(text.denominator)
+  ) {
     return false;
   }
   return greatestCommonDivisor(BigInt(text.numerator), BigInt(text.denominator)) === 1n;
