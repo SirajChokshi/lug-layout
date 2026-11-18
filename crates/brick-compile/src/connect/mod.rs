@@ -1,4 +1,5 @@
 mod axle;
+mod depth_bands;
 mod faces;
 mod inferred;
 mod meta;

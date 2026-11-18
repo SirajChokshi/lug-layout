@@ -940,8 +940,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
 
     fn probe(&self, solid: &Solid, walls: &Slab, probe: &Probe) -> Probed {
         let reach = self.probe.reach;
-        let floor = solid.floor(probe, probe.radius - IDENTIFY_LDU);
-        if floor.depth < reach - IDENTIFY_LDU || floor.faces_probe == Some(false) {
+        let Some(floor) =
+            solid.floor_beyond(probe, probe.radius - IDENTIFY_LDU, reach - IDENTIFY_LDU)
+        else {
+            return Probed::Rejected;
+        };
+        if floor.faces_probe == Some(false) {
             return Probed::Rejected;
         }
         let (i, j) = plan_axes(probe.axis);
@@ -1093,8 +1097,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 if separation <= IDENTIFY_LDU {
                     return false;
                 }
-                let floor = solid.floor(outer, outer.radius - IDENTIFY_LDU);
-                floor.depth >= separation - IDENTIFY_LDU && floor.faces_probe != Some(false)
+                solid
+                    .floor_beyond(
+                        outer,
+                        outer.radius - IDENTIFY_LDU,
+                        separation - IDENTIFY_LDU,
+                    )
+                    .is_some_and(|floor| floor.faces_probe != Some(false))
             });
             if opens_further_out {
                 inference.issues.push(Issue::Uninferred {

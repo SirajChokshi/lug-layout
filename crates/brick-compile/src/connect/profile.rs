@@ -431,23 +431,39 @@ impl Placed {
         })
     }
 
-    pub fn swept_contact(&self, polygon: &[Point], step: Point) -> bool {
-        self.pieces.iter().any(|piece| {
-            let mut points = piece.points.clone();
-            points.extend(
-                piece
-                    .points
-                    .iter()
-                    .map(|p| [p[0] + step[0], p[1] + step[1]]),
-            );
-            overlap(&hull(&points), polygon, true)
-        })
+    pub fn swept(&self, step: Point) -> Swept {
+        Swept {
+            hulls: self
+                .pieces
+                .iter()
+                .map(|piece| {
+                    let mut points = piece.points.clone();
+                    points.extend(
+                        piece
+                            .points
+                            .iter()
+                            .map(|p| [p[0] + step[0], p[1] + step[1]]),
+                    );
+                    hull(&points)
+                })
+                .collect(),
+        }
     }
 
     pub fn contact(&self, polygon: &[Point]) -> bool {
         self.pieces
             .iter()
             .any(|piece| overlap(&piece.points, polygon, true))
+    }
+}
+
+pub struct Swept {
+    hulls: Vec<Vec<Point>>,
+}
+
+impl Swept {
+    pub fn contact(&self, polygon: &[Point]) -> bool {
+        self.hulls.iter().any(|hull| overlap(hull, polygon, true))
     }
 }
 
