@@ -8,7 +8,7 @@ import {
 } from "@brr/catalog";
 import type { PartInstances, RoadSurface, SubmodelInstances } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import type { ModelRole, Vec3 } from "@brr/schema/bundle";
+import type { Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { bakedVisible, withStuds } from "../scene/stud-stream.ts";
@@ -57,7 +57,7 @@ export interface Placeable {
   readonly farModel: number | null;
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
-  readonly slabDepthLdu: number;
+  readonly slabBoxes: Float32Array;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -173,12 +173,7 @@ function wholeCells(ldu: number, what: string): number {
   return cells;
 }
 
-function modelCells(
-  cells: ModelCells,
-  shift: Vec3,
-  label: string,
-  restPlatesInFrame: number,
-): PlaceableCells {
+function modelCells(cells: ModelCells, shift: Vec3, label: string): PlaceableCells {
   const footprint = new Uint8Array(cells.width * cells.depth);
   for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
   for (const cell of cells.flat) footprint[cell] = FOOTPRINT_FLAT;
@@ -192,8 +187,8 @@ function modelCells(
       columnTop[i] = EMPTY_COLUMN;
       continue;
     }
-    columnBottom[i] = Math.max(0, Math.floor((cells.columnBottom[i] ?? 0) + restPlatesInFrame));
-    columnTop[i] = Math.max(0, Math.ceil(top + restPlatesInFrame));
+    columnBottom[i] = Math.max(0, cells.columnBottom[i] ?? 0);
+    columnTop[i] = Math.max(0, top);
     heightPlates = Math.max(heightPlates, columnTop[i] ?? 0);
   }
   return {
@@ -310,8 +305,32 @@ function shiftedSubmodels(submodels: SubmodelInstances, shift: Vec3): SubmodelIn
   return { ...submodels, matrices: shiftedTransforms(submodels.matrices, submodels.count, shift) };
 }
 
-function depthBelowRest(box: LocalBox): number {
-  return Math.max(0, -box.min[1]);
+function isAxisAligned(matrices: Float32Array, o: number): boolean {
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const entry = matrices[o + row * 4 + col] ?? 0;
+      if (entry !== 0 && entry !== 1 && entry !== -1) return false;
+    }
+  }
+  return true;
+}
+
+function belowRestPlane(instances: ChunkPartInstances, partBoxes: Float32Array): Float32Array {
+  const slab: number[] = [];
+  for (let i = 0; i < instances.count; i++) {
+    const b = i * BOX_FLOATS;
+    const bottom = partBoxes[b + 1] ?? 0;
+    if (bottom >= 0 || !isAxisAligned(instances.matrices, i * INSTANCE_MATRIX_FLOATS)) continue;
+    slab.push(
+      partBoxes[b] ?? 0,
+      bottom,
+      partBoxes[b + 2] ?? 0,
+      partBoxes[b + 3] ?? 0,
+      Math.min(0, partBoxes[b + 4] ?? 0),
+      partBoxes[b + 5] ?? 0,
+    );
+  }
+  return Float32Array.from(slab);
 }
 
 function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
@@ -321,44 +340,10 @@ function shiftedBox(min: Vec3, max: Vec3, shift: Vec3): LocalBox {
   };
 }
 
-function groundTop(model: PartModel, parts: ReadonlyArray<PartShapeAsset>): number | null {
-  const boxes = instanceBoxes(
-    {
-      originX: 0,
-      originZ: 0,
-      count: model.instanceCount,
-      partIndex: model.partIndex,
-      colorIndex: new Uint16Array(model.instanceCount),
-      matrices: model.matrices,
-    },
-    parts,
-  );
-  let top: number | null = null;
-  for (let i = 0; i < model.instanceCount; i++) {
-    if (parts[model.partIndex[i] ?? 0]?.role !== "ground") continue;
-    const y = boxes[i * BOX_FLOATS + 4] ?? 0;
-    top = top === null ? y : Math.max(top, y);
-  }
-  return top;
-}
-
-function restingY(
-  model: PartModel,
-  cells: ModelCells,
-  parts: ReadonlyArray<PartShapeAsset>,
-  role: ModelRole | undefined,
-): number {
-  if (role !== "mils-module") return cells.restY;
-  const top = groundTop(model, parts);
-  if (top === null) throw new Error("a MILS module needs its own baseplate to stand on");
-  return top;
-}
-
 export function modelPlaceable(
   id: string,
   name: string,
   label: string,
-  role: ModelRole | undefined,
   model: PartModel,
   credit: ModelCredit,
   parts: ReadonlyArray<PartShapeAsset>,
@@ -369,8 +354,7 @@ export function modelPlaceable(
   if (lattice === null || cells === null) {
     throw new Error(`model ${name} has no stud lattice from the bake, so it cannot be placed`);
   }
-  const restingOn = restingY(model, cells, parts, role);
-  const shift = modelFrameShift(lattice, cells, restingOn);
+  const shift = modelFrameShift(lattice, cells, cells.restY);
   const colorIndex = new Uint16Array(model.instanceCount);
   for (let i = 0; i < model.instanceCount; i++) {
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
@@ -392,7 +376,6 @@ export function modelPlaceable(
     matrices: shiftedTransforms(model.partTransforms, model.instanceCount, shift),
     submodels: shiftedSubmodels(model.submodels, shift),
   };
-  const restPlates = (cells.restY - restingOn) / PLATE_LDU;
   return {
     id,
     label,
@@ -405,22 +388,34 @@ export function modelPlaceable(
     studs,
     studLattice: studLattice(partTransforms, parts, model.studCover, studs.count),
     bakedCoveredStuds: model.studCover.covered,
-    cells: modelCells(cells, shift, name, restPlates),
+    cells: modelCells(cells, shift, name),
     box,
     partBoxes,
     frameShift: shift,
     farModel,
     credit,
     road: null,
-    slabDepthLdu: role === "mils-module" ? depthBelowRest(box) : 0,
+    slabBoxes: belowRestPlane(local, partBoxes),
   };
 }
 
 const IDENTITY_MATRIX = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 const IDENTITY_TRANSFORM = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
 
-function isBaseplate(part: PartShapeAsset): boolean {
-  return part.boundsMax[1] - part.boundsMin[1] < PLATE_LDU;
+function lowestStudLayerY(part: PartShapeAsset): number | null {
+  const m = part.studMatrices;
+  let lowest: number | null = null;
+  for (let o = 0; o < m.length; o += INSTANCE_MATRIX_FLOATS) {
+    if (!Number.isInteger(m[o + 3]) || !Number.isInteger(m[o + 11])) continue;
+    const base = m[o + 7] ?? 0;
+    lowest = lowest === null ? base : Math.min(lowest, base);
+  }
+  return lowest;
+}
+
+function restPlaneY(lowestY: number, studLayerY: number | null, tableDepthLdu: number): number {
+  const onTable = lowestY + tableDepthLdu;
+  return studLayerY !== null && (studLayerY - onTable) % PLATE_LDU === 0 ? onTable : lowestY;
 }
 
 export function partPlaceable(
@@ -430,8 +425,10 @@ export function partPlaceable(
   colorName: string,
   parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
+  tableDepthLdu: number,
 ): Placeable {
-  const shift: Vec3 = [0, isBaseplate(part) ? 0 : -part.boundsMin[1], 0];
+  const restY = restPlaneY(part.boundsMin[1], lowestStudLayerY(part), tableDepthLdu);
+  const shift: Vec3 = [0, 0 - restY, 0];
   const local: ChunkPartInstances = {
     originX: 0,
     originZ: 0,
@@ -468,6 +465,6 @@ export function partPlaceable(
     farModel: null,
     credit: null,
     road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
-    slabDepthLdu: depthBelowRest(box),
+    slabBoxes: belowRestPlane(local, partBoxes),
   };
 }

@@ -1110,6 +1110,7 @@ export class Editor implements IEditor, IEditedWorld {
           colorOf(index.colors, code).name,
           palette.parts,
           colors,
+          index.tablePlane.depthBelowTopLdu,
         ),
       );
     });
@@ -1156,7 +1157,6 @@ export class Editor implements IEditor, IEditedWorld {
       `${entry.origin}:${entry.name}`,
       entry.name,
       modelLabel(entry),
-      entry.role,
       merged,
       { name: entry.name, source: entry.source, sections: model.sections },
       palette.parts,
@@ -1229,7 +1229,6 @@ export class Editor implements IEditor, IEditedWorld {
       id,
       file.name,
       file.name,
-      undefined,
       palette.remap(model, set.parts),
       credit,
       palette.parts,
