@@ -1,0 +1,53 @@
+const INITIAL_CAPACITY = 256;
+
+export class MateReport {
+  private size = 0;
+  private connectors: Int32Array;
+  private families: Uint8Array;
+
+  constructor(capacity: number = INITIAL_CAPACITY) {
+    this.connectors = new Int32Array(capacity);
+    this.families = new Uint8Array(capacity);
+  }
+
+  get count(): number {
+    return this.size;
+  }
+
+  get connector(): Int32Array {
+    return this.connectors;
+  }
+
+  get family(): Uint8Array {
+    return this.families;
+  }
+
+  clear(): void {
+    this.size = 0;
+  }
+
+  push(connector: number): void {
+    if (this.size === this.connectors.length) this.grow();
+    this.connectors[this.size++] = connector;
+  }
+
+  assignFamily(from: number, family: number): void {
+    this.families.fill(family, from, this.size);
+  }
+
+  ofFamily(family: number): number {
+    let n = 0;
+    for (let i = 0; i < this.size; i++) if (this.families[i] === family) n++;
+    return n;
+  }
+
+  private grow(): void {
+    const capacity = Math.max(1, this.connectors.length * 2);
+    const connectors = new Int32Array(capacity);
+    connectors.set(this.connectors);
+    this.connectors = connectors;
+    const families = new Uint8Array(capacity);
+    families.set(this.families);
+    this.families = families;
+  }
+}

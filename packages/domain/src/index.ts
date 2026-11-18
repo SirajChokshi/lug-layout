@@ -190,3 +190,20 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ConnectorTable,
+  GENDER_FEMALE,
+  GENDER_MALE,
+  PROFILE_CROSS,
+  PROFILE_ROUND,
+} from "./connect/connector-table.ts";
+export {
+  IDENTIFICATION_RESIDUAL_LDU,
+  ModelConnectors,
+  type PartInstances,
+} from "./connect/model-connectors.ts";
+export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
+export { MateReport } from "./connect/mate-report.ts";
+export type { MateFinder } from "./connect/mate-finder.ts";
+export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
+export { ConnectionSolver } from "./connect/connection-solver.ts";
