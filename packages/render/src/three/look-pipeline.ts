@@ -1,6 +1,5 @@
 import {
   HalfFloatType,
-  InstancedMesh,
   Matrix4,
   RenderPipeline,
   RGFormat,
@@ -45,6 +44,7 @@ import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { oitPass } from "three/addons/tsl/display/OITPassNode.js";
 import type { LookSettings } from "../scene-backend.ts";
+import { isInstanced } from "./stud-mesh.ts";
 
 const NOT_A_PART = 0;
 const ID_MODULUS = 2048;
@@ -132,7 +132,7 @@ export class LookPipeline {
     const needsGBuffer = look.gtao || look.outlines || look.bevel;
     if (needsGBuffer) {
       const partId = uniform(0).onObjectUpdate(({ object }) =>
-        object instanceof InstancedMesh ? (object.id % ID_MODULUS) + 1 : NOT_A_PART,
+        object !== null && isInstanced(object) ? (object.id % ID_MODULUS) + 1 : NOT_A_PART,
       );
       scenePass.setMRT(
         mrt({

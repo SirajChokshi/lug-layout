@@ -1,4 +1,5 @@
 import { COLOR_CHANNELS, INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "../scene-backend.ts";
+import type { StudBasisTable } from "./stud-basis-table.ts";
 
 export const MATRIX4_FLOATS = 16;
 
@@ -48,18 +49,32 @@ export interface InstancePage {
   readonly matrices: Float32Array;
   readonly linearColors: Float32Array;
   readonly colorIndex: Uint16Array;
-  readonly shape: Uint16Array;
   readonly voxelized: Uint8Array;
+  readonly shape: Uint16Array;
+  readonly studTranslations: Float32Array;
+  readonly studBasisAndColorIndex: Uint32Array;
   readonly partRuns: InstanceRuns;
   readonly studRuns: InstanceRuns;
 }
 
-interface InstanceSource {
+export const TRANSLATION_FLOATS = 3;
+export const STUD_BASIS_INDEX_MASK = 0xffff;
+export const STUD_COLOR_INDEX_SHIFT = 16;
+
+interface RunKeys {
   readonly count: number;
-  readonly matrices: Float32Array;
   readonly shape: ArrayLike<number>;
+}
+
+interface PartSource extends RunKeys {
+  readonly matrices: Float32Array;
   readonly colorIndex: ArrayLike<number>;
-  readonly voxelized: ArrayLike<number> | null;
+  readonly voxelized: ArrayLike<number>;
+}
+
+interface StudSource extends RunKeys {
+  readonly translations: Float32Array;
+  readonly basisAndColorIndex: Uint32Array;
 }
 
 export function isNotUpright(instanceClass: number): boolean {
@@ -68,6 +83,14 @@ export function isNotUpright(instanceClass: number): boolean {
 
 export function isVoxelized(instanceClass: number): boolean {
   return (instanceClass & CLASS_VOXELIZED) !== 0;
+}
+
+export function studBasisIndexOf(basisAndColorIndex: number): number {
+  return basisAndColorIndex & STUD_BASIS_INDEX_MASK;
+}
+
+export function studColorIndexOf(basisAndColorIndex: number): number {
+  return basisAndColorIndex >>> STUD_COLOR_INDEX_SHIFT;
 }
 
 function isUpright(matrices: Float32Array, i: number): boolean {
@@ -81,26 +104,33 @@ function isUpright(matrices: Float32Array, i: number): boolean {
   );
 }
 
-function classesOf(source: InstanceSource): Uint8Array {
-  const classes = new Uint8Array(source.count);
-  if (!source.voxelized) return classes;
-  for (let i = 0; i < source.count; i++) {
-    const voxelized = (source.voxelized[i] ?? 0) !== 0 ? CLASS_VOXELIZED : 0;
-    classes[i] = voxelized | (isUpright(source.matrices, i) ? 0 : CLASS_NOT_UPRIGHT);
+function partClassesOf(parts: PartSource): Uint8Array {
+  const classes = new Uint8Array(parts.count);
+  for (let i = 0; i < parts.count; i++) {
+    const voxelized = (parts.voxelized[i] ?? 0) !== 0 ? CLASS_VOXELIZED : 0;
+    classes[i] = voxelized | (isUpright(parts.matrices, i) ? 0 : CLASS_NOT_UPRIGHT);
   }
   return classes;
 }
 
-function slotsOf(source: InstanceSource, colorAlphaSlot: Uint8Array): Uint8Array {
-  const slots = new Uint8Array(source.count);
-  for (let i = 0; i < source.count; i++) slots[i] = colorAlphaSlot[source.colorIndex[i] ?? 0] ?? 0;
+function partSlotsOf(parts: PartSource, colorAlphaSlot: Uint8Array): Uint8Array {
+  const slots = new Uint8Array(parts.count);
+  for (let i = 0; i < parts.count; i++) slots[i] = colorAlphaSlot[parts.colorIndex[i] ?? 0] ?? 0;
   return slots;
 }
 
-function drawOrder(source: InstanceSource, slots: Uint8Array, classes: Uint8Array): Uint32Array {
-  const order = new Uint32Array(source.count);
-  for (let i = 0; i < source.count; i++) order[i] = i;
-  const { shape } = source;
+function studSlotsOf(studs: StudSource, colorAlphaSlot: Uint8Array): Uint8Array {
+  const slots = new Uint8Array(studs.count);
+  for (let i = 0; i < studs.count; i++) {
+    slots[i] = colorAlphaSlot[studColorIndexOf(studs.basisAndColorIndex[i] ?? 0)] ?? 0;
+  }
+  return slots;
+}
+
+function drawOrder(keys: RunKeys, slots: Uint8Array, classes: Uint8Array): Uint32Array {
+  const order = new Uint32Array(keys.count);
+  for (let i = 0; i < keys.count; i++) order[i] = i;
+  const { shape } = keys;
   return order.toSorted(
     (a, b) =>
       (shape[a] ?? 0) - (shape[b] ?? 0) ||
@@ -111,17 +141,17 @@ function drawOrder(source: InstanceSource, slots: Uint8Array, classes: Uint8Arra
 }
 
 function sameRun(
-  source: InstanceSource,
+  keys: RunKeys,
   slots: Uint8Array,
   classes: Uint8Array,
   a: number,
   b: number,
 ): boolean {
-  return source.shape[a] === source.shape[b] && slots[a] === slots[b] && classes[a] === classes[b];
+  return keys.shape[a] === keys.shape[b] && slots[a] === slots[b] && classes[a] === classes[b];
 }
 
 function runsOf(
-  source: InstanceSource,
+  keys: RunKeys,
   order: Uint32Array,
   slots: Uint8Array,
   classes: Uint8Array,
@@ -129,7 +159,7 @@ function runsOf(
 ): InstanceRuns {
   let count = 0;
   for (let n = 0; n < order.length; n++) {
-    if (n === 0 || !sameRun(source, slots, classes, order[n] ?? 0, order[n - 1] ?? 0)) count++;
+    if (n === 0 || !sameRun(keys, slots, classes, order[n] ?? 0, order[n - 1] ?? 0)) count++;
   }
   const runs: InstanceRuns = {
     shape: new Uint16Array(count),
@@ -141,9 +171,9 @@ function runsOf(
   let run = -1;
   for (let n = 0; n < order.length; n++) {
     const i = order[n] ?? 0;
-    if (n === 0 || !sameRun(source, slots, classes, i, order[n - 1] ?? 0)) {
+    if (n === 0 || !sameRun(keys, slots, classes, i, order[n - 1] ?? 0)) {
       run++;
-      runs.shape[run] = source.shape[i] ?? 0;
+      runs.shape[run] = keys.shape[i] ?? 0;
       runs.alphaSlot[run] = slots[i] ?? 0;
       runs.instanceClass[run] = classes[i] ?? 0;
       runs.start[run] = pageOffset + n;
@@ -153,60 +183,71 @@ function runsOf(
   return runs;
 }
 
-function copyInstances(
-  source: InstanceSource,
+function copyParts(
+  parts: PartSource,
   order: Uint32Array,
   linearColors: Float32Array,
   page: InstancePage,
-  pageOffset: number,
 ): void {
   for (let n = 0; n < order.length; n++) {
     const i = order[n] ?? 0;
-    const to = pageOffset + n;
     for (let f = 0; f < MATRIX4_FLOATS; f++) {
-      page.matrices[to * MATRIX4_FLOATS + f] = source.matrices[i * MATRIX4_FLOATS + f] ?? 0;
+      page.matrices[n * MATRIX4_FLOATS + f] = parts.matrices[i * MATRIX4_FLOATS + f] ?? 0;
     }
-    const color = source.colorIndex[i] ?? 0;
+    const color = parts.colorIndex[i] ?? 0;
     for (let channel = 0; channel < COLOR_CHANNELS; channel++) {
-      page.linearColors[to * COLOR_CHANNELS + channel] =
+      page.linearColors[n * COLOR_CHANNELS + channel] =
         linearColors[color * COLOR_CHANNELS + channel] ?? 0;
     }
-    page.colorIndex[to] = color;
-    page.shape[to] = source.shape[i] ?? 0;
-    if (to < page.partCount) page.voxelized[to] = source.voxelized?.[i] ?? 0;
+    page.colorIndex[n] = color;
+    page.shape[n] = parts.shape[i] ?? 0;
+    page.voxelized[n] = parts.voxelized[i] ?? 0;
+  }
+}
+
+function copyStuds(studs: StudSource, order: Uint32Array, page: InstancePage): void {
+  for (let n = 0; n < order.length; n++) {
+    const i = order[n] ?? 0;
+    for (let axis = 0; axis < TRANSLATION_FLOATS; axis++) {
+      page.studTranslations[n * TRANSLATION_FLOATS + axis] =
+        studs.translations[i * TRANSLATION_FLOATS + axis] ?? 0;
+    }
+    page.studBasisAndColorIndex[n] = studs.basisAndColorIndex[i] ?? 0;
+    page.shape[page.partCount + n] = studs.shape[i] ?? 0;
   }
 }
 
 function build(
   originX: number,
   originZ: number,
-  parts: InstanceSource,
-  studs: InstanceSource,
+  parts: PartSource,
+  studs: StudSource,
   linearColors: Float32Array,
   colorAlphaSlot: Uint8Array,
 ): InstancePage {
-  const instanceCount = parts.count + studs.count;
-  const partSlots = slotsOf(parts, colorAlphaSlot);
-  const partClasses = classesOf(parts);
+  const partSlots = partSlotsOf(parts, colorAlphaSlot);
+  const partClasses = partClassesOf(parts);
   const partOrder = drawOrder(parts, partSlots, partClasses);
-  const studSlots = slotsOf(studs, colorAlphaSlot);
-  const studClasses = classesOf(studs);
+  const studSlots = studSlotsOf(studs, colorAlphaSlot);
+  const studClasses = new Uint8Array(studs.count);
   const studOrder = drawOrder(studs, studSlots, studClasses);
   const page: InstancePage = {
     originX,
     originZ,
     partCount: parts.count,
-    instanceCount,
-    matrices: new Float32Array(instanceCount * MATRIX4_FLOATS),
-    linearColors: new Float32Array(instanceCount * COLOR_CHANNELS),
-    colorIndex: new Uint16Array(instanceCount),
-    shape: new Uint16Array(instanceCount),
+    instanceCount: parts.count + studs.count,
+    matrices: new Float32Array(parts.count * MATRIX4_FLOATS),
+    linearColors: new Float32Array(parts.count * COLOR_CHANNELS),
+    colorIndex: new Uint16Array(parts.count),
     voxelized: new Uint8Array(parts.count),
+    shape: new Uint16Array(parts.count + studs.count),
+    studTranslations: new Float32Array(studs.count * TRANSLATION_FLOATS),
+    studBasisAndColorIndex: new Uint32Array(studs.count),
     partRuns: runsOf(parts, partOrder, partSlots, partClasses, 0),
     studRuns: runsOf(studs, studOrder, studSlots, studClasses, parts.count),
   };
-  copyInstances(parts, partOrder, linearColors, page, 0);
-  copyInstances(studs, studOrder, linearColors, page, parts.count);
+  copyParts(parts, partOrder, linearColors, page);
+  copyStuds(studs, studOrder, page);
   return page;
 }
 
@@ -216,12 +257,28 @@ function matrix4Of(source: Float32Array, count: number): Float32Array {
   return matrices;
 }
 
+function studSourceOf(instances: ChunkInstances, studBases: StudBasisTable): StudSource {
+  const { studs } = instances;
+  const translations = new Float32Array(studs.count * TRANSLATION_FLOATS);
+  const basisAndColorIndex = new Uint32Array(studs.count);
+  for (let i = 0; i < studs.count; i++) {
+    const s = i * INSTANCE_MATRIX_FLOATS;
+    translations[i * TRANSLATION_FLOATS] = studs.matrices[s + 3] ?? 0;
+    translations[i * TRANSLATION_FLOATS + 1] = studs.matrices[s + 7] ?? 0;
+    translations[i * TRANSLATION_FLOATS + 2] = studs.matrices[s + 11] ?? 0;
+    const color = studs.colorIndex[i] ?? 0;
+    basisAndColorIndex[i] =
+      ((color << STUD_COLOR_INDEX_SHIFT) | studBases.indexOf(studs.matrices, i)) >>> 0;
+  }
+  return { count: studs.count, shape: studs.primitiveIndex, translations, basisAndColorIndex };
+}
+
 export function pageOf(
   instances: ChunkInstances,
   linearColors: Float32Array,
   colorAlphaSlot: Uint8Array,
+  studBases: StudBasisTable,
 ): InstancePage {
-  const { studs } = instances;
   return build(
     instances.originX,
     instances.originZ,
@@ -232,13 +289,7 @@ export function pageOf(
       colorIndex: instances.colorIndex,
       voxelized: instances.voxelized ?? new Uint8Array(instances.count),
     },
-    {
-      count: studs.count,
-      matrices: matrix4Of(studs.matrices, studs.count),
-      shape: studs.primitiveIndex,
-      colorIndex: studs.colorIndex,
-      voxelized: null,
-    },
+    studSourceOf(instances, studBases),
     linearColors,
     colorAlphaSlot,
   );
@@ -262,10 +313,9 @@ export function regroupedPage(
     },
     {
       count: page.instanceCount - parts,
-      matrices: page.matrices.subarray(parts * MATRIX4_FLOATS),
       shape: page.shape.subarray(parts),
-      colorIndex: page.colorIndex.subarray(parts),
-      voxelized: null,
+      translations: page.studTranslations,
+      basisAndColorIndex: page.studBasisAndColorIndex,
     },
     linearColors,
     colorAlphaSlot,
@@ -297,4 +347,19 @@ export function matricesOf(page: InstancePage, start: number, end: number): Floa
 
 export function linearColorsOf(page: InstancePage, start: number, end: number): Float32Array {
   return page.linearColors.subarray(start * COLOR_CHANNELS, end * COLOR_CHANNELS);
+}
+
+export function studTranslationsOf(page: InstancePage, start: number, end: number): Float32Array {
+  return page.studTranslations.subarray(
+    (start - page.partCount) * TRANSLATION_FLOATS,
+    (end - page.partCount) * TRANSLATION_FLOATS,
+  );
+}
+
+export function studBasisAndColorIndexOf(
+  page: InstancePage,
+  start: number,
+  end: number,
+): Uint32Array {
+  return page.studBasisAndColorIndex.subarray(start - page.partCount, end - page.partCount);
 }
