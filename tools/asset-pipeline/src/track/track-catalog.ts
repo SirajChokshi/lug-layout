@@ -355,7 +355,7 @@ export function buildTrackPiece(
   const sections = ordered.map((end) => railCheck(heads, frame, end));
   const referenceSection = sections[0];
   if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
-  const halfSpacing = exactRationalToFloat64(referenceSection.halfSpacingLdu);
+  const halfSpacing = exactRationalToFloat64(referenceSection.railHalfSpacingLdu);
   const fitted = routes.map(([from, to]) => {
     const start = ordered[from];
     const finish = ordered[to];
@@ -409,8 +409,8 @@ export function buildTrackPiece(
       marker: relative[index]?.marker ?? "",
       derivation: ordered[connector]?.derivation ?? "",
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
-      railCentreOffsetLdu: exactRationalText(sections[connector]?.centreOffsetLdu),
-      railHalfSpacingLdu: exactRationalText(sections[connector]?.halfSpacingLdu),
+      railCentreOffsetLdu: exactRationalText(sections[connector]?.railCentreOffsetLdu),
+      railHalfSpacingLdu: exactRationalText(sections[connector]?.railHalfSpacingLdu),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,

@@ -161,7 +161,9 @@ describe("exact rationals", () => {
       { numerator: "1", denominator: "3".repeat(1201) },
       { numerator: `1${"0".repeat(1200)}`, denominator: "1" },
     ]) {
-      expect(() => parseExactRational(text)).toThrow("is not a reduced exact rational");
+      expect(() => parseExactRational(text)).toThrow(
+        /^the text is not a reduced exact rational of decimal integer strings$/u,
+      );
     }
   });
 
@@ -192,7 +194,7 @@ describe("exact rationals", () => {
     }
     for (const notText of [null, 1n]) {
       expect(() => parseExactRational(notText)).toThrow(
-        "the text is not a reduced exact rational of decimal integer strings",
+        /^the text is not a reduced exact rational of decimal integer strings$/u,
       );
     }
   });

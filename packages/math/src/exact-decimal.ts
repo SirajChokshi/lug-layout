@@ -11,6 +11,8 @@ const TEN = 10n;
 const MAX_DIGITS = 1100;
 const MAX_EXPONENT_MAGNITUDE = 1100;
 const COEFFICIENT_LIMIT = TEN ** BigInt(MAX_DIGITS);
+const MAX_LITERAL_LENGTH = MAX_DIGITS + `-.e-${MAX_EXPONENT_MAGNITUDE}`.length;
+const MAX_CANONICAL_LENGTH = MAX_DIGITS + "-.".length;
 
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 
@@ -47,6 +49,7 @@ interface LiteralParts {
 }
 
 function literalParts(text: string): LiteralParts | null {
+  if (text.length > MAX_LITERAL_LENGTH) return null;
   const match = DECIMAL_LITERAL.exec(text);
   if (match === null) return null;
   const [, sign = "", whole = "", fraction = "", bareFraction = "", exponent = "0"] = match;
@@ -68,7 +71,7 @@ export function parseExactDecimal(text: unknown): ExactDecimal {
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
-      `the text is not a decimal literal of at most ${MAX_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
+      `the text is not a decimal literal with at most ${MAX_DIGITS} digits and an exponent magnitude of at most ${MAX_EXPONENT_MAGNITUDE}`,
     );
   }
   const places = parts.fractionDigits - parts.exponent;
@@ -107,7 +110,8 @@ export function formatExactDecimal(value: ExactDecimal): ExactDecimalText {
 }
 
 export function isCanonicalExactDecimalText(text: unknown): text is ExactDecimalText {
-  if (typeof text !== "string" || text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
+  if (typeof text !== "string" || text.length > MAX_CANONICAL_LENGTH) return false;
+  if (text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
   const digits = text.length - (text.startsWith("-") ? 1 : 0) - (text.includes(".") ? 1 : 0);
   return digits <= MAX_DIGITS;
 }

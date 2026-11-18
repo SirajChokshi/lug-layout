@@ -745,8 +745,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            1,
-            1
+            {
+              "numerator": "1",
+              "denominator": "1"
+            },
+            {
+              "numerator": "1",
+              "denominator": "1"
+            }
           ],
           "rejected": []
         }
@@ -791,8 +797,14 @@
           "to": 1,
           "family": "arc",
           "railCoverage": [
-            0.9622641509433962,
-            0.9685534591194969
+            {
+              "numerator": "51",
+              "denominator": "53"
+            },
+            {
+              "numerator": "154",
+              "denominator": "159"
+            }
           ],
           "rejected": []
         }
@@ -837,8 +849,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            1,
-            1
+            {
+              "numerator": "1",
+              "denominator": "1"
+            },
+            {
+              "numerator": "1",
+              "denominator": "1"
+            }
           ],
           "rejected": []
         }
@@ -883,8 +901,14 @@
           "to": 1,
           "family": "arc",
           "railCoverage": [
-            0.9622641509433962,
-            0.9685534591194969
+            {
+              "numerator": "51",
+              "denominator": "53"
+            },
+            {
+              "numerator": "154",
+              "denominator": "159"
+            }
           ],
           "rejected": []
         }
@@ -943,8 +967,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.8442367601246106,
-            0.9781931464174455
+            {
+              "numerator": "271",
+              "denominator": "321"
+            },
+            {
+              "numerator": "314",
+              "denominator": "321"
+            }
           ],
           "rejected": []
         },
@@ -953,13 +983,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9833333333333333,
-            0.8805555555555555
+            {
+              "numerator": "59",
+              "denominator": "60"
+            },
+            {
+              "numerator": "317",
+              "denominator": "360"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.13559322033898305
+              "railCoverage": {
+                "numerator": "8",
+                "denominator": "59"
+              }
             }
           ]
         }
@@ -1018,8 +1057,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.8442367601246106,
-            0.9781931464174455
+            {
+              "numerator": "271",
+              "denominator": "321"
+            },
+            {
+              "numerator": "314",
+              "denominator": "321"
+            }
           ],
           "rejected": []
         },
@@ -1028,13 +1073,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9833333333333333,
-            0.9527777777777777
+            {
+              "numerator": "59",
+              "denominator": "60"
+            },
+            {
+              "numerator": "343",
+              "denominator": "360"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.13559322033898305
+              "railCoverage": {
+                "numerator": "8",
+                "denominator": "59"
+              }
             }
           ]
         }
@@ -1093,8 +1147,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9813084112149533,
-            0.8411214953271028
+            {
+              "numerator": "105",
+              "denominator": "107"
+            },
+            {
+              "numerator": "90",
+              "denominator": "107"
+            }
           ],
           "rejected": []
         },
@@ -1103,13 +1163,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.8833333333333333,
-            0.9861111111111112
+            {
+              "numerator": "53",
+              "denominator": "60"
+            },
+            {
+              "numerator": "71",
+              "denominator": "72"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.14124293785310735
+              "railCoverage": {
+                "numerator": "25",
+                "denominator": "177"
+              }
             }
           ]
         }
@@ -1168,8 +1237,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9813084112149533,
-            0.8411214953271028
+            {
+              "numerator": "105",
+              "denominator": "107"
+            },
+            {
+              "numerator": "90",
+              "denominator": "107"
+            }
           ],
           "rejected": []
         },
@@ -1178,13 +1253,22 @@
           "to": 2,
           "family": "reversed-arcs",
           "railCoverage": [
-            0.9555555555555556,
-            0.9861111111111112
+            {
+              "numerator": "43",
+              "denominator": "45"
+            },
+            {
+              "numerator": "71",
+              "denominator": "72"
+            }
           ],
           "rejected": [
             {
               "family": "arc-then-straight",
-              "railCoverage": 0.14124293785310735
+              "railCoverage": {
+                "numerator": "25",
+                "denominator": "177"
+              }
             }
           ]
         }
@@ -1257,8 +1341,14 @@
           "to": 1,
           "family": "straight",
           "railCoverage": [
-            0.9503105590062112,
-            0.9565217391304348
+            {
+              "numerator": "153",
+              "denominator": "161"
+            },
+            {
+              "numerator": "22",
+              "denominator": "23"
+            }
           ],
           "rejected": []
         },
@@ -1267,8 +1357,14 @@
           "to": 3,
           "family": "straight",
           "railCoverage": [
-            0.9192546583850931,
-            0.9254658385093167
+            {
+              "numerator": "148",
+              "denominator": "161"
+            },
+            {
+              "numerator": "149",
+              "denominator": "161"
+            }
           ],
           "rejected": []
         }

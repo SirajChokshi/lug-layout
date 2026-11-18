@@ -16,7 +16,6 @@ import { exactPolygons } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 
 const LATERAL_SCAN_LDU = 90;
-const RAIL_TOP_PROBE_RADIUS_LDU = 70;
 export const RAIL_SECTION_INWARD_LDU = 20;
 
 export interface PlanPoint {
@@ -36,8 +35,8 @@ export interface RailHeads {
 
 export interface RailSection {
   readonly railCentresLdu: ReadonlyArray<ExactRational>;
-  readonly halfSpacingLdu: ExactRational;
-  readonly centreOffsetLdu: ExactRational;
+  readonly railHalfSpacingLdu: ExactRational;
+  readonly railCentreOffsetLdu: ExactRational;
 }
 
 interface FlatPolygon {
@@ -53,7 +52,6 @@ interface Interval {
 const ZERO = exactRational(0n, 1n);
 const ONE = exactRational(1n, 1n);
 const TWO = exactRational(2n, 1n);
-const PROBE_RADIUS_SQUARED = exactRational(BigInt(RAIL_TOP_PROBE_RADIUS_LDU ** 2), 1n);
 const SCAN_FROM = exactRational(BigInt(-LATERAL_SCAN_LDU), 1n);
 const SCAN_TO = exactRational(BigInt(LATERAL_SCAN_LDU), 1n);
 
@@ -91,17 +89,6 @@ export function flatPolygons(library: LdrawLibrary, part: string): ReadonlyArray
   });
 }
 
-function nearOrigin(polygon: FlatPolygon, origin: ExactPlanPoint): boolean {
-  return polygon.outline.some((point) => {
-    const offset = sub(point, origin);
-    const squared = addExactRational(
-      multiplyExactRational(offset.x, offset.x),
-      multiplyExactRational(offset.z, offset.z),
-    );
-    return compareExactRational(squared, PROBE_RADIUS_SQUARED) <= 0;
-  });
-}
-
 interface LevelScan {
   readonly y: ExactDecimal;
   readonly polygons: ReadonlyArray<ReadonlyArray<ExactPlanPoint>>;
@@ -118,17 +105,29 @@ function adjacentRunsSmallestFirst<T>(fromTop: ReadonlyArray<T>): ReadonlyArray<
   return runs;
 }
 
-function levelsFromTopNear(
+function levelScansFromTop(
   flat: ReadonlyArray<FlatPolygon>,
-  origin: ExactPlanPoint,
-): ReadonlyArray<ExactDecimal> {
-  return flat
-    .filter((polygon) => nearOrigin(polygon, origin))
-    .map((polygon) => polygon.y)
+  line: ScanLine,
+): ReadonlyArray<LevelScan> {
+  const crossed = flat
+    .map((polygon) => ({ y: polygon.y, intervals: scanIntervals([polygon.outline], line) }))
+    .filter((crossing) => crossing.intervals.length > 0);
+  const levelsFromTop = crossed
+    .map((crossing) => crossing.y)
     .toSorted(compareExactDecimal)
     .filter(
       (y, index, sorted) => index === 0 || compareExactDecimal(y, sorted[index - 1] ?? y) !== 0,
     );
+  return levelsFromTop.map((y) => {
+    const onLevel = (polygonY: ExactDecimal) => compareExactDecimal(polygonY, y) === 0;
+    return {
+      y,
+      polygons: flat.filter((polygon) => onLevel(polygon.y)).map((polygon) => polygon.outline),
+      intervals: crossed
+        .filter((crossing) => onLevel(crossing.y))
+        .flatMap((crossing) => crossing.intervals),
+    };
+  });
 }
 
 export function railHeadsAtEnd(
@@ -136,23 +135,8 @@ export function railHeadsAtEnd(
   origin: PlanPoint,
   along: number,
 ): RailHeads | null {
-  const line = scanLine(origin, along, RAIL_SECTION_INWARD_LDU);
-  const levels = levelsFromTopNear(flat, exactPlanPoint(origin));
-  const scansByLevel = new Map<number, LevelScan>();
-  const scanOfLevel = (index: number): LevelScan => {
-    const known = scansByLevel.get(index);
-    if (known !== undefined) return known;
-    const y = levels[index];
-    if (y === undefined) throw new Error(`no measured level ${index}`);
-    const polygons = flat
-      .filter((polygon) => compareExactDecimal(polygon.y, y) === 0)
-      .map((polygon) => polygon.outline);
-    const scan = { y, polygons, intervals: scanIntervals(polygons, line) };
-    scansByLevel.set(index, scan);
-    return scan;
-  };
-  for (const run of adjacentRunsSmallestFirst(levels.map((_, index) => index))) {
-    const scans = run.map(scanOfLevel);
+  const levelScans = levelScansFromTop(flat, scanLine(origin, along, RAIL_SECTION_INWARD_LDU));
+  for (const scans of adjacentRunsSmallestFirst(levelScans)) {
     const [top] = scans;
     if (top === undefined) continue;
     if (railSectionFromIntervals(scans.flatMap((scan) => scan.intervals)) === null) continue;
@@ -192,6 +176,10 @@ function crossingInterval(
   centre: ExactPlanPoint,
   normal: ExactPlanPoint,
 ): Interval | null {
+  const sides = polygon.map((point) =>
+    compareExactRational(cross(sub(point, centre), normal), ZERO),
+  );
+  if (sides.every((side) => side > 0) || sides.every((side) => side < 0)) return null;
   const crossings: ExactRational[] = [];
   for (let i = 0; i < polygon.length; i += 1) {
     const a = polygon[i];
@@ -261,8 +249,8 @@ function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSecti
   if (railCentresLdu.length !== 2 || near === undefined || far === undefined) return null;
   return {
     railCentresLdu,
-    halfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
-    centreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
+    railHalfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
+    railCentreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
   };
 }
 

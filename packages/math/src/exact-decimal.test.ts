@@ -71,9 +71,10 @@ describe("exact decimals", () => {
     "1e99999999999999999999",
     "1e-1101",
     "9".repeat(1101),
+    `1e${"0".repeat(1200)}1`,
   ])("refuse %j, which is not a decimal literal in range", (text) => {
     expect(() => decimal(text)).toThrow(
-      /^the text is not a decimal literal of at most \d+ digits and exponent magnitude \d+$/u,
+      /^the text is not a decimal literal with at most 1100 digits and an exponent magnitude of at most 1100$/u,
     );
     expect(isCanonicalExactDecimalText(text)).toBe(false);
   });
@@ -84,7 +85,7 @@ describe("exact decimals", () => {
       expect(isCanonicalExactDecimalText(canonical)).toBe(true);
       expect(formatExactDecimal(decimal(canonical))).toBe(canonical);
     }
-    const tooLong = /^the literal writes canonically with more than \d+ digits$/u;
+    const tooLong = /^the literal writes canonically with more than 1100 digits$/u;
     expect(() => decimal("1e-1100")).toThrow(tooLong);
     expect(isCanonicalExactDecimalText("1e-1100")).toBe(false);
     expect(() => decimal("1e1100")).toThrow(tooLong);

@@ -63,8 +63,8 @@ describe("rail heads", () => {
     const halfSpacing = exactRational(10003n, 200n);
     expect(exactRationalEquals(near, nearCentre)).toBe(true);
     expect(exactRationalEquals(far, farCentre)).toBe(true);
-    expect(exactRationalEquals(section.halfSpacingLdu, halfSpacing)).toBe(true);
-    expect(exactRationalEquals(section.centreOffsetLdu, exactRational(0n, 1n))).toBe(true);
+    expect(exactRationalEquals(section.railHalfSpacingLdu, halfSpacing)).toBe(true);
+    expect(exactRationalEquals(section.railCentreOffsetLdu, exactRational(0n, 1n))).toBe(true);
   });
 
   it("decide against the exact head, not its nearest Float64", () => {
@@ -80,6 +80,6 @@ describe("rail heads", () => {
     expect(formatExactDecimal(split.topY)).toBe("-16.5");
     const section = railSection(split, end, 0, INWARD_LDU);
     if (section === null) throw new Error("the scan line finds no rail pair");
-    expect(exactRationalEquals(section.halfSpacingLdu, exactRational(50n, 1n))).toBe(true);
+    expect(exactRationalEquals(section.railHalfSpacingLdu, exactRational(50n, 1n))).toBe(true);
   });
 });
