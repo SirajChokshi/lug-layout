@@ -22,7 +22,8 @@ export class RoutePlanner {
 
   plan(
     fromEdge: number,
-    fromOffsetLdu: number,
+    fromOffsets: Float64Array,
+    fromOffsetAt: number,
     targetBlock: number,
     placementPenaltyLdu: Float64Array,
     out: Int32Array,
@@ -32,8 +33,8 @@ export class RoutePlanner {
     this.previous.fill(NO_EDGE);
     this.settled.fill(0);
     this.heapSize = 0;
-    this.distance[fromEdge] = (edgeLengthLdu[fromEdge] ?? 0) - fromOffsetLdu;
-    this.push(fromEdge, this.distance[fromEdge] ?? 0);
+    this.distance[fromEdge] = (edgeLengthLdu[fromEdge] ?? 0) - (fromOffsets[fromOffsetAt] ?? 0);
+    this.push(fromEdge);
     let goal = NO_EDGE;
     while (this.heapSize > 0) {
       const edge = this.pop();
@@ -53,7 +54,7 @@ export class RoutePlanner {
         if (reached + cost < (this.distance[next] ?? Number.POSITIVE_INFINITY)) {
           this.distance[next] = reached + cost;
           this.previous[next] = edge;
-          this.push(next, reached + cost);
+          this.push(next);
         }
       }
     }
@@ -79,7 +80,8 @@ export class RoutePlanner {
     return true;
   }
 
-  private push(edge: number, key: number): void {
+  private push(edge: number): void {
+    const key = this.distance[edge] ?? 0;
     let i = this.heapSize++;
     while (i > 0) {
       const parent = (i - 1) >> 1;

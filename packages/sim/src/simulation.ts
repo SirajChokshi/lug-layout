@@ -72,11 +72,11 @@ export class Simulation {
   readonly trainOffset: Float64Array;
   readonly trainSpeed: Float64Array;
   readonly trainThrottle: Float64Array;
-  private readonly trainSolvedLength: Float64Array;
+  readonly trainBodyLength: Float64Array;
   private readonly trainSolvedTick: Int32Array;
   private readonly trainMaxSpeed: Float64Array;
   private readonly trainAcceleration: Float64Array;
-  private readonly trainBraking: Float64Array;
+  readonly trainBraking: Float64Array;
   private readonly trainReversed: Uint8Array;
   private readonly trainTurnPending: Uint8Array;
   private readonly trainTurnSpeed: Float64Array;
@@ -90,8 +90,7 @@ export class Simulation {
   private readonly poser = new RunningGearPoser();
   private samplingTrain = 0;
   private readonly pathSampler: PathSampler = {
-    pointBehind: (distance, out, outIndex) =>
-      this.pointBehind(this.samplingTrain, distance, out, outIndex),
+    pointBehind: (io, at) => this.pointBehind(this.samplingTrain, io, at),
   };
   private readonly pathEdges: Int32Array;
   private readonly pathTop: Int32Array;
@@ -156,7 +155,7 @@ export class Simulation {
     this.trainOffset = new Float64Array(capacity.trains);
     this.trainSpeed = new Float64Array(capacity.trains);
     this.trainThrottle = new Float64Array(capacity.trains);
-    this.trainSolvedLength = new Float64Array(capacity.trains);
+    this.trainBodyLength = new Float64Array(capacity.trains);
     this.trainSolvedTick = new Int32Array(capacity.trains).fill(NOT_SOLVED);
     this.trainMaxSpeed = new Float64Array(capacity.trains);
     this.trainAcceleration = new Float64Array(capacity.trains);
@@ -257,7 +256,7 @@ export class Simulation {
       this.vehicleCount = firstVehicle;
       throw new Error(`a ${length} LDU train does not fit behind (${edge}, ${offsetLdu})`);
     }
-    this.blocks?.place(train, edge, offsetLdu, this.bodyLengthLdu(train), this.switchStates);
+    this.blocks?.place(train, this, this.switchStates);
     this.trainCount++;
     return train;
   }
@@ -369,12 +368,11 @@ export class Simulation {
   }
 
   driveAtTopSpeed(train: number): void {
-    this.applyThrottle(train, this.trainMaxSpeed[train] ?? 0);
+    this.trainThrottle[train] = this.trainMaxSpeed[train] ?? 0;
   }
 
-  bodyLengthLdu(train: number): number {
+  solveBody(train: number): void {
     if (this.trainSolvedTick[train] !== this.tickCount) this.poseTrain(train, null, 0, null, 0);
-    return this.trainSolvedLength[train] ?? 0;
   }
 
   private applyThrottle(train: number, speedLduPerS: number): void {
@@ -394,7 +392,8 @@ export class Simulation {
   reverse(train: number): boolean {
     this.assertTrain(train);
     if ((this.trainSpeed[train] ?? 0) !== 0 || this.derailed(train)) return false;
-    const length = this.poseTrain(train, null, 0, null, 0);
+    this.poseTrain(train, null, 0, null, 0);
+    const length = this.trainBodyLength[train] ?? 0;
     const base = train * PATH_CAPACITY;
     const count = this.pathCount[train] ?? 0;
     let slot = this.pathTop[train] ?? 0;
@@ -421,13 +420,7 @@ export class Simulation {
     this.trainOffset[train] = (this.track.edgeLength[tailEdge] ?? 0) - tailOffset;
     this.trainReversed[train] = this.trainReversed[train] === 1 ? 0 : 1;
     this.trainSolvedTick[train] = NOT_SOLVED;
-    this.blocks?.reseat(
-      train,
-      this.trainEdge[train] ?? 0,
-      this.trainOffset[train] ?? 0,
-      this.bodyLengthLdu(train),
-      this.switchStates,
-    );
+    this.blocks?.reseat(train, this, this.switchStates);
     return true;
   }
 
@@ -482,9 +475,9 @@ export class Simulation {
     pivotStart: number,
     poses: Float64Array | null,
     poseStart: number,
-  ): number {
+  ): void {
     this.samplingTrain = train;
-    const length = this.poser.writeTrain(
+    this.poser.writeTrain(
       this.pathSampler,
       this.vehicleGeometry,
       this.vehicleGeometryAt,
@@ -495,10 +488,10 @@ export class Simulation {
       pivotStart,
       poses,
       poseStart,
+      this.trainBodyLength,
+      train,
     );
-    this.trainSolvedLength[train] = length;
     this.trainSolvedTick[train] = this.tickCount;
-    return length;
   }
 
   stateHash(): number {
@@ -599,33 +592,20 @@ export class Simulation {
     this.trainOffset[train] = (this.trainOffset[train] ?? 0) + speed * SIM_TICK_SECONDS;
   }
 
-  private clearAhead(train: number, speed: number, braking: number): number {
-    const derails = this.openEndsDerail;
-    const blocks = this.blocks;
-    if (!blocks) {
-      if (derails) return Number.POSITIVE_INFINITY;
-      return this.clearDistanceAhead(
-        train,
-        (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS,
-      );
-    }
-    const held = blocks.clearDistanceAhead(
+  private freeClearAhead(train: number, speed: number, braking: number): number {
+    if (this.openEndsDerail) return Number.POSITIVE_INFINITY;
+    return this.clearDistanceAhead(
       train,
-      this.trainEdge[train] ?? 0,
-      this.trainOffset[train] ?? 0,
-      speed,
-      braking,
-      this.bodyLengthLdu(train),
-      this.switchStates,
+      (speed * speed) / (2 * braking) + speed * SIM_TICK_SECONDS,
     );
-    if (
-      derails &&
+  }
+
+  private runsOffHeldEnd(train: number, blocks: BlockKeeper): boolean {
+    return (
+      this.openEndsDerail &&
       blocks.routeState(train) === "manual" &&
       blocks.heldEndIsOpen(train, this.switchStates)
-    ) {
-      return Number.POSITIVE_INFINITY;
-    }
-    return held;
+    );
   }
 
   private advanceTrain(train: number): void {
@@ -636,18 +616,25 @@ export class Simulation {
     const braking = this.trainBraking[train] ?? 0;
     const acceleration = this.trainAcceleration[train] ?? 0;
     let speed = this.trainSpeed[train] ?? 0;
-    const clear = this.clearAhead(train, speed, braking);
+    const blocks = this.blocks;
+    let clear: number;
+    if (blocks) {
+      blocks.updateClearAhead(train, this, this.switchStates);
+      clear = this.runsOffHeldEnd(train, blocks)
+        ? Number.POSITIVE_INFINITY
+        : (blocks.clearAheadLdu[train] ?? 0);
+    } else clear = this.freeClearAhead(train, speed, braking);
     const stopCap = Math.sqrt(2 * braking * clear);
     const target = Math.min(this.trainThrottle[train] ?? 0, stopCap);
     if (speed < target) speed = Math.min(target, speed + acceleration * SIM_TICK_SECONDS);
     else speed = Math.max(target, speed - braking * SIM_TICK_SECONDS);
     let edge = this.trainEdge[train] ?? 0;
     const travel = speed * SIM_TICK_SECONDS;
-    let offset = (this.trainOffset[train] ?? 0) + (this.blocks && travel > clear ? clear : travel);
+    let offset = (this.trainOffset[train] ?? 0) + (blocks && travel > clear ? clear : travel);
     let length = this.track.edgeLength[edge] ?? 0;
     while (offset > length) {
-      const next = this.blocks
-        ? this.blocks.heldSuccessor(train, edge, this.switchStates)
+      const next = blocks
+        ? blocks.heldSuccessor(train, edge, this.switchStates)
         : this.successor(edge);
       if (next === NO_EDGE) {
         if (this.openEndsDerail && this.successor(edge) === NO_EDGE) {
@@ -672,12 +659,12 @@ export class Simulation {
     this.trainSpeed[train] = speed;
   }
 
-  private pointBehind(train: number, distance: number, out: Float64Array, outIndex: number): void {
+  private pointBehind(train: number, io: Float64Array, at: number): void {
     const base = train * PATH_CAPACITY;
     const count = this.pathCount[train] ?? 0;
     let slot = this.pathTop[train] ?? 0;
     let edge = this.pathEdges[base + slot] ?? 0;
-    let offset = (this.trainOffset[train] ?? 0) - distance;
+    let offset = (this.trainOffset[train] ?? 0) - (io[at] ?? 0);
     let used = 1;
     while (offset < 0 && used < count) {
       slot = (slot + PATH_CAPACITY - 1) % PATH_CAPACITY;
@@ -685,7 +672,8 @@ export class Simulation {
       offset += this.track.edgeLength[edge] ?? 0;
       used++;
     }
-    trackPoint(this.track, edge, Math.max(offset, 0), out, outIndex);
+    io[at] = Math.max(offset, 0);
+    trackPoint(this.track, edge, io, at);
   }
 
   private measureSeparation(edgePlacement: Int32Array): void {
@@ -695,7 +683,7 @@ export class Simulation {
     for (let t = 0; t < this.trainCount; t++) {
       const base = t * PATH_CAPACITY;
       const count = this.pathCount[t] ?? 0;
-      const length = this.bodyLengthLdu(t);
+      const length = this.trainBodyLength[t] ?? 0;
       let slot = this.pathTop[t] ?? 0;
       let covered = this.trainOffset[t] ?? 0;
       let used = 1;
@@ -711,7 +699,7 @@ export class Simulation {
     }
     const counters = this.separationCounters;
     if (shared) counters[0] = (counters[0] ?? 0) + 1;
-    let nearest = counters[1] ?? Number.POSITIVE_INFINITY;
+    let nearestSquared = Number.POSITIVE_INFINITY;
     const poses = this.poseScratch;
     for (let t = 0; t < this.trainCount; t++) {
       const firstA = this.trainVehicleStart[t] ?? 0;
@@ -723,13 +711,16 @@ export class Simulation {
           const ax = poses[a * 2] ?? 0;
           const az = poses[a * 2 + 1] ?? 0;
           for (let b = firstB * 2; b < endB * 2; b++) {
-            const d = Math.hypot((poses[b * 2] ?? 0) - ax, (poses[b * 2 + 1] ?? 0) - az);
-            if (d < nearest) nearest = d;
+            const dx = (poses[b * 2] ?? 0) - ax;
+            const dz = (poses[b * 2 + 1] ?? 0) - az;
+            const squared = dx * dx + dz * dz;
+            if (squared < nearestSquared) nearestSquared = squared;
           }
         }
       }
     }
-    counters[1] = nearest;
+    const nearest = Math.sqrt(nearestSquared);
+    if (nearest < (counters[1] ?? Number.POSITIVE_INFINITY)) counters[1] = nearest;
     counters[2] = (counters[2] ?? 0) + 1;
   }
 
