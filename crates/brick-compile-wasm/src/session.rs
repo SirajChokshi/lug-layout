@@ -11,7 +11,7 @@ use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
+use brick_compile::{compile_part, CompileOptions, Lod};
 
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
@@ -250,7 +250,7 @@ fn compile(
             Ok(comparison) => InlineOutcome::measured(pair, &comparison),
             Err(error) => InlineOutcome::Failed {
                 pair,
-                failure: Failure::from(&CompileError::Flatten(error)),
+                failure: Failure::from(&error),
             },
         });
     }

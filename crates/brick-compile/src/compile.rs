@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
+use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
@@ -35,6 +36,9 @@ pub enum CompileError {
         ldraw_org: String,
     },
     NoStudRing,
+    Malformed {
+        findings: Vec<MalformedGeometry>,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -74,7 +78,18 @@ impl std::fmt::Display for CompileError {
                 )
             }
             CompileError::NoStudRing => f.write_str(NO_STUD_RING),
+            CompileError::Malformed { findings } => f.write_str(&describe_malformed(findings)),
         }
+    }
+}
+
+pub(crate) fn refuse_malformed(findings: &[MalformedGeometry]) -> Result<(), CompileError> {
+    if findings.is_empty() {
+        Ok(())
+    } else {
+        Err(CompileError::Malformed {
+            findings: findings.to_vec(),
+        })
     }
 }
 
@@ -176,6 +191,7 @@ pub fn compile_part<L: Library>(
             }))?;
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
     license_gate(&flattened, &options.unofficial_allowlist)?;
+    refuse_malformed(flattener.malformed())?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,
         RollingMode::ReadBy(roundness) => Some(roundness),

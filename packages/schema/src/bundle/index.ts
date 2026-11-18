@@ -818,14 +818,26 @@ export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
 
 const CompilerNeed = v.object({ status: v.literal("need"), paths: v.array(v.string()) });
 
+export const MalformedFinding = v.pipe(
+  v.object({
+    file: v.string(),
+    kind: v.picklist(["nonFinite", "unparsed", "unresolvable"]),
+  }),
+  v.description(
+    "one finding that made the compile refuse a part before building any mesh. nonFinite: a number that is NaN or infinite. unparsed: a type 1 to 4 line that does not parse. unresolvable: a position, in the part's frame, too far out to resolve the 0.0005 LDU identification. `file` is a path: for unparsed, the file holding the line; for nonFinite, the file whose own line holds the value, or the part when only a composed position is non-finite; for unresolvable, the part",
+  ),
+);
+export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
+
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing"]),
+  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing", "malformed"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
   path: v.exactOptional(v.string()),
   ldrawOrg: v.exactOptional(v.string()),
+  findings: v.exactOptional(v.array(MalformedFinding)),
 });
 
 const Reference = { reference: v.string() };
