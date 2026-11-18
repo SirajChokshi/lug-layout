@@ -215,6 +215,8 @@ describe("publishBundle", () => {
         role: "detail",
         file: "3001.glb",
         title: "Brick 2 x 4",
+        ldrawCategory: "Brick",
+        keywords: [],
         author: "James Jessiman",
         license: null,
         bounds: origin,
