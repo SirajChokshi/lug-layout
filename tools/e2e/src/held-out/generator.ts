@@ -102,7 +102,7 @@ const AXES: ReadonlyArray<Axis> = [0, 1, 2];
 const COS = [1, 0, -1, 0] as const;
 const SIN = [0, 1, 0, -1] as const;
 
-class SeededRandom {
+export class SeededRandom {
   private state: number;
 
   constructor(seed: number) {
@@ -188,7 +188,7 @@ export function isPoolCandidate(title: string): boolean {
   );
 }
 
-function producedColors(
+export function producedColors(
   parts: Iterable<ManifestPart>,
   colors: ReadonlyArray<BundleColor>,
 ): ReadonlyArray<number> {
