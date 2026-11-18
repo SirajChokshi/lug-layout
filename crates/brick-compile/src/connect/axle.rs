@@ -87,6 +87,9 @@ impl AxleProbe {
         if !profile.symmetric_under(FRAC_PI_2, IDENTIFY_LDU) {
             return Err("axle profile is not symmetric under a quarter turn".to_string());
         }
+        if !profile.has_pockets() {
+            return Err("axle profile has no pockets between its arms".to_string());
+        }
         let sides = profile.sides(FRAC_PI_2, IDENTIFY_LDU / profile.radius());
         Ok(AxleProbe { profile, sides })
     }
@@ -312,10 +315,10 @@ impl AxleProbe {
         );
         for angle in self.angles(&glance) {
             let placed = self.profile.placed([0.0, 0.0], angle);
-            let root = solid
-                .profile_floor(probe, &placed.eroded_pockets(IDENTIFY_LDU), self.radius())
-                .depth;
-            if root <= 2.0 * IDENTIFY_LDU {
+            let floor =
+                solid.profile_floor(probe, &placed.eroded_pockets(IDENTIFY_LDU), self.radius());
+            let root = floor.depth;
+            if root <= 2.0 * IDENTIFY_LDU || floor.faces_probe == Some(false) {
                 continue;
             }
             let end = root.min(far);
@@ -327,11 +330,14 @@ impl AxleProbe {
             if !placed.outline_covered(&section, IDENTIFY_LDU) || !self.keyed(angle, &section) {
                 continue;
             }
-            return Some(Ok(AxleFound::Axle {
-                probe: *probe,
-                angle,
-                length: root.is_finite().then_some(root),
-            }));
+            return Some(
+                self.located(&placed, angle, &section)
+                    .map(|()| AxleFound::Axle {
+                        probe: *probe,
+                        angle,
+                        length: root.is_finite().then_some(root),
+                    }),
+            );
         }
         None
     }

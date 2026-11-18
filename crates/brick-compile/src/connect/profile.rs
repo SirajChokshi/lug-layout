@@ -367,6 +367,10 @@ impl Profile {
         self.inner
     }
 
+    pub fn has_pockets(&self) -> bool {
+        !self.pockets.is_empty()
+    }
+
     pub fn placed(&self, center: Point, angle: f64) -> Placed {
         let moved = |points: &[Point]| -> Vec<Point> {
             points.iter().map(|p| rotated(*p, center, angle)).collect()

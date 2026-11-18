@@ -1230,6 +1230,17 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 continue;
             };
             let (low, high) = (rising.entrance[rising.axis], falling.entrance[falling.axis]);
+            if high <= low + IDENTIFY_LDU {
+                for probe in [rising, falling] {
+                    inference.issues.push(Issue::Uninferred {
+                        origin: probe.entrance,
+                        reason: Uninferred::UnpairedThroughCavity {
+                            radius: probe.radius,
+                        },
+                    });
+                }
+                continue;
+            }
             let middle = [0, 1, 2].map(|k| (rising.entrance[k] + falling.entrance[k]) / 2.0);
             let size = match gender {
                 Gender::Female => axle.female,
@@ -1239,7 +1250,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 axle_cylinder(
                     gender,
                     Caps::None,
-                    [size, (high - low).abs()],
+                    [size, high - low],
                     axle_frame(middle, rising.axis, 1.0, angle),
                     true,
                 ),
