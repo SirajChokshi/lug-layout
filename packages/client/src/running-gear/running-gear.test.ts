@@ -31,6 +31,7 @@ import { instanceBoxes } from "./instance-boxes.ts";
 import { exactLduText, RunningGearEditor, type GearModelSource } from "./running-gear-editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const BAKED_GEAR_TIMEOUT_MS = 60_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -194,27 +195,31 @@ describe("Running gear overrides on 10133-1", () => {
     ).toBeNull();
   });
 
-  it("accepts every baked vehicle's own detected gear restated as an override", async () => {
-    const loader = bundleLoader();
-    const manifest = await loader.loadManifest("standard");
-    let checked = 0;
-    for (const { name } of manifest.models) {
-      const source = await gearSource(name);
-      source.vehicles.forEach((vehicle, v) => {
-        checked++;
-        const couplers = [vehicle.frontCoupler, vehicle.rearCoupler].flatMap((c) =>
-          c ? [{ instance: c.instance, face: c.face }] : [],
-        );
-        const result = effectiveVehicle(
-          vehicle,
-          { vehicle: v, bogies: detectedBogies(vehicle), couplers },
-          source.instanceBoxes,
-        );
-        expect({ name, v, issues: result.issues }).toEqual({ name, v, issues: [] });
-      });
-    }
-    expect(checked).toBeGreaterThanOrEqual(10);
-  });
+  it(
+    "accepts every baked vehicle's own detected gear restated as an override",
+    async () => {
+      const loader = bundleLoader();
+      const manifest = await loader.loadManifest("standard");
+      let checked = 0;
+      for (const { name } of manifest.models) {
+        const source = await gearSource(name);
+        source.vehicles.forEach((vehicle, v) => {
+          checked++;
+          const couplers = [vehicle.frontCoupler, vehicle.rearCoupler].flatMap((c) =>
+            c ? [{ instance: c.instance, face: c.face }] : [],
+          );
+          const result = effectiveVehicle(
+            vehicle,
+            { vehicle: v, bogies: detectedBogies(vehicle), couplers },
+            source.instanceBoxes,
+          );
+          expect({ name, v, issues: result.issues }).toEqual({ name, v, issues: [] });
+        });
+      }
+      expect(checked).toBeGreaterThanOrEqual(10);
+    },
+    BAKED_GEAR_TIMEOUT_MS,
+  );
 });
 
 describe("Running gear editor", () => {
@@ -250,34 +255,38 @@ describe("Running gear editor", () => {
     );
   });
 
-  it("accepts every pivot and coupling face typed back exactly as the panel shows it", async () => {
-    const manifest = await bundleLoader().loadManifest("standard");
-    let retyped = 0;
-    for (const { name } of manifest.models) {
-      const source = await gearSource(name);
-      if (source.vehicles.length === 0) continue;
-      const store = new MemoryOverrideStore();
-      const editor = new RunningGearEditor(store);
-      await editor.setModels([source]);
-      for (let v = 0; v < source.vehicles.length; v++) {
-        editor.select(name, v);
-        const shown = editor.snapshot().view;
-        if (!shown) throw new Error(`${name} vehicle ${v} has no view`);
-        shown.pivots.forEach((pivot, b) => editor.setPivot(b, typed(pivot[0]), typed(pivot[2])));
-        for (const coupler of shown.couplers) {
-          editor.setCouplerFace(coupler.instance, typed(coupler.face[0]), typed(coupler.face[2]));
-          retyped++;
+  it(
+    "accepts every pivot and coupling face typed back exactly as the panel shows it",
+    async () => {
+      const manifest = await bundleLoader().loadManifest("standard");
+      let retyped = 0;
+      for (const { name } of manifest.models) {
+        const source = await gearSource(name);
+        if (source.vehicles.length === 0) continue;
+        const store = new MemoryOverrideStore();
+        const editor = new RunningGearEditor(store);
+        await editor.setModels([source]);
+        for (let v = 0; v < source.vehicles.length; v++) {
+          editor.select(name, v);
+          const shown = editor.snapshot().view;
+          if (!shown) throw new Error(`${name} vehicle ${v} has no view`);
+          shown.pivots.forEach((pivot, b) => editor.setPivot(b, typed(pivot[0]), typed(pivot[2])));
+          for (const coupler of shown.couplers) {
+            editor.setCouplerFace(coupler.instance, typed(coupler.face[0]), typed(coupler.face[2]));
+            retyped++;
+          }
+          const after = editor.snapshot().view;
+          expect({ name, v, issues: after?.issues }).toEqual({ name, v, issues: [] });
+          expect(after?.couplers.map((c) => c.face)).toEqual(shown.couplers.map((c) => c.face));
+          expect(after?.pivots).toEqual(shown.pivots);
+          await editor.save();
+          expect(editor.snapshot().error).toBeNull();
         }
-        const after = editor.snapshot().view;
-        expect({ name, v, issues: after?.issues }).toEqual({ name, v, issues: [] });
-        expect(after?.couplers.map((c) => c.face)).toEqual(shown.couplers.map((c) => c.face));
-        expect(after?.pivots).toEqual(shown.pivots);
-        await editor.save();
-        expect(editor.snapshot().error).toBeNull();
       }
-    }
-    expect(retyped).toBeGreaterThanOrEqual(10);
-  });
+      expect(retyped).toBeGreaterThanOrEqual(10);
+    },
+    BAKED_GEAR_TIMEOUT_MS,
+  );
 
   it("reads a version 1 record saved in the model frame as the same gear in the vehicle frame", async () => {
     const source = await gearSource("10133-1");

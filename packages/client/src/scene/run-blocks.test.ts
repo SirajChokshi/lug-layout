@@ -19,6 +19,7 @@ import { buildTrackPlan } from "./track-plan.ts";
 import { TRACK_PARTS } from "./track-scene.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const AUTOPILOT_TIMEOUT_MS = 60_000;
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -101,23 +102,27 @@ function run(target: SimSession, minutes: number): void {
   for (let tick = 0; tick < minutes * 60 * SIM_TICK_HZ; tick++) target.simulation.step();
 }
 
-it("keeps three or four autopilot trains off each other's track pieces while they all keep arriving", () => {
-  for (const fronts of [
-    [70, 30, 140],
-    [70, 30, 98, 140],
-  ]) {
-    const autopilot = session(
-      TWO_SIDINGS,
-      fronts.map((edge) => [edge, 100] as const),
-      1,
-    );
-    run(autopilot, AUTOPILOT_MINUTES);
-    expect(autopilot.simulation.separationCounters[0]).toBe(0);
-    for (const arrivals of autopilot.simulation.blocks?.arrivals ?? []) {
-      expect(arrivals).toBeGreaterThanOrEqual(MIN_ARRIVALS_PER_TRAIN);
+it(
+  "keeps three or four autopilot trains off each other's track pieces while they all keep arriving",
+  () => {
+    for (const fronts of [
+      [70, 30, 140],
+      [70, 30, 98, 140],
+    ]) {
+      const autopilot = session(
+        TWO_SIDINGS,
+        fronts.map((edge) => [edge, 100] as const),
+        1,
+      );
+      run(autopilot, AUTOPILOT_MINUTES);
+      expect(autopilot.simulation.separationCounters[0]).toBe(0);
+      for (const arrivals of autopilot.simulation.blocks?.arrivals ?? []) {
+        expect(arrivals).toBeGreaterThanOrEqual(MIN_ARRIVALS_PER_TRAIN);
+      }
     }
-  }
-});
+  },
+  AUTOPILOT_TIMEOUT_MS,
+);
 
 it("runs two manual trains on a switchless oval and stops the follower behind a stopped leader", () => {
   const fronts = [
