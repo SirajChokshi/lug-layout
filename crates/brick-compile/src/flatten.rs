@@ -176,6 +176,7 @@ impl<'a, L: Library> Flattener<'a, L> {
 
     pub fn exact_geometry(mut self) -> Self {
         self.exact = true;
+        self.parsed.clear();
         self
     }
 

@@ -203,7 +203,7 @@ The LDCad meta reference (melkert.net) isn't reachable from the agent VMs, so ea
 
 ### Tier 4 male candidacy
 
-Measured on all 24,985 pinned parts against the float build's published records. A real stud here is R6 up to length 4, or R12; a sleeve has a coaxial female inside it in its own record; anything else is a solid round. "23 enclosures" are the tyre, collar, housing, sleeve and shroud removals above. OMR for (ii) and (iv): 32,669 of 33,678 joints accepted before and after, none using a new male; only 10 of the changed parts occur in the 18 builds.
+Measured on all 24,985 pinned parts against the float build's published records. A real stud here is R6 up to length 4, or R12; a sleeve has a coaxial female inside it in its own record; anything else is a solid round. "23 enclosures" are the tyre, collar, housing, sleeve and shroud removals above; the interior closure in 30089 and 30089a makes 25 without an exemption, and every exemption keeps it. OMR for (ii) and (iv): 32,669 of 33,678 joints accepted before and after, none using a new male; only 10 of the changed parts occur in the 18 builds.
 
 | Variant | Rule | Sleeves gained | Solid rounds gained | Real studs gained | Males removed |
 |---|---|---|---|---|---|

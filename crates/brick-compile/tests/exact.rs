@@ -54,9 +54,13 @@ fn point(x: &str, y: &str) -> Direction {
 }
 
 fn circle_with_seam_at_half_turn(seam: (&str, &str)) -> bool {
+    circle_with_seams_at_half_turn(("-6", "0"), seam)
+}
+
+fn circle_with_seams_at_half_turn(upper_end: (&str, &str), seam: (&str, &str)) -> bool {
     let upper = (
         Bearing::identify(point("6", "0"), 1.0),
-        Bearing::identify(point("-6", "0"), 1.0),
+        Bearing::identify(point(upper_end.0, upper_end.1), 1.0),
     );
     let lower = (
         Bearing::identify(point(seam.0, seam.1), 1.0),
@@ -70,4 +74,8 @@ fn an_arc_end_within_identification_of_a_turn_abuts_and_a_real_gap_stays_open() 
     assert!(circle_with_seam_at_half_turn(("-6", "0")));
     assert!(circle_with_seam_at_half_turn(("-5.999999997", "-0.0002")));
     assert!(!circle_with_seam_at_half_turn(("-5.99999992", "-0.001")));
+    assert!(circle_with_seams_at_half_turn(
+        ("-5.9999999925", "0.0003"),
+        ("-5.9999999925", "-0.0003")
+    ));
 }

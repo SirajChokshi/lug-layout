@@ -522,13 +522,15 @@ pub fn span(bearings: Vec<Bearing>) -> Option<Arc> {
     sorted.sort_by(bearing_order);
     let count = sorted.len();
     let first = sorted.first()?.clone();
+    let reaches_across = |k: usize, strictly: bool| {
+        let (low, high) = (&sorted[k], &sorted[(k + 1) % count]);
+        let across = opposite(low);
+        contains(&(low.clone(), high.clone()), &across)
+            && !(strictly && bearing_order(&across, high) == Ordering::Equal)
+    };
     let widest = (0..count)
-        .find(|&k| {
-            let (low, high) = (&sorted[k], &sorted[(k + 1) % count]);
-            let across = opposite(low);
-            contains(&(low.clone(), high.clone()), &across)
-                && bearing_order(&across, high) != Ordering::Equal
-        })
+        .find(|&k| reaches_across(k, true))
+        .or_else(|| (0..count).find(|&k| reaches_across(k, false)))
         .unwrap_or(count - 1);
     let low = sorted.get((widest + 1) % count).cloned().unwrap_or(first);
     let high = sorted.swap_remove(widest);
