@@ -7,10 +7,12 @@ import {
   linearColorsOf,
   matricesOf,
   pageOf,
+  regionPage,
   regroupedPage,
   usesAnyShape,
   type InstancePage,
   type InstanceRuns,
+  type RegionPage,
 } from "./instance-page.ts";
 
 const LINEAR = Float32Array.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9);
@@ -43,22 +45,31 @@ const STUDS: ReadonlyArray<Instance> = [
   { shape: 3, colorIndex: 2, voxelized: 0, matrix: at(TILTED, 7, 8, 9) },
 ];
 
-function chunk(): ChunkInstances {
+function chunkAt(
+  originX: number,
+  originZ: number,
+  parts: ReadonlyArray<Instance>,
+  studs: ReadonlyArray<Instance>,
+): ChunkInstances {
   return {
-    originX: 640,
-    originZ: -1280,
-    count: PARTS.length,
-    partIndex: Uint16Array.from(PARTS.map((p) => p.shape)),
-    colorIndex: Uint16Array.from(PARTS.map((p) => p.colorIndex)),
-    voxelized: Uint8Array.from(PARTS.map((p) => p.voxelized)),
-    matrices: Float32Array.from(PARTS.flatMap((p) => p.matrix)),
+    originX,
+    originZ,
+    count: parts.length,
+    partIndex: Uint16Array.from(parts.map((p) => p.shape)),
+    colorIndex: Uint16Array.from(parts.map((p) => p.colorIndex)),
+    voxelized: Uint8Array.from(parts.map((p) => p.voxelized)),
+    matrices: Float32Array.from(parts.flatMap((p) => p.matrix)),
     studs: {
-      count: STUDS.length,
-      primitiveIndex: Uint8Array.from(STUDS.map((s) => s.shape)),
-      colorIndex: Uint16Array.from(STUDS.map((s) => s.colorIndex)),
-      matrices: Float32Array.from(STUDS.flatMap((s) => s.matrix)),
+      count: studs.length,
+      primitiveIndex: Uint8Array.from(studs.map((s) => s.shape)),
+      colorIndex: Uint16Array.from(studs.map((s) => s.colorIndex)),
+      matrices: Float32Array.from(studs.flatMap((s) => s.matrix)),
     },
   };
+}
+
+function chunk(): ChunkInstances {
+  return chunkAt(640, -1280, PARTS, STUDS);
 }
 
 function expectedRow(kind: string, instance: Instance): string {
@@ -201,4 +212,121 @@ it("hands meshes views of the page rather than copies", () => {
   ]);
   expect([matrices.byteOffset, matrices.length]).toEqual([2 * 16 * 4, 3 * 16]);
   expect([colors.byteOffset, colors.length]).toEqual([2 * 3 * 4, 3 * 3]);
+});
+
+const REGION_X = 1280;
+const REGION_Z = -2560;
+const NO_CHANGES: ReadonlyMap<number, ChunkInstances | null> = new Map();
+
+function movedBy(instance: Instance, dx: number, dz: number): Instance {
+  const [x = 0, y = 0, z = 0] = [instance.matrix[3], instance.matrix[7], instance.matrix[11]];
+  return { ...instance, matrix: at(instance.matrix, x + dx, y, z + dz) };
+}
+
+function expectedChunkRows(
+  key: number,
+  originX: number,
+  originZ: number,
+  parts: ReadonlyArray<Instance>,
+  studs: ReadonlyArray<Instance>,
+): string[] {
+  const dx = originX - REGION_X;
+  const dz = originZ - REGION_Z;
+  return [
+    ...parts.map((p) => `${key} ${expectedRow("part", movedBy(p, dx, dz))}`),
+    ...studs.map((s) => `${key} ${expectedRow("stud", movedBy(s, dx, dz))}`),
+  ];
+}
+
+function regionRows(page: RegionPage | null): string[] {
+  if (!page) return [];
+  return Array.from(
+    { length: page.instanceCount },
+    (_, i) => `${page.chunkKeys[page.chunkIndex[i] ?? 0]} ${pageRow(page, i)}`,
+  ).toSorted();
+}
+
+function update(
+  previous: RegionPage | null,
+  changes: ReadonlyArray<readonly [number, ChunkInstances | null]>,
+  colorAlphaSlot = COLOR_ALPHA_SLOT,
+): RegionPage | null {
+  return regionPage(previous, new Map(changes), REGION_X, REGION_Z, LINEAR, colorAlphaSlot);
+}
+
+const WEST = chunkAt(1280, -2560, PARTS.slice(0, 3), STUDS.slice(0, 1));
+const EAST = chunkAt(1920, -1920, PARTS.slice(3), STUDS.slice(1));
+const EAST_AGAIN = chunkAt(1920, -1920, PARTS.slice(1, 2), []);
+
+it("keeps each chunk's instances at their place in the region until that chunk is replaced or removed", () => {
+  const both = update(null, [
+    [7, WEST],
+    [9, EAST],
+  ]);
+  const westRows = expectedChunkRows(7, 1280, -2560, PARTS.slice(0, 3), STUDS.slice(0, 1));
+  const eastRows = expectedChunkRows(9, 1920, -1920, PARTS.slice(3), STUDS.slice(1));
+  const eastAgainRows = expectedChunkRows(9, 1920, -1920, PARTS.slice(1, 2), []);
+  const replaced = update(both, [[9, EAST_AGAIN]]);
+  const westRemoved = update(replaced, [[7, null]]);
+
+  expect([both?.originX, both?.originZ]).toEqual([REGION_X, REGION_Z]);
+  expect(regionRows(both)).toEqual([...westRows, ...eastRows].toSorted());
+  expect(regionRows(replaced)).toEqual([...westRows, ...eastAgainRows].toSorted());
+  expect(Array.from(westRemoved?.chunkKeys ?? [])).toEqual([9]);
+  expect(regionRows(westRemoved)).toEqual(eastAgainRows.toSorted());
+  expect(update(westRemoved, [[9, null]])).toBeNull();
+});
+
+it("builds the same page whatever order its chunks arrive in, including two chunks at one origin", () => {
+  const PART_KEY = 4;
+  const TRACK_KEY = -1 - PART_KEY;
+  const parts = chunkAt(1280, -2560, PARTS.slice(0, 2), STUDS);
+  const track = chunkAt(1280, -2560, PARTS.slice(2), []);
+  const together = update(null, [
+    [PART_KEY, parts],
+    [TRACK_KEY, track],
+  ]);
+
+  expect(Array.from(together?.chunkKeys ?? [])).toEqual([TRACK_KEY, PART_KEY]);
+  expect(regionRows(together)).toEqual(
+    [
+      ...expectedChunkRows(PART_KEY, 1280, -2560, PARTS.slice(0, 2), STUDS),
+      ...expectedChunkRows(TRACK_KEY, 1280, -2560, PARTS.slice(2), []),
+    ].toSorted(),
+  );
+  expect(update(update(null, [[PART_KEY, parts]]), [[TRACK_KEY, track]])).toEqual(together);
+  expect(update(update(null, [[TRACK_KEY, track]]), [[PART_KEY, parts]])).toEqual(together);
+});
+
+it("regroups a region for a new palette as if it were built with that palette", () => {
+  const changes = [
+    [7, WEST],
+    [9, EAST],
+  ] as const;
+  const regrouped = regionPage(
+    update(null, changes),
+    NO_CHANGES,
+    REGION_X,
+    REGION_Z,
+    LINEAR.toReversed(),
+    SWAPPED_COLOR_ALPHA_SLOT,
+  );
+
+  expect(regrouped).toEqual(
+    regionPage(
+      null,
+      new Map(changes),
+      REGION_X,
+      REGION_Z,
+      LINEAR.toReversed(),
+      SWAPPED_COLOR_ALPHA_SLOT,
+    ),
+  );
+});
+
+it("refuses more chunks than a region page can index", () => {
+  const empty = chunkAt(REGION_X, REGION_Z, [], []);
+  const tooMany = Array.from({ length: 257 }, (_, key) => [key, empty] as const);
+
+  expect(() => update(null, tooMany)).toThrow(RangeError);
 });

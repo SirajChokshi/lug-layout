@@ -1,6 +1,8 @@
 import { COLOR_CHANNELS, INSTANCE_MATRIX_FLOATS, type ChunkInstances } from "../scene-backend.ts";
 
 export const MATRIX4_FLOATS = 16;
+export const TRANSLATION_X = 12;
+export const TRANSLATION_Z = 14;
 
 export function writeMatrix4(
   source: Float32Array,
@@ -54,12 +56,29 @@ export interface InstancePage {
   readonly studRuns: InstanceRuns;
 }
 
-interface InstanceSource {
-  readonly count: number;
+export interface RegionPage extends InstancePage {
+  readonly chunkKeys: Float64Array;
+  readonly chunkIndex: Uint8Array;
+}
+
+const CHUNK_INDEX_LIMIT = 256;
+const NOT_KEPT = -1;
+
+interface InstanceColumns {
   readonly matrices: Float32Array;
   readonly shape: ArrayLike<number>;
   readonly colorIndex: ArrayLike<number>;
+}
+
+interface InstanceSource extends InstanceColumns {
+  readonly count: number;
   readonly voxelized: ArrayLike<number> | null;
+}
+
+interface OrderedPage {
+  readonly page: InstancePage;
+  readonly partOrder: Uint32Array;
+  readonly studOrder: Uint32Array;
 }
 
 export function isNotUpright(instanceClass: number): boolean {
@@ -184,7 +203,7 @@ function build(
   studs: InstanceSource,
   linearColors: Float32Array,
   colorAlphaSlot: Uint8Array,
-): InstancePage {
+): OrderedPage {
   const instanceCount = parts.count + studs.count;
   const partSlots = slotsOf(parts, colorAlphaSlot);
   const partClasses = classesOf(parts);
@@ -207,7 +226,7 @@ function build(
   };
   copyInstances(parts, partOrder, linearColors, page, 0);
   copyInstances(studs, studOrder, linearColors, page, parts.count);
-  return page;
+  return { page, partOrder, studOrder };
 }
 
 function matrix4Of(source: Float32Array, count: number): Float32Array {
@@ -216,32 +235,40 @@ function matrix4Of(source: Float32Array, count: number): Float32Array {
   return matrices;
 }
 
+function partsOf(instances: ChunkInstances): InstanceSource {
+  return {
+    count: instances.count,
+    matrices: matrix4Of(instances.matrices, instances.count),
+    shape: instances.partIndex,
+    colorIndex: instances.colorIndex,
+    voxelized: instances.voxelized ?? new Uint8Array(instances.count),
+  };
+}
+
+function studsOf(instances: ChunkInstances): InstanceSource {
+  const { studs } = instances;
+  return {
+    count: studs.count,
+    matrices: matrix4Of(studs.matrices, studs.count),
+    shape: studs.primitiveIndex,
+    colorIndex: studs.colorIndex,
+    voxelized: null,
+  };
+}
+
 export function pageOf(
   instances: ChunkInstances,
   linearColors: Float32Array,
   colorAlphaSlot: Uint8Array,
 ): InstancePage {
-  const { studs } = instances;
   return build(
     instances.originX,
     instances.originZ,
-    {
-      count: instances.count,
-      matrices: matrix4Of(instances.matrices, instances.count),
-      shape: instances.partIndex,
-      colorIndex: instances.colorIndex,
-      voxelized: instances.voxelized ?? new Uint8Array(instances.count),
-    },
-    {
-      count: studs.count,
-      matrices: matrix4Of(studs.matrices, studs.count),
-      shape: studs.primitiveIndex,
-      colorIndex: studs.colorIndex,
-      voxelized: null,
-    },
+    partsOf(instances),
+    studsOf(instances),
     linearColors,
     colorAlphaSlot,
-  );
+  ).page;
 }
 
 export function regroupedPage(
@@ -269,7 +296,159 @@ export function regroupedPage(
     },
     linearColors,
     colorAlphaSlot,
+  ).page;
+}
+
+function memberKeys(
+  previous: RegionPage | null,
+  changes: ReadonlyMap<number, ChunkInstances | null>,
+): Float64Array {
+  const keys: number[] = [];
+  if (previous) {
+    for (let m = 0; m < previous.chunkKeys.length; m++) {
+      const key = previous.chunkKeys[m] ?? 0;
+      if (!changes.has(key)) keys.push(key);
+    }
+  }
+  for (const [key, chunk] of changes) if (chunk) keys.push(key);
+  if (keys.length > CHUNK_INDEX_LIMIT) {
+    throw new RangeError(
+      `a region page holds at most ${CHUNK_INDEX_LIMIT} chunks, not ${keys.length}`,
+    );
+  }
+  return Float64Array.from(keys).toSorted();
+}
+
+interface RegionColumns {
+  readonly matrices: Float32Array;
+  readonly shape: Uint16Array;
+  readonly colorIndex: Uint16Array;
+  readonly voxelized: Uint8Array | null;
+  readonly chunkIndex: Uint8Array;
+}
+
+function copyIntoRegion(
+  target: RegionColumns,
+  to: number,
+  from: InstanceColumns,
+  i: number,
+  voxelized: number,
+  chunkIndex: number,
+  offsetX: number,
+  offsetZ: number,
+): void {
+  const t = to * MATRIX4_FLOATS;
+  target.matrices.set(from.matrices.subarray(i * MATRIX4_FLOATS, (i + 1) * MATRIX4_FLOATS), t);
+  target.matrices[t + TRANSLATION_X] = (target.matrices[t + TRANSLATION_X] ?? 0) + offsetX;
+  target.matrices[t + TRANSLATION_Z] = (target.matrices[t + TRANSLATION_Z] ?? 0) + offsetZ;
+  target.shape[to] = from.shape[i] ?? 0;
+  target.colorIndex[to] = from.colorIndex[i] ?? 0;
+  if (target.voxelized) target.voxelized[to] = voxelized;
+  target.chunkIndex[to] = chunkIndex;
+}
+
+function regionSource(
+  keys: Float64Array,
+  previous: RegionPage | null,
+  first: number,
+  end: number,
+  changed: ReadonlyArray<InstanceSource | null>,
+  offsetX: Float64Array,
+  offsetZ: Float64Array,
+  isParts: boolean,
+): InstanceSource & RegionColumns {
+  const keptAs = new Int16Array(previous?.chunkKeys.length ?? 0).fill(NOT_KEPT);
+  for (let m = 0; m < keys.length; m++) {
+    if (previous && !changed[m]) keptAs[previous.chunkKeys.indexOf(keys[m] ?? 0)] = m;
+  }
+  const next = new Uint32Array(keys.length + 1);
+  for (let m = 0; m < keys.length; m++) next[m + 1] = changed[m]?.count ?? 0;
+  for (let i = first; i < end; i++) {
+    const m = keptAs[previous?.chunkIndex[i] ?? 0] ?? NOT_KEPT;
+    if (m !== NOT_KEPT) next[m + 1] = (next[m + 1] ?? 0) + 1;
+  }
+  for (let m = 1; m <= keys.length; m++) next[m] = (next[m] ?? 0) + (next[m - 1] ?? 0);
+  const count = next[keys.length] ?? 0;
+  const source = {
+    count,
+    matrices: new Float32Array(count * MATRIX4_FLOATS),
+    shape: new Uint16Array(count),
+    colorIndex: new Uint16Array(count),
+    voxelized: isParts ? new Uint8Array(count) : null,
+    chunkIndex: new Uint8Array(count),
+  };
+  if (previous) {
+    for (let i = first; i < end; i++) {
+      const m = keptAs[previous.chunkIndex[i] ?? 0] ?? NOT_KEPT;
+      if (m === NOT_KEPT) continue;
+      const to = next[m] ?? 0;
+      next[m] = to + 1;
+      copyIntoRegion(source, to, previous, i, previous.voxelized[i] ?? 0, m, 0, 0);
+    }
+  }
+  for (let m = 0; m < keys.length; m++) {
+    const from = changed[m];
+    if (!from) continue;
+    for (let i = 0; i < from.count; i++) {
+      const to = next[m] ?? 0;
+      next[m] = to + 1;
+      const voxelized = from.voxelized?.[i] ?? 0;
+      copyIntoRegion(source, to, from, i, voxelized, m, offsetX[m] ?? 0, offsetZ[m] ?? 0);
+    }
+  }
+  return source;
+}
+
+export function regionPage(
+  previous: RegionPage | null,
+  changes: ReadonlyMap<number, ChunkInstances | null>,
+  originX: number,
+  originZ: number,
+  linearColors: Float32Array,
+  colorAlphaSlot: Uint8Array,
+): RegionPage | null {
+  const keys = memberKeys(previous, changes);
+  if (keys.length === 0) return null;
+  const changedParts: Array<InstanceSource | null> = [];
+  const changedStuds: Array<InstanceSource | null> = [];
+  const offsetX = new Float64Array(keys.length);
+  const offsetZ = new Float64Array(keys.length);
+  for (let m = 0; m < keys.length; m++) {
+    const chunk = changes.get(keys[m] ?? 0);
+    changedParts.push(chunk ? partsOf(chunk) : null);
+    changedStuds.push(chunk ? studsOf(chunk) : null);
+    offsetX[m] = chunk ? chunk.originX - originX : 0;
+    offsetZ[m] = chunk ? chunk.originZ - originZ : 0;
+  }
+  const partCount = previous?.partCount ?? 0;
+  const instanceCount = previous?.instanceCount ?? 0;
+  const parts = regionSource(keys, previous, 0, partCount, changedParts, offsetX, offsetZ, true);
+  const studs = regionSource(
+    keys,
+    previous,
+    partCount,
+    instanceCount,
+    changedStuds,
+    offsetX,
+    offsetZ,
+    false,
   );
+  const { page, partOrder, studOrder } = build(
+    originX,
+    originZ,
+    parts,
+    studs,
+    linearColors,
+    colorAlphaSlot,
+  );
+  const chunkIndex = new Uint8Array(page.instanceCount);
+  for (let n = 0; n < partOrder.length; n++) {
+    chunkIndex[n] = parts.chunkIndex[partOrder[n] ?? 0] ?? 0;
+  }
+  for (let n = 0; n < studOrder.length; n++) {
+    chunkIndex[page.partCount + n] = studs.chunkIndex[studOrder[n] ?? 0] ?? 0;
+  }
+  return { ...page, chunkKeys: keys, chunkIndex };
 }
 
 export function groupRunEnd(runs: InstanceRuns, firstRun: number): number {
