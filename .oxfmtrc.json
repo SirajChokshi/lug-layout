@@ -11,6 +11,7 @@
     "README.md",
     "packages/test-fixtures/**",
     "tools/asset-pipeline/ldraw.lock.json",
+    "tools/asset-pipeline/shadow-patches/**",
     "target/**"
   ]
 }
