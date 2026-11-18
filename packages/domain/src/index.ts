@@ -197,11 +197,7 @@ export {
   PROFILE_CROSS,
   PROFILE_ROUND,
 } from "./connect/connector-table.ts";
-export {
-  IDENTIFICATION_RESIDUAL_LDU,
-  ModelConnectors,
-  type PartInstances,
-} from "./connect/model-connectors.ts";
+export { ModelConnectors, type PartInstances } from "./connect/model-connectors.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
 export { MateReport } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";

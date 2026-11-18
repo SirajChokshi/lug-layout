@@ -69,10 +69,6 @@ export class ConnectionSolver {
     if (finders.length === 0) throw new RangeError("a connection solver needs at least one finder");
   }
 
-  get families(): number {
-    return this.finders.length;
-  }
-
   insert(model: ModelConnectors, pose: LatticePose): void {
     for (let f = 0; f < this.finders.length; f++) this.finders[f]?.insert(model, pose);
   }

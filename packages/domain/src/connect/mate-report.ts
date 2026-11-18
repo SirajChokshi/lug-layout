@@ -35,12 +35,6 @@ export class MateReport {
     this.families.fill(family, from, this.size);
   }
 
-  ofFamily(family: number): number {
-    let n = 0;
-    for (let i = 0; i < this.size; i++) if (this.families[i] === family) n++;
-    return n;
-  }
-
   private grow(): void {
     const capacity = Math.max(1, this.connectors.length * 2);
     const connectors = new Int32Array(capacity);
