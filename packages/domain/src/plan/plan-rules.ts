@@ -163,28 +163,6 @@ function frameFor(box: LduRect, tables: ReadonlyArray<LduRect>, extra: number): 
   return new ExactFrame([...values, extra]);
 }
 
-export function overhangLdu(box: LduRect, tables: ReadonlyArray<LduRect>): number {
-  if (tables.length === 0) return Number.POSITIVE_INFINITY;
-  const frame = frameFor(box, tables, 0);
-  return frame.toLdu(
-    exactReach(
-      frame.rect(box),
-      tables.map((t) => frame.rect(t)),
-    ),
-  );
-}
-
-export function nearestTableLdu(box: LduRect, tables: ReadonlyArray<LduRect>): number {
-  if (tables.length === 0) return Number.POSITIVE_INFINITY;
-  const frame = frameFor(box, tables, 0);
-  return frame.toLdu(
-    exactNearest(
-      frame.rect(box),
-      tables.map((t) => frame.rect(t)),
-    ),
-  );
-}
-
 function isFiniteRect(rect: LduRect): boolean {
   return [rect.minX, rect.minZ, rect.maxX, rect.maxZ].every(Number.isFinite);
 }

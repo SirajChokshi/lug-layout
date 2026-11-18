@@ -10,7 +10,3 @@ export const MM_PER_STUD = (STUD_LDU * MM_PER_LDU_NUMERATOR) / MM_PER_LDU_DENOMI
 export function lduFromMm(mm: number): number {
   return (mm * MM_PER_LDU_DENOMINATOR) / MM_PER_LDU_NUMERATOR;
 }
-
-export function mmFromLdu(ldu: number): number {
-  return (ldu * MM_PER_LDU_NUMERATOR) / MM_PER_LDU_DENOMINATOR;
-}
