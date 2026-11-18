@@ -8,7 +8,7 @@ use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, MODIFIED_NOTE};
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, TierRecord,
+    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
 };
 use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
@@ -18,7 +18,7 @@ use brick_compile::model::{bake_model, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
-use brick_compile_cli::{verified_patch_paths, LazyLibrary};
+use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const DISCLAIMER: &str =
@@ -473,12 +473,7 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
-    let vocabulary_file: Value = serde_json::from_slice(
-        &fs::read(&args.vocabulary).map_err(|e| format!("{}: {e}", args.vocabulary.display()))?,
-    )
-    .map_err(|e| format!("{}: {e}", args.vocabulary.display()))?;
-    let section_vocabulary = SectionVocabulary::from_json(&vocabulary_file)
-        .map_err(|e| format!("{}: {e}", args.vocabulary.display()))?;
+    let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
