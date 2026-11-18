@@ -20,6 +20,7 @@ import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { WorldSession } from "./edit/world-session.ts";
 import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
@@ -55,11 +56,13 @@ import {
   TRAIN_PLAY,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
+  WORLD_SESSION,
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
+  bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();

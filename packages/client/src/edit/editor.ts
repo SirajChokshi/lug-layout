@@ -21,17 +21,16 @@ import {
 import { MergedParts } from "./merged-parts.ts";
 import { PartMeshStream, type MeshProgress } from "./part-mesh-stream.ts";
 import {
-  DirtyShards,
   BomCounter,
   countPlacements,
   EditHistory,
   RoadNetwork,
   World,
   addShards,
-  worldPlacements,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
+  type PlacementHandle,
   type PlacementTarget,
   type PlacementContents,
   type RoadEdgeSegment,
@@ -49,7 +48,6 @@ import {
   zeta16,
 } from "@brr/math";
 import {
-  CAMERA_FOV_DEGREES,
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
@@ -62,34 +60,9 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
-import { decode, issueText } from "@brr/schema/decode";
+import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
-import {
-  WORLD_NAME_MAX_LENGTH,
-  WorldName,
-  importRef,
-  referencedImports,
-  shardEntry,
-  worldHeader,
-  worldManifest,
-  worldShards,
-  worldTrack,
-  type SavedViewV1,
-  type ImportedFile,
-  type TrackRecordV1,
-  type WorldHeader,
-  type WorldIndexEntry,
-  type WorldManifestV1,
-  type WorldShardV1,
-} from "@brr/schema/world";
-import {
-  WORLD_LOCKS,
-  WORLD_REPOSITORY,
-  contentSha256,
-  type IWorldLocks,
-  type IWorldRepository,
-  type WorldLease,
-} from "@brr/storage";
+import { importRef, worldTrack, type ImportedFile, type WorldShardV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
   notDrawnItems,
@@ -99,9 +72,7 @@ import {
 } from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
-import type { ICredits } from "../credits/credits-service.ts";
-import type { CreditsView } from "../credits/credits-view.ts";
-import { CREDITS, MODEL_IMPORTER, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import { MODEL_IMPORTER, WORLD_SESSION } from "../tokens.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { modelLabel, withoutYear } from "../catalog/model-label.ts";
 import {
@@ -135,9 +106,17 @@ import {
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
-import { ViewCamera } from "../camera/view-camera.ts";
-import { creditsForWorld, exportFileName } from "./world-credits.ts";
 import { playModel, type PlayModel, type PlaySetup } from "../play/play-models.ts";
+import { errorText } from "./error-text.ts";
+import type {
+  ExportedWorld,
+  IEditedWorld,
+  IWorldFiles,
+  IWorldSession,
+  ModelFileInput,
+  WorldContents,
+  WorldSessionView,
+} from "./world-session.ts";
 
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
@@ -267,24 +246,6 @@ export interface EditorStats {
   readonly nearestStudPitchPx: number;
 }
 
-export type SaveState = "saved" | "saving" | "failed" | "off";
-
-export interface WorldFileView {
-  readonly id: string | null;
-  readonly name: string;
-  readonly placements: number;
-  readonly track: number;
-  readonly shards: number;
-  readonly save: SaveState;
-  readonly pinnedBundleVersion: string;
-  readonly openMs: number;
-}
-
-export interface ExportedWorld {
-  readonly fileName: string;
-  readonly bytes: Uint8Array;
-}
-
 export interface FrameMeasurement {
   readonly frames: number;
   readonly medianFrameMs: number;
@@ -398,12 +359,7 @@ export interface ModelImportView {
   readonly studio: StudioReport | null;
 }
 
-export interface ModelFileInput {
-  readonly name: string;
-  readonly bytes: Uint8Array;
-}
-
-export interface EditorSnapshot {
+export interface EditorSnapshot extends WorldSessionView {
   readonly status: EditorStatus;
   readonly error: string | null;
   readonly loadMs: number | null;
@@ -439,12 +395,7 @@ export interface EditorSnapshot {
   readonly lastRefusal: RefusedClick | null;
   readonly track: TrackView | null;
   readonly bundleVersion: string | null;
-  readonly world: WorldFileView | null;
-  readonly worlds: ReadonlyArray<WorldIndexEntry>;
-  readonly fileError: string | null;
-  readonly storageError: string | null;
-  readonly readOnly: boolean;
-  readonly unsavedEdits: boolean;
+  readonly catalogError: string | null;
   readonly coldStartMs: number | null;
   readonly roadKits: ReadonlyArray<RoadKitView>;
   readonly roadKit: string | null;
@@ -505,7 +456,7 @@ export interface EditorOptions {
   readonly tier: ChunkTier | null;
 }
 
-export interface IEditor extends IBomSource {
+export interface IEditor extends IBomSource, IWorldFiles {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
@@ -526,14 +477,6 @@ export interface IEditor extends IBomSource {
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
   goTo(x: number, z: number): void;
-  readonly worldNameMaxLength: number;
-  worldNameIssue(name: string): string | null;
-  newWorld(name: string): Promise<boolean>;
-  openWorld(id: string): Promise<boolean>;
-  deleteWorld(id: string): Promise<boolean>;
-  retrySave(): Promise<void>;
-  exportWorld(): Promise<ExportedWorld>;
-  importWorld(bytes: Uint8Array): Promise<boolean>;
   importModelFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
   cycleTier(): void;
@@ -630,8 +573,6 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   }
 }
 const GHOST_LIFT_LDU = BRICK_LDU;
-const VIEW_SAVE_DELAY_MS = 500;
-const FIRST_WORLD_NAME = "World 1";
 
 interface HeldPiece {
   readonly catalogIndex: number;
@@ -671,15 +612,10 @@ function quantileOfSorted(sorted: Float64Array, fraction: number): number {
   return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
 }
 
-interface OpenWorld {
-  readonly id: string | null;
-  readonly name: string;
-  readonly pinnedBundleVersion: string;
-  readonly openMs: number;
-}
-
-function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).replace(/\.+$/, "");
+interface RestoredWorld {
+  readonly world: World;
+  readonly handles: ReadonlyArray<PlacementHandle>;
+  readonly track: TrackDrawing | null;
 }
 
 function sameModels(a: ReadonlyArray<PlacedModel>, b: ReadonlyArray<PlacedModel>): boolean {
@@ -803,7 +739,7 @@ function undrawableTrack(
 }
 
 @injectable()
-export class Editor implements IEditor {
+export class Editor implements IEditor, IEditedWorld {
   private readonly listeners = new Set<() => void>();
   private state: EditorSnapshot = {
     status: "loading",
@@ -847,6 +783,7 @@ export class Editor implements IEditor {
     storageError: null,
     readOnly: false,
     unsavedEdits: false,
+    catalogError: null,
     coldStartMs: null,
     roadKits: [],
     roadKit: null,
@@ -857,21 +794,7 @@ export class Editor implements IEditor {
   };
   private world = new World();
   private history = new EditHistory(this.world);
-  private readonly dirty = new DirtyShards();
-  private current: OpenWorld | null = null;
-  private bundleVersion = "";
-  private viewDirty = false;
-  private lastView: SavedViewV1 | null = null;
-  private saveScheduled = false;
-  private viewTimer: ReturnType<typeof setTimeout> | null = null;
-  private fileQueue: Promise<void> = Promise.resolve();
   private firstWorldFrame = false;
-  private creditsView: Promise<CreditsView> | null = null;
-  private lease: WorldLease | null = null;
-  private readOnly = false;
-  private storageError: string | null = null;
-  private saveFailed = false;
-  private lastSaveError: string | null = null;
   private readonly ray = new Float64Array(RAY_FLOATS);
   private readonly frameStats: FrameStats = {
     drawCalls: 0,
@@ -929,7 +852,6 @@ export class Editor implements IEditor {
   private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly modelPlaceables = new Map<string, Placeable>();
   private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells">>();
-  private readonly importedFiles = new Map<string, ImportedFile>();
   private bundleColors: ReadonlyArray<BundleColor> = [];
   private readonly modelNames = new Map<Placeable, string>();
   private readonly playModels = new Map<Placeable, PlayModel>();
@@ -940,14 +862,20 @@ export class Editor implements IEditor {
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
-    @inject(WORLD_REPOSITORY) private readonly repository: IWorldRepository,
-    @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
-    @inject(CREDITS) private readonly credits: ICredits,
-    @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
+    @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
     @inject(MODEL_IMPORTER) private readonly importer: IModelImporter,
   ) {
     this.placed = new PlacedChunks(backend);
+    this.state = { ...this.state, ...session.view() };
+    session.subscribe(() => this.sessionChanged());
+  }
+
+  private sessionChanged(): void {
+    this.update(this.session.view());
+    if (this.state.readOnly && (this.active || this.held || this.state.mode === "road")) {
+      this.chooseItem(null);
+    }
   }
 
   subscribe(listener: () => void): () => void {
@@ -978,7 +906,6 @@ export class Editor implements IEditor {
       this.backend.forceTier(options.tier);
       this.update({ tier: options.tier });
       const index = await this.loader.loadIndex(EDITOR_LOD);
-      this.bundleVersion = index.bundleVersion;
       this.bundleColors = index.colors;
       const colorSource = { colors: index.colors, parts: [] };
       const colors = new ColorTable(colorSource);
@@ -1014,7 +941,7 @@ export class Editor implements IEditor {
       });
       this.installedColors = colors.size;
       const loadMs = performance.now() - started;
-      await this.openFirstWorld();
+      await this.session.start(this, index.bundleVersion);
       this.firstWorldFrame = true;
       this.update({
         status: "ready",
@@ -1089,7 +1016,7 @@ export class Editor implements IEditor {
       const credits = this.state.credits;
       if (credits) this.update({ credits: { ...credits, partFiles: manifest.credits.length } });
     } catch (error) {
-      this.update({ fileError: `the part credits can't be loaded: ${errorText(error)}` });
+      this.update({ catalogError: `the part credits can't be loaded: ${errorText(error)}` });
     }
   }
 
@@ -1201,7 +1128,7 @@ export class Editor implements IEditor {
     return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), EDITOR_LOD);
   }
 
-  private async addImportedModel(file: ImportedFile): Promise<Placeable | null> {
+  private async bakeImportedModel(file: ImportedFile): Promise<Placeable | null> {
     const view = {
       file: file.name,
       status: "importing",
@@ -1256,7 +1183,6 @@ export class Editor implements IEditor {
       this.syncColors();
     }
     this.bakes.set(id, model);
-    this.importedFiles.set(file.sha256, file);
     this.placeables.push(placeable);
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots = [...this.slots, slot];
@@ -1269,37 +1195,16 @@ export class Editor implements IEditor {
     return placeable;
   }
 
-  private async ensureImports(
-    shards: ReadonlyArray<WorldShardV1>,
-    files: (sha256: string) => Promise<ImportedFile | undefined>,
-  ): Promise<void> {
-    for (const sha256 of referencedImports(shards)) {
-      if (this.slots.some((slot) => slot.id === importRef(sha256))) continue;
-      const file = await files(sha256);
-      if (!file) {
-        throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
-      }
-      if (!(await this.addImportedModel(file))) {
-        throw new Error(`the imported file ${file.name} can't be placed any more`);
-      }
-    }
+  async addImportedModel(file: ImportedFile): Promise<string | null> {
+    const id = importRef(file.sha256);
+    if (this.slots.some((slot) => slot.id === id)) return id;
+    return (await this.bakeImportedModel(file)) === null ? null : id;
   }
 
-  importModelFile(input: ModelFileInput): Promise<boolean> {
-    return this.fileAction(
-      "model import",
-      async () => {
-        const sha256 = await contentSha256(input.bytes);
-        const id = importRef(sha256);
-        if (!this.slots.some((slot) => slot.id === id)) {
-          const file = { sha256, name: input.name, bytes: input.bytes.slice() };
-          if (!(await this.addImportedModel(file))) return;
-          if (this.storageError === null) await this.repository.putImportedFile(file);
-        }
-        if (!this.readOnly) this.chooseItem(id);
-      },
-      true,
-    );
+  async importModelFile(file: ModelFileInput): Promise<boolean> {
+    const item = await this.session.addModelFile(file);
+    if (item !== null && !this.state.readOnly) this.chooseItem(item);
+    return item !== null;
   }
 
   private syncColors(): void {
@@ -1399,7 +1304,7 @@ export class Editor implements IEditor {
       this.resizeToCanvas();
       const startMs = performance.now();
       this.camera.frame(startMs);
-      this.watchView();
+      this.session.pollCamera();
       const pending = this.pending;
       if (
         pending !== null ||
@@ -1692,7 +1597,7 @@ export class Editor implements IEditor {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     const roads = this.roadDrawing;
-    if (!roads || this.readOnly || !this.groundHit(ndcX, ndcY)) return false;
+    if (!roads || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return false;
     this.showRoadPreview(roads.begin(this.hitX, this.hitZ, ...this.roadNeighbours()));
     return true;
   }
@@ -1700,7 +1605,7 @@ export class Editor implements IEditor {
   private roadDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
     const roads = this.roadDrawing;
     if (!roads) return;
-    if (this.readOnly) {
+    if (this.state.readOnly) {
       roads.cancel();
       this.clearRoadPreview();
       return;
@@ -1724,7 +1629,7 @@ export class Editor implements IEditor {
   dragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.mode === "road") return this.roadDragStart(ndcX, ndcY);
     const track = this.track;
-    if (this.state.mode !== "track" || !track || this.readOnly || this.held) return false;
+    if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
     track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
@@ -1793,7 +1698,7 @@ export class Editor implements IEditor {
     }
     if (commit.laid > 0) {
       this.syncPlan();
-      this.trackEdited();
+      this.session.trackEdited();
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
@@ -1841,7 +1746,7 @@ export class Editor implements IEditor {
   }
 
   chooseItem(id: string | null): void {
-    if (id !== null && this.readOnly) return;
+    if (id !== null && this.state.readOnly) return;
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
     if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
       this.enterRoadMode(id);
@@ -1923,7 +1828,7 @@ export class Editor implements IEditor {
           mode: "select",
           activeItem: null,
           pendingItem: null,
-          fileError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
+          catalogError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
         });
       },
     );
@@ -1985,7 +1890,7 @@ export class Editor implements IEditor {
       report,
     };
     this.syncPlan();
-    this.trackEdited();
+    this.session.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.held = { ...held, snap: null };
     this.showTrackEnds(null);
@@ -2008,7 +1913,7 @@ export class Editor implements IEditor {
 
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
-    if (!track || this.readOnly) return false;
+    if (!track || this.state.readOnly) return false;
     const placement = track.switchAt(xLdu, zLdu);
     if (placement === null) return false;
     const thrown = track.throwSwitch(placement);
@@ -2026,7 +1931,7 @@ export class Editor implements IEditor {
       report,
     };
     this.syncPlan();
-    this.trackEdited();
+    this.session.trackEdited();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
     return true;
@@ -2163,7 +2068,7 @@ export class Editor implements IEditor {
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
     if (this.state.mode === "road") return;
     if (this.state.mode === "track") {
-      if (!this.held || this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      if (!this.held || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
       this.showHeldPiece();
       this.placeHeldPiece(eventTimeMs);
@@ -2171,7 +2076,7 @@ export class Editor implements IEditor {
     }
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
-      if (this.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.refuse(
         pendingItem,
         snapToLattice(this.hitX),
@@ -2181,7 +2086,7 @@ export class Editor implements IEditor {
       );
       return;
     }
-    if (this.active && !this.readOnly) {
+    if (this.active && !this.state.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
       const snap = this.snapGhost();
@@ -2309,7 +2214,7 @@ export class Editor implements IEditor {
       this.requestMeshes(placeable, "high");
       this.requestFarModel(placeable);
     }
-    this.edited(edit);
+    this.session.placementsEdited(edit);
     const primary = edit.changes[0];
     const pose = primary?.to ?? primary?.from ?? null;
     if (pose) {
@@ -2552,7 +2457,7 @@ export class Editor implements IEditor {
       return;
     }
     const model = this.selected;
-    if (!model || this.readOnly) return;
+    if (!model || this.state.readOnly) return;
     this.turnSelection(model, quarterTurned(model.handle.rot, direction), eventTimeMs);
   }
 
@@ -2609,7 +2514,7 @@ export class Editor implements IEditor {
 
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
-    if (!model || this.readOnly) return;
+    if (!model || this.state.readOnly) return;
     const rider = this.placed.strandedRider(model);
     if (rider) {
       const label = model.placeable.label;
@@ -2625,12 +2530,12 @@ export class Editor implements IEditor {
   }
 
   undo(eventTimeMs: number): void {
-    if (this.readOnly) return;
+    if (this.state.readOnly) return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
-    if (this.readOnly) return;
+    if (this.state.readOnly) return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -2654,335 +2559,33 @@ export class Editor implements IEditor {
     return slot ? { refId, colorId: slot.worldColor } : null;
   };
 
-  private refs(): string[] {
-    return this.slots.map((slot) => slot.group);
-  }
-
-  private trackRecords(): TrackRecordV1[] {
-    return this.track?.records() ?? [];
-  }
-
-  private worldShardsNow(): WorldShardV1[] {
-    return worldShards(worldPlacements(this.world, this.refs()), this.trackRecords());
-  }
-
-  private header(current: OpenWorld): WorldHeader {
+  contents(): WorldContents {
     return {
-      name: current.name,
-      bundleVersion: this.bundleVersion,
-      view: this.camera.savedView(),
-      disclaimer: this.disclaimer,
+      world: this.world,
+      refs: this.slots.map((slot) => slot.group),
+      track: this.track?.records() ?? [],
     };
   }
 
-  private inFileQueue<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.fileQueue.then(task);
-    this.fileQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  placedCredits(): ReadonlyArray<ModelCredit> {
+    return this.placed
+      .models()
+      .flatMap((model) => (model.placeable.credit ? [model.placeable.credit] : []));
   }
 
-  private edited(edit: AppliedEdit): void {
-    for (const change of edit.changes) {
-      if (change.from) this.dirty.touch(change.from.x, change.from.z);
-      if (change.to) this.dirty.touch(change.to.x, change.to.z);
-    }
-    this.scheduleSave();
+  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
+    const restored = this.restore(shards);
+    return restored.ok ? [] : restored.issues;
   }
 
-  private trackEdited(): void {
-    this.dirty.touchTrack(this.trackRecords());
-    this.scheduleSave();
-  }
-
-  private scheduleSave(): void {
-    this.syncUnsaved();
-    if (this.saveScheduled) return;
-    this.saveScheduled = true;
-    setTimeout(() => {
-      this.saveScheduled = false;
-      void this.inFileQueue(() => this.saveNow());
-    }, 0);
-  }
-
-  private watchView(): void {
-    const view = this.camera.savedView();
-    const last = this.lastView;
-    const same =
-      last !== null &&
-      last.targetX === view.targetX &&
-      last.targetY === view.targetY &&
-      last.targetZ === view.targetZ &&
-      last.distance === view.distance &&
-      last.yaw === view.yaw &&
-      last.pitch === view.pitch;
-    if (same) return;
-    this.lastView = view;
-    if (this.current !== null) this.viewChanged();
-  }
-
-  private viewChanged(): void {
-    this.viewDirty = true;
-    if (this.viewTimer !== null) clearTimeout(this.viewTimer);
-    this.viewTimer = setTimeout(() => {
-      this.viewTimer = null;
-      void this.inFileQueue(() => this.saveNow());
-    }, VIEW_SAVE_DELAY_MS);
-  }
-
-  private canSave(): boolean {
-    return (
-      this.current !== null &&
-      this.current.id !== null &&
-      this.storageError === null &&
-      !this.readOnly
-    );
-  }
-
-  private async saveNow(): Promise<void> {
-    const current = this.current;
-    if (!current || current.id === null || !this.canSave()) return;
-    if (this.dirty.size === 0 && !this.viewDirty) return;
-    const change = this.dirty.take(this.world, this.refs(), this.trackRecords());
-    const viewWasDirty = this.viewDirty;
-    this.viewDirty = false;
-    this.setWorldView(current, { save: "saving" });
-    try {
-      const summary = await this.repository.save(current.id, {
-        header: this.header(current),
-        put: change.put,
-        drop: change.drop,
-      });
-      this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
-      const unsaved = this.dirty.size > 0 || this.viewDirty;
-      this.setWorldView(this.current, {
-        save: unsaved ? "saving" : "saved",
-        placements: summary.placements,
-        track: summary.track,
-        shards: summary.shards,
-      });
-      this.update({
-        worlds: this.state.worlds.map((item) => (item.id === summary.id ? summary : item)),
-        ...(this.saveFailed ? { fileError: null } : {}),
-      });
-      this.saveFailed = false;
-      this.lastSaveError = null;
-      this.syncUnsaved();
-    } catch (error) {
-      this.dirty.restore(change);
-      this.viewDirty ||= viewWasDirty;
-      this.saveFailed = true;
-      this.lastSaveError = errorText(error);
-      this.syncUnsaved();
-      this.setWorldView(current, { save: "failed" });
-      this.update({
-        fileError: `saving failed: ${errorText(error)}. The edits stay in this tab and are saved with the next change.`,
-      });
-    }
-  }
-
-  private syncUnsaved(): void {
-    const unsavedEdits = this.dirty.size > 0 || (this.storageError !== null && this.world.size > 0);
-    if (unsavedEdits !== this.state.unsavedEdits) this.update({ unsavedEdits });
-  }
-
-  retrySave(): Promise<void> {
-    return this.inFileQueue(() => this.saveNow());
-  }
-
-  private setWorldView(current: OpenWorld, patch: Partial<WorldFileView>): void {
-    const previous = this.state.world?.id === current.id ? this.state.world : null;
-    this.update({
-      world: {
-        id: current.id,
-        name: current.name,
-        placements: previous?.placements ?? 0,
-        track: previous?.track ?? 0,
-        shards: previous?.shards ?? 0,
-        save: previous?.save ?? "saved",
-        pinnedBundleVersion: current.pinnedBundleVersion,
-        openMs: current.openMs,
-        ...patch,
-      },
-    });
-  }
-
-  private async refreshWorlds(): Promise<void> {
-    if (this.storageError !== null) return;
-    this.update({ worlds: await this.repository.list() });
-  }
-
-  private async openFirstWorld(): Promise<void> {
-    let worlds: ReadonlyArray<WorldIndexEntry>;
-    try {
-      worlds = await this.repository.list();
-    } catch (error) {
-      this.startWithoutStorage(errorText(error));
-      return;
-    }
-    const [latest] = worlds;
-    try {
-      if (latest) await this.openStored(latest.id);
-      else await this.createWorld(FIRST_WORLD_NAME);
-    } catch (error) {
-      try {
-        await this.createWorld(`World ${worlds.length + 1}`);
-      } catch (fallback) {
-        this.startWithoutStorage(errorText(fallback));
-        return;
-      }
-      this.update({ fileError: `opening "${latest?.name ?? ""}" failed: ${errorText(error)}` });
-    }
-    await this.refreshWorlds();
-  }
-
-  private startWithoutStorage(reason: string): void {
-    this.storageError = reason;
-    const current = {
-      id: null,
-      name: FIRST_WORLD_NAME,
-      pinnedBundleVersion: this.bundleVersion,
-      openMs: 0,
-    };
-    this.install(new World(), null, current);
-    this.refreshRoads();
-    this.refreshTrains();
-    this.syncPlan();
-    this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
-    this.update({ storageError: reason, worlds: [] });
-  }
-
-  private setReadOnly(readOnly: boolean): void {
-    this.readOnly = readOnly;
-    if (readOnly && (this.active || this.held || this.state.mode === "road")) {
-      this.chooseItem(null);
-    }
-    this.update({ readOnly });
-  }
-
-  private async takeLease(id: string): Promise<void> {
-    this.lease?.release();
-    const lease = await this.locks.hold(id);
-    this.lease = lease;
-    this.setReadOnly(!lease.exclusive);
-    if (lease.exclusive) return;
-    void lease.whenExclusive.then(() =>
-      this.fileAction("reopen", async () => {
-        if (this.lease !== lease) return;
-        try {
-          await this.loadWorld(id);
-          this.setReadOnly(false);
-        } catch (error) {
-          const name = this.current?.name ?? "";
-          lease.release();
-          this.lease = null;
-          this.setReadOnly(false);
-          await this.openLatestOrNew();
-          this.update({
-            fileError: `"${name}" can't be reopened after the other tab let it go: ${errorText(error)}`,
-          });
-        }
-        await this.refreshWorlds();
-      }),
-    );
-  }
-
-  private async openLatestOrNew(): Promise<void> {
-    const [next] = await this.repository.list();
-    if (next) await this.openStored(next.id);
-    else await this.createWorld(FIRST_WORLD_NAME);
-  }
-
-  private async openStored(id: string): Promise<void> {
-    await this.takeLease(id);
-    await this.loadWorld(id);
-  }
-
-  private install(
-    world: World,
-    view: SavedViewV1 | null,
-    current: OpenWorld,
-    track: TrackDrawing | null = this.newTrack?.() ?? null,
-  ): void {
-    this.select(null);
-    this.placed.clear();
-    for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
-    this.track = track;
-    for (const key of track?.chunkKeys() ?? []) {
-      const chunk = track?.chunkInstances(key);
-      if (chunk) this.backend.setChunk(key, chunk);
-    }
-    this.showTrackEnds(null);
-    this.world = world;
-    this.history = new EditHistory(world);
-    this.camera.restoreView(view);
-    this.lastView = this.camera.savedView();
-    this.current = current;
-    this.dirty.clear();
-    this.viewDirty = false;
-    this.saveFailed = false;
-    this.lastSaveError = null;
-    this.update({
-      placements: world.size,
-      history: this.historyView(),
-      track: this.trackView(),
-      fileError: null,
-    });
-    this.syncUnsaved();
-  }
-
-  private async createWorld(name: string): Promise<void> {
-    const started = performance.now();
-    const summary = await this.repository.create(
-      {
-        name,
-        bundleVersion: this.bundleVersion,
-        view: new ViewCamera(CAMERA_FOV_DEGREES).savedView(),
-        disclaimer: this.disclaimer,
-      },
-      [],
-    );
-    await this.takeLease(summary.id);
-    const current = {
-      id: summary.id,
-      name,
-      pinnedBundleVersion: this.bundleVersion,
-      openMs: performance.now() - started,
-    };
-    this.install(new World(), null, current);
-    this.refreshRoads();
-    this.refreshTrains();
-    this.syncPlan();
-    this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
-  }
-
-  private installShards(
-    id: string | null,
-    manifest: WorldManifestV1,
-    shards: ReadonlyArray<WorldShardV1>,
-    started: number,
-  ): void {
-    const world = new World();
-    const handles = addShards(world, shards, this.resolveRef);
-    if (!handles.ok) {
-      throw new Error(`world "${manifest.name}" can't be opened: ${issueText(handles.issues)}`);
-    }
-    const track = this.newTrack?.() ?? null;
-    const restored = track?.restore(worldTrack(shards));
-    if (restored && !restored.ok) {
-      throw new Error(`world "${manifest.name}" can't be opened: ${issueText(restored.issues)}`);
-    }
-    const current = {
-      id,
-      name: manifest.name,
-      pinnedBundleVersion: manifest.bundleVersion,
-      openMs: 0,
-    };
-    this.install(world, manifest.view, current, track);
+  async load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>> {
+    await this.ensureShardPlaceables(shards);
+    const restored = this.restore(shards);
+    if (!restored.ok) return restored.issues;
+    const { world, handles, track } = restored.value;
+    this.replaceWorld(world, track);
     this.placed.addAll(
-      handles.value.flatMap((handle) => {
+      handles.flatMap((handle) => {
         const placeable = this.placeables[handle.refId];
         return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
       }),
@@ -2996,158 +2599,76 @@ export class Editor implements IEditor {
     this.refreshRoads();
     this.refreshTrains();
     this.syncPlan();
-    const opened = { ...current, openMs: performance.now() - started };
-    this.current = opened;
-    this.setWorldView(opened, {
-      placements: manifest.placements,
-      track: manifest.track,
-      shards: manifest.shards.length,
-      save: id === null ? "off" : "saved",
+    return [];
+  }
+
+  clear(): void {
+    this.replaceWorld(new World(), this.newTrack?.() ?? null);
+    this.refreshRoads();
+    this.refreshTrains();
+    this.syncPlan();
+  }
+
+  private restore(shards: ReadonlyArray<WorldShardV1>): Decoded<RestoredWorld> {
+    const world = new World();
+    const handles = addShards(world, shards, this.resolveRef);
+    if (!handles.ok) return handles;
+    const track = this.newTrack?.() ?? null;
+    const restored = track?.restore(worldTrack(shards));
+    if (restored && !restored.ok) return restored;
+    return { ok: true, value: { world, handles: handles.value, track } };
+  }
+
+  private replaceWorld(world: World, track: TrackDrawing | null): void {
+    this.select(null);
+    this.placed.clear();
+    for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
+    this.track = track;
+    for (const key of track?.chunkKeys() ?? []) {
+      const chunk = track?.chunkInstances(key);
+      if (chunk) this.backend.setChunk(key, chunk);
+    }
+    this.showTrackEnds(null);
+    this.world = world;
+    this.history = new EditHistory(world);
+    this.update({
+      placements: world.size,
+      history: this.historyView(),
+      track: this.trackView(),
+      catalogError: null,
     });
   }
 
-  private async loadWorld(id: string): Promise<void> {
-    const started = performance.now();
-    const stored = await this.repository.read(id);
-    if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
-    await this.ensureImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
-    await this.ensureShardPlaceables(stored.value.shards);
-    this.installShards(id, stored.value.manifest, stored.value.shards, started);
+  get worldNameMaxLength(): number {
+    return this.session.worldNameMaxLength;
   }
-
-  private unsavedRefusal(action: string): string | null {
-    if (this.storageError !== null || this.dirty.size === 0) return null;
-    const reason = this.lastSaveError === null ? "" : ` (saving failed: ${this.lastSaveError})`;
-    return `${action} refused: "${this.current?.name ?? ""}" has unsaved edits${reason}. Retry the save, or export the world first.`;
-  }
-
-  private fileAction(
-    action: string,
-    task: () => Promise<void>,
-    keepsCurrentEdits = false,
-  ): Promise<boolean> {
-    return this.inFileQueue(async () => {
-      await this.saveNow();
-      const refusal = keepsCurrentEdits ? null : this.unsavedRefusal(action);
-      if (refusal !== null) {
-        this.update({ fileError: refusal });
-        return false;
-      }
-      try {
-        await task();
-        return true;
-      } catch (error) {
-        this.update({ fileError: `${action} failed: ${errorText(error)}` });
-        return false;
-      }
-    });
-  }
-
-  readonly worldNameMaxLength = WORLD_NAME_MAX_LENGTH;
 
   worldNameIssue(name: string): string | null {
-    const trimmed = name.trim();
-    if (trimmed === "") return null;
-    const checked = decode(WorldName, trimmed, "name");
-    return checked.ok ? null : checked.issues.map((issue) => issue.message).join("; ");
+    return this.session.worldNameIssue(name);
   }
 
   newWorld(name: string): Promise<boolean> {
-    return this.fileAction("new world", async () => {
-      if (this.storageError !== null) throw new Error("storage is unavailable");
-      const issue = this.worldNameIssue(name);
-      if (issue !== null) throw new Error(`the name ${issue}`);
-      const trimmed = name.trim();
-      await this.createWorld(trimmed === "" ? `World ${this.state.worlds.length + 1}` : trimmed);
-      await this.refreshWorlds();
-    });
+    return this.session.newWorld(name);
   }
 
   openWorld(id: string): Promise<boolean> {
-    return this.fileAction("open", async () => {
-      if (this.storageError !== null || this.current?.id === id) return;
-      await this.openStored(id);
-      await this.refreshWorlds();
-    });
+    return this.session.openWorld(id);
   }
 
   deleteWorld(id: string): Promise<boolean> {
-    return this.fileAction(
-      "delete",
-      async () => {
-        if (this.storageError !== null) throw new Error("storage is unavailable");
-        const current = this.current?.id === id;
-        if (current && this.readOnly) throw new Error("this world is open in another tab");
-        const lease = current ? this.lease : await this.locks.hold(id);
-        if (!lease?.exclusive) {
-          lease?.release();
-          throw new Error("this world is open in another tab");
-        }
-        await this.repository.remove(id);
-        lease.release();
-        if (current) {
-          this.lease = null;
-          await this.openLatestOrNew();
-        }
-        await this.refreshWorlds();
-      },
-      true,
-    );
+    return this.session.deleteWorld(id);
+  }
+
+  retrySave(): Promise<void> {
+    return this.session.retrySave();
   }
 
   exportWorld(): Promise<ExportedWorld> {
-    return this.inFileQueue(async () => {
-      await this.saveNow();
-      const current = this.current;
-      if (!current) throw new Error("no world is open");
-      this.creditsView ??= this.credits.load().catch((error: unknown) => {
-        this.creditsView = null;
-        throw error;
-      });
-      const credits = this.credits.exportText(
-        creditsForWorld(
-          await this.creditsView,
-          this.placed.models().map((model) => model.placeable),
-        ),
-      );
-      const shards = this.worldShardsNow();
-      const manifest = worldManifest(this.header(current), shards.map(shardEntry));
-      const imports = [...referencedImports(shards)].map((sha256) => {
-        const file = this.importedFiles.get(sha256);
-        if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
-        return file;
-      });
-      return {
-        fileName: exportFileName(current.name),
-        bytes: this.repository.packArchive({ manifest, shards, credits, imports }),
-      };
-    });
+    return this.session.exportWorld();
   }
 
   importWorld(bytes: Uint8Array): Promise<boolean> {
-    return this.fileAction("import", async () => {
-      const started = performance.now();
-      const archive = await this.repository.readArchive(bytes);
-      if (!archive.ok) throw new Error(issueText(archive.issues));
-      const { manifest, shards, imports } = archive.value;
-      const carried = new Map(imports.map((file) => [file.sha256, file]));
-      await this.ensureImports(shards, async (sha256) => carried.get(sha256));
-      if (this.storageError === null) {
-        for (const file of imports) await this.repository.putImportedFile(file);
-      }
-      const check = addShards(new World(), shards, this.resolveRef);
-      if (!check.ok) throw new Error(issueText(check.issues));
-      const trackCheck = this.newTrack?.().restore(worldTrack(shards));
-      if (trackCheck && !trackCheck.ok) throw new Error(issueText(trackCheck.issues));
-      if (this.storageError !== null) {
-        await this.ensureShardPlaceables(shards);
-        this.installShards(null, manifest, shards, started);
-        return;
-      }
-      const summary = await this.repository.create(worldHeader(manifest), shards);
-      await this.openStored(summary.id);
-      await this.refreshWorlds();
-    });
+    return this.session.importWorld(bytes);
   }
 
   trackRoutes(): ReadonlyArray<TrackRouteView> {
