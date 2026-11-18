@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { PLATE_LDU, STUD_LDU, rot90Cos, rot90Sin } from "@brr/math";
+import {
+  PLATE_LDU,
+  STUD_LDU,
+  ZETA16_ZERO,
+  composePose16,
+  pose16,
+  posesJoin16,
+  rot90Cos,
+  rot90Sin,
+  rotateZeta16,
+  subtractZeta16,
+  zeta16,
+} from "@brr/math";
+import type { TrackEnd } from "../track/end-gaps.ts";
 import { CandidatePoses, type LatticePose, type SnapWindow } from "./candidate-poses.ts";
 import { ConnectionSolver } from "./connection-solver.ts";
 import {
+  AXIS_NEG_X,
   AXIS_NEG_Y,
+  AXIS_POS_X,
   AXIS_POS_Y,
   ConnectorTable,
   GENDER_FEMALE,
@@ -15,6 +30,8 @@ import { LatticeStudFinder } from "./lattice-stud-finder.ts";
 import { MateReport } from "./mate-report.ts";
 import { SnapMating } from "./mating.ts";
 import { ModelConnectors } from "./model-connectors.ts";
+import { SparseConnectorFinder } from "./sparse-connector-finder.ts";
+import { TrackEndFinder } from "./track-end-finder.ts";
 import {
   CAP_FAR,
   CAP_ROOT,
@@ -130,8 +147,12 @@ function pose(x: number, z: number, yPlates: number, rot: QuarterTurn = 0): Latt
   return { x, z, yPlates, rot };
 }
 
-function solver(): ConnectionSolver {
+function latticeOnly(): ConnectionSolver {
   return new ConnectionSolver([new LatticeStudFinder(mating)]);
+}
+
+function allFamilies(): ConnectionSolver {
+  return new ConnectionSolver([new LatticeStudFinder(mating), new SparseConnectorFinder(mating)]);
 }
 
 function evaluated(engine: ConnectionSolver, piece: ModelConnectors, at: LatticePose): MateReport {
@@ -150,7 +171,7 @@ function window(at: LatticePose, cells: number, plates: number, turns = 1): Snap
 
 describe("ConnectionSolver with lattice studs", () => {
   it("mates every receptor that lands on a baseplate stud, at every turn and offset", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     const width = 6;
     engine.insert(single(baseplate(width, width)), pose(0, 0, 0));
     const plate = single(block(2, 3, PLATE_LDU, PLATE_RECEPTOR));
@@ -179,7 +200,7 @@ describe("ConnectionSolver with lattice studs", () => {
   });
 
   it("ranks the pose with the most mates first, and the nearest one among equals", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     engine.insert(single(baseplate(4, 4)), pose(0, 0, 0));
     const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
     const candidates = new CandidatePoses();
@@ -197,7 +218,7 @@ describe("ConnectionSolver with lattice studs", () => {
   });
 
   it("finds the height where the model seats on the stack under the cursor", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     engine.insert(single(baseplate(8, 8)), pose(0, 0, 0));
     const brick = single(block(2, 2, BRICK_LDU, BRICK_RECEPTOR));
     engine.insert(brick, pose(2 * STUD_LDU, 2 * STUD_LDU, 0));
@@ -208,7 +229,7 @@ describe("ConnectionSolver with lattice studs", () => {
   });
 
   it("keeps a connector placed twice until both placements are removed", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     const base = single(baseplate(2, 2));
     const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
     engine.insert(base, pose(0, 0, 0));
@@ -221,7 +242,7 @@ describe("ConnectionSolver with lattice studs", () => {
   });
 
   it("mates a half-stud offset connector only at the offset that puts it on the lattice", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     engine.insert(single(baseplate(4, 4)), pose(0, 0, 0));
     const jumper = single(
       table([
@@ -266,7 +287,7 @@ describe("ConnectionSolver with lattice studs", () => {
       0,
     ],
   ])("section containment: %s", (_, maleSections, femaleSections, mates) => {
-    const engine = solver();
+    const engine = latticeOnly();
     const female = shape(CAP_FAR, false, femaleSections);
     const receptors = grid(2, 2, (x, z) => ({
       shape: female,
@@ -347,7 +368,7 @@ describe("ConnectionSolver with lattice studs", () => {
       },
     ],
   ])("axial engagement: %s", (_, { male, female, engaged, refused }) => {
-    const engine = solver();
+    const engine = latticeOnly();
     const maleShape = shape(...male);
     engine.insert(
       single(
@@ -368,7 +389,7 @@ describe("ConnectionSolver with lattice studs", () => {
   });
 
   it("never mates connectors whose axes point the same way", () => {
-    const engine = solver();
+    const engine = latticeOnly();
     engine.insert(single(baseplate(1, 1)), pose(0, 0, 0));
     const upward = single(
       table([
@@ -381,7 +402,7 @@ describe("ConnectionSolver with lattice studs", () => {
   it("mates inferred connectors and reports each such mate as inferred", () => {
     const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
     for (const source of [SOURCE_SHADOW, SOURCE_INFERRED]) {
-      const engine = solver();
+      const engine = latticeOnly();
       engine.insert(single(baseplate(2, 2, source)), pose(0, 0, 0));
       const report = evaluated(engine, plate, pose(0, 0, 0));
       expect(Array.from(report.source.subarray(0, report.count))).toEqual([
@@ -405,7 +426,7 @@ describe("ModelConnectors", () => {
       ],
     );
     expect([stack.internalMates, stack.count]).toEqual([4, 8]);
-    const engine = solver();
+    const engine = latticeOnly();
     engine.insert(stack, pose(0, 0, 0));
     const piece = single(plate);
     expect(matesAt(engine, piece, pose(0, 0, 1))).toBe(0);
@@ -436,5 +457,270 @@ describe("ModelConnectors", () => {
       connectors.instancesWithoutConnectors,
     ]).toEqual([2, 4, 1]);
     expect(Array.from(connectors.origin)).toEqual([HALF, 0, HALF, HALF, 0, HALF]);
+  });
+});
+
+const PIN = shape(CAP_ROOT, false, [[SECTION_ROUND, 6, 8]]);
+const PIN_HOLE = shape(0, false, [[SECTION_ROUND, 6, 20]]);
+const NEIGHBOUR_WIDTH_LDU = 32 * STUD_LDU;
+const HOLE_HEIGHT = 14;
+const EDGE_ROWS = [50, 130, 510, 590] as const;
+
+function edgeHoles(): ConnectorTable {
+  return table(
+    EDGE_ROWS.map((z) => ({
+      shape: PIN_HOLE,
+      gender: GENDER_FEMALE,
+      origin: [0, HOLE_HEIGHT, z],
+      axis: AXIS_NEG_X,
+    })),
+  );
+}
+
+function edgePins(): ConnectorTable {
+  return table(
+    EDGE_ROWS.map((z) => ({
+      shape: PIN,
+      gender: GENDER_MALE,
+      origin: [NEIGHBOUR_WIDTH_LDU, HOLE_HEIGHT, z],
+      axis: AXIS_POS_X,
+    })),
+  );
+}
+
+describe("ConnectionSolver with sparse connectors", () => {
+  it("snaps a model to the pose where its edge pins enter a neighbour's holes, not a stud away", () => {
+    const solver = allFamilies();
+    solver.insert(single(edgeHoles()), pose(0, 0, 0));
+    const neighbour = single(edgePins());
+    const candidates = new CandidatePoses();
+    for (const gap of [-STUD_LDU, 0, STUD_LDU]) {
+      solver.rank(
+        neighbour,
+        window(pose(-NEIGHBOUR_WIDTH_LDU + gap, STUD_LDU, 0), 1, 1),
+        candidates,
+      );
+      expect([
+        candidates.x[0],
+        candidates.z[0],
+        candidates.yPlates[0],
+        candidates.votes[0],
+      ]).toEqual([-NEIGHBOUR_WIDTH_LDU, 0, 0, EDGE_ROWS.length]);
+    }
+    expect(matesAt(solver, neighbour, pose(-NEIGHBOUR_WIDTH_LDU + STUD_LDU, 0, 0))).toBe(0);
+    solver.rank(
+      neighbour,
+      window(pose(-NEIGHBOUR_WIDTH_LDU - 2 * STUD_LDU, 0, 0), 1, 1),
+      candidates,
+    );
+    expect(candidates.votes[0]).toBe(0);
+  });
+
+  it("never mates or proposes sparse connectors that point the same way or sit off whole plates", () => {
+    const solver = allFamilies();
+    solver.insert(single(edgeHoles()), pose(0, 0, 0));
+    const sameWay = single(
+      table(
+        EDGE_ROWS.map((z) => ({
+          shape: PIN,
+          gender: GENDER_MALE,
+          origin: [0, HOLE_HEIGHT, z],
+          axis: AXIS_NEG_X,
+        })),
+      ),
+    );
+    expect(matesAt(solver, sameWay, pose(0, 0, 0))).toBe(0);
+    const halfPlateLow = single(
+      table(
+        EDGE_ROWS.map((z) => ({
+          shape: PIN,
+          gender: GENDER_MALE,
+          origin: [NEIGHBOUR_WIDTH_LDU, HOLE_HEIGHT - PLATE_LDU / 2, z],
+          axis: AXIS_POS_X,
+        })),
+      ),
+    );
+    const candidates = new CandidatePoses();
+    solver.rank(halfPlateLow, window(pose(-NEIGHBOUR_WIDTH_LDU, 0, 0), 1, 1), candidates);
+    expect(candidates.votes[0]).toBe(0);
+  });
+
+  it("finds the turn that faces the pins into the holes", () => {
+    const solver = allFamilies();
+    solver.insert(single(edgeHoles()), pose(0, 0, 0));
+    const turnedAway = single(
+      table(
+        EDGE_ROWS.map((z) => ({
+          shape: PIN,
+          gender: GENDER_MALE,
+          origin: [0, HOLE_HEIGHT, -z],
+          axis: AXIS_NEG_X,
+        })),
+      ),
+    );
+    const candidates = new CandidatePoses();
+    solver.rank(turnedAway, window(pose(0, 0, 0, 0), 1, 0, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      0,
+      0,
+      2,
+      EDGE_ROWS.length,
+    ]);
+  });
+
+  it("mates a stud off the stud centres, such as a jumper's, and proposes the half-stud pose", () => {
+    const solver = allFamilies();
+    solver.insert(single(baseplate(4, 4)), pose(0, 0, 0));
+    const jumper = single(
+      table([
+        { shape: PLATE_RECEPTOR, gender: GENDER_FEMALE, origin: [HALF, 0, HALF], axis: AXIS_NEG_Y },
+        {
+          shape: PLATE_RECEPTOR,
+          gender: GENDER_FEMALE,
+          origin: [HALF + STUD_LDU, 0, HALF],
+          axis: AXIS_NEG_Y,
+        },
+        { shape: STUD, gender: GENDER_MALE, origin: [STUD_LDU, PLATE_LDU, HALF], axis: AXIS_POS_Y },
+      ]),
+    );
+    solver.insert(jumper, pose(STUD_LDU, STUD_LDU, 0));
+    const tile = single(
+      table([
+        { shape: PLATE_RECEPTOR, gender: GENDER_FEMALE, origin: [HALF, 0, HALF], axis: AXIS_NEG_Y },
+      ]),
+    );
+    const candidates = new CandidatePoses();
+    solver.rank(tile, window(pose(STUD_LDU, STUD_LDU, 1), 1, 0), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.yPlates[0], candidates.votes[0]]).toEqual([
+      STUD_LDU + HALF,
+      STUD_LDU,
+      1,
+      1,
+    ]);
+    const report = evaluated(solver, tile, pose(STUD_LDU + HALF, STUD_LDU, 1));
+    expect([report.count, report.family[0]]).toEqual([1, 1]);
+  });
+
+  it("counts every connector in exactly one family", () => {
+    const solver = allFamilies();
+    solver.insert(single(baseplate(4, 4)), pose(0, 0, 0));
+    solver.insert(single(edgeHoles()), pose(0, 0, 0));
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    const report = evaluated(solver, plate, pose(0, 0, 0));
+    expect([report.count, ...report.family.subarray(0, report.count)]).toEqual([4, 0, 0, 0, 0]);
+    const pins = single(edgePins());
+    const joined = evaluated(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0));
+    expect([joined.count, ...joined.family.subarray(0, joined.count)]).toEqual([4, 1, 1, 1, 1]);
+  });
+
+  it("keeps a sparse connector placed twice until both placements are removed", () => {
+    const solver = allFamilies();
+    const holes = single(edgeHoles());
+    const pins = single(edgePins());
+    solver.insert(holes, pose(0, 0, 0));
+    solver.insert(holes, pose(0, 0, 0));
+    solver.remove(holes, pose(0, 0, 0));
+    expect(matesAt(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0))).toBe(EDGE_ROWS.length);
+    solver.remove(holes, pose(0, 0, 0));
+    expect(matesAt(solver, pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0))).toBe(0);
+    expect(() => solver.remove(holes, pose(0, 0, 0))).toThrow(RangeError);
+  });
+});
+
+function trackModel(ends: ReadonlyArray<TrackEnd>): ModelConnectors {
+  return ModelConnectors.fromParts([], { count: 0, partIndex: [], matrices: [] }, mating, ends);
+}
+
+function end(coefficients: ReadonlyArray<number>, heading: number, yPlates = 0): TrackEnd {
+  return { pose: pose16(zeta16(coefficients.map((c) => BigInt(c))), heading), yPlates };
+}
+
+function placedEnd(at: LatticePose, local: TrackEnd): TrackEnd {
+  const frame = pose16(
+    zeta16([at.x / STUD_LDU, 0, 0, 0, at.z / STUD_LDU, 0, 0, 0].map(BigInt)),
+    -4 * at.rot,
+  );
+  return { pose: composePose16(frame, local.pose), yPlates: local.yPlates + at.yPlates };
+}
+
+describe("ConnectionSolver with track ends", () => {
+  it("joins track ends exactly where their ℤ[ζ₁₆] poses meet, including off-lattice curve ends", () => {
+    const solver = new ConnectionSolver([new TrackEndFinder()]);
+    const curveExit = [0, 0, 0, 40, -40, 0, 0, 0];
+    solver.insert(
+      trackModel([end([10, 0, 0, 0, 0, 0, 0, 0], 0), end(curveExit, 2)]),
+      pose(0, 0, 0),
+    );
+    const straightEnd = trackModel([end(ZETA16_ZERO.map(Number), 8)]);
+    expect(matesAt(solver, straightEnd, pose(10 * STUD_LDU, 0, 0))).toBe(1);
+    expect(matesAt(solver, straightEnd, pose(11 * STUD_LDU, 0, 0))).toBe(0);
+    expect(matesAt(solver, straightEnd, pose(10 * STUD_LDU, 0, 1))).toBe(0);
+    expect(matesAt(solver, straightEnd, pose(10 * STUD_LDU + HALF, 0, 0))).toBe(0);
+    const candidates = new CandidatePoses();
+    solver.rank(straightEnd, window(pose(10 * STUD_LDU + HALF, 0, 0), 0, 0), candidates);
+    const offGrid = Array.from(candidates.x.subarray(0, candidates.count)).indexOf(
+      10 * STUD_LDU + HALF,
+    );
+    expect([candidates.votes[0], candidates.x[0], candidates.votes[offGrid]]).toEqual([
+      1,
+      10 * STUD_LDU,
+      0,
+    ]);
+    solver.rank(straightEnd, window(pose(13 * STUD_LDU, 2 * STUD_LDU, 0), 1, 0, 4), candidates);
+    expect([candidates.x[0], candidates.z[0], candidates.rot[0], candidates.votes[0]]).toEqual([
+      10 * STUD_LDU,
+      0,
+      0,
+      1,
+    ]);
+    const curveFacing = trackModel([end([-10, 0, 0, 40, -40, 0, 0, 0], 10)]);
+    expect(matesAt(solver, curveFacing, pose(10 * STUD_LDU, 0, 0))).toBe(1);
+    expect(matesAt(solver, curveFacing, pose(10 * STUD_LDU, 0, 0, 1))).toBe(0);
+  });
+
+  it("agrees with posesJoin16 for every seeded placement", () => {
+    let seed = 20261118;
+    const next = (span: number): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed % span;
+    };
+    const randomEnd = (): TrackEnd =>
+      end(
+        Array.from({ length: 8 }, () => next(5) - 2),
+        next(16),
+        next(2),
+      );
+    const randomPose = (): LatticePose =>
+      pose((next(7) - 3) * STUD_LDU, (next(7) - 3) * STUD_LDU, next(2), next(4) as QuarterTurn);
+    const solver = new ConnectionSolver([new TrackEndFinder()]);
+    const placed: TrackEnd[] = [];
+    for (let m = 0; m < 40; m++) {
+      const local = [randomEnd(), randomEnd()];
+      const at = randomPose();
+      solver.insert(trackModel(local), at);
+      for (const e of local) placed.push(placedEnd(at, e));
+    }
+    const joinsOf = (own: TrackEnd): number =>
+      placed.filter((w) => w.yPlates === own.yPlates && posesJoin16(own.pose, w.pose)).length;
+    let joins = 0;
+    for (let probe = 0; probe < 400; probe++) {
+      const target = placed[next(placed.length)];
+      if (!target) continue;
+      const at = randomPose();
+      const frame = placedEnd(at, end(ZETA16_ZERO.map(Number), 0, 0)).pose;
+      const facing = target.pose.heading + 8 - frame.heading;
+      const aimed: TrackEnd = {
+        pose: pose16(
+          rotateZeta16(subtractZeta16(target.pose.position, frame.position), -frame.heading),
+          facing,
+        ),
+        yPlates: target.yPlates - at.yPlates,
+      };
+      const noise = randomEnd();
+      const counted = matesAt(solver, trackModel([aimed, noise]), at);
+      expect(counted).toBe(joinsOf(placedEnd(at, aimed)) + joinsOf(placedEnd(at, noise)));
+      joins += counted;
+    }
+    expect(joins).toBeGreaterThanOrEqual(400);
   });
 });

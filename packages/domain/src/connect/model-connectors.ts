@@ -8,6 +8,8 @@ import {
   oppositeAxis,
   type ConnectorTable,
 } from "./connector-table.ts";
+import { ZETA16_COEFFICIENT_COUNT } from "@brr/math";
+import type { TrackEnd } from "../track/end-gaps.ts";
 import type { SnapMating } from "./mating.ts";
 
 export const IDENTIFICATION_RESIDUAL_LDU = 0.0005;
@@ -17,6 +19,7 @@ const Y = 1;
 const Z = 2;
 const LINE_KEYS = 4;
 const ALONG = 3;
+const INT32_LIMIT = 2 ** 31;
 
 export interface PartInstances {
   readonly count: number;
@@ -69,6 +72,32 @@ function axisVector(part: ConnectorTable, connector: number, out: Float64Array):
   }
   out.fill(0);
   out[axisDimension(code)] = axisSign(code);
+}
+
+interface TrackEnds {
+  readonly heading: Uint8Array;
+  readonly position: Int32Array;
+  readonly yPlates: Int32Array;
+}
+
+function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
+  const heading = new Uint8Array(ends.length);
+  const position = new Int32Array(ends.length * ZETA16_COEFFICIENT_COUNT);
+  const yPlates = new Int32Array(ends.length);
+  for (let e = 0; e < ends.length; e++) {
+    const end = ends[e];
+    if (!end) continue;
+    heading[e] = end.pose.heading;
+    yPlates[e] = end.yPlates;
+    for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
+      const coefficient = Number(end.pose.position[k] ?? 0n);
+      if (Math.abs(coefficient) >= INT32_LIMIT) {
+        throw new RangeError(`track end ${e} has coefficient ${coefficient}, beyond int32 studs`);
+      }
+      position[e * ZETA16_COEFFICIENT_COUNT + k] = coefficient;
+    }
+  }
+  return { heading, position, yPlates };
 }
 
 class InternalMates {
@@ -166,12 +195,17 @@ export class ModelConnectors {
     readonly internalMates: number,
     readonly offLattice: number,
     readonly instancesWithoutConnectors: number,
+    readonly trackEndCount: number,
+    readonly trackHeading: Uint8Array,
+    readonly trackPosition: Int32Array,
+    readonly trackYPlates: Int32Array,
   ) {}
 
   static fromParts(
     parts: ReadonlyArray<ConnectorTable | null>,
     instances: PartInstances,
     mating: SnapMating,
+    trackEnds: ReadonlyArray<TrackEnd> = [],
   ): ModelConnectors {
     let total = 0;
     let withoutConnectors = 0;
@@ -259,6 +293,7 @@ export class ModelConnectors {
       }
       n++;
     }
+    const track = exactTrackEnds(trackEnds);
     return new ModelConnectors(
       n,
       exposed.shape,
@@ -270,6 +305,10 @@ export class ModelConnectors {
       internalMates,
       offLattice,
       withoutConnectors,
+      trackEnds.length,
+      track.heading,
+      track.position,
+      track.yPlates,
     );
   }
 }

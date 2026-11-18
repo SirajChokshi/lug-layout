@@ -1,12 +1,8 @@
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import {
-  AXIS_NEG_Y,
-  AXIS_POS_Y,
-  GENDER_FEMALE,
-  GENDER_MALE,
-  VECTOR_FLOATS,
-} from "./connector-table.ts";
+import { ConnectorClasses } from "./connector-classes.ts";
+import { VECTOR_FLOATS } from "./connector-table.ts";
+import { QUARTER_TURNS, checkPose, isLatticeStud, phaseOf, verticalSign } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
@@ -14,7 +10,6 @@ import type { ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
 const STUD_CENTRE_LDU = STUD_LDU / 2;
-const QUARTER_TURNS = 4;
 const LEVEL_Y_SPAN = 2 ** 20;
 const LEVEL_Y_BIAS = LEVEL_Y_SPAN / 2;
 const WORD_SHIFT = 5;
@@ -22,102 +17,8 @@ const WORD_MASK = 31;
 const NOT_ON_LATTICE = -1;
 const INITIAL_GROUPS = 16;
 
-function phaseOf(ldu: number): number {
-  return ((ldu % STUD_LDU) + STUD_LDU) % STUD_LDU;
-}
-
-function checkPose(pose: LatticePose): void {
-  if (!isRot90(pose.rot)) throw new RangeError(`rotation ${pose.rot} is not a quarter turn 0-3`);
-  if (!Number.isInteger(pose.x) || !Number.isInteger(pose.z) || !Number.isInteger(pose.yPlates)) {
-    throw new RangeError(`pose ${pose.x}, ${pose.z}, ${pose.yPlates} is not on integer LDU`);
-  }
-}
-
-function verticalSign(axis: number): number {
-  if (axis === AXIS_POS_Y) return 1;
-  return axis === AXIS_NEG_Y ? -1 : 0;
-}
-
-class StudClasses {
-  private readonly shape: number[] = [];
-  private readonly gender: number[] = [];
-  private readonly axisY: number[] = [];
-  private readonly source: number[] = [];
-  pairStart = new Int32Array(1);
-  pairClass = new Int32Array(0);
-  pairStep = new Int8Array(0);
-  pairSource = new Uint8Array(0);
-  pairOffsetStart = new Int32Array(1);
-  offsets = new Int32Array(0);
-
-  constructor(private readonly mating: SnapMating) {}
-
-  classOf(model: ModelConnectors, connector: number): number {
-    const shape = model.shape[connector] ?? 0;
-    const gender = model.gender[connector] ?? 0;
-    const axisY = verticalSign(model.axis[connector] ?? 0);
-    const source = model.source[connector] ?? 0;
-    for (let c = 0; c < this.shape.length; c++) {
-      if (
-        this.shape[c] === shape &&
-        this.gender[c] === gender &&
-        this.axisY[c] === axisY &&
-        this.source[c] === source
-      ) {
-        return c;
-      }
-    }
-    this.shape.push(shape);
-    this.gender.push(gender);
-    this.axisY.push(axisY);
-    this.source.push(source);
-    this.rebuildPairs();
-    return this.shape.length - 1;
-  }
-
-  private engagement(own: number, other: number): Int32Array | null {
-    if (this.axisY[own] !== -(this.axisY[other] ?? 0)) return null;
-    if (this.gender[own] === GENDER_MALE && this.gender[other] === GENDER_FEMALE) {
-      return this.mating.offsets(this.shape[own] ?? 0, this.shape[other] ?? 0);
-    }
-    if (this.gender[own] === GENDER_FEMALE && this.gender[other] === GENDER_MALE) {
-      return this.mating.offsets(this.shape[other] ?? 0, this.shape[own] ?? 0);
-    }
-    return null;
-  }
-
-  private rebuildPairs(): void {
-    const classes = this.shape.length;
-    const start = new Int32Array(classes + 1);
-    const partner: number[] = [];
-    const step: number[] = [];
-    const source: number[] = [];
-    const offsetStart: number[] = [0];
-    const offsets: number[] = [];
-    for (let own = 0; own < classes; own++) {
-      start[own] = partner.length;
-      for (let other = 0; other < classes; other++) {
-        const engaged = this.engagement(own, other);
-        if (!engaged || engaged.length === 0) continue;
-        partner.push(other);
-        step.push(this.axisY[own] ?? 0);
-        source.push(Math.max(this.source[own] ?? 0, this.source[other] ?? 0));
-        for (let k = 0; k < engaged.length; k++) offsets.push(engaged[k] ?? 0);
-        offsetStart.push(offsets.length);
-      }
-    }
-    start[classes] = partner.length;
-    this.pairStart = start;
-    this.pairClass = Int32Array.from(partner);
-    this.pairStep = Int8Array.from(step);
-    this.pairSource = Uint8Array.from(source);
-    this.pairOffsetStart = Int32Array.from(offsetStart);
-    this.offsets = Int32Array.from(offsets);
-  }
-}
-
 export class LatticeStudFinder implements MateFinder {
-  private readonly classes: StudClasses;
+  private readonly classes: ConnectorClasses;
   private readonly levels = new Map<number, StudLevel>();
   private rasterModel: ModelConnectors | null = null;
   private rasterPhaseX = 0;
@@ -137,7 +38,7 @@ export class LatticeStudFinder implements MateFinder {
   private raster = new Uint32Array(0);
 
   constructor(mating: SnapMating) {
-    this.classes = new StudClasses(mating);
+    this.classes = new ConnectorClasses(mating);
   }
 
   insert(model: ModelConnectors, pose: LatticePose): void {
@@ -349,15 +250,14 @@ export class LatticeStudFinder implements MateFinder {
     for (let i = 0; i < model.count; i++) {
       this.connectorGroup[at + i] = NOT_ON_LATTICE;
       const o = i * VECTOR_FLOATS;
-      if (verticalSign(model.axis[i] ?? 0) === 0) continue;
       const mx = model.origin[o] ?? 0;
       const mz = model.origin[o + 2] ?? 0;
-      const fromCentreX = cos * mx + sin * mz + phaseX - STUD_CENTRE_LDU;
-      const fromCentreZ = -sin * mx + cos * mz + phaseZ - STUD_CENTRE_LDU;
-      if (fromCentreX % STUD_LDU !== 0 || fromCentreZ % STUD_LDU !== 0) continue;
-      const cellX = fromCentreX / STUD_LDU;
-      const cellZ = fromCentreZ / STUD_LDU;
-      const own = this.classes.classOf(model, i);
+      const phasedX = cos * mx + sin * mz + phaseX;
+      const phasedZ = -sin * mx + cos * mz + phaseZ;
+      if (!isLatticeStud(model.axis[i] ?? 0, phasedX, phasedZ)) continue;
+      const cellX = (phasedX - STUD_CENTRE_LDU) / STUD_LDU;
+      const cellZ = (phasedZ - STUD_CENTRE_LDU) / STUD_LDU;
+      const own = this.classes.classOf(model, i, verticalSign(model.axis[i] ?? 0));
       const y = model.origin[o + 1] ?? 0;
       let g = firstGroup;
       while (g < groups && (this.groupClass[g] !== own || this.groupY[g] !== y)) g++;

@@ -219,4 +219,6 @@ export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/can
 export { MateReport } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
 export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
+export { SparseConnectorFinder } from "./connect/sparse-connector-finder.ts";
+export { TrackEndFinder } from "./connect/track-end-finder.ts";
 export { ConnectionSolver } from "./connect/connection-solver.ts";
