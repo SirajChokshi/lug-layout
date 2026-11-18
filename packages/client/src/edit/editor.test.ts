@@ -51,7 +51,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, TRAIN_PLAY } from "../tokens.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -76,6 +76,28 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     return readFile(new URL(path, bundleRoot), "utf8");
+  }
+}
+
+class GeneratedOriginFetcher implements IAssetFetcher {
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly model: string,
+  ) {}
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    const text = await this.files.text(path);
+    if (!path.endsWith("/manifest.json")) return text;
+    const manifest: { readonly models: ReadonlyArray<{ readonly name: string }> } =
+      JSON.parse(text);
+    const models = manifest.models.map((entry) =>
+      entry.name === this.model ? { ...entry, origin: "generated" } : entry,
+    );
+    return JSON.stringify({ ...manifest, models });
   }
 }
 
@@ -248,7 +270,13 @@ async function startEditor(
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.load(
+    ...mainThreadModules({
+      bundleBaseUrl: "unused",
+      disclaimer: "unused",
+      startSimWorker: () => new MessageChannel().port1,
+    }),
+  );
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   const realLoader = container.get(PART_BUNDLE_LOADER);
   if (models !== null) {
@@ -263,7 +291,7 @@ async function startEditor(
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, manifest: await realLoader.loadManifest("standard") };
+  return { editor, backend, container, manifest: await realLoader.loadManifest("standard") };
 }
 
 function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
@@ -378,6 +406,34 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
     { name: STUDLESS_SET, reason: "no stud lattice from the bake" },
   ]);
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
+}, 120_000);
+
+it("lists every bundle model with running gear as a train of its own, in bundle order, under its palette label, and picks the first", async () => {
+  const { editor, container } = await startEditor([
+    PLACEABLE_SET,
+    STUDLESS_SET,
+    "10205-1",
+    "10133-1",
+  ]);
+  const play = container.get(TRAIN_PLAY);
+  const setup = editor.playSetup();
+
+  expect(setup?.models.map((model) => [model.name, model.label])).toEqual([
+    ["10133-1", "10133-1 Burlington Northern Santa Fe Locomotive (2004)"],
+    ["10205-1", "10205-1"],
+    [STUDLESS_SET, STUDLESS_SET],
+  ]);
+  play.offer(setup);
+  expect(play.snapshot().trainModel).toBe("10133-1");
+}, 120_000);
+
+it("lists a generated model with running gear as a train, as it does a set", async () => {
+  const { editor } = await startEditor(
+    ["10205-1"],
+    new GeneratedOriginFetcher(new BundleDirectoryFetcher(), "10205-1"),
+  );
+
+  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
 }, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {

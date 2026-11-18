@@ -15,13 +15,6 @@ import { edgeLengths, trainStart } from "./train-start.ts";
 export type PlayStatus = "idle" | "loading" | "running" | "error";
 export type FollowCamera = (x: number, z: number) => void;
 
-export interface TrainSetView {
-  readonly id: string;
-  readonly label: string;
-  readonly models: ReadonlyArray<string>;
-  readonly available: boolean;
-}
-
 export interface PlaySwitchView {
   readonly index: number;
   readonly label: string;
@@ -34,8 +27,7 @@ export interface PlaySnapshot {
   readonly status: PlayStatus;
   readonly error: string | null;
   readonly notice: string | null;
-  readonly sets: ReadonlyArray<TrainSetView>;
-  readonly setId: string;
+  readonly trainModel: string | null;
   readonly vehicles: number;
   readonly trainLengthLdu: number;
   readonly maxSpeedLduPerS: number;
@@ -53,7 +45,7 @@ export interface ITrainPlay {
   subscribe(listener: () => void): () => void;
   snapshot(): PlaySnapshot;
   offer(setup: PlaySetup | null): void;
-  chooseSet(id: string): void;
+  chooseTrain(model: string): void;
   start(setup: PlaySetup): Promise<void>;
   stop(): void;
   drive(signedSpeedLduPerS: number): void;
@@ -63,17 +55,6 @@ export interface ITrainPlay {
   click(ndcX: number, ndcY: number): boolean;
 }
 
-interface PresetSet {
-  readonly id: string;
-  readonly models: ReadonlyArray<string>;
-}
-
-const PRESETS: ReadonlyArray<PresetSet> = [
-  { id: "bnsf-freight", models: ["10133-1", "10013-1", "10016-1", "10017-1", "10014-1"] },
-  { id: "super-chief", models: ["10020-1", "10022-1_Dining-Car", "10025-1_Baggage-Car"] },
-  { id: "my-own-train", models: ["10205-1"] },
-  { id: "bnsf-locomotive", models: ["10133-1"] },
-];
 const MAX_SPEED_LDU_PER_S = 400;
 const ACCELERATION_LDU_PER_S2 = 150;
 const BRAKING_LDU_PER_S2 = 300;
@@ -100,31 +81,11 @@ interface SwitchSite {
   readonly startsDiverging: boolean;
 }
 
-function presetLabel(preset: PresetSet, models: ReadonlyMap<string, PlayModel>): string {
-  return preset.models
-    .map((name) => {
-      const setName = models.get(name)?.setName;
-      return setName ? `${name} ${setName}` : name;
-    })
-    .join(" + ");
-}
-
-function setViews(models: ReadonlyArray<PlayModel>): TrainSetView[] {
-  const byName = new Map(models.map((model) => [model.name, model]));
-  return PRESETS.map((preset) => ({
-    id: preset.id,
-    label: presetLabel(preset, byName),
-    models: preset.models,
-    available: preset.models.every((name) => byName.has(name)),
-  }));
-}
-
 const IDLE: PlaySnapshot = {
   status: "idle",
   error: null,
   notice: null,
-  sets: [],
-  setId: PRESETS[0]?.id ?? "",
+  trainModel: null,
   vehicles: 0,
   trainLengthLdu: 0,
   maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
@@ -172,15 +133,14 @@ export class TrainPlay implements ITrainPlay {
   }
 
   offer(setup: PlaySetup | null): void {
-    if (!setup || this.state.sets.length > 0) return;
-    const sets = setViews(setup.models);
-    const first = sets.find((set) => set.available);
-    this.update({ sets, setId: first?.id ?? this.state.setId });
+    const first = setup?.models[0];
+    if (!first || this.state.trainModel !== null) return;
+    this.update({ trainModel: first.name });
   }
 
-  chooseSet(id: string): void {
+  chooseTrain(model: string): void {
     if (this.state.status === "running" || this.state.status === "loading") return;
-    this.update({ setId: id });
+    this.update({ trainModel: model });
   }
 
   async start(setup: PlaySetup): Promise<void> {
@@ -204,30 +164,21 @@ export class TrainPlay implements ITrainPlay {
   }
 
   private async load(setup: PlaySetup): Promise<void> {
-    const preset = PRESETS.find((p) => p.id === this.state.setId);
-    if (!preset) throw new Error(`no train set ${this.state.setId}`);
+    const model = setup.models.find((candidate) => candidate.name === this.state.trainModel);
+    if (!model) throw new Error("No model in the bundle has running gear to run.");
     const { layout, pieces } = setup.track;
     if (layout.count === 0) throw new Error("Lay some track first: there is nothing to run on.");
     const graph = new TrackGraph(layout);
-    const byName = new Map(setup.models.map((model) => [model.name, model]));
-    const models = preset.models.map((name) => {
-      const model = byName.get(name);
-      if (!model) throw new Error(`train set model ${name} is not in the bundle`);
-      return model;
-    });
-    await this.runningGear.setModels([...new Set(models)].map((model) => model.gear));
-    const { railPart } = setup.track;
-    const consist = models.flatMap((model) =>
-      consistVehicles(
-        model.model,
-        model.name,
-        false,
-        railPart,
-        this.runningGear.effectiveVehicles(model.name),
-      ).map((vehicle) => ({ vehicle, model })),
+    await this.runningGear.setModels([model.gear]);
+    const consist = consistVehicles(
+      model.model,
+      model.name,
+      false,
+      setup.track.railPart,
+      this.runningGear.effectiveVehicles(model.name),
     );
     const spec: TrainSpec = {
-      vehicles: consist.map(({ vehicle }) => vehicle.spec),
+      vehicles: consist.map((vehicle) => vehicle.spec),
       maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
       accelerationLduPerS2: ACCELERATION_LDU_PER_S2,
       brakingLduPerS2: BRAKING_LDU_PER_S2,
@@ -261,17 +212,17 @@ export class TrainPlay implements ITrainPlay {
     this.railTopY = setup.track.railTopY;
     this.clearVehicles();
     let nextBody = 0;
-    const show = (rigid: RigidBodyInstances | null, model: PlayModel): number => {
+    const show = (rigid: RigidBodyInstances | null): number => {
       if (!rigid) return NO_BODY;
       const id = nextBody++;
       this.backend.setVehicle(id, rigidChunk(rigid, model, setup));
       return id;
     };
-    this.placed = consist.map(({ vehicle, model }) => ({
+    this.placed = consist.map((vehicle) => ({
       vehicle,
-      body: show(vehicle.body, model),
-      frontBogie: show(vehicle.frontBogie, model),
-      rearBogie: show(vehicle.rearBogie, model),
+      body: show(vehicle.body),
+      frontBogie: show(vehicle.frontBogie),
+      rearBogie: show(vehicle.rearBogie),
     }));
     this.update({
       vehicles: consist.length,
@@ -289,8 +240,7 @@ export class TrainPlay implements ITrainPlay {
     this.sites = [];
     this.update({
       ...IDLE,
-      sets: this.state.sets,
-      setId: this.state.setId,
+      trainModel: this.state.trainModel,
       following: this.state.following,
     });
   }

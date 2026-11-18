@@ -63,15 +63,15 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
       {!running && (
         <div className="play-start">
           <label>
-            Train set
+            Train
             <select
-              value={snapshot.setId}
+              value={snapshot.trainModel ?? ""}
               disabled={busy}
-              onChange={(event) => play.chooseSet(event.target.value)}
+              onChange={(event) => play.chooseTrain(event.target.value)}
             >
-              {snapshot.sets.map((set) => (
-                <option key={set.id} value={set.id} disabled={!set.available}>
-                  {set.available ? set.label : `${set.label} (not in the bundle)`}
+              {editor.playSetup()?.models.map((train) => (
+                <option key={train.name} value={train.name}>
+                  {train.label}
                 </option>
               ))}
             </select>
@@ -87,7 +87,7 @@ export function PlayPanel({ editor, camera, play, ready }: PlayPanelProps) {
           </button>
           {snapshot.error && <p className="play-error">{snapshot.error}</p>}
           <p className="toolbar-hint">
-            Puts the set on the longest run of laid track. Open ends are live: run off one and the
+            Puts the train on the longest run of laid track. Open ends are live: run off one and the
             train derails.
           </p>
         </div>
