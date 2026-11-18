@@ -99,9 +99,26 @@ describe("SubmodelFrames", () => {
     expect(tread(0, frame, ALL_COORDINATES)).toBe(false);
     expect(point.residual).toBeCloseTo(AXIAL_DUST, 9);
     expect(tread(0, MODEL_ROOT, across)).toBe(false);
-    expect(point.residual).toBeCloseTo(Math.hypot(DUST, DUST), 9);
+    expect(point.residual).toBeCloseTo(DUST, 9);
     expect(tread(2, frames.lowestCommonFrame(1, 2), across)).toBe(false);
     expect(point.residual).toBeCloseTo(DUST_BEYOND_RESIDUAL_LDU, 9);
+  });
+
+  it("reads the limit per coordinate: a sixteenth printed to three decimals is within it on every coordinate, and one coordinate beyond it is not", () => {
+    const identity = Float64Array.from(translation(0, 0, 0));
+    const point = new IdentifiedPoint();
+    const exact = STUD_LDU + 1 / SIXTEENTHS_PER_LDU;
+    const printed = Number(exact.toFixed(3));
+    const offByPrinting = printed - exact;
+    expect(Math.abs(offByPrinting)).toBeCloseTo(IDENTIFICATION_RESIDUAL_LDU, 12);
+    expect(Math.hypot(offByPrinting, offByPrinting)).toBeGreaterThan(IDENTIFICATION_RESIDUAL_LDU);
+    expect(identifyPoint(identity, printed, 0, printed, ALL_COORDINATES, point)).toBe(true);
+    const exactSixteenths = exact * SIXTEENTHS_PER_LDU;
+    expect(Array.from(point.sixteenths)).toEqual([exactSixteenths, 0, exactSixteenths]);
+    expect(point.residual).toBeCloseTo(IDENTIFICATION_RESIDUAL_LDU, 12);
+    const beyond = exact + DUST_BEYOND_RESIDUAL_LDU;
+    expect(identifyPoint(identity, beyond, 0, exact, ALL_COORDINATES, point)).toBe(false);
+    expect(point.residual).toBeCloseTo(DUST_BEYOND_RESIDUAL_LDU, 12);
   });
 
   it("finds the lowest common instance in the instance tree, and relates a part only to a frame that holds it", () => {

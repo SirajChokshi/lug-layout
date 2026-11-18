@@ -100,7 +100,11 @@ export function identifyPoint(
   const wantY = (coordinates & (1 << Y)) !== 0;
   const wantZ = (coordinates & (1 << Z)) !== 0;
   const residual =
-    Math.hypot(wantX ? sx - ix : 0, wantY ? sy - iy : 0, wantZ ? sz - iz : 0) / SIXTEENTHS_PER_LDU;
+    Math.max(
+      wantX ? Math.abs(sx - ix) : 0,
+      wantY ? Math.abs(sy - iy) : 0,
+      wantZ ? Math.abs(sz - iz) : 0,
+    ) / SIXTEENTHS_PER_LDU;
   out.residual = residual;
   out.sixteenths.fill(0);
   if (!(residual <= IDENTIFICATION_RESIDUAL_LDU)) return false;
