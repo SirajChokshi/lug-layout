@@ -259,6 +259,7 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
     ),
     Int8Array.of(AXIS_POS_Y, AXIS_NEG_Y),
     new Float32Array(6),
+    new Uint16Array(2),
   );
 
   const result = await importWith(nothingFound, "far.mpd", text);

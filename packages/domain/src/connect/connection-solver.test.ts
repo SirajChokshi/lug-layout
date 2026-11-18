@@ -69,6 +69,7 @@ interface Spec {
   readonly status?: number;
   readonly origin: readonly [number, number, number];
   readonly axis: number;
+  readonly piece?: number;
 }
 
 const shapes = new SnapShapes();
@@ -101,6 +102,7 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Float32Array.from(specs.flatMap((s) => s.origin)),
     Int8Array.from(specs, (s) => s.axis),
     new Float32Array(specs.length * 3),
+    Uint16Array.from(specs, (s) => s.piece ?? 0),
   );
 }
 
@@ -150,6 +152,7 @@ function withProvenance(part: ConnectorTable, source: number, status: number): C
     part.origin,
     part.axis,
     part.axisFree,
+    part.piece,
   );
 }
 
@@ -1049,6 +1052,103 @@ describe("ModelConnectors in a sub-model tree", () => {
   });
 });
 
+function hipsAndLegs(hip: number, legs: number): ConnectorTable {
+  return table([
+    {
+      shape: PIN,
+      gender: GENDER_MALE,
+      origin: [0, HOLE_HEIGHT, 0],
+      axis: AXIS_POS_X,
+      piece: hip,
+    },
+    {
+      shape: PIN_HOLE,
+      gender: GENDER_FEMALE,
+      origin: [0, HOLE_HEIGHT, 0],
+      axis: AXIS_NEG_X,
+      piece: legs,
+    },
+    {
+      shape: PIN_HOLE,
+      gender: GENDER_FEMALE,
+      origin: [0, HOLE_HEIGHT, STUD_LDU],
+      axis: AXIS_NEG_X,
+      piece: legs,
+    },
+    { shape: PIN, gender: GENDER_MALE, origin: [0, 0, 0], axis: AXIS_FREE, piece: hip },
+  ]);
+}
+
+function alone(part: ConnectorTable, local: Matrix): ModelConnectors {
+  return assembled([part], [], [{ part: 0, submodel: MODEL_ROOT, local }], false);
+}
+
+describe("ModelConnectors with composite parts", () => {
+  const [x, y, z] = [5 * STUD_LDU, PLATE_LDU, 2 * STUD_LDU];
+  const c = COS_45_TO_3_DECIMALS;
+  const exact = translation(x, y, z);
+  const dusty = translation(x + DUST, y, z);
+  const turned = [c, 0, c, x, 0, 1, 0, y, -c, 0, c, z];
+  const inDustySubmodel = (part: ConnectorTable): ModelConnectors =>
+    assembled([part], oneSubmodel(dusty), [{ part: 0, submodel: 0, local: IDENTITY }], true);
+
+  it("mates a composite part's pieces in part-local coordinates wherever it's placed, and counts each mate once", () => {
+    const composite = hipsAndLegs(1, 2);
+    expect(tally(alone(composite, exact))).toEqual([1, 1, 1]);
+    expect(tally(alone(composite, dusty))).toEqual([0, 1, 2]);
+    expect(tally(alone(composite, turned))).toEqual([0, 1, 2]);
+    expect(tally(inDustySubmodel(composite))).toEqual([0, 1, 2]);
+  });
+
+  it("never mates two connectors of one piece, in any pass, even inside a composite", () => {
+    for (const piece of [0, 3]) {
+      const moulding = hipsAndLegs(piece, piece);
+      expect(tally(alone(moulding, exact))).toEqual([3, 0, 1]);
+      expect(tally(alone(moulding, dusty))).toEqual([0, 0, 4]);
+      expect(tally(inDustySubmodel(moulding))).toEqual([0, 0, 4]);
+    }
+    const composite = hipsAndLegs(1, 2);
+    const legPin = {
+      shape: PIN,
+      gender: GENDER_MALE,
+      origin: [0, HOLE_HEIGHT, STUD_LDU] as const,
+      axis: AXIS_POS_X,
+      piece: 2,
+    };
+    const withLegPin = new ConnectorTable(
+      Uint16Array.of(...composite.shape, legPin.shape),
+      Uint8Array.of(...composite.gender, legPin.gender),
+      Uint8Array.of(...composite.source, SOURCE_SHADOW),
+      Uint8Array.of(...composite.status, STATUS_VERIFIED),
+      Float32Array.of(...composite.origin, ...legPin.origin),
+      Int8Array.of(...composite.axis, legPin.axis),
+      new Float32Array((composite.count + 1) * 3),
+      Uint16Array.of(...composite.piece, legPin.piece),
+    );
+    expect(tally(alone(withLegPin, exact))).toEqual([2, 1, 1]);
+    expect(tally(alone(withLegPin, dusty))).toEqual([0, 1, 3]);
+    expect(tally(inDustySubmodel(withLegPin))).toEqual([0, 1, 3]);
+  });
+
+  it("refuses a piece column that doesn't match the connector count", () => {
+    const part = hipsAndLegs(1, 2);
+    const withPieces = (piece: Uint16Array) =>
+      new ConnectorTable(
+        part.shape,
+        part.gender,
+        part.source,
+        part.status,
+        part.origin,
+        part.axis,
+        part.axisFree,
+        piece,
+      );
+    expect(withPieces(new Uint16Array(part.count)).count).toBe(part.count);
+    expect(() => withPieces(new Uint16Array(part.count - 1))).toThrow(RangeError);
+    expect(() => withPieces(new Uint16Array(part.count + 1))).toThrow(RangeError);
+  });
+});
+
 function trackModel(ends: ReadonlyArray<TrackEnd>): ModelConnectors {
   return ModelConnectors.fromParts(
     [],
@@ -1702,6 +1802,7 @@ function freeFaces(part: ConnectorTable, shiftLdu: number): ConnectorTable {
     origin,
     axis,
     axisFree,
+    part.piece,
   );
 }
 

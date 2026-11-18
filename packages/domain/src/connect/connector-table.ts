@@ -53,6 +53,7 @@ export class ConnectorTable {
     readonly origin: Float32Array,
     readonly axis: Int8Array,
     readonly axisFree: Float32Array,
+    readonly piece: Uint16Array,
   ) {
     const count = shape.length;
     if (
@@ -60,6 +61,7 @@ export class ConnectorTable {
       source.length !== count ||
       status.length !== count ||
       axis.length !== count ||
+      piece.length !== count ||
       origin.length !== count * VECTOR_FLOATS ||
       axisFree.length !== count * VECTOR_FLOATS
     ) {

@@ -29,6 +29,9 @@ const Z = 2;
 const LINE_KEYS = 4;
 const ALONG = 3;
 const INT32_LIMIT = 2 ** 31;
+const PART_FRAME = Float64Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+
+type Pass = "model" | "submodel" | "part";
 
 interface Frames {
   readonly shape: Uint16Array;
@@ -38,6 +41,7 @@ interface Frames {
   readonly origin: Int32Array;
   readonly axis: Int8Array;
   readonly instance: Uint32Array;
+  readonly piece: Uint16Array;
 }
 
 function allocateFrames(count: number): Frames {
@@ -49,6 +53,7 @@ function allocateFrames(count: number): Frames {
     origin: new Int32Array(count * VECTOR_FLOATS),
     axis: new Int8Array(count),
     instance: new Uint32Array(count),
+    piece: new Uint16Array(count),
   };
 }
 
@@ -126,7 +131,8 @@ class InternalMates {
   private readonly connector: Uint32Array;
   private readonly axis: Int8Array;
   private size = 0;
-  private pairFrame: number | null = null;
+  private pass: Pass = "model";
+  private pairFrame = MODEL_ROOT;
   private readonly byLine = (a: number, b: number): number => this.compare(a, b, LINE_KEYS);
 
   constructor(
@@ -160,7 +166,8 @@ class InternalMates {
     this.order[n] = n;
   }
 
-  consume(pairFrame: number | null): number {
+  consume(pass: Pass, pairFrame = MODEL_ROOT): number {
+    this.pass = pass;
     this.pairFrame = pairFrame;
     const count = this.size;
     this.order.subarray(0, count).sort(this.byLine);
@@ -207,9 +214,7 @@ class InternalMates {
     if (frames.gender[femaleConnector] !== GENDER_FEMALE) return false;
     const axis = this.axis[male] ?? 0;
     if (this.axis[female] !== oppositeAxis(axis)) return false;
-    if (this.pairFrame !== null && !this.sharesPairFrame(maleConnector, femaleConnector)) {
-      return false;
-    }
+    if (!this.admits(maleConnector, femaleConnector)) return false;
     const offset = (this.along(female) - this.along(male)) * axisSign(axis);
     return this.mating.engages(
       frames.shape[maleConnector] ?? 0,
@@ -218,14 +223,29 @@ class InternalMates {
     );
   }
 
-  private sharesPairFrame(maleConnector: number, femaleConnector: number): boolean {
+  private admits(maleConnector: number, femaleConnector: number): boolean {
     const frames = this.frames;
-    if (frames.axis[maleConnector] !== AXIS_FREE && frames.axis[femaleConnector] !== AXIS_FREE) {
-      return false;
-    }
     const a = frames.instance[maleConnector] ?? 0;
     const b = frames.instance[femaleConnector] ?? 0;
-    return a !== b && this.submodelFrames.lowestCommonFrame(a, b) === this.pairFrame;
+    if (a === b && frames.piece[maleConnector] === frames.piece[femaleConnector]) return false;
+    const judgedInModelFrame =
+      frames.axis[maleConnector] !== AXIS_FREE && frames.axis[femaleConnector] !== AXIS_FREE;
+    switch (this.pass) {
+      case "model":
+        return true;
+      case "part":
+        return a === b && !judgedInModelFrame;
+      case "submodel":
+        return (
+          a !== b &&
+          !judgedInModelFrame &&
+          this.submodelFrames.lowestCommonFrame(a, b) === this.pairFrame
+        );
+      default: {
+        const exhaustive: never = this.pass;
+        throw new Error(`unhandled pass ${String(exhaustive)}`);
+      }
+    }
   }
 
   private along(candidate: number): number {
@@ -241,6 +261,13 @@ class InternalMates {
   }
 }
 
+function leavesModelFrame(part: ConnectorTable, first: number, modelFrameAxis: Int8Array): boolean {
+  for (let c = 0; c < part.count; c++) {
+    if (modelFrameAxis[first + c] === AXIS_FREE) return true;
+  }
+  return false;
+}
+
 function holdsConnectorOffModelFrame(
   parts: ReadonlyArray<ConnectorTable | null>,
   instances: PartInstances,
@@ -251,11 +278,7 @@ function holdsConnectorOffModelFrame(
   for (let e = 0; e < members.length; e++) {
     const i = members[e] ?? 0;
     const part = parts[instances.partIndex[i] ?? -1];
-    if (!part) continue;
-    const first = firstConnector[i] ?? 0;
-    for (let c = 0; c < part.count; c++) {
-      if (modelFrameAxis[first + c] === AXIS_FREE) return true;
-    }
+    if (part && leavesModelFrame(part, firstConnector[i] ?? 0, modelFrameAxis)) return true;
   }
   return false;
 }
@@ -305,7 +328,41 @@ function mateInSubmodelFrames(
         if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
       }
     }
-    mates += search.consume(n);
+    mates += search.consume("submodel", n);
+  }
+  return mates;
+}
+
+function hasSeveralPieces(part: ConnectorTable | null | undefined): boolean {
+  if (!part) return false;
+  const first = part.piece[0] ?? 0;
+  for (let c = 1; c < part.count; c++) if (part.piece[c] !== first) return true;
+  return false;
+}
+
+function mateInPartFrames(
+  parts: ReadonlyArray<ConnectorTable | null>,
+  instances: PartInstances,
+  firstConnector: Uint32Array,
+  modelFrameAxis: Int8Array,
+  search: InternalMates,
+): number {
+  const pieced = new Uint8Array(parts.length);
+  for (let p = 0; p < parts.length; p++) pieced[p] = hasSeveralPieces(parts[p]) ? 1 : 0;
+  const point = new IdentifiedPoint();
+  let mates = 0;
+  for (let i = 0; i < instances.count; i++) {
+    const index = instances.partIndex[i] ?? -1;
+    const part = parts[index];
+    if (!part || pieced[index] !== 1) continue;
+    const first = firstConnector[i] ?? 0;
+    if (!leavesModelFrame(part, first, modelFrameAxis)) continue;
+    search.clear();
+    for (let c = 0; c < part.count; c++) {
+      const axis = identifyConnector(PART_FRAME, part, c, point);
+      if (axis !== AXIS_FREE) search.add(first + c, axis, point.sixteenths);
+    }
+    mates += search.consume("part");
   }
   return mates;
 }
@@ -350,7 +407,7 @@ export class ModelConnectors {
     const submodelFrames = new SubmodelFrames(instances);
     const submodels = instances.submodels;
     const nested = submodels && submodels.count > 0 ? submodels : null;
-    const firstConnector = new Uint32Array(nested ? instances.count : 0);
+    const firstConnector = new Uint32Array(instances.count);
     const frames = allocateFrames(total);
     const search = new InternalMates(frames, total, mating, submodelFrames);
     const transform = new Float64Array(TRANSFORM_FLOATS);
@@ -358,7 +415,7 @@ export class ModelConnectors {
     let g = 0;
     for (let i = 0; i < instances.count; i++) {
       const part = parts[instances.partIndex[i] ?? -1];
-      if (nested) firstConnector[i] = g;
+      firstConnector[i] = g;
       if (!part) continue;
       submodelFrames.relate(i, MODEL_ROOT, transform);
       for (let c = 0; c < part.count; c++, g++) {
@@ -367,6 +424,7 @@ export class ModelConnectors {
         frames.source[g] = part.source[c] ?? 0;
         frames.status[g] = part.status[c] ?? 0;
         frames.instance[g] = i;
+        frames.piece[g] = part.piece[c] ?? 0;
         const axis = identifyConnector(transform, part, c, point);
         frames.axis[g] = axis;
         if (axis === AXIS_FREE) continue;
@@ -374,7 +432,7 @@ export class ModelConnectors {
         search.add(g, axis, point.sixteenths);
       }
     }
-    let internalMates = search.consume(null);
+    let internalMates = search.consume("model");
     if (nested) {
       internalMates += mateInSubmodelFrames(
         parts,
@@ -386,6 +444,7 @@ export class ModelConnectors {
         search,
       );
     }
+    internalMates += mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
     let occupied = 0;
     let offLattice = 0;
     for (let k = 0; k < total; k++) {
