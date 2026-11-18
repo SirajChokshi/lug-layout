@@ -59,6 +59,12 @@ export interface TrackEnd {
   readonly heading: number;
 }
 
+export interface ModelTrack {
+  readonly pieces: number;
+  readonly offField: number;
+  readonly unanchored: number;
+}
+
 export interface TrackCounts {
   readonly pieces: number;
   readonly openEnds: number;
@@ -355,6 +361,15 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async modelTrack(): Promise<ModelTrack> {
+    const panel = this.page.locator("section.track-panel");
+    return {
+      pieces: Number(await panel.getAttribute("data-model-pieces")),
+      offField: Number(await panel.getAttribute("data-off-field")),
+      unanchored: Number(await panel.getAttribute("data-unanchored")),
     };
   }
 

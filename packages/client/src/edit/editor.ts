@@ -332,6 +332,9 @@ export interface TrackPieceView {
 
 export interface TrackView {
   readonly pieces: number;
+  readonly modelPieces: number;
+  readonly offField: number;
+  readonly unanchored: number;
   readonly bom: ReadonlyArray<TrackBomLine>;
   readonly openEnds: number;
   readonly joins: number;
@@ -498,8 +501,6 @@ export interface IEditor extends IBomSource, IWorldFiles {
   catalogItemModel(itemId: string): Promise<CatalogItemModel | null>;
   dump(): EditorDump;
 }
-
-const NO_PART_TRANSFORMS = { count: 0, partIndex: [], matrices: new Float64Array(0) };
 
 interface Connected {
   readonly model: ModelConnectors;
@@ -1552,8 +1553,12 @@ export class Editor implements IEditor, IEditedWorld {
     const samples = track.solveSamplesMs.toSorted((a, b) => a - b);
     const at = (q: number): number =>
       samples[Math.min(samples.length - 1, Math.floor(q * samples.length))] ?? 0;
+    const inModels = this.modelTrackCounts();
     return {
       pieces: track.pieceCount,
+      modelPieces: inModels.pieces,
+      offField: inModels.offField,
+      unanchored: inModels.unanchored,
       bom: this.bomLines(track),
       openEnds: track.openEnds().length,
       joins: track.joinedPairs(),
@@ -2620,7 +2625,11 @@ export class Editor implements IEditor, IEditedWorld {
     let connected = this.connected.get(placeable);
     if (!connected) {
       connected = {
-        model: this.search.model([], NO_PART_TRANSFORMS, this.trackOf(placeable)?.openEnds ?? []),
+        model: this.search.model(
+          this.requirePalette().parts.map(() => null),
+          placeable.partTransforms,
+          this.trackOf(placeable)?.openEnds ?? [],
+        ),
         volumes: placeableVolumes(placeable),
       };
       this.connected.set(placeable, connected);
@@ -2660,10 +2669,29 @@ export class Editor implements IEditor, IEditedWorld {
     if (!catalog) return null;
     let track = this.modelTrack.get(placeable);
     if (!track) {
-      track = modelTrackEnds(placeable.parts, this.requirePalette().parts, catalog);
+      track = modelTrackEnds(placeable.partTransforms, this.requirePalette().parts, catalog);
       this.modelTrack.set(placeable, track);
     }
     return track;
+  }
+
+  private modelTrackCounts(): {
+    readonly pieces: number;
+    readonly offField: number;
+    readonly unanchored: number;
+  } {
+    let pieces = 0;
+    let offField = 0;
+    let unanchored = 0;
+    for (const model of this.placed.models()) {
+      const track = this.trackOf(model.placeable);
+      pieces += track?.pieces.length ?? 0;
+      for (const piece of track?.uncertified ?? []) {
+        if (piece.reason === "noAnchor") unanchored++;
+        else offField++;
+      }
+    }
+    return { pieces, offField, unanchored };
   }
 
   private syncModelTrack(): void {
