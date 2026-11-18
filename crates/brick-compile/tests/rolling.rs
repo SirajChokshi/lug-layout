@@ -94,6 +94,36 @@ impl Band {
         line + "\n"
     }
 
+    fn alternately_cut_lines(&self, first: f64, step: f64) -> String {
+        let low = |j: usize| self.point(self.from, self.radii[0], self.angle(j));
+        let high = |j: usize| self.point(self.to, self.radii[1], self.angle(j));
+        let cut = |j: usize| {
+            let t = first + step * ((j % self.facets) / 2) as f64;
+            self.point(t, self.radius_at(t), self.angle(j))
+        };
+        let mut out = String::new();
+        for k in 0..self.facets {
+            let (left, right) = (k, k + 1);
+            let triangles = if left % 2 == 0 {
+                [
+                    vec![low(left), low(right), high(right)],
+                    vec![low(left), high(right), cut(left)],
+                    vec![cut(left), high(right), high(left)],
+                ]
+            } else {
+                [
+                    vec![low(left), low(right), high(left)],
+                    vec![low(right), cut(right), high(left)],
+                    vec![cut(right), high(right), high(left)],
+                ]
+            };
+            for corners in triangles {
+                out.push_str(&self.polygon(corners));
+            }
+        }
+        out
+    }
+
     fn lines(&self) -> String {
         let mut out = String::new();
         for k in 0..self.drawn {
@@ -224,6 +254,7 @@ fn custom_wheel() -> String {
         high_wobble: 0.5,
         ..Band::along(2, at(-100.0, 0.0, 0.0), 0.0, 10.0, [10.0, 10.0])
     };
+    let alternate_meridians_cut = Band::along(0, at(0.0, -160.0, 0.0), 60.0, 70.0, [8.0, 8.0]);
     let read_before_an_oblique_cut = Band::along(0, at(0.0, -80.0, 0.0), 40.0, 45.0, [8.0, 8.0]);
     let oblique_cut_after_a_read_band = Band {
         oblique_top: 0.25,
@@ -259,7 +290,11 @@ fn custom_wheel() -> String {
         oblique_cut_after_a_read_band,
         tilted,
     ];
-    let body: String = bands.iter().map(Band::lines).collect();
+    let body: String = bands
+        .iter()
+        .map(Band::lines)
+        .chain([alternate_meridians_cut.alternately_cut_lines(61.0, 1.0)])
+        .collect();
     format!(
         "0 Custom wheel drawn from plain quads\n{LICENSE}{WOUND}{body}1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\unwound.dat\n"
     )
@@ -329,6 +364,7 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
             surface(0, [40.0, 20.0], 40.0, 50.0, [8.0, 6.0]),
             surface(0, [40.0, 60.0], 40.0, 50.0, [8.0, 8.0]),
             surface(0, [80.0, 0.0], 40.0, 45.0, [8.0, 8.0]),
+            surface(0, [160.0, 0.0], 60.0, 70.0, [8.0, 8.0]),
             surface(1, [-60.0, 0.0], 0.0, 8.0, [10.0, 10.0]),
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
         ]

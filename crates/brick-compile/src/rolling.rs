@@ -220,32 +220,52 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
     let mesh = Mesh::new(triangles);
     let mut unread = Vec::new();
     let mut read = Vec::new();
-    let mut explained = vec![false; triangles.len()];
+    let mut settled = vec![false; triangles.len()];
+    let mut strip_reports: Vec<(UnreadBand, Vec<usize>)> = Vec::new();
     for axis in AXES {
         for span in mesh.spans(axis) {
             let (closed, pooled) = span.strips(&mesh, roundness);
-            for strip in closed.iter().chain(pooled.iter()) {
-                let reading = strip.reading(roundness);
-                if !matches!(reading, BandReading::NotRound) {
-                    for &t in &strip.triangles {
-                        explained[t] = true;
+            for strip in closed.into_iter().chain(pooled) {
+                match strip.reading(roundness) {
+                    BandReading::NotRound => {}
+                    BandReading::Inward => strip.triangles.iter().for_each(|&t| settled[t] = true),
+                    BandReading::Read(band) => {
+                        strip.triangles.iter().for_each(|&t| settled[t] = true);
+                        read.push(band);
                     }
-                }
-                match reading {
-                    BandReading::NotRound | BandReading::Inward => {}
-                    BandReading::Unread(band) => unread.push(band),
-                    BandReading::Read(band) => read.push(band),
+                    BandReading::Unread(band) => strip_reports.push((band, strip.triangles)),
                 }
             }
         }
     }
-    for reading in mesh.vertex_revolutions(roundness, &explained) {
-        match reading {
-            BandReading::NotRound | BandReading::Inward => {}
-            BandReading::Unread(band) => unread.push(band),
-            BandReading::Read(band) => read.push(band),
+    let mut reported_by_a_strip = vec![false; triangles.len()];
+    for (_, strip_triangles) in &strip_reports {
+        strip_triangles
+            .iter()
+            .for_each(|&t| reported_by_a_strip[t] = true);
+    }
+    let mut read_from_vertices = vec![false; triangles.len()];
+    for (component, readings) in mesh.vertex_revolutions(roundness, &settled) {
+        let reads_a_band = readings.iter().any(|r| matches!(r, BandReading::Read(_)));
+        if reads_a_band {
+            component.iter().for_each(|&t| read_from_vertices[t] = true);
+        } else if component.iter().any(|&t| reported_by_a_strip[t]) {
+            continue;
+        }
+        for reading in readings {
+            match reading {
+                BandReading::NotRound | BandReading::Inward => {}
+                BandReading::Unread(band) => unread.push(band),
+                BandReading::Read(band) => read.push(band),
+            }
         }
     }
+    unread.extend(
+        strip_reports
+            .into_iter()
+            .filter(|(_, strip_triangles)| !strip_triangles.iter().any(|&t| read_from_vertices[t]))
+            .map(|(band, _)| band),
+    );
     let mut surfaces = Vec::new();
     for band in merged(read) {
         match band.surface() {
@@ -597,13 +617,17 @@ impl<'a> Mesh<'a> {
         }
     }
 
-    fn vertex_revolutions(&self, roundness: Roundness, explained: &[bool]) -> Vec<BandReading> {
+    fn vertex_revolutions(
+        &self,
+        roundness: Roundness,
+        settled: &[bool],
+    ) -> Vec<(Vec<usize>, Vec<BandReading>)> {
         let member: Vec<bool> = self
             .triangles
             .iter()
             .enumerate()
             .map(|(t, triangle)| {
-                self.normals[t].is_some() && !explained[t] && !flat_across_an_axis(triangle)
+                self.normals[t].is_some() && !settled[t] && !flat_across_an_axis(triangle)
             })
             .collect();
         let normal = |t: usize| self.normals[t].unwrap_or([0.0; 3]);
@@ -612,8 +636,10 @@ impl<'a> Mesh<'a> {
         })
         .into_iter()
         .filter(|component| component.len() >= roundness.coarse_facets)
-        .filter_map(|component| self.vertex_revolution(&component, roundness))
-        .flatten()
+        .filter_map(|component| {
+            let readings = self.vertex_revolution(&component, roundness)?;
+            Some((component, readings))
+        })
         .collect()
     }
 
@@ -656,19 +682,28 @@ impl<'a> Mesh<'a> {
                     + normal[plane[1]] * (at[plane[1]] - centre[1])
             })
         };
-        let Some(profile) = Profile::through_full_rings(&points, roundness) else {
-            let fit = coaxial_rings(&points, 0.0).or_else(|| one_circle(&points))?;
-            let orientation = orientation_about(fit.centres[0]);
-            return Some(vec![BandCandidate {
-                axis,
-                lo: points.first()?.0,
-                hi: points.last()?.0,
-                centres: fit.centres,
-                radii: fit.radii,
-                facets: 0,
-                orientation,
+        let (lo, hi) = (points.first()?.0, points.last()?.0);
+        let profile = Profile::through_full_rings(&points, roundness);
+        let complete = self.bounded_by_end_rings(component, axis, lo, hi);
+        let profile = match profile {
+            Some(profile) if complete => profile,
+            incomplete => {
+                let fit = match incomplete {
+                    Some(profile) => profile.fit(),
+                    None => coaxial_rings(&points, 0.0).or_else(|| one_circle(&points))?,
+                };
+                let orientation = orientation_about(fit.centres[0]);
+                return Some(vec![BandCandidate {
+                    axis,
+                    lo,
+                    hi,
+                    centres: fit.centres,
+                    radii: fit.radii,
+                    facets: 0,
+                    orientation,
+                }
+                .unread_when_outward(UnreadBand::Irregular)]);
             }
-            .unread_when_outward(UnreadBand::Irregular)]);
         };
         let orientation = orientation_about(profile.centre);
         let centres: Vec<[f64; 2]> = profile
@@ -695,6 +730,24 @@ impl<'a> Mesh<'a> {
                 })
                 .collect(),
         )
+    }
+
+    fn bounded_by_end_rings(&self, component: &[usize], axis: usize, lo: f64, hi: f64) -> bool {
+        let mut uses: HashMap<(Key, Key), usize> = HashMap::new();
+        for &t in component {
+            let points = self.triangles[t].points;
+            for (a, b) in [(0, 1), (1, 2), (2, 0)] {
+                let (ka, kb) = (key(points[a]), key(points[b]));
+                *uses
+                    .entry(if ka <= kb { (ka, kb) } else { (kb, ka) })
+                    .or_default() += 1;
+            }
+        }
+        let ends = [key([lo; 3])[0], key([hi; 3])[0]];
+        let at_an_end = |k: Key| ends.contains(&k[axis]);
+        uses.iter()
+            .filter(|&(_, &count)| count == 1)
+            .all(|(&(a, b), _)| at_an_end(a) && at_an_end(b) && a[axis] == b[axis])
     }
 
     fn tilted_revolution(
@@ -812,6 +865,14 @@ impl Profile {
     fn facets(&self) -> usize {
         self.rings.iter().map(|ring| ring.facets).min().unwrap_or(0)
     }
+
+    fn fit(&self) -> CoaxialFit {
+        let radius_of = |ring: Option<&FullRing>| ring.map(|ring| ring.circle.radius);
+        CoaxialFit {
+            centres: self.rings.iter().map(|ring| ring.circle.centre).collect(),
+            radii: [radius_of(self.rings.first()), radius_of(self.rings.last())],
+        }
+    }
 }
 
 fn identified_at(centre: [f64; 2]) -> Option<[i32; 2]> {
@@ -900,7 +961,9 @@ fn coaxial_rings(points: &[(f64, [f64; 2])], ring_spread: f64) -> Option<Coaxial
         if ring.len() < 3 {
             continue;
         }
-        let circle = ring_circle(ring.clone())?;
+        let Some(circle) = ring_circle(ring.clone()) else {
+            continue;
+        };
         if let Some(&common) = fit.centres.first() {
             let radius = ring
                 .iter()
