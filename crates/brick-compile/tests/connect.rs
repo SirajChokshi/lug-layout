@@ -994,6 +994,21 @@ fn a_cavity_is_placed_only_where_its_free_travel_centres_the_stud_on_the_grid_po
     );
 }
 
+fn female_faces(connectors: &[Connector]) -> Vec<MatingFace> {
+    let mut found: Vec<MatingFace> = faces_of(connectors)
+        .into_iter()
+        .filter(|f| f.gender == Gender::Female)
+        .collect();
+    found.sort_by(|a, b| a.origin.partial_cmp(&b.origin).expect("finite"));
+    found
+}
+
+fn tube_table() -> PrimitiveTable {
+    let table: Value =
+        serde_json::from_slice(&fs::read(table_path()).expect("table file")).expect("table json");
+    PrimitiveTable::from_json(&table).expect("table")
+}
+
 #[test]
 fn a_stud_tube_supplies_its_four_diagonal_receptors_only_where_they_are_open() {
     let mut off_centre = custom_plate(2, 2, &[]);
@@ -1009,43 +1024,121 @@ fn a_stud_tube_supplies_its_four_diagonal_receptors_only_where_they_are_open() {
         ],
     );
     let shadow = pinned("ldcad-shadow");
-    let table: Value =
-        serde_json::from_slice(&fs::read(table_path()).expect("table file")).expect("table json");
+    let mut primitives = PrimitiveConnectors::new(&library, tube_table());
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut gated = |path: &str| {
+        let candidates = primitives.where_open(path);
+        female_faces(&inferred.open(path, candidates).connectors)
+    };
+    let plate = gated("parts/custom.dat");
+    assert!(plate.iter().all(|f| f.source == Source::Inferred));
+    let mut positions: Vec<[f64; 3]> = plate.iter().map(|f| f.origin).collect();
+    positions.dedup();
+    assert_eq!(positions.len(), 16);
+    for x in [-10.0, 10.0] {
+        for z in [-10.0, 10.0] {
+            assert!(plate.iter().any(|f| f.origin == [x, -8.0, z]));
+        }
+    }
+    let shifted = gated("parts/offcentre.dat");
+    let origins: Vec<[f64; 3]> = shifted.iter().map(|f| f.origin).collect();
+    assert_eq!(origins, vec![[0.0, -8.0, 0.0]]);
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow),
-        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        PrimitiveConnectors::new(&library, tube_table()),
         InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
             .expect("the pinned stud measures"),
     );
-    let receptors = |extraction: &brick_compile::connect::Extraction, source: Source| {
-        let mut found: Vec<[f64; 3]> = faces_of(&extraction.connectors)
-            .into_iter()
-            .filter(|f| f.gender == Gender::Female && f.source == source)
-            .map(|f| f.origin)
-            .collect();
-        found.sort_by(|a, b| a.partial_cmp(b).expect("finite"));
-        found
-    };
-    let plate = extractor.extract("parts/custom.dat");
-    let mut interior = Vec::new();
-    for x in [-10.0, 10.0] {
-        for z in [-10.0, 10.0] {
-            interior.push([x, -8.0, z]);
-        }
-    }
-    let tube_fed = receptors(&plate, Source::Primitive);
-    assert_eq!(tube_fed.len(), 16);
-    assert!(interior.iter().all(|p| tube_fed.contains(p)));
-    assert!(!plate.issues.iter().any(|issue| matches!(
+    let extraction = extractor.extract("parts/custom.dat");
+    assert!(!extraction.issues.iter().any(|issue| matches!(
         issue,
         Issue::Uninferred {
-            reason: Uninferred::LooseCavity { .. },
+            reason: Uninferred::LooseCavity { .. } | Uninferred::OffCentreCavity { .. },
             ..
         }
     )));
-    let shifted = extractor.extract("parts/offcentre.dat");
-    assert_eq!(
-        receptors(&shifted, Source::Primitive),
-        vec![[0.0, -8.0, 0.0]]
+}
+
+#[test]
+fn a_face_already_held_gets_no_second_receptor() {
+    let mut uneven = custom_plate(3, 2, &[]);
+    uneven = uneven.replace(
+        "1 16 10 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat",
+        "1 16 10 6 0 1 0 0 0 -0.5 0 0 0 1 stud4.dat",
     );
+    let dusty = custom_plate(2, 2, &[]).replace(
+        "1 16 0 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat",
+        "1 16 0 4.001 0 1 0 0 0 -1 0 0 0 1 stud4.dat",
+    );
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/curated.dat", custom_plate(2, 2, &[])),
+            ("parts/uneven.dat", uneven),
+            ("parts/dusty-curated.dat", dusty),
+        ],
+    );
+    let shadow = with_parts(
+        pinned("ldcad-shadow"),
+        &[
+            (
+                "parts/curated.dat",
+                "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 8] [pos=-10 8 -10]\n"
+                    .to_string(),
+            ),
+            (
+                "parts/dusty-curated.dat",
+                "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 8] [pos=-10 8 -10]\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, tube_table()),
+        InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+            .expect("the pinned stud measures"),
+    );
+    let mut per_face = |path: &str| {
+        let mut counts: Vec<([f64; 3], Vec<Source>)> = Vec::new();
+        for face in female_faces(&extractor.extract(path).connectors) {
+            match counts.iter_mut().find(|(origin, _)| *origin == face.origin) {
+                Some((_, sources)) => sources.push(face.source),
+                None => counts.push((face.origin, vec![face.source])),
+            }
+        }
+        counts
+    };
+    let curated = per_face("parts/curated.dat");
+    assert_eq!(curated.len(), 5);
+    assert!(curated.iter().all(|(_, sources)| sources.len() == 1));
+    assert!(curated.contains(&([-10.0, -8.0, 10.0], vec![Source::Shadow])));
+    assert!(curated.contains(&([0.0, -8.0, 0.0], vec![Source::Inferred])));
+    let shared = per_face("parts/uneven.dat");
+    assert!(shared.iter().all(|(_, sources)| sources.len() == 1));
+    for z in [-10.0, 10.0] {
+        assert!(shared.iter().any(|(origin, _)| *origin == [0.0, -8.0, z]));
+    }
+    let off_grid = extractor.extract("parts/dusty-curated.dat");
+    let receptors_at = |origin: [f64; 3]| {
+        female_faces(&off_grid.connectors)
+            .iter()
+            .filter(|f| (0..3).all(|k| (f.origin[k] - origin[k]).abs() <= 0.01))
+            .count()
+    };
+    assert_eq!(receptors_at([-10.0, -8.0, 10.0]), 1);
+    assert_eq!(receptors_at([10.0, -8.0, 10.0]), 0);
+    let stranded = female_faces(&off_grid.off_lattice)
+        .iter()
+        .filter(|f| f.origin[0].abs() > 9.99 && f.origin[2].abs() > 9.99)
+        .count();
+    assert_eq!(stranded, 4);
+    assert!(off_grid.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::UnidentifiedOrigin,
+            ..
+        }
+    )));
 }

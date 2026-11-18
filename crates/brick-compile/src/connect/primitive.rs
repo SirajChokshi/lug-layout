@@ -364,7 +364,6 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                     if let Some(templates) = self.table.where_open.get(&child) {
                         out.where_open
                             .extend(templates.iter().map(|c| placed(c, &matrix)));
-                        continue;
                     }
                     if is_cylinder_primitive(&child) {
                         out.cylinders.push(matrix);

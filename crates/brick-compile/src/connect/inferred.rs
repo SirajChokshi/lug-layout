@@ -494,12 +494,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         prepared
     }
 
-    pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Vec<Connector> {
+    pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Inference {
         let prepared = self.prepare(path);
+        let mut inference = Inference::default();
         let Some(solid) = &prepared.solid else {
-            return Vec::new();
+            return inference;
         };
-        candidates
+        let open: Vec<Connector> = candidates
             .into_iter()
             .filter(|candidate| {
                 let Ok(faces) = super::mating_faces(candidate) else {
@@ -525,7 +526,15 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                         && floor.faces_probe != Some(false)
                 })
             })
-            .collect()
+            .map(|candidate| Connector {
+                source: Source::Inferred,
+                ..candidate
+            })
+            .collect();
+        for connector in open {
+            self.keep(connector, &mut inference);
+        }
+        inference
     }
 
     pub fn infer(&mut self, path: &str) -> Inference {

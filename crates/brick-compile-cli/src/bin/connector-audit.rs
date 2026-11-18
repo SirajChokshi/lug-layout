@@ -539,8 +539,10 @@ fn omr_tube_check(
                 let faces = faces_of(&extractor.extract(&path).connectors, None);
                 let tube = primitives.where_open(&path);
                 let opened = inferred.open(&path, tube.clone());
-                let open_faces: Vec<FaceKey> =
-                    faces_of(&opened, None).iter().map(face_key).collect();
+                let open_faces: Vec<FaceKey> = faces_of(&opened.connectors, None)
+                    .iter()
+                    .map(face_key)
+                    .collect();
                 let tube_faces = faces_of(&tube, None);
                 let open = tube_faces
                     .iter()
@@ -808,6 +810,18 @@ fn run() -> Result<(), String> {
         InferredFeatures::new(&library, vocabulary.clone(), &probe_part)?,
     );
     let mut tier4_alone = InferredFeatures::new(&library, vocabulary, &probe_part)?;
+    if let Some(out) = values.get("--hole-pairs") {
+        let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
+        let mut lines = String::new();
+        for part in &list {
+            let Some(path) = resolve_reference(&library, Lod::Standard, part) else {
+                continue;
+            };
+            let (connectors, issues) = primitives.connectors(&path);
+            lines += &format!("{part}\t{connectors:?}\t{issues:?}\n");
+        }
+        return fs::write(out, lines).map_err(|e| format!("{out}: {e}"));
+    }
     if let Some(omr) = values.get("--omr") {
         let mut primitives = PrimitiveConnectors::new(&library, primitive_table.clone());
         let report = omr_tube_check(
@@ -836,6 +850,8 @@ fn run() -> Result<(), String> {
     let mut axle_examples: Vec<Value> = Vec::new();
     let mut disagreeing_faces: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
+    let mut duplicate_faces = [0usize; 2];
+    let mut duplicate_examples: Vec<Value> = Vec::new();
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
     let mut tier2_shapes: BTreeMap<String, usize> = BTreeMap::new();
@@ -1008,6 +1024,30 @@ fn run() -> Result<(), String> {
             }
         }
         let all_faces = faces_of(&extraction.connectors, None);
+        let females: Vec<&MatingFace> = all_faces
+            .iter()
+            .filter(|f| f.gender == Gender::Female)
+            .collect();
+        let mut part_duplicates = 0;
+        for (index, face) in females.iter().enumerate() {
+            let earlier = females[..index].iter().find(|other| {
+                dot(face.axis, other.axis) >= 1.0 - PARALLEL
+                    && norm(sub(face.origin, other.origin)) <= SAME_LDU
+            });
+            if let Some(other) = earlier {
+                part_duplicates += 1;
+                if duplicate_examples.len() < 40 {
+                    duplicate_examples.push(json!({
+                        "part": part,
+                        "at": face.origin,
+                        "held": [source_key(other.source), other.sections.first().map(|s| s.length)],
+                        "second": [source_key(face.source), face.sections.first().map(|s| s.length)],
+                    }));
+                }
+            }
+        }
+        duplicate_faces[0] += part_duplicates;
+        duplicate_faces[1] += usize::from(part_duplicates > 0);
         let inferred_kept = faces_of(&extraction.connectors, Some(Source::Inferred));
         let before_any = extraction
             .connectors
@@ -1229,7 +1269,7 @@ fn run() -> Result<(), String> {
                     .map(face_key)
                     .collect();
             if !curated_female.is_empty() {
-                for face in faces_of(&opened, None) {
+                for face in faces_of(&opened.connectors, None) {
                     tube_oracle[0] += 1;
                     tube_oracle[1] += usize::from(curated_female.contains(&face_key(&face)));
                 }
@@ -1317,6 +1357,11 @@ fn run() -> Result<(), String> {
         },
         "tubeNeighbourReceptorsOnCuratedPartsWithFemales": { "emitted": tube_oracle[0], "atATier1Female": tube_oracle[1] },
         "tubeInteriors": table(tubes),
+        "femaleFacesHeldTwice": {
+            "faces": duplicate_faces[0],
+            "parts": duplicate_faces[1],
+            "examples": duplicate_examples,
+        },
         "axleFeatures": {
             "partsWithAxlePrimitives": axle_census[0],
             "axlePrimitives": axle_census[1],

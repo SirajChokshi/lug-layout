@@ -506,11 +506,14 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
 
     pub fn extract(&mut self, path: &str) -> Extraction {
         let mut extraction = self.shadow.snaps(path);
-        let (mut primitive, issues) = self.primitives.connectors(path);
+        let (primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
-        let candidates = self.primitives.where_open(path);
-        primitive.extend(self.inferred.open(path, candidates));
         merge(&mut extraction, primitive, anchor_keys);
+        let candidates = self.primitives.where_open(path);
+        let opened = self.inferred.open(path, candidates);
+        extraction.issues.extend(opened.issues);
+        extraction.off_lattice.extend(opened.off_lattice);
+        merge(&mut extraction, opened.connectors, anchor_and_face_keys);
         let inferred = self.inferred.infer(path);
         let held: HashSet<Slot> = extraction
             .connectors
