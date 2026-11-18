@@ -33,6 +33,7 @@ const BELOW_REACH_LDU: f64 = 3.0 * STUD_LDU;
 const PROBE_KEY_SCALE: f64 = 1_000.0;
 const RIM_PROBE_FRACTION: f64 = 0.9;
 const CANDIDATES_PER_DEAL: usize = 32;
+const CLIPPED_HEIGHT_ROUNDING_LDU: f64 = 1e-6;
 const UP: Vec3 = [0.0, 1.0, 0.0];
 const DOWN: Vec3 = [0.0, -1.0, 0.0];
 
@@ -737,8 +738,17 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells =
-        phase.map(|phase| model_cells(instances, solids, &mut coverers, aabb, rest_y, phase));
+    let cells = phase.map(|phase| {
+        model_cells(
+            instances,
+            &boxes,
+            solids,
+            &mut coverers,
+            aabb,
+            rest_y,
+            phase,
+        )
+    });
     ModelCover {
         visible,
         open_below,
@@ -752,17 +762,41 @@ struct ColumnReach {
     depth: usize,
     lowest: Vec<f64>,
     highest: Vec<f64>,
+    bounded: bool,
 }
 
 impl ColumnReach {
-    fn new(origin: [f64; 2], width: usize, depth: usize) -> Self {
+    fn new(origin: [f64; 2], width: usize, depth: usize, bounded: bool) -> Self {
         ColumnReach {
             origin,
             width,
             depth,
             lowest: vec![f64::INFINITY; width * depth],
             highest: vec![f64::NEG_INFINITY; width * depth],
+            bounded,
         }
+    }
+
+    fn brackets(&self, cell: usize, low: f64, high: f64) -> bool {
+        self.bounded
+            && self.lowest[cell] + CLIPPED_HEIGHT_ROUNDING_LDU <= low
+            && high <= self.highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
+    }
+
+    fn brackets_box(&self, [min, max]: [Vec3; 2]) -> bool {
+        let (x0, x1) = overlapping_cells(
+            min[0] - CLIPPED_HEIGHT_ROUNDING_LDU,
+            max[0] + CLIPPED_HEIGHT_ROUNDING_LDU,
+            self.origin[0],
+            self.width,
+        );
+        let (z0, z1) = overlapping_cells(
+            min[2] - CLIPPED_HEIGHT_ROUNDING_LDU,
+            max[2] + CLIPPED_HEIGHT_ROUNDING_LDU,
+            self.origin[1],
+            self.depth,
+        );
+        (z0..z1).all(|j| (x0..x1).all(|i| self.brackets(j * self.width + i, min[1], max[1])))
     }
 
     fn add(&mut self, triangle: &[Vec3; 3]) {
@@ -773,11 +807,14 @@ impl ColumnReach {
                     (lo.min(p[axis]), hi.max(p[axis]))
                 })
         };
-        let ((lo_x, hi_x), (lo_z, hi_z)) = (span(0), span(2));
+        let ((lo_x, hi_x), (lo_y, hi_y), (lo_z, hi_z)) = (span(0), span(1), span(2));
         let (x0, x1) = overlapping_cells(lo_x, hi_x, self.origin[0], self.width);
         let (z0, z1) = overlapping_cells(lo_z, hi_z, self.origin[1], self.depth);
         for j in z0..z1 {
             for i in x0..x1 {
+                if self.brackets(j * self.width + i, lo_y, hi_y) {
+                    continue;
+                }
                 let edge_x = self.origin[0] + STUD_LDU * i as f64;
                 let edge_z = self.origin[1] + STUD_LDU * j as f64;
                 let inside = clip_to_box(
@@ -807,8 +844,26 @@ impl ColumnReach {
     }
 }
 
+fn extremes_first(boxes: &[[Vec3; 2]]) -> Vec<usize> {
+    let mut lowest_first: Vec<usize> = (0..boxes.len()).collect();
+    lowest_first.sort_by(|&a, &b| boxes[a][0][1].total_cmp(&boxes[b][0][1]));
+    let mut highest_first = lowest_first.clone();
+    highest_first.sort_by(|&a, &b| boxes[b][1][1].total_cmp(&boxes[a][1][1]));
+    let mut taken = vec![false; boxes.len()];
+    let mut order = Vec::with_capacity(boxes.len());
+    for (&low, &high) in lowest_first.iter().zip(&highest_first) {
+        for index in [low, high] {
+            if !std::mem::replace(&mut taken[index], true) {
+                order.push(index);
+            }
+        }
+    }
+    order
+}
+
 fn model_cells(
     instances: &[CoverInstance],
+    boxes: &[[Vec3; 2]],
     solids: &[PartSolid],
     coverers: &mut Coverers,
     aabb: Bounds,
@@ -843,8 +898,12 @@ fn model_cells(
         }
     }
 
-    let mut reach = ColumnReach::new(origin, width, depth);
-    for instance in instances {
+    let mut reach = ColumnReach::new(origin, width, depth, coverers.model.coordinates_bounded);
+    for index in extremes_first(boxes) {
+        if reach.brackets_box(boxes[index]) {
+            continue;
+        }
+        let instance = &instances[index];
         for points in &solids[instance.part].triangles {
             reach.add(&points.map(|p| instance.matrix.apply(p)));
         }
@@ -876,6 +935,7 @@ fn model_cells(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clip::{clip_to_box, polygon_area};
     use crate::flatten::Triangle;
     use crate::mesh;
 
@@ -970,6 +1030,150 @@ mod tests {
             STUD,
             CoverShard::WHOLE,
         )
+    }
+
+    const COLUMN_SCENES: u64 = 12;
+    const PIECES_PER_COLUMN_SCENE: u64 = 40;
+    const COLUMN_SCENE_STUDS: u64 = 5;
+
+    struct Draws(u64);
+
+    impl Draws {
+        fn below(&mut self, count: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 33) % count
+        }
+
+        fn unit(&mut self) -> f64 {
+            self.below(1 << 30) as f64 / f64::from(1u32 << 30)
+        }
+    }
+
+    fn placed_piece(draws: &mut Draws) -> Affine {
+        let x = 20.0 * draws.below(COLUMN_SCENE_STUDS) as f64;
+        let z = 20.0 * draws.below(COLUMN_SCENE_STUDS) as f64;
+        let y = -8.0 * draws.below(8) as f64;
+        match draws.below(4) {
+            0 => at(
+                x + draws.unit() * 7.0,
+                y - draws.unit() * 5.0,
+                z + draws.unit() * 7.0,
+            ),
+            1 => Affine {
+                m: [0.0, 0.0, 1.0, x, 0.0, 1.0, 0.0, y, -1.0, 0.0, 0.0, z],
+            },
+            2 => {
+                let (sin, cos) = (draws.unit() * 0.6).sin_cos();
+                Affine {
+                    m: [1.0, 0.0, 0.0, x, 0.0, cos, -sin, y, 0.0, sin, cos, z],
+                }
+            }
+            _ => at(x, y, z),
+        }
+    }
+
+    fn columns_clipping_every_triangle(
+        solids: &[PartSolid],
+        parts: &[(usize, u32, Affine)],
+        cells: &ModelCells,
+    ) -> (Vec<f64>, Vec<f64>) {
+        let count = cells.width * cells.depth;
+        let (mut lowest, mut highest) =
+            (vec![f64::INFINITY; count], vec![f64::NEG_INFINITY; count]);
+        for (part, _, matrix) in parts {
+            for points in &solids[*part].triangles {
+                let triangle = points.map(|p| matrix.apply(p));
+                for cell in 0..count {
+                    let edge_x = cells.origin[0] + STUD_LDU * (cell % cells.width) as f64;
+                    let edge_z = cells.origin[1] + STUD_LDU * (cell / cells.width) as f64;
+                    let inside = clip_to_box(
+                        &triangle,
+                        [
+                            edge_x + WELD_EPSILON_LDU,
+                            f64::NEG_INFINITY,
+                            edge_z + WELD_EPSILON_LDU,
+                        ],
+                        [
+                            edge_x + STUD_LDU - WELD_EPSILON_LDU,
+                            f64::INFINITY,
+                            edge_z + STUD_LDU - WELD_EPSILON_LDU,
+                        ],
+                    );
+                    if polygon_area(&inside) <= 0.0 {
+                        continue;
+                    }
+                    for point in &inside.0[..inside.1] {
+                        lowest[cell] = lowest[cell].min(point[1]);
+                        highest[cell] = highest[cell].max(point[1]);
+                    }
+                }
+            }
+        }
+        (lowest, highest)
+    }
+
+    #[test]
+    fn every_column_matches_clipping_every_triangle_into_every_cell() {
+        let solids = [
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
+            solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], true, true, 4.0),
+            solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, true, 12.0),
+        ];
+        let mut draws = Draws(7);
+        let mut inside_known_heights = 0;
+        for _ in 0..COLUMN_SCENES {
+            let parts: Vec<(usize, u32, Affine)> = (0..PIECES_PER_COLUMN_SCENE)
+                .map(|_| (draws.below(3) as usize, OPAQUE, placed_piece(&mut draws)))
+                .collect();
+            let cells = cover_of(&solids, &parts, &[], Some([0, 0]))
+                .cells
+                .expect("a phase gives cells");
+            let (lowest, highest) = columns_clipping_every_triangle(&solids, &parts, &cells);
+            let plates = |y: f64| (y - cells.bottom_y) / PLATE_LDU;
+            let slack = WELD_EPSILON_LDU / PLATE_LDU;
+            for cell in 0..cells.width * cells.depth {
+                let (bottom, top) = if lowest[cell] > highest[cell] {
+                    (EMPTY_COLUMN, EMPTY_COLUMN)
+                } else {
+                    (
+                        ((plates(lowest[cell]) + slack).floor() as i32).max(0),
+                        (plates(highest[cell]) - slack).ceil() as i32,
+                    )
+                };
+                assert_eq!(
+                    (cells.column_bottom[cell], cells.column_top[cell]),
+                    (bottom, top),
+                    "cell {cell}"
+                );
+            }
+            for (part, _, matrix) in &parts {
+                let [min, max] = world_box(
+                    &CoverInstance {
+                        matrix,
+                        color: OPAQUE,
+                        part: *part,
+                        studs: &[],
+                    },
+                    &solids[*part],
+                );
+                let (x0, x1) = overlapping_cells(min[0], max[0], cells.origin[0], cells.width);
+                let (z0, z1) = overlapping_cells(min[2], max[2], cells.origin[1], cells.depth);
+                inside_known_heights += usize::from((z0..z1).all(|j| {
+                    (x0..x1).all(|i| {
+                        let cell = j * cells.width + i;
+                        lowest[cell] + CLIPPED_HEIGHT_ROUNDING_LDU <= min[1]
+                            && max[1] <= highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
+                    })
+                }));
+            }
+        }
+        assert!(
+            inside_known_heights > 20,
+            "{inside_known_heights} pieces lie strictly inside their columns' heights"
+        );
     }
 
     #[test]
