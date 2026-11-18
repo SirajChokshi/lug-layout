@@ -3,10 +3,13 @@ use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Library, Lod};
+use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, Line};
 
 use super::meta::{parse_metas, Meta, ParsedMeta};
-use super::{finished, placed, slots, Connector, Extraction, Issue, Slot};
+use super::{
+    finished, malformed_shape, placeable_cells, placed, slots, Connector, Extraction, Issue, Slot,
+};
 
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
@@ -45,10 +48,23 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         let mut issues = Vec::new();
         let mut seen = HashSet::new();
         self.closure_issues(path, &mut seen, &mut issues);
-        let mut connectors: Vec<Connector> = Vec::with_capacity(gathered.connectors.len());
-        let mut at_slot: HashMap<Slot, Vec<usize>> = HashMap::new();
+        let mut malformed = Vec::new();
+        let mut placeable: Vec<Connector> = Vec::with_capacity(gathered.connectors.len());
         for connector in &gathered.connectors {
+            let (cells, findings) = placeable_cells(connector);
+            for malformation in findings {
+                record(&mut malformed, path, malformation);
+            }
+            placeable.extend(cells);
+        }
+        let mut connectors: Vec<Connector> = Vec::with_capacity(placeable.len());
+        let mut at_slot: HashMap<Slot, Vec<usize>> = HashMap::new();
+        for connector in &placeable {
             let connector = finished(connector, &mut issues);
+            if let Some(malformation) = malformed_shape(&connector) {
+                record(&mut malformed, path, malformation);
+                continue;
+            }
             let Some(&slot) = slots(&connector).first() else {
                 continue;
             };
@@ -63,8 +79,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         let suppressed = gathered
             .suppressed
             .iter()
+            .filter(|connector| !non_finite(&connector.placement.m))
             .map(|connector| finished(connector, &mut ignored))
             .collect();
+        for finding in malformed {
+            let finding = Issue::from(finding);
+            if !issues.contains(&finding) {
+                issues.push(finding);
+            }
+        }
         Extraction {
             connectors,
             suppressed,
@@ -104,13 +127,21 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             return Rc::new(out);
         }
         if let Some(source) = self.library.source(path) {
-            for line in ldraw::parse(source).lines {
+            let parsed = ldraw::parse(source);
+            if parsed.unparsed > 0 {
+                report(&mut out, path, Malformation::Unparsed);
+            }
+            for line in parsed.lines {
                 let Line::Subfile {
                     matrix, reference, ..
                 } = line
                 else {
                     continue;
                 };
+                if non_finite(&matrix.m) {
+                    report(&mut out, path, Malformation::NonFinite);
+                    continue;
+                }
                 let Some(child) = resolve_reference(self.library, Lod::Standard, &reference) else {
                     continue;
                 };
@@ -176,6 +207,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 let offsets = grid.map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
                 for offset in offsets {
                     let at = placement.then(&shifted(offset));
+                    if let Some(malformation) = unplaceable(&at.m) {
+                        report(out, path, malformation);
+                        continue;
+                    }
                     out.connectors
                         .extend(included.connectors.iter().map(|c| placed(c, &at)));
                     out.suppressed
@@ -183,7 +218,23 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 }
                 out.children.push(target);
             }
-            Meta::Snap(connector) => out.connectors.push(connector),
+            Meta::Snap(connector) => {
+                let (cells, findings) = placeable_cells(&connector);
+                for malformation in findings {
+                    report(out, path, malformation);
+                }
+                out.connectors.extend(cells);
+            }
         }
+    }
+}
+
+fn report(out: &mut Gathered, file: &str, malformation: Malformation) {
+    let finding = Issue::from(MalformedGeometry {
+        file: file.to_string(),
+        malformation,
+    });
+    if !out.issues.contains(&finding) {
+        out.issues.push(finding);
     }
 }

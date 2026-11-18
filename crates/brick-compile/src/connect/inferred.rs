@@ -5,7 +5,9 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
 use crate::ldraw::{self, Line, Winding};
 
+use super::axle::{AxleFound, AxleMiss, AxleProbe};
 use super::meta::{parse_metas, Meta};
+use super::profile::Profile;
 use super::solid::{
     covers_circle, identified, plan_axes, sixteenth, span_of, Probe, RoundShape, RoundSurface,
     Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
@@ -42,6 +44,7 @@ pub enum Uninferred {
     UnknownFacing { radius: f64 },
     OpenArc { radius: f64 },
     Unflattened,
+    Oversized { squares: f64 },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -197,6 +200,8 @@ struct MaleCandidate {
 }
 
 type Column = (usize, i8, i64, i64, i64);
+
+type AxleEnds = [Option<(Probe, f64)>; 2];
 
 fn column_of(probe: &Probe) -> Column {
     let (i, j) = plan_axes(probe.axis);
@@ -402,10 +407,17 @@ fn arc_length(arcs: &[(f64, f64)]) -> f64 {
         .sum()
 }
 
+struct AxleSizes {
+    probe: AxleProbe,
+    female: f64,
+    male: f64,
+}
+
 pub struct InferredFeatures<'a, L: Library + ?Sized> {
     library: &'a L,
     vocabulary: SectionVocabulary,
     probe: StudProbe,
+    axle: Option<AxleSizes>,
     units: HashMap<String, Option<Rc<UnitRound>>>,
     rounds: HashMap<String, Rc<Vec<RoundRef>>>,
     prepared: Option<(String, Rc<Prepared>)>,
@@ -424,6 +436,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 radius: 0.0,
                 reach: 0.0,
             },
+            axle: None,
             units: HashMap::new(),
             rounds: HashMap::new(),
             prepared: None,
@@ -458,6 +471,25 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         Ok(features)
     }
 
+    pub fn with_axle_probe(mut self, probe_part: &str) -> Result<Self, String> {
+        let profile = axle_section(self.library, probe_part)?;
+        let size = |gender: Gender| {
+            self.vocabulary
+                .size(gender, SectionShape::Axle, profile.radius())
+                .ok_or(format!(
+                    "axle probe radius {} is not an axle section size",
+                    profile.radius()
+                ))
+        };
+        let (female, male) = (size(Gender::Female)?, size(Gender::Male)?);
+        self.axle = Some(AxleSizes {
+            probe: AxleProbe::new(profile)?,
+            female,
+            male,
+        });
+        Ok(self)
+    }
+
     fn prepare(&mut self, path: &str) -> Rc<Prepared> {
         if let Some((cached, prepared)) = &self.prepared {
             if cached == path {
@@ -465,8 +497,15 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             }
         }
         let borrowed = Borrowed(self.library);
-        let flattened = Flattener::new(&borrowed, Lod::Standard, &[]).flatten(path);
-        let mut issues = Vec::new();
+        let mut flattener = Flattener::new(&borrowed, Lod::Standard, &[]);
+        let flattened = flattener.flatten(path);
+        let mut issues: Vec<Issue> = flattener
+            .malformed()
+            .iter()
+            .cloned()
+            .map(Issue::from)
+            .collect();
+        let malformed = !issues.is_empty();
         let prepared = match flattened {
             Err(_) => {
                 issues.push(Issue::Uninferred {
@@ -479,9 +518,20 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                     issues,
                 }
             }
+            Ok(_) if malformed => Prepared {
+                solid: None,
+                runs: Vec::new(),
+                issues,
+            },
             Ok(flattened) => {
                 let placed = self.placed(path, &mut issues);
                 let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                issues.extend(solid.largest_oversized().map(|(origin, squares)| {
+                    Issue::Uninferred {
+                        origin,
+                        reason: Uninferred::Oversized { squares },
+                    }
+                }));
                 Prepared {
                     solid: (!solid.is_empty()).then_some(solid),
                     runs: placed.runs,
@@ -554,6 +604,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             .filter_map(|run| self.male(solid, run, &mut flanks))
             .collect();
         let mouths = self.cavities(solid, &prepared.runs, &mut inference);
+        self.axles(solid, &mut inference);
         for male in males {
             if mouths.contains(&male.tip) {
                 let m = &male.connector.placement.m;
@@ -883,8 +934,12 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
 
     fn probe(&self, solid: &Solid, walls: &Slab, probe: &Probe) -> Probed {
         let reach = self.probe.reach;
-        let floor = solid.floor(probe, probe.radius - IDENTIFY_LDU);
-        if floor.depth < reach - IDENTIFY_LDU || floor.faces_probe == Some(false) {
+        let Some(floor) =
+            solid.floor_beyond(probe, probe.radius - IDENTIFY_LDU, reach - IDENTIFY_LDU)
+        else {
+            return Probed::Rejected;
+        };
+        if floor.faces_probe == Some(false) {
             return Probed::Rejected;
         }
         let (i, j) = plan_axes(probe.axis);
@@ -892,7 +947,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let nearest = solid.nearest(
             probe,
             (IDENTIFY_LDU, reach - IDENTIFY_LDU),
-            probe.radius + HALF_GRID_LDU,
+            plan_reach(probe.radius),
         );
         if !nearest.is_finite() {
             return Probed::Rejected;
@@ -952,21 +1007,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         for plane in solid.planes() {
             let inward = -plane.outward;
-            let steps = |low: f64, high: f64| {
-                let first = ((low - IDENTIFY_LDU) / HALF_GRID_LDU).ceil() as i64;
-                let last = ((high + IDENTIFY_LDU) / HALF_GRID_LDU).floor() as i64;
-                first..=last
-            };
-            for a in steps(plane.min[0], plane.max[0]) {
-                for b in steps(plane.min[1], plane.max[1]) {
-                    let center = [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU];
-                    add(Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance: point_on(plane.axis, center, plane.at),
-                        radius: self.probe.radius,
-                    });
-                }
+            for center in solid.grid(&plane, plan_reach(self.probe.radius)) {
+                add(Probe {
+                    axis: plane.axis,
+                    inward,
+                    entrance: point_on(plane.axis, center, plane.at),
+                    radius: self.probe.radius,
+                });
             }
             for (run, radius) in bores.iter().filter(|(r, _)| r.axis == plane.axis) {
                 let inside = (0..2).all(|k| {
@@ -1036,8 +1083,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 if separation <= IDENTIFY_LDU {
                     return false;
                 }
-                let floor = solid.floor(outer, outer.radius - IDENTIFY_LDU);
-                floor.depth >= separation - IDENTIFY_LDU && floor.faces_probe != Some(false)
+                solid
+                    .floor_beyond(
+                        outer,
+                        outer.radius - IDENTIFY_LDU,
+                        separation - IDENTIFY_LDU,
+                    )
+                    .is_some_and(|floor| floor.faces_probe != Some(false))
             });
             if opens_further_out {
                 inference.issues.push(Issue::Uninferred {
@@ -1076,6 +1128,146 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         mouths
     }
 
+    fn axles(&self, solid: &Solid, inference: &mut Inference) {
+        let Some(axle) = &self.axle else {
+            return;
+        };
+        let (found, missed) = axle.probe.find(solid);
+        for (origin, miss) in missed {
+            inference.issues.push(Issue::Uninferred {
+                origin,
+                reason: match miss {
+                    AxleMiss::OffCentre { offset } => Uninferred::OffCentreCavity { offset },
+                    AxleMiss::Sliding => Uninferred::SlidingCavity,
+                },
+            });
+        }
+        let mut through: HashMap<(usize, i64, i64), AxleEnds> = HashMap::new();
+        let mut bare: HashMap<(usize, i64, i64), AxleEnds> = HashMap::new();
+        let end_of =
+            |lines: &mut HashMap<(usize, i64, i64), AxleEnds>, probe: Probe, angle: f64| {
+                let (i, j) = plan_axes(probe.axis);
+                let side = usize::from(probe.inward < 0.0);
+                let ends = lines
+                    .entry((probe.axis, key(probe.entrance[i]), key(probe.entrance[j])))
+                    .or_default();
+                if ends[side].is_none_or(|(kept, _)| depth_along(&probe) < depth_along(&kept)) {
+                    ends[side] = Some((probe, angle));
+                }
+            };
+        for feature in found {
+            match feature {
+                AxleFound::Hole {
+                    probe,
+                    angle,
+                    depth: Some(depth),
+                } => self.keep_axle(
+                    axle_cylinder(
+                        Gender::Female,
+                        Caps::One,
+                        [axle.female, depth],
+                        axle_frame(probe.entrance, probe.axis, -probe.inward, angle),
+                        false,
+                    ),
+                    inference,
+                ),
+                AxleFound::Hole {
+                    probe,
+                    angle,
+                    depth: None,
+                } => end_of(&mut through, probe, angle),
+                AxleFound::Axle {
+                    probe,
+                    angle,
+                    length: None,
+                } => end_of(&mut bare, probe, angle),
+                AxleFound::Axle {
+                    probe,
+                    angle,
+                    length: Some(length),
+                } => {
+                    let mut root = probe.entrance;
+                    root[probe.axis] += probe.inward * length;
+                    self.keep_axle(
+                        axle_cylinder(
+                            Gender::Male,
+                            Caps::One,
+                            [axle.male, length],
+                            axle_frame(root, probe.axis, probe.inward, angle),
+                            false,
+                        ),
+                        inference,
+                    );
+                }
+            }
+        }
+        let mut lines: Vec<(Gender, AxleEnds)> = by_key(through)
+            .into_iter()
+            .map(|e| (Gender::Female, e))
+            .chain(by_key(bare).into_iter().map(|e| (Gender::Male, e)))
+            .collect();
+        lines.sort_by(|a, b| {
+            let first = |e: &AxleEnds| e.iter().flatten().next().map(|(p, _)| p.entrance);
+            first(&a.1)
+                .partial_cmp(&first(&b.1))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for (gender, ends) in lines {
+            let [Some((rising, angle)), Some((falling, _))] = ends else {
+                for (probe, _) in ends.iter().flatten() {
+                    inference.issues.push(Issue::Uninferred {
+                        origin: probe.entrance,
+                        reason: Uninferred::UnpairedThroughCavity {
+                            radius: probe.radius,
+                        },
+                    });
+                }
+                continue;
+            };
+            let (low, high) = (rising.entrance[rising.axis], falling.entrance[falling.axis]);
+            if high <= low + IDENTIFY_LDU {
+                for probe in [rising, falling] {
+                    inference.issues.push(Issue::Uninferred {
+                        origin: probe.entrance,
+                        reason: Uninferred::UnpairedThroughCavity {
+                            radius: probe.radius,
+                        },
+                    });
+                }
+                continue;
+            }
+            let middle = [0, 1, 2].map(|k| (rising.entrance[k] + falling.entrance[k]) / 2.0);
+            let size = match gender {
+                Gender::Female => axle.female,
+                Gender::Male => axle.male,
+            };
+            self.keep_axle(
+                axle_cylinder(
+                    gender,
+                    Caps::None,
+                    [size, high - low],
+                    axle_frame(middle, rising.axis, 1.0, angle),
+                    true,
+                ),
+                inference,
+            );
+        }
+    }
+
+    fn keep_axle(&self, mut connector: Connector, inference: &mut Inference) {
+        let Shape::Cylinder { sections, .. } = &mut connector.shape else {
+            return;
+        };
+        let (size, measured) = (sections[0].radius, sections[0].length);
+        match self.vocabulary.length(SectionShape::Axle, measured) {
+            Some(length) => {
+                sections[0].length = length;
+                self.keep(connector, inference);
+            }
+            None => self.unidentified(connector, size, measured, inference),
+        }
+    }
+
     fn through_holes(&self, through: &[Probe], inference: &mut Inference) {
         let mut lines: HashMap<(usize, i64, i64, i64), [Option<Probe>; 2]> = HashMap::new();
         for probe in through {
@@ -1094,7 +1286,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 ends[side] = Some(*probe);
             }
         }
-        let mut lines: Vec<[Option<Probe>; 2]> = lines.into_values().collect();
+        let mut lines: Vec<[Option<Probe>; 2]> = by_key(lines);
         lines.sort_by(|a, b| {
             let first = |e: &[Option<Probe>; 2]| e.iter().flatten().next().map(|p| p.entrance);
             first(a)
@@ -1151,8 +1343,52 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 }
 
+fn plan_reach(radius: f64) -> f64 {
+    radius + HALF_GRID_LDU + IDENTIFY_LDU
+}
+
+pub(super) fn axle_section<L: Library + ?Sized>(
+    library: &L,
+    probe_part: &str,
+) -> Result<Profile, String> {
+    let path = resolve_reference(library, Lod::Standard, probe_part)
+        .ok_or(format!("axle probe {probe_part} is not in the library"))?;
+    let borrowed = Borrowed(library);
+    let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
+        .flatten(&path)
+        .map_err(|e| format!("axle probe {probe_part}: {e:?}"))?;
+    let level = flattened
+        .triangles
+        .first()
+        .map(|t| t.points[0][1])
+        .ok_or(format!("axle probe {probe_part} has no faces"))?;
+    if flattened
+        .triangles
+        .iter()
+        .flat_map(|t| t.points.iter())
+        .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
+    {
+        return Err(format!("axle probe {probe_part} is not a flat section"));
+    }
+    let triangles: Vec<[[f64; 2]; 3]> = flattened
+        .triangles
+        .iter()
+        .map(|t| t.points.map(|p| [p[0], p[2]]))
+        .collect();
+    Profile::from_triangles(&triangles, IDENTIFY_LDU)
+        .map_err(|e| format!("axle probe {probe_part}: {e}"))
+}
+
+pub(super) fn by_key<K: Ord, V>(map: HashMap<K, V>) -> Vec<V> {
+    let mut entries: Vec<(K, V)> = map.into_iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries.into_iter().map(|(_, value)| value).collect()
+}
+
 fn runs(walls: HashMap<WallKey, Vec<Band>>, issues: &mut Vec<Issue>) -> Vec<Run> {
     let mut runs = Vec::new();
+    let mut walls: Vec<(WallKey, Vec<Band>)> = walls.into_iter().collect();
+    walls.sort_by_key(|(key, _)| *key);
     for ((axis, _, _, _, facing), mut pieces) in walls {
         pieces.sort_by(|a, b| a.from.total_cmp(&b.from).then(a.to.total_cmp(&b.to)));
         let mut bands: Vec<Band> = Vec::new();
@@ -1234,23 +1470,76 @@ fn cylinder(
     placement: Affine,
     center: bool,
 ) -> Connector {
+    sectioned(
+        gender,
+        caps,
+        Section {
+            shape: SectionShape::Round,
+            radius,
+            length,
+        },
+        placement,
+        [center, false],
+    )
+}
+
+fn axle_cylinder(
+    gender: Gender,
+    caps: Caps,
+    [radius, length]: [f64; 2],
+    placement: Affine,
+    center: bool,
+) -> Connector {
+    sectioned(
+        gender,
+        caps,
+        Section {
+            shape: SectionShape::Axle,
+            radius,
+            length,
+        },
+        placement,
+        [center, true],
+    )
+}
+
+fn sectioned(
+    gender: Gender,
+    caps: Caps,
+    section: Section,
+    placement: Affine,
+    [center, slide]: [bool; 2],
+) -> Connector {
     Connector {
         source: Source::Inferred,
         id: None,
         group: None,
         shape: Shape::Cylinder {
             gender,
-            sections: vec![Section {
-                shape: SectionShape::Round,
-                radius,
-                length,
-            }],
+            sections: vec![section],
             caps,
             center,
-            slide: false,
+            slide,
             scaling: Scaling::Fixed,
         },
         placement,
         grid: None,
     }
+}
+
+fn axle_frame(origin: Vec3, axis: usize, toward: f64, angle: f64) -> Affine {
+    let (i, j) = plan_axes(axis);
+    let mut x = [0.0; 3];
+    x[i] = angle.cos();
+    x[j] = angle.sin();
+    let y = unit_axis(axis, toward);
+    let z = [
+        x[1] * y[2] - x[2] * y[1],
+        x[2] * y[0] - x[0] * y[2],
+        x[0] * y[1] - x[1] * y[0],
+    ];
+    Affine::from_ldraw(
+        origin,
+        [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]],
+    )
 }
