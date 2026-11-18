@@ -1,3 +1,5 @@
 {
-  "cavityProbe": "p/stud.dat"
+  "cavityProbe": "p/stud.dat",
+  "axleProbe": "p/axleend.dat",
+  "vocabularySnaps": ["p/axle.dat", "p/axlehole.dat"]
 }

@@ -1,7 +1,10 @@
+mod axle;
+mod depth_bands;
 mod faces;
 mod inferred;
 mod meta;
 mod primitive;
+mod profile;
 mod shadow;
 mod solid;
 
@@ -9,6 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
+use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 
 pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT,
@@ -151,6 +155,70 @@ impl Grid {
     }
 }
 
+pub(crate) fn grid_cell(connector: &Connector, offset: Vec3) -> Connector {
+    let at = connector.placement.apply(offset);
+    let mut m = connector.placement.m;
+    m[3] = at[0] + 0.0;
+    m[7] = at[1] + 0.0;
+    m[11] = at[2] + 0.0;
+    Connector {
+        placement: Affine { m },
+        grid: None,
+        ..connector.clone()
+    }
+}
+
+pub(crate) fn placeable_cells(connector: &Connector) -> (Vec<Connector>, Vec<Malformation>) {
+    let Some(grid) = connector.grid else {
+        return match unplaceable(&connector.placement.m) {
+            Some(malformation) => (Vec::new(), vec![malformation]),
+            None => (vec![connector.clone()], Vec::new()),
+        };
+    };
+    let mut kept = Vec::new();
+    let mut findings = Vec::new();
+    for offset in grid.offsets() {
+        let cell = grid_cell(connector, offset);
+        match unplaceable(&cell.placement.m) {
+            Some(malformation) if !findings.contains(&malformation) => findings.push(malformation),
+            Some(_) => {}
+            None => kept.push(cell),
+        }
+    }
+    if findings.is_empty() {
+        (vec![connector.clone()], findings)
+    } else {
+        (kept, findings)
+    }
+}
+
+pub(crate) fn malformed_shape(connector: &Connector) -> Option<Malformation> {
+    let steps = connector.grid.map_or([0.0; 3], |grid| grid.steps);
+    if non_finite(&steps) {
+        return Some(Malformation::NonFinite);
+    }
+    let sizes: Vec<f64> = match &connector.shape {
+        Shape::Cylinder { sections, .. } => sections
+            .iter()
+            .flat_map(|section| [section.radius, section.length])
+            .collect(),
+        Shape::Clip { radius, length, .. } => vec![*radius, *length],
+        Shape::Finger { widths, radius, .. } => widths.iter().copied().chain(*radius).collect(),
+        Shape::Generic { bounding, .. } => match bounding {
+            Bounding::Sphere { radius } => vec![*radius],
+            Bounding::Cube { size } => vec![*size],
+            Bounding::Box { size } => size.to_vec(),
+            Bounding::Cylinder { radius, length } => vec![*radius, *length],
+        },
+    };
+    unplaceable(&sizes)
+}
+
+pub(crate) fn linear_part(placement: &Affine) -> [f64; 9] {
+    let m = &placement.m;
+    [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]]
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connector {
     pub source: Source,
@@ -179,6 +247,10 @@ pub enum Issue {
     TooDeep {
         file: String,
     },
+    MalformedGeometry {
+        file: String,
+        malformation: Malformation,
+    },
     ScaledFixedShape {
         source: Source,
         id: Option<String>,
@@ -201,6 +273,15 @@ pub enum Issue {
         origin: Vec3,
         reason: Uninferred,
     },
+}
+
+impl From<MalformedGeometry> for Issue {
+    fn from(found: MalformedGeometry) -> Self {
+        Issue::MalformedGeometry {
+            file: found.file,
+            malformation: found.malformation,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -565,6 +646,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
         merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        let mut reported: Vec<Issue> = Vec::new();
+        extraction.issues.retain(|issue| match issue {
+            Issue::MalformedGeometry { .. } if reported.contains(issue) => false,
+            Issue::MalformedGeometry { .. } => {
+                reported.push(issue.clone());
+                true
+            }
+            _ => true,
+        });
         extraction
     }
 }

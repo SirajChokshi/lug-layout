@@ -88,6 +88,8 @@ function play(patch: Partial<PlaySnapshot>): PlaySnapshot {
     direction: 1,
     derailSpeedLduPerS: 0,
     bogiesOffTrack: 0,
+    trainXLdu: 0,
+    trainZLdu: 0,
     switches: [],
     following: true,
     tick: 0,
