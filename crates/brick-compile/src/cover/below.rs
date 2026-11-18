@@ -1281,6 +1281,7 @@ mod tests {
                 directions: super::super::enclosure_directions(),
                 enclosed: FxHashMap::default(),
                 nearby: Vec::new(),
+                blockers: Vec::new(),
             };
             let mut below = BelowCertifier::new(&model, STUD);
             let mut reference = BelowCertifier::new(&model, STUD);
@@ -1466,6 +1467,7 @@ mod tests {
                 directions: super::super::enclosure_directions(),
                 enclosed: FxHashMap::default(),
                 nearby: Vec::new(),
+                blockers: Vec::new(),
             };
             let mut below = BelowCertifier::new(&model, STUD);
             let mut reference = BelowCertifier::new(&model, STUD);
