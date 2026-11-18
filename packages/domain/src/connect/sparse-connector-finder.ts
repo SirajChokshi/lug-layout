@@ -1,6 +1,5 @@
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { ConnectorClasses } from "./connector-classes.ts";
 import { VECTOR_FLOATS, axisDimension, axisSign, oppositeAxis } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import {
@@ -13,6 +12,7 @@ import {
   turnCos,
   turnSin,
 } from "./lattice-frame.ts";
+import { MateClasses } from "./mate-classes.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
@@ -26,7 +26,6 @@ const MODEL_KEY_INTS = 4;
 const BOX_INTS = 6;
 const INITIAL_SLOTS = 256;
 const UNCLASSED = -1;
-const SPARSE_AXIS_KEY = 0;
 const X = 0;
 const Y = 1;
 const Z = 2;
@@ -65,7 +64,7 @@ class TurnedModel {
 }
 
 export class SparseConnectorFinder implements MateFinder {
-  private readonly classes: ConnectorClasses;
+  private readonly classes: MateClasses;
   private readonly cells = new IntKeyMap(CELL_KEY_INTS);
   private readonly regions = new IntKeyMap(CELL_KEY_INTS);
   private readonly cellKey = new Int32Array(CELL_KEY_INTS);
@@ -76,13 +75,14 @@ export class SparseConnectorFinder implements MateFinder {
   private slotZ = new Int32Array(INITIAL_SLOTS);
   private slotAxis = new Int8Array(INITIAL_SLOTS);
   private slotClass = new Int32Array(INITIAL_SLOTS);
+  private slotSource = new Uint8Array(INITIAL_SLOTS);
   private slotNext = new Int32Array(INITIAL_SLOTS);
   private slotRegionNext = new Int32Array(INITIAL_SLOTS);
   private slots = 0;
   private freeSlot = NO_SLOT;
 
   constructor(private readonly mating: SnapMating) {
-    this.classes = new ConnectorClasses(mating);
+    this.classes = new MateClasses(mating);
   }
 
   insert(model: ModelConnectors, pose: LatticePose): void {
@@ -101,6 +101,7 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotZ[slot] = z;
       this.slotAxis[slot] = axis;
       this.slotClass[slot] = turned.connectorClass[i] ?? UNCLASSED;
+      this.slotSource[slot] = model.source[i] ?? 0;
       this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_LDU));
       this.cells.set(this.cellKey, slot);
       this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_LDU));
@@ -182,8 +183,7 @@ export class SparseConnectorFinder implements MateFinder {
     ) {
       const to = turned.groupEnd[g] ?? from;
       if (turned.groupKey[g] !== skipped) {
-        for (let k = from; k < to; k++)
-          n += this.matesOf(turned.order[k] ?? 0, model.count, pose, out);
+        for (let k = from; k < to; k++) n += this.matesOf(model, turned.order[k] ?? 0, pose, out);
       }
       from = to;
     }
@@ -191,14 +191,15 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   private matesOf(
+    model: ModelConnectors,
     m: number,
-    connectors: number,
     pose: LatticePose,
     out: MateReport | null,
   ): number {
     const turned = this.turned;
     const classes = this.classes;
-    const i = m % connectors;
+    const i = m % model.count;
+    const ownSource = model.source[i] ?? 0;
     let n = 0;
     const at = m * VECTOR_FLOATS;
     const x = (turned.position[at + X] ?? 0) + pose.x;
@@ -234,7 +235,7 @@ export class SparseConnectorFinder implements MateFinder {
             this.slotClass[slot] === partner
           ) {
             n++;
-            out?.push(i, classes.pairSource[p] ?? 0);
+            out?.push(i, Math.max(ownSource, this.slotSource[slot] ?? 0));
           }
         }
       }
@@ -332,7 +333,7 @@ export class SparseConnectorFinder implements MateFinder {
     turned.next = new Int32Array(QUARTER_TURNS * n);
     turned.cells = new IntKeyMap(MODEL_KEY_INTS);
     for (let i = 0; i < n; i++) {
-      turned.connectorClass[i] = this.classes.classOf(model, i, SPARSE_AXIS_KEY);
+      turned.connectorClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
     }
     turned.axesOfTurn.fill(0);
     for (let rot = 0; rot < QUARTER_TURNS; rot++) {
@@ -475,12 +476,13 @@ export class SparseConnectorFinder implements MateFinder {
     this.slotZ = grown(this.slotZ, new Int32Array(capacity));
     this.slotAxis = grown(this.slotAxis, new Int8Array(capacity));
     this.slotClass = grown(this.slotClass, new Int32Array(capacity));
+    this.slotSource = grown(this.slotSource, new Uint8Array(capacity));
     this.slotNext = grown(this.slotNext, new Int32Array(capacity));
     this.slotRegionNext = grown(this.slotRegionNext, new Int32Array(capacity));
   }
 }
 
-function grown<T extends Int32Array | Int8Array>(from: T, to: T): T {
+function grown<T extends Int32Array | Int8Array | Uint8Array>(from: T, to: T): T {
   to.set(from);
   return to;
 }

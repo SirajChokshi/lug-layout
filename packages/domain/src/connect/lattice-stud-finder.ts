@@ -1,9 +1,9 @@
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { ConnectorClasses } from "./connector-classes.ts";
-import { VECTOR_FLOATS } from "./connector-table.ts";
+import { SOURCES, VECTOR_FLOATS } from "./connector-table.ts";
 import { QUARTER_TURNS, checkPose, isLatticeStud, phaseOf, verticalSign } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import { MateClasses } from "./mate-classes.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
@@ -18,7 +18,7 @@ const NOT_ON_LATTICE = -1;
 const INITIAL_GROUPS = 16;
 
 export class LatticeStudFinder implements MateFinder {
-  private readonly classes: ConnectorClasses;
+  private readonly classes: MateClasses;
   private readonly levels = new Map<number, StudLevel>();
   private rasterModel: ModelConnectors | null = null;
   private rasterPhaseX = 0;
@@ -28,6 +28,7 @@ export class LatticeStudFinder implements MateFinder {
   private connectorCellZ = new Int32Array(0);
   private readonly groupStart = new Int32Array(QUARTER_TURNS + 1);
   private groupClass = new Int32Array(INITIAL_GROUPS);
+  private groupAxis = new Int32Array(INITIAL_GROUPS);
   private groupY = new Int32Array(INITIAL_GROUPS);
   private groupMinX = new Int32Array(INITIAL_GROUPS);
   private groupMinZ = new Int32Array(INITIAL_GROUPS);
@@ -38,7 +39,7 @@ export class LatticeStudFinder implements MateFinder {
   private raster = new Uint32Array(0);
 
   constructor(mating: SnapMating) {
-    this.classes = new ConnectorClasses(mating);
+    this.classes = new MateClasses(mating);
   }
 
   insert(model: ModelConnectors, pose: LatticePose): void {
@@ -77,6 +78,7 @@ export class LatticeStudFinder implements MateFinder {
     let n = 0;
     for (let g = this.groupStart[pose.rot] ?? 0; g < (this.groupStart[pose.rot + 1] ?? 0); g++) {
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
       const y = (this.groupY[g] ?? 0) + baseY;
       const minX = this.groupMinX[g] ?? 0;
       const minZ = this.groupMinZ[g] ?? 0;
@@ -85,15 +87,17 @@ export class LatticeStudFinder implements MateFinder {
       const offset = this.groupOffset[g] ?? 0;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
-          if (!level) continue;
-          n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let s = 0; s < SOURCES.length; s++) {
+            const level = this.levels.get(levelKey(partner, -axis, SOURCES[s] ?? 0, partnerY));
+            if (!level) continue;
+            n += level.countRows(this.raster, offset, rows, words, cellX + minX, cellZ + minZ);
+          }
         }
       }
     }
@@ -114,20 +118,24 @@ export class LatticeStudFinder implements MateFinder {
       const g = this.connectorGroup[at + i] ?? NOT_ON_LATTICE;
       if (g === NOT_ON_LATTICE) continue;
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
+      const ownSource = model.source[i] ?? 0;
       const y = (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY;
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
       const z = cellZ + (this.connectorCellZ[at + i] ?? 0);
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
-        const source = classes.pairSource[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          const level = this.levels.get(levelKey(partner, y + step * (classes.offsets[k] ?? 0)));
-          if (level?.has(x, z)) out.push(i, source);
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let s = 0; s < SOURCES.length; s++) {
+            const source = SOURCES[s] ?? 0;
+            const level = this.levels.get(levelKey(partner, -axis, source, partnerY));
+            if (level?.has(x, z)) out.push(i, Math.max(ownSource, source));
+          }
         }
       }
     }
@@ -147,6 +155,8 @@ export class LatticeStudFinder implements MateFinder {
       if (g === NOT_ON_LATTICE) continue;
       const key = levelKey(
         this.groupClass[g] ?? 0,
+        this.groupAxis[g] ?? 0,
+        model.source[i] ?? 0,
         (model.origin[i * VECTOR_FLOATS + 1] ?? 0) + baseY,
       );
       const x = cellX + (this.connectorCellX[at + i] ?? 0);
@@ -170,16 +180,19 @@ export class LatticeStudFinder implements MateFinder {
     const baseY = yPlates * PLATE_LDU;
     for (let g = this.groupStart[rot] ?? 0; g < (this.groupStart[rot + 1] ?? 0); g++) {
       const own = this.groupClass[g] ?? 0;
+      const axis = this.groupAxis[g] ?? 0;
       const y = (this.groupY[g] ?? 0) + baseY;
       for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
         const partner = classes.pairClass[p] ?? 0;
-        const step = classes.pairStep[p] ?? 0;
         for (
           let k = classes.pairOffsetStart[p] ?? 0;
           k < (classes.pairOffsetStart[p + 1] ?? 0);
           k++
         ) {
-          if (this.levels.has(levelKey(partner, y + step * (classes.offsets[k] ?? 0)))) return true;
+          const partnerY = y + axis * (classes.offsets[k] ?? 0);
+          for (let s = 0; s < SOURCES.length; s++) {
+            if (this.levels.has(levelKey(partner, -axis, SOURCES[s] ?? 0, partnerY))) return true;
+          }
         }
       }
     }
@@ -257,13 +270,20 @@ export class LatticeStudFinder implements MateFinder {
       if (!isLatticeStud(model.axis[i] ?? 0, phasedX, phasedZ)) continue;
       const cellX = (phasedX - STUD_CENTRE_LDU) / STUD_LDU;
       const cellZ = (phasedZ - STUD_CENTRE_LDU) / STUD_LDU;
-      const own = this.classes.classOf(model, i, verticalSign(model.axis[i] ?? 0));
+      const own = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
+      const axis = verticalSign(model.axis[i] ?? 0);
       const y = model.origin[o + 1] ?? 0;
       let g = firstGroup;
-      while (g < groups && (this.groupClass[g] !== own || this.groupY[g] !== y)) g++;
+      while (
+        g < groups &&
+        (this.groupClass[g] !== own || this.groupAxis[g] !== axis || this.groupY[g] !== y)
+      ) {
+        g++;
+      }
       if (g === groups) {
         if (groups === this.groupClass.length) this.growGroups();
         this.groupClass[g] = own;
+        this.groupAxis[g] = axis;
         this.groupY[g] = y;
         this.groupMinX[g] = cellX;
         this.groupMinZ[g] = cellZ;
@@ -286,6 +306,7 @@ export class LatticeStudFinder implements MateFinder {
   private growGroups(): void {
     const capacity = this.groupClass.length * 2;
     this.groupClass = widened(this.groupClass, capacity);
+    this.groupAxis = widened(this.groupAxis, capacity);
     this.groupY = widened(this.groupY, capacity);
     this.groupMinX = widened(this.groupMinX, capacity);
     this.groupMinZ = widened(this.groupMinZ, capacity);
@@ -296,8 +317,11 @@ export class LatticeStudFinder implements MateFinder {
   }
 }
 
-function levelKey(studClass: number, yLdu: number): number {
-  return studClass * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
+const BUCKETS_PER_CLASS = 2 * SOURCES.length;
+
+function levelKey(mateClass: number, axis: number, source: number, yLdu: number): number {
+  const bucket = mateClass * BUCKETS_PER_CLASS + (axis > 0 ? SOURCES.length : 0) + (source >> 1);
+  return bucket * LEVEL_Y_SPAN + yLdu + LEVEL_Y_BIAS;
 }
 
 function widened(values: Int32Array, capacity: number): Int32Array<ArrayBuffer> {

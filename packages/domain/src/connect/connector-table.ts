@@ -3,6 +3,7 @@ export const GENDER_FEMALE = 1;
 export const SOURCE_SHADOW = 1;
 export const SOURCE_PRIMITIVE = 2;
 export const SOURCE_INFERRED = 4;
+export const SOURCES: ReadonlyArray<number> = [SOURCE_SHADOW, SOURCE_PRIMITIVE, SOURCE_INFERRED];
 export const AXIS_FREE = -1;
 export const AXIS_POS_X = 0;
 export const AXIS_NEG_X = 1;

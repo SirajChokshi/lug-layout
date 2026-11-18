@@ -120,6 +120,17 @@ function baseplate(width: number, depth: number, source = SOURCE_SHADOW): Connec
   );
 }
 
+function withSource(part: ConnectorTable, source: number): ConnectorTable {
+  return new ConnectorTable(
+    part.shape,
+    part.gender,
+    new Uint8Array(part.count).fill(source),
+    part.origin,
+    part.axis,
+    part.axisFree,
+  );
+}
+
 function translation(x: number, y: number, z: number): number[] {
   return [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z];
 }
@@ -399,17 +410,27 @@ describe("ConnectionSolver with lattice studs", () => {
     expect(matesAt(engine, upward, pose(0, 0, 0))).toBe(0);
   });
 
-  it("mates inferred connectors and reports each such mate as inferred", () => {
-    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
-    for (const source of [SOURCE_SHADOW, SOURCE_INFERRED]) {
-      const engine = latticeOnly();
-      engine.insert(single(baseplate(2, 2, source)), pose(0, 0, 0));
-      const report = evaluated(engine, plate, pose(0, 0, 0));
+  it.each([
+    ["both curated", SOURCE_SHADOW, SOURCE_SHADOW, SOURCE_SHADOW],
+    ["the placed side inferred", SOURCE_INFERRED, SOURCE_SHADOW, SOURCE_INFERRED],
+    ["the held side inferred", SOURCE_SHADOW, SOURCE_INFERRED, SOURCE_INFERRED],
+  ])("reports each mate's source as the weaker tier: %s", (_, placed, held, expected) => {
+    const engine = allFamilies();
+    engine.insert(single(baseplate(2, 2, placed)), pose(0, 0, 0));
+    engine.insert(single(withSource(edgeHoles(), placed)), pose(0, 0, 0));
+    const plate = single(withSource(block(2, 2, PLATE_LDU, PLATE_RECEPTOR), held));
+    const pins = single(withSource(edgePins(), held));
+    for (const [piece, at] of [
+      [plate, pose(0, 0, 0)],
+      [pins, pose(-NEIGHBOUR_WIDTH_LDU, 0, 0)],
+    ] as const) {
+      const report = evaluated(engine, piece, at);
+      expect(report.count).toBe(4);
       expect(Array.from(report.source.subarray(0, report.count))).toEqual([
-        source,
-        source,
-        source,
-        source,
+        expected,
+        expected,
+        expected,
+        expected,
       ]);
     }
   });
