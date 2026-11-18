@@ -141,7 +141,9 @@ describe("exact rationals", () => {
 
   it("refuse arithmetic whose terms would write past the digit bound", () => {
     const tiny = exactRational(1n, 10n ** 700n);
-    expect(() => multiplyExactRational(tiny, tiny)).toThrow("more than 1200 digits");
+    expect(() => multiplyExactRational(tiny, tiny)).toThrow("more than 1200 digits in a term");
+    const huge = exactRational(10n ** 700n, 1n);
+    expect(() => multiplyExactRational(huge, huge)).toThrow("more than 1200 digits in a term");
   });
 
   it("read back a numerator of the full digit bound whatever its sign", () => {

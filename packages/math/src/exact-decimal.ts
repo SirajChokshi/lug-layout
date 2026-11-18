@@ -6,17 +6,17 @@ export interface ExactDecimal {
 const DECIMAL_LITERAL = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u;
 const CANONICAL_DECIMAL = /^-?(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/u;
 const TEN = 10n;
-const MAX_LITERAL_DIGITS = 1100;
+const MAX_DIGITS = 1100;
 const MAX_EXPONENT_MAGNITUDE = 1100;
-const COEFFICIENT_LIMIT = TEN ** BigInt(MAX_LITERAL_DIGITS);
+const COEFFICIENT_LIMIT = TEN ** BigInt(MAX_DIGITS);
 
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 
 export function exactDecimal(coefficient: bigint, places: number): ExactDecimal {
-  if (!Number.isSafeInteger(places) || places < 0 || places >= MAX_LITERAL_DIGITS) {
-    throw new Error(`${places} is not a count of decimal places below ${MAX_LITERAL_DIGITS}`);
+  if (!Number.isSafeInteger(places) || places < 0 || places >= MAX_DIGITS) {
+    throw new Error(`${places} is not a count of decimal places below ${MAX_DIGITS}`);
   }
-  return bounded(normalized(coefficient, places));
+  return requireWithinDigitBound(normalized(coefficient, places));
 }
 
 function normalized(coefficient: bigint, places: number): ExactDecimal {
@@ -46,7 +46,7 @@ function literalParts(text: string): LiteralParts | null {
   const [, sign = "", whole = "", fraction = "", bareFraction = "", exponent = "0"] = match;
   const digits = `${whole}${fraction}${bareFraction}`;
   const power = Number(exponent);
-  if (digits.length > MAX_LITERAL_DIGITS || !(Math.abs(power) <= MAX_EXPONENT_MAGNITUDE)) {
+  if (digits.length > MAX_DIGITS || !(Math.abs(power) <= MAX_EXPONENT_MAGNITUDE)) {
     return null;
   }
   return {
@@ -61,32 +61,30 @@ export function parseExactDecimal(text: string): ExactDecimal {
   const parts = literalParts(text);
   if (parts === null) {
     throw new Error(
-      `"${text}" is not a decimal literal of at most ${MAX_LITERAL_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
+      `"${text}" is not a decimal literal of at most ${MAX_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
     );
   }
   const places = parts.fractionDigits - parts.exponent;
   const significant = parts.digits.replace(/^0+/u, "");
-  if (places < 0 && significant.length - places > MAX_LITERAL_DIGITS) {
-    throw new Error(`"${text}" writes canonically with more than ${MAX_LITERAL_DIGITS} digits`);
+  if (places < 0 && significant.length - places > MAX_DIGITS) {
+    throw new Error(`"${text}" writes canonically with more than ${MAX_DIGITS} digits`);
   }
   const magnitude = BigInt(parts.digits) * (places < 0 ? TEN ** BigInt(-places) : 1n);
   const value = normalized(parts.negative ? -magnitude : magnitude, Math.max(places, 0));
   if (!withinDigitBound(value)) {
-    throw new Error(`"${text}" writes canonically with more than ${MAX_LITERAL_DIGITS} digits`);
+    throw new Error(`"${text}" writes canonically with more than ${MAX_DIGITS} digits`);
   }
   return value;
 }
 
 function withinDigitBound(value: ExactDecimal): boolean {
   const magnitude = value.coefficient < 0n ? -value.coefficient : value.coefficient;
-  return value.places < MAX_LITERAL_DIGITS && magnitude < COEFFICIENT_LIMIT;
+  return value.places < MAX_DIGITS && magnitude < COEFFICIENT_LIMIT;
 }
 
-function bounded(value: ExactDecimal): ExactDecimal {
+function requireWithinDigitBound(value: ExactDecimal): ExactDecimal {
   if (!withinDigitBound(value)) {
-    throw new Error(
-      `an exact decimal writes canonically with more than ${MAX_LITERAL_DIGITS} digits`,
-    );
+    throw new Error(`an exact decimal writes canonically with more than ${MAX_DIGITS} digits`);
   }
   return value;
 }
@@ -102,22 +100,23 @@ export function formatExactDecimal(value: ExactDecimal): string {
 }
 
 export function isCanonicalExactDecimalText(text: string): boolean {
-  if (text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
-  return text.replace(/\D/gu, "").length <= MAX_LITERAL_DIGITS;
+  if (typeof text !== "string" || text === "-0" || !CANONICAL_DECIMAL.test(text)) return false;
+  const digits = text.length - (text.startsWith("-") ? 1 : 0) - (text.includes(".") ? 1 : 0);
+  return digits <= MAX_DIGITS;
 }
 
 export function addExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
   const places = Math.max(a.places, b.places);
-  return bounded(normalized(scaledTo(a, places) + scaledTo(b, places), places));
+  return requireWithinDigitBound(normalized(scaledTo(a, places) + scaledTo(b, places), places));
 }
 
 export function subtractExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
   const places = Math.max(a.places, b.places);
-  return bounded(normalized(scaledTo(a, places) - scaledTo(b, places), places));
+  return requireWithinDigitBound(normalized(scaledTo(a, places) - scaledTo(b, places), places));
 }
 
 export function multiplyExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
-  return bounded(normalized(a.coefficient * b.coefficient, a.places + b.places));
+  return requireWithinDigitBound(normalized(a.coefficient * b.coefficient, a.places + b.places));
 }
 
 export function compareExactDecimal(a: ExactDecimal, b: ExactDecimal): -1 | 0 | 1 {

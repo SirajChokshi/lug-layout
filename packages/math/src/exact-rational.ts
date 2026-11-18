@@ -64,7 +64,7 @@ export function exactRational(numerator: bigint, denominator: bigint): ExactRati
     denominator: (sign * denominator) / divisor,
   };
   if (magnitude(reduced.numerator) >= TERM_LIMIT || reduced.denominator >= TERM_LIMIT) {
-    throw new Error(`an exact rational writes with more than ${MAX_TEXT_DIGITS} digits a term`);
+    throw new Error(`an exact rational writes more than ${MAX_TEXT_DIGITS} digits in a term`);
   }
   return reduced;
 }
