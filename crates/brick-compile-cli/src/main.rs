@@ -3,21 +3,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use brick_compile::affine::{Affine, Vec3};
+use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, MODIFIED_NOTE};
-use brick_compile::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, StudShape};
+use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
-use brick_compile::lattice::{model_lattice, LatticeError, LatticeInstance};
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
-use brick_compile::vehicle::{
-    detect_vehicles, GuideKind, RailHeadBand, Vehicle, VehicleSignatures,
-};
-use brick_compile::voxel::{
-    greedy_mesh, voxelize, VoxelError, VoxelPart, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE,
-};
+use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
+use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
 use serde_json::{json, Value};
 
@@ -111,50 +106,6 @@ fn part_summary(part: &CompiledPart) -> Value {
     })
 }
 
-struct PartShape {
-    studs: Vec<Vec3>,
-    bounds: [Vec3; 2],
-}
-
-fn part_shape(part: &CompiledPart) -> PartShape {
-    PartShape {
-        studs: part
-            .studs
-            .iter()
-            .map(|stud| [stud.matrix.m[3], stud.matrix.m[7], stud.matrix.m[11]])
-            .collect(),
-        bounds: part
-            .mesh
-            .bounds()
-            .unwrap_or([[0.0; 3]; 2])
-            .map(|corner| corner.map(f64::from)),
-    }
-}
-
-struct CoverParts<'a> {
-    library: &'a FsLibrary,
-    options: CompileOptions,
-    index: HashMap<String, usize>,
-    solids: Vec<PartSolid>,
-    studs: Vec<Vec<Affine>>,
-}
-
-impl CoverParts<'_> {
-    fn slot(&mut self, reference: &str) -> Result<usize, String> {
-        if let Some(&slot) = self.index.get(reference) {
-            return Ok(slot);
-        }
-        let compiled =
-            compile_part(self.library, reference, &self.options).map_err(|e| e.to_string())?;
-        self.solids.push(PartSolid::from_mesh(&compiled.mesh));
-        self.studs
-            .push(compiled.studs.iter().map(|stud| stud.matrix).collect());
-        self.index
-            .insert(reference.to_string(), self.solids.len() - 1);
-        Ok(self.solids.len() - 1)
-    }
-}
-
 fn cover_json(cover: &ModelCover) -> Value {
     let cells = cover.cells.as_ref().map(|cells| {
         json!({
@@ -228,7 +179,7 @@ fn compile_entry(
     options: &CompileOptions,
     out: &Path,
     credits: &mut BTreeMap<String, Value>,
-) -> Result<(Value, PartShape), String> {
+) -> Result<(Value, LatticeShape), String> {
     let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
     let id = stem(reference);
     let file = format!("{id}.glb");
@@ -243,7 +194,7 @@ fn compile_entry(
     summary["title"] = json!(header.title);
     summary["author"] = json!(header.author);
     summary["license"] = json!(header.license);
-    Ok((summary, part_shape(&compiled)))
+    Ok((summary, LatticeShape::of(&compiled)))
 }
 
 fn acknowledged_not_drawn(entry: &Value, file: &str) -> Result<BTreeMap<String, String>, String> {
@@ -336,50 +287,22 @@ fn vehicle_json(vehicle: &Vehicle) -> Value {
 
 const OPAQUE_ALPHA: u8 = 255;
 
-struct FarMeshInputs<'a> {
-    library: &'a FsLibrary,
-    options: CompileOptions,
-    translucent: HashSet<u32>,
-    standard_parts: HashMap<String, CompiledPart>,
-    out: &'a Path,
-}
-
 fn far_mesh(
-    inputs: &mut FarMeshInputs,
+    baker: &mut ModelBaker<FsLibrary>,
+    out: &Path,
     name: &str,
     drawn: &[ModelInstance],
     model_ldraw: &Value,
     credits: &mut BTreeMap<String, Value>,
 ) -> Result<Option<Value>, String> {
-    for instance in drawn {
-        if !inputs.standard_parts.contains_key(&instance.part) {
-            let compiled = compile_part(inputs.library, &instance.part, &inputs.options)
-                .map_err(|e| e.to_string())?;
-            inputs
-                .standard_parts
-                .insert(instance.part.clone(), compiled);
-        }
-    }
-    let parts: Vec<VoxelPart> = drawn
-        .iter()
-        .map(|instance| {
-            let compiled = &inputs.standard_parts[&instance.part];
-            VoxelPart {
-                mesh: &compiled.mesh,
-                studs: &compiled.studs,
-                color: instance.color,
-                matrix: &instance.matrix,
-            }
-        })
-        .collect();
-    let grid = match voxelize(&parts, &inputs.translucent) {
-        Ok(grid) => grid,
-        Err(VoxelError::Lattice(LatticeError::NoIntegerPhaseStuds)) => return Ok(None),
-        Err(e) => return Err(e.to_string()),
+    let Some(grid) = baker.voxels(drawn).map_err(|e| e.to_string())? else {
+        return Ok(None);
     };
     let mut sources: BTreeMap<String, Value> = BTreeMap::new();
     for instance in drawn {
-        let compiled = &inputs.standard_parts[&instance.part];
+        let compiled = baker
+            .standard_part(&instance.part)
+            .map_err(|e| e.to_string())?;
         record_credits(credits, compiled);
         for file in &compiled.flattened_files {
             sources.entry(file.path.clone()).or_insert_with(|| {
@@ -417,7 +340,7 @@ fn far_mesh(
             },
         ],
     );
-    fs::write(inputs.out.join(&file), bytes).map_err(|e| e.to_string())?;
+    fs::write(out.join(&file), bytes).map_err(|e| e.to_string())?;
     Ok(Some(json!({
         "file": file,
         "voxels": grid.count(),
@@ -471,53 +394,22 @@ fn run(args: &Args) -> Result<(), String> {
         }
         None => Value::Null,
     };
-    let cover_options = CompileOptions {
-        lod: Lod::Standard,
-        stud_primitives: stud_primitives.clone(),
-        unofficial_allowlist: unofficial_allowlist.clone(),
-    };
     let part_options = CompileOptions {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
-        unofficial_allowlist,
-    };
-    let mut stud_shape = StudShape {
-        height: 0.0,
-        radius: 0.0,
-    };
-    for name in &stud_primitives {
-        let standard = CompileOptions {
-            stud_primitives: Vec::new(),
-            ..cover_options.clone()
-        };
-        let compiled = compile_part(&library, name, &standard).map_err(|e| e.to_string())?;
-        let [min, max] = compiled
-            .mesh
-            .bounds()
-            .ok_or(format!("stud primitive {name} has no geometry"))?;
-        stud_shape.height = stud_shape.height.max(f64::from(max[1]));
-        stud_shape.radius = stud_shape
-            .radius
-            .max(f64::from(max[0] - min[0]) / 2.0)
-            .max(f64::from(max[2] - min[2]) / 2.0);
-    }
-    let mut cover_parts = CoverParts {
-        library: &library,
-        options: cover_options,
-        index: HashMap::new(),
-        solids: Vec::new(),
-        studs: Vec::new(),
+        unofficial_allowlist: unofficial_allowlist.clone(),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
     let ldconfig = library
         .source(LDCONFIG)
         .ok_or("LDConfig.ldr is missing from the LDraw library")?;
-    let opacity = Opacity::new(
-        parse_ldconfig(ldconfig)
-            .into_iter()
-            .filter(|color| color.alpha < u8::MAX)
-            .map(|color| color.code),
-    );
+    let mut baker = ModelBaker::new(
+        &library,
+        stud_primitives.clone(),
+        unofficial_allowlist,
+        translucent_codes(&parse_ldconfig(ldconfig)),
+    )
+    .map_err(|e| e.to_string())?;
 
     let mut credits: BTreeMap<String, Value> = BTreeMap::new();
 
@@ -536,7 +428,7 @@ fn run(args: &Args) -> Result<(), String> {
     }
 
     let mut parts = Vec::new();
-    let mut shapes: Vec<PartShape> = Vec::new();
+    let mut shapes: Vec<LatticeShape> = Vec::new();
     let mut part_index: HashMap<String, usize> = HashMap::new();
     for entry in palette["parts"]
         .as_array()
@@ -589,16 +481,6 @@ fn run(args: &Args) -> Result<(), String> {
     if ldconfig_colours.is_empty() {
         return Err("LDConfig.ldr is missing or has no !COLOUR lines".into());
     }
-    let mut far_inputs = (args.lod == Lod::Far).then(|| FarMeshInputs {
-        library: &library,
-        options: CompileOptions {
-            lod: Lod::Standard,
-            ..part_options.clone()
-        },
-        translucent: translucent_codes(&ldconfig_colours),
-        standard_parts: HashMap::new(),
-        out: &args.out,
-    });
 
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
@@ -679,7 +561,8 @@ fn run(args: &Args) -> Result<(), String> {
             })
             .cloned()
             .collect();
-        let vehicles: Vec<Value> = detect_vehicles(&library, &drawn, &signatures, &rails)
+        let vehicles: Vec<Value> = baker
+            .vehicles(&drawn, &signatures, &rails)
             .map_err(|e| format!("{file}: {e}"))?
             .iter()
             .map(vehicle_json)
@@ -718,46 +601,14 @@ fn run(args: &Args) -> Result<(), String> {
             instance_colors.push(instance.color);
             instance_matrices.extend(instance.matrix.m.map(|v| v as f32));
         }
-        let lattice_instances: Vec<LatticeInstance> = drawn
+        let drawn_shapes: Vec<&LatticeShape> = instance_global_parts
             .iter()
-            .zip(&instance_global_parts)
-            .map(|(instance, &index)| LatticeInstance {
-                matrix: &instance.matrix,
-                studs: &shapes[index].studs,
-                bounds_min: shapes[index].bounds[0],
-                bounds_max: shapes[index].bounds[1],
-            })
+            .map(|&index| &shapes[index])
             .collect();
-        let lattice = match model_lattice(&lattice_instances) {
-            Ok(lattice) => Some(lattice),
-            Err(LatticeError::NoIntegerPhaseStuds) => None,
-            Err(e) => return Err(format!("{file}: {e}")),
-        };
-        let mut cover_slots = Vec::with_capacity(drawn.len());
-        for (instance, &index) in drawn.iter().zip(&instance_global_parts) {
-            let slot = cover_parts
-                .slot(&instance.part)
-                .map_err(|e| format!("{file}: {e}"))?;
-            if cover_parts.studs[slot].len() != shapes[index].studs.len() {
-                return Err(format!(
-                    "{file}: {} has {} studs at the standard LOD but {} in this bundle",
-                    instance.part,
-                    cover_parts.studs[slot].len(),
-                    shapes[index].studs.len()
-                ));
-            }
-            cover_slots.push(slot);
-        }
-        let cover_instances: Vec<CoverInstance> = drawn
-            .iter()
-            .zip(&cover_slots)
-            .map(|(instance, &slot)| CoverInstance {
-                matrix: &instance.matrix,
-                color: instance.color,
-                part: slot,
-                studs: &cover_parts.studs[slot],
-            })
-            .collect();
+        let lattice = drawn_lattice(&drawn, &drawn_shapes).map_err(|e| format!("{file}: {e}"))?;
+        let total_studs = baker
+            .stud_total(&drawn, &drawn_shapes)
+            .map_err(|e| format!("{file}: {e}"))?;
         let cached = args
             .cover_cache
             .as_ref()
@@ -772,13 +623,9 @@ fn run(args: &Args) -> Result<(), String> {
         let (cover_file, cover_manifest) = match reuse {
             Some(cached) => (cached["file"].clone(), cached["summary"].clone()),
             None => {
-                let cover = model_cover(
-                    &cover_instances,
-                    &cover_parts.solids,
-                    &opacity,
-                    lattice.as_ref().map(|lattice| lattice.phase),
-                    stud_shape,
-                );
+                let cover = baker
+                    .cover(&drawn, lattice.as_ref())
+                    .map_err(|e| format!("{file}: {e}"))?;
                 let pair = (cover_json(&cover), cover_summary(&cover));
                 if let (Some(path), Lod::Standard) = (&cached, args.lod) {
                     fs::create_dir_all(path.parent().unwrap_or(&args.out))
@@ -793,10 +640,6 @@ fn run(args: &Args) -> Result<(), String> {
                 pair
             }
         };
-        let total_studs: usize = cover_slots
-            .iter()
-            .map(|&slot| cover_parts.studs[slot].len())
-            .sum();
         if cover_file["studs"].as_u64() != Some(total_studs as u64) {
             return Err(format!(
                 "{file}: the stud cover lists {} studs but the model has {total_studs}",
@@ -865,7 +708,7 @@ fn run(args: &Args) -> Result<(), String> {
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();
         }
-        if let Some(inputs) = far_inputs.as_mut() {
+        if args.lod == Lod::Far {
             let model_ldraw = json!({
                 "file": file,
                 "name": name,
@@ -874,9 +717,16 @@ fn run(args: &Args) -> Result<(), String> {
                 "licenses": licenses,
                 "sections": sections,
             });
-            manifest_entry["farMesh"] = far_mesh(inputs, name, &drawn, &model_ldraw, &mut credits)
-                .map_err(|e| format!("{file}: {e}"))?
-                .unwrap_or(Value::Null);
+            manifest_entry["farMesh"] = far_mesh(
+                &mut baker,
+                &args.out,
+                name,
+                &drawn,
+                &model_ldraw,
+                &mut credits,
+            )
+            .map_err(|e| format!("{file}: {e}"))?
+            .unwrap_or(Value::Null);
         }
         models.push(manifest_entry);
     }
