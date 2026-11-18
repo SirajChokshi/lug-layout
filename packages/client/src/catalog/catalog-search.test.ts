@@ -4,7 +4,8 @@ import { Container } from "inversify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { CatalogItemView } from "../edit/editor.ts";
-import { EDITOR } from "../tokens.ts";
+import { CATALOG_SEARCH } from "../tokens.ts";
+import type { ICatalogSearch } from "./catalog-search.ts";
 import { PaletteIndex } from "./palette-index.ts";
 import { paletteResults } from "./palette-results.ts";
 
@@ -21,6 +22,7 @@ function baseplate(color: CatalogItemView["color"] & object): CatalogItemView {
     id: `ldraw:3811@${color.code}`,
     label: `3811 Baseplate 32 x 32, ${color.name}`,
     group: "ldraw:3811",
+    shortLabel: "3811 32×32",
     groupLabel: "3811 Baseplate 32 x 32",
     color,
     kind: "baseplate",
@@ -31,6 +33,9 @@ function baseplate(color: CatalogItemView["color"] & object): CatalogItemView {
     aliases: [],
     elements: [],
     displayColor: false,
+    draggable: true,
+    toggleable: false,
+    listedUnder: null,
   };
 }
 
@@ -38,6 +43,7 @@ const crossroads: CatalogItemView = {
   id: "ldraw:2358p02@72",
   label: "2358p02 Baseplate 48 x 48 Road Crossroads, Dark_Bluish_Grey",
   group: "ldraw:2358p02",
+  shortLabel: "2358p02 48×48",
   groupLabel: "2358p02 Baseplate 48 x 48 Road Crossroads",
   color: { code: 72, name: "Dark_Bluish_Grey", rgb: "#6C6E68" },
   kind: "road-plate",
@@ -48,6 +54,9 @@ const crossroads: CatalogItemView = {
   aliases: [],
   elements: [],
   displayColor: false,
+  draggable: true,
+  toggleable: false,
+  listedUnder: null,
 };
 
 const index = new PaletteIndex([baseplate(TAN), baseplate(GREEN), crossroads]);
@@ -86,7 +95,10 @@ function serveWorker(
   return { requests };
 }
 
-function editorWith(config: { readonly manifestFile?: string; readonly baseUrl?: string }) {
+function catalogSearchWith(config: {
+  readonly manifestFile?: string;
+  readonly baseUrl?: string;
+}): ICatalogSearch {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -96,12 +108,12 @@ function editorWith(config: { readonly manifestFile?: string; readonly baseUrl?:
       ...(config.baseUrl === undefined ? {} : { catalogApiBaseUrl: config.baseUrl }),
     }),
   );
-  return container.get(EDITOR);
+  return container.get(CATALOG_SEARCH);
 }
 
-async function typeAndSettle(editor: ReturnType<typeof editorWith>, typed: string): Promise<void> {
+async function typeAndSettle(search: ICatalogSearch, typed: string): Promise<void> {
   for (let end = 1; end <= typed.length; end++) {
-    editor.searchCatalog(typed.slice(0, end));
+    search.search(typed.slice(0, end));
     await vi.advanceTimersByTimeAsync(40);
   }
   await vi.runAllTimersAsync();
@@ -133,14 +145,14 @@ describe("palette search through the catalog Worker", () => {
           }),
         ),
     );
-    const editor = editorWith({ manifestFile: fallbackManifest, baseUrl: `${workerBase}/` });
+    const search = catalogSearchWith({ manifestFile: fallbackManifest, baseUrl: `${workerBase}/` });
 
-    await typeAndSettle(editor, "tan 32");
+    await typeAndSettle(search, "tan 32");
 
     expect(served.requests).toEqual([
       `${workerBase}/v1/bundles/${manifestKey}/search?q=tan+32&limit=50`,
     ]);
-    const results = paletteResults(index, "tan 32", "all", editor.snapshot().catalogSearch);
+    const results = paletteResults(index, "tan 32", "all", search.view());
     expect(results.status).toBe("ready");
     expect(results.hits.map((hit) => [hit.entry.key, hit.items.map((item) => item.id)])).toEqual([
       ["ldraw:3811", ["ldraw:3811@19", "ldraw:3811@2"]],
@@ -149,7 +161,7 @@ describe("palette search through the catalog Worker", () => {
     expect(results.remoteOnly.map((hit) => hit.id)).toEqual(["ldraw:44336p03@72"]);
     expect(results.counts.get("all")).toBe(2);
     expect(results.counts.get("road")).toBe(1);
-    const road = paletteResults(index, "tan 32", "road", editor.snapshot().catalogSearch);
+    const road = paletteResults(index, "tan 32", "road", search.view());
     expect(road.hits.map((hit) => hit.entry.key)).toEqual(["ldraw:2358p02"]);
   });
 
@@ -160,9 +172,9 @@ describe("palette search through the catalog Worker", () => {
       () => new Response(JSON.stringify({ manifest: manifestKey, query: "tan", results: "?" })),
     ]) {
       serveWorker(failure);
-      const editor = editorWith({ manifestFile: keyedManifest, baseUrl: workerBase });
-      await typeAndSettle(editor, "tan");
-      const results = paletteResults(index, "tan", "all", editor.snapshot().catalogSearch);
+      const search = catalogSearchWith({ manifestFile: keyedManifest, baseUrl: workerBase });
+      await typeAndSettle(search, "tan");
+      const results = paletteResults(index, "tan", "all", search.view());
       expect(results.status).toBe("offline");
       expect(results.hits.map((hit) => hit.items.map((item) => item.id))).toEqual([
         ["ldraw:3811@19"],
@@ -173,16 +185,15 @@ describe("palette search through the catalog Worker", () => {
   it("never asks the Worker for short queries, without a base URL, or for an unkeyed manifest", async () => {
     const served = serveWorker(() => Promise.reject(new Error("no request expected")), null);
     const cases = [
-      { editor: editorWith({ manifestFile: keyedManifest, baseUrl: workerBase }), typed: " ta " },
-      { editor: editorWith({ manifestFile: keyedManifest }), typed: "tan" },
-      { editor: editorWith({ baseUrl: workerBase }), typed: "tan" },
+      {
+        search: catalogSearchWith({ manifestFile: keyedManifest, baseUrl: workerBase }),
+        typed: " ta ",
+      },
+      { search: catalogSearchWith({ manifestFile: keyedManifest }), typed: "tan" },
+      { search: catalogSearchWith({ baseUrl: workerBase }), typed: "tan" },
     ];
-    for (const { editor, typed } of cases) await typeAndSettle(editor, typed);
+    for (const { search, typed } of cases) await typeAndSettle(search, typed);
     expect(served.requests).toEqual([]);
-    expect(cases.map(({ editor }) => editor.snapshot().catalogSearch.status)).toEqual([
-      "idle",
-      "off",
-      "off",
-    ]);
+    expect(cases.map(({ search }) => search.view().status)).toEqual(["idle", "off", "off"]);
   });
 });

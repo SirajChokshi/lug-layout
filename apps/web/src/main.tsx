@@ -6,7 +6,10 @@ import {
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
+  PALETTE_DRAG,
   PALETTE_MEMORY,
+  PALETTE_PREFETCH,
+  PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
   RUNNING_GEAR,
   TRACK_SCENE,
@@ -108,8 +111,11 @@ function root(): ReactNode {
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         play={container.get(TRAIN_PLAY)}
-        palette={container.get(PALETTE_MEMORY)}
-        thumbnails={container.get(PALETTE_THUMBNAILS)}
+        paletteSearch={container.get(PALETTE_SEARCH)}
+        paletteDrag={container.get(PALETTE_DRAG)}
+        palettePrefetch={container.get(PALETTE_PREFETCH)}
+        paletteMemory={container.get(PALETTE_MEMORY)}
+        paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
         runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,

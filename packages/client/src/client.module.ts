@@ -13,7 +13,10 @@ import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
+import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
+import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
+import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
@@ -38,8 +41,11 @@ import {
   LDRAW_LIBRARY_BASE_URL,
   MODEL_IMPORTER,
   MODEL_SCENE,
+  PALETTE_DRAG,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
+  PALETTE_PREFETCH,
+  PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
@@ -79,6 +85,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
+  bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
+  bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
+  bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();
 });
 
 export interface MainThreadConfig {

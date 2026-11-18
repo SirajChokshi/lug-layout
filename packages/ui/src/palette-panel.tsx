@@ -13,24 +13,23 @@ import {
 import {
   CATEGORY_LABEL,
   PALETTE_CATEGORIES,
-  PaletteIndex,
-  TRACK_ITEM_ID,
-  TRACK_PIECE_PREFIX,
   colorDisplayName,
-  paletteResults,
-  itemInColor,
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
+  type IPaletteDrag,
   type IPaletteMemory,
+  type IPalettePrefetch,
+  type IPaletteSearch,
   type IPaletteThumbnails,
-  type PaletteCategory,
   type PaletteColorChoice,
+  type PaletteColors,
   type PaletteEntry,
-  type PaletteFilter,
-  type PaletteHit,
+  type PaletteRow,
+  type PaletteSearchSnapshot,
+  type PaletteSection,
+  type PaletteTab,
 } from "@brr/client";
-import { hoverPrefetch } from "./hover-prefetch.ts";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 
@@ -43,13 +42,11 @@ const PALETTE_FIELDS = [
   "activeItem",
   "mode",
   "status",
-  "track",
   "trackNotDrawable",
   "readOnly",
   "roadKits",
   "roadKit",
   "pendingItem",
-  "catalogSearch",
 ] as const satisfies ReadonlyArray<keyof EditorSnapshot>;
 
 type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
@@ -57,6 +54,8 @@ type PaletteSnapshot = Pick<EditorSnapshot, (typeof PALETTE_FIELDS)[number]>;
 interface PaletteProps {
   readonly editor: IEditor;
   readonly snapshot: PaletteSnapshot;
+  readonly drag: IPaletteDrag;
+  readonly prefetch: IPalettePrefetch;
 }
 
 function samePaletteInputs<P extends PaletteProps>(before: P, after: P): boolean {
@@ -65,6 +64,22 @@ function samePaletteInputs<P extends PaletteProps>(before: P, after: P): boolean
       ? PALETTE_FIELDS.every((field) => before.snapshot[field] === after.snapshot[field])
       : before[key] === after[key],
   );
+}
+
+function choosePaletteItem(
+  editor: IEditor,
+  snapshot: PaletteSnapshot,
+  item: CatalogItemView,
+): void {
+  editor.chooseItem(snapshot.activeItem === item.id && item.toggleable ? null : item.id);
+}
+
+function prefetchProps(prefetch: IPalettePrefetch, id: string) {
+  return {
+    onPointerEnter: () => prefetch.pointerEnter(id),
+    onPointerLeave: () => prefetch.pointerLeave(),
+    onFocus: () => prefetch.focus(id),
+  };
 }
 
 interface Favorites {
@@ -124,7 +139,7 @@ function RenderedThumbnail({ item }: { readonly item: CatalogItemView | undefine
     (listener) => thumbnails?.subscribe(listener) ?? (() => {}),
     () => thumbnails?.snapshot() ?? NO_THUMBNAILS,
   );
-  const id = item?.kind === "track" ? undefined : item?.id;
+  const id = item?.id;
   useEffect(() => {
     if (seen && id !== undefined) thumbnails?.request(id);
   }, [thumbnails, id, seen]);
@@ -134,15 +149,6 @@ function RenderedThumbnail({ item }: { readonly item: CatalogItemView | undefine
   ) : (
     <span ref={setNode} className="palette-thumb palette-thumb-empty" aria-hidden="true" />
   );
-}
-
-interface Paint {
-  readonly current: number | null;
-  readonly choose: (code: number | null) => void;
-  readonly resolve: (
-    items: ReadonlyArray<CatalogItemView>,
-    current: number | null,
-  ) => CatalogItemView | undefined;
 }
 
 function Section({
@@ -193,13 +199,14 @@ function Thumbnail({ item }: { readonly item: CatalogItemView | undefined }) {
 function Swatches({
   entry,
   items,
+  current,
   editor,
   snapshot,
-  paint,
+  drag,
 }: PaletteProps & {
   readonly entry: PaletteEntry;
   readonly items: ReadonlyArray<CatalogItemView>;
-  readonly paint: Paint;
+  readonly current: number | null;
 }) {
   return (
     <div className="palette-swatches" role="group" aria-label={entry.title}>
@@ -209,14 +216,14 @@ function Swatches({
           type="button"
           className="palette-swatch"
           data-item={item.id}
-          data-current-color={item.color !== null && item.color.code === paint.current}
+          data-current-color={item.color !== null && item.color.code === current}
           aria-pressed={snapshot.activeItem === item.id}
           aria-label={item.label}
           title={swatchTitle(item)}
           style={{ background: item.color?.rgb ?? "transparent" }}
           disabled={snapshot.readOnly}
-          onClick={() => editor.chooseItem(item.id)}
-          {...paletteDragProps(editor, item)}
+          onClick={() => choosePaletteItem(editor, snapshot, item)}
+          {...paletteDragProps(drag, item)}
         />
       ))}
     </div>
@@ -224,61 +231,52 @@ function Swatches({
 }
 
 function colorName(choices: ReadonlyArray<PaletteColorChoice>, code: number): string {
-  const choice = choices.find((c) => c.color.code === code);
-  return choice ? colorDisplayName(choice.color.name) : `LDraw colour ${code}`;
+  const option = choices.find((c) => c.color.code === code);
+  return option ? colorDisplayName(option.color.name) : `LDraw colour ${code}`;
 }
 
 function SwatchRow({
-  entry,
-  items,
-  editor,
-  snapshot,
-  paint,
-}: PaletteProps & {
-  readonly entry: PaletteEntry;
-  readonly items: ReadonlyArray<CatalogItemView>;
-  readonly paint: Paint;
-}) {
-  const painted =
-    paint.current === null ? paint.resolve(entry.items, null) : itemInColor(entry, paint.current);
-  const unavailable = paint.current !== null && painted === undefined;
-  const shown =
-    items.find((item) => item.id === snapshot.activeItem) ??
-    painted ??
-    paint.resolve(entry.items, null);
+  row,
+  current,
+  ...props
+}: PaletteProps & { readonly row: PaletteRow; readonly current: number | null }) {
+  const { editor, snapshot, drag } = props;
+  const { entry, chosen } = row;
+  const shown = row.items.find((item) => item.id === snapshot.activeItem) ?? row.preview;
   return (
-    <li className="palette-row" data-group={entry.key} data-unavailable={unavailable}>
+    <li className="palette-row" data-group={entry.key} data-unavailable={chosen === undefined}>
       <Thumbnail item={shown} />
       <div className="palette-row-head">
         <button
           type="button"
           className="palette-row-label"
-          disabled={!painted}
-          aria-pressed={painted !== undefined && snapshot.activeItem === painted.id}
-          title={painted ? `Place ${painted.label}` : undefined}
-          onClick={() => painted && editor.chooseItem(painted.id)}
-          {...(painted ? paletteDragProps(editor, painted) : {})}
+          disabled={!chosen}
+          aria-pressed={chosen !== undefined && snapshot.activeItem === chosen.id}
+          title={chosen ? `Place ${chosen.label}` : undefined}
+          onClick={() => chosen && choosePaletteItem(editor, snapshot, chosen)}
+          {...(chosen ? paletteDragProps(drag, chosen) : {})}
         >
           <span className="palette-size">{entry.size}</span>
           <span className="palette-title">{entry.title}</span>
         </button>
         <FavoriteStar entryKey={entry.key} title={entry.title} />
       </div>
-      <Swatches entry={entry} items={items} editor={editor} snapshot={snapshot} paint={paint} />
+      <Swatches {...props} entry={entry} items={row.items} current={current} />
     </li>
   );
 }
 
 function ColorPicker({
-  choices,
-  paint,
+  colors,
   noun,
+  onChoose,
 }: {
-  readonly choices: ReadonlyArray<PaletteColorChoice>;
-  readonly paint: Paint;
+  readonly colors: PaletteColors;
   readonly noun: string;
+  readonly onChoose: (code: number | null) => void;
 }) {
-  const current = choices.find((choice) => choice.color.code === paint.current);
+  const { choices } = colors;
+  const current = choices.find((option) => option.color.code === colors.current);
   return (
     <div className="palette-picker">
       <div className="palette-colors" role="radiogroup" aria-label={`${noun} colour`}>
@@ -286,8 +284,8 @@ function ColorPicker({
           type="button"
           role="radio"
           className="palette-color-any"
-          aria-checked={paint.current === null}
-          onClick={() => paint.choose(null)}
+          aria-checked={colors.current === null}
+          onClick={() => onChoose(null)}
         >
           Any
         </button>
@@ -298,11 +296,11 @@ function ColorPicker({
             role="radio"
             className="palette-color"
             data-color={color.code}
-            aria-checked={paint.current === color.code}
+            aria-checked={colors.current === color.code}
             aria-label={colorDisplayName(color.name)}
             title={`${colorDisplayName(color.name)} (LDraw ${color.code}): ${parts} ${noun}`}
             style={{ background: color.rgb }}
-            onClick={() => paint.choose(paint.current === color.code ? null : color.code)}
+            onClick={() => onChoose(colors.current === color.code ? null : color.code)}
           />
         ))}
       </div>
@@ -320,7 +318,13 @@ function itemMeta(item: CatalogItemView): string {
   return item.studsWide > 0 ? `${parts} · ${item.studsWide}×${item.studsDeep} studs` : parts;
 }
 
-function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: CatalogItemView }) {
+function ItemButton({
+  item,
+  editor,
+  snapshot,
+  drag,
+  prefetch,
+}: PaletteProps & { readonly item: CatalogItemView }) {
   return (
     <li className="palette-item-row">
       <Thumbnail item={item} />
@@ -331,9 +335,9 @@ function ItemButton({ item, editor, snapshot }: PaletteProps & { readonly item: 
         aria-pressed={snapshot.activeItem === item.id}
         aria-busy={snapshot.pendingItem === item.id}
         disabled={snapshot.readOnly}
-        onClick={() => editor.chooseItem(item.id)}
-        {...hoverPrefetch(editor, item.id)}
-        {...paletteDragProps(editor, item)}
+        onClick={() => choosePaletteItem(editor, snapshot, item)}
+        {...prefetchProps(prefetch, item.id)}
+        {...paletteDragProps(drag, item)}
       >
         <span className="catalog-name">{item.label}</span>
         <span className="catalog-meta">
@@ -350,23 +354,29 @@ function colorCount(entries: ReadonlyArray<PaletteEntry>): string {
   return `${entries.length} ${entries.length === 1 ? "part" : "parts"}, ${items} colours`;
 }
 
-function TrackSection({ editor, snapshot }: PaletteProps) {
-  const drawing = snapshot.mode === "track" && snapshot.activeItem === TRACK_ITEM_ID;
-  const pieces = snapshot.catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
-  const available = snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
-  const held = snapshot.track?.held ?? null;
+function TrackSection({
+  rows,
+  editor,
+  snapshot,
+}: Pick<PaletteProps, "editor" | "snapshot"> & { readonly rows: ReadonlyArray<PaletteRow> }) {
+  const items = rows.flatMap((row) => row.items);
+  const tool = items.find((item) => item.listedUnder === null);
+  const pieces = items.filter((item) => item.listedUnder !== null);
+  const drawing = tool !== undefined && snapshot.activeItem === tool.id;
   return (
     <Section id="track" title="Track" count={`${pieces.length} real pieces`}>
-      <button
-        type="button"
-        className="palette-primary"
-        data-item={TRACK_ITEM_ID}
-        aria-pressed={drawing}
-        disabled={!available || snapshot.readOnly}
-        onClick={() => editor.chooseItem(drawing ? null : TRACK_ITEM_ID)}
-      >
-        {drawing ? "Drawing track: press Esc or T to stop" : "Draw track (T)"}
-      </button>
+      {tool && (
+        <button
+          type="button"
+          className="palette-primary"
+          data-item={tool.id}
+          aria-pressed={drawing}
+          disabled={snapshot.readOnly}
+          onClick={() => choosePaletteItem(editor, snapshot, tool)}
+        >
+          {drawing ? "Drawing track: press Esc or T to stop" : "Draw track (T)"}
+        </button>
+      )}
       <p className="palette-hint">
         Drag on the ground to lay a run of real pieces. Start on an open end to continue a line, and
         release on another open end to join it exactly.
@@ -378,11 +388,8 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
               type="button"
               className="catalog-item"
               data-item={item.id}
-              aria-pressed={
-                snapshot.activeItem === item.id ||
-                (held !== null && item.id === `${TRACK_PIECE_PREFIX}${held.item}`)
-              }
-              onClick={() => editor.chooseItem(snapshot.activeItem === item.id ? null : item.id)}
+              aria-pressed={snapshot.activeItem === item.id}
+              onClick={() => choosePaletteItem(editor, snapshot, item)}
             >
               <span className="catalog-name">{item.label}</span>
               <span className="catalog-meta">
@@ -408,53 +415,44 @@ function TrackSection({ editor, snapshot }: PaletteProps) {
 }
 
 function PaintedSection({
-  category,
-  entries,
-  choices,
-  editor,
-  snapshot,
-  paint,
+  section,
+  color,
+  onChooseColor,
+  ...props
 }: PaletteProps & {
-  readonly category: "baseplates" | "road";
-  readonly entries: ReadonlyArray<PaletteEntry>;
-  readonly choices: ReadonlyArray<PaletteColorChoice>;
-  readonly paint: Paint;
+  readonly section: PaletteSection & { readonly category: "baseplates" | "road" };
+  readonly color: number | null;
+  readonly onChooseColor: (code: number | null) => void;
 }) {
+  const { editor, snapshot } = props;
+  const { category, colors, rows, unmade } = section;
   const noun = category === "road" ? "road plates" : "baseplates";
-  const offered = choices.some((choice) => choice.color.code === paint.current);
-  const sectionPaint = offered ? paint : { ...paint, current: null };
-  const current = sectionPaint.current;
-  const made = current === null ? entries : entries.filter((entry) => itemInColor(entry, current));
-  const unmade = current === null ? [] : entries.filter((entry) => !itemInColor(entry, current));
-  const row = (entry: PaletteEntry) => (
-    <SwatchRow
-      key={entry.key}
-      entry={entry}
-      items={entry.items}
-      editor={editor}
-      snapshot={snapshot}
-      paint={sectionPaint}
-    />
+  const row = (shown: PaletteRow) => (
+    <SwatchRow key={shown.entry.key} {...props} row={shown} current={colors.current} />
   );
   return (
-    <Section id={category} title={CATEGORY_LABEL[category]} count={colorCount(entries)}>
+    <Section
+      id={category}
+      title={CATEGORY_LABEL[category]}
+      count={colorCount([...rows, ...unmade].map((shown) => shown.entry))}
+    >
       {category === "road" && (
         <RoadKitList editor={editor} snapshot={snapshot} kits={snapshot.roadKits} />
       )}
-      <ColorPicker choices={choices} paint={sectionPaint} noun={noun} />
-      {!offered && paint.current !== null && (
-        <p className="palette-hint" data-not-offered={paint.current}>
+      <ColorPicker colors={colors} noun={noun} onChoose={onChooseColor} />
+      {colors.current === null && color !== null && (
+        <p className="palette-hint" data-not-offered={color}>
           No {noun.replace(/s$/u, "")} is made in the current colour, so these show every colour.
         </p>
       )}
-      <ul className="palette-rows">{made.map((entry) => row(entry))}</ul>
-      {current !== null && unmade.length > 0 && (
+      <ul className="palette-rows">{rows.map((shown) => row(shown))}</ul>
+      {colors.current !== null && unmade.length > 0 && (
         <details className="palette-unmade" data-unmade={unmade.length}>
           <summary>
             {unmade.length} more {unmade.length === 1 ? noun.replace(/s$/u, "") : noun} not made in{" "}
-            {colorName(choices, current)}
+            {colorName(colors.choices, colors.current)}
           </summary>
-          <ul className="palette-rows">{unmade.map((entry) => row(entry))}</ul>
+          <ul className="palette-rows">{unmade.map((shown) => row(shown))}</ul>
         </details>
       )}
     </Section>
@@ -462,40 +460,37 @@ function PaintedSection({
 }
 
 function CategorySection({
-  category,
-  entries,
-  choices,
-  editor,
-  snapshot,
-  paint,
+  section,
+  color,
+  onChooseColor,
+  ...props
 }: PaletteProps & {
-  readonly category: PaletteCategory;
-  readonly entries: ReadonlyArray<PaletteEntry>;
-  readonly choices: ReadonlyArray<PaletteColorChoice>;
-  readonly paint: Paint;
+  readonly section: PaletteSection;
+  readonly color: number | null;
+  readonly onChooseColor: (code: number | null) => void;
 }) {
+  const { editor, snapshot } = props;
+  const { category } = section;
   switch (category) {
     case "track":
-      return <TrackSection editor={editor} snapshot={snapshot} />;
+      return <TrackSection rows={section.rows} editor={editor} snapshot={snapshot} />;
     case "baseplates":
     case "road":
       return (
         <PaintedSection
-          category={category}
-          entries={entries}
-          choices={choices}
-          editor={editor}
-          snapshot={snapshot}
-          paint={paint}
+          {...props}
+          section={{ ...section, category }}
+          color={color}
+          onChooseColor={onChooseColor}
         />
       );
     case "sets": {
-      const items = entries.flatMap((entry) => entry.items);
+      const items = section.rows.flatMap((row) => row.items);
       return (
         <Section id={category} title={CATEGORY_LABEL[category]} count={`${items.length} sets`}>
           <ul>
             {items.map((item) => (
-              <ItemButton key={item.id} item={item} editor={editor} snapshot={snapshot} />
+              <ItemButton key={item.id} {...props} item={item} />
             ))}
           </ul>
         </Section>
@@ -508,35 +503,32 @@ function CategorySection({
   }
 }
 
-function hitItemsText(hit: PaletteHit): string {
-  const colored = hit.items.filter((item) => item.color !== null);
-  if (colored.length === 0) return hit.items[0] ? itemMeta(hit.items[0]) : "";
-  if (colored.length === hit.entry.items.length) {
+function hitItemsText(row: PaletteRow): string {
+  const colored = row.items.filter((item) => item.color !== null);
+  if (colored.length === 0) return row.items[0] ? itemMeta(row.items[0]) : "";
+  if (colored.length === row.entry.items.length) {
     return `${colored.length} ${colored.length === 1 ? "colour" : "colours"}`;
   }
-  return `${colored.length} of ${hit.entry.items.length} colours`;
+  return `${colored.length} of ${row.entry.items.length} colours`;
 }
 
 function ResultRow({
-  hit,
+  row,
   highlighted,
-  editor,
-  snapshot,
-  paint,
-  onPick,
+  color,
+  ...props
 }: PaletteProps & {
-  readonly hit: PaletteHit;
+  readonly row: PaletteRow;
   readonly highlighted: boolean;
-  readonly paint: Paint;
-  readonly onPick: (item: CatalogItemView) => void;
+  readonly color: number | null;
 }) {
+  const { editor, snapshot, drag, prefetch } = props;
   const rowRef = useRef<HTMLLIElement>(null);
   useEffect(() => {
     if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
   }, [highlighted]);
-  const { entry } = hit;
-  const first = paint.resolve(hit.items, paint.current);
-  const colored = first?.color !== null && first !== undefined;
+  const { entry, chosen } = row;
+  const colored = chosen?.color !== null && chosen !== undefined;
   return (
     <li
       ref={rowRef}
@@ -546,14 +538,14 @@ function ResultRow({
       aria-selected={highlighted}
       role="option"
     >
-      <Thumbnail item={first} />
+      <Thumbnail item={row.preview} />
       <button
         type="button"
         className="palette-result-main"
-        {...(first ? hoverPrefetch(editor, first.id) : {})}
-        aria-pressed={hit.items.some((item) => item.id === snapshot.activeItem)}
-        onClick={() => first && onPick(first)}
-        {...(first ? paletteDragProps(editor, first) : {})}
+        {...(chosen ? prefetchProps(prefetch, chosen.id) : {})}
+        aria-pressed={row.items.some((item) => item.id === snapshot.activeItem)}
+        onClick={() => chosen && choosePaletteItem(editor, snapshot, chosen)}
+        {...(chosen ? paletteDragProps(drag, chosen) : {})}
       >
         <span className="palette-result-title">
           {entry.partNumber && <span className="palette-number">{entry.partNumber}</span>}
@@ -561,44 +553,30 @@ function ResultRow({
         </span>
         <span className="palette-result-meta">
           <span className="palette-tag">{CATEGORY_LABEL[entry.category]}</span>
-          {first?.aliases.map((alias) => (
+          {chosen?.aliases.map((alias) => (
             <span key={alias} className="palette-alias" title="Rebrickable part number">
               {alias}
             </span>
           ))}
           {entry.size !== "" && entry.category !== "track" && <span>{entry.size}</span>}
-          <span>{hitItemsText(hit)}</span>
+          <span>{hitItemsText(row)}</span>
         </span>
       </button>
       <FavoriteStar entryKey={entry.key} title={entry.title} />
-      {colored && (
-        <Swatches
-          entry={entry}
-          items={hit.items}
-          editor={editor}
-          snapshot={snapshot}
-          paint={paint}
-        />
-      )}
+      {colored && <Swatches {...props} entry={entry} items={row.items} current={color} />}
     </li>
   );
 }
 
-function trackTerms(track: PaletteSnapshot["track"]): ReadonlyArray<string> {
-  return (track?.bom ?? []).flatMap((line) => [line.piece.replace(/^[a-z]+:/u, ""), line.title]);
-}
+const TABS: ReadonlyArray<PaletteTab> = ["all", "favorites", ...PALETTE_CATEGORIES];
 
-type Tab = PaletteFilter | "favorites";
-
-const TABS: ReadonlyArray<Tab> = ["all", "favorites", ...PALETTE_CATEGORIES];
-
-function tabLabel(tab: Tab): string {
+function tabLabel(tab: PaletteTab): string {
   if (tab === "all") return "All";
   if (tab === "favorites") return "★";
   return CATEGORY_LABEL[tab];
 }
 
-function tabName(tab: Tab): string {
+function tabName(tab: PaletteTab): string {
   return tab === "favorites" ? "Favourites" : tabLabel(tab);
 }
 
@@ -609,18 +587,19 @@ function usePaletteMemory(memory: IPaletteMemory) {
   );
 }
 
-function recentLabel(item: CatalogItemView): string {
-  if (item.kind === "track") return "Track";
-  if (item.color)
-    return `${item.group.replace(/^[a-z]+:/u, "")} ${item.studsWide}×${item.studsDeep}`;
-  return item.label.replace(/ \(\d{4}\)$/u, "");
+function usePaletteSearchSnapshot(search: IPaletteSearch): PaletteSearchSnapshot {
+  return useSyncExternalStore(
+    (listener) => search.subscribe(listener),
+    () => search.snapshot(),
+  );
 }
 
 function RecentStrip({
-  editor,
-  snapshot,
   recents,
   onForget,
+  editor,
+  snapshot,
+  drag,
 }: PaletteProps & { readonly recents: ReadonlyArray<string>; readonly onForget: () => void }) {
   const items = recents.flatMap((id) => snapshot.catalog.find((item) => item.id === id) ?? []);
   if (items.length === 0) return null;
@@ -635,15 +614,11 @@ function RecentStrip({
           data-recent={item.id}
           aria-pressed={snapshot.activeItem === item.id}
           title={item.label}
-          onClick={() =>
-            editor.chooseItem(
-              snapshot.activeItem === item.id && item.kind === "track" ? null : item.id,
-            )
-          }
-          {...paletteDragProps(editor, item)}
+          onClick={() => choosePaletteItem(editor, snapshot, item)}
+          {...paletteDragProps(drag, item)}
         >
           {item.color && <span className="palette-dot" style={{ background: item.color.rgb }} />}
-          {recentLabel(item)}
+          {item.shortLabel}
         </button>
       ))}
       <button type="button" className="palette-recents-clear" onClick={onForget}>
@@ -654,15 +629,18 @@ function RecentStrip({
 }
 
 export const PalettePanel = memo(function PalettePanel({
-  editor,
-  snapshot,
+  search,
   memory,
   thumbnails,
-}: PaletteProps & { readonly memory: IPaletteMemory; readonly thumbnails: IPaletteThumbnails }) {
-  const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<Tab>("all");
+  ...props
+}: PaletteProps & {
+  readonly search: IPaletteSearch;
+  readonly memory: IPaletteMemory;
+  readonly thumbnails: IPaletteThumbnails;
+}) {
+  const { editor, snapshot } = props;
+  const { query, tab, color, sections, hits, counts, status } = usePaletteSearchSnapshot(search);
   const [highlight, setHighlight] = useState(0);
-  const [color, setColor] = useState<number | null>(null);
   const remembered = usePaletteMemory(memory);
   const favorites = useMemo<Favorites>(
     () => ({
@@ -671,49 +649,9 @@ export const PalettePanel = memo(function PalettePanel({
     }),
     [remembered.favorites, memory],
   );
-  const { catalog } = snapshot;
-  const trackKey = trackTerms(snapshot.track).join("\n");
-  const index = useMemo(
-    () =>
-      new PaletteIndex(catalog, [
-        { entryKey: TRACK_ITEM_ID, terms: trackKey === "" ? [] : trackKey.split("\n") },
-      ]),
-    [catalog, trackKey],
-  );
-  const paint: Paint = {
-    current: color,
-    choose: setColor,
-    resolve: (items, current) => index.defaultItem(items, current),
-  };
   const searching = query.trim() !== "";
-  useEffect(() => editor.searchCatalog(query), [editor, query]);
   const listing = searching || tab === "favorites";
-  const results = useMemo(
-    () => paletteResults(index, query, tab === "favorites" ? "all" : tab, snapshot.catalogSearch),
-    [index, query, tab, snapshot.catalogSearch],
-  );
-  const hits = useMemo(() => {
-    if (!listing) return [];
-    return tab === "favorites"
-      ? results.hits.filter((hit) => favorites.keys.has(hit.entry.key))
-      : results.hits;
-  }, [results, tab, listing, favorites]);
-  const counts = useMemo(
-    () =>
-      new Map<Tab, number>([
-        ...results.counts,
-        [
-          "favorites",
-          index.search(query, "all").filter((hit) => favorites.keys.has(hit.entry.key)).length,
-        ],
-      ]),
-    [results, index, query, favorites],
-  );
   const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
-
-  const pick = (item: CatalogItemView): void => {
-    editor.chooseItem(snapshot.activeItem === item.id && item.kind === "track" ? null : item.id);
-  };
 
   const onSearchKey = (event: KeyboardEvent<HTMLInputElement>): void => {
     switch (event.key) {
@@ -724,15 +662,15 @@ export const PalettePanel = memo(function PalettePanel({
         setHighlight(Math.max(shownHighlight - 1, 0));
         break;
       case "Enter": {
-        const item = paint.resolve(hits[shownHighlight]?.items ?? [], color);
+        const item = hits[shownHighlight]?.chosen;
         if (!item) return;
-        pick(item);
+        choosePaletteItem(editor, snapshot, item);
         event.currentTarget.blur();
         break;
       }
       case "Escape":
         if (query === "") event.currentTarget.blur();
-        setQuery("");
+        search.setQuery("");
         setHighlight(0);
         break;
       default:
@@ -741,7 +679,6 @@ export const PalettePanel = memo(function PalettePanel({
     event.preventDefault();
   };
 
-  const sections = PALETTE_CATEGORIES.filter((category) => tab === "all" || tab === category);
   return (
     <FavoritesContext value={favorites}>
       <ThumbnailsContext value={snapshot.status === "ready" ? thumbnails : null}>
@@ -757,7 +694,7 @@ export const PalettePanel = memo(function PalettePanel({
               aria-controls="palette-results"
               value={query}
               onChange={(event) => {
-                setQuery(event.target.value);
+                search.setQuery(event.target.value);
                 setHighlight(0);
               }}
               onKeyDown={onSearchKey}
@@ -773,7 +710,7 @@ export const PalettePanel = memo(function PalettePanel({
                   aria-selected={tab === option}
                   aria-label={option === "favorites" ? "Favourites" : undefined}
                   onClick={() => {
-                    setTab(option);
+                    search.setTab(option);
                     setHighlight(0);
                   }}
                 >
@@ -784,8 +721,7 @@ export const PalettePanel = memo(function PalettePanel({
             </div>
           </div>
           <RecentStrip
-            editor={editor}
-            snapshot={snapshot}
+            {...props}
             recents={remembered.recents}
             onForget={() => memory.forgetRecents()}
           />
@@ -800,32 +736,28 @@ export const PalettePanel = memo(function PalettePanel({
               aria-label={searching ? "Search results" : "Favourites"}
               data-results={hits.length}
             >
-              {hits.map((hit, i) => (
+              {hits.map((row, i) => (
                 <ResultRow
-                  key={hit.entry.key}
-                  hit={hit}
+                  key={row.entry.key}
+                  {...props}
+                  row={row}
+                  color={color}
                   highlighted={searching && i === shownHighlight}
-                  editor={editor}
-                  snapshot={snapshot}
-                  paint={paint}
-                  onPick={pick}
                 />
               ))}
             </ul>
           ) : (
-            sections.map((category) => (
+            sections.map((section) => (
               <CategorySection
-                key={category}
-                category={category}
-                entries={index.entries(category)}
-                choices={index.colorChoices(category)}
-                editor={editor}
-                snapshot={snapshot}
-                paint={paint}
+                key={section.category}
+                {...props}
+                section={section}
+                color={color}
+                onChooseColor={(code) => search.chooseColor(code)}
               />
             ))
           )}
-          {searching && results.status === "offline" && (
+          {searching && status === "offline" && (
             <p className="palette-hint" data-search-offline>
               Search offline: showing palette matches only.
             </p>

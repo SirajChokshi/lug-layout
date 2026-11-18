@@ -137,6 +137,9 @@ export {
   IMPORT_SCENE,
   MODEL_IMPORTER,
   MODEL_SCENE,
+  PALETTE_DRAG,
+  PALETTE_PREFETCH,
+  PALETTE_SEARCH,
   SIM_CLIENT,
   TRACK_SCENE,
   TRAIN_PLAY,
@@ -146,7 +149,7 @@ export {
 } from "./tokens.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
-export { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./edit/editor.ts";
+export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export {
   COMMAND_GROUPS,
   COMMANDS,
@@ -216,23 +219,23 @@ export type {
   TrackRouteView,
 } from "./edit/track-drawing.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
-export {
-  CATEGORY_LABEL,
-  PALETTE_CATEGORIES,
-  PaletteIndex,
-  colorDisplayName,
-  itemInColor,
-} from "./catalog/palette-index.ts";
+export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {
   PaletteCategory,
   PaletteColorChoice,
   PaletteEntry,
   PaletteFilter,
-  PaletteHit,
-  PaletteTerms,
 } from "./catalog/palette-index.ts";
-export { paletteResults } from "./catalog/palette-results.ts";
-export type { PaletteResults } from "./catalog/palette-results.ts";
+export type {
+  IPaletteSearch,
+  PaletteColors,
+  PaletteRow,
+  PaletteSearchSnapshot,
+  PaletteSection,
+  PaletteTab,
+} from "./catalog/palette-search.ts";
+export type { IPaletteDrag } from "./catalog/palette-drag.ts";
+export type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 export { CATALOG_SEARCH_DEBOUNCE_MS } from "./catalog/catalog-search.ts";
 export type {
   CatalogSearchStatus,
