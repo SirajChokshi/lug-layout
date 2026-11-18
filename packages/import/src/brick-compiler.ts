@@ -63,6 +63,7 @@ export interface CompileRequest {
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;
+  readonly records?: boolean;
 }
 
 type RawCompile = CompilerCompile;
@@ -75,7 +76,10 @@ export type Need = Omit<Extract<RawPartOutcome, { status: "need" }>, "reference"
 
 export type PartOutcome =
   | Exclude<RawPartOutcome, { status: "compiled" }>
-  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb"> & { readonly glb: Uint8Array });
+  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb" | "record"> & {
+      readonly glb: Uint8Array;
+      readonly record: Uint8Array | null;
+    });
 
 export type InlineOutcome = RawInlineOutcome;
 
@@ -320,13 +324,17 @@ export class BrickCompiler {
       library,
     );
     const output = decodedOrThrow(decode(CompilerCompile, header), "brick-compile compile");
+    const slice = ([offset, length]: Range): Uint8Array => body.slice(offset, offset + length);
     return {
       weldEpsilonLdu: output.weldEpsilonLdu,
       inline: output.inline,
       parts: output.parts.map((outcome): PartOutcome => {
         if (outcome.status !== "compiled") return outcome;
-        const [offset, length] = outcome.glb;
-        return { ...outcome, glb: body.slice(offset, offset + length) };
+        return {
+          ...outcome,
+          glb: slice(outcome.glb),
+          record: outcome.record === null ? null : slice(outcome.record),
+        };
       }),
     };
   }

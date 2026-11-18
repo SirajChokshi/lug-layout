@@ -9,9 +9,14 @@ use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
+use brick_compile::record::BakeRecord;
 use brick_compile::studio::read_io;
-use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
+use brick_compile::vehicle::{part_bounds, Vehicle};
+use brick_compile::{
+    compile_part, CompileError, CompileOptions, CompiledPart, Lod, TechnicPrimitives,
+};
+
+const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
 
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
@@ -61,7 +66,11 @@ impl Session {
                 primitives,
                 parts,
                 inline_checks,
+                records,
             } => {
+                if *records && Lod::from(*lod) != Lod::Standard {
+                    return Err(BAKE_RECORD_LOD.to_string());
+                }
                 let rolling_mode = rolling_mode_from_studs(&self.library, stud_primitives);
                 let stud_needs = self.library.take_requested();
                 let options = CompileOptions {
@@ -75,17 +84,18 @@ impl Session {
                     rolling_mode,
                 };
                 let model = request.text("source")?;
-                Ok(compile(
+                compile(
                     &self.library,
                     &options,
                     CompileWork {
                         references: parts,
                         inline_checks,
                         stud_needs: &stud_needs,
+                        records: *records,
                     },
                     &model,
                     body,
-                ))
+                )
             }
             Operation::BakeNeeds { stud_primitives } => {
                 let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
@@ -201,6 +211,22 @@ struct CompileWork<'a> {
     references: &'a [String],
     inline_checks: &'a [InlineCheck],
     stud_needs: &'a [String],
+    records: bool,
+}
+
+fn compiled_part(
+    library: &TrackingLibrary,
+    reference: &str,
+    options: &CompileOptions,
+    records: bool,
+) -> Result<(CompiledPart, Option<BakeRecord>), CompileError> {
+    let compiled = compile_part(library, reference, options)?;
+    if !records {
+        return Ok((compiled, None));
+    }
+    let bounds = part_bounds(library, reference)?;
+    let record = BakeRecord::of(&compiled, bounds);
+    Ok((compiled, Some(record)))
 }
 
 fn compile(
@@ -209,15 +235,16 @@ fn compile(
     work: CompileWork,
     model: &str,
     body: &mut Body,
-) -> Reply {
+) -> Result<Reply, String> {
     let CompileWork {
         references,
         inline_checks,
         stud_needs,
+        records,
     } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
-        let result = compile_part(library, reference, options);
+        let result = compiled_part(library, reference, options, records);
         let mut requested = library.take_requested();
         requested.extend(stud_needs.iter().cloned());
         let reference = reference.clone();
@@ -226,9 +253,15 @@ fn compile(
                 reference,
                 paths: requested,
             },
-            Ok(compiled) => PartOutcome::Compiled {
-                reference,
+            Ok((compiled, record)) => PartOutcome::Compiled {
                 glb: body.bytes(&compiled.to_glb()),
+                record: match record {
+                    Some(record) => {
+                        Some(body.bytes(&record.encode().map_err(|e| format!("{reference}: {e}"))?))
+                    }
+                    None => None,
+                },
+                reference,
                 file: compiled.path.clone(),
                 header: Section::from(&compiled.flattened_files[0].header),
                 files: compiled.flattened_files.len(),
@@ -259,11 +292,11 @@ fn compile(
             },
         });
     }
-    Reply::Compiled {
+    Ok(Reply::Compiled {
         parts,
         inline,
         weld_epsilon_ldu: WELD_EPSILON_LDU,
-    }
+    })
 }
 
 fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, String> {

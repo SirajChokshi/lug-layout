@@ -794,6 +794,7 @@ export const CompilerRequest = v.variant("op", [
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
       v.readonly(),
     ),
+    records: v.exactOptional(v.boolean()),
   }),
   v.strictObject({
     op: v.literal("bakeNeeds"),
@@ -876,6 +877,7 @@ export const CompilerCompile = v.object({
         status: v.literal("compiled"),
         ...Reference,
         glb: ByteRange,
+        record: v.nullable(ByteRange),
         file: v.string(),
         header: ModelSection,
         files: Count,
@@ -1204,6 +1206,55 @@ export const LdrawLibraryIndex = v.strictObject({
   files: v.record(v.string(), Sha256Hex),
 });
 export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
+
+export const LIBRARY_BAKE_FORMAT = 1;
+
+export const LibraryBakeOptions = v.strictObject({
+  studPrimitives: StringList,
+  unofficialAllowlist: StringList,
+  primitives: PrimitiveConnectorTable,
+});
+export type LibraryBakeOptions = v.InferOutput<typeof LibraryBakeOptions>;
+
+export const LibraryBakePart = v.strictObject({ record: v.string(), glb: v.string() });
+export type LibraryBakePart = v.InferOutput<typeof LibraryBakePart>;
+
+export const LIBRARY_BAKE_BUCKETS = 256;
+const FNV_OFFSET = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+
+export function libraryBakeBucket(partId: string): number {
+  let hash = FNV_OFFSET;
+  for (let unit = 0; unit < partId.length; unit++) {
+    hash = Math.imul(hash ^ partId.charCodeAt(unit), FNV_PRIME) >>> 0;
+  }
+  return hash % LIBRARY_BAKE_BUCKETS;
+}
+
+export const LibraryBakeBucket = v.strictObject({
+  bucket: v.pipe(Count, v.maxValue(LIBRARY_BAKE_BUCKETS - 1)),
+  parts: v.record(v.string(), LibraryBakePart),
+});
+export type LibraryBakeBucket = v.InferOutput<typeof LibraryBakeBucket>;
+
+export const LibraryBakeIndex = v.strictObject({
+  format: v.literal(LIBRARY_BAKE_FORMAT),
+  source: GithubMirror,
+  options: LibraryBakeOptions,
+  licenses: StringList,
+  buckets: v.pipe(v.array(v.string()), v.length(LIBRARY_BAKE_BUCKETS), v.readonly()),
+  failed: v.record(v.string(), v.string()),
+});
+export type LibraryBakeIndex = v.InferOutput<typeof LibraryBakeIndex>;
+
+export const LibraryBakePin = v.strictObject({
+  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  parts: Count,
+  records: Count,
+  failed: Count,
+  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
+});
+export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 
 export const CatalogSourceUse = v.picklist(["crosswalk", "inventory-check", "categories"]);
 export type CatalogSourceUse = v.InferOutput<typeof CatalogSourceUse>;

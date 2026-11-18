@@ -168,9 +168,36 @@ jobs:
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - run: pnpm --filter @brr/import test:bundle-models
 
+  library-bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: .cache/catalog
+          key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
+        run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - name: Build the shipped WASM compiler
+        run: cargo build --release --target wasm32-wasip1 -p brick-compile-wasm
+      - name: Compile every pinned part in the shipped WASM compiler and compare bytes
+        run: pnpm --filter @brr/e2e library-bake-parity
+
   check:
     if: ${{ always() }}
-    needs: [verify, e2e, import-bundle-models]
+    needs: [verify, e2e, import-bundle-models, library-bake]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -178,6 +205,7 @@ jobs:
           VERIFY: ${{ needs.verify.result }}
           E2E: ${{ needs.e2e.result }}
           IMPORT_BUNDLE_MODELS: ${{ needs.import-bundle-models.result }}
+          LIBRARY_BAKE: ${{ needs.library-bake.result }}
         run: |
-          echo "verify: $VERIFY, e2e: $E2E, import-bundle-models: $IMPORT_BUNDLE_MODELS"
-          test "$VERIFY" = success && test "$E2E" = success && test "$IMPORT_BUNDLE_MODELS" = success
+          echo "verify: $VERIFY, e2e: $E2E, import-bundle-models: $IMPORT_BUNDLE_MODELS, library-bake: $LIBRARY_BAKE"
+          test "$VERIFY" = success && test "$E2E" = success && test "$IMPORT_BUNDLE_MODELS" = success && test "$LIBRARY_BAKE" = success

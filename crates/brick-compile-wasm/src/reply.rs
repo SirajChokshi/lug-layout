@@ -189,6 +189,7 @@ pub enum PartOutcome {
     Compiled {
         reference: String,
         glb: Range,
+        record: Option<Range>,
         file: String,
         header: Section,
         files: usize,
