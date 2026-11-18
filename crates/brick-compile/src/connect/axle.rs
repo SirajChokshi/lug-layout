@@ -117,67 +117,59 @@ impl AxleProbe {
         let mut missed = Vec::new();
         let mut seen: HashSet<(usize, i8, [i64; 3])> = HashSet::new();
         for plane in solid.planes() {
-            let steps = |lo: f64, hi: f64| {
-                let first = ((lo - IDENTIFY_LDU) / HALF_GRID_LDU).ceil() as i64;
-                let last = ((hi + IDENTIFY_LDU) / HALF_GRID_LDU).floor() as i64;
-                first..=last
-            };
             let inward = -plane.outward;
             let far = if inward > 0.0 {
                 high[plane.axis] - plane.at
             } else {
                 plane.at - low[plane.axis]
             };
-            for a in steps(plane.min[0], plane.max[0]) {
-                for b in steps(plane.min[1], plane.max[1]) {
-                    let center = [a as f64 * HALF_GRID_LDU, b as f64 * HALF_GRID_LDU];
-                    let entrance = point_on(plane.axis, center, plane.at);
-                    let cell = entrance.map(|c| (c / IDENTIFY_LDU).round() as i64);
-                    if !seen.insert((plane.axis, inward as i8, cell)) {
-                        continue;
+            for center in solid.grid(&plane, self.reach()) {
+                let entrance = point_on(plane.axis, center, plane.at);
+                let cell = entrance.map(|c| (c / IDENTIFY_LDU).round() as i64);
+                if !seen.insert((plane.axis, inward as i8, cell)) {
+                    continue;
+                }
+                let probe = Probe {
+                    axis: plane.axis,
+                    inward,
+                    entrance,
+                    radius: self.radius(),
+                };
+                let inner = self.profile.inner();
+                let disc = Probe {
+                    radius: inner,
+                    ..probe
+                };
+                let floor = solid.floor_beyond(&disc, inner - IDENTIFY_LDU, IDENTIFY_LDU);
+                let clear = floor.map(|floor| floor.depth.min(far));
+                let outcome = match clear {
+                    Some(clear) if clear > 2.0 * IDENTIFY_LDU => {
+                        self.hole(solid, &probe, clear, far)
                     }
-                    let probe = Probe {
-                        axis: plane.axis,
-                        inward,
-                        entrance,
-                        radius: self.radius(),
-                    };
-                    let inner = self.profile.inner();
-                    let disc = Probe {
-                        radius: inner,
-                        ..probe
-                    };
-                    let floor = solid.floor_beyond(&disc, inner - IDENTIFY_LDU, IDENTIFY_LDU);
-                    let clear = floor.map(|floor| floor.depth.min(far));
-                    let outcome = match clear {
-                        Some(clear) if clear > 2.0 * IDENTIFY_LDU => {
-                            self.hole(solid, &probe, clear, far)
+                    Some(clear) if clear > IDENTIFY_LDU => None,
+                    _ => self.tip(solid, &probe, far),
+                };
+                match outcome {
+                    Some(Ok(
+                        feature @ AxleFound::Hole {
+                            depth: Some(depth), ..
+                        },
+                    )) => {
+                        let (i, j) = plan_axes(probe.axis);
+                        let column = (
+                            probe.axis,
+                            inward as i8,
+                            cell[i],
+                            cell[j],
+                            depth_key(&probe, depth),
+                        );
+                        if holes.get(&column).is_none_or(|(kept, _)| depth > *kept) {
+                            holes.insert(column, (depth, feature));
                         }
-                        Some(clear) if clear > IDENTIFY_LDU => None,
-                        _ => self.tip(solid, &probe, far),
-                    };
-                    match outcome {
-                        Some(Ok(
-                            feature @ AxleFound::Hole {
-                                depth: Some(depth), ..
-                            },
-                        )) => {
-                            let (i, j) = plan_axes(probe.axis);
-                            let column = (
-                                probe.axis,
-                                inward as i8,
-                                cell[i],
-                                cell[j],
-                                depth_key(&probe, depth),
-                            );
-                            if holes.get(&column).is_none_or(|(kept, _)| depth > *kept) {
-                                holes.insert(column, (depth, feature));
-                            }
-                        }
-                        Some(Ok(feature)) => found.push(feature),
-                        Some(Err(miss)) => missed.push((entrance, miss)),
-                        None => {}
                     }
+                    Some(Ok(feature)) => found.push(feature),
+                    Some(Err(miss)) => missed.push((entrance, miss)),
+                    None => {}
                 }
             }
         }

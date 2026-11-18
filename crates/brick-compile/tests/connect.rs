@@ -1375,6 +1375,61 @@ fn sorted_debug<T: std::fmt::Debug>(items: impl IntoIterator<Item = T>) -> Vec<S
 }
 
 #[test]
+fn geometry_far_from_the_origin_extracts_exactly_like_the_same_geometry_near_it() {
+    let far = 10_000_000;
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/plate.dat", custom_plate(4, 4, &[(-30, -30)])),
+            (
+                "parts/twin.dat",
+                format!(
+                    "0 Twin\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 plate.dat\n1 16 {far} 0 {far} 1 0 0 0 1 0 0 0 1 plate.dat\n"
+                ),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let plate = inferred.infer("parts/plate.dat");
+    let twin = inferred.infer("parts/twin.dat");
+    assert!(!plate.connectors.is_empty());
+    assert!(!plate.issues.is_empty());
+    let shift = 16 * i64::from(far);
+    let mut expected = face_keys(&plate.connectors);
+    expected.extend(face_keys(&plate.connectors).into_iter().map(
+        |(gender, origin, axis, sections)| {
+            (
+                gender,
+                [origin[0] + shift, origin[1], origin[2] - shift],
+                axis,
+                sections,
+            )
+        },
+    ));
+    expected.sort();
+    assert_eq!(face_keys(&twin.connectors), expected);
+    let shifted = plate.issues.iter().map(|issue| match issue {
+        Issue::Uninferred { origin, reason } => Issue::Uninferred {
+            origin: [
+                origin[0] + f64::from(far),
+                origin[1],
+                origin[2] + f64::from(far),
+            ],
+            reason: *reason,
+        },
+        other => other.clone(),
+    });
+    assert_eq!(
+        sorted_debug(&twin.issues),
+        sorted_debug(plate.issues.iter().cloned().chain(shifted))
+    );
+}
+
+#[test]
 fn tier_4_reports_malformed_geometry_and_infers_nothing_from_that_part() {
     let malformed = |file: &str, malformation| Issue::MalformedGeometry {
         file: file.to_string(),
@@ -1806,4 +1861,98 @@ fn tiers_one_and_two_drop_and_report_references_they_cannot_place_and_keep_the_r
         .iter()
         .filter(|issue| matches!(issue, Issue::MalformedGeometry { .. }));
     assert_eq!(sorted_debug(reported), findings);
+}
+
+#[test]
+fn geometry_too_large_for_the_cell_index_is_reported_once_and_probed_where_it_matters() {
+    let top_ring: String = hub_ring(0, 20, 6)
+        .lines()
+        .map(|line| {
+            let t: Vec<&str> = line.split_whitespace().collect();
+            format!(
+                "4 16 {} {} {} {}\n",
+                t[11..14].join(" "),
+                t[8..11].join(" "),
+                t[5..8].join(" "),
+                t[2..5].join(" ")
+            )
+        })
+        .collect();
+    let through_block = format!(
+        "0 Through Block\n0 BFC CERTIFY CCW\n1 16 0 20 0 20 0 0 0 -20 0 0 0 20 box4.dat\n0 BFC INVERTNEXT\n1 16 0 20 0 6 0 0 0 -20 0 0 0 6 4-4cyli.dat\n{top_ring}{}",
+        hub_ring(20, 20, 6)
+    );
+    let closed_by = |reach: i32| {
+        format!("{through_block}3 16 -{reach} 20 -{reach} {reach} 20 -{reach} 0 20 {reach}\n")
+    };
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/hub.dat", custom_hub(ROUND_HOLE)),
+            (
+                "parts/hub-over-a-huge-facet.dat",
+                format!(
+                    "{}3 16 -1000000 40 -1000000 0 40 1000000 1000000 40 -1000000\n3 16 -500000 60 -500000 0 60 500000 500000 60 -500000\n",
+                    custom_hub(ROUND_HOLE)
+                ),
+            ),
+            (
+                "parts/hub-in-a-huge-ring.dat",
+                format!(
+                    "{}1 16 0 20 0 1500 0 0 0 -16 0 0 0 1500 4-4cyli.dat\n",
+                    custom_hub(ROUND_HOLE)
+                ),
+            ),
+            ("parts/through.dat", through_block.clone()),
+            ("parts/closed-by-a-small-facet.dat", closed_by(40)),
+            ("parts/closed-by-a-huge-facet.dat", closed_by(1_000_000)),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures")
+        .with_axle_probe("p/axleend.dat")
+        .expect("the pinned axle end measures");
+    let oversized = |inference: &brick_compile::connect::Inference| -> Vec<(Vec3, f64)> {
+        inference
+            .issues
+            .iter()
+            .filter_map(|issue| match issue {
+                Issue::Uninferred {
+                    origin,
+                    reason: Uninferred::Oversized { cells },
+                } => Some((*origin, *cells)),
+                _ => None,
+            })
+            .collect()
+    };
+    let hub_face = vec![round_face(Gender::Female, [0.0, -20.0, 0.0], -1, 6.0, 16.0)];
+    let hub = inferred.infer("parts/hub.dat");
+    assert_eq!(face_keys(&hub.connectors), hub_face);
+    assert!(oversized(&hub).is_empty());
+    let across = |half: f64| 2.0 * half / 10.0 + 1.0;
+    let over_facet = inferred.infer("parts/hub-over-a-huge-facet.dat");
+    assert_eq!(face_keys(&over_facet.connectors), hub_face);
+    assert_eq!(
+        oversized(&over_facet),
+        vec![(
+            [0.0, 40.0, -1_000_000.0 / 3.0],
+            across(1_000_000.0) * across(1_000_000.0)
+        )]
+    );
+    let in_ring = inferred.infer("parts/hub-in-a-huge-ring.dat");
+    assert_eq!(face_keys(&in_ring.connectors), hub_face);
+    assert_eq!(
+        oversized(&in_ring),
+        vec![([0.0, 4.0, 0.0], across(1500.0) * across(1500.0))]
+    );
+    let through = inferred.infer("parts/through.dat");
+    let small = inferred.infer("parts/closed-by-a-small-facet.dat");
+    let huge = inferred.infer("parts/closed-by-a-huge-facet.dat");
+    let blind = vec![round_face(Gender::Female, [0.0, 0.0, 0.0], 1, 6.0, 20.0)];
+    assert_ne!(face_keys(&through.connectors), blind);
+    assert!(oversized(&small).is_empty());
+    assert_eq!(face_keys(&small.connectors), blind);
+    assert_eq!(oversized(&huge).len(), 1);
+    assert_eq!(face_keys(&huge.connectors), blind);
 }
