@@ -35,6 +35,7 @@ function part(id: string, size: number): PartAsset {
     studColors: new Uint16Array(0),
     studMatrices: new Float32Array(0),
     technic: null,
+    rolling: null,
   };
 }
 

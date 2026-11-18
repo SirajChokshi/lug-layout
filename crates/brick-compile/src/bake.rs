@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
-use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart};
+use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::cover::{
     model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
 };
@@ -116,6 +116,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
+            rolling_mode: RollingMode::Skip,
             stud_primitives,
             unofficial_allowlist,
         };

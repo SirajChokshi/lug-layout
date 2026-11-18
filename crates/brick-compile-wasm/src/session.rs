@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
@@ -59,17 +60,23 @@ impl Session {
                 parts,
                 inline_checks,
             } => {
+                let rolling_mode = rolling_mode_from_studs(&self.library, stud_primitives);
+                let stud_needs = self.library.take_requested();
                 let options = CompileOptions {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
+                    rolling_mode,
                 };
                 let model = request.text("source")?;
                 Ok(compile(
                     &self.library,
                     &options,
-                    parts,
-                    inline_checks,
+                    CompileWork {
+                        references: parts,
+                        inline_checks,
+                        stud_needs: &stud_needs,
+                    },
                     &model,
                     body,
                 ))
@@ -182,18 +189,29 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     })
 }
 
+struct CompileWork<'a> {
+    references: &'a [String],
+    inline_checks: &'a [InlineCheck],
+    stud_needs: &'a [String],
+}
+
 fn compile(
     library: &TrackingLibrary,
     options: &CompileOptions,
-    references: &[String],
-    inline_checks: &[InlineCheck],
+    work: CompileWork,
     model: &str,
     body: &mut Body,
 ) -> Reply {
+    let CompileWork {
+        references,
+        inline_checks,
+        stud_needs,
+    } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
         let result = compile_part(library, reference, options);
-        let requested = library.take_requested();
+        let mut requested = library.take_requested();
+        requested.extend(stud_needs.iter().cloned());
         let reference = reference.clone();
         parts.push(match result {
             _ if !requested.is_empty() => PartOutcome::Need {

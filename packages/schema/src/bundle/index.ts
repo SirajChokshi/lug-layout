@@ -363,6 +363,102 @@ export const PartTechnic = v.object({
 });
 export type PartTechnic = v.InferOutput<typeof PartTechnic>;
 
+export const ROLLING_STEPS_PER_LDU = 16;
+
+const RollingAxis = v.pipe(
+  v.picklist([0, 1, 2]),
+  v.description("the part-frame axis the band turns about: 0 is x, 1 is y, 2 is z (y up)"),
+);
+const RollingAt = v.pipe(
+  v.tuple([Integer, Integer]),
+  v.description(
+    "the axis line's two coordinates perpendicular to `axis`, in ascending axis order, in sixteenths of an LDU",
+  ),
+);
+const RollingAlong = v.pipe(
+  Integer,
+  v.description("a position along `axis`, in sixteenths of an LDU"),
+);
+export const RollingSurface = v.pipe(
+  v.object({
+    source: v.literal("measured"),
+    axis: RollingAxis,
+    at: RollingAt,
+    from: RollingAlong,
+    to: RollingAlong,
+    radii: v.pipe(
+      v.tuple([Count, Count]),
+      v.description(
+        "the radius at `from`, then at `to`, in sixteenths of an LDU; equal for a cylinder, different for a cone",
+      ),
+    ),
+  }),
+  v.check(({ from, to }) => from < to, "a rolling surface runs from below `to`"),
+  v.description(
+    "an outward round band of the part's own triangles, identified to the sixteenth grid; the bands on one axis line together give its whole outward profile, and neighbours share their end sixteenths",
+  ),
+);
+export type RollingSurface = v.InferOutput<typeof RollingSurface>;
+
+const EndRadii = v.pipe(
+  v.tuple([v.nullable(Count), v.nullable(Count)]),
+  v.description("the radius at `from` and at `to` in sixteenths, null where it didn't identify"),
+);
+
+const UnreadEnds = {
+  from: v.optional(RollingAlong),
+  to: v.optional(RollingAlong),
+};
+
+export const UnreadBand = v.pipe(
+  v.variant("reason", [
+    v.object({ reason: v.literal("unoriented") }),
+    v.object({
+      reason: v.literal("centre"),
+      axis: RollingAxis,
+      radii: v.optional(EndRadii),
+      ...UnreadEnds,
+    }),
+    v.object({
+      reason: v.literal("radius"),
+      axis: RollingAxis,
+      at: RollingAt,
+      radii: EndRadii,
+      ...UnreadEnds,
+    }),
+    v.object({
+      reason: v.literal("width"),
+      axis: RollingAxis,
+      at: RollingAt,
+      radii: v.tuple([Count, Count]),
+      ...UnreadEnds,
+    }),
+    v.object({
+      reason: v.picklist(["faceted", "partial", "facing", "irregular"]),
+      axis: RollingAxis,
+      at: v.optional(RollingAt),
+      radii: v.optional(EndRadii),
+      ...UnreadEnds,
+    }),
+  ]),
+  v.check(
+    (band) =>
+      !("from" in band) || band.from === undefined || band.to === undefined || band.from <= band.to,
+    "an unread band runs from no higher than `to`",
+  ),
+  v.description(
+    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify",
+  ),
+);
+export type UnreadBand = v.InferOutput<typeof UnreadBand>;
+
+export const PartRolling = v.object({
+  stepsPerLdu: v.literal(ROLLING_STEPS_PER_LDU),
+  surfaces: v.array(RollingSurface),
+  unread: v.array(UnreadBand),
+});
+export type PartRolling = v.InferOutput<typeof PartRolling>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -377,6 +473,7 @@ export const PartShape = v.object({
   producedColors: v.optional(ProducedColors),
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
+  rolling: v.optional(PartRolling),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -715,7 +812,7 @@ const CompilerNeed = v.object({ status: v.literal("need"), paths: v.array(v.stri
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial"]),
+  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
@@ -926,6 +1023,7 @@ export const PartExtras = v.object({
   studs: v.array(StudRecord),
   bounds: Bounds,
   technic: v.optional(PartTechnic),
+  rolling: v.optional(PartRolling),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 

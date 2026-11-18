@@ -1,3 +1,4 @@
+import { parseGlb } from "@brr/catalog/glb";
 import type { CompilerVehicles } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
 import {
@@ -44,6 +45,7 @@ const COLOR_NOT_IN_LDCONFIG = 99_999;
 const MAIN_COLOUR = 16;
 const RED = 4;
 const YELLOW = 14;
+const SIXTEENTHS_PER_LDU = 16;
 
 interface PaletteModel {
   readonly name: string;
@@ -126,6 +128,7 @@ async function importWith(
   text: string,
   compiler?: BrickCompiler,
   helpers: ReadonlyArray<IBakeHelper> = [],
+  studPrimitives?: ReadonlyArray<string>,
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const partTable = JSON.parse(
@@ -142,7 +145,7 @@ async function importWith(
     text,
     lod: "standard",
     source: manifest.source,
-    studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+    studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
@@ -466,3 +469,72 @@ it(
   },
   BAKE_TIMEOUT_MS,
 );
+
+function band(from: number, to: number, radii: readonly [number, number]) {
+  return {
+    source: "measured",
+    axis: 0,
+    at: [0, 0],
+    from: from * SIXTEENTHS_PER_LDU,
+    to: to * SIXTEENTHS_PER_LDU,
+    radii: radii.map((radius) => radius * SIXTEENTHS_PER_LDU),
+  };
+}
+
+it(
+  "measures the whole outward profile of a wheelset the bundle doesn't hold when the import compiles it",
+  async () => {
+    const result = await importWith(
+      pinnedMirror,
+      "wheelset.ldr",
+      "0 Wheelset outside the bundle\n1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n",
+    );
+
+    const [compiled] = result.compiled;
+    if (!compiled) throw new Error("the import compiled no part");
+    const { rolling } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
+    expect(rolling?.surfaces).toEqual([
+      band(-56, -53.5, [0, 2.5]),
+      band(-53.5, -52, [2.5, 2.5]),
+      band(-52, -49, [6.25, 6.25]),
+      band(-52, -46.5, [20.5, 21]),
+      band(-52, -42, [2.375, 2.375]),
+      band(-46.5, -44, [21, 29]),
+      band(-45, -42, [6.25, 6.25]),
+      band(-44, -42, [29, 29]),
+      band(-42, 42, [2.5, 2.5]),
+      band(42, 44, [29, 29]),
+      band(42, 45, [6.25, 6.25]),
+      band(42, 52, [2.375, 2.375]),
+      band(44, 46.5, [29, 21]),
+      band(46.5, 52, [21, 20.5]),
+      band(49, 52, [6.25, 6.25]),
+      band(52, 53.5, [2.5, 2.5]),
+      band(53.5, 56, [2.5, 0]),
+    ]);
+    expect(rolling?.unread).toEqual([]);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it("reports, without drawing, a part when the stud primitives draw no ring to measure roundness by", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "wheelset.ldr",
+    "1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n",
+    undefined,
+    [],
+    ["not-a-stud.dat"],
+  );
+
+  expect(result.report.parts).toEqual([
+    {
+      kind: "failed",
+      reference: "70720c01.dat",
+      official: "70720c01.dat",
+      instances: 1,
+      message: "the stud primitives draw no closed round ring to measure roundness by",
+    },
+  ]);
+  expect(result.compiled).toEqual([]);
+});
