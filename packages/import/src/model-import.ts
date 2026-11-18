@@ -80,6 +80,11 @@ export type PartResolution =
       readonly findings: ReadonlyArray<MalformedFinding>;
       readonly message: string;
     })
+  | (Counted & {
+      readonly kind: "tooLarge";
+      readonly cause: "beyondAddressSpace" | "memoryUnavailable";
+      readonly message: string;
+    })
   | (Counted & { readonly kind: "failed"; readonly message: string });
 
 export interface ColorIssue {
@@ -511,6 +516,11 @@ function failureResolution(
         findings: failure.findings ?? [],
         message: failure.message,
       };
+    case "tooLarge":
+      if (failure.cause === undefined) {
+        throw new Error(`${counted.official}: a tooLarge failure arrived without its cause`);
+      }
+      return { kind: "tooLarge", ...counted, cause: failure.cause, message: failure.message };
     case "tooDeep":
     case "noStudRing":
       return { kind: "failed", ...counted, message: failure.message };

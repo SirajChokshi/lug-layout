@@ -153,6 +153,9 @@ fn bake_part(
     });
     let (compiled, bounds) = match baked {
         Ok(baked) => baked,
+        Err(error) if error.depends_on_machine() => {
+            return Err(format!("{reference}: {error}; that depends on the machine that built it, so it is never recorded"))
+        }
         Err(error) => return Ok(json!({ "failed": error.to_string() })),
     };
     let record = BakeRecord::of(&compiled, bounds)
