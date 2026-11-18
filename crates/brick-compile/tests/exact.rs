@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 
-use brick_compile::circle::{covers_circle, Bearing, Direction};
+use brick_compile::circle::{covers_circle, span, Bearing, Direction};
 use brick_compile::exact::{Decimal, Exact};
 use serde_json::Value;
 
@@ -77,4 +77,10 @@ fn an_arc_end_within_identification_of_a_turn_abuts_and_a_real_gap_stays_open() 
         ("-5.9999999925", "0.0003"),
         ("-5.9999999925", "-0.0003")
     ));
+}
+
+#[test]
+fn a_span_of_bearings_around_the_centre_leaves_out_its_widest_gap() {
+    let around = vec![Bearing::Turn(0), Bearing::Turn(20), Bearing::Turn(40)];
+    assert_eq!(span(around), Some((Bearing::Turn(20), Bearing::Turn(0))));
 }
