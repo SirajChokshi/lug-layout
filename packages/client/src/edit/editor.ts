@@ -6,6 +6,7 @@ import type {
   NotDrawnSection,
 } from "@brr/schema/bundle";
 import {
+  BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
   withPlaceholderMesh,
   type FetchPriority,
@@ -106,6 +107,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
+import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { ModuleLayout, type ModuleCandidate } from "./module-layout.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
@@ -153,6 +155,7 @@ export interface CatalogItemView {
   readonly parts: number;
   readonly studsWide: number;
   readonly studsDeep: number;
+  readonly thumbnail: string | null;
 }
 
 export interface LatencySample {
@@ -687,7 +690,11 @@ function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor 
   return color;
 }
 
-function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): CatalogItemView {
+function catalogItem(
+  placeable: Placeable,
+  colors: ReadonlyArray<BundleColor>,
+  thumbnails: ReadonlyMap<string, string>,
+): CatalogItemView {
   const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
   const moduleStuds = placeable.module?.studs;
   return {
@@ -700,6 +707,7 @@ function catalogItem(placeable: Placeable, colors: ReadonlyArray<BundleColor>): 
     parts: placeable.parts.count,
     studsWide: moduleStuds ?? Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU),
     studsDeep: moduleStuds ?? Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU),
+    thumbnail: thumbnails.get(placeable.id) ?? null,
   };
 }
 
@@ -707,12 +715,13 @@ function placeableSlot(
   placeable: Placeable,
   model: string | null,
   colors: ReadonlyArray<BundleColor>,
+  thumbnails: ReadonlyMap<string, string>,
 ): CatalogSlot {
   return {
     id: placeable.id,
     group: placeable.group,
     worldColor: placeable.worldColor,
-    view: catalogItem(placeable, colors),
+    view: catalogItem(placeable, colors, thumbnails),
     model,
     credit: placeable.credit,
   };
@@ -722,7 +731,7 @@ function studsAcross(min: number, max: number): number {
   return Math.round((max - min) / STUD_LDU);
 }
 
-function lazySlot(entry: BundleModelEntry): CatalogSlot {
+function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, string>): CatalogSlot {
   const id = `omr:${entry.name}`;
   const label = setLabel(entry);
   const aabb = entry.lattice?.aabb;
@@ -740,6 +749,7 @@ function lazySlot(entry: BundleModelEntry): CatalogSlot {
       parts: entry.instances,
       studsWide: aabb ? studsAcross(aabb.min[0], aabb.max[0]) : 0,
       studsDeep: aabb ? studsAcross(aabb.min[2], aabb.max[2]) : 0,
+      thumbnail: thumbnails.get(id) ?? null,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -909,6 +919,7 @@ export class Editor implements IEditor {
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(WORLD_LOCKS) private readonly locks: IWorldLocks,
     @inject(CATALOG_SEARCH) private readonly catalogSearch: ICatalogSearch,
+    @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, catalogSearch: catalogSearch.view() };
@@ -1076,6 +1087,7 @@ export class Editor implements IEditor {
   ): StartedCatalog {
     const palette = this.requirePalette();
     const colors = this.requireColors();
+    const thumbnails = thumbnailUrls(this.bundleBaseUrl, EDITOR_LOD, index.thumbnails);
     const shapeById = new Map(shapes.map((shape) => [shape.id, shape]));
     const shapeOf = (id: string): PartShapeRecord => {
       const shape = shapeById.get(id);
@@ -1105,7 +1117,7 @@ export class Editor implements IEditor {
       );
     });
     const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
-      placeable ? [placeableSlot(placeable, null, index.colors)] : [],
+      placeable ? [placeableSlot(placeable, null, index.colors, thumbnails)] : [],
     );
     const records = new Map(startRecords.map((record) => [record.entry.name, record]));
     const skipped: SkippedModel[] = [];
@@ -1125,7 +1137,11 @@ export class Editor implements IEditor {
       const record = records.get(entry.name);
       const placeable = record ? this.modelPlaceableFrom(record) : null;
       placeables.push(placeable);
-      slots.push(placeable ? placeableSlot(placeable, entry.name, index.colors) : lazySlot(entry));
+      slots.push(
+        placeable
+          ? placeableSlot(placeable, entry.name, index.colors, thumbnails)
+          : lazySlot(entry, thumbnails),
+      );
     }
     const trains = startRecords
       .filter((record) => record.model.vehicles.length > 0)
@@ -1406,6 +1422,7 @@ export class Editor implements IEditor {
       parts: track.kitParts().length,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+      thumbnail: null,
     };
   }
 
@@ -1427,6 +1444,7 @@ export class Editor implements IEditor {
         parts: 1,
         studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
         studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
+        thumbnail: null,
       };
     });
   }

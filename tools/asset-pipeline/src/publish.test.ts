@@ -1,8 +1,10 @@
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MANIFEST_FILE, publishBundle } from "./publish.ts";
+import { encodePng } from "./thumbnails/png.ts";
+import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_VERSION = 2;
@@ -67,7 +69,12 @@ function compiledManifest() {
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
     creditTable: { file: "credits.json" },
+    thumbnails: [] as Array<{ item: string; file: string }>,
   };
+}
+
+function png(size: number): Buffer {
+  return encodePng(size, size, new Uint8Array(size * size * 4));
 }
 
 function crosswalkFile() {
@@ -177,8 +184,18 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
   await writeFile(join(directory, "crosswalk.json"), JSON.stringify(bundle.crosswalk));
   await writeFile(join(directory, "parts.json"), JSON.stringify({ parts: bundle.parts }));
   await writeFile(join(directory, "credits.json"), JSON.stringify({ credits: [] }));
-  for (const [name, bytes] of bundle.files) await writeFile(join(directory, name), bytes);
+  for (const [name, bytes] of bundle.files) {
+    await mkdir(dirname(join(directory, name)), { recursive: true });
+    await writeFile(join(directory, name), bytes);
+  }
   return { directory, published: await publishBundle(directory, inputs) };
+}
+
+function withThumbnail(bytes: Buffer) {
+  return ({ manifest, files }: CompiledBundle) => {
+    manifest.thumbnails.push({ item: "ldraw:3811@2", file: "thumb/ldraw-3811-2.png" });
+    files.set("thumb/ldraw-3811-2.png", bytes);
+  };
 }
 
 afterEach(async () => {
@@ -252,6 +269,38 @@ describe("publishBundle", () => {
       refusal: "crosswalk.json: no schema declares $.parts.ldraw:3001.popularity",
     },
   ])("refuses an undeclared key nested in $file", async ({ edit, refusal }) => {
+    await expect(publish(edit)).rejects.toThrow(refusal);
+  });
+
+  it("publishes each thumbnail in thumb/ under its content address", async () => {
+    const { directory, published } = await publish(withThumbnail(png(THUMBNAIL_PX)));
+    expect(published.files).toBe(6);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const [thumbnail] = manifest.thumbnails;
+    expect(thumbnail.item).toBe("ldraw:3811@2");
+    expect(thumbnail.file).toMatch(/^thumb\/ldraw-3811-2\.[0-9a-f]{16}\.png$/u);
+    expect(await readFile(join(directory, thumbnail.file))).toEqual(png(THUMBNAIL_PX));
+  });
+
+  it.each([
+    {
+      file: "a thumbnail of the wrong size",
+      edit: withThumbnail(png(THUMBNAIL_PX / 2)),
+      refusal: `thumb/ldraw-3811-2.png is 56×56, not ${THUMBNAIL_PX}×${THUMBNAIL_PX}`,
+    },
+    {
+      file: "a thumbnail that is not a PNG",
+      edit: withThumbnail(Buffer.from("not an image, just some text bytes")),
+      refusal: "thumb/ldraw-3811-2.png is not a PNG file",
+    },
+    {
+      file: "an unreferenced file in a subdirectory",
+      edit: ({ files }: CompiledBundle) => {
+        files.set("thumb/stray.png", png(THUMBNAIL_PX));
+      },
+      refusal: "has files the manifest does not reference: thumb/stray.png",
+    },
+  ])("refuses $file", async ({ edit, refusal }) => {
     await expect(publish(edit)).rejects.toThrow(refusal);
   });
 });

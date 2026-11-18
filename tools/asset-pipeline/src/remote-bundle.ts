@@ -1,13 +1,14 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { CONTENT_HASH_HEX_DIGITS, MANIFEST_FILE } from "./publish.ts";
+import { bundleFiles, CONTENT_HASH_HEX_DIGITS, MANIFEST_FILE } from "./publish.ts";
 import { sha256Hex, type ObjectStore } from "./r2.ts";
 
 const IMMUTABLE = "public, max-age=31536000, immutable";
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".glb": "model/gltf-binary",
   ".json": "application/json",
+  ".png": "image/png",
   ".wasm": "application/wasm",
 };
 const UPLOAD_CONCURRENCY = 16;
@@ -39,7 +40,7 @@ async function contentAddressedObjects(
 ): Promise<BundleObject[]> {
   const objects: BundleObject[] = [];
   for (const lod of lods) {
-    for (const name of (await readdir(join(bundleRoot, lod))).toSorted()) {
+    for (const name of await bundleFiles(join(bundleRoot, lod))) {
       if (name !== MANIFEST_FILE)
         objects.push({ key: `${lod}/${name}`, path: join(bundleRoot, lod, name) });
     }

@@ -11,8 +11,10 @@ import {
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
+import { readPngHeader } from "./thumbnails/png.ts";
+import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
 export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
@@ -64,6 +66,14 @@ function decodeDeclared<const TSchema extends v.GenericSchema>(
     throw new Error(`${label}: no schema declares ${undeclared.join(", ")}`);
   }
   return value;
+}
+
+export async function bundleFiles(directory: string): Promise<ReadonlyArray<string>> {
+  const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(directory, join(entry.parentPath, entry.name)).split(sep).join("/"))
+    .toSorted();
 }
 
 export function contentAddressedName(file: string, digest: string): string {
@@ -123,6 +133,12 @@ export async function publishBundle(
   for (const { file } of [...manifest.studPrimitives, ...partTable.parts]) {
     decodeDeclared(GltfDocument, glbJson(await publish(file), file), file);
   }
+  for (const { file } of manifest.thumbnails) {
+    const { width, height } = readPngHeader(await publish(file), file);
+    if (width !== THUMBNAIL_PX || height !== THUMBNAIL_PX) {
+      throw new Error(`${file} is ${width}×${height}, not ${THUMBNAIL_PX}×${THUMBNAIL_PX}`);
+    }
+  }
   await publishJson(PartTableFile, manifest.partTable.file);
   for (const { file } of manifest.models) await publishJson(ModelFile, file);
   for (const { farMesh } of manifest.models) {
@@ -143,7 +159,7 @@ export async function publishBundle(
   for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
   await publishJson(CreditTableFile, manifest.creditTable.file);
   const published = new Set(renamed.values());
-  const unreferenced = (await readdir(directory)).filter(
+  const unreferenced = (await bundleFiles(directory)).filter(
     (name) => name !== MANIFEST_FILE && !published.has(name),
   );
   if (unreferenced.length > 0) {
