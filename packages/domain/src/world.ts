@@ -1,6 +1,6 @@
 import { CHUNK_LDU, chunkKey, chunkOf, isLatticePose, isRot90 } from "@brr/math";
 
-const INITIAL_CHUNK_CAPACITY = 1024;
+const INITIAL_CHUNK_CAPACITY = 4;
 export const SLOT_LIVE = 1;
 
 export interface ChunkView {

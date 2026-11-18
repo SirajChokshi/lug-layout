@@ -41,3 +41,42 @@ describe("World.remove", () => {
     expect(() => world.remove(foreign)).toThrow(/another world/u);
   });
 });
+
+describe("World.add", () => {
+  it("keeps every placement and handle in a chunk that grows, including slots freed before it grew", () => {
+    const world = new World();
+    world.add(1, 0, 20, 20, 0, 0);
+    const freed = world.add(2, 0, 40, 20, 0, 0);
+    world.remove(freed);
+    const poses = Array.from({ length: 200 }, (_, n) => [
+      n + 10,
+      n % 7,
+      20 * (n % 32),
+      20 * (n >> 5),
+      n,
+      n % 4,
+    ]);
+    const handles = poses.map(([refId = 0, colorId = 0, x = 0, z = 0, yPlates = 0, rot = 0]) =>
+      world.add(refId, colorId, x, z, yPlates, rot),
+    );
+    const [removed] = handles.splice(4, 1);
+    if (removed) world.remove(removed);
+    poses.splice(4, 1);
+    const [view] = world.chunks();
+
+    expect(world.size).toBe(200);
+    expect(view?.liveCount).toBe(200);
+    expect(handles[0]?.slot).toBe(freed.slot);
+    expect([freed.live, removed?.live]).toEqual([false, false]);
+    expect(
+      handles.map((handle) => [
+        handle.refId,
+        handle.colorId,
+        handle.x,
+        handle.z,
+        handle.yPlates,
+        handle.rot,
+      ]),
+    ).toEqual(poses);
+  });
+});
