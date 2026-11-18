@@ -32,7 +32,7 @@ export type Vec3 = v.InferOutput<typeof Vec3>;
 
 const Bounds = v.object({ min: Vec3, max: Vec3 });
 
-export const PartRole = v.picklist(["ground", "road", "track", "model"]);
+export const PartRole = v.picklist(["ground", "road", "track", "wall", "roof", "detail", "model"]);
 export type PartRole = v.InferOutput<typeof PartRole>;
 
 export const DisplayColor = v.object({ ldraw: Integer, source: v.string() });

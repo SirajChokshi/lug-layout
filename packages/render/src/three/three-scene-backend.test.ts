@@ -24,7 +24,7 @@ function part(id: string, size: number): PartAsset {
   return {
     id,
     title: id,
-    role: "model",
+    role: "detail",
     boundsMin: [0, 0, 0],
     boundsMax: [size, size, 0],
     producedColor: undefined,
