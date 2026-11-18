@@ -1,12 +1,12 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference};
+use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
-use crate::rolling::{read_rolling, read_standard_rolling, Rolling, Roundness};
+use crate::rolling::{read_rolling, PartRolling, Roundness};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -36,7 +36,7 @@ pub enum CompileError {
     },
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
@@ -74,7 +74,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
-    pub rolling: Option<Rolling>,
+    pub rolling: Option<PartRolling>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -103,6 +103,40 @@ pub fn license_gate(
     Ok(())
 }
 
+fn standard_triangles<L: Library>(
+    library: &L,
+    path: &str,
+    stud_primitives: &[String],
+) -> Result<Vec<Triangle>, CompileError> {
+    let flattened = Flattener::new(library, Lod::Standard, stud_primitives)
+        .flatten(path)
+        .map_err(CompileError::Flatten)?;
+    Ok(flattened
+        .triangles
+        .into_iter()
+        .map(|triangle| Triangle {
+            points: triangle.points.map(to_y_up),
+            ..triangle
+        })
+        .collect())
+}
+
+pub fn stud_roundness<L: Library>(library: &L, stud_primitives: &[String]) -> Option<Roundness> {
+    let at = |lod: Lod| -> Vec<Vec<Triangle>> {
+        let mut flattener = Flattener::new(library, lod, &[]);
+        let paths: Vec<String> = stud_primitives
+            .iter()
+            .filter_map(|name| flattener.resolve(name))
+            .collect();
+        paths
+            .iter()
+            .filter_map(|path| flattener.flatten(path).ok())
+            .map(|flattened| flattened.triangles)
+            .collect()
+    };
+    Roundness::of_studs(&at(Lod::Standard), &at(Lod::Low))
+}
+
 pub fn compile_part<L: Library>(
     library: &L,
     reference: &str,
@@ -121,12 +155,14 @@ pub fn compile_part<L: Library>(
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);
     }
-    let rolling = options.roundness.and_then(|roundness| match options.lod {
-        Lod::Standard => Some(read_rolling(&flattened.triangles, roundness)),
-        Lod::Low | Lod::Far => {
-            read_standard_rolling(library, &path, roundness, &options.stud_primitives)
+    let rolling = match (options.roundness, options.lod) {
+        (None, _) => None,
+        (Some(roundness), Lod::Standard) => Some(read_rolling(&flattened.triangles, roundness)),
+        (Some(roundness), Lod::Low | Lod::Far) => {
+            let standard = standard_triangles(library, &path, &options.stud_primitives)?;
+            Some(read_rolling(&standard, roundness))
         }
-    });
+    };
     if options.lod == Lod::Far {
         occlusion::drop_hidden_from_above(&mut flattened.triangles);
     }

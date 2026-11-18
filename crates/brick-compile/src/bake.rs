@@ -6,7 +6,6 @@ use crate::cover::{model_cover, CoverInstance, ModelCover, Opacity, PartSolid, S
 use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
 use crate::model::ModelInstance;
-use crate::rolling::Roundness;
 use crate::vehicle::{detect_vehicles, RailHeadBand, Vehicle, VehicleError, VehicleSignatures};
 use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 
@@ -115,7 +114,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
-            roundness: Roundness::measured(library, &stud_primitives),
+            roundness: None,
             stud_primitives,
             unofficial_allowlist,
         };
@@ -240,7 +239,6 @@ fn measured_stud_shape<L: Library>(
 ) -> Result<StudShape, BakeError> {
     let bare = CompileOptions {
         stud_primitives: Vec::new(),
-        roundness: None,
         ..options.clone()
     };
     let mut shape = StudShape {

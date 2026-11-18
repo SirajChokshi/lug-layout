@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
+use brick_compile::compile::stud_roundness;
 use brick_compile::flatten::{Library, Lod};
-use brick_compile::rolling::Roundness;
 use brick_compile::{compile_part, CompileOptions};
 use serde_json::json;
 
@@ -111,7 +111,7 @@ fn run(args: &Args) -> Result<(), String> {
         root: args.ldraw.clone(),
         loaded: RefCell::new(HashMap::new()),
     };
-    let roundness = Roundness::measured(&library, &args.studs)
+    let roundness = stud_roundness(&library, &args.studs)
         .ok_or("the stud primitives draw no closed round band to measure roundness by")?;
     let without = CompileOptions {
         lod: Lod::Standard,

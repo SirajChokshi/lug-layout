@@ -349,13 +349,6 @@ const RollingAlong = v.pipe(
   Integer,
   v.description("a position along `axis`, in sixteenths of an LDU"),
 );
-const RollingDiagnostic = v.pipe(
-  v.object({ direction: Vec3, from: Finite, to: Finite }),
-  v.description(
-    "raw part-frame floats for reports only, never identified: the axis direction and the band's extent along it in LDU",
-  ),
-);
-
 export const RollingSurface = v.pipe(
   v.object({
     source: v.literal("measured"),
@@ -377,33 +370,35 @@ export const RollingSurface = v.pipe(
 );
 export type RollingSurface = v.InferOutput<typeof RollingSurface>;
 
-const UnreadAlong = {
+const UnreadEnds = {
   from: v.optional(RollingAlong),
   to: v.optional(RollingAlong),
 };
 
 export const UnreadBand = v.pipe(
   v.variant("reason", [
-    v.object({ reason: v.literal("unoriented"), diagnostic: RollingDiagnostic }),
-    v.object({ reason: v.literal("centre"), axis: RollingAxis, diagnostic: RollingDiagnostic }),
+    v.object({ reason: v.literal("unoriented") }),
+    v.object({ reason: v.literal("centre"), axis: RollingAxis }),
     v.object({
-      reason: v.picklist(["radius", "faceted", "partial", "facing", "width"]),
+      reason: v.picklist(["radius", "width"]),
+      axis: RollingAxis,
+      at: RollingAt,
+      ...UnreadEnds,
+    }),
+    v.object({
+      reason: v.picklist(["faceted", "partial", "facing", "irregular"]),
       axis: RollingAxis,
       at: v.optional(RollingAt),
-      ...UnreadAlong,
-      diagnostic: RollingDiagnostic,
+      ...UnreadEnds,
     }),
   ]),
   v.check(
     (band) =>
-      !("from" in band && "to" in band) ||
-      band.from === undefined ||
-      band.to === undefined ||
-      band.from <= band.to,
+      !("from" in band) || band.from === undefined || band.to === undefined || band.from <= band.to,
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the bake measured but could not read as a rolling surface; it carries only the fields that identified: unoriented (no axis-aligned axis), centre (axis only), and radius, faceted, partial, facing or width (axis, and `at`, `from`, `to` where they identified)",
+    "round geometry the bake measured but could not read as a rolling surface, carrying only what identified: unoriented (its axis is not a part axis), centre (axis only: no axis line identified), radius (axis line identified, a radius not), width (axis line and radii identified, an end not), and faceted, partial, facing or irregular (axis, with `at`, `from`, `to` where they identified)",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;

@@ -3,12 +3,12 @@
 use std::collections::{HashMap, HashSet};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::compile::stud_roundness;
 use brick_compile::cover::ModelCover;
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, ModelInstance};
-use brick_compile::rolling::Roundness;
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
@@ -20,6 +20,8 @@ use crate::reply::{
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
+
+const NO_STUD_RING: &str = "the stud primitives draw no closed round band to measure roundness by";
 
 #[derive(Default)]
 pub struct Session {
@@ -58,18 +60,26 @@ impl Session {
                 parts,
                 inline_checks,
             } => {
+                let roundness = stud_roundness(&self.library, stud_primitives);
+                let stud_needs = self.library.take_requested();
+                if roundness.is_none() && stud_needs.is_empty() {
+                    return Err(NO_STUD_RING.to_string());
+                }
                 let options = CompileOptions {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
-                    roundness: Roundness::measured(&self.library, stud_primitives),
+                    roundness,
                 };
                 let model = request.text("source")?;
                 Ok(compile(
                     &self.library,
                     &options,
-                    parts,
-                    inline_checks,
+                    CompileWork {
+                        references: parts,
+                        inline_checks,
+                        stud_needs: &stud_needs,
+                    },
                     &model,
                     body,
                 ))
@@ -156,20 +166,29 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
     })
 }
 
+struct CompileWork<'a> {
+    references: &'a [String],
+    inline_checks: &'a [InlineCheck],
+    stud_needs: &'a [String],
+}
+
 fn compile(
     library: &TrackingLibrary,
     options: &CompileOptions,
-    references: &[String],
-    inline_checks: &[InlineCheck],
+    work: CompileWork,
     model: &str,
     body: &mut Body,
 ) -> Reply {
+    let CompileWork {
+        references,
+        inline_checks,
+        stud_needs,
+    } = work;
     let mut parts = Vec::with_capacity(references.len());
-    let roundness_needs = library.take_requested();
     for reference in references {
         let result = compile_part(library, reference, options);
         let mut requested = library.take_requested();
-        requested.extend(roundness_needs.iter().cloned());
+        requested.extend(stud_needs.iter().cloned());
         let reference = reference.clone();
         parts.push(match result {
             _ if !requested.is_empty() => PartOutcome::Need {
@@ -250,10 +269,6 @@ fn bake(
         if scanned.insert(reference) {
             scan.closure(reference);
         }
-    }
-    let mut coarse_scan = Flattener::new(library, Lod::Low, &[]);
-    for stud in inputs.stud_primitives {
-        coarse_scan.closure(stud);
     }
     let requested = library.take_requested();
     if !requested.is_empty() {

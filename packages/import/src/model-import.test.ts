@@ -22,6 +22,7 @@ const COLOR_NOT_IN_LDCONFIG = 99_999;
 const MAIN_COLOUR = 16;
 const RED = 4;
 const YELLOW = 14;
+const SIXTEENTHS_PER_LDU = 16;
 
 interface Manifest {
   readonly source: { readonly repo: string; readonly commit: string; readonly root: string };
@@ -226,7 +227,7 @@ it(
 );
 
 it(
-  "measures the tread and flange cones of a wheelset the bundle doesn't hold when the import compiles it",
+  "measures the whole outward profile of a wheelset the bundle doesn't hold when the import compiles it",
   async () => {
     const result = await importWith(
       pinnedMirror,
@@ -237,14 +238,32 @@ it(
     const [compiled] = result.compiled;
     if (!compiled) throw new Error("the import compiled no part");
     const { rolling } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
-    const cones = rolling?.surfaces.filter(
-      (surface) => surface.radii[0] !== surface.radii[1] && Math.min(...surface.radii) > 320,
-    );
-    expect(cones).toEqual([
-      { source: "measured", axis: 0, at: [0, 0], from: -832, to: -744, radii: [328, 336] },
-      { source: "measured", axis: 0, at: [0, 0], from: -744, to: -704, radii: [336, 464] },
-      { source: "measured", axis: 0, at: [0, 0], from: 704, to: 744, radii: [464, 336] },
-      { source: "measured", axis: 0, at: [0, 0], from: 744, to: 832, radii: [336, 328] },
+    const band = (from: number, to: number, radii: readonly [number, number]) => ({
+      source: "measured",
+      axis: 0,
+      at: [0, 0],
+      from: from * SIXTEENTHS_PER_LDU,
+      to: to * SIXTEENTHS_PER_LDU,
+      radii: radii.map((radius) => radius * SIXTEENTHS_PER_LDU),
+    });
+    expect(rolling?.surfaces).toEqual([
+      band(-56, -53.5, [0, 2.5]),
+      band(-53.5, -52, [2.5, 2.5]),
+      band(-52, -49, [6.25, 6.25]),
+      band(-52, -46.5, [20.5, 21]),
+      band(-52, -42, [2.375, 2.375]),
+      band(-46.5, -44, [21, 29]),
+      band(-45, -42, [6.25, 6.25]),
+      band(-44, -42, [29, 29]),
+      band(-42, 42, [2.5, 2.5]),
+      band(42, 44, [29, 29]),
+      band(42, 45, [6.25, 6.25]),
+      band(42, 52, [2.375, 2.375]),
+      band(44, 46.5, [29, 21]),
+      band(46.5, 52, [21, 20.5]),
+      band(49, 52, [6.25, 6.25]),
+      band(52, 53.5, [2.5, 2.5]),
+      band(53.5, 56, [2.5, 0]),
     ]);
   },
   BAKE_TIMEOUT_MS,

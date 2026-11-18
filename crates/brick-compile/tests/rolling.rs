@@ -2,26 +2,32 @@ mod common;
 
 use std::f64::consts::TAU;
 
-use brick_compile::rolling::{RollingSurface, Roundness, Unread};
-use brick_compile::{compile_part, CompileOptions, Lod};
+use brick_compile::compile::stud_roundness;
+use brick_compile::rolling::{Ends, RollingSurface, SurfaceReason, UnreadBand};
+use brick_compile::{compile_part, CompileOptions, Library, Lod};
 use common::{fixture_library, MemoryLibrary};
 
-const HEADER: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n0 BFC CERTIFY CCW\n";
+const LICENSE: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n";
+const WOUND: &str = "0 BFC CERTIFY CCW\n";
+
+type Point = [f64; 3];
 
 struct Band {
-    axis: [f64; 3],
-    across: [[f64; 3]; 2],
-    centre: [f64; 3],
+    axis: Point,
+    across: [Point; 2],
+    centre: Point,
     from: f64,
     to: f64,
     radii: [f64; 2],
     facets: usize,
+    drawn: usize,
     phase: f64,
     outward: bool,
+    meridian_cuts: Option<[f64; 2]>,
 }
 
 impl Band {
-    fn along(axis: usize, centre: [f64; 3], from: f64, to: f64, radii: [f64; 2]) -> Band {
+    fn along(axis: usize, centre: Point, from: f64, to: f64, radii: [f64; 2]) -> Band {
         let unit = |k: usize| {
             let mut v = [0.0; 3];
             v[k] = 1.0;
@@ -40,12 +46,18 @@ impl Band {
             to,
             radii,
             facets: 16,
+            drawn: 16,
             phase: 0.0,
             outward: true,
+            meridian_cuts: None,
         }
     }
 
-    fn point(&self, t: f64, radius: f64, angle: f64) -> [f64; 3] {
+    fn angle(&self, k: usize) -> f64 {
+        self.phase + TAU * k as f64 / self.facets as f64
+    }
+
+    fn point(&self, t: f64, radius: f64, angle: f64) -> Point {
         let (c, s) = (angle.cos(), angle.sin());
         [0, 1, 2].map(|k| {
             self.centre[k]
@@ -54,45 +66,61 @@ impl Band {
         })
     }
 
-    fn quads(&self) -> String {
-        let mut out = String::new();
-        for k in 0..self.facets {
-            let a = self.phase + TAU * k as f64 / self.facets as f64;
-            let b = self.phase + TAU * (k + 1) as f64 / self.facets as f64;
-            let mut quad = [
-                self.point(self.from, self.radii[0], a),
-                self.point(self.from, self.radii[0], b),
-                self.point(self.to, self.radii[1], b),
-                self.point(self.to, self.radii[1], a),
-            ];
-            let normal = cross(sub(quad[1], quad[0]), sub(quad[2], quad[0]));
-            let middle = self.point((self.from + self.to) / 2.0, 0.0, 0.0);
-            let radial = sub(quad[0], middle);
-            if (dot(normal, radial) > 0.0) != self.outward {
-                quad.reverse();
+    fn radius_at(&self, t: f64) -> f64 {
+        let along = (t - self.from) / (self.to - self.from);
+        self.radii[0] + (self.radii[1] - self.radii[0]) * along
+    }
+
+    fn polygon(&self, corners: Vec<Point>) -> String {
+        let mut corners = corners;
+        let middle = self.point((self.from + self.to) / 2.0, 0.0, 0.0);
+        let normal = cross(sub(corners[1], corners[0]), sub(corners[2], corners[0]));
+        if (dot(normal, sub(corners[0], middle)) > 0.0) != self.outward {
+            corners.reverse();
+        }
+        let mut line = format!("{} 16", corners.len());
+        for p in corners {
+            for v in p {
+                line.push_str(&format!(" {v:.6}"));
             }
-            out.push('4');
-            out.push_str(" 16");
-            for p in quad {
-                for v in p {
-                    out.push_str(&format!(" {v:.6}"));
+        }
+        line + "\n"
+    }
+
+    fn lines(&self) -> String {
+        let mut out = String::new();
+        for k in 0..self.drawn {
+            let (a, b) = (self.angle(k), self.angle(k + 1));
+            let low = |angle| self.point(self.from, self.radii[0], angle);
+            let high = |angle| self.point(self.to, self.radii[1], angle);
+            match self.meridian_cuts {
+                None => out.push_str(&self.polygon(vec![low(a), low(b), high(b), high(a)])),
+                Some([first, step]) => {
+                    let cut = |j: usize| {
+                        let t = first + step * (j % self.facets) as f64;
+                        self.point(t, self.radius_at(t), self.angle(j))
+                    };
+                    let (here, next) = (cut(k), cut(k + 1));
+                    out.push_str(&self.polygon(vec![low(a), low(b), next]));
+                    out.push_str(&self.polygon(vec![low(a), next, here]));
+                    out.push_str(&self.polygon(vec![here, next, high(b)]));
+                    out.push_str(&self.polygon(vec![here, high(b), high(a)]));
                 }
             }
-            out.push('\n');
         }
         out
     }
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+fn sub(a: Point, b: Point) -> Point {
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+fn dot(a: Point, b: Point) -> f64 {
     a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
-fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+fn cross(a: Point, b: Point) -> Point {
     [
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -103,43 +131,77 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn stud(facets: usize) -> String {
     let side = Band {
         facets,
+        drawn: facets,
         ..Band::along(1, [0.0; 3], -4.0, 0.0, [6.0, 6.0])
     };
-    format!("0 Stud\n{HEADER}{}", side.quads())
+    format!("0 Stud\n{LICENSE}{WOUND}{}", side.lines())
 }
 
 fn custom_wheel() -> String {
-    let tread = Band::along(0, [0.0, -12.0, 0.0], -4.0, 6.0, [20.0, 20.0]);
-    let flange = Band::along(0, [0.0, -12.0, 0.0], 6.0, 8.0, [20.0, 24.0]);
+    let at = |x: f64, y: f64, z: f64| [x, y, z];
+    let tread = Band::along(0, at(0.0, -12.0, 0.0), -4.0, 6.0, [20.0, 20.0]);
+    let flange = Band::along(0, at(0.0, -12.0, 0.0), 6.0, 8.0, [20.0, 24.0]);
     let bore = Band {
         outward: false,
-        ..Band::along(0, [0.0, -12.0, 0.0], -4.0, 8.0, [4.0, 4.0])
+        ..Band::along(0, at(0.0, -12.0, 0.0), -4.0, 8.0, [4.0, 4.0])
     };
-    let post = Band::along(1, [0.0, 0.0, 60.0], -24.0, 0.0, [8.0, 8.0]);
-    let octagon = Band {
-        facets: 8,
-        ..Band::along(2, [60.0, 0.0, 0.0], 0.0, 10.0, [10.0, 10.0])
-    };
+    let post = Band::along(1, at(0.0, 0.0, 60.0), -24.0, 0.0, [8.0, 8.0]);
     let turned = Band {
         phase: TAU / 32.0,
-        ..Band::along(1, [-60.0, 0.0, 0.0], -8.0, 0.0, [10.0, 10.0])
+        ..Band::along(1, at(-60.0, 0.0, 0.0), -8.0, 0.0, [10.0, 10.0])
     };
-    let off_grid = Band::along(1, [-60.0, 0.0, 60.0], -8.0, 0.0, [10.01, 10.01]);
+    let octagon = Band {
+        facets: 8,
+        drawn: 8,
+        ..Band::along(2, at(60.0, 0.0, 0.0), 0.0, 10.0, [10.0, 10.0])
+    };
+    let off_grid_radius = Band::along(1, at(-60.0, 0.0, 60.0), -8.0, 0.0, [10.01, 10.01]);
+    let off_grid_centre = Band::along(1, at(60.01, 0.0, -60.0), -8.0, 0.0, [10.0, 10.0]);
+    let off_grid_end = Band::along(1, at(60.0, 0.0, 60.0), -10.003, 0.0, [10.0, 10.0]);
+    let notched = Band {
+        drawn: 15,
+        ..Band::along(0, at(0.0, -12.0, 60.0), 20.0, 30.0, [10.0, 10.0])
+    };
+    let irregular = Band {
+        meridian_cuts: Some([41.0, 0.5]),
+        ..Band::along(0, at(0.0, -40.0, -60.0), 40.0, 50.0, [8.0, 8.0])
+    };
     let diagonal = std::f64::consts::FRAC_1_SQRT_2;
     let tilted = Band {
         axis: [diagonal, diagonal, 0.0],
         across: [[diagonal, -diagonal, 0.0], [0.0, 0.0, 1.0]],
-        ..Band::along(0, [0.0, 60.0, 60.0], 0.0, 10.0, [10.0, 10.0])
+        ..Band::along(0, at(0.0, 60.0, 60.0), 0.0, 10.0, [10.0, 10.0])
     };
-    let bands = [tread, flange, bore, post, octagon, turned, off_grid, tilted];
-    let body: String = bands.iter().map(Band::quads).collect();
-    format!("0 Custom wheel drawn from plain quads\n{HEADER}{body}")
+    let bands = [
+        tread,
+        flange,
+        bore,
+        post,
+        turned,
+        octagon,
+        off_grid_radius,
+        off_grid_centre,
+        off_grid_end,
+        notched,
+        irregular,
+        tilted,
+    ];
+    let body: String = bands.iter().map(Band::lines).collect();
+    format!(
+        "0 Custom wheel drawn from plain quads\n{LICENSE}{WOUND}{body}1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\unwound.dat\n"
+    )
+}
+
+fn unwound() -> String {
+    let band = Band::along(2, [-60.0, -40.0, 0.0], 0.0, 10.0, [10.0, 10.0]);
+    format!("0 ~Band without BFC winding\n{LICENSE}{}", band.lines())
 }
 
 fn library(standard_stud_facets: usize, coarse_stud_facets: usize) -> MemoryLibrary {
     MemoryLibrary(
         [
             ("parts/custom-wheel.dat", custom_wheel()),
+            ("parts/s/unwound.dat", unwound()),
             ("p/stud.dat", stud(standard_stud_facets)),
             ("p/8/stud.dat", stud(coarse_stud_facets)),
         ]
@@ -149,11 +211,11 @@ fn library(standard_stud_facets: usize, coarse_stud_facets: usize) -> MemoryLibr
     )
 }
 
-fn options<L: brick_compile::Library>(library: &L, lod: Lod) -> CompileOptions {
+fn options<L: Library>(library: &L, lod: Lod) -> CompileOptions {
     let stud_primitives = vec!["stud.dat".to_string(), "stud2.dat".to_string()];
     CompileOptions {
         lod,
-        roundness: Roundness::measured(library, &stud_primitives),
+        roundness: stud_roundness(library, &stud_primitives),
         stud_primitives,
         unofficial_allowlist: Vec::new(),
     }
@@ -163,8 +225,34 @@ fn sixteenths(ldu: f64) -> i32 {
     (ldu * 16.0) as i32
 }
 
+fn ends(from: Option<f64>, to: Option<f64>) -> Ends {
+    Ends {
+        from: from.map(sixteenths),
+        to: to.map(sixteenths),
+    }
+}
+
+fn surface(axis: usize, at: [f64; 2], from: f64, to: f64, radii: [f64; 2]) -> RollingSurface {
+    RollingSurface {
+        axis,
+        at: at.map(sixteenths),
+        from: sixteenths(from),
+        to: sixteenths(to),
+        radii: radii.map(sixteenths),
+    }
+}
+
+fn unread(reason: SurfaceReason, axis: usize, at: [f64; 2], from: f64, to: f64) -> UnreadBand {
+    UnreadBand::Surface {
+        reason,
+        axis,
+        at: Some(at.map(sixteenths)),
+        ends: ends(Some(from), Some(to)),
+    }
+}
+
 #[test]
-fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis() {
+fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
     let library = library(16, 8);
     let compiled = compile_part(
         &library,
@@ -176,13 +264,6 @@ fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis()
         .rolling
         .as_ref()
         .expect("roundness is measured from the studs");
-    let surface = |axis, at: [f64; 2], from: f64, to: f64, radii: [f64; 2]| RollingSurface {
-        axis,
-        at: at.map(sixteenths),
-        from: sixteenths(from),
-        to: sixteenths(to),
-        radii: radii.map(sixteenths),
-    };
     assert_eq!(
         rolling.surfaces,
         vec![
@@ -192,21 +273,25 @@ fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis()
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
         ]
     );
-    let reasons: Vec<(Unread, Option<usize>, Option<[i32; 2]>)> = rolling
-        .unread
-        .iter()
-        .map(|band| (band.reason, band.axis, band.at))
-        .collect();
     assert_eq!(
-        reasons,
+        rolling.unread,
         vec![
-            (Unread::Unoriented, None, None),
-            (
-                Unread::Radius,
-                Some(1),
-                Some([sixteenths(-60.0), sixteenths(-60.0)])
-            ),
-            (Unread::Faceted, Some(2), Some([sixteenths(60.0), 0])),
+            UnreadBand::Unoriented,
+            UnreadBand::Centre { axis: 1 },
+            UnreadBand::Radius {
+                axis: 1,
+                at: [sixteenths(-60.0), sixteenths(-60.0)],
+                ends: ends(Some(0.0), Some(8.0)),
+            },
+            UnreadBand::Width {
+                axis: 1,
+                at: [sixteenths(60.0), sixteenths(-60.0)],
+                ends: ends(Some(0.0), None),
+            },
+            unread(SurfaceReason::Faceted, 2, [60.0, 0.0], -10.0, 0.0),
+            unread(SurfaceReason::Partial, 0, [12.0, -60.0], 20.0, 30.0),
+            unread(SurfaceReason::Facing, 2, [-60.0, 40.0], -10.0, 0.0),
+            unread(SurfaceReason::Irregular, 0, [40.0, 60.0], 40.0, 50.0),
         ]
     );
     assert_eq!(
@@ -218,20 +303,17 @@ fn a_custom_part_drawn_from_plain_quads_yields_its_outward_bands_on_every_axis()
 #[test]
 fn the_roundness_threshold_follows_the_stud_geometry_it_is_measured_from() {
     let library = library(8, 8);
-    let compiled = compile_part(
+    let rolling = compile_part(
         &library,
         "custom-wheel.dat",
         &options(&library, Lod::Standard),
     )
-    .expect("compiles");
-    let rolling = compiled
-        .rolling
-        .expect("roundness is measured from the studs");
+    .expect("compiles")
+    .rolling
+    .expect("roundness is measured from the studs");
     assert!(rolling
         .surfaces
-        .iter()
-        .any(|s| s.axis == 2 && s.at == [sixteenths(60.0), 0]));
-    assert!(rolling.unread.iter().all(|u| u.reason != Unread::Faceted));
+        .contains(&surface(2, [60.0, 0.0], -10.0, 0.0, [10.0, 10.0])));
 }
 
 #[test]
@@ -241,23 +323,14 @@ fn the_official_train_wheel_reads_its_whole_outward_profile_at_every_lod() {
         .expect("compiles")
         .rolling
         .expect("roundness is measured from the studs");
-    let profile: Vec<(i32, i32, [i32; 2])> = standard
-        .surfaces
-        .iter()
-        .filter(|s| s.axis == 2 && s.at == [0, 0])
-        .map(|s| (s.from, s.to, s.radii))
-        .collect();
-    let ldu = |from: f64, to: f64, r0: f64, r1: f64| {
-        (sixteenths(from), sixteenths(to), [r0, r1].map(sixteenths))
-    };
     assert_eq!(
-        profile,
+        standard.surfaces,
         vec![
-            ldu(-8.0, -6.0, 29.0, 29.0),
-            ldu(-8.0, -5.0, 6.25, 6.25),
-            ldu(-6.0, -3.5, 29.0, 21.0),
-            ldu(-3.5, 2.0, 21.0, 20.5),
-            ldu(-1.0, 2.0, 6.25, 6.25),
+            surface(2, [0.0, 0.0], -8.0, -6.0, [29.0, 29.0]),
+            surface(2, [0.0, 0.0], -8.0, -5.0, [6.25, 6.25]),
+            surface(2, [0.0, 0.0], -6.0, -3.5, [29.0, 21.0]),
+            surface(2, [0.0, 0.0], -3.5, 2.0, [21.0, 20.5]),
+            surface(2, [0.0, 0.0], -1.0, 2.0, [6.25, 6.25]),
         ]
     );
     let low = compile_part(&library, "2879.dat", &options(&library, Lod::Low))

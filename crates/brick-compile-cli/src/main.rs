@@ -5,13 +5,12 @@ use std::process::ExitCode;
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, MODIFIED_NOTE};
+use brick_compile::compile::{modified_note, stud_roundness, MODIFIED_NOTE};
 use brick_compile::cover::ModelCover;
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, ModelInstance};
-use brick_compile::rolling::Roundness;
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
@@ -401,7 +400,7 @@ fn run(args: &Args) -> Result<(), String> {
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
         roundness: Some(
-            Roundness::measured(&library, &stud_primitives)
+            stud_roundness(&library, &stud_primitives)
                 .ok_or("the stud primitives draw no closed round band to measure roundness by")?,
         ),
     };
