@@ -39,6 +39,7 @@ export {
 export {
   bundlePartId,
   ModelImportEngine,
+  type IBakeHelper,
   type ColorIssue,
   type CompiledGlb,
   type ImportResult,
@@ -49,6 +50,7 @@ export {
   type PartResolution,
 } from "./model-import.ts";
 export {
+  bakeTransferables,
   transferablesOf,
   type ImportInput,
   type ImportWorkerRequest,

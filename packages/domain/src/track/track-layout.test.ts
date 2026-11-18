@@ -1,6 +1,14 @@
 import { readFileSync } from "node:fs";
-import { conjugateZeta16, HALF_TURN_16, POSE16_IDENTITY, pose16, zeta16 } from "@brr/math";
+import {
+  conjugateZeta16,
+  HALF_TURN_16,
+  POSE16_IDENTITY,
+  STUD_LDU,
+  pose16,
+  zeta16,
+} from "@brr/math";
 import { describe, expect, it } from "vitest";
+import { WORLD_TRACK_FRAME, endGaps, type TrackFrame } from "./end-gaps.ts";
 import { NO_END, TrackGraph } from "./track-graph.ts";
 import { TrackLayout, type TrackPieceSpec } from "./track-layout.ts";
 
@@ -80,5 +88,55 @@ describe("track heights", () => {
     const layout = new TrackLayout(pieces);
     expect(() => layout.place(CROSSING, POSE16_IDENTITY, 0, 1)).toThrow(/only be laid level/);
     expect(layout.place(CROSSING, POSE16_IDENTITY, 4)).toBe(0);
+  });
+});
+
+describe("run frames", () => {
+  const runFrame: TrackFrame = { id: 1, xLdu: 0.25, zLdu: -0.125 };
+  const otherRun: TrackFrame = { id: 2, xLdu: 0.25, zLdu: -0.125 };
+  const exit = pose16(zeta16([16n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0);
+
+  it("joins ends only inside one frame, never across frames at the same exact pose", () => {
+    const layout = new TrackLayout([straight(16n)]);
+    const world = layout.place(0, POSE16_IDENTITY, 0);
+    const inRun = layout.place(0, exit, 0, 0, runFrame);
+    const sameRun = layout.place(
+      0,
+      pose16(zeta16([32n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+      0,
+      0,
+      runFrame,
+    );
+    const inOtherRun = layout.place(0, exit, 0, 0, otherRun);
+    const graph = new TrackGraph(layout);
+    expect(partnerOf(graph, world, 1)).toBe(NO_END);
+    expect(partnerOf(graph, inOtherRun, 0)).toBe(NO_END);
+    expect(partnerOf(graph, inRun, 1)).toBe((graph.endStart[sameRun] ?? 0) + 0);
+    expect(graph.joinCount).toBe(1);
+    expect(graph.issues).toEqual([]);
+  });
+
+  it("places a run frame's ends at its float offset for play, and reports the gap to world track", () => {
+    const layout = new TrackLayout([straight(16n)]);
+    layout.place(0, POSE16_IDENTITY, 0);
+    const inRun = layout.place(0, exit, 0, 0, runFrame);
+    const graph = new TrackGraph(layout);
+    const end = graph.endStart[inRun] ?? 0;
+    expect([graph.endXLdu[end], graph.endZLdu[end], graph.endFrame[end]]).toEqual([
+      16 * STUD_LDU + runFrame.xLdu,
+      runFrame.zLdu,
+      runFrame.id,
+    ]);
+    const gaps = endGaps([
+      { pose: layout.connectorPose(0, 1), yPlates: 0, frame: WORLD_TRACK_FRAME },
+      { pose: layout.connectorPose(inRun, 0), yPlates: 0, frame: runFrame },
+    ]);
+    expect(gaps.map((gap) => gap.gapLdu)).toEqual([Math.hypot(runFrame.xLdu, runFrame.zLdu)]);
+  });
+
+  it("refuses a frame id already placed at another offset", () => {
+    const layout = new TrackLayout([straight(16n)]);
+    layout.place(0, POSE16_IDENTITY, 0, 0, runFrame);
+    expect(() => layout.place(0, exit, 0, 0, { ...runFrame, xLdu: 1 })).toThrow(RangeError);
   });
 });

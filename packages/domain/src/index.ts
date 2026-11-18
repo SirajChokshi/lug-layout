@@ -57,7 +57,15 @@ export {
   type CoincidentEndsIssue,
   type TrackGraphIssue,
 } from "./track/track-graph.ts";
-export { NEAR_MISS_RADIUS_LDU, endGaps, type EndGap, type TrackEnd } from "./track/end-gaps.ts";
+export {
+  NEAR_MISS_RADIUS_LDU,
+  WORLD_TRACK_FRAME,
+  endGaps,
+  trackEndsJoin,
+  type EndGap,
+  type TrackEnd,
+  type TrackFrame,
+} from "./track/end-gaps.ts";
 export {
   mmRectInWorld,
   rectContains,
@@ -180,8 +188,11 @@ export {
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
+  SOURCE_PATCH,
   SOURCE_PRIMITIVE,
   SOURCE_SHADOW,
+  STATUS_UNVERIFIED,
+  STATUS_VERIFIED,
 } from "./connect/connector-table.ts";
 export {
   CAP_FAR,
@@ -189,12 +200,40 @@ export {
   SECTION_AXLE,
   SECTION_ROUND,
   SECTION_SQUARE,
+  SECTION_FLARE_JOINS_NEXT,
+  SECTION_FLARE_JOINS_PREVIOUS,
+  NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";
-export { SnapMating } from "./connect/mating.ts";
-export { ModelConnectors, type PartInstances } from "./connect/model-connectors.ts";
+export { SnapMating, type MateFreedom } from "./connect/mating.ts";
+export { ModelConnectors } from "./connect/model-connectors.ts";
+export {
+  ALL_COORDINATES,
+  IDENTIFICATION_RESIDUAL_LDU,
+  IdentifiedPoint,
+  MODEL_ROOT,
+  NO_FRAME,
+  SubmodelFrames,
+  TRANSFORM_FLOATS,
+  coordinatesAcross,
+  identifyDirection,
+  identifyPoint,
+  type PartInstances,
+  type SubmodelInstances,
+} from "./connect/submodel-frames.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
 export { MateReport } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
 export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
+export { SparseConnectorFinder } from "./connect/sparse-connector-finder.ts";
+export { TrackEndFinder } from "./connect/track-end-finder.ts";
 export { ConnectionSolver } from "./connect/connection-solver.ts";
+export {
+  NO_VOLUME_TOP,
+  VolumeIndex,
+  firstOverlap,
+  type CellVolumes,
+  type OverlapHit,
+  type OwnerFilter,
+  type VolumeHit,
+} from "./volume-index.ts";

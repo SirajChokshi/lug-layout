@@ -17,6 +17,8 @@ import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { BakeHelperRegistry } from "./bake-helper-registry.ts";
+import { CompilerLoader } from "./compiler-loader.ts";
 import { ImportWorkerService } from "./import-worker-service.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -27,6 +29,10 @@ const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
 const TECHNIC_PART = "ldraw:52031";
 const UNBUNDLED_PART = "ldraw:3023b";
+
+function importWorker(): ImportWorkerService {
+  return new ImportWorkerService(new CompilerLoader(), new BakeHelperRegistry());
+}
 
 let server: Server;
 let base = "";
@@ -128,8 +134,8 @@ it("gives a bundle part the same connector table from the catalog loader as when
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
 
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
-  const imported = await new ImportWorkerService().run({
-    id: 1,
+  const imported = await importWorker().run({
+    kind: "import",
     compilerUrl: new URL(context.compilerPath, base).href,
     bundleBaseUrl: base,
     connectorIndexes: context.connectorIndexes,
@@ -150,6 +156,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
         bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
+        tableDepthLdu: context.tableDepthLdu,
         vehicles: context.vehicles,
       },
     },

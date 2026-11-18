@@ -115,6 +115,12 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
   if (!track || (snapshot.mode !== "track" && track.pieces === 0)) return null;
   const rows: Array<readonly [string, string]> = [
     ["Pieces laid", integer.format(track.pieces)],
+    ["Model pieces on the ζ₁₆ field", integer.format(track.modelPieces)],
+    ["Model pieces in a run frame, joined only inside it", integer.format(track.runFramePieces)],
+    [
+      "Model pieces off the field or unanchored, not joined",
+      integer.format(track.offField + track.unanchored),
+    ],
     ...track.bom.map((line): readonly [string, string] => [
       `${line.piece} ${line.title}`,
       `× ${line.count}`,
@@ -139,6 +145,10 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       className="inspector track-panel"
       aria-label="Track"
       data-track-pieces={track.pieces}
+      data-model-pieces={track.modelPieces}
+      data-run-frame-pieces={track.runFramePieces}
+      data-off-field={track.offField}
+      data-unanchored={track.unanchored}
       data-open-ends={track.openEnds}
       data-joins={track.joins}
       data-last-commit={track.lastCommit ?? ""}

@@ -1,13 +1,15 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
-  BrickCompiler,
   importStudioFile,
   LdrawMirror,
   ModelImportEngine,
   type ImportWorkerRequest,
   type ImportResult,
 } from "@brr/import";
-import { injectable } from "inversify";
+import { inject, injectable } from "inversify";
+import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
+import type { ICompilerLoader } from "./compiler-loader.ts";
+import { BAKE_HELPER_REGISTRY, COMPILER_LOADER } from "./tokens.ts";
 
 export interface IImportWorkerService {
   run(request: ImportWorkerRequest): Promise<ImportResult>;
@@ -15,22 +17,12 @@ export interface IImportWorkerService {
 
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
-  private readonly compilers = new Map<string, Promise<BrickCompiler>>();
   private readonly records = new Map<string, ConnectorRecords>();
 
-  private compiler(url: string): Promise<BrickCompiler> {
-    const cached = this.compilers.get(url);
-    if (cached) return cached;
-    const loading = fetch(url).then(async (response) => {
-      if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-      return new BrickCompiler(await WebAssembly.compile(await response.arrayBuffer()));
-    });
-    this.compilers.set(url, loading);
-    loading.catch(() => {
-      if (this.compilers.get(url) === loading) this.compilers.delete(url);
-    });
-    return loading;
-  }
+  constructor(
+    @inject(COMPILER_LOADER) private readonly compilers: ICompilerLoader,
+    @inject(BAKE_HELPER_REGISTRY) private readonly bakeHelpers: IBakeHelperRegistry,
+  ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
     const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
@@ -49,27 +41,31 @@ export class ImportWorkerService implements IImportWorkerService {
   }
 
   async run(request: ImportWorkerRequest): Promise<ImportResult> {
-    const compiler = await this.compiler(request.compilerUrl);
+    const compiler = await this.compilers.load(request.compilerUrl);
+    const helpers = this.bakeHelpers.helpers(request.compilerUrl);
     const connectors = this.connectorRecords(request);
     const { input } = request;
+    const mirror = new LdrawMirror(input.job.source, (url) => fetch(url), request.ldrawLibraryUrl);
     switch (input.kind) {
       case "ldraw": {
-        const mirror = new LdrawMirror(
-          input.job.source,
-          (url) => fetch(url),
-          request.ldrawLibraryUrl,
+        const engine = new ModelImportEngine(
+          compiler,
+          mirror,
+          connectors,
+          () => performance.now(),
+          helpers,
         );
-        const engine = new ModelImportEngine(compiler, mirror, connectors, () => performance.now());
         return engine.importText(input.job);
       }
-      case "studio": {
-        const mirror = new LdrawMirror(
-          input.job.source,
-          (url) => fetch(url),
-          request.ldrawLibraryUrl,
+      case "studio":
+        return importStudioFile(
+          compiler,
+          mirror,
+          connectors,
+          () => performance.now(),
+          helpers,
+          input,
         );
-        return importStudioFile(compiler, mirror, connectors, () => performance.now(), input);
-      }
       default: {
         const unhandled: never = input;
         throw new Error(`unhandled import input ${JSON.stringify(unhandled)}`);
