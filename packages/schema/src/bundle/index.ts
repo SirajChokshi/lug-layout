@@ -1,6 +1,6 @@
 import {
   isCanonicalExactDecimal,
-  isCanonicalRationalText,
+  isCanonicalExactRationalText,
   pose16,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
@@ -34,9 +34,9 @@ export type ExactDecimalText = v.InferOutput<typeof ExactDecimalText>;
 
 export const ExactRationalText = v.pipe(
   v.object({ numerator: v.string(), denominator: v.string() }),
-  v.check(isCanonicalRationalText, "must be a reduced exact rational"),
+  v.check(isCanonicalExactRationalText, "must be a reduced exact rational"),
   v.description(
-    "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseRational",
+    "an exact rational as decimal integer strings: the numerator carries the sign, the denominator is positive and shares no factor with it; read with @brr/math parseExactRational",
   ),
 );
 export type ExactRationalText = v.InferOutput<typeof ExactRationalText>;

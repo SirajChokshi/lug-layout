@@ -35,8 +35,18 @@ function greatestCommonDivisor(a: bigint, b: bigint): bigint {
   return x;
 }
 
+const WORD_BITS = 32;
+const WORD_SHIFT = 32n;
+const WORD_MASK = 0xffffffffn;
+
 function bitLength(value: bigint): number {
-  return value === 0n ? 0 : value.toString(2).length;
+  let bits = 0;
+  let rest = value;
+  while (rest > WORD_MASK) {
+    rest >>= WORD_SHIFT;
+    bits += WORD_BITS;
+  }
+  return bits + WORD_BITS - Math.clz32(Number(rest));
 }
 
 export function exactRational(numerator: bigint, denominator: bigint): ExactRational {
@@ -46,18 +56,18 @@ export function exactRational(numerator: bigint, denominator: bigint): ExactRati
   return { numerator: (sign * numerator) / divisor, denominator: (sign * denominator) / divisor };
 }
 
-export function rationalFromSixteenths(sixteenths: number): ExactRational {
+export function exactRationalFromSixteenths(sixteenths: number): ExactRational {
   if (!Number.isInteger(sixteenths) || sixteenths < INT32_MIN || sixteenths > INT32_MAX) {
     throw new Error(`${sixteenths} is not an Int32 count of sixteenths`);
   }
   return exactRational(BigInt(sixteenths), SIXTEENTHS_PER_LDU);
 }
 
-export function rationalFromDecimal(value: ExactDecimal): ExactRational {
+export function exactRationalFromDecimal(value: ExactDecimal): ExactRational {
   return exactRational(value.units, 10n ** BigInt(value.places));
 }
 
-export function rationalFromFloat64(value: number): ExactRational {
+export function exactRationalFromFloat64(value: number): ExactRational {
   if (!Number.isFinite(value)) throw new Error(`${value} is not a finite Float64`);
   float64Bits.setFloat64(0, value);
   const bits = float64Bits.getBigUint64(0);
@@ -71,59 +81,59 @@ export function rationalFromFloat64(value: number): ExactRational {
     : exactRational(signed, 1n << BigInt(-exponent));
 }
 
-export function addRational(a: ExactRational, b: ExactRational): ExactRational {
+export function addExactRational(a: ExactRational, b: ExactRational): ExactRational {
   return exactRational(
     a.numerator * b.denominator + b.numerator * a.denominator,
     a.denominator * b.denominator,
   );
 }
 
-export function subtractRational(a: ExactRational, b: ExactRational): ExactRational {
+export function subtractExactRational(a: ExactRational, b: ExactRational): ExactRational {
   return exactRational(
     a.numerator * b.denominator - b.numerator * a.denominator,
     a.denominator * b.denominator,
   );
 }
 
-export function multiplyRational(a: ExactRational, b: ExactRational): ExactRational {
+export function multiplyExactRational(a: ExactRational, b: ExactRational): ExactRational {
   return exactRational(a.numerator * b.numerator, a.denominator * b.denominator);
 }
 
-export function meanRational(a: ExactRational, b: ExactRational): ExactRational {
+export function meanExactRational(a: ExactRational, b: ExactRational): ExactRational {
   return exactRational(
     a.numerator * b.denominator + b.numerator * a.denominator,
     2n * a.denominator * b.denominator,
   );
 }
 
-export function compareRational(a: ExactRational, b: ExactRational): -1 | 0 | 1 {
+export function compareExactRational(a: ExactRational, b: ExactRational): -1 | 0 | 1 {
   const difference = a.numerator * b.denominator - b.numerator * a.denominator;
   return difference < 0n ? -1 : difference > 0n ? 1 : 0;
 }
 
-export function rationalEquals(a: ExactRational, b: ExactRational): boolean {
+export function exactRationalEquals(a: ExactRational, b: ExactRational): boolean {
   return a.numerator === b.numerator && a.denominator === b.denominator;
 }
 
-export function formatRational(value: ExactRational): ExactRationalText {
+export function formatExactRational(value: ExactRational): ExactRationalText {
   return { numerator: value.numerator.toString(), denominator: value.denominator.toString() };
 }
 
-export function isCanonicalRationalText(text: ExactRationalText): boolean {
+export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
   if (!INTEGER_TEXT.test(text.numerator) || !POSITIVE_INTEGER_TEXT.test(text.denominator)) {
     return false;
   }
   return greatestCommonDivisor(BigInt(text.numerator), BigInt(text.denominator)) === 1n;
 }
 
-export function parseRational(text: ExactRationalText): ExactRational {
-  if (!isCanonicalRationalText(text)) {
+export function parseExactRational(text: ExactRationalText): ExactRational {
+  if (!isCanonicalExactRationalText(text)) {
     throw new Error(`${text.numerator}/${text.denominator} is not a reduced exact rational`);
   }
   return { numerator: BigInt(text.numerator), denominator: BigInt(text.denominator) };
 }
 
-export function rationalToNumber(value: ExactRational): number {
+export function exactRationalToNumber(value: ExactRational): number {
   if (value.numerator === 0n) return 0;
   const numerator = magnitude(value.numerator);
   const shift = bitLength(numerator) - bitLength(value.denominator) - SIGNIFICAND_BITS - GUARD_BITS;

@@ -40,12 +40,22 @@ describe("exact decimals", () => {
     expect(compareExactDecimal(decimal("0.000015"), decimal("0.00001"))).toBe(1);
   });
 
-  it.each(["", "4..6", "1e", "0x10", "NaN", "Infinity", "1,5", " 1"])(
-    "refuse %j, which is not a decimal literal",
-    (text) => {
-      expect(() => decimal(text)).toThrow("is not a decimal literal");
-    },
-  );
+  it.each([
+    "",
+    "4..6",
+    "1e",
+    "0x10",
+    "NaN",
+    "Infinity",
+    "1,5",
+    " 1",
+    "1e99999999999999999999",
+    "1e-1101",
+    "9".repeat(1101),
+  ])("refuse %j, which is not a decimal literal in range", (text) => {
+    expect(() => decimal(text)).toThrow("is not a decimal literal");
+    expect(isCanonicalExactDecimal(text)).toBe(false);
+  });
 
   it("call only the written form canonical", () => {
     expect(["46.9", "-0.5", "250", "0"].map(isCanonicalExactDecimal)).toEqual([

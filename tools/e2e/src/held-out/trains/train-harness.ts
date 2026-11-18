@@ -9,8 +9,8 @@ import {
   compareExactDecimal,
   EXACT_DECIMAL_ZERO,
   parseExactDecimal,
-  rationalFromDecimal,
-  rationalToNumber,
+  exactRationalFromDecimal,
+  exactRationalToNumber,
 } from "@brr/math";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -49,7 +49,7 @@ export interface TrainRun {
 }
 
 function ldu(text: string): number {
-  return rationalToNumber(rationalFromDecimal(parseExactDecimal(text)));
+  return exactRationalToNumber(exactRationalFromDecimal(parseExactDecimal(text)));
 }
 
 async function railBands(repoRoot: string): Promise<ReadonlyArray<RailHeadBands>> {

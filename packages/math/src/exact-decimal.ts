@@ -5,6 +5,8 @@ export interface ExactDecimal {
 
 const DECIMAL_LITERAL = /^([+-]?)(?:(\d+)(?:\.(\d*))?|\.(\d+))(?:[eE]([+-]?\d+))?$/u;
 const TEN = 10n;
+const MAX_LITERAL_DIGITS = 1100;
+const MAX_EXPONENT_MAGNITUDE = 1100;
 
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { units: 0n, places: 0 };
 
@@ -22,16 +24,40 @@ function scaledTo(value: ExactDecimal, places: number): bigint {
   return value.units * TEN ** BigInt(places - value.places);
 }
 
-export function parseExactDecimal(text: string): ExactDecimal {
+interface LiteralParts {
+  readonly negative: boolean;
+  readonly digits: string;
+  readonly fractionDigits: number;
+  readonly shift: number;
+}
+
+function literalParts(text: string): LiteralParts | null {
   const match = DECIMAL_LITERAL.exec(text);
-  if (match === null) throw new Error(`"${text}" is not a decimal literal`);
+  if (match === null) return null;
   const [, sign = "", whole = "", fraction = "", bareFraction = "", exponent = "0"] = match;
-  const fractionDigits = fraction + bareFraction;
-  const shift = Number.parseInt(exponent, 10);
-  const digits = BigInt(`${whole}${fractionDigits}` || "0");
-  const places = fractionDigits.length - shift;
-  const units = places < 0 ? digits * TEN ** BigInt(-places) : digits;
-  return normalized(sign === "-" ? -units : units, Math.max(places, 0));
+  const digits = `${whole}${fraction}${bareFraction}`;
+  const shift = Number(exponent);
+  if (digits.length > MAX_LITERAL_DIGITS || !(Math.abs(shift) <= MAX_EXPONENT_MAGNITUDE)) {
+    return null;
+  }
+  return {
+    negative: sign === "-",
+    digits: digits === "" ? "0" : digits,
+    fractionDigits: fraction.length + bareFraction.length,
+    shift,
+  };
+}
+
+export function parseExactDecimal(text: string): ExactDecimal {
+  const parts = literalParts(text);
+  if (parts === null) {
+    throw new Error(
+      `"${text}" is not a decimal literal of at most ${MAX_LITERAL_DIGITS} digits and exponent magnitude ${MAX_EXPONENT_MAGNITUDE}`,
+    );
+  }
+  const places = parts.fractionDigits - parts.shift;
+  const magnitude = BigInt(parts.digits) * (places < 0 ? TEN ** BigInt(-places) : 1n);
+  return normalized(parts.negative ? -magnitude : magnitude, Math.max(places, 0));
 }
 
 export function exactDecimalFromInteger(value: bigint): ExactDecimal {
@@ -47,7 +73,7 @@ export function formatExactDecimal(value: ExactDecimal): string {
 }
 
 export function isCanonicalExactDecimal(text: string): boolean {
-  return DECIMAL_LITERAL.test(text) && formatExactDecimal(parseExactDecimal(text)) === text;
+  return literalParts(text) !== null && formatExactDecimal(parseExactDecimal(text)) === text;
 }
 
 export function addExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
@@ -58,10 +84,6 @@ export function addExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal 
 export function subtractExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
   const places = Math.max(a.places, b.places);
   return normalized(scaledTo(a, places) - scaledTo(b, places), places);
-}
-
-export function negateExactDecimal(value: ExactDecimal): ExactDecimal {
-  return { units: -value.units, places: value.places };
 }
 
 export function multiplyExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
