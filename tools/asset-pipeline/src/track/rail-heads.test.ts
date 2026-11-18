@@ -65,15 +65,11 @@ describe("rail heads", () => {
   it("find the rail centres exactly where the scan line crosses the heads", () => {
     if (heads === null) throw new Error("the custom rail has no rail pair");
     const section = railSection(heads, end, 0, INWARD_LDU);
-    const [near, far] = section?.railCentresLdu ?? [];
-    if (section === null || near === undefined || far === undefined) {
-      throw new Error("the scan line finds no rail pair");
-    }
-    const nearCentre = exactRational(-10003n, 200n);
-    const farCentre = exactRational(10003n, 200n);
+    if (section === null) throw new Error("the scan line finds no rail pair");
+    const [nearCentre, farCentre] = section.railCentresLdu;
     const halfSpacing = exactRational(10003n, 200n);
-    expect(exactRationalEquals(near, nearCentre)).toBe(true);
-    expect(exactRationalEquals(far, farCentre)).toBe(true);
+    expect(exactRationalEquals(nearCentre, exactRational(-10003n, 200n))).toBe(true);
+    expect(exactRationalEquals(farCentre, exactRational(10003n, 200n))).toBe(true);
     expect(exactRationalEquals(section.railHalfSpacingLdu, halfSpacing)).toBe(true);
     expect(exactRationalEquals(section.railCentreOffsetLdu, exactRational(0n, 1n))).toBe(true);
   });

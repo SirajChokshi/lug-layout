@@ -34,7 +34,7 @@ export interface RailHeads {
 }
 
 export interface RailSection {
-  readonly railCentresLdu: ReadonlyArray<ExactRational>;
+  readonly railCentresLdu: readonly [ExactRational, ExactRational];
   readonly railHalfSpacingLdu: ExactRational;
   readonly railCentreOffsetLdu: ExactRational;
 }
@@ -243,23 +243,26 @@ function scanIntervals(
 
 function railPairRuns(intervals: ReadonlyArray<Interval>): readonly [Interval, Interval] | null {
   const runs = mergedRuns(intervals);
-  const [near, far] = runs;
-  return runs.length === 2 && near !== undefined && far !== undefined ? [near, far] : null;
+  const [nearRun, farRun] = runs;
+  return runs.length === 2 && nearRun !== undefined && farRun !== undefined
+    ? [nearRun, farRun]
+    : null;
 }
 
-function midpoint(run: Interval): ExactRational {
+function runMidpoint(run: Interval): ExactRational {
   return divideExactRational(addExactRational(run.from, run.to), TWO);
 }
 
 function railSectionFromIntervals(intervals: ReadonlyArray<Interval>): RailSection | null {
   const pair = railPairRuns(intervals);
   if (pair === null) return null;
-  const near = midpoint(pair[0]);
-  const far = midpoint(pair[1]);
+  const [nearRun, farRun] = pair;
+  const nearCentre = runMidpoint(nearRun);
+  const farCentre = runMidpoint(farRun);
   return {
-    railCentresLdu: [near, far],
-    railHalfSpacingLdu: divideExactRational(subtractExactRational(far, near), TWO),
-    railCentreOffsetLdu: divideExactRational(addExactRational(far, near), TWO),
+    railCentresLdu: [nearCentre, farCentre],
+    railHalfSpacingLdu: divideExactRational(subtractExactRational(farCentre, nearCentre), TWO),
+    railCentreOffsetLdu: divideExactRational(addExactRational(farCentre, nearCentre), TWO),
   };
 }
 
