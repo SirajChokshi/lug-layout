@@ -102,7 +102,7 @@ const AXES: ReadonlyArray<Axis> = [0, 1, 2];
 const COS = [1, 0, -1, 0] as const;
 const SIN = [0, 1, 0, -1] as const;
 
-class SeededRandom {
+export class SeededRandom {
   private state: number;
 
   constructor(seed: number) {
@@ -129,6 +129,23 @@ class SeededRandom {
     const item = items[this.int(items.length)];
     if (item === undefined) throw new Error("cannot pick from an empty pool");
     return item;
+  }
+
+  choice<T>(items: ReadonlyArray<T>): T | null {
+    return items.length === 0 ? null : this.pick(items);
+  }
+
+  shuffled<T>(items: ReadonlyArray<T>): T[] {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i--) {
+      const j = this.int(i + 1);
+      const a = out[i];
+      const b = out[j];
+      if (a === undefined || b === undefined) continue;
+      out[i] = b;
+      out[j] = a;
+    }
+    return out;
   }
 
   token(): string {
@@ -188,7 +205,7 @@ export function isPoolCandidate(title: string): boolean {
   );
 }
 
-function producedColors(
+export function producedColors(
   parts: Iterable<ManifestPart>,
   colors: ReadonlyArray<BundleColor>,
 ): ReadonlyArray<number> {

@@ -197,7 +197,7 @@ export function markdownReport(context: RunContext, inputs: ReadonlyArray<Checke
   return [
     `### Held-out run, seed ${context.seed}`,
     "",
-    `Revision \`${context.revision}\`, bundle \`${context.bundleVersion}\`, LDraw \`${context.ldraw}\`. ${context.corpusFiles} pinned corpus files plus freshly generated builds; \`HELD_OUT_SEED=${context.seed}\` regenerates the same builds. ${drawn} instances drawn in ${context.elapsedSeconds} s.`,
+    `Revision \`${context.revision}\`, bundle \`${context.bundleVersion}\`, LDraw \`${context.ldraw}\`. ${context.corpusFiles} pinned corpus files plus freshly generated builds and trains; \`HELD_OUT_SEED=${context.seed}\` regenerates the same builds and trains. ${drawn} instances drawn in ${context.elapsedSeconds} s.`,
     "",
     header,
     rule,

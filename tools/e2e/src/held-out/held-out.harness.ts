@@ -22,6 +22,7 @@ import {
   type PoolCandidate,
 } from "./generator.ts";
 import { cachingFetch, importThroughWorkerPath, type HeldOutInput } from "./import-path.ts";
+import { runTrains, trainsMarkdown } from "./trains/train-harness.ts";
 import { partExtras } from "./part-connectors.ts";
 import { markdownReport, partCoverage, type CheckedInput, type InputSet } from "./report.ts";
 
@@ -32,6 +33,7 @@ const BUNDLE_ROOT =
 const CACHE_ROOT = join(REPO_ROOT, ".cache/held-out");
 const SEED_RANGE = 2 ** 31;
 const DEFAULT_BUILDS_PER_KIND = 4;
+const DEFAULT_TRAINS_PER_KIND = 1;
 const HARNESS_TIMEOUT_MS = 3_600_000;
 const MS_PER_SECOND = 1000;
 const STUD_TOP_Y = 7;
@@ -177,6 +179,15 @@ it(
       repoRoot: REPO_ROOT,
     });
 
+    const trains = await runTrains(
+      bundle,
+      REPO_ROOT,
+      CACHE_ROOT,
+      builds,
+      seed,
+      Number(process.env["HELD_OUT_TRAINS_PER_KIND"] ?? DEFAULT_TRAINS_PER_KIND),
+    );
+
     const report = markdownReport(
       {
         coverage: partCoverage(memo.values()),
@@ -188,7 +199,7 @@ it(
         elapsedSeconds: Math.round((performance.now() - started) / MS_PER_SECOND),
       },
       checked,
-    ).concat("\n", acceptanceMarkdown(acceptance));
+    ).concat("\n", acceptanceMarkdown(acceptance), "\n", trainsMarkdown(trains, seed));
     const results = join(CACHE_ROOT, "results");
     await mkdir(results, { recursive: true });
     await writeFile(join(results, `seed-${seed}.md`), report);
@@ -207,6 +218,24 @@ it(
     expect(unsound, "a generated build collides nowhere, and its doubled copy somewhere").toEqual(
       [],
     );
+    expect(
+      trains.outcomes.flatMap(({ train }) =>
+        train.problems.map((problem) => `${train.name}: ${problem}`),
+      ),
+      "every generated train is sound: nothing overlaps, each planned wheelset meets its rail, each negative misses",
+    ).toEqual([]);
+    expect(
+      trains.outcomes.flatMap(({ train, failures }) =>
+        failures.map((failure) => `${train.name}: ${failure}`),
+      ),
+      "generated trains use only official library parts, so each must import cleanly",
+    ).toEqual([]);
+    expect(
+      trains.outcomes.flatMap(({ train, mismatches }) =>
+        mismatches.map((mismatch) => `${train.name}: ${mismatch}`),
+      ),
+      "an imported train keeps the generator's instance order, parts and positions, which its expected outcome indexes",
+    ).toEqual([]);
     expect(
       acceptance.scenarioProblems,
       "the acceptance pair joins only by its pins when aligned, and a pin collides one stud off",
