@@ -8,6 +8,7 @@ const CANONICAL_DECIMAL = /^-?(?:0|[1-9]\d*)(?:\.\d*[1-9])?$/u;
 const TEN = 10n;
 const MAX_LITERAL_DIGITS = 1100;
 const MAX_EXPONENT_MAGNITUDE = 1100;
+const COEFFICIENT_LIMIT = TEN ** BigInt(MAX_LITERAL_DIGITS);
 
 export const EXACT_DECIMAL_ZERO: ExactDecimal = { coefficient: 0n, places: 0 };
 
@@ -15,13 +16,7 @@ export function exactDecimal(coefficient: bigint, places: number): ExactDecimal 
   if (!Number.isSafeInteger(places) || places < 0 || places >= MAX_LITERAL_DIGITS) {
     throw new Error(`${places} is not a count of decimal places below ${MAX_LITERAL_DIGITS}`);
   }
-  const value = normalized(coefficient, places);
-  if (canonicalDigits(value) > MAX_LITERAL_DIGITS) {
-    throw new Error(
-      `${coefficient} × 10^-${places} writes canonically with more than ${MAX_LITERAL_DIGITS} digits`,
-    );
-  }
-  return value;
+  return bounded(normalized(coefficient, places));
 }
 
 function normalized(coefficient: bigint, places: number): ExactDecimal {
@@ -76,15 +71,24 @@ export function parseExactDecimal(text: string): ExactDecimal {
   }
   const magnitude = BigInt(parts.digits) * (places < 0 ? TEN ** BigInt(-places) : 1n);
   const value = normalized(parts.negative ? -magnitude : magnitude, Math.max(places, 0));
-  if (canonicalDigits(value) > MAX_LITERAL_DIGITS) {
+  if (!withinDigitBound(value)) {
     throw new Error(`"${text}" writes canonically with more than ${MAX_LITERAL_DIGITS} digits`);
   }
   return value;
 }
 
-function canonicalDigits(value: ExactDecimal): number {
+function withinDigitBound(value: ExactDecimal): boolean {
   const magnitude = value.coefficient < 0n ? -value.coefficient : value.coefficient;
-  return Math.max(magnitude.toString().length, value.places + 1);
+  return value.places < MAX_LITERAL_DIGITS && magnitude < COEFFICIENT_LIMIT;
+}
+
+function bounded(value: ExactDecimal): ExactDecimal {
+  if (!withinDigitBound(value)) {
+    throw new Error(
+      `an exact decimal writes canonically with more than ${MAX_LITERAL_DIGITS} digits`,
+    );
+  }
+  return value;
 }
 
 export function formatExactDecimal(value: ExactDecimal): string {
@@ -104,16 +108,16 @@ export function isCanonicalExactDecimalText(text: string): boolean {
 
 export function addExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
   const places = Math.max(a.places, b.places);
-  return normalized(scaledTo(a, places) + scaledTo(b, places), places);
+  return bounded(normalized(scaledTo(a, places) + scaledTo(b, places), places));
 }
 
 export function subtractExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
   const places = Math.max(a.places, b.places);
-  return normalized(scaledTo(a, places) - scaledTo(b, places), places);
+  return bounded(normalized(scaledTo(a, places) - scaledTo(b, places), places));
 }
 
 export function multiplyExactDecimal(a: ExactDecimal, b: ExactDecimal): ExactDecimal {
-  return normalized(a.coefficient * b.coefficient, a.places + b.places);
+  return bounded(normalized(a.coefficient * b.coefficient, a.places + b.places));
 }
 
 export function compareExactDecimal(a: ExactDecimal, b: ExactDecimal): -1 | 0 | 1 {

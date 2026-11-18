@@ -28,6 +28,15 @@ describe("exact decimals", () => {
     expect(written(decimal(literal))).toBe(canonical);
   });
 
+  it("refuse arithmetic that would write past the digit bound", () => {
+    const tiny = exactDecimal(1n, 600);
+    expect(() => multiplyExactDecimal(tiny, tiny)).toThrow("writes canonically with more than");
+    const huge = exactDecimal(10n ** 1099n, 0);
+    expect(() => addExactDecimal(huge, multiplyExactDecimal(huge, decimal("9")))).toThrow(
+      "writes canonically with more than",
+    );
+  });
+
   it("compose LDraw literals exactly where Float64 rounds", () => {
     expect(53.1 - 46.9).toBe(6.200000000000003);
     expect(written(subtractExactDecimal(decimal("53.1"), decimal("46.9")))).toBe("6.2");

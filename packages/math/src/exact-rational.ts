@@ -13,6 +13,7 @@ export interface ExactRationalText {
 const INTEGER_TEXT = /^(?:0|-?[1-9]\d*)$/u;
 const POSITIVE_INTEGER_TEXT = /^[1-9]\d*$/u;
 const MAX_TEXT_DIGITS = 1200;
+const TERM_LIMIT = 10n ** BigInt(MAX_TEXT_DIGITS);
 const SIXTEENTHS_PER_LDU = 16n;
 const SIGNIFICAND_BITS = 53;
 const GUARD_BITS = 2;
@@ -58,7 +59,14 @@ export function exactRational(numerator: bigint, denominator: bigint): ExactRati
   if (denominator === 0n) throw new Error("an exact rational has a nonzero denominator");
   const sign = denominator < 0n ? -1n : 1n;
   const divisor = greatestCommonDivisor(numerator, denominator);
-  return { numerator: (sign * numerator) / divisor, denominator: (sign * denominator) / divisor };
+  const reduced = {
+    numerator: (sign * numerator) / divisor,
+    denominator: (sign * denominator) / divisor,
+  };
+  if (magnitude(reduced.numerator) >= TERM_LIMIT || reduced.denominator >= TERM_LIMIT) {
+    throw new Error(`an exact rational writes with more than ${MAX_TEXT_DIGITS} digits a term`);
+  }
+  return reduced;
 }
 
 export function exactRationalFromSixteenths(sixteenths: number): ExactRational {
@@ -136,7 +144,8 @@ export function formatExactRational(value: ExactRational): ExactRationalText {
 }
 
 export function isCanonicalExactRationalText(text: ExactRationalText): boolean {
-  const numeratorDigits = text.numerator.replace(/^-/u, "").length;
+  if (typeof text.numerator !== "string" || typeof text.denominator !== "string") return false;
+  const numeratorDigits = text.numerator.length - (text.numerator.startsWith("-") ? 1 : 0);
   if (
     numeratorDigits > MAX_TEXT_DIGITS ||
     text.denominator.length > MAX_TEXT_DIGITS ||
