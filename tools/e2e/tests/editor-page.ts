@@ -59,6 +59,12 @@ export interface TrackCounts {
   readonly lastCommit: string;
 }
 
+export interface CatalogEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly section: string;
+}
+
 interface PlacementColumns {
   readonly refId: ReadonlyArray<number>;
   readonly x: ReadonlyArray<number>;
@@ -201,6 +207,17 @@ export class EditorPage {
     await this.page.mouse.wheel(0, wheelDelta);
     await this.settle();
     this.forgetView();
+  }
+
+  async catalog(): Promise<ReadonlyArray<CatalogEntry>> {
+    return this.page.locator(".palette [data-section] [data-item]").evaluateAll((buttons) =>
+      buttons.flatMap((button) => {
+        const id = button.getAttribute("data-item");
+        const section = button.closest("[data-section]")?.getAttribute("data-section");
+        const label = button.getAttribute("aria-label") ?? button.textContent ?? "";
+        return id && section ? [{ id, label, section }] : [];
+      }),
+    );
   }
 
   async choose(item: string): Promise<void> {
