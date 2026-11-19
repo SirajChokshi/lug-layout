@@ -1,8 +1,11 @@
 import {
+  CandidatePoses,
   FootprintGrid,
   MateReport,
+  NO_OVERLAP,
   VolumeIndex,
   firstOverlap,
+  firstOverlapFrom,
   ModelConnectors,
   type CellVolumes,
   type ConnectionSolver,
@@ -107,6 +110,8 @@ interface Placed extends PlacedParts {
 const TURNS = 4;
 const INITIAL_KEYS = 64;
 const TURN_KEYS = 3 * TURNS;
+const NO_INDEX = -1;
+const HINTS = 8;
 
 class Bounds {
   cellX0 = 0;
@@ -156,22 +161,29 @@ class VolumeBuffer implements CellVolumes {
       this.bottomLdu = new Int32Array(local.count);
       this.topLdu = new Int32Array(local.count);
     }
-    const rot = isRot90(pose.rot) ? pose.rot : 0;
-    const cos = rot90Cos(rot);
-    const sin = rot90Sin(rot);
-    const yLdu = pose.yPlates * PLATE_LDU;
-    const { cellX, cellZ, bottomLdu, topLdu } = local;
-    for (let c = 0; c < local.count; c++) {
-      const cx = (cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      const cz = (cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      this.cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
-      this.cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-      this.bottomLdu[c] = (bottomLdu[c] ?? 0) + yLdu;
-      this.topLdu[c] = (topLdu[c] ?? 0) + yLdu;
-    }
+    for (let c = 0; c < local.count; c++) placeCell(local, pose, c, this, c);
     this.count = local.count;
     return this;
   }
+}
+
+function placeCell(
+  local: CellVolumes,
+  pose: LatticePose,
+  c: number,
+  out: VolumeBuffer,
+  at: number,
+): void {
+  const rot = isRot90(pose.rot) ? pose.rot : 0;
+  const cos = rot90Cos(rot);
+  const sin = rot90Sin(rot);
+  const yLdu = pose.yPlates * PLATE_LDU;
+  const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+  const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+  out.cellX[at] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
+  out.cellZ[at] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
+  out.bottomLdu[at] = (local.bottomLdu[c] ?? 0) + yLdu;
+  out.topLdu[at] = (local.topLdu[c] ?? 0) + yLdu;
 }
 
 function copyHit(from: OverlapHit, to: OverlapHit): void {
@@ -207,7 +219,16 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly report = new MateReport();
   private readonly tieReport = new MateReport();
   private keys = new Float64Array(INITIAL_KEYS);
-  private keyVotes = new Int32Array(INITIAL_KEYS);
+  private dense = new Int32Array(INITIAL_KEYS);
+  private proposedVotes = new Int32Array(INITIAL_KEYS);
+  private proposedStamp = new Int32Array(INITIAL_KEYS);
+  private levelStamp = new Int32Array(INITIAL_KEYS);
+  private stamp = 0;
+  private readonly proposals = new CandidatePoses();
+  private readonly countPose = new Pose();
+  private readonly oneCell = new VolumeBuffer(1);
+  private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
+  private nextHint = 0;
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
@@ -304,7 +325,7 @@ export class PlacementSearch implements IPlacementSearch {
     out.walked++;
     out.accepted = false;
     if (pose.yPlates < tableYPlates) return;
-    if (this.blocked(model, volumes, boxes, technic, pose, out.votes)) {
+    if (this.blocked(model, volumes, boxes, technic, pose, out.votes, true, false)) {
       copyHit(this.hit, out.overlap);
       return;
     }
@@ -320,7 +341,9 @@ export class PlacementSearch implements IPlacementSearch {
     tableYPlates: number,
     out: PlacementChoice,
   ): void {
-    const count = this.matedInReachOrder(model, window, tableYPlates);
+    const count = this.reachOrder(window, tableYPlates);
+    this.stamp++;
+    this.collectProposed(model, window, tableYPlates);
     const pose = this.pose;
     let found = false;
     let bestKey = 0;
@@ -331,9 +354,11 @@ export class PlacementSearch implements IPlacementSearch {
       const key = this.keys[k] ?? 0;
       const reach = this.decode(window, key, pose);
       if (found && reach > bestReach) break;
-      const votes = this.keyVotes[key % this.keyVotes.length] ?? 0;
+      const votes = this.votesAt(model, window, pose);
+      if (votes === 0) continue;
       out.walked++;
-      if (this.blocked(model, volumes, boxes, technic, pose, votes)) continue;
+      const exemptable = this.proposedAt(window, pose);
+      if (this.blocked(model, volumes, boxes, technic, pose, votes, exemptable, true)) continue;
       this.solver.evaluate(model, pose, this.tieReport);
       const joints = this.tieReport.jointCount;
       if (!found || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
@@ -350,30 +375,24 @@ export class PlacementSearch implements IPlacementSearch {
     out.accepted = true;
   }
 
-  private matedInReachOrder(
-    model: ModelConnectors,
-    window: PlacementWindow,
-    tableYPlates: number,
-  ): number {
+  private reachOrder(window: PlacementWindow, tableYPlates: number): number {
     const across = 2 * window.cells + 1;
     const levels = 2 * window.plates + 1;
     const capacity = window.turns * levels * across * across;
     if (this.keys.length < capacity) {
       this.keys = new Float64Array(capacity);
-      this.keyVotes = new Int32Array(capacity);
+      this.dense = new Int32Array(capacity);
+      this.proposedVotes = new Int32Array(capacity);
+      this.proposedStamp = new Int32Array(capacity);
+      this.levelStamp = new Int32Array(capacity);
     }
-    const slots = this.keyVotes.length;
     const radiusSquared = window.radiusLdu * window.radiusLdu;
-    const pose = this.pose;
     let count = 0;
-    let slot = 0;
     for (let turn = window.firstTurn; turn < window.turns; turn++) {
       const turnRank = quarterTurnsBetween(window.rot + turn, window.rot) * TURNS + turn;
-      pose.rot = (window.rot + turn) % TURNS;
       for (let level = 0; level < levels; level++) {
         const dy = level - window.plates;
-        pose.yPlates = window.yPlates + dy;
-        if (pose.yPlates < tableYPlates) continue;
+        if (window.yPlates + dy < tableYPlates) continue;
         const dyLdu = dy * PLATE_LDU;
         for (let i = 0; i < across; i++) {
           const dx = (i - window.cells) * STUD_LDU;
@@ -381,15 +400,8 @@ export class PlacementSearch implements IPlacementSearch {
             const dz = (j - window.cells) * STUD_LDU;
             const reach = dx * dx + dz * dz + dyLdu * dyLdu;
             if (reach > radiusSquared || (reach === 0 && turn === 0)) continue;
-            pose.x = window.x + dx;
-            pose.z = window.z + dz;
-            const votes = this.solver.votes(model, pose);
-            if (votes === 0) continue;
-            const place =
+            this.keys[count++] =
               (((reach * TURN_KEYS + turnRank) * levels + level) * across + i) * across + j;
-            this.keyVotes[slot] = votes;
-            this.keys[count++] = place * slots + slot;
-            slot++;
           }
         }
       }
@@ -399,11 +411,94 @@ export class PlacementSearch implements IPlacementSearch {
     return count;
   }
 
+  private collectProposed(
+    model: ModelConnectors,
+    window: PlacementWindow,
+    tableYPlates: number,
+  ): void {
+    const proposals = this.proposals;
+    this.solver.proposeMates(model, window, proposals);
+    const radiusSquared = window.radiusLdu * window.radiusLdu;
+    const counted = this.countPose;
+    for (let q = 0; q < proposals.count; q++) {
+      counted.x = proposals.x[q] ?? 0;
+      counted.z = proposals.z[q] ?? 0;
+      counted.yPlates = proposals.yPlates[q] ?? 0;
+      counted.rot = proposals.rot[q] ?? 0;
+      const index = this.ballIndex(window, counted);
+      if (index < 0 || counted.yPlates < tableYPlates) continue;
+      const dx = counted.x - window.x;
+      const dz = counted.z - window.z;
+      const dy = (counted.yPlates - window.yPlates) * PLATE_LDU;
+      if (dx * dx + dz * dz + dy * dy > radiusSquared) continue;
+      this.proposedVotes[index] = this.solver.proposalVotes(model, counted);
+      this.proposedStamp[index] = this.stamp;
+    }
+  }
+
+  private ballIndex(window: PlacementWindow, pose: LatticePose): number {
+    const dx = pose.x - window.x;
+    const dz = pose.z - window.z;
+    if (dx % STUD_LDU !== 0 || dz % STUD_LDU !== 0) return NO_INDEX;
+    const across = 2 * window.cells + 1;
+    const levels = 2 * window.plates + 1;
+    const i = dx / STUD_LDU + window.cells;
+    const j = dz / STUD_LDU + window.cells;
+    const level = pose.yPlates - window.yPlates + window.plates;
+    const turn = (((pose.rot - window.rot) % TURNS) + TURNS) % TURNS;
+    if (i < 0 || i >= across || j < 0 || j >= across || level < 0 || level >= levels) {
+      return NO_INDEX;
+    }
+    if (turn < window.firstTurn || turn >= window.turns) return NO_INDEX;
+    return ((turn * levels + level) * across + i) * across + j;
+  }
+
+  private votesAt(model: ModelConnectors, window: PlacementWindow, pose: LatticePose): number {
+    const index = this.ballIndex(window, pose);
+    const across = 2 * window.cells + 1;
+    const band = Math.floor(index / (across * across));
+    if (this.levelStamp[band] !== this.stamp) this.countLevel(model, window, band);
+    const proposed =
+      this.proposedStamp[index] === this.stamp ? (this.proposedVotes[index] ?? 0) : 0;
+    return (this.dense[index] ?? 0) + proposed;
+  }
+
+  private proposedAt(window: PlacementWindow, pose: LatticePose): boolean {
+    const index = this.ballIndex(window, pose);
+    return this.proposedStamp[index] === this.stamp && (this.proposedVotes[index] ?? 0) > 0;
+  }
+
+  private countLevel(model: ModelConnectors, window: PlacementWindow, band: number): void {
+    const across = 2 * window.cells + 1;
+    const levels = 2 * window.plates + 1;
+    const turn = Math.floor(band / levels);
+    const level = band - turn * levels;
+    const radiusSquared = window.radiusLdu * window.radiusLdu;
+    const counted = this.countPose;
+    counted.rot = (window.rot + turn) % TURNS;
+    counted.yPlates = window.yPlates + level - window.plates;
+    const dyLdu = (level - window.plates) * PLATE_LDU;
+    for (let i = 0; i < across; i++) {
+      const dx = (i - window.cells) * STUD_LDU;
+      for (let j = 0; j < across; j++) {
+        const dz = (j - window.cells) * STUD_LDU;
+        const index = (band * across + i) * across + j;
+        if (dx * dx + dz * dz + dyLdu * dyLdu > radiusSquared) {
+          this.dense[index] = 0;
+          continue;
+        }
+        counted.x = window.x + dx;
+        counted.z = window.z + dz;
+        this.dense[index] = this.solver.denseVotes(model, counted);
+      }
+    }
+    this.levelStamp[band] = this.stamp;
+  }
+
   private decode(window: PlacementWindow, key: number, out: Pose): number {
     const across = 2 * window.cells + 1;
     const levels = 2 * window.plates + 1;
-    const slots = this.keyVotes.length;
-    let rest = (key - (key % slots)) / slots;
+    let rest = key;
     const j = rest % across;
     rest = (rest - j) / across;
     const i = rest % across;
@@ -425,16 +520,43 @@ export class PlacementSearch implements IPlacementSearch {
     technic: TechnicSet,
     pose: LatticePose,
     votes: number,
+    exemptable: boolean,
+    hinted: boolean,
   ): boolean {
-    const placed = this.scratch.place(volumes, pose);
     this.zones.clear();
-    let blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
-    if (blocked && votes > 0 && this.collectZones(model, boxes, technic, pose) > 0) {
-      blocked =
-        firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
-        this.zones.firstOverlap(this.hit);
+    if (hinted && !exemptable && this.hintBlocks(volumes, pose)) return true;
+    const placed = this.scratch.place(volumes, pose);
+    const at = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
+    if (at === NO_OVERLAP) return false;
+    this.remember(at);
+    if (!exemptable || votes === 0 || this.collectZones(model, boxes, technic, pose) === 0) {
+      return true;
     }
-    return blocked;
+    return (
+      firstOverlap(placed, this.volumes, this.exempt, this.hit) || this.zones.firstOverlap(this.hit)
+    );
+  }
+
+  private hintBlocks(volumes: CellVolumes, pose: LatticePose): boolean {
+    const one = this.oneCell;
+    for (let h = 0; h < HINTS; h++) {
+      const cell = this.hints[h] ?? NO_OVERLAP;
+      if (cell < 0 || cell >= volumes.count) continue;
+      placeCell(volumes, pose, cell, one, 0);
+      const bottom = one.bottomLdu[0] ?? 0;
+      const top = one.topLdu[0] ?? 0;
+      if (top <= bottom) continue;
+      const x = one.cellX[0] ?? 0;
+      const z = one.cellZ[0] ?? 0;
+      if (this.volumes.firstOverlap(x, z, bottom, top, this.exempt, this.hit)) return true;
+    }
+    return false;
+  }
+
+  private remember(cell: number): void {
+    for (let h = 0; h < HINTS; h++) if (this.hints[h] === cell) return;
+    this.hints[this.nextHint] = cell;
+    this.nextHint = (this.nextHint + 1) % HINTS;
   }
 
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {

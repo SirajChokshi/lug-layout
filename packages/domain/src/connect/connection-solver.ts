@@ -89,9 +89,34 @@ export class ConnectionSolver {
   }
 
   votes(model: ModelConnectors, pose: LatticePose): number {
+    return this.denseVotes(model, pose) + this.proposalVotes(model, pose);
+  }
+
+  denseVotes(model: ModelConnectors, pose: LatticePose): number {
     let votes = 0;
-    for (let f = 0; f < this.finders.length; f++) votes += this.finders[f]?.count(model, pose) ?? 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder?.proposesEveryPose) votes += finder.count(model, pose);
+    }
     return votes;
+  }
+
+  proposalVotes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder && !finder.proposesEveryPose) votes += finder.count(model, pose);
+    }
+    return votes;
+  }
+
+  proposeMates(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    checkWindow(window);
+    out.clear();
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder && !finder.proposesEveryPose) finder.propose(model, window, out);
+    }
   }
 
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {

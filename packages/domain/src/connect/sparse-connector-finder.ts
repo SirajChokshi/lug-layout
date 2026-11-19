@@ -159,6 +159,7 @@ class TurnedModel {
 
 export class SparseConnectorFinder implements MateFinder {
   readonly namesPartners = true;
+  readonly proposesEveryPose = false;
   private readonly classes: MateClasses;
   private readonly cells = new IntKeyMap(CELL_KEY_INTS);
   private readonly regions = new IntKeyMap(CELL_KEY_INTS);

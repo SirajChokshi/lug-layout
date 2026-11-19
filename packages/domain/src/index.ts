@@ -273,7 +273,9 @@ export {
 export {
   VolumeIndex,
   FootprintGrid,
+  NO_OVERLAP,
   firstOverlap,
+  firstOverlapFrom,
   type CellVolumes,
   type OverlapHit,
   type OwnerFilter,
