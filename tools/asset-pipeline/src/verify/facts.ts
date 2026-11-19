@@ -11,7 +11,7 @@ import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
 import { measureMagnetSeat, type MagnetModel } from "./magnet-seat.ts";
 import { milsModules } from "../mils/mils-modules.ts";
-import { roadBaseplateScene, switchParallelScene } from "./scenes.ts";
+import { roadBaseplateScene, singlePartScene, switchParallelScene } from "./scenes.ts";
 import { ovalPassingSidingScene, r40CircleScene, trackLoopReport } from "./track-loops.ts";
 
 export interface FactReport {
@@ -63,6 +63,7 @@ export function licenseAuditReport(inputs: LicenseAuditInputs): FactReport {
 const ROAD_SCENE_PLATES = ["44336", "2358", "610", "606", "30225b"];
 const RECESSED_ROAD_SCENE_PLATES = ["69958", "71772"];
 const BASEPLATE_ROW_PLATES = ["3811", "44336"];
+const DENSE_STACK_BRICK = "3001";
 const MAGNET_HOLDER = "2920";
 const MAGNET_CASING = "2959";
 
@@ -143,6 +144,10 @@ export function geometryReports(
           RECESSED_ROAD_SCENE_PLATES.map((part) => measureBaseplate(library, part)),
           "Road Plates",
         ),
+    },
+    {
+      fileName: "scenes/brick-2x4.ldr",
+      render: () => singlePartScene(library, DENSE_STACK_BRICK, "Brick 2x4"),
     },
     {
       fileName: "track-loops.json",
