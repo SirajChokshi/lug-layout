@@ -135,9 +135,9 @@ const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
 };
 const GHOST_OPACITY = 0.55;
 const GHOST_TINTS: Readonly<Record<GhostTone, MaterialTint>> = {
-  fits: { color: 0xc4f2cc, emissive: 0x0c3a18 },
-  mates: { color: 0xa8ffb8, emissive: 0x1f7a34 },
-  refused: { color: 0xffb0b0, emissive: 0x7a1010 },
+  fits: { color: 0xd0ffda, emissive: 0x188a36 },
+  mates: { color: 0xb8ffc6, emissive: 0x26b84e },
+  refused: { color: 0xff7070, emissive: 0xb8141e },
 };
 const GHOST_HIT_COLOR = 0xff1f1f;
 const SELECTION_COLOR = 0xff8c00;
