@@ -67,6 +67,10 @@ export interface ModuleModel {
   readonly assembly: Assembly;
 }
 
+export interface SolidEdgeModule extends ModuleModel {
+  readonly edgeRow: Assembly;
+}
+
 export interface ModuleFile {
   readonly names: ModelNames;
   readonly text: string;
@@ -77,7 +81,7 @@ export interface ModulePair {
   readonly subject: ModuleModel;
   readonly renamedSubject: ModuleModel;
   readonly holedSubject: ModuleFile;
-  readonly solidPartner: ModuleModel;
+  readonly solidPartner: SolidEdgeModule;
   readonly partner: ModuleModel;
   readonly partnerOffset: Vec3;
   readonly alongEdge: Vec3;
@@ -548,8 +552,9 @@ class Build {
     }
   }
 
-  fillEdgeRow(edge: number, pool: ReadonlyArray<Block>): void {
+  fillEdgeRow(edge: number, pool: ReadonlyArray<Block>): Placed[] {
     const frame = edgeFrame(edge);
+    const row: Placed[] = [];
     const singleWide = pool
       .filter((block) => Math.min(block.width, block.depth) === 1)
       .toSorted((a, b) => Math.max(b.width, b.depth) - Math.max(a.width, a.depth));
@@ -576,9 +581,11 @@ class Build {
         continue;
       }
       const turn = block.width >= block.depth === (frame.along === 0) ? 0 : 1;
-      this.placeOnEdge(block, edge, at, turn);
+      const placed = this.placeOnEdge(block, edge, at, turn);
+      if (placed) row.push(placed);
       at += Math.max(block.width, block.depth);
     }
+    return row;
   }
 
   wall(pool: ReadonlyArray<Block>, courses: number): void {
@@ -888,7 +895,7 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
   const partnerNames = namedModule(`mils-partner-${seed}`, `MILS partner ${seed}`);
   const holedNames = namedModule(`mils-holed-${seed}`, `MILS module ${seed} without pins`);
   const solid = new Build(subject.base.block, random, pools.colors);
-  solid.fillEdgeRow(facing, pools.bricks);
+  const edgeRow = solid.fillEdgeRow(facing, pools.bricks);
   landscape(solid, pools, random);
   const solidNames = namedModule(`mils-solid-${seed}`, `MILS module ${seed} with a solid edge`);
   return {
@@ -908,6 +915,7 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
       names: solidNames,
       text: mpdText(solid, solidNames),
       assembly: solid.assembly(),
+      edgeRow: edgeRow.map(blockPart),
     },
     partner: {
       names: partnerNames,
