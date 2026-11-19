@@ -12,8 +12,8 @@ use brick_compile::connect::{
 };
 use brick_compile::ends::{cylinder_ends, read_end, Reading};
 use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod, Triangle};
+use brick_compile::identify::{identifies, sixteenth, IDENTIFY_LDU, SIXTEENTHS_PER_LDU};
 use brick_compile::ldraw::{parse, Line};
-use brick_compile::sixteenths;
 use brick_compile::technic::is_circular_primitive;
 use brick_compile_cli::LazyLibrary;
 use serde_json::{json, Value};
@@ -30,7 +30,6 @@ const SECTION_GAP: &str = "   ";
 const PART_FOLDER: &str = "parts/";
 const LDRAW_LIBRARY: &str = "ldraw-library";
 const DECIMALS: usize = 4;
-const IDENTIFY_LDU: f64 = 0.0005;
 const VERIFIED: &str = "verified";
 const UNVERIFIED: &str = "unverified";
 
@@ -167,7 +166,7 @@ fn number(v: f64) -> String {
 
 fn written(v: f64) -> Result<f64, String> {
     let shown: f64 = number(v).parse().map_err(|e| format!("{v}: {e}"))?;
-    if (shown - v).abs() > IDENTIFY_LDU {
+    if !identifies(shown - v) {
         return Err(format!(
             "{v} has no {DECIMALS}-decimal form within {IDENTIFY_LDU} LDU"
         ));
@@ -176,12 +175,9 @@ fn written(v: f64) -> Result<f64, String> {
 }
 
 fn identified_radius(r: f64) -> Result<f64, String> {
-    sixteenths::identified(r)
-        .map(|steps| f64::from(steps) / f64::from(sixteenths::PER_LDU))
-        .ok_or(format!(
-            "radius {r} is not within {IDENTIFY_LDU} LDU of a 1/{} LDU step",
-            sixteenths::PER_LDU
-        ))
+    sixteenth(r).ok_or(format!(
+        "radius {r} is not within {IDENTIFY_LDU} LDU of a 1/{SIXTEENTHS_PER_LDU} LDU step"
+    ))
 }
 
 fn vector(v: Vec3) -> Value {
@@ -233,7 +229,7 @@ fn measure(
         .fold(f64::NEG_INFINITY, f64::max);
     let candidates: Vec<_> = bands
         .iter()
-        .filter(|band| (band.radius - widest).abs() <= IDENTIFY_LDU)
+        .filter(|band| identifies(band.radius - widest))
         .collect();
     let [band] = candidates.as_slice() else {
         return Err(format!(
@@ -745,8 +741,8 @@ fn round_trip(
                     && f.status == status
                     && f.group.as_deref() == Some(group)
                     && (0..3).all(|k| {
-                        (f.origin[k] - y_up(face.origin)[k]).abs() <= IDENTIFY_LDU
-                            && (f.axis[k] - y_up(face.normal)[k]).abs() <= IDENTIFY_LDU
+                        identifies(f.origin[k] - y_up(face.origin)[k])
+                            && identifies(f.axis[k] - y_up(face.normal)[k])
                     })
                     && f.sections.len() == 1
                     && identified_radius(face.radius).is_ok_and(|r| f.sections[0].size == r)

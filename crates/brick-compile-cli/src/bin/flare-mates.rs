@@ -10,13 +10,13 @@ use brick_compile::connect::{
     ShadowPatches, ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 use brick_compile::flatten::{resolve_reference, Lod};
+use brick_compile::identify::{identifies, IDENTIFY_LDU};
 use brick_compile::model::{bake_model, official_reference};
 use brick_compile_cli::{shadow_texts, LazyLibrary};
 use serde_json::{json, Value};
 
 const COAXIAL_LDU: f64 = 0.01;
 const ANTIPARALLEL: f64 = 1e-6;
-const FIT_LDU: f64 = 0.0005;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Rule {
@@ -66,10 +66,10 @@ fn effective(
 fn fits(male: (u8, f64), female: (u8, f64)) -> bool {
     let (m_code, m_size) = male;
     let (f_code, f_size) = female;
-    let within = m_size <= f_size + FIT_LDU;
+    let within = m_size <= f_size + IDENTIFY_LDU;
     match (m_code, f_code) {
         (ROUND, ROUND) | (AXLE, ROUND) | (ROUND, SQUARE) | (AXLE, SQUARE) => within,
-        (AXLE, AXLE) => (m_size - f_size).abs() <= FIT_LDU,
+        (AXLE, AXLE) => identifies(m_size - f_size),
         _ => false,
     }
 }
@@ -103,7 +103,7 @@ fn contained(
     let mut overlapped = false;
     for (i, &(m0, m1)) in male_spans.iter().enumerate() {
         for (j, &(f0, f1)) in female_spans.iter().enumerate() {
-            if m0.max(f0) >= m1.min(f1) - FIT_LDU {
+            if m0.max(f0) >= m1.min(f1) - IDENTIFY_LDU {
                 continue;
             }
             overlapped = true;
@@ -317,7 +317,7 @@ fn run() -> Result<bool, String> {
                 }
                 let male_length: f64 = male.face.sections.iter().map(|s| s.length).sum();
                 let female_length: f64 = female.face.sections.iter().map(|s| s.length).sum();
-                if offset >= male_length - FIT_LDU || offset + female_length <= FIT_LDU {
+                if offset >= male_length - IDENTIFY_LDU || offset + female_length <= IDENTIFY_LDU {
                     continue;
                 }
                 let today = contained(&male.face, &female.face, offset, Rule::FlaresNeverMate);

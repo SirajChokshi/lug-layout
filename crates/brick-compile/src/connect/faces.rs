@@ -1,5 +1,5 @@
 use crate::affine::Vec3;
-use crate::sixteenths;
+use crate::identify::sixteenths;
 
 use super::{
     column, direction_code, Bounding, Connector, Gender, GenericMatch, SectionShape, Shape, Source,
@@ -138,11 +138,8 @@ impl Cylinder<'_> {
 }
 
 fn on_grid(origin: Vec3) -> Option<[i32; 3]> {
-    Some([
-        sixteenths::identified(origin[0])?,
-        sixteenths::identified(origin[1])?,
-        sixteenths::identified(origin[2])?,
-    ])
+    let steps = |value: f64| sixteenths(value).and_then(|steps| i32::try_from(steps).ok());
+    Some([steps(origin[0])?, steps(origin[1])?, steps(origin[2])?])
 }
 
 fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<MatingFace> {
