@@ -1213,10 +1213,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         {
             return Probed::Rejected;
         }
-        if !solid.confined(probe, range, &LATTICE_STEPS) {
+        let Some(travel) = solid.confined_travel(probe, range, &LATTICE_STEPS) else {
             return Probed::Sliding;
-        }
-        if let Some(offset) = off_centre(&solid.travel(probe, range, &LATTICE_STEPS)) {
+        };
+        if let Some(offset) = off_centre(&travel) {
             return Probed::OffCentre(offset);
         }
         if floor.depth.is_infinite() {
