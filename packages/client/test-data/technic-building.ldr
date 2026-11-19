@@ -1,0 +1,17 @@
+0 Technic building, synthetic from official parts
+0 Name: technic-building.ldr
+0 Author: lug-layout tests
+0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt
+1 4 0 0 0 1 0 0 0 1 0 0 0 1 3020.dat
+1 71 0 -24 -10 1 0 0 0 1 0 0 0 1 3701.dat
+1 71 0 -24 10 1 0 0 0 1 0 0 0 1 3701.dat
+1 15 0 -48 -10 1 0 0 0 1 0 0 0 1 3701.dat
+1 15 0 -48 10 1 0 0 0 1 0 0 0 1 3701.dat
+1 71 0 -72 -10 1 0 0 0 1 0 0 0 1 3701.dat
+1 71 0 -72 10 1 0 0 0 1 0 0 0 1 3701.dat
+1 4 0 -96 0 1 0 0 0 1 0 0 0 1 3001.dat
+1 0 -20 -14 0 0 0 -1 0 1 0 1 0 0 2780.dat
+1 0 20 -14 0 0 0 -1 0 1 0 1 0 0 2780.dat
+1 0 0 -38 0 0 0 -1 0 1 0 1 0 0 2780.dat
+1 0 -20 -62 0 0 0 -1 0 1 0 1 0 0 2780.dat
+1 0 20 -62 0 0 0 -1 0 1 0 1 0 0 2780.dat

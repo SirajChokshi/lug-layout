@@ -69,14 +69,29 @@ import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
+import type { IImportWorkerPool } from "../import/import-worker-pool.ts";
+import { InProcessImportPool } from "../import/in-process-import-pool.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import {
+  EDITOR,
+  IMPORT_WORKER_POOL,
+  MODEL_IMPORTER,
+  RUNNING_GEAR,
+  TRAIN_PLAY,
+  PLACEABLE_CATALOG,
+} from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const testData = new URL("../../test-data/", import.meta.url);
+const CUSTOM_BOGIE_WAGON = "custom-bogie-wagon.mpd";
+const CUSTOM_TWO_AXLE_WAGON = "custom-two-axle-wagon.ldr";
+const TECHNIC_BUILDING = "technic-building.ldr";
+const RAIL_MODULE_NAME = "mils-rail-straight";
+const RAIL_MODULE = `generated:${RAIL_MODULE_NAME}`;
 const PLACEABLE_SET = "7936-1";
 const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
@@ -320,18 +335,20 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
   userModels: ReadonlyArray<string> = [],
+  importPool: IImportWorkerPool | null = null,
 ) {
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(
     ...mainThreadModules({
-      bundleBaseUrl: "unused",
+      bundleBaseUrl: importPool === null ? "unused" : bundleRoot.href,
       disclaimer: "unused",
       startSimWorker: () => new MessageChannel().port1,
     }),
   );
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  if (importPool !== null) container.rebind(IMPORT_WORKER_POOL).toConstantValue(importPool);
   const realLoader = container.get(PART_BUNDLE_LOADER);
   if (models !== null) {
     container
@@ -361,6 +378,17 @@ async function startEditor(
     catalog: container.get(PLACEABLE_CATALOG),
     manifest: await realLoader.loadManifest("standard"),
   };
+}
+
+async function importTestModel(editor: IEditor, name: string): Promise<string> {
+  const imported = await editor.importModelFile({
+    name,
+    bytes: new Uint8Array(await readFile(new URL(name, testData))),
+  });
+  const item = editor.snapshot().activeItem;
+  if (!imported || item === null)
+    throw new Error(`${name} did not import: ${JSON.stringify(editor.snapshot().modelImport)}`);
+  return item;
 }
 
 function farTierSettled(editor: IEditor): Promise<EditorSnapshot> {
@@ -474,17 +502,17 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
-it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
-  const { editor, backend, container, catalog } = await startEditor([
-    SET_WITHOUT_TRACK,
-    "10205-1",
-    "10133-1",
-  ]);
+it("offers exactly the placed models whose running gear resolves as trains, imported ones included, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
+  const { editor, backend, container, catalog } = await startEditor(
+    [SET_WITHOUT_TRACK, "10205-1"],
+    undefined,
+    [],
+    new InProcessImportPool(),
+  );
   const play = container.get(TRAIN_PLAY);
   const place = placer(editor, backend);
   const set = `omr:${SET_WITHOUT_TRACK}`;
-  const myOwnTrain = "omr:10205-1";
-  const locomotive = "omr:10133-1";
+  const unresolvedTrain = "omr:10205-1";
   const trains = () => editor.playSetup()?.models.map((model) => model.name);
   const openPlay = async () => {
     startPlay(editor, play);
@@ -494,53 +522,55 @@ it("offers exactly the placed models with running gear as trains under their pal
   const noTrack = expect.stringContaining("Lay some track first");
 
   const nothingPlaced = { trains: trains(), play: await openPlay() };
-  for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
+  const bogieWagon = await importTestModel(editor, CUSTOM_BOGIE_WAGON);
+  const twoAxleWagon = await importTestModel(editor, CUSTOM_TWO_AXLE_WAGON);
+  for (const item of [set, unresolvedTrain]) await loadCatalogItem(catalog, item);
   place(set, 0, 0);
-  const setPlaced = trains();
-  place(myOwnTrain, 1600, 0);
-  const myOwnTrainPlaced = trains();
-  place(locomotive, 0, 1600);
-  place(myOwnTrain, 1600, 1600);
+  place(unresolvedTrain, 1600, 0);
+  const unresolvedPlaced = trains();
+  place(bogieWagon, 0, 1600);
+  const bogieWagonPlaced = trains();
+  place(twoAxleWagon, 1600, 1600);
   const allPlaced = trains();
-  const locomotiveLabel = editor.playSetup()?.models[0]?.label;
-  play.chooseTrain("10133-1");
   selectAt(editor, backend, 0, 1600);
   editor.deleteSelection(0);
-  const locomotiveDeleted = trains();
+  const bogieWagonDeleted = trains();
   const playAfterDelete = await openPlay();
   editor.undo(0);
   const deleteUndone = trains();
 
   expect({
     nothingPlaced,
-    setPlaced,
-    myOwnTrainPlaced,
+    unresolvedPlaced,
+    bogieWagonPlaced,
     allPlaced,
-    locomotiveLabel,
-    locomotiveDeleted,
+    bogieWagonDeleted,
     playAfterDelete,
     deleteUndone,
   }).toEqual({
     nothingPlaced: { trains: [], play: "No train is placed on the layout." },
-    setPlaced: [],
-    myOwnTrainPlaced: ["10205-1"],
-    allPlaced: ["10133-1", "10205-1"],
-    locomotiveLabel: "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
-    locomotiveDeleted: ["10205-1"],
+    unresolvedPlaced: [],
+    bogieWagonPlaced: [CUSTOM_BOGIE_WAGON],
+    allPlaced: [CUSTOM_BOGIE_WAGON, CUSTOM_TWO_AXLE_WAGON],
+    bogieWagonDeleted: [CUSTOM_TWO_AXLE_WAGON],
     playAfterDelete: noTrack,
-    deleteUndone: ["10133-1", "10205-1"],
+    deleteUndone: [CUSTOM_BOGIE_WAGON, CUSTOM_TWO_AXLE_WAGON],
   });
 }, 120_000);
 
-it("runs Play on the track inside a placed set, with the placed train", async () => {
-  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET, "10205-1"]);
+it("runs Play on the track inside a placed rail module, with an imported train", async () => {
+  const { editor, backend, container, catalog } = await startEditor(
+    [RAIL_MODULE_NAME],
+    undefined,
+    [],
+    new InProcessImportPool(),
+  );
   const play = container.get(TRAIN_PLAY);
   const place = placer(editor, backend);
-  for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
-    await loadCatalogItem(catalog, item);
-  }
-  place(`omr:${PLACEABLE_SET}`, 0, 0);
-  place("omr:10205-1", 1600, 0);
+  const wagon = await importTestModel(editor, CUSTOM_BOGIE_WAGON);
+  await loadCatalogItem(catalog, RAIL_MODULE);
+  place(RAIL_MODULE, 0, 0);
+  place(wagon, 1600, 0);
   const setTrack = editor.snapshot().track?.modelPieces ?? 0;
 
   startPlay(editor, play);
@@ -550,8 +580,29 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
 
   expect(setTrack).toBeGreaterThan(0);
   expect(editor.playSetup()?.track.layout.count).toBe(setTrack);
-  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
+  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual([CUSTOM_BOGIE_WAGON]);
   expect(started).toMatchObject({ status: "loading", error: null });
+}, 120_000);
+
+it("checks no rail fit on a crossing whose ends identify no measured rail, says so, and still offers the train", async () => {
+  const { editor, backend } = await startEditor([], undefined, [], new InProcessImportPool());
+  const place = placer(editor, backend);
+  const wagon = await importTestModel(editor, CUSTOM_TWO_AXLE_WAGON);
+  place(wagon, 1600, 0);
+  place("track-piece:ldraw:32087", 0, 0);
+
+  const setup = editor.playSetup();
+  expect({
+    trains: setup?.models.map((model) => model.name),
+    refused: setup?.refused,
+    notChecked: setup?.railFitNotChecked.filter((line) => line.includes("32087")).length,
+    noMatchingRail: setup?.railFitNotChecked.some((line) => line.includes("no matching rail")),
+  }).toEqual({
+    trains: [CUSTOM_TWO_AXLE_WAGON],
+    refused: [],
+    notChecked: 1,
+    noMatchingRail: true,
+  });
 }, 120_000);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
@@ -651,6 +702,37 @@ class MemoryRepository implements IWorldRepository {
     return undefined;
   }
 }
+
+it("shows a custom Technic building with no wheelset as no train, counting its unread bands by reason and listing none of their rows", async () => {
+  const { editor, backend, container } = await startEditor(
+    [SET_WITHOUT_TRACK],
+    undefined,
+    [],
+    new InProcessImportPool(),
+  );
+  const building = await importTestModel(editor, TECHNIC_BUILDING);
+  placer(editor, backend)(building, 0, 0);
+  const models = container.get(RUNNING_GEAR).snapshot().models;
+  const [model] = models;
+  const counted = model?.unread.counts ?? [];
+  expect({
+    models: models.length,
+    vehicles: model?.vehicles,
+    playable: model?.playable,
+    unresolved: model?.unresolved,
+    countsShown: counted.length > 0 && counted.every((count) => count.rows > 0),
+    listed: Array.from(model?.unread.listed ?? []),
+    everyRowUnlisted: model?.unread.others.length === model?.unreadRollingBands.instance.length,
+  }).toEqual({
+    models: 1,
+    vehicles: 0,
+    playable: false,
+    unresolved: [],
+    countsShown: true,
+    listed: [],
+    everyRowUnlisted: true,
+  });
+}, 120_000);
 
 function placer(editor: IEditor, backend: AimedBackend) {
   return (item: string, x: number, z: number) => {
