@@ -176,6 +176,11 @@ export {
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type {
+  RollingDiagnosticsPanel,
+  RollingDiagnosticsPartView,
+  RollingDiagnosticsRowView,
+} from "./inspect/rolling-diagnostics.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,
