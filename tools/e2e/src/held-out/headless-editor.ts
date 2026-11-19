@@ -53,6 +53,8 @@ const UNFETCHED_BUNDLE_URL = "https://bundle.invalid/";
 const NO_BAKE_HELPERS: ReadonlyArray<IBakeHelper> = [];
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 480;
+const VIEW_HALF_WIDTH_LDU = 1_000;
+const VIEW_HALF_HEIGHT_LDU = (VIEW_HALF_WIDTH_LDU * CANVAS_HEIGHT) / CANVAS_WIDTH;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -102,8 +104,15 @@ export class AimedBackend implements ISceneBackend {
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
 
-  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    out.set([
+      this.aimX + ndcX * VIEW_HALF_WIDTH_LDU,
+      RAY_HEIGHT_LDU,
+      this.aimZ - ndcY * VIEW_HALF_HEIGHT_LDU,
+      0,
+      -1,
+      0,
+    ]);
   }
 
   setView(): void {}
