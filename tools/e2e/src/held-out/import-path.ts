@@ -84,7 +84,14 @@ export async function importThroughWorkerPath(
 ): Promise<ImportOutcome> {
   const compiler = new BrickCompiler(bundle.compiler);
   const mirror = new LdrawMirror(bundle.source, fetchUrl);
-  const engine = new ModelImportEngine(compiler, mirror, now, NO_BAKE_HELPERS);
+  const engine = new ModelImportEngine(
+    compiler,
+    mirror,
+    bundle.connectors,
+    bundle.records,
+    now,
+    NO_BAKE_HELPERS,
+  );
   const job = { ...bundle.job, fileName: input.name };
   try {
     switch (input.format) {

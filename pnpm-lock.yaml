@@ -273,6 +273,9 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../config
+      '@types/node':
+        specifier: 22.20.5
+        version: 22.20.5
       '@types/three':
         specifier: 0.187.0
         version: 0.187.0
@@ -408,12 +411,18 @@ importers:
 
   packages/workers/import-worker:
     dependencies:
+      '@brr/catalog':
+        specifier: workspace:*
+        version: link:../../catalog
       '@brr/import':
         specifier: workspace:*
         version: link:../../import
       '@brr/rpc':
         specifier: workspace:*
         version: link:../../rpc
+      '@brr/schema':
+        specifier: workspace:*
+        version: link:../../schema
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
@@ -421,9 +430,6 @@ importers:
       '@brr/config':
         specifier: workspace:*
         version: link:../../config
-      '@brr/schema':
-        specifier: workspace:*
-        version: link:../../schema
       '@types/node':
         specifier: 22.20.5
         version: 22.20.5
@@ -498,6 +504,9 @@ importers:
 
   tools/e2e:
     dependencies:
+      '@brr/catalog':
+        specifier: workspace:*
+        version: link:../../packages/catalog
       '@brr/import':
         specifier: workspace:*
         version: link:../../packages/import

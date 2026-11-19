@@ -263,7 +263,6 @@ export {
   type TechnicSet,
 } from "./technic-fit.ts";
 export {
-  NO_VOLUME_TOP,
   VolumeIndex,
   FootprintGrid,
   firstOverlap,

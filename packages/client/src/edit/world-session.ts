@@ -103,6 +103,7 @@ export interface ModelFileInput {
 }
 
 const CAMERA_SAVE_DELAY_MS = 500;
+const UNSEEN = Number.NaN;
 const FIRST_WORLD_NAME = "World 1";
 
 interface OpenWorld {
@@ -110,6 +111,15 @@ interface OpenWorld {
   readonly name: string;
   readonly pinnedBundleVersion: string;
   readonly openMs: number;
+}
+
+class ViewRecord implements SavedViewV1 {
+  targetX = UNSEEN;
+  targetY = UNSEEN;
+  targetZ = UNSEEN;
+  distance = UNSEEN;
+  yaw = UNSEEN;
+  pitch = UNSEEN;
 }
 
 @injectable()
@@ -129,9 +139,10 @@ export class WorldSession implements IWorldSession {
   private readonly dirty = new DirtyShards();
   private current: OpenWorld | null = null;
   private cameraDirty = false;
-  private lastCamera: SavedViewV1 | null = null;
+  private readonly lastView = new ViewRecord();
   private saveScheduled = false;
   private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private cameraSaveDueMs = 0;
   private fileQueue: Promise<void> = Promise.resolve();
   private creditsView: Promise<CreditsView> | null = null;
   private lease: WorldLease | null = null;
@@ -214,29 +225,28 @@ export class WorldSession implements IWorldSession {
   }
 
   pollCamera(): void {
-    const saved = this.camera.savedView();
-    const last = this.lastCamera;
-    const same =
-      last !== null &&
-      last.targetX === saved.targetX &&
-      last.targetY === saved.targetY &&
-      last.targetZ === saved.targetZ &&
-      last.distance === saved.distance &&
-      last.yaw === saved.yaw &&
-      last.pitch === saved.pitch;
-    if (same) return;
-    this.lastCamera = saved;
+    if (this.camera.matchesView(this.lastView)) return;
+    this.camera.copyView(this.lastView);
     if (this.current !== null) this.cameraMoved();
   }
 
   private cameraMoved(): void {
     this.cameraDirty = true;
-    if (this.cameraSaveTimer !== null) clearTimeout(this.cameraSaveTimer);
-    this.cameraSaveTimer = setTimeout(() => {
-      this.cameraSaveTimer = null;
-      void this.inFileQueue(() => this.saveNow());
-    }, CAMERA_SAVE_DELAY_MS);
+    this.cameraSaveDueMs = performance.now() + CAMERA_SAVE_DELAY_MS;
+    if (this.cameraSaveTimer === null) {
+      this.cameraSaveTimer = setTimeout(this.saveSettledCamera, CAMERA_SAVE_DELAY_MS);
+    }
   }
+
+  private readonly saveSettledCamera = (): void => {
+    const remainingMs = this.cameraSaveDueMs - performance.now();
+    if (remainingMs > 0) {
+      this.cameraSaveTimer = setTimeout(this.saveSettledCamera, remainingMs);
+      return;
+    }
+    this.cameraSaveTimer = null;
+    void this.inFileQueue(() => this.saveNow());
+  };
 
   private canSave(): boolean {
     return (
@@ -400,7 +410,7 @@ export class WorldSession implements IWorldSession {
 
   private finishOpen(savedView: SavedViewV1 | null, current: OpenWorld): void {
     this.camera.restoreView(savedView);
-    this.lastCamera = this.camera.savedView();
+    this.camera.copyView(this.lastView);
     this.current = current;
     this.dirty.clear();
     this.cameraDirty = false;
