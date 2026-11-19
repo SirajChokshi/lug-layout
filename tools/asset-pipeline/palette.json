@@ -1480,6 +1480,18 @@
         "root": "app/Enums"
       },
       "files": ["PartCategory.php"]
+    },
+    {
+      "name": "ldcad-shadow-library",
+      "use": "connectors",
+      "describes": "The whole LDCad Shadow Library at the palette's connectivitySource commit, as GitHub's archive. Tier 4's section vocabulary (section-vocabulary.json) is derived from every snap meta in it, and the pinned-library connector records read their tier 1 from it. CC BY-SA 4.0: fetched and pinned, never committed",
+      "source": {
+        "kind": "github-archive",
+        "repo": "RolandMelkert/LDCadShadowLibrary",
+        "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+        "root": ""
+      },
+      "files": ["ldcad-shadow-library.tar.gz"]
     }
   ]
 }

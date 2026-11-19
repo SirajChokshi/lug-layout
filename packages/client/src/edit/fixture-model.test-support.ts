@@ -10,7 +10,9 @@ import {
   type IPartBundleLoader,
   type ModelBundle,
   type ModelRecord,
+  type PackageAttribution,
   type PartBundle,
+  type PartConnectors,
   type PartFilter,
   type PartMesh,
   type PartShapeRecord,
@@ -117,6 +119,18 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
     return this.from(name).loadModel(lod, name);
+  }
+
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.shipped.loadPartConnectors(lod, partId);
+  }
+
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return this.shipped.loadConnectivityAttribution(lod);
+  }
+
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    return this.shipped.loadSectionVocabularyAttribution(lod);
   }
 
   importContext(lod: BundleLod): Promise<ImportContext> {

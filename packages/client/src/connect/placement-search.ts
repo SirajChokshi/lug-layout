@@ -4,6 +4,8 @@ import {
   VolumeIndex,
   firstOverlap,
   ModelConnectors,
+  placeTechnicInto,
+  technicScratch,
   type CellVolumes,
   type ConnectionSolver,
   type ConnectorTable,
@@ -12,25 +14,18 @@ import {
   type PartInstances,
   type SnapMating,
   type SnapWindow,
+  type TechnicSet,
   type TrackEnd,
 } from "@brr/domain";
-import {
-  PLATE_LDU,
-  STUD_LDU,
-  ZETA16_COEFFICIENT_COUNT,
-  ZETA16_ORDER,
-  isRot90,
-  rot90Cos,
-  rot90Sin,
-} from "@brr/math";
+import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
-import { TRACK_FAMILY } from "./finders.ts";
+import { MateZones, type PlacedParts } from "./mate-zones.ts";
+import type { PartBoxes } from "./part-boxes.ts";
+import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
-const STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const NO_PLACEMENT = -1;
-const JOINT_CELL_CAPACITY = 64;
 
 export interface PlacementChoice {
   accepted: boolean;
@@ -72,12 +67,21 @@ export interface IPlacementSearch {
     instances: PartInstances,
     trackEnds: ReadonlyArray<TrackEnd>,
   ): ModelConnectors;
-  add(placement: number, model: ModelConnectors, volumes: CellVolumes, pose: LatticePose): void;
+  add(
+    placement: number,
+    model: ModelConnectors,
+    volumes: FrozenVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+  ): void;
   remove(placement: number): void;
   clear(): void;
   search(
     model: ModelConnectors,
     volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
     window: SnapWindow,
     moving: number | null,
     out: PlacementChoice,
@@ -85,11 +89,9 @@ export interface IPlacementSearch {
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
 }
 
-interface Placed {
+interface Placed extends PlacedParts {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
-  readonly pose: LatticePose;
-  readonly world: CellVolumes;
+  readonly volumes: FrozenVolumes;
 }
 
 class VolumeBuffer implements CellVolumes {
@@ -117,13 +119,14 @@ class VolumeBuffer implements CellVolumes {
     const cos = rot90Cos(rot);
     const sin = rot90Sin(rot);
     const yLdu = pose.yPlates * PLATE_LDU;
+    const { cellX, cellZ, bottomLdu, topLdu } = local;
     for (let c = 0; c < local.count; c++) {
-      const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cx = (cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cz = (cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
       this.cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
       this.cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-      this.bottomLdu[c] = (local.bottomLdu[c] ?? 0) + yLdu;
-      this.topLdu[c] = (local.topLdu[c] ?? 0) + yLdu;
+      this.bottomLdu[c] = (bottomLdu[c] ?? 0) + yLdu;
+      this.topLdu[c] = (topLdu[c] ?? 0) + yLdu;
     }
     this.count = local.count;
     return this;
@@ -156,9 +159,7 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
-  private readonly jointCellX = new Int32Array(JOINT_CELL_CAPACITY);
-  private readonly jointCellZ = new Int32Array(JOINT_CELL_CAPACITY);
-  private joints = 0;
+  private readonly zones = new MateZones();
   private moving = NO_PLACEMENT;
 
   constructor(
@@ -166,13 +167,8 @@ export class PlacementSearch implements IPlacementSearch {
     @inject(SNAP_MATING) private readonly mating: SnapMating,
   ) {}
 
-  private readonly exempt = (owner: number, cellX: number, cellZ: number): boolean => {
-    if (owner === this.moving) return true;
-    for (let j = 0; j < this.joints; j++) {
-      if (this.jointCellX[j] === cellX && this.jointCellZ[j] === cellZ) return true;
-    }
-    return false;
-  };
+  private readonly exempt = (owner: number, cellX: number, cellZ: number): boolean =>
+    owner === this.moving || this.zones.exempts(owner, cellX, cellZ);
 
   model(
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -182,40 +178,29 @@ export class PlacementSearch implements IPlacementSearch {
     return ModelConnectors.fromParts(parts, instances, this.mating, trackEnds);
   }
 
-  add(placement: number, model: ModelConnectors, volumes: CellVolumes, pose: LatticePose): void {
+  add(
+    placement: number,
+    model: ModelConnectors,
+    volumes: FrozenVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+  ): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
-    const world = new VolumeBuffer(volumes.count).place(volumes, at);
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.add(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
-    this.solver.insert(model, at);
-    this.placed.set(placement, { model, volumes, pose: at, world });
+    const posed = technicScratch(technic);
+    placeTechnicInto(technic, at, posed);
+    this.volumes.add(placement, this.scratch.place(volumes, at));
+    this.solver.insert(model, at, placement);
+    this.placed.set(placement, { model, volumes, boxes, technic: posed, pose: at });
   }
 
   remove(placement: number): void {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
-    const { world } = placed;
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.remove(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
-    this.solver.remove(placed.model, placed.pose);
+    this.volumes.remove(placement, this.scratch.place(placed.volumes, placed.pose));
+    this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
   }
 
@@ -226,6 +211,8 @@ export class PlacementSearch implements IPlacementSearch {
   search(
     model: ModelConnectors,
     volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
     window: SnapWindow,
     moving: number | null,
     out: PlacementChoice,
@@ -239,9 +226,15 @@ export class PlacementSearch implements IPlacementSearch {
     for (let i = 0; i < candidates.count; i++) {
       const pose = this.candidatePose(i);
       out.walked = i + 1;
-      this.collectJoints(model, pose);
       const placed = this.scratch.place(volumes, pose);
-      const blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
+      this.zones.clear();
+      let blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
+      const mated = (candidates.votes[i] ?? 0) > 0;
+      if (blocked && mated && this.collectZones(model, boxes, technic, pose) > 0) {
+        blocked =
+          firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
+          this.zones.firstOverlap(this.hit);
+      }
       if (i === 0 || !blocked) this.choose(out, i);
       if (i === 0 && blocked) copyHit(this.hit, out.overlap);
       if (blocked) continue;
@@ -250,7 +243,7 @@ export class PlacementSearch implements IPlacementSearch {
       break;
     }
     this.moving = NO_PLACEMENT;
-    this.joints = 0;
+    this.zones.clear();
   }
 
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null {
@@ -262,7 +255,7 @@ export class PlacementSearch implements IPlacementSearch {
       this.solver.evaluate(placed.model, placed.pose, this.report);
       if (this.report.count > 0) before.set(other, this.report.count);
     }
-    this.solver.remove(removed.model, removed.pose);
+    this.solver.remove(removed.model, removed.pose, placement);
     let stranded: number | null = null;
     for (const [other, mates] of before) {
       const placed = this.placed.get(other);
@@ -273,7 +266,7 @@ export class PlacementSearch implements IPlacementSearch {
         break;
       }
     }
-    this.solver.insert(removed.model, removed.pose);
+    this.solver.insert(removed.model, removed.pose, placement);
     return stranded;
   }
 
@@ -294,33 +287,13 @@ export class PlacementSearch implements IPlacementSearch {
     out.votes = this.candidates.votes[index] ?? 0;
   }
 
-  private collectJoints(model: ModelConnectors, pose: LatticePose): void {
-    this.joints = 0;
-    if (model.trackEndCount === 0) return;
+  private collectZones(
+    model: ModelConnectors,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+  ): number {
     this.solver.evaluate(model, pose, this.report);
-    const rot = isRot90(pose.rot) ? pose.rot : 0;
-    const cos = rot90Cos(rot);
-    const sin = rot90Sin(rot);
-    for (let k = 0; k < this.report.count && this.joints < this.jointCellX.length; k++) {
-      if (this.report.family[k] !== TRACK_FAMILY) continue;
-      const end = this.report.connector[k] ?? 0;
-      let x = 0;
-      let z = 0;
-      for (let c = 0; c < ZETA16_COEFFICIENT_COUNT; c++) {
-        const coefficient = model.trackPosition[end * ZETA16_COEFFICIENT_COUNT + c] ?? 0;
-        x += coefficient * Math.cos(c * STEP_RADIANS) * STUD_LDU;
-        z += coefficient * Math.sin(c * STEP_RADIANS) * STUD_LDU;
-      }
-      const cellX = Math.floor((cos * x + sin * z + pose.x) / STUD_LDU);
-      const cellZ = Math.floor((-sin * x + cos * z + pose.z) / STUD_LDU);
-      for (let dz = -1; dz <= 0; dz++) {
-        for (let dx = -1; dx <= 0; dx++) {
-          if (this.joints === this.jointCellX.length) return;
-          this.jointCellX[this.joints] = cellX + dx;
-          this.jointCellZ[this.joints] = cellZ + dz;
-          this.joints++;
-        }
-      }
-    }
+    return this.zones.collect(this.report, boxes, technic, pose, this.placed);
   }
 }

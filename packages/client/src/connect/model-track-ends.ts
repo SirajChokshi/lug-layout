@@ -8,6 +8,7 @@ import {
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   HALF_TURN_16,
+  IDENTIFICATION_REPRESENTATION_GUARD_LDU,
   PLATE_LDU,
   STUD_LDU,
   UNROUNDED_TOLERANCE_LDU,
@@ -36,8 +37,10 @@ import type { TrackCatalog } from "@brr/schema/bundle";
 
 const HALF_STEP_RADIANS = ZETA16_STEP_RADIANS / 2;
 const QUARTER_TURN_STEPS = ZETA16_ORDER / 4;
-const RESIDUAL_LIMIT_STUDS = CERTIFIED_RESIDUAL_LIMIT_LDU / STUD_LDU;
-const ROTATION_ENTRY_RESIDUAL = CERTIFIED_RESIDUAL_LIMIT_LDU;
+const ACCEPTED_DEVIATION_LDU =
+  CERTIFIED_RESIDUAL_LIMIT_LDU + IDENTIFICATION_REPRESENTATION_GUARD_LDU;
+const RESIDUAL_LIMIT_STUDS = ACCEPTED_DEVIATION_LDU / STUD_LDU;
+const ROTATION_ENTRY_RESIDUAL = ACCEPTED_DEVIATION_LDU;
 const PAIRED_ENDS_REACH_STUDS = 2 * RESIDUAL_LIMIT_STUDS;
 const END_FLOATS = 4;
 const NEAR_MISS_RADIUS_STUDS = NEAR_MISS_RADIUS_LDU / STUD_LDU;
@@ -98,6 +101,7 @@ interface PieceOfPart {
 }
 
 interface Candidate {
+  readonly instance: number;
   readonly partId: string;
   readonly piece: PieceOfPart;
   readonly heading: number;
@@ -185,6 +189,7 @@ function candidateOf(
   o: number,
   part: PartShapeAsset,
   piece: PieceOfPart,
+  instance: number,
 ): Candidate | UncertifiedReason {
   const plates = piecePlates(m, o, part);
   if (!liesFlat(m, o) || plates === null) return "notFlat";
@@ -208,7 +213,7 @@ function candidateOf(
     ends[e + 2] = cos * dx - sin * dz;
     ends[e + 3] = sin * dx + cos * dz;
   }
-  return { partId: part.id, piece, heading, plates, placement, ends };
+  return { instance, partId: part.id, piece, heading, plates, placement, ends };
 }
 
 function withinLimit(dx: number, dz: number): boolean {
@@ -588,7 +593,7 @@ export function modelTrackEnds(
       uncertified.push({ partId: part.id, reason: "contradiction" });
       continue;
     }
-    const candidate = candidateOf(instances.matrices, i * INSTANCE_MATRIX_FLOATS, part, piece);
+    const candidate = candidateOf(instances.matrices, i * INSTANCE_MATRIX_FLOATS, part, piece, i);
     if (typeof candidate === "string") uncertified.push({ partId: part.id, reason: candidate });
     else candidates.push(candidate);
   }
@@ -616,6 +621,7 @@ export function modelTrackEnds(
       ends.push({
         pose: composePose16(placement, connector),
         yPlates: candidate.plates,
+        instance: candidate.instance,
         frame: WORLD_TRACK_FRAME,
       });
     }

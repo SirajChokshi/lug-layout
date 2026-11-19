@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./colors": "./src/colors.ts",
+    "./connector-records": "./src/connector-records.ts",
     "./glb": "./src/glb.ts"
   },
   "scripts": {

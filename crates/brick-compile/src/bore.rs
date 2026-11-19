@@ -75,6 +75,12 @@ fn across(direction: Vec3) -> (Vec3, Vec3) {
     (first, cross(direction, first))
 }
 
+fn radial(p: Vec3, axis: &BoreAxis) -> f64 {
+    let d = sub(p, axis.point);
+    let off = sub(d, axis.direction.map(|c| c * dot(d, axis.direction)));
+    dot(off, off).sqrt()
+}
+
 fn hit(origin: Vec3, ray: Vec3, triangle: &Triangle) -> Option<f64> {
     let [a, b, c] = triangle.points;
     let e1 = sub(b, a);
@@ -100,8 +106,14 @@ fn wall_radii(
     let mut walls = vec![None; triangles.len()];
     for span in spans.iter().filter(|s| is_circular_primitive(&s.reference)) {
         if let Some(radius) = coaxial_radius(span, axis.point, axis.direction) {
-            for wall in &mut walls[span.triangles.clone()] {
-                *wall = Some(radius);
+            for index in span.triangles.clone() {
+                let on_wall = triangles[index]
+                    .points
+                    .iter()
+                    .all(|&p| (radial(p, axis) - radius).abs() <= IDENTIFY_LDU);
+                if on_wall {
+                    walls[index] = Some(radius);
+                }
             }
         }
     }

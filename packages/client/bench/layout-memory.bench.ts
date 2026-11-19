@@ -1,4 +1,4 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -35,8 +35,8 @@ import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IPlaceableCatalog } from "../src/catalog/placeable-catalog.ts";
 import type { IEditor } from "../src/edit/editor.ts";
 import { WithFixtureModels } from "../src/edit/fixture-model.test-support.ts";
+import type { Placeable, PlaceableCells } from "../src/edit/placeable.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
-import type { PlaceableCells } from "../src/edit/placeable.ts";
 import { parseHeapSnapshot, tallyOwners, type OwnerRules, type OwnerTally } from "./heap-owners.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -108,10 +108,16 @@ const OBJECT3D_CLASSES: ReadonlyArray<string> = [
   "Group",
   "Mesh",
   "InstancedMesh",
+  "StudMesh",
   "LineSegments",
   "DirectionalLight",
 ];
-const RENDERABLE_CLASSES: ReadonlySet<string> = new Set(["Mesh", "InstancedMesh", "LineSegments"]);
+const RENDERABLE_CLASSES: ReadonlySet<string> = new Set([
+  "Mesh",
+  "InstancedMesh",
+  "StudMesh",
+  "LineSegments",
+]);
 
 function fields(owner: string, names: ReadonlyArray<string>): ReadonlyMap<string, string> {
   return new Map(names.map((name) => [name, owner]));
@@ -127,6 +133,7 @@ const RULES: OwnerRules = {
     ["Scene", SCENE],
     ["Group", SCENE],
     ["Mesh", SCENE],
+    ["StudMesh", SCENE],
     ["BufferGeometry", GEOMETRY],
     ["BufferAttribute", GEOMETRY],
     ["PartMeshStream", PART_MESHES],
@@ -135,7 +142,7 @@ const RULES: OwnerRules = {
     [
       "ThreeSceneBackend",
       new Map([
-        ...fields(INSTANCES, ["ghostPage"]),
+        ...fields(INSTANCES, ["ghostPage", "studBases", "studLookups"]),
         ...fields(GEOMETRY, ["detailedLevel", "farLevel", "farModelGeometries", "partBounds"]),
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
@@ -150,6 +157,13 @@ const RULES: OwnerRules = {
       new Map([
         ...fields(INSTANCES, ["instanceMatrix", "instanceColor"]),
         ...fields(GEOMETRY, ["geometry"]),
+      ]),
+    ],
+    [
+      "StudMesh",
+      new Map([
+        ...fields(INSTANCES, ["studTranslations", "studBasisAndColorIndex"]),
+        ...fields(SCENE, ["geometry"]),
       ]),
     ],
   ]),
@@ -182,7 +196,7 @@ interface RunResult {
   readonly arrangement: string;
   readonly parts: number;
   readonly placements: number;
-  readonly footprintCells: number;
+  readonly placementCells: number;
   readonly placing: PlacementTimes;
   readonly studsDrawn: number;
   readonly studsTotal: number;
@@ -406,6 +420,29 @@ function tileCentre(index: number): number {
   return index * TILE_LDU + HALF_TILE_LDU;
 }
 
+function setsByTile(tiles: number): ReadonlyMap<number, string> {
+  const sets = new Map<number, string>();
+  let set = 0;
+  for (let row = 0; row < tiles; row += SET_EVERY_TILES) {
+    for (let column = 0; column < tiles; column++) {
+      if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
+      sets.set(row * tiles + column, SETS[set % SETS.length] ?? "");
+      set++;
+    }
+  }
+  return sets;
+}
+
+function liesInBaseplateLayer(placeable: Placeable): boolean {
+  return placeable.slabBoxes.length > 0;
+}
+
+function placementCells(placeable: Placeable): number {
+  let cells = 0;
+  for (const top of placeable.cells.columnTop) if (top !== EMPTY_COLUMN) cells++;
+  return cells;
+}
+
 interface DensePose {
   readonly x: number;
   readonly z: number;
@@ -465,6 +502,7 @@ class LayoutBuilder {
   constructor(
     private readonly editor: IEditor,
     private readonly backend: WindowlessBackend,
+    private readonly baseplateLayerSets: ReadonlySet<string>,
   ) {}
 
   place(item: string, x: number, z: number): void {
@@ -508,18 +546,20 @@ class LayoutBuilder {
   }
 
   buildTiles(tiles: number): void {
+    const sets = setsByTile(tiles);
+    let displacedBaseplates = 0;
     for (let row = 0; row < tiles; row++) {
       for (let column = 0; column < tiles; column++) {
+        const set = sets.get(row * tiles + column);
+        if (set !== undefined && this.baseplateLayerSets.has(set)) {
+          displacedBaseplates++;
+          continue;
+        }
         this.place(BASEPLATE, tileCentre(column), tileCentre(row));
       }
     }
-    let set = 0;
-    for (let row = 0; row < tiles; row += SET_EVERY_TILES) {
-      for (let column = 0; column < tiles; column++) {
-        if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
-        this.place(SETS[set % SETS.length] ?? "", tileCentre(column), tileCentre(row));
-        set++;
-      }
+    for (const [tile, set] of sets) {
+      this.place(set, tileCentre(tile % tiles), tileCentre(Math.floor(tile / tiles)));
     }
     const roadRow = tiles;
     for (let row = roadRow; row < roadRow + ROAD_ROWS; row++) {
@@ -535,8 +575,21 @@ class LayoutBuilder {
         this.layTrack(fromX, fromX + TRACK_RUN_TILES * TILE_LDU, tileCentre(trackRow + row));
       }
     }
+    const spareRow = trackRow + TRACK_ROWS + 1;
+    for (let i = 0; i < displacedBaseplates; i++) {
+      this.place(BASEPLATE, tileCentre(i % tiles), tileCentre(spareRow + Math.floor(i / tiles)));
+    }
     this.editor.chooseItem(null);
   }
+}
+
+function cellsOf(editor: IEditor, cells: ReadonlyMap<string, number>): number {
+  const { refs, placements } = editor.dump();
+  let total = 0;
+  for (let i = 0; i < placements.refId.length; i++) {
+    total += cells.get(refs[placements.refId[i] ?? 0] ?? "") ?? 0;
+  }
+  return total;
 }
 
 function partsOf(editor: IEditor): number {
@@ -545,19 +598,6 @@ function partsOf(editor: IEditor): number {
   let total = editor.snapshot().track?.pieces ?? 0;
   for (let i = 0; i < placements.refId.length; i++) {
     total += parts.get(refs[placements.refId[i] ?? 0] ?? "") ?? 0;
-  }
-  return total;
-}
-
-function footprintCellsOf(editor: IEditor): number {
-  const { refs, placements, covers } = editor.dump();
-  const cells = new Map(covers.map((cover) => [cover.id, cover.footprintCells]));
-  let total = 0;
-  for (let i = 0; i < placements.refId.length; i++) {
-    const ref = refs[placements.refId[i] ?? -1] ?? "";
-    const footprint = cells.get(ref);
-    if (footprint === undefined) throw new Error(`placed ${ref} has no footprint cells`);
-    total += footprint;
   }
   return total;
 }
@@ -657,8 +697,14 @@ async function runChild(
   if (started.status !== "ready") throw new Error(`editor did not start: ${started.error ?? ""}`);
   await settled(editor, backend);
   const catalog = container.get(PLACEABLE_CATALOG);
+  const cells = new Map<string, number>();
+  const baseplateLayerSets = new Set<string>();
   for (const item of itemsOf(plan)) {
-    if (item !== TRACK_ITEM) await loadCatalogItem(catalog, item);
+    if (item !== TRACK_ITEM) {
+      const placeable = await loadCatalogItem(catalog, item);
+      cells.set(item, placementCells(placeable));
+      if (SETS.includes(item) && liesInBaseplateLayer(placeable)) baseplateLayerSets.add(item);
+    }
     editor.chooseItem(item);
   }
   editor.chooseItem(null);
@@ -667,7 +713,7 @@ async function runChild(
   const baselineSnapshot = snapshotDir
     ? writeHeapSnapshot(join(snapshotDir, `${scale}-baseline.heapsnapshot`))
     : null;
-  const builder = new LayoutBuilder(editor, backend);
+  const builder = new LayoutBuilder(editor, backend, baseplateLayerSets);
   const aimed = build(plan, builder, catalog);
   await settled(editor, backend);
   if (plan.kind === "dense") {
@@ -690,7 +736,7 @@ async function runChild(
     arrangement: arrangementOf(plan),
     parts: partsOf(editor),
     placements: editor.snapshot().placements,
-    footprintCells: footprintCellsOf(editor),
+    placementCells: cellsOf(editor, cells),
     placing: placementTimes(builder.times),
     studsDrawn: studs?.drawn ?? 0,
     studsTotal: (studs?.drawn ?? 0) + (studs?.culledUnderFootprints ?? 0),
@@ -763,12 +809,11 @@ function forkRun(
 function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSplit>): string {
   const lines = [
     `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
-    `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags; ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
-    "",
+    `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags (a set that brings its own baseplates, so has slab boxes, stands on its tile without a 3811, and that 3811 goes in a spare row after the track, so parts and placements match the full grid); ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
     `dense layout: ${DENSE_BRICK} (one 3001 from the fixture bundle) placed across × deep per layer for each of the layers, alternate layers shifted half a brick along its width, at the pitch and layer height of its compiled cells, each through hover and click so it rests on the bricks below; the run fails unless every brick lands at the pose and layer its rule aims at`,
-    "placing: the editor's pointerMove and click per placement, summed over the layout (total) and as p50 and p95, medians of the runs",
+    "placement cells: the occupied columns of each placed item's cells, summed over the placements; placing: the editor's pointerMove and click per placement, summed over the layout (total) and as p50 and p95, medians of the runs",
     "",
-    "| Scale | Layout | Parts | Placements | Footprint cells per part | Placing total, p50, p95 | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
+    "| Scale | Layout | Parts | Placements | Placement cells per part | Placing total, p50, p95 | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
     "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   const scales = [...new Set(results.map((result) => result.scale))];
@@ -783,9 +828,8 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
     const total = median(runs.map((r) => r.placing.totalSeconds));
     const p50 = median(runs.map((r) => r.placing.p50Ms));
     const p95 = median(runs.map((r) => r.placing.p95Ms));
-    const cellsPerPart = first.parts > 0 ? (first.footprintCells / first.parts).toFixed(2) : "n/a";
     lines.push(
-      `| ${scale} | ${first.arrangement} | ${first.parts.toLocaleString("en-US")} | ${first.placements.toLocaleString("en-US")} | ${cellsPerPart} | ${total.toFixed(1)} s, ${p50.toFixed(2)} ms, ${p95.toFixed(2)} ms | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
+      `| ${scale} | ${first.arrangement} | ${first.parts.toLocaleString("en-US")} | ${first.placements.toLocaleString("en-US")} | ${(first.placementCells / first.parts).toFixed(2)} | ${total.toFixed(1)} s, ${p50.toFixed(2)} ms, ${p95.toFixed(2)} ms | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
     );
   }
   for (const split of splits) {
