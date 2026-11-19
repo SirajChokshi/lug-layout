@@ -189,6 +189,7 @@ impl RoundSurface {
 pub struct Floor {
     pub depth: f64,
     pub faces_probe: Option<bool>,
+    pub piece_depth: f64,
 }
 
 struct Attainer {
@@ -1804,7 +1805,11 @@ impl Solid {
                 _ => {}
             }
         }
-        Floor { depth, faces_probe }
+        Floor {
+            depth,
+            faces_probe,
+            piece_depth: if interior { band } else { depth },
+        }
     }
 
     pub fn cross_section(&self, probe: &Probe, range: (f64, f64), reach: f64) -> Vec<Vec<Point>> {
@@ -1875,7 +1880,11 @@ impl Solid {
                 faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
             }
         }
-        Floor { depth, faces_probe }
+        Floor {
+            depth,
+            faces_probe,
+            piece_depth: depth,
+        }
     }
 
     pub fn slab(
