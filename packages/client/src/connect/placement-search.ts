@@ -98,6 +98,7 @@ export interface IPlacementSearch {
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void;
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number>;
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
+  revision(): number;
 }
 
 interface Placed extends PlacedParts {
@@ -238,7 +239,7 @@ export class PlacementSearch implements IPlacementSearch {
   private memoModel: ModelConnectors | null = null;
   private memoRevision = -1;
   private memoMoving = NO_PLACEMENT;
-  private revision = 0;
+  private edits = 0;
   private readonly countPose = new Pose();
   private readonly oneCell = new VolumeBuffer(1);
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
@@ -284,7 +285,7 @@ export class PlacementSearch implements IPlacementSearch {
     const yLdu = at.yPlates * PLATE_LDU;
     const grid = this.gridFor(volumes, at.rot, world, yLdu);
     const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
-    this.revision++;
+    this.edits++;
     this.solver.insert(model, at, placement);
     this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
   }
@@ -293,7 +294,7 @@ export class PlacementSearch implements IPlacementSearch {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
     this.volumes.remove(placed.row);
-    this.revision++;
+    this.edits++;
     this.release(placed);
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
@@ -410,7 +411,7 @@ export class PlacementSearch implements IPlacementSearch {
   private prepareMemo(model: ModelConnectors, count: number): void {
     if (
       model === this.memoModel &&
-      this.revision === this.memoRevision &&
+      this.edits === this.memoRevision &&
       this.moving === this.memoMoving &&
       this.memo.roomFor(count)
     ) {
@@ -418,7 +419,7 @@ export class PlacementSearch implements IPlacementSearch {
     }
     this.memo.reset();
     this.memoModel = model;
-    this.memoRevision = this.revision;
+    this.memoRevision = this.edits;
     this.memoMoving = this.moving;
     this.heldRegion.cells = NO_REGION;
     this.turnedRegion.cells = NO_REGION;
@@ -611,6 +612,10 @@ export class PlacementSearch implements IPlacementSearch {
 
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
     this.solver.evaluate(model, pose, out);
+  }
+
+  revision(): number {
+    return this.edits;
   }
 
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number> {

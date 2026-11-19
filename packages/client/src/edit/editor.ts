@@ -483,6 +483,51 @@ class CursorPick implements PlacementWindow {
   firstTurn = HELD_TURN;
 }
 
+class HoverCell {
+  private placeable: Placeable | null = null;
+  private x = 0;
+  private z = 0;
+  private yPlates = 0;
+  private rot = 0;
+  private mode: PlacementMode = "assist";
+  private radiusLdu = 0;
+  private revision = -1;
+
+  holds(
+    placeable: Placeable,
+    pick: CursorPick,
+    mode: PlacementMode,
+    search: Pick<IPlacementSearch, "revision">,
+  ): boolean {
+    return (
+      placeable === this.placeable &&
+      pick.x === this.x &&
+      pick.z === this.z &&
+      pick.yPlates === this.yPlates &&
+      pick.rot === this.rot &&
+      mode === this.mode &&
+      pick.radiusLdu === this.radiusLdu &&
+      search.revision() === this.revision
+    );
+  }
+
+  keep(
+    placeable: Placeable,
+    pick: CursorPick,
+    mode: PlacementMode,
+    search: Pick<IPlacementSearch, "revision">,
+  ): void {
+    this.placeable = placeable;
+    this.x = pick.x;
+    this.z = pick.z;
+    this.yPlates = pick.yPlates;
+    this.rot = pick.rot;
+    this.mode = mode;
+    this.radiusLdu = pick.radiusLdu;
+    this.revision = search.revision();
+  }
+}
+
 function cellsWithin(reachLdu: number): number {
   return Math.ceil(reachLdu / STUD_LDU);
 }
@@ -702,6 +747,7 @@ export class Editor implements IEditor, IEditedWorld {
   private queuedClick: QueuedClick | null = null;
   private hoverPlacement: PlacementHover | null = null;
   private readonly pick = new CursorPick();
+  private readonly hoverCell = new HoverCell();
   private readonly surface = new Float64Array(2);
   private readonly sideRay = new Float64Array(6);
   private canvas: HTMLCanvasElement | null = null;
@@ -1556,6 +1602,8 @@ export class Editor implements IEditor, IEditedWorld {
     const connected = this.connectedOf(placeable);
     const mode = this.placementMode();
     this.aimPick(this.placeRot, HELD_TURN_ONLY, mode);
+    if (this.hoverPlacement && this.hoverCell.holds(placeable, this.pick, mode, this.search))
+      return;
     const choice = this.choice;
     this.searchPick(connected, null, choice);
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
@@ -1585,6 +1633,7 @@ export class Editor implements IEditor, IEditedWorld {
       },
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
+    this.hoverCell.keep(placeable, this.pick, mode, this.search);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
   }
 
