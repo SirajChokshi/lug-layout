@@ -70,26 +70,20 @@ export class PlanDelta {
     kind: number,
     segment: number,
     source: number,
-    chunkKey: number,
     slot: number,
     ref: string,
     labelKind: number,
     labelBase: string,
-    labelA: number,
-    labelB: number,
   ): number {
     const at = this.writeCount++;
     this.reserve(at + 1);
     this.writeKind[at] = kind;
     this.writeSegment[at] = segment;
     this.writeSource[at] = source;
-    this.chunkKey[at] = chunkKey;
     this.slot[at] = slot;
     this.ref[at] = ref;
     this.labelKind[at] = labelKind;
     this.labelBase[at] = labelBase;
-    this.labelA[at] = labelA;
-    this.labelB[at] = labelB;
     this.boxState[at] = BOX_READ;
     this.original[at] = undefined;
     this.caught[at] = undefined;

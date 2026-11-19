@@ -311,11 +311,25 @@ export function regionContext(region: PlanRegion): PlanRegionContext {
   };
 }
 
-function certifiedSum(t: number, q: number, s: number): boolean {
+const INWARD = -1;
+const OUTWARD = 1;
+
+function certifiedEdge(
+  edges: Float64Array,
+  grown: Float64Array,
+  at: number,
+  coverage: CoverageContext,
+  direction: number,
+): boolean {
+  const t = edges[at] ?? Number.NaN;
+  const q = direction * coverage.reachLdu;
+  const s = t + q;
   if (!(Math.abs(t) <= CERTIFIED_MAGNITUDE) || !(Math.abs(q) <= CERTIFIED_MAGNITUDE)) return false;
   if (!Number.isFinite(s)) return false;
   const bb = s - t;
-  return t - (s - bb) + (q - bb) === 0;
+  if (t - (s - bb) + (q - bb) !== 0) return false;
+  grown[at] = s;
+  return true;
 }
 
 function growTo(buffer: Float64Array<ArrayBuffer>, floats: number): Float64Array<ArrayBuffer> {
@@ -325,79 +339,79 @@ function growTo(buffer: Float64Array<ArrayBuffer>, floats: number): Float64Array
 
 function certifyGrownEdges(coverage: CoverageContext, scratch: CoverageScratch): boolean {
   const edges = coverage.surfaceEdges;
-  const reach = coverage.reachLdu;
-  const back = -reach;
   scratch.grown = growTo(scratch.grown, edges.length);
   const grown = scratch.grown;
   for (let i = 0; i < edges.length; i += RECT_STRIDE) {
-    const minX = edges[i] ?? Number.NaN;
-    const minZ = edges[i + 1] ?? Number.NaN;
-    const maxX = edges[i + 2] ?? Number.NaN;
-    const maxZ = edges[i + 3] ?? Number.NaN;
-    const grownMinX = minX + back;
-    const grownMinZ = minZ + back;
-    const grownMaxX = maxX + reach;
-    const grownMaxZ = maxZ + reach;
     if (
-      !certifiedSum(minX, back, grownMinX) ||
-      !certifiedSum(minZ, back, grownMinZ) ||
-      !certifiedSum(maxX, reach, grownMaxX) ||
-      !certifiedSum(maxZ, reach, grownMaxZ)
+      !certifiedEdge(edges, grown, i, coverage, INWARD) ||
+      !certifiedEdge(edges, grown, i + 1, coverage, INWARD) ||
+      !certifiedEdge(edges, grown, i + 2, coverage, OUTWARD) ||
+      !certifiedEdge(edges, grown, i + 3, coverage, OUTWARD)
     ) {
       return false;
     }
-    grown[i] = grownMinX;
-    grown[i + 1] = grownMinZ;
-    grown[i + 2] = grownMaxX;
-    grown[i + 3] = grownMaxZ;
   }
   return true;
-}
-
-function pushPiece(
-  into: Float64Array,
-  count: number,
-  minX: number,
-  minZ: number,
-  maxX: number,
-  maxZ: number,
-): number {
-  const at = count * RECT_STRIDE;
-  into[at] = minX;
-  into[at + 1] = minZ;
-  into[at + 2] = maxX;
-  into[at + 3] = maxZ;
-  return count + 1;
 }
 
 function subtractCut(
   from: Float64Array,
   fromCount: number,
   into: Float64Array,
-  cMinX: number,
-  cMinZ: number,
-  cMaxX: number,
-  cMaxZ: number,
+  cuts: Float64Array,
+  cut: number,
 ): number {
-  let count = 0;
+  const cMinX = cuts[cut] ?? Number.NaN;
+  const cMinZ = cuts[cut + 1] ?? Number.NaN;
+  const cMaxX = cuts[cut + 2] ?? Number.NaN;
+  const cMaxZ = cuts[cut + 3] ?? Number.NaN;
+  let at = 0;
   for (let p = 0; p < fromCount; p++) {
-    const at = p * RECT_STRIDE;
-    const pMinX = from[at] ?? Number.NaN;
-    const pMinZ = from[at + 1] ?? Number.NaN;
-    const pMaxX = from[at + 2] ?? Number.NaN;
-    const pMaxZ = from[at + 3] ?? Number.NaN;
+    const piece = p * RECT_STRIDE;
+    const pMinX = from[piece] ?? Number.NaN;
+    const pMinZ = from[piece + 1] ?? Number.NaN;
+    const pMaxX = from[piece + 2] ?? Number.NaN;
+    const pMaxZ = from[piece + 3] ?? Number.NaN;
     if (!(pMinX < cMaxX && cMinX < pMaxX && pMinZ < cMaxZ && cMinZ < pMaxZ)) {
-      count = pushPiece(into, count, pMinX, pMinZ, pMaxX, pMaxZ);
+      into[at] = pMinX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = pMaxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
       continue;
     }
-    if (pMinX < cMinX) count = pushPiece(into, count, pMinX, pMinZ, cMinX, pMaxZ);
-    if (cMaxX < pMaxX) count = pushPiece(into, count, cMaxX, pMinZ, pMaxX, pMaxZ);
+    if (pMinX < cMinX) {
+      into[at] = pMinX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = cMinX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
+    if (cMaxX < pMaxX) {
+      into[at] = cMaxX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = pMaxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
     const minX = pMinX > cMinX ? pMinX : cMinX;
     const maxX = pMaxX < cMaxX ? pMaxX : cMaxX;
-    if (pMinZ < cMinZ) count = pushPiece(into, count, minX, pMinZ, maxX, cMinZ);
-    if (cMaxZ < pMaxZ) count = pushPiece(into, count, minX, cMaxZ, maxX, pMaxZ);
+    if (pMinZ < cMinZ) {
+      into[at] = minX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = maxX;
+      into[at + 3] = cMinZ;
+      at += RECT_STRIDE;
+    }
+    if (cMaxZ < pMaxZ) {
+      into[at] = minX;
+      into[at + 1] = cMaxZ;
+      into[at + 2] = maxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
   }
-  return count;
+  return at / RECT_STRIDE;
 }
 
 export function uncoveredPieces(
@@ -411,25 +425,14 @@ export function uncoveredPieces(
   const cuts = coverage.surfaceEdges.length;
   let current = growTo(scratch.pieces, RECT_STRIDE);
   let next = scratch.spare;
-  let count = pushPiece(
-    current,
-    0,
-    box[offset + BOX_MIN_X] ?? Number.NaN,
-    box[offset + BOX_MIN_Z] ?? Number.NaN,
-    box[offset + BOX_MAX_X] ?? Number.NaN,
-    box[offset + BOX_MAX_Z] ?? Number.NaN,
-  );
+  current[0] = box[offset + BOX_MIN_X] ?? Number.NaN;
+  current[1] = box[offset + BOX_MIN_Z] ?? Number.NaN;
+  current[2] = box[offset + BOX_MAX_X] ?? Number.NaN;
+  current[3] = box[offset + BOX_MAX_Z] ?? Number.NaN;
+  let count = 1;
   for (let i = 0; i < cuts && count > 0; i += RECT_STRIDE) {
     next = growTo(next, count * PIECES_PER_CUT * RECT_STRIDE);
-    count = subtractCut(
-      current,
-      count,
-      next,
-      grown[i] ?? Number.NaN,
-      grown[i + 1] ?? Number.NaN,
-      grown[i + 2] ?? Number.NaN,
-      grown[i + 3] ?? Number.NaN,
-    );
+    count = subtractCut(current, count, next, grown, i);
     const swap = current;
     current = next;
     next = swap;

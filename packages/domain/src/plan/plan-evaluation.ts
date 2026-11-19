@@ -242,20 +242,21 @@ export class PlanEvaluation {
   }
 
   private copyRow(delta: PlanDelta, entry: number, row: number): void {
-    this.rows.write(
+    const rows = this.rows;
+    rows.write(
       row,
-      delta.chunkKey[entry] ?? 0,
       delta.slot[entry] ?? 0,
       delta.ref[entry] ?? "",
       delta.labelKind[entry] ?? 0,
       delta.labelBase[entry] ?? "",
-      delta.labelA[entry] ?? 0,
-      delta.labelB[entry] ?? 0,
     );
+    rows.chunkKey[row] = delta.chunkKey[entry] ?? 0;
+    rows.labelA[row] = delta.labelA[entry] ?? 0;
+    rows.labelB[row] = delta.labelB[entry] ?? 0;
     const from = entry * BOX_STRIDE;
     const to = row * BOX_STRIDE;
-    for (let k = 0; k < BOX_STRIDE; k++) this.rows.box[to + k] = delta.box[from + k] ?? 0;
-    this.rows.boxState[row] = delta.boxState[entry] ?? 0;
+    for (let k = 0; k < BOX_STRIDE; k++) rows.box[to + k] = delta.box[from + k] ?? 0;
+    rows.boxState[row] = delta.boxState[entry] ?? 0;
   }
 
   private addRow(delta: PlanDelta, entry: number): void {

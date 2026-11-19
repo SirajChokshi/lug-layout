@@ -312,23 +312,11 @@ export class PlanRows {
     return this.order.after(this, row);
   }
 
-  write(
-    row: number,
-    chunkKey: number,
-    slot: number,
-    ref: string,
-    labelKind: number,
-    labelBase: string,
-    labelA: number,
-    labelB: number,
-  ): void {
-    this.chunkKey[row] = chunkKey;
+  write(row: number, slot: number, ref: string, labelKind: number, labelBase: string): void {
     this.slot[row] = slot;
     this.ref[row] = this.strings.intern(ref);
     this.labelKind[row] = labelKind;
     this.labelBase[row] = this.strings.intern(labelBase);
-    this.labelA[row] = labelA;
-    this.labelB[row] = labelB;
   }
 
   refOf(row: number): string {
