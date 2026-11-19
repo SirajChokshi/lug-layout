@@ -82,7 +82,7 @@ const SCALES: Readonly<Record<string, Layout>> = {
   small: { kind: "tiles", tiles: 5 },
   medium: { kind: "tiles", tiles: 10 },
   large: { kind: "tiles", tiles: 18 },
-  dense: { kind: "dense", across: 16, deep: 16, layers: 4 },
+  dense: { kind: "dense", across: 64, deep: 128, layers: 15 },
 };
 const NO_LOOK: LookSettings = {
   plastic: false,
