@@ -260,11 +260,14 @@ export {
   secondOtherAxis,
   technicItemsOverlap,
   technicScratch,
+  PosedTechnicBuffer,
+  type PosedTechnic,
+  type TechnicColumns,
   type TechnicSet,
 } from "./technic-fit.ts";
 export {
-  NO_VOLUME_TOP,
   VolumeIndex,
+  FootprintGrid,
   firstOverlap,
   type CellVolumes,
   type OverlapHit,

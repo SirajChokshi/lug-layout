@@ -3,14 +3,24 @@ import {
   LibraryBakeBucket,
   LibraryBakeIndex,
   libraryBakeBucket,
+  type LibraryBakePin,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
-import { assembleLibraryBake, LIBRARY_BAKE_INDEX } from "./assemble.ts";
+import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
+import { contentAddressedName } from "../publish.ts";
+import type { ObjectStore } from "../r2.ts";
+import { assembleLibraryBake, LIBRARY_BAKE_INDEX, LIBRARY_BAKE_PIN } from "./assemble.ts";
+import { libraryBakePointer, libraryBakePublication } from "./publish.ts";
 
 const CA = "Licensed under CC BY 4.0 : see CAreadme.txt";
 const NOT_CA = "Redistributable under CCAL version 2.0 : see CAreadme.txt but not quite";
@@ -99,6 +109,12 @@ it("files every part under its own bucket with content-addressed records and GLB
     failed: 0,
     refused: [],
   });
+  expect(
+    await readFile(
+      join(inputs.out, contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)),
+      "utf8",
+    ),
+  ).toBe(indexText);
   const index = await readIndex(inputs.out);
   expect(index.buckets).toHaveLength(LIBRARY_BAKE_BUCKETS);
   expect(index.licenses).toEqual([CA]);
@@ -175,4 +191,127 @@ it("assembles the same pin from the same shards", async () => {
     options: OPTIONS,
   });
   expect(second).toEqual(first);
+});
+
+class RecordingStore implements ObjectStore {
+  readonly types = new Map<string, string | undefined>();
+
+  async has(): Promise<boolean> {
+    return false;
+  }
+
+  async put(
+    key: string,
+    _body: Uint8Array,
+    headers: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    this.types.set(key, headers["Content-Type"]);
+  }
+}
+
+async function filesUnder(root: string): Promise<string[]> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)));
+}
+
+async function filesBesideIndex(out: string, pin: LibraryBakePin): Promise<string[]> {
+  const pinnedIndex = contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256);
+  return (await filesUnder(out)).filter(
+    (file) => file !== LIBRARY_BAKE_INDEX && file !== pinnedIndex,
+  );
+}
+
+const PUBLISHED_TYPES: Readonly<Record<string, string>> = {
+  records: "application/octet-stream",
+  standard: "model/gltf-binary",
+  buckets: "application/json",
+};
+
+it("publishes every file the assembly wrote under library-bake/, records as bytes and GLBs as glTF, with the pinned index under its pinned hash", async () => {
+  const inputs = await build([
+    [{ id: "ldraw:3001" }, { id: "ldraw:3040b" }],
+    [{ id: "ldraw:3626c" }],
+  ]);
+  const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
+  const store = new RecordingStore();
+
+  await uploadPublication(libraryBakePublication, store, inputs.out, pin);
+
+  const indexKey = `library-bake/library-bake.${pin.index.sha256.slice(0, 16)}.json`;
+  expect(publicationIndexKey(libraryBakePublication, pin)).toBe(indexKey);
+  const addressed = await filesBesideIndex(inputs.out, pin);
+  const expected = new Map<string, string | undefined>([
+    ...addressed.map((file): [string, string | undefined] => [
+      `library-bake/${file}`,
+      PUBLISHED_TYPES[file.split("/")[0] ?? ""],
+    ]),
+    [indexKey, "application/json"],
+  ]);
+  expect(new Map([...store.types].toSorted())).toEqual(new Map([...expected].toSorted()));
+});
+
+it("routes the CLI's served command to the committed pin's index under library-bake/", async () => {
+  const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const committed = JSON.parse(
+    await readFile(join(toolRoot, "..", "..", LIBRARY_BAKE_PIN), "utf8"),
+  ) as LibraryBakePin;
+  const requested: string[] = [];
+  const server = createServer((request, response) => {
+    requested.push(`${request.method} ${request.url}`);
+    response.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      ["src/library-bake/cli.ts", "served"],
+      {
+        cwd: toolRoot,
+        env: {
+          ...process.env,
+          PART_BUNDLE_BASE_URL: `http://127.0.0.1:${port}/`,
+          GITHUB_OUTPUT: "",
+        },
+      },
+    );
+    const indexPath = `/library-bake/library-bake.${committed.index.sha256.slice(0, 16)}.json`;
+    expect(requested).toEqual([`HEAD ${indexPath}`]);
+    expect(stdout).toBe(`http://127.0.0.1:${port}${indexPath}: served\n`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+it("the library-bake pointer's manifest references its index, every bucket, and every record and GLB", async () => {
+  const inputs = await build([
+    [{ id: "ldraw:3001" }, { id: "ldraw:3040b" }],
+    [{ id: "ldraw:3626c" }],
+  ]);
+  const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
+  const read = async (key: string) => {
+    const file = key.slice("library-bake/".length);
+    const name =
+      file === contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)
+        ? LIBRARY_BAKE_INDEX
+        : file;
+    return readFile(join(inputs.out, name)).then(
+      (bytes) => new Uint8Array(bytes),
+      () => undefined,
+    );
+  };
+
+  const { indexes, files: referenced } = await libraryBakePointer.references(pin.index, read);
+  const leaves = referenced.map((file) => file.key);
+
+  const files = await filesBesideIndex(inputs.out, pin);
+  expect([...indexes, ...leaves].toSorted()).toEqual(
+    [
+      `library-bake/${contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)}`,
+      ...files.map((file) => `library-bake/${file}`),
+    ].toSorted(),
+  );
+  expect(leaves.every((key) => !key.startsWith("library-bake/buckets/"))).toBe(true);
 });

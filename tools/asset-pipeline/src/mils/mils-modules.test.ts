@@ -5,7 +5,12 @@ import { MilsProfile, type MilsModuleEdge } from "@brr/schema/bundle";
 import { decode } from "@brr/schema/decode";
 import { describe, expect, it } from "vitest";
 import { LdrawLibrary } from "../ldraw/library.ts";
-import { findTrackEnds, LDU_PER_STUD, loadTrackEndMarkers } from "../track/track-ends.ts";
+import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
+  findTrackEnds,
+  LDU_PER_STUD,
+  loadTrackEndMarkers,
+} from "../track/track-ends.ts";
 import { buildMilsModules, loadMilsProfile, loadTrackCatalog } from "./mils-modules.ts";
 
 const library = new LdrawLibrary([
@@ -15,6 +20,7 @@ const catalog = loadTrackCatalog();
 const profile = loadMilsProfile();
 const EDGES: ReadonlyArray<MilsModuleEdge> = ["minX", "maxX", "minZ", "maxZ"];
 const MILS_BUILD_TIMEOUT_MS = 30_000;
+const JUST_BEYOND_THE_GUARDED_LIMIT_LDU = 2e-9;
 
 const LAND = "32@4:2";
 const FEATURE_EDGES: Readonly<Record<string, string>> = {
@@ -162,6 +168,46 @@ describe("MILS module templates", () => {
       expect(plain?.ldraw).not.toMatch(/^1 2 .* 91405\.dat$/mu);
       expect(() => buildMilsModules(library, withoutElement("3811@2"), catalog)).toThrow(
         "3811 in colour 2 has no Rebrickable element in the profile",
+      );
+    },
+    MILS_BUILD_TIMEOUT_MS,
+  );
+
+  it(
+    "lays the rail on the lattice when the rail piece's frame is written 0.0005 LDU off on both plan axes, and refuses it 2e-9 LDU further off",
+    () => {
+      const railPart = `ldraw:${profile.build.rail.part}`;
+      const shifted = (offsetLdu: number, zLdu: number) => ({
+        ...catalog,
+        pieces: catalog.pieces.map((piece) =>
+          piece.part === railPart
+            ? {
+                ...piece,
+                partFrame: { ...piece.partFrame, xLdu: piece.partFrame.xLdu + offsetLdu, zLdu },
+              }
+            : piece,
+        ),
+      });
+      const railLines = (ldraw: string | undefined) =>
+        (ldraw ?? "")
+          .split("\n")
+          .filter((line) => line.endsWith(` ${profile.build.rail.part}.dat`))
+          .map((line) => line.split(" ").slice(2, 5).map(Number));
+      const rail = profile.templates.find((template) => template.feature === "rail");
+      const plain = buildMilsModules(library, profile, catalog).find((m) => m.name === rail?.name);
+      for (const sign of [1, -1]) {
+        const written = shifted(
+          sign * CERTIFIED_RESIDUAL_LIMIT_LDU,
+          sign * CERTIFIED_RESIDUAL_LIMIT_LDU,
+        );
+        const built = buildMilsModules(library, profile, written).find(
+          (m) => m.name === rail?.name,
+        );
+        expect(railLines(built?.ldraw)).toEqual(railLines(plain?.ldraw));
+      }
+      const beyondTheGuard = CERTIFIED_RESIDUAL_LIMIT_LDU + JUST_BEYOND_THE_GUARDED_LIMIT_LDU;
+      expect(() => buildMilsModules(library, profile, shifted(beyondTheGuard, 0))).toThrow(
+        `not within ${CERTIFIED_RESIDUAL_LIMIT_LDU} of a lattice value`,
       );
     },
     MILS_BUILD_TIMEOUT_MS,

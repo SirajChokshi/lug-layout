@@ -28,6 +28,7 @@ const CORNER_SIDES = [-1, -1, 1, -1, 1, 1, -1, 1] as const;
 const CORNER_FLOATS = CORNER_SIDES.length;
 export const FOOTPRINT_FLOATS = CORNER_FLOATS + 2;
 const FOOTPRINT_KEY_FLOATS = 13;
+const SENT_VIEW_FLOATS = 8;
 const BOX_CORNERS = 8;
 
 export type CameraTarget = Pick<ISceneBackend, "setView">;
@@ -91,6 +92,7 @@ export class ViewCamera {
   private readonly grabbed = new Float64Array(2);
   private readonly footprintKey = new Float64Array(FOOTPRINT_KEY_FLOATS).fill(Number.NaN);
   private readonly lastFootprint = new Float64Array(FOOTPRINT_FLOATS);
+  private readonly sentView = new Float64Array(SENT_VIEW_FLOATS).fill(Number.NaN);
   private readonly footprintNdc = new Float64Array(FOOTPRINT_FLOATS);
   private readonly ndc = new Float64Array(2);
 
@@ -225,6 +227,28 @@ export class ViewCamera {
   savedView(): SavedViewV1 {
     const { targetX, targetY, targetZ, distance, yaw, pitch } = this.pose;
     return { targetX, targetY, targetZ, distance, yaw, pitch };
+  }
+
+  matchesView(view: SavedViewV1): boolean {
+    const pose = this.pose;
+    return (
+      pose.targetX === view.targetX &&
+      pose.targetY === view.targetY &&
+      pose.targetZ === view.targetZ &&
+      pose.distance === view.distance &&
+      pose.yaw === view.yaw &&
+      pose.pitch === view.pitch
+    );
+  }
+
+  copyView(out: SavedViewV1): void {
+    const pose = this.pose;
+    out.targetX = pose.targetX;
+    out.targetY = pose.targetY;
+    out.targetZ = pose.targetZ;
+    out.distance = pose.distance;
+    out.yaw = pose.yaw;
+    out.pitch = pose.pitch;
   }
 
   restore(view: SavedViewV1 | null): void {
@@ -542,8 +566,31 @@ export class ViewCamera {
     const eyeX = pose.targetX + horizontal * Math.cos(pose.yaw);
     const eyeY = pose.targetY + eyeDistance * Math.sin(pose.pitch);
     const eyeZ = pose.targetZ + horizontal * Math.sin(pose.yaw);
+    const sent = this.sentView;
+    const projection = this.orthographic ? 1 : 0;
+    const halfHeight = this.orthographic ? this.halfHeight : 0;
+    if (
+      sent[0] === eyeX &&
+      sent[1] === eyeY &&
+      sent[2] === eyeZ &&
+      sent[3] === pose.targetX &&
+      sent[4] === pose.targetY &&
+      sent[5] === pose.targetZ &&
+      sent[6] === projection &&
+      sent[7] === halfHeight
+    ) {
+      return;
+    }
+    sent[0] = eyeX;
+    sent[1] = eyeY;
+    sent[2] = eyeZ;
+    sent[3] = pose.targetX;
+    sent[4] = pose.targetY;
+    sent[5] = pose.targetZ;
+    sent[6] = projection;
+    sent[7] = halfHeight;
     if (this.orthographic) {
-      backend.setView(eyeX, eyeY, eyeZ, pose.targetX, pose.targetY, pose.targetZ, this.halfHeight);
+      backend.setView(eyeX, eyeY, eyeZ, pose.targetX, pose.targetY, pose.targetZ, halfHeight);
       return;
     }
     backend.setView(eyeX, eyeY, eyeZ, pose.targetX, pose.targetY, pose.targetZ);

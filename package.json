@@ -10,12 +10,13 @@
     "lint": "oxlint --deny-warnings",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm --filter @brr/asset-pipeline facts --check && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:infra && pnpm check:rust && pnpm --filter @brr/asset-pipeline section-vocabulary --check && pnpm library-bake:check && turbo run typecheck test build && pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check && pnpm --filter @brr/asset-pipeline library-connectors --check && pnpm --filter @brr/import test:bundle-models && pnpm e2e",
+    "check": "pnpm --filter @brr/asset-pipeline restore-ldraw && pnpm --filter @brr/asset-pipeline facts --check && pnpm lint && pnpm lint:boundaries && pnpm lint:rust && pnpm format:check && pnpm check:infra && pnpm check:rust && pnpm test:wasm && pnpm --filter @brr/asset-pipeline section-vocabulary --check && pnpm library-bake:check && turbo run typecheck test build && pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check && pnpm --filter @brr/asset-pipeline library-connectors --check && pnpm --filter @brr/import test:bundle-models && pnpm e2e",
     "library-bake:check": "pnpm --filter @brr/asset-pipeline library-bake --check && cargo build --release --quiet --target wasm32-wasip1 -p brick-compile-wasm && pnpm --filter @brr/e2e library-bake-parity",
     "lint:rust": "node tools/rust-comment-check/src/cli.ts crates",
     "check:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace",
     "lint:boundaries": "depcruise --config .dependency-cruiser.json packages apps tools/asset-pipeline/src",
-    "check:infra": "terraform -chdir=infra/cloudflare fmt -check -recursive && terraform -chdir=infra/cloudflare init -backend=false -input=false -lockfile=readonly && terraform -chdir=infra/cloudflare validate"
+    "check:infra": "terraform -chdir=infra/cloudflare fmt -check -recursive && terraform -chdir=infra/cloudflare init -backend=false -input=false -lockfile=readonly && terraform -chdir=infra/cloudflare validate",
+    "test:wasm": "node --no-warnings tools/wasi-test-runner/src/cli.ts -p brick-compile --test identify"
   },
   "devDependencies": {
     "@brr/oxlint-plugin": "workspace:*",

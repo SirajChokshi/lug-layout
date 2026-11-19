@@ -125,3 +125,10 @@ export function roadBaseplateScene(
   }
   return toLdraw(title, "abutted edge to edge using measured plate extents", placements);
 }
+
+export function singlePartScene(library: LdrawLibrary, part: string, title: string): string {
+  if (library.load(`${part}.dat`) === undefined) {
+    throw new Error(`${part}.dat is not in the pinned library`);
+  }
+  return toLdraw(title, `one ${part} at the identity pose`, [{ part, transform: IDENTITY }]);
+}
