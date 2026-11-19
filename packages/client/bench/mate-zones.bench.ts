@@ -19,8 +19,6 @@ import {
   SparseConnectorFinder,
   TrackEndFinder,
   modelTechnic,
-  placeTechnicInto,
-  technicScratch,
   type LatticePose,
   type OverlapHit,
 } from "@brr/domain";
@@ -118,9 +116,7 @@ for (let p = 0; p < PINS; p++) {
     matrices: Float64Array.from(translated(p * PITCH, 0)),
   };
   const boxes = partBoxes([p * PITCH, 0, 0, p * PITCH + 2 * STUD, BRICK, STUD]);
-  const local = modelTechnic([bored], instances, boxes.boxes);
-  const technic = technicScratch(local);
-  placeTechnicInto(local, origin, technic);
+  const technic = modelTechnic([bored], instances, boxes.boxes);
   solver.insert(ModelConnectors.fromParts([blockTable], instances, mating), origin, p);
   placed.set(p, { boxes, technic, pose: origin });
 }

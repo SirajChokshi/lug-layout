@@ -59,6 +59,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm check:infra
       - run: pnpm check:rust
+      - run: pnpm test:wasm
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
       - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check

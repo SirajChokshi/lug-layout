@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
@@ -17,6 +17,7 @@ use brick_compile::{
 };
 
 const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
+static NO_RECORDS: std::sync::LazyLock<RecordShelf> = std::sync::LazyLock::new(RecordShelf::new);
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
@@ -30,6 +31,9 @@ use crate::tracking::TrackingLibrary;
 #[derive(Default)]
 pub struct Session {
     library: TrackingLibrary,
+    records: RecordShelf,
+    records_key: String,
+    records_offered: bool,
 }
 
 struct BakeInputs<'a> {
@@ -54,6 +58,7 @@ impl Session {
     fn dispatch(&mut self, input: &[u8], body: &mut Body) -> Result<Reply, String> {
         let request = split(input)?;
         self.extend_library(&request)?;
+        self.shelve_records(&request)?;
         match &request.envelope.request {
             Operation::ReadModel => read_model(&request.text("source")?, body),
             Operation::ReadStudio => Ok(match read_io(request.segment("io")?) {
@@ -100,9 +105,17 @@ impl Session {
                     body,
                 )
             }
-            Operation::BakeNeeds { stud_primitives } => {
+            Operation::BakeNeeds {
+                stud_primitives,
+                vehicles,
+            } => {
                 let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
-                let paths = missing_bake_files(&self.library, &drawn, stud_primitives);
+                let closure = BakeClosure {
+                    stud_primitives,
+                    records: self.offered(),
+                    vehicles: vehicles.as_ref(),
+                };
+                let paths = missing_bake_files(&self.library, &drawn, &closure);
                 Ok(if paths.is_empty() {
                     Reply::Complete
                 } else {
@@ -127,9 +140,45 @@ impl Session {
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
-                Ok(bake(&self.library, &drawn, &inputs, body))
+                Ok(bake(&self.library, self.offered(), &drawn, &inputs, body))
             }
         }
+    }
+
+    fn offered(&self) -> &RecordShelf {
+        if self.records_offered {
+            &self.records
+        } else {
+            &NO_RECORDS
+        }
+    }
+
+    fn shelve_records(&mut self, request: &Request) -> Result<(), String> {
+        let Some(records) = &request.envelope.records else {
+            self.records_offered = false;
+            return Ok(());
+        };
+        self.records_offered = true;
+        if records.key != self.records_key {
+            self.records.clear();
+            self.records_key.clone_from(&records.key);
+        }
+        for file in &records.files {
+            let record = BakeRecord::decode(request.range(file.bytes)?)
+                .map_err(|e| format!("bake record for {}: {e}", file.reference))?;
+            self.records.insert(file.reference.clone(), record);
+        }
+        let offered: HashSet<&str> = records.references.iter().map(String::as_str).collect();
+        self.records
+            .retain(|reference, _| offered.contains(reference.as_str()));
+        if let Some(missing) = records
+            .references
+            .iter()
+            .find(|reference| !self.records.contains_key(*reference))
+        {
+            return Err(format!("the bake record for {missing} was never sent"));
+        }
+        Ok(())
     }
 
     fn extend_library(&mut self, request: &Request) -> Result<(), String> {
@@ -337,17 +386,41 @@ fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, Stri
         .collect())
 }
 
+struct BakeClosure<'a> {
+    stud_primitives: &'a [String],
+    records: &'a RecordShelf,
+    vehicles: Option<&'a VehicleInputs>,
+}
+
+impl BakeClosure<'_> {
+    fn reads_library(&self, reference: &str, signatures: &[&[String]]) -> bool {
+        !self.records.contains_key(reference)
+            || signatures
+                .iter()
+                .any(|names| names.iter().any(|name| name == reference))
+    }
+}
+
 fn missing_bake_files(
     library: &TrackingLibrary,
     drawn: &[ModelInstance],
-    stud_primitives: &[String],
+    closure: &BakeClosure,
 ) -> Vec<String> {
+    let signatures = closure.vehicles.map(VehicleInputs::signatures);
+    let analysed: Vec<&[String]> = signatures.as_ref().map_or_else(Vec::new, |s| {
+        vec![
+            s.wheelsets.as_slice(),
+            s.bogie_pivots.as_slice(),
+            s.couplers.as_slice(),
+        ]
+    });
     let mut scan = Flattener::new(library, Lod::Standard, &[]);
     let mut scanned: HashSet<&str> = HashSet::new();
     for reference in drawn
         .iter()
         .map(|instance| instance.part.as_str())
-        .chain(stud_primitives.iter().map(String::as_str))
+        .filter(|reference| closure.reads_library(reference, &analysed))
+        .chain(closure.stud_primitives.iter().map(String::as_str))
     {
         if scanned.insert(reference) {
             scan.closure(reference);
@@ -358,15 +431,21 @@ fn missing_bake_files(
 
 fn bake(
     library: &TrackingLibrary,
+    records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
     body: &mut Body,
 ) -> Reply {
-    let requested = missing_bake_files(library, drawn, inputs.stud_primitives);
+    let closure = BakeClosure {
+        stud_primitives: inputs.stud_primitives,
+        records,
+        vehicles: inputs.vehicles,
+    };
+    let requested = missing_bake_files(library, drawn, &closure);
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
     }
-    let baked = bake_drawn(library, drawn, inputs, body);
+    let baked = bake_drawn(library, records, drawn, inputs, body);
     let requested = library.take_requested();
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
@@ -376,6 +455,7 @@ fn bake(
 
 fn bake_drawn(
     library: &TrackingLibrary,
+    records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
     body: &mut Body,
@@ -387,14 +467,15 @@ fn bake_drawn(
         inputs.translucent.clone(),
         inputs.table_depth,
     )
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?
+    .with_records(records);
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();
     for instance in drawn {
         if !shapes.contains_key(instance.part.as_str()) {
-            let compiled = baker
-                .standard_part(&instance.part)
+            let shape = baker
+                .lattice_shape(&instance.part)
                 .map_err(|e| format!("{}: {e}", instance.part))?;
-            shapes.insert(&instance.part, LatticeShape::of(compiled));
+            shapes.insert(&instance.part, shape);
         }
     }
     let drawn_shapes: Vec<&LatticeShape> = drawn
@@ -408,6 +489,7 @@ fn bake_drawn(
         put_cover(body, &cover)?;
         return Ok(Reply::Baked {
             instances: drawn.len(),
+            recorded_parts: baker.recorded_parts(),
             lattice: None,
             lattice_issue: None,
             cover: Cover::from(&cover),
@@ -433,6 +515,7 @@ fn bake_drawn(
     };
     Ok(Reply::Baked {
         instances: drawn.len(),
+        recorded_parts: baker.recorded_parts(),
         lattice: lattice.as_ref().map(Lattice::from),
         lattice_issue,
         cover: Cover::from(&cover),

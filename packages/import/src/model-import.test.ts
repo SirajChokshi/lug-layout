@@ -1,6 +1,10 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
-import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
+import {
+  SectionVocabularyFile,
+  type CompilerVehicles,
+  type LibraryBakePart,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import {
@@ -22,6 +26,7 @@ import {
 import type { ModelFile } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
+import type { IPartRecords, RecordOptions, RecordStats } from "./library-bake-store.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
 import { ModelImportEngine, type IBakeHelper, type ImportResult } from "./model-import.ts";
 
@@ -105,6 +110,28 @@ async function bundleManifest(): Promise<Manifest> {
   return JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8")) as Manifest;
 }
 
+interface SectionVocabulary {
+  readonly sizes: SectionVocabularyFile["sizes"];
+  readonly lengths: SectionVocabularyFile["lengths"];
+}
+
+async function bundleVocabulary(manifest: Manifest): Promise<SectionVocabulary> {
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
+  return { sizes: vocabulary.sizes, lengths: vocabulary.lengths };
+}
+
+function bundleConnectors(manifest: Manifest): ConnectorRecords {
+  return new ConnectorRecords(
+    async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
+    { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
+    manifest.compiler.sectionVocabulary.sha256,
+  );
+}
+
 async function compilerModule(): Promise<WebAssembly.Module> {
   const manifest = await bundleManifest();
   return new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot)));
@@ -118,7 +145,9 @@ async function reactorHelpers(count: number): Promise<ReadonlyArray<IBakeHelper>
   const module = await compilerModule();
   return Array.from({ length: count }, (): IBakeHelper => {
     const reactor = new BrickCompiler(module);
-    return { bake: async (request, library) => reactor.bake(request, library) };
+    return {
+      bake: async (request, library, records) => reactor.bake(request, library, records),
+    };
   });
 }
 
@@ -146,19 +175,12 @@ async function importWith(
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
-  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
-  const vocabulary = decodedOrThrow(
-    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
-    vocabularyFile.pathname,
-  );
+  const sectionVocabulary = await bundleVocabulary(manifest);
   const engine = new ModelImportEngine(
     compiler ?? (await bundleCompiler()),
     new LdrawMirror(manifest.source, fetchUrl),
-    new ConnectorRecords(
-      async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
-      { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
-      manifest.compiler.sectionVocabulary.sha256,
-    ),
+    bundleConnectors(manifest),
+    null,
     () => 0,
     helpers,
   );
@@ -170,7 +192,7 @@ async function importWith(
     studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
     primitives: manifest.compiler.primitives ?? null,
-    sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+    sectionVocabulary,
     cavityProbe: manifest.compiler.cavityProbe,
     bundlePartIds: partTable.parts.map((part) => part.id),
     ldconfigCodes: manifest.colors.map((color) => color.code),
@@ -197,6 +219,156 @@ function translation(
 }
 
 const nothingFound: FetchFunction = async () => new Response(null, { status: HTTP_NOT_FOUND });
+
+const PART_ID_PREFIX = "ldraw:";
+const PART_EXTENSION = ".dat";
+
+class CompiledRecords implements IPartRecords {
+  readonly key = "compiled-records";
+  private readonly held = new Map<string, Uint8Array>();
+  private served = 0;
+
+  constructor(
+    private readonly compiler: BrickCompiler,
+    private readonly sectionVocabulary: SectionVocabulary,
+    private readonly cavityProbe: string,
+  ) {}
+
+  async lookup(
+    partIds: ReadonlyArray<string>,
+    options: RecordOptions,
+  ): Promise<ReadonlyMap<string, LibraryBakePart>> {
+    const library = { key: "records", files: new Map<string, string>(), absent: new Set<string>() };
+    const request = {
+      lod: "standard" as const,
+      studPrimitives: options.studPrimitives,
+      unofficialAllowlist: options.unofficialAllowlist,
+      connectors: {
+        primitives: options.primitives,
+        sectionVocabulary: this.sectionVocabulary,
+        cavityProbe: this.cavityProbe,
+        infer: [],
+      },
+      parts: partIds.map((id) => `${id.slice(PART_ID_PREFIX.length)}${PART_EXTENSION}`),
+      model: "",
+      inlineChecks: [],
+      records: true,
+    };
+    let output = this.compiler.compile(request, library);
+    for (;;) {
+      const needed = output.parts.flatMap((outcome) =>
+        outcome.status === "need" ? outcome.paths : [],
+      );
+      if (needed.length === 0) break;
+      for (const path of needed) {
+        const text = await readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
+        if (text === null) library.absent.add(path);
+        else library.files.set(path, text);
+      }
+      output = this.compiler.compile(request, library);
+    }
+    const found = new Map<string, LibraryBakePart>();
+    for (const [index, outcome] of output.parts.entries()) {
+      const id = partIds[index];
+      if (id === undefined || outcome.status !== "compiled" || outcome.record === null) continue;
+      const part = { record: `records/${id}.bin`, glb: `standard/${id}.glb` };
+      this.held.set(part.record, outcome.record);
+      this.held.set(part.glb, outcome.glb);
+      found.set(id, part);
+    }
+    return found;
+  }
+
+  async bytes(file: string): Promise<Uint8Array> {
+    const bytes = this.held.get(file);
+    if (bytes === undefined) throw new Error(`${file} was never looked up`);
+    this.served++;
+    return bytes;
+  }
+
+  stats(): RecordStats {
+    return { fetched: this.served, cached: 0, bytes: 0 };
+  }
+}
+
+function comparable(result: ImportResult): unknown {
+  return {
+    ...result,
+    report: {
+      ...result.report,
+      compileRounds: null,
+      bakeRounds: null,
+      fetched: null,
+      records: null,
+    },
+  };
+}
+
+async function importOutsideTheBundle(
+  fileName: string,
+  text: string,
+  records: IPartRecords | null,
+): Promise<ImportResult> {
+  const manifest = await bundleManifest();
+  const engine = new ModelImportEngine(
+    await bundleCompiler(),
+    new LdrawMirror(manifest.source, pinnedMirror),
+    bundleConnectors(manifest),
+    records,
+    () => 0,
+    await reactorHelpers(2),
+  );
+  return engine.importText({
+    fileName,
+    text,
+    lod: "standard",
+    source: manifest.source,
+    studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+    unofficialAllowlist: [],
+    primitives: manifest.compiler.primitives ?? null,
+    sectionVocabulary: await bundleVocabulary(manifest),
+    cavityProbe: manifest.compiler.cavityProbe,
+    bundlePartIds: [],
+    ldconfigCodes: manifest.colors.map((color) => color.code),
+    translucentColors: manifest.colors
+      .filter((color) => color.alpha < OPAQUE_ALPHA)
+      .map((color) => color.code),
+    tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+    vehicles: manifest.compiler.vehicles ?? null,
+  });
+}
+
+it(
+  "a train whose pinned parts bake and draw from records imports exactly as when they compile",
+  async () => {
+    const model = paletteModels.find((entry) => entry.file === "10013-1.mpd");
+    if (!model) throw new Error("10013-1 is not a palette model");
+    const text = await readFile(new URL(model.file, omrRoot), "utf8");
+
+    const manifest = await bundleManifest();
+    const compiled = await importOutsideTheBundle(model.file, text, null);
+    const recorded = await importOutsideTheBundle(
+      model.file,
+      text,
+      new CompiledRecords(
+        await bundleCompiler(),
+        await bundleVocabulary(manifest),
+        manifest.compiler.cavityProbe,
+      ),
+    );
+
+    expect(compiled.compiled.length).toBeGreaterThan(0);
+    expect(compiled.bake?.vehicles.length).toBeGreaterThan(0);
+    expect(recorded.report.records?.bakedFromRecords).toBeGreaterThan(0);
+    expect(recorded.report.fetched.requests).toBeLessThan(compiled.report.fetched.requests);
+    expect(recorded.report.compileRounds).toBeLessThan(compiled.report.compileRounds);
+    expect(recorded.report.compileRounds + recorded.report.bakeRounds).toBeLessThanOrEqual(
+      compiled.report.compileRounds + compiled.report.bakeRounds,
+    );
+    expect(comparable(recorded)).toEqual(comparable(compiled));
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 const pinnedMirror: FetchFunction = async (url) => {
   const path = /\/ldraw\/(?<path>.+)$/u.exec(url)?.groups?.["path"];
