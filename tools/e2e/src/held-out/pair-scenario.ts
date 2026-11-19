@@ -88,11 +88,18 @@ function coversCell(part: AssemblyPart, [x, z]: readonly [number, number]): bool
   );
 }
 
-function columnBlocks(pin: AssemblyPart, neighbour: Assembly): boolean {
-  const slabTop = Math.max(...neighbour.map((part) => part.min[1]));
-  const aboveSlab = neighbour.filter((part) => part.min[1] < slabTop);
+function cellKey([x, z]: readonly [number, number]): string {
+  return `${x},${z}`;
+}
+
+function columnBlocks(
+  pin: AssemblyPart,
+  neighbour: Assembly,
+  seatedCells: ReadonlySet<string>,
+): boolean {
   return cellsUnder(pin).some((cell) => {
-    const column = aboveSlab.filter((part) => coversCell(part, cell));
+    if (seatedCells.has(cellKey(cell))) return false;
+    const column = neighbour.filter((part) => coversCell(part, cell));
     if (column.length === 0) return false;
     const low = Math.min(...column.map((part) => part.min[1]));
     const high = Math.max(...column.map((part) => part.max[1]));
@@ -105,10 +112,15 @@ export function seamPredictions(pair: ModulePair, span: number): ReadonlyArray<S
   for (let along = -span; along <= span; along++) {
     const partner = translated(pair.partner.assembly, shiftedOffset(pair, along));
     const outcomes = pinOutcomes(pair.subject.assembly, partner);
+    const seatedCells = new Set(
+      outcomes
+        .filter((outcome) => outcome.kind === "inHole")
+        .flatMap((outcome) => cellsUnder(outcome.pin).map(cellKey)),
+    );
     const out = outcomes.some(
       (outcome) =>
         outcome.kind === "colliding" ||
-        (outcome.kind === "free" && columnBlocks(outcome.pin, partner)),
+        (outcome.kind === "free" && columnBlocks(outcome.pin, partner, seatedCells)),
     );
     const joints = outcomes.filter((outcome) => outcome.kind === "inHole").length;
     predictions.push({
