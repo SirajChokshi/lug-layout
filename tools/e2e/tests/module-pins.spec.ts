@@ -12,6 +12,7 @@ import {
   pinsOf,
   placementVerdict,
   posed,
+  sameDistance,
 } from "../src/held-out/editor-pairs.ts";
 import { blockPools, modulePair, type ModulePair } from "../src/held-out/generator.ts";
 import { poolCandidates } from "../src/held-out/pool-candidates.ts";
@@ -242,12 +243,18 @@ test("a generated holed module snaps flush onto a pinned one in assist mode and 
     const dz = seam.flush.z - hover.z;
     expect(hover.placement?.accepted, `${label} is accepted`).toBe(true);
     expect(hover.placement?.pose, `${label} snaps flush`).toEqual(seam.flush);
-    expect(hover.placement?.magnet, `${label} is magnetised by exactly the offset`).toEqual({
-      dxLdu: dx,
-      dzLdu: dz,
-      dyPlates: 0,
-      distanceLdu: Math.sqrt(dx * dx + dz * dz),
-    });
+    expect(
+      [
+        hover.placement?.magnet.dxLdu,
+        hover.placement?.magnet.dzLdu,
+        hover.placement?.magnet.dyPlates,
+      ],
+      `${label} is magnetised by exactly the offset`,
+    ).toEqual([dx, dz, 0]);
+    expect(
+      sameDistance(hover.placement?.magnet.distanceLdu ?? Number.NaN, Math.sqrt(dx * dx + dz * dz)),
+      `${label}: the magnet distance is the offset's length`,
+    ).toBe(true);
     expect(
       hover.placement ? pinHoleJoints(hover.placement.mates) : 0,
       `${label}: every pin engages a hole`,

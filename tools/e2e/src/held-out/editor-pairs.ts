@@ -18,6 +18,7 @@ const QUARTER_TURNS = 4;
 const MODEL_IDENTITY_KEYS = new Set(["item", "label"]);
 const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates"]);
 const LISTED_FAILURES = 4;
+const DISTANCE_RELATIVE_SLACK = 1e-12;
 const LOAD_POLL_MS = 10;
 const LOAD_TIMEOUT_MS = 60_000;
 const NO_TIME = 0;
@@ -433,6 +434,10 @@ function withinNeighbourhood(at: SweepOffset, neighbourhood: AssistNeighbourhood
   return STUD_LDU * Math.sqrt(at.along * at.along + at.across * at.across) <= neighbourhood.ldu;
 }
 
+export function sameDistance(reported: number, expected: number): boolean {
+  return Math.abs(reported - expected) <= DISTANCE_RELATIVE_SLACK * Math.max(1, expected);
+}
+
 function magnetIsExact(hover: PlacementHover, cursor: Pose): boolean {
   const dx = hover.pose.x - cursor.x;
   const dz = hover.pose.z - cursor.z;
@@ -443,7 +448,7 @@ function magnetIsExact(hover: PlacementHover, cursor: Pose): boolean {
     hover.magnet.dxLdu === dx &&
     hover.magnet.dzLdu === dz &&
     hover.magnet.dyPlates === dy &&
-    hover.magnet.distanceLdu === Math.sqrt(dx * dx + dz * dz + (PLATE_LDU * dy) ** 2)
+    sameDistance(hover.magnet.distanceLdu, Math.sqrt(dx * dx + dz * dz + (PLATE_LDU * dy) ** 2))
   );
 }
 
