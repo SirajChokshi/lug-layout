@@ -1,4 +1,5 @@
 import {
+  carriedByABearing,
   type AxleMode,
   type HungAxle,
   type RailTop,
@@ -16,6 +17,7 @@ import {
   type Carrier,
   PIVOT_PART_SUFFIX,
   type RailHeadBands,
+  footprint,
   onLattice,
   pickColor,
   placeAlong,
@@ -50,7 +52,26 @@ const END_VARIANTS: ReadonlyArray<EndVariant | "plain"> = [
 export const WIDE = 1e9;
 const TURNTABLE_TRIES = 6;
 
-export function wheelFor(context: RecipeContext): WheelPart | null {
+export const TWO_AXLE_BOGIE = 0;
+
+export function bogieStuds(wheel: WheelPart, roomFor: 1 | 2, extraStuds: number): number {
+  return (roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2) + extraStuds;
+}
+
+function longestPivotStuds(pools: TrainPools): number {
+  return Math.max(
+    0,
+    ...pivotOptions(pools).map((option) => footprint(option.block, option.turns)[0]),
+  );
+}
+
+export function wheelFor(
+  context: RecipeContext,
+  bogieRoomStuds: number | null = null,
+): WheelPart | null {
+  const longest = bogieRoomStuds === null ? Infinity : longestPivotStuds(context.pools);
+  const fitsBogie = (wheel: WheelPart): boolean =>
+    bogieRoomStuds === null || bogieStuds(wheel, 2, bogieRoomStuds) <= longest;
   for (const wheel of context.random.shuffled(context.pools.wheels)) {
     const key = `${wheel.reading.reference} ${context.rail.part}`;
     let seats = context.seats.get(key);
@@ -58,7 +79,7 @@ export function wheelFor(context: RecipeContext): WheelPart | null {
       seats = positiveSeats(wheel, context.rail, context.rails).length;
       context.seats.set(key, seats);
     }
-    if (seats > 0) return wheel;
+    if (seats > 0 && carriedByABearing(context.pools, wheel) && fitsBogie(wheel)) return wheel;
   }
   return null;
 }
@@ -111,8 +132,18 @@ export function bogieWithAxles(
   roomFor: 1 | 2 = count,
   extraStuds = 0,
 ): { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> } | null {
-  const lengthStuds =
-    (roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2) + extraStuds;
+  const lengthStuds = bogieStuds(wheel, roomFor, extraStuds);
+  const railTop = context.railTop.value;
+  const axleHeights =
+    railTop === null
+      ? []
+      : [
+          ...new Set(
+            positiveSeats(wheel, context.rail, context.rails).flatMap((seat) =>
+              seat.contact === undefined ? [] : [railTop + seat.contact],
+            ),
+          ),
+        ];
   const hung = hangBogie(context.model, context.pools, context.random, {
     body: carrier,
     pivotRange,
@@ -122,6 +153,7 @@ export function bogieWithAxles(
     lengthStuds,
     cap,
     pivotZ,
+    axleHeights,
   });
   if (!hung) return null;
   const firstPivot = Math.min(...hung.pivots.map((pivot) => pivot[0]));
@@ -205,7 +237,7 @@ export function single(wheelsets: ReadonlyArray<PlannedWheelset>, vehicle: Vehic
 
 function bogieCar(axlesPerBogie: 1 | 2, capFront: boolean): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, axlesPerBogie === 2 ? TWO_AXLE_BOGIE : null);
     const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
     if (!wheel || !car) return null;
     const front = bogieWithAxles(
@@ -300,7 +332,7 @@ function hangCoupler(
 }
 
 const truckMountedCoupler: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, COUPLER_ROOM_STUDS);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
   if (!wheel || !car) return null;
   const front = bogieWithAxles(
@@ -338,7 +370,7 @@ const truckMountedCoupler: Recipe = (context) => {
 
 function locomotive(bogies: 1 | 2, ponyTruck: boolean): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, bogies === 2 || !ponyTruck ? TWO_AXLE_BOGIE : null);
     const car = carBody(
       context.model,
       context.pools,
@@ -440,7 +472,7 @@ const motorBogieCar: Recipe = (context) => {
     (part) => part.pivotPin !== null && part.axes.length >= 2,
   );
   const motor = context.random.choice(motors);
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 16, "car");
   if (!motor || !wheel || !car) return null;
   const front = mountPinBogie(
@@ -469,7 +501,7 @@ const motorBogieCar: Recipe = (context) => {
 };
 
 const singleBogieBody: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 10, "car");
   if (!wheel || !car) return null;
   const bogie = bogieWithAxles(context, car, half(car, 1), 2, "car", "bogie", "pivot", wheel);
@@ -506,13 +538,17 @@ function negativeAxleCar(modes: ReadonlyArray<AxleMode>): Recipe {
 
 function lockedTruck(join: "rigid" | "two pivots"): Recipe {
   return (context) => {
-    const wheel = wheelFor(context);
+    const wheel = wheelFor(context, TWO_AXLE_BOGIE);
     const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
     if (!wheel || !car) return null;
-    const truck = bogieWithAxles(context, car, third(car, 2), 2, "car", "truck", join, wheel);
-    const rear = truck
-      ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
-      : null;
+    const hangTruck = () =>
+      bogieWithAxles(context, car, third(car, 2), 2, "car", "truck", join, wheel);
+    const hangRear = () =>
+      bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel);
+    const rearFirst = join === "rigid";
+    const first = rearFirst ? hangRear() : hangTruck();
+    const second = first ? (rearFirst ? hangTruck() : hangRear()) : null;
+    const [truck, rear] = rearFirst ? [second, first] : [first, second];
     if (!truck || !rear) return null;
     return single(
       [...truck.axles, ...rear.axles].map((axle) => axle.wheelset),
@@ -527,7 +563,7 @@ function lockedTruck(join: "rigid" | "two pivots"): Recipe {
 }
 
 const hingedBogieCar: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
   if (!wheel || !car) return null;
   const front = bogieWithAxles(
@@ -629,7 +665,7 @@ const roofTurntable: Recipe = (context) => {
 };
 
 const splitAcrossPivot: Recipe = (context) => {
-  const wheel = wheelFor(context);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
   if (!wheel || !car) return null;
   const front = bogieWithAxles(

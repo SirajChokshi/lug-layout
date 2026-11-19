@@ -96,7 +96,7 @@ export function smoothRuns(
   for (let slab = Math.floor(from); slab < Math.ceil(to); slab++) {
     const band = localBand(model, instance, line, slab, slab + 1);
     if (!band) continue;
-    const rim = roundProfile(band.triangles, band.line, band.from, band.to);
+    const rim = roundProfile(band.triangles, band.line, band.from, band.to, band.down);
     if (!rim.smooth || rim.radius === 0) continue;
     const last = runs.at(-1);
     if (last && last.to === slab) runs[runs.length - 1] = { from: last.from, to: slab + 1 };

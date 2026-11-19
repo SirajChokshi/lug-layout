@@ -1,12 +1,17 @@
 import { type Vec3 } from "../assembly.ts";
 import { smoothRuns } from "./head-band-contact.ts";
+import { VERTICAL } from "./part-geometry.ts";
 import {
+  LATERAL,
+  LATERAL_SEARCH_LDU,
   PIVOT_PART_SUFFIX,
+  TRAVEL,
   headBandSpan,
   type HeadBandSpan,
   type RailHeadBands,
+  pointOnLine,
 } from "./placement.ts";
-import type { TrainModel } from "./train-model.ts";
+import { type TrainModel, add, apply } from "./train-model.ts";
 import type { EndPlan, PlannedWheelset, RollingSurfaceContact, TrainPlan } from "./train-plan.ts";
 const FRAME =
   "y-up LDU in the generated file's model space (LDraw x, -y, -z); instance i is the file's i-th part line; axis lines run along +z; pivot parts are contracted out of the partition and credited to no asserted sub-assembly";
@@ -98,6 +103,77 @@ export function lineUnits(model: TrainModel, line: PlannedWheelset): ReadonlySet
 }
 
 const SIXTEENTHS_PER_LDU = 16;
+const ON_LINE_LDU = 1e-6;
+const SPANS_PIVOT = "a wheelset spanning a vertical pivot";
+
+interface LateralSurface {
+  readonly instance: number;
+  readonly low: number;
+  readonly high: number;
+}
+
+function surfacesOnLine(
+  model: TrainModel,
+  line: { readonly x: number; readonly y: number },
+): ReadonlyArray<LateralSurface> {
+  return model.placements.flatMap((placement, instance) => {
+    const rolling = placement.reading.rolling;
+    if (!rolling) return [];
+    const step = rolling.stepsPerLdu;
+    return rolling.surfaces.flatMap((surface) => {
+      const direction = apply(placement.rotation, pointOnLine(surface.axis, [0, 0], 1));
+      const sign = direction[LATERAL];
+      if (Math.abs(sign) !== 1) return [];
+      const at = add(
+        placement.position,
+        apply(
+          placement.rotation,
+          pointOnLine(surface.axis, [surface.at[0] / step, surface.at[1] / step], 0),
+        ),
+      );
+      if (
+        Math.abs(at[TRAVEL] - line.x) > ON_LINE_LDU ||
+        Math.abs(at[VERTICAL] - line.y) > ON_LINE_LDU
+      ) {
+        return [];
+      }
+      const a = at[LATERAL] + (sign * surface.from) / step;
+      const b = at[LATERAL] + (sign * surface.to) / step;
+      return [{ instance, low: Math.min(a, b), high: Math.max(a, b) }];
+    });
+  });
+}
+
+function overlapsBand(surface: LateralSurface, band: HeadBandSpan, centre: number): boolean {
+  return Math.max(surface.low, centre + band.from) < Math.min(surface.high, centre + band.to);
+}
+
+function headBandMembers(
+  model: TrainModel,
+  line: { readonly x: number; readonly y: number },
+  rail: RailHeadBands,
+): ReadonlyArray<number> {
+  const surfaces = surfacesOnLine(model, line);
+  const near = headBandSpan(rail, 1);
+  const far = headBandSpan(rail, -1);
+  const nearOnly = (surface: LateralSurface, centre: number): boolean =>
+    overlapsBand(surface, near, centre) && !overlapsBand(surface, far, centre);
+  const farOnly = (surface: LateralSurface, centre: number): boolean =>
+    overlapsBand(surface, far, centre) && !overlapsBand(surface, near, centre);
+  const feasible: number[] = [];
+  for (let centre = -LATERAL_SEARCH_LDU; centre <= LATERAL_SEARCH_LDU; centre++) {
+    if (
+      surfaces.some((surface) => nearOnly(surface, centre)) &&
+      surfaces.some((surface) => farOnly(surface, centre))
+    ) {
+      feasible.push(centre);
+    }
+  }
+  const members = surfaces.filter((surface) =>
+    feasible.some((centre) => nearOnly(surface, centre) || farOnly(surface, centre)),
+  );
+  return [...new Set(members.map((surface) => surface.instance))].toSorted((a, b) => a - b);
+}
 const RUN_SEARCH_LDU = 80;
 
 function overlapsAt(run: HeadBandSpan, band: HeadBandSpan, centre: number): boolean {
@@ -142,12 +218,19 @@ export function expectationOf(
   );
   const railsMet = positives.map((line) => firstRailMet(model, rails, line));
   if (railsMet.some((rail) => rail === null)) return null;
-  const wheelsets = positives.map((line, index) => ({
-    axisLine: axisLine(line),
-    rail: railsMet[index] ?? "",
-    instances: [...new Set(line.rollingSurfaces.map((contact) => contact.instance))],
-    rollingSurfaces: line.rollingSurfaces,
-  }));
+  const wheelsets = positives.map((line, index) => {
+    const rail = rails.find((candidate) => candidate.part === railsMet[index]);
+    const members = rail ? headBandMembers(model, line, rail) : [];
+    return {
+      axisLine: axisLine(line),
+      rail: railsMet[index] ?? "",
+      instances:
+        members.length > 0
+          ? members
+          : [...new Set(line.rollingSurfaces.map((contact) => contact.instance))],
+      rollingSurfaces: line.rollingSurfaces,
+    };
+  });
   const unitOfWheelset = positives.map((line) => [...lineUnits(model, line)][0] ?? "");
   const vehicles = plan.vehicles.map((vehicle): VehicleExpectation | null => {
     const fixedAxles = unitOfWheelset.flatMap((unit, index) =>
@@ -204,12 +287,21 @@ export function expectationOf(
     pivotParts: [...new Set(model.placements.map((placement) => placement.unit))]
       .filter((unit) => unit.endsWith(PIVOT_PART_SUFFIX))
       .map((unit) => ({ instances: instancesOf(model, [unit]) })),
-    unresolvedRunningGear: plan.unresolvedRunningGear.map((group) => ({
-      instances: instancesOf(model, group.units),
-      wheelsets: unitOfWheelset.flatMap((unit, index) =>
-        group.units.includes(unit) ? [index] : [],
-      ),
-      reason: group.reason,
-    })),
+    unresolvedRunningGear: [
+      ...plan.unresolvedRunningGear.map((group) => ({
+        instances: instancesOf(model, group.units),
+        wheelsets: unitOfWheelset.flatMap((unit, index) =>
+          group.units.includes(unit) ? [index] : [],
+        ),
+        reason: group.reason,
+      })),
+      ...plan.wheelsets
+        .filter((line) => line.negative === "split across pivot")
+        .map((line) => ({
+          instances: instancesOf(model, [...lineUnits(model, line)]),
+          wheelsets: [],
+          reason: SPANS_PIVOT,
+        })),
+    ],
   };
 }

@@ -118,6 +118,15 @@ function treadRadius(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): nu
   return tread.radii[0] / rolling.stepsPerLdu;
 }
 
+function clearsBelow(wheel: WheelPart, option: BearingOption): boolean {
+  const bearingHeight = option.box.max[VERTICAL] - option.box.min[VERTICAL];
+  return wheel.radius > bearingHeight - option.holeDepth + MARGIN_LDU;
+}
+
+export function carriedByABearing(pools: TrainPools, wheel: WheelPart): boolean {
+  return bearingOptions(pools, LATERAL, false).some((option) => clearsBelow(wheel, option));
+}
+
 export function positiveSeats(
   wheel: WheelPart,
   rail: RailHeadBands,
@@ -454,8 +463,7 @@ function hangAxleAt(
   const { carrier, wheel, rail, mode } = request;
   const [innerEdge, outerEdge] = lateralExtent(wheel, seat);
   const [width, depth] = footprint(option.block, option.turns);
-  const bearingHeight = option.box.max[VERTICAL] - option.box.min[VERTICAL];
-  if (wheel.radius <= bearingHeight - option.holeDepth + MARGIN_LDU) return null;
+  if (!clearsBelow(wheel, option)) return null;
   const zSize = depth * STUD_LDU;
   const lowZ = Math.max(request.lateralRange[0], -innerEdge + BEARING_CLEARANCE_LDU);
   const highZ = Math.min(request.lateralRange[1], innerEdge - BEARING_CLEARANCE_LDU);
