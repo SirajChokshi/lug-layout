@@ -1510,6 +1510,7 @@ export class Editor implements IEditor, IEditedWorld {
     const placeable = this.active;
     if (!placeable || !this.hovering) {
       this.hoverPlacement = null;
+      this.hoverRefusal = null;
       return;
     }
     const connected = this.connectedOf(placeable);

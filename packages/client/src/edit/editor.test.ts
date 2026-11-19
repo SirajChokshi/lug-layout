@@ -1323,6 +1323,28 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
   });
 }, 120_000);
 
+it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await chosen(editor, BASEPLATE);
+  backend.aim(160, 0);
+  editor.pointerMove(0, 0);
+  const held = editor.snapshot().hover;
+  const kit = editor.snapshot().roadKits[0];
+  if (!kit) throw new Error("no road kit");
+  editor.chooseItem(kit.id);
+  editor.pointerMove(0, 0);
+  const { mode, hover } = editor.snapshot();
+
+  expect({
+    heldRefused: held?.placement?.accepted === false && held.refusal !== null,
+    mode,
+    placement: hover?.placement ?? null,
+    refusal: hover?.refusal ?? null,
+  }).toEqual({ heldRefused: true, mode: "road", placement: null, refusal: null });
+}, 120_000);
+
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
   const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
