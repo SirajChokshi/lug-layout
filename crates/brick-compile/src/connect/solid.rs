@@ -1684,7 +1684,8 @@ impl Solid {
             if polygon.is_empty() {
                 return None;
             }
-            let d = first_depth(&polygon, inside)?;
+            first_depth(&polygon, inside)?;
+            let d = first_depth(&polygon, contact)?;
             attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
             Some(d)
         });
