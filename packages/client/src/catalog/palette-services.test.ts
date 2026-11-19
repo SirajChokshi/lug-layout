@@ -28,6 +28,7 @@ import {
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
+import { chosen, settledChoice } from "../edit/editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -383,10 +384,11 @@ describe("palette drag", () => {
   it("places the dragged item where it is dropped, gives back the item picked before, and ignores a drop with no drag", async () => {
     const { container, editor, backend } = await startEditor();
     const drag = container.get(PALETTE_DRAG);
-    editor.chooseItem(CROSSROADS);
+    await chosen(editor, CROSSROADS);
 
     backend.aim(0, 0);
     drag.start(GREEN_BASEPLATE);
+    await settledChoice(editor);
     expect(editor.snapshot().activeItem).toBe(GREEN_BASEPLATE);
     drag.drop(0, 0, 0);
     drag.end();
