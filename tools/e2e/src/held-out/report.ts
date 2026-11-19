@@ -327,7 +327,8 @@ const PHASES: ReadonlyArray<readonly [string, (input: TimedInput) => number]> = 
   ["Compile", (input) => input.timings.compileMs + bakeMs(input, "compileMs")],
   ["LDraw fetch", (input) => input.timings.ldrawFetchMs],
   ["Lattice", (input) => bakeMs(input, "latticeMs")],
-  ["Cells and cover", (input) => bakeMs(input, "coverMs")],
+  ["Cells, before placement opens", (input) => input.timings.bakePhases?.coverMs ?? 0],
+  ["Stud cover, after placement opens", (input) => input.timings.coverPhases?.coverMs ?? 0],
   ["Vehicles", (input) => bakeMs(input, "vehiclesMs")],
 ];
 
