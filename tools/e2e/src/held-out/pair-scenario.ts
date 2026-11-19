@@ -55,7 +55,7 @@ function described(outcomes: ReadonlyArray<PinOutcome>): string[] {
   );
 }
 
-function shiftedOutcomes(pair: ModulePair, sign: number): ReadonlyArray<PinOutcome> {
+export function shiftedOutcomes(pair: ModulePair, sign: number): ReadonlyArray<PinOutcome> {
   const partner: Assembly = translated(pair.partner.assembly, shiftedOffset(pair, sign));
   return pinOutcomes(pair.subject.assembly, partner);
 }

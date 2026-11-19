@@ -67,10 +67,17 @@ export interface ModuleModel {
   readonly assembly: Assembly;
 }
 
+export interface ModuleFile {
+  readonly names: ModelNames;
+  readonly text: string;
+}
+
 export interface ModulePair {
   readonly seed: number;
   readonly subject: ModuleModel;
   readonly renamedSubject: ModuleModel;
+  readonly holedSubject: ModuleFile;
+  readonly solidPartner: ModuleModel;
   readonly partner: ModuleModel;
   readonly partnerOffset: Vec3;
   readonly alongEdge: Vec3;
@@ -92,6 +99,7 @@ const SMALL_BASE_MIN_CELLS = 4;
 const SMALL_BASE_MAX_STUDS = 12;
 const MAX_STACK_PLATES = 36;
 const EDGES = 4;
+const ALL_EDGES: ReadonlyArray<number> = Array.from({ length: EDGES }, (_, edge) => edge);
 const EDGE_ATTEMPTS_PER_BRICK = 4;
 const PINNED_BRICK_ATTEMPTS = 40;
 const PIN_CHANCE = 0.5;
@@ -485,6 +493,20 @@ class Build {
       : (placed.z + minZ - this.base.z - baseMinZ) / STUD_LDU;
   }
 
+  holeEdges(placed: Placed): number[] {
+    const edges: number[] = [];
+    for (let edge = 0; edge < EDGES; edge++) {
+      const frame = edgeFrame(edge);
+      const plane = this.edgePlane(frame);
+      const reaches = placed.block.holes.some((local) => {
+        const line = placedLine(local, placed.turn, [placed.x, placed.y, placed.z]);
+        return line.axis === frame.normal && (frame.outward < 0 ? line.from : line.to) === plane;
+      });
+      if (reaches) edges.push(edge);
+    }
+    return edges;
+  }
+
   insertPins(placed: Placed, edge: number, pin: PinBlock): number {
     const frame = edgeFrame(edge);
     const plane = this.edgePlane(frame);
@@ -504,11 +526,16 @@ class Build {
     return inserted;
   }
 
-  edgeBricks(pool: ReadonlyArray<Block>, count: number, pins: ReadonlyArray<PinBlock>): void {
+  edgeBricks(
+    pool: ReadonlyArray<Block>,
+    count: number,
+    pins: ReadonlyArray<PinBlock>,
+    edges: ReadonlyArray<number> = ALL_EDGES,
+  ): void {
     let placedCount = 0;
     for (let k = 0; k < count * EDGE_ATTEMPTS_PER_BRICK && placedCount < count; k++) {
       const block = this.random.pick(pool);
-      const edge = this.random.int(EDGES);
+      const edge = this.random.pick(edges);
       const turn = this.holeTurn(block, edge);
       if (turn === null) continue;
       const alongCell = this.random.int(this.alongCellCount(block, edge, turn));
@@ -653,13 +680,14 @@ function ldrawText(name: string, title: string, lines: ReadonlyArray<string>): s
   return [`0 ${title}`, `0 Name: ${name}`, AUTHOR, LICENSE, ...lines, ""].join("\n");
 }
 
-function sectionLines(build: Build, section: Section): string[] {
+function sectionLines(build: Build, section: Section, withPins: boolean): string[] {
   const blocks = [build.base, ...build.placed].filter((placed) => placed.section === section);
-  return [...blocks.map(lineOf), ...(section === "pins" ? build.pins.map(pinLine) : [])];
+  const pins = withPins && section === "pins" ? build.pins.map(pinLine) : [];
+  return [...blocks.map(lineOf), ...pins];
 }
 
-function mpdText(build: Build, names: ModelNames): string {
-  const present = SECTIONS.filter((section) => sectionLines(build, section).length > 0);
+function mpdText(build: Build, names: ModelNames, withPins = true): string {
+  const present = SECTIONS.filter((section) => sectionLines(build, section, withPins).length > 0);
   const main = [
     `0 FILE ${names.file}`,
     `0 ${names.title}`,
@@ -676,7 +704,7 @@ function mpdText(build: Build, names: ModelNames): string {
     `0 Name: ${names.sections[section]}`,
     AUTHOR,
     LICENSE,
-    ...sectionLines(build, section),
+    ...sectionLines(build, section, withPins),
   ]);
   return [...main, ...submodels, ""].join("\n");
 }
@@ -841,7 +869,12 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
     }
   }
   partner.fillEdgeRow(facing, pools.bricks);
-  partner.edgeBricks(pools.technicBricks, random.between(1, 6), []);
+  partner.edgeBricks(
+    pools.technicBricks,
+    random.between(1, 6),
+    [],
+    ALL_EDGES.filter((other) => other !== edge),
+  );
   landscape(partner, pools, random);
 
   const frame = edgeFrame(edge);
@@ -853,6 +886,11 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
   const subjectNames = namedModule(`mils-module-${seed}`, `MILS module ${seed}`);
   const renamedNames = randomNames(random);
   const partnerNames = namedModule(`mils-partner-${seed}`, `MILS partner ${seed}`);
+  const holedNames = namedModule(`mils-holed-${seed}`, `MILS module ${seed} without pins`);
+  const solid = new Build(subject.base.block, random, pools.colors);
+  solid.fillEdgeRow(facing, pools.bricks);
+  landscape(solid, pools, random);
+  const solidNames = namedModule(`mils-solid-${seed}`, `MILS module ${seed} with a solid edge`);
   return {
     seed,
     subject: {
@@ -865,6 +903,12 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
       text: mpdText(subject, renamedNames),
       assembly: subject.assembly(),
     },
+    holedSubject: { names: holedNames, text: mpdText(subject, holedNames, false) },
+    solidPartner: {
+      names: solidNames,
+      text: mpdText(solid, solidNames),
+      assembly: solid.assembly(),
+    },
     partner: {
       names: partnerNames,
       text: mpdText(partner, partnerNames),
@@ -873,5 +917,128 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
     partnerOffset,
     alongEdge,
     pins: subject.pins.length,
+  };
+}
+
+export interface TemplateBrick {
+  readonly block: Block;
+  readonly alongCell: number;
+  readonly turn: number;
+}
+
+export interface TemplateEdges {
+  readonly base: Block;
+  readonly edges: ReadonlyMap<number, ReadonlyArray<TemplateBrick>>;
+}
+
+export interface CornerModule {
+  readonly seed: number;
+  readonly edge: number;
+  readonly module: ModuleModel;
+  readonly offset: Vec3;
+  readonly pins: number;
+}
+
+const PLACEMENT_FIELDS = 15;
+const MATRIX_FIELDS = 9;
+
+function blockNamed(blocks: ReadonlyArray<Block>, reference: string): Block | undefined {
+  const wanted = reference.replaceAll("\\", "/").toLowerCase();
+  return blocks.find((block) => block.reference.toLowerCase() === wanted);
+}
+
+function turnOf(matrix: ReadonlyArray<number>): number | null {
+  for (let turn = 0; turn < QUARTER_TURNS; turn++) {
+    const expected = matrixText(turn).split(" ").map(Number);
+    if (expected.every((value, index) => value === matrix[index])) return turn;
+  }
+  return null;
+}
+
+function firstModelLines(text: string): string[] {
+  const lines = text.split(/\r?\n/u);
+  const files = lines.flatMap((line, index) => (line.startsWith("0 FILE ") ? [index] : []));
+  const [first = 0, second = lines.length] = files;
+  return lines.slice(first, second);
+}
+
+export function templateEdges(pools: BlockPools, text: string): TemplateEdges | null {
+  const parts = firstModelLines(text).flatMap((line) => {
+    const fields = line.trim().split(/\s+/u);
+    if (fields[0] !== "1" || fields.length < PLACEMENT_FIELDS) return [];
+    const values = fields.slice(2, PLACEMENT_FIELDS - 1).map(Number);
+    const reference = fields.slice(PLACEMENT_FIELDS - 1).join(" ");
+    const turn = turnOf(values.slice(3, 3 + MATRIX_FIELDS));
+    if (turn === null || values.some((value) => !Number.isFinite(value))) return [];
+    return [
+      {
+        reference,
+        turn,
+        x: values[0] ?? 0,
+        y: values[1] ?? 0,
+        z: values[2] ?? 0,
+        color: Number(fields[1]),
+      },
+    ];
+  });
+  const base = parts.find((part) => {
+    const block = blockNamed(pools.baseplates, part.reference);
+    return (
+      block !== undefined &&
+      block.width === SQUARE_MODULE_STUDS &&
+      block.depth === SQUARE_MODULE_STUDS &&
+      part.turn === 0 &&
+      part.x === 0 &&
+      part.y === 0 &&
+      part.z === 0
+    );
+  });
+  const baseBlock = base ? blockNamed(pools.baseplates, base.reference) : undefined;
+  if (!baseBlock) return null;
+  const template = new Build(baseBlock, new SeededRandom(0), pools.colors);
+  const edges = new Map<number, TemplateBrick[]>();
+  for (const part of parts) {
+    const block = blockNamed(pools.technicBricks, part.reference);
+    if (!block) continue;
+    const placed: Placed = { ...part, block, section: "edge" };
+    for (const edge of template.holeEdges(placed)) {
+      const alongCell = template.alongCellOf(placed, edge);
+      if (!Number.isInteger(alongCell)) continue;
+      edges.set(edge, [...(edges.get(edge) ?? []), { block, alongCell, turn: part.turn }]);
+    }
+  }
+  return edges.size === 0 ? null : { base: baseBlock, edges };
+}
+
+export function cornerJoinedModule(
+  pools: BlockPools,
+  seed: number,
+  template: TemplateEdges,
+): CornerModule {
+  const random = new SeededRandom(seed);
+  const candidates = [...template.edges.keys()].toSorted((a, b) => a - b);
+  const edge = random.pick(candidates);
+  const facing = oppositeEdge(edge);
+  const module = new Build(template.base, random, pools.colors);
+  const pin = random.pick(pools.pins);
+  for (const brick of template.edges.get(edge) ?? []) {
+    const placed = module.placeOnEdge(brick.block, facing, brick.alongCell, brick.turn);
+    if (!placed) throw new Error("the module can't take a hole brick opposite the template's");
+    module.insertPins(placed, facing, pin);
+  }
+  if (module.pins.length === 0) throw new Error("no hole brick opposite the template took a pin");
+  module.edgeBricks(pools.technicBricks, random.between(1, 6), []);
+  landscape(module, pools, random);
+  const frame = edgeFrame(edge);
+  const size = (frame.normal === 0 ? module.cellsX : module.cellsZ) * STUD_LDU;
+  const offset: [number, number, number] = [0, 0, 0];
+  offset[frame.normal] = frame.outward * size;
+  const names = namedModule(`corner-module-${seed}`, `Corner-joined module ${seed}`);
+  return {
+    seed,
+    edge,
+    module: { names, text: mpdText(module, names), assembly: module.assembly() },
+    offset,
+    pins: module.pins.length,
   };
 }
