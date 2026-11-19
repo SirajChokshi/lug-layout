@@ -4,7 +4,9 @@ import {
   BufferGeometry as LineGeometry,
   Color,
   ConeGeometry,
+  DataTexture,
   Float32BufferAttribute,
+  FloatType,
   DirectionalLight,
   EdgesGeometry,
   Group,
@@ -15,15 +17,20 @@ import {
   LineSegments,
   Mesh,
   MeshBasicNodeMaterial,
+  NearestFilter,
+  NoColorSpace,
   OrthographicCamera,
   PerspectiveCamera,
+  RGBAFormat,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGPURenderer,
   type BufferGeometry,
   MeshStandardNodeMaterial,
+  type TextureNode,
 } from "three/webgpu";
+import { texture } from "three/tsl";
 import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
@@ -73,6 +80,9 @@ import {
   matricesOf,
   pageOf,
   regroupedPage,
+  studBasisAndColorIndexOf,
+  studTranslationsOf,
+  TRANSLATION_FLOATS,
   usesAnyShape,
   writeMatrix4,
   type InstancePage,
@@ -84,7 +94,14 @@ import {
   primitiveGeometry,
   type FixedColorGeometry,
 } from "./part-geometry.ts";
-import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
+import {
+  LOOKUP_TEXELS_PER_ROW,
+  OPAQUE_ALPHA,
+  PlasticMaterials,
+  type StudLookups,
+} from "./plastic-materials.ts";
+import { StudBasisTable } from "./stud-basis-table.ts";
+import { isInstanced, StudMesh } from "./stud-mesh.ts";
 import { skyEnvironment } from "./sky-environment.ts";
 
 const REBASE_DISTANCE_CHUNKS = 8;
@@ -288,8 +305,42 @@ function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
 
 function disposeInstancedChildren(layer: Group): void {
   for (const child of layer.children) {
-    if (child instanceof InstancedMesh) child.dispose();
+    if (isInstanced(child)) child.dispose();
   }
+}
+
+const LOOKUP_TEXEL_FLOATS = 4;
+
+function lookupTexture(data: Float32Array): DataTexture {
+  const texels = data.length / LOOKUP_TEXEL_FLOATS;
+  const width = Math.min(texels, LOOKUP_TEXELS_PER_ROW);
+  const result = new DataTexture(data, width, Math.ceil(texels / width), RGBAFormat, FloatType);
+  result.magFilter = NearestFilter;
+  result.minFilter = NearestFilter;
+  result.generateMipmaps = false;
+  result.flipY = false;
+  result.unpackAlignment = 1;
+  result.colorSpace = NoColorSpace;
+  result.needsUpdate = true;
+  return result;
+}
+
+function refreshLookup(node: TextureNode, data: Float32Array): void {
+  const current = node.value;
+  const image = current.image as { data: Float32Array; width: number; height: number };
+  if (image.data.length === data.length) {
+    image.data = data;
+    current.needsUpdate = true;
+    return;
+  }
+  current.dispose();
+  node.value = lookupTexture(data);
+}
+
+function lookupLength(texels: number): number {
+  const used = Math.max(texels, 1);
+  const width = Math.min(used, LOOKUP_TEXELS_PER_ROW);
+  return width * Math.ceil(used / width) * LOOKUP_TEXEL_FLOATS;
 }
 
 interface TierLayers {
@@ -389,9 +440,15 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     CAMERA_NEAR_LDU,
     CAMERA_FAR_LDU,
   );
-  private materials = new PlasticMaterials(false, 1);
+  private readonly studLookups: StudLookups = {
+    studBasisTexture: texture(lookupTexture(new Float32Array(LOOKUP_TEXEL_FLOATS))),
+    linearColorTexture: texture(lookupTexture(new Float32Array(LOOKUP_TEXEL_FLOATS))),
+  };
+  private studBases = new StudBasisTable();
+  private uploadedStudBases = 0;
+  private materials = new PlasticMaterials(false, 1, this.studLookups);
   private thumbnailStage: Promise<ThumbnailStage> | undefined;
-  private ghostMaterials = new PlasticMaterials(false, GHOST_OPACITY);
+  private ghostMaterials = new PlasticMaterials(false, GHOST_OPACITY, this.studLookups);
   private look: LookSettings = {
     plastic: false,
     gtao: false,
@@ -509,8 +566,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
     this.renderer = renderer;
     this.look = config.look;
-    this.materials = new PlasticMaterials(config.look.plastic, 1);
-    this.ghostMaterials = new PlasticMaterials(config.look.plastic, GHOST_OPACITY);
+    this.materials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
+    this.ghostMaterials = new PlasticMaterials(
+      config.look.plastic,
+      GHOST_OPACITY,
+      this.studLookups,
+    );
     this.scene.background = new Color(SKY_COLOR);
     this.light(renderer, config.look);
     if (config.look.gtao || config.look.outlines || config.look.bevel || config.look.oit) {
@@ -673,6 +734,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   setPalette(palette: PartPalette): void {
     this.changed = true;
     this.clearChunks();
+    this.studBases = new StudBasisTable();
+    this.uploadedStudBases = 0;
     for (const node of this.farModelList) this.scene.remove(node.group);
     this.farModelNodes.clear();
     this.farModelPlacements.clear();
@@ -701,6 +764,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
     this.alphaSlots = [OPAQUE_ALPHA];
     this.colorAlphaSlot = new Uint8Array(colorCount);
+    const lookup = new Float32Array(lookupLength(colorCount));
     for (let c = 0; c < colorCount; c++) {
       const o = c * COLOR_CHANNELS;
       this.scratchColor.setRGB(
@@ -716,7 +780,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       let slot = this.alphaSlots.indexOf(alpha);
       if (slot < 0) slot = this.alphaSlots.push(alpha) - 1;
       this.colorAlphaSlot[c] = slot;
+      lookup.set(this.linearColors.subarray(o, o + COLOR_CHANNELS), c * LOOKUP_TEXEL_FLOATS);
+      lookup[c * LOOKUP_TEXEL_FLOATS + COLOR_CHANNELS] = 1;
     }
+    refreshLookup(this.studLookups.linearColorTexture, lookup);
   }
 
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
@@ -815,9 +882,18 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
+  private pageFor(instances: ChunkInstances): InstancePage {
+    const page = pageOf(instances, this.linearColors, this.colorAlphaSlot, this.studBases);
+    if (this.studBases.count !== this.uploadedStudBases) {
+      refreshLookup(this.studLookups.studBasisTexture, this.studBases.columns);
+      this.uploadedStudBases = this.studBases.count;
+    }
+    return page;
+  }
+
   setChunk(key: number, chunk: ChunkInstances): void {
     this.changed = true;
-    this.placeChunk(key, pageOf(chunk, this.linearColors, this.colorAlphaSlot));
+    this.placeChunk(key, this.pageFor(chunk));
   }
 
   private placeGroup(group: Group, originX: number, originZ: number): void {
@@ -853,7 +929,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setVehicle(vehicle: number, model: ChunkInstances): void {
     this.changed = true;
-    this.placeVehicleBody(vehicle, pageOf(model, this.linearColors, this.colorAlphaSlot));
+    this.placeVehicleBody(vehicle, this.pageFor(model));
   }
 
   private placeVehicleBody(vehicle: number, page: InstancePage): void {
@@ -986,7 +1062,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setGhost(model: ChunkInstances | null): void {
     this.changed = true;
-    this.showGhost(model ? pageOf(model, this.linearColors, this.colorAlphaSlot) : null);
+    this.showGhost(model ? this.pageFor(model) : null);
   }
 
   private showGhost(page: InstancePage | null): void {
@@ -1482,32 +1558,42 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const detailedGeometry = this.detailedLevel.studs[k];
       if (!detailedGeometry) continue;
       const alpha = this.alphaSlots[studs.alphaSlot[run] ?? 0] ?? OPAQUE_ALPHA;
-      const material = materials.instanceColored(alpha);
+      const material = materials.basisInstanced(alpha);
       const start = studs.start[run] ?? 0;
       const end = studs.end[run] ?? 0;
-      const attributes = this.pageAttributes(page, start, end);
-      detailed.add(
-        this.instancedMesh(
-          detailedGeometry,
-          material,
-          end - start,
-          attributes.matrices,
-          attributes.colors,
-        ),
+      const translations = new InstancedBufferAttribute(
+        studTranslationsOf(page, start, end),
+        TRANSLATION_FLOATS,
       );
+      const basisAndColorIndex = new InstancedBufferAttribute(
+        studBasisAndColorIndexOf(page, start, end),
+        1,
+      );
+      detailed.add(this.studMesh(detailedGeometry, material, translations, basisAndColorIndex));
       const coarseGeometry = this.farLevel.studs[k];
       if (coarse && coarseGeometry) {
-        coarse.add(
-          this.instancedMesh(
-            coarseGeometry,
-            material,
-            end - start,
-            attributes.matrices,
-            attributes.colors,
-          ),
-        );
+        coarse.add(this.studMesh(coarseGeometry, material, translations, basisAndColorIndex));
       }
     }
+  }
+
+  private studMesh(
+    primitive: BufferGeometry,
+    material: MeshStandardNodeMaterial,
+    translations: InstancedBufferAttribute,
+    basisAndColorIndex: InstancedBufferAttribute,
+  ): StudMesh {
+    const mesh = new StudMesh(
+      primitive,
+      material,
+      translations,
+      basisAndColorIndex,
+      this.studBases,
+    );
+    mesh.matrixAutoUpdate = false;
+    mesh.receiveShadow = this.look.shadows && !material.transparent;
+    mesh.computeBoundingSphere();
+    return mesh;
   }
 
   private instancedMesh(
@@ -1677,7 +1763,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const stage = await (this.thumbnailStage ??= this.createThumbnailStage());
     stage.renderer.setSize(sizePx, sizePx, false);
     const group = new Group();
-    const page = pageOf(model, this.linearColors, this.colorAlphaSlot);
+    const page = this.pageFor(model);
     this.addInstances(group, undefined, undefined, page, this.materials, null);
     group.position.set(
       -(box.minX + box.maxX) / 2,
