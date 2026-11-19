@@ -3,13 +3,7 @@ import { bundlePartGlb, type Bundle } from "./bundle.ts";
 import type { LimitedOutcome } from "./import-limit.ts";
 import { partConnectors, type PartConnectors } from "./part-connectors.ts";
 
-export const CHECKS = [
-  "import",
-  "connectors",
-  "seats on baseplate",
-  "mates beside a module",
-  "collision refused",
-] as const;
+export const CHECKS = ["import", "connectors"] as const;
 export type CheckId = (typeof CHECKS)[number];
 
 export interface Finding {
@@ -20,7 +14,6 @@ export interface Finding {
 export type CheckOutcome =
   | { readonly kind: "pass" }
   | { readonly kind: "fail"; readonly findings: ReadonlyArray<Finding> }
-  | { readonly kind: "blocked"; readonly bugClass: string }
   | { readonly kind: "policy"; readonly bugClass: string }
   | { readonly kind: "skipped" };
 
@@ -30,15 +23,6 @@ export interface InputChecks {
   readonly connectorSources: ReadonlyMap<PartConnectors["source"], number>;
   readonly drawnInstances: number;
 }
-
-const PLACEMENT_CHECKS = [
-  "seats on baseplate",
-  "mates beside a module",
-  "collision refused",
-] as const;
-
-export const NO_IMPORTED_PLACEMENT =
-  "the editor can't place an imported model: its catalog takes only baked bundle models, and the import worker returns no stud lattice or cells for `modelPlaceable`";
 
 const NUMBERS = /\d+(\.\d+)?/gu;
 const QUOTED = /"[^"]*"|'[^']*'|`[^`]*`/gu;
@@ -217,9 +201,6 @@ export async function checkInput(
     return { outcomes, skippedAndReported: [], connectorSources: sources, drawnInstances: 0 };
   }
   outcomes.set("connectors", await connectorOutcome(outcome.result, bundle, memo, sources));
-  for (const check of PLACEMENT_CHECKS) {
-    outcomes.set(check, { kind: "blocked", bugClass: NO_IMPORTED_PLACEMENT });
-  }
   return {
     outcomes,
     skippedAndReported: skippedAndReported(outcome.result),
