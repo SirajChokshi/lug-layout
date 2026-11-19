@@ -36,7 +36,7 @@ export class PlanDelta {
   writeKind = new Uint8Array(INITIAL_ENTRIES);
   writeSegment = new Uint8Array(INITIAL_ENTRIES);
   writeSource = new Int32Array(INITIAL_ENTRIES);
-  chunkKey = new Int32Array(INITIAL_ENTRIES);
+  chunkKey = new Float64Array(INITIAL_ENTRIES);
   slot = new Int32Array(INITIAL_ENTRIES);
   labelKind = new Uint8Array(INITIAL_ENTRIES);
   labelA = new Float64Array(INITIAL_ENTRIES);
@@ -106,7 +106,7 @@ export class PlanDelta {
     this.writeKind = roomUint8(this.writeKind, entries);
     this.writeSegment = roomUint8(this.writeSegment, entries);
     this.writeSource = roomInt32(this.writeSource, entries);
-    this.chunkKey = roomInt32(this.chunkKey, entries);
+    this.chunkKey = roomFloat64(this.chunkKey, entries);
     this.slot = roomInt32(this.slot, entries);
     this.labelKind = roomUint8(this.labelKind, entries);
     this.labelA = roomFloat64(this.labelA, entries);
