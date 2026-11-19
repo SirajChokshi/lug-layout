@@ -658,12 +658,13 @@ L0  math
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries), and *types only* from schema (owner ruling, 2026-11-17: no re-export layers, so `apps/web` names wire types where they are defined) |
 | `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
+| `tools/e2e` | math, schema, catalog, import, client, render, storage and inversify; valibot, Playwright and Vitest. A test-tooling composition root like `apps/web` (owner ruling, 2026-11-19): it builds a `Container` from `client`'s `mainThreadModules` and rebinds only boundary tokens. Nothing imports it. |
 | `apps/catalog-api` | schema and valibot only; `@brr/config` presets as dev tooling. Nothing imports it. |
 
 **Enforced rules:**
 - Every wire and file format is one valibot schema in `schema`, with its type inferred from it (owner decision, 2026-11-16). That covers the CDN bundle (manifest, model files, GLB JSON) and the palette that feeds its compiler, the catalog API and the D1 release rows behind it, and saved worlds. A query's projection of D1 rows is composed from the row schemas next to its SQL in `apps/catalog-api`. Packages that run schemas depend on `valibot`; packages that only name the types use `import type` from `schema`.
 - `math`, `schema`, `domain` and `sim` are **pure**: no DOM, no three.js, no IndexedDB, no workers and no Inversify. They run unchanged in Node tests, in workers and in the pipeline.
-- Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots.
+- Only `client`, `workers/*`, `apps/web` and the L2 adapter packages `storage`, `render`, `catalog` and `rpc` import `inversify` (owner decision, 2026-11-16). Only `apps/web` and each worker entry **create containers**; they are the composition roots. `tools/e2e` is the one test-tooling composition root (owner ruling, 2026-11-19): it imports `inversify` and builds a container from `mainThreadModules`, rebinding only boundary tokens.
 - `ui` never imports `domain`, `render` or `storage` directly. It goes through `client`.
 - CI checks the boundaries with dependency-cruiser (§11 item 29, closed): one allow-list rule per package covering packages and third-party modules, global rules restricting `inversify` to the DI packages and `three` to `render`, and a rule failing any unresolvable import. `tsc --build` project references that mirror the table are still to come.
 - Turbo tasks: `build`, `typecheck`, `lint`, `test`, `bench`, `wasm` (cached and keyed on `crates/**`). `apps/web#build` depends on `^build` and `compile-wasm#wasm`.

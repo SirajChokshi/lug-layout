@@ -9,7 +9,7 @@ The source of truth is `docs/architecture.md`. Section numbers like "§14" refer
 2. **Real parts, exact joins.** No approximations, no hand-typed geometry, no snapping tolerance. See `.cursor/rules/real-parts.mdc`.
 3. **License-clean.** No `OfficialNonCA` parts, no Studio library, never the legacy `.io` password. See `.cursor/rules/ldraw-licensing.mdc`.
 4. **Layered packages.** Dependencies only point down. See `.cursor/rules/package-boundaries.mdc`.
-5. **Inversify with explicit symbol tokens**, used only in `client`, `workers/*`, `apps/web` and the L2 adapters `storage`, `render`, `catalog`, `rpc`. See `.cursor/rules/dependency-injection.mdc`.
+5. **Inversify with explicit symbol tokens**, used only in `client`, `workers/*`, `apps/web`, the L2 adapters `storage`, `render`, `catalog`, `rpc`, and `tools/e2e` as a test-tooling composition root. See `.cursor/rules/dependency-injection.mdc`.
 6. **Hot paths use typed arrays.** Per-part, per-stud, per-instance and per-car data never become JS objects, and frames and ticks allocate nothing. See `.cursor/rules/hot-path-data.mdc`.
 7. **Whole models only.** We never do brick-level editing. Imported models are immutable.
 8. **Official LEGO track only, for now.** Third-party track must stay addable through `PartSource` plus `TrackProfile`, with no core changes.
