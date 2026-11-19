@@ -886,11 +886,11 @@ export function modulePair(pools: BlockPools, seed: number): ModulePair {
   const subjectNames = namedModule(`mils-module-${seed}`, `MILS module ${seed}`);
   const renamedNames = randomNames(random);
   const partnerNames = namedModule(`mils-partner-${seed}`, `MILS partner ${seed}`);
-  const holedNames = namedModule(`mils-holed-${seed}`, `MILS module ${seed} without pins`);
+  const holedNames = namedModule(`holed-module-${seed}`, `Module ${seed} without pins`);
   const solid = new Build(subject.base.block, random, pools.colors);
   solid.fillEdgeRow(facing, pools.bricks);
   landscape(solid, pools, random);
-  const solidNames = namedModule(`mils-solid-${seed}`, `MILS module ${seed} with a solid edge`);
+  const solidNames = namedModule(`solid-edge-module-${seed}`, `Module ${seed} with a solid edge`);
   return {
     seed,
     subject: {
