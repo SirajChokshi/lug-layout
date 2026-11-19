@@ -15,6 +15,8 @@ import { readFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
+import { fitAllBox } from "../src/camera/editor-camera.ts";
+import { overviewOf } from "../src/camera/overview.ts";
 import { mainThreadModules } from "../src/client.module.ts";
 import { TrackDrawing } from "../src/edit/track-drawing.ts";
 import {
@@ -143,7 +145,7 @@ class PanelReads {
     if (!Object.is(plans.activePlanId(), this.activeRef)) this.mismatches++;
     const id = this.planId;
     if (id === null) return;
-    this.total ^= plans.insideCount(id) ^ plans.issueCount(id);
+    this.total ^= plans.insideCount(id) ^ plans.issueCount(id) ^ plans.regionView(id).tables.length;
     if (!Object.is(plans.regionView(id), this.regionRef)) this.mismatches++;
     const at = plans.issueVersion(id);
     const issues = plans.issues(id);
@@ -674,20 +676,13 @@ async function flaggedCosts(ids: Ids, lines: string[]): Promise<void> {
 async function readerCosts(ids: Ids, lines: string[]): Promise<void> {
   lines.push(
     "",
-    "### Cold readers and PR 2's adapter, one region with one table covering the dense layout",
+    "### Cold readers and the minimap's per-version overview, one region with one table covering the dense layout",
     "",
     `| Rows | Work ${COST_HEADER}`,
     "|---|---|---|---|---|---|---|",
   );
   for (const size of SIZES) {
     const built = build(bricks(size, 0, ids), null, tableRegion(ROOM_MM));
-    const extra = brick(size, ids.fresh(), 0);
-    const one: PlanModelSource[] = [extra];
-    const bump = (): void => {
-      extra.id = ids.fresh();
-      applyView(built, { added: one, removed: NONE });
-      applyView(built, { added: NONE, removed: one });
-    };
     const label = size.toLocaleString("en-US");
     lines.push(
       `| ${label} | materialize() | ${summary(await measure(COST_WINDOWS, () => void built.plans.materialize()))} |`,
@@ -698,8 +693,13 @@ async function readerCosts(ids: Ids, lines: string[]): Promise<void> {
       )} |`,
     );
     lines.push(
-      `| ${label} | snapshot() after a version bump, PR 2's adapter | ${summary(
-        await measure(COST_WINDOWS, () => void built.plans.snapshot(), bump),
+      `| ${label} | overviewOf(plans), the minimap's work on each version | ${summary(
+        await measure(COST_WINDOWS, () => void overviewOf(built.plans)),
+      )} |`,
+    );
+    lines.push(
+      `| ${label} | fitAllBox(plans), the camera's fitAll | ${summary(
+        await measure(COST_WINDOWS, () => void fitAllBox(built.plans)),
       )} |`,
     );
   }
@@ -802,6 +802,20 @@ async function footprintCosts(drawing: TrackDrawing, lines: string[]): Promise<v
   );
 }
 
+function productionReads(plans: PlanService): void {
+  const active = plans.activePlanId();
+  plans.version();
+  plans.plans();
+  plans.sandboxCount();
+  plans.placementCount();
+  if (active !== null) {
+    plans.insideCount(active);
+    plans.issues(active);
+    plans.regionView(active);
+  }
+  overviewOf(plans);
+}
+
 interface RegionEdit {
   readonly name: string;
   readonly run: () => void;
@@ -890,12 +904,12 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
       `| ${edit.name} | plan path | ${summary(await measure(REGION_EDITS, edit.run, edit.after))} |`,
     );
     lines.push(
-      `| ${edit.name} | plus one snapshot() read | ${summary(
+      `| ${edit.name} | plus the panel's reads and the minimap's overviewOf | ${summary(
         await measure(
           REGION_EDITS,
           () => {
             edit.run();
-            plans.snapshot();
+            productionReads(plans);
           },
           edit.after,
         ),
@@ -916,13 +930,13 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
     `| typing a width, four commits (2, 24, 240, 2400 mm), the whole burst | plan path | ${summary(await measure(REGION_EDITS, burst, restore))} |`,
   );
   lines.push(
-    `| typing a width, four commits, the whole burst | plus one snapshot() read per commit | ${summary(
+    `| typing a width, four commits, the whole burst | plus the panel's reads and the minimap's overviewOf per commit | ${summary(
       await measure(
         REGION_EDITS,
         () => {
           for (const typed of TYPED_WIDTHS_MM) {
             plans.updatePlan(planId, { roomWidthMm: typed });
-            plans.snapshot();
+            productionReads(plans);
           }
         },
         restore,
@@ -1041,7 +1055,7 @@ if (mode === "all" || mode === "probe") {
     "",
     `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${TRACK_PIECES} track pieces`,
     "",
-    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener reading version(), placementCount(), sandboxCount(), plans(), activePlanId(), and per region insideCount(), issueCount(), issueVersion(), regionView() and issues(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of both variants runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
+    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of both variants runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
     "",
     ...probeTable(rows),
   );
