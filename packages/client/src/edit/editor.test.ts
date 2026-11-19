@@ -75,6 +75,7 @@ import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
+import { chosen } from "./editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -436,9 +437,10 @@ it("loads a set's record only once it is picked, refuses clicks until then, and 
   const set = `omr:${PLACEABLE_SET}`;
   const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
   const place = placer(editor, backend);
+  const placeNow = placerNow(editor, backend);
 
   expect(fetcher.paths).not.toContain(record);
-  const whileLoading = place(set, 640, 640);
+  const whileLoading = placeNow(set, 640, 640);
   expect(whileLoading).toEqual({
     placements: 0,
     refusedClicks: 1,
@@ -447,7 +449,7 @@ it("loads a set's record only once it is picked, refuses clicks until then, and 
   await loadCatalogItem(catalog, set);
   expect(fetcher.paths).toContain(record);
 
-  expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect(await place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
   await vi.waitFor(() => {
     const { detailedPartMeshes } = editor.snapshot().meshes;
     expect(detailedPartMeshes.wanted).toBeGreaterThan(0);
@@ -508,12 +510,12 @@ it("offers exactly the placed models with running gear as trains under their pal
 
   const nothingPlaced = { trains: trains(), play: await openPlay() };
   for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
-  place(set, 0, 0);
+  await place(set, 0, 0);
   const setPlaced = trains();
-  place(myOwnTrain, 1600, 0);
+  await place(myOwnTrain, 1600, 0);
   const myOwnTrainPlaced = trains();
-  place(locomotive, 0, 1600);
-  place(myOwnTrain, 1600, 1600);
+  await place(locomotive, 0, 1600);
+  await place(myOwnTrain, 1600, 1600);
   const allPlaced = trains();
   const locomotiveLabel = editor.playSetup()?.models[0]?.label;
   play.chooseTrain("10133-1");
@@ -552,8 +554,8 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
   for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
     await loadCatalogItem(catalog, item);
   }
-  place(`omr:${PLACEABLE_SET}`, 0, 0);
-  place("omr:10205-1", 1600, 0);
+  await place(`omr:${PLACEABLE_SET}`, 0, 0);
+  await place("omr:10205-1", 1600, 0);
   const setTrack = editor.snapshot().track?.modelPieces ?? 0;
 
   startPlay(editor, play);
@@ -665,7 +667,7 @@ class MemoryRepository implements IWorldRepository {
   }
 }
 
-function placer(editor: IEditor, backend: AimedBackend) {
+function placerNow(editor: IEditor, backend: AimedBackend) {
   return (item: string, x: number, z: number) => {
     editor.chooseItem(item);
     backend.aim(x, z);
@@ -676,13 +678,21 @@ function placer(editor: IEditor, backend: AimedBackend) {
   };
 }
 
+function placer(editor: IEditor, backend: AimedBackend) {
+  const now = placerNow(editor, backend);
+  return async (item: string, x: number, z: number) => {
+    await chosen(editor, item);
+    return now(item, x, z);
+  };
+}
+
 it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
   const { editor, backend } = await startEditor([]);
-  editor.chooseItem("ldraw:44336p04@72");
+  await chosen(editor, "ldraw:44336p04@72");
   backend.aim(320, 320);
   editor.pointerMove(0, 0);
   editor.click(0, 0, 0);
-  editor.chooseItem("ldraw:44342p02@72");
+  await chosen(editor, "ldraw:44342p02@72");
   backend.aim(320, 960);
   editor.pointerMove(0, 0);
   const shown = () => {
@@ -732,8 +742,8 @@ it("refuses to turn a baseplate while a set rests on it, turns the set itself, a
   const place = placer(editor, backend);
   const set = `omr:${PLACEABLE_SET}`;
   await loadCatalogItem(catalog, set);
-  place(BASEPLATE, 0, 0);
-  place(set, 0, 0);
+  await place(BASEPLATE, 0, 0);
+  await place(set, 0, 0);
   const corner = 300;
 
   expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
@@ -763,8 +773,8 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);
   const straight = "ldraw:44336p04@72";
-  place(straight, 320, 320);
-  place(straight, 320, 960);
+  await place(straight, 320, 320);
+  await place(straight, 320, 960);
   expect(editor.snapshot().roads.mismatchedCells).toBe(0);
 
   expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
@@ -909,7 +919,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
     return editor.snapshot();
   };
 
-  editor.chooseItem(BASEPLATE);
+  await chosen(editor, BASEPLATE);
   editor.click(0, 0, 0);
   expect(editsOffered(selectBaseplate())).toEqual({ selected: true, offered: READ_ONLY_REFUSED });
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
@@ -995,7 +1005,7 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  editor.chooseItem(BASEPLATE);
+  await chosen(editor, BASEPLATE);
 
   const imported = await editor.importModelFile({
     name: "no-studs.ldr",
@@ -1036,7 +1046,7 @@ it("shows the stud totals of whichever world is open: none after New World, the 
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
 
-  editor.chooseItem(BASEPLATE);
+  await chosen(editor, BASEPLATE);
   editor.click(0, 0, 0);
   const placed = editor.snapshot().studs;
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
@@ -1105,12 +1115,12 @@ it.each([
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    place(BASEPLATE, 0, 0);
-    editor.chooseItem(held);
+    await place(BASEPLATE, 0, 0);
+    await chosen(editor, held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
     const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
-    const outcome = place(held, at[0], at[1]);
+    const outcome = await place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
   },
@@ -1147,9 +1157,9 @@ it.each([
     const held = `omr:${model}`;
     await loadCatalogItem(catalog, held);
     const place = placer(editor, backend);
-    place(BASEPLATE, 0, 0);
-    const across = place(held, 0, 0);
-    const beside = place(held, besideX, 0);
+    await place(BASEPLATE, 0, 0);
+    const across = await place(held, 0, 0);
+    const beside = await place(held, besideX, 0);
 
     expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
       across: OVERLAP_REFUSED.outcome,
@@ -1203,8 +1213,8 @@ it.each([
     const loose = editor.snapshot().catalog.find((item) => item.group === part)?.id;
     if (!loose) throw new Error(`${part} is not in the catalog`);
     const place = placer(editor, backend);
-    place(loose, -1280, 0);
-    place(held, 1280, 0);
+    await place(loose, -1280, 0);
+    await place(held, 1280, 0);
 
     expect({ placements: editor.snapshot().placements, ...placedHeights(backend, part) }).toEqual({
       placements: 2,
@@ -1221,11 +1231,11 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   const narrow = "ldraw:3857@2";
   const item = editor.snapshot().catalog.find((entry) => entry.id === narrow);
   if (!item) throw new Error(`${narrow} is not in the catalog`);
-  editor.chooseItem(narrow);
+  await chosen(editor, narrow);
   if (item.studsWide > item.studsDeep) editor.rotate(0);
   const halfWidth = (Math.min(item.studsWide, item.studsDeep) * 20) / 2;
-  place(BASEPLATE, 0, 0);
-  const flush = place(narrow, 320 + halfWidth, 0);
+  await place(BASEPLATE, 0, 0);
+  const flush = await place(narrow, 320 + halfWidth, 0);
   expect(selectAt(editor, backend, 320 + halfWidth, 0)?.item).toBe(narrow);
   const before = posesOf(editor);
   editor.rotate(0);
@@ -1242,8 +1252,8 @@ it("refuses to delete a MILS module while a set rests on it, names the set, and 
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
-  place(PLAIN_MODULE, 320, 320);
-  place(SET, 320, 320);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(SET, 320, 320);
   const raised = posesOf(editor);
   expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
   editor.deleteSelection(0);
@@ -1293,7 +1303,7 @@ it.each([
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    for (const [item, x, z] of lay) place(item, x, z);
+    for (const [item, x, z] of lay) await place(item, x, z);
     const setPose = () => posesOf(editor).find((pose) => pose.startsWith(SET));
     const before = setPose();
     selectAt(editor, backend, remove[0], remove[1]);
@@ -1657,7 +1667,7 @@ async function storedWorld(models: ReadonlyArray<string>, item: string) {
   const built = editor.snapshot().world?.id;
   if (!empty || !built) throw new Error("the fixture editor has no world");
   await loadCatalogItem(catalog, item);
-  expect(placer(editor, backend)(item, 640, 640).placements).toBe(1);
+  expect((await placer(editor, backend)(item, 640, 640)).placements).toBe(1);
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1), STREAM_WAIT);
   return { repository, empty, built };
 }
@@ -1717,7 +1727,7 @@ async function placeWithOneHeldMeshGated() {
   const set = `omr:${STREAMED_SET}`;
   await loadCatalogItem(catalog, set);
   gate.close((path) => meshPaths.has(path));
-  expect(placer(editor, backend)(set, 640, 640).placements).toBe(1);
+  expect((await placer(editor, backend)(set, 640, 640)).placements).toBe(1);
   editor.chooseItem(null);
   const heldMeshes = backend.heldMeshPaths(detailedPaths, farPaths);
   const [lastMesh, lastPath] = [...heldMeshes].at(-1) ?? ["", ""];
@@ -1752,7 +1762,7 @@ describe("part mesh streaming", () => {
       fetcher: gate,
     });
     await loadCatalogItem(catalog, SET);
-    expect(placer(editor, backend)(SET, 640, 640).placements).toBe(1);
+    expect((await placer(editor, backend)(SET, 640, 640)).placements).toBe(1);
 
     await vi.waitFor(() => {
       const { detailedPartMeshes } = meshesOf(editor);
@@ -1793,9 +1803,9 @@ describe("part mesh streaming", () => {
     });
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    expect(place(BASEPLATE, 320, 320).placements).toBe(1);
-    expect(place(ROAD_PLATE, 960, 320).placements).toBe(2);
-    expect(place(SET, 320, 1600).placements).toBe(3);
+    expect((await place(BASEPLATE, 320, 320)).placements).toBe(1);
+    expect((await place(ROAD_PLATE, 960, 320)).placements).toBe(2);
+    expect((await place(SET, 320, 1600)).placements).toBe(3);
 
     await vi.waitFor(() => expect(meshesSettled(meshesOf(editor))).toBe(true), STREAM_WAIT);
     const { detailedPartMeshes, farPartMeshes, farModelMeshes } = meshesOf(editor);
@@ -1826,11 +1836,11 @@ describe("part mesh streaming", () => {
       holder: "two ghosts shown and cleared at the mid tier, one of them placed",
       tier: "mid" as const,
       setUp: async (editor: IEditor, backend: AimedBackend) => {
-        editor.chooseItem(SET);
+        await chosen(editor, SET);
         backend.aim(640, 640);
         editor.pointerMove(0, 0);
         editor.chooseItem(null);
-        expect(placer(editor, backend)(`omr:${STREAMED_SET}`, 640, 640).placements).toBe(1);
+        expect((await placer(editor, backend)(`omr:${STREAMED_SET}`, 640, 640)).placements).toBe(1);
         editor.chooseItem(null);
       },
     },
@@ -1961,14 +1971,14 @@ it("loads and applies a placed set's far model once, however often the set is pl
     counts: editor.snapshot().meshes.farModelMeshes,
   });
 
-  expect(place(SET, 0, 0).placements).toBe(1);
+  expect((await place(SET, 0, 0)).placements).toBe(1);
   loader.farFiles.open();
   expect((await farTierSettled(editor)).farTier).toBe("ready");
-  expect(place(SET, 2560, 0).placements).toBe(2);
+  expect((await place(SET, 2560, 0)).placements).toBe(2);
   loader.farModelMesh.open();
   await vi.waitFor(() => expect(backend.farModelUses).toHaveLength(2));
   const settled = farModels();
-  expect(place(SET, 5120, 0).placements).toBe(3);
+  expect((await place(SET, 5120, 0)).placements).toBe(3);
 
   expect({ settled, placedAgain: farModels() }).toEqual({
     settled: {
