@@ -5,6 +5,7 @@ import {
   type IPartBundleLoader,
   type ModelRecord,
   type PartAsset,
+  type PartConnectors,
   type PartModel,
   type PartShapeAsset,
   type PartShapeRecord,
@@ -84,6 +85,10 @@ export type ImportOutcome =
   | (ImportReports & { readonly item: CatalogItemView; readonly credit: ModelCredit })
   | (ImportReports & { readonly item: null; readonly refusal: string });
 
+export type PartConnectorRecord =
+  | { readonly kind: "record"; readonly connectors: PartConnectors }
+  | { readonly kind: "missing"; readonly reason: string };
+
 export interface ICatalogAssets {
   meshProgress(): MeshProgress;
   subscribe(listener: () => void): () => void;
@@ -106,6 +111,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
+  partConnectorRecord(partIndex: number): Promise<PartConnectorRecord>;
 }
 
 interface CatalogSlot {
@@ -125,6 +131,8 @@ const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
 const IMPORTED_SOURCE = "imported file";
+const NOT_IN_BUNDLE_RECORDS = "the bundle's connector packages don't list it";
+const NOT_IN_IMPORT_RECORDS = "the import found no connector record for it";
 
 export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
   const color = colors.find((c) => c.code === code);
@@ -245,6 +253,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly farModelIndex = new Map<string, number>();
+  private readonly importedRecords = new Map<string, PartConnectorRecord>();
   private farReady = false;
 
   constructor(
@@ -475,6 +484,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   async addImported(file: ImportedFile): Promise<ImportOutcome> {
     const result = await this.importedResult(file);
+    this.keepImportedRecords(result);
     const reports = { report: result.report, studio: result.studio ?? null };
     const { bake } = result;
     if (!bake || bake.lattice === null || bake.cells === null) {
@@ -519,6 +529,41 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
     return { ...reports, item: slot.view, credit };
+  }
+
+  private keepImportedRecords(result: ImportResult): void {
+    const refused = new Map(
+      result.report.refusedConnectorRecords.map(({ partId, reason }) => [partId, reason]),
+    );
+    result.partIds.forEach((partId, index) => {
+      const connectors = result.connectors[index] ?? null;
+      this.importedRecords.set(
+        partId,
+        connectors === null
+          ? { kind: "missing", reason: refused.get(partId) ?? NOT_IN_IMPORT_RECORDS }
+          : { kind: "record", connectors },
+      );
+    });
+  }
+
+  async partConnectorRecord(partIndex: number): Promise<PartConnectorRecord> {
+    const part = this.parts()[partIndex];
+    if (!part) throw new Error(`no catalog part has index ${partIndex}`);
+    const imported = this.importedRecords.get(part.id);
+    if (imported) return imported;
+    const loaded = await this.loader.readPartConnectors(this.lod, part.id);
+    switch (loaded.kind) {
+      case "loaded":
+        return { kind: "record", connectors: loaded.connectors };
+      case "unlisted":
+        return { kind: "missing", reason: NOT_IN_BUNDLE_RECORDS };
+      case "refused":
+        return { kind: "missing", reason: loaded.reason };
+      default: {
+        const unhandled: never = loaded;
+        throw new Error(`unhandled connector load ${String(unhandled)}`);
+      }
+    }
   }
 
   playModel(placeable: Placeable): PlayModel | null {

@@ -62,12 +62,14 @@ import {
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
+  CONNECTOR_TABLES,
   EDITOR_FRAME_LOOP,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   WORLD_SESSION,
 } from "../tokens.ts";
 import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame-loop.ts";
+import type { IConnectorTables, PartWithoutConnectorRecord } from "../connect/connector-tables.ts";
 import {
   colorOf,
   type CatalogItemView,
@@ -216,6 +218,19 @@ export interface RefusedClick {
   readonly reason: string;
 }
 
+export interface QueuedPlacement {
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+}
+
+interface QueuedClick extends QueuedPlacement {
+  readonly ndcX: number;
+  readonly ndcY: number;
+  readonly eventTimeMs: number;
+}
+
 export type FarTierStatus = "loading" | "ready" | "unavailable";
 
 export interface TrackBomLine {
@@ -335,6 +350,8 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
+  readonly connectorGaps: ReadonlyArray<PartWithoutConnectorRecord>;
+  readonly queuedPlacement: QueuedPlacement | null;
 }
 
 export interface EditorCredits {
@@ -601,6 +618,8 @@ export class Editor implements IEditor, IEditedWorld {
     lastRoadStroke: null,
     roadErase: false,
     modelImport: null,
+    connectorGaps: [],
+    queuedPlacement: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -618,6 +637,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverZ = 0;
   private hoverYPlates = 0;
   private hoverRefusal: string | null = null;
+  private queuedClick: QueuedClick | null = null;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -651,6 +671,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
+    @inject(CONNECTOR_TABLES) private readonly connectorTables: IConnectorTables,
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, ...session.view(), ...frames.view() };
@@ -784,6 +805,9 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
       return null;
     }
+    const refId = this.catalog.itemRefId(outcome.item.id);
+    const imported = refId === null ? null : this.catalog.placeables()[refId];
+    if (imported) await this.connectorTables.load(imported);
     this.catalogItems = [...this.catalogItems, outcome.item];
     const credits = this.state.credits;
     this.update({
@@ -816,7 +840,8 @@ export class Editor implements IEditor, IEditedWorld {
         if (target) refIds.add(target.refId);
       }
     }
-    await Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
+    const placeables = await Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
+    await Promise.all(placeables.map((placeable) => this.connectorTables.load(placeable)));
   }
 
   private baseplateBottomY(): number {
@@ -1184,6 +1209,8 @@ export class Editor implements IEditor, IEditedWorld {
       roadErase: false,
       mode: "road",
       activeItem: id,
+      pendingItem: null,
+      connectorGaps: [],
       ghostRot: this.ghostRot,
       roadKit: id,
       roadStroke: null,
@@ -1196,11 +1223,18 @@ export class Editor implements IEditor, IEditedWorld {
     this.roadDrawing?.cancel();
     if (this.roadDrawing) this.roadDrawing.erasing = false;
     this.clearRoadPreview();
-    this.update({ mode: "select", activeItem: null, roadStroke: null, roadErase: false });
+    this.update({
+      mode: "select",
+      activeItem: null,
+      pendingItem: null,
+      roadStroke: null,
+      roadErase: false,
+    });
   }
 
   chooseItem(id: string | null): void {
     if (id !== null && this.state.readOnly) return;
+    this.queueClick(null);
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
     if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
       this.enterRoadMode(id);
@@ -1231,7 +1265,8 @@ export class Editor implements IEditor, IEditedWorld {
       if (id === null) return;
     }
     const refId = id === null ? null : this.catalog.itemRefId(id);
-    if (id !== null && refId !== null && !this.catalog.placeables()[refId]) {
+    const loaded = refId === null ? null : (this.catalog.placeables()[refId] ?? null);
+    if (id !== null && refId !== null && (!loaded || !this.connectorTables.loaded(loaded))) {
       this.choosePending(id, refId);
       return;
     }
@@ -1259,6 +1294,9 @@ export class Editor implements IEditor, IEditedWorld {
       pendingItem: null,
       snap,
       ghostRot: this.placeRot,
+      connectorGaps: placeable
+        ? (this.connectorTables.loaded(placeable)?.withoutRecords ?? [])
+        : [],
     });
   }
 
@@ -1272,21 +1310,29 @@ export class Editor implements IEditor, IEditedWorld {
       pendingItem: id,
       snap: null,
       ghostRot: this.placeRot,
+      connectorGaps: [],
     });
-    void this.catalog.load(refId).then(
-      () => {
-        if (this.state.pendingItem === id) this.chooseItem(id);
-      },
-      (error: unknown) => {
-        if (this.state.pendingItem !== id) return;
-        this.update({
-          mode: "select",
-          activeItem: null,
-          pendingItem: null,
-          catalogError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
-        });
-      },
-    );
+    void this.catalog
+      .load(refId)
+      .then((placeable) => this.connectorTables.load(placeable))
+      .then(
+        () => {
+          if (this.state.pendingItem !== id) return;
+          const queued = this.queuedClick;
+          this.chooseItem(id);
+          if (queued?.item === id) this.commitQueuedClick(queued);
+        },
+        (error: unknown) => {
+          if (this.state.pendingItem !== id) return;
+          this.queueClick(null);
+          this.update({
+            mode: "select",
+            activeItem: null,
+            pendingItem: null,
+            catalogError: `${this.labelOf(id)} can't be loaded: ${errorText(error)}`,
+          });
+        },
+      );
   }
 
   private trackPieceIndex(track: TrackDrawing, id: string): number | null {
@@ -1498,6 +1544,8 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    const queued = this.queuedClick;
+    if (queued && !(this.hovering && this.onQueuedCell(queued))) this.queueClick(null);
     const snap = this.snapGhost();
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
@@ -1517,7 +1565,29 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerLeave(): void {
     this.hovering = false;
+    this.queueClick(null);
     this.update({ hover: null });
+  }
+
+  private onQueuedCell(queued: QueuedClick): boolean {
+    return snapToLattice(this.hitX) === queued.x && snapToLattice(this.hitZ) === queued.z;
+  }
+
+  private queueClick(queued: QueuedClick | null): void {
+    if (queued === null && this.queuedClick === null) return;
+    this.queuedClick = queued;
+    this.update({
+      queuedPlacement:
+        queued === null ? null : { item: queued.item, x: queued.x, z: queued.z, rot: queued.rot },
+    });
+  }
+
+  private commitQueuedClick(queued: QueuedClick): void {
+    const holding = this.active !== null && !this.state.readOnly && this.state.pendingItem === null;
+    if (!holding || !this.groundHit(queued.ndcX, queued.ndcY)) return;
+    if (!this.onQueuedCell(queued)) return;
+    this.pointerMove(queued.ndcX, queued.ndcY);
+    this.click(queued.ndcX, queued.ndcY, queued.eventTimeMs);
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
@@ -1532,13 +1602,15 @@ export class Editor implements IEditor, IEditedWorld {
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
       if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
-      this.refuse(
-        pendingItem,
-        snapToLattice(this.hitX),
-        snapToLattice(this.hitZ),
-        this.placeRot,
-        `${this.labelOf(pendingItem)} is still loading`,
-      );
+      this.queueClick({
+        item: pendingItem,
+        x: snapToLattice(this.hitX),
+        z: snapToLattice(this.hitZ),
+        rot: this.placeRot,
+        ndcX,
+        ndcY,
+        eventTimeMs,
+      });
       return;
     }
     if (this.active && !this.state.readOnly) {
@@ -2040,11 +2112,13 @@ export class Editor implements IEditor, IEditedWorld {
   private connectedOf(placeable: Placeable): Connected {
     let connected = this.connected.get(placeable);
     if (!connected) {
+      const tables = this.connectorTables.loaded(placeable);
+      if (!tables) throw new Error(`${placeable.id} has no connector tables loaded yet`);
       const parts = this.catalog.parts();
       const boxes = partBoxes(placeable.partBoxes);
       connected = {
         model: this.search.model(
-          parts.map(() => null),
+          tables.tables,
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
@@ -2062,6 +2136,21 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private searchable(model: PlacedModel): void {
+    if (this.searchIds.has(model)) return;
+    if (!this.connectorTables.loaded(model.placeable)) {
+      this.connectorTables.load(model.placeable).then(
+        () => {
+          if (this.placed.models().includes(model)) this.searchable(model);
+        },
+        (error: unknown) => {
+          if (!this.placed.models().includes(model)) return;
+          this.update({
+            catalogError: `${model.placeable.label}'s connector records can't be read: ${errorText(error)}`,
+          });
+        },
+      );
+      return;
+    }
     const id = this.nextSearchId++;
     const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
     const { x, z, yPlates, rot } = model.handle;
