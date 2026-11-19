@@ -1060,6 +1060,17 @@ export const CompilerVehicle = v.object({
 });
 export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 
+const Duration = v.pipe(Finite, v.minValue(0));
+
+export const CompilerBakePhases = v.object({
+  decodeMs: Duration,
+  compileMs: Duration,
+  latticeMs: Duration,
+  coverMs: Duration,
+  vehiclesMs: Duration,
+});
+export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
@@ -1076,6 +1087,7 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
