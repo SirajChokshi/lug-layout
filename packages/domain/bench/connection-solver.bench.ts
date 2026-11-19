@@ -458,15 +458,20 @@ const brickPart = slab(2, 4, BRICK_PLATES * PLATE_LDU, BRICK_CAVITY, true);
 const brick = one(brickPart);
 const heights = new Uint16Array(WORLD_CELLS * WORLD_CELLS);
 
+let owner = 0;
 const buildStart = performance.now();
 for (let bz = 0; bz < BASEPLATES_PER_SIDE; bz++) {
   for (let bx = 0; bx < BASEPLATES_PER_SIDE; bx++) {
-    solver.insert(plate, {
-      x: bx * BASEPLATE_STUDS * STUD_LDU,
-      z: bz * BASEPLATE_STUDS * STUD_LDU,
-      yPlates: 0,
-      rot: 0,
-    });
+    solver.insert(
+      plate,
+      {
+        x: bx * BASEPLATE_STUDS * STUD_LDU,
+        z: bz * BASEPLATE_STUDS * STUD_LDU,
+        yPlates: 0,
+        rot: 0,
+      },
+      owner++,
+    );
   }
 }
 for (let b = 0; b < BRICKS; b++) {
@@ -479,16 +484,20 @@ for (let b = 0; b < BRICKS; b++) {
   for (let j = 0; j < 4; j++) {
     for (let i = 0; i < 2; i++) heights[(cz + j) * WORLD_CELLS + cx + i] = top + BRICK_PLATES;
   }
-  solver.insert(brick, { x: cx * STUD_LDU, z: cz * STUD_LDU, yPlates: top, rot: 0 });
+  solver.insert(brick, { x: cx * STUD_LDU, z: cz * STUD_LDU, yPlates: top, rot: 0 }, owner++);
 }
 const track = trackPiece();
 for (let t = 0; t < TRACK_MODELS; t++) {
-  solver.insert(track, {
-    x: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
-    z: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
-    yPlates: 0,
-    rot: Math.floor(random() * 4),
-  });
+  solver.insert(
+    track,
+    {
+      x: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
+      z: Math.floor(random() * WORLD_CELLS) * STUD_LDU,
+      yPlates: 0,
+      rot: Math.floor(random() * 4),
+    },
+    owner++,
+  );
 }
 const buildMs = performance.now() - buildStart;
 const worldStuds = BASEPLATES_PER_SIDE ** 2 * BASEPLATE_STUDS ** 2 + BRICKS * 8;
@@ -575,7 +584,7 @@ const street = new ConnectionSolver([
 ]);
 const neighbour = one(modular());
 const centre = (MODULAR_STUDS * STUD_LDU) / 2;
-street.insert(neighbour, { x: centre, z: centre, yPlates: 0, rot: 0 });
+street.insert(neighbour, { x: centre, z: centre, yPlates: 0, rot: 0 }, 1);
 const flushWindows = FLUSH_SIDES.length * QUARTER_TURN_COUNT;
 function aimFlush(k: number): void {
   const side = FLUSH_SIDES[Math.floor(k / QUARTER_TURN_COUNT) % FLUSH_SIDES.length] ?? [1, 0];
@@ -616,7 +625,7 @@ const clipWall = one(
 );
 const barPanel = one(railFace(BAR, GENDER_MALE, AXIS_NEG_Z, AXIS_NEG_Y, 0));
 for (let w = 0; w < WALLS; w++) {
-  yard.insert(clipWall, { x: w * WALL_SPACING_STUDS * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+  yard.insert(clipWall, { x: w * WALL_SPACING_STUDS * STUD_LDU, z: 0, yPlates: 0, rot: 0 }, w);
 }
 const wallCursorX = new Int32Array(HOVER_POSITIONS);
 for (let k = 0; k < HOVER_POSITIONS; k++) {
@@ -654,8 +663,8 @@ const editCycle = await timed(EDIT_CYCLES, WARMUP_CALLS, (k) => {
   edit.x = window.x;
   edit.z = window.z;
   edit.yPlates = window.yPlates;
-  solver.insert(brick, edit);
-  solver.remove(brick, edit);
+  solver.insert(brick, edit, owner);
+  solver.remove(brick, edit, owner);
 });
 rows.push(
   `| place + undo: insert and remove one 2×4 brick | ${editCycle.p50.toFixed(4)} | ${editCycle.p95.toFixed(4)} | ${editCycle.gcs} | ${editCycle.heapGrowthBytes} |`,
