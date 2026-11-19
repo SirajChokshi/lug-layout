@@ -104,9 +104,123 @@ jobs:
         run: |
           echo "Part bundle \`$MANIFEST_FILE\`, already published before this run: $ALREADY_PUBLISHED" >> "$GITHUB_STEP_SUMMARY"
 
+  library-bake-status:
+    name: Check the public library bake records
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      served: ${{ steps.served.outputs.served }}
+      current: ${{ steps.current.outputs.current }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Look for the pinned index at the public URL
+        id: served
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts served
+      - name: Look for the pointer naming the pinned index as current
+        id: current
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts current
+
+  library-bake-publish:
+    name: Publish library bake records and prune old ones
+    needs: library-bake-status
+    if: ${{ needs.library-bake-status.outputs.served != 'true' || needs.library-bake-status.outputs.current != 'true' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Check the bucket for the pinned index
+        id: status
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts published
+      - name: Report missing credentials
+        if: steps.status.outputs.configured == 'false'
+        run: echo "::warning::Library bake records not published. The production environment has no Cloudflare token; see docs/part-bundle.md."
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        if: steps.status.outputs.published == 'false'
+        with:
+          toolchain: 1.100.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        if: steps.status.outputs.published == 'false'
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.status.outputs.published == 'false'
+        with:
+          path: .cache/catalog
+          key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - name: Recompute the records and check them against the pin and the licence gate
+        if: steps.status.outputs.published == 'false'
+        run: node tools/asset-pipeline/src/library-bake/cli.ts --check
+      - name: Upload the records, GLBs and buckets, then the pinned index
+        if: steps.status.outputs.published == 'false'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts upload
+      - name: Verify every served file of the new manifest against its content address
+        if: steps.status.outputs.configured == 'true' && (steps.status.outputs.published == 'false' || needs.library-bake-status.outputs.served != 'true' || needs.library-bake-status.outputs.current != 'true')
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts verify-served --all --wait
+      - name: Move the pointer to the new manifest, keeping the one it replaces as previous
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts point
+      - name: Verify the current and previous manifests, and those the live bundles name, through the served pointer
+        if: steps.status.outputs.configured == 'true'
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts verify-pointer --wait
+      - name: List what pruning would delete
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts prune --dry-run
+      - name: Delete every object that neither the current, the previous nor a live bundle's library-bake index references
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library-bake/cli.ts prune
+      - name: Summary
+        if: steps.status.outputs.configured == 'true'
+        env:
+          ALREADY_PUBLISHED: ${{ steps.status.outputs.published }}
+        run: |
+          echo "Library bake records \`$(node -p "require('./tools/asset-pipeline/library-bake.json').index.sha256")\`, already published before this run: $ALREADY_PUBLISHED" >> "$GITHUB_STEP_SUMMARY"
+
   pointer:
     name: Point current/latest.json at this bundle and prune old bundles
-    needs: [status, publish]
+    needs: [status, publish, library-bake-publish]
     if: ${{ !cancelled() && needs.status.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped') && (needs.status.outputs.pointer_current != 'true' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
     environment: production

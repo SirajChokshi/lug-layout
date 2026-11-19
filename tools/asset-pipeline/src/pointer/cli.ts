@@ -1,5 +1,4 @@
 import { BundleLod } from "@brr/schema/bundle";
-import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bundleInputKey, remoteManifestFile } from "../bundle-key.ts";
@@ -10,6 +9,7 @@ import {
   type ServedScope,
 } from "../publication/pinned-publication.ts";
 import { waitUntilServed } from "../remote-bundle.ts";
+import { bundleBaseUrl } from "./live-bundles.ts";
 import { partBundlePointer } from "./part-bundle-pointer.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
@@ -19,21 +19,10 @@ const SERVED_WAIT_MS = 5 * 60_000;
 const SERVED_POLL_MS = 15_000;
 const VERIFY_SERVED_FLAGS = ["--all", "--wait"];
 
-interface StoreConfig {
-  readonly public_base_url?: string | null;
-}
-
 const pointer = partBundlePointer(fallbackPath);
 
 function pinnedManifestFile(): string {
   return remoteManifestFile(bundleInputKey(repoRoot));
-}
-
-async function publicBaseUrl(): Promise<string> {
-  const config = JSON.parse(await readFile(storeConfigPath, "utf8")) as StoreConfig;
-  const base = process.env["PART_BUNDLE_BASE_URL"] || config.public_base_url;
-  if (!base) throw new Error(`set PART_BUNDLE_BASE_URL or public_base_url in ${storeConfigPath}`);
-  return base.endsWith("/") ? base : `${base}/`;
 }
 
 async function verifyServedCommand(flags: ReadonlyArray<string>): Promise<void> {
@@ -45,7 +34,7 @@ async function verifyServedCommand(flags: ReadonlyArray<string>): Promise<void> 
   }
   const scope: ServedScope = flags.includes("--all") ? "all" : "indexes";
   const manifestFile = pinnedManifestFile();
-  const baseUrl = await publicBaseUrl();
+  const baseUrl = await bundleBaseUrl(storeConfigPath);
   if (flags.includes("--wait")) {
     await waitUntilServed(baseUrl, BundleLod.options, manifestFile, {
       timeoutMs: SERVED_WAIT_MS,
