@@ -16,6 +16,7 @@ import {
   pinnedArchive,
   publicObjectUrl,
 } from "../library/ldraw-library.ts";
+import { runPointerCommand } from "../publication/pinned-publication.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
 import {
   CONNECTOR_SOURCE_USE,
@@ -26,6 +27,7 @@ import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts
 import {
   areLibraryConnectorsPublished,
   libraryConnectorsIndexKey,
+  libraryConnectorsPointer,
   uploadLibraryConnectors,
   verifyServedLibraryConnectors,
 } from "./publish.ts";
@@ -298,13 +300,27 @@ switch (process.argv[2]) {
   case "verify-served":
     await verifyServedCommand(process.argv.includes("--all"), process.argv.includes("--wait"));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      {
+        storeConfigPath,
+        readPin,
+        pointer: libraryConnectorsPointer,
+        manifestOf: (pin) => pin.index,
+      },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
     process.stderr.write(
-      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait]\n",
+      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
     );
     process.exitCode = 1;
 }
