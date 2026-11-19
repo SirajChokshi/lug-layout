@@ -288,11 +288,10 @@ export class EditorPage {
   }
 
   async choose(item: string): Promise<void> {
-    await this.page.locator(`.palette [data-item="${item}"]`).click();
-    await expect(this.page.locator(`.palette [data-item="${item}"]`)).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    const button = this.page.locator(`.palette [data-item="${item}"]`);
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await expect(button).not.toHaveAttribute("aria-busy", "true");
   }
 
   async escape(): Promise<void> {
