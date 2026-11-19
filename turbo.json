@@ -29,6 +29,7 @@
         "shadow-patches/**",
         "ldraw.lock.json",
         "library-bake.json",
+        "library-connectors.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/Cargo.lock",
