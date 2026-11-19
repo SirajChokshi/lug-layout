@@ -24,6 +24,7 @@ export interface PlacedModelView {
 
 export interface HoverMateCount {
   readonly kind: ConnectorKindView;
+  readonly partnerKinds: ReadonlyArray<ConnectorKindView>;
   readonly connectors: number;
   readonly joints: number;
   readonly partners: ReadonlyArray<PlacedModelView>;
@@ -49,5 +50,7 @@ export interface PlacementHover {
   readonly hit: HoverRefusalHit | null;
   readonly mates: ReadonlyArray<HoverMateCount>;
   readonly lifted: boolean;
+  readonly restsOn: ReadonlyArray<PlacedModelView>;
   readonly turnBlocksSnap: boolean;
+  readonly turnMates: ReadonlyArray<HoverMateCount>;
 }
