@@ -265,6 +265,7 @@ export {
 export {
   NO_VOLUME_TOP,
   VolumeIndex,
+  FootprintGrid,
   firstOverlap,
   type CellVolumes,
   type OverlapHit,
