@@ -602,17 +602,15 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
     Uint8Array.of(GENDER_MALE, GENDER_FEMALE),
     Uint8Array.of(SOURCE_SHADOW, SOURCE_SHADOW),
     Uint8Array.of(STATUS_VERIFIED, STATUS_VERIFIED),
-    Float32Array.of(
-      STUD_CENTRE_LDU,
-      BRICK_LDU,
-      STUD_CENTRE_LDU,
-      STUD_CENTRE_LDU,
-      0,
-      STUD_CENTRE_LDU,
+    Int32Array.from(
+      [STUD_CENTRE_LDU, BRICK_LDU, STUD_CENTRE_LDU, STUD_CENTRE_LDU, 0, STUD_CENTRE_LDU],
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
     ),
     Int8Array.of(AXIS_POS_Y, AXIS_NEG_Y),
-    new Float32Array(6),
+    new Float64Array(6),
     new Uint16Array(2),
+    new Float64Array(6),
+    [],
   );
 
   const result = await importWith(nothingFound, "far.mpd", text);

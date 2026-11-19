@@ -185,6 +185,7 @@ export {
   AXIS_POS_Y,
   AXIS_POS_Z,
   ConnectorTable,
+  connectorOriginLdu,
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
@@ -197,6 +198,7 @@ export {
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
 } from "./connect/connector-table.ts";
+export type { ConnectorColumns } from "./connect/connector-columns.ts";
 export {
   CAP_FAR,
   CAP_ROOT,
