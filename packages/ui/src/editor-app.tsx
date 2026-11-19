@@ -75,6 +75,9 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
     >
       {JSON.stringify({
         held,
+        hover: snapshot.hover,
+        placementMode: snapshot.placementMode,
+        placementModeOverride: snapshot.placementModeOverride,
         latencies: snapshot.latencies,
         stats: snapshot.stats,
         measurement: snapshot.measurement,
