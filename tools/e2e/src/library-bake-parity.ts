@@ -194,7 +194,7 @@ function runWorker(job: ShardJob): Promise<ShardResult> {
 async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
-      records: { type: "string", default: "../asset-pipeline/dist/library-bake" },
+      records: { type: "string", default: "../../.cache/library-bake" },
       vocabulary: { type: "string", default: "../asset-pipeline/section-vocabulary.json" },
       inferred: { type: "string", default: "../asset-pipeline/inferred-connectors.json" },
       wasm: {
