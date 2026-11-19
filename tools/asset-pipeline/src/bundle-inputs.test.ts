@@ -32,7 +32,13 @@ function repoPath(path: string): string {
 function filesLoadedBy(entry: string): LoadedFiles {
   const run = spawnSync(
     process.execPath,
-    ["--import", `data:text/javascript,${encodeURIComponent(RECORD_LOADED_FILES)}`, entry],
+    [
+      "--experimental-transform-types",
+      "--no-warnings",
+      "--import",
+      `data:text/javascript,${encodeURIComponent(RECORD_LOADED_FILES)}`,
+      entry,
+    ],
     { encoding: "utf8" },
   );
   const files = run.stdout

@@ -38,11 +38,15 @@
         "!$TURBO_ROOT$/packages/schema/src/bundle/**/*.test.ts",
         "$TURBO_ROOT$/packages/schema/src/decode/**",
         "!$TURBO_ROOT$/packages/schema/src/decode/**/*.test.ts",
+        "$TURBO_ROOT$/packages/schema/src/world/**",
+        "!$TURBO_ROOT$/packages/schema/src/world/**/*.test.ts",
         "$TURBO_ROOT$/packages/math/src/**",
         "!$TURBO_ROOT$/packages/math/src/**/*.test.ts",
         "$TURBO_ROOT$/packages/catalog/src/glb.ts",
         "$TURBO_ROOT$/packages/catalog/src/part-bundle.ts",
-        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
+        "$TURBO_ROOT$/packages/catalog/src/connector-records.ts",
+        "$TURBO_ROOT$/packages/domain/src/**",
+        "!$TURBO_ROOT$/packages/domain/src/**/*.test.ts"
       ],
       "outputs": ["dist/**", "fixture-bundle/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]

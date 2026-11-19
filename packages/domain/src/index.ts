@@ -218,6 +218,8 @@ export {
   SECTION_SQUARE,
   SECTION_FLARE_JOINS_NEXT,
   SECTION_FLARE_JOINS_PREVIOUS,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";
