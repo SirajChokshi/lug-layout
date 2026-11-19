@@ -454,19 +454,19 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
-const PICK_RADIUS_CELLS = 2;
-const PICK_RADIUS_PLATES = 2;
+const MATE_PICK_RADIUS_CELLS = 2;
+const MATE_PICK_RADIUS_PLATES = 2;
 const HELD_TURN_ONLY = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 
-class PickWindow implements SnapWindow {
+class MatePickWindow implements SnapWindow {
   x = 0;
   z = 0;
   yPlates = RESTS_ON_TABLE_Y_PLATES;
   rot = 0;
-  cells = PICK_RADIUS_CELLS;
-  plates = PICK_RADIUS_PLATES;
+  cells = MATE_PICK_RADIUS_CELLS;
+  plates = MATE_PICK_RADIUS_PLATES;
   turns = HELD_TURN_ONLY;
 }
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
@@ -671,7 +671,8 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverRefusal: string | null = null;
   private queuedClick: QueuedClick | null = null;
   private hoverPlacement: PlacementHover | null = null;
-  private readonly pick = new PickWindow();
+  private readonly pick = new MatePickWindow();
+  private readonly surface = new Float64Array(2);
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
   private readonly mates = new MateReport();
@@ -1546,19 +1547,17 @@ export class Editor implements IEditor, IEditedWorld {
     pick.rot = rot;
     pick.turns = turns;
     let nearest = Number.POSITIVE_INFINITY;
-    let surface: PlacedModel | null = null;
+    let top = Number.NaN;
     for (const model of this.placed.models()) {
-      const t = model.rayHit(this.ray);
-      if (t < nearest) {
-        nearest = t;
-        surface = model;
-      }
+      if (!model.rayTopOver(this.ray, this.hitX, this.hitZ, this.surface)) continue;
+      const t = this.surface[0] ?? Number.POSITIVE_INFINITY;
+      if (t >= nearest) continue;
+      nearest = t;
+      top = this.surface[1] ?? Number.NaN;
     }
-    const top = surface ? surface.rayTop(this.ray) : Number.NaN;
-    if (!Number.isFinite(top)) return;
-    pick.x = snapToLattice((this.ray[0] ?? 0) + (this.ray[3] ?? 0) * nearest);
-    pick.z = snapToLattice((this.ray[2] ?? 0) + (this.ray[5] ?? 0) * nearest);
-    pick.yPlates = Math.max(RESTS_ON_TABLE_Y_PLATES, Math.round(top / PLATE_LDU));
+    if (Number.isFinite(top)) {
+      pick.yPlates = Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
+    }
   }
 
   private searchPick(connected: Connected, moving: number | null, out: PlacementChoice): void {
@@ -2152,8 +2151,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.searchIds.get(model) ?? null,
       this.turnChoice,
     );
-    pick.cells = PICK_RADIUS_CELLS;
-    pick.plates = PICK_RADIUS_PLATES;
+    pick.cells = MATE_PICK_RADIUS_CELLS;
+    pick.plates = MATE_PICK_RADIUS_PLATES;
     if (!this.turnChoice.accepted) {
       refuseTurn(refusalText(label, this.refusalHit(this.turnChoice.overlap)));
       return;
