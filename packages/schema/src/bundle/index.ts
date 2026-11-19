@@ -561,6 +561,9 @@ export type SectionVocabulary = v.InferOutput<typeof SectionVocabulary>;
 export const SectionVocabularyRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 
+export const LibraryBakeIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -568,6 +571,7 @@ export const BundleCompiler = v.object({
   primitives: v.optional(PrimitiveConnectorTable),
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
+  libraryBake: v.optional(LibraryBakeIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -915,6 +919,7 @@ export const CompilerRequest = v.variant("op", [
   v.strictObject({
     op: v.literal("bakeNeeds"),
     studPrimitives: StringList,
+    vehicles: v.exactOptional(v.nullable(CompilerVehicles)),
   }),
   v.strictObject({
     op: v.literal("bake"),
@@ -935,10 +940,18 @@ export const CompilerLibraryDelta = v.strictObject({
 });
 export type CompilerLibraryDelta = v.InferOutput<typeof CompilerLibraryDelta>;
 
+export const CompilerRecordDelta = v.strictObject({
+  key: v.string(),
+  files: v.pipe(v.array(v.strictObject({ reference: v.string(), bytes: ByteRange })), v.readonly()),
+  references: StringList,
+});
+export type CompilerRecordDelta = v.InferOutput<typeof CompilerRecordDelta>;
+
 export const CompilerEnvelope = v.strictObject({
   request: CompilerRequest,
   segments: v.record(v.string(), ByteRange),
   library: v.exactOptional(CompilerLibraryDelta),
+  records: v.exactOptional(CompilerRecordDelta),
 });
 export type CompilerEnvelope = v.InferOutput<typeof CompilerEnvelope>;
 
@@ -1050,6 +1063,7 @@ export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
+  recordedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1377,6 +1391,20 @@ export const LibraryBakePart = v.strictObject({ record: v.string(), glb: v.strin
 export type LibraryBakePart = v.InferOutput<typeof LibraryBakePart>;
 
 export const LIBRARY_BAKE_BUCKETS = 256;
+export const LIBRARY_BAKE_INDEX_FILE = "library-bake.json";
+export const CONTENT_DIGEST_HEX_DIGITS = 16;
+const ADDRESSED_NAME = /\.(?<digest>[0-9a-f]{16})(?<extension>\.[^./]+)$/u;
+
+export function contentAddressedFile(file: string, sha256: string): string {
+  const dot = file.lastIndexOf(".");
+  const stem = dot < 0 ? file : file.slice(0, dot);
+  const extension = dot < 0 ? "" : file.slice(dot);
+  return `${stem}.${sha256.slice(0, CONTENT_DIGEST_HEX_DIGITS)}${extension}`;
+}
+
+export function contentDigestOf(file: string): string | null {
+  return ADDRESSED_NAME.exec(file)?.groups?.["digest"] ?? null;
+}
 const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
 
@@ -1405,7 +1433,7 @@ export const LibraryBakeIndex = v.strictObject({
 export type LibraryBakeIndex = v.InferOutput<typeof LibraryBakeIndex>;
 
 export const LibraryBakePin = v.strictObject({
-  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  index: LibraryBakeIndexRef,
   parts: Count,
   records: Count,
   failed: Count,

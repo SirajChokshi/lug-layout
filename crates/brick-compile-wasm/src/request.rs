@@ -15,6 +15,22 @@ pub struct Envelope {
     pub request: Operation,
     pub segments: HashMap<String, Range>,
     pub library: Option<LibraryDelta>,
+    pub records: Option<RecordDelta>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordDelta {
+    pub key: String,
+    pub files: Vec<RecordFile>,
+    pub references: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordFile {
+    pub reference: String,
+    pub bytes: Range,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +70,8 @@ pub enum Operation {
     },
     BakeNeeds {
         stud_primitives: Vec<String>,
+        #[serde(default)]
+        vehicles: Option<VehicleInputs>,
     },
     Bake {
         stud_primitives: Vec<String>,
