@@ -9,6 +9,7 @@ import {
 } from "./part-geometry.ts";
 import { CONTACT_FRACTION, transpose } from "./placement.ts";
 import { type TrainModel, apply, subtract } from "./train-model.ts";
+import type { HeadBandSpan } from "./placement.ts";
 import type { RollingSurfaceContact } from "./train-plan.ts";
 function worldBottom(model: TrainModel, instance: number): number {
   return model.box(instance).min[VERTICAL];
@@ -82,4 +83,24 @@ export function clearOfHeadBands(
 ): boolean {
   const band = localBand(model, instance, line, from, to);
   return band === null || roundProfile(band.triangles, band.line, band.from, band.to).radius === 0;
+}
+
+export function smoothRuns(
+  model: TrainModel,
+  instance: number,
+  line: { readonly x: number; readonly y: number },
+  from: number,
+  to: number,
+): ReadonlyArray<HeadBandSpan> {
+  const runs: HeadBandSpan[] = [];
+  for (let slab = Math.floor(from); slab < Math.ceil(to); slab++) {
+    const band = localBand(model, instance, line, slab, slab + 1);
+    if (!band) continue;
+    const rim = roundProfile(band.triangles, band.line, band.from, band.to);
+    if (!rim.smooth || rim.radius === 0) continue;
+    const last = runs.at(-1);
+    if (last && last.to === slab) runs[runs.length - 1] = { from: last.from, to: slab + 1 };
+    else runs.push({ from: slab, to: slab + 1 });
+  }
+  return runs;
 }

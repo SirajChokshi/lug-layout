@@ -1,10 +1,6 @@
 import type { PartAsset, PartModel } from "@brr/catalog";
-import type { BundleModelEntry } from "@brr/schema/bundle";
-import { modelLabel } from "../catalog/model-label.ts";
 import type { MergedParts } from "../edit/merged-parts.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
-import { instanceBoxes } from "../running-gear/instance-boxes.ts";
-import type { GearModelSource } from "../running-gear/running-gear-editor.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 
 export interface PlayModel {
@@ -12,11 +8,15 @@ export interface PlayModel {
   readonly label: string;
   readonly model: PartModel;
   readonly colorIndex: Uint16Array;
-  readonly gear: GearModelSource;
+}
+
+export interface PlayModelName {
+  readonly name: string;
+  readonly label: string;
 }
 
 export function playModel(
-  entry: BundleModelEntry,
+  { name, label }: PlayModelName,
   model: PartModel,
   modelBundle: { readonly parts: ReadonlyArray<PartAsset> },
   palette: MergedParts,
@@ -28,22 +28,23 @@ export function playModel(
     colorIndex[i] = colors.indexOfCode(model.ldrawColor[i] ?? 0);
   }
   return {
-    name: entry.name,
-    label: modelLabel(entry),
+    name,
+    label,
     model: remapped,
     colorIndex,
-    gear: {
-      name: entry.name,
-      sha256: entry.sha256,
-      vehicles: model.vehicles,
-      instanceBoxes: instanceBoxes(model, modelBundle),
-    },
   };
+}
+
+export interface PlayRefusal {
+  readonly label: string;
+  readonly reason: string;
 }
 
 export interface PlaySetup {
   readonly track: PlayTrack;
   readonly models: ReadonlyArray<PlayModel>;
+  readonly refused: ReadonlyArray<PlayRefusal>;
+  readonly railFitNotChecked: ReadonlyArray<string>;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly colors: ColorTable;
 }

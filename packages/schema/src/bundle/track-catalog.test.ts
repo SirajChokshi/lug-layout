@@ -1,7 +1,7 @@
 import { pose16, pose16Equals, ZETA16_ORDER, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
-import { TrackCatalog } from "./index.ts";
+import { BundleIndex, TrackCatalog } from "./index.ts";
 
 const straight53401 = {
   id: "ldraw:53401",
@@ -17,12 +17,16 @@ const straight53401 = {
       heading: 8,
       status: "certified",
       residualLdu: 0,
+      rail: 0,
+      railResidualLdu: 0,
     },
     {
       coefficients: ["16", "0", "0", "0", "0", "0", "0", "0"],
       heading: 0,
       status: "certified",
       residualLdu: 0,
+      rail: 0,
+      railResidualLdu: 0,
     },
   ],
   routes: [{ from: 0, to: 1, lengthLdu: 320, segments: [{ kind: "straight", lengthLdu: 320 }] }],
@@ -65,6 +69,68 @@ describe("TrackCatalog", () => {
     const decoded = decode(TrackCatalog, catalogWith(fractional));
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toEqual([
       "$.pieces.0.connectors.0.coefficients.0",
+    ]);
+  });
+});
+
+const SOURCE = { kind: "github-mirror", repo: "ldraw", commit: "0", root: "" };
+const ZERO_HASH = "0".repeat(64);
+const RAIL = {
+  railPart: "rail",
+  railHeads: [
+    { from: "-53.1", to: "-46.9" },
+    { from: "46.9", to: "53.1" },
+  ],
+};
+
+function indexWith(rail: number | null, rails: ReadonlyArray<typeof RAIL> | null): unknown {
+  return {
+    bundleVersion: "0123456789abcdef",
+    unit: "LDU",
+    upAxis: "+Y",
+    lod: "standard",
+    source: SOURCE,
+    studPrimitives: [],
+    colors: [],
+    models: [],
+    catalogParts: [],
+    modified: "modified from LDraw",
+    disclaimer: "not affiliated",
+    inputs: { ldraw: SOURCE, omr: SOURCE, lockSha256: ZERO_HASH, paletteSha256: ZERO_HASH },
+    trackCatalog: catalogWith({
+      ...straight53401,
+      connectors: straight53401.connectors.map((connector) => ({
+        ...connector,
+        rail,
+        railResidualLdu: rail === null ? null : 0,
+      })),
+    }),
+    trackShapes: [],
+    tablePlane: { part: "table", depthBelowTopLdu: 8 },
+    compiler: rails === null ? null : { file: "compile.wasm", unofficialAllowlist: [], rails },
+    connectors: { file: "connectors.json" },
+    connectivity: { file: "connectivity.json" },
+    crosswalk: { file: "crosswalk.json" },
+    partTable: { file: "parts.json" },
+    creditTable: { file: "credits.json" },
+    thumbnails: [],
+  };
+}
+
+describe("BundleIndex", () => {
+  it("accepts track connectors that name one of the compiler's rails or none", () => {
+    expect(decode(BundleIndex, indexWith(0, [RAIL])).ok).toBe(true);
+    expect(decode(BundleIndex, indexWith(null, null)).ok).toBe(true);
+  });
+
+  it("refuses a track connector naming a rail the compiler's rails[] lacks", () => {
+    const refused = [indexWith(1, [RAIL]), indexWith(0, null)].map((index) => {
+      const decoded = decode(BundleIndex, index);
+      return decoded.ok ? [] : decoded.issues.map((issue) => issue.message);
+    });
+    expect(refused).toEqual([
+      ["a track connector names a rail the compiler's rails[] lacks"],
+      ["a track connector names a rail the compiler's rails[] lacks"],
     ]);
   });
 });

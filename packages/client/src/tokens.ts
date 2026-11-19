@@ -24,8 +24,7 @@ import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-wor
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
-import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
-import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
+import type { IRunningGear } from "./running-gear/running-gear-inspector.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
 import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
@@ -72,9 +71,6 @@ export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.cli
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
-export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
-  "brr.client.RunningGearOverrides",
-);
 export const RUNNING_GEAR: ServiceIdentifier<IRunningGear> = Symbol.for("brr.client.RunningGear");
 export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
   "brr.client.TrademarkDisclaimer",

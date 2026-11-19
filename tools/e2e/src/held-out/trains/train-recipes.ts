@@ -2,6 +2,7 @@ import { type AxleMode, type HungAxle, hangAxle, hangSplitAxle, positiveSeats } 
 import { type HungBogie, hangBogie } from "./bogies.ts";
 import { carBody } from "./car-bodies.ts";
 import { type EndVariant, buildEnd } from "./end-features.ts";
+import { hangHinge } from "./hinges.ts";
 import { VERTICAL } from "./part-geometry.ts";
 import { pivotOptions, pivotPartAxles, stackAt } from "./pivot-stacks.ts";
 import {
@@ -425,6 +426,40 @@ function lockedTruck(join: "rigid" | "two pivots"): Recipe {
   };
 }
 
+const hingedBogieCar: Recipe = (context) => {
+  const wheel = wheelFor(context);
+  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  if (!wheel || !car) return null;
+  const front = bogieWithAxles(
+    context,
+    car,
+    third(car, 2),
+    2,
+    "car",
+    "front bogie",
+    "pivot",
+    wheel,
+  );
+  const hinged =
+    front !== null && hangHinge(context.model, context.pools, context.random, front.hung.bogie);
+  const rear = hinged
+    ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
+    : null;
+  if (!front || !rear) return null;
+  return single(
+    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
+    {
+      body: ["car"],
+      bogies: [
+        { unit: "front bogie", pivot: front.hung.pivots[0] ?? [0, 0] },
+        { unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] },
+      ],
+      front: "plain",
+      rear: "plain",
+    },
+  );
+};
+
 const roofTurntable: Recipe = (context) => {
   const base = axleCar(context);
   if (!base) return null;
@@ -553,6 +588,7 @@ export const CAR_RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["motor bogie, two axles in one part", motorBogieCar],
   ["car on a single bogie", singleBogieBody],
   ["roof turntable", roofTurntable],
+  ["horizontal hinge on a bogie", hingedBogieCar],
   ["bush capping a pivot", bogieCar(2, true)],
   ["co-linear wheels split across a pivot", splitAcrossPivot],
   ["gauge miss", negativeAxleCar(["gauge miss", "gauge miss"])],

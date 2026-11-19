@@ -23,7 +23,6 @@ pub mod sixteenths;
 pub mod studio;
 pub mod surface;
 pub mod technic;
-pub mod vehicle;
 pub mod voxel;
 pub mod zip;
 

@@ -7,7 +7,7 @@ import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
 import { buildTrackCatalog } from "../track/track-catalog.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
-import { buildGeometryReport } from "./geometry-report.ts";
+import { buildGeometryReport, measuredRails } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
 import { measureMagnetSeat, type MagnetModel } from "./magnet-seat.ts";
 import { milsModules } from "../mils/mils-modules.ts";
@@ -171,7 +171,7 @@ export function trackCatalogReports(
 ): ReadonlyArray<FactReport> {
   const markers = loadTrackEndMarkers();
   const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
-  const catalog = buildTrackCatalog(library, trackParts, markers);
+  const catalog = buildTrackCatalog(library, trackParts, markers, measuredRails(library));
   const scenes = CATALOG_LAYOUTS.map((layout) => ({
     layout,
     scene: catalogScene(library, markers, catalog.pieces, layout),

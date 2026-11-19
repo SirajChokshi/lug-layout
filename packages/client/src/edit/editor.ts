@@ -63,7 +63,7 @@ import {
 } from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
-import { PLACEABLE_CATALOG, PLACEMENT_SEARCH, WORLD_SESSION } from "../tokens.ts";
+import { PLACEABLE_CATALOG, PLACEMENT_SEARCH, RUNNING_GEAR, WORLD_SESSION } from "../tokens.ts";
 import {
   colorOf,
   type CatalogItemView,
@@ -112,6 +112,9 @@ import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel, PlaySetup } from "../play/play-models.ts";
+import { layoutRails, railFitRefusal } from "../play/rail-fit.ts";
+import type { IRunningGear } from "../running-gear/running-gear-inspector.ts";
+import { hasRunningGear } from "../running-gear/running-gear-summary.ts";
 import { errorText } from "./error-text.ts";
 import type {
   ExportedWorld,
@@ -710,6 +713,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
+    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, ...session.view() };
@@ -1941,6 +1945,12 @@ export class Editor implements IEditor, IEditedWorld {
       const train = placeable && placed.has(placeable) ? this.catalog.playModel(placeable) : null;
       return train ? [train] : [];
     });
+    this.runningGear.setModels(
+      this.catalog.placeables().flatMap((placeable) => {
+        const gear = placeable && placed.has(placeable) ? this.catalog.gearModel(placeable) : null;
+        return gear && hasRunningGear(gear.runningGear) ? [gear] : [];
+      }),
+    );
   }
 
   private showMarkers(): void {
@@ -2421,9 +2431,19 @@ export class Editor implements IEditor, IEditedWorld {
   playSetup(): PlaySetup | null {
     const track = this.track;
     if (!track) return null;
+    const playTrack = track.playTrack();
+    const rails = layoutRails(playTrack);
+    const fits = this.placedTrains.map((train) => ({
+      train,
+      refusal: railFitRefusal(train.model, rails),
+    }));
     return {
-      track: track.playTrack(),
-      models: this.placedTrains,
+      track: playTrack,
+      models: fits.flatMap(({ train, refusal }) => (refusal === null ? [train] : [])),
+      refused: fits.flatMap(({ train, refusal }) =>
+        refusal === null ? [] : [{ label: train.label, reason: refusal }],
+      ),
+      railFitNotChecked: rails.notChecked,
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };

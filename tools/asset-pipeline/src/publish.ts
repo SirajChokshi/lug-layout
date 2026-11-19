@@ -1,5 +1,6 @@
 import {
   BundleIndex,
+  BundleIndexFields,
   ConnectorIndexFile,
   ConnectorRecordFile,
   type ConnectorPackage,
@@ -36,7 +37,7 @@ const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
 const GLB_JSON_OFFSET = 20;
 
-const CompiledIndex = v.omit(BundleIndex, ["bundleVersion", "inputs"]);
+const CompiledIndex = v.omit(BundleIndexFields, ["bundleVersion", "inputs"]);
 
 export interface PublishedBundle {
   readonly bundleVersion: string;

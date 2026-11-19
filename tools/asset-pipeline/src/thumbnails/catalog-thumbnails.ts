@@ -1,6 +1,6 @@
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import {
-  BundleIndex,
+  BundleIndexFields,
   ModelFile,
   type BundleLod,
   type BundleModelEntry,
@@ -49,7 +49,12 @@ interface CompiledPart {
   readonly studs: ReadonlyArray<StudRecord>;
 }
 
-const ThumbnailInputs = v.pick(BundleIndex, ["catalogParts", "studPrimitives", "colors", "models"]);
+const ThumbnailInputs = v.pick(BundleIndexFields, [
+  "catalogParts",
+  "studPrimitives",
+  "colors",
+  "models",
+]);
 type ThumbnailInputs = v.InferOutput<typeof ThumbnailInputs>;
 
 export function thumbnailFile(item: string): string {

@@ -28,6 +28,8 @@ import { PartMeshStream } from "../edit/part-mesh-stream.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
+import { gearModelSource, type GearModelSource } from "../running-gear/running-gear-inspector.ts";
+import { isPlayable } from "../running-gear/running-gear-summary.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
@@ -104,6 +106,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
   playModel(placeable: Placeable): PlayModel | null;
+  gearModel(placeable: Placeable): GearModelSource | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
 }
@@ -243,6 +246,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly modelNames = new Map<Placeable, string>();
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly playModels = new Map<Placeable, PlayModel>();
+  private readonly gearModels = new Map<Placeable, GearModelSource>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly farModelIndex = new Map<string, number>();
   private farReady = false;
@@ -434,8 +438,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       colors,
       null,
     );
-    if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
+    this.gearModels.set(placeable, gearModelSource(entry.name, entry.sha256, model, { parts }));
+    if (isPlayable(model)) {
+      const name = { name: entry.name, label: modelLabel(entry) };
+      this.playModels.set(placeable, playModel(name, model, { parts }, palette, colors));
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -496,7 +502,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       matrices: result.matrices,
       partTransforms: result.partTransforms,
       submodels: result.submodels,
-      vehicles: bake.vehicles,
+      ...result.runningGear,
     };
     const credit = {
       name: file.name,
@@ -515,6 +521,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     );
     this.installMerged(palette, before);
     this.bakes.set(placeable, model);
+    this.gearModels.set(placeable, gearModelSource(file.name, file.sha256, model, set));
+    if (isPlayable(model)) {
+      const name = { name: file.name, label: file.name };
+      this.playModels.set(placeable, playModel(name, model, set, palette, colors));
+    }
     this.placeablesByRefId.push(placeable);
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
@@ -523,6 +534,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   playModel(placeable: Placeable): PlayModel | null {
     return this.playModels.get(placeable) ?? null;
+  }
+
+  gearModel(placeable: Placeable): GearModelSource | null {
+    return this.gearModels.get(placeable) ?? null;
   }
 
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {

@@ -9,8 +9,8 @@ import {
   type BundleManifest,
   type BundleModelEntry,
   type CatalogPart,
+  type BundleRail,
   type BundleSource,
-  type CompilerVehicles,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -21,7 +21,10 @@ import {
   type PrimitiveConnectorTable,
   type SectionVocabulary,
   type TrackEnd,
+  type UnreadRollingBands,
+  type UnresolvedRunningGear,
   type Vec3,
+  type VehicleCoupling,
 } from "@brr/schema/bundle";
 
 export const BUNDLE_LODS: ReadonlyArray<BundleLod> = BundleLod.options;
@@ -129,7 +132,14 @@ export interface PartModelSubmodels {
   readonly ofPart: Int32Array;
 }
 
-export interface PartModel {
+export interface ModelRunningGear {
+  readonly vehicles: ReadonlyArray<PartVehicle>;
+  readonly vehicleCouplings: ReadonlyArray<VehicleCoupling>;
+  readonly unresolvedRunningGear: ReadonlyArray<UnresolvedRunningGear>;
+  readonly unreadRollingBands: UnreadRollingBands;
+}
+
+export interface PartModel extends ModelRunningGear {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly lattice: PartModelLattice | null;
   readonly studCover: ModelStudCover;
@@ -140,7 +150,6 @@ export interface PartModel {
   readonly matrices: Float32Array;
   readonly partTransforms: Float64Array;
   readonly submodels: PartModelSubmodels;
-  readonly vehicles: ReadonlyArray<PartVehicle>;
 }
 
 export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
@@ -188,7 +197,7 @@ export interface ImportContext {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly vehicles: CompilerVehicles | null;
+  readonly rails: ReadonlyArray<BundleRail>;
 }
 
 export interface CompiledPartGlb {

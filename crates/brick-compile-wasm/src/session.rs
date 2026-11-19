@@ -10,16 +10,14 @@ use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
-use brick_compile::vehicle::Vehicle;
 use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
-    BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
-    Reply, Section, VehicleHeader,
+    Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome, Reply, Section,
 };
-use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
+use crate::request::{InlineCheck, Operation};
 use crate::tracking::TrackingLibrary;
 
 #[derive(Default)]
@@ -32,7 +30,6 @@ struct BakeInputs<'a> {
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
     table_depth: f64,
-    vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
     visibility_only: bool,
 }
@@ -104,7 +101,6 @@ impl Session {
                 unofficial_allowlist,
                 translucent_colors,
                 table_depth_ldu,
-                vehicles,
                 shard,
             } => {
                 let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
@@ -113,7 +109,6 @@ impl Session {
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
                     table_depth: *table_depth_ldu,
-                    vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
@@ -378,8 +373,6 @@ fn bake_drawn(
             lattice: None,
             lattice_issue: None,
             cover: Cover::from(&cover),
-            vehicles: None,
-            vehicle_issue: None,
             blobs: body.take_blobs(),
         });
     }
@@ -391,54 +384,13 @@ fn bake_drawn(
         .cover(drawn, lattice.as_ref(), inputs.shard)
         .map_err(|e| e.to_string())?;
     put_cover(body, &cover)?;
-    let (vehicles, vehicle_issue) = match inputs.vehicles {
-        None => (None, None),
-        Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
-            Ok(detected) => (Some(vehicle_headers(body, &detected)?), None),
-            Err(error) => (None, Some(error.to_string())),
-        },
-    };
     Ok(Reply::Baked {
         instances: drawn.len(),
         lattice: lattice.as_ref().map(Lattice::from),
         lattice_issue,
         cover: Cover::from(&cover),
-        vehicles,
-        vehicle_issue,
         blobs: body.take_blobs(),
     })
-}
-
-fn index_range(indices: &[usize], out: &mut Vec<u32>) -> Result<Range, String> {
-    let start = out.len();
-    for &index in indices {
-        out.push(u32::try_from(index).map_err(|e| e.to_string())?);
-    }
-    Ok((start, indices.len()))
-}
-
-fn vehicle_headers(body: &mut Body, vehicles: &[Vehicle]) -> Result<Vec<VehicleHeader>, String> {
-    let mut members = Vec::new();
-    let mut bogie_instances = Vec::new();
-    let mut headers = Vec::with_capacity(vehicles.len());
-    for vehicle in vehicles {
-        let members_range = index_range(&vehicle.body, &mut members)?;
-        let bogies = vehicle
-            .bogies
-            .iter()
-            .map(|bogie| {
-                Ok(BogieHeader {
-                    instances: index_range(&bogie.instances, &mut bogie_instances)?,
-                    pivot: bogie.pivot,
-                    axles: bogie.axles.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        headers.push(VehicleHeader::new(vehicle, members_range, bogies));
-    }
-    body.blob("vehicleBody", &members);
-    body.blob("bogieInstances", &bogie_instances);
-    Ok(headers)
 }
 
 fn plates(columns: &[i32]) -> Result<Vec<i16>, String> {

@@ -81,6 +81,7 @@ function play(patch: Partial<PlaySnapshot>): PlaySnapshot {
     notice: null,
     trainModel: null,
     vehicles: 1,
+    consists: 1,
     trainLengthLdu: 0,
     maxSpeedLduPerS: MAX_LDU_PER_S,
     targetLduPerS: 0,

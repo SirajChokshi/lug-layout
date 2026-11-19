@@ -43,7 +43,9 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
     return () => play.follow(null);
   }, [camera, play]);
   const running = snapshot.status === "running";
-  const trains = running ? undefined : editor.playSetup()?.models;
+  const setup = running ? null : editor.playSetup();
+  const trains = setup?.models;
+  const refused = setup?.refused ?? [];
   const busy = snapshot.status === "loading";
   const derailed = snapshot.derailSpeedLduPerS > 0;
   const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;
@@ -81,8 +83,20 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
               </select>
             </label>
           ) : (
-            <p className="toolbar-hint">Place a train on the layout to run it.</p>
+            refused.length === 0 && (
+              <p className="toolbar-hint">Place a train on the layout to run it.</p>
+            )
           )}
+          {refused.map((refusal) => (
+            <p key={refusal.label} className="play-error" data-rail-fit-refused={refusal.label}>
+              {refusal.label} doesn't fit this layout's rails. {refusal.reason}
+            </p>
+          ))}
+          {setup?.railFitNotChecked.map((line) => (
+            <p key={line} className="toolbar-hint" data-rail-fit-not-checked>
+              {line}
+            </p>
+          ))}
           <button
             type="button"
             className="play-primary"
@@ -104,6 +118,11 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
           <p className="play-motion" aria-live="polite">
             {motionText(snapshot)}
           </p>
+          {snapshot.consists > 1 && (
+            <p className="toolbar-hint" data-consists={snapshot.consists}>
+              This model runs as {snapshot.consists} consists; only the first is driven.
+            </p>
+          )}
           {snapshot.derailSpeedLduPerS > 0 && (
             <div className="play-derailed" role="alert">
               <span>
@@ -171,9 +190,9 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
             {shortcutText("stop-train")} stops, {shortcutText("rerail")} rerails. Going the other
             way brakes, stops and reverses. Click a switch on the layout to throw it.
           </p>
-          <RunningGearPanel gear={runningGear} />
         </div>
       )}
+      <RunningGearPanel gear={runningGear} />
     </section>
   );
 }

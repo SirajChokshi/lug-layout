@@ -1,6 +1,11 @@
 import type { TrackPiece } from "@brr/schema/bundle";
 import { NO_EDGE, NO_SWITCH, type TrackGraph, type TrackLayout } from "@brr/domain";
 
+export interface TrackPosition {
+  readonly edge: number;
+  readonly offsetLdu: number;
+}
+
 export interface TrainStart {
   readonly edge: number;
   readonly offsetLdu: number;
@@ -66,4 +71,24 @@ export function trainStart(
     if (!best || aheadLdu > best.aheadLdu) best = { edge, offsetLdu, aheadLdu };
   }
   return best;
+}
+
+export function placementBehind(
+  graph: TrackGraph,
+  lengths: Float64Array,
+  switchStates: Uint8Array,
+  head: TrackPosition,
+  distanceLdu: number,
+): TrackPosition | null {
+  let edge = head.edge;
+  let offset = head.offsetLdu;
+  let remaining = distanceLdu;
+  while (remaining > offset) {
+    remaining -= offset;
+    const back = nextEdge(graph, edge ^ 1, switchStates);
+    if (back === NO_EDGE) return null;
+    edge = back ^ 1;
+    offset = lengths[edge] ?? 0;
+  }
+  return { edge, offsetLdu: offset - remaining };
 }

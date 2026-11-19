@@ -362,6 +362,40 @@ describe("Coupled running gear on a circle", () => {
   });
 });
 
+describe("Packing guide rail tops", () => {
+  it("bakes each guide's rail top from its own axle height and exact rolling radius, as transformed", () => {
+    const radius = { numerator: "1841", denominator: "88" };
+    const scenario = circle();
+    const session = createSimSession({
+      ...scenario,
+      capacity: { trains: 1, vehicles: 1 },
+      trains: [
+        {
+          spec: {
+            ...TRAIN,
+            vehicles: [
+              {
+                lengthLdu: 400,
+                frontBogieLdu: 80,
+                rearBogieLdu: 320,
+                guideWheelsets: {
+                  front: { axleYLdu: 13, rollingRadius: radius },
+                  rear: { axleYLdu: 13.0003, rollingRadius: radius },
+                },
+              },
+            ],
+          },
+          placement: { edge: forwardEdge(4), offsetLdu: 10 },
+        },
+      ],
+    });
+    expect([
+      ...session.simulation.guideRailTops("front"),
+      ...session.simulation.guideRailTops("rear"),
+    ]).toEqual([13 - 1841 / 88, 13.0003 - 1841 / 88]);
+  });
+});
+
 describe("Simulation determinism", () => {
   it("reaches the same state hash on a fresh session given the same commands at the same ticks", () => {
     const script: ScriptStep[] = [

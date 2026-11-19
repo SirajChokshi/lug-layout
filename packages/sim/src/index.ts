@@ -39,6 +39,7 @@ export {
   type OpenEndRule,
   type SimCapacity,
   type Simulation,
+  type GuideWheelset,
   type TrainPlacement,
   type TrainSpec,
   type VehicleSpec,

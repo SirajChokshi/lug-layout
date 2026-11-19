@@ -42,7 +42,7 @@ export function generateTrains(
         if (!rail) break;
         const plan = recipe({ model, pools, random, rails, rail, seats });
         if (!plan) continue;
-        const expected = expectationOf(model, plan);
+        const expected = expectationOf(model, plan, rails);
         if (!expected) continue;
         const name = `held-out-train-${seed}-${trains.length + 1}.ldr`;
         built = {

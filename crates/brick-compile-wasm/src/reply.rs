@@ -9,7 +9,6 @@ use brick_compile::inline::InlineComparison;
 use brick_compile::lattice::{Malformation, MalformedGeometry, ModelLattice};
 use brick_compile::ldraw::Header;
 use brick_compile::studio::{StudioArchive, StudioError};
-use brick_compile::vehicle::{Coupler, GuideKind, Vehicle};
 use brick_compile::CompileError;
 use serde::Serialize;
 
@@ -58,10 +57,6 @@ pub enum Reply {
         #[serde(skip_serializing_if = "Option::is_none")]
         lattice_issue: Option<String>,
         cover: Cover,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        vehicles: Option<Vec<VehicleHeader>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        vehicle_issue: Option<String>,
         blobs: Blobs,
     },
     #[serde(rename = "failed")]
@@ -308,101 +303,6 @@ impl From<&ModelCover> for Cover {
                 size: [cells.width, cells.depth],
                 bottom_y: cells.bottom_y,
             }),
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BogieHeader {
-    pub instances: Range,
-    pub pivot: Vec3,
-    pub axles: Vec<Vec3>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WheelsetHeader {
-    instance: usize,
-    centre: Vec3,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CouplerHeader {
-    instance: usize,
-    face: Vec3,
-    bogie: Option<usize>,
-    obsolete_sources: Vec<String>,
-}
-
-impl From<&Coupler> for CouplerHeader {
-    fn from(coupler: &Coupler) -> Self {
-        CouplerHeader {
-            instance: coupler.instance,
-            face: coupler.face,
-            bogie: coupler.bogie,
-            obsolete_sources: coupler.obsolete_sources.clone(),
-        }
-    }
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RailContactHeader {
-    rail_part: String,
-    rail_top_y: f64,
-    spread_ldu: f64,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VehicleHeader {
-    origin: [f64; 2],
-    yaw: f64,
-    guide_kind: &'static str,
-    guides: [f64; 2],
-    body: Range,
-    bogies: Vec<BogieHeader>,
-    fixed_axles: Vec<Vec3>,
-    wheelsets: Vec<WheelsetHeader>,
-    front_coupler: Option<CouplerHeader>,
-    rear_coupler: Option<CouplerHeader>,
-    rail_contacts: Vec<RailContactHeader>,
-}
-
-impl VehicleHeader {
-    pub fn new(vehicle: &Vehicle, body: Range, bogies: Vec<BogieHeader>) -> Self {
-        VehicleHeader {
-            origin: vehicle.origin,
-            yaw: vehicle.yaw,
-            guide_kind: match vehicle.guide_kind {
-                GuideKind::BogiePivot => "bogiePivot",
-                GuideKind::FixedAxle => "fixedAxle",
-            },
-            guides: vehicle.guides,
-            body,
-            bogies,
-            fixed_axles: vehicle.fixed_axles.clone(),
-            wheelsets: vehicle
-                .wheelsets
-                .iter()
-                .map(|wheelset| WheelsetHeader {
-                    instance: wheelset.instance,
-                    centre: wheelset.centre,
-                })
-                .collect(),
-            front_coupler: vehicle.front_coupler.as_ref().map(CouplerHeader::from),
-            rear_coupler: vehicle.rear_coupler.as_ref().map(CouplerHeader::from),
-            rail_contacts: vehicle
-                .rail_contacts
-                .iter()
-                .map(|contact| RailContactHeader {
-                    rail_part: contact.rail_part.clone(),
-                    rail_top_y: contact.rail_top_y,
-                    spread_ldu: contact.spread,
-                })
-                .collect(),
         }
     }
 }

@@ -72,7 +72,7 @@ export async function openBundle(root: string): Promise<Bundle> {
         .filter((color) => color.alpha < OPAQUE_ALPHA)
         .map((color) => color.code),
       tableDepthLdu: index.tablePlane.depthBelowTopLdu,
-      vehicles: index.compiler.vehicles ?? null,
+      rails: index.compiler.rails,
     },
   };
 }

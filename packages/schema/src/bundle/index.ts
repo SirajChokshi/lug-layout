@@ -101,6 +101,18 @@ export const TrackConnector = v.pipe(
     heading: Integer,
     status: PoseStatus,
     residualLdu: Finite,
+    rail: v.pipe(
+      v.nullable(Count),
+      v.description(
+        "the unique rails[] entry whose head bands every band end lies within the identification residual of, measured on this end's face along its identified normal and closed with the joint's half-turn; null when none does or this end's pose isn't certified",
+      ),
+    ),
+    railResidualLdu: v.pipe(
+      v.nullable(v.pipe(Finite, v.minValue(0))),
+      v.description(
+        "provenance only: the largest per-end difference between the closed head bands and the identified rails[] entry, in LDU; null when rail is null. Contact, joins and rail fit never read it",
+      ),
+    ),
   }),
   v.transform((connector) => ({
     ...connector,
@@ -302,7 +314,6 @@ export const BundleModelEntry = v.object({
   inlinePartsResolvedToOfficial: v.array(InlinePartResolution),
   instances: Count,
   lattice: v.nullable(ModelLattice),
-  vehicles: Count,
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
@@ -507,19 +518,18 @@ export const StudPrimitive = v.object({
 });
 export type StudPrimitive = v.InferOutput<typeof StudPrimitive>;
 
-export const CompilerVehicles = v.object({
-  parts: v.object({
-    bogiePivots: v.array(v.string()),
-    pivotPins: v.array(v.string()),
-    wheelsets: v.array(v.string()),
-    wheels: v.array(v.string()),
-    couplers: v.array(v.string()),
-  }),
-  railHeads: v.array(
-    v.object({ railPart: v.string(), inner: ExactDecimalText, outer: ExactDecimalText }),
+export const RailHeadText = v.object({ from: ExactDecimalText, to: ExactDecimalText });
+export type RailHeadText = v.InferOutput<typeof RailHeadText>;
+
+export const BundleRail = v.object({
+  railPart: v.string(),
+  railHeads: v.pipe(
+    v.tuple([RailHeadText, RailHeadText]),
+    v.description("the near and far rail head bands across the track centre, from geometry.json"),
   ),
 });
-export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
+export type BundleRail = v.InferOutput<typeof BundleRail>;
+
 export const TECHNIC_ROLES = ["hole", "pin", "axleEnd"] as const;
 
 export const PrimitiveConnectorTable = v.strictObject({
@@ -564,7 +574,7 @@ export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
-  vehicles: v.optional(CompilerVehicles),
+  rails: v.array(BundleRail),
   primitives: v.optional(PrimitiveConnectorTable),
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
@@ -713,7 +723,7 @@ export const TablePlane = v.object({
 });
 export type TablePlane = v.InferOutput<typeof TablePlane>;
 
-export const BundleIndex = v.object({
+export const BundleIndexFields = v.object({
   bundleVersion: v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/u)),
   unit: v.literal("LDU"),
   upAxis: v.literal("+Y"),
@@ -742,6 +752,25 @@ export const BundleIndex = v.object({
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),
 });
+
+interface TrackRails {
+  readonly trackCatalog: TrackCatalog;
+  readonly compiler: BundleCompiler | null;
+}
+
+const TRACK_RAILS_MESSAGE = "a track connector names a rail the compiler's rails[] lacks";
+
+function trackRailsFit({ trackCatalog, compiler }: TrackRails): boolean {
+  const rails = compiler?.rails.length ?? 0;
+  return trackCatalog.pieces.every((piece) =>
+    piece.connectors.every((connector) => connector.rail === null || connector.rail < rails),
+  );
+}
+
+export const BundleIndex = v.pipe(
+  BundleIndexFields,
+  v.check((index) => trackRailsFit(index), TRACK_RAILS_MESSAGE),
+);
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
 export const PartTableFile = v.object({ parts: v.array(ManifestPart) });
@@ -750,11 +779,16 @@ export type PartTableFile = v.InferOutput<typeof PartTableFile>;
 export const CreditTableFile = v.object({ credits: v.array(BundleCredit) });
 export type CreditTableFile = v.InferOutput<typeof CreditTableFile>;
 
-export const BundleManifest = v.object({
-  ...BundleIndex.entries,
+export const BundleManifestFields = v.object({
+  ...BundleIndexFields.entries,
   ...PartTableFile.entries,
   ...CreditTableFile.entries,
 });
+
+export const BundleManifest = v.pipe(
+  BundleManifestFields,
+  v.check((manifest) => trackRailsFit(manifest), TRACK_RAILS_MESSAGE),
+);
 export type BundleManifest = v.InferOutput<typeof BundleManifest>;
 
 export const CROSSWALK_FORMAT = 1;
@@ -824,57 +858,202 @@ export type CrosswalkFile = v.InferOutput<typeof CrosswalkFile>;
 export const VehicleGuideKind = v.picklist(["bogiePivot", "fixedAxle"]);
 export type VehicleGuideKind = v.InferOutput<typeof VehicleGuideKind>;
 
-export const VehicleCoupler = v.object({
-  instance: Count,
-  face: Vec3,
-  bogie: v.nullable(Count),
-  obsoleteSources: v.array(v.string()),
+export const VehicleWheelsetMember = v.object({ instance: Count, surface: Count });
+export type VehicleWheelsetMember = v.InferOutput<typeof VehicleWheelsetMember>;
+
+export const VehicleWheelset = v.object({
+  members: v.pipe(
+    v.array(VehicleWheelsetMember),
+    v.minLength(1),
+    v.description(
+      "the (instance, rolling surface) pairs whose axial extent overlaps a head band of the recorded rail with positive length at a feasible track centre",
+    ),
+  ),
+  rail: v.pipe(Count, v.description("the measured rail's index in geometry.json rails[] order")),
+  frame: v.pipe(
+    Integer,
+    v.minValue(-1),
+    v.description(
+      "the wheelset's lowest common frame: -1 for the model root, otherwise a sub-model instance",
+    ),
+  ),
+  dimension: v.pipe(
+    v.picklist([0, 1, 2]),
+    v.description("the axis line's dimension in that frame"),
+  ),
+  trackCentre: v.pipe(
+    Integer,
+    v.description("the track centre along the axis line in that frame, in sixteenths of an LDU"),
+  ),
+  contactRadii: v.pipe(
+    v.tuple([ExactRationalText, ExactRationalText]),
+    v.description(
+      "the contact radius over the near and the far head band at the track centre, in LDU",
+    ),
+  ),
+  rollingRadius: v.pipe(
+    ExactRationalText,
+    v.description("the exact mean of the two contact radii, in LDU"),
+  ),
+  rollingRadiusOnRail: v.pipe(
+    v.array(v.nullable(ExactRationalText)),
+    v.description(
+      "over rails[]: the exact rolling radius by the contact rule on each rail the co-linear group meets on its own, or null where it doesn't",
+    ),
+  ),
+  seated: v.pipe(
+    v.boolean(),
+    v.description(
+      "whether its rail top is its vehicle's lowest, compared exactly in each pair's lowest common frame; only seated wheelsets count for bogies, guides, fixed axles and wheelbases",
+    ),
+  ),
+  axisLine: v.pipe(
+    v.tuple([Vec3, Vec3]),
+    v.description(
+      "the axis line, as its points over the near and the far head band's middle at the track centre, in the model frame; packing reads the line and its span from it",
+    ),
+  ),
 });
-export type VehicleCoupler = v.InferOutput<typeof VehicleCoupler>;
+export type VehicleWheelset = v.InferOutput<typeof VehicleWheelset>;
+
+export const VehicleGuide = v.object({
+  kind: VehicleGuideKind,
+  position: v.pipe(Finite, v.description("along the travel axis from the vehicle origin, in LDU")),
+  bogie: v.nullable(Count),
+  wheelset: v.nullable(Count),
+});
+export type VehicleGuide = v.InferOutput<typeof VehicleGuide>;
 
 export const VehicleBogie = v.object({
   instances: v.array(Count),
-  pivot: Vec3,
-  axles: v.array(Vec3),
+  pivot: v.pipe(
+    Vec3,
+    v.description("the pivot mate's male connector origin, in the model frame, in LDU"),
+  ),
+  wheelsets: v.array(Count),
 });
 export type VehicleBogie = v.InferOutput<typeof VehicleBogie>;
 
-export const VehicleWheelset = v.object({ instance: Count, centre: Vec3 });
-export type VehicleWheelset = v.InferOutput<typeof VehicleWheelset>;
-
-export const VehicleRailContact = v.object({
-  railPart: v.string(),
-  railTopY: Finite,
-  spreadLdu: Finite,
-});
-export type VehicleRailContact = v.InferOutput<typeof VehicleRailContact>;
+export const ConnectorRef = v.object({ instance: Count, connector: Count });
+export type ConnectorRef = v.InferOutput<typeof ConnectorRef>;
 
 export const ModelVehicle = v.pipe(
   v.object({
     origin: v.tuple([Finite, Finite]),
     yaw: Finite,
-    guideKind: VehicleGuideKind,
-    guides: v.tuple([Finite, Finite]),
+    guides: v.tuple([VehicleGuide, VehicleGuide]),
     body: v.array(Count),
     bogies: v.array(VehicleBogie),
-    fixedAxles: v.array(Vec3),
+    fixedAxles: v.array(Count),
     wheelsets: v.array(VehicleWheelset),
-    frontCoupler: v.nullable(VehicleCoupler),
-    rearCoupler: v.nullable(VehicleCoupler),
-    railContacts: v.array(VehicleRailContact),
+    frontEndCandidates: v.array(ConnectorRef),
+    rearEndCandidates: v.array(ConnectorRef),
   }),
   v.check(
-    ({ bogies, frontCoupler, rearCoupler }) =>
-      [frontCoupler, rearCoupler].every(
-        (coupler) => coupler === null || coupler.bogie === null || coupler.bogie < bogies.length,
+    ({ guides, bogies, wheelsets }) =>
+      guides.every((guide) =>
+        guide.kind === "bogiePivot"
+          ? guide.bogie !== null && guide.bogie < bogies.length && guide.wheelset === null
+          : guide.bogie === null && guide.wheelset !== null && guide.wheelset < wheelsets.length,
       ),
-    "a coupler names a bogie the vehicle does not have",
+    "a guide names a bogie or wheelset the vehicle does not have",
+  ),
+  v.check(
+    ({ bogies, fixedAxles, wheelsets }) =>
+      [...fixedAxles, ...bogies.flatMap((bogie) => bogie.wheelsets)].every(
+        (w) => w < wheelsets.length,
+      ),
+    "a fixed axle or bogie names a wheelset the vehicle does not have",
+  ),
+  v.check(
+    ({ guides, bogies, fixedAxles, wheelsets }) =>
+      [
+        ...fixedAxles,
+        ...bogies.flatMap((bogie) => bogie.wheelsets),
+        ...guides.flatMap((guide) => (guide.wheelset === null ? [] : [guide.wheelset])),
+      ].every((w) => wheelsets[w]?.seated === true),
+    "a guide, fixed axle or bogie names an unseated wheelset",
   ),
 );
 export type ModelVehicle = v.InferOutput<typeof ModelVehicle>;
 
+export const ConnectorMate = v.object({ male: ConnectorRef, female: ConnectorRef });
+export type ConnectorMate = v.InferOutput<typeof ConnectorMate>;
+
+export const VehicleCoupling = v.object({
+  vehicles: v.tuple([Count, Count]),
+  mates: v.pipe(v.array(ConnectorMate), v.minLength(1)),
+  pivot: v.pipe(
+    v.nullable(Vec3),
+    v.description(
+      "the link's shared pivot point, a mate's male connector origin in the model frame in LDU; null when the link's mates pivot about more than one vertical line",
+    ),
+  ),
+});
+export type VehicleCoupling = v.InferOutput<typeof VehicleCoupling>;
+
+export const UnresolvedRunningGearReason = v.picklist([
+  "fewerThanTwoGuides",
+  "sharedBogie",
+  "pivotInsideSupportSpan",
+  "wheelsetSpansPivot",
+  "supportPlaneUnidentified",
+]);
+export type UnresolvedRunningGearReason = v.InferOutput<typeof UnresolvedRunningGearReason>;
+
+export const UnresolvedRunningGear = v.object({
+  reason: UnresolvedRunningGearReason,
+  instances: v.array(Count),
+  wheelsets: v.array(VehicleWheelset),
+  mates: v.array(ConnectorMate),
+  unreadRows: v.pipe(
+    v.array(Count),
+    v.description("indexes into the model's unreadRollingBands columns, on these instances"),
+  ),
+});
+export type UnresolvedRunningGear = v.InferOutput<typeof UnresolvedRunningGear>;
+
+const BAKE_UNREAD_REASON: Readonly<Record<UnreadBand["reason"], true>> = {
+  unoriented: true,
+  centre: true,
+  radius: true,
+  width: true,
+  faceted: true,
+  partial: true,
+  facing: true,
+  irregular: true,
+};
+const BAKE_UNREAD_REASONS = Object.keys(BAKE_UNREAD_REASON) as Array<UnreadBand["reason"]>;
+
+export type UnreadRollingReason = UnreadBand["reason"] | "direction" | "across";
+export const UnreadRollingReason = v.picklist<Array<UnreadRollingReason>>([
+  ...BAKE_UNREAD_REASONS,
+  "direction",
+  "across",
+]);
+
+export function isBakeUnreadReason(reason: UnreadRollingReason): reason is UnreadBand["reason"] {
+  return Object.hasOwn(BAKE_UNREAD_REASON, reason);
+}
+
+export const UnreadRollingBands = v.pipe(
+  v.object({
+    instance: v.array(Count),
+    band: v.array(Count),
+    reason: v.array(UnreadRollingReason),
+  }),
+  v.check(
+    ({ instance, band, reason }) =>
+      instance.length === band.length && band.length === reason.length,
+    "unread rolling band columns differ in length",
+  ),
+  v.description(
+    "every rolling band the model can't read as a candidate rolling surface: band indexes the part's rolling unread list for bake reasons and its surfaces for direction and across",
+  ),
+);
+export type UnreadRollingBands = v.InferOutput<typeof UnreadRollingBands>;
+
 const ByteRange = v.pipe(v.tuple([Count, Count]), v.readonly());
-const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
@@ -921,7 +1100,6 @@ export const CompilerRequest = v.variant("op", [
     unofficialAllowlist: StringList,
     translucentColors: v.pipe(v.array(Count), v.readonly()),
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
-    vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
   }),
 ]);
@@ -1021,21 +1199,6 @@ export const CompilerCompile = v.object({
 });
 export type CompilerCompile = v.InferOutput<typeof CompilerCompile>;
 
-export const CompilerVehicle = v.object({
-  origin: v.tuple([Finite, Finite]),
-  yaw: Finite,
-  guideKind: VehicleGuideKind,
-  guides: v.tuple([Finite, Finite]),
-  body: IndexRange,
-  bogies: v.array(v.object({ instances: IndexRange, pivot: Vec3, axles: v.array(Vec3) })),
-  fixedAxles: v.array(Vec3),
-  wheelsets: v.array(VehicleWheelset),
-  frontCoupler: v.nullable(VehicleCoupler),
-  rearCoupler: v.nullable(VehicleCoupler),
-  railContacts: v.array(VehicleRailContact),
-});
-export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
-
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
@@ -1049,8 +1212,6 @@ export const CompilerBaked = v.object({
       v.object({ origin: v.tuple([Finite, Finite]), size: CellGridSize, bottomY: Finite }),
     ),
   }),
-  vehicles: v.exactOptional(v.array(CompilerVehicle)),
-  vehicleIssue: v.exactOptional(v.string()),
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
@@ -1070,15 +1231,52 @@ export type CompilerBake = v.InferOutput<typeof CompilerBake>;
 
 export const CompilerError = v.object({ status: v.literal("error"), message: v.string() });
 
+function wheelsetInstances(wheelset: VehicleWheelset): ReadonlyArray<number> {
+  return wheelset.members.map((member) => member.instance);
+}
+
 function vehicleInstances(vehicle: ModelVehicle): ReadonlyArray<number> {
   return [
     ...vehicle.body,
     ...vehicle.bogies.flatMap((bogie) => bogie.instances),
-    ...vehicle.wheelsets.map((wheelset) => wheelset.instance),
-    ...[vehicle.frontCoupler, vehicle.rearCoupler].flatMap((coupler) =>
-      coupler === null ? [] : [coupler.instance],
-    ),
+    ...vehicle.wheelsets.flatMap(wheelsetInstances),
+    ...[...vehicle.frontEndCandidates, ...vehicle.rearEndCandidates].map((ref) => ref.instance),
   ];
+}
+
+function mateInstances(mate: ConnectorMate): ReadonlyArray<number> {
+  return [mate.male.instance, mate.female.instance];
+}
+
+function unresolvedInstances(report: UnresolvedRunningGear): ReadonlyArray<number> {
+  return [
+    ...report.instances,
+    ...report.wheelsets.flatMap(wheelsetInstances),
+    ...report.mates.flatMap(mateInstances),
+  ];
+}
+
+interface RollingCounts {
+  readonly surfaces: number;
+  readonly unread: number;
+}
+
+export function unreadRollingBandsFit(
+  bands: UnreadRollingBands,
+  partOf: ArrayLike<number>,
+  rolling: ReadonlyArray<RollingCounts | null>,
+): boolean {
+  for (let row = 0; row < bands.instance.length; row++) {
+    const instance = bands.instance[row];
+    const band = bands.band[row];
+    const reason = bands.reason[row];
+    if (instance === undefined || band === undefined || reason === undefined) return false;
+    if (instance >= partOf.length) return false;
+    const counts = rolling[partOf[instance] ?? -1];
+    if (!counts) return false;
+    if (band >= (isBakeUnreadReason(reason) ? counts.unread : counts.surfaces)) return false;
+  }
+  return true;
 }
 
 export const MODEL_ROOT = -1;
@@ -1126,6 +1324,9 @@ export const ModelFile = v.pipe(
     shapes: v.array(PartShape),
     lattice: v.nullable(ModelLattice),
     vehicles: v.array(ModelVehicle),
+    vehicleCouplings: v.array(VehicleCoupling),
+    unresolvedRunningGear: v.array(UnresolvedRunningGear),
+    unreadRollingBands: UnreadRollingBands,
     cover: ModelFileCover,
     notDrawn: v.optional(v.array(NotDrawnSection)),
     instances: v.object({
@@ -1159,6 +1360,41 @@ export const ModelFile = v.pipe(
         vehicleInstances(vehicle).every((index) => index < instances.part.length),
       ),
     "a vehicle names an instance the model does not have",
+  ),
+  v.check(
+    ({ vehicles, vehicleCouplings }) =>
+      vehicleCouplings.every(
+        ({ vehicles: [a, b] }) => a !== b && a < vehicles.length && b < vehicles.length,
+      ),
+    "a coupling inside the model names a vehicle the model does not have",
+  ),
+  v.check(
+    ({ vehicleCouplings, unresolvedRunningGear, instances }) =>
+      [
+        ...vehicleCouplings.flatMap((coupling) => coupling.mates.flatMap(mateInstances)),
+        ...unresolvedRunningGear.flatMap(unresolvedInstances),
+      ].every((index) => index < instances.part.length),
+    "running gear names an instance the model does not have",
+  ),
+  v.check(
+    ({ unreadRollingBands, unresolvedRunningGear }) =>
+      unresolvedRunningGear.every((report) =>
+        report.unreadRows.every((row) => row < unreadRollingBands.instance.length),
+      ),
+    "an unresolved running gear report names an unread rolling band row the model does not have",
+  ),
+  v.check(
+    ({ unreadRollingBands, instances, shapes }) =>
+      unreadRollingBandsFit(
+        unreadRollingBands,
+        instances.part,
+        shapes.map((shape) =>
+          shape.rolling
+            ? { surfaces: shape.rolling.surfaces.length, unread: shape.rolling.unread.length }
+            : null,
+        ),
+      ),
+    "an unread rolling band row names an instance or band the model does not have",
   ),
 );
 export type ModelFile = v.InferOutput<typeof ModelFile>;
@@ -1259,30 +1495,6 @@ export type FarMeshExtras = v.InferOutput<typeof FarMeshExtras>;
 
 export const FarMeshGltfDocument = v.object({ ...GltfDocument.entries, extras: FarMeshExtras });
 export type FarMeshGltfDocument = v.InferOutput<typeof FarMeshGltfDocument>;
-
-export const RUNNING_GEAR_OVERRIDE_VERSION = 2;
-export const MODEL_FRAME_OVERRIDE_VERSION = 1;
-
-export const BogieOverride = v.strictObject({ instances: v.array(Count), pivot: Vec3 });
-export type BogieOverride = v.InferOutput<typeof BogieOverride>;
-
-export const CouplerOverride = v.strictObject({ instance: Count, face: Vec3 });
-export type CouplerOverride = v.InferOutput<typeof CouplerOverride>;
-
-export const VehicleOverride = v.strictObject({
-  vehicle: Count,
-  bogies: v.optional(v.array(BogieOverride)),
-  couplers: v.optional(v.array(CouplerOverride)),
-});
-export type VehicleOverride = v.InferOutput<typeof VehicleOverride>;
-
-export const RunningGearOverride = v.strictObject({
-  version: v.picklist([RUNNING_GEAR_OVERRIDE_VERSION, MODEL_FRAME_OVERRIDE_VERSION]),
-  modelSha256: Sha256Hex,
-  model: v.string(),
-  vehicles: v.array(VehicleOverride),
-});
-export type RunningGearOverride = v.InferOutput<typeof RunningGearOverride>;
 
 export const PaletteModel = v.strictObject({
   name: v.string(),
@@ -1390,13 +1602,6 @@ export const Palette = v.strictObject({
   ),
   omrSource: BundleSource,
   models: v.array(PaletteModel),
-  vehicleParts: v.strictObject({
-    bogiePivots: v.array(v.string()),
-    pivotPins: v.array(v.string()),
-    wheelsets: v.array(v.string()),
-    wheels: v.array(v.string()),
-    couplers: v.array(v.string()),
-  }),
   audit: v.array(AuditGroup),
   connectivitySource: BundleSource,
   producedColorSource: v.optional(v.string()),
@@ -1406,6 +1611,22 @@ export type Palette = v.InferOutput<typeof Palette>;
 
 export const FixtureModels = v.strictObject({ models: v.array(PaletteModel) });
 export type FixtureModels = v.InferOutput<typeof FixtureModels>;
+
+export {
+  closedHalfLap,
+  exactRailHeads,
+  identifyRail,
+  poseCertified,
+  RAIL_IDENTIFICATION_LIMIT,
+  unidentifiedRailReason,
+  type CertifiablePose,
+  type ExactRailHeads,
+  type MeasuredRailHeads,
+  type RailHeadBands,
+  type RailHeadInterval,
+  type RailIdentification,
+  type UnidentifiedRailReason,
+} from "./rail-identification.ts";
 
 export {
   MilsBuild,

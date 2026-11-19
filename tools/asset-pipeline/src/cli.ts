@@ -1,10 +1,11 @@
 import {
-  BundleIndex,
+  BundleIndexFields,
   BundleLod,
-  BundleManifest,
+  BundleManifestFields,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
+  type BundleIndex,
   type CatalogSourceUse,
   type CrosswalkFile,
   type Palette,
@@ -460,9 +461,10 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   const catalogPath = join(repoRoot, BUNDLE_DATA_FILES.trackCatalog);
   const catalog: Record<string, unknown> = JSON.parse(await readFile(catalogPath, "utf8"));
   const bundled = new Set(
-    decodedOrThrow(decode(v.pick(BundleManifest, ["parts"]), manifest), manifestPath).parts.map(
-      (part) => part.id,
-    ),
+    decodedOrThrow(
+      decode(v.pick(BundleManifestFields, ["parts"]), manifest),
+      manifestPath,
+    ).parts.map((part) => part.id),
   );
   const missing = decodedOrThrow(decode(TrackCatalog, catalog), catalogPath)
     .pieces.filter((piece) => !bundled.has(piece.id))
@@ -506,7 +508,7 @@ async function reportReusedBundle(buildKey: BundleBuildKey): Promise<void> {
     const manifestPath = join(bundleRoot, lod, MANIFEST_FILE);
     const { bundleVersion } = decodedOrThrow(
       decode(
-        v.pick(BundleIndex, ["bundleVersion"]),
+        v.pick(BundleIndexFields, ["bundleVersion"]),
         JSON.parse(await readFile(manifestPath, "utf8")),
       ),
       manifestPath,

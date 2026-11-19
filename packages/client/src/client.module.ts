@@ -38,8 +38,7 @@ import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
-import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
-import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
+import { RunningGearInspector } from "./running-gear/running-gear-inspector.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
@@ -70,7 +69,6 @@ import {
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
   RUNNING_GEAR,
-  RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
@@ -94,8 +92,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
-  bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
-  bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
+  bind(RUNNING_GEAR).to(RunningGearInspector).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
   bind(SNAP_SHAPES)

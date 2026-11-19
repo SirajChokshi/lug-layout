@@ -24,6 +24,8 @@ export function loadSession(createSession: SimSessionFactory, load: SimLoad): Lo
       layout: session.layout,
       tickHz: SIM_TICK_HZ,
       maxEndResidualLdu: built.maxEndResidualLdu,
+      frontRailTops: session.simulation.guideRailTops("front"),
+      rearRailTops: session.simulation.guideRailTops("rear"),
       maxEndHeadingResidualRadians: built.maxEndHeadingResidualRadians,
     },
   };

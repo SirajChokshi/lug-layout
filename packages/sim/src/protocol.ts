@@ -16,6 +16,8 @@ export interface SimLoaded {
   readonly layout: SimFrameLayout;
   readonly tickHz: number;
   readonly maxEndResidualLdu: number;
+  readonly frontRailTops: Float64Array;
+  readonly rearRailTops: Float64Array;
   readonly maxEndHeadingResidualRadians: number;
 }
 

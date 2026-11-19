@@ -1,19 +1,22 @@
-import {
-  exactLduText,
-  type GearBox,
-  type GearSnapshot,
-  type GearView,
-  type IRunningGear,
-  type RunningGearSource,
-} from "@brr/client";
+import type { GearBox, GearModelView, GearView, IRunningGear } from "@brr/client";
+import type { ConnectorRef, UnresolvedRunningGearReason } from "@brr/schema/bundle";
 import { memo, useState, useSyncExternalStore, type ReactNode } from "react";
 
 const GROUP_FILLS = ["#f2a541", "#4a90d9", "#5cb85c", "#b06ab3"];
 const BODY_FILL = "#c9ced6";
+const END_STROKE = "#c0392b";
 const MARGIN_LDU = 24;
 const MARKER_LDU = 6;
 const SHA_PREFIX = 10;
 const SPEC_DIGITS = 2;
+
+const UNRESOLVED_TEXT: Readonly<Record<UnresolvedRunningGearReason, string>> = {
+  fewerThanTwoGuides: "a body rests on fewer than two guides",
+  sharedBogie: "one bogie carries more than one body",
+  pivotInsideSupportSpan: "a link pivots inside a body's support span",
+  wheelsetSpansPivot: "a wheelset spans a pivot",
+  supportPlaneUnidentified: "two wheelsets' axle heights can't be compared exactly",
+};
 
 function fillOf(box: GearBox): string {
   return box.bogie === null
@@ -21,22 +24,26 @@ function fillOf(box: GearBox): string {
     : (GROUP_FILLS[box.bogie % GROUP_FILLS.length] ?? BODY_FILL);
 }
 
-function nextGroup(box: GearBox, bogies: number): number | null {
-  if (box.bogie === null) return bogies > 0 ? 0 : null;
-  return box.bogie + 1 < bogies ? box.bogie + 1 : null;
+function strokeOf(box: GearBox): string {
+  if (box.endCandidate) return END_STROKE;
+  return box.wheelset ? "#1b2a34" : "#55606e";
 }
 
 function byAreaDescending(view: GearView, area: (b: GearBox) => number): ReadonlyArray<GearBox> {
   return view.boxes.toSorted((a, b) => area(b) - area(a));
 }
 
-function PlanView({ gear, view }: { readonly gear: IRunningGear; readonly view: GearView }) {
+function boxTitle(box: GearBox): string {
+  const role = box.bogie === null ? "body" : `bogie ${box.bogie + 1}`;
+  return `part ${box.instance}: ${role}${box.wheelset ? ", wheelset" : ""}${box.endCandidate ? ", end candidate" : ""}`;
+}
+
+function PlanView({ view }: { readonly view: GearView }) {
   const finite = view.boxes.filter((b) => Number.isFinite(b.minX));
   const minX = Math.min(...finite.map((b) => b.minX)) - MARGIN_LDU;
   const maxX = Math.max(...finite.map((b) => b.maxX)) + MARGIN_LDU;
   const minZ = Math.min(...finite.map((b) => b.minZ)) - MARGIN_LDU;
   const maxZ = Math.max(...finite.map((b) => b.maxZ)) + MARGIN_LDU;
-  const bogies = view.pivots.length;
   return (
     <svg
       className="gear-view"
@@ -53,20 +60,19 @@ function PlanView({ gear, view }: { readonly gear: IRunningGear; readonly view: 
           height={box.maxZ - box.minZ}
           fill={fillOf(box)}
           fillOpacity={0.55}
-          stroke={box.coupler ? "#c0392b" : box.wheelset ? "#1b2a34" : "#55606e"}
-          strokeWidth={box.coupler || box.wheelset ? 1.5 : 0.4}
-          onClick={() => gear.assignPart(box.instance, nextGroup(box, bogies))}
+          stroke={strokeOf(box)}
+          strokeWidth={box.endCandidate || box.wheelset ? 1.5 : 0.4}
         >
-          <title>{`part ${box.instance}: ${box.bogie === null ? "body" : `bogie ${box.bogie + 1}`}${box.wheelset ? ", wheelset" : ""}${box.coupler ? ", coupler" : ""} (click to move)`}</title>
+          <title>{boxTitle(box)}</title>
         </rect>
       ))}
-      {view.axles.map((axle, a) => (
+      {view.axisLines.map(([near, far], a) => (
         <line
-          key={`axle-${a}`}
-          x1={axle[0]}
-          x2={axle[0]}
-          y1={axle[2] - 60}
-          y2={axle[2] + 60}
+          key={`axis-${a}`}
+          x1={near[0]}
+          x2={far[0]}
+          y1={near[2]}
+          y2={far[2]}
           stroke="#1b2a34"
           strokeWidth={2}
           strokeDasharray="4 3"
@@ -100,17 +106,6 @@ function PlanView({ gear, view }: { readonly gear: IRunningGear; readonly view: 
           />
         </g>
       ))}
-      {view.couplers.map((coupler) => (
-        <line
-          key={`coupler-${coupler.instance}`}
-          x1={coupler.face[0]}
-          x2={coupler.face[0]}
-          y1={coupler.face[2] - 12}
-          y2={coupler.face[2] + 12}
-          stroke="#c0392b"
-          strokeWidth={5}
-        />
-      ))}
     </svg>
   );
 }
@@ -136,12 +131,18 @@ function SideView({ view }: { readonly view: GearView }) {
           height={box.maxY - box.minY}
           fill={fillOf(box)}
           fillOpacity={0.55}
-          stroke={box.coupler ? "#c0392b" : "#55606e"}
-          strokeWidth={box.coupler ? 1.5 : 0.4}
+          stroke={box.endCandidate ? END_STROKE : "#55606e"}
+          strokeWidth={box.endCandidate ? 1.5 : 0.4}
         />
       ))}
-      {view.axles.map((axle, a) => (
-        <circle key={`axle-${a}`} cx={axle[0]} cy={-axle[1]} r={MARKER_LDU} fill="#1b2a34" />
+      {view.axisLines.map(([near, far], a) => (
+        <circle
+          key={`axis-${a}`}
+          cx={(near[0] + far[0]) / 2}
+          cy={-(near[1] + far[1]) / 2}
+          r={MARKER_LDU}
+          fill="#1b2a34"
+        />
       ))}
       {view.pivots.map((pivot, p) => (
         <line
@@ -154,54 +155,17 @@ function SideView({ view }: { readonly view: GearView }) {
           strokeWidth={2}
         />
       ))}
-      {view.couplers.map((coupler) => (
-        <line
-          key={`coupler-${coupler.instance}`}
-          x1={coupler.face[0]}
-          x2={coupler.face[0]}
-          y1={-coupler.face[1] - 12}
-          y2={-coupler.face[1] + 12}
-          stroke="#c0392b"
-          strokeWidth={5}
-        />
-      ))}
     </svg>
   );
 }
 
-function NumberField({
-  label,
-  value,
-  onChange,
-}: {
-  readonly label: string;
-  readonly value: number;
-  readonly onChange: (value: number) => void;
-}) {
-  const [typing, setTyping] = useState<string | null>(null);
-  return (
-    <label className="gear-field">
-      {label}
-      <input
-        type="number"
-        step="any"
-        value={typing ?? exactLduText(value)}
-        onFocus={() => setTyping(exactLduText(value))}
-        onBlur={() => setTyping(null)}
-        onChange={(event) => {
-          const text = event.target.value;
-          setTyping(text);
-          const parsed = Number(text);
-          if (text.trim() !== "" && Number.isFinite(parsed)) onChange(parsed);
-        }}
-      />
-    </label>
-  );
+function specText(spec: GearView["spec"]): string {
+  return `length ${spec.lengthLdu.toFixed(SPEC_DIGITS)}, guides at ${spec.frontBogieLdu.toFixed(SPEC_DIGITS)} and ${spec.rearBogieLdu.toFixed(SPEC_DIGITS)}`;
 }
 
-function specText(spec: GearView["spec"]): string {
-  if (!spec) return "invalid";
-  return `length ${spec.lengthLdu.toFixed(SPEC_DIGITS)}, guides at ${spec.frontBogieLdu.toFixed(SPEC_DIGITS)} and ${spec.rearBogieLdu.toFixed(SPEC_DIGITS)}`;
+function endsText(ends: ReadonlyArray<ConnectorRef>): string {
+  if (ends.length === 0) return "none";
+  return ends.map((end) => `part ${end.instance} connector ${end.connector}`).join(", ");
 }
 
 function Rows({ rows }: { readonly rows: ReadonlyArray<readonly [string, ReactNode]> }) {
@@ -217,115 +181,125 @@ function Rows({ rows }: { readonly rows: ReadonlyArray<readonly [string, ReactNo
   );
 }
 
-function Editor({
-  gear,
-  snapshot,
-  view,
-}: {
-  readonly gear: IRunningGear;
-  readonly snapshot: GearSnapshot;
-  readonly view: GearView;
-}) {
-  const obsolete = [...new Set(view.couplers.flatMap((c) => c.obsoleteSources))];
-  const valid = view.spec !== null && view.issues.length === 0;
+function VehicleView({ view }: { readonly view: GearView }) {
   return (
-    <>
+    <div className="gear-vehicle" data-vehicle={view.vehicle}>
       <Rows
         rows={[
           ["Model sha256", view.sha256.slice(0, SHA_PREFIX)],
-          [
-            "Running gear",
-            view.source === "override"
-              ? snapshot.dirty
-                ? "override (unsaved)"
-                : view.savedOverrideRefused
-                  ? "override (saved, refused)"
-                  : "override (saved)"
-              : "detected from geometry",
-          ],
-          ["Detected", specText(view.detectedSpec)],
-          ["Effective", specText(view.spec)],
+          ["Consist span", specText(view.spec)],
+          ["Front end candidates", endsText(view.frontEndCandidates)],
+          ["Rear end candidates", endsText(view.rearEndCandidates)],
         ]}
       />
-      <p>Click a part in the plan view to move it between the body and the bogies.</p>
-      <PlanView gear={gear} view={view} />
+      <PlanView view={view} />
       <SideView view={view} />
-      {view.pivots.map((pivot, b) => (
-        <div key={`bogie-${b}`} className="gear-row">
-          <span
-            className="gear-swatch"
-            style={{ background: GROUP_FILLS[b % GROUP_FILLS.length] }}
-          />
-          Bogie {b + 1} pivot
-          <NumberField label="x" value={pivot[0]} onChange={(x) => gear.setPivot(b, x, pivot[2])} />
-          <NumberField label="z" value={pivot[2]} onChange={(z) => gear.setPivot(b, pivot[0], z)} />
-          <button type="button" onClick={() => gear.removeBogie(b)}>
-            Remove
-          </button>
-        </div>
-      ))}
-      <button type="button" onClick={() => gear.addBogie()}>
-        Add bogie
-      </button>
-      {view.couplers.map((coupler) => (
-        <div key={`coupler-${coupler.instance}`} className="gear-row">
-          Coupling face (part {coupler.instance}
-          {coupler.bogie === null ? ", body" : `, bogie ${coupler.bogie + 1}`})
-          <NumberField
-            label="x"
-            value={coupler.face[0]}
-            onChange={(x) => gear.setCouplerFace(coupler.instance, x, coupler.face[2])}
-          />
-          <NumberField
-            label="z"
-            value={coupler.face[2]}
-            onChange={(z) => gear.setCouplerFace(coupler.instance, coupler.face[0], z)}
-          />
-        </div>
-      ))}
-      {obsolete.length > 0 && (
-        <p>The coupling magnets come from parts LDraw marks obsolete: {obsolete.join(", ")}.</p>
-      )}
-      {view.savedOverrideRefused && (
-        <p className="error">
-          The saved override for this vehicle cannot run, so play uses the detected gear instead.
-        </p>
-      )}
-      {view.issues.map((issue) => (
-        <p key={issue} className="error">
-          {issue}
-        </p>
-      ))}
-      <div className="gear-actions">
-        <button
-          type="button"
-          disabled={!snapshot.dirty || !valid || snapshot.busy}
-          onClick={() => void gear.save()}
-        >
-          Save override
-        </button>
-        <button
-          type="button"
-          disabled={
-            snapshot.busy ||
-            snapshot.models.find((m) => m.sha256 === view.sha256)?.sources[view.vehicle] ===
-              "detected"
-          }
-          onClick={() => void gear.reset()}
-        >
-          Reset this vehicle to detected
-        </button>
-      </div>
-      <p>A saved override takes effect the next time play starts.</p>
-    </>
+    </div>
   );
 }
 
-const SOURCE_LABELS: Readonly<Record<RunningGearSource, string>> = {
-  detected: "",
-  override: " (override)",
-  "override refused": " (override refused, running detected gear)",
-};
+function UnreadRows({
+  model,
+  rows,
+}: {
+  readonly model: GearModelView;
+  readonly rows: Uint32Array;
+}) {
+  const { instance, band, reason } = model.unreadRollingBands;
+  return (
+    <table className="gear-unread-rows">
+      <thead>
+        <tr>
+          <th>Part</th>
+          <th>Band</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {Array.from(rows, (row) => (
+          <tr key={row}>
+            <td>{instance[row]}</td>
+            <td>{band[row]}</td>
+            <td>{reason[row]}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function UnreadBands({ model }: { readonly model: GearModelView }) {
+  const [showAll, setShowAll] = useState(false);
+  const { counts, listed, others } = model.unread;
+  if (counts.length === 0) return null;
+  return (
+    <div className="gear-unread" aria-label="Unread rolling bands">
+      <p>Rolling bands the detector could not read:</p>
+      <ul className="gear-unread-counts">
+        {counts.map((count) => (
+          <li key={count.reason} data-reason={count.reason}>
+            {count.reason}: {count.rows}
+          </li>
+        ))}
+      </ul>
+      {listed.length > 0 && <UnreadRows model={model} rows={listed} />}
+      {others.length > 0 && (
+        <button type="button" aria-expanded={showAll} onClick={() => setShowAll(!showAll)}>
+          {showAll ? "Hide" : "Show all"} {others.length} rows off the running gear
+        </button>
+      )}
+      {showAll && <UnreadRows model={model} rows={others} />}
+    </div>
+  );
+}
+
+function ModelGear({
+  gear,
+  model,
+  selected,
+  view,
+}: {
+  readonly gear: IRunningGear;
+  readonly model: GearModelView;
+  readonly selected: number | null;
+  readonly view: GearView | null;
+}) {
+  const status = model.playable
+    ? `${model.vehicles} ${model.vehicles === 1 ? "vehicle" : "vehicles"}`
+    : model.unresolved.length > 0
+      ? "placeable, not playable"
+      : "no running gear";
+  return (
+    <section className="gear-model" data-model={model.name} data-playable={model.playable}>
+      <h3>
+        {model.name} <span className="gear-status">{status}</span>
+      </h3>
+      {model.unresolved.map((report, r) => (
+        <p key={`unresolved-${r}`} className="error" data-reason={report.reason}>
+          Unresolved: {UNRESOLVED_TEXT[report.reason]} ({report.instances.length} parts,{" "}
+          {report.wheelsets.length} wheelsets, {report.mates.length} mates,{" "}
+          {report.unreadRows.length} unread bands)
+        </p>
+      ))}
+      {model.vehicles > 0 && (
+        <div className="toolbar">
+          {Array.from({ length: model.vehicles }, (_, v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={selected === v}
+              onClick={() => gear.select(model.name, v)}
+            >
+              Vehicle {v + 1}
+            </button>
+          ))}
+        </div>
+      )}
+      {view && <VehicleView view={view} />}
+      <UnreadBands model={model} />
+    </section>
+  );
+}
 
 export const RunningGearPanel = memo(function RunningGearPanel({
   gear,
@@ -336,39 +310,24 @@ export const RunningGearPanel = memo(function RunningGearPanel({
     (listener) => gear.subscribe(listener),
     () => gear.snapshot(),
   );
-  const options = snapshot.models.flatMap((model) =>
-    Array.from({ length: model.vehicles }, (_, v) => ({
-      key: `${model.name}#${v}`,
-      model: model.name,
-      vehicle: v,
-      label: `${model.name}${model.vehicles > 1 ? ` vehicle ${v + 1}` : ""}${SOURCE_LABELS[model.sources[v] ?? "detected"]}`,
-    })),
-  );
-  const selectedKey = snapshot.selected
-    ? `${snapshot.selected.model}#${snapshot.selected.vehicle}`
-    : "";
   return (
     <details className="gear-panel">
       <summary>Running gear</summary>
-      <select
-        value={selectedKey}
-        onChange={(event) => {
-          const option = options.find((o) => o.key === event.target.value);
-          if (option) gear.select(option.model, option.vehicle);
-        }}
-      >
-        <option value="" disabled>
-          Choose a vehicle
-        </option>
-        {options.map((option) => (
-          <option key={option.key} value={option.key}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      {snapshot.storeProblem && <p className="error">{snapshot.storeProblem}</p>}
-      {snapshot.error && <p className="error">{snapshot.error}</p>}
-      {snapshot.view && <Editor gear={gear} snapshot={snapshot} view={snapshot.view} />}
+      {snapshot.models.length === 0 && (
+        <p className="toolbar-hint">Place a model to see the running gear read from its parts.</p>
+      )}
+      {snapshot.models.map((model) => {
+        const selected = snapshot.selected?.model === model.name ? snapshot.selected.vehicle : null;
+        return (
+          <ModelGear
+            key={model.sha256}
+            gear={gear}
+            model={model}
+            selected={selected}
+            view={selected === null ? null : snapshot.view}
+          />
+        );
+      })}
     </details>
   );
 });

@@ -2,13 +2,6 @@ import type { PartModel, PartShapeAsset } from "@brr/catalog";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 
-export interface PlanBox {
-  readonly minX: number;
-  readonly maxX: number;
-  readonly minZ: number;
-  readonly maxZ: number;
-}
-
 export function instanceBoxes(
   model: PartModel,
   bundle: { readonly parts: ReadonlyArray<PartShapeAsset> },
@@ -37,32 +30,4 @@ export function instanceBoxes(
     }
   }
   return out;
-}
-
-export function planBox(boxes: Float64Array, instance: number): PlanBox | null {
-  const o = instance * BOX_FLOATS;
-  if (o + BOX_FLOATS > boxes.length) return null;
-  const box = {
-    minX: boxes[o] ?? Number.POSITIVE_INFINITY,
-    maxX: boxes[o + 3] ?? Number.NEGATIVE_INFINITY,
-    minZ: boxes[o + 2] ?? Number.POSITIVE_INFINITY,
-    maxZ: boxes[o + 5] ?? Number.NEGATIVE_INFINITY,
-  };
-  return box.minX <= box.maxX && box.minZ <= box.maxZ ? box : null;
-}
-
-export function unionBox(boxes: ReadonlyArray<PlanBox>): PlanBox | null {
-  if (boxes.length === 0) return null;
-  return {
-    minX: Math.min(...boxes.map((b) => b.minX)),
-    maxX: Math.max(...boxes.map((b) => b.maxX)),
-    minZ: Math.min(...boxes.map((b) => b.minZ)),
-    maxZ: Math.max(...boxes.map((b) => b.maxZ)),
-  };
-}
-
-export function distanceOutside(box: PlanBox, x: number, z: number): number {
-  const dx = Math.max(box.minX - x, 0, x - box.maxX);
-  const dz = Math.max(box.minZ - z, 0, z - box.maxZ);
-  return Math.hypot(dx, dz);
 }

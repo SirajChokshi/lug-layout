@@ -415,7 +415,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         .filter((color) => color.alpha < ALPHA_OPAQUE)
         .map((color) => color.code),
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-      vehicles: manifest.compiler.vehicles ?? null,
+      rails: manifest.compiler.rails,
     };
   }
 
@@ -651,6 +651,9 @@ function partModel(file: ModelFile): PartModel {
         instances: Uint32Array.from(bogie.instances),
       })),
     })),
+    vehicleCouplings: file.vehicleCouplings,
+    unresolvedRunningGear: file.unresolvedRunningGear,
+    unreadRollingBands: file.unreadRollingBands,
   };
 }
 

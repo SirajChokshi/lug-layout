@@ -1,4 +1,4 @@
-import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
+import type { ModelCells, ModelStudCover, PartModelLattice } from "@brr/catalog";
 import {
   CompilerBake,
   CompilerBakeNeeds,
@@ -13,8 +13,6 @@ import {
   type CompilerEnvelope,
   type CompilerLibraryDelta,
   type CompilerRequest,
-  type CompilerVehicle,
-  type CompilerVehicles,
   type ModelSection,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -92,7 +90,6 @@ export interface BakeRequest {
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly vehicles: CompilerVehicles | null;
   readonly shard?: BakeShard;
 }
 
@@ -102,8 +99,6 @@ export interface BakedModel {
   readonly latticeIssue: string | null;
   readonly studCover: ModelStudCover;
   readonly cells: ModelCells | null;
-  readonly vehicles: ReadonlyArray<PartVehicle>;
-  readonly vehicleIssue: string | null;
 }
 
 export interface BakeFailure {
@@ -161,33 +156,6 @@ function bytesOf(body: Uint8Array, blobs: CompilerBlobs, name: string): ArrayBuf
   return body.slice(offset, offset + length).buffer;
 }
 
-function indices(all: Uint32Array, [start, count]: Range): Uint32Array {
-  return all.slice(start, start + count);
-}
-
-function vehicleOf(
-  vehicle: CompilerVehicle,
-  body: Uint32Array,
-  bogieInstances: Uint32Array,
-): PartVehicle {
-  return {
-    ...vehicle,
-    body: indices(body, vehicle.body),
-    bogies: vehicle.bogies.map((bogie) => ({
-      ...bogie,
-      instances: indices(bogieInstances, bogie.instances),
-    })),
-  };
-}
-
-function bakedVehicles(header: CompilerBaked, body: Uint8Array): ReadonlyArray<PartVehicle> {
-  const { vehicles, blobs } = header;
-  if (vehicles === undefined) return [];
-  const vehicleBody = new Uint32Array(bytesOf(body, blobs, "vehicleBody"));
-  const bogieInstances = new Uint32Array(bytesOf(body, blobs, "bogieInstances"));
-  return vehicles.map((vehicle) => vehicleOf(vehicle, vehicleBody, bogieInstances));
-}
-
 function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
   const { blobs, cover, lattice } = header;
   const cells = cover.cells;
@@ -222,8 +190,6 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
             columnBottom: new Int16Array(bytesOf(body, blobs, "columnBottom")),
             columnTop: new Int16Array(bytesOf(body, blobs, "columnTop")),
           },
-    vehicles: bakedVehicles(header, body),
-    vehicleIssue: header.vehicleIssue ?? null,
   };
 }
 

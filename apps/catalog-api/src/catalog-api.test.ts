@@ -474,7 +474,6 @@ function bundleModel(
     inlinePartsResolvedToOfficial: [],
     instances: 0,
     lattice: null,
-    vehicles: 0,
     sha256: "0".repeat(64),
     cover: { studs: 0, coveredStuds: 0, keptOpenBelow: 0, cells: null },
   };

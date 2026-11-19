@@ -9,7 +9,6 @@ use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice, StudPose};
 use crate::model::ModelInstance;
 use crate::technic::TechnicPrimitives;
-use crate::vehicle::{detect_vehicles, RailHeadBand, Vehicle, VehicleError, VehicleSignatures};
 use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -212,15 +211,6 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             shard,
             self.table_depth,
         ))
-    }
-
-    pub fn vehicles(
-        &self,
-        drawn: &[ModelInstance],
-        signatures: &VehicleSignatures,
-        rails: &[RailHeadBand],
-    ) -> Result<Vec<Vehicle>, VehicleError> {
-        detect_vehicles(self.library, drawn, signatures, rails)
     }
 
     pub fn voxels(&mut self, drawn: &[ModelInstance]) -> Result<Option<VoxelGrid>, BakeError> {

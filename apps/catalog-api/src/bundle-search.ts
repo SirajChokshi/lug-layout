@@ -1,4 +1,4 @@
-import { BundleIndex, BundleModelEntry, CatalogPart } from "@brr/schema/bundle";
+import { BundleIndexFields, BundleModelEntry, CatalogPart } from "@brr/schema/bundle";
 import {
   BUNDLE_SEARCH_LOD,
   MIN_PREFIX_LETTERS,
@@ -13,10 +13,10 @@ import * as v from "valibot";
 const SearchedModel = v.pick(BundleModelEntry, ["name", "file", "origin", "set", "sections"]);
 type SearchedModel = v.InferOutput<typeof SearchedModel>;
 const SearchedIndex = v.object({
-  colors: BundleIndex.entries.colors,
+  colors: BundleIndexFields.entries.colors,
   models: v.array(SearchedModel),
   catalogParts: v.array(v.pick(CatalogPart, ["id", "role", "title", "producedColors", "shape"])),
-  trackCatalog: BundleIndex.entries.trackCatalog,
+  trackCatalog: BundleIndexFields.entries.trackCatalog,
 });
 type SearchedIndex = v.InferOutput<typeof SearchedIndex>;
 

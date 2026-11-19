@@ -1,16 +1,16 @@
 import { TrackGraph } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import { RAY_FLOATS, SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
-import type { SimFrameLayout, TrainSpec } from "@brr/sim";
+import type { SimFrameLayout, TrainPlacement, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
-import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
-import { consistVehicles, type ConsistVehicle, type RigidBodyInstances } from "../sim/consist.ts";
+import { instanceBoxes } from "../running-gear/instance-boxes.ts";
+import { consistsOf, type ConsistVehicle, type RigidBodyInstances } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { withStuds } from "../scene/stud-stream.ts";
-import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
+import { SIM_CLIENT } from "../tokens.ts";
 import type { PlayModel, PlaySetup } from "./play-models.ts";
-import { edgeLengths, trainStart } from "./train-start.ts";
+import { edgeLengths, placementBehind, trainStart } from "./train-start.ts";
 
 export type PlayStatus = "idle" | "loading" | "running" | "error";
 export type FollowCamera = (x: number, z: number) => void;
@@ -29,6 +29,7 @@ export interface PlaySnapshot {
   readonly notice: string | null;
   readonly trainModel: string | null;
   readonly vehicles: number;
+  readonly consists: number;
   readonly trainLengthLdu: number;
   readonly maxSpeedLduPerS: number;
   readonly targetLduPerS: number;
@@ -70,6 +71,7 @@ const DIVERGING_PIECE = /-f2$/u;
 
 interface PlacedVehicle {
   readonly vehicle: ConsistVehicle;
+  readonly consist: number;
   readonly body: number;
   readonly frontBogie: number;
   readonly rearBogie: number;
@@ -88,6 +90,7 @@ const IDLE: PlaySnapshot = {
   notice: null,
   trainModel: null,
   vehicles: 0,
+  consists: 0,
   trainLengthLdu: 0,
   maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
   targetLduPerS: 0,
@@ -107,9 +110,12 @@ export class TrainPlay implements ITrainPlay {
   private readonly listeners = new Set<() => void>();
   private state: PlaySnapshot = IDLE;
   private placed: PlacedVehicle[] = [];
+  private leadVehicles = 0;
   private layout: SimFrameLayout | null = null;
   private sites: SwitchSite[] = [];
   private railTopY = 0;
+  private frontRailTops: Float64Array = new Float64Array(0);
+  private rearRailTops: Float64Array = new Float64Array(0);
   private running = false;
   private lastStatusMs = 0;
   private camera: FollowCamera | null = null;
@@ -118,7 +124,6 @@ export class TrainPlay implements ITrainPlay {
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) private readonly sim: ISimClient,
-    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -166,21 +171,18 @@ export class TrainPlay implements ITrainPlay {
     const { layout, pieces } = setup.track;
     if (layout.count === 0) throw new Error("Lay some track first: there is nothing to run on.");
     const graph = new TrackGraph(layout);
-    await this.runningGear.setModels([model.gear]);
-    const consist = consistVehicles(
-      model.model,
-      model.name,
-      false,
-      setup.track.railPart,
-      this.runningGear.effectiveVehicles(model.name),
-    );
-    const spec: TrainSpec = {
+    const consists = consistsOf(model.model, instanceBoxes(model.model, setup));
+    const specs: TrainSpec[] = consists.map((consist) => ({
       vehicles: consist.map((vehicle) => vehicle.spec),
       maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
       accelerationLduPerS2: ACCELERATION_LDU_PER_S2,
       brakingLduPerS2: BRAKING_LDU_PER_S2,
-    };
-    const trainLengthLdu = spec.vehicles.reduce((sum, vehicle) => sum + vehicle.lengthLdu, 0);
+    }));
+    const consistLengths = specs.map((spec) =>
+      spec.vehicles.reduce((sum, vehicle) => sum + vehicle.lengthLdu, 0),
+    );
+    const trainLengthLdu = consistLengths.reduce((sum, length) => sum + length, 0);
+    const vehicleCount = consists.reduce((sum, consist) => sum + consist.length, 0);
     this.sites = switchSites(graph, setup);
     const initialStates = Uint8Array.from(this.sites, (site) =>
       site.startsDiverging ? DIVERGING : STRAIGHT,
@@ -192,11 +194,23 @@ export class TrainPlay implements ITrainPlay {
         `The ${Math.round(trainLengthLdu / STUD_LDU)}-stud train does not fit on any run of this track. Lay a longer run or pick a shorter train.`,
       );
     }
+    const placements: TrainPlacement[] = [{ edge: start.edge, offsetLdu: start.offsetLdu }];
+    for (let k = 1; k < consists.length; k++) {
+      const ahead = placements[k - 1];
+      const behind = ahead
+        ? placementBehind(graph, lengths, initialStates, ahead, consistLengths[k - 1] ?? 0)
+        : null;
+      if (!behind) throw new Error(`Consist ${k + 1} of the train does not fit on the track.`);
+      placements.push(behind);
+    }
     const loaded = await this.sim.load({
       graph: simTopology(graph),
       routeSegments: routeSegments(graph, layout, pieces),
-      capacity: { trains: 1, vehicles: consist.length },
-      trains: [{ spec, placement: { edge: start.edge, offsetLdu: start.offsetLdu } }],
+      capacity: { trains: consists.length, vehicles: vehicleCount },
+      trains: specs.map((spec, k) => ({
+        spec,
+        placement: placements[k] ?? placements[0] ?? start,
+      })),
       autopilotSeed: null,
       openEnds: "derail",
     });
@@ -206,6 +220,8 @@ export class TrainPlay implements ITrainPlay {
       }
     }
     this.layout = loaded.layout;
+    this.frontRailTops = loaded.frontRailTops;
+    this.rearRailTops = loaded.rearRailTops;
     this.railTopY = setup.track.railTopY;
     this.clearVehicles();
     let nextBody = 0;
@@ -215,14 +231,19 @@ export class TrainPlay implements ITrainPlay {
       this.backend.setVehicle(id, rigidChunk(rigid, model, setup));
       return id;
     };
-    this.placed = consist.map((vehicle) => ({
-      vehicle,
-      body: show(vehicle.body),
-      frontBogie: show(vehicle.frontBogie),
-      rearBogie: show(vehicle.rearBogie),
-    }));
+    this.placed = consists.flatMap((vehicles, consist) =>
+      vehicles.map((vehicle) => ({
+        vehicle,
+        consist,
+        body: show(vehicle.body),
+        frontBogie: show(vehicle.frontBogie),
+        rearBogie: show(vehicle.rearBogie),
+      })),
+    );
+    this.leadVehicles = consists[0]?.length ?? 0;
     this.update({
-      vehicles: consist.length,
+      vehicles: vehicleCount,
+      consists: consists.length,
       trainLengthLdu,
       switches: this.switchViews(initialStates),
     });
@@ -294,9 +315,9 @@ export class TrainPlay implements ITrainPlay {
   private trainCentre(): { readonly x: number; readonly z: number } | null {
     const frame = this.sim.latestFrame();
     const layout = this.layout;
-    if (!frame || !layout || layout.vehicles === 0) return null;
+    if (!frame || !layout || this.leadVehicles === 0) return null;
     const first = layout.vehiclePoseStart;
-    const last = first + (layout.vehicles - 1) * layout.vehiclePoseFloats;
+    const last = first + (this.leadVehicles - 1) * layout.vehiclePoseFloats;
     const data = frame.data;
     return {
       x: ((data[first] ?? 0) + (data[last] ?? 0)) / 2,
@@ -386,14 +407,16 @@ export class TrainPlay implements ITrainPlay {
       if (!placed) continue;
       const o = layout.vehiclePoseStart + v * layout.vehiclePoseFloats;
       const off = data[layout.bogiesOffTrackStart + v] ?? 0;
-      const onRails = this.railTopY - placed.vehicle.railTopY;
-      const onGround = -placed.vehicle.railTopY;
-      const leadingY = off >= 1 ? onGround : onRails;
-      const trailingY = off >= 2 ? onGround : onRails;
+      const leadingIsFront = (data[layout.trainFacingStart + placed.consist] ?? 1) > 0;
+      const frontTop = this.frontRailTops[v] ?? 0;
+      const rearTop = this.rearRailTops[v] ?? 0;
+      const leadingTop = leadingIsFront ? frontTop : rearTop;
+      const trailingTop = leadingIsFront ? rearTop : frontTop;
+      const leadingY = off >= 1 ? -leadingTop : this.railTopY - leadingTop;
+      const trailingY = off >= 2 ? -trailingTop : this.railTopY - trailingTop;
       const side = v % 2 === 0 ? 1 : -1;
       const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
       const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
-      const leadingIsFront = (data[layout.trainFacingStart] ?? 1) > 0;
       const frontY = leadingIsFront ? leadingY : trailingY;
       const rearY = leadingIsFront ? trailingY : leadingY;
       const spacing = Math.hypot(

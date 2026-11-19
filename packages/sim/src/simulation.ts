@@ -1,4 +1,5 @@
 import { NO_EDGE, runningGearSpanProblem } from "@brr/domain";
+import { exactRationalToFloat64, parseExactRational, type ExactRationalText } from "@brr/math";
 import type { Autopilot } from "./blocks/autopilot.ts";
 import type { BlockKeeper } from "./blocks/block-keeper.ts";
 import { NO_BLOCK } from "./blocks/block-map.ts";
@@ -17,17 +18,25 @@ export const SIM_TICK_SECONDS = 1 / SIM_TICK_HZ;
 export const POSE_FLOATS_PER_VEHICLE = 4;
 const PATH_CAPACITY = 64;
 const PATH_MARGIN_EDGES = 2;
-const AXLES_PER_VEHICLE = 4;
+const AXLES_PER_VEHICLE = 6;
 const FRONT_LEAD_AXLE = 0;
 const FRONT_TRAIL_AXLE = 1;
 const REAR_LEAD_AXLE = 2;
 const REAR_TRAIL_AXLE = 3;
+const FRONT_RAIL_TOP = 4;
+const REAR_RAIL_TOP = 5;
+
+export interface GuideWheelset {
+  readonly axleYLdu: number;
+  readonly rollingRadius: ExactRationalText;
+}
 
 export interface VehicleSpec {
   readonly lengthLdu: number;
   readonly frontBogieLdu: number;
   readonly rearBogieLdu: number;
   readonly geometry?: VehicleGeometry;
+  readonly guideWheelsets?: { readonly front: GuideWheelset; readonly rear: GuideWheelset };
 }
 
 export interface TrainSpec {
@@ -160,6 +169,14 @@ export class Simulation {
 
   get trains(): number {
     return this.trainCount;
+  }
+
+  guideRailTops(column: "front" | "rear"): Float64Array {
+    const offset = column === "front" ? FRONT_RAIL_TOP : REAR_RAIL_TOP;
+    return Float64Array.from(
+      { length: this.vehicleCount },
+      (_, v) => this.vehicleAxles[v * AXLES_PER_VEHICLE + offset] ?? Number.NaN,
+    );
   }
 
   get vehicles(): number {
@@ -727,7 +744,17 @@ function assertGeometryMatchesSpec(vehicle: VehicleSpec): void {
   }
 }
 
+function railTop({ axleYLdu, rollingRadius }: GuideWheelset): number {
+  return axleYLdu - exactRationalToFloat64(parseExactRational(rollingRadius));
+}
+
 function writeAxles(vehicle: VehicleSpec, ahead: number, out: Float64Array, at: number): void {
+  out[at + FRONT_RAIL_TOP] = vehicle.guideWheelsets
+    ? railTop(vehicle.guideWheelsets.front)
+    : Number.NaN;
+  out[at + REAR_RAIL_TOP] = vehicle.guideWheelsets
+    ? railTop(vehicle.guideWheelsets.rear)
+    : Number.NaN;
   const geometry = vehicle.geometry;
   if (!geometry) {
     out[at + FRONT_LEAD_AXLE] = ahead + vehicle.frontBogieLdu;

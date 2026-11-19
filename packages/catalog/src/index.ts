@@ -44,6 +44,7 @@ export type {
   PartBundle,
   PartFilter,
   PartMesh,
+  ModelRunningGear,
   PartModel,
   PartVehicle,
   PinnedSectionVocabulary,

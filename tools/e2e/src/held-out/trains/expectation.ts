@@ -1,5 +1,11 @@
 import { type Vec3 } from "../assembly.ts";
-import { PIVOT_PART_SUFFIX } from "./placement.ts";
+import { smoothRuns } from "./head-band-contact.ts";
+import {
+  PIVOT_PART_SUFFIX,
+  headBandSpan,
+  type HeadBandSpan,
+  type RailHeadBands,
+} from "./placement.ts";
 import type { TrainModel } from "./train-model.ts";
 import type { EndPlan, PlannedWheelset, RollingSurfaceContact, TrainPlan } from "./train-plan.ts";
 const FRAME =
@@ -91,13 +97,54 @@ export function lineUnits(model: TrainModel, line: PlannedWheelset): ReadonlySet
   return new Set(instances.map((index) => model.placements[index]?.unit ?? ""));
 }
 
-export function expectationOf(model: TrainModel, plan: TrainPlan): TrainExpectation | null {
+const SIXTEENTHS_PER_LDU = 16;
+const RUN_SEARCH_LDU = 80;
+
+function overlapsAt(run: HeadBandSpan, band: HeadBandSpan, centre: number): boolean {
+  return run.from < centre + band.to && run.to > centre + band.from;
+}
+
+function firstRailMet(
+  model: TrainModel,
+  rails: ReadonlyArray<RailHeadBands>,
+  line: PlannedWheelset,
+): string | null {
+  const runs = [...new Set(line.rollingSurfaces.map((contact) => contact.instance))].flatMap(
+    (instance) => smoothRuns(model, instance, line, -RUN_SEARCH_LDU, RUN_SEARCH_LDU),
+  );
+  for (const rail of rails) {
+    const near = headBandSpan(rail, -1);
+    const far = headBandSpan(rail, 1);
+    for (
+      let k = -RUN_SEARCH_LDU * SIXTEENTHS_PER_LDU;
+      k <= RUN_SEARCH_LDU * SIXTEENTHS_PER_LDU;
+      k++
+    ) {
+      const centre = k / SIXTEENTHS_PER_LDU;
+      if (
+        runs.some((run) => overlapsAt(run, near, centre)) &&
+        runs.some((run) => overlapsAt(run, far, centre))
+      ) {
+        return rail.part;
+      }
+    }
+  }
+  return null;
+}
+
+export function expectationOf(
+  model: TrainModel,
+  plan: TrainPlan,
+  rails: ReadonlyArray<RailHeadBands>,
+): TrainExpectation | null {
   const positives = plan.wheelsets.filter(
     (line) => line.negative === null && line.rail !== null && line.rollingSurfaces.length > 0,
   );
-  const wheelsets = positives.map((line) => ({
+  const railsMet = positives.map((line) => firstRailMet(model, rails, line));
+  if (railsMet.some((rail) => rail === null)) return null;
+  const wheelsets = positives.map((line, index) => ({
     axisLine: axisLine(line),
-    rail: line.rail ?? "",
+    rail: railsMet[index] ?? "",
     instances: [...new Set(line.rollingSurfaces.map((contact) => contact.instance))],
     rollingSurfaces: line.rollingSurfaces,
   }));

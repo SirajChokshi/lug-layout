@@ -1,4 +1,4 @@
-import { BrickCompiler, type BakeRequest, type CompileLod, type CompileOutput } from "@brr/import";
+import { BrickCompiler, type CompileLod, type CompileOutput } from "@brr/import";
 import { SectionVocabularyFile, type PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { isDeepStrictEqual } from "node:util";
@@ -19,7 +19,6 @@ interface Manifest {
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: ManifestFile & {
     readonly unofficialAllowlist: ReadonlyArray<string>;
-    readonly vehicles?: NonNullable<BakeRequest["vehicles"]>;
     readonly primitives?: PrimitiveConnectorTable;
     readonly sectionVocabulary: ManifestFile;
     readonly cavityProbe: string;
@@ -159,7 +158,6 @@ if (identical !== total) process.exitCode = 1;
 interface ModelFile {
   readonly parts: ReadonlyArray<string>;
   readonly lattice: unknown;
-  readonly vehicles: ReadonlyArray<unknown>;
   readonly cover: {
     readonly studs: number;
     readonly coveredStuds: number;
@@ -254,7 +252,6 @@ for (const model of standardManifest.models) {
     unofficialAllowlist: standardManifest.compiler.unofficialAllowlist,
     translucentColors,
     tableDepthLdu: standardManifest.tablePlane.depthBelowTopLdu,
-    vehicles: standardManifest.compiler.vehicles ?? null,
   };
   let baked = baker.bake(request, library);
   while (baked.status === "need") {
@@ -309,16 +306,10 @@ for (const model of standardManifest.models) {
       if (!isDeepStrictEqual([...bakedCells.columnTop], cells.columnTop))
         mismatches.push("column tops");
     }
-    const vehicles = baked.vehicles.map((vehicle) => ({
-      ...vehicle,
-      body: [...vehicle.body],
-      bogies: vehicle.bogies.map((bogie) => ({ ...bogie, instances: [...bogie.instances] })),
-    }));
-    if (!isDeepStrictEqual(vehicles, bundled.vehicles)) mismatches.push("vehicles");
   }
   if (differing === 0 && mismatches.length === 0) bakesIdentical++;
   process.stdout.write(
-    `bake ${model.name}: ${kept.length} instances, ${differing} differing (part, colour, float32 matrix); lattice, cover, cells and vehicles ${mismatches.length === 0 ? "identical" : `differ: ${mismatches.join(", ")}`} (WASM bake ${bakeMs.toFixed(0)} ms)\n`,
+    `bake ${model.name}: ${kept.length} instances, ${differing} differing (part, colour, float32 matrix); lattice, cover and cells ${mismatches.length === 0 ? "identical" : `differ: ${mismatches.join(", ")}`} (WASM bake ${bakeMs.toFixed(0)} ms)\n`,
   );
   if (differing > 0 || mismatches.length > 0) process.exitCode = 1;
 }

@@ -14,7 +14,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { vehicleSpec } from "../sim/consist.ts";
+import { instanceBoxes } from "../running-gear/instance-boxes.ts";
+import { plannedConsists } from "../sim/consist.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { buildTrackPlan } from "./track-plan.ts";
 import { TRACK_PARTS } from "./track-scene.ts";
@@ -69,9 +70,9 @@ beforeAll(async () => {
   const loader = container.get(PART_BUNDLE_LOADER);
   catalog = (await loader.load("standard", TRACK_PARTS)).trackCatalog;
   const model = await loader.loadModel("standard", LOCOMOTIVE_MODEL);
-  const vehicle = model.model.vehicles[0];
-  if (!vehicle) throw new Error(`${LOCOMOTIVE_MODEL} has no baked vehicle`);
-  locomotive = vehicleSpec(vehicle, false);
+  const planned = plannedConsists(model.model, instanceBoxes(model.model, model.bundle))[0]?.[0];
+  if (!planned) throw new Error(`${LOCOMOTIVE_MODEL} has no vehicle`);
+  locomotive = planned.spec;
 });
 
 function session(
