@@ -190,7 +190,7 @@ async function checkPair(
   const subjectPose = await placeAtOrigin(path, subject);
   const poses = pairPoses(path, pair.partnerOffset, pair.alongEdge, subject, subjectPose, partner);
   const pinned = await pinnedPairChecks(path, poses, pair, subject, partner, FULL_SWEEP);
-  const turned = await turnedAwayCheck(path, poses, partner);
+  const turned = await turnedAwayCheck(path, poses, partner, pair.pins);
   path.undoLast();
 
   const holedPose = await placeAtOrigin(path, holed);
@@ -226,7 +226,7 @@ async function checkPair(
   const solidRun = await solidEdgeChecks(
     path,
     pairPoses(path, heldOffset, pair.alongEdge, solid, solidPose, subject),
-    pair.solidPartner,
+    pair.solidPartner.assembly,
     pair.subject.assembly,
     solid,
     subject,
@@ -235,7 +235,7 @@ async function checkPair(
   const solidRenamedRun = await solidEdgeChecks(
     path,
     pairPoses(path, heldOffset, pair.alongEdge, solid, solidPose, renamed),
-    pair.solidPartner,
+    pair.solidPartner.assembly,
     pair.renamedSubject.assembly,
     solid,
     renamed,
@@ -278,7 +278,7 @@ function markdown(seed: number, outcomes: ReadonlyArray<PairOutcome>, seconds: n
   const lines = [
     `#### Generated module pairs through the editor's own interface (base seed ${seed}, HELD_OUT_SEED=${seed} reproduces it)`,
     "",
-    `${outcomes.length} pairs in ${seconds.toFixed(1)} s, ${FULL_SWEEP ? "full" : "coarse"} sweep (HELD_OUT_SWEEP=full runs every stud offset). Each pair is imported and placed through \`IEditor\` only: the pinned module is placed and its holed partner is held, in assist (magnetic) and precise modes.`,
+    `${outcomes.length} pairs in ${seconds.toFixed(1)} s, ${FULL_SWEEP ? "full" : "coarse"} sweep (HELD_OUT_SWEEP=full runs every stud offset). Each pair is imported through the import engine in process, then placed and held through \`IEditor\` only: the pinned module is placed and its holed partner is held, in assist (magnetic) and precise modes.`,
     "",
   ];
   for (const outcome of outcomes) {

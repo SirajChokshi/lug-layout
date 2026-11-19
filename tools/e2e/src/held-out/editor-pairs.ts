@@ -67,12 +67,33 @@ function roundSections(kind: ConnectorKindView): boolean {
   );
 }
 
+function counterboredAtBothMouths(kind: ConnectorKindView): boolean {
+  const first = kind.sections[0];
+  const last = kind.sections.at(-1);
+  const inner = kind.sections.slice(1, -1);
+  return (
+    first !== undefined &&
+    last !== undefined &&
+    inner.length > 0 &&
+    inner.every((section) => section.sizeLdu < first.sizeLdu && section.sizeLdu < last.sizeLdu)
+  );
+}
+
 function isTechnicHole(kind: ConnectorKindView): boolean {
-  return kind.gender === "female" && kind.slides && kind.sections.length > 0 && roundSections(kind);
+  return (
+    kind.gender === "female" &&
+    kind.slides &&
+    kind.sections.every((section) => section.profile === "round") &&
+    counterboredAtBothMouths(kind)
+  );
 }
 
 function isTechnicPin(kind: ConnectorKindView): boolean {
-  return kind.gender === "male" && kind.sections.length > 0 && roundSections(kind);
+  return (
+    kind.gender === "male" &&
+    roundSections(kind) &&
+    kind.sections.some((section) => section.profile === "flare")
+  );
 }
 
 function pinHoleMates(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<HoverMateCount> {
@@ -316,17 +337,30 @@ interface HitBox {
   readonly topLdu: number;
 }
 
-function overlapsHit(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
+function coversCell(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
   const x0 = box.cellX * STUD_LDU;
   const z0 = box.cellZ * STUD_LDU;
   return (
     origin[0] + part.min[0] < x0 + STUD_LDU &&
     origin[0] + part.max[0] > x0 &&
     origin[2] - part.max[2] < z0 + STUD_LDU &&
-    origin[2] - part.min[2] > z0 &&
+    origin[2] - part.min[2] > z0
+  );
+}
+
+function overlapsHit(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
+  return (
+    coversCell(part, origin, box) &&
     origin[1] - part.max[1] < box.topLdu &&
     origin[1] - part.min[1] > box.bottomLdu
   );
+}
+
+function columnOverlapsHit(posedParts: PosedAssembly, box: HitBox): boolean {
+  const inCell = posedParts.parts.filter((part) => coversCell(part, posedParts.origin, box));
+  const bottom = Math.min(...inCell.map((part) => posedParts.origin[1] - part.max[1]));
+  const top = Math.max(...inCell.map((part) => posedParts.origin[1] - part.min[1]));
+  return inCell.length > 0 && bottom < box.topLdu && top > box.bottomLdu;
 }
 
 export function hitIsReal(
@@ -346,7 +380,7 @@ export function hitIsReal(
   return (
     named.parts.some(
       (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
-    ) && held.parts.some((part) => overlapsHit(part, held.origin, box))
+    ) && columnOverlapsHit(held, box)
   );
 }
 
@@ -649,8 +683,9 @@ export async function holesAgainstHolesCheck(
       step.hover?.accepted === true &&
       !step.hover.lifted &&
       step.hover.hit === null &&
+      pinHoleJoints(step.hover.mates) === 0 &&
       samePose(step.committed, poses.flush),
-    detail: `expected ${describePose(poses.flush)}; ${outcome(step)}`,
+    detail: `expected ${describePose(poses.flush)} with no pin/hole joint; ${outcome(step)}`,
   };
 }
 
@@ -658,18 +693,20 @@ export async function turnedAwayCheck(
   path: EditorPath,
   poses: PairPoses,
   heldItem: string,
+  pins: number,
 ): Promise<EditorCheck> {
   const log = new StepLog(path, heldItem, poses);
   const step = await log.at("assist", ONE_STUD_SHORT, false, QUARTER_TURNS_AWAY);
   await path.hold(heldItem, 0);
   return {
     label:
-      "Turned 180° so the holes face away, assist doesn't snap: no pin/hole mates, the cursor pose is kept, and turnBlocksSnap says a turn would",
+      "Turned 180° so the holes face away, assist doesn't snap: no pin/hole mates and the cursor pose is kept, while turnBlocksSnap and turnMates say a turn would engage every pin",
     passed:
       step.hover !== null &&
       atCursor(step, "assist") &&
       pinHoleJoints(step.hover.mates) === 0 &&
-      step.hover.turnBlocksSnap,
+      step.hover.turnBlocksSnap &&
+      pinHoleJoints(step.hover.turnMates) === pins,
     detail: `held turned ${QUARTER_TURNS_AWAY} quarter turns, aimed one stud short; ${outcome(step)}${step.hover?.turnBlocksSnap ? `; a turn would snap: ${describeMates(step.hover.turnMates)}` : ""}`,
   };
 }
@@ -762,7 +799,7 @@ export async function cornerModuleCheck(
 export async function solidEdgeChecks(
   path: EditorPath,
   poses: PairPoses,
-  solid: { readonly assembly: Assembly; readonly edgeRow: Assembly },
+  solidParts: Assembly,
   heldParts: Assembly,
   placedItem: string,
   heldItem: string,
@@ -805,18 +842,18 @@ export async function solidEdgeChecks(
         stepVerdict(item.assist) === stepVerdict(item.precise) &&
         atCursor(item.assist, "assist") &&
         atCursor(item.precise, "precise") &&
-        (item.precise.hover?.accepted === true || realHit(item.precise, solid.assembly, heldParts)),
+        (item.precise.hover?.accepted === true || realHit(item.precise, solidParts, heldParts)),
       describe,
       `${compared.length} offsets, assist identical to precise at each`,
     ),
     sweepCheck(
-      "Pins against a solid edge, flush: refused in both modes, naming an edge-row brick and the pin cell it hits, with no pin/hole joint, and the click places nothing",
+      "Pins against a solid edge, flush: refused in both modes, naming a hole-free part of the solid module and the pin cell it hits, with no pin/hole joint, and the click places nothing",
       flush,
       (item) =>
         bothModes(
           item,
           (step) =>
-            realHit(step, solid.edgeRow, pinsOf(heldParts)) &&
+            realHit(step, solidParts, pinsOf(heldParts)) &&
             pinHoleJoints(step.hover?.mates ?? []) === 0,
         ) &&
         clicked.refused &&
@@ -827,7 +864,7 @@ export async function solidEdgeChecks(
     sweepCheck(
       "Pins against a solid edge, pressed in by a stud or more: refused in both modes, naming a part and cell where the models overlap",
       pressed,
-      (item) => bothModes(item, (step) => realHit(step, solid.assembly, heldParts)),
+      (item) => bothModes(item, (step) => realHit(step, solidParts, heldParts)),
       describe,
       `${pressed.length} offsets, all refused with a real hit`,
     ),
