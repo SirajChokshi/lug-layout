@@ -1,4 +1,4 @@
-import { ASSET_FETCHER, type IAssetFetcher } from "@brr/catalog";
+import { ASSET_FETCHER, EMPTY_COLUMN, type IAssetFetcher } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -32,6 +32,7 @@ import { mainThreadModules } from "../src/client.module.ts";
 import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
 import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import type { Placeable } from "../src/edit/placeable.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
 import { parseHeapSnapshot, tallyOwners, type OwnerRules, type OwnerTally } from "./heap-owners.ts";
 
@@ -166,6 +167,7 @@ interface RunResult {
   readonly tiles: number;
   readonly parts: number;
   readonly placements: number;
+  readonly placementCells: number;
   readonly studsDrawn: number;
   readonly studsTotal: number;
   readonly renderInput: string;
@@ -388,10 +390,34 @@ function tileCentre(index: number): number {
   return index * TILE_LDU + HALF_TILE_LDU;
 }
 
+function setsByTile(tiles: number): ReadonlyMap<number, string> {
+  const sets = new Map<number, string>();
+  let set = 0;
+  for (let row = 0; row < tiles; row += SET_EVERY_TILES) {
+    for (let column = 0; column < tiles; column++) {
+      if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
+      sets.set(row * tiles + column, SETS[set % SETS.length] ?? "");
+      set++;
+    }
+  }
+  return sets;
+}
+
+function liesInBaseplateLayer(placeable: Placeable): boolean {
+  return placeable.slabBoxes.length > 0;
+}
+
+function placementCells(placeable: Placeable): number {
+  let cells = 0;
+  for (const top of placeable.cells.columnTop) if (top !== EMPTY_COLUMN) cells++;
+  return cells;
+}
+
 class LayoutBuilder {
   constructor(
     private readonly editor: IEditor,
     private readonly backend: WindowlessBackend,
+    private readonly baseplateLayerSets: ReadonlySet<string>,
   ) {}
 
   place(item: string, x: number, z: number): void {
@@ -428,18 +454,20 @@ class LayoutBuilder {
   }
 
   build(tiles: number): void {
+    const sets = setsByTile(tiles);
+    let displacedBaseplates = 0;
     for (let row = 0; row < tiles; row++) {
       for (let column = 0; column < tiles; column++) {
+        const set = sets.get(row * tiles + column);
+        if (set !== undefined && this.baseplateLayerSets.has(set)) {
+          displacedBaseplates++;
+          continue;
+        }
         this.place(BASEPLATE, tileCentre(column), tileCentre(row));
       }
     }
-    let set = 0;
-    for (let row = 0; row < tiles; row += SET_EVERY_TILES) {
-      for (let column = 0; column < tiles; column++) {
-        if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
-        this.place(SETS[set % SETS.length] ?? "", tileCentre(column), tileCentre(row));
-        set++;
-      }
+    for (const [tile, set] of sets) {
+      this.place(set, tileCentre(tile % tiles), tileCentre(Math.floor(tile / tiles)));
     }
     const roadRow = tiles;
     for (let row = roadRow; row < roadRow + ROAD_ROWS; row++) {
@@ -455,8 +483,21 @@ class LayoutBuilder {
         this.layTrack(fromX, fromX + TRACK_RUN_TILES * TILE_LDU, tileCentre(trackRow + row));
       }
     }
+    const spareRow = trackRow + TRACK_ROWS + 1;
+    for (let i = 0; i < displacedBaseplates; i++) {
+      this.place(BASEPLATE, tileCentre(i % tiles), tileCentre(spareRow + Math.floor(i / tiles)));
+    }
     this.editor.chooseItem(null);
   }
+}
+
+function cellsOf(editor: IEditor, cells: ReadonlyMap<string, number>): number {
+  const { refs, placements } = editor.dump();
+  let total = 0;
+  for (let i = 0; i < placements.refId.length; i++) {
+    total += cells.get(refs[placements.refId[i] ?? 0] ?? "") ?? 0;
+  }
+  return total;
 }
 
 function partsOf(editor: IEditor): number {
@@ -494,8 +535,12 @@ async function runChild(
   if (started.status !== "ready") throw new Error(`editor did not start: ${started.error ?? ""}`);
   await settled(editor, backend);
   const catalog = container.get(PLACEABLE_CATALOG);
+  const cells = new Map<string, number>();
+  const baseplateLayerSets = new Set<string>();
   for (const item of ITEMS) {
-    await loadCatalogItem(catalog, item);
+    const placeable = await loadCatalogItem(catalog, item);
+    cells.set(item, placementCells(placeable));
+    if (SETS.includes(item) && liesInBaseplateLayer(placeable)) baseplateLayerSets.add(item);
     editor.chooseItem(item);
   }
   editor.chooseItem(TRACK_ITEM);
@@ -505,7 +550,7 @@ async function runChild(
   const baselineSnapshot = snapshotDir
     ? writeHeapSnapshot(join(snapshotDir, `${scale}-baseline.heapsnapshot`))
     : null;
-  new LayoutBuilder(editor, backend).build(tiles);
+  new LayoutBuilder(editor, backend, baseplateLayerSets).build(tiles);
   await settled(editor, backend);
   const renderInput = backend.renderInputDigest();
   backend.forgetDigests();
@@ -523,6 +568,7 @@ async function runChild(
     tiles,
     parts: partsOf(editor),
     placements: editor.snapshot().placements,
+    placementCells: cellsOf(editor, cells),
     studsDrawn: studs?.drawn ?? 0,
     studsTotal: (studs?.drawn ?? 0) + (studs?.culledUnderFootprints ?? 0),
     renderInput,
@@ -594,10 +640,10 @@ function forkRun(
 function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSplit>): string {
   const lines = [
     `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
-    `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags; ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
+    `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags (a set that brings its own baseplates, so has slab boxes, stands on its tile without a 3811, and that 3811 goes in a spare row after the track, so parts and placements match the full grid); ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
     "",
-    "| Scale | Tiles | Parts | Placements | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
-    "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    "| Scale | Tiles | Parts | Placements | Placement cells per part | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
+    "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   const scales = [...new Set(results.map((result) => result.scale))];
   for (const scale of scales) {
@@ -609,7 +655,7 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
       runs.map((r) => r.layout.arrayBufferBytes - r.baseline.arrayBufferBytes),
     );
     lines.push(
-      `| ${scale} | ${first.tiles}×${first.tiles} | ${first.parts.toLocaleString("en-US")} | ${first.placements} | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
+      `| ${scale} | ${first.tiles}×${first.tiles} | ${first.parts.toLocaleString("en-US")} | ${first.placements} | ${(first.placementCells / first.parts).toFixed(2)} | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
     );
   }
   for (const split of splits) {
