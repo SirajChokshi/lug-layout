@@ -72,6 +72,7 @@ class PlanOnlyBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostVerdict(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}

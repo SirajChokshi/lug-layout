@@ -127,6 +127,13 @@ export interface EdgeMarker {
   readonly kind: MarkerKind;
 }
 
+export type GhostTone = "fits" | "mates" | "refused";
+
+export interface GhostVerdict {
+  readonly tone: GhostTone;
+  readonly hit: WorldBox | null;
+}
+
 export type TrackEndKind = "open" | "gap" | "target";
 
 export interface TrackEndMarker {
@@ -171,6 +178,7 @@ export interface ISceneBackend {
   setNeededMeshListener(listener: NeededMeshListener | null): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
+  setGhostVerdict(verdict: GhostVerdict | null): void;
   setSelectionBox(box: WorldBox | null): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;

@@ -1,6 +1,17 @@
 import { INHERIT_COLOR, type PartAsset, type PartMesh } from "@brr/catalog";
+import {
+  Mesh,
+  type LineSegments,
+  type MeshStandardNodeMaterial,
+  type Object3D,
+} from "three/webgpu";
 import { expect, it } from "vitest";
-import type { ChunkInstances, NeededMeshListener, PartPalette } from "../scene-backend.ts";
+import type {
+  ChunkInstances,
+  NeededMeshListener,
+  PartPalette,
+  WorldBox,
+} from "../scene-backend.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -236,4 +247,90 @@ it("swaps meshes, far studs and far model meshes while chunks, a vehicle, a ghos
   expect(() =>
     backend.setPartMeshes([{ index: 2, level: "detailed", part: part("c", 20) }]),
   ).toThrow("part 2 is not in the palette");
+});
+
+function ghostLooks(backend: ThreeSceneBackend): string[] {
+  const ghost: Object3D | undefined = backend["ghost"];
+  const looks = new Set<string>();
+  ghost?.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const materials: ReadonlyArray<MeshStandardNodeMaterial> = [object.material].flat();
+    for (const material of materials) {
+      looks.add(`${material.color.getHexString()} ${material.emissive.getHexString()}`);
+    }
+  });
+  return [...looks];
+}
+
+function ghostHitShown(backend: ThreeSceneBackend) {
+  const hit: LineSegments = backend["ghostHit"];
+  if (!hit.visible) return null;
+  return {
+    x: hit.position.x,
+    y: hit.position.y,
+    z: hit.position.z,
+    size: [hit.scale.x, hit.scale.y, hit.scale.z],
+  };
+}
+
+const HIT_CELL: WorldBox = { minX: 320, minY: 8, minZ: -140, maxX: 340, maxY: 24, maxZ: -120 };
+
+function ghostBackend(): ThreeSceneBackend {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette(palette([part("a", 20)]));
+  return backend;
+}
+
+function ghostLooksAfter(steps: (backend: ThreeSceneBackend) => void): string[] {
+  const backend = ghostBackend();
+  steps(backend);
+  return ghostLooks(backend);
+}
+
+it("tints the ghost by its verdict, whether the verdict or the ghost came first, and untints it when the verdict clears", () => {
+  const untinted = ghostLooksAfter((backend) => backend.setGhost(chunkOf(0)));
+  const fits = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "fits", hit: null });
+  });
+  const refusedAfter = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL });
+  });
+  const refusedBefore = ghostLooksAfter((backend) => {
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL });
+    backend.setGhost(chunkOf(0));
+  });
+  const cleared = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL });
+    backend.setGhostVerdict(null);
+  });
+
+  expect(refusedBefore).toEqual(refusedAfter);
+  expect(cleared).toEqual(untinted);
+  expect(new Set([untinted, fits, refusedAfter].map((looks) => looks.join()))).toHaveProperty(
+    "size",
+    3,
+  );
+});
+
+it("boxes a refused ghost's hit cell only while the ghost is placed", () => {
+  const backend = ghostBackend();
+  backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL });
+  backend.setGhost(chunkOf(0));
+  const beforePlaced = ghostHitShown(backend);
+  backend.placeGhost(320, 0, -140, 0);
+  const placed = ghostHitShown(backend);
+  backend.setGhostVerdict({ tone: "fits", hit: null });
+  const fits = ghostHitShown(backend);
+  backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL });
+  backend.setGhost(null);
+
+  expect({ beforePlaced, placed, fits, cleared: ghostHitShown(backend) }).toEqual({
+    beforePlaced: null,
+    placed: { x: 330, y: 16, z: -130, size: [20, 16, 20] },
+    fits: null,
+    cleared: null,
+  });
 });

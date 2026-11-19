@@ -27,14 +27,33 @@ function plasticMaterial(plastic: boolean, vertexColors: boolean, opacity: numbe
     : new MeshStandardNodeMaterial({ ...shared, roughness: M0_ROUGHNESS });
 }
 
+export interface MaterialTint {
+  readonly color: number;
+  readonly emissive: number;
+}
+
+export const UNTINTED: MaterialTint = { color: 0xffffff, emissive: 0x000000 };
+
 export class PlasticMaterials {
   private readonly instanced = new Map<number, MeshStandardNodeMaterial>();
   private readonly fixed = new Map<number, MeshStandardNodeMaterial>();
+  private shownTint: MaterialTint = UNTINTED;
 
   constructor(
     private readonly plastic: boolean,
     private readonly opacityScale: number,
   ) {}
+
+  get tint(): MaterialTint {
+    return this.shownTint;
+  }
+
+  set tint(tint: MaterialTint) {
+    this.shownTint = tint;
+    for (const cache of [this.instanced, this.fixed]) {
+      for (const material of cache.values()) this.applyTint(material);
+    }
+  }
 
   instanceColored(alpha: number): MeshStandardNodeMaterial {
     return this.cached(this.instanced, alpha, false);
@@ -42,6 +61,11 @@ export class PlasticMaterials {
 
   vertexColored(alpha: number): MeshStandardNodeMaterial {
     return this.cached(this.fixed, alpha, true);
+  }
+
+  private applyTint(material: MeshStandardNodeMaterial): void {
+    material.color.setHex(this.shownTint.color);
+    material.emissive.setHex(this.shownTint.emissive);
   }
 
   private cached(
@@ -56,6 +80,7 @@ export class PlasticMaterials {
         vertexColors,
         (alpha / OPAQUE_ALPHA) * this.opacityScale,
       );
+      this.applyTint(material);
       cache.set(alpha, material);
     }
     return material;

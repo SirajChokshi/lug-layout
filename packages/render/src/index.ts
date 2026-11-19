@@ -8,6 +8,8 @@ export type {
   FarModelPlacement,
   FrameStats,
   GeometrySet,
+  GhostTone,
+  GhostVerdict,
   GraphicsApi,
   ISceneBackend,
   IThumbnailRenderer,

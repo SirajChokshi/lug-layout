@@ -327,3 +327,75 @@ kbd {
 .tool-hud[data-tone="play"] {
   --tone: #b26b00;
 }
+
+.placement-chip {
+  --tone: #1a7f37;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 340px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--tone);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.95);
+  color: #1b2a34;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.2);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.placement-chip[hidden] {
+  display: none;
+}
+
+.placement-chip[data-tone="mates"] {
+  --tone: #2da44e;
+}
+
+.placement-chip[data-tone="refused"] {
+  --tone: #cf222e;
+}
+
+.placement-chip-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.placement-chip-line[data-line="refusal"] {
+  color: #a40e26;
+  font-weight: 600;
+}
+
+.placement-chip-line[data-line="turn"] {
+  color: #6e5300;
+}
+
+.placement-chip-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #fff4d6;
+  color: #7a4d00;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.placement-chip-badge[data-badge="inferred"] {
+  background: #ede6ff;
+  color: #5a32a3;
+}
+
+.editor[data-ghost="refused"] .scene {
+  cursor: not-allowed;
+}

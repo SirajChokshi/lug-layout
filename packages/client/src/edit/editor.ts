@@ -48,6 +48,7 @@ import {
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
+  type GhostVerdict,
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
@@ -96,6 +97,7 @@ import type {
   PlacementHover,
 } from "./placement-hover.ts";
 import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
+import { ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   placementChoice,
@@ -716,6 +718,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
   private readonly mates = new MateReport();
+  private shownVerdict: GhostVerdict | null = null;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -782,7 +785,15 @@ export class Editor implements IEditor, IEditedWorld {
 
   private update(patch: Partial<EditorSnapshot>): void {
     this.state = { ...this.state, ...patch };
+    this.showGhostVerdict();
     for (const listener of this.listeners) listener();
+  }
+
+  private showGhostVerdict(): void {
+    const verdict = ghostVerdict(this.state);
+    if (sameVerdict(verdict, this.shownVerdict)) return;
+    this.shownVerdict = verdict;
+    this.backend.setGhostVerdict(verdict);
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {

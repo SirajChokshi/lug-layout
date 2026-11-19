@@ -179,6 +179,16 @@ export type {
   PlacementHover,
   SectionProfile,
 } from "./edit/placement-hover.ts";
+export {
+  badgeText,
+  placementFeedback,
+  type BadgeCount,
+  type ConnectorBadge,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementLineKind,
+  type PlacementTone,
+} from "./edit/placement-feedback.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,

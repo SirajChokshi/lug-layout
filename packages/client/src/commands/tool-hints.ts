@@ -1,4 +1,5 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
+import { lineText, placementFeedback } from "../edit/placement-feedback.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -76,18 +77,22 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     return { tone: "warn", title: "The editor couldn't start", detail: snapshot.error, hints: [] };
   }
   switch (snapshot.mode) {
-    case "place":
+    case "place": {
+      const feedback = placementFeedback(snapshot);
+      const refused = feedback?.tone === "refused";
+      const said = feedback?.lines.map(lineText) ?? [];
       return {
-        tone: "place",
+        tone: refused ? "warn" : "place",
         title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
-        detail: `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
+        detail: [`${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`, ...said].join(" · "),
         hints: [
-          gesture("Click", "place"),
-          key("rotate", "rotate"),
+          gesture("Click", refused ? "refused here" : "place"),
+          key("rotate", feedback?.turnToSnap ? "turn to snap" : "rotate"),
           key("open-palette", "another part"),
           key("select-tool", "done"),
         ],
       };
+    }
     case "track": {
       const drag = snapshot.track?.drag ?? null;
       if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };
