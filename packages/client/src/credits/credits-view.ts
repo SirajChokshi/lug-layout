@@ -47,6 +47,13 @@ export interface DataSourceCredit {
   readonly usedFor: ReadonlyArray<string>;
 }
 
+export interface DataPackageCredit {
+  readonly name: string;
+  readonly usedFor: string;
+  readonly licenses: ReadonlyArray<string>;
+  readonly attribution: ReadonlyArray<string>;
+}
+
 export interface CreditCounts {
   readonly bundlePartFiles: number;
   readonly creditedPartFiles: number;
@@ -63,6 +70,7 @@ export interface CreditsView {
   readonly sets: ReadonlyArray<SetCredit>;
   readonly generated: ReadonlyArray<GeneratedModelCredit>;
   readonly dataSources: ReadonlyArray<DataSourceCredit>;
+  readonly dataPackages: ReadonlyArray<DataPackageCredit>;
   readonly counts: CreditCounts;
   readonly disclaimer: string;
 }
@@ -114,7 +122,10 @@ function firstManifest(manifests: ReadonlyArray<LodManifest>): BundleManifest {
   return first.manifest;
 }
 
-export function buildCredits(manifests: ReadonlyArray<LodManifest>): CreditsView {
+export function buildCredits(
+  manifests: ReadonlyArray<LodManifest>,
+  dataPackages: ReadonlyArray<DataPackageCredit>,
+): CreditsView {
   const reference = firstManifest(manifests);
   const credited = new Map<string, LicensedFile>();
   const partPaths = new Set<string>();
@@ -172,6 +183,7 @@ export function buildCredits(manifests: ReadonlyArray<LodManifest>): CreditsView
     sets,
     generated,
     dataSources: [...dataSources].map(([source, usedFor]) => ({ source, usedFor })),
+    dataPackages,
     counts: {
       bundlePartFiles: partPaths.size,
       creditedPartFiles,
@@ -242,6 +254,14 @@ export function creditsText(view: CreditsView): string {
     for (const scene of view.generated) {
       lines.push(`  ${scene.name}: ${scene.authors.join("; ")}. ${scene.source}`);
     }
+  }
+  lines.push("", "Connector data");
+  for (const data of view.dataPackages) {
+    lines.push(
+      `  ${data.name}: ${data.usedFor}`,
+      `    License: ${data.licenses.join("; ")}`,
+      ...data.attribution.map((line) => `    ${line}`),
+    );
   }
   lines.push("", "Set and colour data");
   for (const data of view.dataSources) {

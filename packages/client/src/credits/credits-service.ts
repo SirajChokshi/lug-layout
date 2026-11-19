@@ -1,10 +1,44 @@
-import { BUNDLE_LODS, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
+import {
+  BUNDLE_LODS,
+  PART_BUNDLE_LOADER,
+  type IPartBundleLoader,
+  type PackageAttribution,
+} from "@brr/catalog";
 import { inject, injectable } from "inversify";
-import { buildCredits, creditsText, type CreditsView } from "./credits-view.ts";
+import {
+  buildCredits,
+  creditsText,
+  type CreditsView,
+  type DataPackageCredit,
+} from "./credits-view.ts";
 
 export interface ICredits {
   load(): Promise<CreditsView>;
   exportText(view: CreditsView): string;
+}
+
+const CONNECTIVITY_PACKAGE = "Connectivity package";
+const CONNECTIVITY_USE = "tier 1 connectors, where parts snap together, from LDCad shadow files";
+const SECTION_VOCABULARY = "Section vocabulary";
+const SECTION_VOCABULARY_USE =
+  "the connector section sizes and lengths that connectors inferred from part geometry are identified against";
+
+function distinctCredits(
+  name: string,
+  usedFor: string,
+  packages: ReadonlyArray<PackageAttribution | null>,
+): ReadonlyArray<DataPackageCredit> {
+  const distinct = new Map<string, PackageAttribution>();
+  for (const attributed of packages) {
+    if (attributed === null) continue;
+    distinct.set(JSON.stringify([attributed.licenses, attributed.attribution]), attributed);
+  }
+  return [...distinct.values()].map(({ licenses, attribution }) => ({
+    name,
+    usedFor,
+    licenses,
+    attribution,
+  }));
 }
 
 @injectable()
@@ -12,10 +46,17 @@ export class CreditsService implements ICredits {
   constructor(@inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader) {}
 
   async load(): Promise<CreditsView> {
-    const manifests = await Promise.all(
-      BUNDLE_LODS.map(async (lod) => ({ lod, manifest: await this.loader.loadManifest(lod) })),
-    );
-    return buildCredits(manifests);
+    const [manifests, connectivity, vocabularies] = await Promise.all([
+      Promise.all(
+        BUNDLE_LODS.map(async (lod) => ({ lod, manifest: await this.loader.loadManifest(lod) })),
+      ),
+      Promise.all(BUNDLE_LODS.map((lod) => this.loader.loadConnectivityAttribution(lod))),
+      Promise.all(BUNDLE_LODS.map((lod) => this.loader.loadSectionVocabularyAttribution(lod))),
+    ]);
+    return buildCredits(manifests, [
+      ...distinctCredits(CONNECTIVITY_PACKAGE, CONNECTIVITY_USE, connectivity),
+      ...distinctCredits(SECTION_VOCABULARY, SECTION_VOCABULARY_USE, vocabularies),
+    ]);
   }
 
   exportText(view: CreditsView): string {

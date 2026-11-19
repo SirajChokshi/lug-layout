@@ -1,3 +1,8 @@
+import type {
+  ConnectorIndexPaths,
+  PackageAttribution,
+  PartConnectors,
+} from "./connector-records.ts";
 import {
   BundleLod,
   type BundleIndex,
@@ -6,6 +11,7 @@ import {
   type CatalogPart,
   type BundleSource,
   type CompilerVehicles,
+  type LibraryBakeIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -13,6 +19,8 @@ import {
   type PartRolling,
   type PartTechnic,
   type ProducedColors,
+  type PrimitiveConnectorTable,
+  type SectionVocabulary,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -162,17 +170,27 @@ export interface ModelBundle {
   readonly farMesh: ModelFarMesh | undefined;
 }
 
+export interface PinnedSectionVocabulary {
+  readonly sha256: string;
+  readonly vocabulary: SectionVocabulary;
+}
+
 export interface ImportContext {
   readonly bundleVersion: string;
   readonly source: BundleSource;
   readonly compilerPath: string;
+  readonly connectorIndexes: ConnectorIndexPaths;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly primitives: PrimitiveConnectorTable | null;
+  readonly sectionVocabulary: PinnedSectionVocabulary;
+  readonly cavityProbe: string;
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
+  readonly libraryBake: LibraryBakeIndexRef | null;
 }
 
 export interface CompiledPartGlb {
@@ -218,6 +236,9 @@ export interface IPartBundleLoader {
   load(lod: BundleLod, include: PartFilter): Promise<PartBundle>;
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
   importContext(lod: BundleLod): Promise<ImportContext>;
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(
     lod: BundleLod,
     partIds: ReadonlyArray<string>,

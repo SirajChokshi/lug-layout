@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Range;
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, LdrawFile, Line, Winding};
 use crate::license::{self, LicenseVerdict};
+use crate::pieces::{PieceMap, NO_PIECE};
 
 pub const INHERIT_COLOR: u32 = 16;
 const MAX_DEPTH: usize = 64;
@@ -46,12 +48,38 @@ pub struct VisitedFile {
     pub license: LicenseVerdict,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReferenceSpan {
+    pub reference: String,
+    pub path: String,
+    pub matrix: Affine,
+    pub triangles: Range<usize>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PieceSpan {
+    pub piece: u16,
+    pub triangles: Range<usize>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flattened {
     pub triangles: Vec<Triangle>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
     pub files: Vec<VisitedFile>,
+    pub spans: Vec<ReferenceSpan>,
+    pub pieces: Vec<PieceSpan>,
+}
+
+impl Flattened {
+    pub fn triangle_pieces(&self) -> Vec<u16> {
+        let mut out = vec![NO_PIECE; self.triangles.len()];
+        for span in &self.pieces {
+            out[span.triangles.clone()].fill(span.piece);
+        }
+        out
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +111,8 @@ pub struct Flattener<'a, L: Library> {
     library: &'a L,
     lod: Lod,
     stud_primitives: &'a [String],
+    records_span: Option<&'a dyn Fn(&str) -> bool>,
+    pieces: Option<&'a PieceMap>,
     parsed: HashMap<String, Rc<LdrawFile>>,
     first_unresolved: Option<FlattenError>,
     root: String,
@@ -95,6 +125,7 @@ struct Frame {
     flipped: bool,
     culling: bool,
     depth: usize,
+    trail: Vec<u32>,
 }
 
 impl<'a, L: Library> Flattener<'a, L> {
@@ -103,11 +134,23 @@ impl<'a, L: Library> Flattener<'a, L> {
             library,
             lod,
             stud_primitives,
+            records_span: None,
+            pieces: None,
             parsed: HashMap::new(),
             first_unresolved: None,
             root: String::new(),
             malformed: Vec::new(),
         }
+    }
+
+    pub fn recording_spans(mut self, records_span: &'a dyn Fn(&str) -> bool) -> Self {
+        self.records_span = Some(records_span);
+        self
+    }
+
+    pub fn numbering_pieces(mut self, pieces: &'a PieceMap) -> Self {
+        self.pieces = Some(pieces);
+        self
     }
 
     pub fn malformed(&self) -> &[MalformedGeometry] {
@@ -177,6 +220,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             flipped: false,
             culling: true,
             depth: 0,
+            trail: Vec::new(),
         };
         let file = self
             .load(path, &mut out)
@@ -229,6 +273,7 @@ impl<'a, L: Library> Flattener<'a, L> {
         let mut certified = false;
         let mut winding = Winding::Ccw;
         let mut invert_next = false;
+        let mut ordinal: u32 = 0;
         for line in &file.lines {
             match line {
                 Line::Certify(w) => {
@@ -247,6 +292,9 @@ impl<'a, L: Library> Flattener<'a, L> {
                     let child_matrix = frame.matrix.then(matrix);
                     let inverted = invert_next;
                     invert_next = false;
+                    let mut child_trail = frame.trail.clone();
+                    child_trail.push(ordinal);
+                    ordinal += 1;
                     self.check_line(path, &matrix.m, &child_matrix.m);
                     if self.is_stud(reference) {
                         out.studs.push(StudReference {
@@ -270,8 +318,27 @@ impl<'a, L: Library> Flattener<'a, L> {
                         flipped: frame.flipped ^ (matrix.determinant() < 0.0) ^ inverted,
                         culling: frame.culling && certified,
                         depth: frame.depth + 1,
+                        trail: child_trail,
                     };
+                    let first = out.triangles.len();
                     self.walk(&child_path, &child, &child_frame, out)?;
+                    if let Some(piece) = self
+                        .pieces
+                        .and_then(|pieces| pieces.numbered(&child_frame.trail))
+                    {
+                        out.pieces.push(PieceSpan {
+                            piece,
+                            triangles: first..out.triangles.len(),
+                        });
+                    }
+                    if self.records_span.is_some_and(|records| records(reference)) {
+                        out.spans.push(ReferenceSpan {
+                            reference: reference.clone(),
+                            path: child_path,
+                            matrix: child_matrix,
+                            triangles: first..out.triangles.len(),
+                        });
+                    }
                 }
                 Line::Edge { points } => {
                     let edge = points.map(|point| frame.matrix.apply(point));

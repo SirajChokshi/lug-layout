@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
+use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
@@ -8,6 +9,7 @@ use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
+use crate::technic::{self, TechnicPart, TechnicPrimitives};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -39,6 +41,11 @@ pub enum CompileError {
     Malformed {
         findings: Vec<MalformedGeometry>,
     },
+    TooLarge {
+        path: String,
+        extent_ldu: [f64; 2],
+        cells: CellsTooLarge,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -54,10 +61,24 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
+    pub technic: TechnicPrimitives,
     pub rolling_mode: RollingMode,
 }
 
 const UNOFFICIAL_PREFIX: &str = "Unofficial_";
+
+impl CompileError {
+    pub fn depends_on_machine(&self) -> bool {
+        match self {
+            CompileError::TooLarge { cells, .. } => cells.cause.depends_on_machine(),
+            CompileError::Flatten(_)
+            | CompileError::License { .. }
+            | CompileError::Unofficial { .. }
+            | CompileError::NoStudRing
+            | CompileError::Malformed { .. } => false,
+        }
+    }
+}
 
 impl std::fmt::Display for CompileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -79,6 +100,11 @@ impl std::fmt::Display for CompileError {
             }
             CompileError::NoStudRing => f.write_str(NO_STUD_RING),
             CompileError::Malformed { findings } => f.write_str(&describe_malformed(findings)),
+            CompileError::TooLarge {
+                path,
+                extent_ldu: [x, z],
+                cells,
+            } => write!(f, "{path} spans {x} × {z} LDU, and {cells}"),
         }
     }
 }
@@ -99,6 +125,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
+    pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
 }
 
@@ -215,6 +242,19 @@ pub fn compile_part<L: Library>(
         *edge = edge.map(to_y_up);
     }
     let mesh = mesh::build(&flattened.triangles, &flattened.hard_edges);
+    if let Some(bounds) = mesh.bounds() {
+        let [min, max] = bounds.map(|corner| corner.map(f64::from));
+        part_cover_fits([min, max]).map_err(|cells| CompileError::TooLarge {
+            path: path.clone(),
+            extent_ldu: [max[0] - min[0], max[2] - min[2]],
+            cells,
+        })?;
+    }
+    let technic = if options.technic.appear_in(&flattened.files) {
+        technic_features(library, &path, &options.technic, &mesh)?
+    } else {
+        None
+    };
     let studs = flattened
         .studs
         .iter()
@@ -231,8 +271,38 @@ pub fn compile_part<L: Library>(
         mesh,
         studs,
         flattened_files: flattened.files,
+        technic,
         rolling,
     })
+}
+
+fn technic_features<L: Library>(
+    library: &L,
+    path: &str,
+    primitives: &TechnicPrimitives,
+    mesh: &Mesh,
+) -> Result<Option<TechnicPart>, CompileError> {
+    let Some([min, max]) = mesh.bounds() else {
+        return Ok(None);
+    };
+    let shape_reference = |reference: &str| primitives.shape_reference(reference);
+    let mut flattened = Flattener::new(library, Lod::Standard, &[])
+        .recording_spans(&shape_reference)
+        .flatten(path)
+        .map_err(CompileError::Flatten)?;
+    for triangle in &mut flattened.triangles {
+        triangle.points = triangle.points.map(to_y_up);
+    }
+    for span in &mut flattened.spans {
+        span.matrix = span.matrix.ldraw_to_y_up();
+    }
+    let part = technic::analyze(
+        &flattened.triangles,
+        &flattened.spans,
+        primitives,
+        [min.map(f64::from), max.map(f64::from)],
+    );
+    Ok((!part.is_empty()).then_some(part))
 }
 
 impl CompiledPart {
@@ -271,6 +341,9 @@ impl CompiledPart {
             "studs": studs,
             "bounds": { "min": min, "max": max },
         });
+        if let Some(technic) = &self.technic {
+            extras["technic"] = technic.to_json();
+        }
         if let Some(rolling) = &self.rolling {
             extras["rolling"] = rolling.to_json();
         }

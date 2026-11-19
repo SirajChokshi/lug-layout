@@ -16,6 +16,7 @@ export interface CheckedInput {
   readonly checks: InputChecks;
   readonly importSeconds: number;
   readonly importFinished: boolean;
+  readonly bakedFromRecords: number;
 }
 
 export interface PartCoverage {
@@ -51,10 +52,12 @@ export interface RunContext {
   readonly corpusFiles: number;
   readonly elapsedSeconds: number;
   readonly importLimitSeconds: number;
+  readonly recordsIndex: string | null;
 }
 
 const EXAMPLE_PARTS = 8;
 const BUDGET_INSTANCES = 10_000;
+const RECORD_INDEX_DIGITS = 16;
 const MAX_CLASS_ROWS = 25;
 
 interface Tally {
@@ -198,7 +201,20 @@ function timingRow(label: string, members: ReadonlyArray<CheckedInput>): string 
   return `| ${label} | ${members.length} | ${seconds(total)} | ${perBudget} | ${seconds(slowest)} | ${unfinished} |`;
 }
 
-function importTimeTable(limitSeconds: number, inputs: ReadonlyArray<CheckedInput>): string[] {
+function recordsLine(recordsIndex: string | null, inputs: ReadonlyArray<CheckedInput>): string {
+  if (recordsIndex === null) {
+    return "No precompiled bake records were available: every part compiled from LDraw at import.";
+  }
+  const using = inputs.filter((input) => input.bakedFromRecords > 0);
+  const parts = using.reduce((sum, input) => sum + input.bakedFromRecords, 0);
+  return `Precompiled bake records (index \`${recordsIndex.slice(0, RECORD_INDEX_DIGITS)}\`): ${using.length} of ${inputs.length} inputs baked ${parts} pinned parts from records instead of compiling them; the rest compiled from LDraw.`;
+}
+
+function importTimeTable(
+  limitSeconds: number,
+  recordsIndex: string | null,
+  inputs: ReadonlyArray<CheckedInput>,
+): string[] {
   const rows = INPUT_SETS.flatMap((set) => {
     const members = inputs.filter((input) => input.set === set);
     return members.length === 0 ? [] : [timingRow(set, members)];
@@ -212,6 +228,8 @@ function importTimeTable(limitSeconds: number, inputs: ReadonlyArray<CheckedInpu
     "|---|---|---|---|---|---|",
     ...rows,
     timingRow("**all**", inputs),
+    "",
+    recordsLine(recordsIndex, inputs),
     "",
   ];
 }
@@ -243,7 +261,7 @@ export function markdownReport(context: RunContext, inputs: ReadonlyArray<Checke
     "",
     coverageLine(context.coverage),
     "",
-    ...importTimeTable(context.importLimitSeconds, inputs),
+    ...importTimeTable(context.importLimitSeconds, context.recordsIndex, inputs),
     ...classTable("Failures and blocks by bug class", classRows(inputs, failures)),
     ...classTable("Refused by policy (expected)", classRows(inputs, policies)),
     ...classTable("Skipped and reported by the importer (never drawn, by design)", reported),

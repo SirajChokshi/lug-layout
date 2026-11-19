@@ -9,8 +9,10 @@ import {
   StudioRead,
   type CompilerBaked,
   type CompilerBlobs,
+  type CompilerConnectorInputs,
   type CompilerEnvelope,
   type CompilerLibraryDelta,
+  type CompilerRecordDelta,
   type CompilerRequest,
   type CompilerVehicle,
   type CompilerVehicles,
@@ -54,13 +56,20 @@ export interface LibraryFiles {
   readonly absent: ReadonlySet<string>;
 }
 
+export interface RecordFiles {
+  readonly key: string;
+  readonly files: ReadonlyMap<string, Uint8Array>;
+}
+
 export interface CompileRequest {
   readonly lod: CompileLod;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly connectors: CompilerConnectorInputs;
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;
+  readonly records?: boolean;
 }
 
 type RawCompile = CompilerCompile;
@@ -73,7 +82,10 @@ export type Need = Omit<Extract<RawPartOutcome, { status: "need" }>, "reference"
 
 export type PartOutcome =
   | Exclude<RawPartOutcome, { status: "compiled" }>
-  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb"> & { readonly glb: Uint8Array });
+  | (Omit<Extract<RawPartOutcome, { status: "compiled" }>, "glb" | "record"> & {
+      readonly glb: Uint8Array;
+      readonly record: Uint8Array | null;
+    });
 
 export type InlineOutcome = RawInlineOutcome;
 
@@ -96,6 +108,7 @@ export interface BakeRequest {
 
 export interface BakedModel {
   readonly status: "baked";
+  readonly recordedParts: number;
   readonly lattice: PartModelLattice | null;
   readonly latticeIssue: string | null;
   readonly studCover: ModelStudCover;
@@ -111,7 +124,10 @@ export interface BakeFailure {
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
 
-export type BakeNeedsRequest = Pick<BakeRequest, "source" | "drawn" | "studPrimitives">;
+export type BakeNeedsRequest = Pick<
+  BakeRequest,
+  "source" | "drawn" | "studPrimitives" | "vehicles"
+>;
 
 export type BakeNeeds = { readonly status: "complete" } | Need;
 
@@ -191,6 +207,7 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
   const cells = cover.cells;
   return {
     status: "baked",
+    recordedParts: header.recordedParts,
     lattice:
       lattice === null
         ? null
@@ -237,6 +254,9 @@ export class BrickCompiler {
   private libraryGeneration = 0;
   private readonly sentFiles = new Set<string>();
   private readonly sentAbsent = new Set<string>();
+  private recordKey = "";
+  private recordGeneration = 0;
+  private readonly sentRecords = new Set<string>();
 
   constructor(module: WebAssembly.Module) {
     this.reactor = new WasiReactor(module);
@@ -246,16 +266,45 @@ export class BrickCompiler {
     request: CompilerRequest,
     segments: Segments,
     library: LibraryFiles | null = null,
+    records: RecordFiles | null = null,
   ): Response {
     const payload = new RequestPayload();
     const ranges: Record<string, Range> = {};
     for (const [name, bytes] of Object.entries(segments)) ranges[name] = payload.add(bytes);
-    if (library === null) return this.send(payload.frame({ request, segments: ranges }));
-    const delta = this.libraryDelta(library, payload);
-    const response = this.send(payload.frame({ request, segments: ranges, library: delta.header }));
-    for (const path of delta.files) this.sentFiles.add(path);
-    for (const path of delta.absent) this.sentAbsent.add(path);
+    const delta = library === null ? null : this.libraryDelta(library, payload);
+    const shelved = records === null ? null : this.recordDelta(records, payload);
+    const response = this.send(
+      payload.frame({
+        request,
+        segments: ranges,
+        ...(delta === null ? {} : { library: delta.header }),
+        ...(shelved === null ? {} : { records: shelved.header }),
+      }),
+    );
+    for (const path of delta?.files ?? []) this.sentFiles.add(path);
+    for (const path of delta?.absent ?? []) this.sentAbsent.add(path);
+    if (records !== null) {
+      this.sentRecords.clear();
+      for (const reference of records.files.keys()) this.sentRecords.add(reference);
+    }
     return response;
+  }
+
+  private recordDelta(
+    records: RecordFiles,
+    payload: RequestPayload,
+  ): { readonly header: CompilerRecordDelta } {
+    if (records.key !== this.recordKey || this.reactor.generation !== this.recordGeneration) {
+      this.recordKey = records.key;
+      this.recordGeneration = this.reactor.generation;
+      this.sentRecords.clear();
+    }
+    const files: Array<CompilerRecordDelta["files"][number]> = [];
+    for (const [reference, bytes] of records.files) {
+      if (this.sentRecords.has(reference)) continue;
+      files.push({ reference, bytes: payload.add(bytes) });
+    }
+    return { header: { key: records.key, files, references: [...records.files.keys()] } };
   }
 
   private send(request: Uint8Array): Response {
@@ -318,32 +367,46 @@ export class BrickCompiler {
       library,
     );
     const output = decodedOrThrow(decode(CompilerCompile, header), "brick-compile compile");
+    const slice = ([offset, length]: Range): Uint8Array => body.slice(offset, offset + length);
     return {
       weldEpsilonLdu: output.weldEpsilonLdu,
       inline: output.inline,
       parts: output.parts.map((outcome): PartOutcome => {
         if (outcome.status !== "compiled") return outcome;
-        const [offset, length] = outcome.glb;
-        return { ...outcome, glb: body.slice(offset, offset + length) };
+        return {
+          ...outcome,
+          glb: slice(outcome.glb),
+          record: outcome.record === null ? null : slice(outcome.record),
+        };
       }),
     };
   }
 
-  bakeNeeds(request: BakeNeedsRequest, library: LibraryFiles): BakeNeeds {
+  bakeNeeds(
+    request: BakeNeedsRequest,
+    library: LibraryFiles,
+    records: RecordFiles | null = null,
+  ): BakeNeeds {
     const { header } = this.call(
-      { op: "bakeNeeds", studPrimitives: request.studPrimitives },
+      { op: "bakeNeeds", studPrimitives: request.studPrimitives, vehicles: request.vehicles },
       { source: utf8.encode(request.source), drawn: request.drawn },
       library,
+      records,
     );
     return decodedOrThrow(decode(CompilerBakeNeeds, header), "brick-compile bakeNeeds");
   }
 
-  bake(request: BakeRequest, library: LibraryFiles): BakeOutcome {
+  bake(
+    request: BakeRequest,
+    library: LibraryFiles,
+    records: RecordFiles | null = null,
+  ): BakeOutcome {
     const { drawn, source, ...rest } = request;
     const { header, body } = this.call(
       { op: "bake", ...rest },
       { source: utf8.encode(source), drawn },
       library,
+      records,
     );
     const outcome = decodedOrThrow(decode(CompilerBake, header), "brick-compile bake");
     return outcome.status === "baked" ? bakedModel(outcome, body) : outcome;

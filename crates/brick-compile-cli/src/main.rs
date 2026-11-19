@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -6,6 +6,10 @@ use std::process::ExitCode;
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
+use brick_compile::connect::{
+    record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
+    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
+};
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
@@ -13,13 +17,21 @@ use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
-use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod};
+use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
+use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const DISCLAIMER: &str =
     "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this project.";
 const LDCONFIG: &str = "ldconfig.ldr";
 const COMPILER_FILE: &str = "brick-compile.wasm";
+const CONNECTOR_INDEX_FILE: &str = "connector-index.json";
+const CONNECTIVITY_INDEX_FILE: &str = "connectivity-index.json";
+const PATCH_MANIFEST: &str = "manifest.json";
+const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
+const SHADOW_AUTHORS: &str = "Roland Melkert and the LDCad Shadow Library contributors";
+const PATCH_ATTRIBUTION: &str =
+    "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
 
 struct FsLibrary {
     files: HashMap<String, String>,
@@ -58,6 +70,11 @@ struct Args {
     fixtures: PathBuf,
     omr: PathBuf,
     palette: PathBuf,
+    primitives: PathBuf,
+    inferred: PathBuf,
+    vocabulary: PathBuf,
+    shadow: PathBuf,
+    patches: PathBuf,
     out: PathBuf,
     lod: Lod,
     compiler: Option<PathBuf>,
@@ -84,6 +101,11 @@ fn parse_args() -> Result<Args, String> {
         omr: take("--omr")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
+        primitives: take("--primitives")?.into(),
+        inferred: take("--inferred")?.into(),
+        vocabulary: take("--vocabulary")?.into(),
+        shadow: take("--shadow")?.into(),
+        patches: take("--patches")?.into(),
         out: take("--out")?.into(),
         cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
@@ -361,6 +383,72 @@ fn far_mesh(
     })))
 }
 
+struct ConnectorIndexes {
+    connectors: BTreeMap<String, Value>,
+    connector_licenses: BTreeSet<String>,
+    connectivity: BTreeMap<String, Value>,
+}
+
+fn write_record(
+    out: &Path,
+    file: String,
+    part: &str,
+    license: &str,
+    record: &TierRecord,
+) -> Result<Value, String> {
+    if record.is_empty() {
+        return Ok(Value::Null);
+    }
+    let text =
+        serde_json::to_string(&record_json(part, license, record)).map_err(|e| e.to_string())?;
+    fs::write(out.join(&file), text).map_err(|e| format!("{file}: {e}"))?;
+    Ok(json!({ "file": file }))
+}
+
+fn connector_records<L: Library, S: Library>(
+    extractor: &mut ConnectorExtractor<'_, L, S>,
+    parts: &[Value],
+    out: &Path,
+) -> Result<ConnectorIndexes, String> {
+    let mut indexes = ConnectorIndexes {
+        connectors: BTreeMap::new(),
+        connector_licenses: BTreeSet::new(),
+        connectivity: BTreeMap::new(),
+    };
+    for part in parts {
+        let (Some(id), Some(path)) = (part["id"].as_str(), part["path"].as_str()) else {
+            return Err(format!("part summary {part} needs an id and a path"));
+        };
+        let records = PartRecords::of(&extractor.extract(path));
+        let part_license = part["license"].as_str().unwrap_or_default();
+        if !records.connectors.is_empty() {
+            indexes.connector_licenses.insert(part_license.to_string());
+        }
+        let name = stem(path.trim_start_matches("parts/"));
+        indexes.connectors.insert(
+            id.to_string(),
+            write_record(
+                out,
+                format!("connectors-{name}.json"),
+                id,
+                part_license,
+                &records.connectors,
+            )?,
+        );
+        indexes.connectivity.insert(
+            id.to_string(),
+            write_record(
+                out,
+                format!("connectivity-{name}.json"),
+                id,
+                CONNECTIVITY_LICENSE,
+                &records.connectivity,
+            )?,
+        );
+    }
+    Ok(indexes)
+}
+
 fn translucent_codes(colors: &[Colour]) -> HashSet<u32> {
     colors
         .iter()
@@ -391,10 +479,25 @@ fn run(args: &Args) -> Result<(), String> {
                 .collect()
         })
         .unwrap_or_default();
+    let primitive_table: Value = serde_json::from_slice(
+        &fs::read(&args.primitives).map_err(|e| format!("{}: {e}", args.primitives.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
+    let technic = TechnicPrimitives::from_table(&primitive_table)?;
+    let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
+    let inferred: Value = serde_json::from_slice(
+        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
+    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
+        "{}: cavityProbe must be a part path",
+        args.inferred.display()
+    ))?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic: TechnicPrimitives::default(),
         rolling_mode: RollingMode::Skip,
     };
     let compiler = match &args.compiler {
@@ -402,7 +505,12 @@ fn run(args: &Args) -> Result<(), String> {
             fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
             fs::copy(path, args.out.join(COMPILER_FILE))
                 .map_err(|e| format!("{}: {e}", path.display()))?;
-            json!({ "file": COMPILER_FILE, "unofficialAllowlist": unofficial_allowlist })
+            json!({
+                "file": COMPILER_FILE,
+                "unofficialAllowlist": unofficial_allowlist,
+                "primitives": primitive_table,
+                "cavityProbe": probe_part,
+            })
         }
         None => Value::Null,
     };
@@ -410,6 +518,7 @@ fn run(args: &Args) -> Result<(), String> {
         lod: args.lod,
         stud_primitives: stud_primitives.clone(),
         unofficial_allowlist: unofficial_allowlist.clone(),
+        technic,
         rolling_mode: RollingMode::ReadBy(required_stud_roundness(&library, &stud_primitives)?),
     };
     fs::create_dir_all(&args.out).map_err(|e| e.to_string())?;
@@ -775,6 +884,54 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(manifest_entry);
     }
 
+    let shadow = LazyLibrary::new(args.shadow.clone());
+    let patch_files = LazyLibrary::new(args.patches.clone());
+    let patch_manifest_path = args.patches.join(PATCH_MANIFEST);
+    let patch_manifest: Value = serde_json::from_slice(
+        &fs::read(&patch_manifest_path)
+            .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
+    let verified = verified_patch_paths(&patch_manifest);
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
+            files: &patch_files,
+            verified: &verified,
+        }),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&primitive_table)?),
+        InferredFeatures::new(&library, section_vocabulary.clone(), probe_part)?,
+    );
+    let indexes = connector_records(&mut extractor, &parts, &args.out)?;
+    let connectivity_source = &palette["connectivitySource"];
+    let connectivity_index = json!({
+        "package": "connectivity",
+        "licenses": [CONNECTIVITY_LICENSE],
+        "attribution": [
+            format!(
+                "LDCad Shadow Library by {SHADOW_AUTHORS}, github.com/{} at {}, {CONNECTIVITY_LICENSE}",
+                connectivity_source["repo"].as_str().unwrap_or_default(),
+                connectivity_source["commit"].as_str().unwrap_or_default(),
+            ),
+            PATCH_ATTRIBUTION,
+        ],
+        "source": connectivity_source,
+        "parts": indexes.connectivity,
+    });
+    let connector_index = json!({
+        "package": "connectors",
+        "licenses": indexes.connector_licenses,
+        "attribution": [],
+        "source": palette["source"],
+        "parts": indexes.connectors,
+    });
+    for (file, index) in [
+        (CONNECTIVITY_INDEX_FILE, &connectivity_index),
+        (CONNECTOR_INDEX_FILE, &connector_index),
+    ] {
+        let text = serde_json::to_string(index).map_err(|e| e.to_string())?;
+        fs::write(args.out.join(file), text).map_err(|e| format!("{file}: {e}"))?;
+    }
+
     let ldconfig_header = parse_ldraw(ldconfig).header;
     credits.insert(
         LDCONFIG.to_string(),
@@ -805,6 +962,8 @@ fn run(args: &Args) -> Result<(), String> {
         "modified": modified_note(args.lod),
         "disclaimer": DISCLAIMER,
         "compiler": compiler,
+        "connectors": { "file": CONNECTOR_INDEX_FILE },
+        "connectivity": { "file": CONNECTIVITY_INDEX_FILE },
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(args.out.join("manifest.json"), text + "\n").map_err(|e| e.to_string())?;

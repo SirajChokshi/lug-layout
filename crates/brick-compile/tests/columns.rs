@@ -60,6 +60,7 @@ fn cells_of(part: &str) -> ModelCells {
         CoverShard::WHOLE,
         table_depth(),
     )
+    .expect("a part's stud cover is allocated")
     .cells
     .expect("a lattice phase gives cells")
 }
