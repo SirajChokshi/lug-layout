@@ -22,7 +22,7 @@
       "name": "inversify-only-in-di-packages",
       "severity": "error",
       "from": {
-        "pathNot": "^(packages/(client|workers|storage|render|catalog|rpc)|apps/web)/"
+        "pathNot": "^(packages/(client|workers|storage|render|catalog|rpc)|apps/web|tools/e2e)/"
       },
       "to": {
         "path": "(^|/)node_modules/inversify/"
@@ -248,6 +248,28 @@
       "to": {
         "path": "(^|/)node_modules/",
         "pathNot": "(^|/)node_modules/valibot/"
+      }
+    },
+    {
+      "name": "e2e-composes-only-its-approved-packages",
+      "severity": "error",
+      "from": {
+        "path": "^tools/e2e/"
+      },
+      "to": {
+        "path": "^(packages|apps|tools/asset-pipeline)/",
+        "pathNot": "^packages/(math|schema|catalog|import|client|render|storage)/"
+      }
+    },
+    {
+      "name": "e2e-imports-only-its-tooling-from-npm",
+      "severity": "error",
+      "from": {
+        "path": "^tools/e2e/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/",
+        "pathNot": "(^|/)node_modules/(valibot|inversify|vitest|playwright-core|@playwright/test)/"
       }
     },
     {
