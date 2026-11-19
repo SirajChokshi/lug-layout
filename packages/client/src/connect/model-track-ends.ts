@@ -98,6 +98,7 @@ interface PieceOfPart {
 }
 
 interface Candidate {
+  readonly instance: number;
   readonly partId: string;
   readonly piece: PieceOfPart;
   readonly heading: number;
@@ -185,6 +186,7 @@ function candidateOf(
   o: number,
   part: PartShapeAsset,
   piece: PieceOfPart,
+  instance: number,
 ): Candidate | UncertifiedReason {
   const plates = piecePlates(m, o, part);
   if (!liesFlat(m, o) || plates === null) return "notFlat";
@@ -208,7 +210,7 @@ function candidateOf(
     ends[e + 2] = cos * dx - sin * dz;
     ends[e + 3] = sin * dx + cos * dz;
   }
-  return { partId: part.id, piece, heading, plates, placement, ends };
+  return { instance, partId: part.id, piece, heading, plates, placement, ends };
 }
 
 function withinLimit(dx: number, dz: number): boolean {
@@ -588,7 +590,7 @@ export function modelTrackEnds(
       uncertified.push({ partId: part.id, reason: "contradiction" });
       continue;
     }
-    const candidate = candidateOf(instances.matrices, i * INSTANCE_MATRIX_FLOATS, part, piece);
+    const candidate = candidateOf(instances.matrices, i * INSTANCE_MATRIX_FLOATS, part, piece, i);
     if (typeof candidate === "string") uncertified.push({ partId: part.id, reason: candidate });
     else candidates.push(candidate);
   }
@@ -616,6 +618,7 @@ export function modelTrackEnds(
       ends.push({
         pose: composePose16(placement, connector),
         yPlates: candidate.plates,
+        instance: candidate.instance,
         frame: WORLD_TRACK_FRAME,
       });
     }
