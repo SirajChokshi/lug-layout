@@ -11,7 +11,7 @@ import type {
 import type { Assembly, AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
 import { shiftedOutcomes } from "./pair-scenario.ts";
-import type { AimedBackend } from "./headless-editor.ts";
+import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU, type AimedBackend } from "./headless-editor.ts";
 
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
@@ -19,6 +19,12 @@ const MODEL_IDENTITY_KEYS = new Set(["item", "label"]);
 const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates"]);
 const LISTED_FAILURES = 4;
 const DISTANCE_RELATIVE_SLACK = 1e-12;
+const ASSIST_TOLERANCE_PX = 32;
+const ASSIST_FLOOR_LDU = STUD_LDU;
+const ASSIST_CAP_LDU = 3 * STUD_LDU;
+const NDC_SPAN = 2;
+const CLOSE_VIEW_HALF_WIDTH_LDU = 100;
+const MIDDLE_VIEW_HALF_WIDTH_LDU = 440;
 const LOAD_POLL_MS = 10;
 const LOAD_TIMEOUT_MS = 60_000;
 const NO_TIME = 0;
@@ -185,6 +191,10 @@ export class EditorPath {
 
   setMode(mode: PlacementMode): void {
     this.editor.setPlacementMode(mode);
+  }
+
+  viewHalfWidth(ldu: number): void {
+    this.backend.viewHalfWidth(ldu);
   }
 
   hoverAt(
@@ -430,10 +440,6 @@ function describeOffset(at: SweepOffset): string {
   return at.along === 0 ? across : `${across}, ${at.along} along`;
 }
 
-function withinNeighbourhood(at: SweepOffset, neighbourhood: AssistNeighbourhood): boolean {
-  return STUD_LDU * Math.sqrt(at.along * at.along + at.across * at.across) <= neighbourhood.ldu;
-}
-
 export function sameDistance(reported: number, expected: number): boolean {
   return Math.abs(reported - expected) <= DISTANCE_RELATIVE_SLACK * Math.max(1, expected);
 }
@@ -511,11 +517,6 @@ function sweepCheck<T>(
   };
 }
 
-interface Probe {
-  readonly at: SweepOffset;
-  readonly step: Step;
-}
-
 interface Compared {
   readonly at: SweepOffset;
   readonly assist: Step;
@@ -546,6 +547,120 @@ class StepLog {
   }
 }
 
+interface MatedPose {
+  readonly along: number;
+  readonly step: Step;
+}
+
+interface Snapped {
+  readonly at: SweepOffset;
+  readonly step: Step;
+  readonly target: MatedPose;
+}
+
+function jointsOf(step: Step): number {
+  return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.joints, 0);
+}
+
+function connectorsOf(step: Step): number {
+  return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.connectors, 0);
+}
+
+async function matedPoses(
+  log: StepLog,
+  neighbourhood: AssistNeighbourhood,
+): Promise<ReadonlyArray<MatedPose>> {
+  const span = 2 * (neighbourhood.cells + 1);
+  const mated: MatedPose[] = [];
+  for (let along = -span; along <= span; along++) {
+    const step = await log.at("precise", { along: along + 0, across: 0 }, false);
+    if (step.hover?.accepted === true && step.hover.mates.length > 0) mated.push({ along, step });
+  }
+  return mated;
+}
+
+function squaredDistance(at: SweepOffset, along: number): number {
+  return STUD_LDU * STUD_LDU * ((at.along - along) ** 2 + at.across * at.across);
+}
+
+function nearestMated(
+  at: SweepOffset,
+  mated: ReadonlyArray<MatedPose>,
+  neighbourhood: AssistNeighbourhood,
+): MatedPose | null {
+  const reach = neighbourhood.ldu * neighbourhood.ldu;
+  const ranked = mated
+    .filter((candidate) => squaredDistance(at, candidate.along) <= reach)
+    .toSorted(
+      (a, b) =>
+        squaredDistance(at, a.along) - squaredDistance(at, b.along) ||
+        jointsOf(b.step) - jointsOf(a.step) ||
+        connectorsOf(b.step) - connectorsOf(a.step) ||
+        (a.step.hover?.pose.x ?? 0) - (b.step.hover?.pose.x ?? 0) ||
+        (a.step.hover?.pose.z ?? 0) - (b.step.hover?.pose.z ?? 0),
+    );
+  return ranked[0] ?? null;
+}
+
+function snapsTo(step: Step, target: MatedPose): boolean {
+  const { hover, cursor } = step;
+  const expected = target.step.hover;
+  return (
+    hover !== null &&
+    expected !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    hover.mode === "assist" &&
+    hover.accepted &&
+    samePose(hover.pose, expected.pose) &&
+    !hover.lifted &&
+    JSON.stringify(hover.mates) === JSON.stringify(expected.mates) &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+function describeMated(mated: ReadonlyArray<MatedPose>): string {
+  return mated
+    .map(
+      ({ along, step }) => `${along === 0 ? "flush" : `${along} along`} (${jointsOf(step)} joints)`,
+    )
+    .join(", ");
+}
+
+function expectedNeighbourhood(viewHalfWidthLdu: number): AssistNeighbourhood {
+  const tolerance = (NDC_SPAN * ASSIST_TOLERANCE_PX * viewHalfWidthLdu) / CANVAS_WIDTH;
+  const ldu = Math.min(Math.max(tolerance, ASSIST_FLOOR_LDU), ASSIST_CAP_LDU);
+  return { ldu, cells: Math.ceil(ldu / STUD_LDU), plates: Math.floor(ldu / PLATE_LDU) };
+}
+
+async function reachAcrossScales(path: EditorPath, log: StepLog): Promise<EditorCheck> {
+  const scales: string[] = [];
+  let passed = true;
+  for (const viewHalfWidthLdu of [
+    CLOSE_VIEW_HALF_WIDTH_LDU,
+    MIDDLE_VIEW_HALF_WIDTH_LDU,
+    VIEW_HALF_WIDTH_LDU,
+  ]) {
+    path.viewHalfWidth(viewHalfWidthLdu);
+    const reported = (await log.at("assist", AT_FLUSH, false)).hover?.assistNeighbourhood ?? null;
+    const expected = expectedNeighbourhood(viewHalfWidthLdu);
+    passed &&=
+      reported !== null &&
+      sameDistance(reported.ldu, expected.ldu) &&
+      reported.cells === expected.cells &&
+      reported.plates === expected.plates;
+    scales.push(
+      `${viewHalfWidthLdu} LDU half-width: expected ${JSON.stringify(expected)}, reported ${JSON.stringify(reported)}`,
+    );
+  }
+  path.viewHalfWidth(VIEW_HALF_WIDTH_LDU);
+  return {
+    label: `The reported neighbourhood is ${ASSIST_TOLERANCE_PX} px at the cursor in LDU, clamped to the ${ASSIST_FLOOR_LDU} LDU floor and the ${ASSIST_CAP_LDU} LDU cap, at three camera scales`,
+    passed,
+    detail: scales.join("; "),
+  };
+}
+
 function outcome(step: Step): string {
   const clicked = step.refused
     ? `; refused: ${step.refusal ?? "no reason"}`
@@ -565,13 +680,16 @@ export async function pinnedPairChecks(
 ): Promise<PairRun> {
   const { pins } = pair;
   const log = new StepLog(path, heldItem, poses);
+  const reach = await reachAcrossScales(path, log);
   const probe = await log.at("assist", AT_FLUSH, false);
   const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
-  const inside: Probe[] = [];
+  const mated = await matedPoses(log, neighbourhood);
+  const snapped: Snapped[] = [];
   const beyond: Compared[] = [];
   for (const at of sweepOffsets(neighbourhood.cells, full)) {
     const assist = await log.at("assist", at, false);
-    if (withinNeighbourhood(at, neighbourhood)) inside.push({ at, step: assist });
+    const target = nearestMated(at, mated, neighbourhood);
+    if (target) snapped.push({ at, step: assist, target });
     else beyond.push({ at, assist, precise: await log.at("precise", at, false) });
   }
   const assistShort = await log.at("assist", ONE_STUD_SHORT, true);
@@ -601,6 +719,7 @@ export async function pinnedPairChecks(
     return step.hover !== null && pinHoleJoints(step.hover.mates) < pins;
   };
   const refusedBeyond = beyond.filter(({ precise }) => precise.hover?.accepted === false).length;
+  const toFlush = snapped.filter(({ target }) => target.along === 0).length;
   const checks: EditorCheck[] = [
     {
       label:
@@ -612,15 +731,19 @@ export async function pinnedPairChecks(
         committedFlush(assistIn),
       detail: `expected ${describePose(poses.flush)} with ${pins} pin/hole joints; one stud short: ${outcome(assistShort)}; one stud in: ${outcome(assistIn)}`,
     },
+    reach,
     sweepCheck(
-      `Assist sweep: every cursor offset within the reported neighbourhood (${neighbourhood.ldu} LDU) snaps flush with every pin engaged, magnetised by exactly the offset`,
-      inside,
-      ({ step }) => snapsFlush(step, poses, pins),
-      ({ at, step }) => `${describeOffset(at)}: ${outcome(step)}`,
-      `${inside.length} offsets, all flush with ${pins} pin/hole joints`,
+      `Assist sweep: every cursor offset within the reported neighbourhood (${neighbourhood.ldu} LDU) of a mated pose snaps to the nearest one, magnetised by exactly the offset, and flush engages every pin`,
+      snapped,
+      ({ step, target }) =>
+        snapsTo(step, target) &&
+        (target.along !== 0 || pinHoleJoints(step.hover?.mates ?? []) === pins),
+      ({ at, step, target }) =>
+        `${describeOffset(at)}: expected the mated pose at ${describeOffset({ along: target.along, across: 0 })}; ${outcome(step)}`,
+      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; mated poses: ${describeMated(mated)}`,
     ),
     sweepCheck(
-      "Assist sweep: beyond the neighbourhood, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
+      "Assist sweep: beyond the neighbourhood of every mated pose, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
       beyond,
       ({ assist, precise }) =>
         stepVerdict(assist) === stepVerdict(precise) &&
@@ -780,24 +903,28 @@ export async function cornerModuleCheck(
   const log = new StepLog(path, moduleItem, seam);
   const probe = await log.at("assist", AT_FLUSH, false);
   const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
-  const inside: Probe[] = [];
+  const mated = await matedPoses(log, neighbourhood);
+  const snapped: Snapped[] = [];
   for (const at of sweepOffsets(neighbourhood.cells, full)) {
-    if (withinNeighbourhood(at, neighbourhood)) {
-      inside.push({ at, step: await log.at("assist", at, false) });
-    }
+    const target = nearestMated(at, mated, neighbourhood);
+    if (target) snapped.push({ at, step: await log.at("assist", at, false), target });
   }
   const clicked = await log.at("assist", ONE_STUD_SHORT, true);
+  const toFlush = snapped.filter(({ target }) => target.along === 0).length;
   const sweep = sweepCheck(
     "",
-    inside,
-    ({ step }) => snapsFlush(step, seam, pins),
-    ({ at, step }) => `${describeOffset(at)}: ${outcome(step)}`,
-    `${inside.length} offsets within ${neighbourhood.ldu} LDU, all flush with ${pins} pin/hole joints`,
+    snapped,
+    ({ step, target }) =>
+      snapsTo(step, target) &&
+      (target.along !== 0 || pinHoleJoints(step.hover?.mates ?? []) === pins),
+    ({ at, step, target }) =>
+      `${describeOffset(at)}: expected the mated pose at ${describeOffset({ along: target.along, across: 0 })}; ${outcome(step)}`,
+    `${snapped.length} offsets within ${neighbourhood.ldu} LDU of a mated pose: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate; mated poses: ${describeMated(mated)}`,
   );
   const clickedFlush = snapsFlush(clicked, seam, pins) && samePose(clicked.committed, seam.flush);
   return {
     label:
-      "A generated module with corner Technic joins mates an official template: in assist, every offset within the neighbourhood snaps flush with every pin engaged, and a click from one stud short commits flush",
+      "A generated module with corner Technic joins mates an official template: in assist, every offset within the neighbourhood of a mated pose snaps to the nearest one, flush engaging every pin, and a click from one stud short commits flush",
     passed: sweep.passed && clickedFlush,
     detail: `${sweep.detail}; one stud short, clicked: ${outcome(clicked)}`,
   };
@@ -811,6 +938,7 @@ export async function solidEdgeChecks(
   placedItem: string,
   heldItem: string,
   full: boolean,
+  pinsMeetBricksAt: (along: number) => boolean,
 ): Promise<PairRun> {
   const log = new StepLog(path, heldItem, poses);
   const probe = await log.at("assist", AT_FLUSH, false);
@@ -841,6 +969,12 @@ export async function solidEdgeChecks(
   const flush = compared.filter(({ at }) => at.along === 0 && at.across === 0);
   const pressed = compared.filter(({ at }) => at.across > 0);
   const clear = compared.filter(({ at }) => at.across < 0);
+  const shifted = compared.filter(
+    ({ at }) => at.across === 0 && at.along !== 0 && pinsMeetBricksAt(at.along),
+  );
+  const shiftedRefused = shifted.filter(
+    (item) => !bothModes(item, (step) => realHit(step, solidParts, heldParts)),
+  );
   const checks: EditorCheck[] = [
     sweepCheck(
       "Pins against a solid edge: at every cursor offset assist gives exactly the precise result at the cursor pose, so it never relocates to an unmated free pose, and every refusal names a part and cell where the models overlap",
@@ -883,6 +1017,15 @@ export async function solidEdgeChecks(
       describe,
       `${clear.length} offsets, all accepted with no mates`,
     ),
+    {
+      label:
+        "Pins against a solid edge, shifted along the seam: refused in both modes, with a real hit, wherever the generator's geometry puts a pin into a brick",
+      passed: shiftedRefused.length === 0,
+      detail:
+        shiftedRefused.length === 0
+          ? `${shifted.length} shifted offsets put a pin into a brick, all refused with a real hit`
+          : `${shiftedRefused.length} of ${shifted.length} fail: ${shiftedRefused.slice(0, LISTED_FAILURES).map(describe).join("; ")}`,
+    },
   ];
   return { placedLabel: "solid", checks, steps: log.steps };
 }

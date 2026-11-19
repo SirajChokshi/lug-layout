@@ -27,6 +27,7 @@ import {
 } from "./generator.ts";
 import { startHeadlessEditor } from "./headless-editor.ts";
 import { cachingFetch } from "./import-path.ts";
+import { solidShiftCollides } from "./pair-scenario.ts";
 import { poolCandidates } from "./pool-candidates.ts";
 import type { FetchFunction } from "@brr/import";
 
@@ -232,6 +233,7 @@ async function checkPair(
     solid,
     subject,
     FULL_SWEEP,
+    (along) => solidShiftCollides(pair, 0 - along),
   );
   const solidRenamedRun = await solidEdgeChecks(
     path,
@@ -241,6 +243,7 @@ async function checkPair(
     solid,
     renamed,
     FULL_SWEEP,
+    (along) => solidShiftCollides(pair, 0 - along),
   );
   const solidDifferences = sameOutcomes(solidRun, solidRenamedRun);
   const sameSubjectPose = JSON.stringify(subjectPose) === JSON.stringify(renamedPose);

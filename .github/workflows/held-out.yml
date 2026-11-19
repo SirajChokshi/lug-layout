@@ -78,6 +78,7 @@ jobs:
       - run: pnpm --filter @brr/e2e held-out
         env:
           HELD_OUT_SEED: ${{ inputs.seed }}
+          HELD_OUT_SWEEP: ${{ github.event_name == 'schedule' && 'full' || '' }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

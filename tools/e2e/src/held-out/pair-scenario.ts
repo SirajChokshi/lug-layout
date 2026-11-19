@@ -60,6 +60,11 @@ export function shiftedOutcomes(pair: ModulePair, sign: number): ReadonlyArray<P
   return pinOutcomes(pair.subject.assembly, partner);
 }
 
+export function solidShiftCollides(pair: ModulePair, sign: number): boolean {
+  const solid: Assembly = translated(pair.solidPartner.assembly, shiftedOffset(pair, sign));
+  return pinOutcomes(pair.subject.assembly, solid).some((outcome) => outcome.kind === "colliding");
+}
+
 export function scenarioProblems(pair: ModulePair): string[] {
   const problems: string[] = [];
   const { subject, partner, partnerOffset } = pair;
