@@ -986,13 +986,22 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing", "malformed"]),
+  kind: v.picklist([
+    "unresolved",
+    "tooDeep",
+    "license",
+    "unofficial",
+    "noStudRing",
+    "malformed",
+    "tooLarge",
+  ]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
   path: v.exactOptional(v.string()),
   ldrawOrg: v.exactOptional(v.string()),
   findings: v.exactOptional(v.array(MalformedFinding)),
+  cause: v.exactOptional(v.picklist(["beyondAddressSpace", "memoryUnavailable"])),
 });
 
 const Reference = { reference: v.string() };

@@ -30,6 +30,8 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
       return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
     case "malformed":
       return `Refused before drawing: ${part.message}.`;
+    case "tooLarge":
+      return `Not drawn: ${part.message}.`;
     case "failed":
       return part.message;
     default: {

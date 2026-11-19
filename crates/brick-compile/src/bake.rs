@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 use crate::affine::{Affine, Vec3};
 use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::cover::{
-    model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
+    model_cover, AxisSpan, CellsTooLarge, CoverInstance, CoverShard, ModelCover, ModelTooLarge,
+    Opacity, PartSolid, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
@@ -28,6 +29,11 @@ pub enum BakeError {
         shape: usize,
     },
     Voxel(VoxelError),
+    Cover {
+        cells: CellsTooLarge,
+        x: Box<PartSpan>,
+        z: Box<PartSpan>,
+    },
     Record {
         part: String,
         error: RecordError,
@@ -35,6 +41,30 @@ pub enum BakeError {
     Recorded {
         part: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartSpan {
+    pub from: String,
+    pub to: String,
+    pub ldu: f64,
+}
+
+impl PartSpan {
+    fn of(drawn: &[ModelInstance], span: AxisSpan) -> Box<Self> {
+        let part = |i: usize| drawn.get(i).map_or_else(String::new, |d| d.part.clone());
+        Box::new(PartSpan {
+            from: part(span.from),
+            to: part(span.to),
+            ldu: span.ldu,
+        })
+    }
+}
+
+impl std::fmt::Display for PartSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} LDU from {} to {}", self.ldu, self.from, self.to)
+    }
 }
 
 pub type RecordShelf = HashMap<String, BakeRecord>;
@@ -76,6 +106,10 @@ impl std::fmt::Display for BakeError {
                 "{part} has {standard} studs at the standard LOD but {shape} in this bundle"
             ),
             BakeError::Voxel(error) => write!(f, "{error}"),
+            BakeError::Cover { cells, x, z } => write!(
+                f,
+                "the drawn parts span {x} along x and {z} along z, and {cells}"
+            ),
             BakeError::Record { part, error } => write!(f, "{part}: {error}"),
             BakeError::Recorded { part } => {
                 write!(
@@ -284,7 +318,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
                 studs: &self.studs[slot],
             })
             .collect();
-        Ok(model_cover(
+        model_cover(
             &instances,
             &self.solids,
             &self.opacity,
@@ -292,7 +326,12 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             self.stud_shape,
             shard,
             self.table_depth,
-        ))
+        )
+        .map_err(|ModelTooLarge { cells, x, z }| BakeError::Cover {
+            cells,
+            x: PartSpan::of(drawn, x),
+            z: PartSpan::of(drawn, z),
+        })
     }
 
     pub fn vehicles(

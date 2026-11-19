@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use brick_compile::affine::Vec3;
-use brick_compile::cover::ModelCover;
+use brick_compile::cover::{CellsCause, ModelCover};
 use brick_compile::flatten::FlattenError;
 use brick_compile::inline::InlineComparison;
 use brick_compile::lattice::{Malformation, MalformedGeometry, ModelLattice};
@@ -122,6 +122,8 @@ pub struct Failure {
     ldraw_org: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     findings: Option<Vec<MalformedFinding>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cause: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -154,6 +156,7 @@ impl From<&CompileError> for Failure {
             path: None,
             ldraw_org: None,
             findings: None,
+            cause: None,
         };
         match error {
             CompileError::Flatten(FlattenError::Unresolved { reference, from }) => Failure {
@@ -167,6 +170,14 @@ impl From<&CompileError> for Failure {
                 ..failure("license")
             },
             CompileError::NoStudRing => failure("noStudRing"),
+            CompileError::TooLarge { path, cells, .. } => Failure {
+                path: Some(path.clone()),
+                cause: Some(match cells.cause {
+                    CellsCause::BeyondAddressSpace => "beyondAddressSpace",
+                    CellsCause::MemoryUnavailable => "memoryUnavailable",
+                }),
+                ..failure("tooLarge")
+            },
             CompileError::Unofficial { path, ldraw_org } => Failure {
                 path: Some(path.clone()),
                 ldraw_org: Some(ldraw_org.clone()),
