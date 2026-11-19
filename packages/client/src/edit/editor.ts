@@ -16,7 +16,6 @@ import {
   RoadNetwork,
   World,
   addShards,
-  modelTechnic,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
@@ -26,7 +25,6 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
   type ModelConnectors,
-  type TechnicSet,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -79,6 +77,7 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
+import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
@@ -444,7 +443,7 @@ interface Connected {
   readonly model: ModelConnectors;
   readonly volumes: FrozenVolumes;
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -2232,7 +2231,7 @@ export class Editor implements IEditor, IEditedWorld {
         ),
         volumes: FrozenVolumes.ofPlaceable(placeable),
         boxes,
-        technic: modelTechnic(
+        technic: FrozenTechnic.ofParts(
           parts.map((part) => part.technic),
           placeable.partTransforms,
           boxes.boxes,
