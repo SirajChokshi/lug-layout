@@ -1,5 +1,4 @@
-import type { ModelRunningGear } from "@brr/catalog";
-import type { UnreadRollingReason } from "@brr/schema/bundle";
+import type { ModelRunningGear, UnreadRollingReason } from "@brr/schema/bundle";
 
 export interface UnreadReasonCount {
   readonly reason: UnreadRollingReason;

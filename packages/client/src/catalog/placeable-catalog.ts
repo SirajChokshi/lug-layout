@@ -18,6 +18,7 @@ import type {
   BundleIndex,
   BundleLod,
   BundleModelEntry,
+  ModelRunningGear,
   NotDrawnSection,
 } from "@brr/schema/bundle";
 import { importRef, type ImportedFile } from "@brr/schema/world";
@@ -124,6 +125,12 @@ interface SkippedModel extends SkippedCatalogModel {
   readonly credit: ModelCredit;
 }
 
+const NOT_YET_DETECTED: ModelRunningGear = {
+  vehicles: [],
+  vehicleCouplings: [],
+  unresolvedRunningGear: [],
+  unreadRollingBands: { instance: [], band: [], reason: [] },
+};
 const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
@@ -439,7 +446,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       null,
     );
     this.gearModels.set(placeable, gearModelSource(entry.name, entry.sha256, model, { parts }));
-    if (isPlayable(model)) {
+    if (isPlayable(model.runningGear)) {
       const name = { name: entry.name, label: modelLabel(entry) };
       this.playModels.set(placeable, playModel(name, model, { parts }, palette, colors));
     }
@@ -502,7 +509,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       matrices: result.matrices,
       partTransforms: result.partTransforms,
       submodels: result.submodels,
-      ...result.runningGear,
+      runningGear: NOT_YET_DETECTED,
     };
     const credit = {
       name: file.name,
@@ -522,7 +529,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.installMerged(palette, before);
     this.bakes.set(placeable, model);
     this.gearModels.set(placeable, gearModelSource(file.name, file.sha256, model, set));
-    if (isPlayable(model)) {
+    if (isPlayable(model.runningGear)) {
       const name = { name: file.name, label: file.name };
       this.playModels.set(placeable, playModel(name, model, set, palette, colors));
     }

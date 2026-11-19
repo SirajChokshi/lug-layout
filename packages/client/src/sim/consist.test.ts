@@ -1,5 +1,9 @@
-import type { ModelRunningGear, PartVehicle } from "@brr/catalog";
-import type { VehicleCoupling, VehicleWheelset } from "@brr/schema/bundle";
+import type {
+  ModelRunningGear,
+  ModelVehicle,
+  VehicleCoupling,
+  VehicleWheelset,
+} from "@brr/schema/bundle";
 import { describe, expect, it } from "vitest";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 import { plannedConsists } from "./consist.ts";
@@ -29,7 +33,7 @@ function axle(x: number, height = AXLE_HEIGHT_LDU): VehicleWheelset {
   };
 }
 
-function wagon(x: number, instance: number): PartVehicle {
+function wagon(x: number, instance: number): ModelVehicle {
   return {
     origin: [x, 0],
     yaw: 0,
@@ -37,7 +41,7 @@ function wagon(x: number, instance: number): PartVehicle {
       { kind: "fixedAxle", position: AXLE_OFFSET_LDU, bogie: null, wheelset: 0 },
       { kind: "fixedAxle", position: -AXLE_OFFSET_LDU, bogie: null, wheelset: 1 },
     ],
-    body: Uint32Array.of(instance),
+    body: [instance],
     bogies: [],
     fixedAxles: [0, 1],
     wheelsets: [axle(x + AXLE_OFFSET_LDU), axle(x - AXLE_OFFSET_LDU)],
@@ -54,7 +58,7 @@ function bounds(centres: ReadonlyArray<number>): Float64Array {
   return boxes;
 }
 
-function pair(couplings: ReadonlyArray<VehicleCoupling>): ModelRunningGear {
+function pair(couplings: VehicleCoupling[]): ModelRunningGear {
   return {
     vehicles: [wagon(100, 0), wagon(-100, 1)],
     vehicleCouplings: couplings,
@@ -127,13 +131,13 @@ describe("Planned consists until E12 (owner, option 1)", () => {
 
   it("packs each guide's first wheelset in row order: its transformed axle height and recorded rolling radius", () => {
     const coned: VehicleWheelset = { ...axle(140), contactRadii: [SIX, EIGHT] };
-    const trucked: PartVehicle = {
+    const trucked: ModelVehicle = {
       ...wagon(100, 0),
       guides: [
         { kind: "bogiePivot", position: AXLE_OFFSET_LDU, bogie: 0, wheelset: null },
         { kind: "fixedAxle", position: -AXLE_OFFSET_LDU, bogie: null, wheelset: 2 },
       ],
-      bogies: [{ instances: Uint32Array.of(1), pivot: [130, 20, 0], wheelsets: [1, 0] }],
+      bogies: [{ instances: [1], pivot: [130, 20, 0], wheelsets: [1, 0] }],
       fixedAxles: [2],
       wheelsets: [coned, axle(120, 7.25), axle(70, 6.5)],
     };

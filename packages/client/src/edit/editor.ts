@@ -2435,7 +2435,7 @@ export class Editor implements IEditor, IEditedWorld {
     const rails = layoutRails(playTrack);
     const fits = this.placedTrains.map((train) => ({
       train,
-      refusal: railFitRefusal(train.model, rails),
+      refusal: railFitRefusal(train.model.runningGear, rails),
     }));
     return {
       track: playTrack,

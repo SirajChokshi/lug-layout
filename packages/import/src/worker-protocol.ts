@@ -77,9 +77,5 @@ export function transferablesOf(model: ImportResult): Transferable[] {
     ...model.compiled.map((part) => part.glb.buffer),
     ...model.connectors.flatMap((connectors) => (connectors ? connectorBuffers(connectors) : [])),
     ...(model.bake ? bakeTransferables(model.bake) : []),
-    ...model.runningGear.vehicles.flatMap((vehicle) => [
-      vehicle.body.buffer,
-      ...vehicle.bogies.map((bogie) => bogie.instances.buffer),
-    ]),
   ];
 }

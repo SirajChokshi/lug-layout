@@ -912,7 +912,6 @@ it("offers none of the editing commands on a selection in a world another tab ho
 }, 120_000);
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
-const NO_UNREAD_ROWS = { instance: [], band: [], reason: [] };
 
 function refusedBake(fileName: string): ImportResult {
   return {
@@ -934,8 +933,6 @@ function refusedBake(fileName: string): ImportResult {
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       bakeHelpersFailed: 0,
-      unresolvedRunningGear: [],
-      unreadRollingBands: NO_UNREAD_ROWS,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
       timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
     },
@@ -954,12 +951,6 @@ function refusedBake(fileName: string): ImportResult {
     compiled: [],
     connectors: [],
     bake: null,
-    runningGear: {
-      vehicles: [],
-      vehicleCouplings: [],
-      unresolvedRunningGear: [],
-      unreadRollingBands: NO_UNREAD_ROWS,
-    },
   };
 }
 

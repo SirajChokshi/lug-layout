@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
-import { ModelFile, ModelVehicle, UnreadRollingBands, unreadRollingBandsFit } from "./index.ts";
+import {
+  ModelFile,
+  ModelRunningGear,
+  ModelVehicle,
+  UnreadRollingBands,
+  unreadRollingBandsFit,
+} from "./index.ts";
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const SEVEN = { numerator: "7", denominator: "1" };
@@ -163,6 +169,27 @@ describe("running gear on a model file", () => {
       }),
     ).toBe(false);
     expect(decodes({ vehicles: [vehicle({ body: [4] })] })).toBe(false);
+  });
+});
+
+function coupled(vehicles: readonly [number, number]): boolean {
+  return decode(ModelRunningGear, {
+    vehicles: [vehicle(), vehicle()],
+    vehicleCouplings: [
+      {
+        vehicles,
+        mates: [{ male: { instance: 0, connector: 0 }, female: { instance: 0, connector: 1 } }],
+        pivot: null,
+      },
+    ],
+    unresolvedRunningGear: [],
+    unreadRollingBands: { instance: [], band: [], reason: [] },
+  }).ok;
+}
+
+describe("ModelRunningGear", () => {
+  it("refuses a coupling that names a vehicle the running gear lacks, or one vehicle twice", () => {
+    expect([coupled([0, 1]), coupled([0, 2]), coupled([1, 1])]).toEqual([true, false, false]);
   });
 });
 

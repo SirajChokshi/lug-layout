@@ -1,5 +1,5 @@
-import type { ModelRunningGear, PartModel, PartVehicle } from "@brr/catalog";
-import type { Vec3, VehicleCoupling } from "@brr/schema/bundle";
+import type { PartModel } from "@brr/catalog";
+import type { ModelRunningGear, ModelVehicle, Vec3, VehicleCoupling } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import type {
   CouplerGeometry,
@@ -36,24 +36,24 @@ interface PlanePoint {
   readonly z: number;
 }
 
-function inPlan(vehicle: PartVehicle, model: Vec3): PlanePoint {
+function inPlan(vehicle: ModelVehicle, model: Vec3): PlanePoint {
   const [x, , z] = toVehicleFrame(vehicle, model);
   return { x, z };
 }
 
-function guideAt(vehicle: PartVehicle, end: End): PartVehicle["guides"][number] {
+function guideAt(vehicle: ModelVehicle, end: End): ModelVehicle["guides"][number] {
   const [front, rear] = vehicle.guides;
   return end === "front" ? front : rear;
 }
 
-function axlePoint(vehicle: PartVehicle, wheelset: number): PlanePoint {
+function axlePoint(vehicle: ModelVehicle, wheelset: number): PlanePoint {
   const line = vehicle.wheelsets[wheelset]?.axisLine;
   if (!line) throw new Error(`the vehicle has no wheelset ${wheelset}`);
   const [near, far] = line;
   return inPlan(vehicle, [(near[0] + far[0]) / 2, (near[1] + far[1]) / 2, (near[2] + far[2]) / 2]);
 }
 
-function guideGeometry(vehicle: PartVehicle, end: End): GuideGeometry {
+function guideGeometry(vehicle: ModelVehicle, end: End): GuideGeometry {
   const guide = guideAt(vehicle, end);
   const bogie = guide.bogie === null ? undefined : vehicle.bogies[guide.bogie];
   if (guide.kind === "bogiePivot" && bogie) {
@@ -80,7 +80,7 @@ function guideGeometry(vehicle: PartVehicle, end: End): GuideGeometry {
   };
 }
 
-function guideWheelset(vehicle: PartVehicle, end: End): GuideWheelset {
+function guideWheelset(vehicle: ModelVehicle, end: End): GuideWheelset {
   const guide = guideAt(vehicle, end);
   const rows =
     guide.kind === "bogiePivot" && guide.bogie !== null
@@ -95,13 +95,13 @@ function guideWheelset(vehicle: PartVehicle, end: End): GuideWheelset {
   return { axleYLdu: (near[1] + far[1]) / 2, rollingRadius: wheelset.rollingRadius };
 }
 
-function vehicleInstances(vehicle: PartVehicle): Uint32Array {
+function vehicleInstances(vehicle: ModelVehicle): Uint32Array {
   const all = [...vehicle.body];
   for (const bogie of vehicle.bogies) all.push(...bogie.instances);
   return Uint32Array.from(all);
 }
 
-function boundsEnd(vehicle: PartVehicle, boxes: Float64Array, end: End): CouplerGeometry {
+function boundsEnd(vehicle: ModelVehicle, boxes: Float64Array, end: End): CouplerGeometry {
   let extreme = end === "front" ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
   for (const instance of vehicleInstances(vehicle)) {
     const o = instance * BOX_FLOATS;
@@ -118,7 +118,7 @@ function boundsEnd(vehicle: PartVehicle, boxes: Float64Array, end: End): Coupler
   return { xLdu: extreme, zLdu: 0, mount: "body" };
 }
 
-function mountOf(vehicle: PartVehicle, coupling: VehicleCoupling): CouplerMount {
+function mountOf(vehicle: ModelVehicle, coupling: VehicleCoupling): CouplerMount {
   const linked = new Set(
     coupling.mates.flatMap((mate) => [mate.male.instance, mate.female.instance]),
   );
@@ -130,7 +130,7 @@ function mountOf(vehicle: PartVehicle, coupling: VehicleCoupling): CouplerMount 
 }
 
 function couplingEnd(
-  vehicle: PartVehicle,
+  vehicle: ModelVehicle,
   coupling: VehicleCoupling,
   pivot: Vec3,
 ): CouplerGeometry {
@@ -138,7 +138,7 @@ function couplingEnd(
   return { xLdu: point.x, zLdu: point.z, mount: mountOf(vehicle, coupling) };
 }
 
-function specOf(vehicle: PartVehicle, front: CouplerGeometry, rear: CouplerGeometry): VehicleSpec {
+function specOf(vehicle: ModelVehicle, front: CouplerGeometry, rear: CouplerGeometry): VehicleSpec {
   const geometry: VehicleGeometry = {
     front: guideGeometry(vehicle, "front"),
     rear: guideGeometry(vehicle, "rear"),
@@ -157,7 +157,7 @@ function specOf(vehicle: PartVehicle, front: CouplerGeometry, rear: CouplerGeome
   };
 }
 
-function travelOrder(vehicles: ReadonlyArray<PartVehicle>): number[] {
+function travelOrder(vehicles: ReadonlyArray<ModelVehicle>): number[] {
   const first = vehicles[0];
   const forwardX = Math.cos(first?.yaw ?? 0);
   const forwardZ = Math.sin(first?.yaw ?? 0);
@@ -215,7 +215,7 @@ export function plannedConsists(
 function localMatrices(
   model: PartModel,
   instances: Uint32Array,
-  vehicle: PartVehicle,
+  vehicle: ModelVehicle,
   pivot: PlanePoint,
 ): Float32Array {
   const cos = Math.cos(vehicle.yaw);
@@ -237,28 +237,31 @@ function localMatrices(
   return out;
 }
 
-function bogieBody(model: PartModel, vehicle: PartVehicle, end: End): RigidBodyInstances | null {
+function bogieBody(model: PartModel, vehicle: ModelVehicle, end: End): RigidBodyInstances | null {
   const guide = guideAt(vehicle, end);
   const bogie =
     guide.kind === "bogiePivot" && guide.bogie !== null ? vehicle.bogies[guide.bogie] : undefined;
   if (!bogie) return null;
+  const instances = Uint32Array.from(bogie.instances);
   return {
-    instances: bogie.instances,
-    matrices: localMatrices(model, bogie.instances, vehicle, inPlan(vehicle, bogie.pivot)),
+    instances,
+    matrices: localMatrices(model, instances, vehicle, inPlan(vehicle, bogie.pivot)),
   };
 }
 
+function bodyInstances(model: PartModel, vehicle: ModelVehicle): RigidBodyInstances {
+  const instances = Uint32Array.from(vehicle.body);
+  return { instances, matrices: localMatrices(model, instances, vehicle, { x: 0, z: 0 }) };
+}
+
 export function consistsOf(model: PartModel, boxes: Float64Array): ConsistVehicle[][] {
-  return plannedConsists(model, boxes).map((consist) =>
+  return plannedConsists(model.runningGear, boxes).map((consist) =>
     consist.map(({ vehicle: index, spec }) => {
-      const vehicle = model.vehicles[index];
+      const vehicle = model.runningGear.vehicles[index];
       if (!vehicle) throw new Error(`the model has no vehicle ${index}`);
       return {
         spec,
-        body: {
-          instances: vehicle.body,
-          matrices: localMatrices(model, vehicle.body, vehicle, { x: 0, z: 0 }),
-        },
+        body: bodyInstances(model, vehicle),
         frontBogie: bogieBody(model, vehicle, "front"),
         rearBogie: bogieBody(model, vehicle, "rear"),
       };

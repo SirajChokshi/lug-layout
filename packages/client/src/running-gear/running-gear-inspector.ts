@@ -1,7 +1,9 @@
-import type { ModelRunningGear, PartModel, PartShapeAsset, PartVehicle } from "@brr/catalog";
+import type { PartModel, PartShapeAsset } from "@brr/catalog";
 import type { VehicleSpec } from "@brr/sim";
 import type {
   ConnectorRef,
+  ModelRunningGear,
+  ModelVehicle,
   UnreadRollingBands,
   UnresolvedRunningGear,
   Vec3,
@@ -83,12 +85,7 @@ export function gearModelSource(
   model: PartModel,
   bundle: { readonly parts: ReadonlyArray<PartShapeAsset> },
 ): GearModelSource {
-  const runningGear: ModelRunningGear = {
-    vehicles: model.vehicles,
-    vehicleCouplings: model.vehicleCouplings,
-    unresolvedRunningGear: model.unresolvedRunningGear,
-    unreadRollingBands: model.unreadRollingBands,
-  };
+  const { runningGear } = model;
   return {
     name,
     sha256,
@@ -113,7 +110,7 @@ function modelView(source: GearModelSource): GearModelView {
 
 function box(
   boxes: Float64Array,
-  vehicle: PartVehicle,
+  vehicle: ModelVehicle,
   instance: number,
   marks: Pick<GearBox, "bogie" | "wheelset" | "endCandidate">,
 ): GearBox {
@@ -151,7 +148,7 @@ function plannedSpec(source: GearModelSource, index: number): VehicleSpec {
   return planned.spec;
 }
 
-function gearView(source: GearModelSource, index: number, vehicle: PartVehicle): GearView {
+function gearView(source: GearModelSource, index: number, vehicle: ModelVehicle): GearView {
   const owner = new Map<number, number>();
   vehicle.bogies.forEach((bogie, b) => {
     for (const instance of bogie.instances) owner.set(instance, b);
@@ -213,7 +210,7 @@ export class RunningGearInspector implements IRunningGear {
     this.publish();
   }
 
-  private vehicleOf(selection: GearSelection): PartVehicle | undefined {
+  private vehicleOf(selection: GearSelection): ModelVehicle | undefined {
     return this.source(selection.model)?.runningGear.vehicles[selection.vehicle];
   }
 

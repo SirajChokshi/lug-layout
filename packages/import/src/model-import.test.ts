@@ -1,6 +1,6 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
-import { SectionVocabularyFile, type BundleRail } from "@brr/schema/bundle";
+import { SectionVocabularyFile } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import {
@@ -72,7 +72,6 @@ interface Manifest {
     readonly primitives?: CompileRequest["connectors"]["primitives"];
     readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
-    readonly rails: ReadonlyArray<BundleRail>;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
@@ -178,7 +177,6 @@ async function importWith(
       .filter((color) => color.alpha < OPAQUE_ALPHA)
       .map((color) => color.code),
     tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-    rails: manifest.compiler.rails,
   });
 }
 

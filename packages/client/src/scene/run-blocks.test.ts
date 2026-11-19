@@ -70,7 +70,10 @@ beforeAll(async () => {
   const loader = container.get(PART_BUNDLE_LOADER);
   catalog = (await loader.load("standard", TRACK_PARTS)).trackCatalog;
   const model = await loader.loadModel("standard", LOCOMOTIVE_MODEL);
-  const planned = plannedConsists(model.model, instanceBoxes(model.model, model.bundle))[0]?.[0];
+  const planned = plannedConsists(
+    model.model.runningGear,
+    instanceBoxes(model.model, model.bundle),
+  )[0]?.[0];
   if (!planned) throw new Error(`${LOCOMOTIVE_MODEL} has no vehicle`);
   locomotive = planned.spec;
 });

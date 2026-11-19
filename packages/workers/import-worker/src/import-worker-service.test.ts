@@ -17,7 +17,7 @@ import {
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
-import type { BundleRail, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import type { PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -207,7 +207,6 @@ it("gives a bundle part the same connector table from the catalog loader as when
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
         tableDepthLdu: context.tableDepthLdu,
-        rails: context.rails,
       },
     },
   });
@@ -324,7 +323,6 @@ it("refuses, and reports, a bundle part whose connector record was inferred with
           ldconfigCodes: context.ldconfigCodes,
           translucentColors: context.translucentCodes,
           tableDepthLdu: context.tableDepthLdu,
-          vehicles: context.vehicles,
         },
       },
     });
@@ -359,7 +357,6 @@ interface Manifest {
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly compiler: {
     readonly file: string;
-    readonly rails: ReadonlyArray<BundleRail>;
     readonly primitives?: PrimitiveConnectorTable;
     readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
@@ -443,7 +440,6 @@ it("imports with the compiler and LDraw library the request names and the worker
         translucentColors: manifest.colors
           .filter((color) => color.alpha < OPAQUE_ALPHA)
           .map((color) => color.code),
-        rails: manifest.compiler.rails,
         tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
         primitives: manifest.compiler.primitives ?? null,
         sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },

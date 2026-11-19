@@ -1311,6 +1311,33 @@ export const SubmodelTree = v.object({
   ofPart: v.array(Integer),
 });
 
+export const ModelRunningGearFields = v.object({
+  vehicles: v.array(ModelVehicle),
+  vehicleCouplings: v.array(VehicleCoupling),
+  unresolvedRunningGear: v.array(UnresolvedRunningGear),
+  unreadRollingBands: UnreadRollingBands,
+});
+
+const COUPLING_VEHICLES_MESSAGE =
+  "a coupling inside the model names a vehicle the model does not have";
+
+interface CoupledVehicles {
+  readonly vehicles: ReadonlyArray<unknown>;
+  readonly vehicleCouplings: ReadonlyArray<{ readonly vehicles: readonly [number, number] }>;
+}
+
+function couplingsNameVehicles({ vehicles, vehicleCouplings }: CoupledVehicles): boolean {
+  return vehicleCouplings.every(
+    ({ vehicles: [a, b] }) => a !== b && a < vehicles.length && b < vehicles.length,
+  );
+}
+
+export const ModelRunningGear = v.pipe(
+  ModelRunningGearFields,
+  v.check((gear) => couplingsNameVehicles(gear), COUPLING_VEHICLES_MESSAGE),
+);
+export type ModelRunningGear = v.InferOutput<typeof ModelRunningGear>;
+
 export const ModelFile = v.pipe(
   v.object({
     name: v.string(),
@@ -1323,10 +1350,7 @@ export const ModelFile = v.pipe(
     parts: v.array(v.string()),
     shapes: v.array(PartShape),
     lattice: v.nullable(ModelLattice),
-    vehicles: v.array(ModelVehicle),
-    vehicleCouplings: v.array(VehicleCoupling),
-    unresolvedRunningGear: v.array(UnresolvedRunningGear),
-    unreadRollingBands: UnreadRollingBands,
+    ...ModelRunningGearFields.entries,
     cover: ModelFileCover,
     notDrawn: v.optional(v.array(NotDrawnSection)),
     instances: v.object({
@@ -1361,13 +1385,7 @@ export const ModelFile = v.pipe(
       ),
     "a vehicle names an instance the model does not have",
   ),
-  v.check(
-    ({ vehicles, vehicleCouplings }) =>
-      vehicleCouplings.every(
-        ({ vehicles: [a, b] }) => a !== b && a < vehicles.length && b < vehicles.length,
-      ),
-    "a coupling inside the model names a vehicle the model does not have",
-  ),
+  v.check((model) => couplingsNameVehicles(model), COUPLING_VEHICLES_MESSAGE),
   v.check(
     ({ vehicleCouplings, unresolvedRunningGear, instances }) =>
       [

@@ -9,11 +9,10 @@ import {
   type BundleManifest,
   type BundleModelEntry,
   type CatalogPart,
-  type BundleRail,
   type BundleSource,
   type ManifestPart,
+  type ModelRunningGear,
   type ModelSection,
-  type ModelVehicle,
   type PartRole,
   type PartRolling,
   type PartTechnic,
@@ -21,10 +20,7 @@ import {
   type PrimitiveConnectorTable,
   type SectionVocabulary,
   type TrackEnd,
-  type UnreadRollingBands,
-  type UnresolvedRunningGear,
   type Vec3,
-  type VehicleCoupling,
 } from "@brr/schema/bundle";
 
 export const BUNDLE_LODS: ReadonlyArray<BundleLod> = BundleLod.options;
@@ -132,14 +128,7 @@ export interface PartModelSubmodels {
   readonly ofPart: Int32Array;
 }
 
-export interface ModelRunningGear {
-  readonly vehicles: ReadonlyArray<PartVehicle>;
-  readonly vehicleCouplings: ReadonlyArray<VehicleCoupling>;
-  readonly unresolvedRunningGear: ReadonlyArray<UnresolvedRunningGear>;
-  readonly unreadRollingBands: UnreadRollingBands;
-}
-
-export interface PartModel extends ModelRunningGear {
+export interface PartModel {
   readonly sections: ReadonlyArray<ModelSection>;
   readonly lattice: PartModelLattice | null;
   readonly studCover: ModelStudCover;
@@ -150,14 +139,8 @@ export interface PartModel extends ModelRunningGear {
   readonly matrices: Float32Array;
   readonly partTransforms: Float64Array;
   readonly submodels: PartModelSubmodels;
+  readonly runningGear: ModelRunningGear;
 }
-
-export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
-  readonly body: Uint32Array;
-  readonly bogies: ReadonlyArray<
-    Omit<ModelVehicle["bogies"][number], "instances"> & { readonly instances: Uint32Array }
-  >;
-};
 
 export type PartBundle = Pick<
   BundleManifest,
@@ -197,7 +180,6 @@ export interface ImportContext {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly rails: ReadonlyArray<BundleRail>;
 }
 
 export interface CompiledPartGlb {

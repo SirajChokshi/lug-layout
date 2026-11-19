@@ -1,4 +1,4 @@
-import type { ModelRunningGear } from "@brr/catalog";
+import type { ModelRunningGear } from "@brr/schema/bundle";
 import { exactRationalEquals, parseExactRational } from "@brr/math";
 import {
   unidentifiedRailReason,

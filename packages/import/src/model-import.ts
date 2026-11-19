@@ -14,16 +14,12 @@ import type {
   ModelRead,
   PartOutcome,
 } from "./brick-compiler.ts";
-import type { ModelRunningGear } from "@brr/catalog";
 import { isDirectColor } from "@brr/catalog/colors";
 import {
   submodelTreeFits,
   type MalformedFinding,
   type PrimitiveConnectorTable,
   type SectionVocabulary,
-  type BundleRail,
-  type UnreadRollingBands,
-  type UnresolvedRunningGear,
 } from "@brr/schema/bundle";
 import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
@@ -43,7 +39,6 @@ export interface ImportJob {
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentColors: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
-  readonly rails: ReadonlyArray<BundleRail>;
 }
 
 interface Counted {
@@ -115,8 +110,6 @@ export interface ImportReport {
   readonly bakeRounds: number;
   readonly bakeIssue: string | null;
   readonly bakeHelpersFailed: number;
-  readonly unresolvedRunningGear: ReadonlyArray<UnresolvedRunningGear>;
-  readonly unreadRollingBands: UnreadRollingBands;
   readonly fetched: MirrorStats;
   readonly timings: ImportTimings;
 }
@@ -149,7 +142,6 @@ export interface ImportResult {
   readonly compiled: ReadonlyArray<CompiledGlb>;
   readonly connectors: ReadonlyArray<PartConnectors | null>;
   readonly bake: ModelBake | null;
-  readonly runningGear: ModelRunningGear;
   readonly studio?: StudioReport;
 }
 
