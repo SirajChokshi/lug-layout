@@ -15,24 +15,32 @@ import { STUD_BASIS_FLOATS, type StudBasisTable } from "./stud-basis-table.ts";
 const studMatrix = new Matrix4();
 const studSphere = new Sphere();
 
+export function studGeometry(
+  primitive: BufferGeometry,
+  studTranslations: InstancedBufferAttribute,
+  studBasisAndColorIndex: InstancedBufferAttribute,
+): InstancedBufferGeometry {
+  const geometry = new InstancedBufferGeometry();
+  geometry.setIndex(primitive.index);
+  geometry.setAttribute("position", primitive.getAttribute("position"));
+  geometry.setAttribute("normal", primitive.getAttribute("normal"));
+  geometry.setAttribute("studTranslations", studTranslations);
+  geometry.setAttribute("studBasisAndColorIndex", studBasisAndColorIndex);
+  geometry.boundingSphere = primitive.boundingSphere?.clone() ?? null;
+  geometry.instanceCount = studBasisAndColorIndex.count;
+  return geometry;
+}
+
 export class StudMesh extends Mesh<InstancedBufferGeometry, Material> {
   readonly boundingSphere = new Sphere();
 
   constructor(
-    primitive: BufferGeometry,
+    geometry: InstancedBufferGeometry,
     material: Material,
     readonly studTranslations: InstancedBufferAttribute,
     readonly studBasisAndColorIndex: InstancedBufferAttribute,
     private readonly studBases: StudBasisTable,
   ) {
-    const geometry = new InstancedBufferGeometry();
-    geometry.setIndex(primitive.index);
-    geometry.setAttribute("position", primitive.getAttribute("position"));
-    geometry.setAttribute("normal", primitive.getAttribute("normal"));
-    geometry.setAttribute("studTranslations", studTranslations);
-    geometry.setAttribute("studBasisAndColorIndex", studBasisAndColorIndex);
-    geometry.boundingSphere = primitive.boundingSphere?.clone() ?? null;
-    geometry.instanceCount = studBasisAndColorIndex.count;
     super(geometry, material);
   }
 
