@@ -137,6 +137,7 @@ class TurnedModel {
   classes = new Int32Array(0);
   classCount = 0;
   axisClasses = new Uint8Array(0);
+  pairable = new Uint8Array(0);
   position = new Int32Array(0);
   axis = new Int8Array(0);
   next = new Int32Array(0);
@@ -306,6 +307,7 @@ export class SparseConnectorFinder implements MateFinder {
               slot !== NO_SLOT;
               slot = this.slotRegionNext[slot] ?? NO_SLOT
             ) {
+              if (latticeOnly && !this.pairableSlot(turned, slot, rot)) continue;
               if (!this.reachable(slot, near, 0, reach)) continue;
               const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
               this.proposeFromSlot(slot, model.count, rot, window, travel, latticeOnly, out);
@@ -934,12 +936,40 @@ export class SparseConnectorFinder implements MateFinder {
         turned.cells.set(this.modelKey, m);
       }
     }
+    this.markPairable(turned);
     this.groupByPhase(turned, n);
     this.indexLines(turned, n);
     turned.lineShared = sharedLines(model);
     turned.model = model;
     this.gatheredRevision.fill(-1);
     return turned;
+  }
+
+  private markPairable(turned: TurnedModel): void {
+    const classes = this.classes;
+    const classCount = turned.classCount;
+    turned.pairable = new Uint8Array(QUARTER_TURNS * classCount * AXIS_CODES);
+    for (let rot = 0; rot < QUARTER_TURNS; rot++) {
+      for (const own of turned.classes) {
+        if (own < 0) continue;
+        for (let axis = 0; axis < AXIS_CODES; axis++) {
+          if (turned.axisClasses[(rot * AXIS_CODES + axis) * classCount + own] !== 1) continue;
+          const slotAxis = oppositeAxis(axis);
+          for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+            const partner = classes.pairClass[p] ?? UNCLASSED;
+            if (partner < 0) continue;
+            turned.pairable[(rot * classCount + partner) * AXIS_CODES + slotAxis] = 1;
+          }
+        }
+      }
+    }
+  }
+
+  private pairableSlot(turned: TurnedModel, slot: number, rot: number): boolean {
+    const slotClass = this.slotClass[slot] ?? UNCLASSED;
+    if (slotClass < 0 || slotClass >= turned.classCount) return false;
+    const slotAxis = this.slotAxis[slot] ?? 0;
+    return turned.pairable[(rot * turned.classCount + slotClass) * AXIS_CODES + slotAxis] === 1;
   }
 
   private indexLines(turned: TurnedModel, n: number): void {

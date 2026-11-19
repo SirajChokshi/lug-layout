@@ -44,7 +44,7 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
-import { CandidatePoses } from "@brr/domain";
+import { CandidatePoses, MateReport } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -80,6 +80,8 @@ import {
   MODEL_IMPORTER,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
+  SNAP_SHAPES,
+  SPARSE_CONNECTOR_FINDER,
   TRAIN_PLAY,
 } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
@@ -87,6 +89,7 @@ import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
+import { mateCounts } from "./placement-hover-view.ts";
 import { partConnectors } from "@brr/catalog/connector-records";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -1096,6 +1099,17 @@ const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
 const OVERLAP = "would hit";
 
+function latticeKeys(poses: CandidatePoses, x: number, z: number): Set<string> {
+  const found = new Set<string>();
+  for (let q = 0; q < poses.count; q++) {
+    const px = poses.x[q] ?? 0;
+    const pz = poses.z[q] ?? 0;
+    if ((px - x) % 20 !== 0 || (pz - z) % 20 !== 0) continue;
+    found.add(`${px},${pz},${poses.yPlates[q]},${poses.rot[q]}`);
+  }
+  return found;
+}
+
 function posesOf(editor: IEditor) {
   const { refs, placements } = editor.dump();
   return placements.refId
@@ -1458,6 +1472,50 @@ it("counts Technic, side-stud and track votes only where those finders propose a
   }
 
   expect({ missed, votedSomewhere: voted > 0 }).toEqual({ missed: [], votedSomewhere: true });
+}, 600_000);
+
+it("proposes on the stud lattice exactly the lattice poses of the full slot walk, a held Technic hole's facade pin among the side studs and bars included", async () => {
+  const marketStreet = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor(["10190-1", "10218-1"]);
+  for (const item of [marketStreet, petShop]) await loadCatalogItem(catalog, item);
+  await placer(editor, backend)(marketStreet, 0, 0);
+  const sparse = container.get(SPARSE_CONNECTOR_FINDER);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const shapes = container.get(SNAP_SHAPES);
+  const placeable = await loadCatalogItem(catalog, petShop);
+  const loaded = await container.get(CONNECTOR_TABLES).load(placeable);
+  const model = search.model(loaded.tables, placeable.partTransforms, []);
+  const full = new CandidatePoses();
+  const lattice = new CandidatePoses();
+  const report = new MateReport();
+  const differing: string[] = [];
+  let technicMates = 0;
+  for (const x of [600, 640, 680]) {
+    const window = { x, z: 0, yPlates: 0, rot: 0, cells: 3, plates: 7, turns: 4 };
+    sparse.propose(model, window, full);
+    sparse.proposeOnLattice(model, window, lattice);
+    const walked = latticeKeys(full, x, 0);
+    const indexed = latticeKeys(lattice, x, 0);
+    for (const key of walked) if (!indexed.has(key)) differing.push(`missing ${key}`);
+    for (const key of indexed) if (!walked.has(key)) differing.push(`extra ${key}`);
+    for (const key of indexed) {
+      const [px = 0, pz = 0, yPlates = 0, rot = 0] = key.split(",").map(Number);
+      solver.partneredMates(model, { x: px, z: pz, yPlates, rot }, report);
+      for (const mate of mateCounts(report, shapes, () => null)) {
+        const flaredPartner = mate.partnerKinds.some((kind) =>
+          kind.sections.some((section) => section.profile === "flare"),
+        );
+        if (mate.kind.gender === "female" && flaredPartner) technicMates += mate.connectors;
+      }
+    }
+  }
+
+  expect({ differing, technicMates: technicMates > 0 }).toEqual({
+    differing: [],
+    technicMates: true,
+  });
 }, 600_000);
 
 it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
