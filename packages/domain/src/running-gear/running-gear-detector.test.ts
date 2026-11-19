@@ -471,7 +471,16 @@ const PIVOT_AXLE: Part = {
   ],
 };
 
-function throughAxleCar(frameY: number, bodyY: number): Scenario {
+const OUTWARD_PIVOT_AXLE: Part = {
+  connectors: [
+    { at: [0, -17, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+    { at: [0, 17, 0], axis: AXIS_POS_Y, gender: GENDER_MALE },
+  ],
+};
+
+function throughAxleCar(frameY: number, bodyY: number, pivot: Part = PIVOT_AXLE): Scenario {
+  const intoUpFace = pivot.connectors[0]?.axis === AXIS_NEG_Y ? 0 : 1;
+  const intoDownFace = 1 - intoUpFace;
   const placed: Placement[] = [{ part: "body", at: [0, bodyY, 0] }];
   const mates: MateSpec[] = [];
   for (const [side, x] of [
@@ -488,14 +497,14 @@ function throughAxleCar(frameY: number, bodyY: number): Scenario {
     mates.push(
       { male: [frame + 1, 0], female: [frame, 2] },
       { male: [frame + 2, 0], female: [frame, 3] },
-      { male: [frame + 3, 0], female: [frame, 1] },
-      { male: [frame + 3, 1], female: [frame, 0] },
-      { male: [frame + 3, 0], female: [0, 2 * side + 1] },
-      { male: [frame + 3, 1], female: [0, 2 * side] },
+      { male: [frame + 3, intoDownFace], female: [frame, 1] },
+      { male: [frame + 3, intoUpFace], female: [frame, 0] },
+      { male: [frame + 3, intoDownFace], female: [0, 2 * side + 1] },
+      { male: [frame + 3, intoUpFace], female: [0, 2 * side] },
     );
   }
   return {
-    parts: { ...PARTS, frame: THROUGH_FRAME, body: THROUGH_BODY, pivot: PIVOT_AXLE },
+    parts: { ...PARTS, frame: THROUGH_FRAME, body: THROUGH_BODY, pivot },
     placed,
     mates,
   };
@@ -901,14 +910,12 @@ describe("RunningGearDetector", () => {
     });
   });
 
-  it("peels bogies on a through axle below the body and never the inverted ones above it", () => {
+  it("peels bogies on a through axle below the body and never the inverted ones above it, reading only the faces that mate the contracted axle, never the axle's own", () => {
     expect({
       below: bogieCount(throughAxleCar(20, 30)),
+      belowOnOutwardAxle: bogieCount(throughAxleCar(20, 30, OUTWARD_PIVOT_AXLE)),
       above: bogieCount(throughAxleCar(40, 30)),
-    }).toEqual({
-      below: 2,
-      above: 0,
-    });
+    }).toEqual({ below: 2, belowOnOutwardAxle: 2, above: 0 });
   });
 
   it("reads pivot heights in the pivot's lowest common frame: a car off the grid in its own sub-model peels its bogies, and a bogie off the grid alone isn't peeled", () => {

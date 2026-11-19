@@ -93,6 +93,7 @@ export interface RunningGearPartition extends Classification {
 
 const NOT_UNSEATED = -1;
 const NOT_VERTICAL_FREE = -2;
+const CONTRACTED_PIVOT_PART = -1;
 const MODEL_UP = 1;
 
 interface Edge {
@@ -201,7 +202,7 @@ export class BogieDetector {
     };
     for (let i = 0; i < instances.count; i++) {
       const root = sets.find(i);
-      classifiedOf[i] = contracted.has(root) ? -1 : indexOf(root);
+      classifiedOf[i] = contracted.has(root) ? CONTRACTED_PIVOT_PART : indexOf(root);
     }
     for (let i = 0; i < instances.count; i++) {
       const index = indexOf(creditedRoot(sets.find(i)));
@@ -728,6 +729,7 @@ export class BogieDetector {
         [mates.femaleInstance[m] ?? 0, mates.femaleConnector[m] ?? 0, oppositeAxis(axis)],
       ] as const;
       for (const [instance, connector, facing] of sides) {
+        if (classifiedOf[instance] === CONTRACTED_PIVOT_PART) continue;
         const own = classifiedOf[instance] === s;
         if (own !== (facing === AXIS_POS_Y)) continue;
         const part = parts[instances.partIndex[instance] ?? -1];
