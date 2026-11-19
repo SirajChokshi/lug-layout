@@ -33,7 +33,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 
 ## CI
 
-`.github/workflows/part-bundle.yml` runs three bundle jobs on every push to `main`, and on *Actions → Part bundle → Run workflow*. Two more, `library-bake-status` and `library-bake-publish`, publish and prune the precompiled bake records (*Precompiled bake records*, below); `pointer` runs after `library-bake-publish`, but never depends on its success.
+`.github/workflows/part-bundle.yml` runs three bundle jobs on every push to `main`, and on *Actions → Part bundle → Run workflow*. Four more publish and prune what the bundle's manifests name: `library-bake-status` and `library-bake-publish` for the precompiled bake records (*Precompiled bake records*, below), and `library-connectors-status` and `library-connectors-publish` for the library connector records (*Publishing the library connector records*, below). `pointer` runs after both publish jobs, but never depends on their success.
 
 **`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the bucket's public URL: the repository variable `PART_BUNDLE_BASE_URL` if it's set, otherwise `public_base_url` in `infra/cloudflare/part-bundles.json`. It also reads `current/latest.json` there. If all three manifests are served and the pointer already names them, `publish` and `pointer` don't run. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
 
