@@ -16,6 +16,7 @@ import {
   pinnedArchive,
   publicObjectUrl,
 } from "../library/ldraw-library.ts";
+import { bundleBaseUrl, liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
 import { runPointerCommand } from "../publication/pinned-publication.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
 import {
@@ -41,6 +42,7 @@ const buildRoot = join(repoRoot, ".cache", "library-connectors-build");
 const outRoot = join(toolRoot, "dist", "library-connectors");
 const binary = join(repoRoot, "target", "release", "library-connectors");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 interface StoreConfig {
   readonly bucket_name?: string;
@@ -287,6 +289,15 @@ async function verifyServedCommand(all: boolean, wait: boolean): Promise<void> {
   process.stdout.write(`${baseUrl}: ${checked} match their content addresses\n`);
 }
 
+const libraryConnectorsPointerRetainingLiveBundles = {
+  ...libraryConnectorsPointer,
+  retained: async () =>
+    liveBundleLibraryConnectorsIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
     await publishedCommand();
@@ -308,7 +319,7 @@ switch (process.argv[2]) {
       {
         storeConfigPath,
         readPin,
-        pointer: libraryConnectorsPointer,
+        pointer: libraryConnectorsPointerRetainingLiveBundles,
         manifestOf: (pin) => pin.index,
       },
       process.argv.slice(2),
