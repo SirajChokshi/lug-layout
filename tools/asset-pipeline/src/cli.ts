@@ -2,6 +2,7 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
   type CatalogSourceUse,
@@ -15,6 +16,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
 import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES, FIXTURES_DIRECTORY } from "./bundle-data.ts";
 import { bundleInputKey, remoteManifestFile } from "./bundle-key.ts";
@@ -64,8 +66,18 @@ import {
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
 import { readFixtureModels, readPalette } from "./palette.ts";
-import { attachCrosswalk, MANIFEST_FILE, publishBundle } from "./publish.ts";
+import {
+  attachCrosswalk,
+  attachSectionVocabulary,
+  MANIFEST_FILE,
+  publishBundle,
+} from "./publish.ts";
 import { attachRecords } from "./records.ts";
+import {
+  extractShadowArchive,
+  pinnedShadowArchive,
+  sectionVocabularyFile,
+} from "./section-vocabulary.ts";
 import { R2ObjectStore, sha256Hex } from "./r2.ts";
 import { attachThumbnails, type RenderedThumbnail } from "./thumbnails/catalog-thumbnails.ts";
 import {
@@ -92,6 +104,7 @@ const ldrawRoot = join(repoRoot, ".cache", "ldraw");
 const auditRoot = join(repoRoot, ".cache", "ldraw-audit");
 const connectivityRoot = join(repoRoot, ".cache", "ldcad-shadow");
 const bundleConnectivityRoot = join(repoRoot, ".cache", "ldcad-shadow-bundle");
+const shadowLibraryRoot = join(repoRoot, ".cache", "ldcad-shadow-library");
 const omrRoot = join(repoRoot, ".cache", "omr");
 const catalogRoot = join(repoRoot, ".cache", "catalog");
 const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
@@ -240,6 +253,7 @@ async function restoreCommand(): Promise<void> {
   await restoreModels(await readPalette(palettePath));
   await restoreCatalog(lock, "crosswalk");
   await restoreCatalog(lock, "categories");
+  await restoreCatalog(lock, "connectors");
 }
 
 async function verifyCommand(): Promise<void> {
@@ -255,6 +269,7 @@ async function verifyCommand(): Promise<void> {
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "connectors")),
   ];
   if (problems.length > 0) {
     process.stderr.write(`${problems.join("\n")}\n`);
@@ -262,6 +277,52 @@ async function verifyCommand(): Promise<void> {
     return;
   }
   process.stdout.write("LDraw inputs match ldraw.lock.json\n");
+}
+
+async function sectionVocabularyCommand(check: boolean): Promise<void> {
+  const lock = await readLock();
+  await restoreCatalog(lock, "connectors");
+  const archive = pinnedShadowArchive(catalogLock(lock));
+  const files = await extractShadowArchive(
+    join(catalogSourceDirectory(catalogRoot, archive.name), archive.file),
+    archive.sha256,
+    shadowLibraryRoot,
+  );
+  const derivedPath = join(shadowLibraryRoot, "..", "section-vocabulary.derived.json");
+  runCargo([
+    "run",
+    "--release",
+    "--quiet",
+    "-p",
+    "brick-compile-cli",
+    "--bin",
+    "section-vocabulary",
+    "--",
+    "--shadow",
+    shadowLibraryRoot,
+    "--out",
+    derivedPath,
+  ]);
+  const derived = sectionVocabularyFile(archive, JSON.parse(await readFile(derivedPath, "utf8")));
+  const committedPath = join(repoRoot, BUNDLE_DATA_FILES.sectionVocabulary);
+  const summary = `${derived.sizes.length} sizes and ${derived.lengths.length} lengths from ${files} shadow files of ${archive.source.repo}@${archive.source.commit}`;
+  if (!check) {
+    await writeFile(committedPath, `${JSON.stringify(derived, null, 2)}\n`);
+    process.stdout.write(`wrote ${BUNDLE_DATA_FILES.sectionVocabulary}: ${summary}\n`);
+    return;
+  }
+  const committed = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(committedPath, "utf8"))),
+    committedPath,
+  );
+  if (!isDeepStrictEqual(committed, derived)) {
+    process.stderr.write(
+      `${BUNDLE_DATA_FILES.sectionVocabulary} differs from the vocabulary derived from the pinned shadow archive (${summary}); run section-vocabulary\n`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(`${BUNDLE_DATA_FILES.sectionVocabulary} matches: ${summary}\n`);
 }
 
 async function factsCommand(check: boolean): Promise<void> {
@@ -475,6 +536,8 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
     "--inferred",
     join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
+    "--vocabulary",
+    join(repoRoot, BUNDLE_DATA_FILES.sectionVocabulary),
     "--shadow",
     bundleConnectivityRoot,
     "--patches",
@@ -488,6 +551,7 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     "--cover-cache",
     shared.coverCache,
   ]);
+  await attachSectionVocabulary(out, join(repoRoot, BUNDLE_DATA_FILES.sectionVocabulary));
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
@@ -713,6 +777,9 @@ switch (command) {
   }
   case "facts":
     await factsCommand(process.argv.includes("--check"));
+    break;
+  case "section-vocabulary":
+    await sectionVocabularyCommand(process.argv.includes("--check"));
     break;
   case "colors":
     await colorsCommand(

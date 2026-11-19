@@ -61,6 +61,7 @@ jobs:
       - run: pnpm check:rust
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
+      - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check
       - run: pnpm turbo run typecheck build
       - run: pnpm turbo run test --concurrency=1
       - uses: actions/cache/save@v4

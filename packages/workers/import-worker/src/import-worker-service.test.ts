@@ -5,17 +5,21 @@ import {
   catalogModule,
   type PartConnectors,
 } from "@brr/catalog";
+import { BrickCompiler, type CompileRequest, type PartOutcome } from "@brr/import";
 import {
   BundleIndex,
   CONNECTIVITY_SOURCES,
+  CONNECTOR_SOURCE,
   ConnectorIndexFile,
   ConnectorRecordFile,
+  SectionVocabularyFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
 import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { Container } from "inversify";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -26,12 +30,21 @@ import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const pinnedLibrary = new URL("../../../../.cache/ldraw/", import.meta.url);
+const vocabularyFile = new URL(
+  "../../../../tools/asset-pipeline/section-vocabulary.json",
+  import.meta.url,
+);
 const MIRROR_PREFIX = "/mirror/";
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
 const TECHNIC_PART = "ldraw:52031";
 const UNBUNDLED_PART = "ldraw:3023b";
+const INFERRED_ONLY_PART = "ldraw:1751";
+const INFERRED_ONLY_FILE = "parts/1751.dat";
+const INFERRED_ONLY_FACES = 25;
+const OUTSIDE_PINNED_LIBRARY = "brr-renamed-1751.dat";
+const COMPILE_ROUNDS = 16;
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
@@ -130,12 +143,30 @@ afterAll(async () => {
   await new Promise((resolve) => server.close(resolve));
 });
 
-it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
+async function bundleLoader() {
   const container = new Container();
   await container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
-  const loader = container.get(PART_BUNDLE_LOADER);
+  return container.get(PART_BUNDLE_LOADER);
+}
+
+it("hands the import path the committed section vocabulary, pinned by its SHA-256, that the bundle's tier 4 records were inferred with", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const committed = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
+  expect(context.sectionVocabulary).toEqual({
+    sha256: createHash("sha256")
+      .update(await readFile(vocabularyFile))
+      .digest("hex"),
+    vocabulary: { sizes: committed.sizes, lengths: committed.lengths },
+  });
+});
+
+it("gives a bundle part the same connector table from the catalog loader as when an import fetches it as a pinned part", async () => {
+  const loader = await bundleLoader();
   const context = await loader.importContext(LOD);
   const { repo, commit, root } = context.source;
   mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
@@ -160,6 +191,8 @@ it("gives a bundle part the same connector table from the catalog loader as when
         studPrimitives: context.studPrimitiveNames,
         unofficialAllowlist: context.unofficialAllowlist,
         primitives: context.primitives,
+        sectionVocabulary: context.sectionVocabulary.vocabulary,
+        cavityProbe: context.cavityProbe,
         bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
         ldconfigCodes: context.ldconfigCodes,
         translucentColors: context.translucentCodes,
@@ -188,6 +221,56 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
 });
 
+async function pinnedFile(path: string): Promise<string | null> {
+  return readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
+}
+
+it("infers tier 4 at import for a part outside the pinned library with the bundle's section vocabulary, face for face what the bundle bake published for the same geometry", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const compiler = new BrickCompiler(
+    await WebAssembly.compile(await readFile(new URL(context.compilerPath, bundleRoot))),
+  );
+  const geometry = await pinnedFile(INFERRED_ONLY_FILE);
+  if (geometry === null) throw new Error(`${INFERRED_ONLY_FILE} is not in the pinned library`);
+  const files = new Map([[`parts/${OUTSIDE_PINNED_LIBRARY}`, geometry]]);
+  const absent = new Set<string>();
+  const request: CompileRequest = {
+    lod: LOD,
+    studPrimitives: context.studPrimitiveNames,
+    unofficialAllowlist: context.unofficialAllowlist,
+    connectors: {
+      primitives: context.primitives,
+      sectionVocabulary: context.sectionVocabulary.vocabulary,
+      cavityProbe: context.cavityProbe,
+      infer: [OUTSIDE_PINNED_LIBRARY],
+    },
+    parts: [OUTSIDE_PINNED_LIBRARY],
+    model: "",
+    inlineChecks: [],
+  };
+  let outcome: PartOutcome | undefined;
+  for (let round = 0; round < COMPILE_ROUNDS; round++) {
+    [outcome] = compiler.compile(request, { key: "pinned", files, absent }).parts;
+    if (outcome?.status !== "need") break;
+    for (const path of outcome.paths) {
+      const text = await pinnedFile(path);
+      if (text === null) absent.add(path);
+      else files.set(path, text);
+    }
+  }
+
+  const records = await publishedRecords(INFERRED_ONLY_PART);
+  expect(records).toHaveLength(1);
+  const [bundled] = records;
+  expect(bundled?.faces.source).toEqual(
+    Array.from({ length: INFERRED_ONLY_FACES }, () => CONNECTOR_SOURCE.inferred),
+  );
+  expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
+    ...bundled,
+    part: OUTSIDE_PINNED_LIBRARY,
+  });
+});
+
 const standardBundleRoot = new URL(
   "../../../../tools/asset-pipeline/dist/bundle/standard/",
   import.meta.url,
@@ -207,6 +290,8 @@ interface Manifest {
     readonly file: string;
     readonly vehicles?: CompilerVehicles;
     readonly primitives?: PrimitiveConnectorTable;
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly connectivity: { readonly file: string };
@@ -245,6 +330,14 @@ it("imports with the compiler and LDraw library the request names and the worker
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, standardBundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
+  const standardVocabularyFile = new URL(
+    manifest.compiler.sectionVocabulary.file,
+    standardBundleRoot,
+  );
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(standardVocabularyFile, "utf8"))),
+    standardVocabularyFile.pathname,
+  );
   const requested: string[] = [];
   let clockReads = 0;
   const container = new Container();
@@ -281,6 +374,8 @@ it("imports with the compiler and LDraw library the request names and the worker
         vehicles: manifest.compiler.vehicles ?? null,
         tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
         primitives: manifest.compiler.primitives ?? null,
+        sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+        cavityProbe: manifest.compiler.cavityProbe,
       },
     },
   });

@@ -8,13 +8,12 @@ use std::time::Instant;
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
     mating_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue, MatingFace,
-    PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary, ShadowSnaps, Shape,
-    Source, Uninferred,
+    PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source, Uninferred,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::model::{bake_model, official_reference};
-use brick_compile_cli::{shadow_texts, LazyLibrary};
+use brick_compile_cli::{read_section_vocabulary, LazyLibrary};
 use serde_json::{json, Value};
 
 const SAME_LDU: f64 = 0.01;
@@ -737,8 +736,7 @@ fn run() -> Result<(), String> {
     let library = LazyLibrary::new(ldraw.clone());
     let shadow_root = PathBuf::from(take("--shadow")?);
     let shadow = LazyLibrary::new(shadow_root.clone());
-    let vocabulary =
-        SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
+    let vocabulary = read_section_vocabulary(Path::new(&take("--vocabulary")?))?;
     let revived = LazyLibrary::reviving_commented_snaps(shadow_root);
     let mut revived_snaps = ShadowSnaps::new(&library, &revived);
     let mut commented_fills: Vec<Value> = Vec::new();

@@ -45,6 +45,7 @@ export type {
   PartMesh,
   PartModel,
   PartVehicle,
+  PinnedSectionVocabulary,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 export {

@@ -8,7 +8,7 @@ use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, TierRecord,
+    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
 };
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
@@ -18,7 +18,7 @@ use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
-use brick_compile_cli::{shadow_texts, verified_patch_paths, LazyLibrary};
+use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const DISCLAIMER: &str =
@@ -72,6 +72,7 @@ struct Args {
     palette: PathBuf,
     primitives: PathBuf,
     inferred: PathBuf,
+    vocabulary: PathBuf,
     shadow: PathBuf,
     patches: PathBuf,
     out: PathBuf,
@@ -102,6 +103,7 @@ fn parse_args() -> Result<Args, String> {
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
         inferred: take("--inferred")?.into(),
+        vocabulary: take("--vocabulary")?.into(),
         shadow: take("--shadow")?.into(),
         patches: take("--patches")?.into(),
         out: take("--out")?.into(),
@@ -482,6 +484,15 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
+    let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
+    let inferred: Value = serde_json::from_slice(
+        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
+    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
+        "{}: cavityProbe must be a part path",
+        args.inferred.display()
+    ))?;
     let primitive_options = CompileOptions {
         lod: args.lod,
         stud_primitives: Vec::new(),
@@ -498,6 +509,7 @@ fn run(args: &Args) -> Result<(), String> {
                 "file": COMPILER_FILE,
                 "unofficialAllowlist": unofficial_allowlist,
                 "primitives": primitive_table,
+                "cavityProbe": probe_part,
             })
         }
         None => Value::Null,
@@ -881,23 +893,13 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
     let verified = verified_patch_paths(&patch_manifest);
-    let inferred: Value = serde_json::from_slice(
-        &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
-    )
-    .map_err(|e| format!("{}: {e}", args.inferred.display()))?;
-    let probe_part = inferred["cavityProbe"].as_str().ok_or(format!(
-        "{}: cavityProbe must be a part path",
-        args.inferred.display()
-    ))?;
-    let vocabulary =
-        SectionVocabulary::from_metas(shadow_texts(&args.shadow).iter().map(String::as_str));
     let mut extractor = ConnectorExtractor::new(
         ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
             files: &patch_files,
             verified: &verified,
         }),
         PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&primitive_table)?),
-        InferredFeatures::new(&library, vocabulary, probe_part)?,
+        InferredFeatures::new(&library, section_vocabulary.clone(), probe_part)?,
     );
     let indexes = connector_records(&mut extractor, &parts, &args.out)?;
     let connectivity_source = &palette["connectivitySource"];

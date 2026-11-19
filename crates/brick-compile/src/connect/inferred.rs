@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
+use serde_json::{json, Value};
+
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Flattener, Library, Lod};
 use crate::ldraw::{self, Line, Winding};
@@ -54,6 +56,41 @@ pub struct Inference {
     pub issues: Vec<Issue>,
 }
 
+const SHAPE_CODES: [(SectionShape, &str); 5] = [
+    (SectionShape::Round, "R"),
+    (SectionShape::Axle, "A"),
+    (SectionShape::Square, "S"),
+    (SectionShape::FlexibleEnd, "_L"),
+    (SectionShape::FlexibleStart, "L_"),
+];
+const GENDER_CODES: [(Gender, &str); 2] = [(Gender::Male, "M"), (Gender::Female, "F")];
+
+fn shape_code(shape: SectionShape) -> &'static str {
+    SHAPE_CODES
+        .iter()
+        .find_map(|&(s, code)| (s == shape).then_some(code))
+        .unwrap_or_default()
+}
+
+fn shape_of(code: &str) -> Option<SectionShape> {
+    SHAPE_CODES
+        .iter()
+        .find_map(|&(shape, c)| (c == code).then_some(shape))
+}
+
+fn gender_code(gender: Gender) -> &'static str {
+    GENDER_CODES
+        .iter()
+        .find_map(|&(g, code)| (g == gender).then_some(code))
+        .unwrap_or_default()
+}
+
+fn gender_of(code: &str) -> Option<Gender> {
+    GENDER_CODES
+        .iter()
+        .find_map(|&(gender, c)| (c == code).then_some(gender))
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct SectionVocabulary {
     sizes: Vec<(Gender, SectionShape, f64)>,
@@ -86,11 +123,71 @@ impl SectionVocabulary {
                 }
             }
         }
+        Self::sorted(sizes, lengths)
+    }
+
+    fn sorted(
+        mut sizes: Vec<(Gender, SectionShape, f64)>,
+        mut lengths: Vec<(SectionShape, f64)>,
+    ) -> Self {
         sizes.sort_by(|a, b| (a.0, a.1).cmp(&(b.0, b.1)).then(a.2.total_cmp(&b.2)));
         sizes.dedup();
         lengths.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
         lengths.dedup();
         SectionVocabulary { sizes, lengths }
+    }
+
+    pub fn to_json(&self) -> Value {
+        json!({
+            "sizes": self
+                .sizes
+                .iter()
+                .map(|&(gender, shape, size)| json!({
+                    "gender": gender_code(gender),
+                    "shape": shape_code(shape),
+                    "size": size,
+                }))
+                .collect::<Vec<_>>(),
+            "lengths": self
+                .lengths
+                .iter()
+                .map(|&(shape, length)| json!({ "shape": shape_code(shape), "length": length }))
+                .collect::<Vec<_>>(),
+        })
+    }
+
+    pub fn from_json(value: &Value) -> Result<Self, String> {
+        let entries = |key: &str| {
+            value[key]
+                .as_array()
+                .ok_or(format!("a section vocabulary needs a {key} array"))
+        };
+        let number = |entry: &Value, key: &str| {
+            entry[key]
+                .as_f64()
+                .ok_or(format!("vocabulary entry {entry} needs a numeric {key}"))
+        };
+        let shape = |entry: &Value| {
+            entry["shape"]
+                .as_str()
+                .and_then(shape_of)
+                .ok_or(format!("vocabulary entry {entry} names no section shape"))
+        };
+        let sizes = entries("sizes")?
+            .iter()
+            .map(|entry| {
+                let gender = entry["gender"]
+                    .as_str()
+                    .and_then(gender_of)
+                    .ok_or(format!("vocabulary entry {entry} names no gender"))?;
+                Ok((gender, shape(entry)?, number(entry, "size")?))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let lengths = entries("lengths")?
+            .iter()
+            .map(|entry| Ok((shape(entry)?, number(entry, "length")?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(Self::sorted(sizes, lengths))
     }
 
     fn unique(mut found: impl Iterator<Item = f64>) -> Option<f64> {

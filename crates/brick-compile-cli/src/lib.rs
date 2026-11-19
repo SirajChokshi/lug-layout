@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use brick_compile::connect::SectionVocabulary;
 use brick_compile::flatten::Library;
 use serde_json::Value;
 
@@ -94,4 +95,11 @@ pub fn shadow_texts(root: &Path) -> Vec<String> {
         }
     }
     out
+}
+
+pub fn read_section_vocabulary(path: &Path) -> Result<SectionVocabulary, String> {
+    let bytes = fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+    SectionVocabulary::from_json(&value).map_err(|e| format!("{}: {e}", path.display()))
 }
