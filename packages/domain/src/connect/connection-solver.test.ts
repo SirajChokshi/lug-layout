@@ -523,7 +523,138 @@ const FAR_LDU = 20_000;
 const ONE_SIXTEENTH_LDU = 1 / SIXTEENTHS_PER_LDU;
 const DUST_BEYOND_RESIDUAL_LDU = 1.8 * IDENTIFICATION_RESIDUAL_LDU;
 
+function facesFromBothEnds(
+  shapeId: number,
+  gender: number,
+  from: number,
+  to: number,
+  axis: number,
+): ConnectorTable {
+  return table([
+    { shape: shapeId, gender, origin: [0, 0, from], axis },
+    {
+      shape: shapeId,
+      gender,
+      origin: [0, 0, to],
+      axis: axis === AXIS_POS_Z ? AXIS_NEG_Z : AXIS_POS_Z,
+    },
+  ]);
+}
+
+function oneFace(shapeId: number, gender: number, axis: number): ConnectorTable {
+  return table([{ shape: shapeId, gender, origin: [0, 0, 0], axis }]);
+}
+
+function exposedStretches(connectors: ModelConnectors) {
+  return Array.from({ length: connectors.count }, (_, n) => {
+    const exposedShape = connectors.shape[n] ?? 0;
+    const first = shapes.firstSection(exposedShape);
+    return {
+      origin: Array.from(connectors.origin.subarray(n * 3, n * 3 + 3)),
+      axis: connectors.axis[n],
+      caps: shapes.caps(exposedShape),
+      slides: shapes.slides(exposedShape),
+      sections: Array.from({ length: shapes.sectionCount(exposedShape) }, (_section, s) => [
+        shapes.internedCode(first + s),
+        shapes.internedSize(first + s),
+        shapes.span(first + s),
+      ]),
+    };
+  });
+}
+
 describe("ModelConnectors", () => {
+  it("exposes a connector mated inside its model only over the free stretch that reaches an open end, closed at the cut and rooted on an exact sixteenth", () => {
+    const pin = shape(0, true, [
+      [SECTION_FLARE_JOINS_NEXT, 6.25, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 4],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+    ]);
+    const bore = shape(0, true, [
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 2],
+    ]);
+    const closedTip = shape(CAP_ROOT | CAP_FAR, false, [[SECTION_ROUND, 6, 8]]);
+    const shortSleeve = shape(0, false, [[SECTION_ROUND, 6, 4]]);
+    const rod = shape(0, true, [[SECTION_ROUND, 6, STUD_LDU]]);
+    const sleeveOffTheSixteenthGrid = shape(0, false, [[SECTION_ROUND, 6, 4.1]]);
+    const bar = shape(0, true, [[SECTION_ROUND, 4, STUD_LDU]]);
+    const tube = shape(0, false, [[SECTION_ROUND, 4, BRICK_LDU]]);
+    const x = 3 * STUD_LDU;
+    const y = 2 * PLATE_LDU;
+    const z = 5 * STUD_LDU + ONE_SIXTEENTH_LDU;
+    const sixteenths = (zLdu: number) => [x, y, zLdu].map(toSixteenths);
+    const placed = (male: ConnectorTable, female: ConnectorTable) => {
+      const connectors = model(
+        [male, female],
+        [
+          [0, translation(x, y, z)],
+          [1, translation(x, y, z)],
+        ],
+      );
+      return { exposed: exposedStretches(connectors), offLattice: connectors.offLattice };
+    };
+    expect({
+      pinHalfInItsBore: placed(
+        facesFromBothEnds(pin, GENDER_MALE, -STUD_LDU, STUD_LDU, AXIS_POS_Z),
+        facesFromBothEnds(bore, GENDER_FEMALE, -STUD_LDU, 0, AXIS_NEG_Z),
+      ),
+      closedTipThroughASleeve: placed(
+        oneFace(closedTip, GENDER_MALE, AXIS_POS_Z),
+        oneFace(shortSleeve, GENDER_FEMALE, AXIS_NEG_Z),
+      ),
+      rodCutOffTheSixteenthGrid: placed(
+        oneFace(rod, GENDER_MALE, AXIS_POS_Z),
+        oneFace(sleeveOffTheSixteenthGrid, GENDER_FEMALE, AXIS_NEG_Z),
+      ),
+      barRootedInsideATube: placed(
+        facesFromBothEnds(bar, GENDER_MALE, 10, -10, AXIS_NEG_Z),
+        facesFromBothEnds(tube, GENDER_FEMALE, 0, BRICK_LDU, AXIS_NEG_Z),
+      ),
+    }).toEqual({
+      pinHalfInItsBore: {
+        exposed: [
+          {
+            origin: sixteenths(z),
+            axis: AXIS_POS_Z,
+            caps: CAP_ROOT,
+            slides: true,
+            sections: [
+              [SECTION_ROUND, 8, 2],
+              [SECTION_ROUND, 6, 16],
+              [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+            ],
+          },
+        ],
+        offLattice: 0,
+      },
+      closedTipThroughASleeve: { exposed: [], offLattice: 0 },
+      rodCutOffTheSixteenthGrid: { exposed: [], offLattice: 1 },
+      barRootedInsideATube: {
+        exposed: [
+          {
+            origin: sixteenths(z),
+            axis: AXIS_NEG_Z,
+            caps: CAP_ROOT,
+            slides: true,
+            sections: [[SECTION_ROUND, 4, 10]],
+          },
+          {
+            origin: sixteenths(z + BRICK_LDU),
+            axis: AXIS_POS_Z,
+            caps: CAP_FAR,
+            slides: false,
+            sections: [[SECTION_ROUND, 4, 14]],
+          },
+        ],
+        offLattice: 0,
+      },
+    });
+  });
+
   it("identifies far from the model origin in double precision, refusing dust that single precision would erase", () => {
     const far = FAR_LDU + ONE_SIXTEENTH_LDU;
     const exact = model([baseplate(1, 1)], [[0, translation(far, 0, far)]]);
@@ -1225,21 +1356,25 @@ function records(connectors: ModelConnectors): number[][] {
   ]);
 }
 
-function expectEachConnectorOnce(connectors: ModelConnectors, perInstance: ReadonlyArray<number>) {
-  const mated = new Set<string>();
+function expectEveryConnectorAccountedFor(
+  connectors: ModelConnectors,
+  perInstance: ReadonlyArray<number>,
+) {
+  const accounted = new Set<string>();
   const m = connectors.mates;
   for (let k = 0; k < m.count; k++) {
-    mated.add(`${m.maleInstance[k]}:${m.maleConnector[k]}`);
-    mated.add(`${m.femaleInstance[k]}:${m.femaleConnector[k]}`);
+    accounted.add(`${m.maleInstance[k]}:${m.maleConnector[k]}`);
+    accounted.add(`${m.femaleInstance[k]}:${m.femaleConnector[k]}`);
   }
   const exposed = new Set<string>();
   for (let n = 0; n < connectors.count; n++) {
-    exposed.add(`${connectors.instance[n]}:${connectors.connector[n]}`);
+    const key = `${connectors.instance[n]}:${connectors.connector[n]}`;
+    exposed.add(key);
+    accounted.add(key);
   }
   const total = perInstance.reduce((sum, count) => sum + count, 0);
-  expect([...exposed].filter((key) => mated.has(key))).toEqual([]);
   expect(exposed.size).toBe(connectors.count);
-  expect(mated.size + exposed.size + connectors.offLattice).toBe(total);
+  expect(accounted.size + connectors.offLattice).toBe(total);
 }
 
 function axleInBeamComposite(): ConnectorTable {
@@ -1292,7 +1427,7 @@ describe("ModelConnectors mate pairs", () => {
       const stack = axleThroughBeams(placement, false);
       expect(records(stack)).toEqual(exactRecords);
       expect(stack.internalMates).toBe(exactRecords.length);
-      expectEachConnectorOnce(stack, [2, 2, 2, 2]);
+      expectEveryConnectorAccountedFor(stack, [2, 2, 2, 2]);
     }
   });
 
@@ -1309,7 +1444,7 @@ describe("ModelConnectors mate pairs", () => {
       [0, 0, 1, 0, inModel, AXIS_POS_Y, -behind * SIXTEENTHS_PER_LDU],
       [0, 1, 1, 1, inModel, AXIS_NEG_Y, (AXLE_LENGTH - PLATE_LDU + behind) * SIXTEENTHS_PER_LDU],
     ]);
-    expectEachConnectorOnce(overhanging, [2, 2]);
+    expectEveryConnectorAccountedFor(overhanging, [2, 2]);
   });
 
   it("records a pair in the model pass when both connectors identify there, and otherwise in its lowest common sub-model frame", () => {
@@ -1320,7 +1455,7 @@ describe("ModelConnectors mate pairs", () => {
         return [...r.slice(0, 4), judgedInModelFrame ? inModel : inSubmodel, ...r.slice(5)];
       }),
     );
-    expectEachConnectorOnce(leaning, [2, 2, 2, 2]);
+    expectEveryConnectorAccountedFor(leaning, [2, 2, 2, 2]);
   });
 
   it("orders records by connector, not by the pass that found them", () => {
@@ -1346,7 +1481,7 @@ describe("ModelConnectors mate pairs", () => {
       [0, 0, 1, 0, inSubmodel, AXIS_POS_X, 0],
       [2, 0, 3, 0, inModel, AXIS_POS_X, 0],
     ]);
-    expectEachConnectorOnce(pairs, [1, 1, 1, 1]);
+    expectEveryConnectorAccountedFor(pairs, [1, 1, 1, 1]);
   });
 
   it("records a composite part's cross-piece mate in the part pass, in part-local terms, and maps exposed connectors to their part", () => {
@@ -1354,11 +1489,15 @@ describe("ModelConnectors mate pairs", () => {
     const turnedWithDust = then(QUARTER_TURN_ABOUT_X, translation(DUST, 0, 0));
     const dusty = alone(composite, turnedWithDust);
     expect(records(dusty)).toEqual([[0, 0, 0, 1, MATE_PASS_PART, AXIS_POS_Y, p]]);
-    expectEachConnectorOnce(dusty, [3]);
+    expectEveryConnectorAccountedFor(dusty, [3]);
     const exact = alone(composite, translation(STUD_LDU, 0, 0));
     expect(records(exact)).toEqual([[0, 0, 0, 1, inModel, AXIS_POS_Y, p]]);
-    expect([exact.count, exact.instance[0], exact.connector[0]]).toEqual([1, 0, 2]);
-    expectEachConnectorOnce(exact, [3]);
+    expect([exact.count, Array.from(exact.instance), Array.from(exact.connector)]).toEqual([
+      2,
+      [0, 0],
+      [0, 2],
+    ]);
+    expectEveryConnectorAccountedFor(exact, [3]);
   });
 
   it("keeps every record of a model with more mates than its first buffer holds", () => {
@@ -1374,7 +1513,7 @@ describe("ModelConnectors mate pairs", () => {
     expect(records(stacked)).toEqual(
       Array.from({ length: studs }, (_, c) => [1, c, 0, studs + c, inModel, AXIS_POS_Y, 0]),
     );
-    expectEachConnectorOnce(stacked, [2 * studs, 2 * studs]);
+    expectEveryConnectorAccountedFor(stacked, [2 * studs, 2 * studs]);
   });
 
   it("refuses columns that disagree on the count or name an unknown pass", () => {

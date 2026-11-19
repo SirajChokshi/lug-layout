@@ -32,6 +32,7 @@ export class SnapShapes {
   private femaleSizeOf = new Float64Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
   private readonly groups = new Map<string, number>([[NO_GROUP, NO_GROUP_TOKEN]]);
+  private readonly groupNames: string[] = [NO_GROUP];
 
   get count(): number {
     return this.shapes;
@@ -81,6 +82,36 @@ export class SnapShapes {
     this.longestLength = Math.max(this.longestLength, length);
     this.ids.set(key, shape);
     return shape;
+  }
+
+  clipped(shape: number, from: number, to: number, closes: number): number {
+    const codes: number[] = [];
+    const sizes: number[] = [];
+    const lengths: number[] = [];
+    let at = 0;
+    const first = this.firstSection(shape);
+    for (let s = first; s < first + this.sectionCount(shape); s++) {
+      const end = at + this.span(s);
+      const kept = Math.min(end, to) - Math.max(at, from);
+      if (kept > 0) {
+        codes.push(this.codeOf[s] ?? 0);
+        sizes.push(this.sizeOf[s] ?? 0);
+        lengths.push(kept);
+      }
+      at = end;
+    }
+    return this.intern(
+      this.caps(shape) | closes,
+      this.slides(shape),
+      codes,
+      sizes,
+      lengths,
+      this.groupName(shape),
+    );
+  }
+
+  groupName(shape: number): string {
+    return this.groupNames[this.group(shape)] ?? NO_GROUP;
   }
 
   caps(shape: number): number {
@@ -162,6 +193,7 @@ export class SnapShapes {
     if (token === undefined) {
       token = this.groups.size;
       this.groups.set(group, token);
+      this.groupNames.push(group);
     }
     return token;
   }

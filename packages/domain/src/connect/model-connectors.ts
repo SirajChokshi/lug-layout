@@ -18,7 +18,8 @@ import {
   MatePairs,
   type MatePass,
 } from "./mate-pairs.ts";
-import type { SnapMating } from "./mating.ts";
+import { SPAN_FLOATS, SPAN_FROM, SPAN_TO, type SnapMating } from "./mating.ts";
+import { CAP_FAR, CAP_ROOT, type SnapShapes } from "./snap-shapes.ts";
 import {
   ALL_COORDINATES,
   IdentifiedPoint,
@@ -257,8 +258,14 @@ class MateRecorder {
   }
 }
 
+const NO_ENGAGED_TIP = 0;
+const NO_ENGAGED_ENTRANCE = Number.POSITIVE_INFINITY;
+
 class InternalMates {
-  readonly consumed: Uint8Array;
+  readonly matedInside: Uint8Array;
+  readonly maleEngagedTo: Float64Array;
+  readonly femaleEngagedFrom: Float64Array;
+  private readonly span = new Float64Array(SPAN_FLOATS);
   readonly records = new MateRecorder();
   private readonly reach: number;
   private readonly keys: Int32Array;
@@ -276,7 +283,9 @@ class InternalMates {
     private readonly mating: SnapMating,
     private readonly submodelFrames: SubmodelFrames,
   ) {
-    this.consumed = new Uint8Array(capacity);
+    this.matedInside = new Uint8Array(capacity);
+    this.maleEngagedTo = new Float64Array(capacity).fill(NO_ENGAGED_TIP);
+    this.femaleEngagedFrom = new Float64Array(capacity).fill(NO_ENGAGED_ENTRANCE);
     this.reach = Math.ceil(mating.shapes.longest * SIXTEENTHS_PER_LDU);
     this.keys = new Int32Array(capacity * LINE_KEYS);
     this.order = new Uint32Array(capacity);
@@ -341,9 +350,19 @@ class InternalMates {
     if (!this.admits(maleConnector, femaleConnector)) return;
     const offset = (this.along(female) - this.along(male)) * axisSign(axis);
     const maleShape = frames.shape[maleConnector] ?? 0;
-    if (!this.mating.engages(maleShape, frames.shape[femaleConnector] ?? 0, offset)) return;
-    this.consumed[maleConnector] = 1;
-    this.consumed[femaleConnector] = 1;
+    const femaleShape = frames.shape[femaleConnector] ?? 0;
+    if (!this.mating.engages(maleShape, femaleShape, offset)) return;
+    this.mating.engagedSpan(maleShape, femaleShape, offset, this.span);
+    this.maleEngagedTo[maleConnector] = Math.max(
+      this.maleEngagedTo[maleConnector] ?? NO_ENGAGED_TIP,
+      this.span[SPAN_TO] ?? 0,
+    );
+    this.femaleEngagedFrom[femaleConnector] = Math.min(
+      this.femaleEngagedFrom[femaleConnector] ?? NO_ENGAGED_ENTRANCE,
+      (this.span[SPAN_FROM] ?? 0) - offset,
+    );
+    this.matedInside[maleConnector] = 1;
+    this.matedInside[femaleConnector] = 1;
     this.records.append(maleConnector, femaleConnector, this.pass, offset);
   }
 
@@ -572,17 +591,23 @@ export class ModelConnectors {
       );
     }
     mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
+    const freeStretch = new Int32Array(total).fill(NO_FREE_STRETCH);
     let occupied = 0;
     let offLattice = 0;
     for (let k = 0; k < total; k++) {
-      if (search.consumed[k] === 1) occupied++;
-      else if (frames.axis[k] === AXIS_FREE) offLattice++;
+      if (search.matedInside[k] === 1) {
+        freeStretch[k] = openEndStretch(mating.shapes, frames, search, k);
+        if (freeStretch[k] === NO_FREE_STRETCH) occupied++;
+        else if (freeStretch[k] === FREE_STRETCH_OFF_LATTICE) offLattice++;
+      } else if (frames.axis[k] === AXIS_FREE) offLattice++;
     }
     const exposed = allocateFrames(total - occupied - offLattice);
     let n = 0;
     for (let k = 0; k < total; k++) {
-      if (search.consumed[k] === 1 || frames.axis[k] === AXIS_FREE) continue;
-      exposed.shape[n] = frames.shape[k] ?? 0;
+      const stretch = freeStretch[k] ?? NO_FREE_STRETCH;
+      const matedInside = search.matedInside[k] === 1;
+      if (frames.axis[k] === AXIS_FREE || (matedInside && stretch < 0)) continue;
+      exposed.shape[n] = matedInside ? stretch : (frames.shape[k] ?? 0);
       exposed.gender[n] = frames.gender[k] ?? 0;
       exposed.source[n] = frames.source[k] ?? 0;
       exposed.status[n] = frames.status[k] ?? 0;
@@ -591,6 +616,12 @@ export class ModelConnectors {
       exposed.connector[n] = frames.connector[k] ?? 0;
       for (let v = 0; v < VECTOR_FLOATS; v++) {
         exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
+      }
+      if (matedInside && frames.gender[k] === GENDER_MALE) {
+        const axis = frames.axis[k] ?? 0;
+        const at = n * VECTOR_FLOATS + axisDimension(axis);
+        exposed.origin[at] =
+          (exposed.origin[at] ?? 0) + axisSign(axis) * (search.maleEngagedTo[k] ?? 0);
       }
       n++;
     }
@@ -615,4 +646,31 @@ export class ModelConnectors {
       track.instance,
     );
   }
+}
+
+const NO_FREE_STRETCH = -1;
+const FREE_STRETCH_OFF_LATTICE = -2;
+
+function openEndStretch(
+  shapes: SnapShapes,
+  frames: Frames,
+  search: InternalMates,
+  k: number,
+): number {
+  const shape = frames.shape[k] ?? 0;
+  const length = shapes.length(shape) * SIXTEENTHS_PER_LDU;
+  if (frames.gender[k] === GENDER_MALE) {
+    const engagedTo = search.maleEngagedTo[k] ?? NO_ENGAGED_TIP;
+    if ((shapes.caps(shape) & CAP_FAR) !== 0 || engagedTo >= length) return NO_FREE_STRETCH;
+    if (!Number.isInteger(engagedTo)) return FREE_STRETCH_OFF_LATTICE;
+    return shapes.clipped(
+      shape,
+      engagedTo / SIXTEENTHS_PER_LDU,
+      length / SIXTEENTHS_PER_LDU,
+      CAP_ROOT,
+    );
+  }
+  const engagedFrom = search.femaleEngagedFrom[k] ?? NO_ENGAGED_ENTRANCE;
+  if (engagedFrom <= 0 || engagedFrom >= length) return NO_FREE_STRETCH;
+  return shapes.clipped(shape, 0, engagedFrom / SIXTEENTHS_PER_LDU, CAP_FAR);
 }
