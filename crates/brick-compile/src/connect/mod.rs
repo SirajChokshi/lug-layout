@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
+use crate::identify::{identifies, sixteenths};
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 use crate::pieces::NO_PIECE;
 
@@ -30,7 +31,6 @@ pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
-const SAME_PLACE_LDU: f64 = 0.0005;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
@@ -465,9 +465,9 @@ const FREE_AXIS_STEPS: f64 = 1e6;
 
 fn direction_code(axis: Vec3) -> Option<u8> {
     (0..3).find_map(|k| {
-        let aligned = (0..3).all(|j| j == k || axis[j].abs() <= SAME_PLACE_LDU);
+        let aligned = (0..3).all(|j| j == k || identifies(axis[j]));
         let sign = axis[k];
-        match aligned && (sign.abs() - 1.0).abs() <= SAME_PLACE_LDU {
+        match aligned && identifies(sign.abs() - 1.0) {
             true if sign > 0.0 => Some(2 * k as u8),
             true => Some(2 * k as u8 + 1),
             false => None,
@@ -516,7 +516,7 @@ fn symmetric(shape: &Shape) -> bool {
 
 fn slots(connector: &Connector) -> Vec<Slot> {
     let mut axis = column(&connector.placement, 1);
-    let first = axis.iter().copied().find(|c| c.abs() > SAME_PLACE_LDU);
+    let first = axis.iter().copied().find(|&c| !identifies(c));
     if symmetric(&connector.shape) && first.is_some_and(|c| c < 0.0) {
         axis = axis.map(|c| -c);
     }
@@ -528,7 +528,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
         .into_iter()
         .map(|offset| {
             let origin = connector.placement.apply(offset);
-            let lattice = [0, 1, 2].map(|k| solid::sixteenths(origin[k]));
+            let lattice = [0, 1, 2].map(|k| sixteenths(origin[k]));
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
@@ -551,8 +551,8 @@ fn same_sections(a: &Shape, b: &Shape) -> bool {
             x.len() == y.len()
                 && x.iter().zip(y).all(|(p, q)| {
                     p.shape == q.shape
-                        && (p.radius - q.radius).abs() <= SAME_PLACE_LDU
-                        && (p.length - q.length).abs() <= SAME_PLACE_LDU
+                        && identifies(p.radius - q.radius)
+                        && identifies(p.length - q.length)
                 })
         }
         _ => a == b,
@@ -580,7 +580,7 @@ fn face_slot(face: &MatingFace) -> Slot {
         Gender::Male => 0,
         Gender::Female => 1,
     };
-    let lattice = face.origin.map(solid::sixteenths);
+    let lattice = face.origin.map(sixteenths);
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
