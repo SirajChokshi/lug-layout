@@ -2,7 +2,6 @@ import { CHUNK_STUDS } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import {
   FootprintGrid,
-  NO_VOLUME_TOP,
   VolumeIndex,
   firstOverlap,
   type CellVolumes,
@@ -10,10 +9,10 @@ import {
 } from "./volume-index.ts";
 
 type Cell = readonly [number, number, number, number];
+type Span = readonly [number, number, number];
 
 const keepAll = (): boolean => false;
 const ignoreSlab = (owner: number): boolean => owner === 1;
-const onlyOwner5 = (owner: number): boolean => owner !== 5;
 const LOWEST_LDU = -0x8000_0000;
 const HIGHEST_LDU = 0x7fff_ffff;
 
@@ -59,26 +58,51 @@ function stack(): { readonly index: VolumeIndex; readonly rows: ReadonlyArray<nu
   return { index, rows };
 }
 
-function ownersAt(index: VolumeIndex, cellX: number, cellZ: number): ReadonlyArray<number> {
+function ownersAt(index: VolumeIndex, cellX: number, cellZ: number): ReadonlyArray<Span> {
   const seen: number[] = [];
+  const spans: Span[] = [];
   const out = hit();
   while (index.firstOverlap(cellX, cellZ, LOWEST_LDU, HIGHEST_LDU, (o) => seen.includes(o), out)) {
     seen.push(out.owner);
+    spans.push([out.owner, out.bottomLdu, out.topLdu]);
   }
-  return seen;
+  return spans;
 }
 
+function edges(
+  index: VolumeIndex,
+  owner: number,
+  [cellX, cellZ, bottom, top]: Cell,
+): ReadonlyArray<boolean> {
+  const others = (o: number): boolean => o !== owner;
+  return [
+    [bottom - 1, bottom],
+    [bottom, bottom + 1],
+    [top - 1, top],
+    [top, top + 1],
+  ].map(([b = 0, t = 0]) => index.firstOverlap(cellX, cellZ, b, t, others, hit()));
+}
+
+const AT_BOTH_ENDS = [false, true, true, false];
+
 function observed(index: VolumeIndex, cells: ReadonlyArray<readonly [number, number]>): string {
-  return cells
-    .map(([x, z]) => `${x},${z}:${index.topAt(x, z)}:${ownersAt(index, x, z).join("/")}`)
-    .join(";");
+  return cells.map(([x, z]) => `${x},${z}:${JSON.stringify(ownersAt(index, x, z))}`).join(";");
 }
 
 describe("VolumeIndex", () => {
-  it("keeps every span in a cell and reports the highest top, on both sides of zero", () => {
+  it("keeps every span in a cell, newest first, exact at both ends, on both sides of zero", () => {
     const { index } = stack();
-    expect(index.topAt(-1, -1)).toBe(96);
-    expect(index.topAt(0, 0)).toBe(NO_VOLUME_TOP);
+    expect(ownersAt(index, -1, -1)).toEqual([
+      [3, 80, 96],
+      [2, 0, 24],
+      [1, -4, 0],
+    ]);
+    expect([
+      edges(index, 3, [-1, -1, 80, 96]),
+      edges(index, 2, [-1, -1, 0, 24]),
+      edges(index, 1, [-1, -1, -4, 0]),
+    ]).toEqual([AT_BOTH_ENDS, AT_BOTH_ENDS, AT_BOTH_ENDS]);
+    expect(ownersAt(index, 0, 0)).toEqual([]);
   });
 
   it.each([
@@ -111,11 +135,19 @@ describe("VolumeIndex", () => {
     const { index, rows } = stack();
     const third = rows[2] ?? -1;
     index.remove(third);
-    expect(index.topAt(-1, -1)).toBe(24);
+    expect(ownersAt(index, -1, -1)).toEqual([
+      [2, 0, 24],
+      [1, -4, 0],
+    ]);
     expect(firstOverlap(volumes([[-1, -1, 24, 81]]), index, keepAll, hit())).toBe(false);
     expect(() => index.remove(third)).toThrow(RangeError);
     expect(place(index, 4, [[-1, -1, 40, 48]])).toBe(third);
-    expect(index.topAt(-1, -1)).toBe(48);
+    expect(ownersAt(index, -1, -1)).toEqual([
+      [4, 40, 48],
+      [2, 0, 24],
+      [1, -4, 0],
+    ]);
+    expect(edges(index, 4, [-1, -1, 40, 48])).toEqual(AT_BOTH_ENDS);
   });
 
   it("walks the owners of a cell newest first, as an exemption filter sees them", () => {
@@ -125,11 +157,17 @@ describe("VolumeIndex", () => {
       [0, 0, 0, 24],
       [1, 0, 0, 24],
     ]);
-    expect(ownersAt(index, 0, 0)).toEqual([7, 6]);
+    expect(ownersAt(index, 0, 0)).toEqual([
+      [7, 0, 24],
+      [6, 0, 24],
+    ]);
     index.remove(newest);
-    expect(ownersAt(index, 0, 0)).toEqual([6]);
+    expect(ownersAt(index, 0, 0)).toEqual([[6, 0, 24]]);
     place(index, 7, [[0, 0, 8, 16]]);
-    expect(ownersAt(index, 0, 0)).toEqual([7, 6]);
+    expect(ownersAt(index, 0, 0)).toEqual([
+      [7, 8, 16],
+      [6, 0, 24],
+    ]);
   });
 
   it("places one shared grid at each row's own corner and height", () => {
@@ -137,15 +175,15 @@ describe("VolumeIndex", () => {
     const grid = FootprintGrid.of(volumes([[0, 0, 24, 48]]), 0, 0, 1, 1, 24);
     index.add(9, grid, 0, 0, 24);
     index.add(10, grid, 5, -3, 72);
-    expect([index.topAt(0, 0), index.topAt(5, -3), index.topAt(5, 0)]).toEqual([
-      48,
-      96,
-      NO_VOLUME_TOP,
+    expect([ownersAt(index, 0, 0), ownersAt(index, 5, -3), ownersAt(index, 5, 0)]).toEqual([
+      [[9, 24, 48]],
+      [[10, 72, 96]],
+      [],
     ]);
-    const out = hit();
-    expect(firstOverlap(volumes([[5, -3, 72, 73]]), index, keepAll, out)).toBe(true);
-    expect([out.owner, out.bottomLdu, out.topLdu]).toEqual([10, 72, 96]);
-    expect(firstOverlap(volumes([[5, -3, 71, 72]]), index, keepAll, hit())).toBe(false);
+    expect([edges(index, 9, [0, 0, 24, 48]), edges(index, 10, [5, -3, 72, 96])]).toEqual([
+      AT_BOTH_ENDS,
+      AT_BOTH_ENDS,
+    ]);
   });
 
   it("indexes one owner's cells across chunks together, and removes them all", () => {
@@ -156,14 +194,7 @@ describe("VolumeIndex", () => {
       [CHUNK_STUDS, -CHUNK_STUDS - 1, 8, 16],
     ];
     const row = place(index, 5, across);
-    for (const [x, z, bottom, top] of across) {
-      expect([
-        firstOverlap(volumes([[x, z, bottom - 1, bottom]]), index, onlyOwner5, hit()),
-        firstOverlap(volumes([[x, z, bottom, bottom + 1]]), index, onlyOwner5, hit()),
-        firstOverlap(volumes([[x, z, top - 1, top]]), index, onlyOwner5, hit()),
-        firstOverlap(volumes([[x, z, top, top + 1]]), index, onlyOwner5, hit()),
-      ]).toEqual([false, true, true, false]);
-    }
+    expect(across.map((cell) => edges(index, 5, cell))).toEqual(across.map(() => AT_BOTH_ENDS));
     expect(firstOverlap(volumes([[0, -1, LOWEST_LDU, HIGHEST_LDU]]), index, keepAll, hit())).toBe(
       false,
     );
@@ -214,7 +245,7 @@ describe("VolumeIndex", () => {
   it("takes an empty span as occupying nothing, and refuses a fractional one", () => {
     const { index } = stack();
     place(index, 4, [[0, 0, 8, 8]]);
-    expect(index.topAt(0, 0)).toBe(NO_VOLUME_TOP);
+    expect(ownersAt(index, 0, 0)).toEqual([]);
     const fractional = { count: 1, cellX: [0], cellZ: [0], bottomLdu: [0], topLdu: [1.5] };
     expect(() => FootprintGrid.of(fractional, 0, 0, 1, 1, 0)).toThrow(RangeError);
   });

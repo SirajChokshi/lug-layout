@@ -9,7 +9,6 @@ const NEXT = 1;
 const NONE = -1;
 const GROWTH = 1.25;
 const MIN_GROWTH = 16;
-export const NO_VOLUME_TOP = -0x8000_0000;
 
 function chunkOfCell(cell: number): number {
   return Math.floor(cell / CHUNK_STUDS);
@@ -149,28 +148,6 @@ export class VolumeIndex {
     this.grids[row] = null;
     this.freeRows = grown(this.freeRows, this.freeCount + 1);
     this.freeRows[this.freeCount++] = row;
-  }
-
-  topAt(cellX: number, cellZ: number): number {
-    const chunk = this.chunkAt(cellX, cellZ);
-    if (!chunk) return NO_VOLUME_TOP;
-    const nodes = chunk.nodes;
-    let top = NO_VOLUME_TOP;
-    for (
-      let n = chunk.heads[bucketOf(cellX, cellZ)] ?? NONE;
-      n !== NONE;
-      n = nodes[n + NEXT] ?? NONE
-    ) {
-      const row = nodes[n + ROW] ?? 0;
-      const k = this.cellOf(row, cellX, cellZ);
-      if (k === NONE) continue;
-      const grid = this.grids[row];
-      const b = grid?.bottomLdu[k] ?? 0;
-      const t = grid?.topLdu[k] ?? 0;
-      if (t <= b) continue;
-      top = Math.max(top, t + (this.yLdu[row] ?? 0));
-    }
-    return top;
   }
 
   firstOverlap(
