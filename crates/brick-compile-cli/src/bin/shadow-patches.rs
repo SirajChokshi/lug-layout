@@ -15,7 +15,7 @@ use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod, Triangl
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::sixteenths;
 use brick_compile::technic::is_circular_primitive;
-use brick_compile_cli::LazyLibrary;
+use brick_compile_cli::{patch_path, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
 const WIDEST_BAND_END_FACES: &str = "widestOutwardRoundBandEndFaces";
@@ -27,7 +27,6 @@ const GROUP_KEY: &str = " [group=";
 const SNAP_PREFIX: &str = "0 !LDCAD SNAP_";
 const SECS_KEY: &str = "[secs=";
 const SECTION_GAP: &str = "   ";
-const PART_FOLDER: &str = "parts/";
 const LDRAW_LIBRARY: &str = "ldraw-library";
 const DECIMALS: usize = 4;
 const IDENTIFY_LDU: f64 = 0.0005;
@@ -139,14 +138,6 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
             })
         })
         .collect()
-}
-
-fn patch_path(part: &str) -> String {
-    if part.contains('/') {
-        format!("{part}.dat")
-    } else {
-        format!("{PART_FOLDER}{part}.dat")
-    }
 }
 
 fn without_group(line: &str) -> Option<String> {
@@ -916,11 +907,7 @@ fn run() -> Result<bool, String> {
     let source = ldraw_source(&read_json(Path::new(&take("--lock")?))?)?;
     let list = entries(&manifest)?;
     let patched: HashSet<String> = list.iter().map(|e| patch_path(&e.part)).collect();
-    let verified: HashSet<String> = list
-        .iter()
-        .filter(|e| e.status == VERIFIED)
-        .map(|e| patch_path(&e.part))
-        .collect();
+    let verified = verified_patch_paths(&manifest);
     let shadow = values
         .get("--shadow")
         .map(|root| LazyLibrary::new(PathBuf::from(root)));

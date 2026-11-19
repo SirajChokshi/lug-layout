@@ -1,3 +1,4 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
 import type { CompilerVehicles } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
@@ -72,6 +73,8 @@ interface Manifest {
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
+  readonly connectors: { readonly file: string };
+  readonly connectivity: { readonly file: string };
 }
 
 interface BundledModel {
@@ -143,6 +146,10 @@ async function importWith(
   const engine = new ModelImportEngine(
     compiler ?? (await bundleCompiler()),
     new LdrawMirror(manifest.source, fetchUrl),
+    new ConnectorRecords(
+      async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
+      { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
+    ),
     () => 0,
     helpers,
   );

@@ -5,6 +5,7 @@ mod inferred;
 mod meta;
 mod primitive;
 mod profile;
+mod records;
 mod shadow;
 mod solid;
 
@@ -21,6 +22,9 @@ pub use faces::{
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
+pub use records::{
+    is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+};
 pub use shadow::{ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;

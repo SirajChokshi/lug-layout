@@ -17,6 +17,8 @@ import {
   type PartMesh,
   type PartShapeRecord,
   type StudPrimitiveAsset,
+  type PackageAttribution,
+  type PartConnectors,
 } from "@brr/catalog";
 import type {
   BundleIndex,
@@ -210,6 +212,14 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   importContext(lod: BundleLod): Promise<ImportContext> {
     return this.loader.importContext(lod);
+  }
+
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.loader.loadPartConnectors(lod, partId);
+  }
+
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return this.loader.loadConnectivityAttribution(lod);
   }
 
   loadPartSet(
@@ -914,6 +924,7 @@ function refusedBake(fileName: string): ImportResult {
       unknownColors: [],
       directColors: [],
       compileRounds: 0,
+      withoutConnectorRecords: [],
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       bakeHelpersFailed: 0,
@@ -933,6 +944,7 @@ function refusedBake(fileName: string): ImportResult {
       ofPart: new Int32Array(),
     },
     compiled: [],
+    connectors: [],
     bake: null,
   };
 }

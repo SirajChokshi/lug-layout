@@ -22,6 +22,8 @@
         "palette.json",
         "fixture-models.json",
         "primitive-connectors.json",
+        "inferred-connectors.json",
+        "shadow-patches/**",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
