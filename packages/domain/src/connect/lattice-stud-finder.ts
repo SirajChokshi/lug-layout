@@ -182,6 +182,10 @@ export class LatticeStudFinder implements MateFinder {
             if (!levels[l]?.has(x, z)) continue;
             out.push(
               i,
+              model.shape[i] ?? 0,
+              model.gender[i] ?? 0,
+              classes.shapeOf(partner),
+              classes.genderOf(partner),
               ownSource | provenanceSource(provenance),
               Math.max(ownStatus, provenanceStatus(provenance)),
               NO_PARTNER,

@@ -15,7 +15,7 @@ import { SOURCE_SHADOW, STATUS_VERIFIED } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
-import type { MateReport } from "./mate-report.ts";
+import { NO_SHAPE, type MateReport } from "./mate-report.ts";
 import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 
 const COEFFICIENTS = ZETA16_COEFFICIENT_COUNT;
@@ -136,6 +136,10 @@ export class TrackEndFinder implements MateFinder {
       ) {
         out.push(
           e,
+          NO_SHAPE,
+          0,
+          NO_SHAPE,
+          0,
           SOURCE_SHADOW,
           STATUS_VERIFIED,
           this.holderOwner[holder] ?? 0,
