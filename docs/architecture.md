@@ -194,12 +194,12 @@ This comes from connection rules §4.3, generalized for D3.
     - **Exact decimals:** it compares the printed decimals exactly, so the 1e-9 model-frame guard doesn't apply.
     - **The gate:** an explicit bake option, off by default and set only by the asset pipeline's compile of `.cache/omr` model records. A test pins that the import worker leaves it off.
     - **The named divergence:** re-importing an OMR `.mpd` through the import worker keeps 0.0005, so it differs from its bundle record wherever the rule identified something.
-    - **Provenance per coordinate:** the printed text, the grid identified to, the exact residual, and the rule version. Per model: counts per grid, the residual histogram, rotated lines excluded, and every coordinate left off-lattice.
+    - **Provenance per coordinate:** the printed text, the grid identified to, the exact residual, and the rule version. Per model: the rotated lines excluded, and a row for every coordinate not already on the 0.0005 step, including every coordinate left off-lattice. Counts per grid and the residual distribution are derived from those rows, not stored.
     - **Measured basis:**
       - TotalyWicked dust off whole LDU runs from 0.01 to 0.11 with no gap before the eighth cluster.
       - Against the sixteenth grid, distance is bounded by 1/32, so rounding there isn't identification.
       - In the 18 OMR builds, this rule (signed-permutation lines, r₁ = 0.05, fine grids only for two or more printed decimals) gives +2,245 joints and 0 lost, and 4,738 mate rows, 1,931 of them relative, with a maximum relative shift of 0.100 LDU. It forms 4 bogie and 18 coupler pivots (from 0 and 3), and changes clean sets only in 10218-1 and 10264-1, each explained.
-      - The 33 one-decimal coordinates no longer reach fine grids. That removes 19 joints, all between parts sharing one offset, and no pivot.
+      - The 33 one-decimal coordinates no longer reach fine grids. That removes 19 joints (73 mate rows, all but one between parts sharing one offset) and no pivot.
 - **Identifying placed track in an imported model** (`modelTrackEnds`) applies that rule to every catalog track piece. It reads only the Float64 part transforms, never the Float32 render copy.
   - **Why not each end directly:** the search box holds about 1,049 candidates within 0.0005 LDU of a point, so no end's float position has a unique candidate on its own. Uniqueness is obtained in the steps below.
   - **Rotation, per printed entry:**
