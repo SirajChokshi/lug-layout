@@ -328,7 +328,7 @@ The records publish from `.github/workflows/part-bundle.yml`, in the bundle's co
 - **`library-connectors-publish`** runs when either answer is no, and on *Run workflow*. Unless the bucket already holds the pinned index, it recomputes the records, checks them against the pin, and uploads them. Then it checks every served record (`verify-served --all --wait`), moves the pointer (`point`), checks the kept indexes through the served pointer (`verify-pointer --wait`), lists what pruning would delete (`prune --dry-run`), and prunes (`prune`). Every step is idempotent, so a later run that asks for it, and *Run workflow* always, finishes one an earlier run left unfinished.
 - **It runs before the bundle's `pointer`.** `library-connectors.json` is a bundle input, so a new pin brings a new bundle naming the new index; publishing first means a live bundle never names an index that isn't uploaded yet, and the old bundle keeps serving with its own records meanwhile. `pointer` doesn't depend on it succeeding: if it fails, the bundle still moves, and imports report those parts' connector records as unreadable until a later run publishes them.
 
-A newer pending run cancels an older pending one, and that loses nothing: `library-connectors-status` decides from what the bucket serves, so the newer run does the unfinished work.
+A newer pending run cancels an older pending one, and that loses nothing: `library-connectors-status` decides from what the bucket serves, so the newer run does the unfinished work. As for `library-bake`, a *Run workflow* run replaced while pending by a push that finds everything current needs starting again.
 
 ## Connector packs
 
