@@ -96,6 +96,7 @@ import type {
   PlacementHover,
   PlacementMode,
 } from "./placement-hover.ts";
+import { effectivePlacementMode } from "./placement-mode.ts";
 import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
@@ -488,10 +489,6 @@ function cellsWithin(reachLdu: number): number {
 
 function platesWithin(reachLdu: number): number {
   return Math.floor(reachLdu / PLATE_LDU);
-}
-
-function flipped(mode: PlacementMode): PlacementMode {
-  return mode === "assist" ? "precise" : "assist";
 }
 
 function magnetOffset(cursor: CursorPick, pose: LatticePose): MagnetOffset {
@@ -2091,8 +2088,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placementMode(): PlacementMode {
-    const { placementMode, placementModeOverride } = this.state;
-    return placementModeOverride ? flipped(placementMode) : placementMode;
+    return effectivePlacementMode(this.state.placementMode, this.state.placementModeOverride);
   }
 
   private rehover(): void {

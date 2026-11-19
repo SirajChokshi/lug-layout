@@ -189,6 +189,7 @@ export type {
   PlacementMode,
   SectionProfile,
 } from "./edit/placement-hover.ts";
+export { effectivePlacementMode } from "./edit/placement-mode.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,
