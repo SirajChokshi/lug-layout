@@ -1,10 +1,8 @@
-import { BundleLod, GithubMirror, LdrawLibraryIndex } from "@brr/schema/bundle";
-import { BUNDLE_POINTER_FILE } from "@brr/schema/bundle-pointer";
+import { GithubMirror, LdrawLibraryIndex } from "@brr/schema/bundle";
 import * as v from "valibot";
-import { partBundlePointer } from "../pointer/part-bundle-pointer.ts";
+import { liveBundleManifestValues } from "../pointer/live-bundles.ts";
 import {
   decodeJsonFile,
-  readPointer,
   type ManifestReferences,
   type PointerAdapter,
 } from "../publication/pinned-publication.ts";
@@ -48,27 +46,8 @@ export async function liveBundleSources(
   readBundle: ObjectReader,
   fallbackPath: string,
 ): Promise<GithubMirror[]> {
-  const bundle = partBundlePointer(fallbackPath);
-  const pointer = await readPointer(bundle, readBundle);
-  if (pointer === null) {
-    throw new Error(
-      `${BUNDLE_POINTER_FILE} is not served, so the commits the live bundles need are unknown`,
-    );
-  }
-  const manifests = [pointer.current];
-  if (pointer.previous !== null) manifests.push(pointer.previous);
-  manifests.push(...(await bundle.retained()));
-  const sources: GithubMirror[] = [];
-  for (const manifest of new Set(manifests)) {
-    for (const lod of BundleLod.options) {
-      const key = `${lod}/${manifest}`;
-      const bytes = await readBundle(key);
-      if (bytes === undefined) throw new Error(`${key} is not served`);
-      const { source } = decodeJsonFile(BundleManifestSource, bytes, key);
-      if (!sources.some((known) => sameSource(known, source))) sources.push(source);
-    }
-  }
-  return sources;
+  const values = await liveBundleManifestValues(readBundle, fallbackPath, BundleManifestSource);
+  return values.map(({ source }) => source);
 }
 
 export function ldrawLibraryPointer(

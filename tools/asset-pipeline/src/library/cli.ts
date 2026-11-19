@@ -4,6 +4,7 @@ import { appendFile, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
+import { bundleBaseUrl } from "../pointer/live-bundles.ts";
 import { runPointerCommand, type StoreVariables } from "../publication/pinned-publication.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
 import {
@@ -95,18 +96,8 @@ async function publicBaseUrl(): Promise<string | undefined> {
   return (await readStoreConfig()).public_base_url ?? undefined;
 }
 
-async function bundleBaseUrl(): Promise<string> {
-  const fromEnv = process.env["PART_BUNDLE_BASE_URL"];
-  if (fromEnv) return fromEnv;
-  const config = JSON.parse(await readFile(bundleStoreConfigPath, "utf8")) as StoreConfig;
-  if (!config.public_base_url) {
-    throw new Error(`set PART_BUNDLE_BASE_URL or public_base_url in ${bundleStoreConfigPath}`);
-  }
-  return config.public_base_url;
-}
-
 const libraryPointer = ldrawLibraryPointer(async () =>
-  liveBundleSources(httpReader(await bundleBaseUrl()), bundleFallbackPath),
+  liveBundleSources(httpReader(await bundleBaseUrl(bundleStoreConfigPath)), bundleFallbackPath),
 );
 
 async function writeStepOutput(name: string, value: string): Promise<void> {
