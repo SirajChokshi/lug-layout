@@ -245,7 +245,7 @@ class ModelSubsetLoader implements IPartBundleLoader {
 }
 
 interface AimedBackend {
-  aim(x: number, z: number): void;
+  aim(x: number, z: number, slope?: number): void;
 }
 
 class HeadlessBackend implements ISceneBackend {
@@ -289,12 +289,15 @@ class HeadlessBackend implements ISceneBackend {
   setIssueBoxes(): void {}
   private aimX = 0;
   private aimZ = 0;
-  aim(x: number, z: number): void {
+  private aimSlope = 0;
+  aim(x: number, z: number, slope = 0): void {
     this.aimX = x;
     this.aimZ = z;
+    this.aimSlope = slope;
   }
   rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+    const back = this.aimSlope * RAY_HEIGHT_LDU;
+    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ + back, 0, -1, -this.aimSlope]);
   }
   setView(): void {}
   resize(): void {}
@@ -1234,6 +1237,27 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
     poses: before,
     reason: expect.stringContaining(OVERLAP),
   });
+}, 120_000);
+
+it("seats a set on a MILS module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const justInsideTheFrontEdge = 620;
+  backend.aim(320, justInsideTheFrontEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = editor.snapshot().hover?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
 }, 120_000);
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {

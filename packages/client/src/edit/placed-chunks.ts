@@ -39,7 +39,7 @@ export interface PlacedModel {
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
   rayHit(ray: Float64Array): number;
-  rayTop(ray: Float64Array): number;
+  rayTopOver(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
 }
 
@@ -531,20 +531,17 @@ class PlacedEntry implements PlacedModel {
     return nearest;
   }
 
-  rayTop(ray: Float64Array): number {
+  rayTopOver(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean {
     const box = this.box;
     if (
       rayBoxDistance(ray, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ) ===
       Number.POSITIVE_INFINITY
     ) {
-      return Number.NaN;
+      return false;
     }
     const boxes = this.placeable.partBoxes;
     const { cos, sin } = this;
-    const originY = ray[1] ?? 0;
-    const directionY = ray[4] ?? 0;
-    let nearest = Number.POSITIVE_INFINITY;
-    let top = Number.NaN;
+    let found = false;
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
       const loX = boxes[b] ?? 0;
       const loZ = boxes[b + 2] ?? 0;
@@ -554,21 +551,19 @@ class PlacedEntry implements PlacedModel {
       const az = this.z - sin * loX + cos * loZ;
       const bx = this.x + cos * hiX + sin * hiZ;
       const bz = this.z - sin * hiX + cos * hiZ;
-      const boxTop = this.yLdu + (boxes[b + 4] ?? 0);
-      const t = rayBoxDistance(
-        ray,
-        Math.min(ax, bx),
-        this.yLdu + (boxes[b + 1] ?? 0),
-        Math.min(az, bz),
-        Math.max(ax, bx),
-        boxTop,
-        Math.max(az, bz),
-      );
-      if (t >= nearest) continue;
-      nearest = t;
-      top = directionY < 0 && (boxTop - originY) / directionY === t ? boxTop : Number.NaN;
+      const minX = Math.min(ax, bx);
+      const maxX = Math.max(ax, bx);
+      const minZ = Math.min(az, bz);
+      const maxZ = Math.max(az, bz);
+      if (groundX < minX || groundX > maxX || groundZ < minZ || groundZ > maxZ) continue;
+      const top = this.yLdu + (boxes[b + 4] ?? 0);
+      const t = rayBoxDistance(ray, minX, this.yLdu + (boxes[b + 1] ?? 0), minZ, maxX, top, maxZ);
+      if (t === Number.POSITIVE_INFINITY || (found && t >= (out[0] ?? 0))) continue;
+      out[0] = t;
+      out[1] = top;
+      found = true;
     }
-    return top;
+    return found;
   }
 
   private worldBox(): WorldBox {
