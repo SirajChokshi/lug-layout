@@ -16,6 +16,8 @@ const UNRESOLVED_TEXT: Readonly<Record<UnresolvedRunningGearReason, string>> = {
   pivotInsideSupportSpan: "a link pivots inside a body's support span",
   wheelsetSpansPivot: "a wheelset spans a pivot",
   supportPlaneUnidentified: "two wheelsets' axle heights can't be compared exactly",
+  belowRailTop: "a part other than a wheel reaches below the rail top over a rail head",
+  clearanceUnidentified: "a part's position can't be compared exactly with the rail top",
 };
 
 function fillOf(box: GearBox): string {

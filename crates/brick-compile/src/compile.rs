@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
+use crate::extents::{part_extents, PartExtents};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
@@ -103,6 +104,7 @@ pub struct CompiledPart {
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
     pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
+    pub extents: Option<PartExtents>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -195,6 +197,7 @@ pub fn compile_part<L: Library>(
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
     license_gate(&flattened, &options.unofficial_allowlist)?;
     refuse_malformed(flattener.malformed())?;
+    let extents = part_extents(library, &path).map_err(CompileError::Flatten)?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,
         RollingMode::ReadBy(roundness) => Some(roundness),
@@ -241,6 +244,7 @@ pub fn compile_part<L: Library>(
         flattened_files: flattened.files,
         technic,
         rolling,
+        extents,
     })
 }
 
@@ -308,6 +312,7 @@ impl CompiledPart {
             "sources": sources,
             "studs": studs,
             "bounds": { "min": min, "max": max },
+            "extents": self.extents.as_ref().map(PartExtents::to_json),
         });
         if let Some(technic) = &self.technic {
             extras["technic"] = technic.to_json();

@@ -13,6 +13,7 @@ import {
   type ManifestPart,
   type ModelRunningGear,
   type ModelSection,
+  type PartExtents,
   type PartRole,
   type PartRolling,
   type PartTechnic,
@@ -51,6 +52,7 @@ export interface PartShapeAsset {
   readonly role: PartRole;
   readonly boundsMin: Vec3;
   readonly boundsMax: Vec3;
+  readonly extents: PartExtents | null;
   readonly producedColor: number | undefined;
   readonly producedColors: ProducedColors | undefined;
   readonly trackEnds: ReadonlyArray<TrackEnd> | undefined;

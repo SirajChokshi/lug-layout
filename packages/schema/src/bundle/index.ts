@@ -470,6 +470,17 @@ export const PartRolling = v.object({
 });
 export type PartRolling = v.InferOutput<typeof PartRolling>;
 
+export const PartExtents = v.pipe(
+  v.object({
+    min: v.tuple([ExactRationalText, ExactRationalText, ExactRationalText]),
+    max: v.tuple([ExactRationalText, ExactRationalText, ExactRationalText]),
+  }),
+  v.description(
+    "the part's least and greatest coordinate along each axis of its y-up part frame in LDU, exact from the LDraw decimals of every triangle and quad vertex through its sub-file transforms, stud primitives included; written by brick-compile; null when the part draws no geometry",
+  ),
+);
+export type PartExtents = v.InferOutput<typeof PartExtents>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -479,6 +490,7 @@ export const PartShape = v.object({
   role: PartRole,
   file: v.string(),
   bounds: Bounds,
+  extents: v.nullable(PartExtents),
   studs: v.array(StudRecord),
   displayColor: v.optional(DisplayColor),
   producedColors: v.optional(ProducedColors),
@@ -998,6 +1010,8 @@ export const UnresolvedRunningGearReason = v.picklist([
   "pivotInsideSupportSpan",
   "wheelsetSpansPivot",
   "supportPlaneUnidentified",
+  "belowRailTop",
+  "clearanceUnidentified",
 ]);
 export type UnresolvedRunningGearReason = v.InferOutput<typeof UnresolvedRunningGearReason>;
 
@@ -1438,6 +1452,7 @@ export const PartExtras = v.object({
   sources: v.array(LdrawSource),
   studs: v.array(StudRecord),
   bounds: Bounds,
+  extents: v.nullable(PartExtents),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
 });
