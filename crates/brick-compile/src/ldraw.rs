@@ -1,4 +1,5 @@
 use crate::affine::{Affine, Vec3};
+use crate::exact::Decimal;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Winding {
@@ -40,9 +41,17 @@ pub struct Header {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum ExactNumbers {
+    Unavailable,
+    Matrix(Box<[Decimal; 12]>),
+    Points(Vec<[Decimal; 3]>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct LdrawFile {
     pub header: Header,
     pub lines: Vec<Line>,
+    pub exact: Vec<ExactNumbers>,
     pub unparsed: usize,
 }
 
@@ -69,6 +78,39 @@ fn parse_numbers<const N: usize>(tokens: &[&str]) -> Option<[f64; N]> {
         *slot = token.parse().ok()?;
     }
     Some(out)
+}
+
+fn exact_numbers<const N: usize>(tokens: &[&str]) -> Option<[Decimal; N]> {
+    let tokens = tokens.get(..N)?;
+    let parsed: Vec<Decimal> = tokens
+        .iter()
+        .map(|t| Decimal::parse(t))
+        .collect::<Option<_>>()?;
+    parsed.try_into().ok()
+}
+
+fn exact_line(kind: &str, rest: &[&str]) -> ExactNumbers {
+    let numbers = rest.get(1..).unwrap_or_default();
+    let found = match kind {
+        "1" => exact_numbers::<SUBFILE_NUMBER_COUNT>(numbers)
+            .map(|n| ExactNumbers::Matrix(Box::new(n))),
+        "3" => exact_numbers::<9>(numbers).map(|n| {
+            ExactNumbers::Points(
+                n.chunks(3)
+                    .map(|p| [p[0].clone(), p[1].clone(), p[2].clone()])
+                    .collect(),
+            )
+        }),
+        "4" => exact_numbers::<12>(numbers).map(|n| {
+            ExactNumbers::Points(
+                n.chunks(3)
+                    .map(|p| [p[0].clone(), p[1].clone(), p[2].clone()])
+                    .collect(),
+            )
+        }),
+        _ => None,
+    };
+    found.unwrap_or(ExactNumbers::Unavailable)
 }
 
 fn points<const N: usize>(numbers: &[f64]) -> [Vec3; N] {
@@ -132,8 +174,17 @@ const SUBFILE_NUMBER_COUNT: usize = 12;
 const GEOMETRY_KINDS: [&str; 4] = ["1", "2", "3", "4"];
 
 pub fn parse(source: &str) -> LdrawFile {
+    parse_lines(source, false)
+}
+
+pub fn parse_exact(source: &str) -> LdrawFile {
+    parse_lines(source, true)
+}
+
+fn parse_lines(source: &str, keeps_exact: bool) -> LdrawFile {
     let mut header = Header::default();
     let mut lines = Vec::new();
+    let mut exact = Vec::new();
     let mut unparsed = 0;
     let mut first = true;
     for raw in source.lines() {
@@ -168,7 +219,12 @@ pub fn parse(source: &str) -> LdrawFile {
             _ => None,
         };
         match parsed {
-            Some(line) => lines.push(line),
+            Some(line) => {
+                if keeps_exact {
+                    exact.push(exact_line(kind, rest));
+                }
+                lines.push(line);
+            }
             None if GEOMETRY_KINDS.contains(kind) => unparsed += 1,
             None => {}
         }
@@ -176,6 +232,7 @@ pub fn parse(source: &str) -> LdrawFile {
     LdrawFile {
         header,
         lines,
+        exact,
         unparsed,
     }
 }
