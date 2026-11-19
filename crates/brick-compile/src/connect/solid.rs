@@ -191,6 +191,12 @@ pub struct Floor {
     pub faces_probe: Option<bool>,
 }
 
+struct Attainer {
+    inner: f64,
+    rim: f64,
+    along: Option<f64>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Plane {
     pub axis: usize,
@@ -1621,6 +1627,7 @@ impl Solid {
         let inside = contact - IDENTIFICATION_REACH_LDU;
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
         let mut pieces = Vec::new();
+        let mut rim_only = Vec::new();
         for index in self.near(probe, inside + IDENTIFY_LDU, ANY_DEPTH) {
             if self.owned_by(index as usize, &coaxial) {
                 continue;
@@ -1630,10 +1637,14 @@ impl Solid {
                 continue;
             }
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
-            if first_depth(&polygon, inside).is_some()
-                && first_depth(&polygon, contact).is_some_and(|d| d <= depth + IDENTIFY_LDU)
-            {
+            let Some(inner) = first_depth(&polygon, inside) else {
+                continue;
+            };
+            if inner <= depth + IDENTIFY_LDU {
                 pieces.push(facet.piece);
+            } else if first_depth(&polygon, contact).is_some_and(|rim| rim <= depth + IDENTIFY_LDU)
+            {
+                rim_only.push(facet.piece);
             }
         }
         for &index in &coaxial {
@@ -1646,7 +1657,11 @@ impl Solid {
                 pieces.push(surface.piece);
             }
         }
-        pieces
+        if pieces.is_empty() {
+            rim_only
+        } else {
+            pieces
+        }
     }
 
     pub fn floor(&self, probe: &Probe, contact: f64) -> Floor {
@@ -1660,7 +1675,7 @@ impl Solid {
     fn floor_until(&self, probe: &Probe, contact: f64, limit: f64) -> Floor {
         let inside = contact - IDENTIFICATION_REACH_LDU;
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
-        let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
+        let mut attaining: Vec<Attainer> = Vec::new();
         for &index in &coaxial {
             let surface = &self.surfaces[index];
             let (low, high) = surface.depths(probe);
@@ -1672,29 +1687,47 @@ impl Solid {
                 RoundShape::Annulus { .. } => surface.facing.map(|f| f * probe.inward),
                 RoundShape::Wall { .. } => Some(0.0),
             };
-            attaining.push((d, along));
+            attaining.push(Attainer {
+                inner: d,
+                rim: d,
+                along,
+            });
         }
-        let analytic = attaining.iter().map(|a| a.0).fold(f64::INFINITY, f64::min);
+        let analytic = attaining
+            .iter()
+            .map(|a| a.inner)
+            .fold(f64::INFINITY, f64::min);
         let window = (inside + IDENTIFY_LDU, inside);
         let line = self.line(probe, LineUse::Floor, window, |index, facet| {
             !self.apart(probe, facet, inside) && !self.owned_by(index, &coaxial)
         });
-        let depth = self.sweep(probe, &line, (analytic, limit), |facet| {
+        let band = self.sweep(probe, &line, (analytic, limit), |facet| {
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
             if polygon.is_empty() {
                 return None;
             }
-            first_depth(&polygon, inside)?;
-            let d = first_depth(&polygon, contact)?;
-            attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
-            Some(d)
+            let inner = first_depth(&polygon, inside)?;
+            let rim = first_depth(&polygon, contact).unwrap_or(inner);
+            attaining.push(Attainer {
+                inner,
+                rim,
+                along: facet.front.map(|front| front[probe.axis] * probe.inward),
+            });
+            Some(inner)
         });
+        let depth = attaining.iter().map(|a| a.rim).fold(band, f64::min);
+        let interior = band <= depth + IDENTIFY_LDU;
         let mut faces_probe = None;
-        for (d, along) in attaining {
-            if d > depth + IDENTIFY_LDU {
+        for attainer in attaining {
+            let (reading, floor) = if interior {
+                (attainer.inner, band)
+            } else {
+                (attainer.rim, depth)
+            };
+            if reading > floor + IDENTIFY_LDU {
                 continue;
             }
-            match along {
+            match attainer.along {
                 Some(along) if along != 0.0 => {
                     faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
                 }
