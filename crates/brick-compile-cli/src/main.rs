@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::authored::AUTHORED_RULE_VERSION;
-use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::bake::{drawn_lattice, FarVoxels, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
 use brick_compile::connect::{
@@ -357,8 +357,12 @@ fn far_mesh(
     model_ldraw: &Value,
     credits: &mut BTreeMap<String, Value>,
 ) -> Result<Option<Value>, String> {
-    let Some(grid) = baker.voxels(drawn).map_err(|e| e.to_string())? else {
-        return Ok(None);
+    let grid = match baker.voxels(drawn).map_err(|e| e.to_string())? {
+        FarVoxels::Grid(grid) => grid,
+        FarVoxels::Omitted(reason) => {
+            println!("{name}: no far mesh: {reason}");
+            return Ok(None);
+        }
     };
     let mut sources: BTreeMap<String, Value> = BTreeMap::new();
     for instance in drawn {

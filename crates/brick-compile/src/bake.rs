@@ -351,7 +351,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         detect_vehicles_with_bounds(self.library, drawn, signatures, rails, recorded)
     }
 
-    pub fn voxels(&mut self, drawn: &[ModelInstance]) -> Result<Option<VoxelGrid>, BakeError> {
+    pub fn voxels(&mut self, drawn: &[ModelInstance]) -> Result<FarVoxels, BakeError> {
         let slots = self.slots(drawn)?;
         let parts: Vec<VoxelPart> = drawn
             .iter()
@@ -364,11 +364,20 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             })
             .collect();
         match voxelize(&parts, &self.translucent) {
-            Ok(grid) => Ok(Some(grid)),
-            Err(VoxelError::Lattice(LatticeError::NoIntegerPhaseStuds)) => Ok(None),
+            Ok(grid) => Ok(FarVoxels::Grid(grid)),
+            Err(
+                reason @ (VoxelError::Lattice(LatticeError::NoIntegerPhaseStuds)
+                | VoxelError::FractionalStudLayer(_)),
+            ) => Ok(FarVoxels::Omitted(reason)),
             Err(error) => Err(BakeError::Voxel(error)),
         }
     }
+}
+
+#[derive(Debug)]
+pub enum FarVoxels {
+    Grid(VoxelGrid),
+    Omitted(VoxelError),
 }
 
 fn measured_stud_shape<L: Library>(
