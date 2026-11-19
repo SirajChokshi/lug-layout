@@ -578,6 +578,10 @@ export class SparseConnectorFinder implements MateFinder {
         this.engage(model, i, x, y, z, axis, slot, d);
         out.push(
           i,
+          model.shape[i] ?? 0,
+          model.gender[i] ?? 0,
+          classes.shapeOf(this.slotClass[slot] ?? UNCLASSED),
+          classes.genderOf(this.slotClass[slot] ?? UNCLASSED),
           ownSource | (this.slotSource[slot] ?? 0),
           Math.max(ownStatus, this.slotStatus[slot] ?? 0),
           this.slotOwner[slot] ?? 0,
@@ -655,6 +659,10 @@ export class SparseConnectorFinder implements MateFinder {
       this.engage(model, i, x, y, z, wanted, slot, d);
       out.push(
         i,
+        model.shape[i] ?? 0,
+        model.gender[i] ?? 0,
+        classes.shapeOf(slotClass),
+        classes.genderOf(slotClass),
         (model.source[i] ?? 0) | slotSource,
         Math.max(model.status[i] ?? 0, slotStatus),
         this.slotOwner[slot] ?? 0,
