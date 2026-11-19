@@ -1613,14 +1613,15 @@ impl Solid {
             }
         }
         if let Some(depth) = floor {
-            pieces.extend(self.floor_pieces(probe, probe.radius - IDENTIFICATION_REACH_LDU, depth));
+            pieces.extend(self.floor_pieces(probe, probe.radius, depth));
         }
         pieces.sort_unstable();
         pieces.dedup();
         pieces
     }
 
-    fn floor_pieces(&self, probe: &Probe, inside: f64, depth: f64) -> Vec<u16> {
+    fn floor_pieces(&self, probe: &Probe, contact: f64, depth: f64) -> Vec<u16> {
+        let inside = contact - IDENTIFICATION_REACH_LDU;
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
         let mut pieces = Vec::new();
         for index in self.near(probe, inside + IDENTIFY_LDU, ANY_DEPTH) {
@@ -1632,7 +1633,9 @@ impl Solid {
                 continue;
             }
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
-            if first_depth(&polygon, inside).is_some_and(|d| d <= depth + IDENTIFY_LDU) {
+            if first_depth(&polygon, inside).is_some()
+                && first_depth(&polygon, contact).is_some_and(|d| d <= depth + IDENTIFY_LDU)
+            {
                 pieces.push(facet.piece);
             }
         }
