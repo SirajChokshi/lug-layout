@@ -1,5 +1,6 @@
 import { ConnectorTable, type SnapShapes } from "@brr/domain";
 import { inject, injectable } from "inversify";
+import type { PartConnectors } from "@brr/catalog";
 import type { IPlaceableCatalog, PartConnectorRecord } from "../catalog/placeable-catalog.ts";
 import type { Placeable } from "../edit/placeable.ts";
 import { errorText } from "../edit/error-text.ts";
@@ -42,7 +43,7 @@ function usedPartIndices(placeable: ConnectedPlaceable): ReadonlyArray<number> {
 export class ConnectorTables implements IConnectorTables {
   private readonly loading = new Map<string, Promise<PlaceableConnectorTables>>();
   private readonly ready = new Map<string, PlaceableConnectorTables>();
-  private readonly partTables = new Map<string, Promise<PartTable>>();
+  private readonly partTables = new WeakMap<PartConnectors, PartTable>();
 
   constructor(
     @inject(PLACEABLE_CATALOG) private readonly catalog: ConnectorRecordSource,
@@ -84,7 +85,11 @@ export class ConnectorTables implements IConnectorTables {
         const part = parts[partIndex];
         if (!part)
           throw new Error(`${placeable.id} uses part index ${partIndex}, outside the catalog`);
-        return this.partTable(partIndex, part.id).then((outcome) => ({ partIndex, part, outcome }));
+        return this.partTable(placeable.id, partIndex, part.id).then((outcome) => ({
+          partIndex,
+          part,
+          outcome,
+        }));
       }),
     );
     for (const { partIndex, part, outcome } of outcomes) {
@@ -94,42 +99,37 @@ export class ConnectorTables implements IConnectorTables {
     return { tables, withoutRecords };
   }
 
-  private partTable(partIndex: number, partId: string): Promise<PartTable> {
-    const cached = this.partTables.get(partId);
-    if (cached) return cached;
-    const loading = this.catalog
-      .partConnectorRecord(partIndex)
-      .then((record) => this.tableOf(record, partId));
-    this.partTables.set(partId, loading);
-    loading.then(
-      (outcome) => {
-        if (outcome.kind === "missing") this.partTables.delete(partId);
-      },
-      () => this.partTables.delete(partId),
-    );
-    return loading;
+  private async partTable(
+    placeableId: string,
+    partIndex: number,
+    partId: string,
+  ): Promise<PartTable> {
+    return this.tableOf(await this.catalog.partConnectorRecord(placeableId, partIndex), partId);
   }
 
   private tableOf(record: PartConnectorRecord, partId: string): PartTable {
     switch (record.kind) {
-      case "record":
-        try {
-          return {
-            kind: "table",
-            table: ConnectorTable.fromColumns(record.connectors, this.shapes, partId),
-          };
-        } catch (error) {
-          return {
-            kind: "missing",
-            reason: `its connector record is malformed: ${errorText(error)}`,
-          };
-        }
+      case "record": {
+        const cached = this.partTables.get(record.connectors);
+        if (cached) return cached;
+        const table = this.tableFrom(record.connectors, partId);
+        this.partTables.set(record.connectors, table);
+        return table;
+      }
       case "missing":
         return { kind: "missing", reason: record.reason };
       default: {
         const unhandled: never = record;
         throw new Error(`unhandled connector record ${String(unhandled)}`);
       }
+    }
+  }
+
+  private tableFrom(connectors: PartConnectors, partId: string): PartTable {
+    try {
+      return { kind: "table", table: ConnectorTable.fromColumns(connectors, this.shapes, partId) };
+    } catch (error) {
+      return { kind: "missing", reason: `its connector record is malformed: ${errorText(error)}` };
     }
   }
 }

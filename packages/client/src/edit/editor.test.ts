@@ -75,15 +75,16 @@ import {
   CONNECTOR_TABLES,
   EDITOR,
   MODEL_IMPORTER,
+  PLACEMENT_SEARCH,
   TRAIN_PLAY,
   PLACEABLE_CATALOG,
 } from "../tokens.ts";
+import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
-import { partConnectors } from "@brr/catalog/connector-records";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -2482,7 +2483,67 @@ it("lists the held item's parts that have no connector record, and why, and stil
   });
 }, 120_000);
 
-class ImporterWithRecords implements IModelImporter {
+const REFUSED_PART = "ldraw:3023";
+const REFUSED_REASON = "the library's connector records can't be read: 503";
+
+async function bundleSetAfterAnImport(withImport: boolean) {
+  const importer = new GatedModelImporter();
+  const { editor, container, catalog } = await startEditor(
+    [PLACEABLE_SET],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const tables = container.get(CONNECTOR_TABLES);
+  let imported: PlaceableConnectorTables | null = null;
+  if (withImport) {
+    const record = await container
+      .get(PART_BUNDLE_LOADER)
+      .loadModelRecord("standard", PLACEABLE_SET);
+    const brought = importedRecord("brings-nulls.mpd", record);
+    importer.serve({
+      ...brought,
+      report: {
+        ...brought.report,
+        refusedConnectorRecords: [{ partId: REFUSED_PART, reason: REFUSED_REASON }],
+      },
+    });
+    const item = await importChecking(editor);
+    const refId = catalog.itemRefId(item);
+    const placeable = refId === null ? null : catalog.placeables()[refId];
+    if (!placeable) throw new Error("the import was not announced placeable");
+    imported = await tables.load(placeable);
+  }
+  const set = await loadCatalogItem(catalog, `omr:${PLACEABLE_SET}`);
+  const loaded = await tables.load(set);
+  const mates = container
+    .get(PLACEMENT_SEARCH)
+    .model(loaded.tables, set.partTransforms, []).internalMates;
+  return { imported, set: { withoutRecords: loaded.withoutRecords, mates } };
+}
+
+it("keeps a bundle set's parts and mates when it loads after an import that brought no record for those parts", async () => {
+  const alone = await bundleSetAfterAnImport(false);
+  const afterImport = await bundleSetAfterAnImport(true);
+
+  expect(alone.set.mates).toBeGreaterThan(0);
+  expect(afterImport.set).toEqual(alone.set);
+  expect(afterImport.set.withoutRecords).toEqual([]);
+}, 120_000);
+
+it("lists an import's own parts without records, with the import's reasons, while a bundle set loaded after it has them", async () => {
+  const { imported, set } = await bundleSetAfterAnImport(true);
+  const refused = imported?.withoutRecords.find((part) => part.partId === REFUSED_PART);
+  const reasons = new Set(imported?.withoutRecords.map((part) => part.reason));
+
+  expect({ refused: refused?.reason, reasons, setGaps: set.withoutRecords }).toEqual({
+    refused: REFUSED_REASON,
+    reasons: new Set([REFUSED_REASON, "the import found no connector record for it"]),
+    setGaps: [],
+  });
+}, 120_000);
+
+class ImporterBringing implements IModelImporter {
   constructor(
     private readonly partIds: ReadonlyArray<string>,
     private readonly connectors: ReadonlyArray<PartConnectors | null>,
@@ -2501,43 +2562,31 @@ class ImporterWithRecords implements IModelImporter {
   }
 }
 
-it("takes a part's connector record from an import that brought one before the bundle's packages, and the bundle's for every other part", async () => {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  const brought = partConnectors([]);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const loader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(loader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
-  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
-  container
-    .rebind(MODEL_IMPORTER)
-    .toConstantValue(new ImporterWithRecords(["ldraw:3811"], [brought]));
-  const editor = container.get(EDITOR);
-  const catalog = container.get(PLACEABLE_CATALOG);
-  const canvas = {
-    clientWidth: 640,
-    clientHeight: 480,
-    dataset: {},
-  } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  const parts = catalog.parts();
-  const baseplate = parts.findIndex((part) => part.id === "ldraw:3811");
-  const other = parts.findIndex((part) => part.id !== "ldraw:3811");
-  const otherId = parts[other]?.id ?? "";
+it("gives a part the bundle's packages don't list the record an import brought for it", async () => {
+  const hidden = new WithoutConnectorRecordsFor(new BundleDirectoryFetcher(), "ldraw:3811");
+  const shipped = new BundleDirectoryFetcher();
+  const { container: reader } = await startEditor([], shipped);
+  const record = await reader.get(PART_BUNDLE_LOADER).loadPartConnectors("standard", "ldraw:3811");
+  const { editor, container } = await startEditor(
+    [],
+    hidden,
+    [],
+    new ImporterBringing(["ldraw:3811"], [record]),
+  );
 
   await editor.importModelFile({
     name: "brings-3811.ldr",
     bytes: new TextEncoder().encode("0 x\n"),
   });
+  await chosen(editor, BASEPLATE);
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const refId = catalog.itemRefId(BASEPLATE);
+  const baseplate = refId === null ? null : catalog.placeables()[refId];
+  const tables = baseplate ? container.get(CONNECTOR_TABLES).loaded(baseplate) : null;
 
-  expect(await catalog.partConnectorRecord(baseplate)).toEqual({
-    kind: "record",
-    connectors: brought,
-  });
-  expect(await catalog.partConnectorRecord(other)).toEqual({
-    kind: "record",
-    connectors: await loader.loadPartConnectors("standard", otherId),
-  });
+  expect(record).not.toBeNull();
+  expect({
+    gaps: editor.snapshot().connectorGaps,
+    tabled: tables?.tables.filter((table) => table !== null).length,
+  }).toEqual({ gaps: [], tabled: 1 });
 }, 120_000);

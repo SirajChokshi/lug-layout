@@ -143,7 +143,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
-  partConnectorRecord(partIndex: number): Promise<PartConnectorRecord>;
+  partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
 }
 
 interface CatalogSlot {
@@ -320,7 +320,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly farModelIndex = new Map<string, number>();
-  private readonly importedRecords = new Map<string, PartConnectorRecord>();
+  private readonly importRecords = new Map<string, ReadonlyMap<string, PartConnectorRecord>>();
+  private readonly broughtRecords = new Map<string, PartConnectors>();
   private farReady = false;
 
   constructor(
@@ -560,7 +561,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     if (first === null || first.bake.lattice === null || first.bake.cells === null) {
       return this.completeImport(file, await imported);
     }
-    this.keepImportedRecords(first, first.refusedConnectorRecords);
+    this.keepImportedRecords(file, first, first.refusedConnectorRecords);
     const added = await this.addPlaceable(file, placedModel(first), first);
     return {
       kind: "checking",
@@ -580,7 +581,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   }
 
   private async completeImport(file: ImportedFile, result: ImportResult): Promise<ImportOutcome> {
-    this.keepImportedRecords(result, result.report.refusedConnectorRecords);
+    this.keepImportedRecords(file, result, result.report.refusedConnectorRecords);
     const reports = { report: result.report, studio: result.studio ?? null };
     const { bake } = result;
     if (!bake || bake.lattice === null || bake.cells === null) {
@@ -650,30 +651,34 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   }
 
   private keepImportedRecords(
+    file: ImportedFile,
     imported: Pick<ImportResult, "partIds" | "connectors">,
     refusedRecords: ReadonlyArray<RefusedConnectorRecord>,
   ): void {
     const refused = new Map(refusedRecords.map(({ partId, reason }) => [partId, reason]));
+    const own = new Map<string, PartConnectorRecord>();
     imported.partIds.forEach((partId, index) => {
       const connectors = imported.connectors[index] ?? null;
-      this.importedRecords.set(
-        partId,
-        connectors === null
-          ? { kind: "missing", reason: refused.get(partId) ?? NOT_IN_IMPORT_RECORDS }
-          : { kind: "record", connectors },
-      );
+      if (connectors === null) {
+        own.set(partId, { kind: "missing", reason: refused.get(partId) ?? NOT_IN_IMPORT_RECORDS });
+        return;
+      }
+      own.set(partId, { kind: "record", connectors });
+      if (!this.broughtRecords.has(partId)) this.broughtRecords.set(partId, connectors);
     });
+    this.importRecords.set(importRef(file.sha256), own);
   }
 
-  async partConnectorRecord(partIndex: number): Promise<PartConnectorRecord> {
+  async partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord> {
     const part = this.parts()[partIndex];
     if (!part) throw new Error(`no catalog part has index ${partIndex}`);
-    const imported = this.importedRecords.get(part.id);
-    if (imported) return imported;
+    const own = this.importRecords.get(placeableId)?.get(part.id);
+    if (own) return own;
     const loaded = await this.loader.readPartConnectors(this.lod, part.id);
+    if (loaded.kind === "loaded") return { kind: "record", connectors: loaded.connectors };
+    const brought = this.broughtRecords.get(part.id);
+    if (brought) return { kind: "record", connectors: brought };
     switch (loaded.kind) {
-      case "loaded":
-        return { kind: "record", connectors: loaded.connectors };
       case "unlisted":
         return { kind: "missing", reason: NOT_IN_BUNDLE_RECORDS };
       case "refused":
