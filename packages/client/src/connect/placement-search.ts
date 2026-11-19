@@ -61,6 +61,10 @@ export function placementChoice(): PlacementChoice {
 
 export type RestsOnTable = (placement: number) => boolean;
 
+export interface PlacementWindow extends SnapWindow {
+  readonly radiusLdu: number;
+}
+
 export interface IPlacementSearch {
   model(
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -82,7 +86,7 @@ export interface IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
-    window: SnapWindow,
+    window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
     out: PlacementChoice,
@@ -101,6 +105,7 @@ interface Placed extends PlacedParts {
 }
 
 const TURNS = 4;
+const INITIAL_ORDER = 64;
 
 class Bounds {
   cellX0 = 0;
@@ -185,12 +190,35 @@ class Pose implements LatticePose {
   rot = 0;
 }
 
+class CursorWindow implements SnapWindow {
+  x = 0;
+  z = 0;
+  yPlates = 0;
+  rot = 0;
+  readonly cells = 0;
+  readonly plates = 0;
+  readonly turns = 1;
+}
+
+function reachesBeyondCursor(window: PlacementWindow): boolean {
+  return window.radiusLdu > 0 || window.plates > 0 || window.turns > 1;
+}
+
+function quarterTurnsBetween(a: number, b: number): number {
+  const turns = (((a - b) % TURNS) + TURNS) % TURNS;
+  return Math.min(turns, TURNS - turns);
+}
+
 @injectable()
 export class PlacementSearch implements IPlacementSearch {
   private readonly volumes = new VolumeIndex();
   private readonly placed = new Map<number, Placed>();
   private readonly candidates = new CandidatePoses();
   private readonly report = new MateReport();
+  private readonly tieReport = new MateReport();
+  private readonly cursor = new CursorWindow();
+  private order = new Int32Array(INITIAL_ORDER);
+  private reach = new Float64Array(INITIAL_ORDER);
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
@@ -254,48 +282,156 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
-    window: SnapWindow,
+    window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
     out: PlacementChoice,
   ): void {
-    const candidates = this.candidates;
-    this.solver.rank(model, window, candidates);
     this.moving = moving ?? NO_PLACEMENT;
-    out.accepted = false;
     out.walked = 0;
-    out.overlap.owner = NO_PLACEMENT;
-    this.choose(out, 0);
-    for (let i = 0; i < candidates.count; i++) {
-      out.walked = i + 1;
-      const votes = candidates.votes[i] ?? 0;
-      const yPlates = candidates.yPlates[i] ?? 0;
-      const cursor = this.isWindowPose(window, i);
-      if (yPlates < tableYPlates || !this.onWindowLattice(window, i)) continue;
-      if (votes === 0 && !cursor) continue;
-      const pose = this.candidatePose(i);
-      const placed = this.scratch.place(volumes, pose);
-      this.zones.clear();
-      let blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
-      if (blocked && votes > 0 && this.collectZones(model, boxes, technic, pose) > 0) {
-        blocked =
-          firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
-          this.zones.firstOverlap(this.hit);
-      }
-      if (votes > 0 && !blocked) {
-        this.choose(out, i);
-        out.accepted = true;
-        out.overlap.owner = NO_PLACEMENT;
-        break;
-      }
-      if (!cursor) continue;
-      this.choose(out, i);
-      if (blocked) copyHit(this.hit, out.overlap);
-      else out.accepted = votes > 0 || yPlates === tableYPlates;
-      if (votes === 0) break;
+    this.atCursor(model, volumes, boxes, technic, window, tableYPlates, out);
+    if (!(out.accepted && out.votes > 0) && reachesBeyondCursor(window)) {
+      this.nearestMate(model, volumes, boxes, technic, window, tableYPlates, out);
     }
     this.moving = NO_PLACEMENT;
     this.zones.clear();
+  }
+
+  private atCursor(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    window: SnapWindow,
+    tableYPlates: number,
+    out: PlacementChoice,
+  ): void {
+    const cursor = this.cursor;
+    cursor.x = window.x;
+    cursor.z = window.z;
+    cursor.yPlates = window.yPlates;
+    cursor.rot = window.rot;
+    this.solver.rank(model, cursor, this.candidates);
+    let index = 0;
+    while (index < this.candidates.count && !this.isWindowPose(cursor, index)) index++;
+    this.choose(out, index);
+    out.walked++;
+    out.overlap.owner = NO_PLACEMENT;
+    out.accepted = false;
+    if (out.yPlates < tableYPlates) return;
+    if (this.blocked(model, volumes, boxes, technic, this.candidatePose(index), out.votes)) {
+      copyHit(this.hit, out.overlap);
+      return;
+    }
+    out.accepted = out.votes > 0 || out.yPlates === tableYPlates;
+  }
+
+  private nearestMate(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    window: PlacementWindow,
+    tableYPlates: number,
+    out: PlacementChoice,
+  ): void {
+    const candidates = this.candidates;
+    this.solver.rank(model, window, candidates);
+    const kept = this.nearestFirst(window, tableYPlates);
+    let best = -1;
+    let bestReach = Number.POSITIVE_INFINITY;
+    let bestJoints = -1;
+    for (let k = 0; k < kept; k++) {
+      const i = this.order[k] ?? 0;
+      const reach = this.reach[k] ?? 0;
+      if (best >= 0 && reach > bestReach) break;
+      out.walked++;
+      const votes = candidates.votes[i] ?? 0;
+      if (this.blocked(model, volumes, boxes, technic, this.candidatePose(i), votes)) continue;
+      this.solver.evaluate(model, this.candidatePose(i), this.tieReport);
+      const joints = this.tieReport.jointCount;
+      const bestVotes = best >= 0 ? (candidates.votes[best] ?? 0) : -1;
+      if (best < 0 || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
+        best = i;
+        bestReach = reach;
+        bestJoints = joints;
+      }
+    }
+    if (best < 0) return;
+    this.choose(out, best);
+    out.accepted = true;
+    out.overlap.owner = NO_PLACEMENT;
+  }
+
+  private nearestFirst(window: PlacementWindow, tableYPlates: number): number {
+    const candidates = this.candidates;
+    if (this.order.length < candidates.count) {
+      this.order = new Int32Array(candidates.count);
+      this.reach = new Float64Array(candidates.count);
+    }
+    const radiusSquared = window.radiusLdu * window.radiusLdu;
+    let kept = 0;
+    for (let i = 0; i < candidates.count; i++) {
+      if ((candidates.votes[i] ?? 0) === 0 || this.isWindowPose(window, i)) continue;
+      const yPlates = candidates.yPlates[i] ?? 0;
+      if (yPlates < tableYPlates || !this.onWindowLattice(window, i)) continue;
+      const dx = (candidates.x[i] ?? 0) - window.x;
+      const dz = (candidates.z[i] ?? 0) - window.z;
+      const dy = (yPlates - window.yPlates) * PLATE_LDU;
+      const reach = dx * dx + dz * dz + dy * dy;
+      if (reach > radiusSquared) continue;
+      let k = kept++;
+      while (
+        k > 0 &&
+        this.ranksBefore(window, i, reach, this.order[k - 1] ?? 0, this.reach[k - 1] ?? 0)
+      ) {
+        this.order[k] = this.order[k - 1] ?? 0;
+        this.reach[k] = this.reach[k - 1] ?? 0;
+        k--;
+      }
+      this.order[k] = i;
+      this.reach[k] = reach;
+    }
+    return kept;
+  }
+
+  private ranksBefore(
+    window: SnapWindow,
+    a: number,
+    reachA: number,
+    b: number,
+    reachB: number,
+  ): boolean {
+    if (reachA !== reachB) return reachA < reachB;
+    const candidates = this.candidates;
+    const turns =
+      quarterTurnsBetween(candidates.rot[a] ?? 0, window.rot) -
+      quarterTurnsBetween(candidates.rot[b] ?? 0, window.rot);
+    if (turns !== 0) return turns < 0;
+    const y = (candidates.yPlates[a] ?? 0) - (candidates.yPlates[b] ?? 0);
+    if (y !== 0) return y < 0;
+    const x = (candidates.x[a] ?? 0) - (candidates.x[b] ?? 0);
+    if (x !== 0) return x < 0;
+    return (candidates.z[a] ?? 0) < (candidates.z[b] ?? 0);
+  }
+
+  private blocked(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+    votes: number,
+  ): boolean {
+    const placed = this.scratch.place(volumes, pose);
+    this.zones.clear();
+    let blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
+    if (blocked && votes > 0 && this.collectZones(model, boxes, technic, pose) > 0) {
+      blocked =
+        firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
+        this.zones.firstOverlap(this.hit);
+    }
+    return blocked;
   }
 
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {

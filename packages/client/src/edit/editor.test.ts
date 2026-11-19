@@ -84,6 +84,7 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const PLACEABLE_SET = "7936-1";
 const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
+const VIEW_HALF_WIDTH_LDU = 1_000;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -300,14 +301,16 @@ class HeadlessBackend implements ISceneBackend {
   private aimX = 0;
   private aimZ = 0;
   private aimSlope = 0;
+  viewHalfWidthLdu = VIEW_HALF_WIDTH_LDU;
   aim(x: number, z: number, slope = 0): void {
     this.aimX = x;
     this.aimZ = z;
     this.aimSlope = slope;
   }
-  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
+  rayThrough(ndcX: number, _ndcY: number, out: Float64Array): void {
     const back = this.aimSlope * RAY_HEIGHT_LDU;
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ + back, 0, -1, -this.aimSlope]);
+    const x = this.aimX + ndcX * this.viewHalfWidthLdu;
+    out.set([x, RAY_HEIGHT_LDU, this.aimZ + back, 0, -1, -this.aimSlope]);
   }
   setView(): void {}
   resize(): void {}
@@ -1368,6 +1371,25 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
     released: snapped,
     chosenPrecise: refused,
   });
+}, 120_000);
+
+it("publishes the assist radius as 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  const viewWidthPx = 640;
+  const thirtyTwoPxIn = (ldu: number) => (ldu * viewWidthPx) / 2 / 32;
+  const radius = (lduPer32Px: number) => {
+    backend.viewHalfWidthLdu = thirtyTwoPxIn(lduPer32Px);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    return editor.snapshot().hover?.placement?.assistNeighbourhood;
+  };
+
+  expect([radius(100), radius(44), radius(5)]).toEqual([
+    { ldu: 60, cells: 3, plates: 7 },
+    { ldu: 44, cells: 3, plates: 5 },
+    { ldu: 20, cells: 1, plates: 2 },
+  ]);
 }, 120_000);
 
 it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {

@@ -29,7 +29,6 @@ import {
   type LatticePose,
   type OverlapHit,
   type SnapShapes,
-  type SnapWindow,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -90,7 +89,6 @@ import {
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type {
-  AssistNeighbourhood,
   HoverMateCount,
   HoverRefusalHit,
   MagnetOffset,
@@ -104,6 +102,7 @@ import {
   placementChoice,
   type IPlacementSearch,
   type PlacementChoice,
+  type PlacementWindow,
 } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
@@ -460,33 +459,39 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
-const ASSIST_RADIUS_CELLS = 2;
-const ASSIST_RADIUS_PLATES = 2;
+const ASSIST_TOLERANCE_PX = 32;
+const ASSIST_FLOOR_LDU = STUD_LDU;
+const ASSIST_BASIN_LDU = 3 * STUD_LDU;
 const PRECISE_RADIUS = 0;
-const ASSIST_NEIGHBOURHOOD: AssistNeighbourhood = {
-  ldu: ASSIST_RADIUS_CELLS * STUD_LDU,
-  cells: ASSIST_RADIUS_CELLS,
-  plates: ASSIST_RADIUS_PLATES,
-};
+const NDC_SPAN = 2;
 const HELD_TURN_ONLY = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 
-class PlacementWindow implements SnapWindow {
+class CursorPick implements PlacementWindow {
   x = 0;
   z = 0;
   yPlates = RESTS_ON_TABLE_Y_PLATES;
   rot = 0;
-  cells = ASSIST_RADIUS_CELLS;
-  plates = ASSIST_RADIUS_PLATES;
+  cells = PRECISE_RADIUS;
+  plates = PRECISE_RADIUS;
+  radiusLdu = PRECISE_RADIUS;
   turns = HELD_TURN_ONLY;
+}
+
+function cellsWithin(reachLdu: number): number {
+  return Math.ceil(reachLdu / STUD_LDU);
+}
+
+function platesWithin(reachLdu: number): number {
+  return Math.floor(reachLdu / PLATE_LDU);
 }
 
 function flipped(mode: PlacementMode): PlacementMode {
   return mode === "assist" ? "precise" : "assist";
 }
 
-function magnetOffset(cursor: PlacementWindow, pose: LatticePose): MagnetOffset {
+function magnetOffset(cursor: CursorPick, pose: LatticePose): MagnetOffset {
   const dxLdu = pose.x - cursor.x;
   const dzLdu = pose.z - cursor.z;
   const dyPlates = pose.yPlates - cursor.yPlates;
@@ -696,8 +701,13 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverRefusal: string | null = null;
   private queuedClick: QueuedClick | null = null;
   private hoverPlacement: PlacementHover | null = null;
-  private readonly pick = new PlacementWindow();
+  private readonly pick = new CursorPick();
   private readonly surface = new Float64Array(2);
+  private readonly sideRay = new Float64Array(6);
+  private canvas: HTMLCanvasElement | null = null;
+  private pointerNdcX = 0;
+  private pointerNdcY = 0;
+  private assistLdu = 0;
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
   private readonly mates = new MateReport();
@@ -766,6 +776,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {
+    this.canvas = canvas;
     try {
       const started = performance.now();
       const backend = await this.backend.init({
@@ -1521,6 +1532,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private groundHit(ndcX: number, ndcY: number): boolean {
+    this.pointerNdcX = ndcX;
+    this.pointerNdcY = ndcY;
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
@@ -1565,10 +1578,32 @@ export class Editor implements IEditor, IEditedWorld {
       mode,
       magnetised: magnet.distanceLdu > 0,
       magnet,
-      assistNeighbourhood: ASSIST_NEIGHBOURHOOD,
+      assistNeighbourhood: {
+        ldu: this.assistLdu,
+        cells: cellsWithin(this.assistLdu),
+        plates: platesWithin(this.assistLdu),
+      },
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
+  }
+
+  private assistReachLdu(): number {
+    return Math.min(Math.max(this.toleranceLdu(), ASSIST_FLOOR_LDU), ASSIST_BASIN_LDU);
+  }
+
+  private toleranceLdu(): number {
+    const widthPx = this.canvas?.clientWidth ?? 0;
+    if (widthPx <= 0) return ASSIST_FLOOR_LDU;
+    const sideNdcX = this.pointerNdcX + (NDC_SPAN * ASSIST_TOLERANCE_PX) / widthPx;
+    const side = this.sideRay;
+    this.backend.rayThrough(sideNdcX, this.pointerNdcY, side);
+    const directionY = side[4] ?? 0;
+    if (directionY >= 0) return ASSIST_BASIN_LDU;
+    const t = -(side[1] ?? 0) / directionY;
+    const dx = (side[0] ?? 0) + (side[3] ?? 0) * t - this.hitX;
+    const dz = (side[2] ?? 0) + (side[5] ?? 0) * t - this.hitZ;
+    return Math.hypot(dx, dz);
   }
 
   private aimPick(rot: number, turns: number, mode: PlacementMode): void {
@@ -1578,8 +1613,11 @@ export class Editor implements IEditor, IEditedWorld {
     pick.yPlates = RESTS_ON_TABLE_Y_PLATES;
     pick.rot = rot;
     pick.turns = turns;
-    pick.cells = mode === "assist" ? ASSIST_RADIUS_CELLS : PRECISE_RADIUS;
-    pick.plates = mode === "assist" ? ASSIST_RADIUS_PLATES : PRECISE_RADIUS;
+    this.assistLdu = this.assistReachLdu();
+    const reach = mode === "assist" ? this.assistLdu : PRECISE_RADIUS;
+    pick.radiusLdu = reach;
+    pick.cells = cellsWithin(reach);
+    pick.plates = platesWithin(reach);
     let nearest = Number.POSITIVE_INFINITY;
     let top = Number.NaN;
     for (const model of this.placed.models()) {
@@ -2198,16 +2236,15 @@ export class Editor implements IEditor, IEditedWorld {
     pick.z = pose.z;
     pick.yPlates = yPlates;
     pick.rot = rot;
-    pick.cells = 0;
-    pick.plates = 0;
+    pick.cells = PRECISE_RADIUS;
+    pick.plates = PRECISE_RADIUS;
+    pick.radiusLdu = PRECISE_RADIUS;
     pick.turns = HELD_TURN_ONLY;
     this.searchPick(
       this.connectedOf(model.placeable),
       this.searchIds.get(model) ?? null,
       this.turnChoice,
     );
-    pick.cells = ASSIST_RADIUS_CELLS;
-    pick.plates = ASSIST_RADIUS_PLATES;
     if (!this.turnChoice.accepted) {
       refuseTurn(refusalText(label, this.refusalHit(this.turnChoice.overlap)));
       return;

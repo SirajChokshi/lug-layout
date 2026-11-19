@@ -13,7 +13,6 @@ import {
   SOURCE_SHADOW,
   STATUS_VERIFIED,
   type LatticePose,
-  type SnapWindow,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
@@ -38,6 +37,7 @@ import {
   placementChoice,
   type IPlacementSearch,
   type PlacementChoice,
+  type PlacementWindow,
 } from "./placement-search.ts";
 
 const HALF = STUD_LDU / 2;
@@ -229,7 +229,7 @@ function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIG
 function choose(
   f: Fixture,
   piece: Piece,
-  at: SnapWindow,
+  at: PlacementWindow,
   moving: number | null = null,
 ): PlacementChoice {
   const choice = placementChoice();
@@ -246,8 +246,17 @@ function choose(
   return choice;
 }
 
-function window(x: number, z: number, cells: number, yPlates = 0, plates = 1): SnapWindow {
-  return { x, z, yPlates, rot: 0, cells, plates, turns: 1 };
+function fullVerdict(choice: PlacementChoice) {
+  return {
+    pose: [choice.x, choice.z, choice.yPlates, choice.rot],
+    votes: choice.votes,
+    accepted: choice.accepted,
+    hit: choice.accepted ? null : { ...choice.overlap },
+  };
+}
+
+function window(x: number, z: number, cells: number, yPlates = 0, plates = 1): PlacementWindow {
+  return { x, z, yPlates, rot: 0, cells, plates, turns: 1, radiusLdu: cells * STUD_LDU };
 }
 
 function world(f: Fixture): Piece {
@@ -344,17 +353,16 @@ function verdict(choice: PlacementChoice): readonly [boolean, number, number] {
 }
 
 describe("PlacementSearch", () => {
-  it("walks past a ranked pose that collides and takes the best pose that fits", () => {
+  it("takes the nearest mated pose that fits when the cursor pose collides, breaking an equal-distance tie by lattice order", () => {
     const f = fixture();
     const choice = choose(f, world(f), window(0, 0, 1));
-    expect([
-      choice.accepted,
-      choice.x,
-      choice.z,
-      choice.yPlates,
-      choice.votes,
-      choice.walked,
-    ]).toEqual([true, STUD_LDU, 0, 0, 4, 2]);
+    expect([choice.accepted, choice.x, choice.z, choice.yPlates, choice.votes]).toEqual([
+      true,
+      0,
+      STUD_LDU,
+      0,
+      4,
+    ]);
   });
 
   it("refuses with the top pose's overlap when every candidate collides, unless that volume is moving", () => {
@@ -399,6 +407,34 @@ describe("PlacementSearch", () => {
       0,
       OTHER,
     ]);
+  });
+
+  it("gives exactly precise's verdict wherever assist ends at the cursor pose: nothing mated in reach, or the cursor pose itself mated and free", () => {
+    const f = fixture();
+    const plate = world(f);
+    const away = 10 * STUD_LDU;
+    place(
+      f,
+      OTHER,
+      {
+        connectors: f.connectors([null]),
+        volumes: columns(1, 1, 0, BRICK_LDU),
+        parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+      },
+      { x: away, z: away, yPlates: 0, rot: 0 },
+    );
+    const cursors = [
+      [away, away],
+      [away + 4 * STUD_LDU, away],
+      [0, STUD_LDU],
+    ] as const;
+    const assist = cursors.map(([x, z]) => fullVerdict(choose(f, plate, window(x, z, 2))));
+    const precise = cursors.map(([x, z]) => fullVerdict(choose(f, plate, window(x, z, 0, 0, 0))));
+
+    expect({ assist, accepted: precise.map((row) => row.accepted) }).toEqual({
+      assist: precise,
+      accepted: [false, true, true],
+    });
   });
 
   it("stacks a brick on a brick through stud mates that name no partner, since columns stop at the body top below the studs", () => {
