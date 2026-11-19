@@ -1141,6 +1141,29 @@ it.each([
   120_000,
 );
 
+it("settles the ghost to neutral after a drop until the pointer leaves the cell, while the hover keeps the solver's verdict", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  const shown = () => ({
+    accepted: editor.snapshot().hover?.placement?.accepted ?? null,
+    ghost: backend.verdict?.tone ?? null,
+    hint: toolHints(editor.snapshot()).tone,
+  });
+  const dropped = shown();
+  backend.aim(5, 5);
+  editor.pointerMove(0, 0);
+  const sameCell = shown();
+  backend.aim(100, 0);
+  editor.pointerMove(0, 0);
+
+  expect({ dropped, sameCell, moved: shown() }).toEqual({
+    dropped: { accepted: false, ghost: null, hint: "place" },
+    sameCell: { accepted: false, ghost: null, hint: "place" },
+    moved: { accepted: false, ghost: "refused", hint: "warn" },
+  });
+}, 120_000);
+
 it.each([
   {
     name: "a set built on its own baseplates, 10185-1",

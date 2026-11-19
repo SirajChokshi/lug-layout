@@ -41,12 +41,35 @@ export interface PlacementHoverInput {
 export interface PlacementView {
   readonly mode: string;
   readonly hover: PlacementHoverInput | null;
+  readonly ghostSettled: boolean;
+}
+
+export interface SettleView {
+  readonly mode: string;
+  readonly hover: { readonly x: number; readonly z: number } | null;
+  readonly placements: number;
+  readonly ghostRot: number;
+  readonly activeItem: string | null;
+  readonly ghostSettled: boolean;
 }
 
 const PLACE_MODE = "place";
 
 function heldHover(view: PlacementView): PlacementHoverInput | null {
-  return view.mode === PLACE_MODE ? view.hover : null;
+  return view.mode === PLACE_MODE && !view.ghostSettled ? view.hover : null;
+}
+
+export function ghostSettles(before: SettleView, after: SettleView): boolean {
+  const { hover } = after;
+  if (after.mode !== PLACE_MODE || hover === null) return false;
+  if (after.placements > before.placements) return true;
+  return (
+    before.ghostSettled &&
+    before.hover?.x === hover.x &&
+    before.hover.z === hover.z &&
+    before.ghostRot === after.ghostRot &&
+    before.activeItem === after.activeItem
+  );
 }
 
 interface ConnectorNoun {

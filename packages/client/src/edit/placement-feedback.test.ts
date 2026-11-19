@@ -66,6 +66,7 @@ function mate(
 function hover(placement: Partial<PlacementHover>) {
   return {
     mode: "place",
+    ghostSettled: false,
     hover: {
       refusal: null,
       placement: {

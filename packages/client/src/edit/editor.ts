@@ -97,7 +97,7 @@ import type {
   PlacementHover,
 } from "./placement-hover.ts";
 import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
-import { ghostVerdict, sameVerdict } from "./placement-feedback.ts";
+import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   placementChoice,
@@ -387,6 +387,7 @@ export interface EditorSnapshot extends WorldSessionView {
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
   readonly connectorGaps: ReadonlyArray<PartWithoutConnectorRecord>;
+  readonly ghostSettled: boolean;
 }
 
 export interface EditorCredits {
@@ -683,6 +684,7 @@ export class Editor implements IEditor, IEditedWorld {
     roadErase: false,
     modelImport: null,
     connectorGaps: [],
+    ghostSettled: false,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -784,7 +786,10 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private update(patch: Partial<EditorSnapshot>): void {
-    this.state = { ...this.state, ...patch };
+    const before = this.state;
+    const merged = { ...before, ...patch };
+    const ghostSettled = ghostSettles(before, merged);
+    this.state = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
     this.showGhostVerdict();
     for (const listener of this.listeners) listener();
   }
