@@ -1,4 +1,5 @@
 import {
+  heldItem,
   meshesSettled,
   runEditorAction,
   type EditorActionId,
@@ -63,14 +64,18 @@ interface EditorAppProps {
 
 function EditorState({ editor }: { readonly editor: IEditor }) {
   const snapshot = useEditorSnapshot(editor);
+  const held = heldItem(snapshot);
   return (
     <pre
       id="edit-state"
       data-placements={snapshot.placements}
       data-samples={snapshot.latencies.length}
       data-measuring={snapshot.measuring ? "1" : "0"}
+      data-held-item={held?.item}
+      data-held-tables={held?.tables}
     >
       {JSON.stringify({
+        held,
         latencies: snapshot.latencies,
         stats: snapshot.stats,
         measurement: snapshot.measurement,
