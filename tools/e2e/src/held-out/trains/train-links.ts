@@ -592,7 +592,8 @@ const jacobsTwoAxis: Recipe = (context) => {
     attachments: [],
     couplingsInModel: [],
     unresolvedRunningGear: [
-      { units: ["car A", "car B", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
+      { units: ["car A", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
+      { units: ["car B", "shared bogie"], reason: LINK_INSIDE_SUPPORT_SPAN },
     ],
   };
 };
@@ -644,12 +645,21 @@ const spanBolster: Recipe = (context) => {
   if (!other) return null;
   return {
     wheelsets: [...a.axles, ...b.axles].map((axle) => axle.wheelset).concat(other.wheelsets),
-    vehicles: other.vehicles,
+    vehicles: [
+      {
+        body: ["bolster"],
+        bogies: [
+          { unit: "car A", pivot: pivots[0] },
+          { unit: "car B", pivot: pivots[1] },
+        ],
+        front: "unasserted",
+        rear: "unasserted",
+      },
+      ...other.vehicles,
+    ],
     attachments: [],
     couplingsInModel: [],
-    unresolvedRunningGear: [
-      { units: ["car A", "car B", "bolster"], reason: LINK_INSIDE_SUPPORT_SPAN },
-    ],
+    unresolvedRunningGear: [],
   };
 };
 

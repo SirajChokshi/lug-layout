@@ -1,5 +1,6 @@
 import {
   carriedByABearing,
+  leavesBearingRoom,
   type AxleMode,
   type HungAxle,
   type RailTop,
@@ -65,13 +66,28 @@ function longestPivotStuds(pools: TrainPools): number {
   );
 }
 
+function adoptRailTop(context: RecipeContext, wheelsets: ReadonlyArray<PlannedWheelset>): void {
+  if (context.railTop.value !== null) return;
+  for (const wheelset of wheelsets) {
+    if (wheelset.contactRadius === null) continue;
+    context.railTop.value = wheelset.y - wheelset.contactRadius;
+    return;
+  }
+}
+
 export function wheelFor(
   context: RecipeContext,
   bogieRoomStuds: number | null = null,
+  bearingWindow: readonly [number, number] | null = null,
 ): WheelPart | null {
   const longest = bogieRoomStuds === null ? Infinity : longestPivotStuds(context.pools);
   const fitsBogie = (wheel: WheelPart): boolean =>
     bogieRoomStuds === null || bogieStuds(wheel, 2, bogieRoomStuds) <= longest;
+  const fitsWindow = (wheel: WheelPart): boolean =>
+    bearingWindow === null ||
+    positiveSeats(wheel, context.rail, context.rails).some((seat) =>
+      leavesBearingRoom(context.pools, wheel, seat, bearingWindow),
+    );
   for (const wheel of context.random.shuffled(context.pools.wheels)) {
     const key = `${wheel.reading.reference} ${context.rail.part}`;
     let seats = context.seats.get(key);
@@ -79,7 +95,14 @@ export function wheelFor(
       seats = positiveSeats(wheel, context.rail, context.rails).length;
       context.seats.set(key, seats);
     }
-    if (seats > 0 && carriedByABearing(context.pools, wheel) && fitsBogie(wheel)) return wheel;
+    if (
+      seats > 0 &&
+      carriedByABearing(context.pools, wheel) &&
+      fitsBogie(wheel) &&
+      fitsWindow(wheel)
+    ) {
+      return wheel;
+    }
   }
   return null;
 }
@@ -293,6 +316,7 @@ function hangCoupler(
   const outerAxle = Math.max(...bogie.axles.map((axle) => axle.wheelset.x));
   const holes = random.shuffled(bogie.hung.holes.filter(([x]) => x > outerAxle));
   const holders = random.shuffled(pivotOptions(pools).filter((option) => option.holes.length > 0));
+  const lowestWheel = Math.min(...bogie.axles.map((axle) => axle.wheelset.y - axle.radius));
   for (const [x, z] of holes) {
     for (const holder of holders) {
       const [hole] = holder.holes;
@@ -302,6 +326,7 @@ function hangCoupler(
       for (const gap of COUPLER_GAP_PLATES) {
         const checkpoint = model.checkpoint();
         const top = frame.bottom - gap * PLATE_LDU;
+        if (top - PLATE_LDU < lowestWheel) continue;
         const placed = stackAt(
           model,
           pools,
@@ -446,6 +471,7 @@ function runningGearCar(explode: boolean): Recipe {
       "car",
     );
     if (!first) return null;
+    adoptRailTop(context, first.wheelsets);
     const second = mountRunningGear(
       context.model,
       context.pools,
@@ -487,6 +513,7 @@ const motorBogieCar: Recipe = (context) => {
     "motor bogie",
   );
   if (!front?.pivot) return null;
+  adoptRailTop(context, front.wheelsets);
   const rear = bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel);
   if (!rear) return null;
   return single([...front.wheelsets, ...rear.axles.map((axle) => axle.wheelset)], {
@@ -657,15 +684,21 @@ const roofTurntable: Recipe = (context) => {
     );
     for (const member of [...lowerStack, ...upperStack]) model.join(pin, member);
     if (!model.collidesSince(checkpoint)) {
-      return { ...base, attachments: ["turntable"] };
+      return {
+        ...base,
+        vehicles: [],
+        unresolvedRunningGear: [{ units: ["car", "turntable"], reason: "fewer than two guides" }],
+      };
     }
     model.rollback(checkpoint);
   }
   return null;
 };
 
+const SPLIT_BOGIE_WINDOW: readonly [number, number] = [-2 * STUD_LDU, 0];
+
 const splitAcrossPivot: Recipe = (context) => {
-  const wheel = wheelFor(context, TWO_AXLE_BOGIE);
+  const wheel = wheelFor(context, TWO_AXLE_BOGIE, SPLIT_BOGIE_WINDOW);
   const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
   if (!wheel || !car) return null;
   const front = bogieWithAxles(

@@ -280,6 +280,33 @@ function verticalThroughHoles(reading: PartReading, fit: readonly [number, numbe
   return holes;
 }
 
+export function receivesStudsBelow(block: Block, reading: PartReading): boolean {
+  const { min } = block.bounds;
+  const t = reading.triangles;
+  const flat: Array<readonly [number, number]> = [];
+  for (let k = 0; k + 8 < t.length; k += 9) {
+    const ys = [t[k + 1] ?? 0, t[k + 4] ?? 0, t[k + 7] ?? 0];
+    if (ys.every((y) => Math.abs(y - min[1]) < SAME)) {
+      for (const v of [0, 3, 6]) flat.push([t[k + v] ?? 0, t[k + v + 2] ?? 0]);
+    }
+  }
+  for (let i = 0; i < block.width; i++) {
+    for (let j = 0; j < block.depth; j++) {
+      const x0 = min[0] + i * STUD_LDU;
+      const z0 = min[2] + j * STUD_LDU;
+      const inCell = flat.some(
+        ([x, z]) =>
+          x >= x0 - SAME &&
+          x <= x0 + STUD_LDU + SAME &&
+          z >= z0 - SAME &&
+          z <= z0 + STUD_LDU + SAME,
+      );
+      if (!inCell) return false;
+    }
+  }
+  return true;
+}
+
 export function blockOf(reading: PartReading, holeFit: readonly [number, number]): Block | null {
   const { min, max } = reading.bounds;
   const width = wholeMultiple(max[0] - min[0], STUD_LDU);

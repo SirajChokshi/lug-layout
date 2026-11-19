@@ -1,7 +1,14 @@
 import { type SeededRandom } from "../generator.ts";
 import { type Vec3 } from "../assembly.ts";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
-import { type Block, type Sign, VERTICAL, rollingContact, roundProfile } from "./part-geometry.ts";
+import {
+  type Block,
+  type RoundProfile,
+  type Sign,
+  VERTICAL,
+  rollingContact,
+  roundProfile,
+} from "./part-geometry.ts";
 import {
   BEARING_CLEARANCE_LDU,
   type BearingOption,
@@ -81,10 +88,10 @@ function seatCandidate(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): 
   return true;
 }
 
-function seatContacts(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): boolean {
+function seatProfile(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): RoundProfile | null {
   const a = seat.sign * (rail.inner - seat.centre);
   const b = seat.sign * (rail.outer - seat.centre);
-  const contact = rollingContact(
+  return rollingContact(
     wheel.reading.triangles,
     wheel.hole,
     Math.min(a, b),
@@ -93,7 +100,11 @@ function seatContacts(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): b
     null,
     CONTACT_FRACTION * wheel.radius,
   );
-  return contact !== null;
+}
+
+function treadIsOutermost(wheel: WheelPart, profile: RoundProfile, contact: number): boolean {
+  const step = 1 / (wheel.reading.rolling?.stepsPerLdu ?? 1);
+  return profile.radius <= contact + step;
 }
 
 function treadRadius(wheel: WheelPart, seat: WheelSeat, rail: RailHeadBands): number | null {
@@ -123,6 +134,26 @@ function clearsBelow(wheel: WheelPart, option: BearingOption): boolean {
   return wheel.radius > bearingHeight - option.holeDepth + MARGIN_LDU;
 }
 
+function narrowestBearing(pools: TrainPools): number {
+  return Math.min(
+    ...bearingOptions(pools, LATERAL, false).map(
+      (option) => footprint(option.block, option.turns)[1] * STUD_LDU,
+    ),
+  );
+}
+
+export function leavesBearingRoom(
+  pools: TrainPools,
+  wheel: WheelPart,
+  seat: WheelSeat,
+  lateralRange: readonly [number, number],
+): boolean {
+  const [innerEdge] = lateralExtent(wheel, seat);
+  const low = Math.max(lateralRange[0], -innerEdge + BEARING_CLEARANCE_LDU);
+  const high = Math.min(lateralRange[1], innerEdge - BEARING_CLEARANCE_LDU);
+  return high - low >= narrowestBearing(pools);
+}
+
 export function carriedByABearing(pools: TrainPools, wheel: WheelPart): boolean {
   return bearingOptions(pools, LATERAL, false).some((option) => clearsBelow(wheel, option));
 }
@@ -136,11 +167,13 @@ export function positiveSeats(
   for (const sign of [1, -1] as const) {
     for (let centre = 0; centre <= LATERAL_SEARCH_LDU; centre++) {
       const seat = { sign, centre };
-      if (!seatCandidate(wheel, seat, rail) || !seatContacts(wheel, seat, rail)) continue;
+      const profile = seatCandidate(wheel, seat, rail) ? seatProfile(wheel, seat, rail) : null;
+      if (!profile) continue;
       const treads = [rail, ...rails].map((measured) => treadRadius(wheel, seat, measured));
       const [contact] = treads;
       if (contact === null || contact === undefined) continue;
       if (treads.some((tread) => tread !== contact)) continue;
+      if (!treadIsOutermost(wheel, profile, contact)) continue;
       seats.push({ ...seat, contact });
     }
   }
@@ -426,10 +459,11 @@ export function hangAxle(
   request: AxleRequest,
 ): HungAxle | null {
   const { wheel, mode } = request;
-  const seats =
+  const seats = (
     mode === "gauge miss"
       ? inboardSeats(wheel, request.rails)
-      : positiveSeats(wheel, request.rail, request.rails);
+      : positiveSeats(wheel, request.rail, request.rails)
+  ).filter((seat) => leavesBearingRoom(pools, wheel, seat, request.lateralRange));
   for (const seat of random.shuffled(seats).slice(0, SEAT_TRIES)) {
     for (const option of random.shuffled(bearingOptions(pools, LATERAL, false))) {
       const checkpoint = model.checkpoint();

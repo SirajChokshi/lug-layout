@@ -7,8 +7,17 @@ import {
   rollingContact,
   roundProfile,
 } from "./part-geometry.ts";
-import { CONTACT_FRACTION, transpose } from "./placement.ts";
-import { type TrainModel, apply, subtract } from "./train-model.ts";
+import {
+  CONTACT_FRACTION,
+  LATERAL,
+  LATERAL_SEARCH_LDU,
+  type RailHeadBands,
+  TRAVEL,
+  headBandSpan,
+  pointOnLine,
+  transpose,
+} from "./placement.ts";
+import { type TrainModel, add, apply, subtract } from "./train-model.ts";
 import type { HeadBandSpan } from "./placement.ts";
 import type { RollingSurfaceContact } from "./train-plan.ts";
 function worldBottom(model: TrainModel, instance: number): number {
@@ -103,4 +112,135 @@ export function smoothRuns(
     else runs.push({ from: slab, to: slab + 1 });
   }
   return runs;
+}
+
+const ON_LINE_LDU = 1e-6;
+
+interface LateralSurface {
+  readonly instance: number;
+  readonly low: number;
+  readonly high: number;
+  readonly lowRadius: number;
+  readonly highRadius: number;
+}
+
+export interface HeadBandReading {
+  readonly members: ReadonlyArray<number>;
+  readonly centre: number;
+  readonly contactRadii: readonly [number, number];
+}
+
+function surfacesOnLine(
+  model: TrainModel,
+  line: { readonly x: number; readonly y: number },
+): ReadonlyArray<LateralSurface> {
+  return model.placements.flatMap((placement, instance) => {
+    const rolling = placement.reading.rolling;
+    if (!rolling) return [];
+    const step = rolling.stepsPerLdu;
+    return rolling.surfaces.flatMap((surface) => {
+      const direction = apply(placement.rotation, pointOnLine(surface.axis, [0, 0], 1));
+      const sign = direction[LATERAL];
+      if (Math.abs(sign) !== 1) return [];
+      const at = add(
+        placement.position,
+        apply(
+          placement.rotation,
+          pointOnLine(surface.axis, [surface.at[0] / step, surface.at[1] / step], 0),
+        ),
+      );
+      if (
+        Math.abs(at[TRAVEL] - line.x) > ON_LINE_LDU ||
+        Math.abs(at[VERTICAL] - line.y) > ON_LINE_LDU
+      ) {
+        return [];
+      }
+      const a = at[LATERAL] + (sign * surface.from) / step;
+      const b = at[LATERAL] + (sign * surface.to) / step;
+      const [radiusA, radiusB] = [surface.radii[0] / step, surface.radii[1] / step];
+      return [
+        a <= b
+          ? { instance, low: a, high: b, lowRadius: radiusA, highRadius: radiusB }
+          : { instance, low: b, high: a, lowRadius: radiusB, highRadius: radiusA },
+      ];
+    });
+  });
+}
+
+function overlapsBand(surface: LateralSurface, band: HeadBandSpan, centre: number): boolean {
+  return Math.max(surface.low, centre + band.from) < Math.min(surface.high, centre + band.to);
+}
+
+function radiusAt(surface: LateralSurface, at: number): number {
+  if (surface.high === surface.low) return surface.lowRadius;
+  const t = (at - surface.low) / (surface.high - surface.low);
+  return surface.lowRadius + t * (surface.highRadius - surface.lowRadius);
+}
+
+function bandRadius(
+  surfaces: ReadonlyArray<LateralSurface>,
+  band: HeadBandSpan,
+  centre: number,
+): number {
+  return Math.max(
+    ...surfaces.map((surface) => {
+      const low = Math.max(surface.low, centre + band.from);
+      const high = Math.min(surface.high, centre + band.to);
+      return Math.max(radiusAt(surface, low), radiusAt(surface, high));
+    }),
+  );
+}
+
+function nearestToMiddle(feasible: ReadonlyArray<number>): number | null {
+  const first = feasible[0];
+  const last = feasible.at(-1);
+  if (first === undefined || last === undefined) return null;
+  const twiceMiddle = first + last;
+  return feasible.reduce((best, centre) =>
+    Math.abs(2 * centre - twiceMiddle) < Math.abs(2 * best - twiceMiddle) ? centre : best,
+  );
+}
+
+export function headBandReading(
+  model: TrainModel,
+  line: { readonly x: number; readonly y: number },
+  rail: RailHeadBands,
+): HeadBandReading | null {
+  const surfaces = surfacesOnLine(model, line);
+  const near = headBandSpan(rail, 1);
+  const far = headBandSpan(rail, -1);
+  const nearOnly = (surface: LateralSurface, centre: number): boolean =>
+    overlapsBand(surface, near, centre) && !overlapsBand(surface, far, centre);
+  const farOnly = (surface: LateralSurface, centre: number): boolean =>
+    overlapsBand(surface, far, centre) && !overlapsBand(surface, near, centre);
+  const feasible: number[] = [];
+  for (let centre = -LATERAL_SEARCH_LDU; centre <= LATERAL_SEARCH_LDU; centre++) {
+    if (
+      surfaces.some((surface) => nearOnly(surface, centre)) &&
+      surfaces.some((surface) => farOnly(surface, centre))
+    ) {
+      feasible.push(centre);
+    }
+  }
+  const centre = nearestToMiddle(feasible);
+  if (centre === null) return null;
+  const members = surfaces.filter((surface) =>
+    feasible.some((each) => nearOnly(surface, each) || farOnly(surface, each)),
+  );
+  return {
+    members: [...new Set(members.map((surface) => surface.instance))].toSorted((a, b) => a - b),
+    centre,
+    contactRadii: [
+      bandRadius(
+        members.filter((surface) => nearOnly(surface, centre)),
+        near,
+        centre,
+      ),
+      bandRadius(
+        members.filter((surface) => farOnly(surface, centre)),
+        far,
+        centre,
+      ),
+    ],
+  };
 }

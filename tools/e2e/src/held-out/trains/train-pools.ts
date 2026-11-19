@@ -12,6 +12,7 @@ import {
   axleSpan,
   axleStops,
   blockOf,
+  receivesStudsBelow,
   framesOf,
   holeLines,
   pinSpan,
@@ -393,14 +394,15 @@ export async function trainPools(
     const block = blockOf(reading, holeFit);
     if (!block) continue;
     const plain = block.holes.length === 0 && block.sideStuds.length === 0;
-    if (plain) spacers.push(block);
-    if (plain && block.heightPlates === 1) plates.push(block);
+    const stacks = receivesStudsBelow(block, reading);
+    if (plain && stacks) spacers.push(block);
+    if (plain && stacks && block.heightPlates === 1) plates.push(block);
     if (block.sideStuds.length > 0) continue;
     const roundHoles = block.holes.filter((hole) => hole.kind === "round");
     if (roundHoles.length !== block.holes.length || roundHoles.length === 0) continue;
     const rigid = block.width * block.depth >= RIGID_BEARING_STUDS;
     if (rigid && roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
-    if (block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
+    if (stacks && block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
       pivotPlates.push(block);
     }
   }
