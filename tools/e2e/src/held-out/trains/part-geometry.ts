@@ -12,7 +12,8 @@ export const PRIMITIVE_FAMILIES = {
   round: /^(48\/)?4-4(cyli|cylo|cylc|con\d+|ring\d+|disc)\.dat$/u,
   axleEnd: /^(axleend\d*|axl\dend)\.dat$/u,
   crossHole: /^(?!axleend)(axl\w*hol\w*|axl\w*ho\d+)\.dat$/u,
-  roundHole: /^(peghole\d*|connhol\w*|beamhol\w*|npeghol\w*|wpinhol\w*)\.dat$/u,
+  roundHole: /^(peghole\d*|connhol\w*|beamhol\w*|npeghol\w*)\.dat$/u,
+  notchedHole: /^wpinhol\w*\.dat$/u,
   pinHalf: /^(connect\d*|confric\d*)\.dat$/u,
 } as const;
 
@@ -188,6 +189,15 @@ export function studsOf(reading: PartReading): ReadonlyArray<Stud> {
     if (oriented) out.push({ origin: frame.origin, ...oriented });
   }
   return out;
+}
+
+export function axleStops(
+  reading: PartReading,
+  line: AxisLine,
+): ReadonlyArray<readonly [number, number]> {
+  return roundFeatures(reading.frames)
+    .filter((feature) => sameLine(feature, line))
+    .map((feature) => [feature.from, feature.to] as const);
 }
 
 export function axleSpan(reading: PartReading): Span | null {

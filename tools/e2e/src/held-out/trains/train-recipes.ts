@@ -1,4 +1,11 @@
-import { type AxleMode, type HungAxle, hangAxle, hangSplitAxle, positiveSeats } from "./axles.ts";
+import {
+  type AxleMode,
+  type HungAxle,
+  type RailTop,
+  hangAxle,
+  hangSplitAxle,
+  positiveSeats,
+} from "./axles.ts";
 import { type HungBogie, hangBogie } from "./bogies.ts";
 import { carBody } from "./car-bodies.ts";
 import { type EndVariant, buildEnd } from "./end-features.ts";
@@ -28,6 +35,7 @@ export interface RecipeContext {
   readonly rails: ReadonlyArray<RailHeadBands>;
   readonly rail: RailHeadBands;
   readonly seats: Map<string, number>;
+  readonly railTop: RailTop;
 }
 
 export type Recipe = (context: RecipeContext) => TrainPlan | null;
@@ -47,7 +55,7 @@ export function wheelFor(context: RecipeContext): WheelPart | null {
     const key = `${wheel.reading.reference} ${context.rail.part}`;
     let seats = context.seats.get(key);
     if (seats === undefined) {
-      seats = positiveSeats(wheel, context.rail).length;
+      seats = positiveSeats(wheel, context.rail, context.rails).length;
       context.seats.set(key, seats);
     }
     if (seats > 0) return wheel;
@@ -80,6 +88,7 @@ export function axles(
       sides: mode === "one head band" ? [1] : [1, -1],
       lateralRange: [carrier.z0, carrier.z1],
       unit,
+      railTop: context.railTop,
     });
     if (!hung) return null;
     out.push(hung);
@@ -648,6 +657,7 @@ const splitAcrossPivot: Recipe = (context) => {
     xRange: [-WIDE, Math.min(pivotX, normal.occupied[0])],
     wheel,
     rail: context.rail,
+    rails: context.rails,
   });
   const rear = split
     ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)

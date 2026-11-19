@@ -8,6 +8,7 @@ export interface RollingSurfaceContact {
 export interface PlannedWheelset {
   readonly x: number;
   readonly y: number;
+  readonly contactRadius: number | null;
   readonly unit: string;
   readonly instances: ReadonlyArray<number>;
   readonly rail: string | null;

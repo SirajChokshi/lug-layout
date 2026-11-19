@@ -98,6 +98,7 @@ function plannedWheelsets(
       : [];
     return {
       ...wheelLine,
+      contactRadius: null,
       unit,
       instances: indices,
       rail: rail ? rail.part : null,

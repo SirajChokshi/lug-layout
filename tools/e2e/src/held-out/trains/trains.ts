@@ -4,6 +4,7 @@ import { soundness } from "./soundness.ts";
 import { LINK_RECIPES } from "./train-links.ts";
 import { TrainModel } from "./train-model.ts";
 import type { TrainPools } from "./train-pools.ts";
+import type { TrainPlan } from "./train-plan.ts";
 import { CAR_RECIPES } from "./train-recipes.ts";
 import { SeededRandom } from "../generator.ts";
 
@@ -40,8 +41,8 @@ export function generateTrains(
         const model = new TrainModel();
         const rail = rails[random.int(rails.length)];
         if (!rail) break;
-        const plan = recipe({ model, pools, random, rails, rail, seats });
-        if (!plan) continue;
+        const plan = recipe({ model, pools, random, rails, rail, seats, railTop: { value: null } });
+        if (!plan || !levelVehicles(plan)) continue;
         const expected = expectationOf(model, plan, rails);
         if (!expected) continue;
         const name = `held-out-train-${seed}-${trains.length + 1}.ldr`;
@@ -59,4 +60,18 @@ export function generateTrains(
     }
   }
   return { trains, notBuilt };
+}
+
+function levelVehicles(plan: TrainPlan): boolean {
+  return plan.vehicles.every((vehicle) => {
+    const units = new Set([...vehicle.body, ...vehicle.bogies.map((bogie) => bogie.unit)]);
+    const railTops = new Set(
+      plan.wheelsets.flatMap((wheelset) =>
+        units.has(wheelset.unit) && wheelset.negative === null && wheelset.contactRadius !== null
+          ? [wheelset.y - wheelset.contactRadius]
+          : [],
+      ),
+    );
+    return railTops.size <= 1;
+  });
 }

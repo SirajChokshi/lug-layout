@@ -10,6 +10,7 @@ import {
   across,
   axisOf,
   axleSpan,
+  axleStops,
   blockOf,
   framesOf,
   holeLines,
@@ -53,6 +54,7 @@ export interface WheelPart {
 export interface AxlePart {
   readonly reading: PartReading;
   readonly span: Span;
+  readonly stops: ReadonlyArray<readonly [number, number]>;
 }
 
 export interface PinPart {
@@ -161,8 +163,17 @@ function wheelOf(reading: PartReading): WheelPart | null {
   const outer = roundFeatures(reading.frames).some(
     (feature) => sameLine(feature, hole) && feature.radius >= OUTER_PRIMITIVE_FRACTION * radius,
   );
-  if (!outer) return null;
+  if (!outer || !readsRollingOn(reading, hole)) return null;
   return { reading, hole, lateral: [min[hole.axis], max[hole.axis]], radius };
+}
+
+function readsRollingOn(reading: PartReading, hole: AxisLine): boolean {
+  const rolling = reading.rolling;
+  if (!rolling) return false;
+  const at = hole.at.map((coordinate) => Math.round(coordinate * rolling.stepsPerLdu));
+  return rolling.surfaces.some(
+    (surface) => surface.axis === hole.axis && surface.at[0] === at[0] && surface.at[1] === at[1],
+  );
 }
 
 function familyName(primitive: string): string {
@@ -356,9 +367,10 @@ export async function trainPools(
 
   const axles = [...(await reader.read(axleCandidates)).values()].flatMap((reading) => {
     const span = axleSpan(reading);
-    return span ? [{ reading, span }] : [];
+    return span ? [{ reading, span, stops: axleStops(reading, span) }] : [];
   });
   const axleRadii = axles
+    .filter((axle) => axle.stops.length === 0)
     .map(({ reading, span }) => {
       const [p, q] = across(span.axis);
       const { min, max } = reading.bounds;
