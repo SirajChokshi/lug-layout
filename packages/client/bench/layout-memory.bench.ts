@@ -10,6 +10,7 @@ import {
   type FrameStats,
   type ISceneBackend,
   type LookSettings,
+  type NeededMeshListener,
   type PartMeshUpdate,
   type PartPalette,
   type PlanOverlay,
@@ -28,8 +29,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
 import { mainThreadModules } from "../src/client.module.ts";
-import { EDITOR } from "../src/tokens.ts";
+import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
+import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { meshesSettled } from "../src/edit/mesh-progress.ts";
 import { parseHeapSnapshot, tallyOwners, type OwnerRules, type OwnerTally } from "./heap-owners.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -113,7 +116,7 @@ const RULES: OwnerRules = {
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
     ],
-    ["Editor", fields(PART_MESHES, ["placeables", "palette", "slots", "modelPlaceables"])],
+    ["PlaceableCatalog", fields(PART_MESHES, ["placeablesByRefId", "palette", "slots"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
     ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
     ["ChunkRecord", fields(INSTANCES, ["page"])],
@@ -165,30 +168,13 @@ interface OwnerSplit {
 }
 
 class BundleDirectoryFetcher implements IAssetFetcher {
-  private inFlight = 0;
-
-  get idle(): boolean {
-    return this.inFlight === 0;
-  }
-
-  private async read<T>(load: () => Promise<T>): Promise<T> {
-    this.inFlight++;
-    try {
-      return await load();
-    } finally {
-      this.inFlight--;
-    }
-  }
-
-  bytes(path: string): Promise<ArrayBuffer> {
-    return this.read(async () => {
-      const buffer = await readFile(new URL(path, bundleRoot));
-      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    });
+  async bytes(path: string): Promise<ArrayBuffer> {
+    const buffer = await readFile(new URL(path, bundleRoot));
+    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   }
 
   text(path: string): Promise<string> {
-    return this.read(() => readFile(new URL(path, bundleRoot), "utf8"));
+    return readFile(new URL(path, bundleRoot), "utf8");
   }
 }
 
@@ -263,6 +249,9 @@ class WindowlessBackend implements ISceneBackend {
   deleteChunk(key: number): void {
     this.chunkDigests.delete(key);
     this.scene.deleteChunk(key);
+  }
+  setNeededMeshListener(listener: NeededMeshListener | null): void {
+    this.scene.setNeededMeshListener(listener);
   }
   setGhost(model: ChunkInstances | null): void {
     this.scene.setGhost(model);
@@ -370,18 +359,13 @@ function measure(): Measured {
   };
 }
 
-async function settled(
-  editor: IEditor,
-  files: BundleDirectoryFetcher,
-  backend: WindowlessBackend,
-): Promise<void> {
+async function settled(editor: IEditor, backend: WindowlessBackend): Promise<void> {
   let before = "";
   for (;;) {
     await delay(SETTLE_MS);
     const { meshes, farTier } = editor.snapshot();
-    const loaded = farTier !== "loading" && meshes.loaded + meshes.failed >= meshes.wanted;
     const after = backend.renderInputDigest();
-    if (loaded && files.idle && after === before) return;
+    if (farTier !== "loading" && meshesSettled(meshes) && after === before) return;
     before = after;
   }
 }
@@ -494,20 +478,21 @@ async function runChild(
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   const started = editor.snapshot();
   if (started.status !== "ready") throw new Error(`editor did not start: ${started.error ?? ""}`);
-  await settled(editor, files, backend);
+  await settled(editor, backend);
+  const catalog = container.get(PLACEABLE_CATALOG);
   for (const item of ITEMS) {
-    if (!(await editor.prefetch(item))) throw new Error(`${item} did not load`);
+    await loadCatalogItem(catalog, item);
     editor.chooseItem(item);
   }
   editor.chooseItem(TRACK_ITEM);
   editor.chooseItem(null);
-  await settled(editor, files, backend);
+  await settled(editor, backend);
   const baseline = measure();
   const baselineSnapshot = snapshotDir
     ? writeHeapSnapshot(join(snapshotDir, `${scale}-baseline.heapsnapshot`))
     : null;
   new LayoutBuilder(editor, backend).build(tiles);
-  await settled(editor, files, backend);
+  await settled(editor, backend);
   const renderInput = backend.renderInputDigest();
   backend.forgetDigests();
   const layout = measure();

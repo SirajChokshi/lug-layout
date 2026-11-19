@@ -47,5 +47,6 @@ test("undo walks every edit back to the exact earlier poses and redo replays the
   await expect(redoButton).toBeDisabled();
   await expect(undoButton).toBeEnabled();
 
+  await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("undo-redo.png") });
 });

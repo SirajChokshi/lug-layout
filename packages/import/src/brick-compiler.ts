@@ -1,7 +1,9 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
 import {
   CompilerBake,
+  CompilerBakeNeeds,
   CompilerCompile,
+  type BakeShard,
   CompilerError,
   CompilerModelRead,
   StudioRead,
@@ -13,6 +15,7 @@ import {
   type CompilerVehicle,
   type CompilerVehicles,
   type ModelSection,
+  type PrimitiveConnectorTable,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { WasiReactor } from "./wasi-reactor.ts";
@@ -56,6 +59,7 @@ export interface CompileRequest {
   readonly lod: CompileLod;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
+  readonly primitives: PrimitiveConnectorTable | null;
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;
@@ -87,7 +91,9 @@ export interface BakeRequest {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly translucentColors: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
+  readonly shard?: BakeShard;
 }
 
 export interface BakedModel {
@@ -106,6 +112,10 @@ export interface BakeFailure {
 }
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
+
+export type BakeNeedsRequest = Pick<BakeRequest, "source" | "drawn" | "studPrimitives">;
+
+export type BakeNeeds = { readonly status: "complete" } | Need;
 
 interface Response {
   readonly header: unknown;
@@ -319,6 +329,15 @@ export class BrickCompiler {
         return { ...outcome, glb: body.slice(offset, offset + length) };
       }),
     };
+  }
+
+  bakeNeeds(request: BakeNeedsRequest, library: LibraryFiles): BakeNeeds {
+    const { header } = this.call(
+      { op: "bakeNeeds", studPrimitives: request.studPrimitives },
+      { source: utf8.encode(request.source), drawn: request.drawn },
+      library,
+    );
+    return decodedOrThrow(decode(CompilerBakeNeeds, header), "brick-compile bakeNeeds");
   }
 
   bake(request: BakeRequest, library: LibraryFiles): BakeOutcome {

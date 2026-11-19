@@ -2,6 +2,7 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  TablePlane,
   TrackCatalog,
   type CatalogSourceUse,
   type CrosswalkFile,
@@ -93,6 +94,17 @@ const modelRoots: ModelRoots = { omr: omrRoot, generated: fixturesRoot };
 const TEST_DATA_DIRECTORIES = [join("packages", "import", "test-data")];
 const verifiedFactsRoot = join(repoRoot, "docs", "verified-facts");
 const bundleRoot = join(toolRoot, "dist", "bundle");
+const inferredConnectorsPath = join(toolRoot, "inferred-connectors.json");
+
+const InferredConnectors = v.object({
+  cavityProbe: v.string(),
+  axleProbe: v.string(),
+  vocabularySnaps: v.array(v.string()),
+});
+
+async function inferredConnectors(): Promise<v.InferOutput<typeof InferredConnectors>> {
+  return v.parse(InferredConnectors, JSON.parse(await readFile(inferredConnectorsPath, "utf8")));
+}
 const fixtureBundleRoot = join(toolRoot, "fixture-bundle");
 const FIXTURE_LOD: BundleLod = "standard";
 
@@ -124,8 +136,17 @@ async function fetchCommand(): Promise<void> {
   const modelSources = await Promise.all(
     models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
   );
-  const closure = await fetchClosure(palette, ldrawRoot, modelSources);
-  const audit = await fetchAuditInputs(palette, auditRoot, connectivityRoot);
+  const inferred = await inferredConnectors();
+  const closure = await fetchClosure(palette, ldrawRoot, modelSources, [
+    inferred.cavityProbe,
+    inferred.axleProbe,
+  ]);
+  const audit = await fetchAuditInputs(
+    palette,
+    auditRoot,
+    connectivityRoot,
+    inferred.vocabularySnaps,
+  );
   const catalog = await fetchCatalogSources(palette.catalogSources, catalogRoot);
   const lock: InputLock = { ...closure, audit, catalog };
   await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
@@ -344,9 +365,12 @@ async function addVerifiedFacts(directory: string): Promise<void> {
     throw new Error(`track catalog pieces missing from the bundle: ${missing}`);
   }
   const bundledCatalog = { n: catalog["n"], pieces: catalog["pieces"] };
+  const geometryPath = join(repoRoot, BUNDLE_DATA_FILES.geometry);
+  const geometry: Record<string, unknown> = JSON.parse(await readFile(geometryPath, "utf8"));
+  const tablePlane = decodedOrThrow(decode(TablePlane, geometry["tablePlane"]), geometryPath);
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane }, null, 2)}\n`,
   );
 }
 
@@ -420,6 +444,8 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
     join(repoRoot, BUNDLE_DATA_FILES.geometry),
     "--palette",
     palette,
+    "--primitives",
+    join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
     "--out",
     out,
     "--lod",

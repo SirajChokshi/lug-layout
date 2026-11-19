@@ -39,6 +39,13 @@ export type {
   CatalogColorView,
   CatalogItemModel,
   CatalogItemView,
+  ICatalogAssets,
+  IPlaceableCatalog,
+  ImportOutcome,
+  SkippedCatalogModel,
+  StartedCatalog,
+} from "./catalog/placeable-catalog.ts";
+export type {
   CatalogPartView,
   EditAction,
   EditorCredits,
@@ -65,7 +72,6 @@ export type {
   RoadSnapView,
   PlaceableCoverView,
   SelectionView,
-  SkippedCatalogModel,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
@@ -86,7 +92,12 @@ export type {
   RoadTileIssue,
   RoadTileProblem,
 } from "./edit/road-drawing.ts";
-export type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+export type { IModelImporter } from "./import/worker-model-importer.ts";
+export type {
+  IImportWorkerPool,
+  ImportRun,
+  ImportWorkerFactory,
+} from "./import/import-worker-pool.ts";
 export type { IImportScene, ImportedModule, ModulePlacement } from "./scene/import-scene.ts";
 export type {
   ImportReport,
@@ -141,6 +152,7 @@ export {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE_DRAG,
@@ -156,6 +168,7 @@ export {
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,
   COMMANDS,

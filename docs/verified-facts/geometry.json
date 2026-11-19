@@ -116,7 +116,7 @@
           "headingResidualDegrees": -0.000040928130404793706,
           "toleranceLdu": 0.001,
           "fieldSearch": {
-            "bestResidualLdu": 0.000636825563193285,
+            "bestResidualLdu": 0.00047123763746270697,
             "solutionCount": 3781
           },
           "fieldCertified": false,
@@ -258,7 +258,7 @@
           "headingResidualDegrees": 0.00007085028140174643,
           "toleranceLdu": 0.000001,
           "fieldSearch": {
-            "bestResidualLdu": 7.741948029150472e-7,
+            "bestResidualLdu": 7.593188655619088e-7,
             "solutionCount": 1
           },
           "fieldCertified": true,
@@ -363,7 +363,7 @@
           "headingResidualDegrees": -0.00005988729524286641,
           "toleranceLdu": 0.000001,
           "fieldSearch": {
-            "bestResidualLdu": 8.921174634225937e-7,
+            "bestResidualLdu": 8.920717675664491e-7,
             "solutionCount": 1
           },
           "fieldCertified": true,
@@ -462,7 +462,7 @@
           "headingResidualDegrees": 0.000059887295247862404,
           "toleranceLdu": 0.000001,
           "fieldSearch": {
-            "bestResidualLdu": 8.921174634225937e-7,
+            "bestResidualLdu": 8.920717675664491e-7,
             "solutionCount": 1
           },
           "fieldCertified": true,
@@ -643,7 +643,7 @@
       "exactDerivation": "75541-f1 diverging + ζ^15 · mirror(74747 exit), both certified",
       "measuredXStuds": 48.00000008256953,
       "measuredZStuds": -16.00000000710044,
-      "measuredResidualToExactLdu": 0.0000016574852289172643
+      "measuredResidualToExactLdu": 0.0000016513905620740843
     },
     {
       "via": [
@@ -664,51 +664,51 @@
       "exactDerivation": "75542-f1 diverging + ζ^1 · (74747 exit), both certified",
       "measuredXStuds": 48.00000008256953,
       "measuredZStuds": 16.00000000710043,
-      "measuredResidualToExactLdu": 0.0000016574852106540724
+      "measuredResidualToExactLdu": 0.0000016513905620740843
     }
   ],
   "rails": [
     {
       "part": "74746",
       "sectionX": 20,
-      "railTopY": -16,
+      "railTopY": "-16",
       "railHeads": [
         {
-          "from": -53.625,
-          "to": -47.375
+          "from": "-53.625",
+          "to": "-47.375"
         },
         {
-          "from": 47.375,
-          "to": 53.625
+          "from": "47.375",
+          "to": "53.625"
         }
       ],
-      "railCentreSpacingLdu": 101,
-      "innerGaugeLdu": 94.75,
-      "innerGaugeMm": 37.9,
-      "railHeadWidthLdu": 6.25,
-      "trackWidthLdu": 160,
-      "railTopAboveUndersideLdu": 24
+      "railCentreSpacingLdu": "101",
+      "innerGaugeLdu": "94.75",
+      "innerGaugeMm": "37.9",
+      "railHeadWidthLdu": "6.25",
+      "trackWidthLdu": "160",
+      "railTopAboveUndersideLdu": "24"
     },
     {
       "part": "53401",
       "sectionX": 20,
-      "railTopY": -16,
+      "railTopY": "-16",
       "railHeads": [
         {
-          "from": -53.1,
-          "to": -46.9
+          "from": "-53.1",
+          "to": "-46.9"
         },
         {
-          "from": 46.9,
-          "to": 53.1
+          "from": "46.9",
+          "to": "53.1"
         }
       ],
-      "railCentreSpacingLdu": 100,
-      "innerGaugeLdu": 93.8,
-      "innerGaugeMm": 37.52,
-      "railHeadWidthLdu": 6.200000000000003,
-      "trackWidthLdu": 160,
-      "railTopAboveUndersideLdu": 24
+      "railCentreSpacingLdu": "100",
+      "innerGaugeLdu": "93.8",
+      "innerGaugeMm": "37.52",
+      "railHeadWidthLdu": "6.2",
+      "trackWidthLdu": "160",
+      "railTopAboveUndersideLdu": "24"
     }
   ],
   "baseplates": [
@@ -883,6 +883,10 @@
       "depthLdu": 640
     }
   ],
+  "tablePlane": {
+    "part": "3811",
+    "depthBelowTopLdu": 4
+  },
   "roadStudZones": [
     {
       "part": "44336",

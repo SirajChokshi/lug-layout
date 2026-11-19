@@ -39,6 +39,7 @@ import {
 } from "./connector-table.ts";
 import { isLatticeStud } from "./lattice-frame.ts";
 import { LatticeStudFinder } from "./lattice-stud-finder.ts";
+import { MATE_PASS_MODEL, MATE_PASS_PART, MATE_PASS_SUBMODEL, MatePairs } from "./mate-pairs.ts";
 import {
   ENGAGED_U,
   ENGAGEMENT_FLOATS,
@@ -1158,6 +1159,216 @@ describe("ModelConnectors with composite parts", () => {
     expect(withPieces(new Uint16Array(part.count)).count).toBe(part.count);
     expect(() => withPieces(new Uint16Array(part.count - 1))).toThrow(RangeError);
     expect(() => withPieces(new Uint16Array(part.count + 1))).toThrow(RangeError);
+  });
+});
+
+const QUARTER_TURN_ABOUT_X = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0];
+const AXLE_LENGTH = 3 * PLATE_LDU;
+const THROUGH_SHAFT = shape(0, true, [[SECTION_AXLE, 6, AXLE_LENGTH]]);
+const THROUGH_HOLE = shape(0, false, [[SECTION_AXLE, 6, PLATE_LDU]]);
+const SIXTEENTHS_PER_PLATE = PLATE_LDU * SIXTEENTHS_PER_LDU;
+
+function twoEndedAxle(): ConnectorTable {
+  return table([
+    { shape: THROUGH_SHAFT, gender: GENDER_MALE, origin: [0, 0, 0], axis: AXIS_POS_Y },
+    { shape: THROUGH_SHAFT, gender: GENDER_MALE, origin: [0, AXLE_LENGTH, 0], axis: AXIS_NEG_Y },
+  ]);
+}
+
+function twoHoleBeam(): ConnectorTable {
+  return table([
+    { shape: THROUGH_HOLE, gender: GENDER_FEMALE, origin: [0, 0, 0], axis: AXIS_NEG_Y },
+    { shape: THROUGH_HOLE, gender: GENDER_FEMALE, origin: [0, PLATE_LDU, 0], axis: AXIS_POS_Y },
+  ]);
+}
+
+function axleThroughBeams(placement: Matrix, withLean: boolean): ModelConnectors {
+  const lean = withLean ? IDENTIFICATION_RESIDUAL_LDU / (1.25 * PLATE_LDU) : 0;
+  return assembled(
+    [twoEndedAxle(), twoHoleBeam()],
+    [{ parent: MODEL_ROOT, local: then(placement, [1, -lean, 0, 0, lean, 1, 0, 0, 0, 0, 1, 0]) }],
+    [
+      { part: 1, submodel: 0, local: IDENTITY },
+      { part: 0, submodel: 0, local: IDENTITY },
+      { part: 1, submodel: 0, local: translation(0, PLATE_LDU, 0) },
+      { part: 1, submodel: 0, local: translation(0, 2 * PLATE_LDU, 0) },
+    ],
+    true,
+  );
+}
+
+function records(connectors: ModelConnectors): number[][] {
+  const m = connectors.mates;
+  return Array.from({ length: m.count }, (_, k) => [
+    m.maleInstance[k] ?? -1,
+    m.maleConnector[k] ?? -1,
+    m.femaleInstance[k] ?? -1,
+    m.femaleConnector[k] ?? -1,
+    m.pass[k] ?? -1,
+    m.mateAxis[k] ?? -1,
+    m.mateOffset[k] ?? -1,
+  ]);
+}
+
+function expectEachConnectorOnce(connectors: ModelConnectors, perInstance: ReadonlyArray<number>) {
+  const mated = new Set<string>();
+  const m = connectors.mates;
+  for (let k = 0; k < m.count; k++) {
+    mated.add(`${m.maleInstance[k]}:${m.maleConnector[k]}`);
+    mated.add(`${m.femaleInstance[k]}:${m.femaleConnector[k]}`);
+  }
+  const exposed = new Set<string>();
+  for (let n = 0; n < connectors.count; n++) {
+    exposed.add(`${connectors.instance[n]}:${connectors.connector[n]}`);
+  }
+  const total = perInstance.reduce((sum, count) => sum + count, 0);
+  expect([...exposed].filter((key) => mated.has(key))).toEqual([]);
+  expect(exposed.size).toBe(connectors.count);
+  expect(mated.size + exposed.size + connectors.offLattice).toBe(total);
+}
+
+function axleInBeamComposite(): ConnectorTable {
+  return table([
+    { shape: THROUGH_SHAFT, gender: GENDER_MALE, origin: [0, 0, 0], axis: AXIS_POS_Y, piece: 1 },
+    {
+      shape: THROUGH_HOLE,
+      gender: GENDER_FEMALE,
+      origin: [0, PLATE_LDU, 0],
+      axis: AXIS_NEG_Y,
+      piece: 2,
+    },
+    {
+      shape: THROUGH_HOLE,
+      gender: GENDER_FEMALE,
+      origin: [0, 2 * PLATE_LDU, 0],
+      axis: AXIS_POS_Y,
+      piece: 2,
+    },
+  ]);
+}
+
+function matePairColumns(count: number, pass: Uint8Array, offsets = count): MatePairs {
+  return new MatePairs(
+    new Uint32Array(count),
+    new Uint32Array(count),
+    new Uint32Array(count),
+    new Uint32Array(count),
+    pass,
+    new Int8Array(count),
+    new Int32Array(offsets),
+  );
+}
+
+describe("ModelConnectors mate pairs", () => {
+  const p = SIXTEENTHS_PER_PLATE;
+  const inModel = MATE_PASS_MODEL;
+  const inSubmodel = MATE_PASS_SUBMODEL;
+  const exactRecords = [
+    [1, 0, 0, 0, inModel, AXIS_POS_Y, 0],
+    [1, 0, 2, 0, inModel, AXIS_POS_Y, p],
+    [1, 0, 3, 0, inModel, AXIS_POS_Y, 2 * p],
+    [1, 1, 0, 1, inModel, AXIS_NEG_Y, 2 * p],
+    [1, 1, 2, 1, inModel, AXIS_NEG_Y, p],
+    [1, 1, 3, 1, inModel, AXIS_NEG_Y, 0],
+  ];
+
+  it("records every mate once, by male then female connector, with the male's part-local axis and its engaged offset", () => {
+    for (const placement of [IDENTITY, then(QUARTER_TURN_ABOUT_X, translation(STUD_LDU, 0, 0))]) {
+      const stack = axleThroughBeams(placement, false);
+      expect(records(stack)).toEqual(exactRecords);
+      expect(stack.internalMates).toBe(exactRecords.length);
+      expectEachConnectorOnce(stack, [2, 2, 2, 2]);
+    }
+  });
+
+  it("records the offset with its sign, for a hole behind the male's end", () => {
+    const behind = 4;
+    const overhanging = model(
+      [twoEndedAxle(), twoHoleBeam()],
+      [
+        [0, IDENTITY],
+        [1, translation(0, -behind, 0)],
+      ],
+    );
+    expect(records(overhanging)).toEqual([
+      [0, 0, 1, 0, inModel, AXIS_POS_Y, -behind * SIXTEENTHS_PER_LDU],
+      [0, 1, 1, 1, inModel, AXIS_NEG_Y, (AXLE_LENGTH - PLATE_LDU + behind) * SIXTEENTHS_PER_LDU],
+    ]);
+    expectEachConnectorOnce(overhanging, [2, 2]);
+  });
+
+  it("records a pair in the model pass when both connectors identify there, and otherwise in its lowest common sub-model frame", () => {
+    const leaning = axleThroughBeams(IDENTITY, true);
+    expect(records(leaning)).toEqual(
+      exactRecords.map((r, k) => {
+        const judgedInModelFrame = k < 2;
+        return [...r.slice(0, 4), judgedInModelFrame ? inModel : inSubmodel, ...r.slice(5)];
+      }),
+    );
+    expectEachConnectorOnce(leaning, [2, 2, 2, 2]);
+  });
+
+  it("orders records by connector, not by the pass that found them", () => {
+    const pin = table([
+      { shape: PIN, gender: GENDER_MALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_POS_X },
+    ]);
+    const hole = table([
+      { shape: PIN_HOLE, gender: GENDER_FEMALE, origin: [0, HOLE_HEIGHT, 0], axis: AXIS_NEG_X },
+    ]);
+    const far = translation(10 * STUD_LDU, 0, 0);
+    const pairs = assembled(
+      [pin, hole],
+      oneSubmodel(translation(DUST, 0, 0)),
+      [
+        { part: 0, submodel: 0, local: IDENTITY },
+        { part: 1, submodel: 0, local: IDENTITY },
+        { part: 0, submodel: MODEL_ROOT, local: far },
+        { part: 1, submodel: MODEL_ROOT, local: far },
+      ],
+      true,
+    );
+    expect(records(pairs)).toEqual([
+      [0, 0, 1, 0, inSubmodel, AXIS_POS_X, 0],
+      [2, 0, 3, 0, inModel, AXIS_POS_X, 0],
+    ]);
+    expectEachConnectorOnce(pairs, [1, 1, 1, 1]);
+  });
+
+  it("records a composite part's cross-piece mate in the part pass, in part-local terms, and maps exposed connectors to their part", () => {
+    const composite = axleInBeamComposite();
+    const turnedWithDust = then(QUARTER_TURN_ABOUT_X, translation(DUST, 0, 0));
+    const dusty = alone(composite, turnedWithDust);
+    expect(records(dusty)).toEqual([[0, 0, 0, 1, MATE_PASS_PART, AXIS_POS_Y, p]]);
+    expectEachConnectorOnce(dusty, [3]);
+    const exact = alone(composite, translation(STUD_LDU, 0, 0));
+    expect(records(exact)).toEqual([[0, 0, 0, 1, inModel, AXIS_POS_Y, p]]);
+    expect([exact.count, exact.instance[0], exact.connector[0]]).toEqual([1, 0, 2]);
+    expectEachConnectorOnce(exact, [3]);
+  });
+
+  it("keeps every record of a model with more mates than its first buffer holds", () => {
+    const side = 10;
+    const studs = side * side;
+    const stacked = model(
+      [block(side, side, PLATE_LDU, PLATE_RECEPTOR)],
+      [
+        [0, translation(0, PLATE_LDU, 0)],
+        [0, IDENTITY],
+      ],
+    );
+    expect(records(stacked)).toEqual(
+      Array.from({ length: studs }, (_, c) => [1, c, 0, studs + c, inModel, AXIS_POS_Y, 0]),
+    );
+    expectEachConnectorOnce(stacked, [2 * studs, 2 * studs]);
+  });
+
+  it("refuses columns that disagree on the count or name an unknown pass", () => {
+    expect(matePairColumns(1, Uint8Array.of(MATE_PASS_PART)).passOf(0)).toBe(MATE_PASS_PART);
+    const bothModel = Uint8Array.of(MATE_PASS_MODEL, MATE_PASS_MODEL);
+    expect(matePairColumns(2, bothModel).count).toBe(2);
+    expect(() => matePairColumns(2, bothModel, 1)).toThrow(RangeError);
+    expect(() => matePairColumns(1, Uint8Array.of(MATE_PASS_PART + 1))).toThrow(RangeError);
+    expect(() => matePairColumns(1, Uint8Array.of(MATE_PASS_MODEL)).passOf(1)).toThrow(RangeError);
   });
 });
 

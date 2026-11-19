@@ -10,7 +10,8 @@
     "test": "vitest run",
     "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/mate-zones.bench.ts && pnpm run bench:layout",
     "bench:layout": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/large-layout.bench.js",
-    "bench:layout-memory": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/layout-memory.bench.js"
+    "bench:layout-memory": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/layout-memory.bench.js",
+    "bench:needed-meshes": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/needed-meshes.bench.js"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",

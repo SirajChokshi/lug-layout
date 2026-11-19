@@ -1,26 +1,13 @@
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
-  NotDrawnSection,
-  TrackCatalog,
-} from "@brr/schema/bundle";
+import type { BundleLod, TrackCatalog } from "@brr/schema/bundle";
 import {
-  BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
-  withPlaceholderMesh,
-  type FetchPriority,
   type IPartBundleLoader,
   type ModelCells,
-  type ModelRecord,
-  type PartModel,
+  type PartAsset,
   type PartModelLattice,
   type PartShapeAsset,
-  type PartShapeRecord,
 } from "@brr/catalog";
-import { MergedParts } from "./merged-parts.ts";
-import { PartMeshStream, type MeshProgress } from "./part-mesh-stream.ts";
+import { NO_MESHES, type MeshProgress } from "./mesh-progress.ts";
 import {
   BomCounter,
   WORLD_TRACK_FRAME,
@@ -34,7 +21,6 @@ import {
   type EditKind,
   type HistoryStep,
   type PlacementHandle,
-  type PlacementTarget,
   type PlacementContents,
   type RoadEdgeSegment,
   type RoadJoinReport,
@@ -57,7 +43,6 @@ import {
   RAY_FLOATS,
   SCENE_BACKEND,
   type BackendInfo,
-  type ChunkInstances,
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
@@ -67,7 +52,7 @@ import {
   type WorldBox,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
-import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
+import type { ImportReport, StudioReport } from "@brr/import";
 import { importRef, worldTrack, type ImportedFile, type WorldShardV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
@@ -77,10 +62,14 @@ import {
   type IBomSource,
 } from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
-import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
-import { MODEL_IMPORTER, PLACEMENT_SEARCH, WORLD_SESSION } from "../tokens.ts";
-import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { modelLabel, withoutYear } from "../catalog/model-label.ts";
+import type { ModelCredit } from "../scene/viewer-scene.ts";
+import { PLACEABLE_CATALOG, PLACEMENT_SEARCH, WORLD_SESSION } from "../tokens.ts";
+import {
+  colorOf,
+  type CatalogItemView,
+  type IPlaceableCatalog,
+  type SkippedCatalogModel,
+} from "../catalog/placeable-catalog.ts";
 import {
   heldPieces,
   heldRuns,
@@ -108,8 +97,7 @@ import {
   type StudTotals,
   type ViewUpdate,
 } from "./placed-chunks.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
-import { thumbnailUrls } from "../catalog/thumbnail-urls.ts";
+import type { Placeable } from "./placeable.ts";
 import { trackObstacleRects } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
@@ -123,7 +111,7 @@ import {
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
 import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
-import { playModel, type PlayModel, type PlaySetup } from "../play/play-models.ts";
+import type { PlayModel, PlaySetup } from "../play/play-models.ts";
 import { errorText } from "./error-text.ts";
 import type {
   ExportedWorld,
@@ -144,35 +132,9 @@ export interface RoadStrokeResult {
   readonly stroke: RoadStrokeView;
 }
 
-export interface CatalogColorView {
-  readonly code: number;
-  readonly name: string;
-  readonly rgb: string;
-}
-
 export interface CatalogPartView {
   readonly id: string;
   readonly title: string;
-}
-
-export interface CatalogItemView {
-  readonly id: string;
-  readonly label: string;
-  readonly shortLabel: string;
-  readonly group: string;
-  readonly groupLabel: string;
-  readonly color: CatalogColorView | null;
-  readonly kind: Placeable["kind"] | "track";
-  readonly parts: number;
-  readonly studsWide: number;
-  readonly studsDeep: number;
-  readonly thumbnail: string | null;
-  readonly aliases: ReadonlyArray<string>;
-  readonly elements: ReadonlyArray<string>;
-  readonly displayColor: boolean;
-  readonly draggable: boolean;
-  readonly toggleable: boolean;
-  readonly listedUnder: string | null;
 }
 
 export interface LatencySample {
@@ -274,30 +236,6 @@ export interface FrameMeasurement {
   readonly midChunks: number;
   readonly farChunks: number;
   readonly nearestStudPitchPx: number;
-}
-
-export interface SkippedCatalogModel {
-  readonly name: string;
-  readonly reason: string;
-}
-
-interface SkippedModel extends SkippedCatalogModel {
-  readonly credit: ModelCredit;
-}
-
-interface CatalogSlot {
-  readonly id: string;
-  readonly group: string;
-  readonly worldColor: number;
-  readonly view: CatalogItemView;
-  readonly model: string | null;
-  readonly credit: ModelCredit | null;
-}
-
-interface StartedCatalog {
-  readonly slots: ReadonlyArray<CatalogSlot>;
-  readonly placeables: Array<Placeable | null>;
-  readonly skipped: ReadonlyArray<SkippedModel>;
 }
 
 export type FarTierStatus = "loading" | "ready" | "unavailable";
@@ -465,11 +403,6 @@ export interface EditorDump {
   readonly studs: StudTotals;
 }
 
-export interface CatalogItemModel {
-  readonly model: ChunkInstances;
-  readonly box: WorldBox;
-}
-
 export interface EditorOptions {
   readonly api: GraphicsApi;
   readonly pixelRatio: number;
@@ -481,7 +414,6 @@ export interface IEditor extends IBomSource, IWorldFiles {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
-  prefetch(id: string): Promise<boolean>;
   chooseItem(id: string | null): void;
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
@@ -504,7 +436,6 @@ export interface IEditor extends IBomSource, IWorldFiles {
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
-  catalogItemModel(itemId: string): Promise<CatalogItemModel | null>;
   dump(): EditorDump;
 }
 
@@ -516,10 +447,6 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
-const FAR_LOD: BundleLod = "far";
-const NO_LATTICE_REASON = "no stud lattice from the bake";
-const STUDIO_FILE = /\.io$/iu;
-const IMPORTED_SOURCE = "imported file";
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
@@ -612,12 +539,6 @@ interface HeldPiece {
 const EDITOR_WORLD_NAME = "editor-world";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
-interface EditorBomTables {
-  readonly palette: MergedParts;
-  readonly colors: ColorTable;
-  readonly ldrawColors: ReadonlyArray<number>;
-}
-
 interface PendingAction {
   readonly step: HistoryStep;
   readonly action: EditAction;
@@ -658,110 +579,12 @@ function snapToLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU + 0;
 }
 
-function footprintArea(part: PartShapeAsset): number {
-  return (part.boundsMax[0] - part.boundsMin[0]) * (part.boundsMax[2] - part.boundsMin[2]);
-}
-
-function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
-  const color = colors.find((c) => c.code === code);
-  if (!color) throw new Error(`LDConfig has no colour ${code}`);
-  return color;
-}
-
-function catalogItem(
-  placeable: Placeable,
-  colors: ReadonlyArray<BundleColor>,
-  thumbnails: ReadonlyMap<string, string>,
-  part: PartShapeAsset | undefined,
-): CatalogItemView {
-  const colored = placeable.kind === "baseplate" || placeable.kind === "road-plate";
-  const produced = part?.producedColors;
-  const ldrawNumber = placeable.group.replace(/^ldraw:/u, "");
-  const studsWide = Math.round((placeable.box.max[0] - placeable.box.min[0]) / STUD_LDU);
-  const studsDeep = Math.round((placeable.box.max[2] - placeable.box.min[2]) / STUD_LDU);
-  return {
-    id: placeable.id,
-    label: placeable.label,
-    shortLabel: colored
-      ? `${placeable.group.replace(/^[a-z]+:/u, "")} ${studsWide}×${studsDeep}`
-      : withoutYear(placeable.label),
-    group: placeable.group,
-    groupLabel: placeable.groupLabel,
-    color: colored ? colorOf(colors, placeable.worldColor) : null,
-    kind: placeable.kind,
-    parts: placeable.parts.count,
-    studsWide,
-    studsDeep,
-    thumbnail: thumbnails.get(placeable.id) ?? null,
-    aliases: produced && produced.rebrickable !== ldrawNumber ? [produced.rebrickable] : [],
-    elements:
-      produced?.colors.find((color) => color.ldraw === placeable.worldColor)?.elements ?? [],
-    displayColor: part !== undefined && part.producedColor === placeable.worldColor,
-    draggable: true,
-    toggleable: false,
-    listedUnder: null,
-  };
-}
-
-function placeableSlot(
-  placeable: Placeable,
-  colors: ReadonlyArray<BundleColor>,
-  thumbnails: ReadonlyMap<string, string>,
-  part: PartShapeAsset | undefined,
-): CatalogSlot {
-  return {
-    id: placeable.id,
-    group: placeable.group,
-    worldColor: placeable.worldColor,
-    view: catalogItem(placeable, colors, thumbnails, part),
-    model: null,
-    credit: placeable.credit,
-  };
-}
-
-function studsAcross(min: number, max: number): number {
-  return Math.round((max - min) / STUD_LDU);
-}
-
-function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, string>): CatalogSlot {
-  const id = `${entry.origin}:${entry.name}`;
-  const label = modelLabel(entry);
-  const aabb = entry.lattice?.aabb;
-  return {
-    id,
-    group: id,
-    worldColor: 0,
-    view: {
-      id,
-      label,
-      shortLabel: withoutYear(label),
-      group: id,
-      groupLabel: label,
-      color: null,
-      kind: "model",
-      parts: entry.instances,
-      studsWide: aabb ? studsAcross(aabb.min[0], aabb.max[0]) : 0,
-      studsDeep: aabb ? studsAcross(aabb.min[2], aabb.max[2]) : 0,
-      thumbnail: thumbnails.get(id) ?? null,
-      aliases: [],
-      elements: [],
-      displayColor: false,
-      draggable: true,
-      toggleable: false,
-      listedUnder: null,
-    },
-    model: entry.name,
-    credit: { name: entry.name, source: entry.source, sections: entry.sections },
-  };
-}
-
 function undrawableTrack(
-  bundleParts: ReadonlyArray<PartShapeAsset>,
   track: TrackDrawing,
-  parts: ReadonlyArray<PartShapeAsset>,
+  parts: ReadonlyArray<PartAsset>,
 ): ReadonlyArray<CatalogPartView> {
   const drawable = new Set(track.pieceParts().map((kit) => parts[kit.partIndex]?.id));
-  return bundleParts
+  return parts
     .filter((part) => part.role === "track" && !drawable.has(part.id))
     .map((part) => ({ id: part.id.replace("ldraw:", ""), title: part.title }));
 }
@@ -793,7 +616,7 @@ export class Editor implements IEditor, IEditedWorld {
     farTier: "loading",
     farTierError: null,
     pendingItem: null,
-    meshes: { wanted: 0, loaded: 0, failed: 0 },
+    meshes: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES, farModelMeshes: NO_MESHES },
     measuring: false,
     measurement: null,
     credits: null,
@@ -835,17 +658,11 @@ export class Editor implements IEditor, IEditedWorld {
     renderOriginChunkZ: 0,
     rebaseCount: 0,
   };
-  private placeables: Array<Placeable | null> = [];
-  private slots: ReadonlyArray<CatalogSlot> = [];
-  private readonly placeableLoads = new Map<number, Promise<Placeable>>();
-  private palette: MergedParts | null = null;
-  private colors: ColorTable | null = null;
-  private meshes: PartMeshStream | null = null;
-  private installedColors = 0;
-  private readonly farModelIndex = new Map<string, number>();
-  private farReady = false;
+  private catalogItems: ReadonlyArray<CatalogItemView> = [];
+  private bundleColorCodes: ReadonlyArray<number> | null = null;
   private placed: PlacedChunks;
   private active: Placeable | null = null;
+  private activeRefId = -1;
   private selected: PlacedModel | null = null;
   private ghostRot = 0;
   private placeRot = 0;
@@ -883,13 +700,6 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
   private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
   private statsSince = 0;
-  private bomTables: EditorBomTables | null = null;
-  private readonly notDrawnByPlaceable = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
-  private readonly modelPlaceables = new Map<string, Placeable>();
-  private readonly bakes = new Map<string, Pick<PartModel, "lattice" | "cells">>();
-  private bundleColors: ReadonlyArray<BundleColor> = [];
-  private readonly modelNames = new Map<Placeable, string>();
-  private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly planEntries = new WeakMap<PlacedModel, PlacedForPlan>();
 
   constructor(
@@ -898,13 +708,13 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
-    @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
-    @inject(MODEL_IMPORTER) private readonly importer: IModelImporter,
+    @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
   ) {
     this.placed = new PlacedChunks(backend);
     this.state = { ...this.state, ...session.view() };
     session.subscribe(() => this.sessionChanged());
+    catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
   }
 
   private sessionChanged(): void {
@@ -942,41 +752,24 @@ export class Editor implements IEditor, IEditedWorld {
       this.backend.forceTier(options.tier);
       this.update({ tier: options.tier });
       const index = await this.loader.loadIndex(EDITOR_LOD);
-      this.bundleColors = index.colors;
-      const colorSource = { colors: index.colors, parts: [] };
-      const colors = new ColorTable(colorSource);
-      for (const color of index.colors) colors.indexOfCode(color.code);
-      this.colors = colors;
-      const [studPrimitives, shapes] = await Promise.all([
-        this.loader.loadStudPrimitives(EDITOR_LOD),
-        Promise.all(index.catalogParts.map((part) => this.loader.loadPartShape(EDITOR_LOD, part))),
-      ]);
-      const palette = new MergedParts(shapes.map(withPlaceholderMesh));
-      this.palette = palette;
-      this.meshes = new PartMeshStream(this.loader, this.backend, palette, EDITOR_LOD, (meshes) =>
-        this.update({ meshes }),
-      );
-      for (const shape of shapes) this.meshes.register(palette.indexOf(shape.id), shape.meshFile);
-      const { slots, placeables, skipped } = this.buildCatalog(index, shapes);
-      this.slots = slots;
-      this.placeables = placeables;
+      const catalog = await this.catalog.start(index);
+      this.catalogItems = catalog.items;
+      this.bundleColorCodes = index.colors.map((color) => color.code);
       this.plans.setTableTopY(this.baseplateBottomY());
       this.trackCatalog = index.trackCatalog;
-      this.newTrack = () => new TrackDrawing(index, palette.parts, colors);
+      this.newTrack = () => new TrackDrawing(index, this.catalog.parts(), this.catalog.colors());
       this.track = this.newTrack();
-      this.bomTables = { palette, colors, ldrawColors: index.colors.map((color) => color.code) };
+      const parts = this.catalog.parts();
+      const trackItems = [
+        this.trackItem(this.track, parts),
+        ...this.trackPieceItems(this.track, parts),
+      ];
+      const trackNotDrawable = undrawableTrack(this.track, parts);
       this.roadDrawing = new RoadDrawing(
         this.loadedPlaceables(),
         (placeable) =>
           `${colorOf(index.colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
       );
-      this.backend.setPalette({
-        detailed: { parts: palette.parts, studPrimitives },
-        colorsSrgb: colors.toSrgb(),
-        colorsAlpha: colors.toAlpha(),
-        ldrawColors: ldrawColors(colorSource),
-      });
-      this.installedColors = colors.size;
       const loadMs = performance.now() - started;
       await this.session.start(this, index.bundleVersion);
       this.firstWorldFrame = true;
@@ -985,24 +778,13 @@ export class Editor implements IEditor, IEditedWorld {
         loadMs,
         bundleVersion: index.bundleVersion,
         backend,
-        catalog: [
-          ...slots.map((slot) => slot.view),
-          this.trackItem(this.track, palette.parts),
-          ...this.trackPieceItems(this.track, palette.parts),
-        ],
-        catalogSkipped: skipped.map(({ name, reason }) => ({ name, reason })),
-        trackNotDrawable: undrawableTrack(shapes, this.track, palette.parts),
+        catalog: [...catalog.items, ...trackItems],
+        catalogSkipped: catalog.skipped,
+        trackNotDrawable,
         roadKits: this.roadDrawing.kitViews(),
         roadKit: this.roadDrawing.activeKit()?.id ?? null,
         track: this.trackView(),
-        credits: {
-          partFiles: 0,
-          partFilesLod: EDITOR_LOD,
-          models: [
-            ...slots.flatMap((slot) => (slot.credit ? [slot.credit] : [])),
-            ...skipped.map(({ credit }) => credit),
-          ],
-        },
+        credits: { partFiles: 0, partFilesLod: EDITOR_LOD, models: catalog.credits },
       });
       this.statsSince = performance.now();
       this.resizeToCanvas();
@@ -1017,13 +799,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private async startFarTier(): Promise<void> {
     try {
-      const [studPrimitives, farFiles] = await Promise.all([
-        this.loader.loadStudPrimitives(FAR_LOD),
-        this.loader.loadPartFiles(FAR_LOD),
-      ]);
-      this.backend.setFarStuds(studPrimitives);
-      this.meshes?.useFarFiles(farFiles);
-      this.farReady = true;
+      await this.catalog.startFarTier();
       for (const model of this.placed.models()) this.requestFarModel(model.placeable);
       this.update({ farTier: "ready" });
     } catch (error) {
@@ -1032,16 +808,9 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private requestFarModel(placeable: Placeable): void {
-    if (!this.farReady) return;
-    const name = this.modelNames.get(placeable);
-    if (name === undefined || this.farModelIndex.has(name)) return;
-    const farModel = this.farModelIndex.size;
-    this.farModelIndex.set(name, farModel);
-    void this.loader.loadFarModelMesh(name, "low").then(
-      (mesh) => {
-        if (!mesh) return;
-        this.backend.setFarModelMesh(farModel, mesh);
-        this.placed.useFarModel(placeable, farModel);
+    void this.catalog.claimFarModel(placeable).then(
+      (farModel) => {
+        if (farModel !== null) this.placed.useFarModel(placeable, farModel);
       },
       (error: unknown) => this.update({ farTierError: errorText(error) }),
     );
@@ -1058,115 +827,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private loadedPlaceables(): ReadonlyArray<Placeable> {
-    return this.placeables.filter((placeable) => placeable !== null);
+    return this.catalog.placeables().filter((placeable) => placeable !== null);
   }
 
-  private buildCatalog(index: BundleIndex, shapes: ReadonlyArray<PartShapeRecord>): StartedCatalog {
-    const palette = this.requirePalette();
-    const colors = this.requireColors();
-    const thumbnails = thumbnailUrls(this.bundleBaseUrl, EDITOR_LOD, index.thumbnails);
-    const shapeById = new Map(shapes.map((shape) => [shape.id, shape]));
-    const shapeOf = (id: string): PartShapeRecord => {
-      const shape = shapeById.get(id);
-      if (!shape) throw new Error(`${id} has no shape in the bundle`);
-      return shape;
-    };
-    const groundParts = index.catalogParts
-      .filter((part) => part.role === "ground")
-      .map((part) => shapeOf(part.id))
-      .toSorted((a, b) => footprintArea(b) - footprintArea(a));
-    const roadParts = index.catalogParts
-      .filter((part) => part.role === "road")
-      .map((part) => shapeOf(part.id));
-    const placeables: Array<Placeable | null> = [...groundParts, ...roadParts].flatMap((part) => {
-      const produced = part.producedColors?.colors ?? [];
-      if (produced.length === 0) {
-        throw new Error(`${part.id} has no produced colour in the bundle`);
-      }
-      return produced.map(({ ldraw: code }) =>
-        partPlaceable(
-          part,
-          palette.indexOf(part.id),
-          code,
-          colorOf(index.colors, code).name,
-          palette.parts,
-          colors,
-        ),
-      );
-    });
-    const slots: CatalogSlot[] = placeables.flatMap((placeable) =>
-      placeable
-        ? [placeableSlot(placeable, index.colors, thumbnails, shapeOf(placeable.group))]
-        : [],
-    );
-    const skipped: SkippedModel[] = [];
-    for (const entry of index.models) {
-      if (entry.lattice === null) {
-        skipped.push({
-          name: entry.name,
-          reason: NO_LATTICE_REASON,
-          credit: { name: entry.name, source: entry.source, sections: entry.sections },
-        });
-        continue;
-      }
-      placeables.push(null);
-      slots.push(lazySlot(entry, thumbnails));
-    }
-    return { slots, placeables, skipped };
-  }
-
-  private requirePalette(): MergedParts {
-    if (!this.palette) throw new Error("the editor has no palette before it starts");
-    return this.palette;
-  }
-
-  private requireColors(): ColorTable {
-    if (!this.colors) throw new Error("the editor has no colour table before it starts");
-    return this.colors;
-  }
-
-  private modelPlaceableFrom(record: ModelRecord): Placeable {
-    const palette = this.requirePalette();
-    const colors = this.requireColors();
-    const { entry, model } = record;
-    const before = palette.parts.length;
-    const parts = record.parts.map(withPlaceholderMesh);
-    const merged = palette.remap(model, parts);
-    for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
-    const placeable = modelPlaceable(
-      `${entry.origin}:${entry.name}`,
-      entry.name,
-      modelLabel(entry),
-      entry.role,
-      merged,
-      { name: entry.name, source: entry.source, sections: model.sections },
-      palette.parts,
-      colors,
-      null,
-    );
-    if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
-    }
-    if (this.palette === palette && this.installedColors > 0) {
-      this.backend.addParts(palette.parts.slice(before));
-      this.syncColors();
-    }
-    this.notDrawnByPlaceable.set(placeable, entry.notDrawn ?? []);
-    this.modelPlaceables.set(entry.name, placeable);
-    this.modelNames.set(placeable, entry.name);
-    this.bakes.set(placeable.id, model);
-    return placeable;
-  }
-
-  private async importedResult(file: ImportedFile): Promise<ImportResult> {
-    if (STUDIO_FILE.test(file.name)) {
-      return this.importer.importStudio(file.name, file.bytes.slice(), EDITOR_LOD);
-    }
-    return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), EDITOR_LOD);
-  }
-
-  private async bakeImportedModel(file: ImportedFile): Promise<Placeable | null> {
-    const view = {
+  async addImportedModel(file: ImportedFile): Promise<string | null> {
+    const id = importRef(file.sha256);
+    if (this.catalog.itemRefId(id) !== null) return id;
+    const importing = {
       file: file.name,
       status: "importing",
       item: null,
@@ -1174,70 +841,21 @@ export class Editor implements IEditor, IEditedWorld {
       report: null,
       studio: null,
     } as const;
-    this.update({ modelImport: view });
-    const result = await this.importedResult(file);
-    const reported = { ...view, report: result.report, studio: result.studio ?? null };
-    const { bake } = result;
-    if (!bake || bake.lattice === null || bake.cells === null) {
-      const reason = result.report.bakeIssue ?? bake?.latticeIssue ?? NO_LATTICE_REASON;
-      this.update({ modelImport: { ...reported, status: "refused", reason } });
+    this.update({ modelImport: importing });
+    const outcome = await this.catalog.addImported(file);
+    const reported = { ...importing, report: outcome.report, studio: outcome.studio };
+    if (outcome.item === null) {
+      this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
       return null;
     }
-    const set = await this.loader.loadPartSet(EDITOR_LOD, result.partIds, result.compiled);
-    const palette = this.requirePalette();
-    const colors = this.requireColors();
-    const before = palette.parts.length;
-    const model: PartModel = {
-      sections: result.report.sections,
-      lattice: bake.lattice,
-      studCover: bake.studCover,
-      cells: bake.cells,
-      instanceCount: result.instanceCount,
-      partIndex: Uint16Array.from(result.partIndex),
-      ldrawColor: result.ldrawColor,
-      matrices: result.matrices,
-      partTransforms: result.partTransforms,
-      submodels: result.submodels,
-      vehicles: bake.vehicles,
-    };
-    const id = importRef(file.sha256);
-    const credit = {
-      name: file.name,
-      source: `${IMPORTED_SOURCE} ${file.name}`,
-      sections: result.report.sections,
-    };
-    const placeable = modelPlaceable(
-      id,
-      file.name,
-      file.name,
-      undefined,
-      palette.remap(model, set.parts),
-      credit,
-      palette.parts,
-      colors,
-      null,
-    );
-    if (this.palette === palette && this.installedColors > 0) {
-      this.backend.addParts(palette.parts.slice(before));
-      this.syncColors();
-    }
-    this.bakes.set(id, model);
-    this.placeables.push(placeable);
-    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
-    this.slots = [...this.slots, slot];
+    this.catalogItems = [...this.catalogItems, outcome.item];
     const credits = this.state.credits;
     this.update({
-      catalog: [...this.state.catalog, slot.view],
-      modelImport: { ...reported, status: "placeable", item: id },
-      ...(credits ? { credits: { ...credits, models: [...credits.models, credit] } } : {}),
+      catalog: [...this.state.catalog, outcome.item],
+      modelImport: { ...reported, status: "placeable", item: outcome.item.id },
+      ...(credits ? { credits: { ...credits, models: [...credits.models, outcome.credit] } } : {}),
     });
-    return placeable;
-  }
-
-  async addImportedModel(file: ImportedFile): Promise<string | null> {
-    const id = importRef(file.sha256);
-    if (this.slots.some((slot) => slot.id === id)) return id;
-    return (await this.bakeImportedModel(file)) === null ? null : id;
+    return outcome.item.id;
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
@@ -1246,66 +864,23 @@ export class Editor implements IEditor, IEditedWorld {
     return item !== null;
   }
 
-  private syncColors(): void {
-    const colors = this.requireColors();
-    if (colors.size === this.installedColors) return;
-    this.installedColors = colors.size;
-    this.backend.setColors(colors.toSrgb(), colors.toAlpha());
-  }
-
-  private ensurePlaceable(refId: number): Promise<Placeable> {
-    const loaded = this.placeables[refId];
-    if (loaded) return Promise.resolve(loaded);
-    const pending = this.placeableLoads.get(refId);
-    if (pending) return pending;
-    const model = this.slots[refId]?.model;
-    if (model === undefined || model === null) {
-      return Promise.reject(new Error(`no catalog item has ref id ${refId}`));
-    }
-    const loading = this.loader.loadModelRecord(EDITOR_LOD, model).then((record) => {
-      const placeable = this.placeables[refId] ?? this.modelPlaceableFrom(record);
-      this.placeables[refId] = placeable;
-      return placeable;
-    });
-    this.placeableLoads.set(refId, loading);
-    loading.then(
-      () => this.placeableLoads.delete(refId),
-      () => this.placeableLoads.delete(refId),
-    );
-    return loading;
-  }
-
-  private requestMeshes(placeable: Placeable, priority: FetchPriority): void {
-    this.meshes?.request(new Set(placeable.parts.partIndex), priority);
+  private requestMeshes(placeable: Placeable): void {
+    this.catalog.requestMeshes(new Set(placeable.parts.partIndex));
   }
 
   private requestTrackMeshes(track: TrackDrawing): void {
-    this.meshes?.request(
-      track.pieceParts().map((kit) => kit.partIndex),
-      "high",
-    );
-  }
-
-  async prefetch(id: string): Promise<boolean> {
-    const refId = this.slots.findIndex((slot) => slot.id === id);
-    if (refId < 0) return false;
-    try {
-      await this.ensurePlaceable(refId);
-      return true;
-    } catch {
-      return false;
-    }
+    this.catalog.requestMeshes(track.pieceParts().map((kit) => kit.partIndex));
   }
 
   private async ensureShardPlaceables(shards: ReadonlyArray<WorldShardV1>): Promise<void> {
     const refIds = new Set<number>();
     for (const shard of shards) {
       for (const placement of shard.placements) {
-        const target = this.resolveRef(placement.ref, placement.color);
+        const target = this.catalog.resolveRef(placement.ref, placement.color);
         if (target) refIds.add(target.refId);
       }
     }
-    await Promise.all([...refIds].map((refId) => this.ensurePlaceable(refId)));
+    await Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
   }
 
   private baseplateBottomY(): number {
@@ -1752,8 +1327,9 @@ export class Editor implements IEditor, IEditedWorld {
   private requestKitMeshes(kitId: string): void {
     const kit = this.roadDrawing?.kitViews().find((view) => view.id === kitId);
     for (const piece of kit?.pieces ?? []) {
-      const placeable = this.placeables[this.slots.findIndex((slot) => slot.id === piece.item)];
-      if (placeable) this.requestMeshes(placeable, "high");
+      const refId = this.catalog.itemRefId(piece.item);
+      const placeable = refId === null ? null : this.catalog.placeables()[refId];
+      if (placeable) this.requestMeshes(placeable);
     }
   }
 
@@ -1820,8 +1396,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
     }
-    const refId = id === null ? -1 : this.slots.findIndex((slot) => slot.id === id);
-    if (id !== null && refId >= 0 && !this.placeables[refId]) {
+    const refId = id === null ? null : this.catalog.itemRefId(id);
+    if (id !== null && refId !== null && !this.catalog.placeables()[refId]) {
       this.choosePending(id, refId);
       return;
     }
@@ -1832,12 +1408,13 @@ export class Editor implements IEditor, IEditedWorld {
       this.select(null);
       return;
     }
-    const placeable = refId < 0 ? null : (this.placeables[refId] ?? null);
+    const placeable = refId === null ? null : (this.catalog.placeables()[refId] ?? null);
     if (placeable) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     this.active = placeable;
+    this.activeRefId = placeable && refId !== null ? refId : -1;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select(null);
     const snap = this.snapGhost();
@@ -1862,7 +1439,7 @@ export class Editor implements IEditor, IEditedWorld {
       snap: null,
       ghostRot: this.placeRot,
     });
-    void this.ensurePlaceable(refId).then(
+    void this.catalog.load(refId).then(
       () => {
         if (this.state.pendingItem === id) this.chooseItem(id);
       },
@@ -2214,7 +1791,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private labelOf(id: string): string {
-    return this.slots.find((slot) => slot.id === id)?.view.label ?? id;
+    return this.catalogItems.find((item) => item.id === id)?.label ?? id;
   }
 
   private placeAt(
@@ -2226,7 +1803,7 @@ export class Editor implements IEditor, IEditedWorld {
   ): void {
     this.show(
       this.history.place({
-        refId: this.placeables.indexOf(placeable),
+        refId: this.activeRefId,
         colorId: placeable.worldColor,
         x,
         z,
@@ -2247,7 +1824,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeableAt(refId: number): Placeable {
-    const placeable = this.placeables[refId];
+    const placeable = this.catalog.placeables()[refId];
     if (!placeable) throw new Error(`no catalog item has ref id ${refId}`);
     return placeable;
   }
@@ -2257,7 +1834,7 @@ export class Editor implements IEditor, IEditedWorld {
     for (const model of view.removed) this.unsearchable(model);
     for (const model of view.added) this.searchable(model);
     for (const placeable of new Set(view.added.map((model) => model.placeable))) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     this.session.placementsEdited(edit);
@@ -2360,8 +1937,8 @@ export class Editor implements IEditor, IEditedWorld {
 
   private refreshTrains(): void {
     const placed = new Set(this.placed.models().map((model) => model.placeable));
-    this.placedTrains = this.placeables.flatMap((placeable) => {
-      const train = placeable && placed.has(placeable) ? this.playModels.get(placeable) : undefined;
+    this.placedTrains = this.catalog.placeables().flatMap((placeable) => {
+      const train = placeable && placed.has(placeable) ? this.catalog.playModel(placeable) : null;
       return train ? [train] : [];
     });
   }
@@ -2394,29 +1971,31 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   bomInput(scope: BomScope): BomInput {
-    const tables = this.bomTables;
-    if (!tables) throw new Error("the editor has not loaded");
+    const ldrawCodes = this.bundleColorCodes;
+    if (!ldrawCodes) throw new Error("the editor has not loaded");
+    const colors = this.catalog.colors();
+    const placeables = this.catalog.placeables();
     const counter = new BomCounter(
-      tables.palette.parts.map((part) => part.id),
-      tables.ldrawColors,
+      this.catalog.parts().map((part) => part.id),
+      ldrawCodes,
     );
     const placedCounts = new Map<number, number>();
     const contents: PlacementContents = {
       addTo: (target, refId) => {
-        const placeable = this.placeables[refId];
+        const placeable = placeables[refId];
         if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
         placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
         const { parts } = placeable;
         for (let i = 0; i < parts.count; i++) {
-          target.add(parts.partIndex[i] ?? 0, tables.colors.codeAt(parts.colorIndex[i] ?? 0), 1);
+          target.add(parts.partIndex[i] ?? 0, colors.codeAt(parts.colorIndex[i] ?? 0), 1);
         }
       },
     };
     const uncounted = (): BomInput["uncounted"] =>
       [...placedCounts].flatMap(([refId, count]) => {
-        const placeable = this.placeables[refId];
+        const placeable = placeables[refId];
         if (!placeable) return [];
-        return notDrawnItems(placeable.id, this.notDrawnByPlaceable.get(placeable) ?? [], count);
+        return notDrawnItems(placeable.id, this.catalog.notDrawn(placeable), count);
       });
     if (scope.kind !== "selection") {
       const placements = countPlacements(
@@ -2610,16 +2189,10 @@ export class Editor implements IEditor, IEditedWorld {
     this.camera.lookAt(x, z, false);
   }
 
-  private readonly resolveRef = (ref: string, color: number): PlacementTarget | null => {
-    const refId = this.slots.findIndex((slot) => slot.group === ref && slot.worldColor === color);
-    const slot = this.slots[refId];
-    return slot ? { refId, colorId: slot.worldColor } : null;
-  };
-
   contents(): WorldContents {
     return {
       world: this.world,
-      refs: this.slots.map((slot) => slot.group),
+      refs: this.catalog.refs(),
       track: this.track?.records() ?? [],
     };
   }
@@ -2633,7 +2206,7 @@ export class Editor implements IEditor, IEditedWorld {
   private connectedOf(placeable: Placeable): Connected {
     let connected = this.connected.get(placeable);
     if (!connected) {
-      const parts = this.requirePalette().parts;
+      const parts = this.catalog.parts();
       const boxes = partBoxes(placeable.partBoxes);
       connected = {
         model: this.search.model(
@@ -2686,7 +2259,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!catalog) return null;
     let track = this.modelTrack.get(placeable);
     if (!track) {
-      track = modelTrackEnds(placeable.partTransforms, this.requirePalette().parts, catalog);
+      track = modelTrackEnds(placeable.partTransforms, this.catalog.parts(), catalog);
       this.modelTrack.set(placeable, track);
     }
     return track;
@@ -2755,7 +2328,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!restored.ok) return restored.issues;
     this.replaceWorld(restored.value);
     for (const placeable of new Set(this.placed.models().map((model) => model.placeable))) {
-      this.requestMeshes(placeable, "high");
+      this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
     const { track } = restored.value;
@@ -2769,7 +2342,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private restore(shards: ReadonlyArray<WorldShardV1>): Decoded<RestoredWorld> {
     const world = new World();
-    const handles = addShards(world, shards, this.resolveRef);
+    const handles = addShards(world, shards, (ref, color) => this.catalog.resolveRef(ref, color));
     if (!handles.ok) return handles;
     const track = this.newTrack?.() ?? null;
     const restored = track?.restore(worldTrack(shards));
@@ -2795,7 +2368,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.history = new EditHistory(world);
     this.placed.addAll(
       handles.flatMap((handle) => {
-        const placeable = this.placeables[handle.refId];
+        const placeable = this.catalog.placeables()[handle.refId];
         return placeable ? [{ placement: this.history.adopt(handle), handle, placeable }] : [];
       }),
     );
@@ -2846,27 +2419,19 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   playSetup(): PlaySetup | null {
-    const { track, palette, colors } = this;
-    if (!track || !palette || !colors) return null;
-    return { track: track.playTrack(), models: this.placedTrains, parts: palette.parts, colors };
-  }
-
-  async catalogItemModel(itemId: string): Promise<CatalogItemModel | null> {
-    const refId = this.slots.findIndex((slot) => slot.id === itemId);
-    if (refId < 0) return null;
-    const placeable = await this.ensurePlaceable(refId).catch(() => null);
-    if (!placeable) return null;
-    await this.meshes?.whenLoaded(new Set(placeable.parts.partIndex), "low");
-    const { min, max } = placeable.box;
+    const track = this.track;
+    if (!track) return null;
     return {
-      model: { ...placeable.parts, studs: placeable.studs },
-      box: { minX: min[0], minY: min[1], minZ: min[2], maxX: max[0], maxY: max[1], maxZ: max[2] },
+      track: track.playTrack(),
+      models: this.placedTrains,
+      parts: this.catalog.parts(),
+      colors: this.catalog.colors(),
     };
   }
 
   dump(): EditorDump {
     return {
-      refs: this.slots.map((slot) => slot.id),
+      refs: this.catalogItems.map((item) => item.id),
       chunkCounts: this.world
         .chunks()
         .filter((chunk) => chunk.liveCount > 0)
@@ -2885,11 +2450,12 @@ export class Editor implements IEditor, IEditedWorld {
         flatCells: p.cells.flatCells,
         heightPlates: p.cells.heightPlates,
       })),
-      bakes: [...this.bakes].flatMap(([id, { lattice, cells }]) =>
-        lattice && cells
+      bakes: this.loadedPlaceables().flatMap((placeable) => {
+        const { lattice, cells } = this.catalog.baked(placeable) ?? { lattice: null, cells: null };
+        return lattice && cells
           ? [
               {
-                id,
+                id: placeable.id,
                 lattice,
                 cells: {
                   ...cells,
@@ -2900,8 +2466,8 @@ export class Editor implements IEditor, IEditedWorld {
                 },
               },
             ]
-          : [],
-      ),
+          : [];
+      }),
       placements: dumpPlacements(this.world),
       roadPlacements: this.roadModels.map((model, id) => ({
         id,

@@ -11,28 +11,40 @@ import {
 } from "@brr/schema/bundle";
 import type * as v from "valibot";
 import {
+  addExactRational,
+  compareExactRational,
   conjugateZeta16,
+  exactRationalFromDecimal,
+  exactRationalFromFloat64,
+  exactRationalToFloat64,
+  formatExactDecimal,
+  formatExactRational,
   HALF_TURN_16,
+  multiplyExactRational,
   normalizeHeading16,
   rotateZeta16,
+  subtractExactRational,
   subtractZeta16,
   ZETA16_ORDER,
   ZETA16_ZERO,
   zeta16,
   zeta16Direction,
   zeta16ToStuds,
+  type ExactDecimalText,
+  type ExactRational,
+  type ExactRationalText,
   type Zeta16,
 } from "@brr/math";
+import { exactPlacements, type ExactPlacement } from "../ldraw/exact-walk.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { metaValues } from "../ldraw/parse.ts";
 import {
   flatPolygons,
-  RAIL_SECTION_INWARD_LDU,
   railHeadsAtEnd,
   railSection,
+  scanEndAt,
   type PlanPoint,
-  type RailHeads,
-  type RailSection,
+  type ScanEnd,
 } from "./rail-heads.ts";
 import {
   findTrackEnds,
@@ -70,8 +82,8 @@ export interface ConnectorCheck {
   readonly marker: string;
   readonly derivation: string;
   readonly markerResidualLdu: number;
-  readonly railCentreOffsetLdu: number | null;
-  readonly railHalfSpacingLdu: number | null;
+  readonly railCentreOffsetLdu: ExactRationalText | null;
+  readonly railHalfSpacingLdu: ExactRationalText | null;
 }
 
 export interface RouteCheck {
@@ -84,7 +96,7 @@ export interface RouteCheck {
 
 export interface PieceChecks {
   readonly id: string;
-  readonly railTopY: number;
+  readonly railTopY: ExactDecimalText;
   readonly connectors: ReadonlyArray<ConnectorCheck>;
   readonly routes: ReadonlyArray<RouteCheck>;
 }
@@ -118,7 +130,7 @@ function scale(value: Zeta16, factor: bigint): Zeta16 {
 
 function residualLdu(position: Zeta16, end: TrackEnd): number {
   const exact = zeta16ToStuds(position);
-  return Math.hypot(exact.x - end.xStuds, exact.z - end.zStuds) * LDU_PER_STUD;
+  return Math.max(Math.abs(exact.x - end.xStuds), Math.abs(exact.z - end.zStuds)) * LDU_PER_STUD;
 }
 
 function signedTurn(heading: number): number {
@@ -175,7 +187,7 @@ function exactEnd(
       position,
       heading: end.headingSteps,
       status: "certified",
-      derivation: "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+      derivation: "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
       residualLdu: residualLdu(position, end),
     };
   }
@@ -300,17 +312,44 @@ function partFrameInBundle(frame: EntryFrame): v.InferInput<typeof TrackPiece>["
   return { xLdu: x, zLdu: -z, headingHalfSteps: halfSteps };
 }
 
+function squaredPlanDistance(placement: ExactPlacement, point: PlanPoint): ExactRational {
+  const [x, , z] = placement.origin;
+  const dx = subtractExactRational(exactRationalFromDecimal(x), exactRationalFromFloat64(point.x));
+  const dz = subtractExactRational(exactRationalFromDecimal(z), exactRationalFromFloat64(point.z));
+  return addExactRational(multiplyExactRational(dx, dx), multiplyExactRational(dz, dz));
+}
+
+function nearestEndSleeper(
+  endSleepers: ReadonlyArray<ExactPlacement>,
+  point: PlanPoint,
+): ExactPlacement {
+  const [first, ...rest] = endSleepers;
+  if (first === undefined) throw new Error("a track part has no end sleepers");
+  return rest.reduce(
+    (nearest, candidate) =>
+      compareExactRational(
+        squaredPlanDistance(candidate, point),
+        squaredPlanDistance(nearest, point),
+      ) < 0
+        ? candidate
+        : nearest,
+    first,
+  );
+}
+
 function endInPart(
   frame: EntryFrame,
   end: ExactEnd,
-): { readonly origin: PlanPoint; readonly along: number } {
+  endSleepers: ReadonlyArray<ExactPlacement>,
+): ScanEnd {
   const pose = poseInEntryFrame(end);
-  return { origin: toPartFrame(frame, pose), along: pose.heading + Math.PI + frame.inward };
+  const origin = toPartFrame(frame, pose);
+  const heading = pose.heading + Math.PI + frame.inward;
+  return scanEndAt(origin, heading, nearestEndSleeper(endSleepers, origin));
 }
 
-function railCheck(heads: RailHeads, frame: EntryFrame, end: ExactEnd): RailSection | null {
-  const { origin, along } = endInPart(frame, end);
-  return railSection(heads, origin, along, RAIL_SECTION_INWARD_LDU);
+function exactRationalText(value: ExactRational | undefined): ExactRationalText | null {
+  return value === undefined ? null : formatExactRational(value);
 }
 
 export function buildTrackPiece(
@@ -333,18 +372,16 @@ export function buildTrackPiece(
   const firstEnd = ends[0];
   if (firstEnd === undefined) throw new Error(`${part}: no track ends`);
   const frame = entryFrame(firstEnd);
-  const reference = ordered[0];
-  if (reference === undefined) throw new Error(`${part}: no reference end`);
-  const referenceEnd = endInPart(frame, reference);
-  const heads = railHeadsAtEnd(
-    flatPolygons(library, part),
-    referenceEnd.origin,
-    referenceEnd.along,
-  );
+  const endSleepers = exactPlacements(library, part, new Set(markers.map((marker) => marker.file)));
+  const scanEnds = ordered.map((end) => endInPart(frame, end, endSleepers));
+  const [referenceScan] = scanEnds;
+  if (referenceScan === undefined) throw new Error(`${part}: no reference end`);
+  const heads = railHeadsAtEnd(flatPolygons(library, part), referenceScan);
   if (heads === null) throw new Error(`${part}: no rail pair at the reference end`);
-  const sections = ordered.map((end) => railCheck(heads, frame, end));
-  const halfSpacing = sections[0]?.halfSpacingLdu;
-  if (halfSpacing === undefined) throw new Error(`${part}: no rail pair at the reference end`);
+  const sections = scanEnds.map((scan) => railSection(heads, scan));
+  const referenceSection = sections[0];
+  if (!referenceSection) throw new Error(`${part}: no rail pair at the reference end`);
+  const halfSpacing = exactRationalToFloat64(referenceSection.railHalfSpacingLdu);
   const fitted = routes.map(([from, to]) => {
     const start = ordered[from];
     const finish = ordered[to];
@@ -392,14 +429,14 @@ export function buildTrackPiece(
   };
   const checks: PieceChecks = {
     id: piece.id,
-    railTopY: heads.topY,
+    railTopY: formatExactDecimal(heads.topY),
     connectors: order.map((index, connector) => ({
       connector,
       marker: relative[index]?.marker ?? "",
       derivation: ordered[connector]?.derivation ?? "",
       markerResidualLdu: ordered[connector]?.residualLdu ?? Number.NaN,
-      railCentreOffsetLdu: sections[connector]?.centreOffsetLdu ?? null,
-      railHalfSpacingLdu: sections[connector]?.halfSpacingLdu ?? null,
+      railCentreOffsetLdu: exactRationalText(sections[connector]?.railCentreOffsetLdu),
+      railHalfSpacingLdu: exactRationalText(sections[connector]?.railHalfSpacingLdu),
     })),
     routes: fitted.map(({ from, to, path }) => ({
       from,

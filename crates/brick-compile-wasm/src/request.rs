@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use brick_compile::cover::CoverShard;
 use brick_compile::vehicle::{RailHeadBand, VehicleSignatures};
 use brick_compile::Lod;
 use serde::Deserialize;
@@ -45,15 +46,42 @@ pub enum Operation {
         lod: LodName,
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
+        primitives: Option<serde_json::Value>,
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
+    },
+    BakeNeeds {
+        stud_primitives: Vec<String>,
     },
     Bake {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent_colors: Vec<u32>,
+        table_depth_ldu: f64,
         vehicles: Option<VehicleInputs>,
+        shard: Option<Shard>,
     },
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Shard {
+    from: usize,
+    to: usize,
+    of: usize,
+    pub visibility_only: bool,
+}
+
+impl Shard {
+    pub fn cover(&self) -> Result<CoverShard, String> {
+        let Shard { from, to, of, .. } = *self;
+        if from > to || to > of || of == 0 {
+            return Err(format!(
+                "bake shard {from}..{to} of {of} is not a slice of the candidates"
+            ));
+        }
+        Ok(CoverShard { from, to, of })
+    }
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -102,8 +130,8 @@ struct VehicleParts {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct RailHead {
     rail_part: String,
-    inner: f64,
-    outer: f64,
+    inner: String,
+    outer: String,
 }
 
 impl VehicleInputs {
@@ -117,14 +145,10 @@ impl VehicleInputs {
         }
     }
 
-    pub fn rails(&self) -> Vec<RailHeadBand> {
+    pub fn rails(&self) -> Result<Vec<RailHeadBand>, String> {
         self.rail_heads
             .iter()
-            .map(|rail| RailHeadBand {
-                rail_part: rail.rail_part.clone(),
-                inner: rail.inner,
-                outer: rail.outer,
-            })
+            .map(|rail| RailHeadBand::from_decimals(&rail.rail_part, &rail.inner, &rail.outer))
             .collect()
     }
 }

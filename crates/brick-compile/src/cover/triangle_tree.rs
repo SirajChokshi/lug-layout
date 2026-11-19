@@ -1,4 +1,6 @@
-use super::ray::{sub, AnchoredBounds, AnchoredTriangle, Bounds, Ray, RayTriangle};
+use std::ops::Range;
+
+use super::ray::{sub, Bounds, Ray, RayTriangle};
 use crate::affine::Vec3;
 
 const LEAF_TRIANGLES: usize = 4;
@@ -122,21 +124,107 @@ impl TriangleTree {
         }
     }
 
-    pub fn anchored(&self, origin: Vec3, hit: TriangleHit) -> AnchoredHit {
-        AnchoredHit {
-            leaf: self.nodes[hit.leaf].bounds.seen_from(origin),
-            triangle: self.triangles[hit.triangle].seen_from(origin),
+    pub fn confirms(&self, ray: &Ray, hit: TriangleHit, counts: impl Fn(usize) -> bool) -> bool {
+        counts(hit.triangle)
+            && self.nodes[hit.leaf].bounds.entry(ray).is_some()
+            && self.triangles[hit.triangle].blocks(ray)
+    }
+
+    pub fn find_hit<T>(
+        &self,
+        ray: &Ray,
+        counts: impl Fn(usize) -> bool,
+        mut accept: impl FnMut(usize) -> Option<T>,
+        blocked: &mut bool,
+    ) -> Option<T> {
+        if self.nodes.is_empty() {
+            return None;
+        }
+        let mut stack = [0_usize; STACK_DEPTH];
+        let mut depth = 0;
+        let mut node = 0;
+        loop {
+            let TreeNode { bounds, link } = &self.nodes[node];
+            if bounds.entry(ray).is_some() {
+                match *link {
+                    Link::Leaf { first, count } => {
+                        for (triangle, shape) in
+                            self.triangles.iter().enumerate().skip(first).take(count)
+                        {
+                            if !counts(triangle) || !shape.blocks(ray) {
+                                continue;
+                            }
+                            *blocked = true;
+                            if let Some(found) = accept(triangle) {
+                                return Some(found);
+                            }
+                        }
+                    }
+                    Link::Branch { axis, upper } => {
+                        let lower = node + 1;
+                        let (near, far) = if ray.direction[axis] < 0.0 {
+                            (upper, lower)
+                        } else {
+                            (lower, upper)
+                        };
+                        stack[depth] = far;
+                        depth += 1;
+                        node = near;
+                        continue;
+                    }
+                }
+            }
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            node = stack[depth];
         }
     }
-}
 
-pub(super) struct AnchoredHit {
-    leaf: AnchoredBounds,
-    triangle: AnchoredTriangle,
-}
+    pub fn walk(&self, mut enter: impl FnMut(&Bounds, Option<Range<usize>>) -> bool) {
+        let mut stack = Vec::new();
+        if !self.nodes.is_empty() {
+            stack.push(0);
+        }
+        while let Some(node) = stack.pop() {
+            let TreeNode { bounds, link } = &self.nodes[node];
+            match *link {
+                Link::Leaf { first, count } => {
+                    enter(bounds, Some(first..first + count));
+                }
+                Link::Branch { upper, .. } => {
+                    if enter(bounds, None) {
+                        stack.push(upper);
+                        stack.push(node + 1);
+                    }
+                }
+            }
+        }
+    }
 
-impl AnchoredHit {
-    pub fn confirms(&self, direction: Vec3, reach: f64) -> bool {
-        self.leaf.entry(direction, reach).is_some() && self.triangle.blocks(direction, reach)
+    pub fn each_leaf(&self, mut visit: impl FnMut(Range<usize>, &[Bounds])) {
+        let mut ancestors = Vec::new();
+        if !self.nodes.is_empty() {
+            self.visit_leaves(0, &mut ancestors, &mut visit);
+        }
+    }
+
+    fn visit_leaves(
+        &self,
+        node: usize,
+        ancestors: &mut Vec<Bounds>,
+        visit: &mut impl FnMut(Range<usize>, &[Bounds]),
+    ) {
+        let TreeNode { bounds, link } = &self.nodes[node];
+        ancestors.push(*bounds);
+        match *link {
+            Link::Leaf { first, count } => visit(first..first + count, ancestors),
+            Link::Branch { upper, .. } => {
+                self.visit_leaves(node + 1, ancestors, visit);
+                self.visit_leaves(upper, ancestors, visit);
+            }
+        }
+        ancestors.pop();
     }
 }

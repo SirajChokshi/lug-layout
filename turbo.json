@@ -18,8 +18,10 @@
         "!src/**/*.test.ts",
         "!src/library/**",
         "!src/pointer/**",
+        "!src/publication/**",
         "palette.json",
         "fixture-models.json",
+        "primitive-connectors.json",
         "ldraw.lock.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
@@ -49,6 +51,9 @@
       "outputs": ["dist/**"]
     },
     "@brr/import#test": {
+      "dependsOn": ["^build", "@brr/asset-pipeline#build"]
+    },
+    "@brr/import-worker#test": {
       "dependsOn": ["^build", "@brr/asset-pipeline#build"]
     },
     "@brr/e2e#e2e": {

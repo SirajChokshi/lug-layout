@@ -26,12 +26,14 @@ import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { WorldSession } from "./edit/world-session.ts";
-import { WorkerModelImporter, type ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
+import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -55,8 +57,10 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  IMPORT_BAKE_HELPERS,
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
+  IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE_DRAG,
@@ -73,6 +77,7 @@ import {
   TRAIN_PLAY,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
+  PLACEABLE_CATALOG,
   WORLD_SESSION,
 } from "./tokens.ts";
 
@@ -80,7 +85,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
+  bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
+  bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
   bind(CREDITS).to(CreditsService).inSingletonScope();
@@ -141,6 +148,7 @@ const clientModule = new ContainerModule(({ bind }) => {
 export interface MainThreadConfig {
   readonly bundleBaseUrl: string;
   readonly createImportWorker?: ImportWorkerFactory;
+  readonly importBakeHelpers?: number;
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
@@ -157,6 +165,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       }
       return config.createImportWorker();
     });
+    bind(IMPORT_BAKE_HELPERS).toConstantValue(config.importBakeHelpers ?? 0);
     bind(BUNDLE_MANIFEST_FILE).toConstantValue(
       config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
     );

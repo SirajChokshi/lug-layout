@@ -13,8 +13,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { mainThreadModules } from "../src/client.module.ts";
-import { EDITOR } from "../src/tokens.ts";
+import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
+import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
+import type { IPlaceableCatalog } from "../src/catalog/placeable-catalog.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { meshesSettled } from "../src/edit/mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const TILE_LDU = 640;
@@ -32,7 +35,6 @@ const TRACK_RUNS = 5;
 const TRACK_RUN_TILES = 2;
 const RAY_HEIGHT_LDU = 10_000;
 const GC_SETTLE_MS = 50;
-const FAR_MODELS_SETTLE_MS = 2_000;
 const HOVER_CALLS = 2_000;
 const HOVER_WARMUP_CALLS = 200;
 const CLICK_CYCLES = 60;
@@ -91,6 +93,7 @@ class HeadlessBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -218,10 +221,11 @@ async function timeCalls(
   record(name, samples, gcs, digestOf(seen));
 }
 
-function farTierSettled(editor: IEditor): Promise<void> {
+function farTierAndMeshesSettled(editor: IEditor): Promise<void> {
   return new Promise((resolve) => {
     const check = (): void => {
-      if (editor.snapshot().farTier === "loading") return;
+      const { farTier, meshes } = editor.snapshot();
+      if (farTier === "loading" || !meshesSettled(meshes)) return;
       unsubscribe();
       resolve();
     };
@@ -234,7 +238,11 @@ function tileCentre(index: number): number {
   return index * TILE_LDU + HALF_TILE_LDU;
 }
 
-async function startEditor(): Promise<{ editor: IEditor; backend: HeadlessBackend }> {
+async function startEditor(): Promise<{
+  editor: IEditor;
+  backend: HeadlessBackend;
+  catalog: IPlaceableCatalog;
+}> {
   const backend = new HeadlessBackend();
   Object.assign(globalThis, { requestAnimationFrame: () => 0 });
   const container = new Container();
@@ -250,7 +258,7 @@ async function startEditor(): Promise<{ editor: IEditor; backend: HeadlessBacken
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
   const { status, error } = editor.snapshot();
   if (status !== "ready") throw new Error(`editor did not start: ${error ?? status}`);
-  return { editor, backend };
+  return { editor, backend, catalog: container.get(PLACEABLE_CATALOG) };
 }
 
 function placer(editor: IEditor, backend: HeadlessBackend, clickMs: number[]) {
@@ -299,11 +307,9 @@ function partsOf(editor: IEditor): number {
 }
 
 const loadStart = performance.now();
-const { editor, backend } = await startEditor();
+const { editor, backend, catalog } = await startEditor();
 const loadMs = performance.now() - loadStart;
-for (const model of [...SETS, RAIL_MODULE, ROAD_MODULE]) {
-  if (!(await editor.prefetch(model))) throw new Error(`${model} did not load`);
-}
+for (const model of [...SETS, RAIL_MODULE, ROAD_MODULE]) await loadCatalogItem(catalog, model);
 const clickMs: number[] = [];
 const place = placer(editor, backend, clickMs);
 const buildStart = performance.now();
@@ -337,8 +343,7 @@ for (let row = 0; row < TRACK_ROWS; row++) {
   }
 }
 const buildMs = performance.now() - buildStart;
-await farTierSettled(editor);
-await new Promise((resolve) => setTimeout(resolve, FAR_MODELS_SETTLE_MS));
+await farTierAndMeshesSettled(editor);
 const snapshot = editor.snapshot();
 const totalParts = partsOf(editor);
 const placeSamples = Float64Array.from(clickMs);

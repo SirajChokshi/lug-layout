@@ -15,11 +15,13 @@ import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memo
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
-import type { IModelImporter, ImportWorkerFactory } from "./import/worker-model-importer.ts";
+import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
+import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -35,6 +37,9 @@ export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.clien
 export const EDITOR: ServiceIdentifier<IEditor> = Symbol.for("brr.client.Editor");
 export const WORLD_SESSION: ServiceIdentifier<IWorldSession> =
   Symbol.for("brr.client.WorldSession");
+export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.for(
+  "brr.client.PlaceableCatalog",
+);
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
@@ -53,6 +58,12 @@ export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Sym
 );
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
+);
+export const IMPORT_BAKE_HELPERS: ServiceIdentifier<number> = Symbol.for(
+  "brr.client.ImportBakeHelpers",
+);
+export const IMPORT_WORKER_POOL: ServiceIdentifier<IImportWorkerPool> = Symbol.for(
+  "brr.client.ImportWorkerPool",
 );
 export const MODEL_IMPORTER: ServiceIdentifier<IModelImporter> = Symbol.for(
   "brr.client.ModelImporter",

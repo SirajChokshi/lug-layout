@@ -4,6 +4,7 @@ import {
   LdrawMirror,
   ModelImportEngine,
   type FetchFunction,
+  type IBakeHelper,
   type ImportResult,
 } from "@brr/import";
 import type { StudioRejection } from "@brr/schema/bundle";
@@ -14,6 +15,7 @@ import type { Bundle } from "./bundle.ts";
 import type { InputFormat } from "./corpus.ts";
 
 const HTTP_NOT_FOUND = 404;
+const NO_BAKE_HELPERS: ReadonlyArray<IBakeHelper> = [];
 const NOT_FOUND_MARKER = ".absent";
 
 export interface HeldOutInput {
@@ -82,13 +84,14 @@ export async function importThroughWorkerPath(
 ): Promise<ImportOutcome> {
   const compiler = new BrickCompiler(bundle.compiler);
   const mirror = new LdrawMirror(bundle.source, fetchUrl);
+  const engine = new ModelImportEngine(compiler, mirror, now, NO_BAKE_HELPERS);
   const job = { ...bundle.job, fileName: input.name };
   try {
     switch (input.format) {
       case "ldraw":
         return {
           kind: "imported",
-          result: await new ModelImportEngine(compiler, mirror, now).importText({
+          result: await engine.importText({
             ...job,
             text: new TextDecoder().decode(input.bytes),
           }),
@@ -96,7 +99,7 @@ export async function importThroughWorkerPath(
       case "studio":
         return {
           kind: "imported",
-          result: await importStudioFile(compiler, mirror, now, {
+          result: await importStudioFile(engine, compiler, mirror, {
             kind: "studio",
             job,
             bytes: input.bytes,

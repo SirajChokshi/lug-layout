@@ -6,7 +6,7 @@ use brick_compile::affine::Vec3;
 use brick_compile::cover::ModelCover;
 use brick_compile::flatten::FlattenError;
 use brick_compile::inline::InlineComparison;
-use brick_compile::lattice::ModelLattice;
+use brick_compile::lattice::{Malformation, MalformedGeometry, ModelLattice};
 use brick_compile::ldraw::Header;
 use brick_compile::studio::{StudioArchive, StudioError};
 use brick_compile::vehicle::{Coupler, GuideKind, Vehicle};
@@ -49,6 +49,8 @@ pub enum Reply {
     },
     #[serde(rename = "need")]
     Need { paths: Vec<String> },
+    #[serde(rename = "complete")]
+    Complete,
     #[serde(rename = "baked")]
     Baked {
         instances: usize,
@@ -117,6 +119,27 @@ pub struct Failure {
     path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ldraw_org: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    findings: Option<Vec<MalformedFinding>>,
+}
+
+#[derive(Serialize)]
+pub struct MalformedFinding {
+    file: String,
+    kind: &'static str,
+}
+
+impl From<&MalformedGeometry> for MalformedFinding {
+    fn from(found: &MalformedGeometry) -> Self {
+        MalformedFinding {
+            file: found.file.clone(),
+            kind: match found.malformation {
+                Malformation::NonFinite => "nonFinite",
+                Malformation::Unparsed => "unparsed",
+                Malformation::Unresolvable => "unresolvable",
+            },
+        }
+    }
 }
 
 impl From<&CompileError> for Failure {
@@ -129,6 +152,7 @@ impl From<&CompileError> for Failure {
             from: None,
             path: None,
             ldraw_org: None,
+            findings: None,
         };
         match error {
             CompileError::Flatten(FlattenError::Unresolved { reference, from }) => Failure {
@@ -141,10 +165,15 @@ impl From<&CompileError> for Failure {
                 path: Some(path.clone()),
                 ..failure("license")
             },
+            CompileError::NoStudRing => failure("noStudRing"),
             CompileError::Unofficial { path, ldraw_org } => Failure {
                 path: Some(path.clone()),
                 ldraw_org: Some(ldraw_org.clone()),
                 ..failure("unofficial")
+            },
+            CompileError::Malformed { findings } => Failure {
+                findings: Some(findings.iter().map(MalformedFinding::from).collect()),
+                ..failure("malformed")
             },
         }
     }

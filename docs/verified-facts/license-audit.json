@@ -12,10 +12,10 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1968,
+    "files": 1969,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 135,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1833
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1834
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -46,7 +46,7 @@
   "ldcadShadow": {
     "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
     "patchFileLicenses": {
-      "CC BY-SA 4.0, see LICENSE.md": 73
+      "CC BY-SA 4.0, see LICENSE.md": 75
     }
   },
   "parts": [

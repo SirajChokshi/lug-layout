@@ -54,11 +54,13 @@ export async function openBundle(root: string): Promise<Bundle> {
       source: index.source,
       studPrimitives: index.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: index.compiler.unofficialAllowlist,
+      primitives: index.compiler.primitives ?? null,
       bundlePartIds: table.parts.map((part) => part.id),
       ldconfigCodes: index.colors.map((color) => color.code),
       translucentColors: index.colors
         .filter((color) => color.alpha < OPAQUE_ALPHA)
         .map((color) => color.code),
+      tableDepthLdu: index.tablePlane.depthBelowTopLdu,
       vehicles: index.compiler.vehicles ?? null,
     },
   };

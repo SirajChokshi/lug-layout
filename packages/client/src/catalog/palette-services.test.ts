@@ -1,22 +1,22 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   SCENE_BACKEND,
+  THUMBNAIL_RENDERER,
   type BackendInfo,
   type BufferMemory,
   type ISceneBackend,
+  type IThumbnailRenderer,
   type LookSettings,
   type RebaseEvent,
+  type ThumbnailRequest,
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import {
-  TRACK_ITEM_ID,
-  TRACK_PIECE_PREFIX,
-  type CatalogItemView,
-  type IEditor,
-} from "../edit/editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type IEditor } from "../edit/editor.ts";
+import type { MeshCounts } from "../edit/mesh-progress.ts";
+import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
   EDITOR,
   PALETTE_DRAG,
@@ -24,6 +24,7 @@ import {
   PALETTE_MEMORY_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
+  PALETTE_THUMBNAILS,
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
@@ -89,6 +90,7 @@ class HeadlessBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(): void {}
   deleteChunk(): void {}
+  setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
   setSelectionBox(): void {}
@@ -121,6 +123,20 @@ class HeadlessBackend implements ISceneBackend {
   }
   forceTier(): void {}
   setFarModel(): void {}
+}
+
+class RecordingThumbnailRenderer implements IThumbnailRenderer {
+  readonly drawn: Array<{ readonly instances: number; readonly detailedMeshes: MeshCounts }> = [];
+
+  constructor(private readonly editor: IEditor) {}
+
+  async renderThumbnail(request: ThumbnailRequest): Promise<string> {
+    this.drawn.push({
+      instances: request.model.count,
+      detailedMeshes: this.editor.snapshot().meshes.detailedPartMeshes,
+    });
+    return `thumbnail-${this.drawn.length}`;
+  }
 }
 
 async function startEditor() {
@@ -296,6 +312,29 @@ describe("palette prefetch", () => {
     prefetch.focus("omr:4554-1");
     await vi.waitFor(() => expect(fetcher.paths).toContain(focused));
     expect(fetcher.paths).not.toContain(passed);
+  }, 120_000);
+});
+
+describe("palette thumbnails", () => {
+  it("draws a set's thumbnail from the set's own model once its detailed meshes are in", async () => {
+    const { container, editor } = await startEditor();
+    const renderer = new RecordingThumbnailRenderer(editor);
+    container.rebind(THUMBNAIL_RENDERER).toConstantValue(renderer);
+    const thumbnails = container.get(PALETTE_THUMBNAILS);
+    const set = editor.snapshot().catalog.find((item) => item.id === SET);
+    if (!set) throw new Error(`the catalog has no ${SET}`);
+
+    thumbnails.request(SET);
+
+    await vi.waitFor(() => expect(thumbnails.snapshot().get(SET)).toBe("thumbnail-1"), {
+      timeout: 60_000,
+    });
+    const meshes = renderer.drawn[0]?.detailedMeshes;
+    expect({
+      drawings: renderer.drawn.length,
+      instances: renderer.drawn[0]?.instances,
+      meshesIn: meshes !== undefined && meshes.wanted > 0 && meshes.loaded === meshes.wanted,
+    }).toEqual({ drawings: 1, instances: set.parts, meshesIn: true });
   }, 120_000);
 });
 

@@ -1,4 +1,5 @@
 import { BrickCompiler, type BakeRequest, type CompileLod, type CompileOutput } from "@brr/import";
+import type { PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
@@ -18,7 +19,9 @@ interface Manifest {
   readonly compiler: ManifestFile & {
     readonly unofficialAllowlist: ReadonlyArray<string>;
     readonly vehicles?: NonNullable<BakeRequest["vehicles"]>;
+    readonly primitives?: PrimitiveConnectorTable;
   };
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
 }
 
 const GLB_HEADER_BYTES = 12;
@@ -104,6 +107,7 @@ for (const lod of lods) {
         lod,
         studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
         unofficialAllowlist: manifest.compiler.unofficialAllowlist,
+        primitives: manifest.compiler.primitives ?? null,
         parts: [...references.keys()],
         model: "",
         inlineChecks: [],
@@ -236,6 +240,7 @@ for (const model of standardManifest.models) {
     studPrimitives: standardManifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: standardManifest.compiler.unofficialAllowlist,
     translucentColors,
+    tableDepthLdu: standardManifest.tablePlane.depthBelowTopLdu,
     vehicles: standardManifest.compiler.vehicles ?? null,
   };
   let baked = baker.bake(request, library);

@@ -1,7 +1,8 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::affine::{Affine, Vec3};
-use crate::flatten::{FlattenError, Flattener, Library, Lod, StudReference, Triangle};
+use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
+use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::model::ModelInstance;
 
 pub const CONTACT_OVERLAP_LDU: f64 = 2.0;
@@ -24,6 +25,22 @@ pub struct RailHeadBand {
     pub rail_part: String,
     pub inner: f64,
     pub outer: f64,
+}
+
+impl RailHeadBand {
+    pub fn from_decimals(rail_part: &str, inner: &str, outer: &str) -> Result<Self, String> {
+        let ldu = |text: &str| {
+            text.parse::<f64>()
+                .ok()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| format!("rail {rail_part}: {text:?} is not a decimal LDU value"))
+        };
+        Ok(RailHeadBand {
+            rail_part: rail_part.to_string(),
+            inner: ldu(inner)?,
+            outer: ldu(outer)?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -78,6 +95,7 @@ pub struct Vehicle {
 #[derive(Clone, Debug, PartialEq)]
 pub enum VehicleError {
     Flatten(FlattenError),
+    Malformed { findings: Vec<MalformedGeometry> },
     PinCount { part: String, pins: usize },
     PinNotVertical { part: String },
     WheelCount { part: String, wheels: usize },
@@ -91,6 +109,9 @@ impl std::fmt::Display for VehicleError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             VehicleError::Flatten(error) => write!(f, "vehicle geometry: {error:?}"),
+            VehicleError::Malformed { findings } => {
+                write!(f, "vehicle geometry: {}", describe_malformed(findings))
+            }
             VehicleError::PinCount { part, pins } => {
                 write!(f, "bogie pivot {part} has {pins} pins, expected 1")
             }
@@ -215,10 +236,22 @@ impl<'a, L: Library> Geometry<'a, L> {
             })
     }
 
-    fn triangles(&mut self, part: &str) -> Result<&[Triangle], FlattenError> {
+    fn flatten(&self, part: &str, targets: &[String]) -> Result<Flattened, VehicleError> {
+        let path = self.path(part)?;
+        let mut flattener = Flattener::new(self.library, Lod::Standard, targets);
+        let flattened = flattener.flatten(&path)?;
+        if flattener.malformed().is_empty() {
+            Ok(flattened)
+        } else {
+            Err(VehicleError::Malformed {
+                findings: flattener.malformed().to_vec(),
+            })
+        }
+    }
+
+    fn triangles(&mut self, part: &str) -> Result<&[Triangle], VehicleError> {
         if !self.triangles.contains_key(part) {
-            let path = self.path(part)?;
-            let flattened = Flattener::new(self.library, Lod::Standard, &[]).flatten(&path)?;
+            let flattened = self.flatten(part, &[])?;
             self.triangles.insert(part.to_string(), flattened.triangles);
         }
         Ok(self
@@ -228,7 +261,7 @@ impl<'a, L: Library> Geometry<'a, L> {
             .unwrap_or_default())
     }
 
-    fn bounds(&mut self, part: &str) -> Result<Bounds, FlattenError> {
+    fn bounds(&mut self, part: &str) -> Result<Bounds, VehicleError> {
         if let Some(bounds) = self.bounds.get(part) {
             return Ok(*bounds);
         }
@@ -247,10 +280,9 @@ impl<'a, L: Library> Geometry<'a, L> {
         Ok([min, max])
     }
 
-    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, FlattenError> {
-        let path = self.path(part)?;
-        let flattened = Flattener::new(self.library, Lod::Standard, &[]).flatten(&path)?;
-        Ok(flattened
+    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, VehicleError> {
+        Ok(self
+            .flatten(part, &[])?
             .files
             .into_iter()
             .filter(|file| file.header.title.contains(OBSOLETE_TITLE_MARK))
@@ -262,11 +294,8 @@ impl<'a, L: Library> Geometry<'a, L> {
         &self,
         part: &str,
         targets: &[String],
-    ) -> Result<Vec<StudReference>, FlattenError> {
-        let path = self.path(part)?;
-        Ok(Flattener::new(self.library, Lod::Standard, targets)
-            .flatten(&path)?
-            .studs)
+    ) -> Result<Vec<StudReference>, VehicleError> {
+        Ok(self.flatten(part, targets)?.studs)
     }
 }
 
@@ -715,7 +744,67 @@ fn analyse<L: Library>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
+    use crate::lattice::Malformation;
+
+    struct Files(HashMap<String, String>);
+
+    impl Library for Files {
+        fn source(&self, path: &str) -> Option<&str> {
+            self.0.get(path).map(String::as_str)
+        }
+    }
+
+    #[test]
+    fn vehicle_detection_refuses_a_part_with_malformed_geometry() {
+        let part = |line: &str| {
+            format!("0 Part\n0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n3 16 0 0 0 20 0 0 0 0 20\n{line}\n")
+        };
+        let library = Files(HashMap::from([
+            (
+                "parts/plate.dat".to_string(),
+                part("3 16 0 0 0 1 0 0 0 0 1"),
+            ),
+            (
+                "parts/sliver.dat".to_string(),
+                part("3 16 0 0 0 40000000000000000 0 0 0 0 1"),
+            ),
+        ]));
+        let signatures = VehicleSignatures {
+            bogie_pivots: Vec::new(),
+            pivot_pins: Vec::new(),
+            wheelsets: Vec::new(),
+            wheels: Vec::new(),
+            couplers: Vec::new(),
+        };
+        let placed = |part: &str| ModelInstance {
+            part: part.to_string(),
+            inline: None,
+            color: 16,
+            matrix: Affine::IDENTITY,
+            submodel: None,
+        };
+        assert_eq!(
+            detect_vehicles(&library, &[placed("plate.dat")], &signatures, &[]),
+            Ok(Vec::new())
+        );
+        assert_eq!(
+            detect_vehicles(
+                &library,
+                &[placed("plate.dat"), placed("sliver.dat")],
+                &signatures,
+                &[]
+            ),
+            Err(VehicleError::Malformed {
+                findings: vec![MalformedGeometry {
+                    file: "parts/sliver.dat".to_string(),
+                    malformation: Malformation::Unresolvable,
+                }],
+            })
+        );
+    }
 
     #[test]
     fn contact_radius_of_a_cylinder_band_is_its_radius() {

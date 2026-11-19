@@ -7,7 +7,7 @@ use std::thread;
 
 use rustc_hash::{FxHashMap, FxHashSet};
 
-use self::below::{rays_in, BelowSearch};
+use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::triangle_tree::{TriangleHit, TriangleTree};
@@ -30,8 +30,11 @@ const BELOW_ELEVATION_STEPS: usize = 36;
 const BELOW_HEIGHT_STEPS: usize = 8;
 const BELOW_START_OUTSIDE: f64 = 1.001;
 const BELOW_REACH_LDU: f64 = 3.0 * STUD_LDU;
-const PROBE_KEY_SCALE: f64 = 1_000.0;
 const RIM_PROBE_FRACTION: f64 = 0.9;
+const TREE_WALK_TRIANGLES: usize = 64;
+const CANDIDATES_PER_DEAL: usize = 32;
+const CLIPPED_HEIGHT_ROUNDING_LDU: f64 = 1e-6;
+const ENCLOSURE_BLOCKERS_KEPT: usize = 32;
 const UP: Vec3 = [0.0, 1.0, 0.0];
 const DOWN: Vec3 = [0.0, -1.0, 0.0];
 
@@ -81,6 +84,8 @@ impl Opacity {
 pub struct PartSolid {
     triangles: Vec<[Vec3; 3]>,
     tree_colors: Vec<u32>,
+    tree_points: Vec<[Vec3; 3]>,
+    certifiable: Vec<bool>,
     tree: TriangleTree,
     min: Vec3,
     max: Vec3,
@@ -109,8 +114,11 @@ impl PartSolid {
             .bounds()
             .unwrap_or([[0.0; 3]; 2])
             .map(|corner| corner.map(f64::from));
+        let tree_points: Vec<[Vec3; 3]> = order.iter().map(|&t| triangles[t]).collect();
         PartSolid {
             tree_colors: order.iter().map(|&t| colors[t]).collect(),
+            certifiable: certifiable_faces(&tree_points, &tree),
+            tree_points,
             triangles,
             tree,
             min,
@@ -165,8 +173,6 @@ pub struct StudShape {
     pub height: f64,
     pub radius: f64,
 }
-
-type Fan = [Vec3; BELOW_ELEVATION_STEPS];
 
 #[derive(Clone, Copy)]
 struct StudFrame {
@@ -233,29 +239,25 @@ impl StudFrame {
         }
         radials
     }
+}
 
-    fn all_fans_below(&self, shape: StudShape, mut closed: impl FnMut(Vec3, &Fan) -> bool) -> bool {
-        let elevations: [(f64, f64); BELOW_ELEVATION_STEPS] = std::array::from_fn(|index| {
-            let step = index + 1;
-            let elevation = -BELOW_ELEVATION_STEP_DEGREES * step as f64;
-            elevation.to_radians().sin_cos()
-        });
-        for radial in self.radials() {
-            let fan = elevations
-                .map(|(rise, run)| [0, 1, 2].map(|axis| radial[axis] * run + self.up[axis] * rise));
-            for level in 0..BELOW_HEIGHT_STEPS {
-                let fraction = (level as f64 + 0.5) / BELOW_HEIGHT_STEPS as f64;
-                let origin = self.at(
-                    shape.height * fraction,
-                    radial,
-                    shape.radius * BELOW_START_OUTSIDE,
-                );
-                if !closed(origin, &fan) {
-                    return false;
-                }
-            }
-        }
-        true
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CoverShard {
+    pub from: usize,
+    pub to: usize,
+    pub of: usize,
+}
+
+impl CoverShard {
+    pub const WHOLE: CoverShard = CoverShard {
+        from: 0,
+        to: 1,
+        of: 1,
+    };
+
+    fn takes(&self, candidate: usize) -> bool {
+        let slot = (candidate / CANDIDATES_PER_DEAL) % self.of;
+        (self.from..self.to).contains(&slot)
     }
 }
 
@@ -315,6 +317,10 @@ fn translation(matrix: &Affine) -> Vec3 {
     [matrix.m[3], matrix.m[7], matrix.m[11]]
 }
 
+fn rotation_bits(matrix: &Affine) -> [u64; 9] {
+    [0, 1, 2, 4, 5, 6, 8, 9, 10].map(|k| matrix.m[k].to_bits())
+}
+
 fn up_of(matrix: &Affine) -> Vec3 {
     unit([matrix.m[1], matrix.m[5], matrix.m[9]])
 }
@@ -350,21 +356,25 @@ fn inverse(matrix: &Affine) -> Option<Affine> {
 }
 
 fn world_box(instance: &CoverInstance, solid: &PartSolid) -> [Vec3; 2] {
+    corner_box(instance.matrix, solid.min, solid.max)
+}
+
+fn corner_box(matrix: &Affine, min: Vec3, max: Vec3) -> [Vec3; 2] {
     let mut bounds = Bounds::EMPTY;
     for i in 0..8 {
         let pick = |bit: usize, axis: usize| {
             if i & bit == 0 {
-                solid.min[axis]
+                min[axis]
             } else {
-                solid.max[axis]
+                max[axis]
             }
         };
-        bounds = bounds.grow(instance.matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
+        bounds = bounds.grow(matrix.apply([pick(1, 0), pick(2, 1), pick(4, 2)]));
     }
     [bounds.min, bounds.max]
 }
 
-type ProbeKey = (usize, u32, i64, i64, i64);
+type ProbeKey = (usize, bool, [u64; 3]);
 
 fn broad_cell(v: f64) -> i64 {
     (v / BROAD_CELL_LDU).floor() as i64
@@ -394,10 +404,6 @@ impl CellRange {
     fn shares_cell(&self, other: &CellRange) -> bool {
         (0..3).all(|axis| self.lo[axis].max(other.lo[axis]) <= self.hi[axis].min(other.hi[axis]))
     }
-
-    fn holds(&self, cell: [i64; 3]) -> bool {
-        (0..3).all(|axis| self.lo[axis] <= cell[axis] && cell[axis] <= self.hi[axis])
-    }
 }
 
 struct Segment {
@@ -423,8 +429,9 @@ impl Segment {
 
 struct Placed {
     part: usize,
-    color: u32,
     inverse: Affine,
+    translation: Vec3,
+    rotation: [u64; 9],
     up: Vec3,
     cells: CellRange,
     inherited_opaque: bool,
@@ -456,27 +463,13 @@ struct Blocker {
     hit: TriangleHit,
 }
 
-struct FanRays {
-    origin: Vec3,
-    cell: [i64; 3],
-    ends: Fan,
-}
-
-impl FanRays {
-    fn new(origin: Vec3, fan: &Fan, reach: f64) -> Self {
-        FanRays {
-            origin,
-            cell: origin.map(broad_cell),
-            ends: fan.map(|direction| [0, 1, 2].map(|axis| origin[axis] + direction[axis] * reach)),
-        }
-    }
-}
-
 struct ModelSolids<'a> {
     solids: &'a [PartSolid],
     materials: Vec<Vec<Material>>,
     placed: Vec<Option<Placed>>,
     index: InstanceTree,
+    anchors: FxHashMap<[i64; 3], Vec<usize>>,
+    coordinates_bounded: bool,
 }
 
 impl<'a> ModelSolids<'a> {
@@ -493,6 +486,7 @@ impl<'a> ModelSolids<'a> {
             }
         }
         let mut members = Vec::new();
+        let mut anchors: FxHashMap<[i64; 3], Vec<usize>> = FxHashMap::default();
         let placed = instances
             .iter()
             .zip(boxes)
@@ -501,10 +495,16 @@ impl<'a> ModelSolids<'a> {
                 let inverse = inverse(instance.matrix)?;
                 let inherited_opaque = opacity.opaque(instance.color);
                 members.push((i, Bounds { min, max }.padded(WELD_EPSILON_LDU)));
+                let translation = translation(instance.matrix);
+                anchors
+                    .entry(translation.map(broad_cell))
+                    .or_default()
+                    .push(i);
                 Some(Placed {
                     part: instance.part,
-                    color: instance.color,
                     inverse,
+                    translation,
+                    rotation: rotation_bits(instance.matrix),
                     up: up_of(instance.matrix),
                     cells: CellRange::welded(min, max),
                     inherited_opaque,
@@ -519,6 +519,8 @@ impl<'a> ModelSolids<'a> {
             materials,
             placed,
             index: InstanceTree::build(members),
+            anchors,
+            coordinates_bounded: coordinates_bounded(boxes),
         }
     }
 
@@ -529,18 +531,6 @@ impl<'a> ModelSolids<'a> {
 
     fn tree(&self, placed: &Placed) -> &TriangleTree {
         &self.solids[placed.part].tree
-    }
-
-    fn confirms(&self, blocker: Blocker, segment: &Segment) -> bool {
-        let Some(placed) = &self.placed[blocker.instance] else {
-            return false;
-        };
-        placed.cells.shares_cell(&segment.cells)
-            && placed.local(segment).is_some_and(|local| {
-                self.tree(placed)
-                    .anchored(local.origin, blocker.hit)
-                    .confirms(local.direction, local.reach)
-            })
     }
 
     fn first_blocker(&self, instance: usize, segment: &Segment) -> Option<Blocker> {
@@ -561,32 +551,9 @@ impl<'a> ModelSolids<'a> {
         });
         found
     }
-
-    fn confirmed_rays(&self, blocker: Blocker, rays: &FanRays, pending: u64) -> u64 {
-        let Some(placed) = &self.placed[blocker.instance] else {
-            return 0;
-        };
-        let local_origin = placed.inverse.apply(rays.origin);
-        let anchored = self.tree(placed).anchored(local_origin, blocker.hit);
-        let every_ray_shares = placed.cells.holds(rays.cell);
-        rays_in(pending)
-            .filter(|&ray| {
-                let end = rays.ends[ray];
-                (every_ray_shares
-                    || placed
-                        .cells
-                        .shares_cell(&CellRange::spanned(rays.origin, end)))
-                    && placed
-                        .local_between(local_origin, end)
-                        .is_some_and(|local| anchored.confirms(local.direction, local.reach))
-            })
-            .fold(0, |confirmed, ray| confirmed | 1 << ray)
-    }
-
-    fn closed_below(&self, stud: StudFrame, shape: StudShape) -> bool {
-        BelowSearch::new(self).closed(stud, shape)
-    }
 }
+
+type RememberedHit = (usize, bool, TriangleHit);
 
 struct Coverers<'a, 'b> {
     model: &'b ModelSolids<'a>,
@@ -594,31 +561,86 @@ struct Coverers<'a, 'b> {
     directions: Vec<Vec3>,
     enclosed: FxHashMap<ProbeKey, Option<CoverKind>>,
     nearby: Vec<usize>,
+    blockers: Vec<RememberedHit>,
+    last_hit_along: Vec<Option<RememberedHit>>,
+}
+
+impl<'a, 'b> Coverers<'a, 'b> {
+    fn new(model: &'b ModelSolids<'a>, stud: StudShape) -> Self {
+        let directions = enclosure_directions();
+        Coverers {
+            model,
+            stud,
+            last_hit_along: vec![None; directions.len() + 1],
+            directions,
+            enclosed: FxHashMap::default(),
+            nearby: Vec::new(),
+            blockers: Vec::new(),
+        }
+    }
 }
 
 impl Coverers<'_, '_> {
-    fn enclosure(&self, placed: &Placed, probe: Vec3) -> Option<CoverKind> {
-        let tree = self.model.tree(placed);
-        let counts = self.model.counts(placed);
-        let hits = |direction: Vec3| {
-            let ray = Ray {
-                origin: probe,
-                direction,
-                reach: f64::INFINITY,
-            };
-            tree.first_hit(&ray, &counts).is_some()
-        };
-        if !self.directions.iter().all(|direction| hits(*direction)) {
+    fn enclosure(&mut self, placed: &Placed, probe: Vec3) -> Option<CoverKind> {
+        let enclosed = (0..self.directions.len()).all(|k| {
+            let direction = self.directions[k];
+            self.hits(placed, probe, direction, k)
+        });
+        if !enclosed {
             return None;
         }
-        if hits(DOWN) {
+        if self.hits(placed, probe, DOWN, self.directions.len()) {
             Some(CoverKind::Flat)
         } else {
             Some(CoverKind::AntiStud)
         }
     }
 
-    fn covers(&mut self, stud: StudFrame, owner: Option<usize>) -> Option<CoverKind> {
+    fn probe(&mut self, placed: &Placed, local: Vec3) -> Option<CoverKind> {
+        let key = (
+            placed.part,
+            placed.inherited_opaque,
+            local.map(f64::to_bits),
+        );
+        if let Some(known) = self.enclosed.get(&key) {
+            return *known;
+        }
+        let found = self.enclosure(placed, local);
+        self.enclosed.insert(key, found);
+        found
+    }
+
+    fn hits(&mut self, placed: &Placed, origin: Vec3, direction: Vec3, slot: usize) -> bool {
+        let tree = self.model.tree(placed);
+        let counts = self.model.counts(placed);
+        let ray = Ray {
+            origin,
+            direction,
+            reach: f64::INFINITY,
+        };
+        let solid = (placed.part, placed.inherited_opaque);
+        let confirmed = |&(part, opaque, hit): &RememberedHit| {
+            (part, opaque) == solid && tree.confirms(&ray, hit, &counts)
+        };
+        if self.last_hit_along[slot].as_ref().is_some_and(confirmed) {
+            return true;
+        }
+        if let Some(index) = self.blockers.iter().position(confirmed) {
+            self.last_hit_along[slot] = Some(self.blockers[index]);
+            self.blockers[..=index].rotate_right(1);
+            return true;
+        }
+        let Some(hit) = tree.first_hit(&ray, &counts) else {
+            return false;
+        };
+        let remembered = (placed.part, placed.inherited_opaque, hit);
+        self.last_hit_along[slot] = Some(remembered);
+        self.blockers.insert(0, remembered);
+        self.blockers.truncate(ENCLOSURE_BLOCKERS_KEPT);
+        true
+    }
+
+    fn covers(&mut self, stud: StudFrame, owner: Option<usize>) -> Option<(CoverKind, usize)> {
         let StudFrame { base, up, .. } = stud;
         let probes = stud.probes(self.stud);
         let model = self.model;
@@ -642,22 +664,7 @@ impl Coverers<'_, '_> {
             }
             let mut centre = None;
             for (k, probe) in probes.iter().enumerate() {
-                let local = placed.inverse.apply(*probe);
-                let probe_key = (
-                    placed.part,
-                    placed.color,
-                    (local[0] * PROBE_KEY_SCALE).round() as i64,
-                    (local[1] * PROBE_KEY_SCALE).round() as i64,
-                    (local[2] * PROBE_KEY_SCALE).round() as i64,
-                );
-                let enclosure = match self.enclosed.get(&probe_key) {
-                    Some(known) => *known,
-                    None => {
-                        let found = self.enclosure(placed, local);
-                        self.enclosed.insert(probe_key, found);
-                        found
-                    }
-                };
+                let enclosure = self.probe(placed, placed.inverse.apply(*probe));
                 if enclosure.is_none() {
                     centre = None;
                     break;
@@ -666,8 +673,8 @@ impl Coverers<'_, '_> {
                     centre = enclosure;
                 }
             }
-            if centre.is_some() {
-                found = centre;
+            if let Some(kind) = centre {
+                found = Some((kind, i));
                 break;
             }
         }
@@ -688,28 +695,23 @@ fn overlapping_cells(lo: f64, hi: f64, edge: f64, count: usize) -> (usize, usize
     (first.min(end), end)
 }
 
-fn closed_below_all(
-    model: &ModelSolids,
-    candidates: &[(usize, StudFrame)],
-    shape: StudShape,
-) -> Vec<bool> {
+fn closed_below_all(model: &ModelSolids, candidates: &[BelowStud], shape: StudShape) -> Vec<bool> {
     if candidates.is_empty() {
         return Vec::new();
     }
     let workers = thread::available_parallelism().map_or(1, |n| n.get());
     if workers == 1 {
-        return candidates
-            .iter()
-            .map(|(_, stud)| model.closed_below(*stud, shape))
-            .collect();
+        let mut below = BelowCertifier::new(model, shape);
+        return candidates.iter().map(|stud| below.closed(stud)).collect();
     }
     let chunk = candidates.len().div_ceil(workers);
     let mut closed = vec![false; candidates.len()];
     thread::scope(|scope| {
         for (slice, out) in candidates.chunks(chunk).zip(closed.chunks_mut(chunk)) {
             scope.spawn(move || {
-                for ((_, stud), result) in slice.iter().zip(out.iter_mut()) {
-                    *result = model.closed_below(*stud, shape);
+                let mut below = BelowCertifier::new(model, shape);
+                for (stud, result) in slice.iter().zip(out.iter_mut()) {
+                    *result = below.closed(stud);
                 }
             });
         }
@@ -717,12 +719,23 @@ fn closed_below_all(
     closed
 }
 
+fn column_floor_y(underside_y: f64, stud_layer_y: f64, table_depth: f64) -> f64 {
+    let on_table = underside_y + table_depth;
+    if (stud_layer_y - on_table).rem_euclid(PLATE_LDU) == 0.0 {
+        on_table
+    } else {
+        underside_y
+    }
+}
+
 pub fn model_cover(
     instances: &[CoverInstance],
     solids: &[PartSolid],
     opacity: &Opacity,
-    phase: Option<[u32; 2]>,
+    lattice: Option<([u32; 2], f64)>,
     stud: StudShape,
+    shard: CoverShard,
+    table_depth: f64,
 ) -> ModelCover {
     let boxes: Vec<[Vec3; 2]> = instances
         .iter()
@@ -733,40 +746,59 @@ pub fn model_cover(
         aabb = aabb.grow(*min).grow(*max);
     }
     let model = ModelSolids::new(instances, &boxes, solids, opacity);
-    let mut coverers = Coverers {
-        model: &model,
-        stud,
-        directions: enclosure_directions(),
-        enclosed: FxHashMap::default(),
-        nearby: Vec::new(),
-    };
+    let mut coverers = Coverers::new(&model, stud);
 
     let mut visible = Vec::new();
     let mut candidates = Vec::new();
     for (owner, instance) in instances.iter().enumerate() {
         for stud_matrix in instance.studs {
-            let frame = StudFrame::of(&instance.matrix.then(stud_matrix));
-            if coverers.covers(frame, Some(owner)).is_some() {
-                candidates.push((visible.len(), frame));
+            let world = instance.matrix.then(stud_matrix);
+            let frame = StudFrame::of(&world);
+            if let Some((_, coverer)) = coverers.covers(frame, Some(owner)) {
+                candidates.push((
+                    visible.len(),
+                    BelowStud {
+                        frame,
+                        rotation: rotation_bits(&world),
+                        owner,
+                        coverer,
+                    },
+                ));
             }
             visible.push(true);
         }
     }
+    let (indices, candidates): (Vec<usize>, Vec<BelowStud>) = candidates
+        .into_iter()
+        .enumerate()
+        .filter(|(candidate, _)| shard.takes(*candidate))
+        .map(|(_, taken)| taken)
+        .unzip();
     let closed = closed_below_all(&model, &candidates, stud);
     let mut open_below = 0;
-    for ((index, _), closed) in candidates.iter().zip(closed) {
+    for (&index, closed) in indices.iter().zip(closed) {
         if closed {
-            visible[*index] = false;
+            visible[index] = false;
         } else {
             open_below += 1;
         }
     }
-    let rest_y = instances
+    let underside_y = instances
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells =
-        phase.map(|phase| model_cells(instances, solids, &mut coverers, aabb, rest_y, phase));
+    let cells = lattice.map(|(phase, stud_layer_y)| {
+        let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
+        model_cells(
+            instances,
+            &boxes,
+            solids,
+            &mut coverers,
+            aabb,
+            [underside_y, floor_y],
+            phase,
+        )
+    });
     ModelCover {
         visible,
         open_below,
@@ -780,17 +812,71 @@ struct ColumnReach {
     depth: usize,
     lowest: Vec<f64>,
     highest: Vec<f64>,
+    bounded: bool,
 }
 
 impl ColumnReach {
-    fn new(origin: [f64; 2], width: usize, depth: usize) -> Self {
+    fn new(origin: [f64; 2], width: usize, depth: usize, bounded: bool) -> Self {
         ColumnReach {
             origin,
             width,
             depth,
             lowest: vec![f64::INFINITY; width * depth],
             highest: vec![f64::NEG_INFINITY; width * depth],
+            bounded,
         }
+    }
+
+    fn brackets(&self, cell: usize, low: f64, high: f64) -> bool {
+        self.bounded
+            && self.lowest[cell] + CLIPPED_HEIGHT_ROUNDING_LDU <= low
+            && high <= self.highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
+    }
+
+    fn holds_level(&self, cell: usize, y: f64) -> bool {
+        self.lowest[cell] <= y && y <= self.highest[cell]
+    }
+
+    fn brackets_box(&self, [min, max]: [Vec3; 2]) -> bool {
+        let (x0, x1) = overlapping_cells(
+            min[0] - CLIPPED_HEIGHT_ROUNDING_LDU,
+            max[0] + CLIPPED_HEIGHT_ROUNDING_LDU,
+            self.origin[0],
+            self.width,
+        );
+        let (z0, z1) = overlapping_cells(
+            min[2] - CLIPPED_HEIGHT_ROUNDING_LDU,
+            max[2] + CLIPPED_HEIGHT_ROUNDING_LDU,
+            self.origin[1],
+            self.depth,
+        );
+        (z0..z1).all(|j| (x0..x1).all(|i| self.brackets(j * self.width + i, min[1], max[1])))
+    }
+
+    fn add_solid(&mut self, solid: &PartSolid, faces: &Faces, matrix: &Affine) {
+        let add_unless_face = |reach: &mut Self, t: usize| {
+            if !faces.marked[t] {
+                reach.add(&solid.tree_points[t].map(|p| matrix.apply(p)));
+            }
+        };
+        for &face in &faces.first {
+            self.add(&solid.tree_points[face].map(|p| matrix.apply(p)));
+        }
+        if solid.tree_points.len() < TREE_WALK_TRIANGLES {
+            for t in 0..solid.tree_points.len() {
+                add_unless_face(self, t);
+            }
+            return;
+        }
+        solid.tree.walk(|bounds, leaf| match leaf {
+            Some(range) => {
+                for t in range {
+                    add_unless_face(self, t);
+                }
+                false
+            }
+            None => !self.brackets_box(corner_box(matrix, bounds.min, bounds.max)),
+        });
     }
 
     fn add(&mut self, triangle: &[Vec3; 3]) {
@@ -801,11 +887,16 @@ impl ColumnReach {
                     (lo.min(p[axis]), hi.max(p[axis]))
                 })
         };
-        let ((lo_x, hi_x), (lo_z, hi_z)) = (span(0), span(2));
+        let ((lo_x, hi_x), (lo_y, hi_y), (lo_z, hi_z)) = (span(0), span(1), span(2));
         let (x0, x1) = overlapping_cells(lo_x, hi_x, self.origin[0], self.width);
         let (z0, z1) = overlapping_cells(lo_z, hi_z, self.origin[1], self.depth);
+        let level = lo_y == hi_y;
         for j in z0..z1 {
             for i in x0..x1 {
+                let cell = j * self.width + i;
+                if self.brackets(cell, lo_y, hi_y) || (level && self.holds_level(cell, lo_y)) {
+                    continue;
+                }
                 let edge_x = self.origin[0] + STUD_LDU * i as f64;
                 let edge_z = self.origin[1] + STUD_LDU * j as f64;
                 let inside = clip_to_box(
@@ -824,7 +915,6 @@ impl ColumnReach {
                 if polygon_area(&inside) <= 0.0 {
                     continue;
                 }
-                let cell = j * self.width + i;
                 let (points, len) = inside;
                 for point in &points[..len] {
                     self.lowest[cell] = self.lowest[cell].min(point[1]);
@@ -835,12 +925,58 @@ impl ColumnReach {
     }
 }
 
+struct Faces {
+    first: Vec<usize>,
+    marked: Vec<bool>,
+}
+
+fn extreme_faces(solid: &PartSolid) -> Faces {
+    fn heights(t: &[Vec3; 3]) -> impl Iterator<Item = f64> + '_ {
+        t.iter().map(|p| p[1])
+    }
+    let points = &solid.tree_points;
+    let low = points
+        .iter()
+        .flat_map(heights)
+        .fold(f64::INFINITY, f64::min);
+    let high = points
+        .iter()
+        .flat_map(heights)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let marked: Vec<bool> = points
+        .iter()
+        .map(|t| heights(t).all(|y| y == low) || heights(t).all(|y| y == high))
+        .collect();
+    Faces {
+        first: (0..points.len()).filter(|&t| marked[t]).collect(),
+        marked,
+    }
+}
+
+fn extremes_first(boxes: &[[Vec3; 2]]) -> Vec<usize> {
+    let mut lowest_first: Vec<usize> = (0..boxes.len()).collect();
+    lowest_first.sort_by(|&a, &b| boxes[a][0][1].total_cmp(&boxes[b][0][1]));
+    let mut highest_first = lowest_first.clone();
+    highest_first.sort_by(|&a, &b| boxes[b][1][1].total_cmp(&boxes[a][1][1]));
+    let mut taken = vec![false; boxes.len()];
+    let mut order = Vec::with_capacity(boxes.len());
+    for (&low, &high) in lowest_first.iter().zip(&highest_first) {
+        for index in [low, high] {
+            if !std::mem::replace(&mut taken[index], true) {
+                order.push(index);
+            }
+        }
+    }
+    order
+}
+
 fn model_cells(
     instances: &[CoverInstance],
+    boxes: &[[Vec3; 2]],
     solids: &[PartSolid],
     coverers: &mut Coverers,
     aabb: Bounds,
-    bottom_y: f64,
+    [underside_y, bottom_y]: [f64; 2],
     phase: [u32; 2],
 ) -> ModelCells {
     let [phase_x, phase_z] = phase.map(f64::from);
@@ -859,11 +995,11 @@ fn model_cells(
     for j in 0..depth {
         for i in 0..width {
             let cell = j * width + i;
-            let base = [centre(0, i), bottom_y, centre(1, j)];
+            let base = [centre(0, i), underside_y, centre(1, j)];
             match coverers.covers(StudFrame::upright_at(base), None) {
                 None => {}
-                Some(CoverKind::AntiStud) => footprint.push(cell),
-                Some(CoverKind::Flat) => {
+                Some((CoverKind::AntiStud, _)) => footprint.push(cell),
+                Some((CoverKind::Flat, _)) => {
                     footprint.push(cell);
                     flat.push(cell);
                 }
@@ -871,11 +1007,16 @@ fn model_cells(
         }
     }
 
-    let mut reach = ColumnReach::new(origin, width, depth);
-    for instance in instances {
-        for points in &solids[instance.part].triangles {
-            reach.add(&points.map(|p| instance.matrix.apply(p)));
+    let mut reach = ColumnReach::new(origin, width, depth, coverers.model.coordinates_bounded);
+    let mut faces: Vec<Option<Faces>> = solids.iter().map(|_| None).collect();
+    for index in extremes_first(boxes) {
+        if reach.brackets_box(boxes[index]) {
+            continue;
         }
+        let instance = &instances[index];
+        let solid = &solids[instance.part];
+        let faces = faces[instance.part].get_or_insert_with(|| extreme_faces(solid));
+        reach.add_solid(solid, faces, instance.matrix);
     }
     let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
@@ -904,6 +1045,7 @@ fn model_cells(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::clip::{clip_to_box, polygon_area};
     use crate::flatten::Triangle;
     use crate::mesh;
 
@@ -913,6 +1055,8 @@ mod tests {
     };
     const OPAQUE: u32 = 4;
     const TRANS_CLEAR: u32 = 47;
+    const TABLE_DEPTH: f64 = 4.0;
+    const PHASE: [u32; 2] = [10, 10];
 
     fn quad(out: &mut Vec<Triangle>, [a, b, c, d]: [Vec3; 4]) {
         for points in [[a, b, c], [a, c, d]] {
@@ -968,6 +1112,59 @@ mod tests {
         PartSolid::from_mesh(&mesh::build(&t, &[]))
     }
 
+    fn tessellated(min: Vec3, max: Vec3, divisions: usize) -> PartSolid {
+        let [x0, y0, z0] = min;
+        let [x1, y1, z1] = max;
+        let step = |lo: f64, hi: f64, k: usize| lo + (hi - lo) * k as f64 / divisions as f64;
+        let mut t = Vec::new();
+        for a in 0..divisions {
+            for b in 0..divisions {
+                let (xa, xb) = (step(x0, x1, a), step(x0, x1, a + 1));
+                let (za, zb) = (step(z0, z1, b), step(z0, z1, b + 1));
+                for y in [y0, y1] {
+                    quad(&mut t, [[xa, y, za], [xb, y, za], [xb, y, zb], [xa, y, zb]]);
+                }
+                let xm = (xa + xb) / 2.0;
+                let zm = (za + zb) / 2.0;
+                quad(
+                    &mut t,
+                    [
+                        [xa, y0, zm],
+                        [xb, y0, zm],
+                        [xb, y1 - 3.0, zm],
+                        [xa, y0 + 1.0, zm],
+                    ],
+                );
+                quad(
+                    &mut t,
+                    [
+                        [xm, y0 + 2.0, za],
+                        [xm, y0 + 2.0, zb],
+                        [xm, y1 - 2.0, zb],
+                        [xm, y1 - 2.0, za],
+                    ],
+                );
+            }
+        }
+        quad(
+            &mut t,
+            [[x0, y0, z0], [x0, y1, z0], [x0, y1, z1], [x0, y0, z1]],
+        );
+        quad(
+            &mut t,
+            [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]],
+        );
+        quad(
+            &mut t,
+            [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0]],
+        );
+        quad(
+            &mut t,
+            [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
+        );
+        PartSolid::from_mesh(&mesh::build(&t, &[]))
+    }
+
     fn at(x: f64, y: f64, z: f64) -> Affine {
         Affine {
             m: [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z],
@@ -978,7 +1175,7 @@ mod tests {
         solids: &[PartSolid],
         parts: &[(usize, u32, Affine)],
         studs: &[Affine],
-        phase: Option<[u32; 2]>,
+        lattice: Option<([u32; 2], f64)>,
     ) -> ModelCover {
         let instances: Vec<CoverInstance> = parts
             .iter()
@@ -994,9 +1191,323 @@ mod tests {
             &instances,
             solids,
             &Opacity::new([TRANS_CLEAR]),
-            phase,
+            lattice,
             STUD,
+            CoverShard::WHOLE,
+            TABLE_DEPTH,
         )
+    }
+
+    const COLUMN_SCENES: u64 = 12;
+    const PIECES_PER_COLUMN_SCENE: u64 = 40;
+    const COLUMN_SCENE_STUDS: u64 = 5;
+
+    struct Draws(u64);
+
+    impl Draws {
+        fn below(&mut self, count: u64) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 33) % count
+        }
+
+        fn unit(&mut self) -> f64 {
+            self.below(1 << 30) as f64 / f64::from(1u32 << 30)
+        }
+    }
+
+    fn placed_piece(draws: &mut Draws) -> Affine {
+        let x = 20.0 * draws.below(COLUMN_SCENE_STUDS) as f64;
+        let z = 20.0 * draws.below(COLUMN_SCENE_STUDS) as f64;
+        let y = -8.0 * draws.below(8) as f64;
+        match draws.below(4) {
+            0 => at(
+                x + draws.unit() * 7.0,
+                y - draws.unit() * 5.0,
+                z + draws.unit() * 7.0,
+            ),
+            1 => Affine {
+                m: [0.0, 0.0, 1.0, x, 0.0, 1.0, 0.0, y, -1.0, 0.0, 0.0, z],
+            },
+            2 => {
+                let (sin, cos) = (draws.unit() * 0.6).sin_cos();
+                Affine {
+                    m: [1.0, 0.0, 0.0, x, 0.0, cos, -sin, y, 0.0, sin, cos, z],
+                }
+            }
+            _ => at(x, y, z),
+        }
+    }
+
+    fn columns_clipping_every_triangle(
+        solids: &[PartSolid],
+        parts: &[(usize, u32, Affine)],
+        cells: &ModelCells,
+    ) -> (Vec<f64>, Vec<f64>) {
+        let count = cells.width * cells.depth;
+        let (mut lowest, mut highest) =
+            (vec![f64::INFINITY; count], vec![f64::NEG_INFINITY; count]);
+        for (part, _, matrix) in parts {
+            for points in &solids[*part].triangles {
+                let triangle = points.map(|p| matrix.apply(p));
+                for cell in 0..count {
+                    let edge_x = cells.origin[0] + STUD_LDU * (cell % cells.width) as f64;
+                    let edge_z = cells.origin[1] + STUD_LDU * (cell / cells.width) as f64;
+                    let inside = clip_to_box(
+                        &triangle,
+                        [
+                            edge_x + WELD_EPSILON_LDU,
+                            f64::NEG_INFINITY,
+                            edge_z + WELD_EPSILON_LDU,
+                        ],
+                        [
+                            edge_x + STUD_LDU - WELD_EPSILON_LDU,
+                            f64::INFINITY,
+                            edge_z + STUD_LDU - WELD_EPSILON_LDU,
+                        ],
+                    );
+                    if polygon_area(&inside) <= 0.0 {
+                        continue;
+                    }
+                    for point in &inside.0[..inside.1] {
+                        lowest[cell] = lowest[cell].min(point[1]);
+                        highest[cell] = highest[cell].max(point[1]);
+                    }
+                }
+            }
+        }
+        (lowest, highest)
+    }
+
+    const PROBED_PIECES: u64 = 24;
+    const PROBES_PER_PIECE: u64 = 40;
+    const EXTRA_DIRECTIONS: u64 = 16;
+
+    fn tilted_piece(draws: &mut Draws) -> Affine {
+        let q = [0, 1, 2, 3].map(|_| draws.unit() * 2.0 - 1.0);
+        let norm = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let [w, x, y, z] = q.map(|v| v / norm);
+        Affine {
+            m: [
+                1.0 - 2.0 * (y * y + z * z),
+                2.0 * (x * y - w * z),
+                2.0 * (x * z + w * y),
+                draws.unit() * 100.0,
+                2.0 * (x * y + w * z),
+                1.0 - 2.0 * (x * x + z * z),
+                2.0 * (y * z - w * x),
+                draws.unit() * 100.0,
+                2.0 * (x * z - w * y),
+                2.0 * (y * z + w * x),
+                1.0 - 2.0 * (x * x + y * y),
+                draws.unit() * 100.0,
+            ],
+        }
+    }
+
+    #[test]
+    fn remembered_enclosure_blockers_answer_as_walking_the_part_tree() {
+        let solids = [
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
+            solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], false, true, 4.0),
+            solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, false, 12.0),
+        ];
+        let mut draws = Draws(11);
+        let (mut hits, mut misses) = (0, 0);
+        let parts: Vec<(usize, u32, Affine)> = (0..PROBED_PIECES)
+            .map(|_| {
+                let color = if draws.below(4) == 0 {
+                    TRANS_CLEAR
+                } else {
+                    OPAQUE
+                };
+                (draws.below(3) as usize, color, tilted_piece(&mut draws))
+            })
+            .collect();
+        let instances: Vec<CoverInstance> = parts
+            .iter()
+            .map(|(part, color, matrix)| CoverInstance {
+                matrix,
+                color: *color,
+                part: *part,
+                studs: &[],
+            })
+            .collect();
+        let boxes: Vec<[Vec3; 2]> = instances
+            .iter()
+            .map(|instance| world_box(instance, &solids[instance.part]))
+            .collect();
+        let opacity = Opacity::new([TRANS_CLEAR]);
+        let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+        let mut coverers = Coverers::new(&model, STUD);
+        for placed in model.placed.iter().flatten() {
+            let tree = model.tree(placed);
+            let counts = model.counts(placed);
+            for _ in 0..PROBES_PER_PIECE {
+                let probe = [0, 1, 2].map(|axis| {
+                    let [min, max] = [solids[placed.part].min[axis], solids[placed.part].max[axis]];
+                    min + (max - min) * (draws.unit() * 1.2 - 0.1)
+                });
+                let random = (0..EXTRA_DIRECTIONS)
+                    .map(|_| unit([0, 1, 2].map(|_| draws.unit() * 2.0 - 1.0)));
+                let directions: Vec<Vec3> = enclosure_directions()
+                    .into_iter()
+                    .chain([DOWN])
+                    .chain(random)
+                    .collect();
+                for direction in directions {
+                    let ray = Ray {
+                        origin: probe,
+                        direction,
+                        reach: f64::INFINITY,
+                    };
+                    let walked = tree.first_hit(&ray, &counts).is_some();
+                    let slot = draws.below(coverers.last_hit_along.len() as u64) as usize;
+                    assert_eq!(coverers.hits(placed, probe, direction, slot), walked);
+                    if walked {
+                        hits += 1;
+                    } else {
+                        misses += 1;
+                    }
+                }
+            }
+        }
+        assert!(hits > 1000 && misses > 1000, "{hits} hits, {misses} misses");
+    }
+
+    #[test]
+    fn two_probes_closer_than_a_thousandth_keep_their_own_enclosures() {
+        let solids = [solid(
+            [-20.0, 0.0, -20.0],
+            [20.0, 24.0, 20.0],
+            true,
+            false,
+            4.0,
+        )];
+        let instances = [CoverInstance {
+            matrix: &Affine::IDENTITY,
+            color: OPAQUE,
+            part: 0,
+            studs: &[],
+        }];
+        let boxes = [world_box(&instances[0], &solids[0])];
+        let opacity = Opacity::new([TRANS_CLEAR]);
+        let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
+        let placed = model.placed[0].as_ref().expect("an invertible placement");
+        let fresh = || Coverers::new(&model, STUD);
+        let inside_wall = [20.0 - 4e-4, 2.0, 0.0];
+        let outside_wall = [20.0 + 4e-4, 2.0, 0.0];
+        let alone = [inside_wall, outside_wall].map(|probe| fresh().enclosure(placed, probe));
+        assert_eq!(alone, [Some(CoverKind::AntiStud), None]);
+        for order in [[0, 1], [1, 0]] {
+            let mut coverers = fresh();
+            for index in order {
+                let probe = [inside_wall, outside_wall][index];
+                assert_eq!(
+                    coverers.probe(placed, probe),
+                    alone[index],
+                    "probe {probe:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_column_matches_clipping_every_triangle_into_every_cell() {
+        let solids = [
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
+            solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], true, true, 4.0),
+            solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, true, 12.0),
+            tessellated([-40.0, 0.0, -40.0], [40.0, 8.0, 40.0], 4),
+        ];
+        let walked = solids.len() - 1;
+        assert!(solids[walked].tree_points.len() >= TREE_WALK_TRIANGLES);
+        let walls = [[-40.0, 2.0, -40.0], [40.0, 6.0, 40.0]];
+        let mut draws = Draws(7);
+        let mut inside_known_heights = 0;
+        let mut walls_inside_known_heights = 0;
+        for _ in 0..COLUMN_SCENES {
+            let parts: Vec<(usize, u32, Affine)> = (0..PIECES_PER_COLUMN_SCENE)
+                .map(|_| {
+                    let part = draws.below(solids.len() as u64) as usize;
+                    (part, OPAQUE, placed_piece(&mut draws))
+                })
+                .collect();
+            let cells = cover_of(&solids, &parts, &[], Some(([0, 0], 0.0)))
+                .cells
+                .expect("a phase gives cells");
+            let (lowest, highest) = columns_clipping_every_triangle(&solids, &parts, &cells);
+            let plates = |y: f64| (y - cells.bottom_y) / PLATE_LDU;
+            let slack = WELD_EPSILON_LDU / PLATE_LDU;
+            for cell in 0..cells.width * cells.depth {
+                let (bottom, top) = if lowest[cell] > highest[cell] {
+                    (EMPTY_COLUMN, EMPTY_COLUMN)
+                } else {
+                    (
+                        ((plates(lowest[cell]) + slack).floor() as i32).max(0),
+                        (plates(highest[cell]) - slack).ceil() as i32,
+                    )
+                };
+                assert_eq!(
+                    (cells.column_bottom[cell], cells.column_top[cell]),
+                    (bottom, top),
+                    "cell {cell}"
+                );
+            }
+            let inside = |[min, max]: [Vec3; 2]| {
+                let (x0, x1) = overlapping_cells(min[0], max[0], cells.origin[0], cells.width);
+                let (z0, z1) = overlapping_cells(min[2], max[2], cells.origin[1], cells.depth);
+                (z0..z1).all(|j| {
+                    (x0..x1).all(|i| {
+                        let cell = j * cells.width + i;
+                        lowest[cell] + CLIPPED_HEIGHT_ROUNDING_LDU <= min[1]
+                            && max[1] <= highest[cell] - CLIPPED_HEIGHT_ROUNDING_LDU
+                    })
+                })
+            };
+            for (part, _, matrix) in &parts {
+                let instance = CoverInstance {
+                    matrix,
+                    color: OPAQUE,
+                    part: *part,
+                    studs: &[],
+                };
+                inside_known_heights += usize::from(inside(world_box(&instance, &solids[*part])));
+                if *part == walked {
+                    walls_inside_known_heights +=
+                        usize::from(inside(corner_box(matrix, walls[0], walls[1])));
+                }
+            }
+        }
+        assert!(
+            inside_known_heights > 20,
+            "{inside_known_heights} pieces lie strictly inside their columns' heights"
+        );
+        assert!(
+            walls_inside_known_heights > 20,
+            "{walls_inside_known_heights} tessellated pieces have walls strictly inside their columns' heights"
+        );
+    }
+
+    #[test]
+    fn a_box_within_rounding_of_an_unknown_cell_or_height_is_never_skipped() {
+        let mut reach = ColumnReach::new([0.0, 0.0], 2, 1, true);
+        reach.lowest[0] = 0.0;
+        reach.highest[0] = 10.0;
+        let next_square = STUD_LDU + WELD_EPSILON_LDU;
+        let short_of_next = |gap: f64| {
+            [
+                [WELD_EPSILON_LDU + 1.0, 2.0, WELD_EPSILON_LDU + 1.0],
+                [next_square - gap, 8.0, STUD_LDU - WELD_EPSILON_LDU - 1.0],
+            ]
+        };
+        assert!(reach.brackets_box(short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU)));
+        assert!(!reach.brackets_box(short_of_next(CLIPPED_HEIGHT_ROUNDING_LDU / 2.0)));
+        let mut touching = short_of_next(10.0 * CLIPPED_HEIGHT_ROUNDING_LDU);
+        touching[1][1] = reach.highest[0];
+        assert!(!reach.brackets_box(touching));
     }
 
     #[test]
@@ -1048,7 +1559,7 @@ mod tests {
         ];
         let identity = Affine::IDENTITY;
         let parts = [(0, OPAQUE, identity), (1, OPAQUE, identity)];
-        let cells = cover_of(&solids, &parts, &[], Some([10, 10]))
+        let cells = cover_of(&solids, &parts, &[], Some((PHASE, 0.0)))
             .cells
             .expect("a phase gives cells");
         assert_eq!([cells.width, cells.depth], [4, 2]);
@@ -1058,7 +1569,40 @@ mod tests {
     }
 
     #[test]
-    fn the_rest_plane_is_the_lowest_transformed_vertex_of_any_part() {
+    fn a_model_whose_studs_sit_the_table_depth_above_its_underside_stands_on_the_table_plane() {
+        let solids = [
+            solid([-40.0, -4.0, -20.0], [40.0, 0.0, 20.0], true, true, -4.0),
+            solid([-40.0, 0.0, -20.0], [0.0, 24.0, 20.0], true, true, 0.0),
+            solid([-40.0, -8.0, -20.0], [40.0, 0.0, 20.0], true, true, -8.0),
+        ];
+        let identity = Affine::IDENTITY;
+        let floor_and_tops = |base: usize, stud_layer_y: f64| {
+            let parts = [(base, OPAQUE, identity), (1, OPAQUE, identity)];
+            let cells = cover_of(&solids, &parts, &[], Some((PHASE, stud_layer_y)))
+                .cells
+                .expect("a phase gives cells");
+            (cells.bottom_y, cells.column_top, cells.flat)
+        };
+        let all_cells: Vec<usize> = (0..8).collect();
+        assert_eq!(
+            floor_and_tops(0, 0.0),
+            (0.0, vec![3, 3, 0, 0, 3, 3, 0, 0], all_cells.clone()),
+            "studs 4 LDU above the underside: the underside meets the table and columns start at the stud plane, while the footprint is still probed at the underside"
+        );
+        assert_eq!(
+            floor_and_tops(0, 24.0).0,
+            0.0,
+            "studs a whole number of plates above that plane put the model on the table too"
+        );
+        assert_eq!(
+            floor_and_tops(2, 0.0),
+            (-8.0, vec![4, 4, 1, 1, 4, 4, 1, 1], all_cells),
+            "studs a whole plate above the underside: the underside stays on the plate lattice"
+        );
+    }
+
+    #[test]
+    fn off_the_table_plane_the_rest_plane_is_the_lowest_transformed_vertex_of_any_part() {
         let solids = [solid(
             [-20.0, -8.0, -20.0],
             [20.0, 0.0, 20.0],
@@ -1073,7 +1617,7 @@ mod tests {
             ],
         };
         let parts = [(0, OPAQUE, Affine::IDENTITY), (0, OPAQUE, tilted)];
-        let cells = cover_of(&solids, &parts, &[], Some([10, 10]))
+        let cells = cover_of(&solids, &parts, &[], Some((PHASE, 0.0)))
             .cells
             .expect("a phase gives cells");
         let lowest = -10.0 - 8.0 * cos - 20.0 * sin;
@@ -1081,17 +1625,29 @@ mod tests {
     }
 
     fn closed_below_testing_every_instance(model: &ModelSolids, stud: StudFrame) -> bool {
-        stud.all_fans_below(STUD, |origin, fan| {
-            fan.iter().all(|direction| {
-                let segment = Segment::new(origin, *direction, BELOW_REACH_LDU);
-                (0..model.placed.len())
-                    .any(|instance| model.first_blocker(instance, &segment).is_some())
+        stud.radials().into_iter().all(|radial| {
+            (0..BELOW_HEIGHT_STEPS).all(|level| {
+                let fraction = (level as f64 + 0.5) / BELOW_HEIGHT_STEPS as f64;
+                let origin = stud.at(
+                    STUD.height * fraction,
+                    radial,
+                    STUD.radius * BELOW_START_OUTSIDE,
+                );
+                (1..=BELOW_ELEVATION_STEPS).all(|step| {
+                    let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * step as f64)
+                        .to_radians()
+                        .sin_cos();
+                    let direction = [0, 1, 2].map(|axis| radial[axis] * run + stud.up[axis] * rise);
+                    let segment = Segment::new(origin, direction, BELOW_REACH_LDU);
+                    (0..model.placed.len())
+                        .any(|instance| model.first_blocker(instance, &segment).is_some())
+                })
             })
         })
     }
 
     #[test]
-    fn remembered_blockers_and_the_instance_tree_close_exactly_the_studs_every_instance_closes() {
+    fn the_certifier_closes_exactly_the_studs_casting_through_every_instance_closes() {
         let solids = [
             solid(
                 [-120.0, -16.0, -120.0],
@@ -1144,27 +1700,24 @@ mod tests {
             .collect();
         let opacity = Opacity::new([TRANS_CLEAR]);
         let model = ModelSolids::new(&instances, &boxes, &solids, &opacity);
-        let mut coverers = Coverers {
-            model: &model,
-            stud: STUD,
-            directions: enclosure_directions(),
-            enclosed: FxHashMap::default(),
-            nearby: Vec::new(),
-        };
+        let mut coverers = Coverers::new(&model, STUD);
+        let mut certifier = BelowCertifier::new(&model, STUD);
         let mut decided = [0, 0];
         for (owner, instance) in instances.iter().enumerate() {
             for stud in instance.studs {
-                let frame = StudFrame::of(&instance.matrix.then(stud));
-                if coverers.covers(frame, Some(owner)).is_none() {
+                let world = instance.matrix.then(stud);
+                let frame = StudFrame::of(&world);
+                let Some((_, coverer)) = coverers.covers(frame, Some(owner)) else {
                     continue;
-                }
+                };
+                let below = BelowStud {
+                    frame,
+                    rotation: rotation_bits(&world),
+                    owner,
+                    coverer,
+                };
                 let closed = closed_below_testing_every_instance(&model, frame);
-                assert_eq!(
-                    model.closed_below(frame, STUD),
-                    closed,
-                    "stud at {:?}",
-                    frame.base
-                );
+                assert_eq!(certifier.closed(&below), closed, "stud at {:?}", frame.base);
                 decided[usize::from(closed)] += 1;
             }
         }

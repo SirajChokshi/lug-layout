@@ -58,6 +58,7 @@ function compiledManifest() {
     catalogParts: [],
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
+    tablePlane: { part: "3811", depthBelowTopLdu: 4 },
     compiler: null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },

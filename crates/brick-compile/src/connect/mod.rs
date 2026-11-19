@@ -1,7 +1,10 @@
+mod axle;
+mod depth_bands;
 mod faces;
 mod inferred;
 mod meta;
 mod primitive;
+mod profile;
 mod shadow;
 mod solid;
 
@@ -9,15 +12,16 @@ use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
+use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARED_FAR_END,
-    FLARED_NEAR_END, ROUND, SQUARE,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT,
+    FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
-pub use shadow::ShadowSnaps;
+pub use shadow::{ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -28,6 +32,13 @@ pub enum Source {
     Shadow,
     Primitive,
     Inferred,
+    Patch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Status {
+    Verified,
+    Unverified,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -59,6 +70,17 @@ pub enum Caps {
     Two,
     A,
     B,
+}
+
+impl Caps {
+    pub fn closed_ends(self, gender: Gender) -> (bool, bool) {
+        match (self, gender) {
+            (Caps::None, _) => (false, false),
+            (Caps::Two, _) => (true, true),
+            (Caps::A, _) | (Caps::One, Gender::Male) => (true, false),
+            (Caps::B, _) | (Caps::One, Gender::Female) => (false, true),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -144,9 +166,74 @@ impl Grid {
     }
 }
 
+pub(crate) fn grid_cell(connector: &Connector, offset: Vec3) -> Connector {
+    let at = connector.placement.apply(offset);
+    let mut m = connector.placement.m;
+    m[3] = at[0] + 0.0;
+    m[7] = at[1] + 0.0;
+    m[11] = at[2] + 0.0;
+    Connector {
+        placement: Affine { m },
+        grid: None,
+        ..connector.clone()
+    }
+}
+
+pub(crate) fn placeable_cells(connector: &Connector) -> (Vec<Connector>, Vec<Malformation>) {
+    let Some(grid) = connector.grid else {
+        return match unplaceable(&connector.placement.m) {
+            Some(malformation) => (Vec::new(), vec![malformation]),
+            None => (vec![connector.clone()], Vec::new()),
+        };
+    };
+    let mut kept = Vec::new();
+    let mut findings = Vec::new();
+    for offset in grid.offsets() {
+        let cell = grid_cell(connector, offset);
+        match unplaceable(&cell.placement.m) {
+            Some(malformation) if !findings.contains(&malformation) => findings.push(malformation),
+            Some(_) => {}
+            None => kept.push(cell),
+        }
+    }
+    if findings.is_empty() {
+        (vec![connector.clone()], findings)
+    } else {
+        (kept, findings)
+    }
+}
+
+pub(crate) fn malformed_shape(connector: &Connector) -> Option<Malformation> {
+    let steps = connector.grid.map_or([0.0; 3], |grid| grid.steps);
+    if non_finite(&steps) {
+        return Some(Malformation::NonFinite);
+    }
+    let sizes: Vec<f64> = match &connector.shape {
+        Shape::Cylinder { sections, .. } => sections
+            .iter()
+            .flat_map(|section| [section.radius, section.length])
+            .collect(),
+        Shape::Clip { radius, length, .. } => vec![*radius, *length],
+        Shape::Finger { widths, radius, .. } => widths.iter().copied().chain(*radius).collect(),
+        Shape::Generic { bounding, .. } => match bounding {
+            Bounding::Sphere { radius } => vec![*radius],
+            Bounding::Cube { size } => vec![*size],
+            Bounding::Box { size } => size.to_vec(),
+            Bounding::Cylinder { radius, length } => vec![*radius, *length],
+        },
+    };
+    unplaceable(&sizes)
+}
+
+pub(crate) fn linear_part(placement: &Affine) -> [f64; 9] {
+    let m = &placement.m;
+    [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]]
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Connector {
     pub source: Source,
+    pub status: Status,
     pub id: Option<String>,
     pub group: Option<String>,
     pub shape: Shape,
@@ -170,6 +257,10 @@ pub enum Issue {
     },
     TooDeep {
         file: String,
+    },
+    MalformedGeometry {
+        file: String,
+        malformation: Malformation,
     },
     ScaledFixedShape {
         source: Source,
@@ -195,6 +286,15 @@ pub enum Issue {
     },
 }
 
+impl From<MalformedGeometry> for Issue {
+    fn from(found: MalformedGeometry) -> Self {
+        Issue::MalformedGeometry {
+            file: found.file,
+            malformation: found.malformation,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Extraction {
     pub connectors: Vec<Connector>,
@@ -204,7 +304,7 @@ pub struct Extraction {
     pub issues: Vec<Issue>,
 }
 
-fn column(m: &Affine, c: usize) -> Vec3 {
+pub(crate) fn column(m: &Affine, c: usize) -> Vec3 {
     [m.m[c], m.m[4 + c], m.m[8 + c]]
 }
 
@@ -286,7 +386,7 @@ fn finished(connector: &Connector, issues: &mut Vec<Issue>) -> Connector {
 enum Slot {
     Lattice {
         polarity: u8,
-        origin: [i64; 3],
+        sixteenths: [i64; 3],
         axis: u8,
     },
     Free {
@@ -368,7 +468,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
-                    origin: [x, y, z],
+                    sixteenths: [x, y, z],
                     axis,
                 },
                 _ => Slot::Free {
@@ -420,7 +520,7 @@ fn face_slot(face: &MatingFace) -> Slot {
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
-            origin: [x, y, z],
+            sixteenths: [x, y, z],
             axis,
         },
         _ => Slot::Free {
@@ -540,9 +640,13 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 } => {
                     let entrance = MatingFace {
                         source: Source::Inferred,
+                        status: Status::Unverified,
+                        group: None,
                         gender: Gender::Female,
                         origin: [origin[0], -origin[1], -origin[2]].map(|c| c + 0.0),
                         axis: [0.0; 3],
+                        sixteenths: None,
+                        direction: None,
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,
@@ -553,6 +657,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
         merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        let mut reported: Vec<Issue> = Vec::new();
+        extraction.issues.retain(|issue| match issue {
+            Issue::MalformedGeometry { .. } if reported.contains(issue) => false,
+            Issue::MalformedGeometry { .. } => {
+                reported.push(issue.clone());
+                true
+            }
+            _ => true,
+        });
         extraction
     }
 }

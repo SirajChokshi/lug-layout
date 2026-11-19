@@ -46,7 +46,7 @@ import type {
   PartFilter,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
-import { FetchPool } from "./fetch-pool.ts";
+import { FetchPool, type FetchLane } from "./fetch-pool.ts";
 import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
@@ -172,12 +172,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return pointer.ok ? pointer.value.manifestFile : undefined;
   }
 
-  private bytes(path: string, priority: FetchPriority = "high"): Promise<ArrayBuffer> {
-    return this.pool.run(() => this.fetcher.bytes(path), priority);
+  private bytes(path: string, lane: FetchLane): Promise<ArrayBuffer> {
+    return this.pool.run(path, () => this.fetcher.bytes(path), lane);
   }
 
   private text(path: string): Promise<string> {
-    return this.pool.run(() => this.fetcher.text(path));
+    return this.pool.run(path, () => this.fetcher.text(path), "structural");
   }
 
   private async json<const TSchema extends v.GenericSchema>(
@@ -234,6 +234,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     );
   }
 
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void {
+    this.pool.setPriority(`${lod}/${file}`, priority);
+  }
+
   async loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
     const index = await this.loadIndex(FAR_LOD);
     const farMesh = index.models.find((model) => model.name === name)?.farMesh;
@@ -268,7 +272,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     if (cached) return cached;
     const loading = Promise.all(
       manifest.studPrimitives.map(async (primitive): Promise<StudPrimitiveAsset> => {
-        const glb = parseGlb(await this.bytes(`${lod}/${primitive.file}`), primitive.file);
+        const glb = parseGlb(
+          await this.bytes(`${lod}/${primitive.file}`, "structural"),
+          primitive.file,
+        );
         return { mesh: readInheritColorMesh(glb, primitive.name) };
       }),
     );
@@ -285,7 +292,9 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     const key = `${lod}/${part.file}`;
     const cached = this.partAssets.get(key);
     if (cached) return cached;
-    const loading = this.bytes(key).then((bytes) => toPartAsset(part, bytes, studPrimitiveNames));
+    const loading = this.bytes(key, "high").then((bytes) =>
+      toPartAsset(part, bytes, studPrimitiveNames),
+    );
     this.partAssets.set(key, loading);
     loading.catch(() => this.partAssets.delete(key));
     return loading;
@@ -310,6 +319,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      tablePlane: manifest.tablePlane,
     };
   }
 
@@ -322,11 +332,13 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       compilerPath: `${lod}/${manifest.compiler.file}`,
       unofficialAllowlist: manifest.compiler.unofficialAllowlist,
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
+      primitives: manifest.compiler.primitives ?? null,
       partIds: manifest.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentCodes: manifest.colors
         .filter((color) => color.alpha < ALPHA_OPAQUE)
         .map((color) => color.code),
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
     };
   }
@@ -366,6 +378,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      tablePlane: manifest.tablePlane,
     };
   }
 
@@ -415,12 +428,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     });
     const [bundle, farMesh] = await Promise.all([
       this.bundle(lod, manifest, parts),
-      entry.farMesh ? this.farMesh(`${lod}/${entry.farMesh.file}`) : undefined,
+      entry.farMesh ? this.farMesh(`${lod}/${entry.farMesh.file}`, "high") : undefined,
     ]);
     return { bundle, farMesh, entry, model: partModel(file) };
   }
 
-  private async farMesh(path: string, priority: FetchPriority = "high"): Promise<ModelFarMesh> {
+  private async farMesh(path: string, priority: FetchPriority): Promise<ModelFarMesh> {
     const glb = parseFarMeshGlb(await this.bytes(path, priority), path);
     const { extras } = glb.document;
     const cellIndex = readUint32Array(glb, extras.arrays.voxelCells);
@@ -504,6 +517,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     meshFile: shape.file,
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
+    rolling: shape.rolling ?? null,
   };
 }
 
@@ -561,5 +575,6 @@ function toPartAsset(
     mesh: readPartMesh(glb, part.id),
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
+    rolling: glb.document.extras.rolling ?? null,
   };
 }
