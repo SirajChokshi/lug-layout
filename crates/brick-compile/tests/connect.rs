@@ -1604,6 +1604,7 @@ fn a_face_an_included_clear_would_remove_is_unverified_and_passes_the_flag_on() 
         ("parts/relay.dat", "0 Relay\n"),
         ("parts/pin.dat", &format!("0 Pin\n{SUBFILE_HALF}")),
         ("parts/relayed.dat", &format!("0 Relayed\n{SUBFILE_HALF}")),
+        ("parts/repinned.dat", "0 Repinned\n"),
         (
             "parts/assembly.dat",
             "0 Assembly\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 pin.dat\n",
@@ -1625,6 +1626,7 @@ fn a_face_an_included_clear_would_remove_is_unverified_and_passes_the_flag_on() 
         ("parts/relay.dat", "0 !LDCAD SNAP_INCL [ref=whole.dat]\n"),
         ("parts/pin.dat", "0 !LDCAD SNAP_INCL [ref=whole.dat]\n"),
         ("parts/relayed.dat", "0 !LDCAD SNAP_INCL [ref=relay.dat]\n"),
+        ("parts/repinned.dat", "0 !LDCAD SNAP_INCL [ref=pin.dat]\n"),
     ]);
     let mut snaps = ShadowSnaps::new(&library, &shadow);
     let flagged = vec![
@@ -1641,6 +1643,10 @@ fn a_face_an_included_clear_would_remove_is_unverified_and_passes_the_flag_on() 
     );
     assert_eq!(
         statuses_by_id(&snaps.snaps("parts/assembly.dat").connectors),
+        flagged
+    );
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/repinned.dat").connectors),
         flagged
     );
     assert_eq!(
