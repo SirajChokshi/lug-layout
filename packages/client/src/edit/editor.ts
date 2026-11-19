@@ -90,10 +90,13 @@ import {
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type {
+  AssistNeighbourhood,
   HoverMateCount,
   HoverRefusalHit,
+  MagnetOffset,
   PlacedModelView,
   PlacementHover,
+  PlacementMode,
 } from "./placement-hover.ts";
 import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
@@ -354,6 +357,8 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
+  readonly placementMode: PlacementMode;
+  readonly placementModeOverride: boolean;
   readonly snap: RoadSnapView | null;
   readonly refusedClicks: number;
   readonly lastRefusal: RefusedClick | null;
@@ -435,6 +440,8 @@ export interface IEditor extends IBomSource, IWorldFiles {
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
+  setPlacementMode(mode: PlacementMode): void;
+  setPlacementModeOverride(held: boolean): void;
   goTo(x: number, z: number): void;
   importModelFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
@@ -453,20 +460,38 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
-const MATE_PICK_RADIUS_CELLS = 2;
-const MATE_PICK_RADIUS_PLATES = 2;
+const ASSIST_RADIUS_CELLS = 2;
+const ASSIST_RADIUS_PLATES = 2;
+const PRECISE_RADIUS = 0;
+const ASSIST_NEIGHBOURHOOD: AssistNeighbourhood = {
+  ldu: ASSIST_RADIUS_CELLS * STUD_LDU,
+  cells: ASSIST_RADIUS_CELLS,
+  plates: ASSIST_RADIUS_PLATES,
+};
 const HELD_TURN_ONLY = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 
-class MatePickWindow implements SnapWindow {
+class PlacementWindow implements SnapWindow {
   x = 0;
   z = 0;
   yPlates = RESTS_ON_TABLE_Y_PLATES;
   rot = 0;
-  cells = MATE_PICK_RADIUS_CELLS;
-  plates = MATE_PICK_RADIUS_PLATES;
+  cells = ASSIST_RADIUS_CELLS;
+  plates = ASSIST_RADIUS_PLATES;
   turns = HELD_TURN_ONLY;
+}
+
+function flipped(mode: PlacementMode): PlacementMode {
+  return mode === "assist" ? "precise" : "assist";
+}
+
+function magnetOffset(cursor: PlacementWindow, pose: LatticePose): MagnetOffset {
+  const dxLdu = pose.x - cursor.x;
+  const dzLdu = pose.z - cursor.z;
+  const dyPlates = pose.yPlates - cursor.yPlates;
+  const dyLdu = dyPlates * PLATE_LDU;
+  return { dxLdu, dzLdu, dyPlates, distanceLdu: Math.hypot(dxLdu, dzLdu, dyLdu) };
 }
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
@@ -629,6 +654,8 @@ export class Editor implements IEditor, IEditedWorld {
     roads: EMPTY_ROADS,
     showJoins: true,
     snapRoads: true,
+    placementMode: "assist",
+    placementModeOverride: false,
     snap: null,
     refusedClicks: 0,
     lastRefusal: null,
@@ -669,7 +696,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverRefusal: string | null = null;
   private queuedClick: QueuedClick | null = null;
   private hoverPlacement: PlacementHover | null = null;
-  private readonly pick = new MatePickWindow();
+  private readonly pick = new PlacementWindow();
   private readonly surface = new Float64Array(2);
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
@@ -1514,10 +1541,12 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const connected = this.connectedOf(placeable);
-    this.aimPick(this.placeRot, HELD_TURN_ONLY);
+    const mode = this.placementMode();
+    this.aimPick(this.placeRot, HELD_TURN_ONLY, mode);
     const choice = this.choice;
     this.searchPick(connected, null, choice);
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
+    const magnet = magnetOffset(this.pick, pose);
     this.search.evaluate(connected.model, pose, this.mates);
     const hit = choice.accepted ? null : this.refusalHit(choice.overlap);
     const turnBlocksSnap = this.turnBlocksSnap(connected, choice);
@@ -1533,18 +1562,24 @@ export class Editor implements IEditor, IEditedWorld {
         .flatMap((owner) => this.placedViewOf(owner) ?? []),
       turnBlocksSnap,
       turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
+      mode,
+      magnetised: magnet.distanceLdu > 0,
+      magnet,
+      assistNeighbourhood: ASSIST_NEIGHBOURHOOD,
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
   }
 
-  private aimPick(rot: number, turns: number): void {
+  private aimPick(rot: number, turns: number, mode: PlacementMode): void {
     const pick = this.pick;
     pick.x = this.hoverX;
     pick.z = this.hoverZ;
     pick.yPlates = RESTS_ON_TABLE_Y_PLATES;
     pick.rot = rot;
     pick.turns = turns;
+    pick.cells = mode === "assist" ? ASSIST_RADIUS_CELLS : PRECISE_RADIUS;
+    pick.plates = mode === "assist" ? ASSIST_RADIUS_PLATES : PRECISE_RADIUS;
     let nearest = Number.POSITIVE_INFINITY;
     let top = Number.NaN;
     for (const model of this.placed.models()) {
@@ -2002,6 +2037,27 @@ export class Editor implements IEditor, IEditedWorld {
     this.update({ snapRoads: snap, snap: null });
   }
 
+  setPlacementMode(mode: PlacementMode): void {
+    this.update({ placementMode: mode });
+    this.rehover();
+  }
+
+  setPlacementModeOverride(held: boolean): void {
+    this.update({ placementModeOverride: held });
+    this.rehover();
+  }
+
+  private placementMode(): PlacementMode {
+    const { placementMode, placementModeOverride } = this.state;
+    return placementModeOverride ? flipped(placementMode) : placementMode;
+  }
+
+  private rehover(): void {
+    if (!this.active || !this.hovering) return;
+    this.placeGhost();
+    this.update({ hover: this.hoverView() });
+  }
+
   bomInput(scope: BomScope): BomInput {
     const ldrawCodes = this.bundleColorCodes;
     if (!ldrawCodes) throw new Error("the editor has not loaded");
@@ -2150,8 +2206,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.searchIds.get(model) ?? null,
       this.turnChoice,
     );
-    pick.cells = MATE_PICK_RADIUS_CELLS;
-    pick.plates = MATE_PICK_RADIUS_PLATES;
+    pick.cells = ASSIST_RADIUS_CELLS;
+    pick.plates = ASSIST_RADIUS_PLATES;
     if (!this.turnChoice.accepted) {
       refuseTurn(refusalText(label, this.refusalHit(this.turnChoice.overlap)));
       return;

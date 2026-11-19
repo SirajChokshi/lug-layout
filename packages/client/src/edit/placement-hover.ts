@@ -44,6 +44,21 @@ export interface HoverRefusalHit {
   readonly heldTopLdu: number;
 }
 
+export type PlacementMode = "assist" | "precise";
+
+export interface MagnetOffset {
+  readonly dxLdu: number;
+  readonly dzLdu: number;
+  readonly dyPlates: number;
+  readonly distanceLdu: number;
+}
+
+export interface AssistNeighbourhood {
+  readonly ldu: number;
+  readonly cells: number;
+  readonly plates: number;
+}
+
 export interface PlacementHover {
   readonly pose: LatticePose;
   readonly accepted: boolean;
@@ -53,4 +68,8 @@ export interface PlacementHover {
   readonly restsOn: ReadonlyArray<PlacedModelView>;
   readonly turnBlocksSnap: boolean;
   readonly turnMates: ReadonlyArray<HoverMateCount>;
+  readonly mode: PlacementMode;
+  readonly magnetised: boolean;
+  readonly magnet: MagnetOffset;
+  readonly assistNeighbourhood: AssistNeighbourhood;
 }

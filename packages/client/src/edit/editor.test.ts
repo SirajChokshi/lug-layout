@@ -1323,6 +1323,53 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
   });
 }, 120_000);
 
+it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  const hover = () => {
+    editor.pointerMove(0, 0);
+    const placement = editor.snapshot().hover?.placement;
+    return {
+      mode: placement?.mode,
+      accepted: placement?.accepted,
+      magnetised: placement?.magnetised,
+      atCursor: placement?.pose.x === oneStudIn && placement.pose.z === 320,
+      hits: placement?.hit?.placed.item ?? null,
+    };
+  };
+  const assist = hover();
+  editor.setPlacementModeOverride(true);
+  const held = hover();
+  editor.setPlacementModeOverride(false);
+  const released = hover();
+  editor.setPlacementMode("precise");
+  const chosenPrecise = hover();
+
+  const snapped = { mode: "assist", accepted: true, magnetised: true, atCursor: false, hits: null };
+  const refused = {
+    mode: "precise",
+    accepted: false,
+    magnetised: false,
+    atCursor: true,
+    hits: SET,
+  };
+  expect({ assist, held, released, chosenPrecise }).toEqual({
+    assist: snapped,
+    held: refused,
+    released: snapped,
+    chosenPrecise: refused,
+  });
+}, 120_000);
+
 it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);

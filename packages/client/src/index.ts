@@ -177,13 +177,16 @@ export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./pla
 export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
+  AssistNeighbourhood,
   ConnectorGender,
   ConnectorKindView,
   ConnectorSectionView,
   HoverMateCount,
   HoverRefusalHit,
+  MagnetOffset,
   PlacedModelView,
   PlacementHover,
+  PlacementMode,
   SectionProfile,
 } from "./edit/placement-hover.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
