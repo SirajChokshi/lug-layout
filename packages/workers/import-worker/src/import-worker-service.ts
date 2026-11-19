@@ -1,12 +1,16 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   importStudioFile,
+  LibraryBakeStore,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
+  type IByteCache,
   type ImportResult,
   type ImportWorkerRequest,
+  type IPartRecords,
   type LdrawMirror,
+  type LibraryBakeSource,
   type MirrorSource,
   type ModelImportEngine,
   type PartConnectorSource,
@@ -20,6 +24,7 @@ import {
   IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
+  RECORD_CACHE,
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
@@ -32,12 +37,14 @@ export type ModelImportEngineFactory = (
   compiler: BrickCompiler,
   mirror: LdrawMirror,
   connectors: PartConnectorSource,
+  records: IPartRecords | null,
   helpers: ReadonlyArray<IBakeHelper>,
 ) => ModelImportEngine;
 
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
-  private readonly records = new Map<string, ConnectorRecords>();
+  private readonly connectorStores = new Map<string, ConnectorRecords>();
+  private readonly recordStores = new Map<string, IPartRecords>();
 
   constructor(
     @inject(COMPILER_LOADER) private readonly compilers: ICompilerLoader,
@@ -45,12 +52,13 @@ export class ImportWorkerService implements IImportWorkerService {
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
     @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
+    @inject(RECORD_CACHE) private readonly recordCache: IByteCache,
   ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
     const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
     const key = JSON.stringify([base.href, request.connectorIndexes, request.connectorVocabulary]);
-    let records = this.records.get(key);
+    let records = this.connectorStores.get(key);
     if (records === undefined) {
       records = new ConnectorRecords(
         async (path) => {
@@ -62,18 +70,30 @@ export class ImportWorkerService implements IImportWorkerService {
         request.connectorIndexes,
         request.connectorVocabulary,
       );
-      this.records.set(key, records);
+      this.connectorStores.set(key, records);
     }
     return records;
+  }
+
+  private partRecords(source: LibraryBakeSource | undefined): IPartRecords | null {
+    if (source === undefined) return null;
+    const key = `${source.url} ${source.pin.sha256}`;
+    let store = this.recordStores.get(key);
+    if (store === undefined) {
+      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.recordCache);
+      this.recordStores.set(key, store);
+    }
+    return store;
   }
 
   async run(request: ImportWorkerRequest): Promise<ImportResult> {
     const compiler = await this.compilers.load(request.compilerUrl);
     const helpers = this.bakeHelpers.helpers(request.compilerUrl);
     const connectors = this.connectorRecords(request);
+    const records = this.partRecords(request.libraryBake);
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
-    const engine = this.createEngine(compiler, mirror, connectors, helpers);
+    const engine = this.createEngine(compiler, mirror, connectors, records, helpers);
     switch (input.kind) {
       case "ldraw":
         return engine.importText(input.job);

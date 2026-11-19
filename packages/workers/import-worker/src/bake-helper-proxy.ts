@@ -1,6 +1,11 @@
-import type { BakeOutcome, BakeRequest, IBakeHelper, LibraryFiles } from "@brr/import";
+import type { BakeOutcome, BakeRequest, IBakeHelper, LibraryFiles, RecordFiles } from "@brr/import";
 import { BAKE_HELPER_PROTOCOL, RpcEndpoint } from "@brr/rpc";
-import type { BakeHelperReply, BakeHelperRequest, LibraryDelta } from "./bake-helper-protocol.ts";
+import type {
+  BakeHelperReply,
+  BakeHelperRequest,
+  LibraryDelta,
+  RecordDelta,
+} from "./bake-helper-protocol.ts";
 
 export class BakeHelperProxy {
   private readonly endpoint: RpcEndpoint<BakeHelperRequest, BakeHelperReply>;
@@ -8,6 +13,8 @@ export class BakeHelperProxy {
   private libraryKey = "";
   private readonly sentFiles = new Set<string>();
   private readonly sentAbsent = new Set<string>();
+  private recordKey = "";
+  private readonly sentRecords = new Set<string>();
 
   constructor(port: MessagePort) {
     this.endpoint = new RpcEndpoint(port, BAKE_HELPER_PROTOCOL);
@@ -22,16 +29,24 @@ export class BakeHelperProxy {
   }
 
   helper(compilerUrl: string): IBakeHelper {
-    return { bake: (request, library) => this.bake(compilerUrl, request, library) };
+    return {
+      bake: (request, library, records) => this.bake(compilerUrl, request, library, records),
+    };
   }
 
   private async bake(
     compilerUrl: string,
     request: BakeRequest,
     library: LibraryFiles,
+    records: RecordFiles | null,
   ): Promise<BakeOutcome> {
     const reply = await Promise.race([
-      this.endpoint.request({ compilerUrl, request, library: this.delta(library) }),
+      this.endpoint.request({
+        compilerUrl,
+        request,
+        library: this.delta(library),
+        records: records === null ? null : this.recordDelta(records),
+      }),
       this.broken,
     ]);
     switch (reply.kind) {
@@ -44,6 +59,21 @@ export class BakeHelperProxy {
         throw new Error(`unhandled bake helper reply ${String(unhandled)}`);
       }
     }
+  }
+
+  private recordDelta(records: RecordFiles): RecordDelta {
+    if (records.key !== this.recordKey) {
+      this.recordKey = records.key;
+      this.sentRecords.clear();
+    }
+    const files: Array<readonly [string, Uint8Array]> = [];
+    for (const [reference, bytes] of records.files) {
+      if (!this.sentRecords.has(reference)) files.push([reference, bytes]);
+    }
+    const references = [...records.files.keys()];
+    this.sentRecords.clear();
+    for (const reference of references) this.sentRecords.add(reference);
+    return { key: records.key, files, references };
   }
 
   private delta(library: LibraryFiles): LibraryDelta {

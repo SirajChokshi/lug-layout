@@ -11,6 +11,7 @@ import {
   shardName,
   worldManifest,
   type ImportedFile,
+  type SavedViewV1,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
@@ -23,9 +24,9 @@ import {
   type WorldChange,
 } from "@brr/storage";
 import { Container } from "inversify";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { WORLD_SESSION } from "../tokens.ts";
+import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import type { IEditedWorld, IWorldSession, WorldContents } from "./world-session.ts";
 
@@ -210,6 +211,15 @@ class FailingSaveRepository implements IWorldRepository {
   }
 }
 
+class ViewRecordingRepository extends FailingSaveRepository {
+  readonly savedViews: SavedViewV1[] = [];
+
+  override async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
+    this.savedViews.push(change.header.view);
+    return super.save(id, change);
+  }
+}
+
 async function sessionWithFailingSaves() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
@@ -265,5 +275,72 @@ describe("unsaved edits after a failed save", () => {
 
     expect(await session.openWorld(other.id)).toBe(true);
     expect(session.view().world?.name).toBe("Other");
+  });
+});
+
+describe("camera saving", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("saves a moved camera with the world 500 ms after it settles, once for continuous motion, and never for a still camera or a world's restored view", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const container = new Container();
+    container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
+    const repository = new ViewRecordingRepository();
+    container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+    const session = container.get(WORLD_SESSION);
+    const camera = container.get(EDITOR_CAMERA);
+    await session.start(new BaseplateWorld(), "test");
+    const saves = (): number => repository.savedViews.length;
+    const afterStart = saves();
+
+    for (let i = 0; i < 5; i++) {
+      session.pollCamera();
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    const afterStill = saves();
+    for (let i = 0; i < 10; i++) {
+      camera.orbit(5, 0);
+      session.pollCamera();
+      await vi.advanceTimersByTimeAsync(100);
+    }
+    const duringMotion = saves();
+    await vi.advanceTimersByTimeAsync(399);
+    const justBeforeSettled = saves();
+    await vi.advanceTimersByTimeAsync(1);
+    const settled = saves();
+    const settledView = repository.savedViews.at(-1);
+    const cameraWhenSettled = camera.savedView();
+
+    const other = repository.seed({
+      name: "Other",
+      bundleVersion: "test",
+      view: { targetX: 640, targetY: 0, targetZ: 640, distance: 2600, yaw: 1, pitch: 0.75 },
+      disclaimer: "disclaimer",
+    });
+    expect(await session.openWorld(other.id)).toBe(true);
+    const afterOpen = saves();
+    for (let i = 0; i < 5; i++) {
+      session.pollCamera();
+      await vi.advanceTimersByTimeAsync(200);
+    }
+
+    expect({
+      afterStill,
+      duringMotion,
+      justBeforeSettled,
+      settled,
+      settledView,
+      afterRestoredView: saves(),
+    }).toEqual({
+      afterStill: afterStart,
+      duringMotion: afterStart,
+      justBeforeSettled: afterStart,
+      settled: afterStart + 1,
+      settledView: cameraWhenSettled,
+      afterRestoredView: afterOpen,
+    });
   });
 });
