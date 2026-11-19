@@ -1074,7 +1074,7 @@ footer a {
   color: #445;
 }
 
-.module-report dl div {
+.module-report dl > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -1086,8 +1086,22 @@ footer a {
 }
 
 .module-report dd {
+  min-width: 0;
   margin: 0;
   text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] {
+  display: block;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] dd {
+  text-align: left;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] dd > div {
+  margin-bottom: 3px;
 }
 
 .not-drawn {
