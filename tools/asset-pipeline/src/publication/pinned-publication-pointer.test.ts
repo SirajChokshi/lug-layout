@@ -350,11 +350,8 @@ it("verifies every referenced file against the SHA-256 its manifest gives, conte
 
 it("refuses a pointer command flag it does not know before touching the bucket", async () => {
   const untouchable: PointerCommands<ToyPin, PinnedIndex> = {
-    publication: toy,
     storeConfigPath: "/nonexistent/store.json",
-    root: "/nonexistent",
     readPin: () => Promise.reject(new Error("read the pin")),
-    describeVerified: () => "",
     pointer,
     manifestOf: (pin) => pin.index,
   };
