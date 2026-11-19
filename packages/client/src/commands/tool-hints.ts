@@ -76,8 +76,8 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView
     title: `Loading ${itemName(snapshot, held.item)}`,
     detail:
       queued === null
-        ? "loading connectors…, a click now places it once they load"
-        : `loading connectors…, then it goes down at ${queued.x}, ${queued.z} if the pointer stays there`,
+        ? "loading connectors… a click places it once they load"
+        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} if the pointer stays there`,
     hints: [
       gesture("Click", "place once loaded"),
       key("open-palette", "another part"),
