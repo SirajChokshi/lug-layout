@@ -54,7 +54,7 @@ function joined(segments: ReadonlyArray<string>): string {
   return segments.filter((segment) => segment !== "").join("/");
 }
 
-function libraryObjectKey(source: GithubMirror, path: string): string {
+export function libraryObjectKey(source: GithubMirror, path: string): string {
   return joined([source.repo, source.commit, source.root, path]);
 }
 

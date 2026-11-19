@@ -243,7 +243,20 @@ async function readStoreConfig(path: string): Promise<StoreConfig> {
   return JSON.parse(await readFile(path, "utf8")) as StoreConfig;
 }
 
-async function bucketStore(storeConfigPath: string): Promise<R2ObjectStore | undefined> {
+export interface StoreVariables {
+  readonly endpoint: string;
+  readonly baseUrl: string;
+}
+
+const PART_BUNDLE_STORE_VARIABLES: StoreVariables = {
+  endpoint: "PART_BUNDLE_R2_ENDPOINT",
+  baseUrl: "PART_BUNDLE_BASE_URL",
+};
+
+async function bucketStore(
+  storeConfigPath: string,
+  variables: StoreVariables = PART_BUNDLE_STORE_VARIABLES,
+): Promise<R2ObjectStore | undefined> {
   const tokenId = process.env["CLOUDFLARE_API_TOKEN_ID"];
   const token = process.env["CLOUDFLARE_API_TOKEN"];
   if (!tokenId || !token) return undefined;
@@ -253,15 +266,18 @@ async function bucketStore(storeConfigPath: string): Promise<R2ObjectStore | und
   if (bucket === undefined) throw new Error(`${storeConfigPath} has no bucket_name`);
   return new R2ObjectStore({
     endpoint:
-      process.env["PART_BUNDLE_R2_ENDPOINT"] ||
+      process.env[variables.endpoint] ||
       `https://${requiredEnv("CLOUDFLARE_ACCOUNT_ID")}.r2.cloudflarestorage.com`,
     bucket,
     credentials: { accessKeyId: tokenId, secretAccessKey },
   });
 }
 
-async function publicBaseUrl(storeConfigPath: string): Promise<string | undefined> {
-  const fromEnv = process.env["PART_BUNDLE_BASE_URL"];
+async function publicBaseUrl(
+  storeConfigPath: string,
+  variables: StoreVariables = PART_BUNDLE_STORE_VARIABLES,
+): Promise<string | undefined> {
+  const fromEnv = process.env[variables.baseUrl];
   if (fromEnv) return fromEnv;
   return (await readStoreConfig(storeConfigPath)).public_base_url ?? undefined;
 }
@@ -644,6 +660,7 @@ export async function pruneUnreferenced<TManifest>(
 
 export interface PointerCommands<TPin, TManifest> {
   readonly storeConfigPath: string;
+  readonly storeVariables?: StoreVariables;
   readonly pointer: PointerAdapter<TManifest>;
   readPin(): Promise<TPin>;
   manifestOf(pin: TPin): TManifest;
@@ -652,7 +669,7 @@ export interface PointerCommands<TPin, TManifest> {
 async function pointCommand<TPin, TManifest>(
   commands: PointerCommands<TPin, TManifest>,
 ): Promise<void> {
-  const store = await bucketStore(commands.storeConfigPath);
+  const store = await bucketStore(commands.storeConfigPath, commands.storeVariables);
   if (store === undefined) throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
   const { pointer, moved } = await movePointer(
     commands.pointer,
@@ -669,7 +686,7 @@ async function pointCommand<TPin, TManifest>(
 async function currentCommand<TPin, TManifest>(
   commands: PointerCommands<TPin, TManifest>,
 ): Promise<void> {
-  const baseUrl = await publicBaseUrl(commands.storeConfigPath);
+  const baseUrl = await publicBaseUrl(commands.storeConfigPath, commands.storeVariables);
   const pointer =
     baseUrl === undefined
       ? null
@@ -687,8 +704,10 @@ async function verifyPointerCommand<TPin, TManifest>(
   scope: ServedScope,
   wait: boolean,
 ): Promise<void> {
-  const baseUrl = await publicBaseUrl(commands.storeConfigPath);
-  if (baseUrl === undefined) throw new Error("set PART_BUNDLE_BASE_URL");
+  const baseUrl = await publicBaseUrl(commands.storeConfigPath, commands.storeVariables);
+  if (baseUrl === undefined) {
+    throw new Error(`set ${(commands.storeVariables ?? PART_BUNDLE_STORE_VARIABLES).baseUrl}`);
+  }
   if (wait) await waitUntilServed(publicObjectUrl(baseUrl, commands.pointer.key));
   const problems = await verifyServedPointer(commands.pointer, httpReader(baseUrl), scope);
   if (problems.length > 0) {
@@ -705,7 +724,7 @@ async function pruneCommand<TPin, TManifest>(
   commands: PointerCommands<TPin, TManifest>,
   dryRun: boolean,
 ): Promise<void> {
-  const store = await bucketStore(commands.storeConfigPath);
+  const store = await bucketStore(commands.storeConfigPath, commands.storeVariables);
   if (store === undefined) throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
   const { live, doomed, deleted } = await pruneUnreferenced(commands.pointer, store, dryRun);
   const bytes = doomed.reduce((sum, object) => sum + object.size, 0);
