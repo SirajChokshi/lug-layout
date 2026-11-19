@@ -96,6 +96,7 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
 import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
   MESH_KIND_BODY,
@@ -632,6 +633,13 @@ function alphaSlotsOf(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): AlphaSlo
   return { alphaSlots, colorAlphaSlot };
 }
 
+function addContainerGroup(parent: Object3D): Group {
+  const group = new Group();
+  group.matrixAutoUpdate = false;
+  parent.add(group);
+  return group;
+}
+
 function writeNearEdgeIds(holder: Group, meshes: MeshPage, edgeSlot: number): void {
   let ordinal = 0;
   for (let row = 0; row < meshes.kind.length; row++) {
@@ -644,6 +652,12 @@ function writeNearEdgeIds(holder: Group, meshes: MeshPage, edgeSlot: number): vo
 export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private renderer: WebGPURenderer | undefined;
   private readonly scene = new Scene();
+  private readonly chunkHolders = new KeyOrderedChildren(this.scene);
+  private readonly farModelHolders = new KeyOrderedChildren(this.scene);
+  private readonly vehicleHolders = new KeyOrderedChildren(this.scene);
+  private readonly ghostGroup = addContainerGroup(this.scene);
+  private readonly planOverlayGroup = addContainerGroup(this.scene);
+  private readonly issueBoxGroup = addContainerGroup(this.scene);
   private readonly perspective = new PerspectiveCamera(
     CAMERA_FOV_DEGREES,
     1,
@@ -778,6 +792,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
     this.renderer = renderer;
+    renderer.setOpaqueSort(opaqueSort);
+    renderer.setTransparentSort(transparentSort);
     this.look = config.look;
     this.materials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
     this.shellMaterials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
@@ -950,7 +966,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.clearChunks();
     this.studBases = new StudBasisTable();
     this.uploadedStudBases = 0;
-    for (const node of this.farModelList) this.scene.remove(node.group);
+    this.farModelHolders.clear();
     this.farModelNodes.clear();
     this.farModelPlacements.clear();
     this.farModelList = [];
@@ -1158,7 +1174,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.placeGroup(record.group, page.originX, page.originZ);
     this.chunks.set(key, record);
     this.chunkList.push(record);
-    this.scene.add(record.group);
+    this.chunkHolders.add(record.group, key);
     this.sceneMinX = Math.min(this.sceneMinX, record.minX);
     this.sceneMaxX = Math.max(this.sceneMaxX, record.maxX);
     this.sceneMinZ = Math.min(this.sceneMinZ, record.minZ);
@@ -1185,7 +1201,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     group.add(body.group);
     const record = new VehicleRecord(group, body);
     this.vehicles.set(vehicle, record);
-    this.scene.add(group);
+    this.vehicleHolders.add(group, vehicle);
     this.placeVehicle(record);
   }
 
@@ -1241,7 +1257,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private removeVehicle(vehicle: number): void {
     const existing = this.vehicles.get(vehicle);
     if (!existing) return;
-    this.scene.remove(existing.group);
+    this.vehicleHolders.remove(existing.group);
     existing.body.dispose();
     this.vehicles.delete(vehicle);
   }
@@ -1288,7 +1304,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private removeChunk(key: number): void {
     const existing = this.chunks.get(key);
     if (!existing) return;
-    this.scene.remove(existing.group);
+    this.chunkHolders.remove(existing.group);
     existing.dispose();
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
@@ -1302,7 +1318,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private showGhost(page: InstancePage | null): void {
     this.changed = true;
     if (this.ghost) {
-      this.scene.remove(this.ghost);
+      this.ghostGroup.clear();
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
@@ -1321,7 +1337,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const ghostMeshes = this.addNearInstances(ghost, page, this.ghostMaterials);
     writeNearEdgeIds(ghost, ghostMeshes, GHOST_EDGE_SLOT);
     this.ghost = ghost;
-    this.scene.add(ghost);
+    this.ghostGroup.add(ghost);
     if (samePage && held) {
       this.ghostNeeds = held;
       return;
@@ -1439,14 +1455,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.changed = true;
-    for (const anchored of this.planObjects) {
-      this.scene.remove(anchored.object);
-      disposeTree(anchored.object);
-    }
+    this.planOverlayGroup.clear();
+    for (const anchored of this.planObjects) disposeTree(anchored.object);
     this.planObjects = overlays.map((overlay) => this.planGroup(overlay));
     for (const anchored of this.planObjects) {
       this.positionAnchored(anchored);
-      this.scene.add(anchored.object);
+      this.planOverlayGroup.add(anchored.object);
     }
   }
 
@@ -1520,7 +1534,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.changed = true;
-    for (const anchored of this.issueObjects) this.scene.remove(anchored.object);
+    this.issueBoxGroup.clear();
     this.issueObjects = boxes.map((box) => {
       const lines = new LineSegments(this.issueEdges, this.issueMaterial);
       lines.matrixAutoUpdate = false;
@@ -1531,7 +1545,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     });
     for (const anchored of this.issueObjects) {
       this.positionAnchored(anchored);
-      this.scene.add(anchored.object);
+      this.issueBoxGroup.add(anchored.object);
     }
   }
 
@@ -2152,7 +2166,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.changed = true;
     const existing = this.farModelNodes.get(id);
     if (existing) {
-      this.scene.remove(existing.group);
+      this.farModelHolders.remove(existing.group);
       this.farModelNodes.delete(id);
       this.farModelList = this.farModelList.filter((node) => node !== existing);
     }
@@ -2184,7 +2198,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ]);
     this.farModelNodes.set(id, node);
     this.farModelList.push(node);
-    this.scene.add(group);
+    this.farModelHolders.add(group, id);
   }
 
   private showFarModels(): void {
