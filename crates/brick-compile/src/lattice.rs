@@ -59,10 +59,25 @@ pub fn record(found: &mut Vec<MalformedGeometry>, file: &str, malformation: Malf
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StudPose {
+    pub origin: Vec3,
+    pub axis: Vec3,
+}
+
+impl StudPose {
+    pub fn of(matrix: &Affine) -> StudPose {
+        StudPose {
+            origin: [matrix.m[3], matrix.m[7], matrix.m[11]],
+            axis: [matrix.m[1], matrix.m[5], matrix.m[9]],
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatticeInstance<'a> {
     pub matrix: &'a Affine,
-    pub studs: &'a [Vec3],
+    pub studs: &'a [StudPose],
     pub bounds_min: Vec3,
     pub bounds_max: Vec3,
 }
@@ -99,6 +114,10 @@ impl std::fmt::Display for LatticeError {
     }
 }
 
+fn vertical(axis: Vec3) -> bool {
+    axis[0] == 0.0 && axis[2] == 0.0 && axis[1] != 0.0
+}
+
 fn integer_phase(value: f64) -> Option<u32> {
     let phase = value.rem_euclid(STUD_LDU);
     (phase.fract() == 0.0).then_some(phase as u32 % STUD_LDU as u32)
@@ -132,7 +151,10 @@ pub fn model_lattice(instances: &[LatticeInstance]) -> Result<ModelLattice, Latt
             }
         }
         for stud in instance.studs {
-            let p = instance.matrix.apply(*stud);
+            if !vertical(instance.matrix.rotate(stud.axis)) {
+                continue;
+            }
+            let p = instance.matrix.apply(stud.origin);
             let (Some(px), Some(pz)) = (integer_phase(p[0]), integer_phase(p[2])) else {
                 continue;
             };
@@ -181,7 +203,17 @@ mod tests {
         }
     }
 
-    const BRICK_STUDS: [Vec3; 2] = [[-10.0, 24.0, 0.0], [10.0, 24.0, 0.0]];
+    const UP: Vec3 = [0.0, 1.0, 0.0];
+    const BRICK_STUDS: [StudPose; 2] = [
+        StudPose {
+            origin: [-10.0, 24.0, 0.0],
+            axis: UP,
+        },
+        StudPose {
+            origin: [10.0, 24.0, 0.0],
+            axis: UP,
+        },
+    ];
 
     fn brick(matrix: &Affine) -> LatticeInstance<'_> {
         LatticeInstance {
@@ -203,6 +235,50 @@ mod tests {
         assert_eq!(lattice.phase_layer_y, 24.0);
         assert_eq!(lattice.aabb_min, [-20.0, 0.0, -10.0]);
         assert_eq!(lattice.aabb_max, [105.0, 52.0, 10.0]);
+    }
+
+    const HUB_STUDS: [StudPose; 2] = [
+        StudPose {
+            origin: [0.0, 0.0, -12.0],
+            axis: [0.0, 0.0, -1.0],
+        },
+        StudPose {
+            origin: [0.0, 0.0, 12.0],
+            axis: [0.0, 0.0, 1.0],
+        },
+    ];
+
+    fn wheel(matrix: &Affine) -> LatticeInstance<'_> {
+        LatticeInstance {
+            matrix,
+            studs: &HUB_STUDS,
+            bounds_min: [-9.0, -9.0, -12.0],
+            bounds_max: [9.0, 9.0, 12.0],
+        }
+    }
+
+    #[test]
+    fn studs_off_the_vertical_never_phase_the_lattice_though_they_lie_lowest() {
+        let wheels = [at(-27.0, 9.0, 40.0), at(33.0, 9.0, -40.0)];
+        let body = at(5.0, 12.0, 0.0);
+        let mut instances: Vec<LatticeInstance> = wheels.iter().map(wheel).collect();
+        instances.push(brick(&body));
+        let lattice = model_lattice(&instances).expect("lattice");
+        assert_eq!(lattice.phase, [15, 0]);
+        assert_eq!(lattice.phase_layer_y, 36.0);
+        assert_eq!(lattice.phase_layer_studs, 2);
+    }
+
+    #[test]
+    fn downward_studs_phase_the_lattice_like_upward_ones() {
+        let inverted = Affine {
+            m: [
+                1.0, 0.0, 0.0, 5.0, 0.0, -1.0, 0.0, 30.0, 0.0, 0.0, -1.0, 0.0,
+            ],
+        };
+        let lattice = model_lattice(&[brick(&inverted)]).expect("lattice");
+        assert_eq!(lattice.phase, [15, 0]);
+        assert_eq!(lattice.phase_layer_y, 6.0);
     }
 
     #[test]

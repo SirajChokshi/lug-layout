@@ -6,7 +6,7 @@ use crate::cover::{
     model_cover, CoverInstance, CoverShard, ModelCover, Opacity, PartSolid, StudShape,
 };
 use crate::flatten::{Library, Lod};
-use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
+use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice, StudPose};
 use crate::model::ModelInstance;
 use crate::technic::TechnicPrimitives;
 use crate::vehicle::{detect_vehicles, RailHeadBand, Vehicle, VehicleError, VehicleSignatures};
@@ -54,7 +54,7 @@ impl From<CompileError> for BakeError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatticeShape {
-    pub studs: Vec<Vec3>,
+    pub studs: Vec<StudPose>,
     pub bounds: [Vec3; 2],
 }
 
@@ -64,7 +64,7 @@ impl LatticeShape {
             studs: part
                 .studs
                 .iter()
-                .map(|stud| [stud.matrix.m[3], stud.matrix.m[7], stud.matrix.m[11]])
+                .map(|stud| StudPose::of(&stud.matrix))
                 .collect(),
             bounds: part
                 .mesh
