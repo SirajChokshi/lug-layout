@@ -9,6 +9,7 @@ import { PlacedChunks } from "./placed-chunks.ts";
 const TILE_LDU = 640;
 const HALF_TILE_LDU = TILE_LDU / 2;
 const COVER_GRID_LDU = 80;
+const COVER_HEIGHTS = 4;
 const TILES = 2;
 const STEPS = 160;
 const SEEDS = [1, 2, 3, 4];
@@ -162,7 +163,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
         const rot = refId === 0 ? 0 : Math.floor(random() * 4);
         const occupied = live.some((h) => h.refId === 0 && refId === 0 && h.x === x && h.z === z);
         if (occupied) continue;
-        const yPlates = chunks.restingHeight(placeableOf(refId), x, z, rot, null);
+        const yPlates = refId === 0 ? 0 : Math.floor(random() * COVER_HEIGHTS);
         const handle: PlacementHandle = {
           chunkKey: 0,
           slot: slot++,

@@ -26,9 +26,12 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
   type ModelConnectors,
+  MateReport,
+  type LatticePose,
+  type OverlapHit,
+  type SnapShapes,
 } from "@brr/domain";
 import {
-  BRICK_LDU,
   CHUNK_LDU,
   PLATE_LDU,
   QUARTER_TURN_16,
@@ -65,6 +68,7 @@ import {
   EDITOR_FRAME_LOOP,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
+  SNAP_SHAPES,
   WORLD_SESSION,
 } from "../tokens.ts";
 import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame-loop.ts";
@@ -86,8 +90,24 @@ import {
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
+import type {
+  HoverMateCount,
+  HoverRefusalHit,
+  MagnetOffset,
+  PlacedModelView,
+  PlacementHover,
+  PlacementMode,
+} from "./placement-hover.ts";
+import { effectivePlacementMode } from "./placement-mode.ts";
+import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
-import type { IPlacementSearch } from "../connect/placement-search.ts";
+import {
+  placementChoice,
+  type IPlacementSearch,
+  type OverlapNamer,
+  type PlacementChoice,
+  type PlacementWindow,
+} from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
@@ -297,6 +317,7 @@ export interface HoverView {
   readonly z: number;
   readonly yPlates: number;
   readonly refusal: string | null;
+  readonly placement: PlacementHover | null;
 }
 
 export interface PlaceableCoverView {
@@ -347,6 +368,8 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
   readonly snapRoads: boolean;
+  readonly placementMode: PlacementMode;
+  readonly placementModeOverride: boolean;
   readonly snap: RoadSnapView | null;
   readonly refusedClicks: number;
   readonly lastRefusal: RefusedClick | null;
@@ -430,6 +453,8 @@ export interface IEditor extends IBomSource, IWorldFiles {
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
   setSnapRoads(snap: boolean): void;
+  setPlacementMode(mode: PlacementMode): void;
+  setPlacementModeOverride(held: boolean): void;
   goTo(x: number, z: number): void;
   importModelFile(file: ModelFileInput): Promise<boolean>;
   measureFrames(): void;
@@ -448,6 +473,89 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
+const ASSIST_TOLERANCE_PX = 32;
+const ASSIST_FLOOR_LDU = STUD_LDU;
+const ASSIST_BASIN_LDU = 3 * STUD_LDU;
+const PRECISE_RADIUS = 0;
+const NDC_SPAN = 2;
+const HELD_TURN_ONLY = 1;
+const HELD_TURN = 0;
+const NEXT_TURN = 1;
+const EVERY_TURN = 4;
+const RESTS_ON_TABLE_Y_PLATES = 0;
+
+class CursorPick implements PlacementWindow {
+  x = 0;
+  z = 0;
+  yPlates = RESTS_ON_TABLE_Y_PLATES;
+  rot = 0;
+  cells = PRECISE_RADIUS;
+  plates = PRECISE_RADIUS;
+  radiusLdu = PRECISE_RADIUS;
+  turns = HELD_TURN_ONLY;
+  firstTurn = HELD_TURN;
+}
+
+class HoverCell {
+  private placeable: Placeable | null = null;
+  private x = 0;
+  private z = 0;
+  private yPlates = 0;
+  private rot = 0;
+  private mode: PlacementMode = "assist";
+  private radiusLdu = 0;
+  private revision = -1;
+
+  holds(
+    placeable: Placeable,
+    pick: CursorPick,
+    mode: PlacementMode,
+    search: Pick<IPlacementSearch, "revision">,
+  ): boolean {
+    return (
+      placeable === this.placeable &&
+      pick.x === this.x &&
+      pick.z === this.z &&
+      pick.yPlates === this.yPlates &&
+      pick.rot === this.rot &&
+      mode === this.mode &&
+      pick.radiusLdu === this.radiusLdu &&
+      search.revision() === this.revision
+    );
+  }
+
+  keep(
+    placeable: Placeable,
+    pick: CursorPick,
+    mode: PlacementMode,
+    search: Pick<IPlacementSearch, "revision">,
+  ): void {
+    this.placeable = placeable;
+    this.x = pick.x;
+    this.z = pick.z;
+    this.yPlates = pick.yPlates;
+    this.rot = pick.rot;
+    this.mode = mode;
+    this.radiusLdu = pick.radiusLdu;
+    this.revision = search.revision();
+  }
+}
+
+function cellsWithin(reachLdu: number): number {
+  return Math.ceil(reachLdu / STUD_LDU);
+}
+
+function platesWithin(reachLdu: number): number {
+  return Math.floor(reachLdu / PLATE_LDU);
+}
+
+function magnetOffset(cursor: CursorPick, pose: LatticePose): MagnetOffset {
+  const dxLdu = pose.x - cursor.x;
+  const dzLdu = pose.z - cursor.z;
+  const dyPlates = pose.yPlates - cursor.yPlates;
+  const dyLdu = dyPlates * PLATE_LDU;
+  return { dxLdu, dzLdu, dyPlates, distanceLdu: Math.hypot(dxLdu, dzLdu, dyLdu) };
+}
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
@@ -524,7 +632,6 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
     }
   }
 }
-const GHOST_LIFT_LDU = BRICK_LDU;
 
 interface HeldPiece {
   readonly catalogIndex: number;
@@ -610,6 +717,8 @@ export class Editor implements IEditor, IEditedWorld {
     roads: EMPTY_ROADS,
     showJoins: true,
     snapRoads: true,
+    placementMode: "assist",
+    placementModeOverride: false,
     snap: null,
     refusedClicks: 0,
     lastRefusal: null,
@@ -650,6 +759,21 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverYPlates = 0;
   private hoverRefusal: string | null = null;
   private queuedClick: QueuedClick | null = null;
+  private hoverPlacement: PlacementHover | null = null;
+  private readonly pick = new CursorPick();
+  private readonly hoverCell = new HoverCell();
+  private readonly namedOverlap = placementChoice().overlap;
+  private hitPart: HitPart | null = null;
+  private namingIndices: ArrayLike<number> = [];
+  private readonly surface = new Float64Array(2);
+  private readonly sideRay = new Float64Array(6);
+  private canvas: HTMLCanvasElement | null = null;
+  private pointerNdcX = 0;
+  private pointerNdcY = 0;
+  private assistLdu = 0;
+  private readonly choice = placementChoice();
+  private readonly turnChoice = placementChoice();
+  private readonly mates = new MateReport();
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -684,6 +808,7 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
+    @inject(SNAP_SHAPES) private readonly shapes: SnapShapes,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: IConnectorTables,
   ) {
     this.placed = new PlacedChunks(backend);
@@ -715,6 +840,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {
+    this.canvas = canvas;
     try {
       const started = performance.now();
       const backend = await this.backend.init({
@@ -1554,6 +1680,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private groundHit(ndcX: number, ndcY: number): boolean {
+    this.pointerNdcX = ndcX;
+    this.pointerNdcY = ndcY;
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
@@ -1567,28 +1695,195 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeGhost(): void {
-    if (!this.active || !this.hovering) return;
-    this.hoverYPlates = this.placed.restingHeight(
-      this.active,
-      this.hoverX,
-      this.hoverZ,
-      this.placeRot,
-      null,
+    const placeable = this.active;
+    if (!placeable || !this.hovering) {
+      this.hoverPlacement = null;
+      this.hoverRefusal = null;
+      return;
+    }
+    const connected = this.connectedOf(placeable);
+    const mode = this.placementMode();
+    this.aimPick(this.placeRot, HELD_TURN_ONLY, mode);
+    if (this.hoverPlacement && this.hoverCell.holds(placeable, this.pick, mode, this.search))
+      return;
+    const choice = this.choice;
+    this.searchPick(connected, null, choice);
+    const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
+    const magnet = magnetOffset(this.pick, pose);
+    this.search.evaluate(connected.model, pose, this.mates);
+    const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
+    const turnBlocksSnap = this.turnBlocksSnap(connected, choice);
+    this.hoverYPlates = pose.yPlates;
+    this.hoverPlacement = {
+      pose,
+      accepted: choice.accepted,
+      hit,
+      mates: mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner)),
+      lifted: pose.yPlates > RESTS_ON_TABLE_Y_PLATES,
+      restsOn: this.search
+        .restingOn(connected.volumes, pose, null)
+        .flatMap((owner) => this.placedViewOf(owner) ?? []),
+      turnBlocksSnap,
+      turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
+      mode,
+      magnetised: magnet.distanceLdu > 0,
+      magnet,
+      assistNeighbourhood: {
+        ldu: this.assistLdu,
+        cells: cellsWithin(this.assistLdu),
+        plates: platesWithin(this.assistLdu),
+      },
+    };
+    this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
+    this.hoverCell.keep(placeable, this.pick, mode, this.search);
+    this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
+  }
+
+  private assistReachLdu(): number {
+    return Math.min(Math.max(this.toleranceLdu(), ASSIST_FLOOR_LDU), ASSIST_BASIN_LDU);
+  }
+
+  private toleranceLdu(): number {
+    const widthPx = this.canvas?.clientWidth ?? 0;
+    if (widthPx <= 0) return ASSIST_FLOOR_LDU;
+    const sideNdcX = this.pointerNdcX + (NDC_SPAN * ASSIST_TOLERANCE_PX) / widthPx;
+    const side = this.sideRay;
+    this.backend.rayThrough(sideNdcX, this.pointerNdcY, side);
+    const directionY = side[4] ?? 0;
+    if (directionY >= 0) return ASSIST_BASIN_LDU;
+    const t = -(side[1] ?? 0) / directionY;
+    const dx = (side[0] ?? 0) + (side[3] ?? 0) * t - this.hitX;
+    const dz = (side[2] ?? 0) + (side[5] ?? 0) * t - this.hitZ;
+    return Math.hypot(dx, dz);
+  }
+
+  private aimPick(rot: number, turns: number, mode: PlacementMode): void {
+    const pick = this.pick;
+    pick.x = this.hoverX;
+    pick.z = this.hoverZ;
+    pick.yPlates = RESTS_ON_TABLE_Y_PLATES;
+    pick.rot = rot;
+    pick.turns = turns;
+    this.assistLdu = this.assistReachLdu();
+    const reach = mode === "assist" ? this.assistLdu : PRECISE_RADIUS;
+    pick.radiusLdu = reach;
+    pick.cells = cellsWithin(reach);
+    pick.plates = platesWithin(reach);
+    let nearest = Number.POSITIVE_INFINITY;
+    let top = Number.NaN;
+    for (const model of this.placed.models()) {
+      if (!model.aimedTop(this.ray, this.hitX, this.hitZ, this.surface)) continue;
+      const t = this.surface[0] ?? Number.POSITIVE_INFINITY;
+      if (t >= nearest) continue;
+      nearest = t;
+      top = this.surface[1] ?? Number.NaN;
+    }
+    if (Number.isFinite(top)) {
+      pick.yPlates = Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
+    }
+  }
+
+  private searchPick(connected: Connected, moving: number | null, out: PlacementChoice): void {
+    this.search.search(
+      connected.model,
+      connected.volumes,
+      connected.boxes,
+      connected.technic,
+      this.pick,
+      RESTS_ON_TABLE_Y_PLATES,
+      moving,
+      out,
     );
-    this.hoverRefusal = this.placementRefusal(
-      this.active,
-      this.hoverX,
-      this.hoverZ,
-      this.placeRot,
-      this.hoverYPlates,
-      null,
+  }
+
+  private turnBlocksSnap(connected: Connected, choice: PlacementChoice): boolean {
+    if (choice.accepted && choice.votes > 0) return false;
+    const heldRot = this.pick.rot;
+    this.pick.turns = EVERY_TURN;
+    this.pick.firstTurn = NEXT_TURN;
+    this.searchPick(connected, null, this.turnChoice);
+    this.pick.turns = HELD_TURN_ONLY;
+    this.pick.firstTurn = HELD_TURN;
+    const turned = this.turnChoice;
+    return turned.accepted && turned.votes > 0 && turned.rot !== heldRot;
+  }
+
+  private turnMates(connected: Connected): ReadonlyArray<HoverMateCount> {
+    const turned = this.turnChoice;
+    this.search.evaluate(
+      connected.model,
+      { x: turned.x, z: turned.z, yPlates: turned.yPlates, rot: turned.rot },
+      this.mates,
     );
-    this.backend.placeGhost(
-      this.hoverX,
-      this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
-      this.hoverZ,
-      this.placeRot,
+    return mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner));
+  }
+
+  private placedViewOf(owner: number): PlacedModelView | null {
+    const model = this.searchModels.get(owner);
+    if (!model) return null;
+    const { x, z, yPlates, rot } = model.handle;
+    return {
+      item: model.placeable.id,
+      label: model.placeable.label,
+      pose: { x, z, yPlates, rot },
+    };
+  }
+
+  private refusalHit(
+    connected: Connected,
+    pose: LatticePose,
+    moving: number | null,
+    overlap: OverlapHit,
+  ): HoverRefusalHit | null {
+    if (this.namesPart(overlap)) return this.refusalView(overlap, false);
+    const named = this.namedOverlap;
+    const { model, volumes, boxes, technic } = connected;
+    if (this.search.nameOverlap(model, volumes, boxes, technic, pose, moving, this.namer, named)) {
+      this.namesPart(named);
+      return this.refusalView(named, false);
+    }
+    this.namesPart(overlap);
+    return this.refusalView(overlap, true);
+  }
+
+  private namesPart(hit: OverlapHit): boolean {
+    const model = this.searchModels.get(hit.owner);
+    this.hitPart = null;
+    if (!model) return false;
+    this.namingIndices = model.placeable.partTransforms.partIndex;
+    this.hitPart = partAtHit(
+      model.worldPartBoxes(),
+      hit.cellX,
+      hit.cellZ,
+      Math.max(hit.bottomLdu, hit.candidateBottomLdu),
+      Math.min(hit.topLdu, hit.candidateTopLdu),
+      this.partOfInstance,
     );
+    return this.hitPart !== null;
+  }
+
+  private readonly partOfInstance = (instance: number): HitPart | null => {
+    const asset = this.catalog.parts()[this.namingIndices[instance] ?? -1];
+    return asset ? { part: asset.id, partLabel: asset.title } : null;
+  };
+
+  private readonly namer: OverlapNamer = { names: (hit) => this.namesPart(hit) };
+
+  private refusalView(overlap: OverlapHit, byColumnOnly: boolean): HoverRefusalHit | null {
+    const placed = this.placedViewOf(overlap.owner);
+    if (!placed) return null;
+    return {
+      placed,
+      part: this.hitPart?.part ?? null,
+      partLabel: this.hitPart?.partLabel ?? null,
+      cellX: overlap.cellX,
+      cellZ: overlap.cellZ,
+      placedBottomLdu: overlap.bottomLdu,
+      placedTopLdu: overlap.topLdu,
+      heldBottomLdu: overlap.candidateBottomLdu,
+      heldTopLdu: overlap.candidateTopLdu,
+      byColumnOnly,
+    };
   }
 
   private hoverView(): HoverView | null {
@@ -1598,6 +1893,7 @@ export class Editor implements IEditor, IEditedWorld {
       z: this.hoverZ,
       yPlates: this.hoverYPlates,
       refusal: this.hoverRefusal,
+      placement: this.hoverPlacement,
     };
   }
 
@@ -1663,6 +1959,7 @@ export class Editor implements IEditor, IEditedWorld {
   pointerLeave(): void {
     this.hovering = false;
     this.queueClick(null);
+    this.hoverPlacement = null;
     this.update({ hover: null });
   }
 
@@ -1731,11 +2028,15 @@ export class Editor implements IEditor, IEditedWorld {
         });
         return;
       }
-      if (this.hoverRefusal !== null) {
-        this.refuse(this.active.id, this.hoverX, this.hoverZ, this.placeRot, this.hoverRefusal);
+      const placement = this.hoverPlacement;
+      if (!placement) return;
+      const { pose } = placement;
+      if (!placement.accepted) {
+        this.refuse(this.active.id, pose.x, pose.z, pose.rot, this.hoverRefusal ?? "");
+        this.update({ hover: this.hoverView() });
         return;
       }
-      this.placeAt(this.active, this.hoverX, this.hoverZ, this.placeRot, eventTimeMs);
+      this.placeAt(this.active, pose, eventTimeMs);
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);
@@ -1780,38 +2081,19 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
-  private placementRefusal(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    yPlates: number,
-    ignore: PlacedModel | null,
-  ): string | null {
-    const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
-    if (!overlap) return null;
-    return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
-  }
-
   private labelOf(id: string): string {
     return this.catalogItems.find((item) => item.id === id)?.label ?? id;
   }
 
-  private placeAt(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    eventTimeMs: number,
-  ): void {
+  private placeAt(placeable: Placeable, pose: LatticePose, eventTimeMs: number): void {
     this.show(
       this.history.place({
         refId: this.activeRefId,
         colorId: placeable.worldColor,
-        x,
-        z,
-        yPlates: this.placed.restingHeight(placeable, x, z, rot, null),
-        rot,
+        x: pose.x,
+        z: pose.z,
+        yPlates: pose.yPlates,
+        rot: pose.rot,
       }),
       eventTimeMs,
     );
@@ -1988,6 +2270,26 @@ export class Editor implements IEditor, IEditedWorld {
     this.update({ snapRoads: snap, snap: null });
   }
 
+  setPlacementMode(mode: PlacementMode): void {
+    this.update({ placementMode: mode });
+    this.rehover();
+  }
+
+  setPlacementModeOverride(held: boolean): void {
+    this.update({ placementModeOverride: held });
+    this.rehover();
+  }
+
+  private placementMode(): PlacementMode {
+    return effectivePlacementMode(this.state.placementMode, this.state.placementModeOverride);
+  }
+
+  private rehover(): void {
+    if (!this.active || !this.hovering) return;
+    this.placeGhost();
+    this.update({ hover: this.hoverView() });
+  }
+
   bomInput(scope: BomScope): BomInput {
     const ldrawCodes = this.bundleColorCodes;
     if (!ldrawCodes) throw new Error("the editor has not loaded");
@@ -2114,18 +2416,31 @@ export class Editor implements IEditor, IEditedWorld {
         selectionRefusal: `Can't turn to ${rot * DEGREES_PER_QUARTER_TURN}°. ${reason}`,
       });
     };
-    const rider = this.placed.riderOn(model);
-    if (rider) {
-      const riding = rider.placeable.label;
+    const carried = this.strandedBy(model);
+    if (carried) {
+      const riding = carried.placeable.label;
       refuseTurn(
         `${label}: ${riding} rests on it, so turning it would leave ${riding} floating or cut into it.`,
       );
       return;
     }
-    const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
-    const refusal = this.placementRefusal(model.placeable, pose.x, pose.z, rot, yPlates, model);
-    if (refusal !== null) {
-      refuseTurn(refusal);
+    const yPlates = pose.yPlates;
+    const pick = this.pick;
+    pick.x = pose.x;
+    pick.z = pose.z;
+    pick.yPlates = yPlates;
+    pick.rot = rot;
+    pick.cells = PRECISE_RADIUS;
+    pick.plates = PRECISE_RADIUS;
+    pick.radiusLdu = PRECISE_RADIUS;
+    pick.turns = HELD_TURN_ONLY;
+    const connected = this.connectedOf(model.placeable);
+    const moving = this.searchIds.get(model) ?? null;
+    this.searchPick(connected, moving, this.turnChoice);
+    if (!this.turnChoice.accepted) {
+      const turned = { x: pose.x, z: pose.z, yPlates, rot };
+      const hit = this.refusalHit(connected, turned, moving, this.turnChoice.overlap);
+      refuseTurn(refusalText(label, hit));
       return;
     }
     const road = this.turnedRoadFit(model, rot, yPlates);
@@ -2159,21 +2474,11 @@ export class Editor implements IEditor, IEditedWorld {
   deleteSelection(eventTimeMs: number): void {
     const model = this.selected;
     if (!model || this.state.readOnly) return;
-    const rider = this.placed.strandedRider(model);
-    if (rider) {
-      const label = model.placeable.label;
-      const riding = rider.placeable.label;
-      const reason = `${label}: ${riding} rests on it, so deleting it would leave ${riding} floating. Delete ${riding} first.`;
-      const { x, z, rot } = model.handle;
-      this.refuse(model.placeable.id, x, z, rot, reason);
-      this.update({ selectionRefusal: `Can't delete. ${reason}` });
-      return;
-    }
     const stranded = this.strandedBy(model);
     if (stranded) {
       const label = model.placeable.label;
       const left = stranded.placeable.label;
-      const reason = `${label}: ${left} connects only through it, so deleting it would leave ${left} unconnected. Delete ${left} first.`;
+      const reason = `${label}: ${left} rests on it, so deleting it would leave ${left} floating. Delete ${left} first.`;
       const { x, z, rot } = model.handle;
       this.refuse(model.placeable.id, x, z, rot, reason);
       this.update({ selectionRefusal: `Can't delete. ${reason}` });
@@ -2284,7 +2589,9 @@ export class Editor implements IEditor, IEditedWorld {
     if (id === undefined) return null;
     const stranded = this.search.strandedByRemoval(
       id,
-      (other) => (this.searchModels.get(other)?.handle.yPlates ?? 0) <= 0,
+      (other) =>
+        (this.searchModels.get(other)?.handle.yPlates ?? RESTS_ON_TABLE_Y_PLATES) <=
+        RESTS_ON_TABLE_Y_PLATES,
     );
     return stranded === null ? null : (this.searchModels.get(stranded) ?? null);
   }

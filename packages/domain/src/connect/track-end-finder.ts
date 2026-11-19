@@ -15,7 +15,7 @@ import { SOURCE_SHADOW, STATUS_VERIFIED } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
-import type { MateReport } from "./mate-report.ts";
+import { NO_SHAPE, type MateReport } from "./mate-report.ts";
 import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 
 const COEFFICIENTS = ZETA16_COEFFICIENT_COUNT;
@@ -36,6 +36,8 @@ function headingOfTurn(rot: number): number {
 }
 
 export class TrackEndFinder implements MateFinder {
+  readonly namesPartners = true;
+  readonly proposesEveryPose = false;
   private readonly index = new IntKeyMap(KEY_INTS);
   private readonly key = new Int32Array(KEY_INTS);
   private slotPosition = new Int32Array(INITIAL_SLOTS * COEFFICIENTS);
@@ -87,6 +89,10 @@ export class TrackEndFinder implements MateFinder {
     }
   }
 
+  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.propose(model, window, out);
+  }
+
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
     this.turn(model);
@@ -136,6 +142,10 @@ export class TrackEndFinder implements MateFinder {
       ) {
         out.push(
           e,
+          NO_SHAPE,
+          0,
+          NO_SHAPE,
+          0,
           SOURCE_SHADOW,
           STATUS_VERIFIED,
           this.holderOwner[holder] ?? 0,

@@ -82,23 +82,63 @@ export class ConnectionSolver {
     out.clear();
     out.add(window.x, window.z, window.yPlates, window.rot);
     for (let f = 0; f < this.finders.length; f++) this.finders[f]?.propose(model, window, out);
-    for (let i = 0; i < out.count; i++) {
-      const pose = this.pose.read(out, i);
-      let votes = 0;
-      for (let f = 0; f < this.finders.length; f++)
-        votes += this.finders[f]?.count(model, pose) ?? 0;
-      out.setVotes(i, votes);
-    }
+    for (let i = 0; i < out.count; i++) out.setVotes(i, this.votes(model, this.pose.read(out, i)));
     for (let i = 1; i < out.count; i++) {
       for (let j = i; j > 0 && ranksBefore(window, out, j, j - 1); j--) out.swap(j, j - 1);
     }
   }
 
-  evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+  votes(model: ModelConnectors, pose: LatticePose): number {
+    return this.denseVotes(model, pose) + this.proposalVotes(model, pose);
+  }
+
+  denseVotes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder?.proposesEveryPose) votes += finder.count(model, pose);
+    }
+    return votes;
+  }
+
+  proposalVotes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder && !finder.proposesEveryPose) votes += finder.count(model, pose);
+    }
+    return votes;
+  }
+
+  proposeMates(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    checkWindow(window);
     out.clear();
     for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder && !finder.proposesEveryPose) finder.proposeOnLattice(model, window, out);
+    }
+  }
+
+  evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, false);
+  }
+
+  partneredMates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, true);
+  }
+
+  private mates(
+    model: ModelConnectors,
+    pose: LatticePose,
+    out: MateReport,
+    partneredOnly: boolean,
+  ): void {
+    out.clear();
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (!finder || (partneredOnly && !finder.namesPartners)) continue;
       const from = out.count;
-      this.finders[f]?.mates(model, pose, out);
+      finder.mates(model, pose, out);
       out.assignFamily(from, f);
     }
   }

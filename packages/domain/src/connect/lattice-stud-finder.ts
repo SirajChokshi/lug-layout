@@ -34,6 +34,8 @@ function centredCell(turned16: number): number {
 }
 
 export class LatticeStudFinder implements MateFinder {
+  readonly namesPartners = false;
+  readonly proposesEveryPose = true;
   private readonly classes: MateClasses;
   private readonly levelYs: Int32Array[] = [];
   private readonly levelsOf: StudLevel[][] = [];
@@ -79,6 +81,10 @@ export class LatticeStudFinder implements MateFinder {
 
   remove(model: ModelConnectors, pose: LatticePose): void {
     this.stamp(model, pose, false);
+  }
+
+  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.propose(model, window, out);
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
@@ -182,6 +188,10 @@ export class LatticeStudFinder implements MateFinder {
             if (!levels[l]?.has(x, z)) continue;
             out.push(
               i,
+              model.shape[i] ?? 0,
+              model.gender[i] ?? 0,
+              classes.shapeOf(partner),
+              classes.genderOf(partner),
               ownSource | provenanceSource(provenance),
               Math.max(ownStatus, provenanceStatus(provenance)),
               NO_PARTNER,

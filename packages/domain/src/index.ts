@@ -172,7 +172,7 @@ export {
   planHull,
   verticalRange,
 } from "./track/heading-footprints.ts";
-export { OccupancyGrid, cellChunkKey } from "./occupancy.ts";
+export { cellChunkKey } from "./cell-chunk-key.ts";
 export {
   DirtyShards,
   addShards,
@@ -238,6 +238,8 @@ export {
   SECTION_SQUARE,
   SECTION_FLARE_JOINS_NEXT,
   SECTION_FLARE_JOINS_PREVIOUS,
+  SECTION_MALE_FINGER,
+  SECTION_FEMALE_FINGER,
   NO_GROUP,
   SnapShapes,
 } from "./connect/snap-shapes.ts";
@@ -277,6 +279,7 @@ export {
   MateReport,
   NOT_ENGAGED,
   NO_PARTNER,
+  NO_SHAPE,
 } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
 export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
@@ -301,7 +304,9 @@ export {
 export {
   VolumeIndex,
   FootprintGrid,
+  NO_OVERLAP,
   firstOverlap,
+  firstOverlapFrom,
   type CellVolumes,
   type OverlapHit,
   type OwnerFilter,

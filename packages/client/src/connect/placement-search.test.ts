@@ -13,7 +13,7 @@ import {
   SOURCE_SHADOW,
   STATUS_VERIFIED,
   type LatticePose,
-  type SnapWindow,
+  type OverlapHit,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
@@ -30,6 +30,7 @@ import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { partAtHit } from "../edit/placement-hover-view.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
@@ -38,6 +39,7 @@ import {
   placementChoice,
   type IPlacementSearch,
   type PlacementChoice,
+  type PlacementWindow,
 } from "./placement-search.ts";
 
 const HALF = STUD_LDU / 2;
@@ -60,6 +62,7 @@ const LINE_Y = 14;
 const BLOCK = [0, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU];
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const ORIGIN: LatticePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
+const TABLE_Y_PLATES = 0;
 
 type Box = ReadonlyArray<number>;
 type Spec = readonly [shape: number, gender: number, x: number, y: number, z: number, axis: number];
@@ -228,7 +231,7 @@ function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIG
 function choose(
   f: Fixture,
   piece: Piece,
-  at: SnapWindow,
+  at: PlacementWindow,
   moving: number | null = null,
 ): PlacementChoice {
   const choice = placementChoice();
@@ -238,14 +241,70 @@ function choose(
     piece.parts.boxes,
     piece.parts.technic,
     at,
+    TABLE_Y_PLATES,
     moving,
     choice,
   );
   return choice;
 }
 
-function window(x: number, z: number, cells: number, yPlates = 0, plates = 1): SnapWindow {
-  return { x, z, yPlates, rot: 0, cells, plates, turns: 1 };
+const TYPED_ARRAYS = [
+  "Float64Array",
+  "Float32Array",
+  "Int32Array",
+  "Uint32Array",
+  "Int16Array",
+  "Uint16Array",
+  "Int8Array",
+  "Uint8Array",
+] as const;
+
+function typedArraysConstructedDuring(run: () => void): number {
+  const global = globalThis as unknown as Record<string, new (...args: never[]) => unknown>;
+  const originals = TYPED_ARRAYS.map((name) => global[name]);
+  let constructed = 0;
+  TYPED_ARRAYS.forEach((name, i) => {
+    const Original = originals[i];
+    if (!Original) return;
+    global[name] = class extends (Original as new (...args: unknown[]) => object) {
+      constructor(...args: unknown[]) {
+        super(...args);
+        constructed++;
+      }
+    } as unknown as new (...args: never[]) => unknown;
+  });
+  try {
+    run();
+  } finally {
+    TYPED_ARRAYS.forEach((name, i) => {
+      const Original = originals[i];
+      if (Original) global[name] = Original;
+    });
+  }
+  return constructed;
+}
+
+function fullVerdict(choice: PlacementChoice) {
+  return {
+    pose: [choice.x, choice.z, choice.yPlates, choice.rot],
+    votes: choice.votes,
+    accepted: choice.accepted,
+    hit: choice.accepted ? null : { ...choice.overlap },
+  };
+}
+
+function window(x: number, z: number, cells: number, yPlates = 0, plates = 1): PlacementWindow {
+  return {
+    x,
+    z,
+    yPlates,
+    rot: 0,
+    cells,
+    plates,
+    turns: 1,
+    radiusLdu: cells * STUD_LDU,
+    firstTurn: 0,
+  };
 }
 
 function world(f: Fixture): Piece {
@@ -342,17 +401,16 @@ function verdict(choice: PlacementChoice): readonly [boolean, number, number] {
 }
 
 describe("PlacementSearch", () => {
-  it("walks past a ranked pose that collides and takes the best pose that fits", () => {
+  it("takes the nearest mated pose that fits when the cursor pose collides, breaking an equal-distance tie by lattice order", () => {
     const f = fixture();
     const choice = choose(f, world(f), window(0, 0, 1));
-    expect([
-      choice.accepted,
-      choice.x,
-      choice.z,
-      choice.yPlates,
-      choice.votes,
-      choice.walked,
-    ]).toEqual([true, STUD_LDU, 0, 0, 4, 2]);
+    expect([choice.accepted, choice.x, choice.z, choice.yPlates, choice.votes]).toEqual([
+      true,
+      0,
+      STUD_LDU,
+      0,
+      4,
+    ]);
   });
 
   it("refuses with the top pose's overlap when every candidate collides, unless that volume is moving", () => {
@@ -373,6 +431,143 @@ describe("PlacementSearch", () => {
     f.search.remove(BRICK);
     const freed = choose(f, plate, window(0, 0, 0));
     expect([freed.accepted, freed.votes]).toEqual([true, 4]);
+  });
+
+  it("refuses an unmated model at the cursor where it collides, and never moves it to a free cell nearby", () => {
+    const f = fixture();
+    const plate = world(f);
+    const away = 10 * STUD_LDU;
+    place(
+      f,
+      OTHER,
+      {
+        connectors: f.connectors([null]),
+        volumes: columns(1, 1, 0, BRICK_LDU),
+        parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+      },
+      { x: away, z: away, yPlates: 0, rot: 0 },
+    );
+    const choice = choose(f, plate, window(away, away, 2));
+    expect([choice.accepted, choice.x, choice.z, choice.votes, choice.overlap.owner]).toEqual([
+      false,
+      away,
+      away,
+      0,
+      OTHER,
+    ]);
+  });
+
+  it("names a refusal at the first overlapping cell whose placed part lies in the held band, past a single-interval column whose only part there sits above it", () => {
+    const f = fixture();
+    const baseplate = [0, -SLAB_LDU, 0, 2 * STUD_LDU, 0, STUD_LDU] as const;
+    const overhangingPlate = [0, 5 * PLATE_LDU, 0, STUD_LDU, 6 * PLATE_LDU, STUD_LDU] as const;
+    const solid: Piece = {
+      connectors: f.connectors([null, null]),
+      volumes: FrozenVolumes.ofPlaceable({
+        cells: {
+          cellX0: 0,
+          cellZ0: 0,
+          width: 2,
+          depth: 1,
+          columnBottom: Int16Array.of(0, 0),
+          columnTop: Int16Array.of(6, 0),
+        },
+        slabBoxes: Float32Array.from(baseplate),
+      }),
+      parts: partsOf([[...baseplate], [...overhangingPlate]]),
+    };
+    place(f, OTHER, solid);
+    const held = (cells: number, pinTop: number, slab: ReadonlyArray<number>): Piece => ({
+      connectors: f.connectors(Array.from({ length: cells }, () => null)),
+      volumes: FrozenVolumes.ofPlaceable({
+        cells: {
+          cellX0: 0,
+          cellZ0: 0,
+          width: cells,
+          depth: 1,
+          columnBottom: new Int16Array(cells),
+          columnTop: Int16Array.from({ length: cells }, (_, c) => (c === 0 ? pinTop : 0)),
+        },
+        slabBoxes: Float32Array.from(slab),
+      }),
+      parts: partsOf([[0, 0, 0, STUD_LDU, pinTop * PLATE_LDU, STUD_LDU]]),
+    });
+    const pinAndBaseplate = held(2, 3, [STUD_LDU, -SLAB_LDU, 0, 2 * STUD_LDU, 0, STUD_LDU]);
+    const pinOnly = held(1, 3, []);
+    const namer = {
+      names: (hit: OverlapHit) =>
+        partAtHit(
+          solid.parts.boxes.boxes,
+          hit.cellX,
+          hit.cellZ,
+          Math.max(hit.bottomLdu, hit.candidateBottomLdu),
+          Math.min(hit.topLdu, hit.candidateTopLdu),
+          (instance) => ({ part: `part ${instance}`, partLabel: "" }),
+        ) !== null,
+    };
+    const nameOn = (piece: Piece) => {
+      const named = placementChoice().overlap;
+      const found = f.search.nameOverlap(
+        piece.connectors,
+        piece.volumes,
+        piece.parts.boxes,
+        piece.parts.technic,
+        ORIGIN,
+        null,
+        namer,
+        named,
+      );
+      return found ? [named.cellX, named.cellZ] : null;
+    };
+    const refused = choose(f, pinAndBaseplate, window(0, 0, 0, 0, 0));
+
+    expect({
+      refused: refused.accepted ? null : [refused.overlap.cellX, refused.overlap.cellZ],
+      named: nameOn(pinAndBaseplate),
+      onlyByColumn: nameOn(pinOnly),
+    }).toEqual({ refused: [0, 0], named: [1, 0], onlyByColumn: null });
+  });
+
+  it("constructs no typed array once warm, however the assist window moves", () => {
+    const f = fixture();
+    const plate = world(f);
+    const windows = [0, 1, 2, 3, 4].flatMap((i) =>
+      [0, 1, 2].map((j) => window(i * STUD_LDU, j * STUD_LDU, 2)),
+    );
+    const sweep = () => {
+      for (const at of windows) choose(f, plate, at);
+    };
+    sweep();
+
+    expect(typedArraysConstructedDuring(sweep)).toBe(0);
+  });
+
+  it("gives exactly precise's verdict wherever assist ends at the cursor pose: nothing mated in reach, or the cursor pose itself mated and free", () => {
+    const f = fixture();
+    const plate = world(f);
+    const away = 10 * STUD_LDU;
+    place(
+      f,
+      OTHER,
+      {
+        connectors: f.connectors([null]),
+        volumes: columns(1, 1, 0, BRICK_LDU),
+        parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+      },
+      { x: away, z: away, yPlates: 0, rot: 0 },
+    );
+    const cursors = [
+      [away, away],
+      [away + 4 * STUD_LDU, away],
+      [0, STUD_LDU],
+    ] as const;
+    const assist = cursors.map(([x, z]) => fullVerdict(choose(f, plate, window(x, z, 2))));
+    const precise = cursors.map(([x, z]) => fullVerdict(choose(f, plate, window(x, z, 0, 0, 0))));
+
+    expect({ assist, accepted: precise.map((row) => row.accepted) }).toEqual({
+      assist: precise,
+      accepted: [false, true, true],
+    });
   });
 
   it("stacks a brick on a brick through stud mates that name no partner, since columns stop at the body top below the studs", () => {
@@ -414,21 +609,20 @@ describe("PlacementSearch", () => {
       }),
       parts: partsOf([[0, 0, 0, 2 * STUD_LDU, BRICK_LDU, 2 * STUD_LDU]]),
     };
-    const probe: Piece = {
+    const column: Piece = {
       connectors: f.connectors([null]),
-      volumes: columns(1, 1, 0, BRICK_LDU),
-      parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+      volumes: columns(1, 1, 0, 3 * BRICK_LDU),
+      parts: partsOf([[0, 0, 0, STUD_LDU, 3 * BRICK_LDU, STUD_LDU]]),
     };
-    const at = (cellX: number, cellZ: number, yPlates = 0): readonly [boolean, number, number] => {
-      const choice = choose(f, probe, window(cellX * STUD_LDU, cellZ * STUD_LDU, 0, yPlates, 0));
+    const at = (cellX: number, cellZ: number): readonly [boolean, number, number] => {
+      const choice = choose(f, column, window(cellX * STUD_LDU, cellZ * STUD_LDU, 0, 0, 0));
       return choice.accepted ? [true, 0, 0] : [false, choice.overlap.owner, choice.overlap.topLdu];
     };
     place(f, first, ell, ORIGIN);
     place(f, raised, ell, { x: 5 * STUD_LDU + HALF, z: 2 * STUD_LDU, yPlates: 3, rot: 0 });
     place(f, turned, ell, { x: -5 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 1 });
-    expect([at(1, 0), at(1, 1), at(7, 2), at(7, 2, 1), at(7, 3, 1), at(-5, 0), at(-4, 0)]).toEqual([
+    expect([at(1, 0), at(1, 1), at(7, 2), at(7, 3), at(-5, 0), at(-4, 0)]).toEqual([
       [false, first, BRICK_LDU],
-      [true, 0, 0],
       [true, 0, 0],
       [false, raised, 2 * BRICK_LDU],
       [true, 0, 0],
@@ -438,7 +632,7 @@ describe("PlacementSearch", () => {
     f.search.remove(first);
     f.search.remove(raised);
     place(f, moved, ell, { x: 10 * STUD_LDU, z: -3 * STUD_LDU, yPlates: 2, rot: 0 });
-    expect([at(1, 0), at(7, 2, 1), at(11, -3), at(11, -2), at(10, -2), at(-5, 0)]).toEqual([
+    expect([at(1, 0), at(7, 2), at(11, -3), at(11, -2), at(10, -2), at(-5, 0)]).toEqual([
       [true, 0, 0],
       [true, 0, 0],
       [false, moved, BRICK_LDU + 2 * PLATE_LDU],
@@ -495,6 +689,37 @@ describe("PlacementSearch mate zones", () => {
       overhang: [false, BORED, 0],
       sameCellsOtherPlacement: [false, OTHER],
     });
+  });
+
+  it("lands a pin held where it clears a sliding bore on the stud lattice, not at the nearest depth the slide allows", () => {
+    const f = fixture();
+    place(f, BORED, {
+      connectors: f.connectors([
+        table([
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z],
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, STUD_LDU, AXIS_POS_Z],
+        ]),
+      ]),
+      volumes: columns(2, 1, 0, BRICK_LDU),
+      parts: partsOf([BLOCK], [bore(0)]),
+    });
+    const held = {
+      connectors: f.connectors([
+        table([
+          [f.freePin, GENDER_MALE, LINE_X, LINE_Y, -HALF, AXIS_POS_Z],
+          [f.freePin, GENDER_MALE, LINE_X, LINE_Y, STUD_LDU + HALF, AXIS_NEG_Z],
+        ]),
+      ]),
+      volumes: columns(2, 3, 0, BRICK_LDU, 0, -1),
+      parts: partsOf([[LINE_X - 6, LINE_Y - 6, -HALF, LINE_X + 6, LINE_Y + 6, STUD_LDU + HALF]]),
+    };
+    const choice = choose(f, held, window(0, 2 * STUD_LDU, 1, 0, 0));
+    expect([choice.accepted, choice.x, choice.z, choice.votes > 0]).toEqual([
+      true,
+      0,
+      STUD_LDU,
+      true,
+    ]);
   });
 
   it("seats a free pin through a through bore, whose two end faces pair with the bore's two openings as one joint", () => {
