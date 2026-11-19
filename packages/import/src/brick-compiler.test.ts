@@ -201,7 +201,7 @@ it(
 
     expect(bakes.map((bake) => bake.recordedParts)).toEqual([2, 0, 1, 2]);
     for (const bake of bakes) {
-      expect(bake).toEqual({ ...bakes[0], recordedParts: bake.recordedParts });
+      expect(bake).toEqual({ ...bakes[0], recordedParts: bake.recordedParts, phases: bake.phases });
     }
   },
   COMPILE_TIMEOUT_MS,

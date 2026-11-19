@@ -2,6 +2,7 @@ import type { ConnectorLoad, PartConnectors } from "@brr/catalog/connector-recor
 import type {
   BakedModel,
   BakeOutcome,
+  BakePhases,
   BakeRequest,
   BrickCompiler,
   CompileLod,
@@ -29,6 +30,7 @@ import { MODEL_ROOT, type SubmodelInstances } from "@brr/domain";
 import type { IPartRecords } from "./library-bake-store.ts";
 import type { LdrawMirror, MirrorSource, MirrorStats } from "./ldraw-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
+import { TimeSpent } from "./time-spent.ts";
 
 export interface ImportJob {
   readonly fileName: string;
@@ -101,6 +103,11 @@ export interface ImportTimings {
   readonly resolveMs: number;
   readonly bakeMs: number;
   readonly totalMs: number;
+  readonly placementMs: number;
+  readonly recordFetchMs: number;
+  readonly compileMs: number;
+  readonly ldrawFetchMs: number;
+  readonly bakePhases: BakePhases | null;
 }
 
 export interface ImportReport {
@@ -144,7 +151,7 @@ export interface CompiledGlb {
   readonly glb: Uint8Array;
 }
 
-export type ModelBake = Omit<BakedModel, "status" | "recordedParts">;
+export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "phases">;
 
 export interface IBakeHelper {
   bake(
@@ -213,7 +220,7 @@ function asksForHeldFiles(outcome: BakeOutcome, library: ImportLibrary): boolean
 }
 
 function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): ModelBake {
-  const { status: _baked, recordedParts: _recorded, ...bake } = primary;
+  const { status: _baked, recordedParts: _recorded, phases: _phases, ...bake } = primary;
   const { studs } = primary.studCover;
   const visibleBits = primary.studCover.visibleBits.slice();
   for (const other of others) {
@@ -272,6 +279,7 @@ interface BakeRounds {
   readonly rounds: number;
   readonly helpersFailed: number;
   readonly recordedParts: number;
+  readonly phases: BakePhases | null;
 }
 
 function libraryKey(source: MirrorSource): string {
@@ -290,6 +298,7 @@ export class ModelImportEngine {
 
   async importText(job: ImportJob): Promise<ImportResult> {
     const started = this.now();
+    const spent = new TimeSpent(this.now);
     const read = this.compiler.readModel(job.text);
     const readAt = this.now();
     const library: ImportLibrary = {
@@ -300,9 +309,16 @@ export class ModelImportEngine {
     const bundleIds = new Set(job.bundlePartIds);
     const officialOf = new Map(read.inlineParts.map((part) => [part.inline, part.official]));
     const officials = new Set(read.parts.map((key) => officialOf.get(key) ?? key));
-    const pinned = await this.pinnedParts(job, officials);
+    const pinned = await spent.during("recordFetchMs", () => this.pinnedParts(job, officials));
     const outside = [...officials].filter((reference) => !bundleIds.has(bundlePartId(reference)));
-    const outcomes = await this.resolveOutside(job, library, outside, read.inlineParts, pinned);
+    const outcomes = await this.resolveOutside(
+      job,
+      library,
+      outside,
+      read.inlineParts,
+      pinned,
+      spent,
+    );
     const resolvedAt = this.now();
     const counts = instanceCounts(read);
     const parts = read.parts.map((key, index) => {
@@ -313,8 +329,10 @@ export class ModelImportEngine {
         : inlineResolution({ reference: key, official, instances }, bundleIds, outcomes);
     });
     const assembled = assemble(job, read, parts, outcomes);
-    const recordFiles = await this.recordFiles(read, assembled.drawn, officialOf, pinned);
-    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles);
+    const recordFiles = await spent.during("recordFetchMs", () =>
+      this.recordFiles(read, assembled.drawn, officialOf, pinned),
+    );
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent);
     const loads = await Promise.all(
       assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
@@ -350,19 +368,28 @@ export class ModelImportEngine {
           resolveMs: resolvedAt - readAt,
           bakeMs: bakedAt - resolvedAt,
           totalMs: bakedAt - started,
+          placementMs: bakedAt - started,
+          ...spent.spent(),
+          bakePhases: baked.phases,
         },
       },
     };
   }
 
-  private async fetchNeeded(library: ImportLibrary, needed: ReadonlySet<string>): Promise<void> {
+  private async fetchNeeded(
+    library: ImportLibrary,
+    needed: ReadonlySet<string>,
+    spent: TimeSpent,
+  ): Promise<void> {
     const unknown = [...needed].filter(
       (path) => !library.files.has(path) && !library.absent.has(path),
     );
     if (needed.size > 0 && unknown.length === 0) {
       throw new Error(`compiler keeps asking for files it already has: ${[...needed]}`);
     }
-    const probe = await this.mirror.probe(unknown, FETCH_CONCURRENCY);
+    const probe = await spent.during("ldrawFetchMs", () =>
+      this.mirror.probe(unknown, FETCH_CONCURRENCY),
+    );
     for (const [path, text] of probe.found) library.files.set(path, text);
     for (const path of probe.absent) library.absent.add(path);
   }
@@ -425,6 +452,7 @@ export class ModelImportEngine {
     library: ImportLibrary,
     drawn: Uint8Array,
     records: RecordFiles | null,
+    spent: TimeSpent,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) {
       return {
@@ -433,6 +461,7 @@ export class ModelImportEngine {
         rounds: 0,
         helpersFailed: 0,
         recordedParts: 0,
+        phases: null,
       };
     }
     const request: BakeRequest = {
@@ -457,7 +486,7 @@ export class ModelImportEngine {
     for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
       const needs = this.compiler.bakeNeeds(request, library, records);
       if (needs.status === "need") {
-        await this.fetchNeeded(library, new Set(needs.paths));
+        await this.fetchNeeded(library, new Set(needs.paths), spent);
         continue;
       }
       const assisted = this.helpers.map((helper, index) =>
@@ -483,7 +512,7 @@ export class ModelImportEngine {
         outcomes.flatMap((outcome) => (outcome.status === "need" ? outcome.paths : [])),
       );
       if (needed.size > 0) {
-        await this.fetchNeeded(library, needed);
+        await this.fetchNeeded(library, needed, spent);
         continue;
       }
       const baked: BakedModel[] = [];
@@ -493,7 +522,14 @@ export class ModelImportEngine {
             baked.push(outcome);
             break;
           case "failed":
-            return { bake: null, issue: outcome.message, rounds, helpersFailed, recordedParts: 0 };
+            return {
+              bake: null,
+              issue: outcome.message,
+              rounds,
+              helpersFailed,
+              recordedParts: 0,
+              phases: null,
+            };
           case "need":
             throw new Error("a bake shard asked for files after the round that fetched them");
           default: {
@@ -510,6 +546,7 @@ export class ModelImportEngine {
         rounds,
         helpersFailed,
         recordedParts: first.recordedParts,
+        phases: first.phases,
       };
     }
     throw new Error(`bake closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
@@ -541,10 +578,14 @@ export class ModelImportEngine {
     outside: ReadonlyArray<string>,
     inlineParts: ReadonlyArray<InlinePart>,
     pinned: ReadonlyMap<string, LibraryBakePart>,
+    spent: TimeSpent,
   ): Promise<Outcomes> {
     const parts = new Map<string, Exclude<PartOutcome, { status: "need" }>>();
     const inline = new Map<string, Exclude<InlineOutcome, { status: "need" }>>();
-    for (const outcome of await this.fromRecords(job, outside, pinned)) {
+    const recorded = await spent.during("recordFetchMs", () =>
+      this.fromRecords(job, outside, pinned),
+    );
+    for (const outcome of recorded) {
       parts.set(outcome.reference, outcome);
     }
     let pendingParts = outside.filter((reference) => !parts.has(reference));
@@ -556,23 +597,21 @@ export class ModelImportEngine {
         throw new Error(`part closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);
       }
       rounds++;
-      const output = this.compiler.compile(
-        {
-          lod: job.lod,
-          studPrimitives: job.studPrimitives,
-          unofficialAllowlist: job.unofficialAllowlist,
-          connectors: {
-            primitives: job.primitives,
-            sectionVocabulary: job.sectionVocabulary,
-            cavityProbe: job.cavityProbe,
-            infer: ONLY_PINNED_PARTS_ARE_COMPILED,
-          },
-          parts: pendingParts,
-          model: job.text,
-          inlineChecks: pendingChecks,
+      const request = {
+        lod: job.lod,
+        studPrimitives: job.studPrimitives,
+        unofficialAllowlist: job.unofficialAllowlist,
+        connectors: {
+          primitives: job.primitives,
+          sectionVocabulary: job.sectionVocabulary,
+          cavityProbe: job.cavityProbe,
+          infer: ONLY_PINNED_PARTS_ARE_COMPILED,
         },
-        library,
-      );
+        parts: pendingParts,
+        model: job.text,
+        inlineChecks: pendingChecks,
+      };
+      const output = spent.inside("compileMs", () => this.compiler.compile(request, library));
       weldEpsilonLdu = output.weldEpsilonLdu;
       const needed = new Set<string>();
       pendingParts = [];
@@ -593,7 +632,7 @@ export class ModelImportEngine {
           inline.set(outcome.inline, outcome);
         }
       }
-      await this.fetchNeeded(library, needed);
+      await this.fetchNeeded(library, needed, spent);
     }
     return { parts, inline, rounds, weldEpsilonLdu };
   }

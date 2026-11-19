@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::time::{Duration, Instant};
 
 use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::rolling_mode_from_studs;
@@ -17,13 +18,18 @@ use brick_compile::{
 };
 
 const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
+const MS_PER_SECOND: f64 = 1000.0;
+
+fn ms(elapsed: Duration) -> f64 {
+    elapsed.as_secs_f64() * MS_PER_SECOND
+}
 static NO_RECORDS: std::sync::LazyLock<RecordShelf> = std::sync::LazyLock::new(RecordShelf::new);
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
-    BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
-    Reply, Section, VehicleHeader,
+    BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry,
+    PartOutcome, Reply, Section, VehicleHeader,
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
@@ -34,6 +40,7 @@ pub struct Session {
     records: RecordShelf,
     records_key: String,
     records_offered: bool,
+    decoded_since_bake: Duration,
 }
 
 struct BakeInputs<'a> {
@@ -140,7 +147,15 @@ impl Session {
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
-                Ok(bake(&self.library, self.offered(), &drawn, &inputs, body))
+                let decoded = std::mem::take(&mut self.decoded_since_bake);
+                Ok(bake(
+                    &self.library,
+                    self.offered(),
+                    &drawn,
+                    &inputs,
+                    decoded,
+                    body,
+                ))
             }
         }
     }
@@ -163,11 +178,13 @@ impl Session {
             self.records.clear();
             self.records_key.clone_from(&records.key);
         }
+        let decoding = Instant::now();
         for file in &records.files {
             let record = BakeRecord::decode(request.range(file.bytes)?)
                 .map_err(|e| format!("bake record for {}: {e}", file.reference))?;
             self.records.insert(file.reference.clone(), record);
         }
+        self.decoded_since_bake += decoding.elapsed();
         let offered: HashSet<&str> = records.references.iter().map(String::as_str).collect();
         self.records
             .retain(|reference, _| offered.contains(reference.as_str()));
@@ -434,6 +451,7 @@ fn bake(
     records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
+    decoded: Duration,
     body: &mut Body,
 ) -> Reply {
     let closure = BakeClosure {
@@ -445,7 +463,7 @@ fn bake(
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
     }
-    let baked = bake_drawn(library, records, drawn, inputs, body);
+    let baked = bake_drawn(library, records, drawn, inputs, decoded, body);
     let requested = library.take_requested();
     if !requested.is_empty() {
         return Reply::Need { paths: requested };
@@ -458,8 +476,13 @@ fn bake_drawn(
     records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
+    decoded: Duration,
     body: &mut Body,
 ) -> Result<Reply, String> {
+    let mut phases = BakePhases {
+        decode_ms: ms(decoded),
+        ..BakePhases::default()
+    };
     let mut baker = ModelBaker::new(
         library,
         inputs.stud_primitives.to_vec(),
@@ -472,9 +495,16 @@ fn bake_drawn(
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();
     for instance in drawn {
         if !shapes.contains_key(instance.part.as_str()) {
+            let resolving = Instant::now();
             let shape = baker
                 .lattice_shape(&instance.part)
                 .map_err(|e| format!("{}: {e}", instance.part))?;
+            let resolved = ms(resolving.elapsed());
+            if records.contains_key(&instance.part) {
+                phases.decode_ms += resolved;
+            } else {
+                phases.compile_ms += resolved;
+            }
             shapes.insert(&instance.part, shape);
         }
     }
@@ -483,9 +513,11 @@ fn bake_drawn(
         .map(|instance| &shapes[instance.part.as_str()])
         .collect();
     if inputs.visibility_only {
+        let covering = Instant::now();
         let cover = baker
             .cover(drawn, None, inputs.shard)
             .map_err(|e| e.to_string())?;
+        phases.cover_ms = ms(covering.elapsed());
         put_cover(body, &cover)?;
         return Ok(Reply::Baked {
             instances: drawn.len(),
@@ -495,17 +527,23 @@ fn bake_drawn(
             cover: Cover::from(&cover),
             vehicles: None,
             vehicle_issue: None,
+            phases,
             blobs: body.take_blobs(),
         });
     }
+    let latticing = Instant::now();
     let (lattice, lattice_issue) = match drawn_lattice(drawn, &drawn_shapes) {
         Ok(lattice) => (lattice, None),
         Err(error) => (None, Some(error.to_string())),
     };
+    phases.lattice_ms = ms(latticing.elapsed());
+    let covering = Instant::now();
     let cover = baker
         .cover(drawn, lattice.as_ref(), inputs.shard)
         .map_err(|e| e.to_string())?;
+    phases.cover_ms = ms(covering.elapsed());
     put_cover(body, &cover)?;
+    let detecting = Instant::now();
     let (vehicles, vehicle_issue) = match inputs.vehicles {
         None => (None, None),
         Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
@@ -513,6 +551,7 @@ fn bake_drawn(
             Err(error) => (None, Some(error.to_string())),
         },
     };
+    phases.vehicles_ms = ms(detecting.elapsed());
     Ok(Reply::Baked {
         instances: drawn.len(),
         recorded_parts: baker.recorded_parts(),
@@ -521,6 +560,7 @@ fn bake_drawn(
         cover: Cover::from(&cover),
         vehicles,
         vehicle_issue,
+        phases,
         blobs: body.take_blobs(),
     })
 }

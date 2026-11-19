@@ -17,6 +17,16 @@ use crate::request::Range;
 
 pub type Blobs = BTreeMap<&'static str, Range>;
 
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BakePhases {
+    pub decode_ms: f64,
+    pub compile_ms: f64,
+    pub lattice_ms: f64,
+    pub cover_ms: f64,
+    pub vehicles_ms: f64,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "status", rename_all_fields = "camelCase")]
 pub enum Reply {
@@ -63,6 +73,7 @@ pub enum Reply {
         vehicles: Option<Vec<VehicleHeader>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         vehicle_issue: Option<String>,
+        phases: BakePhases,
         blobs: Blobs,
     },
     #[serde(rename = "failed")]
