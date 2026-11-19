@@ -802,13 +802,16 @@ export class PlacedChunks {
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
+    const vacated = new Set<number>();
     const removed: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
       entry.addRebuildKeys(touched);
+      for (const key of entry.chunks.keysWithColumns()) vacated.add(key);
       removed.push(entry);
     }
+    this.restamp(vacated, NO_ENTRIES);
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
@@ -982,7 +985,6 @@ export class PlacedChunks {
     }
     const slabbed = this.slabbed.indexOf(entry);
     if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
-    this.restamp(entry.chunks.keysWithColumns(), NO_ENTRIES);
     return entry;
   }
 

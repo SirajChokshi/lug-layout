@@ -1972,3 +1972,37 @@ it("loads and applies a placed set's far model once, however often the set is pl
     },
   });
 }, 120_000);
+
+it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a chunk edge, so its tiles share column chunks", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  place(BASEPLATE, 0, 320);
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  const stroke = () => {
+    backend.aim(0, 320);
+    editor.dragStart(0, 0);
+    for (const x of [640, 1280]) {
+      backend.aim(x, 320);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+  };
+  const xs = () => Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+  editor.chooseItem(kit.id);
+  stroke();
+  const laid = xs();
+  editor.undo(0);
+  const undone = xs();
+  editor.redo(0);
+  const redone = xs();
+  editor.setRoadErase(true);
+  stroke();
+  const erased = xs();
+  expect({ laid, undone, redone, erased }).toEqual({
+    laid: [0, 640, 1280],
+    undone: [0],
+    redone: [0, 640, 1280],
+    erased: [0],
+  });
+}, 120_000);
