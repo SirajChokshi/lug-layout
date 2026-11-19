@@ -330,6 +330,7 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
     let mut settled = vec![false; triangles.len()];
     let mut strip_reports: Vec<(UnreadRow, Vec<usize>)> = Vec::new();
     let mut strip_notes: Vec<(UnreadRow, Vec<usize>)> = Vec::new();
+    let mut reported_round_by_strips = vec![false; triangles.len()];
     for axis in AXES {
         for span in mesh.spans(axis) {
             let (closed, pooled) = span.strips(&mesh, roundness);
@@ -341,7 +342,15 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
                         strip.triangles.iter().for_each(|&t| settled[t] = true);
                         read.push(band);
                     }
-                    BandReading::Unread(row) => strip_reports.push((row, strip.triangles)),
+                    BandReading::Unread(row) => {
+                        if strip.has_round_evidence() {
+                            strip
+                                .triangles
+                                .iter()
+                                .for_each(|&t| reported_round_by_strips[t] = true);
+                        }
+                        strip_reports.push((row, strip.triangles));
+                    }
                     BandReading::Noted(row) => strip_notes.push((row, strip.triangles)),
                 }
             }
@@ -358,6 +367,12 @@ pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling
         let reads_a_band = readings.iter().any(|r| matches!(r, BandReading::Read(_)));
         let strips_report_it = component.iter().all(|&t| reported_by_strips[t]);
         if strips_report_it && !reads_a_band {
+            if !component.iter().all(|&t| reported_round_by_strips[t]) {
+                unread.extend(readings.into_iter().filter_map(|reading| match reading {
+                    BandReading::Unread(row) | BandReading::Noted(row) => Some(row),
+                    BandReading::NotRound | BandReading::Inward | BandReading::Read(_) => None,
+                }));
+            }
             continue;
         }
         let reports_a_band = readings
@@ -1500,6 +1515,10 @@ impl<'a> Strip<'a> {
     fn is_closed(&self) -> bool {
         let rings = &self.rings;
         rings.iter().all(|r| r.is_closed() || r.is_apex()) && !rings.iter().all(Ring::is_apex)
+    }
+
+    fn has_round_evidence(&self) -> bool {
+        !self.is_closed() || !matches!(self.ring_circles(), RingCircles::Absent)
     }
 
     fn facets(&self) -> usize {
