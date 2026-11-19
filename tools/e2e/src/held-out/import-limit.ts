@@ -18,9 +18,9 @@ function threadFailure(message: string): Settled {
   return { outcome: { kind: "threw", message }, threadAlive: false };
 }
 
-function startThread(bundleRoot: string, ldrawCache: string): Promise<Worker> {
+function startThread(bundleRoot: string, ldrawCache: string, recordsRoot: string): Promise<Worker> {
   const worker = new Worker(IMPORT_THREAD, {
-    argv: [bundleRoot, ldrawCache],
+    argv: [bundleRoot, ldrawCache, recordsRoot],
     execArgv: THREAD_NODE_OPTIONS,
   });
   worker.unref();
@@ -53,11 +53,16 @@ function settledReply(worker: Worker, limitSeconds: number): Promise<Settled> {
   });
 }
 
-export function importsWithinLimit(bundleRoot: string, ldrawCache: string, limitSeconds: number) {
+export function importsWithinLimit(
+  bundleRoot: string,
+  ldrawCache: string,
+  recordsRoot: string,
+  limitSeconds: number,
+) {
   let thread: Promise<Worker> | null = null;
   return {
     async run(input: HeldOutInput): Promise<{ outcome: LimitedOutcome; seconds: number }> {
-      thread ??= startThread(bundleRoot, ldrawCache);
+      thread ??= startThread(bundleRoot, ldrawCache, recordsRoot);
       const worker = await thread;
       const started = performance.now();
       worker.postMessage(input, []);
