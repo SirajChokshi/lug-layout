@@ -10,7 +10,7 @@ import type {
 } from "@brr/client";
 import type { Assembly, AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
-import { shiftedOutcomes } from "./pair-scenario.ts";
+import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
 import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU, type AimedBackend } from "./headless-editor.ts";
 
 const QUARTER_TURNS_AWAY = 2;
@@ -566,17 +566,77 @@ function connectorsOf(step: Step): number {
   return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.connectors, 0);
 }
 
+function seamSpan(neighbourhood: AssistNeighbourhood): number {
+  return 2 * (neighbourhood.cells + 1);
+}
+
+async function seamPoses(log: StepLog, span: number): Promise<ReadonlyArray<MatedPose>> {
+  const poses: MatedPose[] = [];
+  for (let along = -span; along <= span; along++) {
+    poses.push({ along, step: await log.at("precise", { along: along + 0, across: 0 }, false) });
+  }
+  return poses;
+}
+
 async function matedPoses(
   log: StepLog,
   neighbourhood: AssistNeighbourhood,
 ): Promise<ReadonlyArray<MatedPose>> {
-  const span = 2 * (neighbourhood.cells + 1);
-  const mated: MatedPose[] = [];
-  for (let along = -span; along <= span; along++) {
-    const step = await log.at("precise", { along: along + 0, across: 0 }, false);
-    if (step.hover?.accepted === true && step.hover.mates.length > 0) mated.push({ along, step });
-  }
-  return mated;
+  return (await seamPoses(log, seamSpan(neighbourhood))).filter(
+    ({ step }) => step.hover?.accepted === true && step.hover.mates.length > 0,
+  );
+}
+
+interface PredictedMate {
+  readonly along: number;
+  readonly joints: number;
+  readonly pose: Pose;
+}
+
+interface PredictedSnap {
+  readonly at: SweepOffset;
+  readonly step: Step;
+  readonly target: PredictedMate;
+}
+
+function nearestPredicted(
+  at: SweepOffset,
+  mates: ReadonlyArray<PredictedMate>,
+  neighbourhood: AssistNeighbourhood,
+): PredictedMate | null {
+  const reach = neighbourhood.ldu * neighbourhood.ldu;
+  const ranked = mates
+    .filter((mate) => squaredDistance(at, mate.along) <= reach)
+    .toSorted(
+      (a, b) =>
+        squaredDistance(at, a.along) - squaredDistance(at, b.along) ||
+        b.joints - a.joints ||
+        a.pose.x - b.pose.x ||
+        a.pose.z - b.pose.z,
+    );
+  return ranked[0] ?? null;
+}
+
+function snapsToPredicted(step: Step, target: PredictedMate): boolean {
+  const { hover, cursor } = step;
+  return (
+    hover !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    hover.mode === "assist" &&
+    hover.accepted &&
+    samePose(hover.pose, target.pose) &&
+    !hover.lifted &&
+    pinHoleJoints(hover.mates) === target.joints &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+function describePredictions(predictions: ReadonlyArray<SeamPrediction>): string {
+  return predictions
+    .filter(({ fit }) => fit === "mated")
+    .map(({ along, joints }) => `${along === 0 ? "flush" : `${along} along`} (${joints} joints)`)
+    .join(", ");
 }
 
 function squaredDistance(at: SweepOffset, along: number): number {
@@ -683,12 +743,17 @@ export async function pinnedPairChecks(
   const reach = await reachAcrossScales(path, log);
   const probe = await log.at("assist", AT_FLUSH, false);
   const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
-  const mated = await matedPoses(log, neighbourhood);
-  const snapped: Snapped[] = [];
+  const span = seamSpan(neighbourhood);
+  const precisely = await seamPoses(log, span);
+  const predictions = seamPredictions(pair, span);
+  const predictedMates: ReadonlyArray<PredictedMate> = predictions
+    .filter(({ fit }) => fit === "mated")
+    .map(({ along, joints }) => ({ along, joints, pose: offset(poses.flush, poses.along, along) }));
+  const snapped: PredictedSnap[] = [];
   const beyond: Compared[] = [];
   for (const at of sweepOffsets(neighbourhood.cells, full)) {
     const assist = await log.at("assist", at, false);
-    const target = nearestMated(at, mated, neighbourhood);
+    const target = nearestPredicted(at, predictedMates, neighbourhood);
     if (target) snapped.push({ at, step: assist, target });
     else beyond.push({ at, assist, precise: await log.at("precise", at, false) });
   }
@@ -720,6 +785,28 @@ export async function pinnedPairChecks(
   };
   const refusedBeyond = beyond.filter(({ precise }) => precise.hover?.accepted === false).length;
   const toFlush = snapped.filter(({ target }) => target.along === 0).length;
+  const seamDisagrees = (prediction: SeamPrediction): boolean => {
+    const step = precisely.find(({ along }) => along === prediction.along)?.step;
+    if (!step?.hover || !atCursor(step, "precise")) return true;
+    const joints = pinHoleJoints(step.hover.mates);
+    switch (prediction.fit) {
+      case "out":
+        return !realHit(step);
+      case "mated":
+        return !step.hover.accepted || joints !== prediction.joints;
+      case "free":
+        return !step.hover.accepted || joints !== 0;
+      default: {
+        const unhandled: never = prediction.fit;
+        throw new Error(`unhandled seam fit ${String(unhandled)}`);
+      }
+    }
+  };
+  const seamMismatches = predictions.filter(seamDisagrees);
+  const describeSeam = (prediction: SeamPrediction): string => {
+    const step = precisely.find(({ along }) => along === prediction.along)?.step;
+    return `${describeOffset({ along: prediction.along, across: 0 })}: predicted ${prediction.fit} with ${prediction.joints} joints; precise ${step ? outcome(step) : "not evaluated"}`;
+  };
   const checks: EditorCheck[] = [
     {
       label:
@@ -732,18 +819,25 @@ export async function pinnedPairChecks(
       detail: `expected ${describePose(poses.flush)} with ${pins} pin/hole joints; one stud short: ${outcome(assistShort)}; one stud in: ${outcome(assistIn)}`,
     },
     reach,
+    {
+      label:
+        "Precise along the seam at flush depth matches the generator's geometry: refused with a real hit where a pin lands in a solid, accepted with exactly the predicted pin/hole joints where pins land in holes, and accepted with none where every pin is free",
+      passed: seamMismatches.length === 0,
+      detail:
+        seamMismatches.length === 0
+          ? `${predictions.length} seam offsets agree; predicted mates: ${describePredictions(predictions)}`
+          : `${seamMismatches.length} of ${predictions.length} disagree: ${seamMismatches.slice(0, LISTED_FAILURES).map(describeSeam).join("; ")}`,
+    },
     sweepCheck(
-      `Assist sweep: every cursor offset within the reported neighbourhood (${neighbourhood.ldu} LDU) of a mated pose snaps to the nearest one, magnetised by exactly the offset, and flush engages every pin`,
+      `Assist sweep: every cursor offset within the reported neighbourhood (${neighbourhood.ldu} LDU) of a predicted mate snaps to the nearest one, with its predicted joints, magnetised by exactly the offset`,
       snapped,
-      ({ step, target }) =>
-        snapsTo(step, target) &&
-        (target.along !== 0 || pinHoleJoints(step.hover?.mates ?? []) === pins),
+      ({ step, target }) => snapsToPredicted(step, target),
       ({ at, step, target }) =>
-        `${describeOffset(at)}: expected the mated pose at ${describeOffset({ along: target.along, across: 0 })}; ${outcome(step)}`,
-      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; mated poses: ${describeMated(mated)}`,
+        `${describeOffset(at)}: expected the mate at ${describeOffset({ along: target.along, across: 0 })} with ${target.joints} joints; ${outcome(step)}`,
+      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; predicted mates: ${describePredictions(predictions)}`,
     ),
     sweepCheck(
-      "Assist sweep: beyond the neighbourhood of every mated pose, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
+      "Assist sweep: beyond the neighbourhood of every predicted mate, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
       beyond,
       ({ assist, precise }) =>
         stepVerdict(assist) === stepVerdict(precise) &&
