@@ -5,9 +5,8 @@ use serde_json::{json, Value};
 
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
-use crate::sixteenths;
+use crate::identify::{self, identifies, SIXTEENTHS_PER_LDU};
 
-const AXIS_RESIDUAL: f64 = 0.0005;
 const AXES: [usize; 3] = [0, 1, 2];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -75,8 +74,8 @@ pub struct PartRolling {
 impl UnreadEnds {
     fn of(lo: f64, hi: f64) -> UnreadEnds {
         UnreadEnds {
-            from: sixteenths::identified(lo),
-            to: sixteenths::identified(hi),
+            from: sixteenths_of(lo),
+            to: sixteenths_of(hi),
         }
     }
 
@@ -167,7 +166,7 @@ impl PartRolling {
             .collect();
         let unread: Vec<Value> = self.unread.iter().map(|band| band.json()).collect();
         json!({
-            "stepsPerLdu": sixteenths::PER_LDU,
+            "stepsPerLdu": SIXTEENTHS_PER_LDU,
             "surfaces": surfaces,
             "unread": unread,
         })
@@ -885,8 +884,12 @@ impl Profile {
     }
 }
 
+fn sixteenths_of(value: f64) -> Option<i32> {
+    identify::sixteenths(value).and_then(|steps| i32::try_from(steps).ok())
+}
+
 fn identified_at(centre: [f64; 2]) -> Option<[i32; 2]> {
-    match centre.map(sixteenths::identified) {
+    match centre.map(sixteenths_of) {
         [Some(a), Some(b)] => Some([a, b]),
         _ => None,
     }
@@ -896,9 +899,9 @@ fn aligned_axis(direction: Vec3) -> Option<usize> {
     let mut found = None;
     for (k, &c) in direction.iter().enumerate() {
         let magnitude = c.abs();
-        if (magnitude - 1.0).abs() <= AXIS_RESIDUAL {
+        if identifies(magnitude - 1.0) {
             found = Some(k);
-        } else if magnitude > AXIS_RESIDUAL {
+        } else if !identifies(magnitude) {
             return None;
         }
     }
@@ -1217,8 +1220,7 @@ impl BandCandidate {
     }
 
     fn identified_radii(&self) -> [Option<i32>; 2] {
-        self.radii
-            .map(|radius| radius.and_then(sixteenths::identified))
+        self.radii.map(|radius| radius.and_then(sixteenths_of))
     }
 
     fn ends(&self) -> UnreadEnds {
@@ -1527,7 +1529,7 @@ impl ReadBand {
         if both_cylinders {
             return true;
         }
-        match [self.lo, self.hi, next.hi].map(sixteenths::identified) {
+        match [self.lo, self.hi, next.hi].map(sixteenths_of) {
             [Some(t0), Some(t1), Some(t2)] => {
                 let [r0, r1, r2] = [self.radii[0], self.radii[1], next.radii[1]].map(i64::from);
                 let [t0, t1, t2] = [t0, t1, t2].map(i64::from);
@@ -1538,8 +1540,8 @@ impl ReadBand {
     }
 
     fn surface(&self) -> Option<RollingSurface> {
-        let from = sixteenths::identified(self.lo)?;
-        let to = sixteenths::identified(self.hi)?;
+        let from = sixteenths_of(self.lo)?;
+        let to = sixteenths_of(self.hi)?;
         (from < to).then_some(RollingSurface {
             axis: self.axis,
             at: self.at,

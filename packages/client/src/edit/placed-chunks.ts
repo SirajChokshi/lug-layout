@@ -8,6 +8,7 @@ import {
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  CHUNK_STUDS,
   PLATE_LDU,
   STUD_LDU,
   chunkKey,
@@ -23,6 +24,7 @@ import {
   type ISceneBackend,
   type WorldBox,
 } from "@brr/render";
+import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS } from "./local-box.ts";
 import {
   FOOTPRINT_ANTI_STUD,
@@ -83,6 +85,8 @@ export function rayBoxDistance(
 
 const FOOTPRINT_FLAG = 1;
 const COLUMNS_FLAG = 2;
+const BORDER_FLAG = 4;
+const ANTI_STUD_FLAG = 8;
 const INITIAL_TOUCHED_CAPACITY = 4;
 const NOT_TOUCHED = -1;
 
@@ -128,6 +132,14 @@ class TouchedChunks {
     return ((this.flags[row] ?? 0) & COLUMNS_FLAG) !== 0;
   }
 
+  borders(row: number): boolean {
+    return ((this.flags[row] ?? 0) & BORDER_FLAG) !== 0;
+  }
+
+  hasAntiStudFootprint(row: number): boolean {
+    return ((this.flags[row] ?? 0) & ANTI_STUD_FLAG) !== 0;
+  }
+
   contributedKeys(): number[] {
     const keys: number[] = [];
     for (let row = 0; row < this.rows; row++) {
@@ -160,6 +172,14 @@ class TouchedChunks {
 
   markColumns(key: number): void {
     this.setFlag(key, COLUMNS_FLAG);
+  }
+
+  markBorder(key: number): void {
+    this.setFlag(key, BORDER_FLAG);
+  }
+
+  markAntiStudFootprint(key: number): void {
+    this.setFlag(key, ANTI_STUD_FLAG);
   }
 
   private setFlag(key: number, flag: number): void {
@@ -284,22 +304,21 @@ const scratchBox = new Float64Array(BOX_FLOATS);
 const NEIGHBOUR_DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
 const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
 
+const CULLING_BORDER_CELLS = 1;
+const CULLING_WINDOW_CELLS = CHUNK_STUDS + 2 * CULLING_BORDER_CELLS;
+const localRange = new Int32Array(4);
+
 function closedAround(
   cellX: number,
   cellZ: number,
   baseLdu: number,
-  cover: PlacedEntry,
-  closers: ReadonlyArray<PlacedEntry>,
+  cover: number,
+  columns: CellWindowIndex,
 ): boolean {
   for (let n = 0; n < NEIGHBOUR_DX.length; n++) {
     const x = cellX + (NEIGHBOUR_DX[n] ?? 0);
     const z = cellZ + (NEIGHBOUR_DZ[n] ?? 0);
-    let closed = false;
-    for (let c = 0; c < closers.length && !closed; c++) {
-      const closer = closers[c];
-      closed = closer !== undefined && closer !== cover && closer.columnSpans(x, z, baseLdu);
-    }
-    if (!closed) return false;
+    if (!columns.spannedByAnotherOwner(x, z, baseLdu, cover)) return false;
   }
   return true;
 }
@@ -345,6 +364,7 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
 
 class PlacedEntry implements PlacedModel {
   readonly chunks = new TouchedChunks();
+  columnsIndexedIn = -1;
   readonly slab: Float64Array;
   readonly box: WorldBox;
   readonly pose: LatticePose;
@@ -393,14 +413,17 @@ class PlacedEntry implements PlacedModel {
       for (let i = 0; i < cells.width; i++) {
         const cell = j * cells.width + i;
         const occupied = (cells.columnTop[cell] ?? EMPTY_COLUMN) !== EMPTY_COLUMN;
-        const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
+        const kind = cells.footprint[cell] ?? FOOTPRINT_NONE;
+        const footprint = kind !== FOOTPRINT_NONE;
         if (!occupied && !footprint) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         const key = cellChunkKey(wx, wz);
+        this.markChunksAcrossTheBorder(wx, wz, key);
         if (occupied) this.chunks.markColumns(key);
         if (footprint) {
           this.chunks.markFootprint(key);
+          if (kind === FOOTPRINT_ANTI_STUD) this.chunks.markAntiStudFootprint(key);
           if (!chunkOrigins.has(key)) {
             chunkOrigins.set(key, [
               chunkOf(wx * STUD_LDU + HALF_STUD_LDU),
@@ -408,6 +431,20 @@ class PlacedEntry implements PlacedModel {
             ]);
           }
         }
+      }
+    }
+  }
+
+  private markChunksAcrossTheBorder(worldCellX: number, worldCellZ: number, key: number): void {
+    const inChunkX = worldCellX - Math.floor(worldCellX / CHUNK_STUDS) * CHUNK_STUDS;
+    const inChunkZ = worldCellZ - Math.floor(worldCellZ / CHUNK_STUDS) * CHUNK_STUDS;
+    const interior =
+      inChunkX > 0 && inChunkX < CHUNK_STUDS - 1 && inChunkZ > 0 && inChunkZ < CHUNK_STUDS - 1;
+    if (interior) return;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const neighbour = cellChunkKey(worldCellX + dx, worldCellZ + dz);
+        if (neighbour !== key) this.chunks.markBorder(neighbour);
       }
     }
   }
@@ -453,20 +490,77 @@ class PlacedEntry implements PlacedModel {
     return false;
   }
 
-  footprintKind(worldCellX: number, worldCellZ: number, baseLdu: number): number {
-    if (baseLdu !== this.yLdu) return FOOTPRINT_NONE;
-    const cell = this.cellAt(worldCellX, worldCellZ);
-    return cell < 0 ? FOOTPRINT_NONE : (this.placeable.cells.footprint[cell] ?? FOOTPRINT_NONE);
+  private localCellsIn(index: CellWindowIndex): boolean {
+    const { cells } = this.placeable;
+    const pose = this.pose;
+    let minI = Number.POSITIVE_INFINITY;
+    let maxI = Number.NEGATIVE_INFINITY;
+    let minJ = Number.POSITIVE_INFINITY;
+    let maxJ = Number.NEGATIVE_INFINITY;
+    for (let corner = 0; corner < 4; corner++) {
+      const wx = corner & 1 ? index.maxCellX : index.minCellX;
+      const wz = corner & 2 ? index.maxCellZ : index.minCellZ;
+      const i = pose.localCellX(wx, wz) - cells.cellX0;
+      const j = pose.localCellZ(wx, wz) - cells.cellZ0;
+      minI = Math.min(minI, i);
+      maxI = Math.max(maxI, i);
+      minJ = Math.min(minJ, j);
+      maxJ = Math.max(maxJ, j);
+    }
+    localRange[0] = Math.max(0, minI);
+    localRange[1] = Math.min(cells.width - 1, maxI);
+    localRange[2] = Math.max(0, minJ);
+    localRange[3] = Math.min(cells.depth - 1, maxJ);
+    return localRange[0] <= localRange[1] && localRange[2] <= localRange[3];
   }
 
-  columnSpans(worldCellX: number, worldCellZ: number, ldu: number): boolean {
-    const cell = this.cellAt(worldCellX, worldCellZ);
-    if (cell < 0) return false;
-    const { columnBottom, columnTop } = this.placeable.cells;
-    const top = columnTop[cell] ?? EMPTY_COLUMN;
-    if (top === EMPTY_COLUMN) return false;
-    const bottom = columnBottom[cell] ?? 0;
-    return this.yLdu + bottom * PLATE_LDU <= ldu && ldu <= this.yLdu + top * PLATE_LDU;
+  indexFootprints(index: CellWindowIndex): void {
+    if (!this.localCellsIn(index)) return;
+    const { cells } = this.placeable;
+    const i0 = localRange[0] ?? 0;
+    const i1 = localRange[1] ?? -1;
+    const j0 = localRange[2] ?? 0;
+    const j1 = localRange[3] ?? -1;
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const kind = cells.footprint[j * cells.width + i] ?? FOOTPRINT_NONE;
+        if (kind === FOOTPRINT_NONE) continue;
+        const lx = cells.cellX0 + i;
+        const lz = cells.cellZ0 + j;
+        index.push(
+          this.pose.worldCellX(lx, lz),
+          this.pose.worldCellZ(lx, lz),
+          this.id,
+          this.yLdu,
+          kind,
+        );
+      }
+    }
+  }
+
+  indexColumns(index: CellWindowIndex): void {
+    if (!this.localCellsIn(index)) return;
+    const { cells } = this.placeable;
+    const i0 = localRange[0] ?? 0;
+    const i1 = localRange[1] ?? -1;
+    const j0 = localRange[2] ?? 0;
+    const j1 = localRange[3] ?? -1;
+    for (let j = j0; j <= j1; j++) {
+      for (let i = i0; i <= i1; i++) {
+        const cell = j * cells.width + i;
+        const top = cells.columnTop[cell] ?? EMPTY_COLUMN;
+        if (top === EMPTY_COLUMN) continue;
+        const lx = cells.cellX0 + i;
+        const lz = cells.cellZ0 + j;
+        index.push(
+          this.pose.worldCellX(lx, lz),
+          this.pose.worldCellZ(lx, lz),
+          this.id,
+          this.yLdu + (cells.columnBottom[cell] ?? 0) * PLATE_LDU,
+          this.yLdu + top * PLATE_LDU,
+        );
+      }
+    }
   }
 
   studCellX(stud: number): number {
@@ -485,20 +579,22 @@ class PlacedEntry implements PlacedModel {
 
   private isStudCulled(
     stud: number,
-    covers: ReadonlyArray<PlacedEntry>,
-    closers: ReadonlyArray<PlacedEntry>,
+    footprints: CellWindowIndex,
+    columns: CellWindowIndex,
   ): boolean {
     if (this.placeable.studLattice.onLattice[stud] !== 1) return false;
     const cx = this.studCellX(stud);
     const cz = this.studCellZ(stud);
     const base = this.studBaseLdu(stud);
-    for (let c = 0; c < covers.length; c++) {
-      const cover = covers[c];
-      if (!cover || cover === this) continue;
-      const kind = cover.footprintKind(cx, cz, base);
+    const end = footprints.end(cx, cz);
+    for (let r = footprints.firstAtOrAbove(cx, cz, base); r < end; r++) {
+      if (footprints.low(r) !== base) break;
+      const cover = footprints.owner(r);
+      if (cover === this.id) continue;
+      const kind = footprints.high(r);
       if (
         kind === FOOTPRINT_FLAT ||
-        (kind === FOOTPRINT_ANTI_STUD && closedAround(cx, cz, base, cover, closers))
+        (kind === FOOTPRINT_ANTI_STUD && closedAround(cx, cz, base, cover, columns))
       ) {
         return true;
       }
@@ -544,10 +640,17 @@ class PlacedEntry implements PlacedModel {
       this.chunks.addStud(this.recordChunkKey(matrices, i, chunkOrigins));
   }
 
-  addRebuildKeys(out: Set<number>): void {
+  addRebuildKeys(out: Set<number>, hasAntiStudCovers: (key: number) => boolean): void {
     const { chunks } = this;
     for (let row = 0; row < chunks.length; row++) {
-      if (chunks.contributes(row) || chunks.hasFootprint(row)) out.add(chunks.keyAt(row));
+      const key = chunks.keyAt(row);
+      if (
+        chunks.contributes(row) ||
+        chunks.hasFootprint(row) ||
+        ((chunks.borders(row) || chunks.hasColumns(row)) && hasAntiStudCovers(key))
+      ) {
+        out.add(key);
+      }
     }
   }
 
@@ -658,8 +761,8 @@ class PlacedEntry implements PlacedModel {
   writeDrawnStuds(
     chunkX: number,
     chunkZ: number,
-    covers: ReadonlyArray<PlacedEntry>,
-    closers: ReadonlyArray<PlacedEntry>,
+    footprints: CellWindowIndex,
+    columns: CellWindowIndex,
     target: Float32Array,
     firstSlot: number,
     selected: Uint32Array,
@@ -667,7 +770,7 @@ class PlacedEntry implements PlacedModel {
     const { matrices, count } = this.placeable.studs;
     let slot = firstSlot;
     for (let i = 0; i < count; i++) {
-      if (!this.inChunk(matrices, i, chunkX, chunkZ) || this.isStudCulled(i, covers, closers))
+      if (!this.inChunk(matrices, i, chunkX, chunkZ) || this.isStudCulled(i, footprints, columns))
         continue;
       this.writeInstance(matrices, i, chunkX, chunkZ, target, slot);
       selected[slot++] = i;
@@ -759,6 +862,7 @@ export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
@@ -767,6 +871,18 @@ export class PlacedChunks {
   private readonly slabbed: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
+  private readonly hasAntiStudCovers = (key: number): boolean =>
+    (this.byAntiStudChunk.get(key)?.size ?? 0) > 0;
+  private readonly footprints = new CellWindowIndex(false);
+  private readonly columns = new CellWindowIndex(true);
+  private cullingEpoch = 0;
+  private readonly indexFootprints = (entry: PlacedEntry): void =>
+    entry.indexFootprints(this.footprints);
+  private readonly indexColumns = (entry: PlacedEntry): void => {
+    if (entry.columnsIndexedIn === this.cullingEpoch) return;
+    entry.columnsIndexedIn = this.cullingEpoch;
+    entry.indexColumns(this.columns);
+  };
 
   constructor(private readonly backend: ISceneBackend) {}
 
@@ -806,14 +922,14 @@ export class PlacedChunks {
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
-      entry.addRebuildKeys(touched);
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
       removed.push(entry);
     }
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
       const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
-      entry.addRebuildKeys(touched);
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
       added.push(entry);
     }
     return { added, removed, report: this.rebuild(touched) };
@@ -904,17 +1020,30 @@ export class PlacedChunks {
     return { drawn, culledInsideModels, culledUnderFootprints };
   }
 
-  private columnsAround(key: number): PlacedEntry[] {
-    const origin = this.chunkOrigins.get(key);
-    if (!origin) return [];
-    const found = new Set<PlacedEntry>();
+  private indexCulling(key: number, chunkX: number, chunkZ: number): void {
+    const cellX0 = chunkX * CHUNK_STUDS - CULLING_BORDER_CELLS;
+    const cellZ0 = chunkZ * CHUNK_STUDS - CULLING_BORDER_CELLS;
+    this.footprints.reset(cellX0, cellZ0, CULLING_WINDOW_CELLS, CULLING_WINDOW_CELLS);
+    this.columns.reset(cellX0, cellZ0, CULLING_WINDOW_CELLS, CULLING_WINDOW_CELLS);
+    const covers = this.byFootprintChunk.get(key);
+    if (!covers || covers.size === 0) return;
+    covers.forEach(this.indexFootprints);
+    this.footprints.startFilling();
+    covers.forEach(this.indexFootprints);
+    this.footprints.seal();
+    this.indexClosers(chunkX, chunkZ);
+    this.columns.startFilling();
+    this.indexClosers(chunkX, chunkZ);
+    this.columns.seal();
+  }
+
+  private indexClosers(chunkX: number, chunkZ: number): void {
+    this.cullingEpoch++;
     for (let dz = -1; dz <= 1; dz++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const around = chunkKey(origin[0] + dx, origin[1] + dz);
-        for (const entry of this.byColumnChunk.get(around) ?? []) found.add(entry);
+        this.byColumnChunk.get(chunkKey(chunkX + dx, chunkZ + dz))?.forEach(this.indexColumns);
       }
     }
-    return [...found];
   }
 
   private restamp(keys: Iterable<number>, except: ReadonlySet<PlacedEntry>): void {
@@ -929,7 +1058,7 @@ export class PlacedChunks {
   addAll(placements: ReadonlyArray<PlacementSource>): RebuildReport {
     const keys = new Set<number>();
     for (const { placement, handle, placeable } of placements) {
-      this.insert(placement, handle, placeable).addRebuildKeys(keys);
+      this.insert(placement, handle, placeable).addRebuildKeys(keys, this.hasAntiStudCovers);
     }
     return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
@@ -941,6 +1070,7 @@ export class PlacedChunks {
     for (const key of this.byColumnChunk.keys()) this.occupancy.clearChunk(key);
     this.byChunk.clear();
     this.byFootprintChunk.clear();
+    this.byAntiStudChunk.clear();
     this.byColumnChunk.clear();
     this.slabbed.length = 0;
     this.chunkStuds.clear();
@@ -960,6 +1090,7 @@ export class PlacedChunks {
       const key = chunks.keyAt(row);
       if (chunks.contributes(row)) addTo(this.byChunk, key, entry);
       if (chunks.hasFootprint(row)) addTo(this.byFootprintChunk, key, entry);
+      if (chunks.hasAntiStudFootprint(row)) addTo(this.byAntiStudChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
     if (entry.slab.length > 0) this.slabbed.push(entry);
@@ -978,6 +1109,7 @@ export class PlacedChunks {
       const key = chunks.keyAt(row);
       this.byChunk.get(key)?.delete(entry);
       this.byFootprintChunk.get(key)?.delete(entry);
+      this.byAntiStudChunk.get(key)?.delete(entry);
       this.byColumnChunk.get(key)?.delete(entry);
     }
     const slabbed = this.slabbed.indexOf(entry);
@@ -1004,8 +1136,7 @@ export class PlacedChunks {
     if (!origin) throw new Error(`chunk ${key} has no recorded origin`);
     const [chunkX, chunkZ] = origin;
     const entries = inWorldOrder(this.byChunk.get(key) ?? new Set<PlacedEntry>());
-    const covers = [...(this.byFootprintChunk.get(key) ?? [])];
-    const closers = covers.length > 0 ? this.columnsAround(key) : [];
+    this.indexCulling(key, chunkX, chunkZ);
     let partCount = 0;
     let studsBefore = 0;
     for (const entry of entries) {
@@ -1039,8 +1170,8 @@ export class PlacedChunks {
       studSlot = entry.writeDrawnStuds(
         chunkX,
         chunkZ,
-        covers,
-        closers,
+        this.footprints,
+        this.columns,
         studMatrices,
         studSlot,
         selectedStuds,

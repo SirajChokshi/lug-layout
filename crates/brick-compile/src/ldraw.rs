@@ -15,6 +15,7 @@ pub enum Line {
     Subfile {
         color: u32,
         matrix: Affine,
+        printed_translation: [Option<PrintedDecimal>; 3],
         reference: String,
     },
     Edge {
@@ -28,6 +29,39 @@ pub enum Line {
         color: u32,
         points: [Vec3; 4],
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct PrintedDecimal {
+    pub units: i128,
+    pub scale: u32,
+}
+
+impl PrintedDecimal {
+    pub fn parse(token: &str) -> Option<PrintedDecimal> {
+        let (negative, unsigned) = match token.as_bytes().first()? {
+            b'-' => (true, &token[1..]),
+            b'+' => (false, &token[1..]),
+            _ => (false, token),
+        };
+        let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+        if whole.is_empty() && fraction.is_empty() {
+            return None;
+        }
+        let mut units: i128 = 0;
+        for digit in whole.bytes().chain(fraction.bytes()) {
+            if !digit.is_ascii_digit() {
+                return None;
+            }
+            units = units
+                .checked_mul(10)?
+                .checked_add(i128::from(digit - b'0'))?;
+        }
+        Some(PrintedDecimal {
+            units: if negative { -units } else { units },
+            scale: u32::try_from(fraction.len()).ok()?,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -192,6 +226,56 @@ fn parse_subfile(rest: &[&str]) -> Option<Line> {
     Some(Line::Subfile {
         color,
         matrix: Affine::from_ldraw([numbers[0], numbers[1], numbers[2]], rotation),
+        printed_translation: [rest[1], rest[2], rest[3]].map(PrintedDecimal::parse),
         reference: normalize_reference(&reference),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse, Line, PrintedDecimal};
+
+    fn translation_of(line: &str) -> ([Option<PrintedDecimal>; 3], [f64; 3]) {
+        match parse(line).lines.as_slice() {
+            [Line::Subfile {
+                printed_translation,
+                matrix,
+                ..
+            }] => (
+                *printed_translation,
+                [matrix.m[3], matrix.m[7], matrix.m[11]],
+            ),
+            other => panic!("expected one subfile line, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_subfile_line_keeps_each_printed_translation_decimal_exactly() {
+        let cases = [
+            (
+                "1 16 -12.345 0.063 20 1 0 0 0 1 0 0 0 1 3001.dat",
+                [Some((-12_345, 3)), Some((63, 3)), Some((20, 0))],
+            ),
+            (
+                "1 16 10.50 +5. .5 1 0 0 0 1 0 0 0 1 3001.dat",
+                [Some((1_050, 2)), Some((5, 0)), Some((5, 1))],
+            ),
+            (
+                "1 16 -0.000 182.7 1e-3 1 0 0 0 1 0 0 0 1 3001.dat",
+                [Some((0, 3)), Some((1_827, 1)), None],
+            ),
+        ];
+        for (line, expected) in cases {
+            let (printed, translation) = translation_of(line);
+            let expected = expected
+                .map(|decimal| decimal.map(|(units, scale)| PrintedDecimal { units, scale }));
+            assert_eq!(printed, expected, "{line}");
+            for (decimal, value) in printed.iter().zip(translation) {
+                if let Some(decimal) = decimal {
+                    let exact = format!("{}e-{}", decimal.units, decimal.scale).parse::<f64>();
+                    assert_eq!(exact, Ok(value), "{line}");
+                }
+            }
+        }
+    }
 }
