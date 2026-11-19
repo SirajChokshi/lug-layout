@@ -33,6 +33,7 @@ const BUNDLE_ROOT =
   process.env["HELD_OUT_BUNDLE"] ?? join(REPO_ROOT, "tools/asset-pipeline/dist/bundle");
 const CACHE_ROOT = join(REPO_ROOT, ".cache/held-out");
 const RECORDS_ROOT = join(REPO_ROOT, ".cache/library-bake");
+const LIBRARY_CONNECTORS_ROOT = join(REPO_ROOT, "tools/asset-pipeline/dist/library-connectors");
 const SEED_RANGE = 2 ** 31;
 const DEFAULT_BUILDS_PER_KIND = 4;
 const DEFAULT_TRAINS_PER_KIND = 1;
@@ -126,11 +127,19 @@ it(
     const started = performance.now();
     const seed = seedFromEnvironment();
     process.stdout.write(`held-out generator seed ${seed} (HELD_OUT_SEED=${seed} reproduces it)\n`);
-    const bundle = await openBundle(BUNDLE_ROOT, RECORDS_ROOT);
+    const bundle = await openBundle(BUNDLE_ROOT, RECORDS_ROOT, LIBRARY_CONNECTORS_ROOT);
     const ldrawCache = join(CACHE_ROOT, "ldraw");
     const fetchUrl = cachingFetch(ldrawCache);
     const importLimitSeconds = importLimitFromEnvironment();
-    const imports = importsWithinLimit(BUNDLE_ROOT, ldrawCache, RECORDS_ROOT, importLimitSeconds);
+    const imports = importsWithinLimit(
+      {
+        bundle: BUNDLE_ROOT,
+        ldrawCache,
+        records: RECORDS_ROOT,
+        libraryConnectors: LIBRARY_CONNECTORS_ROOT,
+      },
+      importLimitSeconds,
+    );
     const memo: ConnectorMemo = new Map();
     const checked: CheckedInput[] = [];
     const details: Detail[] = [];

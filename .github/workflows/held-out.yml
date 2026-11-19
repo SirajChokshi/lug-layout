@@ -62,6 +62,8 @@ jobs:
           key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
       - name: Precompile the pinned library's bake records the import fetches instead of compiling
         run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - name: Precompute the pinned library's connector records the import fetches beside the bundle's
+        run: pnpm --filter @brr/asset-pipeline library-connectors --check
       - uses: actions/cache@v4
         with:
           path: |
