@@ -251,9 +251,13 @@ struct Geometry<'a, L: Library> {
 
 impl<'a, L: Library> Geometry<'a, L> {
     fn new(library: &'a L) -> Self {
+        Geometry::with_bounds(library, HashMap::new())
+    }
+
+    fn with_bounds(library: &'a L, bounds: HashMap<String, Bounds>) -> Self {
         Geometry {
             library,
-            bounds: HashMap::new(),
+            bounds,
             triangles: HashMap::new(),
         }
     }
@@ -624,7 +628,17 @@ pub fn detect_vehicles<L: Library>(
     signatures: &VehicleSignatures,
     rails: &[RailHeadBand],
 ) -> Result<Vec<Vehicle>, VehicleError> {
-    let mut geometry = Geometry::new(library);
+    detect_vehicles_with_bounds(library, instances, signatures, rails, HashMap::new())
+}
+
+pub fn detect_vehicles_with_bounds<L: Library>(
+    library: &L,
+    instances: &[ModelInstance],
+    signatures: &VehicleSignatures,
+    rails: &[RailHeadBand],
+    known_bounds: HashMap<String, [Vec3; 2]>,
+) -> Result<Vec<Vehicle>, VehicleError> {
+    let mut geometry = Geometry::with_bounds(library, known_bounds);
     let mut bounds = Vec::with_capacity(instances.len());
     for placed in instances {
         bounds.push(world_bounds(&placed.matrix, geometry.bounds(&placed.part)?));

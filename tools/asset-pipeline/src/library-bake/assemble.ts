@@ -131,6 +131,7 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
   };
   const text = JSON.stringify(index);
   await writeFile(join(out, LIBRARY_BAKE_INDEX), text);
+  await writeFile(join(out, contentAddressedName(LIBRARY_BAKE_INDEX, sha256(text))), text);
   return {
     index: { file: LIBRARY_BAKE_INDEX, sha256: sha256(text) },
     parts: listed.length,
