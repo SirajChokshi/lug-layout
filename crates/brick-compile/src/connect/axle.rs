@@ -475,10 +475,10 @@ mod tests {
         let probe = axle_probe();
         let corner = probe.radius() + 0.1;
         let stubs = toothed_socket((corner - 0.3, corner));
-        let (found, _) = probe.find(&Solid::new(&stubs, Vec::new()));
+        let (found, _) = probe.find(&Solid::unpieced(&stubs, Vec::new()));
         assert!(found.is_empty(), "{found:?}");
         let hugging = toothed_socket((2.5, 5.5));
-        let (found, _) = probe.find(&Solid::new(&hugging, Vec::new()));
+        let (found, _) = probe.find(&Solid::unpieced(&hugging, Vec::new()));
         assert!(
             matches!(
                 found.as_slice(),

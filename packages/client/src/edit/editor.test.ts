@@ -17,6 +17,8 @@ import {
   type PartMesh,
   type PartShapeRecord,
   type StudPrimitiveAsset,
+  type PackageAttribution,
+  type PartConnectors,
 } from "@brr/catalog";
 import type {
   BundleIndex,
@@ -212,6 +214,18 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.importContext(lod);
   }
 
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.loader.loadPartConnectors(lod, partId);
+  }
+
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return this.loader.loadConnectivityAttribution(lod);
+  }
+
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    return this.loader.loadSectionVocabularyAttribution(lod);
+  }
+
   loadPartSet(
     lod: BundleLod,
     partIds: ReadonlyArray<string>,
@@ -299,6 +313,7 @@ class HeadlessBackend implements ISceneBackend {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -308,7 +323,11 @@ async function startEditor(
   userModels: ReadonlyArray<string> = [],
 ) {
   const backend = new HeadlessBackend();
-  vi.stubGlobal("requestAnimationFrame", () => 0);
+  let scheduled: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    scheduled = callback;
+    return 1;
+  });
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -340,12 +359,20 @@ async function startEditor(
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const frame = async (): Promise<void> => {
+    const callback = scheduled;
+    if (!callback) throw new Error("no frame is scheduled");
+    scheduled = null;
+    callback(performance.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
   return {
     editor,
     backend,
     container,
     catalog: container.get(PLACEABLE_CATALOG),
     manifest: await realLoader.loadManifest("standard"),
+    frame,
   };
 }
 
@@ -914,10 +941,13 @@ function refusedBake(fileName: string): ImportResult {
       unknownColors: [],
       directColors: [],
       compileRounds: 0,
+      withoutConnectorRecords: [],
+      refusedConnectorRecords: [],
       bakeRounds: 1,
       bakeIssue: NO_LATTICE_REASON,
       bakeHelpersFailed: 0,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+      records: null,
       timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
     },
     partIds: [],
@@ -933,6 +963,7 @@ function refusedBake(fileName: string): ImportResult {
       ofPart: new Int32Array(),
     },
     compiled: [],
+    connectors: [],
     bake: null,
   };
 }
@@ -1954,3 +1985,49 @@ it("loads and applies a placed set's far model once, however often the set is pl
     },
   });
 }, 120_000);
+
+describe("frame loop in the editor's snapshot", () => {
+  it("the snapshot carries the frame loop's tier and first-frame time", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const { editor, frame } = await startEditor([]);
+    const beforeFirstFrame = editor.snapshot().coldStartMs;
+
+    await frame();
+    const firstFramePresentedMs = performance.now();
+    editor.cycleTier();
+
+    const { coldStartMs, tier } = editor.snapshot();
+    expect({ beforeFirstFrame, coldStartMs, tier }).toEqual({
+      beforeFirstFrame: null,
+      coldStartMs: firstFramePresentedMs,
+      tier: "near",
+    });
+  }, 120_000);
+
+  it("an edit's latency sample takes its times from the frame that presented it", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const { editor, backend, frame } = await startEditor([]);
+    await frame();
+    const queuedMs = 4;
+    editor.chooseItem(BASEPLATE);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+
+    editor.click(0, 0, performance.now());
+    vi.advanceTimersByTime(queuedMs);
+    await frame();
+
+    expect(editor.snapshot().lastLatency).toMatchObject({
+      step: "do",
+      action: "place",
+      item: BASEPLATE,
+      x: 0,
+      z: 0,
+      ms: queuedMs,
+      rebuildMs: 0,
+      queueMs: queuedMs,
+      submitMs: 0,
+      gpuWaitMs: 0,
+    });
+  }, 120_000);
+});

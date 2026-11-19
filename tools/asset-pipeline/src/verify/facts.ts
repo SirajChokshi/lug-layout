@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { AuditLock, InputLock } from "../fetch-ldraw.ts";
+import type { AuditLock, ConnectivityLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import type { Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
@@ -9,8 +9,9 @@ import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
 import { auditGroups, closureLicenses } from "./license-audit.ts";
+import { measureMagnetSeat, type MagnetModel } from "./magnet-seat.ts";
 import { milsModules } from "../mils/mils-modules.ts";
-import { roadBaseplateScene, switchParallelScene } from "./scenes.ts";
+import { roadBaseplateScene, singlePartScene, switchParallelScene } from "./scenes.ts";
 import { ovalPassingSidingScene, r40CircleScene, trackLoopReport } from "./track-loops.ts";
 
 export interface FactReport {
@@ -62,6 +63,46 @@ export function licenseAuditReport(inputs: LicenseAuditInputs): FactReport {
 const ROAD_SCENE_PLATES = ["44336", "2358", "610", "606", "30225b"];
 const RECESSED_ROAD_SCENE_PLATES = ["69958", "71772"];
 const BASEPLATE_ROW_PLATES = ["3811", "44336"];
+const DENSE_STACK_BRICK = "3001";
+const MAGNET_HOLDER = "2920";
+const MAGNET_CASING = "2959";
+
+export interface PinnedModel extends MagnetModel {
+  readonly sha256: string;
+}
+
+function pinnedFile(files: Readonly<Record<string, string>>, part: string) {
+  const file = `parts/${part}.dat`;
+  const sha256 = files[file];
+  if (sha256 === undefined) throw new Error(`ldraw.lock.json pins no ${file}`);
+  return { file, sha256 };
+}
+
+export function magnetSeatReports(
+  lock: InputLock,
+  connectivity: ConnectivityLock,
+  library: LdrawLibrary,
+  shadowLibrary: LdrawLibrary,
+  models: ReadonlyArray<PinnedModel>,
+): ReadonlyArray<FactReport> {
+  return [
+    {
+      fileName: "magnet-seat.json",
+      render: () =>
+        asJson({
+          source: lock.source,
+          connectivitySource: connectivity.source,
+          inputs: [
+            pinnedFile(lock.files, MAGNET_HOLDER),
+            pinnedFile(lock.files, MAGNET_CASING),
+            { shadow: true, ...pinnedFile(connectivity.files, MAGNET_HOLDER) },
+          ],
+          models: models.map(({ name, sha256 }) => ({ name, sha256 })),
+          ...measureMagnetSeat(library, shadowLibrary, MAGNET_HOLDER, MAGNET_CASING, models),
+        }),
+    },
+  ];
+}
 
 export function geometryReports(
   source: InputLock["source"],
@@ -103,6 +144,10 @@ export function geometryReports(
           RECESSED_ROAD_SCENE_PLATES.map((part) => measureBaseplate(library, part)),
           "Road Plates",
         ),
+    },
+    {
+      fileName: "scenes/brick-2x4.ldr",
+      render: () => singlePartScene(library, DENSE_STACK_BRICK, "Brick 2x4"),
     },
     {
       fileName: "track-loops.json",

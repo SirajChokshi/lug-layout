@@ -6,15 +6,17 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, InferredFeatures,
-    Issue, MatingFace, MetaError, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
-    SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
-    CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, IncludeRefusal,
+    InferredFeatures, Issue, MatingFace, MetaError, Openness, PrimitiveConnectors, PrimitiveTable,
+    Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status,
+    Uninferred, Unreadable, CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED,
+    FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
 use brick_compile::lattice::{Malformation, STUD_LDU};
 use brick_compile::ldraw::{parse, Line};
+use brick_compile::pieces::PieceNumbering;
 use brick_compile::technic::is_circular_primitive;
 use brick_compile::Library;
 use serde_json::{json, Value};
@@ -654,11 +656,6 @@ fn caps_read_as_attached_male_ends_and_blind_female_ends() {
             Unreadable::ClosedAtBothEnds,
         ),
         (
-            "SNAP_FGR",
-            "[genderOfs=M] [seq=4 4 4] [radius=4]",
-            Unreadable::FingerHinge,
-        ),
-        (
             "SNAP_GEN",
             "[gender=M] [bounding=sph 8]",
             Unreadable::Generic,
@@ -872,6 +869,89 @@ fn a_custom_plate_gets_its_studs_tube_interiors_and_hollow_stud_bore_and_reports
 }
 
 #[test]
+fn a_stud_tube_whose_entrance_lies_inside_a_deeper_skirt_is_its_receptor_sleeve_not_a_male() {
+    let mut plate = String::from("0 Custom Open-Sided Plate\n0 BFC CERTIFY CCW\n");
+    plate += "1 16 0 2 0 20 0 0 0 2 0 0 0 20 box.dat\n";
+    plate += "1 16 -19 7 0 1 0 0 0 3 0 0 0 20 box.dat\n";
+    plate += "1 16 0 7 19 20 0 0 0 3 0 0 0 1 box.dat\n";
+    plate += "1 16 0 7 -19 20 0 0 0 3 0 0 0 1 box.dat\n";
+    plate += "1 16 0 4 0 1 0 0 0 -1 0 0 0 1 stud4.dat\n";
+    for (x, z) in [(-10, -10), (-10, 10), (10, -10), (10, 10)] {
+        plate += &format!("1 16 {x} 0 {z} 1 0 0 0 1 0 0 0 1 stud.dat\n");
+    }
+    let library = with_parts(pinned("ldraw"), &[("parts/custom.dat", plate)]);
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let inference = inferred.infer("parts/custom.dat");
+    assert!(inference.off_lattice.is_empty());
+    let males: Vec<FaceKey> = face_keys(&inference.connectors)
+        .into_iter()
+        .filter(|key| key.0 == Gender::Male)
+        .collect();
+    let mut studs: Vec<FaceKey> = [-10.0, 10.0]
+        .iter()
+        .flat_map(|&x| [-10.0, 10.0].map(|z| round_face(Gender::Male, [x, 0.0, z], 1, 6.0, 4.0)))
+        .collect();
+    studs.sort();
+    assert_eq!(males, studs);
+    let sleeves: Vec<[f64; 3]> = inference
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                origin,
+                reason: Uninferred::SleeveOfReceptor,
+            } => Some(*origin),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sleeves, vec![[0.0, 4.0, 0.0]]);
+}
+
+#[test]
+fn a_collar_round_a_through_stud_hole_stays_a_male() {
+    let collar = [
+        "0 Custom Collared Round Link End",
+        "0 BFC CERTIFY CCW",
+        "0 BFC INVERTNEXT",
+        "1 16 0 -8 0 -6 0 0 0 16 0 0 0 -6 4-4cylo.dat",
+        "1 16 0 8 0 -2 0 0 0 -1 0 0 0 2 4-4ring3.dat",
+        "1 16 0 8 0 -8 0 0 0 -4 0 0 0 -8 4-4cylo.dat",
+        "1 16 0 4 0 -1 0 0 0 -1 0 0 0 -1 4-4ring8.dat",
+        "1 16 0 -4 0 9 0 0 0 8 0 0 0 -9 4-4cylo.dat",
+        "1 16 0 -4 0 -1 0 0 0 1 0 0 0 -1 4-4ring8.dat",
+        "1 16 0 -8 0 -8 0 0 0 4 0 0 0 8 4-4cylo.dat",
+        "1 16 0 -8 0 -2 0 0 0 1 0 0 0 2 4-4ring3.dat",
+    ]
+    .join("\n");
+    let library = with_parts(pinned("ldraw"), &[("parts/custom.dat", collar)]);
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let inference = inferred.infer("parts/custom.dat");
+    let mut found = inference.connectors.clone();
+    found.extend(inference.off_lattice.iter().cloned());
+    let males: Vec<FaceKey> = face_keys(&found)
+        .into_iter()
+        .filter(|key| key.0 == Gender::Male)
+        .collect();
+    let mut collars = vec![
+        round_face(Gender::Male, [0.0, 4.0, 0.0], 1, 8.0, 4.0),
+        round_face(Gender::Male, [0.0, -4.0, 0.0], -1, 8.0, 4.0),
+    ];
+    collars.sort();
+    assert_eq!(males, collars);
+    assert!(!inference.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::SleeveOfReceptor,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
     let mut plate = custom_plate(3, 1, &[]);
     plate += "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/marker.dat\n";
@@ -1003,6 +1083,7 @@ fn a_through_hole_printed_within_the_limit_of_the_lattice_lands_on_it() {
         faces_of(connectors)
             .into_iter()
             .filter(|f| f.gender == Gender::Female && f.caps == 0)
+            .map(|f| MatingFace { piece: 0, ..f })
             .collect()
     };
     let printed = inferred.infer("parts/3700.dat");
@@ -1328,6 +1409,133 @@ fn a_face_already_held_gets_no_second_receptor() {
     )));
 }
 
+#[test]
+fn a_declared_square_receptor_is_open_only_while_no_material_fills_any_of_its_positions() {
+    let receptor =
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]";
+    let hollow =
+        "0 Custom Hollow Slope\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3048a.dat\n"
+            .to_string();
+    let plugged = format!("{hollow}1 16 10 20 0 6 0 0 0 4 0 0 0 6 box5.dat\n");
+    let aside = format!("{hollow}1 16 10 20 40 6 0 0 0 4 0 0 0 6 box5.dat\n");
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/hollow.dat", hollow),
+            ("parts/plugged.dat", plugged),
+            ("parts/aside.dat", aside),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut open_at = |path: &str| {
+        let declared = memory(&[(path, receptor)]);
+        let candidates = ShadowSnaps::new(&library, &declared).snaps(path).connectors;
+        let mut origins: Vec<[f64; 3]> = female_faces(&inferred.open(path, candidates).connectors)
+            .iter()
+            .map(|f| f.origin)
+            .collect();
+        origins.dedup();
+        origins
+    };
+    let both = vec![[-10.0, -24.0, 0.0], [10.0, -24.0, 0.0]];
+    assert_eq!(open_at("parts/hollow.dat"), both);
+    assert_eq!(open_at("parts/aside.dat"), both);
+    assert!(open_at("parts/plugged.dat").is_empty());
+
+    let mut reading = |path: &str| {
+        let declared = memory(&[(path, receptor)]);
+        ShadowSnaps::new(&library, &declared)
+            .snaps(path)
+            .connectors
+            .iter()
+            .map(|candidate| inferred.openness(path, candidate))
+            .collect::<Vec<Openness>>()
+    };
+    assert_eq!(reading("parts/plugged.dat"), vec![Openness::NotOpen]);
+}
+
+#[test]
+fn a_receptor_whose_probe_starts_inside_solid_reads_not_open() {
+    let receptor = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0]";
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/block.dat",
+            "0 Custom Block Open At Its Base\n0 BFC CERTIFY CCW\n1 16 0 24 0 6 0 0 0 -6 0 0 0 6 box5.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let declared = memory(&[("parts/block.dat", receptor)]);
+    let readings: Vec<Openness> = ShadowSnaps::new(&library, &declared)
+        .snaps("parts/block.dat")
+        .connectors
+        .iter()
+        .map(|candidate| inferred.openness("parts/block.dat", candidate))
+        .collect();
+    assert_eq!(readings, vec![Openness::NotOpen]);
+}
+
+#[test]
+fn a_receptor_reads_unmeasurable_without_a_solid_a_floor_an_aligned_axis_or_readable_faces() {
+    let receptor =
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]";
+    let tilted = receptor.replace(
+        "[pos=0 24 0]",
+        "[pos=0 24 0] [ori=0.6 -0.8 0 0.8 0.6 0 0 0 1]",
+    );
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/empty.dat", "0 Custom Part Without Geometry\n".to_string()),
+            (
+                "parts/tube.dat",
+                "0 Custom Open Tube\n0 BFC CERTIFY CCW\n1 16 0 24 0 20 0 0 0 -24 0 0 0 10 box4o4a.dat\n0 BFC INVERTNEXT\n1 16 0 24 0 16 0 0 0 -24 0 0 0 6 box4o4a.dat\n".to_string(),
+            ),
+            (
+                "parts/hollow.dat",
+                "0 Custom Hollow Slope\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3048a.dat\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut reading = |path: &str, line: &str| {
+        let declared = memory(&[(path, line)]);
+        ShadowSnaps::new(&library, &declared)
+            .snaps(path)
+            .connectors
+            .iter()
+            .map(|candidate| inferred.openness(path, candidate))
+            .collect::<Vec<Openness>>()
+    };
+    assert_eq!(
+        reading("parts/empty.dat", receptor),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading("parts/tube.dat", receptor),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading("parts/hollow.dat", &tilted),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading(
+            "parts/hollow.dat",
+            &receptor.replace("[caps=one]", "[caps=two]")
+        ),
+        vec![Openness::Unmeasurable]
+    );
+}
+
 const FACE_PAIR_AT_PLUS_Z: &str = "0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=M] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 1 0 -1 0]
 0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=F] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 -1 0 1 0]
 ";
@@ -1379,6 +1587,48 @@ fn project_patches_add_curated_snaps_with_their_status_and_clear_by_id() {
             (Source::Patch, Status::Verified, -9),
             (Source::Patch, Status::Verified, -9),
         ]
+    );
+}
+
+#[test]
+fn inheritance_includes_let_a_clearing_patch_keep_what_a_part_inherits() {
+    let plate = "0 Custom Plate\n1 16 0 0 0 0 0 1 0 1 0 -1 0 0 stug-2x1.dat\n1 16 0 8 0 20 0 0 0 -4 0 0 0 10 box5.dat\n1 16 0 3 0 0 0 1 0 -1.25 0 1 0 0 stud3.dat\n";
+    let library = with_parts(pinned("ldraw"), &[("parts/plate.dat", plate.to_string())]);
+    let shadow = pinned("ldcad-shadow");
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let inherited = snaps.snaps("parts/plate.dat").connectors;
+    let includes = snaps
+        .inheritance_includes("parts/plate.dat")
+        .expect("a plate of primitives has no pieces");
+    assert_eq!(
+        includes,
+        vec![
+            "0 !LDCAD SNAP_INCL [ref=stug-2x1.dat] [pos=0 0 0] [ori=0 0 1 0 1 0 -1 0 0]",
+            "0 !LDCAD SNAP_INCL [ref=stud3.dat] [pos=0 3 0] [ori=0 0 1 0 -1.25 0 1 0 0]",
+        ]
+    );
+    let patch = format!("0 !LDCAD SNAP_CLEAR\n{}\n", includes.join("\n"));
+    let patches = memory(&[("parts/plate.dat", patch.as_str())]);
+    let verified = HashSet::new();
+    let restored = ShadowSnaps::new(&library, &shadow)
+        .patched(ShadowPatches {
+            files: &patches,
+            verified: &verified,
+        })
+        .snaps("parts/plate.dat")
+        .connectors;
+    assert_eq!(inherited.len(), 3);
+    assert_eq!(restored, inherited);
+}
+
+#[test]
+fn inheritance_includes_refuse_a_part_whose_inherited_snaps_belong_to_numbered_pieces() {
+    let pair = "0 Custom Pair\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n1 16 20 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n";
+    let library = with_parts(pinned("ldraw"), &[("parts/pair.dat", pair.to_string())]);
+    let shadow = pinned("ldcad-shadow");
+    assert_eq!(
+        ShadowSnaps::new(&library, &shadow).inheritance_includes("parts/pair.dat"),
+        Err(IncludeRefusal::PiecesWouldBeLost)
     );
 }
 
@@ -2120,6 +2370,398 @@ fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip()
         handle_ends("parts/30154.dat"),
         vec![(vec![8.0], [true, true]), (vec![12.0], [true, false])]
     );
+}
+
+type FingerFace = (
+    Gender,
+    Vec3,
+    Vec3,
+    Vec<FaceSection>,
+    u8,
+    bool,
+    Option<String>,
+);
+
+#[test]
+fn a_finger_snap_is_a_male_and_a_female_at_each_end_of_its_fingers() {
+    let cases = [
+        (
+            "[genderOfs=M] [seq=6 4 6] [radius=4]",
+            vec![
+                (MALE_FINGER, 4.0, 6.0),
+                (FEMALE_FINGER, 4.0, 4.0),
+                (MALE_FINGER, 4.0, 6.0),
+            ],
+        ),
+        (
+            "[genderOfs=F] [seq=2 3]",
+            vec![
+                (FEMALE_FINGER, FINGER_RADIUS_UNSTATED, 2.0),
+                (MALE_FINGER, FINGER_RADIUS_UNSTATED, 3.0),
+            ],
+        ),
+    ];
+    for (descriptor, fingers) in cases {
+        let library = memory(&[("parts/part.dat", "0 Part\n")]);
+        let text = format!("0 !LDCAD SNAP_FGR [group=hinge] {descriptor} [pos=0 4 0]\n");
+        let shadow = memory(&[("parts/part.dat", &text)]);
+        let connectors = ShadowSnaps::new(&library, &shadow)
+            .snaps("parts/part.dat")
+            .connectors;
+        let total: f64 = fingers.iter().map(|&(_, _, width)| width).sum();
+        let up = [0.0, 1.0, 0.0];
+        let down = [0.0, -1.0, 0.0];
+        let start = [0.0, -4.0 - total / 2.0, 0.0];
+        let far = [0.0, -4.0 + total / 2.0, 0.0];
+        let forward: Vec<FaceSection> = fingers
+            .iter()
+            .map(|&(code, size, length)| FaceSection { code, size, length })
+            .collect();
+        let backward: Vec<FaceSection> = forward.iter().rev().copied().collect();
+        let found: Vec<FingerFace> = mating_faces(&connectors[0])
+            .expect("a finger snap has faces")
+            .into_iter()
+            .map(|f| {
+                (
+                    f.gender, f.origin, f.axis, f.sections, f.caps, f.slide, f.group,
+                )
+            })
+            .collect();
+        let group = Some("hinge".to_string());
+        assert_eq!(
+            found,
+            vec![
+                (
+                    Gender::Male,
+                    start,
+                    up,
+                    forward.clone(),
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (
+                    Gender::Male,
+                    far,
+                    down,
+                    backward.clone(),
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (
+                    Gender::Female,
+                    start,
+                    down,
+                    forward,
+                    0,
+                    false,
+                    group.clone()
+                ),
+                (Gender::Female, far, up, backward, 0, false, group),
+            ],
+            "{descriptor}"
+        );
+    }
+}
+
+#[test]
+fn finger_snaps_without_a_center_flag_are_centred_on_their_position_as_their_parts_are_drawn() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow-bundle");
+    for part in ["parts/4593.dat", "parts/3854.dat"] {
+        let line = shadow
+            .source(part)
+            .expect("pinned shadow file")
+            .lines()
+            .find(|line| line.contains("SNAP_FGR"))
+            .expect("a finger snap");
+        assert!(!line.to_ascii_lowercase().contains("center"), "{line}");
+        let flattened = Flattener::new(&library, Lod::Standard, &[])
+            .recording_spans(&|reference: &str| is_circular_primitive(reference))
+            .flatten(part)
+            .expect("part flattens");
+        let bands = outward_round_bands(&flattened.spans, &flattened.triangles);
+        let snaps = ShadowSnaps::new(&library, &shadow).snaps(part);
+        let finger = snaps
+            .connectors
+            .iter()
+            .find(|c| matches!(c.shape, Shape::Finger { .. }))
+            .expect("a finger connector");
+        let Shape::Finger {
+            radius: Some(radius),
+            ..
+        } = finger.shape
+        else {
+            panic!("{part}: the finger snap states its radius");
+        };
+        let ends: Vec<Vec3> = mating_faces(finger)
+            .expect("finger faces")
+            .iter()
+            .filter(|face| face.gender == Gender::Male)
+            .map(|face| Affine::LDRAW_TO_Y_UP.apply(face.origin))
+            .collect();
+        let along = |band: &brick_compile::bands::RoundBand, p: Vec3| -> f64 {
+            (0..3).map(|k| (p[k] - band.point[k]) * band.axis[k]).sum()
+        };
+        let on_axis = |band: &brick_compile::bands::RoundBand, p: Vec3| -> bool {
+            let t = along(band, p);
+            (0..3).all(|k| (band.point[k] + band.axis[k] * t - p[k]).abs() < 1e-9)
+        };
+        let band = bands
+            .iter()
+            .find(|band| band.radius == radius && ends.iter().all(|&p| on_axis(band, p)))
+            .unwrap_or_else(|| {
+                panic!("{part}: a round band of radius {radius} on the finger axis")
+            });
+        let mut span: Vec<f64> = ends.iter().map(|&p| along(band, p)).collect();
+        span.sort_by(f64::total_cmp);
+        assert_eq!(span, vec![band.from, band.to], "{part}");
+    }
+}
+
+#[test]
+fn a_section_vocabulary_writes_ldcad_section_codes_and_reads_back_unchanged() {
+    let vocabulary = SectionVocabulary::from_metas([
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4   A 4 2]",
+        "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=_L 6.25 2   L_ 6.5 1   S 3 2]",
+        "0 !LDCAD SNAP_CLP [radius=4] [length=8]",
+    ]);
+    let written = vocabulary.to_json();
+    assert_eq!(
+        written,
+        json!({
+            "sizes": [
+                { "gender": "M", "shape": "S", "size": 3.0 },
+                { "gender": "M", "shape": "_L", "size": 6.25 },
+                { "gender": "M", "shape": "L_", "size": 6.5 },
+                { "gender": "F", "shape": "R", "size": 4.0 },
+                { "gender": "F", "shape": "R", "size": 6.0 },
+                { "gender": "F", "shape": "A", "size": 4.0 },
+            ],
+            "lengths": [
+                { "shape": "R", "length": 4.0 },
+                { "shape": "R", "length": 8.0 },
+                { "shape": "A", "length": 2.0 },
+                { "shape": "S", "length": 2.0 },
+                { "shape": "_L", "length": 2.0 },
+                { "shape": "L_", "length": 1.0 },
+            ],
+        })
+    );
+    assert_eq!(SectionVocabulary::from_json(&written), Ok(vocabulary));
+}
+
+fn file_at(library: &MemoryLibrary, part: &str, trail: &[u32]) -> Option<String> {
+    let mut file = part.to_string();
+    for &ordinal in trail {
+        let reference = parse(library.source(&file)?)
+            .lines
+            .into_iter()
+            .filter_map(|line| match line {
+                Line::Subfile { reference, .. } => Some(reference),
+                _ => None,
+            })
+            .nth(ordinal as usize)?;
+        file = brick_compile::flatten::resolve_reference(library, Lod::Standard, &reference)?;
+    }
+    Some(file)
+}
+
+fn numbered_files(library: &MemoryLibrary, part: &str) -> Vec<String> {
+    let pieces = PieceNumbering::new(library).map(part);
+    let mut found: Vec<(u16, String)> = Vec::new();
+    let mut trails: Vec<Vec<u32>> = vec![Vec::new()];
+    while let Some(trail) = trails.pop() {
+        let Some(file) = file_at(library, part, &trail) else {
+            continue;
+        };
+        if let Some(piece) = pieces.numbered(&trail) {
+            found.push((piece, file));
+            continue;
+        }
+        let references = parse(library.source(&file).unwrap_or_default())
+            .lines
+            .iter()
+            .filter(|line| matches!(line, Line::Subfile { .. }))
+            .count();
+        trails.extend((0..references as u32).map(|ordinal| {
+            let mut child = trail.clone();
+            child.push(ordinal);
+            child
+        }));
+    }
+    found.sort();
+    assert_eq!(
+        found.iter().map(|(piece, _)| *piece).collect::<Vec<_>>(),
+        (1..=found.len() as u16).collect::<Vec<_>>()
+    );
+    found.into_iter().map(|(_, file)| file).collect()
+}
+
+#[test]
+fn composite_parts_number_leaf_mouldings_in_walk_order_descending_shortcuts_and_parts_that_hold_pieces(
+) {
+    let library = pinned("ldraw");
+    for (part, pieces) in [
+        (
+            "parts/2878c01.dat",
+            &[
+                "parts/2878.dat",
+                "parts/70720.dat",
+                "parts/2879.dat",
+                "parts/2879.dat",
+            ][..],
+        ),
+        (
+            "parts/3815c01.dat",
+            &["parts/3815.dat", "parts/3816.dat", "parts/3817.dat"][..],
+        ),
+        (
+            "parts/2862ac01.dat",
+            &["parts/2860a.dat", "parts/u9240.dat"][..],
+        ),
+        (
+            "parts/4449.dat",
+            &[
+                "parts/4449k01.dat",
+                "parts/4449k02.dat",
+                "parts/4449k03.dat",
+            ][..],
+        ),
+        ("parts/3001.dat", &[][..]),
+    ] {
+        assert_eq!(numbered_files(&library, part), pieces, "{part}");
+    }
+}
+
+fn reference_at(library: &MemoryLibrary, part: &str, trail: &[u32]) -> Option<(String, Affine)> {
+    let mut file = part.to_string();
+    let mut matrix = Affine::IDENTITY;
+    for &ordinal in trail {
+        let (step, reference) = parse(library.source(&file)?)
+            .lines
+            .into_iter()
+            .filter_map(|line| match line {
+                Line::Subfile {
+                    matrix, reference, ..
+                } => Some((matrix, reference)),
+                _ => None,
+            })
+            .nth(ordinal as usize)?;
+        matrix = matrix.then(&step);
+        file = brick_compile::flatten::resolve_reference(library, Lod::Standard, &reference)?;
+    }
+    Some((file, matrix))
+}
+
+fn flipped(p: Vec3) -> Vec3 {
+    [p[0], -p[1], -p[2]]
+}
+
+fn placed_face(face: MatingFace, at: &Affine) -> MatingFace {
+    let mut rotation = at.m;
+    rotation[3] = 0.0;
+    rotation[7] = 0.0;
+    rotation[11] = 0.0;
+    MatingFace {
+        origin: flipped(at.apply(flipped(face.origin))),
+        axis: flipped(Affine { m: rotation }.apply(flipped(face.axis))),
+        ..face
+    }
+}
+
+fn same_face(a: &MatingFace, b: &MatingFace) -> bool {
+    a.gender == b.gender
+        && a.sections == b.sections
+        && (0..3).all(|k| {
+            (a.origin[k] - b.origin[k]).abs() <= 1e-3 && (a.axis[k] - b.axis[k]).abs() <= 1e-3
+        })
+}
+
+#[test]
+fn every_shadow_and_primitive_face_of_a_composite_takes_the_lowest_piece_whose_own_part_produces_it(
+) {
+    let mut files = pinned("ldraw").0;
+    for (path, text) in pinned("ldraw-audit").0 {
+        files.entry(path).or_insert(text);
+    }
+    let library = MemoryLibrary(files);
+    let shadow = pinned("ldcad-shadow-bundle");
+    let table: Value =
+        serde_json::from_str(&fs::read_to_string(table_path()).expect("table")).expect("json");
+    let vocabulary: Value = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/section-vocabulary.json"),
+        )
+        .expect("committed vocabulary"),
+    )
+    .expect("json");
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        InferredFeatures::new(
+            &library,
+            SectionVocabulary::from_json(&vocabulary).expect("vocabulary"),
+            "p/stud.dat",
+        )
+        .expect("the probe measures"),
+    );
+    let mut labelled: HashSet<u16> = HashSet::new();
+    for part in [
+        "parts/2878c01.dat",
+        "parts/3815c01.dat",
+        "parts/2861c00.dat",
+        "parts/2865.dat",
+    ] {
+        let pieces = PieceNumbering::new(&library).map(part);
+        let mut own: Vec<(u16, Vec<MatingFace>)> = Vec::new();
+        let mut trails: Vec<Vec<u32>> = vec![Vec::new()];
+        while let Some(trail) = trails.pop() {
+            let Some((file, at)) = reference_at(&library, part, &trail) else {
+                continue;
+            };
+            if let Some(piece) = pieces.numbered(&trail) {
+                let faces = extractor
+                    .extract(&file)
+                    .connectors
+                    .iter()
+                    .flat_map(|c| mating_faces(c).unwrap_or_default())
+                    .map(|face| placed_face(face, &at))
+                    .collect();
+                own.push((piece, faces));
+                continue;
+            }
+            let references = parse(library.source(&file).unwrap_or_default())
+                .lines
+                .iter()
+                .filter(|line| matches!(line, Line::Subfile { .. }))
+                .count();
+            trails.extend((0..references as u32).map(|ordinal| {
+                let mut child = trail.clone();
+                child.push(ordinal);
+                child
+            }));
+        }
+        own.sort_by_key(|(piece, _)| *piece);
+        let faces: Vec<MatingFace> = extractor
+            .extract(part)
+            .connectors
+            .iter()
+            .filter(|c| c.source != Source::Inferred)
+            .flat_map(|c| mating_faces(c).unwrap_or_default())
+            .collect();
+        labelled.extend(faces.iter().map(|face| face.piece));
+        for face in &faces {
+            let lowest = own
+                .iter()
+                .find(|(_, faces)| faces.iter().any(|f| same_face(f, face)))
+                .map_or(0, |(piece, _)| *piece);
+            assert_eq!(face.piece, lowest, "{part}: face at {:?}", face.origin);
+        }
+    }
+    assert!([1, 2, 3].iter().all(|piece| labelled.contains(piece)));
 }
 
 #[test]
