@@ -22,6 +22,7 @@ import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
+import { BLOCKED, FREE, PoseMemo, UNKNOWN } from "./pose-memo.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
 import type { FrozenVolumes } from "./placeable-volumes.ts";
@@ -110,7 +111,8 @@ interface Placed extends PlacedParts {
 const TURNS = 4;
 const INITIAL_KEYS = 64;
 const TURN_KEYS = 3 * TURNS;
-const NO_INDEX = -1;
+const NO_REGION = -1;
+const COVER_ATTEMPTS = 2;
 const HINTS = 8;
 
 class Bounds {
@@ -203,6 +205,16 @@ class Pose implements LatticePose {
   rot = 0;
 }
 
+class RegionWindow implements SnapWindow {
+  x = 0;
+  z = 0;
+  yPlates = 0;
+  rot = 0;
+  cells = NO_REGION;
+  plates = 0;
+  turns = 1;
+}
+
 function reachesBeyondCursor(window: PlacementWindow): boolean {
   return window.radiusLdu > 0 || window.plates > 0 || window.turns > 1;
 }
@@ -219,12 +231,14 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly report = new MateReport();
   private readonly tieReport = new MateReport();
   private keys = new Float64Array(INITIAL_KEYS);
-  private dense = new Int32Array(INITIAL_KEYS);
-  private proposedVotes = new Int32Array(INITIAL_KEYS);
-  private proposedStamp = new Int32Array(INITIAL_KEYS);
-  private levelStamp = new Int32Array(INITIAL_KEYS);
-  private stamp = 0;
   private readonly proposals = new CandidatePoses();
+  private readonly memo = new PoseMemo();
+  private readonly heldRegion = new RegionWindow();
+  private readonly turnedRegion = new RegionWindow();
+  private memoModel: ModelConnectors | null = null;
+  private memoRevision = -1;
+  private memoMoving = NO_PLACEMENT;
+  private revision = 0;
   private readonly countPose = new Pose();
   private readonly oneCell = new VolumeBuffer(1);
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
@@ -270,6 +284,7 @@ export class PlacementSearch implements IPlacementSearch {
     const yLdu = at.yPlates * PLATE_LDU;
     const grid = this.gridFor(volumes, at.rot, world, yLdu);
     const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
+    this.revision++;
     this.solver.insert(model, at, placement);
     this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
   }
@@ -278,6 +293,7 @@ export class PlacementSearch implements IPlacementSearch {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
     this.volumes.remove(placed.row);
+    this.revision++;
     this.release(placed);
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
@@ -342,8 +358,9 @@ export class PlacementSearch implements IPlacementSearch {
     out: PlacementChoice,
   ): void {
     const count = this.reachOrder(window, tableYPlates);
-    this.stamp++;
-    this.collectProposed(model, window, tableYPlates);
+    this.prepareMemo(model, count);
+    this.coverProposals(model, window, count);
+    const memo = this.memo;
     const pose = this.pose;
     let found = false;
     let bestKey = 0;
@@ -354,11 +371,26 @@ export class PlacementSearch implements IPlacementSearch {
       const key = this.keys[k] ?? 0;
       const reach = this.decode(window, key, pose);
       if (found && reach > bestReach) break;
-      const votes = this.votesAt(model, window, pose);
+      const slot = memo.slot(pose.x, pose.z, pose.yPlates, pose.rot);
+      if (memo.dense[slot] === UNKNOWN) this.countLevel(model, window, pose.rot, pose.yPlates);
+      const proposal = this.proposalAt(model, pose, slot);
+      const votes = (memo.dense[slot] ?? 0) + proposal;
       if (votes === 0) continue;
       out.walked++;
-      const exemptable = this.proposedAt(window, pose);
-      if (this.blocked(model, volumes, boxes, technic, pose, votes, exemptable, true)) continue;
+      if (memo.verdict[slot] === 0) {
+        const blocked = this.blocked(
+          model,
+          volumes,
+          boxes,
+          technic,
+          pose,
+          votes,
+          proposal > 0,
+          true,
+        );
+        memo.verdict[slot] = blocked ? BLOCKED : FREE;
+      }
+      if (memo.verdict[slot] === BLOCKED) continue;
       this.solver.evaluate(model, pose, this.tieReport);
       const joints = this.tieReport.jointCount;
       if (!found || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
@@ -375,17 +407,119 @@ export class PlacementSearch implements IPlacementSearch {
     out.accepted = true;
   }
 
+  private prepareMemo(model: ModelConnectors, count: number): void {
+    if (
+      model === this.memoModel &&
+      this.revision === this.memoRevision &&
+      this.moving === this.memoMoving &&
+      this.memo.roomFor(count)
+    ) {
+      return;
+    }
+    this.memo.reset();
+    this.memoModel = model;
+    this.memoRevision = this.revision;
+    this.memoMoving = this.moving;
+    this.heldRegion.cells = NO_REGION;
+    this.turnedRegion.cells = NO_REGION;
+  }
+
+  private coverProposals(model: ModelConnectors, window: PlacementWindow, count: number): void {
+    const held = window.firstTurn === 0;
+    const turned = window.turns - 1;
+    const nextRot = (window.rot + 1) % TURNS;
+    for (let attempt = 0; attempt < COVER_ATTEMPTS; attempt++) {
+      const lastAttempt = attempt === COVER_ATTEMPTS - 1;
+      if (
+        (!held || this.cover(model, window, count, this.heldRegion, window.rot, 1, lastAttempt)) &&
+        (turned <= 0 ||
+          this.cover(model, window, count, this.turnedRegion, nextRot, turned, lastAttempt))
+      ) {
+        return;
+      }
+      this.memo.reset();
+      this.heldRegion.cells = NO_REGION;
+      this.turnedRegion.cells = NO_REGION;
+    }
+  }
+
+  private cover(
+    model: ModelConnectors,
+    window: PlacementWindow,
+    count: number,
+    region: RegionWindow,
+    rot: number,
+    turns: number,
+    regardlessOfRoom: boolean,
+  ): boolean {
+    if (
+      region.cells !== NO_REGION &&
+      region.rot === rot &&
+      region.turns >= turns &&
+      Math.abs(window.x - region.x) + window.cells * STUD_LDU <= region.cells * STUD_LDU &&
+      Math.abs(window.z - region.z) + window.cells * STUD_LDU <= region.cells * STUD_LDU &&
+      Math.abs(window.yPlates - region.yPlates) + window.plates <= region.plates
+    ) {
+      return true;
+    }
+    region.x = window.x;
+    region.z = window.z;
+    region.yPlates = window.yPlates;
+    region.rot = rot;
+    region.turns = turns;
+    region.cells = window.cells;
+    region.plates = window.plates;
+    const proposals = this.proposals;
+    this.solver.proposeMates(model, region, proposals);
+    if (!regardlessOfRoom && !this.memo.roomFor(count + proposals.count)) return false;
+    for (let q = 0; q < proposals.count; q++) {
+      const x = proposals.x[q] ?? 0;
+      const z = proposals.z[q] ?? 0;
+      if ((x - window.x) % STUD_LDU !== 0 || (z - window.z) % STUD_LDU !== 0) continue;
+      const slot = this.memo.slot(x, z, proposals.yPlates[q] ?? 0, proposals.rot[q] ?? 0);
+      this.memo.proposed[slot] = 1;
+    }
+    return true;
+  }
+
+  private proposalAt(model: ModelConnectors, pose: LatticePose, slot: number): number {
+    const memo = this.memo;
+    if (memo.proposed[slot] === 0) return 0;
+    if (memo.proposal[slot] === UNKNOWN)
+      memo.proposal[slot] = this.solver.proposalVotes(model, pose);
+    return memo.proposal[slot] ?? 0;
+  }
+
+  private countLevel(
+    model: ModelConnectors,
+    window: PlacementWindow,
+    rot: number,
+    yPlates: number,
+  ): void {
+    const memo = this.memo;
+    const radiusSquared = window.radiusLdu * window.radiusLdu;
+    const counted = this.countPose;
+    counted.rot = rot;
+    counted.yPlates = yPlates;
+    const dyLdu = (yPlates - window.yPlates) * PLATE_LDU;
+    for (let i = -window.cells; i <= window.cells; i++) {
+      const dx = i * STUD_LDU;
+      for (let j = -window.cells; j <= window.cells; j++) {
+        const dz = j * STUD_LDU;
+        if (dx * dx + dz * dz + dyLdu * dyLdu > radiusSquared) continue;
+        counted.x = window.x + dx;
+        counted.z = window.z + dz;
+        const slot = memo.slot(counted.x, counted.z, yPlates, rot);
+        if (memo.dense[slot] === UNKNOWN) memo.dense[slot] = this.solver.denseVotes(model, counted);
+      }
+    }
+  }
+
   private reachOrder(window: PlacementWindow, tableYPlates: number): number {
     const across = 2 * window.cells + 1;
     const levels = 2 * window.plates + 1;
     const capacity = window.turns * levels * across * across;
-    if (this.keys.length < capacity) {
-      this.keys = new Float64Array(capacity);
-      this.dense = new Int32Array(capacity);
-      this.proposedVotes = new Int32Array(capacity);
-      this.proposedStamp = new Int32Array(capacity);
-      this.levelStamp = new Int32Array(capacity);
-    }
+    if (this.keys.length < capacity) this.keys = new Float64Array(capacity);
     const radiusSquared = window.radiusLdu * window.radiusLdu;
     let count = 0;
     for (let turn = window.firstTurn; turn < window.turns; turn++) {
@@ -409,90 +543,6 @@ export class PlacementSearch implements IPlacementSearch {
     this.keys.fill(Number.POSITIVE_INFINITY, count);
     this.keys.sort();
     return count;
-  }
-
-  private collectProposed(
-    model: ModelConnectors,
-    window: PlacementWindow,
-    tableYPlates: number,
-  ): void {
-    const proposals = this.proposals;
-    this.solver.proposeMates(model, window, proposals);
-    const radiusSquared = window.radiusLdu * window.radiusLdu;
-    const counted = this.countPose;
-    for (let q = 0; q < proposals.count; q++) {
-      counted.x = proposals.x[q] ?? 0;
-      counted.z = proposals.z[q] ?? 0;
-      counted.yPlates = proposals.yPlates[q] ?? 0;
-      counted.rot = proposals.rot[q] ?? 0;
-      const index = this.ballIndex(window, counted);
-      if (index < 0 || counted.yPlates < tableYPlates) continue;
-      const dx = counted.x - window.x;
-      const dz = counted.z - window.z;
-      const dy = (counted.yPlates - window.yPlates) * PLATE_LDU;
-      if (dx * dx + dz * dz + dy * dy > radiusSquared) continue;
-      this.proposedVotes[index] = this.solver.proposalVotes(model, counted);
-      this.proposedStamp[index] = this.stamp;
-    }
-  }
-
-  private ballIndex(window: PlacementWindow, pose: LatticePose): number {
-    const dx = pose.x - window.x;
-    const dz = pose.z - window.z;
-    if (dx % STUD_LDU !== 0 || dz % STUD_LDU !== 0) return NO_INDEX;
-    const across = 2 * window.cells + 1;
-    const levels = 2 * window.plates + 1;
-    const i = dx / STUD_LDU + window.cells;
-    const j = dz / STUD_LDU + window.cells;
-    const level = pose.yPlates - window.yPlates + window.plates;
-    const turn = (((pose.rot - window.rot) % TURNS) + TURNS) % TURNS;
-    if (i < 0 || i >= across || j < 0 || j >= across || level < 0 || level >= levels) {
-      return NO_INDEX;
-    }
-    if (turn < window.firstTurn || turn >= window.turns) return NO_INDEX;
-    return ((turn * levels + level) * across + i) * across + j;
-  }
-
-  private votesAt(model: ModelConnectors, window: PlacementWindow, pose: LatticePose): number {
-    const index = this.ballIndex(window, pose);
-    const across = 2 * window.cells + 1;
-    const band = Math.floor(index / (across * across));
-    if (this.levelStamp[band] !== this.stamp) this.countLevel(model, window, band);
-    const proposed =
-      this.proposedStamp[index] === this.stamp ? (this.proposedVotes[index] ?? 0) : 0;
-    return (this.dense[index] ?? 0) + proposed;
-  }
-
-  private proposedAt(window: PlacementWindow, pose: LatticePose): boolean {
-    const index = this.ballIndex(window, pose);
-    return this.proposedStamp[index] === this.stamp && (this.proposedVotes[index] ?? 0) > 0;
-  }
-
-  private countLevel(model: ModelConnectors, window: PlacementWindow, band: number): void {
-    const across = 2 * window.cells + 1;
-    const levels = 2 * window.plates + 1;
-    const turn = Math.floor(band / levels);
-    const level = band - turn * levels;
-    const radiusSquared = window.radiusLdu * window.radiusLdu;
-    const counted = this.countPose;
-    counted.rot = (window.rot + turn) % TURNS;
-    counted.yPlates = window.yPlates + level - window.plates;
-    const dyLdu = (level - window.plates) * PLATE_LDU;
-    for (let i = 0; i < across; i++) {
-      const dx = (i - window.cells) * STUD_LDU;
-      for (let j = 0; j < across; j++) {
-        const dz = (j - window.cells) * STUD_LDU;
-        const index = (band * across + i) * across + j;
-        if (dx * dx + dz * dz + dyLdu * dyLdu > radiusSquared) {
-          this.dense[index] = 0;
-          continue;
-        }
-        counted.x = window.x + dx;
-        counted.z = window.z + dz;
-        this.dense[index] = this.solver.denseVotes(model, counted);
-      }
-    }
-    this.levelStamp[band] = this.stamp;
   }
 
   private decode(window: PlacementWindow, key: number, out: Pose): number {
