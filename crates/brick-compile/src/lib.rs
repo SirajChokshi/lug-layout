@@ -1,4 +1,5 @@
 pub mod affine;
+pub mod authored;
 pub mod bake;
 pub mod bands;
 pub mod bore;

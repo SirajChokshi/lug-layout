@@ -8,7 +8,7 @@ use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
-use brick_compile::model::{bake_model, submodel_index, ModelInstance};
+use brick_compile::model::{bake_model_with, submodel_index, BakeOptions, ModelInstance};
 use brick_compile::record::BakeRecord;
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::{part_bounds, Vehicle};
@@ -22,8 +22,8 @@ static NO_RECORDS: std::sync::LazyLock<RecordShelf> = std::sync::LazyLock::new(R
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
-    BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
-    Reply, Section, VehicleHeader,
+    AuthoredIdentification, BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice,
+    LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
@@ -60,7 +60,15 @@ impl Session {
         self.extend_library(&request)?;
         self.shelve_records(&request)?;
         match &request.envelope.request {
-            Operation::ReadModel => read_model(&request.text("source")?, body),
+            Operation::ReadModel {
+                omr_authoring_identification,
+            } => read_model(
+                &request.text("source")?,
+                BakeOptions {
+                    omr_authoring_identification: *omr_authoring_identification,
+                },
+                body,
+            ),
             Operation::ReadStudio => Ok(match read_io(request.segment("io")?) {
                 Ok(archive) => Reply::from(archive),
                 Err(error) => Reply::from(error),
@@ -109,7 +117,11 @@ impl Session {
                 stud_primitives,
                 vehicles,
             } => {
-                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let drawn = drawn_instances(
+                    &request.text("source")?,
+                    request.segment("drawn")?,
+                    BakeOptions::default(),
+                )?;
                 let closure = BakeClosure {
                     stud_primitives,
                     records: self.offered(),
@@ -129,8 +141,15 @@ impl Session {
                 table_depth_ldu,
                 vehicles,
                 shard,
+                omr_authoring_identification,
             } => {
-                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let drawn = drawn_instances(
+                    &request.text("source")?,
+                    request.segment("drawn")?,
+                    BakeOptions {
+                        omr_authoring_identification: *omr_authoring_identification,
+                    },
+                )?;
                 let inputs = BakeInputs {
                     stud_primitives,
                     unofficial_allowlist,
@@ -201,8 +220,8 @@ fn wire_index(index: i64) -> Result<i32, String> {
     i32::try_from(index).map_err(|_| format!("sub-model index {index} does not fit an Int32"))
 }
 
-fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
-    let model = bake_model(source).map_err(|e| e.to_string())?;
+fn read_model(source: &str, options: BakeOptions, body: &mut Body) -> Result<Reply, String> {
+    let model = bake_model_with(source, options).map_err(|e| e.to_string())?;
     let mut part_ids: Vec<String> = Vec::new();
     let mut part_index: HashMap<&str, u32> = HashMap::new();
     let count = model.instances.len();
@@ -255,6 +274,10 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
             })
             .collect(),
         instances: count,
+        authored_identification: model
+            .authored_identification
+            .as_ref()
+            .map(|authored| AuthoredIdentification::from(authored.columns(Some))),
         blobs: body.take_blobs(),
     })
 }
@@ -368,8 +391,12 @@ fn compile(
     })
 }
 
-fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, String> {
-    let model = bake_model(source).map_err(|e| e.to_string())?;
+fn drawn_instances(
+    source: &str,
+    mask: &[u8],
+    options: BakeOptions,
+) -> Result<Vec<ModelInstance>, String> {
+    let model = bake_model_with(source, options).map_err(|e| e.to_string())?;
     if mask.len() != model.instances.len() {
         return Err(format!(
             "bake got a drawn mask for {} instances, but the model has {}",
