@@ -218,6 +218,37 @@ jobs:
         run: cargo build --release --target wasm32-wasip1 -p brick-compile-wasm
       - name: Compile every pinned part in the shipped WASM compiler and compare bytes
         run: pnpm --filter @brr/e2e library-bake-parity
+      - id: bundle-key
+        run: |
+          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
+          input_key=${manifest_file#manifest.}
+          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/ldraw
+            .cache/ldraw-audit
+            .cache/ldcad-shadow
+            .cache/omr
+            .cache/catalog
+          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - name: Drive the editor against the library bake just built
+        run: pnpm turbo run e2e:library-bake
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-library-bake-report
+          path: |
+            tools/e2e/playwright-report
+            tools/e2e/test-results
+          retention-days: 7
 
   check:
     if: ${{ always() }}
