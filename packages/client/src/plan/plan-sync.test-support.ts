@@ -38,7 +38,7 @@ import {
   type TableInput,
 } from "./plan-service.ts";
 
-interface PlanSnapshot {
+export interface PlanSnapshot {
   readonly plans: ReadonlyArray<PlanRegion>;
   readonly activePlanId: string | null;
   readonly checks: ReadonlyArray<PlanCheck>;
@@ -243,7 +243,7 @@ function todaysToDomain(placement: PlacedForPlan): PlanPlacement {
   };
 }
 
-class TodaysPlanService {
+export class TodaysPlanService {
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
   private state: PlanSnapshot = {
