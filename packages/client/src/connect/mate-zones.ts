@@ -13,12 +13,14 @@ import {
   TECHNIC_WAIVER_INTS,
   firstOtherAxis,
   placeTechnicInto,
+  PosedTechnicBuffer,
   secondOtherAxis,
   technicItemsOverlap,
   technicScratch,
   type LatticePose,
   type MateReport,
   type OverlapHit,
+  type PosedTechnic,
   type TechnicSet,
 } from "@brr/domain";
 import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
@@ -149,8 +151,9 @@ export class MateZones {
   private technic: TechnicSet | null = null;
   private pose: LatticePose | null = null;
   private placed: ReadonlyMap<number, PlacedParts> | null = null;
-  private posedTechnic: TechnicSet | null = null;
+  private posedTechnic: PosedTechnic | null = null;
   private posedTechnicOf: TechnicSet | null = null;
+  private readonly theirTechnic = new PosedTechnicBuffer();
 
   clear(): void {
     this.zones = 0;
@@ -411,7 +414,8 @@ export class MateZones {
     const theirItem = other.technic.itemOfInstance[theirs] ?? NO_TECHNIC_ITEM;
     const posed = this.posedTechnic;
     if (ownItem === NO_TECHNIC_ITEM || theirItem === NO_TECHNIC_ITEM || !posed) return contained;
-    return !technicItemsOverlap(posed, ownItem, other.technic, theirItem, this.waivers, waivers);
+    const theirPosed = this.theirTechnic.placeItem(other.technic, theirItem, other.pose);
+    return !technicItemsOverlap(posed, ownItem, theirPosed, theirItem, this.waivers, waivers);
   }
 
   private defer(owner: number, cellX: number, cellZ: number): void {
@@ -444,7 +448,7 @@ export class MateZones {
     this.deferredInts = new Int32Array(cells * DEFERRED_INTS);
   }
 
-  private posed(local: TechnicSet): TechnicSet {
+  private posed(local: TechnicSet): PosedTechnic {
     if (!this.posedTechnic || this.posedTechnicOf !== local) {
       this.posedTechnic = technicScratch(local);
       this.posedTechnicOf = local;

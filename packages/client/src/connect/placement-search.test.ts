@@ -11,11 +11,9 @@ import {
   ModelConnectors,
   SECTION_ROUND,
   SOURCE_SHADOW,
-  modelTechnic,
   STATUS_VERIFIED,
   type LatticePose,
   type SnapWindow,
-  type TechnicSet,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
@@ -27,6 +25,7 @@ import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
+import { FrozenTechnic } from "./frozen-technic.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
 import {
   placementChoice,
@@ -74,7 +73,7 @@ interface Fixture {
 
 interface Parts {
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 interface Piece {
@@ -191,7 +190,7 @@ function partsOf(
   const measured = partBoxes(boxes.flat());
   return {
     boxes: measured,
-    technic: modelTechnic(
+    technic: FrozenTechnic.ofParts(
       boxes.map((_, i) => technic[i] ?? null),
       {
         count: boxes.length,
