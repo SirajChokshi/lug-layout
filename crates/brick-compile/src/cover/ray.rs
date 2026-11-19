@@ -122,6 +122,13 @@ pub(super) struct RayTriangle {
 }
 
 impl RayTriangle {
+    pub fn same_bits(&self, other: &RayTriangle) -> bool {
+        let bits = |v: &Vec3| v.map(f64::to_bits);
+        bits(&self.corner) == bits(&other.corner)
+            && bits(&self.edge1) == bits(&other.edge1)
+            && bits(&self.edge2) == bits(&other.edge2)
+    }
+
     pub fn new(points: &[Vec3; 3]) -> Self {
         RayTriangle {
             corner: points[0],

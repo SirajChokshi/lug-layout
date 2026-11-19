@@ -16,7 +16,7 @@ import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
-import type { ModelConnectors } from "./model-connectors.ts";
+import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 
 const COEFFICIENTS = ZETA16_COEFFICIENT_COUNT;
 const HEADING_KEY = COEFFICIENTS;
@@ -26,6 +26,7 @@ const STEPS_PER_TURN = ZETA16_ORDER / QUARTER_TURNS;
 const REAL_AXIS = 0;
 const QUARTER_AXIS = COEFFICIENTS / 2;
 const INITIAL_SLOTS = 64;
+const NO_HOLDER = -1;
 const STEP_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const COS16 = Float64Array.from({ length: COEFFICIENTS }, (_, k) => Math.cos(k * STEP_RADIANS));
 const SIN16 = Float64Array.from({ length: COEFFICIENTS }, (_, k) => Math.sin(k * STEP_RADIANS));
@@ -43,17 +44,47 @@ export class TrackEndFinder implements MateFinder {
   private slotCount = new Int32Array(INITIAL_SLOTS);
   private slotX = new Float64Array(INITIAL_SLOTS);
   private slotZ = new Float64Array(INITIAL_SLOTS);
+  private slotHolder = new Int32Array(INITIAL_SLOTS);
+  private holderOwner = new Int32Array(INITIAL_SLOTS);
+  private holderEnd = new Int32Array(INITIAL_SLOTS);
+  private holderInstance = new Int32Array(INITIAL_SLOTS);
+  private holderNext = new Int32Array(INITIAL_SLOTS);
+  private holders = 0;
+  private freeHolder = NO_HOLDER;
   private slots = 0;
   private turnedModel: ModelConnectors | null = null;
   private turnedPosition = new Int32Array(0);
   private turnedHeading = new Uint8Array(0);
 
-  insert(model: ModelConnectors, pose: LatticePose): void {
-    this.stamp(model, pose, 1);
+  insert(model: ModelConnectors, pose: LatticePose, owner: number): void {
+    checkPose(pose);
+    if (!this.onStudGrid(pose)) return;
+    this.turn(model);
+    for (let e = 0; e < model.trackEndCount; e++) {
+      const key = this.placedKey(model, e, pose);
+      let slot = this.index.get(key);
+      if (slot === MISSING) slot = this.claim(key);
+      const holder = this.allocateHolder();
+      this.holderOwner[holder] = owner;
+      this.holderEnd[holder] = e;
+      this.holderInstance[holder] = model.trackInstance[e] ?? NO_INSTANCE;
+      this.holderNext[holder] = this.slotHolder[slot] ?? NO_HOLDER;
+      this.slotHolder[slot] = holder;
+      this.slotCount[slot] = (this.slotCount[slot] ?? 0) + 1;
+    }
   }
 
-  remove(model: ModelConnectors, pose: LatticePose): void {
-    this.stamp(model, pose, -1);
+  remove(model: ModelConnectors, pose: LatticePose, owner: number): void {
+    checkPose(pose);
+    if (!this.onStudGrid(pose)) return;
+    this.turn(model);
+    for (let e = 0; e < model.trackEndCount; e++) {
+      const slot = this.index.get(this.placedKey(model, e, pose));
+      if (slot === MISSING || !this.unlinkHolder(slot, owner, e)) {
+        throw new RangeError(`placement ${owner} has no placed track end ${e} to remove`);
+      }
+      this.slotCount[slot] = (this.slotCount[slot] ?? 0) - 1;
+    }
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
@@ -97,26 +128,60 @@ export class TrackEndFinder implements MateFinder {
     this.turn(model);
     for (let e = 0; e < model.trackEndCount; e++) {
       const slot = this.index.get(this.facingKey(model, e, pose));
-      const joined = slot === MISSING ? 0 : (this.slotCount[slot] ?? 0);
-      for (let j = 0; j < joined; j++) out.push(e, SOURCE_SHADOW, STATUS_VERIFIED);
+      if (slot === MISSING) continue;
+      for (
+        let holder = this.slotHolder[slot] ?? NO_HOLDER;
+        holder !== NO_HOLDER;
+        holder = this.holderNext[holder] ?? NO_HOLDER
+      ) {
+        out.push(
+          e,
+          SOURCE_SHADOW,
+          STATUS_VERIFIED,
+          this.holderOwner[holder] ?? 0,
+          model.trackInstance[e] ?? NO_INSTANCE,
+          this.holderInstance[holder] ?? NO_INSTANCE,
+          null,
+        );
+      }
     }
   }
 
-  private stamp(model: ModelConnectors, pose: LatticePose, change: number): void {
-    checkPose(pose);
-    if (!this.onStudGrid(pose)) return;
-    this.turn(model);
-    for (let e = 0; e < model.trackEndCount; e++) {
-      const key = this.placedKey(model, e, pose);
-      let slot = this.index.get(key);
-      if (slot === MISSING) {
-        if (change < 0) throw new RangeError(`no placed track end ${e} to remove`);
-        slot = this.claim(key);
-      }
-      const count = (this.slotCount[slot] ?? 0) + change;
-      if (count < 0) throw new RangeError(`no placed track end ${e} to remove`);
-      this.slotCount[slot] = count;
+  private allocateHolder(): number {
+    if (this.freeHolder !== NO_HOLDER) {
+      const holder = this.freeHolder;
+      this.freeHolder = this.holderNext[holder] ?? NO_HOLDER;
+      return holder;
     }
+    if (this.holders === this.holderOwner.length) {
+      const capacity = this.holderOwner.length * 2;
+      this.holderOwner = grown(this.holderOwner, new Int32Array(capacity));
+      this.holderEnd = grown(this.holderEnd, new Int32Array(capacity));
+      this.holderInstance = grown(this.holderInstance, new Int32Array(capacity));
+      this.holderNext = grown(this.holderNext, new Int32Array(capacity));
+    }
+    return this.holders++;
+  }
+
+  private unlinkHolder(slot: number, owner: number, end: number): boolean {
+    let previous = NO_HOLDER;
+    for (
+      let holder = this.slotHolder[slot] ?? NO_HOLDER;
+      holder !== NO_HOLDER;
+      holder = this.holderNext[holder] ?? NO_HOLDER
+    ) {
+      if (this.holderOwner[holder] !== owner || this.holderEnd[holder] !== end) {
+        previous = holder;
+        continue;
+      }
+      const next = this.holderNext[holder] ?? NO_HOLDER;
+      if (previous === NO_HOLDER) this.slotHolder[slot] = next;
+      else this.holderNext[previous] = next;
+      this.holderNext[holder] = this.freeHolder;
+      this.freeHolder = holder;
+      return true;
+    }
+    return false;
   }
 
   private placedKey(model: ModelConnectors, end: number, pose: LatticePose): Int32Array {
@@ -165,6 +230,7 @@ export class TrackEndFinder implements MateFinder {
     this.slotPosition.set(key.subarray(0, COEFFICIENTS), slot * COEFFICIENTS);
     this.slotHeading[slot] = key[HEADING_KEY] ?? 0;
     this.slotY[slot] = key[Y_KEY] ?? 0;
+    this.slotHolder[slot] = NO_HOLDER;
     this.slotX[slot] = this.studsX(this.slotPosition, slot * COEFFICIENTS);
     this.slotZ[slot] = this.studsZ(this.slotPosition, slot * COEFFICIENTS);
     this.index.set(key, slot);
@@ -215,6 +281,7 @@ export class TrackEndFinder implements MateFinder {
     this.slotCount = grown(this.slotCount, new Int32Array(capacity));
     this.slotX = grown(this.slotX, new Float64Array(capacity));
     this.slotZ = grown(this.slotZ, new Float64Array(capacity));
+    this.slotHolder = grown(this.slotHolder, new Int32Array(capacity));
   }
 }
 

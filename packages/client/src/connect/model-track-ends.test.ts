@@ -4,7 +4,7 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import { MateReport, ModelConnectors } from "@brr/domain";
+import { MateReport, ModelConnectors, NO_INSTANCE } from "@brr/domain";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   STUD_LDU,
@@ -51,6 +51,9 @@ const CURVE_PART = "ldraw:74747";
 const STRAIGHT_PART = "ldraw:74746";
 const NEAREST_ELEMENT_TO_A_STUD_POINT = zeta16([-21n, -20n, 59n, -20n, -21n, 10n, 0n, -10n]);
 const STUD_POINT = zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]);
+const TWENTY_STUDS_OUT = zeta16([20n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]);
+const PLAN_TRANSLATION_ENTRIES = [3, 11];
+const SINE_ENTRIES = [2, 8];
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -298,6 +301,49 @@ describe("modelTrackEnds", () => {
     expect(nudged.uncertified).toContainEqual({ partId: STRAIGHT_PART, reason: "contradiction" });
   });
 
+  it("seats a straight written 0.0005 LDU off the stud lattice, which double precision puts a hair beyond the limit", () => {
+    const [straight] = chain(pose16(TWENTY_STUDS_OUT, 0), [STRAIGHT_PART]);
+    if (!straight) throw new Error("no piece laid");
+    const exact = writtenAt([straight]);
+    const offByTheLimit = {
+      ...exact,
+      matrices: exact.matrices.map((entry, k) =>
+        PLAN_TRANSLATION_ENTRIES.includes(k % INSTANCE_MATRIX_FLOATS)
+          ? entry + CERTIFIED_RESIDUAL_LIMIT_LDU
+          : entry,
+      ),
+    };
+    const ends = modelTrackEnds(offByTheLimit, bundle.parts, bundle.trackCatalog);
+    expect(ends.uncertified).toEqual([]);
+    expect(ends.pieces).toHaveLength(1);
+    expect(pose16Equals(ends.pieces[0]?.placement ?? pose16(STUD_POINT, 1), straight[1])).toBe(
+      true,
+    );
+  });
+
+  it("certifies a curve whose sine entries are written 0.0005 off, which double precision puts a hair beyond the limit", () => {
+    const run = chain(pose16(STUD_POINT, 0), [STRAIGHT_PART, CURVE_PART]);
+    const exact = writtenAt(run);
+    const curve = INSTANCE_MATRIX_FLOATS;
+    const offByTheLimit = {
+      ...exact,
+      matrices: exact.matrices.map((entry, k) =>
+        k >= curve && SINE_ENTRIES.includes(k - curve)
+          ? entry + CERTIFIED_RESIDUAL_LIMIT_LDU
+          : entry,
+      ),
+    };
+    for (const k of SINE_ENTRIES) {
+      const written = (offByTheLimit.matrices[curve + k] ?? 0) - (exact.matrices[curve + k] ?? 0);
+      expect(written).toBeGreaterThan(CERTIFIED_RESIDUAL_LIMIT_LDU);
+    }
+    const ends = modelTrackEnds(offByTheLimit, bundle.parts, bundle.trackCatalog);
+    expect(ends.uncertified).toEqual([]);
+    expect(ends.pieces.map((piece) => piece.placement)).toEqual(
+      run.map(([, placement]) => placement),
+    );
+  });
+
   it("leaves a lone piece off the stud lattice unanchored, since one window candidate alone could be a stray of rounded data", () => {
     const [lone] = chain(pose16(STUD_POINT, 1), [CURVE_PART]);
     if (!lone) throw new Error("no piece laid");
@@ -427,16 +473,24 @@ describe("modelTrackEnds", () => {
       bundle.trackCatalog,
     );
     const none = { count: 0, partIndex: [], matrices: new Float64Array(0) };
-    solver.insert(ModelConnectors.fromParts([], none, mating, run.openEnds), {
-      x: 0,
-      z: 0,
-      yPlates: 0,
-      rot: 0,
-    });
+    const RUN = 1;
+    solver.insert(
+      ModelConnectors.fromParts([], none, mating, run.openEnds),
+      { x: 0, z: 0, yPlates: 0, rot: 0 },
+      RUN,
+    );
     const held = ModelConnectors.fromParts([], none, mating, next.openEnds);
     const report = new MateReport();
     solver.evaluate(held, { x: 0, z: 0, yPlates: 0, rot: 0 }, report);
-    expect([report.count, report.family[0]]).toEqual([1, TRACK_FAMILY]);
+    expect({
+      mate: [report.count, report.family[0], report.partner[0]],
+      heldEndNamesItsPiece: (report.instance[0] ?? NO_INSTANCE) !== NO_INSTANCE,
+      partnerEndNamesItsPiece: (report.partnerInstance[0] ?? NO_INSTANCE) !== NO_INSTANCE,
+    }).toEqual({
+      mate: [1, TRACK_FAMILY, RUN],
+      heldEndNamesItsPiece: true,
+      partnerEndNamesItsPiece: true,
+    });
     solver.evaluate(held, { x: STUD_LDU, z: 0, yPlates: 0, rot: 0 }, report);
     expect(report.count).toBe(0);
   });
