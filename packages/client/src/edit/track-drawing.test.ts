@@ -190,9 +190,9 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
   const delta = new PlanDelta();
   writeFullRebuild(delta, [], drawing);
   plans.apply(delta);
-  const check = plans.snapshot().checks.find((c) => c.regionId === planId);
+  const issues = plans.issues(planId);
   plans.removePlan(planId);
-  return check?.issues.filter((issue) => issue.rule === "fit").length ?? -1;
+  return issues.filter((issue) => issue.rule === "fit").length;
 }
 
 it("lays a closed oval of real 9V pieces from four drags", () => {

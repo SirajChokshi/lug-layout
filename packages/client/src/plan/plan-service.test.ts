@@ -104,10 +104,10 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
     box: unreadable,
   };
 
-  const snapshot = plans.snapshot();
-  expect(snapshot.placements).toEqual([placement]);
-  expect(snapshot.checks[0]?.tables.map((t) => t.studs.studsWide)).toEqual([300]);
-  expect(snapshot.checks[0]?.issues.map((i) => [i.rule, i.message])).toEqual([
+  const dump = plans.materialize();
+  expect(dump.placements).toEqual([placement]);
+  expect(plans.regionView(planId).tables.map((t) => t.studs.studsWide)).toEqual([300]);
+  expect(dump.checks[0]?.issues.map((i) => [i.rule, i.message])).toEqual([
     ["unchecked", 'Plan "Room" could not be checked: Error: box is gone'],
   ]);
   expect(backend.issueBoxes).toEqual([]);

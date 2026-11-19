@@ -35,15 +35,6 @@ export interface PlacedForPlan {
   readonly box: WorldBox;
 }
 
-export interface PlanSnapshot {
-  readonly plans: ReadonlyArray<PlanRegion>;
-  readonly activePlanId: string | null;
-  readonly checks: ReadonlyArray<PlanCheck>;
-  readonly placements: ReadonlyArray<PlacedForPlan>;
-  readonly sandboxPlacements: ReadonlyArray<PlacementKey>;
-  readonly tableTopY: number;
-}
-
 export interface PlanStateDump {
   readonly plans: ReadonlyArray<PlanRegion>;
   readonly checks: ReadonlyArray<PlanCheck>;
@@ -91,7 +82,6 @@ export type ObstacleInput = Omit<PlanObstacle, "id">;
 export interface IPlanService {
   subscribe(listener: () => void): () => void;
   version(): number;
-  snapshot(): PlanSnapshot;
   plans(): ReadonlyArray<PlanRegion>;
   activePlanId(): string | null;
   tableTopY(): number;
@@ -188,8 +178,6 @@ export class PlanService implements IPlanService {
   private active: string | null = null;
   private topY = 0;
   private changes = 0;
-  private snapshotAt = -1;
-  private cachedSnapshot: PlanSnapshot | null = null;
   private readonly view: PlanPlacementsView;
 
   constructor(@inject(SCENE_BACKEND) private readonly backend: ISceneBackend) {
@@ -278,21 +266,6 @@ export class PlanService implements IPlanService {
 
   placements(): PlanPlacementsView {
     return this.view;
-  }
-
-  snapshot(): PlanSnapshot {
-    if (this.cachedSnapshot && this.snapshotAt === this.changes) return this.cachedSnapshot;
-    const dump = this.materialize();
-    this.cachedSnapshot = {
-      plans: dump.plans,
-      activePlanId: this.active,
-      checks: dump.checks,
-      placements: dump.placements,
-      sandboxPlacements: dump.sandboxPlacements,
-      tableTopY: dump.tableTopY,
-    };
-    this.snapshotAt = this.changes;
-    return this.cachedSnapshot;
   }
 
   materialize(): PlanStateDump {
