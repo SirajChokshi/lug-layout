@@ -139,7 +139,8 @@ const GHOST_TINTS: Readonly<Record<GhostTone, MaterialTint>> = {
   mates: { color: 0xb8ffc6, emissive: 0x26b84e },
   refused: { color: 0xff7070, emissive: 0xb8141e },
 };
-const GHOST_HIT_COLOR = 0xff1f1f;
+const GHOST_HIT_COLOR = 0xffc400;
+const GHOST_HIT_OPACITY = 0.9;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
@@ -431,9 +432,14 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
-  private readonly ghostHit = new LineSegments(
-    new EdgesGeometry(new BoxGeometry(1, 1, 1)),
-    new LineBasicNodeMaterial({ color: GHOST_HIT_COLOR, depthTest: false }),
+  private readonly ghostHit = new Mesh(
+    new BoxGeometry(1, 1, 1),
+    new MeshBasicNodeMaterial({
+      color: GHOST_HIT_COLOR,
+      depthTest: false,
+      transparent: true,
+      opacity: GHOST_HIT_OPACITY,
+    }),
   );
   private ghostHitX = 0;
   private ghostHitZ = 0;
@@ -551,7 +557,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(this.selection);
     this.ghostHit.visible = false;
     this.ghostHit.matrixAutoUpdate = false;
-    this.ghostHit.renderOrder = 2;
+    this.ghostHit.renderOrder = 3;
     this.scene.add(this.ghostHit);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);

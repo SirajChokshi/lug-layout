@@ -1,10 +1,5 @@
 import { INHERIT_COLOR, type PartAsset, type PartMesh } from "@brr/catalog";
-import {
-  Mesh,
-  type LineSegments,
-  type MeshStandardNodeMaterial,
-  type Object3D,
-} from "three/webgpu";
+import { Mesh, type MeshStandardNodeMaterial, type Object3D } from "three/webgpu";
 import { expect, it } from "vitest";
 import type {
   ChunkInstances,
@@ -263,7 +258,7 @@ function ghostLooks(backend: ThreeSceneBackend): string[] {
 }
 
 function ghostHitShown(backend: ThreeSceneBackend) {
-  const hit: LineSegments = backend["ghostHit"];
+  const hit: Mesh = backend["ghostHit"];
   if (!hit.visible) return null;
   return {
     x: hit.position.x,
