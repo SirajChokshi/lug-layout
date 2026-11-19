@@ -264,6 +264,7 @@ async function verifyCommand(): Promise<void> {
       connectivityLock(lock),
       palette.connectivitySource,
       bundleConnectivityRoot,
+      lock.files,
     )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
@@ -334,7 +335,12 @@ async function factsCommand(check: boolean): Promise<void> {
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
-    ...(await verifyConnectivity(connectivity, palette.connectivitySource, bundleConnectivityRoot)),
+    ...(await verifyConnectivity(
+      connectivity,
+      palette.connectivitySource,
+      bundleConnectivityRoot,
+      lock.files,
+    )),
     ...(await verifyModels(omrModels, modelRoots)),
   ];
   if (problems.length > 0) {

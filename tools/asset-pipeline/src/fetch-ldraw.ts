@@ -243,17 +243,41 @@ function sameSource(a: Palette["source"], b: Palette["source"]): boolean {
   return a.kind === b.kind && a.repo === b.repo && a.commit === b.commit && a.root === b.root;
 }
 
+async function unpinnedIncludes(
+  connectivity: Readonly<Record<string, string>>,
+  library: Readonly<Record<string, string>>,
+  directory: string,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const path of Object.keys(connectivity)) {
+    const text = await readFile(join(directory, path), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    for (const reference of snapIncludeReferences(parseLdraw(text))) {
+      if (SEARCH_DIRECTORIES.some((folder) => Object.hasOwn(library, folder + reference))) continue;
+      problems.push(
+        `${path} includes ${reference}, which the pinned closure leaves out; run fetch-ldraw`,
+      );
+    }
+  }
+  return problems;
+}
+
 export async function verifyConnectivity(
   lock: ConnectivityLock,
   source: Palette["source"],
   directory: string,
+  library: Readonly<Record<string, string>>,
 ): Promise<string[]> {
   const stale = sameSource(lock.source, source)
     ? []
     : [
         `ldraw.lock.json pins LDCad connectivity from ${lock.source.repo}@${lock.source.commit}, but the palette names ${source.repo}@${source.commit}; run fetch-ldraw`,
       ];
-  return [...stale, ...(await hashProblems(lock.files, directory))];
+  return [
+    ...stale,
+    ...(await hashProblems(lock.files, directory)),
+    ...(await unpinnedIncludes(lock.files, library, directory)),
+  ];
 }
 
 export async function fetchCatalogSources(
@@ -363,6 +387,7 @@ export async function verifyAuditInputs(
   return [
     ...(await hashProblems(audit.files, auditDirectory)),
     ...(await hashProblems(audit.connectivity.files, connectivityDirectory)),
+    ...(await unpinnedIncludes(audit.connectivity.files, audit.files, connectivityDirectory)),
   ];
 }
 
