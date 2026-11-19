@@ -1,15 +1,21 @@
-import { LibraryBakePin, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { LIBRARY_BAKE_BUCKETS, LibraryBakePin, PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { isDeepStrictEqual } from "node:util";
 import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
 import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import {
+  runPointerCommand,
+  runPublicationCommand,
+  writeOrCheckPin,
+  type ServedScope,
+} from "../publication/pinned-publication.ts";
 import { assembleLibraryBake, LIBRARY_BAKE_PIN } from "./assemble.ts";
+import { libraryBakePointer, libraryBakePublication } from "./publish.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -20,6 +26,7 @@ const outRoot = join(toolRoot, "dist", "library-bake");
 const palettePath = join(toolRoot, "palette.json");
 const primitivesPath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const binary = join(repoRoot, "target", "release", "library-bake");
+const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
 
 interface PaletteOptions {
   readonly studPrimitives: ReadonlyArray<string>;
@@ -102,32 +109,63 @@ async function precompute(check: boolean): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  const pinPath = join(repoRoot, LIBRARY_BAKE_PIN);
-  if (!check) {
-    await writeFile(pinPath, `${JSON.stringify(pin, null, 2)}\n`);
-    process.stdout.write(`wrote ${LIBRARY_BAKE_PIN}: ${summary}\n`);
-    return;
-  }
-  const committed = decodedOrThrow(
-    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
-    pinPath,
+  const outcome = await writeOrCheckPin(
+    join(repoRoot, LIBRARY_BAKE_PIN),
+    LibraryBakePin,
+    pin,
+    check,
   );
-  if (!isDeepStrictEqual(committed, pin)) {
+  if (outcome === "written") {
+    process.stdout.write(`wrote ${LIBRARY_BAKE_PIN}: ${summary}\n`);
+  } else if (outcome === "differs") {
     process.stderr.write(
       `${LIBRARY_BAKE_PIN} differs from the records the pinned inputs and this code produce (${summary}); run library-bake\n`,
     );
     process.exitCode = 1;
-    return;
+  } else {
+    process.stdout.write(`${LIBRARY_BAKE_PIN} matches: ${summary}\n`);
   }
-  process.stdout.write(`${LIBRARY_BAKE_PIN} matches: ${summary}\n`);
 }
 
+async function readPin(): Promise<LibraryBakePin> {
+  const path = join(repoRoot, LIBRARY_BAKE_PIN);
+  return decodedOrThrow(decode(LibraryBakePin, JSON.parse(await readFile(path, "utf8"))), path);
+}
+
+const commands = {
+  publication: libraryBakePublication,
+  storeConfigPath,
+  root: outRoot,
+  readPin,
+  describeVerified: (pin: LibraryBakePin, scope: ServedScope) =>
+    scope === "all"
+      ? `the index, its ${LIBRARY_BAKE_BUCKETS} buckets and all ${pin.records} records and their GLBs`
+      : `the index and its ${LIBRARY_BAKE_BUCKETS} buckets`,
+};
+
 switch (process.argv[2]) {
+  case "published":
+  case "upload":
+  case "served":
+  case "verify-served":
+    await runPublicationCommand(commands, process.argv.slice(2));
+    break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      { ...commands, pointer: libraryBakePointer, manifestOf: (pin) => pin.index },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
-    process.stderr.write("usage: library-bake [--check]\n");
+    process.stderr.write(
+      "usage: library-bake [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
+    );
     process.exitCode = 1;
 }
