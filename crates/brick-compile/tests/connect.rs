@@ -6,11 +6,11 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, InferredFeatures,
-    Issue, MatingFace, MetaError, PrimitiveConnectors, PrimitiveTable, Section, SectionShape,
-    SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
-    CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT,
-    FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
+    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, IncludeRefusal,
+    InferredFeatures, Issue, MatingFace, MetaError, Openness, PrimitiveConnectors, PrimitiveTable,
+    Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status,
+    Uninferred, Unreadable, CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED,
+    FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -1289,6 +1289,133 @@ fn a_face_already_held_gets_no_second_receptor() {
     )));
 }
 
+#[test]
+fn a_declared_square_receptor_is_open_only_while_no_material_fills_any_of_its_positions() {
+    let receptor =
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]";
+    let hollow =
+        "0 Custom Hollow Slope\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3048a.dat\n"
+            .to_string();
+    let plugged = format!("{hollow}1 16 10 20 0 6 0 0 0 4 0 0 0 6 box5.dat\n");
+    let aside = format!("{hollow}1 16 10 20 40 6 0 0 0 4 0 0 0 6 box5.dat\n");
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/hollow.dat", hollow),
+            ("parts/plugged.dat", plugged),
+            ("parts/aside.dat", aside),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut open_at = |path: &str| {
+        let declared = memory(&[(path, receptor)]);
+        let candidates = ShadowSnaps::new(&library, &declared).snaps(path).connectors;
+        let mut origins: Vec<[f64; 3]> = female_faces(&inferred.open(path, candidates).connectors)
+            .iter()
+            .map(|f| f.origin)
+            .collect();
+        origins.dedup();
+        origins
+    };
+    let both = vec![[-10.0, -24.0, 0.0], [10.0, -24.0, 0.0]];
+    assert_eq!(open_at("parts/hollow.dat"), both);
+    assert_eq!(open_at("parts/aside.dat"), both);
+    assert!(open_at("parts/plugged.dat").is_empty());
+
+    let mut reading = |path: &str| {
+        let declared = memory(&[(path, receptor)]);
+        ShadowSnaps::new(&library, &declared)
+            .snaps(path)
+            .connectors
+            .iter()
+            .map(|candidate| inferred.openness(path, candidate))
+            .collect::<Vec<Openness>>()
+    };
+    assert_eq!(reading("parts/plugged.dat"), vec![Openness::NotOpen]);
+}
+
+#[test]
+fn a_receptor_whose_probe_starts_inside_solid_reads_not_open() {
+    let receptor = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0]";
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/block.dat",
+            "0 Custom Block Open At Its Base\n0 BFC CERTIFY CCW\n1 16 0 24 0 6 0 0 0 -6 0 0 0 6 box5.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let declared = memory(&[("parts/block.dat", receptor)]);
+    let readings: Vec<Openness> = ShadowSnaps::new(&library, &declared)
+        .snaps("parts/block.dat")
+        .connectors
+        .iter()
+        .map(|candidate| inferred.openness("parts/block.dat", candidate))
+        .collect();
+    assert_eq!(readings, vec![Openness::NotOpen]);
+}
+
+#[test]
+fn a_receptor_reads_unmeasurable_without_a_solid_a_floor_an_aligned_axis_or_readable_faces() {
+    let receptor =
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]";
+    let tilted = receptor.replace(
+        "[pos=0 24 0]",
+        "[pos=0 24 0] [ori=0.6 -0.8 0 0.8 0.6 0 0 0 1]",
+    );
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/empty.dat", "0 Custom Part Without Geometry\n".to_string()),
+            (
+                "parts/tube.dat",
+                "0 Custom Open Tube\n0 BFC CERTIFY CCW\n1 16 0 24 0 20 0 0 0 -24 0 0 0 10 box4o4a.dat\n0 BFC INVERTNEXT\n1 16 0 24 0 16 0 0 0 -24 0 0 0 6 box4o4a.dat\n".to_string(),
+            ),
+            (
+                "parts/hollow.dat",
+                "0 Custom Hollow Slope\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3048a.dat\n"
+                    .to_string(),
+            ),
+        ],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let mut reading = |path: &str, line: &str| {
+        let declared = memory(&[(path, line)]);
+        ShadowSnaps::new(&library, &declared)
+            .snaps(path)
+            .connectors
+            .iter()
+            .map(|candidate| inferred.openness(path, candidate))
+            .collect::<Vec<Openness>>()
+    };
+    assert_eq!(
+        reading("parts/empty.dat", receptor),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading("parts/tube.dat", receptor),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading("parts/hollow.dat", &tilted),
+        vec![Openness::Unmeasurable]
+    );
+    assert_eq!(
+        reading(
+            "parts/hollow.dat",
+            &receptor.replace("[caps=one]", "[caps=two]")
+        ),
+        vec![Openness::Unmeasurable]
+    );
+}
+
 const FACE_PAIR_AT_PLUS_Z: &str = "0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=M] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 1 0 -1 0]
 0 !LDCAD SNAP_GEN [id=face] [group=token] [gender=F] [bounding=cyl 15 0] [match=group] [pos=0 0 8] [ori=1 0 0 0 0 -1 0 1 0]
 ";
@@ -1340,6 +1467,48 @@ fn project_patches_add_curated_snaps_with_their_status_and_clear_by_id() {
             (Source::Patch, Status::Verified, -9),
             (Source::Patch, Status::Verified, -9),
         ]
+    );
+}
+
+#[test]
+fn inheritance_includes_let_a_clearing_patch_keep_what_a_part_inherits() {
+    let plate = "0 Custom Plate\n1 16 0 0 0 0 0 1 0 1 0 -1 0 0 stug-2x1.dat\n1 16 0 8 0 20 0 0 0 -4 0 0 0 10 box5.dat\n1 16 0 3 0 0 0 1 0 -1.25 0 1 0 0 stud3.dat\n";
+    let library = with_parts(pinned("ldraw"), &[("parts/plate.dat", plate.to_string())]);
+    let shadow = pinned("ldcad-shadow");
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let inherited = snaps.snaps("parts/plate.dat").connectors;
+    let includes = snaps
+        .inheritance_includes("parts/plate.dat")
+        .expect("a plate of primitives has no pieces");
+    assert_eq!(
+        includes,
+        vec![
+            "0 !LDCAD SNAP_INCL [ref=stug-2x1.dat] [pos=0 0 0] [ori=0 0 1 0 1 0 -1 0 0]",
+            "0 !LDCAD SNAP_INCL [ref=stud3.dat] [pos=0 3 0] [ori=0 0 1 0 -1.25 0 1 0 0]",
+        ]
+    );
+    let patch = format!("0 !LDCAD SNAP_CLEAR\n{}\n", includes.join("\n"));
+    let patches = memory(&[("parts/plate.dat", patch.as_str())]);
+    let verified = HashSet::new();
+    let restored = ShadowSnaps::new(&library, &shadow)
+        .patched(ShadowPatches {
+            files: &patches,
+            verified: &verified,
+        })
+        .snaps("parts/plate.dat")
+        .connectors;
+    assert_eq!(inherited.len(), 3);
+    assert_eq!(restored, inherited);
+}
+
+#[test]
+fn inheritance_includes_refuse_a_part_whose_inherited_snaps_belong_to_numbered_pieces() {
+    let pair = "0 Custom Pair\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n1 16 20 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n";
+    let library = with_parts(pinned("ldraw"), &[("parts/pair.dat", pair.to_string())]);
+    let shadow = pinned("ldcad-shadow");
+    assert_eq!(
+        ShadowSnaps::new(&library, &shadow).inheritance_includes("parts/pair.dat"),
+        Err(IncludeRefusal::PiecesWouldBeLost)
     );
 }
 
