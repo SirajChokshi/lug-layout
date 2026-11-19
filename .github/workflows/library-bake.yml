@@ -51,7 +51,7 @@ jobs:
         run: node tools/asset-pipeline/src/library-bake/cli.ts current
 
   publish:
-    name: Publish library bake records and prune old ones
+    name: Publish library bake records and log what pruning would delete
     needs: status
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -121,13 +121,6 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/library-bake/cli.ts prune --dry-run
-      - name: Delete every object neither the current nor the previous manifest references
-        if: steps.status.outputs.configured == 'true'
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
-        run: node tools/asset-pipeline/src/library-bake/cli.ts prune
       - name: Summary
         if: steps.status.outputs.configured == 'true'
         env:

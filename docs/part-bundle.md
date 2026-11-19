@@ -164,18 +164,19 @@ Sharing a group across two differently triggered workflows has a catch: a newer 
   2. it checks every served file of the new manifest against its content address (`verify-served --all --wait`). It skips this only when the bucket already held the pinned index and `status` found it served and named as current by the pointer;
   3. it moves the pointer (`point`), after checking that the bucket holds the manifest and its buckets;
   4. it checks the current and previous manifests' index files through the served pointer (`verify-pointer --wait`; `--all` would also read every file);
-  5. it lists what pruning would delete (`prune --dry-run`);
-  6. it prunes (`prune`).
+  5. it logs what pruning would delete (`prune --dry-run`), and deletes nothing.
 
-  Every step is idempotent, so any later run, pushed or on demand, finishes a publish or prune that an earlier run left unfinished. `--wait` polls the public URL for the index or the pointer for up to 20 minutes, then checks the files once.
+  Every step is idempotent, so any later run, pushed or on demand, finishes a publish that an earlier run left unfinished. `--wait` polls the public URL for the index or the pointer for up to 20 minutes, then checks the files once.
+
+**The workflow doesn't delete yet.** It publishes and logs a prune dry run, but never runs `prune` itself. Once every bundle manifest names a records index (`compiler.libraryBake`), keeping only library-bake's own current and previous could delete the index a live bundle names, such as the committed fallback, and sites on that bundle would silently compile. Deletion is enabled together with retaining the library-bake indexes that live bundle manifests name. Until then, storage grows by at most a few library versions.
 
 **Publishing is serialized.** The workflow has one concurrency group with `cancel-in-progress: false`, so two runs never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period. GitHub never cancels the running run, but keeps at most one pending run per group: a newer queued run cancels an older pending one. Within this workflow that loses nothing, because the newer run does the whole sequence for its own, later pin. Setting `cancel-in-progress` to `true` would be unsafe, since it could stop a run between its upload and its pointer move, or mid-prune.
 
-**Between publishes the bucket holds the current and previous libraries.** During a publish it briefly holds a third, the new upload, until `prune` deletes the oldest. For three full libraries sharing nothing that's about 7.75 GB, against 5.17 GB for two. If a run stops before its prune, the third stays until the next run.
+**Until deletion is enabled, every published library stays.** Each new one adds only its changed files: 1,813 objects (85.6 MB) for three LDraw syncs, and 2.58 GB only if every part changes. Once `prune` runs, the bucket holds the current and previous libraries between publishes, and briefly a third, the new upload, until `prune` deletes the oldest: about 7.75 GB for three full libraries sharing nothing, against 5.17 GB for two.
 
 The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]`. `upload` reads `dist/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
 
-**A preview built against an older library loses its records.** A preview deployment built against a pin older than the previous one finds its records pruned, and its imports compile those parts instead.
+**Once deletion is enabled, a preview built against an older library loses its records.** A preview deployment built against a pin older than the previous one, and named by no live bundle, finds its records pruned, and its imports compile those parts instead.
 
 `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
