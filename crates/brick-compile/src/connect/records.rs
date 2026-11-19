@@ -95,7 +95,9 @@ pub fn record_json(part: &str, license: &str, record: &TierRecord) -> Value {
     let mut free_face = Vec::new();
     let mut free_origin = Vec::new();
     let mut free_axis = Vec::new();
+    let mut piece = Vec::with_capacity(faces.len());
     for (index, face) in faces.iter().enumerate() {
+        piece.push(face.piece);
         gender.push(gender_code(face.gender));
         source.push(source_code(face.source));
         status.push(status_code(face.status));
@@ -140,6 +142,7 @@ pub fn record_json(part: &str, license: &str, record: &TierRecord) -> Value {
             "sectionCode": section_code,
             "sectionSize": section_size,
             "sectionLength": section_length,
+            "piece": piece,
         },
         "free": {
             "face": free_face,

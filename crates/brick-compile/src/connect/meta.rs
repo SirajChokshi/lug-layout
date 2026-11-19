@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::affine::{Affine, Vec3};
+use crate::pieces::NO_PIECE;
 
 use super::{
     Bounding, Caps, Connector, Gender, GenericMatch, Grid, Scaling, Section, SectionShape, Shape,
@@ -278,6 +279,7 @@ fn snap(params: &mut Params, shape: Shape) -> Result<Meta, MetaError> {
         shape,
         placement: params.placement()?,
         grid: params.grid()?,
+        pieces: vec![NO_PIECE],
     }))
 }
 

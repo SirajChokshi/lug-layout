@@ -53,6 +53,7 @@ export async function openBundle(root: string): Promise<Bundle> {
     connectors: new ConnectorRecords(
       async (path) => JSON.parse(await readFile(join(directory, path), "utf8")),
       { connectivity: index.connectivity.file, connectors: index.connectors.file },
+      index.compiler.sectionVocabulary.sha256,
     ),
     parts: new Map(table.parts.map((part) => [part.id, part])),
     colors: index.colors,

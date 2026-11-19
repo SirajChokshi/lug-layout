@@ -71,7 +71,7 @@ interface Manifest {
     readonly file: string;
     readonly vehicles?: CompilerVehicles;
     readonly primitives?: CompileRequest["connectors"]["primitives"];
-    readonly sectionVocabulary: { readonly file: string };
+    readonly sectionVocabulary: { readonly file: string; readonly sha256: string };
     readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
@@ -157,6 +157,7 @@ async function importWith(
     new ConnectorRecords(
       async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
       { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
+      manifest.compiler.sectionVocabulary.sha256,
     ),
     () => 0,
     helpers,

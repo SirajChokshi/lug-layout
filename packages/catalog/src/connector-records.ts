@@ -20,6 +20,7 @@ export interface PartConnectors {
   readonly sectionCode: Uint8Array;
   readonly sectionSize: Float64Array;
   readonly sectionLength: Float64Array;
+  readonly piece: Uint16Array;
   readonly freeFace: Uint32Array;
   readonly freeOrigin: Float64Array;
   readonly freeAxis: Float64Array;
@@ -37,6 +38,11 @@ export interface PackageAttribution {
 }
 
 export type ReadJson = (path: string) => Promise<unknown>;
+
+export type ConnectorLoad =
+  | { readonly kind: "loaded"; readonly connectors: PartConnectors }
+  | { readonly kind: "unlisted" }
+  | { readonly kind: "refused"; readonly reason: string };
 
 const VECTOR_FLOATS = 3;
 
@@ -59,6 +65,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     sectionCode: new Uint8Array(sections),
     sectionSize: new Float64Array(sections),
     sectionLength: new Float64Array(sections),
+    piece: new Uint16Array(faces),
     freeFace: new Uint32Array(free),
     freeOrigin: new Float64Array(free * VECTOR_FLOATS),
     freeAxis: new Float64Array(free * VECTOR_FLOATS),
@@ -84,6 +91,7 @@ export function partConnectors(records: ReadonlyArray<ConnectorRecordFile>): Par
     out.sectionCode.set(columns.sectionCode, section);
     out.sectionSize.set(columns.sectionSize, section);
     out.sectionLength.set(columns.sectionLength, section);
+    out.piece.set(columns.piece, face);
     out.freeFace.set(
       loose.face.map((index) => index + face),
       freeAt,
@@ -105,8 +113,9 @@ export class ConnectorRecords {
   private indexes: Promise<readonly [ConnectorIndexFile, ConnectorIndexFile]> | null = null;
 
   constructor(
-    private readonly read: ReadJson,
+    private readonly readJson: ReadJson,
     private readonly paths: ConnectorIndexPaths,
+    private readonly sectionVocabulary: string | null,
   ) {}
 
   private loadIndexes(): Promise<readonly [ConnectorIndexFile, ConnectorIndexFile]> {
@@ -118,12 +127,12 @@ export class ConnectorRecords {
   }
 
   private async index(path: string): Promise<ConnectorIndexFile> {
-    return decodedOrThrow(decode(ConnectorIndexFile, await this.read(path)), path);
+    return decodedOrThrow(decode(ConnectorIndexFile, await this.readJson(path)), path);
   }
 
   private async record(indexPath: string, file: string): Promise<ConnectorRecordFile> {
     const path = `${directoryOf(indexPath)}${file}`;
-    return decodedOrThrow(decode(ConnectorRecordFile, await this.read(path)), path);
+    return decodedOrThrow(decode(ConnectorRecordFile, await this.readJson(path)), path);
   }
 
   async connectivityAttribution(): Promise<PackageAttribution> {
@@ -131,14 +140,48 @@ export class ConnectorRecords {
     return { licenses, attribution };
   }
 
-  async load(partId: string): Promise<PartConnectors | null> {
+  private vocabularyMismatch(found: string | undefined, what: string): string | null {
+    if (this.sectionVocabulary === null || found === this.sectionVocabulary) return null;
+    return `${what} was inferred with section vocabulary ${found ?? "(none)"}, not ${this.sectionVocabulary}`;
+  }
+
+  async read(partId: string): Promise<ConnectorLoad> {
     const [connectivity, connectors] = await this.loadIndexes();
     const tier1 = connectivity.parts[partId];
     const rest = connectors.parts[partId];
-    if (tier1 === undefined || rest === undefined) return null;
-    const records: Promise<ConnectorRecordFile>[] = [];
-    if (tier1 !== null) records.push(this.record(this.paths.connectivity, tier1.file));
-    if (rest !== null) records.push(this.record(this.paths.connectors, rest.file));
-    return partConnectors(await Promise.all(records));
+    if (tier1 === undefined || rest === undefined) return { kind: "unlisted" };
+    const indexMismatch = this.vocabularyMismatch(
+      connectors.sectionVocabulary,
+      this.paths.connectors,
+    );
+    if (indexMismatch !== null) return { kind: "refused", reason: indexMismatch };
+    const records: ConnectorRecordFile[] = [];
+    if (tier1 !== null) records.push(await this.record(this.paths.connectivity, tier1.file));
+    if (rest !== null) {
+      const record = await this.record(this.paths.connectors, rest.file);
+      const mismatch = this.vocabularyMismatch(
+        record.sectionVocabulary,
+        `${partId}'s connector record`,
+      );
+      if (mismatch !== null) return { kind: "refused", reason: mismatch };
+      records.push(record);
+    }
+    return { kind: "loaded", connectors: partConnectors(records) };
+  }
+
+  async load(partId: string): Promise<PartConnectors | null> {
+    const loaded = await this.read(partId);
+    switch (loaded.kind) {
+      case "loaded":
+        return loaded.connectors;
+      case "unlisted":
+        return null;
+      case "refused":
+        throw new Error(loaded.reason);
+      default: {
+        const unhandled: never = loaded;
+        throw new Error(`unhandled connector load ${String(unhandled)}`);
+      }
+    }
   }
 }

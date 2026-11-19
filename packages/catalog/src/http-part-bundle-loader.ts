@@ -427,6 +427,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
           new ConnectorRecords(
             async (path) => JSON.parse(await this.fetcher.text(path)),
             connectorIndexPaths(lod, index),
+            index.compiler?.sectionVocabulary.sha256 ?? null,
           ),
       );
       this.connectorRecords.set(lod, records);

@@ -21,6 +21,7 @@ export interface ImportWorkerRequest {
   readonly compilerUrl: string;
   readonly bundleBaseUrl: string;
   readonly connectorIndexes: ConnectorIndexPaths;
+  readonly connectorVocabulary: string;
   readonly ldrawLibraryUrl?: string;
   readonly input: ImportInput;
 }
@@ -61,6 +62,7 @@ function connectorBuffers(connectors: PartConnectors): ArrayBufferLike[] {
     connectors.sectionCode,
     connectors.sectionSize,
     connectors.sectionLength,
+    connectors.piece,
     connectors.freeFace,
     connectors.freeOrigin,
     connectors.freeAxis,
