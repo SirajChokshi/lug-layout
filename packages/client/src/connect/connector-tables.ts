@@ -16,16 +16,22 @@ export interface PlaceableConnectorTables {
   readonly withoutRecords: ReadonlyArray<PartWithoutConnectorRecord>;
 }
 
+export type ConnectedPlaceable = Pick<Placeable, "id" | "partTransforms">;
+
+export type ConnectorRecordSource = Pick<IPlaceableCatalog, "partConnectorRecord"> & {
+  parts(): ReadonlyArray<{ readonly id: string }>;
+};
+
 export interface IConnectorTables {
-  load(placeable: Placeable): Promise<PlaceableConnectorTables>;
-  loaded(placeable: Placeable): PlaceableConnectorTables | null;
+  load(placeable: ConnectedPlaceable): Promise<PlaceableConnectorTables>;
+  loaded(placeable: ConnectedPlaceable): PlaceableConnectorTables | null;
 }
 
 type PartTable =
   | { readonly kind: "table"; readonly table: ConnectorTable }
   | { readonly kind: "missing"; readonly reason: string };
 
-function usedPartIndices(placeable: Placeable): ReadonlyArray<number> {
+function usedPartIndices(placeable: ConnectedPlaceable): ReadonlyArray<number> {
   const { count, partIndex } = placeable.partTransforms;
   const used = new Set<number>();
   for (let i = 0; i < count; i++) used.add(partIndex[i] ?? 0);
@@ -39,11 +45,11 @@ export class ConnectorTables implements IConnectorTables {
   private readonly partTables = new Map<string, Promise<PartTable>>();
 
   constructor(
-    @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
+    @inject(PLACEABLE_CATALOG) private readonly catalog: ConnectorRecordSource,
     @inject(SNAP_SHAPES) private readonly shapes: SnapShapes,
   ) {}
 
-  load(placeable: Placeable): Promise<PlaceableConnectorTables> {
+  load(placeable: ConnectedPlaceable): Promise<PlaceableConnectorTables> {
     const ready = this.ready.get(placeable.id);
     if (ready) return Promise.resolve(ready);
     let loading = this.loading.get(placeable.id);
@@ -61,11 +67,11 @@ export class ConnectorTables implements IConnectorTables {
     return loading;
   }
 
-  loaded(placeable: Placeable): PlaceableConnectorTables | null {
+  loaded(placeable: ConnectedPlaceable): PlaceableConnectorTables | null {
     return this.ready.get(placeable.id) ?? null;
   }
 
-  private async build(placeable: Placeable): Promise<PlaceableConnectorTables> {
+  private async build(placeable: ConnectedPlaceable): Promise<PlaceableConnectorTables> {
     const used = usedPartIndices(placeable);
     const parts = this.catalog.parts();
     const tables = Array.from<unknown, ConnectorTable | null>(
