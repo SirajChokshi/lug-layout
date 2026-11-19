@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "e2e": "playwright test",
+    "e2e:library-bake": "playwright test --config playwright.library-bake.config.ts",
     "import-models": "node src/import-models.ts",
     "export-parts-lists": "node src/export-parts-lists.ts",
     "measure-startup": "node src/measure-startup.ts",
