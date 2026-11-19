@@ -15,12 +15,13 @@ import {
   pinnedShadowArchive,
 } from "../section-vocabulary.ts";
 import {
+  runPointerCommand,
   runPublicationCommand,
   writeOrCheckPin,
   type ServedScope,
 } from "../publication/pinned-publication.ts";
 import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
-import { libraryConnectorsPublication } from "./publish.ts";
+import { libraryConnectorsPointer, libraryConnectorsPublication } from "./publish.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -169,13 +170,27 @@ switch (process.argv[2]) {
   case "verify-served":
     await runPublicationCommand(commands, process.argv.slice(2));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      {
+        storeConfigPath,
+        readPin,
+        pointer: libraryConnectorsPointer,
+        manifestOf: (pin) => pin.index,
+      },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
     process.stderr.write(
-      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait]\n",
+      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
     );
     process.exitCode = 1;
 }

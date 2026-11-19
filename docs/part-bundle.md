@@ -314,6 +314,23 @@ It reads the package indexes and records with `ConnectorRecords`, the loader the
 
 **Held-out.** The held-out workflow runs `library-connectors --check`, and its harness reads `dist/library-connectors` from disk.
 
+## Precompiled connector records for the pinned library
+
+`pnpm --filter @brr/asset-pipeline library-connectors` precomputes connector records for every pinned library part, and `library-connectors.json` pins their top index's SHA-256. They publish to `brr-part-bundles` under `library-connectors/`:
+- every record, at `library-connectors/<package>/<stem>.<first 16 hex of its SHA-256>.json`;
+- the two package indexes, `connectivity` and `connectors`, under their content-addressed names;
+- then the top index, `library-connectors/library-connectors.<first 16 hex of its pinned SHA-256>.json`.
+
+**Keeping only the current and previous indexes.** `library-connectors/latest.json` is the pointer, `{ "current": …, "previous": … }`, each naming a top index and its SHA-256, through the same pointer and prune as `library-bake` (`libraryConnectorsPointer` in `src/library-connectors/publish.ts`). After the pointer moves, `prune` deletes every object under `library-connectors/` that neither the current nor the previous top index references: a top index references itself, both package indexes, and every record they list. Records shared between the two stay. `prune` refuses, deleting nothing, if the pointer or any kept index can't be read and verified against its pin or content address, if nothing is referenced, or if the pointer changes while the bucket is being listed.
+
+No bundle manifest names a library-connectors index, so nothing beyond the current and previous is retained. A test fails once `BundleCompiler` gains a field that does: that field's indexes would then have to be retained the way `library-bake` retains what the live bundles name, and library-connectors would have to publish in `part-bundle.yml`'s concurrency group.
+
+`.github/workflows/library-connectors.yml` runs on `main` when the pin, `src/library-connectors/**`, `src/publication/**`, `src/r2.ts` or the bucket config change, and on demand. It has its own concurrency group, `library-connectors-production` with `cancel-in-progress: false`: its live set comes from no other publication, and nothing else writes under `library-connectors/`.
+- **`status`** asks whether the public URL already serves the pinned index, and whether `latest.json` names it as current.
+- **`publish`** runs when either answer is no, and on *Run workflow*. Unless the bucket already holds the pinned index, it recomputes the records, checks them against the pin and the licence gate, and uploads them. Then it checks every served record (`verify-served --all --wait`), moves the pointer (`point`), checks the current and previous indexes through the served pointer (`verify-pointer --wait`), lists what pruning would delete (`prune --dry-run`), and prunes (`prune`). Every step is idempotent, so a later run, and *Run workflow* always, finishes one an earlier run left unfinished.
+
+A newer pending run of this workflow cancels an older pending one, and that loses nothing: `status` decides from what the bucket serves, so the newer run does the unfinished work.
+
 ## Connector packs
 
 `publishBundle` also writes each connector package as one file, `connectivity-pack.<sha>.json` and `connectors-pack.<sha>.json` (`ConnectorPackFile`): `{ package, files }`, where `files` maps the package's published index and every record it lists, by their content-addressed names, to their JSON exactly as published. The two packages stay in separate packs, so the CC BY-SA connectivity data never shares a file with the CA-licensed records. The manifest names them in `connectorPacks`, which is optional, so a manifest published before packs still loads.

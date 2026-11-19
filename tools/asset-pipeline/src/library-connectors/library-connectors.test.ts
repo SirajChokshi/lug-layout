@@ -1,4 +1,5 @@
 import {
+  BundleCompiler,
   CONNECTIVITY_LICENSE,
   CONNECTOR_SOURCE,
   LIBRARY_CONNECTORS_INDEX_FILE,
@@ -15,9 +16,14 @@ import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import { contentAddressedName } from "../publish.ts";
 import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
-import { libraryConnectorsPublication } from "./publish.ts";
-import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
-import type { ObjectStore } from "../r2.ts";
+import { libraryConnectorsPointer, libraryConnectorsPublication } from "./publish.ts";
+import {
+  movePointer,
+  publicationIndexKey,
+  pruneUnreferenced,
+  uploadPublication,
+} from "../publication/pinned-publication.ts";
+import type { ObjectStore, PrunableStore, StoredObject } from "../r2.ts";
 import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
 
 const [PART_LICENSE = ""] = CA_LICENSE_LINES;
@@ -56,14 +62,18 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-async function assembled(): Promise<{ readonly out: string; readonly pin: LibraryConnectorsPin }> {
+async function assembled(
+  connectivityPiece = 2,
+): Promise<{ readonly out: string; readonly pin: LibraryConnectorsPin }> {
   const build = await mkdtemp(join(tmpdir(), "brr-library-build-"));
   const out = await mkdtemp(join(tmpdir(), "brr-library-out-"));
   directories.push(build, out);
   for (const pkg of ["connectivity", "connectors"]) await mkdir(join(build, pkg));
   await writeFile(
     join(build, "connectivity", "3815c01.json"),
-    JSON.stringify(record("ldraw:3815c01", CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow, 2)),
+    JSON.stringify(
+      record("ldraw:3815c01", CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow, connectivityPiece),
+    ),
   );
   await writeFile(
     join(build, "connectors", "3815c01.json"),
@@ -149,6 +159,34 @@ class RecordingStore implements ObjectStore {
   }
 }
 
+class MemoryStore implements PrunableStore {
+  readonly objects = new Map<string, Uint8Array>();
+
+  async has(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
+  async put(key: string, body: Uint8Array): Promise<void> {
+    this.objects.set(key, body);
+  }
+
+  readonly read = async (key: string): Promise<Uint8Array | undefined> => this.objects.get(key);
+
+  async get(key: string): Promise<Uint8Array | undefined> {
+    return this.objects.get(key);
+  }
+
+  async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
+    return [...this.objects]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, body]) => ({ key, size: body.length }));
+  }
+
+  async delete(keys: ReadonlyArray<string>): Promise<void> {
+    for (const key of keys) this.objects.delete(key);
+  }
+}
+
 async function filesUnder(root: string): Promise<string[]> {
   const entries = await readdir(root, { recursive: true, withFileTypes: true });
   return entries
@@ -204,4 +242,58 @@ it("routes the CLI's served command to the committed pin's index under library-c
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+it("the library-connectors pointer's manifest references the pinned index, both package indexes and every record they list", async () => {
+  const { out, pin } = await assembled();
+  const store = new MemoryStore();
+  await uploadPublication(libraryConnectorsPublication, store, out, pin);
+
+  const { indexes, files } = await libraryConnectorsPointer.references(pin.index, store.read);
+
+  expect(indexes).toHaveLength(3);
+  expect([...indexes, ...files.map((file) => file.key)].toSorted()).toEqual(
+    [...store.objects.keys()].toSorted(),
+  );
+});
+
+it("prune keeps the current and previous indexes and every record they share, deletes the rest, and refuses while a kept package index is missing", async () => {
+  const store = new MemoryStore();
+  const pins: LibraryConnectorsPin[] = [];
+  for (const piece of [2, 3, 4]) {
+    const { out, pin } = await assembled(piece);
+    await uploadPublication(libraryConnectorsPublication, store, out, pin);
+    pins.push(pin);
+  }
+  const [first, second, third] = pins;
+  if (!first || !second || !third) throw new Error("three pins");
+  for (const pin of pins) await movePointer(libraryConnectorsPointer, store, pin.index);
+  const keys = async (pin: LibraryConnectorsPin) => {
+    const { indexes, files } = await libraryConnectorsPointer.references(pin.index, store.read);
+    return [...indexes, ...files.map((file) => file.key)];
+  };
+  const kept = new Set([...(await keys(second)), ...(await keys(third))]);
+  const firstOnly = (await keys(first)).filter((key) => !kept.has(key));
+  const shared = (await keys(first)).filter((key) => kept.has(key));
+  expect(shared.length).toBeGreaterThan(0);
+
+  const outcome = await pruneUnreferenced(libraryConnectorsPointer, store, false);
+
+  expect(outcome.doomed.map((object) => object.key).toSorted()).toEqual(firstOnly.toSorted());
+  expect(shared.every((key) => store.objects.has(key))).toBe(true);
+  expect((await pruneUnreferenced(libraryConnectorsPointer, store, false)).deleted).toBe(0);
+
+  const [, secondPackage] = (await libraryConnectorsPointer.references(second.index, store.read))
+    .indexes;
+  if (secondPackage === undefined) throw new Error("a package index");
+  store.objects.delete(secondPackage);
+  const before = [...store.objects.keys()].toSorted();
+  await expect(pruneUnreferenced(libraryConnectorsPointer, store, false)).rejects.toThrow(
+    "is not stored",
+  );
+  expect([...store.objects.keys()].toSorted()).toEqual(before);
+});
+
+it("no BundleCompiler field names a library-connectors index, since its prune keeps only its own current and previous; one that does needs that prune to retain what the live bundle manifests name, and library-connectors to publish in part-bundle.yml's concurrency group", () => {
+  expect(Object.keys(BundleCompiler.entries)).not.toContain("libraryConnectors");
 });
