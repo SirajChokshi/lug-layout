@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use brick_compile::affine::Vec3;
+use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
@@ -11,7 +11,8 @@ use brick_compile::connect::{
     SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable,
     CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
-use brick_compile::flatten::{Flattener, Lod};
+use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
+use brick_compile::flatten::{Flattener, Lod, Triangle};
 use brick_compile::lattice::{Malformation, STUD_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::technic::is_circular_primitive;
@@ -1944,6 +1945,144 @@ fn a_bore_through_a_cone_flange_measures_its_cylinder_wall_only() {
             shape: BoreShape::Round { radius: 4.0 },
             length: 10.0
         }])
+    );
+}
+
+#[test]
+fn an_end_is_closed_only_by_geometry_between_its_radius_and_a_female_reach() {
+    let end = End {
+        point: [0.0, 0.0, 0.0],
+        outward: [0.0, 1.0, 0.0],
+        radius: 4.0,
+    };
+    let beyond_at = |inner: f64, outer: f64| {
+        [Triangle {
+            color: 16,
+            points: [[inner, 2.0, -1.0], [inner, 2.0, 1.0], [outer, 3.0, 0.0]],
+            double_sided: false,
+        }]
+    };
+    assert_eq!(read_end(&beyond_at(0.0, 4.0), &end), Reading::Free);
+    assert!(matches!(
+        read_end(&beyond_at(5.0, 9.0), &end),
+        Reading::Blocked(b) if b.gap == 2.0
+    ));
+    assert_eq!(read_end(&beyond_at(15.0, 30.0), &end), Reading::Free);
+    let wide = End {
+        radius: 10.0,
+        ..end
+    };
+    assert_eq!(
+        read_end(&beyond_at(15.0, 30.0), &wide),
+        Reading::WiderThanReach
+    );
+}
+
+#[test]
+fn the_wand_handle_is_free_at_both_ends_and_the_sextant_handle_only_at_its_tip() {
+    let library = pinned("ldraw");
+    let manifest: Value = serde_json::from_str(
+        &fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/shadow-patches/manifest.json"),
+        )
+        .expect("patch manifest reads"),
+    )
+    .expect("patch manifest parses");
+    let upstream: Vec<(String, String)> = manifest["patches"]
+        .as_array()
+        .expect("patches")
+        .iter()
+        .filter(|entry| entry["feature"] == "measuredCaps")
+        .map(|entry| {
+            let lines: Vec<&str> = entry["upstream"]["snaps"]
+                .as_array()
+                .expect("recorded upstream snaps")
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            (
+                format!("parts/{}.dat", entry["part"].as_str().expect("part")),
+                lines.join("\n"),
+            )
+        })
+        .collect();
+    let shadow = memory(
+        &upstream
+            .iter()
+            .map(|(path, text)| (path.as_str(), text.as_str()))
+            .collect::<Vec<_>>(),
+    );
+    let handle_ends = |part: &str| -> Vec<(Vec<f64>, [bool; 2])> {
+        let triangles: Vec<Triangle> = Flattener::new(&library, Lod::Standard, &[])
+            .flatten(part)
+            .expect("part flattens")
+            .triangles
+            .iter()
+            .map(|t| Triangle {
+                points: t.points.map(|p| Affine::LDRAW_TO_Y_UP.apply(p)),
+                ..*t
+            })
+            .collect();
+        let closed = |end: &End| matches!(read_end(&triangles, end), Reading::Blocked(_));
+        ShadowSnaps::new(&library, &shadow)
+            .snaps(part)
+            .connectors
+            .iter()
+            .filter_map(|c| match &c.shape {
+                Shape::Cylinder {
+                    gender: Gender::Male,
+                    slide: true,
+                    sections,
+                    ..
+                } => Some((c, sections.iter().map(|s| s.length).collect::<Vec<_>>())),
+                _ => None,
+            })
+            .flat_map(|(c, lengths)| {
+                cylinder_ends(c)
+                    .into_iter()
+                    .map(move |ends| (lengths.clone(), ends.each_ref().map(closed)))
+            })
+            .collect()
+    };
+    assert_eq!(
+        handle_ends("parts/36752a.dat"),
+        vec![(vec![6.0, 20.0], [false, false])]
+    );
+    let wand = ShadowSnaps::new(&library, &shadow).snaps("parts/36752a.dat");
+    let grip = wand
+        .connectors
+        .iter()
+        .find_map(|c| match &c.shape {
+            Shape::Cylinder {
+                slide: true,
+                sections,
+                ..
+            } => Some((cylinder_ends(c)[0][0], sections[0])),
+            _ => None,
+        })
+        .expect("the wand handle");
+    let (start, first) = grip;
+    let section_end = [0, 1, 2].map(|k| start.point[k] - start.outward[k] * first.length);
+    let records = |reference: &str| is_circular_primitive(reference);
+    let flat = Flattener::new(&library, Lod::Standard, &[])
+        .recording_spans(&records)
+        .flatten("parts/36752a.dat")
+        .expect("36752a flattens");
+    let band = outward_round_bands(&flat.spans, &flat.triangles)
+        .into_iter()
+        .find(|b| (b.radius - first.radius).abs() < 1e-3)
+        .expect("the grip's measured band");
+    let mut measured = [band.from, band.to].map(|t| {
+        Affine::LDRAW_TO_Y_UP.apply([0, 1, 2].map(|k| band.point[k] + band.axis[k] * t))[1]
+    });
+    measured.sort_by(f64::total_cmp);
+    let mut read = [start.point[1], section_end[1]];
+    read.sort_by(f64::total_cmp);
+    assert_eq!(read, measured);
+    assert_eq!(
+        handle_ends("parts/30154.dat"),
+        vec![(vec![8.0], [true, true]), (vec![12.0], [true, false])]
     );
 }
 

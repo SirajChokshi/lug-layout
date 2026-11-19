@@ -2,8 +2,8 @@ use crate::affine::Vec3;
 use crate::sixteenths;
 
 use super::{
-    column, direction_code, Bounding, Caps, Connector, Gender, GenericMatch, SectionShape, Shape,
-    Source, Status,
+    column, direction_code, Bounding, Connector, Gender, GenericMatch, SectionShape, Shape, Source,
+    Status,
 };
 
 pub const CAP_ROOT: u8 = 1;
@@ -51,15 +51,6 @@ fn code(shape: SectionShape) -> u8 {
         SectionShape::Square => SQUARE,
         SectionShape::FlexibleEnd => FLARE_JOINS_PREVIOUS,
         SectionShape::FlexibleStart => FLARE_JOINS_NEXT,
-    }
-}
-
-fn closed_ends(gender: Gender, caps: Caps) -> (bool, bool) {
-    match (caps, gender) {
-        (Caps::None, _) => (false, false),
-        (Caps::Two, _) => (true, true),
-        (Caps::A, _) | (Caps::One, Gender::Male) => (true, false),
-        (Caps::B, _) | (Caps::One, Gender::Female) => (false, true),
     }
 }
 
@@ -204,7 +195,7 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
                     length: s.length,
                 })
                 .collect::<Vec<_>>(),
-            closed_ends(*gender, *caps),
+            caps.closed_ends(*gender),
             *center,
             *slide,
         ),

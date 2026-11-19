@@ -3,14 +3,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use brick_compile::affine::Vec3;
+use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands, EndFace};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, parse_metas, Gender, Meta, SectionShape, ShadowPatches, ShadowSnaps, Shape,
-    Source, Status,
+    mating_faces, parse_metas, Caps, Connector, Gender, Meta, SectionShape, ShadowPatches,
+    ShadowSnaps, Shape, Source, Status,
 };
-use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod};
+use brick_compile::ends::{cylinder_ends, read_end, Reading};
+use brick_compile::flatten::{resolve_reference, Flattener, Library, Lod, Triangle};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::sixteenths;
 use brick_compile::technic::is_circular_primitive;
@@ -20,6 +21,8 @@ use serde_json::{json, Value};
 const WIDEST_BAND_END_FACES: &str = "widestOutwardRoundBandEndFaces";
 const MEASURED_SECTIONS: &str = "measuredSections";
 const UNGROUPED_TWIN: &str = "ungroupedTwin";
+const MEASURED_CAPS: &str = "measuredCaps";
+const CAPS_KEY: &str = "[caps=";
 const GROUP_KEY: &str = " [group=";
 const SNAP_PREFIX: &str = "0 !LDCAD SNAP_";
 const SECS_KEY: &str = "[secs=";
@@ -34,6 +37,7 @@ const UNVERIFIED: &str = "unverified";
 enum Feature {
     CouplingFaces { id: String, group: String },
     MeasuredSections { snap: usize, twin: bool },
+    MeasuredCaps { snap: usize },
 }
 
 struct Entry {
@@ -48,6 +52,14 @@ struct Sections {
     replaced: String,
     measured: Vec<BoreSection>,
     twin: bool,
+    text: String,
+}
+
+struct CapsPatch {
+    title: String,
+    replaced: String,
+    caps: Caps,
+    ends: [Reading; 2],
     text: String,
 }
 
@@ -110,6 +122,12 @@ fn entries(manifest: &Value) -> Result<Vec<Entry>, String> {
                         .and_then(|i| usize::try_from(i).ok())
                         .ok_or(format!("a {name} entry needs a snap index"))?,
                     twin: name == UNGROUPED_TWIN,
+                },
+                MEASURED_CAPS => Feature::MeasuredCaps {
+                    snap: entry["snap"]
+                        .as_u64()
+                        .and_then(|i| usize::try_from(i).ok())
+                        .ok_or(format!("a {MEASURED_CAPS} entry needs a snap index"))?,
                 },
                 other => return Err(format!("unknown feature {other}")),
             };
@@ -525,6 +543,168 @@ fn sections_round_trip(
     Ok(())
 }
 
+fn caps_word(caps: Caps) -> &'static str {
+    match caps {
+        Caps::None => "none",
+        Caps::One => "one",
+        Caps::Two => "two",
+        Caps::A => "A",
+        Caps::B => "B",
+    }
+}
+
+fn male_caps(closed: (bool, bool)) -> Caps {
+    match closed {
+        (false, false) => Caps::None,
+        (true, false) => Caps::One,
+        (false, true) => Caps::B,
+        (true, true) => Caps::Two,
+    }
+}
+
+fn reading_json(reading: Reading) -> Value {
+    match reading {
+        Reading::Free => json!("free"),
+        Reading::Blocked(b) => json!({ "gap": number(b.gap), "radius": number(b.radius) }),
+        Reading::WiderThanReach => json!("wider than a female's reach"),
+    }
+}
+
+fn extracted(library: &LazyLibrary, path: &str, lines: &[String]) -> Vec<Connector> {
+    let file = MemoryLibrary([(path.to_string(), lines.join("\n") + "\n")].into());
+    ShadowSnaps::new(library, &file).snaps(path).connectors
+}
+
+fn measure_caps(
+    library: &LazyLibrary,
+    entry: &Entry,
+    snap: usize,
+    upstream: &[String],
+    source: &Value,
+) -> Result<CapsPatch, String> {
+    let path = patch_path(&entry.part);
+    let target = upstream
+        .get(snap)
+        .ok_or(format!("{path}: no upstream snap {snap}"))?;
+    let [connector] = extracted(library, &path, std::slice::from_ref(target))
+        .try_into()
+        .map_err(|_| format!("{path}: snap {snap} isn't one connector"))?;
+    let Shape::Cylinder {
+        gender: Gender::Male,
+        caps: declared,
+        ..
+    } = connector.shape
+    else {
+        return Err(format!("{path}: snap {snap} isn't a male SNAP_CYL"));
+    };
+    let [ends] = cylinder_ends(&connector)
+        .try_into()
+        .map_err(|_| format!("{path}: snap {snap} isn't a single cylinder"))?;
+    let flat = Flattener::new(library, Lod::Standard, &[])
+        .flatten(&path)
+        .map_err(|e| format!("{path}: {e:?}"))?;
+    let triangles: Vec<Triangle> = flat
+        .triangles
+        .iter()
+        .map(|t| Triangle {
+            points: t.points.map(|p| Affine::LDRAW_TO_Y_UP.apply(p)),
+            ..*t
+        })
+        .collect();
+    let readings = ends.map(|end| read_end(&triangles, &end));
+    let blocked = |r: Reading| -> Result<bool, String> {
+        match r {
+            Reading::Free => Ok(false),
+            Reading::Blocked(_) => Ok(true),
+            Reading::WiderThanReach => Err(format!(
+                "{path}: snap {snap} is wider than a female's reach"
+            )),
+        }
+    };
+    let caps = male_caps((blocked(readings[0])?, blocked(readings[1])?));
+    if caps.closed_ends(Gender::Male) == declared.closed_ends(Gender::Male) {
+        return Err(format!(
+            "{path}: snap {snap}'s measured ends agree with its caps"
+        ));
+    }
+    let replaced = target
+        .split(CAPS_KEY)
+        .nth(1)
+        .and_then(|rest| rest.split(']').next())
+        .ok_or(format!("{path}: snap {snap} has no caps"))?
+        .to_string();
+    let corrected = target.replacen(
+        &format!("{CAPS_KEY}{replaced}]"),
+        &format!("{CAPS_KEY}{}]", caps_word(caps)),
+        1,
+    );
+    let title = title(library, &path)?;
+    let mut lines = header(&title, &entry.added, source);
+    lines.push("0 !LDCAD SNAP_CLEAR".to_string());
+    for (index, line) in upstream.iter().enumerate() {
+        lines.push(if index == snap {
+            corrected.clone()
+        } else {
+            line.clone()
+        });
+    }
+    Ok(CapsPatch {
+        title,
+        replaced,
+        caps,
+        ends: readings,
+        text: lines.join("\n") + "\n",
+    })
+}
+
+fn caps_round_trip(
+    library: &LazyLibrary,
+    upstream: &[String],
+    patches: &MemoryLibrary,
+    verified: &HashSet<String>,
+    entry: &Entry,
+    snap: usize,
+    patch: &CapsPatch,
+) -> Result<(), String> {
+    let path = patch_path(&entry.part);
+    let status = if entry.status == VERIFIED {
+        Status::Verified
+    } else {
+        Status::Unverified
+    };
+    let target = extracted(library, &path, &upstream[snap..=snap]);
+    let expected: Vec<Connector> = extracted(library, &path, upstream)
+        .into_iter()
+        .map(|mut c| {
+            if target.contains(&c) {
+                if let Shape::Cylinder { caps, .. } = &mut c.shape {
+                    *caps = patch.caps;
+                }
+            }
+            Connector {
+                source: Source::Patch,
+                status,
+                ..c
+            }
+        })
+        .collect();
+    let upstream_file = MemoryLibrary([(path.clone(), upstream.join("\n") + "\n")].into());
+    let patched = ShadowSnaps::new(library, &upstream_file)
+        .patched(ShadowPatches {
+            files: patches,
+            verified,
+        })
+        .snaps(&path)
+        .connectors;
+    if patched != expected {
+        return Err(format!(
+            "{path}: the patch doesn't read back as upstream with snap {snap}'s caps {}",
+            caps_word(patch.caps)
+        ));
+    }
+    Ok(())
+}
+
 fn y_up(v: Vec3) -> Vec3 {
     [v[0], -v[1], -v[2]].map(|c| c + 0.0)
 }
@@ -750,6 +930,7 @@ fn run() -> Result<bool, String> {
     let mut measured_rows: Vec<(Value, Option<Value>)> = Vec::new();
     let mut faces_checks = Vec::new();
     let mut sections_checks = Vec::new();
+    let mut caps_checks = Vec::new();
     for (entry, row) in list.iter().zip(&rows) {
         match &entry.feature {
             Feature::CouplingFaces { id, group } => {
@@ -775,6 +956,21 @@ fn run() -> Result<bool, String> {
                 ));
                 sections_checks.push((entry, upstream, sections));
             }
+            Feature::MeasuredCaps { snap } => {
+                let upstream = upstream_snaps(&entry.part, row, shadow.as_ref())?;
+                let patch = measure_caps(&library, entry, *snap, &upstream, &source)?;
+                texts.insert(patch_path(&entry.part), patch.text.clone());
+                measured_rows.push((
+                    json!({
+                        "title": patch.title,
+                        "replacedCaps": patch.replaced,
+                        "caps": caps_word(patch.caps),
+                        "ends": { "start": reading_json(patch.ends[0]), "far": reading_json(patch.ends[1]) },
+                    }),
+                    Some(json!({ "source": shadow_source, "snaps": upstream })),
+                ));
+                caps_checks.push((entry, upstream, *snap, patch));
+            }
         }
     }
     let patch_library = MemoryLibrary(texts.clone());
@@ -789,6 +985,17 @@ fn run() -> Result<bool, String> {
             &verified,
             entry,
             sections,
+        )?;
+    }
+    for (entry, upstream, snap, patch) in &caps_checks {
+        caps_round_trip(
+            &library,
+            upstream,
+            &patch_library,
+            &verified,
+            entry,
+            *snap,
+            patch,
         )?;
     }
     if let Some(report) = values.get("--report") {
