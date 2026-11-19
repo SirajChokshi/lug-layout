@@ -266,6 +266,7 @@ export {
 } from "./technic-fit.ts";
 export {
   VolumeIndex,
+  FootprintGrid,
   firstOverlap,
   type CellVolumes,
   type OverlapHit,
