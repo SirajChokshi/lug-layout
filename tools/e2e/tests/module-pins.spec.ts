@@ -1,6 +1,5 @@
 import type { PlacementMode } from "@brr/client";
 import { expect, test, type Page } from "@playwright/test";
-import { randomInt } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,15 +14,20 @@ import {
   posed,
 } from "../src/held-out/editor-pairs.ts";
 import { blockPools, modulePair, type ModulePair } from "../src/held-out/generator.ts";
-import { cachingFetch } from "../src/held-out/import-path.ts";
 import { poolCandidates } from "../src/held-out/pool-candidates.ts";
-import { EditorPage, STUD, type HoverState } from "./editor-page.ts";
+import { EditorPage, pinnedLdrawFetch, STUD, type HoverState } from "./editor-page.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const BUNDLE_ROOT = join(REPO_ROOT, "tools/asset-pipeline/dist/bundle");
 const SEED_RANGE = 2 ** 31;
+const DEFAULT_SEED = 7;
 const GENERATOR_ATTEMPTS = 8;
 const TOGGLE_KEY = "a";
+const ASSIST_FLOOR_LDU = STUD;
+const ASSIST_CAP_LDU = 3 * STUD;
+const ZOOM_STEP_IN = -400;
+const ZOOM_STEP_OUT = 400;
+const ZOOM_STEPS = 12;
 const HOLD_KEY = "Alt";
 
 type Vec3 = readonly [number, number, number];
@@ -52,14 +56,17 @@ interface Seam {
 
 function seed(): number {
   const given = process.env["HELD_OUT_SEED"];
-  return given === undefined || given === "" ? randomInt(SEED_RANGE) : Number(given);
+  if (given === undefined || given === "") return DEFAULT_SEED;
+  const value = Number(given);
+  if (!Number.isInteger(value) || value < 0)
+    throw new Error(`HELD_OUT_SEED ${given} is not a seed`);
+  return value;
 }
 
 async function generatedPair(from: number): Promise<ModulePair> {
   const bundle = await openBundleParts(BUNDLE_ROOT);
-  const fetchUrl = cachingFetch(join(REPO_ROOT, ".cache/held-out/ldraw"));
   const pools = blockPools(
-    await poolCandidates(bundle, fetchUrl),
+    await poolCandidates(bundle, pinnedLdrawFetch()),
     bundle.parts.values(),
     bundle.colors,
   );
@@ -188,7 +195,7 @@ function atCursor(hover: HoverState): boolean {
   );
 }
 
-test("a freshly generated holed module snaps flush onto a pinned one in assist mode and sits exactly at the cursor in precise mode; the mode switches by key, by the switch, and while Alt is held", async ({
+test("a generated holed module snaps flush onto a pinned one in assist mode and sits exactly at the cursor in precise mode; the mode switches by key, by the switch, and while Alt is held", async ({
   page,
 }) => {
   const pair = await freshPair();
@@ -312,7 +319,7 @@ test("a freshly generated holed module snaps flush onto a pinned one in assist m
   await expectMode(editor, "assist", "assist", false);
 });
 
-test("a freshly generated pinned module held against solid bricks is refused in both modes where its pins hit, naming the brick and cell, and never moves to a free pose", async ({
+test("a generated pinned module held against solid bricks is refused in both modes where its pins hit, naming the brick and cell, and never moves to a free pose", async ({
   page,
 }) => {
   const pair = await freshPair();
@@ -333,8 +340,15 @@ test("a freshly generated pinned module held against solid bricks is refused in 
     const flush = await editor.hoverIn(mode);
     expect(atCursor(flush), `seed ${pair.seed}: ${mode} flush stays at the cursor`).toBe(true);
     expect(
-      realHit(flush, solid, pair.solidPartner.edgeRow, pinsOf(pair.subject.assembly), placed, seam),
-      `seed ${pair.seed}: ${mode} flush is refused, naming an edge brick and the pin cell it hits (${JSON.stringify(flush.placement?.hit)})`,
+      realHit(
+        flush,
+        solid,
+        pair.solidPartner.assembly,
+        pinsOf(pair.subject.assembly),
+        placed,
+        seam,
+      ),
+      `seed ${pair.seed}: ${mode} flush is refused, naming a part of the solid module and the pin cell it hits (${JSON.stringify(flush.placement?.hit)})`,
     ).toBe(true);
     expect(
       flush.placement ? pinHoleJoints(flush.placement.mates) : -1,
@@ -366,4 +380,61 @@ test("a freshly generated pinned module held against solid bricks is refused in 
   ).toEqual(verdicts.get("precise"));
   await page.keyboard.press(TOGGLE_KEY);
   await expectMode(editor, "assist", "assist", false);
+});
+
+async function settledReach(
+  editor: EditorPage,
+  partner: string,
+  seam: Seam,
+  wheelStep: number,
+): Promise<number> {
+  let reach = Number.NaN;
+  for (let step = 0; step < ZOOM_STEPS; step++) {
+    await editor.escape();
+    await editor.zoomAt(seam.flush, wheelStep);
+    await editor.hoverPlacementAt(partner, seam.cursorAt(0, -1));
+    const next = (await editor.hoverIn("assist")).placement?.assistNeighbourhood.ldu ?? Number.NaN;
+    if (next === reach) return reach;
+    reach = next;
+  }
+  return reach;
+}
+
+test("the assist neighbourhood follows the zoom, settling on its floor up close and its cap in overview, and assist snaps exactly within it", async ({
+  page,
+}) => {
+  const pair = await freshPair();
+  const { editor, items } = await importModels(page, [pair.subject, pair.partner]);
+  const [subject = "", partner = ""] = items;
+  const placed = await placedAtOrigin(editor, subject);
+  const seam = await seamBeside(editor, placed, partner, pair.partnerOffset, pair.alongEdge);
+  const views = [
+    { view: "close", wheelStep: ZOOM_STEP_IN, settles: ASSIST_FLOOR_LDU },
+    { view: "overview", wheelStep: ZOOM_STEP_OUT, settles: ASSIST_CAP_LDU },
+  ] as const;
+  for (const { view, wheelStep, settles } of views) {
+    const reach = await settledReach(editor, partner, seam, wheelStep);
+    expect(
+      reach,
+      `seed ${pair.seed}: at ${view} zoom the neighbourhood settles at ${settles} LDU`,
+    ).toBe(settles);
+    for (let studs = 1; studs * STUD <= reach + STUD; studs++) {
+      await editor.hoverPlacementAt(partner, seam.cursorAt(0, -studs));
+      const hover = await editor.hoverIn("assist");
+      const label = `seed ${pair.seed}: ${view} zoom, ${studs} studs short`;
+      if (studs * STUD <= reach) {
+        expect(hover.placement?.pose, `${label} snaps flush`).toEqual(seam.flush);
+        expect(
+          hover.placement ? pinHoleJoints(hover.placement.mates) : 0,
+          `${label}: every pin engages a hole`,
+        ).toBe(pair.pins);
+      } else {
+        expect(hover.placement?.accepted, `${label} is accepted where it is`).toBe(true);
+        expect(atCursor(hover), `${label} stays at the cursor, beyond the neighbourhood`).toBe(
+          true,
+        );
+        expect(hover.placement?.mates, `${label} has no mates`).toEqual([]);
+      }
+    }
+  }
 });

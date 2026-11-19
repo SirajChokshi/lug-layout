@@ -1,4 +1,5 @@
 import type { PlacementHover, PlacementMode } from "@brr/client";
+import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -21,6 +22,19 @@ const MODEL_IMPORT_TIMEOUT_MS = 180_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
+
+function pinnedLdrawPath(url: string): string | undefined {
+  return LDRAW_PATH.exec(decodeURIComponent(new URL(url).pathname))?.groups?.["path"];
+}
+
+export function pinnedLdrawFetch(): FetchFunction {
+  return async (url) => {
+    const path = pinnedLdrawPath(url);
+    const bytes =
+      path === undefined ? null : await readFile(new URL(path, PINNED_LDRAW)).catch(() => null);
+    return bytes === null ? new Response(null, { status: HTTP_NOT_FOUND }) : new Response(bytes);
+  };
+}
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
 const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
 
@@ -371,6 +385,14 @@ export class EditorPage {
     this.forgetView();
   }
 
+  async zoomAt(target: LatticePoint, wheelDelta: number): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.mouse.move(point.sx, point.sy);
+    await this.page.mouse.wheel(0, wheelDelta);
+    await this.settle();
+    this.forgetView();
+  }
+
   async zoom(wheelDelta: number): Promise<void> {
     const centre = await this.canvasCentre();
     await this.page.mouse.move(centre.sx, centre.sy);
@@ -639,8 +661,7 @@ export class EditorPage {
 
   async serveLdrawLibrary(): Promise<void> {
     await this.page.context().route(GITHUB_RAW, async (route) => {
-      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(route.request().url()).pathname))
-        ?.groups?.["path"];
+      const path = pinnedLdrawPath(route.request().url());
       const text =
         path === undefined
           ? undefined
