@@ -8,7 +8,6 @@ const TOP = 2;
 const NEXT = 3;
 const NO_RECORD = -1;
 const GROWTH = 1.25;
-export const NO_VOLUME_TOP = -0x8000_0000;
 
 function chunkOfCell(cell: number): number {
   return Math.floor(cell / CHUNK_STUDS);
@@ -130,18 +129,6 @@ export class VolumeIndex {
         );
       }
     }
-  }
-
-  topAt(cellX: number, cellZ: number): number {
-    const chunk = this.chunkAt(cellX, cellZ);
-    if (!chunk) return NO_VOLUME_TOP;
-    let top = NO_VOLUME_TOP;
-    for (let r = chunk.heads[cellIndex(cellX, cellZ)] ?? NO_RECORD; r !== NO_RECORD;) {
-      const t = chunk.records[r + TOP] ?? NO_VOLUME_TOP;
-      if (t > top) top = t;
-      r = chunk.records[r + NEXT] ?? NO_RECORD;
-    }
-    return top;
   }
 
   firstOverlap(
