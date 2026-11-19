@@ -16,7 +16,7 @@ import type { AimedBackend } from "./headless-editor.ts";
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
 const MODEL_IDENTITY_KEYS = new Set(["item", "label"]);
-const MODE_KEYS = new Set(["mode"]);
+const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates"]);
 const LISTED_FAILURES = 4;
 const LOAD_POLL_MS = 10;
 const LOAD_TIMEOUT_MS = 60_000;
@@ -475,7 +475,9 @@ function atCursor(step: Step, mode: PlacementMode): boolean {
 }
 
 export function placementVerdict(hover: PlacementHover | null): string {
-  return JSON.stringify(hover, (key, field: unknown) => (MODE_KEYS.has(key) ? undefined : field));
+  return JSON.stringify(hover, (key, field: unknown) =>
+    MODE_DEPENDENT_KEYS.has(key) ? undefined : field,
+  );
 }
 
 function stepVerdict(step: Step): string {
@@ -613,7 +615,7 @@ export async function pinnedPairChecks(
       `${inside.length} offsets, all flush with ${pins} pin/hole joints`,
     ),
     sweepCheck(
-      "Assist sweep: beyond the neighbourhood, assist gives exactly the precise result at the same cursor pose, and every refusal names a part and cell where the two models overlap",
+      "Assist sweep: beyond the neighbourhood, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
       beyond,
       ({ assist, precise }) =>
         stepVerdict(assist) === stepVerdict(precise) &&
