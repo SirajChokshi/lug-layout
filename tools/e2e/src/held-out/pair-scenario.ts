@@ -89,9 +89,3 @@ export function scenarioProblems(pair: ModulePair): string[] {
   }
   return problems;
 }
-
-export function shiftedPoseContacts(pair: ModulePair): string {
-  return SHIFTED_POSES.map(
-    (pose) => `${pose.name}, ${described(shiftedOutcomes(pair, pose.sign)).join("; ")}`,
-  ).join(". ");
-}
