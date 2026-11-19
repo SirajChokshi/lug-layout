@@ -97,11 +97,12 @@ import type {
   PlacementMode,
 } from "./placement-hover.ts";
 import { effectivePlacementMode } from "./placement-mode.ts";
-import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
+import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   placementChoice,
   type IPlacementSearch,
+  type OverlapNamer,
   type PlacementChoice,
   type PlacementWindow,
 } from "../connect/placement-search.ts";
@@ -748,6 +749,9 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverPlacement: PlacementHover | null = null;
   private readonly pick = new CursorPick();
   private readonly hoverCell = new HoverCell();
+  private readonly namedOverlap = placementChoice().overlap;
+  private hitPart: HitPart | null = null;
+  private namingIndices: ArrayLike<number> = [];
   private readonly surface = new Float64Array(2);
   private readonly sideRay = new Float64Array(6);
   private canvas: HTMLCanvasElement | null = null;
@@ -1609,7 +1613,7 @@ export class Editor implements IEditor, IEditedWorld {
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
     const magnet = magnetOffset(this.pick, pose);
     this.search.evaluate(connected.model, pose, this.mates);
-    const hit = choice.accepted ? null : this.refusalHit(choice.overlap);
+    const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
     const turnBlocksSnap = this.turnBlocksSnap(connected, choice);
     this.hoverYPlates = pose.yPlates;
     this.hoverPlacement = {
@@ -1727,33 +1731,60 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private refusalHit(overlap: OverlapHit): HoverRefusalHit | null {
-    const model = this.searchModels.get(overlap.owner);
-    const placed = this.placedViewOf(overlap.owner);
-    if (!model || !placed) return null;
-    const parts = this.catalog.parts();
-    const indices = model.placeable.partTransforms.partIndex;
-    const part = partAtHit(
+  private refusalHit(
+    connected: Connected,
+    pose: LatticePose,
+    moving: number | null,
+    overlap: OverlapHit,
+  ): HoverRefusalHit | null {
+    if (this.namesPart(overlap)) return this.refusalView(overlap, false);
+    const named = this.namedOverlap;
+    const { model, volumes, boxes, technic } = connected;
+    if (this.search.nameOverlap(model, volumes, boxes, technic, pose, moving, this.namer, named)) {
+      this.namesPart(named);
+      return this.refusalView(named, false);
+    }
+    this.namesPart(overlap);
+    return this.refusalView(overlap, true);
+  }
+
+  private namesPart(hit: OverlapHit): boolean {
+    const model = this.searchModels.get(hit.owner);
+    this.hitPart = null;
+    if (!model) return false;
+    this.namingIndices = model.placeable.partTransforms.partIndex;
+    this.hitPart = partAtHit(
       model.worldPartBoxes(),
-      overlap.cellX,
-      overlap.cellZ,
-      Math.max(overlap.bottomLdu, overlap.candidateBottomLdu),
-      Math.min(overlap.topLdu, overlap.candidateTopLdu),
-      (instance) => {
-        const asset = parts[indices[instance] ?? -1];
-        return asset ? { part: asset.id, partLabel: asset.title } : null;
-      },
+      hit.cellX,
+      hit.cellZ,
+      Math.max(hit.bottomLdu, hit.candidateBottomLdu),
+      Math.min(hit.topLdu, hit.candidateTopLdu),
+      this.partOfInstance,
     );
+    return this.hitPart !== null;
+  }
+
+  private readonly partOfInstance = (instance: number): HitPart | null => {
+    const asset = this.catalog.parts()[this.namingIndices[instance] ?? -1];
+    return asset ? { part: asset.id, partLabel: asset.title } : null;
+  };
+
+  private readonly namer: OverlapNamer = { names: (hit) => this.namesPart(hit) };
+
+  private refusalView(overlap: OverlapHit, byColumnOnly: boolean): HoverRefusalHit | null {
+    const placed = this.placedViewOf(overlap.owner);
+    if (!placed) return null;
     return {
       placed,
-      part: part?.part ?? null,
-      partLabel: part?.partLabel ?? null,
+      part: this.hitPart?.part ?? null,
+      partLabel: this.hitPart?.partLabel ?? null,
       cellX: overlap.cellX,
       cellZ: overlap.cellZ,
       placedBottomLdu: overlap.bottomLdu,
       placedTopLdu: overlap.topLdu,
       heldBottomLdu: overlap.candidateBottomLdu,
       heldTopLdu: overlap.candidateTopLdu,
+      byColumnOnly,
     };
   }
 
@@ -2290,13 +2321,13 @@ export class Editor implements IEditor, IEditedWorld {
     pick.plates = PRECISE_RADIUS;
     pick.radiusLdu = PRECISE_RADIUS;
     pick.turns = HELD_TURN_ONLY;
-    this.searchPick(
-      this.connectedOf(model.placeable),
-      this.searchIds.get(model) ?? null,
-      this.turnChoice,
-    );
+    const connected = this.connectedOf(model.placeable);
+    const moving = this.searchIds.get(model) ?? null;
+    this.searchPick(connected, moving, this.turnChoice);
     if (!this.turnChoice.accepted) {
-      refuseTurn(refusalText(label, this.refusalHit(this.turnChoice.overlap)));
+      const turned = { x: pose.x, z: pose.z, yPlates, rot };
+      const hit = this.refusalHit(connected, turned, moving, this.turnChoice.overlap);
+      refuseTurn(refusalText(label, hit));
       return;
     }
     const road = this.turnedRoadFit(model, rot, yPlates);

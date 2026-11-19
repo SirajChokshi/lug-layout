@@ -42,6 +42,7 @@ export interface HoverRefusalHit {
   readonly placedTopLdu: number;
   readonly heldBottomLdu: number;
   readonly heldTopLdu: number;
+  readonly byColumnOnly: boolean;
 }
 
 export type PlacementMode = "assist" | "precise";

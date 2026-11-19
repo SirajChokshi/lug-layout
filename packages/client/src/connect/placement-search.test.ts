@@ -13,6 +13,7 @@ import {
   SOURCE_SHADOW,
   STATUS_VERIFIED,
   type LatticePose,
+  type OverlapHit,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
@@ -29,6 +30,7 @@ import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { partAtHit } from "../edit/placement-hover-view.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
@@ -453,6 +455,77 @@ describe("PlacementSearch", () => {
       0,
       OTHER,
     ]);
+  });
+
+  it("names a refusal at the first overlapping cell whose placed part lies in the held band, past a single-interval column whose only part there sits above it", () => {
+    const f = fixture();
+    const baseplate = [0, -SLAB_LDU, 0, 2 * STUD_LDU, 0, STUD_LDU] as const;
+    const overhangingPlate = [0, 5 * PLATE_LDU, 0, STUD_LDU, 6 * PLATE_LDU, STUD_LDU] as const;
+    const solid: Piece = {
+      connectors: f.connectors([null, null]),
+      volumes: FrozenVolumes.ofPlaceable({
+        cells: {
+          cellX0: 0,
+          cellZ0: 0,
+          width: 2,
+          depth: 1,
+          columnBottom: Int16Array.of(0, 0),
+          columnTop: Int16Array.of(6, 0),
+        },
+        slabBoxes: Float32Array.from(baseplate),
+      }),
+      parts: partsOf([[...baseplate], [...overhangingPlate]]),
+    };
+    place(f, OTHER, solid);
+    const held = (cells: number, pinTop: number, slab: ReadonlyArray<number>): Piece => ({
+      connectors: f.connectors(Array.from({ length: cells }, () => null)),
+      volumes: FrozenVolumes.ofPlaceable({
+        cells: {
+          cellX0: 0,
+          cellZ0: 0,
+          width: cells,
+          depth: 1,
+          columnBottom: new Int16Array(cells),
+          columnTop: Int16Array.from({ length: cells }, (_, c) => (c === 0 ? pinTop : 0)),
+        },
+        slabBoxes: Float32Array.from(slab),
+      }),
+      parts: partsOf([[0, 0, 0, STUD_LDU, pinTop * PLATE_LDU, STUD_LDU]]),
+    });
+    const pinAndBaseplate = held(2, 3, [STUD_LDU, -SLAB_LDU, 0, 2 * STUD_LDU, 0, STUD_LDU]);
+    const pinOnly = held(1, 3, []);
+    const namer = {
+      names: (hit: OverlapHit) =>
+        partAtHit(
+          solid.parts.boxes.boxes,
+          hit.cellX,
+          hit.cellZ,
+          Math.max(hit.bottomLdu, hit.candidateBottomLdu),
+          Math.min(hit.topLdu, hit.candidateTopLdu),
+          (instance) => ({ part: `part ${instance}`, partLabel: "" }),
+        ) !== null,
+    };
+    const nameOn = (piece: Piece) => {
+      const named = placementChoice().overlap;
+      const found = f.search.nameOverlap(
+        piece.connectors,
+        piece.volumes,
+        piece.parts.boxes,
+        piece.parts.technic,
+        ORIGIN,
+        null,
+        namer,
+        named,
+      );
+      return found ? [named.cellX, named.cellZ] : null;
+    };
+    const refused = choose(f, pinAndBaseplate, window(0, 0, 0, 0, 0));
+
+    expect({
+      refused: refused.accepted ? null : [refused.overlap.cellX, refused.overlap.cellZ],
+      named: nameOn(pinAndBaseplate),
+      onlyByColumn: nameOn(pinOnly),
+    }).toEqual({ refused: [0, 0], named: [1, 0], onlyByColumn: null });
   });
 
   it("constructs no typed array once warm, however the assist window moves", () => {

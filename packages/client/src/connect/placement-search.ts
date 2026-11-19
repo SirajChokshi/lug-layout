@@ -64,6 +64,10 @@ export function placementChoice(): PlacementChoice {
 
 export type RestsOnTable = (placement: number) => boolean;
 
+export interface OverlapNamer {
+  names(hit: OverlapHit): boolean;
+}
+
 export interface PlacementWindow extends SnapWindow {
   readonly radiusLdu: number;
   readonly firstTurn: number;
@@ -99,6 +103,16 @@ export interface IPlacementSearch {
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number>;
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
   revision(): number;
+  nameOverlap(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+    moving: number | null,
+    namer: OverlapNamer,
+    out: OverlapHit,
+  ): boolean;
 }
 
 interface Placed extends PlacedParts {
@@ -115,6 +129,7 @@ const TURN_KEYS = 3 * TURNS;
 const NO_REGION = -1;
 const COVER_ATTEMPTS = 2;
 const HINTS = 8;
+const INITIAL_SEEN = 8;
 
 class Bounds {
   cellX0 = 0;
@@ -243,6 +258,8 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly countPose = new Pose();
   private readonly oneCell = new VolumeBuffer(1);
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
+  private seen = new Int32Array(INITIAL_SEEN);
+  private seenOwners = 0;
   private nextHint = 0;
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
@@ -342,7 +359,7 @@ export class PlacementSearch implements IPlacementSearch {
     out.walked++;
     out.accepted = false;
     if (pose.yPlates < tableYPlates) return;
-    if (this.blocked(model, volumes, boxes, technic, pose, out.votes, true, false)) {
+    if (this.blocked(model, volumes, boxes, technic, pose, out.votes > 0, false)) {
       copyHit(this.hit, out.overlap);
       return;
     }
@@ -374,24 +391,17 @@ export class PlacementSearch implements IPlacementSearch {
       if (found && reach > bestReach) break;
       const slot = memo.slot(pose.x, pose.z, pose.yPlates, pose.rot);
       if (memo.dense[slot] === UNKNOWN) this.countLevel(model, window, pose.rot, pose.yPlates);
-      const proposal = this.proposalAt(model, pose, slot);
-      const votes = (memo.dense[slot] ?? 0) + proposal;
-      if (votes === 0) continue;
-      out.walked++;
+      const dense = memo.dense[slot] ?? 0;
+      const proposed = memo.proposed[slot] === 1;
+      if (dense === 0 && !proposed) continue;
       if (memo.verdict[slot] === 0) {
-        const blocked = this.blocked(
-          model,
-          volumes,
-          boxes,
-          technic,
-          pose,
-          votes,
-          proposal > 0,
-          true,
-        );
+        const blocked = this.blocked(model, volumes, boxes, technic, pose, proposed, true);
         memo.verdict[slot] = blocked ? BLOCKED : FREE;
       }
       if (memo.verdict[slot] === BLOCKED) continue;
+      const votes = dense + this.proposalAt(model, pose, slot);
+      if (votes === 0) continue;
+      out.walked++;
       this.solver.evaluate(model, pose, this.tieReport);
       const joints = this.tieReport.jointCount;
       if (!found || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
@@ -570,7 +580,6 @@ export class PlacementSearch implements IPlacementSearch {
     boxes: PartBoxes,
     technic: TechnicSet,
     pose: LatticePose,
-    votes: number,
     exemptable: boolean,
     hinted: boolean,
   ): boolean {
@@ -580,7 +589,7 @@ export class PlacementSearch implements IPlacementSearch {
     const at = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
     if (at === NO_OVERLAP) return false;
     this.remember(at);
-    if (!exemptable || votes === 0 || this.collectZones(model, boxes, technic, pose) === 0) {
+    if (!exemptable || this.collectZones(model, boxes, technic, pose) === 0) {
       return true;
     }
     return (
@@ -617,6 +626,60 @@ export class PlacementSearch implements IPlacementSearch {
   revision(): number {
     return this.edits;
   }
+
+  nameOverlap(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+    moving: number | null,
+    namer: OverlapNamer,
+    out: OverlapHit,
+  ): boolean {
+    this.moving = moving ?? NO_PLACEMENT;
+    this.zones.clear();
+    this.collectZones(model, boxes, technic, pose);
+    const placed = this.scratch.place(volumes, pose);
+    let named = false;
+    for (let c = 0; c < placed.count && !named; c++) {
+      const x = placed.cellX[c] ?? 0;
+      const z = placed.cellZ[c] ?? 0;
+      const bottom = placed.bottomLdu[c] ?? 0;
+      const top = placed.topLdu[c] ?? 0;
+      if (top <= bottom) continue;
+      this.seenOwners = 0;
+      while (this.volumes.firstOverlap(x, z, bottom, top, this.unseen, this.hit)) {
+        this.see(this.hit.owner);
+        this.hit.cellX = x;
+        this.hit.cellZ = z;
+        this.hit.candidateBottomLdu = bottom;
+        this.hit.candidateTopLdu = top;
+        if (!namer.names(this.hit)) continue;
+        copyHit(this.hit, out);
+        named = true;
+        break;
+      }
+    }
+    this.moving = NO_PLACEMENT;
+    this.zones.clear();
+    return named;
+  }
+
+  private see(owner: number): void {
+    if (this.seenOwners === this.seen.length) {
+      const grown = new Int32Array(this.seen.length * 2);
+      grown.set(this.seen);
+      this.seen = grown;
+    }
+    this.seen[this.seenOwners++] = owner;
+  }
+
+  private readonly unseen = (owner: number, cellX: number, cellZ: number): boolean => {
+    if (this.exempt(owner, cellX, cellZ)) return true;
+    for (let i = 0; i < this.seenOwners; i++) if (this.seen[i] === owner) return true;
+    return false;
+  };
 
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number> {
     const placed = this.scratch.place(volumes, pose);
