@@ -7,10 +7,10 @@ use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, IncludeRefusal,
-    InferredFeatures, Issue, MatingFace, MetaError, Openness, PrimitiveConnectors, PrimitiveTable,
-    Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape, Source, Status,
-    Uninferred, Unreadable, CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED,
-    FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
+    InferredFeatures, Issue, MatingFace, MetaError, Openness, PartRecords, PrimitiveConnectors,
+    PrimitiveTable, Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape,
+    Source, Status, Uninferred, Unreadable, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -257,6 +257,119 @@ fn lower_tiers_fill_only_empty_slots_and_never_slots_a_clear_wiped() {
             ..
         }
     ));
+}
+
+fn published_rows(faces: &[MatingFace]) -> Vec<PublishedRow> {
+    let mut rows: Vec<_> = faces
+        .iter()
+        .map(|face| {
+            (
+                face.source,
+                face.piece,
+                face.sections
+                    .iter()
+                    .map(|s| (s.code, s.size, s.length))
+                    .collect(),
+                face.origin,
+            )
+        })
+        .collect();
+    rows.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+    rows
+}
+
+type PublishedRow = (Source, u16, Vec<(u8, f64, f64)>, Vec3);
+
+fn in_published_order(mut rows: Vec<PublishedRow>) -> Vec<PublishedRow> {
+    rows.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
+    rows
+}
+
+#[test]
+fn published_records_keep_one_face_per_exact_slot_and_receptor_from_the_highest_tier() {
+    let composite = format!(
+        "0 Composite\n\
+         0 !LDRAW_ORG Part\n\
+         1 16 0 0 0 1 0 0 0 1 0 0 0 1 zz-body.dat\n\
+         1 16 0 0 -10 {TOWARD_PLUS_Z} end.dat\n\
+         1 16 0 0 10 {TOWARD_MINUS_Z} end.dat\n\
+         1 16 0 0 -8 {BORE_ALONG_Z} 4-4cyli.dat\n"
+    );
+    let [probe, probe_wall] = stud_probe();
+    let library = memory(&[
+        ("parts/zz-composite.dat", &composite),
+        ("parts/zz-body.dat", "0 Body\n0 !LDRAW_ORG Part\n"),
+        ("p/end.dat", "0 End\n"),
+        ("p/4-4cyli.dat", "0 Cylinder 1.0\n"),
+        (probe.0, &probe.1),
+        (probe_wall.0, &probe_wall.1),
+    ]);
+    let receptors =
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]\n";
+    let off_lattice = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0.3 40 0]\n";
+    let shadow = memory(&[
+        (
+            "parts/zz-body.dat",
+            "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]\n",
+        ),
+        (
+            "parts/zz-composite.dat",
+            &format!(
+                "{receptors}{off_lattice}\
+                 0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 4 4] [pos=10 24 0]\n\
+                 0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [pos=0 0 -10] [ori={TOWARD_MINUS_Z}]\n"
+            ),
+        ),
+    ]);
+    let patches = memory(&[(
+        "parts/zz-body.dat",
+        &format!("0 !LDCAD SNAP_CLEAR\n{receptors}{off_lattice}"),
+    )]);
+    let table = PrimitiveTable::from_json(&json!({
+        "primitives": [
+            { "file": "p/end.dat", "holeEnd": { "counterbore": { "radius": 8, "length": 2 }, "boreRadius": 6 } }
+        ]
+    }))
+    .expect("table parses");
+    let vocabulary =
+        SectionVocabulary::from_metas(["0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]"]);
+    let verified = HashSet::new();
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
+            files: &patches,
+            verified: &verified,
+        }),
+        PrimitiveConnectors::new(&library, table),
+        InferredFeatures::new(&library, vocabulary, "p/probe.dat").expect("the probe measures"),
+    );
+    let records = PartRecords::of(&extractor.extract("parts/zz-composite.dat"));
+    let receptor = vec![(SQUARE, 6.0, 4.0)];
+    let stud_hole = vec![(ROUND, 6.0, 4.0)];
+    assert_eq!(
+        published_rows(&records.connectivity.faces),
+        in_published_order(vec![
+            (Source::Patch, 0, receptor.clone(), [-10.0, -24.0, 0.0]),
+            (Source::Patch, 0, receptor, [10.0, -24.0, 0.0]),
+            (
+                Source::Shadow,
+                0,
+                vec![(ROUND, 4.0, 4.0)],
+                [10.0, -24.0, 0.0]
+            ),
+            (Source::Patch, 1, stud_hole.clone(), [0.3, -40.0, 0.0]),
+            (Source::Shadow, 0, stud_hole.clone(), [0.3, -40.0, 0.0]),
+            (Source::Shadow, 0, stud_hole, [0.0, 0.0, 10.0]),
+        ])
+    );
+    assert_eq!(
+        published_rows(&records.connectors.faces),
+        vec![(
+            Source::Primitive,
+            0,
+            vec![(ROUND, 8.0, 2.0), (ROUND, 6.0, 16.0), (ROUND, 8.0, 2.0)],
+            [0.0, 0.0, -10.0],
+        )]
+    );
 }
 
 #[test]

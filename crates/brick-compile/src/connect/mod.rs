@@ -24,7 +24,8 @@ pub use inferred::{Inference, InferredFeatures, Openness, SectionVocabulary, Uni
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
-    is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+    is_connectivity, published_faces, record_json, source_code, status_code, PartRecords,
+    PublishedFace, TierRecord,
 };
 pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
