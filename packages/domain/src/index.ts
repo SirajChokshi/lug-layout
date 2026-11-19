@@ -260,6 +260,9 @@ export {
   secondOtherAxis,
   technicItemsOverlap,
   technicScratch,
+  PosedTechnicBuffer,
+  type PosedTechnic,
+  type TechnicColumns,
   type TechnicSet,
 } from "./technic-fit.ts";
 export {
