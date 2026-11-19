@@ -19,6 +19,7 @@ export const WORLD_TRACK_FRAME: TrackFrame = { id: 0, xLdu: 0, zLdu: 0 };
 export interface TrackEnd {
   readonly pose: Pose16;
   readonly yPlates: number;
+  readonly instance?: number;
   readonly frame: TrackFrame;
 }
 

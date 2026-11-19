@@ -6,9 +6,10 @@ export interface S3Credentials {
 }
 
 export interface S3Request {
-  readonly method: "GET" | "HEAD" | "PUT";
+  readonly method: "GET" | "HEAD" | "PUT" | "POST";
   readonly host: string;
   readonly path: string;
+  readonly query?: Readonly<Record<string, string>>;
   readonly headers: Readonly<Record<string, string>>;
   readonly payloadSha256: string;
 }
@@ -34,16 +35,22 @@ function amzDate(date: Date): string {
     .replace(/\.\d{3}/u, "");
 }
 
+function encodeComponent(value: string): string {
+  return encodeURIComponent(value).replace(
+    UNRESERVED_EXTRAS,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
 export function encodeObjectPath(path: string): string {
-  return path
-    .split("/")
-    .map((segment) =>
-      encodeURIComponent(segment).replace(
-        UNRESERVED_EXTRAS,
-        (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
-      ),
-    )
-    .join("/");
+  return path.split("/").map(encodeComponent).join("/");
+}
+
+function canonicalQuery(query: Readonly<Record<string, string>> | undefined): string {
+  return Object.entries(query ?? {})
+    .map(([name, value]) => `${encodeComponent(name)}=${encodeComponent(value)}`)
+    .toSorted()
+    .join("&");
 }
 
 export function signS3Request(
@@ -67,7 +74,7 @@ export function signS3Request(
   const canonicalRequest = [
     request.method,
     request.path,
-    "",
+    canonicalQuery(request.query),
     ...names.map((name) => `${name}:${headers[name]}`),
     "",
     signedHeaders,
@@ -91,13 +98,100 @@ export interface ObjectStore {
   put(key: string, body: Uint8Array, headers: Readonly<Record<string, string>>): Promise<void>;
 }
 
+export interface StoredObject {
+  readonly key: string;
+  readonly size: number;
+}
+
+export interface PrunableStore extends ObjectStore {
+  get(key: string): Promise<Uint8Array | undefined>;
+  list(prefix: string): Promise<ReadonlyArray<StoredObject>>;
+  delete(keys: ReadonlyArray<string>): Promise<void>;
+}
+
+const DELETE_OBJECTS_LIMIT = 1000;
+
+function xmlEscaped(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function deleteRequest(keys: ReadonlyArray<string>): Uint8Array {
+  const objects = keys.map((key) => `<Object><Key>${xmlEscaped(key)}</Key></Object>`).join("");
+  return new TextEncoder().encode(`<Delete><Quiet>true</Quiet>${objects}</Delete>`);
+}
+
+const XML_ENTITIES: Readonly<Record<string, string>> = {
+  "&amp;": "&",
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&apos;": "'",
+};
+
+const DECIMAL = 10;
+const HEXADECIMAL = 16;
+
+const LAST_CODE_POINT = 0x10ffff;
+const FIRST_SURROGATE = 0xd800;
+const LAST_SURROGATE = 0xdfff;
+
+function isXmlCharacter(codePoint: number): boolean {
+  return (
+    codePoint > 0 &&
+    codePoint <= LAST_CODE_POINT &&
+    (codePoint < FIRST_SURROGATE || codePoint > LAST_SURROGATE)
+  );
+}
+
+function xmlCharacter(reference: string): string {
+  const named = XML_ENTITIES[reference];
+  if (named !== undefined) return named;
+  const hex = /^&#x([0-9a-f]+);$/iu.exec(reference)?.[1];
+  const decimal = /^&#([0-9]+);$/u.exec(reference)?.[1];
+  const codePoint =
+    hex !== undefined
+      ? Number.parseInt(hex, HEXADECIMAL)
+      : decimal !== undefined
+        ? Number.parseInt(decimal, DECIMAL)
+        : undefined;
+  if (codePoint === undefined || !isXmlCharacter(codePoint)) {
+    throw new Error(`unrecognised XML reference ${reference}`);
+  }
+  return String.fromCodePoint(codePoint);
+}
+
+function xmlText(value: string): string {
+  return value.replace(/&[^;&]*;?/gu, xmlCharacter);
+}
+
+function xmlField(xml: string, name: string): string | undefined {
+  const match = new RegExp(`<${name}>([^<]*)</${name}>`, "u").exec(xml);
+  return match?.[1] === undefined ? undefined : xmlText(match[1]);
+}
+
+function listedObjects(xml: string): StoredObject[] {
+  return [...xml.matchAll(/<Contents>(.*?)<\/Contents>/gsu)].map(([, entry = ""]) => {
+    const key = xmlField(entry, "Key");
+    const size = Number(xmlField(entry, "Size"));
+    if (key === undefined || !Number.isSafeInteger(size)) {
+      throw new Error(`a ListObjectsV2 entry has no key or size: ${entry}`);
+    }
+    return { key, size };
+  });
+}
+
 export interface R2Bucket {
   readonly endpoint: string;
   readonly bucket: string;
   readonly credentials: S3Credentials;
 }
 
-export class R2ObjectStore implements ObjectStore {
+export class R2ObjectStore implements PrunableStore {
   private readonly target: R2Bucket;
 
   constructor(target: R2Bucket) {
@@ -109,17 +203,27 @@ export class R2ObjectStore implements ObjectStore {
     key: string,
     body: Uint8Array | undefined,
     headers: Readonly<Record<string, string>>,
+    query?: Readonly<Record<string, string>>,
   ): Promise<Response> {
     const endpoint = new URL(this.target.endpoint);
-    const path = `/${encodeObjectPath(this.target.bucket)}/${encodeObjectPath(key)}`;
+    const bucketPath = `/${encodeObjectPath(this.target.bucket)}`;
+    const path = query === undefined ? `${bucketPath}/${encodeObjectPath(key)}` : bucketPath;
     const signed = signS3Request(
-      { method, host: endpoint.host, path, headers, payloadSha256: sha256Hex(body ?? "") },
+      {
+        method,
+        host: endpoint.host,
+        path,
+        ...(query === undefined ? {} : { query }),
+        headers,
+        payloadSha256: sha256Hex(body ?? ""),
+      },
       this.target.credentials,
       R2_REGION,
       new Date(),
     );
     const { host: _host, ...sent } = signed;
-    return fetch(new URL(path, endpoint), {
+    const search = canonicalQuery(query);
+    return fetch(new URL(search === "" ? path : `${path}?${search}`, endpoint), {
       method,
       headers: sent,
       ...(body === undefined ? {} : { body }),
@@ -141,6 +245,53 @@ export class R2ObjectStore implements ObjectStore {
     const response = await this.send("PUT", key, body, headers);
     if (!response.ok) {
       throw new Error(`PUT ${key} failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  async get(key: string): Promise<Uint8Array | undefined> {
+    const response = await this.send("GET", key, undefined, {});
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`GET ${key} failed with ${response.status}`);
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
+  async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
+    const objects: StoredObject[] = [];
+    let token: string | undefined;
+    do {
+      const query: Record<string, string> = { "list-type": "2", prefix };
+      if (token !== undefined) query["continuation-token"] = token;
+      const response = await this.send("GET", "", undefined, {}, query);
+      if (!response.ok) throw new Error(`listing ${prefix} failed with ${response.status}`);
+      const xml = await response.text();
+      objects.push(...listedObjects(xml));
+      const truncated = xmlField(xml, "IsTruncated") === "true";
+      const next = xmlField(xml, "NextContinuationToken");
+      if (truncated && (next === undefined || next === token)) {
+        throw new Error(`listing ${prefix} was truncated without a new continuation token`);
+      }
+      token = truncated ? next : undefined;
+    } while (token !== undefined);
+    return objects;
+  }
+
+  async delete(keys: ReadonlyArray<string>): Promise<void> {
+    for (let start = 0; start < keys.length; start += DELETE_OBJECTS_LIMIT) {
+      const body = deleteRequest(keys.slice(start, start + DELETE_OBJECTS_LIMIT));
+      const response = await this.send(
+        "POST",
+        "",
+        body,
+        {
+          "Content-Type": "application/xml",
+          "Content-MD5": createHash("md5").update(body).digest("base64"),
+        },
+        { delete: "" },
+      );
+      const xml = await response.text();
+      if (!response.ok) throw new Error(`DeleteObjects failed with ${response.status}: ${xml}`);
+      const failed = [...xml.matchAll(/<Error>(.*?)<\/Error>/gsu)].map(([, entry = ""]) => entry);
+      if (failed.length > 0) throw new Error(`DeleteObjects refused: ${failed.join("; ")}`);
     }
   }
 }

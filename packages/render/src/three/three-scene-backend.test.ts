@@ -1,7 +1,19 @@
-import { INHERIT_COLOR, type PartAsset, type PartMesh } from "@brr/catalog";
+import {
+  INHERIT_COLOR,
+  type PartAsset,
+  type PartMesh,
+  type StudPrimitiveAsset,
+} from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
+import { Mesh, type Object3D } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ChunkInstances, NeededMeshListener, PartPalette } from "../scene-backend.ts";
+import type {
+  ChunkInstances,
+  ChunkTier,
+  NeededMeshListener,
+  PartPalette,
+} from "../scene-backend.ts";
+import { edgeIdOf } from "./edge-ids.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -239,6 +251,133 @@ it("swaps meshes, far studs and far model meshes while chunks, a vehicle, a ghos
   expect(() =>
     backend.setPartMeshes([{ index: 2, level: "detailed", part: part("c", 20) }]),
   ).toThrow("part 2 is not in the palette");
+});
+
+const CHUNK = 640;
+const OPAQUE = 255;
+const TRANSLUCENT = 128;
+const TWO_COLOURS_SRGB = Uint8Array.of(200, 0, 0, 0, 0, 200);
+
+function stud(): StudPrimitiveAsset {
+  return {
+    mesh: {
+      positions: Float32Array.of(0, 0, 0, 4, 0, 0, 0, 4, 0),
+      normals: Float32Array.of(0, 0, 1, 0, 0, 1, 0, 0, 1),
+      indices: Uint32Array.of(0, 1, 2),
+    },
+  };
+}
+
+function edgeBackend(): ThreeSceneBackend {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette({
+    detailed: { parts: [part("a", 20)], studPrimitives: [stud()] },
+    colorsSrgb: TWO_COLOURS_SRGB,
+    colorsAlpha: Uint8Array.of(OPAQUE, OPAQUE),
+    ldrawColors: new Map([[RED, { srgb: 0xc80000, alpha: OPAQUE }]]),
+  });
+  backend.setFarStuds([stud()]);
+  return backend;
+}
+
+function partsAndStudAt(originX: number, originZ: number): ChunkInstances {
+  return {
+    originX,
+    originZ,
+    count: 2,
+    partIndex: Uint16Array.of(0, 0),
+    colorIndex: Uint16Array.of(0, 1),
+    matrices: Float32Array.from([...IDENTITY, ...IDENTITY]),
+    studs: {
+      count: 1,
+      primitiveIndex: Uint8Array.of(0),
+      colorIndex: Uint16Array.of(0),
+      matrices: Float32Array.from(IDENTITY),
+    },
+  };
+}
+
+function drawnMeshes(backend: ThreeSceneBackend): Mesh[] {
+  const meshes: Mesh[] = [];
+  const scene: Object3D = backend["scene"];
+  scene.traverse((object) => {
+    if (object instanceof Mesh && object.visible && edgeIdOf(object) !== 0) meshes.push(object);
+  });
+  return meshes;
+}
+
+function drawnEdgeIds(backend: ThreeSceneBackend): number[] {
+  return drawnMeshes(backend).map(edgeIdOf);
+}
+
+const CONSIST = [0, 1, 2, 3, 4, 5, 6];
+const VEHICLE_EDGE_IDS = [
+  [2624768, 2626816],
+  [2887040, 2889088],
+  [3149312, 3151360],
+  [3411584, 3413632],
+  [3673856, 3675904],
+  [3936128, 3938176],
+  [2624768, 2626816],
+].flat();
+const GHOST_EDGE_IDS = [2362496, 2364544];
+
+it.each<{ readonly tier: ChunkTier; readonly chunks: ReadonlyArray<number> }>([
+  { tier: "near", chunks: [2048, 4096, 526592, 528640] },
+  { tier: "mid", chunks: [2048, 4096, 526592, 528640] },
+  { tier: "far", chunks: [2048, 526592] },
+])(
+  "tags each chunk mesh drawn at $tier by its chunk's edge slot and its ordinal at that tier, and vehicles and the ghost by theirs",
+  ({ tier, chunks }) => {
+    const backend = edgeBackend();
+    backend.setChunk(1, partsAndStudAt(0, 0));
+    backend.setChunk(2, partsAndStudAt(-CHUNK, 0));
+    for (const vehicle of CONSIST) backend.setVehicle(vehicle, partsAndStudAt(0, 0));
+    backend.setGhost(partsAndStudAt(0, 0));
+
+    backend.forceTier(tier);
+
+    expect(drawnEdgeIds(backend)).toEqual([...chunks, ...VEHICLE_EDGE_IDS, ...GHOST_EDGE_IDS]);
+  },
+);
+
+it("gives a chunk the same edge ids whether its far mesh arrived before it was set, after, or while its tier deferred the rebuild", () => {
+  const before = edgeBackend();
+  before.forceTier("mid");
+  before.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+  before.setChunk(1, partsAndStudAt(0, 0));
+  const after = edgeBackend();
+  after.forceTier("mid");
+  after.setChunk(1, partsAndStudAt(0, 0));
+  after.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+  const deferred = edgeBackend();
+  deferred.forceTier("near");
+  deferred.setChunk(1, partsAndStudAt(0, 0));
+  deferred.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+  deferred.forceTier("mid");
+
+  expect([drawnEdgeIds(before), drawnEdgeIds(after), drawnEdgeIds(deferred)]).toEqual([
+    [2048, 4096],
+    [2048, 4096],
+    [2048, 4096],
+  ]);
+});
+
+it("keeps edge ids when colours are appended, and refuses colours that change which colours share an alpha slot", () => {
+  const backend = edgeBackend();
+  backend.forceTier("near");
+  backend.setChunk(1, partsAndStudAt(0, 0));
+  backend.setColors(
+    Uint8Array.of(...TWO_COLOURS_SRGB, 0, 200, 0),
+    Uint8Array.of(OPAQUE, OPAQUE, TRANSLUCENT),
+  );
+  const meshes = drawnMeshes(backend).map((mesh) => mesh.id);
+
+  expect(drawnEdgeIds(backend)).toEqual([2048, 4096]);
+  expect(() => backend.setColors(TWO_COLOURS_SRGB, Uint8Array.of(OPAQUE, TRANSLUCENT))).toThrow(
+    "setColors may only append colours",
+  );
+  expect(drawnMeshes(backend).map((mesh) => mesh.id)).toEqual(meshes);
 });
 
 describe("the render origin", () => {

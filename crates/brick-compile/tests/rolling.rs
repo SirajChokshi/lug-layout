@@ -4,7 +4,7 @@ use std::f64::consts::TAU;
 
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::rolling::RollingSurface;
-use brick_compile::{compile_part, CompileOptions, Library, Lod};
+use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
 use common::{fixture_library, MemoryLibrary};
 use serde_json::json;
 
@@ -355,6 +355,7 @@ fn options<L: Library>(library: &L, lod: Lod) -> CompileOptions {
         rolling_mode: rolling_mode_from_studs(library, &stud_primitives),
         stud_primitives,
         unofficial_allowlist: Vec::new(),
+        technic: TechnicPrimitives::default(),
     }
 }
 
