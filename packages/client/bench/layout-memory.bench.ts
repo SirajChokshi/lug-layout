@@ -84,10 +84,16 @@ const OBJECT3D_CLASSES: ReadonlyArray<string> = [
   "Group",
   "Mesh",
   "InstancedMesh",
+  "StudMesh",
   "LineSegments",
   "DirectionalLight",
 ];
-const RENDERABLE_CLASSES: ReadonlySet<string> = new Set(["Mesh", "InstancedMesh", "LineSegments"]);
+const RENDERABLE_CLASSES: ReadonlySet<string> = new Set([
+  "Mesh",
+  "InstancedMesh",
+  "StudMesh",
+  "LineSegments",
+]);
 
 function fields(owner: string, names: ReadonlyArray<string>): ReadonlyMap<string, string> {
   return new Map(names.map((name) => [name, owner]));
@@ -103,6 +109,7 @@ const RULES: OwnerRules = {
     ["Scene", SCENE],
     ["Group", SCENE],
     ["Mesh", SCENE],
+    ["StudMesh", SCENE],
     ["BufferGeometry", GEOMETRY],
     ["BufferAttribute", GEOMETRY],
     ["PartMeshStream", PART_MESHES],
@@ -111,7 +118,7 @@ const RULES: OwnerRules = {
     [
       "ThreeSceneBackend",
       new Map([
-        ...fields(INSTANCES, ["ghostPage"]),
+        ...fields(INSTANCES, ["ghostPage", "studBases", "studLookups"]),
         ...fields(GEOMETRY, ["detailedLevel", "farLevel", "farModelGeometries", "partBounds"]),
         ...fields(SCENE, ["chunks", "chunkList", "scene"]),
       ]),
@@ -126,6 +133,13 @@ const RULES: OwnerRules = {
       new Map([
         ...fields(INSTANCES, ["instanceMatrix", "instanceColor"]),
         ...fields(GEOMETRY, ["geometry"]),
+      ]),
+    ],
+    [
+      "StudMesh",
+      new Map([
+        ...fields(INSTANCES, ["studTranslations", "studBasisAndColorIndex"]),
+        ...fields(SCENE, ["geometry"]),
       ]),
     ],
   ]),
