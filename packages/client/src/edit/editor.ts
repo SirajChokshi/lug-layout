@@ -1733,6 +1733,7 @@ export class Editor implements IEditor, IEditedWorld {
         cells: cellsWithin(this.assistLdu),
         plates: platesWithin(this.assistLdu),
       },
+      settled: true,
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
     this.hoverCell.keep(placeable, this.pick, mode, this.search);
