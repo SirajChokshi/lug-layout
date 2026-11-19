@@ -37,7 +37,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 
 **`status`** has no environment and no secrets. It HEADs the three manifests for the commit's input key at the bucket's public URL: the repository variable `PART_BUNDLE_BASE_URL` if it's set, otherwise `public_base_url` in `infra/cloudflare/part-bundles.json`. It also reads `current/latest.json` there. If all three manifests are served and the pointer already names them, the workflow ends there. That covers every commit that doesn't touch the bundle inputs, and nobody is asked to approve anything. If the variable is unset, a manifest is missing, or the URL can't be reached, it falls through to `publish`.
 
-**`publish`** runs in the `production` environment that #62's catalog deploy also uses, so it waits for the owner's approval:
+**`publish`** runs in the `production` environment that #62's catalog deploy also uses. That environment has no protection rules, so the job runs on its own after a merge:
 1. Checks the bucket itself for the three manifests, over R2's S3 API, and stops if they're all there.
 2. Otherwise, restores the pinned LDraw inputs and builds the bundle, including the compiler.
 3. Uploads the objects the bucket doesn't have yet.
@@ -131,7 +131,55 @@ The index is two levels, so a reader fetches only what its parts need:
 
 The `compile` op returns records only at the standard LOD, and refuses `records` at any other.
 
-Publishing to `brr-part-bundles` comes in a following change, through `src/publication/pinned-publication.ts` like library connectors. `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
+### Publishing
+
+The records publish to `brr-part-bundles` under `library-bake/`, through `src/publication/pinned-publication.ts`; `src/library-bake/publish.ts` describes them to it:
+- every record (`application/octet-stream`), standard GLB (`model/gltf-binary`) and bucket (`application/json`) under its own content-addressed name;
+- then the top index as `library-bake/library-bake.<first 16 hex of its pinned SHA-256>.json`.
+
+Uploading puts the index last, so a served index always has its files behind it. The upload skips any object the bucket already has, so an unchanged library uploads nothing new.
+
+**Keeping only the current and previous libraries.** `library-bake/latest.json` is the pointer: `{ "current": …, "previous": … }`, each naming a top index and its SHA-256. One PUT writes it, so both change together. Pointing at a new index makes the old current the previous; pointing at the current again changes nothing. After the pointer moves, `prune` deletes every object under `library-bake/` that neither the current nor the previous manifest references. A manifest references its top index, its 256 buckets, and every record and GLB its buckets list. Keeping the previous library means a site rolled back to the earlier build still finds every file. `prune` refuses, deleting nothing, if:
+- the pointer, any kept manifest (current, previous or retained, below) or any bucket can't be read and verified against its pin or content address;
+- the live set is empty;
+- the pointer, or the set of manifests it keeps, changes while the bucket is being listed.
+
+`prune --dry-run` lists every key and its size that it would delete. Each pointer command refuses any flag it doesn't take before doing any work, so `prune --dryrun` is an error, not a real prune.
+
+The pointer and prune are generic, in `pinned-publication.ts` (`PointerAdapter`, `movePointer`, `verifyServedPointer`, `pruneUnreferenced`, `runPointerCommand`):
+- **Adapters define the pointer.** An adapter gives the pointer's key and how to read and write it, so an existing pointer can keep its shape. The part bundle's `current/latest.json` can keep `manifestFile` and add `previous` beside it.
+- **Manifests are generic.** An adapter says what a manifest references:
+  - the index files it read and verified on the way;
+  - every other file, each with the SHA-256 it must have. For content-addressed files that's the prefix in the name; for files an index lists by full hash, like an LDraw library commit's, it's that hash.
+
+  `verify-pointer --all` checks every file against it.
+- **Adapters can retain more manifests.** Their files are kept beyond the current and previous ones. `prune` and `verify-pointer` read and verify them the same way. The part bundle can retain its committed fallback manifest, and the LDraw library the commits the live bundle manifests name. An adapter whose retained manifests come from another publication, like the LDraw library's, must publish in the same concurrency group as that publication. `prune` refuses if the retained set changes during its listing, but only the group stops it changing between that check and the deletes.
+
+Sharing a group across two differently triggered workflows has a catch: a newer run of one cancels a pending run of the other, and the cancelled publication doesn't run again until its next trigger. So such publications belong in one workflow that runs both, or the other workflow must be re-dispatched.
+- **`library-bake`** is the first adapter. `pinnedIndexPointer` serves any publication pinned by an index's SHA-256.
+
+`.github/workflows/library-bake.yml` runs on `main` when the pin, `src/library-bake/**`, `src/publication/**`, `src/r2.ts` or the bucket config change, and on demand:
+- **`status`** asks whether the public URL already serves the pinned index, and whether `latest.json` names it as current.
+- **`publish`** runs on every run. It uses the `production` environment, with the same Cloudflare token and secret handling as the part bundle's `publish`, in this order:
+  1. unless the bucket already holds the pinned index, it rebuilds the records, checks them against the pin and the licence gate (`library-bake --check`), and uploads them;
+  2. it checks every served file of the new manifest against its content address (`verify-served --all --wait`). It skips this only when the bucket already held the pinned index and `status` found it served and named as current by the pointer;
+  3. it moves the pointer (`point`), after checking that the bucket holds the manifest and its buckets;
+  4. it checks the current and previous manifests' index files through the served pointer (`verify-pointer --wait`; `--all` would also read every file);
+  5. it logs what pruning would delete (`prune --dry-run`), and deletes nothing.
+
+  Every step is idempotent, so any later run, pushed or on demand, finishes a publish that an earlier run left unfinished. `--wait` polls the public URL for the index or the pointer for up to 20 minutes, then checks the files once.
+
+**The workflow doesn't delete yet.** It publishes and logs a prune dry run, but never runs `prune` itself. Once every bundle manifest names a records index (`compiler.libraryBake`), keeping only library-bake's own current and previous could delete the index a live bundle names, such as the committed fallback, and sites on that bundle would silently compile. Deletion is enabled together with retaining the library-bake indexes that live bundle manifests name. Until then, storage grows by at most a few library versions.
+
+**Publishing is serialized.** The workflow has one concurrency group with `cancel-in-progress: false`, so two runs never overlap. A prune never sees another run's freshly uploaded objects before that run has pointed at them. That, with the reference set, is what makes pruning safe: there is no time-based grace period. GitHub never cancels the running run, but keeps at most one pending run per group: a newer queued run cancels an older pending one. Within this workflow that loses nothing, because the newer run does the whole sequence for its own, later pin. Setting `cancel-in-progress` to `true` would be unsafe, since it could stop a run between its upload and its pointer move, or mid-prune.
+
+**Until deletion is enabled, every published library stays.** Each new one adds only its changed files: 1,813 objects (85.6 MB) for three LDraw syncs, and 2.58 GB only if every part changes. Once `prune` runs, the bucket holds the current and previous libraries between publishes, and briefly a third, the new upload, until `prune` deletes the oldest: about 7.75 GB for three full libraries sharing nothing, against 5.17 GB for two.
+
+The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]`. `upload` reads `dist/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
+
+**Once deletion is enabled, a preview built against an older library loses its records.** A preview deployment built against a pin older than the previous one, and named by no live bundle, finds its records pruned, and its imports compile those parts instead.
+
+`src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
 ## Local development
 
