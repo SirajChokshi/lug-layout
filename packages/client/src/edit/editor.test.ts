@@ -71,7 +71,13 @@ import { commandEnabled, startPlay, type CommandId } from "../commands/editor-co
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import {
+  CONNECTOR_TABLES,
+  EDITOR,
+  MODEL_IMPORTER,
+  TRAIN_PLAY,
+  PLACEABLE_CATALOG,
+} from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
@@ -1186,6 +1192,128 @@ it("places an import while its studs are checked, offers none of them to the sta
   });
   expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
   expect(posesOf(editor)).toEqual(posesPending);
+}, 120_000);
+
+async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const importer = new GatedModelImporter();
+  const started = await startEditor([], fetcher, [], importer);
+  const { container, editor } = started;
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  importer.serve(importedRecord("checking.mpd", record));
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const importedPlaceable = () => {
+    const item = editor.snapshot().modelImport?.item ?? null;
+    const refId = item === null ? null : catalog.itemRefId(item);
+    return refId === null ? null : (catalog.placeables()[refId] ?? null);
+  };
+  return { ...started, importer, importedPlaceable, tables: container.get(CONNECTOR_TABLES) };
+}
+
+async function importChecking(editor: IEditor): Promise<string> {
+  await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  return editor.snapshot().modelImport?.item ?? "";
+}
+
+it("has an import's connector tables before it is announced placeable, and keeps the same tables, never unloaded, through the studs-landed swap", async () => {
+  const { editor, importer, importedPlaceable, tables } = await checkingImport();
+  const seen: Array<boolean> = [];
+  editor.subscribe(() => {
+    const placeable = importedPlaceable();
+    if (placeable) seen.push(tables.loaded(placeable) !== null);
+  });
+
+  await importChecking(editor);
+  const pending = importedPlaceable();
+  const announced = pending === null ? null : tables.loaded(pending);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const checked = importedPlaceable();
+
+  expect({
+    status: editor.snapshot().modelImport?.status,
+    swapped: checked !== null && checked !== pending && checked.id === pending?.id,
+    announced: announced !== null,
+    sameTables: checked !== null && tables.loaded(checked) === announced,
+    everUnloaded: seen.includes(false),
+  }).toEqual({
+    status: "placeable",
+    swapped: true,
+    announced: true,
+    sameTables: true,
+    everUnloaded: false,
+  });
+}, 120_000);
+
+it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
+  const outcome = async (queued: boolean) => {
+    const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>
+      path.includes("/connectivity-44336p01."),
+    );
+    const baseplateGate = new HeldText(roadPlateGate, (path) =>
+      path.includes("/connectivity-3811."),
+    );
+    const { editor, backend } = await checkingImport(baseplateGate);
+    const item = await importChecking(editor);
+    await placer(editor, backend)(item, 0, 0);
+    const clicks: Array<[string, HeldText]> = [
+      [BASEPLATE, baseplateGate],
+      [ROAD_PLATE, roadPlateGate],
+    ];
+    for (const [held, gate] of clicks) {
+      if (queued) {
+        placerNow(editor, backend)(held, 0, 0);
+        gate.open();
+        await settledChoice(editor);
+      } else {
+        gate.open();
+        await placer(editor, backend)(held, 0, 0);
+      }
+    }
+    const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
+      editor.snapshot();
+    return {
+      placements,
+      refusedClicks,
+      reason: lastRefusal?.reason ?? null,
+      studChecks,
+      queuedPlacement,
+      poses: posesOf(editor),
+    };
+  };
+
+  const [queued, direct] = [await outcome(true), await outcome(false)];
+
+  expect(queued).toEqual(direct);
+  expect(queued).toMatchObject({
+    placements: 2,
+    refusedClicks: 1,
+    studChecks: 1,
+    queuedPlacement: null,
+  });
+  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+}, 120_000);
+
+it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend, importer } = await checkingImport(gate);
+  const item = await importChecking(editor);
+  await placer(editor, backend)(item, 0, 0);
+
+  placerNow(editor, backend)(BASEPLATE, 2_560, 0);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const afterLanding = editor.snapshot().queuedPlacement;
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ afterLanding, placed: posesOf(editor) }).toEqual({
+    afterLanding: { item: BASEPLATE, x: 2_560, z: 0, rot: 0 },
+    placed: expect.arrayContaining([`${BASEPLATE} 2560,0 y0`]),
+  });
+  expect(editor.snapshot().placements).toBe(2);
 }, 120_000);
 
 it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
