@@ -83,6 +83,10 @@ export class LatticeStudFinder implements MateFinder {
     this.stamp(model, pose, false);
   }
 
+  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.propose(model, window, out);
+  }
+
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
     this.prepare(model);

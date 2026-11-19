@@ -89,6 +89,10 @@ export class TrackEndFinder implements MateFinder {
     }
   }
 
+  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.propose(model, window, out);
+  }
+
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
     checkPose(window);
     this.turn(model);

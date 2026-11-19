@@ -126,10 +126,6 @@ function firstAtLeast(values: Int32Array, from: number, to: number, value: numbe
   return low;
 }
 
-function isWholeLdu(sixteenthsAlong: number): boolean {
-  return sixteenthsAlong % SIXTEENTHS_PER_LDU === 0;
-}
-
 class TurnedModel {
   model: ModelConnectors | null = null;
   order = new Int32Array(0);
@@ -256,6 +252,19 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.proposeStepping(model, window, out, false);
+  }
+
+  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.proposeStepping(model, window, out, true);
+  }
+
+  private proposeStepping(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    latticeOnly: boolean,
+  ): void {
     checkPose(window);
     const turned = this.turn(model);
     const reach = this.modelTravel(turned);
@@ -299,7 +308,7 @@ export class SparseConnectorFinder implements MateFinder {
             ) {
               if (!this.reachable(slot, near, 0, reach)) continue;
               const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
-              this.proposeFromSlot(slot, model.count, rot, window, travel, out);
+              this.proposeFromSlot(slot, model.count, rot, window, travel, latticeOnly, out);
             }
           }
         }
@@ -747,6 +756,7 @@ export class SparseConnectorFinder implements MateFinder {
     rot: number,
     window: SnapWindow,
     travel: number,
+    latticeOnly: boolean,
     out: CandidatePoses,
   ): void {
     const turned = this.turned;
@@ -766,7 +776,9 @@ export class SparseConnectorFinder implements MateFinder {
     const wantedSign = axisSign(wanted);
     const sAlong = wantedDimension === X ? sx : wantedDimension === Y ? sy : sz;
     const spanAlong = wantedDimension === Y ? spanY : spanXZ;
-    const latticeStep = wantedDimension === Y ? PLATE_SIXTEENTHS : SIXTEENTHS_PER_LDU;
+    const latticeStep =
+      wantedDimension === Y ? PLATE_SIXTEENTHS : latticeOnly ? STUD_SIXTEENTHS : SIXTEENTHS_PER_LDU;
+    const planStep = latticeOnly ? STUD_SIXTEENTHS : SIXTEENTHS_PER_LDU;
     const block = this.block;
     block[0] = cellOf(sx - spanXZ - ax, CELL_SIXTEENTHS);
     block[1] = cellOf(sy - spanY - ay, CELL_SIXTEENTHS);
@@ -803,7 +815,7 @@ export class SparseConnectorFinder implements MateFinder {
               sy - axisStep(wanted, Y) * d - (turned.position[m * VECTOR_FLOATS + Y] ?? 0);
             const shiftZ =
               sz - axisStep(wanted, Z) * d - (turned.position[m * VECTOR_FLOATS + Z] ?? 0);
-            if (!isWholeLdu(shiftX) || !isWholeLdu(shiftZ)) continue;
+            if (shiftX % planStep !== 0 || shiftZ % planStep !== 0) continue;
             if (shiftY % PLATE_SIXTEENTHS !== 0) continue;
             const plates = shiftY / PLATE_SIXTEENTHS;
             if (

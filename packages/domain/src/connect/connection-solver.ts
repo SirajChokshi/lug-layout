@@ -115,7 +115,7 @@ export class ConnectionSolver {
     out.clear();
     for (let f = 0; f < this.finders.length; f++) {
       const finder = this.finders[f];
-      if (finder && !finder.proposesEveryPose) finder.propose(model, window, out);
+      if (finder && !finder.proposesEveryPose) finder.proposeOnLattice(model, window, out);
     }
   }
 
