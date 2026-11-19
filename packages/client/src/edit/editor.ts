@@ -84,6 +84,7 @@ import {
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
+import type { PlacementHover } from "./placement-hover.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
@@ -288,6 +289,7 @@ export interface HoverView {
   readonly z: number;
   readonly yPlates: number;
   readonly refusal: string | null;
+  readonly placement: PlacementHover | null;
 }
 
 export interface PlaceableCoverView {
@@ -1500,6 +1502,7 @@ export class Editor implements IEditor, IEditedWorld {
       z: this.hoverZ,
       yPlates: this.hoverYPlates,
       refusal: this.hoverRefusal,
+      placement: null,
     };
   }
 
