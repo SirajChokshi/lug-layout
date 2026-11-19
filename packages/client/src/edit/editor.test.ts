@@ -91,6 +91,7 @@ import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 import { mateCounts } from "./placement-hover-view.ts";
+import type { PlacementHover } from "./placement-hover.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -1074,7 +1075,11 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
   });
 }, 120_000);
 
-function importedRecord(fileName: string, record: ModelRecord): ImportResult {
+function importedRecord(
+  fileName: string,
+  record: ModelRecord,
+  connectors: ReadonlyArray<PartConnectors | null> = record.parts.map(() => null),
+): ImportResult {
   const { model, parts } = record;
   const refused = refusedBake(fileName);
   const partIds = parts.map((part) => part.id);
@@ -1088,7 +1093,7 @@ function importedRecord(fileName: string, record: ModelRecord): ImportResult {
     matrices: model.matrices,
     partTransforms: model.partTransforms,
     submodels: model.submodels,
-    connectors: partIds.map(() => null),
+    connectors: [...connectors],
     bake: {
       lattice: model.lattice,
       latticeIssue: null,
@@ -1214,12 +1219,21 @@ it("places an import while its studs are checked, offers none of them to the sta
   expect(posesOf(editor)).toEqual(posesPending);
 }, 120_000);
 
-async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+async function checkingImport(
+  fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+  served = PLACEABLE_SET,
+  models: ReadonlyArray<string> = [],
+  bringsRecords = false,
+) {
   const importer = new GatedModelImporter();
-  const started = await startEditor([], fetcher, [], importer);
+  const started = await startEditor(models, fetcher, [], importer);
   const { container, editor } = started;
-  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
-  importer.serve(importedRecord("checking.mpd", record));
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const record = await loader.loadModelRecord("standard", served);
+  const connectors = bringsRecords
+    ? await Promise.all(record.parts.map((part) => loader.loadPartConnectors("standard", part.id)))
+    : undefined;
+  importer.serve(importedRecord("checking.mpd", record, connectors));
   const catalog = container.get(PLACEABLE_CATALOG);
   const importedPlaceable = () => {
     const item = editor.snapshot().modelImport?.item ?? null;
@@ -1314,6 +1328,53 @@ it("resolves clicks queued while the held item's tables load, over an import who
     queuedPlacement: null,
   });
   expect(queued.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
+}, 120_000);
+
+function hoverOutcome(placement: PlacementHover | null | undefined) {
+  return {
+    pose: placement?.pose,
+    accepted: placement?.accepted,
+    magnetised: placement?.magnetised,
+    magnet: placement?.magnet,
+    restsOn: [...new Set(placement?.restsOn.map((model) => model.item))],
+    mates: placement?.mates.length,
+  };
+}
+
+it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
+  const { editor, backend, importer, importedPlaceable } = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLACEABLE_SET],
+    true,
+  );
+  const item = await importChecking(editor);
+  const place = placer(editor, backend);
+  await place(item, 320, 320);
+  await place(item, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((entry) => entry.id === SET)?.studsWide ?? 0;
+  await chosen(editor, SET);
+  backend.aim(320 + wide * 20 - 20, 320);
+  const hover = () => {
+    editor.pointerMove(0, 0);
+    return hoverOutcome(editor.snapshot().hover?.placement);
+  };
+  const offersStuds = () => importedPlaceable()?.studLattice.onLattice.includes(1) ?? null;
+  const pending = { studChecks: editor.snapshot().studChecks, offersStuds: offersStuds() };
+  const pendingHover = hover();
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const republished = hoverOutcome(editor.snapshot().hover?.placement);
+
+  expect(pending).toEqual({ studChecks: 1, offersStuds: false });
+  expect(offersStuds()).toBe(true);
+  expect(pendingHover).toMatchObject({ accepted: true, magnetised: true, restsOn: [item] });
+  expect({ republished, moved: hover() }).toEqual({
+    republished: pendingHover,
+    moved: pendingHover,
+  });
 }, 120_000);
 
 it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
