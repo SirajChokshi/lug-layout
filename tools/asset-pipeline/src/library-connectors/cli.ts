@@ -8,7 +8,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
-import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import { extractLibrary, httpReader, pinnedArchive } from "../library/ldraw-library.ts";
+import { bundleBaseUrl, liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
 import {
   CONNECTOR_SOURCE_USE,
   extractShadowArchive,
@@ -32,6 +33,7 @@ const buildRoot = join(repoRoot, ".cache", "library-connectors-build");
 const outRoot = join(toolRoot, "dist", "library-connectors");
 const binary = join(repoRoot, "target", "release", "library-connectors");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(join(repoRoot, BUNDLE_DATA_FILES.lock), "utf8")) as InputLock;
@@ -163,6 +165,15 @@ const commands = {
       : "the index and both package indexes",
 };
 
+const libraryConnectorsPointerRetainingLiveBundles = {
+  ...libraryConnectorsPointer,
+  retained: async () =>
+    liveBundleLibraryConnectorsIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
   case "upload":
@@ -178,7 +189,7 @@ switch (process.argv[2]) {
       {
         storeConfigPath,
         readPin,
-        pointer: libraryConnectorsPointer,
+        pointer: libraryConnectorsPointerRetainingLiveBundles,
         manifestOf: (pin) => pin.index,
       },
       process.argv.slice(2),

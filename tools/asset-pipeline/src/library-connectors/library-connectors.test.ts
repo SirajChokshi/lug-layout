@@ -1,5 +1,4 @@
 import {
-  BundleCompiler,
   CONNECTIVITY_LICENSE,
   CONNECTOR_SOURCE,
   LIBRARY_CONNECTORS_INDEX_FILE,
@@ -23,6 +22,8 @@ import {
   pruneUnreferenced,
   uploadPublication,
 } from "../publication/pinned-publication.ts";
+import { liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
+import { partBundlePointer } from "../pointer/part-bundle-pointer.ts";
 import type { ObjectStore, PrunableStore, StoredObject } from "../r2.ts";
 import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
 
@@ -294,6 +295,61 @@ it("prune keeps the current and previous indexes and every record they share, de
   expect([...store.objects.keys()].toSorted()).toEqual(before);
 });
 
-it("no BundleCompiler field names a library-connectors index, since its prune keeps only its own current and previous; one that does needs that prune to retain what the live bundle manifests name, and library-connectors to publish in part-bundle.yml's concurrency group", () => {
-  expect(Object.keys(BundleCompiler.entries)).not.toContain("libraryConnectors");
+it("the library-connectors prune keeps the index a live bundle manifest names beyond its own current and previous, and refuses while a named index is missing", async () => {
+  const store = new MemoryStore();
+  const pins: LibraryConnectorsPin[] = [];
+  for (const piece of [2, 3, 4, 5]) {
+    const { out, pin } = await assembled(piece);
+    await uploadPublication(libraryConnectorsPublication, store, out, pin);
+    pins.push(pin);
+  }
+  const [fallbackPin, firstPin, secondPin, thirdPin] = pins;
+  if (!fallbackPin || !firstPin || !secondPin || !thirdPin) throw new Error("four pins");
+  const root = await mkdtemp(join(tmpdir(), "brr-library-live-"));
+  directories.push(root);
+  const fallbackPath = join(root, "bundle-fallback.json");
+  const manifests = {
+    fallback: "manifest.0000000000000001.json",
+    current: "manifest.0000000000000002.json",
+  };
+  await writeFile(fallbackPath, JSON.stringify({ manifest_file: manifests.fallback }));
+  const nameIndex = async (manifest: string, index: LibraryConnectorsPin["index"]) => {
+    for (const lod of ["standard", "low", "far"]) {
+      await store.put(
+        `${lod}/${manifest}`,
+        new TextEncoder().encode(JSON.stringify({ compiler: { libraryConnectors: index } })),
+      );
+    }
+  };
+  await nameIndex(manifests.fallback, fallbackPin.index);
+  await nameIndex(manifests.current, thirdPin.index);
+  const bundle = partBundlePointer(fallbackPath);
+  await store.put(bundle.key, bundle.encode({ current: manifests.current, previous: null }));
+  const adapter = {
+    ...libraryConnectorsPointer,
+    retained: () => liveBundleLibraryConnectorsIndexes(store.read, fallbackPath),
+  };
+  for (const pin of [firstPin, secondPin, thirdPin]) await movePointer(adapter, store, pin.index);
+  const keys = async (pin: LibraryConnectorsPin) => {
+    const { indexes, files } = await adapter.references(pin.index, store.read);
+    return [...indexes, ...files.map((file) => file.key)];
+  };
+  const kept = new Set([
+    ...(await keys(fallbackPin)),
+    ...(await keys(secondPin)),
+    ...(await keys(thirdPin)),
+  ]);
+  const firstOnly = (await keys(firstPin)).filter((key) => !kept.has(key));
+  expect(firstOnly.length).toBeGreaterThan(0);
+
+  const outcome = await pruneUnreferenced(adapter, store, false);
+
+  expect(outcome.doomed.map((object) => object.key).toSorted()).toEqual(firstOnly.toSorted());
+  expect((await keys(fallbackPin)).every((key) => store.objects.has(key))).toBe(true);
+  expect((await pruneUnreferenced(adapter, store, false)).deleted).toBe(0);
+
+  await nameIndex(manifests.fallback, firstPin.index);
+  const before = [...store.objects.keys()].toSorted();
+  await expect(pruneUnreferenced(adapter, store, false)).rejects.toThrow("is not stored");
+  expect([...store.objects.keys()].toSorted()).toEqual(before);
 });
