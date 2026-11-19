@@ -73,10 +73,12 @@ function connectors(specs: ReadonlyArray<ConnectorSpec>): ConnectorTable {
     Uint8Array.from(specs, (s) => s.gender),
     Uint8Array.from(specs, () => SOURCE_SHADOW),
     Uint8Array.from(specs, () => STATUS_VERIFIED),
-    Float32Array.from(specs.flatMap((s) => [...s.at])),
+    Int32Array.from(specs.flatMap((s) => s.at.map(sixteenths))),
     Int8Array.from(specs, (s) => s.axis),
-    new Float32Array(specs.length * 3),
+    new Float64Array(specs.length * 3),
     new Uint16Array(specs.length),
+    new Float64Array(specs.length * 3),
+    [],
   );
 }
 

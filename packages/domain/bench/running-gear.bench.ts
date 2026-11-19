@@ -1,3 +1,4 @@
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import type { PartRolling } from "@brr/schema/bundle";
@@ -54,10 +55,15 @@ function table(
     Uint8Array.from(specs, (s) => s[4]),
     Uint8Array.from(specs, () => SOURCE_SHADOW),
     Uint8Array.from(specs, () => STATUS_VERIFIED),
-    Float32Array.from(specs.flatMap((s) => [s[0], s[1], s[2]])),
+    Int32Array.from(
+      specs.flatMap((s) => [s[0], s[1], s[2]]),
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
+    ),
     Int8Array.from(specs, (s) => s[3]),
-    new Float32Array(specs.length * 3),
+    new Float64Array(specs.length * 3),
     new Uint16Array(specs.length),
+    new Float64Array(specs.length * 3),
+    [],
   );
 }
 

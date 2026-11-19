@@ -12,6 +12,7 @@ import type {
   VehicleWheelset,
 } from "@brr/schema/bundle";
 import {
+  connectorOriginLdu,
   AXIS_FREE,
   VECTOR_FLOATS,
   axisDimension,
@@ -309,11 +310,10 @@ export class RunningGearDetector {
     if (!part) return 0;
     frames.relate(instance, MODEL_ROOT, this.transform);
     const r = row * ROW;
-    const v = connector * VECTOR_FLOATS;
     return (
-      (this.transform[r] ?? 0) * (part.origin[v] ?? 0) +
-      (this.transform[r + 1] ?? 0) * (part.origin[v + 1] ?? 0) +
-      (this.transform[r + 2] ?? 0) * (part.origin[v + 2] ?? 0) +
+      (this.transform[r] ?? 0) * connectorOriginLdu(part, connector, 0) +
+      (this.transform[r + 1] ?? 0) * connectorOriginLdu(part, connector, 1) +
+      (this.transform[r + 2] ?? 0) * connectorOriginLdu(part, connector, 2) +
       (this.transform[r + TRANSLATION] ?? 0)
     );
   }

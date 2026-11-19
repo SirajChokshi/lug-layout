@@ -1,6 +1,7 @@
 import { compareExactRational, exactRationalFromFloat64, type ExactRational } from "@brr/math";
 import type { SnapMating } from "../connect/mating.ts";
 import {
+  connectorOriginLdu,
   AXIS_FREE,
   AXIS_POS_Y,
   VECTOR_FLOATS,
@@ -109,16 +110,15 @@ function normalize(sets: UnionFind, edges: ReadonlyArray<Edge>): void {
 
 function transformPoint(
   transform: Float64Array,
-  origin: Float32Array,
+  part: ConnectorTable,
   c: number,
   row: number,
 ): number {
   const r = row * ROW;
-  const v = c * VECTOR_FLOATS;
   return (
-    (transform[r] ?? 0) * (origin[v] ?? 0) +
-    (transform[r + 1] ?? 0) * (origin[v + 1] ?? 0) +
-    (transform[r + 2] ?? 0) * (origin[v + 2] ?? 0) +
+    (transform[r] ?? 0) * connectorOriginLdu(part, c, 0) +
+    (transform[r + 1] ?? 0) * connectorOriginLdu(part, c, 1) +
+    (transform[r + 2] ?? 0) * connectorOriginLdu(part, c, 2) +
     (transform[r + TRANSLATION] ?? 0)
   );
 }
@@ -377,12 +377,11 @@ export class BogieDetector {
   ): boolean {
     const part = parts[instances.partIndex[instance] ?? -1];
     if (!part || !frames.relate(instance, frame, this.transform)) return false;
-    const v = connector * VECTOR_FLOATS;
     return identifyPoint(
       this.transform,
-      part.origin[v] ?? 0,
-      part.origin[v + 1] ?? 0,
-      part.origin[v + 2] ?? 0,
+      connectorOriginLdu(part, connector, 0),
+      connectorOriginLdu(part, connector, 1),
+      connectorOriginLdu(part, connector, 2),
       coordinatesAcross(AXIS_POS_Y),
       out,
     );
@@ -616,7 +615,7 @@ export class BogieDetector {
         if (!part) continue;
         frames.relate(instance, MODEL_ROOT, this.transform);
         const height = exactRationalFromFloat64(
-          transformPoint(this.transform, part.origin, connector, VERTICAL),
+          transformPoint(this.transform, part, connector, VERTICAL),
         );
         const order = bestHeight === null ? 1 : compareExactRational(height, bestHeight);
         if (order > 0 || (order === 0 && neighbour < best)) {
@@ -685,12 +684,7 @@ export class BogieDetector {
     const part = parts[instances.partIndex[male] ?? -1];
     if (!part) return false;
     frames.relate(male, MODEL_ROOT, this.transform);
-    const pivot = transformPoint(
-      this.transform,
-      part.origin,
-      mates.maleConnector[pivotMate] ?? 0,
-      travel,
-    );
+    const pivot = transformPoint(this.transform, part, mates.maleConnector[pivotMate] ?? 0, travel);
     return low <= pivot && pivot <= high;
   }
 }
