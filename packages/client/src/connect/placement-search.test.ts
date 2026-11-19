@@ -19,7 +19,14 @@ import {
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, ZETA16_COEFFICIENT_COUNT, pose16, zeta16 } from "@brr/math";
+import {
+  PLATE_LDU,
+  pose16,
+  SIXTEENTHS_PER_LDU,
+  STUD_LDU,
+  zeta16,
+  ZETA16_COEFFICIENT_COUNT,
+} from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
@@ -127,10 +134,15 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Uint8Array.from(specs, ([, gender]) => gender),
     new Uint8Array(specs.length).fill(SOURCE_SHADOW),
     new Uint8Array(specs.length).fill(STATUS_VERIFIED),
-    Float32Array.from(specs.flatMap(([, , x, y, z]) => [x, y, z])),
+    Int32Array.from(
+      specs.flatMap(([, , x, y, z]) => [x, y, z]),
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
+    ),
     Int8Array.from(specs, ([, , , , , axis]) => axis),
-    new Float32Array(specs.length * 3),
+    new Float64Array(specs.length * 3),
     new Uint16Array(specs.length),
+    new Float64Array(specs.length * 3),
+    [],
   );
 }
 
