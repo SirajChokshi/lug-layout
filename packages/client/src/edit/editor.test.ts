@@ -2287,6 +2287,43 @@ it("places nothing while an item's connector tables load, and places a click mad
   );
 }, 120_000);
 
+it("decides a click queued while a set's tables load in the mode in effect when they load: assist magnetises it onto the module beside it, precise takes the cursor pose", async () => {
+  const queuedBesideModule = async (mode: "assist" | "precise") => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET], gate);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    editor.setPlacementMode(mode);
+    placerNow(editor, backend)(SET, clearOfModule, 320);
+    const queued = editor.snapshot().queuedPlacement !== null;
+    gate.open();
+    await settledChoice(editor);
+    const set = posesOf(editor).find((pose) => pose.startsWith(SET)) ?? "";
+    return { queued, set, clearOfModule };
+  };
+  const assist = await queuedBesideModule("assist");
+  const precise = await queuedBesideModule("precise");
+
+  expect({
+    queued: [assist.queued, precise.queued],
+    assistOnTheModule:
+      assist.set.endsWith(" y4") && !assist.set.includes(` ${assist.clearOfModule},`),
+    precise: precise.set,
+  }).toEqual({
+    queued: [true, true],
+    assistOnTheModule: true,
+    precise: `${SET} ${precise.clearOfModule},320 y0`,
+  });
+}, 240_000);
+
 it("lets go of a click made while an item loads once the pointer leaves that stud", async () => {
   const gate = heldConnectivity();
   const { editor, backend } = await startEditor([], gate);
