@@ -744,35 +744,37 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
   };
 }
 
-it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET]);
+it("refuses to turn a MILS module while a set lifted onto it rests on it, turns the set itself, and turns the module once the set is gone", async () => {
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
-  const set = `omr:${PLACEABLE_SET}`;
-  await loadCatalogItem(catalog, set);
-  await place(BASEPLATE, 0, 0);
-  await place(set, 0, 0);
-  const corner = 300;
+  await place(PLAIN_MODULE, 320, 320);
+  await place(SET, 320, 320);
+  const corner = 20;
 
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const baseplateUnderSet = turnOutcome(editor, 1);
-  const baseplateUnderSetBack = turnOutcome(editor, -1);
-  expect(selectAt(editor, backend, 0, 0)?.item).toBe(set);
-  const setOnBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const moduleUnderSet = turnOutcome(editor, 1);
+  const moduleUnderSetBack = turnOutcome(editor, -1);
+  const setSelection = selectAt(editor, backend, 320, 320);
+  expect(setSelection?.item).toBe(SET);
+  const setOnModule = turnOutcome(editor, -1);
   editor.deleteSelection(0);
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const bareBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const bareModule = turnOutcome(editor, -1);
 
   const refused = {
     rot: 0,
     yPlates: 0,
-    refusal: expect.stringContaining(`rests on it`),
+    refusal: expect.stringContaining(`${PLACEABLE_SET} Level Crossing (2010) rests on it`),
     roadCells: 0,
   };
-  expect({ baseplateUnderSet, baseplateUnderSetBack, setOnBaseplate, bareBaseplate }).toEqual({
-    baseplateUnderSet: refused,
-    baseplateUnderSetBack: refused,
-    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
-    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+  expect(setSelection?.yPlates).toBeGreaterThan(0);
+  expect({ moduleUnderSet, moduleUnderSetBack, setOnModule, bareModule }).toEqual({
+    moduleUnderSet: refused,
+    moduleUnderSetBack: refused,
+    setOnModule: { rot: 3, yPlates: setSelection?.yPlates, refusal: null, roadCells: 0 },
+    bareModule: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
   });
 }, 120_000);
 
@@ -1072,7 +1074,7 @@ it("shows the stud totals of whichever world is open: none after New World, the 
 
 const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
-const OVERLAP = "would overlap";
+const OVERLAP = "would hit";
 
 function posesOf(editor: IEditor) {
   const { refs, placements } = editor.dump();
@@ -1085,7 +1087,7 @@ const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
     refusedClicks: 1,
-    reason: expect.stringContaining(`${OVERLAP} 3811 Baseplate 32 x 32`),
+    reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
 };
@@ -1116,7 +1118,7 @@ it.each([
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
   { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
 ] as const)(
-  "with a 3811 placed, $name is refused only where two baseplates would share space",
+  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits",
   async ({ held, at, expected }) => {
     const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);

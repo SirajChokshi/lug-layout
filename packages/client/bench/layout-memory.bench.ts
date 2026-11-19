@@ -72,7 +72,6 @@ const NO_LOOK: LookSettings = {
 
 const PLACED = "client: PlacedChunks";
 const WORLD = "domain: World";
-const OCCUPANCY = "domain: OccupancyGrid";
 const HISTORY = "domain: EditHistory";
 const INSTANCES = "render: instance matrices and colours";
 const SCENE = "render: scene objects";
@@ -126,7 +125,7 @@ const RULES: OwnerRules = {
     ],
     ["PlaceableCatalog", fields(PART_MESHES, ["placeablesByRefId", "palette", "slots"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
-    ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
+    ["PlacedChunks", fields(SCENE, ["backend"])],
     ["ChunkRecord", fields(INSTANCES, ["page"])],
     ["Mesh", fields(GEOMETRY, ["geometry"])],
     [
