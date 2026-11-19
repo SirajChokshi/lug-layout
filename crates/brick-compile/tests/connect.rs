@@ -259,8 +259,10 @@ fn lower_tiers_fill_only_empty_slots_and_never_slots_a_clear_wiped() {
     ));
 }
 
+type PublishedRow = (Source, u16, Vec<(u8, f64, f64)>, Vec3);
+
 fn published_rows(faces: &[MatingFace]) -> Vec<PublishedRow> {
-    let mut rows: Vec<_> = faces
+    faces
         .iter()
         .map(|face| {
             (
@@ -273,14 +275,10 @@ fn published_rows(faces: &[MatingFace]) -> Vec<PublishedRow> {
                 face.origin,
             )
         })
-        .collect();
-    rows.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
-    rows
+        .collect()
 }
 
-type PublishedRow = (Source, u16, Vec<(u8, f64, f64)>, Vec3);
-
-fn in_published_order(mut rows: Vec<PublishedRow>) -> Vec<PublishedRow> {
+fn sorted(mut rows: Vec<PublishedRow>) -> Vec<PublishedRow> {
     rows.sort_by(|a, b| format!("{a:?}").cmp(&format!("{b:?}")));
     rows
 }
@@ -346,8 +344,8 @@ fn published_records_keep_one_face_per_exact_slot_and_receptor_from_the_highest_
     let receptor = vec![(SQUARE, 6.0, 4.0)];
     let stud_hole = vec![(ROUND, 6.0, 4.0)];
     assert_eq!(
-        published_rows(&records.connectivity.faces),
-        in_published_order(vec![
+        sorted(published_rows(&records.connectivity.faces)),
+        sorted(vec![
             (Source::Patch, 0, receptor.clone(), [-10.0, -24.0, 0.0]),
             (Source::Patch, 0, receptor, [10.0, -24.0, 0.0]),
             (
