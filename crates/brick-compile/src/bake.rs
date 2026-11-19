@@ -4,8 +4,8 @@ use std::sync::Arc;
 use crate::affine::{Affine, Vec3};
 use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::cover::{
-    model_cover, AxisSpan, CellsTooLarge, CoverInstance, CoverShard, ModelCover, ModelTooLarge,
-    Opacity, PartSolid, StudShape,
+    model_cover_with, AxisSpan, CellsTooLarge, CoverInstance, CoverModel, CoverShard, ModelCover,
+    ModelTooLarge, Opacity, PartSolid, ProbeCache, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
@@ -185,6 +185,7 @@ pub struct ModelBaker<'a, L: Library> {
     sources: Vec<PartSource>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    probes: ProbeCache,
     table_depth: f64,
 }
 
@@ -197,6 +198,7 @@ pub struct KeptParts {
     sources: Vec<PartSource>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    probes: ProbeCache,
     table_depth: f64,
 }
 
@@ -246,6 +248,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources: Vec::new(),
             solids: Vec::new(),
             studs: Vec::new(),
+            probes: ProbeCache::default(),
             table_depth,
         })
     }
@@ -265,6 +268,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources,
             solids,
             studs,
+            probes,
             table_depth,
         } = kept;
         ModelBaker {
@@ -278,6 +282,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources,
             solids,
             studs,
+            probes,
             table_depth,
         }
     }
@@ -292,6 +297,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources,
             solids,
             studs,
+            probes,
             table_depth,
             ..
         } = self;
@@ -304,6 +310,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources,
             solids,
             studs,
+            probes,
             table_depth,
         }
     }
@@ -403,14 +410,18 @@ impl<'a, L: Library> ModelBaker<'a, L> {
                 studs: &self.studs[slot],
             })
             .collect();
-        model_cover(
-            &instances,
-            &self.solids,
-            &self.opacity,
+        let model = CoverModel {
+            instances: &instances,
+            solids: &self.solids,
+            opacity: &self.opacity,
+            stud: self.stud_shape,
+        };
+        model_cover_with(
+            &model,
             lattice.map(|lattice| (lattice.phase, lattice.phase_layer_y)),
-            self.stud_shape,
             shard,
             self.table_depth,
+            &mut self.probes,
         )
         .map_err(|ModelTooLarge { cells, x, z }| BakeError::Cover {
             cells,
