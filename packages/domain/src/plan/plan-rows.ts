@@ -251,7 +251,7 @@ export class RowList {
 export class PlanRows {
   capacity = INITIAL_ROWS;
   count = 0;
-  chunkKey = new Int32Array(INITIAL_ROWS);
+  chunkKey = new Float64Array(INITIAL_ROWS);
   slot = new Int32Array(INITIAL_ROWS);
   ref = new Int32Array(INITIAL_ROWS);
   labelBase = new Int32Array(INITIAL_ROWS);
@@ -353,7 +353,7 @@ export class PlanRows {
   }
 
   private grow(capacity: number): void {
-    this.chunkKey = grownInt32(this.chunkKey, capacity);
+    this.chunkKey = grownFloat64(this.chunkKey, capacity);
     this.slot = grownInt32(this.slot, capacity);
     this.ref = grownInt32(this.ref, capacity);
     this.labelBase = grownInt32(this.labelBase, capacity);
