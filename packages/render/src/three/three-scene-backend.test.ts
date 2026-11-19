@@ -1,5 +1,6 @@
 import { INHERIT_COLOR, type PartAsset, type PartMesh } from "@brr/catalog";
-import { expect, it } from "vitest";
+import { CHUNK_LDU } from "@brr/math";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChunkInstances, NeededMeshListener, PartPalette } from "../scene-backend.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
 
@@ -7,6 +8,8 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const TILTED = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0];
 const CLOSE_EYE_LDU = 20;
 const DISTANT_EYE_LDU = 10_000_000;
+const VIEW_EYE_HEIGHT_LDU = 2_000;
+const WELL_PAST_SETTLE_MS = 1_000;
 const RED = 4;
 const NO_STUDS = {
   count: 0,
@@ -236,4 +239,38 @@ it("swaps meshes, far studs and far model meshes while chunks, a vehicle, a ghos
   expect(() =>
     backend.setPartMeshes([{ index: 2, level: "detailed", part: part("c", 20) }]),
   ).toThrow("part 2 is not in the palette");
+});
+
+describe("the render origin", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("rebases to the eye's chunk once the eye has been still for the settle time, without another setView", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const backend = new ThreeSceneBackend();
+    backend.resize(640, 480);
+    const z = CHUNK_LDU / 2;
+    const firstX = CHUNK_LDU / 2;
+    const nextChunkX = CHUNK_LDU + CHUNK_LDU / 2;
+    const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
+      backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+
+    backend.setView(firstX, VIEW_EYE_HEIGHT_LDU, z, firstX, 0, z + 1);
+    backend.setView(nextChunkX, VIEW_EYE_HEIGHT_LDU, z, nextChunkX, 0, z + 1);
+    const whileMoving = rebasedChunks();
+    vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
+    const ray = new Float64Array(6);
+    backend.rayThrough(0, 0, ray);
+
+    expect({ whileMoving, settled: rebasedChunks(), eyeX: ray[0], eyeZ: ray[2] }).toEqual({
+      whileMoving: [[0, 0]],
+      settled: [
+        [0, 0],
+        [1, 0],
+      ],
+      eyeX: nextChunkX,
+      eyeZ: z,
+    });
+  });
 });

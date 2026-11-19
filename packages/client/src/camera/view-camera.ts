@@ -28,6 +28,7 @@ const CORNER_SIDES = [-1, -1, 1, -1, 1, 1, -1, 1] as const;
 const CORNER_FLOATS = CORNER_SIDES.length;
 export const FOOTPRINT_FLOATS = CORNER_FLOATS + 2;
 const FOOTPRINT_KEY_FLOATS = 13;
+const SENT_VIEW_FLOATS = 8;
 const BOX_CORNERS = 8;
 
 export type CameraTarget = Pick<ISceneBackend, "setView">;
@@ -91,6 +92,7 @@ export class ViewCamera {
   private readonly grabbed = new Float64Array(2);
   private readonly footprintKey = new Float64Array(FOOTPRINT_KEY_FLOATS).fill(Number.NaN);
   private readonly lastFootprint = new Float64Array(FOOTPRINT_FLOATS);
+  private readonly sentView = new Float64Array(SENT_VIEW_FLOATS).fill(Number.NaN);
   private readonly footprintNdc = new Float64Array(FOOTPRINT_FLOATS);
   private readonly ndc = new Float64Array(2);
 
@@ -535,6 +537,20 @@ export class ViewCamera {
     return this.keep(key, 12, this.safeBottomPx) || moved;
   }
 
+  private viewMoved(eyeX: number, eyeY: number, eyeZ: number): boolean {
+    const sent = this.sentView;
+    const { pose } = this;
+    let moved = false;
+    moved = this.keep(sent, 0, eyeX) || moved;
+    moved = this.keep(sent, 1, eyeY) || moved;
+    moved = this.keep(sent, 2, eyeZ) || moved;
+    moved = this.keep(sent, 3, pose.targetX) || moved;
+    moved = this.keep(sent, 4, pose.targetY) || moved;
+    moved = this.keep(sent, 5, pose.targetZ) || moved;
+    moved = this.keep(sent, 6, this.orthographic ? 1 : 0) || moved;
+    return this.keep(sent, 7, this.orthographic ? this.halfHeight : 0) || moved;
+  }
+
   private keep(key: Float64Array, index: number, value: number): boolean {
     if (key[index] === value) return false;
     key[index] = value;
@@ -564,6 +580,7 @@ export class ViewCamera {
     const eyeX = pose.targetX + horizontal * Math.cos(pose.yaw);
     const eyeY = pose.targetY + eyeDistance * Math.sin(pose.pitch);
     const eyeZ = pose.targetZ + horizontal * Math.sin(pose.yaw);
+    if (!this.viewMoved(eyeX, eyeY, eyeZ)) return;
     if (this.orthographic) {
       backend.setView(eyeX, eyeY, eyeZ, pose.targetX, pose.targetY, pose.targetZ, this.halfHeight);
       return;

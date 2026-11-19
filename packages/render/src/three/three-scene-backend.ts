@@ -491,6 +491,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly rebases: RebaseEvent[] = [];
   private rebaseCount = 0;
   private eyeMovedAt = 0;
+  private settledEyeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -1562,7 +1563,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
-    this.fitShadowRange();
     if (viewChanged) this.applyTiers();
   }
 
@@ -1616,8 +1616,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const far =
       Math.abs(chunkX - originChunkX) > REBASE_DISTANCE_CHUNKS ||
       Math.abs(chunkZ - originChunkZ) > REBASE_DISTANCE_CHUNKS;
-    const settled = performance.now() - this.eyeMovedAt >= SETTLED_EYE_MS;
-    if (this.rebaseCount > 0 && !far && (atEye || !settled)) return;
+    if (this.rebaseCount > 0 && !far) {
+      if (atEye) return;
+      if (performance.now() - this.eyeMovedAt < SETTLED_EYE_MS) {
+        this.scheduleSettledEye();
+        return;
+      }
+    }
     const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
@@ -1668,6 +1673,29 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       ms: performance.now() - started,
     });
   }
+
+  private scheduleSettledEye(): void {
+    if (this.settledEyeTimer !== null) return;
+    this.settledEyeTimer = setTimeout(
+      this.followSettledEye,
+      this.eyeMovedAt + SETTLED_EYE_MS - performance.now(),
+    );
+  }
+
+  private readonly followSettledEye = (): void => {
+    this.settledEyeTimer = null;
+    const remainingMs = this.eyeMovedAt + SETTLED_EYE_MS - performance.now();
+    if (remainingMs > 0) {
+      this.settledEyeTimer = setTimeout(this.followSettledEye, remainingMs);
+      return;
+    }
+    const rebases = this.rebaseCount;
+    this.followEye();
+    if (this.rebaseCount === rebases) return;
+    this.aim(this.perspective, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
+    this.aim(this.orthographic, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
+    this.changed = true;
+  };
 
   rebaseLog(): ReadonlyArray<RebaseEvent> {
     return this.rebases;
@@ -1871,6 +1899,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
+    this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
     renderer.info.reset();
