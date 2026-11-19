@@ -15,6 +15,7 @@ import {
   InstancedMesh,
   LineBasicNodeMaterial,
   LineSegments,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
   NearestFilter,
@@ -29,6 +30,7 @@ import {
   type BufferGeometry,
   type Material,
   MeshStandardNodeMaterial,
+  type Object3D,
   type Sphere,
   type TextureNode,
 } from "three/webgpu";
@@ -152,6 +154,7 @@ const TIER_COUNT = 3;
 const TIER_NAMES: ReadonlyArray<ChunkTier> = ["near", "mid", "far"];
 const SPHERE_DOUBLES = 4;
 const MESH_SPHERE_DOUBLES = 2 * SPHERE_DOUBLES;
+const SHARED_IDENTITY = new Matrix4();
 const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   near: TIER_NEAR,
   mid: TIER_MID,
@@ -337,6 +340,12 @@ function pageNeeds(page: InstancePage, tiered: boolean): ChunkNeeds {
     first = next;
   }
   return needs.build();
+}
+
+function aliasParentWorld(mesh: Object3D, parent: Object3D): void {
+  mesh.matrix = SHARED_IDENTITY;
+  mesh.matrixWorld = parent.matrixWorld;
+  mesh.matrixWorldAutoUpdate = false;
 }
 
 function disposeInstancedChildren(layer: Group): void {
@@ -1568,7 +1577,18 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const start = meshes.start[row] ?? 0;
       const end = start + Math.max(meshes.nearCount[row] ?? 0, meshes.shellCount[row] ?? 0);
       if (meshes.kind[row] === MESH_KIND_STUD) {
-        holder.add(this.studRow(page, meshes, row, start, end, materials, shellMaterials, swaps));
+        const studMesh = this.studRow(
+          page,
+          meshes,
+          row,
+          start,
+          end,
+          materials,
+          shellMaterials,
+          swaps,
+        );
+        aliasParentWorld(studMesh, holder);
+        holder.add(studMesh);
         continue;
       }
       if (!views || start !== viewsStart || end !== viewsEnd) {
@@ -1576,7 +1596,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         viewsStart = start;
         viewsEnd = end;
       }
-      holder.add(this.partRow(meshes, row, views, materials, shellMaterials, swaps));
+      const partMesh = this.partRow(meshes, row, views, materials, shellMaterials, swaps);
+      aliasParentWorld(partMesh, holder);
+      holder.add(partMesh);
       if (shadowCasters && !this.tiered) this.addShadowCaster(shadowCasters, meshes, row, views);
     }
     if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, page);
@@ -1693,6 +1715,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
+    aliasParentWorld(mesh, layer);
     layer.add(mesh);
   }
 
@@ -1778,6 +1801,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
+    aliasParentWorld(mesh, layer);
     layer.add(mesh);
   }
 
