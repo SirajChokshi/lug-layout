@@ -58,8 +58,8 @@ export function connectorKind(
   const sections: ConnectorSectionView[] = [];
   for (let s = first; s < first + shapes.sectionCount(shape); s++) {
     sections.push({
-      profile: sectionProfile(male ? shapes.maleCode(s) : shapes.femaleCode(s)),
-      sizeLdu: male ? shapes.maleSize(s) : shapes.femaleSize(s),
+      profile: sectionProfile(shapes.internedCode(s)),
+      sizeLdu: shapes.internedSize(s),
       lengthLdu: shapes.span(s),
     });
   }
