@@ -22,6 +22,7 @@ import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import type { PartBoxes } from "./part-boxes.ts";
+import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const NO_PLACEMENT = -1;
@@ -69,7 +70,7 @@ export interface IPlacementSearch {
   add(
     placement: number,
     model: ModelConnectors,
-    volumes: CellVolumes,
+    volumes: FrozenVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
     pose: LatticePose,
@@ -90,8 +91,7 @@ export interface IPlacementSearch {
 
 interface Placed extends PlacedParts {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
-  readonly world: CellVolumes;
+  readonly volumes: FrozenVolumes;
 }
 
 class VolumeBuffer implements CellVolumes {
@@ -119,13 +119,14 @@ class VolumeBuffer implements CellVolumes {
     const cos = rot90Cos(rot);
     const sin = rot90Sin(rot);
     const yLdu = pose.yPlates * PLATE_LDU;
+    const { cellX, cellZ, bottomLdu, topLdu } = local;
     for (let c = 0; c < local.count; c++) {
-      const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cx = (cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cz = (cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
       this.cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
       this.cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-      this.bottomLdu[c] = (local.bottomLdu[c] ?? 0) + yLdu;
-      this.topLdu[c] = (local.topLdu[c] ?? 0) + yLdu;
+      this.bottomLdu[c] = (bottomLdu[c] ?? 0) + yLdu;
+      this.topLdu[c] = (topLdu[c] ?? 0) + yLdu;
     }
     this.count = local.count;
     return this;
@@ -180,7 +181,7 @@ export class PlacementSearch implements IPlacementSearch {
   add(
     placement: number,
     model: ModelConnectors,
-    volumes: CellVolumes,
+    volumes: FrozenVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
     pose: LatticePose,
@@ -190,35 +191,15 @@ export class PlacementSearch implements IPlacementSearch {
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
     const posed = technicScratch(technic);
     placeTechnicInto(technic, at, posed);
-    const world = new VolumeBuffer(volumes.count).place(volumes, at);
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.add(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    this.volumes.add(placement, this.scratch.place(volumes, at));
     this.solver.insert(model, at, placement);
-    this.placed.set(placement, { model, volumes, boxes, technic: posed, pose: at, world });
+    this.placed.set(placement, { model, volumes, boxes, technic: posed, pose: at });
   }
 
   remove(placement: number): void {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
-    const { world } = placed;
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.remove(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    this.volumes.remove(placement, this.scratch.place(placed.volumes, placed.pose));
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
   }

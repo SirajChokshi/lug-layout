@@ -7,7 +7,7 @@ const BOTTOM = 1;
 const TOP = 2;
 const NEXT = 3;
 const NO_RECORD = -1;
-const INITIAL_RECORDS = 256;
+const GROWTH = 1.25;
 export const NO_VOLUME_TOP = -0x8000_0000;
 
 function chunkOfCell(cell: number): number {
@@ -22,19 +22,31 @@ function cellIndex(cellX: number, cellZ: number): number {
 
 class VolumeChunk {
   readonly heads = new Int32Array(CELLS_PER_CHUNK).fill(NO_RECORD);
-  records = new Int32Array(INITIAL_RECORDS * RECORD_FIELDS);
+  records = new Int32Array(0);
+  incoming = 0;
   private used = 0;
   private free = NO_RECORD;
+  private freed = 0;
+
+  reserveIncoming(): void {
+    const appended = Math.max(0, this.incoming - this.freed);
+    this.incoming = 0;
+    const needed = (this.used + appended) * RECORD_FIELDS;
+    if (needed <= this.records.length) return;
+    const stepped = Math.ceil((this.records.length / RECORD_FIELDS) * GROWTH) * RECORD_FIELDS;
+    const grown = new Int32Array(Math.max(needed, stepped));
+    grown.set(this.records);
+    this.records = grown;
+  }
 
   push(cell: number, owner: number, bottom: number, top: number): void {
     let r = this.free;
     if (r !== NO_RECORD) {
       this.free = this.records[r + NEXT] ?? NO_RECORD;
+      this.freed--;
     } else {
       if ((this.used + 1) * RECORD_FIELDS > this.records.length) {
-        const grown = new Int32Array(this.records.length * 2);
-        grown.set(this.records);
-        this.records = grown;
+        throw new RangeError(`chunk records were not reserved for cell ${cell}`);
       }
       r = this.used++ * RECORD_FIELDS;
     }
@@ -65,6 +77,7 @@ class VolumeChunk {
       else this.records[previous + NEXT] = next;
       this.records[r + NEXT] = this.free;
       this.free = r;
+      this.freed++;
       return true;
     }
     return false;
@@ -82,31 +95,40 @@ export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boole
 export class VolumeIndex {
   private readonly byChunkX = new Map<number, Map<number, VolumeChunk>>();
 
-  add(owner: number, cellX: number, cellZ: number, bottomLdu: number, topLdu: number): void {
-    if (!Number.isInteger(bottomLdu) || !Number.isInteger(topLdu) || topLdu <= bottomLdu) {
-      throw new RangeError(`volume [${bottomLdu}, ${topLdu}) LDU is not a non-empty integer span`);
+  add(owner: number, volumes: CellVolumes): void {
+    for (let c = 0; c < volumes.count; c++) {
+      const bottom = volumes.bottomLdu[c] ?? 0;
+      const top = volumes.topLdu[c] ?? 0;
+      if (!Number.isInteger(bottom) || !Number.isInteger(top)) {
+        throw new RangeError(`volume [${bottom}, ${top}) LDU is not an integer span`);
+      }
+      if (top <= bottom) continue;
+      this.chunkFor(volumes.cellX[c] ?? 0, volumes.cellZ[c] ?? 0).incoming++;
     }
-    const chunkX = chunkOfCell(cellX);
-    const chunkZ = chunkOfCell(cellZ);
-    let rows = this.byChunkX.get(chunkX);
-    if (!rows) {
-      rows = new Map<number, VolumeChunk>();
-      this.byChunkX.set(chunkX, rows);
+    for (let c = 0; c < volumes.count; c++) {
+      const bottom = volumes.bottomLdu[c] ?? 0;
+      const top = volumes.topLdu[c] ?? 0;
+      if (top <= bottom) continue;
+      const cellX = volumes.cellX[c] ?? 0;
+      const cellZ = volumes.cellZ[c] ?? 0;
+      const chunk = this.chunkFor(cellX, cellZ);
+      if (chunk.incoming > 0) chunk.reserveIncoming();
+      chunk.push(cellIndex(cellX, cellZ), owner, bottom, top);
     }
-    let chunk = rows.get(chunkZ);
-    if (!chunk) {
-      chunk = new VolumeChunk();
-      rows.set(chunkZ, chunk);
-    }
-    chunk.push(cellIndex(cellX, cellZ), owner, bottomLdu, topLdu);
   }
 
-  remove(owner: number, cellX: number, cellZ: number, bottomLdu: number, topLdu: number): void {
-    const chunk = this.chunkAt(cellX, cellZ);
-    if (!chunk?.unlink(cellIndex(cellX, cellZ), owner, bottomLdu, topLdu)) {
-      throw new RangeError(
-        `owner ${owner} has no volume [${bottomLdu}, ${topLdu}) at cell ${cellX}, ${cellZ}`,
-      );
+  remove(owner: number, volumes: CellVolumes): void {
+    for (let c = 0; c < volumes.count; c++) {
+      const bottom = volumes.bottomLdu[c] ?? 0;
+      const top = volumes.topLdu[c] ?? 0;
+      if (top <= bottom) continue;
+      const cellX = volumes.cellX[c] ?? 0;
+      const cellZ = volumes.cellZ[c] ?? 0;
+      if (!this.chunkAt(cellX, cellZ)?.unlink(cellIndex(cellX, cellZ), owner, bottom, top)) {
+        throw new RangeError(
+          `owner ${owner} has no volume [${bottom}, ${top}) at cell ${cellX}, ${cellZ}`,
+        );
+      }
     }
   }
 
@@ -150,14 +172,30 @@ export class VolumeIndex {
   private chunkAt(cellX: number, cellZ: number): VolumeChunk | undefined {
     return this.byChunkX.get(chunkOfCell(cellX))?.get(chunkOfCell(cellZ));
   }
+
+  private chunkFor(cellX: number, cellZ: number): VolumeChunk {
+    const chunkX = chunkOfCell(cellX);
+    const chunkZ = chunkOfCell(cellZ);
+    let rows = this.byChunkX.get(chunkX);
+    if (!rows) {
+      rows = new Map<number, VolumeChunk>();
+      this.byChunkX.set(chunkX, rows);
+    }
+    let chunk = rows.get(chunkZ);
+    if (!chunk) {
+      chunk = new VolumeChunk();
+      rows.set(chunkZ, chunk);
+    }
+    return chunk;
+  }
 }
 
 export interface CellVolumes {
   readonly count: number;
-  readonly cellX: Int32Array;
-  readonly cellZ: Int32Array;
-  readonly bottomLdu: Int32Array;
-  readonly topLdu: Int32Array;
+  readonly cellX: ArrayLike<number>;
+  readonly cellZ: ArrayLike<number>;
+  readonly bottomLdu: ArrayLike<number>;
+  readonly topLdu: ArrayLike<number>;
 }
 
 export interface OverlapHit extends VolumeHit {

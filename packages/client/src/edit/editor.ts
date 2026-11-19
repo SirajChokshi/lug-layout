@@ -25,7 +25,6 @@ import {
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
-  type CellVolumes,
   type ModelConnectors,
   type TechnicSet,
 } from "@brr/domain";
@@ -80,7 +79,7 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
-import { placeableVolumes } from "../connect/placeable-volumes.ts";
+import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
@@ -443,7 +442,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
 
 interface Connected {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
+  readonly volumes: FrozenVolumes;
   readonly boxes: PartBoxes;
   readonly technic: TechnicSet;
 }
@@ -2231,7 +2230,7 @@ export class Editor implements IEditor, IEditedWorld {
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
-        volumes: placeableVolumes(placeable),
+        volumes: FrozenVolumes.ofPlaceable(placeable),
         boxes,
         technic: modelTechnic(
           parts.map((part) => part.technic),
