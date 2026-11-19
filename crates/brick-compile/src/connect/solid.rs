@@ -195,6 +195,69 @@ struct Attainer {
     inner: f64,
     rim: f64,
     along: Option<f64>,
+    wall_foot: Option<Ring>,
+}
+
+fn circle_crossings(polygon: &[Local], radius: f64) -> Vec<Local> {
+    let squared = radius * radius;
+    let mut crossings = Vec::new();
+    for (k, a) in polygon.iter().enumerate() {
+        let b = polygon[(k + 1) % polygon.len()];
+        let (du, dv, dd) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+        let qa = du * du + dv * dv;
+        if qa == 0.0 {
+            continue;
+        }
+        let qb = 2.0 * (a[0] * du + a[1] * dv);
+        let qc = a[0] * a[0] + a[1] * a[1] - squared;
+        let discriminant = qb * qb - 4.0 * qa * qc;
+        if discriminant < 0.0 {
+            continue;
+        }
+        let root = discriminant.sqrt();
+        for t in [(-qb - root) / (2.0 * qa), (-qb + root) / (2.0 * qa)] {
+            if (0.0..=1.0).contains(&t) {
+                crossings.push([a[0] + t * du, a[1] + t * dv, a[2] + t * dd]);
+            }
+        }
+    }
+    crossings
+}
+
+fn meets_circle_only_at_vertices(polygon: &[Local], contact: f64, depth: f64) -> bool {
+    let on_circle = |p: &Local| {
+        (planar_length(p[0], p[1]) - contact).abs() <= IDENTIFY_REPRESENTATION_GUARD_LDU
+    };
+    let at_vertex = |q: &Local| {
+        polygon.iter().any(|p| {
+            on_circle(p)
+                && planar_length(p[0] - q[0], p[1] - q[1]) <= IDENTIFY_REPRESENTATION_GUARD_LDU
+        })
+    };
+    let mut met = false;
+    for p in polygon {
+        if p[2] <= depth && planar_length(p[0], p[1]) <= contact + IDENTIFY_REPRESENTATION_GUARD_LDU
+        {
+            if !on_circle(p) {
+                return false;
+            }
+            met = true;
+        }
+    }
+    met && circle_crossings(polygon, contact)
+        .iter()
+        .all(|q| q[2] > depth || at_vertex(q))
+}
+
+fn only_wall_feet_on_circle(attaining: &[Attainer], contact: f64, depth: f64) -> bool {
+    let reach = depth + IDENTIFY_LDU;
+    let mut touching = attaining.iter().filter(|a| a.rim <= reach).peekable();
+    touching.peek().is_some()
+        && touching.all(|a| {
+            a.wall_foot
+                .as_ref()
+                .is_some_and(|polygon| meets_circle_only_at_vertices(polygon, contact, reach))
+        })
 }
 
 #[derive(Clone, Debug)]
@@ -1691,6 +1754,7 @@ impl Solid {
                 inner: d,
                 rim: d,
                 along,
+                wall_foot: None,
             });
         }
         let analytic = attaining
@@ -1708,15 +1772,21 @@ impl Solid {
             }
             let inner = first_depth(&polygon, inside)?;
             let rim = first_depth(&polygon, contact).unwrap_or(inner);
+            let wall_foot = (rim < inner && newell(&polygon)[2] == 0.0).then_some(polygon);
             attaining.push(Attainer {
                 inner,
                 rim,
                 along: facet.front.map(|front| front[probe.axis] * probe.inward),
+                wall_foot,
             });
             Some(inner)
         });
-        let depth = attaining.iter().map(|a| a.rim).fold(band, f64::min);
-        let interior = band <= depth + IDENTIFY_LDU;
+        let mut depth = attaining.iter().map(|a| a.rim).fold(band, f64::min);
+        let mut interior = band <= depth + IDENTIFY_LDU;
+        if !interior && only_wall_feet_on_circle(&attaining, contact, depth) {
+            depth = band;
+            interior = true;
+        }
         let mut faces_probe = None;
         for attainer in attaining {
             let (reading, floor) = if interior {
