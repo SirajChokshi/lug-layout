@@ -34,6 +34,7 @@ interface Manifest {
   readonly partTable: { readonly file: string };
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
+  readonly tablePlane: { readonly depthBelowTopLdu: number };
   readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
 }
 
@@ -70,11 +71,13 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       source,
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: [],
+      primitives: null,
       bundlePartIds: partTable.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentColors: manifest.colors
         .filter((color) => color.alpha < OPAQUE_ALPHA)
         .map((color) => color.code),
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
     });
   };

@@ -319,6 +319,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      tablePlane: manifest.tablePlane,
     };
   }
 
@@ -331,11 +332,13 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       compilerPath: `${lod}/${manifest.compiler.file}`,
       unofficialAllowlist: manifest.compiler.unofficialAllowlist,
       studPrimitiveNames: manifest.studPrimitives.map((primitive) => primitive.name),
+      primitives: manifest.compiler.primitives ?? null,
       partIds: manifest.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentCodes: manifest.colors
         .filter((color) => color.alpha < ALPHA_OPAQUE)
         .map((color) => color.code),
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
     };
   }
@@ -375,6 +378,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       models: manifest.models,
       trackCatalog: manifest.trackCatalog,
       trackShapes: manifest.trackShapes,
+      tablePlane: manifest.tablePlane,
     };
   }
 

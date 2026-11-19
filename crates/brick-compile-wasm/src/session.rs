@@ -11,7 +11,7 @@ use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileError, CompileOptions, Lod};
+use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
 
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
@@ -30,6 +30,7 @@ struct BakeInputs<'a> {
     stud_primitives: &'a [String],
     unofficial_allowlist: &'a [String],
     translucent: HashSet<u32>,
+    table_depth: f64,
     vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
     visibility_only: bool,
@@ -57,6 +58,7 @@ impl Session {
                 lod,
                 stud_primitives,
                 unofficial_allowlist,
+                primitives,
                 parts,
                 inline_checks,
             } => {
@@ -66,6 +68,10 @@ impl Session {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
+                    technic: primitives.as_ref().map_or_else(
+                        || Ok(TechnicPrimitives::default()),
+                        TechnicPrimitives::from_table,
+                    )?,
                     rolling_mode,
                 };
                 let model = request.text("source")?;
@@ -94,6 +100,7 @@ impl Session {
                 stud_primitives,
                 unofficial_allowlist,
                 translucent_colors,
+                table_depth_ldu,
                 vehicles,
                 shard,
             } => {
@@ -102,6 +109,7 @@ impl Session {
                     stud_primitives,
                     unofficial_allowlist,
                     translucent: translucent_colors.iter().copied().collect(),
+                    table_depth: *table_depth_ldu,
                     vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
@@ -247,7 +255,7 @@ fn compile(
             Ok(comparison) => InlineOutcome::measured(pair, &comparison),
             Err(error) => InlineOutcome::Failed {
                 pair,
-                failure: Failure::from(&CompileError::Flatten(error)),
+                failure: Failure::from(&error),
             },
         });
     }
@@ -324,6 +332,7 @@ fn bake_drawn(
         inputs.stud_primitives.to_vec(),
         inputs.unofficial_allowlist.to_vec(),
         inputs.translucent.clone(),
+        inputs.table_depth,
     )
     .map_err(|e| e.to_string())?;
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();

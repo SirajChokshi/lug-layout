@@ -520,11 +520,35 @@ export const CompilerVehicles = v.object({
   ),
 });
 export type CompilerVehicles = v.InferOutput<typeof CompilerVehicles>;
+export const TECHNIC_ROLES = ["hole", "pin", "axleEnd"] as const;
+
+export const PrimitiveConnectorTable = v.strictObject({
+  source: BundleSource,
+  license: v.string(),
+  primitives: v.array(
+    v.strictObject({
+      file: v.string(),
+      title: v.string(),
+      derivation: v.string(),
+      snaps: v.optional(v.array(v.string())),
+      whereOpen: v.optional(v.array(v.string())),
+      holeEnd: v.optional(
+        v.strictObject({
+          counterbore: v.strictObject({ radius: Finite, length: Finite }),
+          boreRadius: Finite,
+        }),
+      ),
+      technic: v.optional(v.picklist(TECHNIC_ROLES)),
+    }),
+  ),
+});
+export type PrimitiveConnectorTable = v.InferOutput<typeof PrimitiveConnectorTable>;
 
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
   vehicles: v.optional(CompilerVehicles),
+  primitives: v.optional(PrimitiveConnectorTable),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -577,6 +601,12 @@ export type BundleThumbnail = v.InferOutput<typeof BundleThumbnail>;
 export const BundleLod = v.picklist(["standard", "low", "far"]);
 export type BundleLod = v.InferOutput<typeof BundleLod>;
 
+export const TablePlane = v.object({
+  part: v.string(),
+  depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
+});
+export type TablePlane = v.InferOutput<typeof TablePlane>;
+
 export const BundleIndex = v.object({
   bundleVersion: v.pipe(v.string(), v.regex(/^[0-9a-f]{16}$/u)),
   unit: v.literal("LDU"),
@@ -597,6 +627,7 @@ export const BundleIndex = v.object({
   }),
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
+  tablePlane: TablePlane,
   compiler: v.nullable(BundleCompiler),
   crosswalk: FileRef,
   partTable: FileRef,
@@ -757,6 +788,7 @@ export const CompilerRequest = v.variant("op", [
     lod: BundleLod,
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
+    primitives: v.nullable(PrimitiveConnectorTable),
     parts: StringList,
     inlineChecks: v.pipe(
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
@@ -772,6 +804,7 @@ export const CompilerRequest = v.variant("op", [
     studPrimitives: StringList,
     unofficialAllowlist: StringList,
     translucentColors: v.pipe(v.array(Count), v.readonly()),
+    tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
   }),
@@ -810,14 +843,26 @@ export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
 
 const CompilerNeed = v.object({ status: v.literal("need"), paths: v.array(v.string()) });
 
+export const MalformedFinding = v.pipe(
+  v.object({
+    file: v.string(),
+    kind: v.picklist(["nonFinite", "unparsed", "unresolvable"]),
+  }),
+  v.description(
+    "one finding that made the compile refuse a part before building any mesh. nonFinite: a number that is NaN or infinite. unparsed: a type 1 to 4 line that does not parse. unresolvable: a position, in the part's frame, too far out to resolve the 0.0005 LDU identification. `file` is a path: for unparsed, the file holding the line; for nonFinite, the file whose own line holds the value, or the part when only a composed position is non-finite; for unresolvable, the part",
+  ),
+);
+export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
+
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing"]),
+  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing", "malformed"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
   path: v.exactOptional(v.string()),
   ldrawOrg: v.exactOptional(v.string()),
+  findings: v.exactOptional(v.array(MalformedFinding)),
 });
 
 const Reference = { reference: v.string() };

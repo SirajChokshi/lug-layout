@@ -8,6 +8,7 @@ use crate::cover::{
 use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
 use crate::model::ModelInstance;
+use crate::technic::TechnicPrimitives;
 use crate::vehicle::{detect_vehicles, RailHeadBand, Vehicle, VehicleError, VehicleSignatures};
 use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 
@@ -105,6 +106,7 @@ pub struct ModelBaker<'a, L: Library> {
     compiled: Vec<CompiledPart>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    table_depth: f64,
 }
 
 impl<'a, L: Library> ModelBaker<'a, L> {
@@ -113,12 +115,14 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         stud_primitives: Vec<String>,
         unofficial_allowlist: Vec<String>,
         translucent: HashSet<u32>,
+        table_depth: f64,
     ) -> Result<Self, BakeError> {
         let options = CompileOptions {
             lod: Lod::Standard,
             rolling_mode: RollingMode::Skip,
             stud_primitives,
             unofficial_allowlist,
+            technic: TechnicPrimitives::default(),
         };
         let stud_shape = measured_stud_shape(library, &options)?;
         Ok(ModelBaker {
@@ -131,6 +135,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             compiled: Vec::new(),
             solids: Vec::new(),
             studs: Vec::new(),
+            table_depth,
         })
     }
 
@@ -202,9 +207,10 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             &instances,
             &self.solids,
             &self.opacity,
-            lattice.map(|lattice| lattice.phase),
+            lattice.map(|lattice| (lattice.phase, lattice.phase_layer_y)),
             self.stud_shape,
             shard,
+            self.table_depth,
         ))
     }
 

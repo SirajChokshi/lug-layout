@@ -13,6 +13,7 @@ import {
   type PartRolling,
   type PartTechnic,
   type ProducedColors,
+  type PrimitiveConnectorTable,
   type TrackEnd,
   type Vec3,
 } from "@brr/schema/bundle";
@@ -145,7 +146,7 @@ export type PartVehicle = Omit<ModelVehicle, "body" | "bogies"> & {
 
 export type PartBundle = Pick<
   BundleManifest,
-  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes"
+  "bundleVersion" | "colors" | "credits" | "models" | "trackCatalog" | "trackShapes" | "tablePlane"
 > & {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
@@ -168,9 +169,11 @@ export interface ImportContext {
   readonly compilerPath: string;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly studPrimitiveNames: ReadonlyArray<string>;
+  readonly primitives: PrimitiveConnectorTable | null;
   readonly partIds: ReadonlyArray<string>;
   readonly ldconfigCodes: ReadonlyArray<number>;
   readonly translucentCodes: ReadonlyArray<number>;
+  readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
 }
 

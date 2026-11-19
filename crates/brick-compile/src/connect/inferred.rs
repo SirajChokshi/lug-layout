@@ -13,7 +13,7 @@ use super::solid::{
     Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
 };
 use super::{
-    finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source,
+    finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -44,7 +44,7 @@ pub enum Uninferred {
     UnknownFacing { radius: f64 },
     OpenArc { radius: f64 },
     Unflattened,
-    Oversized { cells: f64 },
+    Oversized { squares: f64 },
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -472,32 +472,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 
     pub fn with_axle_probe(mut self, probe_part: &str) -> Result<Self, String> {
-        let path = resolve_reference(self.library, Lod::Standard, probe_part)
-            .ok_or(format!("axle probe {probe_part} is not in the library"))?;
-        let borrowed = Borrowed(self.library);
-        let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
-            .flatten(&path)
-            .map_err(|e| format!("axle probe {probe_part}: {e:?}"))?;
-        let level = flattened
-            .triangles
-            .first()
-            .map(|t| t.points[0][1])
-            .ok_or(format!("axle probe {probe_part} has no faces"))?;
-        if flattened
-            .triangles
-            .iter()
-            .flat_map(|t| t.points.iter())
-            .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
-        {
-            return Err(format!("axle probe {probe_part} is not a flat section"));
-        }
-        let triangles: Vec<[[f64; 2]; 3]> = flattened
-            .triangles
-            .iter()
-            .map(|t| t.points.map(|p| [p[0], p[2]]))
-            .collect();
-        let profile = Profile::from_triangles(&triangles, IDENTIFY_LDU)
-            .map_err(|e| format!("axle probe {probe_part}: {e}"))?;
+        let profile = axle_section(self.library, probe_part)?;
         let size = |gender: Gender| {
             self.vocabulary
                 .size(gender, SectionShape::Axle, profile.radius())
@@ -531,40 +506,39 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             .map(Issue::from)
             .collect();
         let malformed = !issues.is_empty();
-        let prepared =
-            match flattened {
-                Err(_) => {
-                    issues.push(Issue::Uninferred {
-                        origin: [0.0; 3],
-                        reason: Uninferred::Unflattened,
-                    });
-                    Prepared {
-                        solid: None,
-                        runs: Vec::new(),
-                        issues,
-                    }
-                }
-                Ok(_) if malformed => Prepared {
+        let prepared = match flattened {
+            Err(_) => {
+                issues.push(Issue::Uninferred {
+                    origin: [0.0; 3],
+                    reason: Uninferred::Unflattened,
+                });
+                Prepared {
                     solid: None,
                     runs: Vec::new(),
                     issues,
-                },
-                Ok(flattened) => {
-                    let placed = self.placed(path, &mut issues);
-                    let solid = Solid::new(&flattened.triangles, placed.surfaces);
-                    issues.extend(solid.largest_oversized().map(|(origin, cells)| {
-                        Issue::Uninferred {
-                            origin,
-                            reason: Uninferred::Oversized { cells },
-                        }
-                    }));
-                    Prepared {
-                        solid: (!solid.is_empty()).then_some(solid),
-                        runs: placed.runs,
-                        issues,
-                    }
                 }
-            };
+            }
+            Ok(_) if malformed => Prepared {
+                solid: None,
+                runs: Vec::new(),
+                issues,
+            },
+            Ok(flattened) => {
+                let placed = self.placed(path, &mut issues);
+                let solid = Solid::new(&flattened.triangles, placed.surfaces);
+                issues.extend(solid.largest_oversized().map(|(origin, squares)| {
+                    Issue::Uninferred {
+                        origin,
+                        reason: Uninferred::Oversized { squares },
+                    }
+                }));
+                Prepared {
+                    solid: (!solid.is_empty()).then_some(solid),
+                    runs: placed.runs,
+                    issues,
+                }
+            }
+        };
         let prepared = Rc::new(prepared);
         self.prepared = Some((path.to_string(), Rc::clone(&prepared)));
         prepared
@@ -604,6 +578,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             })
             .map(|candidate| Connector {
                 source: Source::Inferred,
+                status: Status::Unverified,
                 ..candidate
             })
             .collect();
@@ -973,7 +948,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let nearest = solid.nearest(
             probe,
             (IDENTIFY_LDU, reach - IDENTIFY_LDU),
-            probe.radius + HALF_GRID_LDU,
+            plan_reach(probe.radius),
         );
         if !nearest.is_finite() {
             return Probed::Rejected;
@@ -1033,7 +1008,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         };
         for plane in solid.planes() {
             let inward = -plane.outward;
-            for center in solid.grid(&plane, self.probe.radius + HALF_GRID_LDU) {
+            for center in solid.grid(&plane, plan_reach(self.probe.radius)) {
                 add(Probe {
                     axis: plane.axis,
                     inward,
@@ -1369,6 +1344,42 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 }
 
+fn plan_reach(radius: f64) -> f64 {
+    radius + HALF_GRID_LDU + IDENTIFY_LDU
+}
+
+pub(super) fn axle_section<L: Library + ?Sized>(
+    library: &L,
+    probe_part: &str,
+) -> Result<Profile, String> {
+    let path = resolve_reference(library, Lod::Standard, probe_part)
+        .ok_or(format!("axle probe {probe_part} is not in the library"))?;
+    let borrowed = Borrowed(library);
+    let flattened = Flattener::new(&borrowed, Lod::Standard, &[])
+        .flatten(&path)
+        .map_err(|e| format!("axle probe {probe_part}: {e:?}"))?;
+    let level = flattened
+        .triangles
+        .first()
+        .map(|t| t.points[0][1])
+        .ok_or(format!("axle probe {probe_part} has no faces"))?;
+    if flattened
+        .triangles
+        .iter()
+        .flat_map(|t| t.points.iter())
+        .any(|p| (p[1] - level).abs() > IDENTIFY_LDU)
+    {
+        return Err(format!("axle probe {probe_part} is not a flat section"));
+    }
+    let triangles: Vec<[[f64; 2]; 3]> = flattened
+        .triangles
+        .iter()
+        .map(|t| t.points.map(|p| [p[0], p[2]]))
+        .collect();
+    Profile::from_triangles(&triangles, IDENTIFY_LDU)
+        .map_err(|e| format!("axle probe {probe_part}: {e}"))
+}
+
 pub(super) fn by_key<K: Ord, V>(map: HashMap<K, V>) -> Vec<V> {
     let mut entries: Vec<(K, V)> = map.into_iter().collect();
     entries.sort_by(|a, b| a.0.cmp(&b.0));
@@ -1502,6 +1513,7 @@ fn sectioned(
 ) -> Connector {
     Connector {
         source: Source::Inferred,
+        status: Status::Unverified,
         id: None,
         group: None,
         shape: Shape::Cylinder {

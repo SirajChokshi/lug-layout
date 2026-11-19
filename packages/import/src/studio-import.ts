@@ -2,12 +2,7 @@ import type { StudioRejection } from "@brr/schema/bundle";
 import type { BrickCompiler } from "./brick-compiler.ts";
 import type { StudioFileInput } from "./worker-protocol.ts";
 import type { LdrawMirror } from "./ldraw-mirror.ts";
-import {
-  bundlePartId,
-  ModelImportEngine,
-  type IBakeHelper,
-  type ImportResult,
-} from "./model-import.ts";
+import { bundlePartId, type ImportResult, type ModelImportEngine } from "./model-import.ts";
 import {
   BricklinkPartsCrosswalk,
   mapStudioParts,
@@ -78,10 +73,9 @@ export async function prepareStudioImport(
 }
 
 export async function importStudioFile(
+  engine: ModelImportEngine,
   compiler: BrickCompiler,
   mirror: LdrawMirror,
-  now: () => number,
-  helpers: ReadonlyArray<IBakeHelper>,
   input: StudioFileInput,
 ): Promise<ImportResult> {
   const prepared = await prepareStudioImport(
@@ -93,7 +87,7 @@ export async function importStudioFile(
     new Set(input.job.ldconfigCodes),
   );
   if (prepared.kind === "rejected") throw new Error(prepared.rejection.message);
-  const result = await new ModelImportEngine(compiler, mirror, now, helpers).importText({
+  const result = await engine.importText({
     ...input.job,
     fileName: prepared.fileName,
     text: prepared.ldraw,
