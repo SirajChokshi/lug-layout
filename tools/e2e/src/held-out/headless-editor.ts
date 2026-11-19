@@ -51,10 +51,9 @@ import type { Bundle } from "./bundle.ts";
 const RAY_HEIGHT_LDU = 10_000;
 const UNFETCHED_BUNDLE_URL = "https://bundle.invalid/";
 const NO_BAKE_HELPERS: ReadonlyArray<IBakeHelper> = [];
-const CANVAS_WIDTH = 640;
+export const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 480;
-const VIEW_HALF_WIDTH_LDU = 1_000;
-const VIEW_HALF_HEIGHT_LDU = (VIEW_HALF_WIDTH_LDU * CANVAS_HEIGHT) / CANVAS_WIDTH;
+export const VIEW_HALF_WIDTH_LDU = 1_000;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -67,6 +66,11 @@ const NO_LOOK: LookSettings = {
 export class AimedBackend implements ISceneBackend {
   private aimX = 0;
   private aimZ = 0;
+  private viewHalfWidthLdu = VIEW_HALF_WIDTH_LDU;
+
+  viewHalfWidth(ldu: number): void {
+    this.viewHalfWidthLdu = ldu;
+  }
 
   aim(x: number, z: number): void {
     this.aimX = x;
@@ -106,9 +110,9 @@ export class AimedBackend implements ISceneBackend {
 
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     out.set([
-      this.aimX + ndcX * VIEW_HALF_WIDTH_LDU,
+      this.aimX + ndcX * this.viewHalfWidthLdu,
       RAY_HEIGHT_LDU,
-      this.aimZ - ndcY * VIEW_HALF_HEIGHT_LDU,
+      this.aimZ - (ndcY * this.viewHalfWidthLdu * CANVAS_HEIGHT) / CANVAS_WIDTH,
       0,
       -1,
       0,
