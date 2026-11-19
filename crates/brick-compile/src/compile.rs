@@ -9,6 +9,7 @@ use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
+use crate::technic::{self, TechnicPart, TechnicPrimitives};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -60,6 +61,7 @@ pub struct CompileOptions {
     pub lod: Lod,
     pub stud_primitives: Vec<String>,
     pub unofficial_allowlist: Vec<String>,
+    pub technic: TechnicPrimitives,
     pub rolling_mode: RollingMode,
 }
 
@@ -123,6 +125,7 @@ pub struct CompiledPart {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
+    pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
 }
 
@@ -247,6 +250,11 @@ pub fn compile_part<L: Library>(
             cells,
         })?;
     }
+    let technic = if options.technic.appear_in(&flattened.files) {
+        technic_features(library, &path, &options.technic, &mesh)?
+    } else {
+        None
+    };
     let studs = flattened
         .studs
         .iter()
@@ -263,8 +271,38 @@ pub fn compile_part<L: Library>(
         mesh,
         studs,
         flattened_files: flattened.files,
+        technic,
         rolling,
     })
+}
+
+fn technic_features<L: Library>(
+    library: &L,
+    path: &str,
+    primitives: &TechnicPrimitives,
+    mesh: &Mesh,
+) -> Result<Option<TechnicPart>, CompileError> {
+    let Some([min, max]) = mesh.bounds() else {
+        return Ok(None);
+    };
+    let shape_reference = |reference: &str| primitives.shape_reference(reference);
+    let mut flattened = Flattener::new(library, Lod::Standard, &[])
+        .recording_spans(&shape_reference)
+        .flatten(path)
+        .map_err(CompileError::Flatten)?;
+    for triangle in &mut flattened.triangles {
+        triangle.points = triangle.points.map(to_y_up);
+    }
+    for span in &mut flattened.spans {
+        span.matrix = span.matrix.ldraw_to_y_up();
+    }
+    let part = technic::analyze(
+        &flattened.triangles,
+        &flattened.spans,
+        primitives,
+        [min.map(f64::from), max.map(f64::from)],
+    );
+    Ok((!part.is_empty()).then_some(part))
 }
 
 impl CompiledPart {
@@ -303,6 +341,9 @@ impl CompiledPart {
             "studs": studs,
             "bounds": { "min": min, "max": max },
         });
+        if let Some(technic) = &self.technic {
+            extras["technic"] = technic.to_json();
+        }
         if let Some(rolling) = &self.rolling {
             extras["rolling"] = rolling.to_json();
         }

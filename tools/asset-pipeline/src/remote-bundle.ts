@@ -29,7 +29,7 @@ function contentType(name: string): string {
   return type;
 }
 
-function isContentAddressed(name: string, bytes: Uint8Array): boolean {
+export function isContentAddressed(name: string, bytes: Uint8Array): boolean {
   const digest = sha256Hex(bytes).slice(0, CONTENT_HASH_HEX_DIGITS);
   return name.endsWith(`.${digest}${extname(name)}`);
 }

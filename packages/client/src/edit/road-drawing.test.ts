@@ -15,6 +15,8 @@ import {
   type PartMesh,
   type PartShapeRecord,
   type StudPrimitiveAsset,
+  type PackageAttribution,
+  type PartConnectors,
 } from "@brr/catalog";
 import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
 import {
@@ -29,7 +31,9 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { EDITOR } from "../tokens.ts";
+import { EDITOR, PLACEABLE_CATALOG } from "../tokens.ts";
+import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
+import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { IEditor } from "./editor.ts";
 
@@ -124,6 +128,18 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.importContext(lod);
   }
 
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.loader.loadPartConnectors(lod, partId);
+  }
+
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return this.loader.loadConnectivityAttribution(lod);
+  }
+
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    return this.loader.loadSectionVocabularyAttribution(lod);
+  }
+
   loadPartSet(
     lod: BundleLod,
     partIds: ReadonlyArray<string>,
@@ -182,7 +198,7 @@ class TopDownBackend implements ISceneBackend {
   }
 }
 
-async function startEditor(): Promise<IEditor> {
+async function startEditor(): Promise<{ editor: IEditor; catalog: IPlaceableCatalog }> {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
@@ -197,7 +213,7 @@ async function startEditor(): Promise<IEditor> {
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return editor;
+  return { editor, catalog: container.get(PLACEABLE_CATALOG) };
 }
 
 function centre(tile: number): number {
@@ -243,8 +259,9 @@ afterEach(() => {
 
 describe("draw road", () => {
   let editor: IEditor;
+  let catalog: IPlaceableCatalog;
   beforeAll(async () => {
-    editor = await startEditor();
+    ({ editor, catalog } = await startEditor());
   }, 120_000);
 
   const completeKits = [
@@ -396,7 +413,7 @@ describe("draw road", () => {
   });
 
   it("refuses a stroke over a placed model instead of swapping it for road", async () => {
-    expect(await editor.prefetch(PLACED_MODEL)).toBe(true);
+    await loadCatalogItem(catalog, PLACED_MODEL);
     editor.chooseItem(PLACED_MODEL);
     editor.click(...ndc([1, 0]), 0);
     editor.chooseItem(kitId(editor, completeKits[0][1]));

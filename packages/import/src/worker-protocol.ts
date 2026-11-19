@@ -1,4 +1,5 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
+import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
 import type { ImportResult, ImportJob, ModelBake } from "./model-import.ts";
 
 export interface LdrawTextInput {
@@ -18,6 +19,9 @@ export type ImportInput = LdrawTextInput | StudioFileInput;
 export interface ImportWorkerRequest {
   readonly kind: "import";
   readonly compilerUrl: string;
+  readonly bundleBaseUrl: string;
+  readonly connectorIndexes: ConnectorIndexPaths;
+  readonly connectorVocabulary: string;
   readonly ldrawLibraryUrl?: string;
   readonly input: ImportInput;
 }
@@ -44,6 +48,27 @@ export function bakeTransferables(bake: ModelBake): Transferable[] {
   ];
 }
 
+function connectorBuffers(connectors: PartConnectors): ArrayBufferLike[] {
+  return [
+    connectors.gender,
+    connectors.source,
+    connectors.status,
+    connectors.caps,
+    connectors.slide,
+    connectors.origin,
+    connectors.axis,
+    connectors.sectionStart,
+    connectors.sectionCount,
+    connectors.sectionCode,
+    connectors.sectionSize,
+    connectors.sectionLength,
+    connectors.piece,
+    connectors.freeFace,
+    connectors.freeOrigin,
+    connectors.freeAxis,
+  ].map((array) => array.buffer);
+}
+
 export function transferablesOf(model: ImportResult): Transferable[] {
   return [
     model.partIndex.buffer,
@@ -54,6 +79,7 @@ export function transferablesOf(model: ImportResult): Transferable[] {
     model.submodels.matrices.buffer,
     model.submodels.ofPart.buffer,
     ...model.compiled.map((part) => part.glb.buffer),
+    ...model.connectors.flatMap((connectors) => (connectors ? connectorBuffers(connectors) : [])),
     ...(model.bake ? bakeTransferables(model.bake) : []),
   ];
 }

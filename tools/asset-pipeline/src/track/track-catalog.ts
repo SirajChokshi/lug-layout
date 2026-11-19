@@ -130,7 +130,7 @@ function scale(value: Zeta16, factor: bigint): Zeta16 {
 
 function residualLdu(position: Zeta16, end: TrackEnd): number {
   const exact = zeta16ToStuds(position);
-  return Math.hypot(exact.x - end.xStuds, exact.z - end.zStuds) * LDU_PER_STUD;
+  return Math.max(Math.abs(exact.x - end.xStuds), Math.abs(exact.z - end.zStuds)) * LDU_PER_STUD;
 }
 
 function signedTurn(heading: number): number {
@@ -187,7 +187,7 @@ function exactEnd(
       position,
       heading: end.headingSteps,
       status: "certified",
-      derivation: "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+      derivation: "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
       residualLdu: residualLdu(position, end),
     };
   }

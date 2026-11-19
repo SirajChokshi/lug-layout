@@ -9,6 +9,7 @@ use crate::cover::{
 use crate::flatten::{Library, Lod};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
 use crate::model::ModelInstance;
+use crate::technic::TechnicPrimitives;
 use crate::vehicle::{detect_vehicles, RailHeadBand, Vehicle, VehicleError, VehicleSignatures};
 use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 
@@ -155,6 +156,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             rolling_mode: RollingMode::Skip,
             stud_primitives,
             unofficial_allowlist,
+            technic: TechnicPrimitives::default(),
         };
         let stud_shape = measured_stud_shape(library, &options)?;
         Ok(ModelBaker {

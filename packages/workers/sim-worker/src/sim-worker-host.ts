@@ -1,7 +1,6 @@
 import { RpcEndpoint, SIM_PROTOCOL, type RpcPort } from "@brr/rpc";
 import {
   loadSession,
-  replay,
   SIM_TICK_SECONDS,
   type LoadedSession,
   type SimReply,
@@ -54,7 +53,7 @@ export class SimWorkerHost {
         this.spareFrames.length = 0;
         this.current = loadSession(this.createSession, request.load);
         this.endpoint.reply(id, { kind: "loaded", loaded: this.current.loaded });
-        this.postFrame(0, 0);
+        this.postFrame();
         return;
       }
       case "run":
@@ -64,32 +63,12 @@ export class SimWorkerHost {
         const session = this.loaded().session;
         const accepted = session.apply(request.command);
         this.endpoint.reply(id, { kind: "commanded", accepted, tick: session.simulation.tick });
-        if (!this.stopPump) this.postFrame(0, 0);
+        if (!this.stopPump) this.postFrame();
         return;
       }
       case "recycle":
         this.spareFrames.push(request.buffer);
         return;
-      case "bench": {
-        const { scenario, session } = this.loaded();
-        const live = session.simulation;
-        const copy = replay(this.createSession, scenario, session.log, live.tick);
-        const replayHash = copy.stateHash();
-        const start = this.clock.now();
-        for (let i = 0; i < request.ticks; i++) copy.step();
-        const elapsedMs = this.clock.now() - start;
-        this.endpoint.reply(id, {
-          kind: "bench",
-          result: {
-            replayedToTick: live.tick,
-            replayHash,
-            liveHash: live.stateHash(),
-            ticks: request.ticks,
-            elapsedMs,
-          },
-        });
-        return;
-      }
       default: {
         const unhandled: never = request;
         throw new Error(`unhandled sim request ${String(unhandled)}`);
@@ -125,12 +104,11 @@ export class SimWorkerHost {
       due = MAX_TICKS_PER_PUMP;
     }
     if (due <= 0) return;
-    const start = this.clock.now();
     for (let i = 0; i < due; i++) sim.step();
-    this.postFrame(due, this.clock.now() - start);
+    this.postFrame();
   }
 
-  private postFrame(batchTicks: number, batchStepMs: number): void {
+  private postFrame(): void {
     const { session } = this.loaded();
     const sim = session.simulation;
     const data = this.spareFrames.pop() ?? new Float64Array(session.layout.floats);
@@ -138,7 +116,7 @@ export class SimWorkerHost {
     this.endpoint.post(
       {
         kind: "frame",
-        frame: { tick: sim.tick, stateHash: sim.stateHash(), batchTicks, batchStepMs, data },
+        frame: { tick: sim.tick, stateHash: sim.stateHash(), data },
       },
       [data.buffer],
     );

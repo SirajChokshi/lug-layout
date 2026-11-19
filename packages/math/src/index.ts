@@ -46,6 +46,7 @@ export {
   COEFFICIENT_BOUND,
   certifiedZeta16,
   findZeta16Representation,
+  IDENTIFICATION_REPRESENTATION_GUARD_LDU,
   UNROUNDED_TOLERANCE_LDU,
   ZETA16_STEP_RADIANS,
   type FieldRepresentation,

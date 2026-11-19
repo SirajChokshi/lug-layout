@@ -47,6 +47,7 @@ export {
   type ImportReport,
   type ImportTimings,
   type ModelBake,
+  type PartConnectorSource,
   type PartResolution,
 } from "./model-import.ts";
 export {

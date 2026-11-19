@@ -98,7 +98,7 @@
           ],
           "heading": 1,
           "status": "unverified",
-          "residualLdu": 0.0014847741947485202
+          "residualLdu": 0.0014562446749266655
         }
       ],
       "routes": [
@@ -217,7 +217,7 @@
           ],
           "heading": 1,
           "status": "certified",
-          "residualLdu": 7.741948029150472e-7
+          "residualLdu": 7.593188655619088e-7
         }
       ],
       "routes": [
@@ -292,7 +292,7 @@
           ],
           "heading": 1,
           "status": "certified",
-          "residualLdu": 8.921174634225937e-7
+          "residualLdu": 8.920717675664491e-7
         }
       ],
       "routes": [
@@ -383,7 +383,7 @@
           ],
           "heading": 1,
           "status": "certified",
-          "residualLdu": 8.921174634225937e-7
+          "residualLdu": 8.920717675664491e-7
         }
       ],
       "routes": [
@@ -474,7 +474,7 @@
           ],
           "heading": 15,
           "status": "certified",
-          "residualLdu": 8.921174634225937e-7
+          "residualLdu": 8.920717675664491e-7
         }
       ],
       "routes": [
@@ -565,7 +565,7 @@
           ],
           "heading": 15,
           "status": "certified",
-          "residualLdu": 8.921174634225937e-7
+          "residualLdu": 8.920717675664491e-7
         }
       ],
       "routes": [
@@ -713,7 +713,7 @@
         {
           "connector": 0,
           "marker": "s/53401s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -727,7 +727,7 @@
         {
           "connector": 1,
           "marker": "s/53401s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -780,7 +780,7 @@
           "connector": 1,
           "marker": "s/53400s04.dat",
           "derivation": "arc: radius 40 studs from the file's !HELP rotation point (0/-800), turn -1 step from the end markers; not certified (no unique field candidate within the file's precision)",
-          "markerResidualLdu": 0.0014847741947485202,
+          "markerResidualLdu": 0.0014562446749266655,
           "railCentreOffsetLdu": {
             "numerator": "195108374373855055069752931943429194095978908522043596733216293738449439116332647011437328213287617530297",
             "denominator": "778091011899912099278784263411654594430741616310655213141797119560727095068033605172765135444089804687500"
@@ -817,7 +817,7 @@
         {
           "connector": 0,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -831,7 +831,7 @@
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 7.837739514543061e-14,
           "railCentreOffsetLdu": {
             "numerator": "-180081213000779783",
@@ -869,7 +869,7 @@
         {
           "connector": 0,
           "marker": "s/2867as04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "-23524865507161032881199205686983255066908697132723665059477246202574880253700396299055055269353",
@@ -883,8 +883,8 @@
         {
           "connector": 1,
           "marker": "s/2867as03.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 7.741948029150472e-7,
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
+          "markerResidualLdu": 7.593188655619088e-7,
           "railCentreOffsetLdu": {
             "numerator": "31517544359494817287753974616343685416773367961239680510149301789827660594015587563386566676513",
             "denominator": "122101886065763239770768410979946386739254696840838680157399226698348105785064534202936035000000"
@@ -921,7 +921,7 @@
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "-439516278936139821193014087513581746510057135260283235797839640384644915946321455176986802570599230369800781",
@@ -935,7 +935,7 @@
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -949,8 +949,8 @@
         {
           "connector": 2,
           "marker": "s/2867as04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921174634225937e-7,
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
+          "markerResidualLdu": 8.920717675664491e-7,
           "railCentreOffsetLdu": {
             "numerator": "-192975694399310637476467918589493430520604773472788573353555653933080307118368581639774644937",
             "denominator": "747569055385457026411595465943732745710865747383557063290383853909444602707400623752441125000"
@@ -1011,7 +1011,7 @@
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "-439516278936139821193014087513581746510057135260283235797839640384644915946321455176986802570599230369800781",
@@ -1025,7 +1025,7 @@
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -1039,8 +1039,8 @@
         {
           "connector": 2,
           "marker": "s/2867as04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921174634225937e-7,
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
+          "markerResidualLdu": 8.920717675664491e-7,
           "railCentreOffsetLdu": {
             "numerator": "-192975694399310637476467918589493430520604773472788573353555653933080307118368581639774644937",
             "denominator": "747569055385457026411595465943732745710865747383557063290383853909444602707400623752441125000"
@@ -1101,7 +1101,7 @@
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "1318548836808519350287511358849253673000317203735199612564695691695403010034484927056132850585151753766770969",
@@ -1115,7 +1115,7 @@
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -1129,8 +1129,8 @@
         {
           "connector": 2,
           "marker": "s/2867as03.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921174634225937e-7,
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
+          "markerResidualLdu": 8.920717675664491e-7,
           "railCentreOffsetLdu": {
             "numerator": "21105325840081440953552956638316473459984611534142582958861671916987175745426528488552704168709",
             "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
@@ -1191,7 +1191,7 @@
         {
           "connector": 0,
           "marker": "s/2859s02.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "1318548836808519350287511358849253673000317203735199612564695691695403010034484927056132850585151753766770969",
@@ -1205,7 +1205,7 @@
         {
           "connector": 1,
           "marker": "s/2865as01.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -1219,8 +1219,8 @@
         {
           "connector": 2,
           "marker": "s/2867as03.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
-          "markerResidualLdu": 8.921174634225937e-7,
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
+          "markerResidualLdu": 8.920717675664491e-7,
           "railCentreOffsetLdu": {
             "numerator": "21105325840081440953552956638316473459984611534142582958861671916987175745426528488552704168709",
             "denominator": "81760237121011670371146632370957514022072863357705220059008146744556539468635565806921305750000"
@@ -1281,7 +1281,7 @@
         {
           "connector": 0,
           "marker": "s/2865s04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -1295,7 +1295,7 @@
         {
           "connector": 1,
           "marker": "s/2865s04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "24838788000107555",
@@ -1309,7 +1309,7 @@
         {
           "connector": 2,
           "marker": "s/2865s04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "31048485000134445",
@@ -1323,7 +1323,7 @@
         {
           "connector": 3,
           "marker": "s/2865s04.dat",
-          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU",
+          "derivation": "field test: unique ℤ[ζ₁₆] candidate, residual ≤ 0.0005 LDU per coordinate",
           "markerResidualLdu": 0,
           "railCentreOffsetLdu": {
             "numerator": "18629091000080665",
