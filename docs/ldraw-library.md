@@ -39,7 +39,7 @@ Every other object is stored with `Cache-Control: public, max-age=31536000, immu
 **Once `public_base_url` is committed:** deployed builds read only R2, and GitHub is the local-dev fallback from then on.
 - `vercel-build.sh` exports the URL, unless Vercel sets `VITE_LDRAW_LIBRARY_BASE_URL` itself, in which case that value wins.
 - `vite.config.ts` refuses a Vercel build without an absolute `VITE_LDRAW_LIBRARY_BASE_URL`, so a deployment can't fall back to GitHub by accident.
-- The Vercel build doesn't check that the pinned library is published. After a merge that re-pins the library, imports that need a library file fail until its publish is approved. `library/cli.ts served` HEADs the pinned library's index to check it by hand.
+- The Vercel build doesn't check that the pinned library is published. After a merge that re-pins the library, imports that need a library file fail until its publish finishes. `library/cli.ts served` HEADs the pinned library's index to check it by hand.
 
 Commit the URL only after the library is published and `verify-served` passes against it (*Setup*). Going back to GitHub means setting `public_base_url` to `null` again.
 
@@ -49,7 +49,7 @@ The library publishes from `.github/workflows/part-bundle.yml`, the part bundle'
 
 **`library-status`** has no environment and no secrets. On every push it costs one filtered `pnpm install`; when a public URL is set (the repository variable `LDRAW_LIBRARY_BASE_URL`, otherwise `public_base_url`) it also makes two small requests there, a `HEAD` of the pinned index and a `GET` of `index/latest.json`. It asks for `library-publish` when the index isn't served or the pointer doesn't name it as current, and on *Run workflow*. While neither URL is set it can't see the bucket, so only *Run workflow* publishes or prunes the library. Since it decides from what the bucket serves, not from what a push changed, a run that GitHub cancels while it's pending (a newer push replaces it) loses nothing: the next run sees the same unfinished state and does the work.
 
-**`library-publish`** runs in `production`, so it waits for approval, after the bundle's `pointer` job, or when that job is skipped or fails. Neither publication's jobs depend on the other's success. It uses the same `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID` as the part bundle and the catalog deploy:
+**`library-publish`** runs in `production`, under whatever protection that environment has (the bundle's jobs already do), after the bundle's `pointer` job, or when that job is skipped or fails. Neither publication's jobs depend on the other's success. It uses the same `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_API_TOKEN_ID` as the part bundle and the catalog deploy:
 1. It checks the bucket for the index over R2's S3 API (`published`).
 2. Unless the index is there, it restores the archive into `.cache/catalog/ldraw-library` (the same path and pin that `restore-ldraw` uses) without secrets, runs the checks above, and uploads the objects the bucket doesn't have yet, checking each file against its index hash again just before upload, and then the index.
 3. With a public URL, it fetches every published file and compares SHA-256 values (`verify-served --all`).
@@ -96,7 +96,7 @@ pnpm --filter @brr/asset-pipeline ldraw-library prune [--dry-run]
 ## Setup
 
 1. Apply `infra/cloudflare`, which creates `brr-ldraw-library`, its CORS and its r2.dev domain (*LDraw library bucket* in its README). After a merge, the catalog deploy workflow plans and applies it.
-2. Run the part bundle workflow (*Actions → Part bundle → Run workflow*) and approve `library-publish`. It publishes the library and points `index/latest.json` at it; the bundle's jobs in the same run skip what's already published.
+2. Run the part bundle workflow (*Actions → Part bundle → Run workflow*), approving `library-publish` if `production` asks. It publishes the library and points `index/latest.json` at it; the bundle's jobs in the same run skip what's already published.
 3. Check the bucket: `LDRAW_LIBRARY_BASE_URL=<ldraw_library_base_url> pnpm --filter @brr/asset-pipeline ldraw-library verify-served`. The publish job already ran this if the URL was known to it.
 4. Commit the Terraform output `ldraw_library_base_url` as `public_base_url` in `infra/cloudflare/ldraw-library.json`. That commit is the switch to R2. `ignoreCommand` skips commits that touch only `infra/`, so redeploy Vercel Production by hand after it.
 
