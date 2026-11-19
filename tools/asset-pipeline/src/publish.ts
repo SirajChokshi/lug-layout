@@ -7,6 +7,7 @@ import {
   CrosswalkFile,
   FarMeshGltfDocument,
   GltfDocument,
+  LibraryBakePin,
   ModelFile,
   PartShape,
   PartTableFile,
@@ -103,6 +104,23 @@ export async function bundleFiles(directory: string): Promise<ReadonlyArray<stri
 export function contentAddressedName(file: string, digest: string): string {
   const extension = extname(file);
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
+}
+
+export async function attachLibraryBake(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
+  const { compiler } = compiled;
+  if (compiler === null) return;
+  if (!isRecord(compiler)) throw new Error(`${manifestPath} has no compiler section`);
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, compiler: { ...compiler, libraryBake: pin.index } }, null, 2)}\n`,
+  );
 }
 
 export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {

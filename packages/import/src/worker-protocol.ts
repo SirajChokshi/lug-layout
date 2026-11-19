@@ -1,5 +1,6 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
+import type { PinnedRecords } from "./library-bake-store.ts";
 import type { ImportResult, ImportJob, ModelBake } from "./model-import.ts";
 
 export interface LdrawTextInput {
@@ -16,6 +17,11 @@ export interface StudioFileInput {
 
 export type ImportInput = LdrawTextInput | StudioFileInput;
 
+export interface LibraryBakeSource {
+  readonly url: string;
+  readonly pin: PinnedRecords;
+}
+
 export interface ImportWorkerRequest {
   readonly kind: "import";
   readonly compilerUrl: string;
@@ -23,6 +29,7 @@ export interface ImportWorkerRequest {
   readonly connectorIndexes: ConnectorIndexPaths;
   readonly connectorVocabulary: string;
   readonly ldrawLibraryUrl?: string;
+  readonly libraryBake?: LibraryBakeSource;
   readonly input: ImportInput;
 }
 

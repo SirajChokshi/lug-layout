@@ -1,11 +1,10 @@
 import {
   CandidatePoses,
+  FootprintGrid,
   MateReport,
   VolumeIndex,
   firstOverlap,
   ModelConnectors,
-  placeTechnicInto,
-  technicScratch,
   type CellVolumes,
   type ConnectionSolver,
   type ConnectorTable,
@@ -21,7 +20,9 @@ import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
+import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
+import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const NO_PLACEMENT = -1;
@@ -69,9 +70,9 @@ export interface IPlacementSearch {
   add(
     placement: number,
     model: ModelConnectors,
-    volumes: CellVolumes,
+    volumes: FrozenVolumes,
     boxes: PartBoxes,
-    technic: TechnicSet,
+    technic: FrozenTechnic,
     pose: LatticePose,
   ): void;
   remove(placement: number): void;
@@ -90,8 +91,39 @@ export interface IPlacementSearch {
 
 interface Placed extends PlacedParts {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
-  readonly world: CellVolumes;
+  readonly volumes: FrozenVolumes;
+  readonly technic: FrozenTechnic;
+  readonly row: number;
+  readonly grid: FootprintGrid;
+}
+
+const TURNS = 4;
+
+class Bounds {
+  cellX0 = 0;
+  cellZ0 = 0;
+  width = 0;
+  depth = 0;
+
+  measure(world: CellVolumes): this {
+    let x0 = 0;
+    let z0 = 0;
+    let x1 = -1;
+    let z1 = -1;
+    for (let c = 0; c < world.count; c++) {
+      const x = world.cellX[c] ?? 0;
+      const z = world.cellZ[c] ?? 0;
+      if (c === 0 || x < x0) x0 = x;
+      if (c === 0 || z < z0) z0 = z;
+      if (c === 0 || x > x1) x1 = x;
+      if (c === 0 || z > z1) z1 = z;
+    }
+    this.cellX0 = x0;
+    this.cellZ0 = z0;
+    this.width = x1 - x0 + 1;
+    this.depth = z1 - z0 + 1;
+    return this;
+  }
 }
 
 class VolumeBuffer implements CellVolumes {
@@ -119,13 +151,14 @@ class VolumeBuffer implements CellVolumes {
     const cos = rot90Cos(rot);
     const sin = rot90Sin(rot);
     const yLdu = pose.yPlates * PLATE_LDU;
+    const { cellX, cellZ, bottomLdu, topLdu } = local;
     for (let c = 0; c < local.count; c++) {
-      const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-      const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cx = (cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
+      const cz = (cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
       this.cellX[c] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
       this.cellZ[c] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-      this.bottomLdu[c] = (local.bottomLdu[c] ?? 0) + yLdu;
-      this.topLdu[c] = (local.topLdu[c] ?? 0) + yLdu;
+      this.bottomLdu[c] = (bottomLdu[c] ?? 0) + yLdu;
+      this.topLdu[c] = (topLdu[c] ?? 0) + yLdu;
     }
     this.count = local.count;
     return this;
@@ -159,6 +192,9 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
   private readonly zones = new MateZones();
+  private readonly bounds = new Bounds();
+  private readonly grids = new Map<FrozenVolumes, Array<FootprintGrid | undefined>>();
+  private readonly gridUses = new Map<FootprintGrid, number>();
   private moving = NO_PLACEMENT;
 
   constructor(
@@ -180,45 +216,28 @@ export class PlacementSearch implements IPlacementSearch {
   add(
     placement: number,
     model: ModelConnectors,
-    volumes: CellVolumes,
+    volumes: FrozenVolumes,
     boxes: PartBoxes,
-    technic: TechnicSet,
+    technic: FrozenTechnic,
     pose: LatticePose,
   ): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
-    const posed = technicScratch(technic);
-    placeTechnicInto(technic, at, posed);
-    const world = new VolumeBuffer(volumes.count).place(volumes, at);
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.add(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    const world = this.scratch.place(volumes, at);
+    const bounds = this.bounds.measure(world);
+    const yLdu = at.yPlates * PLATE_LDU;
+    const grid = this.gridFor(volumes, at.rot, world, yLdu);
+    const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
     this.solver.insert(model, at, placement);
-    this.placed.set(placement, { model, volumes, boxes, technic: posed, pose: at, world });
+    this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
   }
 
   remove(placement: number): void {
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
-    const { world } = placed;
-    for (let c = 0; c < world.count; c++) {
-      if ((world.topLdu[c] ?? 0) <= (world.bottomLdu[c] ?? 0)) continue;
-      this.volumes.remove(
-        placement,
-        world.cellX[c] ?? 0,
-        world.cellZ[c] ?? 0,
-        world.bottomLdu[c] ?? 0,
-        world.topLdu[c] ?? 0,
-      );
-    }
+    this.volumes.remove(placed.row);
+    this.release(placed);
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
   }
@@ -304,6 +323,46 @@ export class PlacementSearch implements IPlacementSearch {
     out.yPlates = this.candidates.yPlates[index] ?? 0;
     out.rot = this.candidates.rot[index] ?? 0;
     out.votes = this.candidates.votes[index] ?? 0;
+  }
+
+  private gridFor(
+    volumes: FrozenVolumes,
+    rot: number,
+    world: CellVolumes,
+    yLdu: number,
+  ): FootprintGrid {
+    const turn = isRot90(rot) ? rot : 0;
+    let byTurn = this.grids.get(volumes);
+    if (!byTurn) {
+      byTurn = Array.from<FootprintGrid | undefined>({ length: TURNS });
+      this.grids.set(volumes, byTurn);
+    }
+    const { cellX0, cellZ0, width, depth } = this.bounds;
+    let grid = byTurn[turn];
+    if (!grid) {
+      grid = FootprintGrid.of(world, cellX0, cellZ0, width, depth, yLdu);
+      byTurn[turn] = grid;
+    } else if (grid.width !== width || grid.depth !== depth) {
+      throw new RangeError(`a placed footprint changed shape under translation`);
+    }
+    this.gridUses.set(grid, (this.gridUses.get(grid) ?? 0) + 1);
+    return grid;
+  }
+
+  private release(placed: Placed): void {
+    const uses = (this.gridUses.get(placed.grid) ?? 0) - 1;
+    if (uses > 0) {
+      this.gridUses.set(placed.grid, uses);
+      return;
+    }
+    this.gridUses.delete(placed.grid);
+    const byTurn = this.grids.get(placed.volumes);
+    if (!byTurn) return;
+    byTurn[isRot90(placed.pose.rot) ? placed.pose.rot : 0] = undefined;
+    for (let turn = 0; turn < TURNS; turn++) {
+      if (byTurn[turn] !== undefined) return;
+    }
+    this.grids.delete(placed.volumes);
   }
 
   private collectZones(

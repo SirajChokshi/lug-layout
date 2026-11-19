@@ -6,6 +6,7 @@ import { encodeZeta16, type TrackEnd } from "@brr/schema/bundle";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   findZeta16Representation,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
   UNROUNDED_TOLERANCE_LDU,
   ZETA16_ORDER,
   ZETA16_STEP_RADIANS,
@@ -118,7 +119,7 @@ export function relativeToEntry(ends: ReadonlyArray<MarkerEnd>): ReadonlyArray<T
     const certified =
       field !== undefined &&
       field.solutionCount === 1 &&
-      field.residual * LDU_PER_STUD <= CERTIFIED_RESIDUAL_LIMIT_LDU;
+      field.residual * LDU_PER_STUD <= IDENTIFICATION_ACCEPTED_DEVIATION_LDU;
     return {
       marker: end.marker,
       xStuds,

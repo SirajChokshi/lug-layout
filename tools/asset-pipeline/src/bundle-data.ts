@@ -12,6 +12,7 @@ export const BUNDLE_DATA_FILES = {
   inferredConnectors: `${PIPELINE_DIRECTORY}/inferred-connectors.json`,
   sectionVocabulary: `${PIPELINE_DIRECTORY}/section-vocabulary.json`,
   lock: `${PIPELINE_DIRECTORY}/ldraw.lock.json`,
+  libraryBakePin: `${PIPELINE_DIRECTORY}/library-bake.json`,
   geometry: `${VERIFIED_FACTS_DIRECTORY}/geometry.json`,
   trackCatalog: `${VERIFIED_FACTS_DIRECTORY}/${TRACK_CATALOG_FILE}`,
 } as const;

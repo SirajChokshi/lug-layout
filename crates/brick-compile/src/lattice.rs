@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use crate::affine::{Affine, Vec3};
+pub use crate::identify::IDENTIFY_LDU;
 
 pub const STUD_LDU: f64 = 20.0;
-pub const IDENTIFY_LDU: f64 = 0.0005;
 pub const RESOLVABLE_LDU: f64 = IDENTIFY_LDU / f64::EPSILON;
 const LAYER_KEY_SCALE: f64 = 1_000.0;
 
