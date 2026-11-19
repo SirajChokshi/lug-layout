@@ -26,6 +26,7 @@ class IssueBoxBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostVerdict(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}

@@ -35,6 +35,7 @@ import {
   type ChunkInstances,
   type ChunkTier,
   type FarModelPlacement,
+  type GhostVerdict,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -279,6 +280,10 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  verdict: GhostVerdict | null = null;
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.verdict = verdict;
+  }
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
@@ -1073,10 +1078,25 @@ const OVERLAP_REFUSED = {
     reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
+  ghostTone: "refused",
+  hint: {
+    tone: "warn",
+    detail: expect.stringContaining("Hits Baseplate 32 x 32 in 3811 Baseplate 32 x 32"),
+  },
 };
 const PLACED_BESIDE = {
   outcome: { placements: 2, refusedClicks: 0, reason: null },
   ghostRefusal: null,
+  ghostTone: "fits",
+  hint: { tone: "place", detail: "0°" },
+};
+const SEATED_ON_STUDS = {
+  ...PLACED_BESIDE,
+  ghostTone: "mates",
+  hint: {
+    tone: "place",
+    detail: expect.stringMatching(/^0° · \d+ round sockets take \d+ round pegs/u),
+  },
 };
 
 it.each([
@@ -1099,9 +1119,9 @@ it.each([
     expected: OVERLAP_REFUSED,
   },
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
-  { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
+  { name: "a set on the 3811", held: SET, at: [0, 0], expected: SEATED_ON_STUDS },
 ] as const)(
-  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits",
+  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits, and the ghost and tool hint say so before the click",
   async ({ held, at, expected }) => {
     const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
@@ -1112,12 +1132,37 @@ it.each([
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
     const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const ghostTone = backend.verdict?.tone ?? null;
+    const { tone, detail } = toolHints(editor.snapshot());
     const outcome = await place(held, at[0], at[1]);
 
-    expect({ outcome, ghostRefusal }).toEqual(expected);
+    expect({ outcome, ghostRefusal, ghostTone, hint: { tone, detail } }).toEqual(expected);
   },
   120_000,
 );
+
+it("settles the ghost to neutral after a drop until the pointer leaves the cell, while the hover keeps the solver's verdict", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  const shown = () => ({
+    accepted: editor.snapshot().hover?.placement?.accepted ?? null,
+    ghost: backend.verdict?.tone ?? null,
+    hint: toolHints(editor.snapshot()).tone,
+  });
+  const dropped = shown();
+  backend.aim(5, 5);
+  editor.pointerMove(0, 0);
+  const sameCell = shown();
+  backend.aim(100, 0);
+  editor.pointerMove(0, 0);
+
+  expect({ dropped, sameCell, moved: shown() }).toEqual({
+    dropped: { accepted: false, ghost: null, hint: "place" },
+    sameCell: { accepted: false, ghost: null, hint: "place" },
+    moved: { accepted: false, ghost: "refused", hint: "warn" },
+  });
+}, 120_000);
 
 it.each([
   {
@@ -1514,6 +1559,9 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   placeGhost(...args: Parameters<ISceneBackend["placeGhost"]>): void {
     this.three.placeGhost(...args);
+  }
+  setGhostVerdict(...args: Parameters<ISceneBackend["setGhostVerdict"]>): void {
+    this.three.setGhostVerdict(...args);
   }
   setSelectionBox(...args: Parameters<ISceneBackend["setSelectionBox"]>): void {
     this.three.setSelectionBox(...args);

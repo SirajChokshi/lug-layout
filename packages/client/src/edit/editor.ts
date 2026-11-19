@@ -48,6 +48,7 @@ import {
   type EdgeMarker,
   type ChunkTier,
   type FrameStats,
+  type GhostVerdict,
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
@@ -96,6 +97,7 @@ import type {
   PlacementHover,
 } from "./placement-hover.ts";
 import { mateCounts, partAtHit, refusalText } from "./placement-hover-view.ts";
+import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   placementChoice,
@@ -385,6 +387,7 @@ export interface EditorSnapshot extends WorldSessionView {
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
   readonly connectorGaps: ReadonlyArray<PartWithoutConnectorRecord>;
+  readonly ghostSettled: boolean;
 }
 
 export interface EditorCredits {
@@ -681,6 +684,7 @@ export class Editor implements IEditor, IEditedWorld {
     roadErase: false,
     modelImport: null,
     connectorGaps: [],
+    ghostSettled: false,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -716,6 +720,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
   private readonly mates = new MateReport();
+  private shownVerdict: GhostVerdict | null = null;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -781,8 +786,19 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private update(patch: Partial<EditorSnapshot>): void {
-    this.state = { ...this.state, ...patch };
+    const before = this.state;
+    const merged = { ...before, ...patch };
+    const ghostSettled = ghostSettles(before, merged);
+    this.state = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
+    this.showGhostVerdict();
     for (const listener of this.listeners) listener();
+  }
+
+  private showGhostVerdict(): void {
+    const verdict = ghostVerdict(this.state);
+    if (sameVerdict(verdict, this.shownVerdict)) return;
+    this.shownVerdict = verdict;
+    this.backend.setGhostVerdict(verdict);
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {

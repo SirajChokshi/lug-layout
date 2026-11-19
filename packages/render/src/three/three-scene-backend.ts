@@ -36,6 +36,8 @@ import {
   type ChunkTier,
   type FarModelPlacement,
   type GeometrySet,
+  type GhostTone,
+  type GhostVerdict,
   type FrameStats,
   type ISceneBackend,
   type LdrawColor,
@@ -84,7 +86,12 @@ import {
   primitiveGeometry,
   type FixedColorGeometry,
 } from "./part-geometry.ts";
-import { OPAQUE_ALPHA, PlasticMaterials } from "./plastic-materials.ts";
+import {
+  OPAQUE_ALPHA,
+  PlasticMaterials,
+  UNTINTED,
+  type MaterialTint,
+} from "./plastic-materials.ts";
 import { skyEnvironment } from "./sky-environment.ts";
 
 const REBASE_DISTANCE_CHUNKS = 8;
@@ -127,6 +134,13 @@ const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   far: TIER_FAR,
 };
 const GHOST_OPACITY = 0.55;
+const GHOST_TINTS: Readonly<Record<GhostTone, MaterialTint>> = {
+  fits: { color: 0xd0ffda, emissive: 0x188a36 },
+  mates: { color: 0xb8ffc6, emissive: 0x26b84e },
+  refused: { color: 0xff7070, emissive: 0xb8141e },
+};
+const GHOST_HIT_COLOR = 0xffc400;
+const GHOST_HIT_OPACITY = 0.9;
 const SELECTION_COLOR = 0xff8c00;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
@@ -418,6 +432,18 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
+  private readonly ghostHit = new Mesh(
+    new BoxGeometry(1, 1, 1),
+    new MeshBasicNodeMaterial({
+      color: GHOST_HIT_COLOR,
+      depthTest: false,
+      transparent: true,
+      opacity: GHOST_HIT_OPACITY,
+    }),
+  );
+  private ghostHitX = 0;
+  private ghostHitZ = 0;
+  private ghostHitShown = false;
   private readonly selection = new LineSegments(
     new EdgesGeometry(new BoxGeometry(1, 1, 1)),
     new LineBasicNodeMaterial({ color: SELECTION_COLOR, depthTest: false }),
@@ -510,7 +536,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.renderer = renderer;
     this.look = config.look;
     this.materials = new PlasticMaterials(config.look.plastic, 1);
+    const ghostTint = this.ghostMaterials.tint;
     this.ghostMaterials = new PlasticMaterials(config.look.plastic, GHOST_OPACITY);
+    this.ghostMaterials.tint = ghostTint;
     this.scene.background = new Color(SKY_COLOR);
     this.light(renderer, config.look);
     if (config.look.gtao || config.look.outlines || config.look.bevel || config.look.oit) {
@@ -527,6 +555,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.selection.matrixAutoUpdate = false;
     this.selection.renderOrder = 1;
     this.scene.add(this.selection);
+    this.ghostHit.visible = false;
+    this.ghostHit.matrixAutoUpdate = false;
+    this.ghostHit.renderOrder = 3;
+    this.scene.add(this.ghostHit);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
@@ -1001,6 +1033,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.ghostPose = null;
     this.ghostPage = page;
     this.ghostNeeds = null;
+    this.showGhostHit();
     if (!page) {
       if (held) this.release(held, TIER_NEAR);
       return;
@@ -1040,6 +1073,36 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ghost.updateMatrix();
     ghost.updateMatrixWorld(true);
     ghost.visible = true;
+    this.showGhostHit();
+  }
+
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.changed = true;
+    this.ghostMaterials.tint = verdict ? GHOST_TINTS[verdict.tone] : UNTINTED;
+    const box = verdict?.hit ?? null;
+    this.ghostHitShown = box !== null;
+    if (box) {
+      this.ghostHitX = (box.minX + box.maxX) / 2;
+      this.ghostHitZ = (box.minZ + box.maxZ) / 2;
+      this.ghostHit.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
+      this.ghostHit.position.y = (box.minY + box.maxY) / 2;
+      this.positionGhostHit();
+    }
+    this.showGhostHit();
+  }
+
+  private showGhostHit(): void {
+    this.ghostHit.visible = this.ghostHitShown && this.ghostPose !== null;
+  }
+
+  private positionGhostHit(): void {
+    this.ghostHit.position.set(
+      this.ghostHitX - this.renderOriginX,
+      this.ghostHit.position.y,
+      this.ghostHitZ - this.renderOriginZ,
+    );
+    this.ghostHit.updateMatrix();
+    this.ghostHit.updateMatrixWorld(true);
   }
 
   setSelectionBox(box: WorldBox | null): void {
@@ -1646,6 +1709,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       ghost.updateMatrix();
       ghost.updateMatrixWorld(true);
     }
+    this.positionGhostHit();
     this.selection.position.set(
       this.selectionCentreX - this.renderOriginX,
       this.selection.position.y,
