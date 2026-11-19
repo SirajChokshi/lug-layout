@@ -2,10 +2,14 @@ import {
   BOX_STRIDE,
   checkPlan,
   LABEL_NUMBERED,
+  mmRectInWorld,
+  NO_ROW,
   PlanDelta,
   regionOf,
+  roomRect,
   TRACK_SEGMENT,
   uncheckedPlan,
+  type LduRect,
   type PlacementKey,
   type PlanCheck,
   type PlanPlacement,
@@ -13,6 +17,7 @@ import {
 } from "@brr/domain";
 import { chunkKey, lduFromMm } from "@brr/math";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
+import { fitAllBox } from "../camera/editor-camera.ts";
 import { overviewOf } from "../camera/overview.ts";
 import {
   writeFullRebuild,
@@ -30,9 +35,125 @@ import {
   type ObstacleInput,
   type PlacedForPlan,
   type PlanPatch,
-  type PlanSnapshot,
   type TableInput,
 } from "./plan-service.ts";
+
+interface PlanSnapshot {
+  readonly plans: ReadonlyArray<PlanRegion>;
+  readonly activePlanId: string | null;
+  readonly checks: ReadonlyArray<PlanCheck>;
+  readonly placements: ReadonlyArray<PlacedForPlan>;
+  readonly sandboxPlacements: ReadonlyArray<PlacementKey>;
+  readonly tableTopY: number;
+}
+
+interface TodaysOverviewItem {
+  readonly ref: string;
+  readonly rect: LduRect;
+}
+
+interface TodaysOverviewView {
+  readonly items: ReadonlyArray<TodaysOverviewItem>;
+  readonly rooms: ReadonlyArray<LduRect>;
+  readonly tables: ReadonlyArray<LduRect>;
+  readonly obstacles: ReadonlyArray<LduRect>;
+  readonly bounds: LduRect | null;
+}
+
+function todaysUnionOf(rects: ReadonlyArray<LduRect>): LduRect | null {
+  const first = rects[0];
+  if (!first) return null;
+  let { minX, minZ, maxX, maxZ } = first;
+  for (const rect of rects) {
+    minX = Math.min(minX, rect.minX);
+    minZ = Math.min(minZ, rect.minZ);
+    maxX = Math.max(maxX, rect.maxX);
+    maxZ = Math.max(maxZ, rect.maxZ);
+  }
+  return { minX, minZ, maxX, maxZ };
+}
+
+function todaysOverviewOf(snapshot: PlanSnapshot): TodaysOverviewView {
+  const items = snapshot.placements.map((placement) => ({
+    ref: placement.ref,
+    rect: {
+      minX: placement.box.minX,
+      minZ: placement.box.minZ,
+      maxX: placement.box.maxX,
+      maxZ: placement.box.maxZ,
+    },
+  }));
+  const rooms = snapshot.plans.map(roomRect);
+  const tables = snapshot.plans.flatMap((plan) =>
+    plan.footprint.tables.map((table) => mmRectInWorld(plan, table.rect)),
+  );
+  const obstacles = snapshot.plans.flatMap((plan) =>
+    plan.footprint.obstacles.map((obstacle) => mmRectInWorld(plan, obstacle.rect)),
+  );
+  return {
+    items,
+    rooms,
+    tables,
+    obstacles,
+    bounds: todaysUnionOf([...items.map((item) => item.rect), ...rooms]),
+  };
+}
+
+const TODAYS_HOME_HALF_LDU = 640;
+const TODAYS_HOME_BOX: WorldBox = {
+  minX: -TODAYS_HOME_HALF_LDU,
+  minY: 0,
+  minZ: -TODAYS_HOME_HALF_LDU,
+  maxX: TODAYS_HOME_HALF_LDU,
+  maxY: 0,
+  maxZ: TODAYS_HOME_HALF_LDU,
+};
+
+function todaysFlatBox(rect: LduRect): WorldBox {
+  return { minX: rect.minX, minY: 0, minZ: rect.minZ, maxX: rect.maxX, maxY: 0, maxZ: rect.maxZ };
+}
+
+function todaysUnion(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
+  const first = boxes[0];
+  if (!first) return null;
+  let { minX, minY, minZ, maxX, maxY, maxZ } = first;
+  for (const box of boxes) {
+    minX = Math.min(minX, box.minX);
+    minY = Math.min(minY, box.minY);
+    minZ = Math.min(minZ, box.minZ);
+    maxX = Math.max(maxX, box.maxX);
+    maxY = Math.max(maxY, box.maxY);
+    maxZ = Math.max(maxZ, box.maxZ);
+  }
+  return { minX, minY, minZ, maxX, maxY, maxZ };
+}
+
+function todaysFitAllBox(snapshot: PlanSnapshot): WorldBox {
+  const { placements, plans } = snapshot;
+  return (
+    todaysUnion(placements.map((placement) => placement.box)) ??
+    todaysUnion(plans.map((plan) => todaysFlatBox(roomRect(plan)))) ??
+    TODAYS_HOME_BOX
+  );
+}
+
+function overviewWithItems(plans: PlanService): TodaysOverviewView {
+  const { rooms, tables, obstacles, bounds } = overviewOf(plans);
+  const view = plans.placements();
+  const items: TodaysOverviewItem[] = [];
+  for (let row = view.first(); row !== NO_ROW; row = view.next(row)) {
+    items.push({
+      ref: view.refOf(row),
+      rect: {
+        minX: view.minX(row),
+        minZ: view.minZ(row),
+        maxX: view.maxX(row),
+        maxZ: view.maxZ(row),
+      },
+    });
+  }
+  return { items, rooms, tables, obstacles, bounds };
+}
 
 interface Recorder {
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
@@ -744,7 +865,6 @@ export class Pair {
       if (!sameValue(a, b)) this.mismatch(what, a, b);
     };
     sameObject(sut.materialize(), fiveFields(todaySnap), "materialize");
-    sameObject(sut.snapshot(), todaySnap, "snapshot adapter");
     sameObject(sut.plans(), todaySnap.plans, "plans");
     sameObject(sut.activePlanId(), todaySnap.activePlanId, "activePlanId");
     sameObject(sut.tableTopY(), todaySnap.tableTopY, "tableTopY");
@@ -774,9 +894,14 @@ export class Pair {
       "#plan-state JSON",
     );
     sameObject(
-      attempt(() => overviewOf(sut.snapshot())),
-      attempt(() => overviewOf(todaySnap)),
+      attempt(() => overviewWithItems(sut)),
+      attempt(() => todaysOverviewOf(todaySnap)),
       "overviewOf",
+    );
+    sameObject(
+      attempt(() => fitAllBox(sut)),
+      attempt(() => todaysFitAllBox(todaySnap)),
+      "fitAll",
     );
   }
 }
