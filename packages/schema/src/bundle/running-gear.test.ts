@@ -65,6 +65,7 @@ function modelFile(overrides: Record<string, unknown> = {}) {
         role: "model",
         file: "wheel.glb",
         bounds: { min: [0, 0, 0], max: [1, 1, 1] },
+        extents: null,
         studs: [],
         rolling: { stepsPerLdu: 16, surfaces: [TREAD], unread: [{ reason: "faceted", axis: 2 }] },
       },

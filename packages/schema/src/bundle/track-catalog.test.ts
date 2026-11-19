@@ -107,7 +107,16 @@ function indexWith(rail: number | null, rails: ReadonlyArray<typeof RAIL> | null
     }),
     trackShapes: [],
     tablePlane: { part: "table", depthBelowTopLdu: 8 },
-    compiler: rails === null ? null : { file: "compile.wasm", unofficialAllowlist: [], rails },
+    compiler:
+      rails === null
+        ? null
+        : {
+            file: "compile.wasm",
+            unofficialAllowlist: [],
+            rails,
+            sectionVocabulary: { file: "section-vocabulary.json", sha256: "0".repeat(64) },
+            cavityProbe: "cavity.dat",
+          },
     connectors: { file: "connectors.json" },
     connectivity: { file: "connectivity.json" },
     crosswalk: { file: "crosswalk.json" },
