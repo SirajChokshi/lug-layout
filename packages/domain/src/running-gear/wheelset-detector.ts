@@ -221,6 +221,22 @@ function openRange(low: ExactRational, high: ExactRational): IntegerRange | null
   return first <= last ? { low: toInt32(first), high: toInt32(last) } : null;
 }
 
+function minus(range: IntegerRange, other: IntegerRange | null): IntegerRange[] {
+  if (other === null || other.high < range.low || other.low > range.high) return [range];
+  const out: IntegerRange[] = [];
+  if (other.low > range.low) out.push({ low: range.low, high: other.low - 1 });
+  if (other.high < range.high) out.push({ low: other.high + 1, high: range.high });
+  return out;
+}
+
+function exclusive(range: IntegerRange | null, other: IntegerRange | null): IntegerRange[] {
+  return range === null ? [] : minus(range, other);
+}
+
+function contains(ranges: ReadonlyArray<IntegerRange>, value: number): boolean {
+  return ranges.some((range) => range.low <= value && value <= range.high);
+}
+
 function union(ranges: ReadonlyArray<IntegerRange>): IntegerRange[] {
   const sorted = ranges.toSorted((a, b) => a.low - b.low);
   const out: IntegerRange[] = [];
@@ -701,28 +717,29 @@ export class WheelsetDetector {
         subtractExactRational(extent.high, rail.farFrom),
       ),
     );
-    const feasible = intersect(
-      union(near.filter((range): range is IntegerRange => range !== null)),
-      union(far.filter((range): range is IntegerRange => range !== null)),
-    );
+    const nearOnly = extents.map((_, m) => exclusive(near[m] ?? null, far[m] ?? null));
+    const farOnly = extents.map((_, m) => exclusive(far[m] ?? null, near[m] ?? null));
+    const feasible = intersect(union(nearOnly.flat()), union(farOnly.flat()));
     if (feasible.length === 0) return null;
     const memberIndex: number[] = [];
     for (let m = 0; m < extents.length; m++) {
-      if (meets(near[m] ?? null, feasible) || meets(far[m] ?? null, feasible)) memberIndex.push(m);
+      const through = [...(nearOnly[m] ?? []), ...(farOnly[m] ?? [])];
+      if (through.some((range) => meets(range, feasible))) memberIndex.push(m);
     }
     const trackCentre = nearestToMiddle(feasible);
     const c = exactRational(BigInt(trackCentre), 1n);
-    const memberExtents = memberIndex.flatMap((m) => {
-      const extent = extents[m];
-      return extent ? [extent] : [];
-    });
+    const exclusiveAt = (only: ReadonlyArray<ReadonlyArray<IntegerRange>>) =>
+      memberIndex.flatMap((m) => {
+        const extent = extents[m];
+        return extent && contains(only[m] ?? [], trackCentre) ? [extent] : [];
+      });
     const nearRadius = contactRadius(
-      memberExtents,
+      exclusiveAt(nearOnly),
       addExactRational(c, rail.nearFrom),
       addExactRational(c, rail.nearTo),
     );
     const farRadius = contactRadius(
-      memberExtents,
+      exclusiveAt(farOnly),
       addExactRational(c, rail.farFrom),
       addExactRational(c, rail.farTo),
     );

@@ -25,7 +25,8 @@ import {
   MATE_PASS_SUBMODEL,
   type MatePairs,
 } from "../connect/mate-pairs.ts";
-import { AxleHeights, supportPlane } from "./support-plane.ts";
+import { wheelFreeHangingGroups, type HangingGroup } from "./hanging-groups.ts";
+import { AxleHeights, commonFrame, supportPlane } from "./support-plane.ts";
 import { UnionFind } from "./union-find.ts";
 import type { DetectedWheelset } from "./wheelset-detector.ts";
 
@@ -63,6 +64,7 @@ export interface DetectedBogie {
   readonly subAssembly: number;
   readonly pivotMates: ReadonlyArray<number>;
   readonly carried: ReadonlyArray<number>;
+  readonly pendants: ReadonlyArray<number>;
 }
 
 export interface UnidentifiedSupportPlane {
@@ -203,6 +205,7 @@ export class BogieDetector {
       b: rootIndex.get(edge.b) ?? 0,
       mates: edge.mates,
     }));
+    const heights = new AxleHeights(frames);
     const classifyWith = (counted: Uint8Array): Classification =>
       this.classify(
         members,
@@ -210,6 +213,7 @@ export class BogieDetector {
         counted,
         pivotEdges,
         frames,
+        heights,
         instances,
         parts,
         mates,
@@ -217,7 +221,6 @@ export class BogieDetector {
       );
     const counted = new Uint8Array(wheelsets.length).fill(1);
     const unseatedBy = new Int32Array(wheelsets.length).fill(NOT_UNSEATED);
-    const heights = new AxleHeights(frames);
     const unidentified = new Map<number, UnidentifiedSupportPlane>();
     let classes = classifyWith(counted);
     for (let unseated = true; unseated;) {
@@ -261,6 +264,7 @@ export class BogieDetector {
     counted: Uint8Array,
     pivotEdges: ReadonlyArray<PivotEdge>,
     frames: SubmodelFrames,
+    heights: AxleHeights,
     instances: PartInstances,
     parts: ReadonlyArray<ConnectorTable | null>,
     mates: MatePairs,
@@ -280,6 +284,11 @@ export class BogieDetector {
       instances: Uint32Array.from(list),
       wheelsets: wheelsetsOf[s] ?? [],
     }));
+    const hanging = wheelFreeHangingGroups(
+      subAssemblies.length,
+      pivotEdges,
+      Int32Array.from(subAssemblies, (sub) => sub.wheelsets.length),
+    );
     const bogies: DetectedBogie[] = [];
     const isBogie = new Uint8Array(subAssemblies.length);
     for (let s = 0; s < subAssemblies.length; s++) {
@@ -287,8 +296,10 @@ export class BogieDetector {
         s,
         subAssemblies,
         pivotEdges,
+        hanging[s] ?? [],
         classifiedOf,
         frames,
+        heights,
         instances,
         parts,
         mates,
@@ -631,8 +642,10 @@ export class BogieDetector {
     s: number,
     subAssemblies: ReadonlyArray<SubAssembly>,
     edges: ReadonlyArray<PivotEdge>,
+    hanging: ReadonlyArray<HangingGroup>,
     classifiedOf: Int32Array,
     frames: SubmodelFrames,
+    heights: AxleHeights,
     instances: PartInstances,
     parts: ReadonlyArray<ConnectorTable | null>,
     mates: MatePairs,
@@ -640,7 +653,11 @@ export class BogieDetector {
   ): DetectedBogie | null {
     const sub = subAssemblies[s];
     if (!sub || sub.wheelsets.length === 0) return null;
-    const incident = edges.filter((edge) => edge.a === s || edge.b === s);
+    const pendantGroups = hanging.filter((group) =>
+      this.outboardPendant(sub, group, edges, frames, heights, instances, parts, mates, wheelsets),
+    );
+    const peeled = new Set(pendantGroups.flatMap((group) => group.joins));
+    const incident = edges.filter((edge, e) => (edge.a === s || edge.b === s) && !peeled.has(e));
     if (incident.length === 0) return null;
     const pivotMates = incident.flatMap((edge) => edge.mates);
     const firstMate = pivotMates[0];
@@ -661,7 +678,55 @@ export class BogieDetector {
     if (!this.pivotWithinWheelbase(sub, firstMate, frames, instances, parts, mates, wheelsets))
       return null;
     const carried = [...new Set(incident.map((edge) => (edge.a === s ? edge.b : edge.a)))];
-    return { subAssembly: s, pivotMates, carried };
+    const pendants = pendantGroups.flatMap((group) => group.members).toSorted((a, b) => a - b);
+    return { subAssembly: s, pivotMates, carried, pendants };
+  }
+
+  private outboardPendant(
+    sub: SubAssembly,
+    group: HangingGroup,
+    edges: ReadonlyArray<PivotEdge>,
+    frames: SubmodelFrames,
+    heights: AxleHeights,
+    instances: PartInstances,
+    parts: ReadonlyArray<ConnectorTable | null>,
+    mates: MatePairs,
+    wheelsets: ReadonlyArray<DetectedWheelset>,
+  ): boolean {
+    const join = group.joins.flatMap((e) => edges[e]?.mates ?? []);
+    const first = join[0];
+    if (first === undefined) return false;
+    if (!join.every((m) => this.sameLine(frames, instances, parts, mates, m, first))) return false;
+    const own = sub.wheelsets.flatMap((w) => {
+      const wheelset = wheelsets[w];
+      return wheelset ? [wheelset] : [];
+    });
+    const lead = own[0];
+    if (!lead || own.some((w) => w.modelDimension !== lead.modelDimension)) return false;
+    const travel = lead.modelDimension === 0 ? 2 : 0;
+    const male = mates.maleInstance[first] ?? 0;
+    const female = mates.femaleInstance[first] ?? 0;
+    const part = parts[instances.partIndex[male] ?? -1];
+    if (!part) return false;
+    let frame = commonFrame(frames, frames.frameOf(male), frames.frameOf(female));
+    for (const w of own) frame = commonFrame(frames, frame, frames.frameOf(w.axleInstance));
+    const connector = mates.maleConnector[first] ?? 0;
+    const pivot = heights.along(
+      male,
+      [0, 1, 2].map((k) => connectorOriginLdu(part, connector, k)),
+      frame,
+      travel,
+    );
+    if (pivot === null) return false;
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+    for (const w of own) {
+      const at = heights.along(w.axleInstance, w.axlePoint, frame, travel);
+      if (at === null) return false;
+      low = Math.min(low, at);
+      high = Math.max(high, at);
+    }
+    return pivot < low || pivot > high;
   }
 
   private pivotWithinWheelbase(

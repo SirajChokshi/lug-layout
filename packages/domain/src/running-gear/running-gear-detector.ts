@@ -104,6 +104,12 @@ function byTip(list: ReadonlyArray<TippedCandidate>): ConnectorRef[] {
     .map((candidate) => candidate.ref);
 }
 
+function bogieInstances(bogie: DetectedBogie, partition: RunningGearPartition): number[] {
+  return [bogie.subAssembly, ...bogie.pendants]
+    .flatMap((s) => [...(partition.subAssemblies[s]?.instances ?? [])])
+    .toSorted((a, b) => a - b);
+}
+
 function travelOf(wheelset: DetectedWheelset): number {
   return wheelset.modelDimension === 0 ? 2 : 0;
 }
@@ -251,9 +257,7 @@ export class RunningGearDetector {
     resolved.forEach((gear, v) => {
       for (const instance of bodies[v] ?? []) vehicleOfInstance[instance] = v;
       for (const bogie of gear.bogies) {
-        for (const instance of partition.subAssemblies[bogie.subAssembly]?.instances ?? []) {
-          vehicleOfInstance[instance] = v;
-        }
+        for (const instance of bogieInstances(bogie, partition)) vehicleOfInstance[instance] = v;
       }
     });
     const ends = this.endCandidates(exposed, resolved, vehicleOfInstance);
@@ -487,7 +491,7 @@ export class RunningGearDetector {
         g?.wheelset === null || g?.wheelset === undefined ? null : (local.get(g.wheelset) ?? null),
     });
     const bogies: VehicleBogie[] = gear.bogies.map((bogie, index) => ({
-      instances: Array.from(partition.subAssemblies[bogie.subAssembly]?.instances ?? []),
+      instances: bogieInstances(bogie, partition),
       pivot: [0, 1, 2].map((row) =>
         this.pivotPosition(bogie.pivotMates[0] ?? 0, row, frames, instances, connectors, mates),
       ) as [number, number, number],

@@ -16,7 +16,8 @@ import {
   type SubmodelFrames,
 } from "../connect/submodel-frames.ts";
 
-const MODEL_UP_ROW = 4;
+const ROW = 4;
+const MODEL_UP = 1;
 
 export interface SeatingWheelset {
   readonly axleInstance: number;
@@ -38,30 +39,40 @@ export class AxleHeights {
 
   constructor(private readonly frames: SubmodelFrames) {}
 
-  inFrame(instance: number, axlePoint: Float64Array, frame: number): number | null {
+  inFrame(instance: number, axlePoint: ArrayLike<number>, frame: number): number | null {
+    return this.along(instance, axlePoint, frame, MODEL_UP);
+  }
+
+  along(
+    instance: number,
+    point: ArrayLike<number>,
+    frame: number,
+    modelDimension: number,
+  ): number | null {
     if (!this.frames.relate(instance, frame, this.toFrame)) return null;
     this.frames.relate(instance, MODEL_ROOT, this.toModel);
-    const up = identifyDirection(
+    const row = modelDimension * ROW;
+    const direction = identifyDirection(
       this.toFrame,
-      this.toModel[MODEL_UP_ROW] ?? 0,
-      this.toModel[MODEL_UP_ROW + 1] ?? 0,
-      this.toModel[MODEL_UP_ROW + 2] ?? 0,
+      this.toModel[row] ?? 0,
+      this.toModel[row + 1] ?? 0,
+      this.toModel[row + 2] ?? 0,
     );
-    if (up === AXIS_FREE) return null;
-    const dimension = axisDimension(up);
+    if (direction === AXIS_FREE) return null;
+    const dimension = axisDimension(direction);
     const identified = identifyPoint(
       this.toFrame,
-      axlePoint[0] ?? 0,
-      axlePoint[1] ?? 0,
-      axlePoint[2] ?? 0,
+      point[0] ?? 0,
+      point[1] ?? 0,
+      point[2] ?? 0,
       1 << dimension,
       this.point,
     );
-    return identified ? axisSign(up) * (this.point.sixteenths[dimension] ?? 0) : null;
+    return identified ? axisSign(direction) * (this.point.sixteenths[dimension] ?? 0) : null;
   }
 }
 
-function commonFrame(frames: SubmodelFrames, a: number, b: number): number {
+export function commonFrame(frames: SubmodelFrames, a: number, b: number): number {
   for (let x = a; x !== NO_FRAME; x = frames.parentFrame(x)) {
     for (let y = b; y !== NO_FRAME; y = frames.parentFrame(y)) if (x === y) return x;
   }
