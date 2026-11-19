@@ -40,6 +40,7 @@ const SEED_RANGE = 2 ** 31;
 const DEFAULT_PAIRS = 3;
 const MAX_GENERATOR_ATTEMPTS_PER_PAIR = 8;
 const HARNESS_TIMEOUT_MS = 600_000;
+const FULL_SWEEP = process.env["HELD_OUT_SWEEP"] === "full";
 const MS_PER_SECOND = 1000;
 const ORIGIN = 0;
 const ASSET_PIPELINE = join(REPO_ROOT, "tools/asset-pipeline");
@@ -145,6 +146,7 @@ async function checkCornerModule(
         moduleItem,
         corner.offset,
         corner.pins,
+        FULL_SWEEP,
       ),
     ],
   };
@@ -187,7 +189,7 @@ async function checkPair(
 
   const subjectPose = await placeAtOrigin(path, subject);
   const poses = pairPoses(path, pair.partnerOffset, pair.alongEdge, subject, subjectPose, partner);
-  const pinned = await pinnedPairChecks(path, poses, pair, subject, partner);
+  const pinned = await pinnedPairChecks(path, poses, pair, subject, partner, FULL_SWEEP);
   const turned = await turnedAwayCheck(path, poses, partner);
   path.undoLast();
 
@@ -206,6 +208,7 @@ async function checkPair(
     pair,
     renamed,
     partner,
+    FULL_SWEEP,
   );
   const differences = sameOutcomes(pinned, renamedRun);
   path.undoLast();
@@ -227,6 +230,7 @@ async function checkPair(
     pair.subject.assembly,
     solid,
     subject,
+    FULL_SWEEP,
   );
   const solidRenamedRun = await solidEdgeChecks(
     path,
@@ -235,6 +239,7 @@ async function checkPair(
     pair.renamedSubject.assembly,
     solid,
     renamed,
+    FULL_SWEEP,
   );
   const solidDifferences = sameOutcomes(solidRun, solidRenamedRun);
   const sameSubjectPose = JSON.stringify(subjectPose) === JSON.stringify(renamedPose);
@@ -273,7 +278,7 @@ function markdown(seed: number, outcomes: ReadonlyArray<PairOutcome>, seconds: n
   const lines = [
     `#### Generated module pairs through the editor's own interface (base seed ${seed}, HELD_OUT_SEED=${seed} reproduces it)`,
     "",
-    `${outcomes.length} pairs in ${seconds.toFixed(1)} s. Each pair is imported and placed through \`IEditor\` only: the pinned module is placed, and its holed partner is held.`,
+    `${outcomes.length} pairs in ${seconds.toFixed(1)} s, ${FULL_SWEEP ? "full" : "coarse"} sweep (HELD_OUT_SWEEP=full runs every stud offset). Each pair is imported and placed through \`IEditor\` only: the pinned module is placed and its holed partner is held, in assist (magnetic) and precise modes.`,
     "",
   ];
   for (const outcome of outcomes) {
