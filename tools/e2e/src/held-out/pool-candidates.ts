@@ -1,12 +1,12 @@
 import { LdrawMirror, type FetchFunction } from "@brr/import";
-import { bundlePartGlb, type Bundle } from "./bundle.ts";
+import { bundlePartGlb, type BundleParts } from "./bundle.ts";
 import { isPoolCandidate, needsLdrawText, type PoolCandidate } from "./generator.ts";
 import { partExtras } from "./part-connectors.ts";
 
 const STUD_TOP_Y = 7;
 
 export async function poolCandidates(
-  bundle: Bundle,
+  bundle: BundleParts,
   fetchUrl: FetchFunction,
 ): Promise<PoolCandidate[]> {
   const mirror = new LdrawMirror(bundle.source, fetchUrl);

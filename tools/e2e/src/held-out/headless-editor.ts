@@ -26,12 +26,30 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
+import type { Decoded } from "@brr/schema/decode";
+import {
+  shardEntry,
+  shardName,
+  worldManifest,
+  type ImportedFile,
+  type WorldArchive,
+  type WorldHeader,
+  type WorldIndexEntry,
+  type WorldShardV1,
+} from "@brr/schema/world";
+import {
+  WORLD_REPOSITORY,
+  type IWorldRepository,
+  type StoredWorld,
+  type WorldChange,
+} from "@brr/storage";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Bundle } from "./bundle.ts";
 
 const RAY_HEIGHT_LDU = 10_000;
+const UNFETCHED_BUNDLE_URL = "https://bundle.invalid/";
 const NO_BAKE_HELPERS: ReadonlyArray<IBakeHelper> = [];
 const CANVAS_WIDTH = 640;
 const CANVAS_HEIGHT = 480;
@@ -74,6 +92,7 @@ export class AimedBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostVerdict(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
@@ -114,6 +133,85 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     return readFile(join(this.root, path), "utf8");
+  }
+}
+
+interface MemoryWorld {
+  header: WorldHeader;
+  readonly shards: Map<string, WorldShardV1>;
+}
+
+class MemoryWorldRepository implements IWorldRepository {
+  private readonly worlds = new Map<string, MemoryWorld>();
+  private readonly files = new Map<string, ImportedFile>();
+  private nextId = 1;
+
+  private entry(id: string, world: MemoryWorld): WorldIndexEntry {
+    const manifest = worldManifest(world.header, [...world.shards.values()].map(shardEntry));
+    return {
+      id,
+      name: world.header.name,
+      placements: manifest.placements,
+      track: manifest.track,
+      shards: manifest.shards.length,
+      savedAt: 0,
+    };
+  }
+
+  async list(): Promise<ReadonlyArray<WorldIndexEntry>> {
+    return [...this.worlds].map(([id, world]) => this.entry(id, world));
+  }
+
+  async create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
+    const id = `world-${this.nextId++}`;
+    this.worlds.set(id, { header, shards: new Map() });
+    return this.save(id, { header, put: shards, drop: [] });
+  }
+
+  async read(id: string): Promise<Decoded<StoredWorld>> {
+    const world = this.worlds.get(id);
+    if (!world) return { ok: false, issues: [{ path: id, message: "is not stored" }] };
+    const shards = [...world.shards.values()];
+    return {
+      ok: true,
+      value: { id, manifest: worldManifest(world.header, shards.map(shardEntry)), shards },
+    };
+  }
+
+  async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
+    const world = this.worlds.get(id) ?? { header: change.header, shards: new Map() };
+    world.header = change.header;
+    for (const superChunk of change.drop) world.shards.delete(shardName(superChunk));
+    for (const shard of change.put) world.shards.set(shardName(shard.superChunk), shard);
+    this.worlds.set(id, world);
+    return this.entry(id, world);
+  }
+
+  async remove(id: string): Promise<void> {
+    this.worlds.delete(id);
+  }
+
+  async shardFiles(): Promise<never[]> {
+    return [];
+  }
+
+  packArchive(_archive: WorldArchive): Uint8Array {
+    return new Uint8Array();
+  }
+
+  async readArchive(): Promise<Decoded<WorldArchive>> {
+    return {
+      ok: false,
+      issues: [{ path: "archive", message: "isn't read by the held-out harness" }],
+    };
+  }
+
+  async putImportedFile(file: ImportedFile): Promise<void> {
+    this.files.set(file.sha256, file);
+  }
+
+  async importedFile(sha256: string): Promise<ImportedFile | undefined> {
+    return this.files.get(sha256);
   }
 }
 
@@ -165,7 +263,7 @@ export async function startHeadlessEditor(
   const container = new Container();
   container.load(
     ...mainThreadModules({
-      bundleBaseUrl: "unused",
+      bundleBaseUrl: UNFETCHED_BUNDLE_URL,
       disclaimer: "unused",
       startSimWorker: () => new MessageChannel().port1,
     }),
@@ -173,6 +271,7 @@ export async function startHeadlessEditor(
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher(bundleRoot));
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   container.rebind(IMPORT_WORKER_POOL).toConstantValue(new InProcessImportPool(bundle, fetchUrl));
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryWorldRepository());
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: CANVAS_WIDTH,

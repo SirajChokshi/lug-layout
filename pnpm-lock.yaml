@@ -522,6 +522,9 @@ importers:
       '@brr/schema':
         specifier: workspace:*
         version: link:../../packages/schema
+      '@brr/storage':
+        specifier: workspace:*
+        version: link:../../packages/storage
       inversify:
         specifier: 8.3.0
         version: 8.3.0(reflect-metadata@0.2.2)
