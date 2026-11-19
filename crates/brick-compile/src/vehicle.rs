@@ -1,6 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::affine::{Affine, Vec3};
+use crate::compile::CompileError;
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::model::ModelInstance;
@@ -147,6 +148,36 @@ impl From<FlattenError> for VehicleError {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum GeometryError {
+    Flatten(FlattenError),
+    Malformed { findings: Vec<MalformedGeometry> },
+}
+
+impl From<FlattenError> for GeometryError {
+    fn from(error: FlattenError) -> Self {
+        GeometryError::Flatten(error)
+    }
+}
+
+impl From<GeometryError> for VehicleError {
+    fn from(error: GeometryError) -> Self {
+        match error {
+            GeometryError::Flatten(error) => VehicleError::Flatten(error),
+            GeometryError::Malformed { findings } => VehicleError::Malformed { findings },
+        }
+    }
+}
+
+impl From<GeometryError> for CompileError {
+    fn from(error: GeometryError) -> Self {
+        match error {
+            GeometryError::Flatten(error) => CompileError::Flatten(error),
+            GeometryError::Malformed { findings } => CompileError::Malformed { findings },
+        }
+    }
+}
+
 type Bounds = [Vec3; 2];
 
 fn ldraw_point_to_y_up(p: Vec3) -> Vec3 {
@@ -236,20 +267,20 @@ impl<'a, L: Library> Geometry<'a, L> {
             })
     }
 
-    fn flatten(&self, part: &str, targets: &[String]) -> Result<Flattened, VehicleError> {
+    fn flatten(&self, part: &str, targets: &[String]) -> Result<Flattened, GeometryError> {
         let path = self.path(part)?;
         let mut flattener = Flattener::new(self.library, Lod::Standard, targets);
         let flattened = flattener.flatten(&path)?;
         if flattener.malformed().is_empty() {
             Ok(flattened)
         } else {
-            Err(VehicleError::Malformed {
+            Err(GeometryError::Malformed {
                 findings: flattener.malformed().to_vec(),
             })
         }
     }
 
-    fn triangles(&mut self, part: &str) -> Result<&[Triangle], VehicleError> {
+    fn triangles(&mut self, part: &str) -> Result<&[Triangle], GeometryError> {
         if !self.triangles.contains_key(part) {
             let flattened = self.flatten(part, &[])?;
             self.triangles.insert(part.to_string(), flattened.triangles);
@@ -261,26 +292,16 @@ impl<'a, L: Library> Geometry<'a, L> {
             .unwrap_or_default())
     }
 
-    fn bounds(&mut self, part: &str) -> Result<Bounds, VehicleError> {
+    fn bounds(&mut self, part: &str) -> Result<Bounds, GeometryError> {
         if let Some(bounds) = self.bounds.get(part) {
             return Ok(*bounds);
         }
-        let mut min = [f64::INFINITY; 3];
-        let mut max = [f64::NEG_INFINITY; 3];
-        for triangle in self.triangles(part)? {
-            for point in triangle.points {
-                let p = ldraw_point_to_y_up(point);
-                for axis in 0..3 {
-                    min[axis] = min[axis].min(p[axis]);
-                    max[axis] = max[axis].max(p[axis]);
-                }
-            }
-        }
-        self.bounds.insert(part.to_string(), [min, max]);
-        Ok([min, max])
+        let bounds = triangle_bounds(self.triangles(part)?);
+        self.bounds.insert(part.to_string(), bounds);
+        Ok(bounds)
     }
 
-    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, VehicleError> {
+    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, GeometryError> {
         Ok(self
             .flatten(part, &[])?
             .files
@@ -294,9 +315,28 @@ impl<'a, L: Library> Geometry<'a, L> {
         &self,
         part: &str,
         targets: &[String],
-    ) -> Result<Vec<StudReference>, VehicleError> {
+    ) -> Result<Vec<StudReference>, GeometryError> {
         Ok(self.flatten(part, targets)?.studs)
     }
+}
+
+fn triangle_bounds(triangles: &[Triangle]) -> Bounds {
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for triangle in triangles {
+        for point in triangle.points {
+            let p = ldraw_point_to_y_up(point);
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+    }
+    [min, max].map(|corner| corner.map(|v| v + 0.0))
+}
+
+pub fn part_bounds<L: Library>(library: &L, part: &str) -> Result<[Vec3; 2], GeometryError> {
+    Geometry::new(library).bounds(part)
 }
 
 fn world_bounds(matrix: &Affine, local: Bounds) -> Bounds {

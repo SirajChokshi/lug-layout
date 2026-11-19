@@ -16,6 +16,7 @@ use crate::clip::{clip_to_box, polygon_area};
 use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
+use crate::record::{BakeRecord, RecordError};
 
 pub const PLATE_LDU: f64 = 8.0;
 pub const EMPTY_COLUMN: i32 = -1;
@@ -91,25 +92,84 @@ pub struct PartSolid {
     max: Vec3,
 }
 
+fn mesh_triangles(mesh: &Mesh) -> (Vec<[Vec3; 3]>, Vec<u32>) {
+    let point = |index: u32| {
+        let k = index as usize * 3;
+        [
+            f64::from(mesh.positions[k]),
+            f64::from(mesh.positions[k + 1]),
+            f64::from(mesh.positions[k + 2]),
+        ]
+    };
+    let mut triangles = Vec::new();
+    let mut colors = Vec::new();
+    for group in &mesh.groups {
+        for t in group.indices.as_chunks::<3>().0 {
+            triangles.push([point(t[0]), point(t[1]), point(t[2])]);
+            colors.push(group.color);
+        }
+    }
+    (triangles, colors)
+}
+
+pub fn tree_order(mesh: &Mesh) -> Vec<usize> {
+    TriangleTree::build(&mesh_triangles(mesh).0).1
+}
+
+fn is_permutation(order: &[usize], count: usize) -> bool {
+    let mut seen = vec![false; count];
+    order.len() == count
+        && order
+            .iter()
+            .all(|&t| t < count && !std::mem::replace(&mut seen[t], true))
+}
+
 impl PartSolid {
     pub fn from_mesh(mesh: &Mesh) -> Self {
-        let point = |index: u32| {
-            let k = index as usize * 3;
-            [
-                f64::from(mesh.positions[k]),
-                f64::from(mesh.positions[k + 1]),
-                f64::from(mesh.positions[k + 2]),
-            ]
-        };
-        let mut triangles = Vec::new();
-        let mut colors = Vec::new();
-        for group in &mesh.groups {
-            for t in group.indices.as_chunks::<3>().0 {
-                triangles.push([point(t[0]), point(t[1]), point(t[2])]);
-                colors.push(group.color);
-            }
-        }
+        let (triangles, colors) = mesh_triangles(mesh);
         let (tree, order) = TriangleTree::build(&triangles);
+        PartSolid::assemble(mesh, triangles, &colors, tree, &order)
+    }
+
+    pub fn from_record(record: &BakeRecord) -> Result<Self, RecordError> {
+        let (triangles, colors) = mesh_triangles(&record.mesh);
+        if !is_permutation(&record.tree_order, triangles.len()) {
+            return Err(RecordError::Order);
+        }
+        let tree = TriangleTree::from_order(&triangles, &record.tree_order);
+        Ok(PartSolid::assemble(
+            &record.mesh,
+            triangles,
+            &colors,
+            tree,
+            &record.tree_order,
+        ))
+    }
+
+    pub fn same_bits(&self, other: &PartSolid) -> bool {
+        let points = |list: &[[Vec3; 3]]| -> Vec<u64> {
+            list.iter()
+                .flatten()
+                .flatten()
+                .map(|v| v.to_bits())
+                .collect()
+        };
+        points(&self.triangles) == points(&other.triangles)
+            && points(&self.tree_points) == points(&other.tree_points)
+            && self.tree_colors == other.tree_colors
+            && self.certifiable == other.certifiable
+            && self.min.map(f64::to_bits) == other.min.map(f64::to_bits)
+            && self.max.map(f64::to_bits) == other.max.map(f64::to_bits)
+            && self.tree.same_bits(&other.tree)
+    }
+
+    fn assemble(
+        mesh: &Mesh,
+        triangles: Vec<[Vec3; 3]>,
+        colors: &[u32],
+        tree: TriangleTree,
+        order: &[usize],
+    ) -> Self {
         let [min, max] = mesh
             .bounds()
             .unwrap_or([[0.0; 3]; 2])
@@ -1110,6 +1170,20 @@ mod tests {
             );
         }
         PartSolid::from_mesh(&mesh::build(&t, &[]))
+    }
+
+    #[test]
+    fn same_bits_tells_a_solid_with_another_tree_apart() {
+        let part = tessellated([0.0; 3], [40.0, 24.0, 20.0], 3);
+        let mut retreed = tessellated([0.0; 3], [40.0, 24.0, 20.0], 3);
+        assert!(retreed.same_bits(&part));
+        let shifted: Vec<[Vec3; 3]> = part
+            .tree_points
+            .iter()
+            .map(|t| t.map(|p| [p[0] + 1.0, p[1], p[2]]))
+            .collect();
+        retreed.tree = TriangleTree::build(&shifted).0;
+        assert!(!retreed.same_bits(&part));
     }
 
     fn tessellated(min: Vec3, max: Vec3, divisions: usize) -> PartSolid {

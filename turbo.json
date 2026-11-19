@@ -17,6 +17,7 @@
         "src/**",
         "!src/**/*.test.ts",
         "!src/library/**",
+        "!src/library-bake/**",
         "!src/pointer/**",
         "!src/publication/**",
         "!src/library-connectors/**",

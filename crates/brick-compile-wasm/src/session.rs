@@ -9,9 +9,14 @@ use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
 use brick_compile::model::{bake_model, submodel_index, ModelInstance};
+use brick_compile::record::BakeRecord;
 use brick_compile::studio::read_io;
-use brick_compile::vehicle::Vehicle;
-use brick_compile::{compile_part, CompileOptions, Lod, TechnicPrimitives};
+use brick_compile::vehicle::{part_bounds, Vehicle};
+use brick_compile::{
+    compile_part, CompileError, CompileOptions, CompiledPart, Lod, TechnicPrimitives,
+};
+
+const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
@@ -62,7 +67,11 @@ impl Session {
                 connectors,
                 parts,
                 inline_checks,
+                records,
             } => {
+                if *records && Lod::from(*lod) != Lod::Standard {
+                    return Err(BAKE_RECORD_LOD.to_string());
+                }
                 let rolling_mode = rolling_mode_from_studs(&self.library, stud_primitives);
                 let stud_needs = self.library.take_requested();
                 let options = CompileOptions {
@@ -85,6 +94,7 @@ impl Session {
                         inline_checks,
                         stud_needs: &stud_needs,
                         inference: &inference,
+                        records: *records,
                     },
                     &model,
                     body,
@@ -205,6 +215,22 @@ struct CompileWork<'a> {
     inline_checks: &'a [InlineCheck],
     stud_needs: &'a [String],
     inference: &'a ConnectorInference<'a>,
+    records: bool,
+}
+
+fn compiled_part(
+    library: &TrackingLibrary,
+    reference: &str,
+    options: &CompileOptions,
+    records: bool,
+) -> Result<(CompiledPart, Option<BakeRecord>), CompileError> {
+    let compiled = compile_part(library, reference, options)?;
+    if !records {
+        return Ok((compiled, None));
+    }
+    let bounds = part_bounds(library, reference)?;
+    let record = BakeRecord::of(&compiled, bounds);
+    Ok((compiled, Some(record)))
 }
 
 fn compile(
@@ -219,14 +245,15 @@ fn compile(
         inline_checks,
         stud_needs,
         inference,
+        records,
     } = work;
     let mut parts = Vec::with_capacity(references.len());
     for reference in references {
-        let result = compile_part(library, reference, options);
+        let result = compiled_part(library, reference, options, records);
         let mut requested = library.take_requested();
         requested.extend(stud_needs.iter().cloned());
         let connectors = match &result {
-            Ok(compiled) if requested.is_empty() && inference.wants(reference) => {
+            Ok((compiled, _)) if requested.is_empty() && inference.wants(reference) => {
                 let header = &compiled.flattened_files[0].header;
                 let license = header.license.as_deref().unwrap_or_default();
                 let record = inference.record(library, reference, &compiled.path, license);
@@ -245,9 +272,15 @@ fn compile(
                 reference,
                 paths: requested,
             },
-            Ok(compiled) => PartOutcome::Compiled {
-                reference,
+            Ok((compiled, record)) => PartOutcome::Compiled {
                 glb: body.bytes(&compiled.to_glb()),
+                record: match record {
+                    Some(record) => {
+                        Some(body.bytes(&record.encode().map_err(|e| format!("{reference}: {e}"))?))
+                    }
+                    None => None,
+                },
+                reference,
                 file: compiled.path.clone(),
                 header: Section::from(&compiled.flattened_files[0].header),
                 files: compiled.flattened_files.len(),
