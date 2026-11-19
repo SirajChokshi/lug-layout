@@ -44,6 +44,7 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
+import { PLATE_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import type { Decoded } from "@brr/schema/decode";
@@ -284,7 +285,10 @@ class HeadlessBackend implements ISceneBackend {
   }
   setNeededMeshListener(): void {}
   setGhost(): void {}
-  placeGhost(): void {}
+  readonly ghost: number[] = [];
+  placeGhost(x: number, yLdu: number, z: number, rot: number): void {
+    this.ghost.splice(0, this.ghost.length, x, yLdu, z, rot);
+  }
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
@@ -1299,6 +1303,24 @@ it("seats a set on a MILS module's surface where the cursor's ray enters the mod
     restsOn: hover?.restsOn.map((model) => model.item),
     studMates: (hover?.mates.length ?? 0) > 0,
   }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
+it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  const [x = Number.NaN, yLdu = Number.NaN, z = Number.NaN] = backend.ghost;
+  editor.click(0, 0, 0);
+
+  expect({ poses: posesOf(editor), onTheModule: yLdu > 0 }).toEqual({
+    poses: [`${PLAIN_MODULE} 320,320 y0`, `${SET} ${x},${z} y${yLdu / PLATE_LDU}`].toSorted(),
+    onTheModule: true,
+  });
 }, 120_000);
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {

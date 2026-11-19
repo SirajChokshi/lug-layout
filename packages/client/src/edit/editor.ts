@@ -32,7 +32,6 @@ import {
   type SnapWindow,
 } from "@brr/domain";
 import {
-  BRICK_LDU,
   CHUNK_LDU,
   PLATE_LDU,
   QUARTER_TURN_16,
@@ -545,7 +544,6 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
     }
   }
 }
-const GHOST_LIFT_LDU = BRICK_LDU;
 
 interface HeldPiece {
   readonly catalogIndex: number;
@@ -1536,7 +1534,7 @@ export class Editor implements IEditor, IEditedWorld {
       turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
-    this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU + GHOST_LIFT_LDU, pose.z, pose.rot);
+    this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
   }
 
   private aimPick(rot: number, turns: number): void {
