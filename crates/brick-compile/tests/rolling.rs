@@ -207,6 +207,7 @@ fn custom_wheel() -> String {
     let off_grid_radius = Band::along(1, at(-60.0, 0.0, 60.0), -8.0, 0.0, [10.01, 10.01]);
     let off_grid_centre = Band::along(1, at(60.01, 0.0, -60.0), -8.0, 0.0, [10.0, 10.0]);
     let off_grid_end = Band::along(1, at(60.0, 0.0, 60.0), -10.003, 0.0, [10.0, 10.0]);
+    let off_grid_cone_end = Band::along(1, at(-100.0, 0.0, 60.0), -10.003, 0.0, [10.0, 12.0]);
     let notched = Band {
         drawn: 15,
         ..Band::along(0, at(0.0, -12.0, 60.0), 20.0, 30.0, [10.0, 10.0])
@@ -300,6 +301,7 @@ fn custom_wheel() -> String {
         off_grid_radius,
         off_grid_centre,
         off_grid_end,
+        off_grid_cone_end,
         notched,
         cut_on_every_meridian,
         cut_obliquely,
@@ -397,6 +399,7 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
             surface(0, [160.0, 0.0], 60.0, 70.0, [8.0, 8.0]),
             surface(1, [-60.0, 0.0], 0.0, 8.0, [10.0, 10.0]),
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
+            surface(1, [60.0, -60.0], 0.0, 10.0, [10.0, 10.0]),
         ]
     );
     let extras = compiled.extras();
@@ -415,7 +418,7 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "from": 0,
                 "to": 128
             },
-            { "reason": "width", "axis": 1, "at": [960, -960], "radii": [160, 160], "from": 0 },
+            { "reason": "width", "axis": 1, "at": [-1600, -960], "radii": [192, 160], "from": 0 },
             {
                 "reason": "faceted",
                 "axis": 2,
