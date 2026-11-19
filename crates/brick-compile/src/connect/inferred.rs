@@ -738,8 +738,10 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         let floor_plane = probe.entrance[probe.axis] + probe.inward * floor.depth;
         if sixteenths(floor_plane) == Some(plane) {
             EntranceClosure::Closed
-        } else {
+        } else if floor.faces_probe == Some(true) {
             EntranceClosure::Open
+        } else {
+            EntranceClosure::Unmeasurable
         }
     }
 

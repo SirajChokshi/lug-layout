@@ -370,17 +370,22 @@ fn published_records_keep_one_face_per_exact_slot_and_receptor_from_the_highest_
     }));
 }
 
-fn peghole_pair(closed_far_end: bool) -> String {
-    let disc = if closed_far_end {
-        "1 16 0 0 10 8 0 0 0 0 8 0 1 0 4-4disc.dat\n"
-    } else {
-        ""
-    };
+const CLOSING_DISC: &str = "1 16 0 0 10 8 0 0 0 0 8 0 1 0 4-4disc.dat\n";
+const UNCERTIFIED_SLAB: &str = "1 16 0 0 10 1 0 0 0 1 0 0 0 1 s/zz-slab.dat\n";
+const SLAB_WITHOUT_BFC: &str = "0 Slab Without BFC\n\
+     4 16 -12 -12 -1 12 -12 -1 12 12 -1 -12 12 -1\n\
+     4 16 -12 -12 1 -12 12 1 12 12 1 12 -12 1\n\
+     4 16 -12 -12 -1 -12 -12 1 12 -12 1 12 -12 -1\n\
+     4 16 -12 12 -1 12 12 -1 12 12 1 -12 12 1\n\
+     4 16 -12 -12 -1 -12 12 -1 -12 12 1 -12 -12 1\n\
+     4 16 12 -12 -1 12 -12 1 12 12 1 12 12 -1\n";
+
+fn peghole_pair(at_free_end: &str) -> String {
     format!(
         "0 Peghole Pair\n0 BFC CERTIFY CCW\n\
          1 16 0 0 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n\
          1 16 0 0 -10 1 0 0 0 0 1 0 1 0 peghole.dat\n\
-         1 16 0 0 -8 {BORE_ALONG_Z} 4-4cyli.dat\n{disc}"
+         1 16 0 0 -8 {BORE_ALONG_Z} 4-4cyli.dat\n{at_free_end}"
     )
 }
 
@@ -389,16 +394,16 @@ fn a_partly_held_connector_keeps_a_free_face_only_where_shadow_and_mesh_leave_it
     let short_shadow = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 8 4] [pos=0 0 -10] [ori=1 0 0 0 0 1 0 -1 0]\n";
     let full_shadow = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 8 2   R 6 16   R 8 2] [pos=0 0 -10] [ori=1 0 0 0 0 1 0 -1 0]\n";
     let cases = [
-        ("parts/zz-open.dat", false, short_shadow, None),
+        ("parts/zz-open.dat", "", short_shadow, None),
         (
             "parts/zz-closed.dat",
-            true,
+            CLOSING_DISC,
             full_shadow,
             Some((Withholding::ClosedByGeometry, true, EntranceClosure::Closed)),
         ),
         (
             "parts/zz-mesh-closed.dat",
-            true,
+            CLOSING_DISC,
             short_shadow,
             Some((
                 Withholding::ClosedByGeometry,
@@ -408,15 +413,27 @@ fn a_partly_held_connector_keeps_a_free_face_only_where_shadow_and_mesh_leave_it
         ),
         (
             "parts/zz-disagree.dat",
-            false,
+            "",
             full_shadow,
             Some((Withholding::SourcesDisagree, true, EntranceClosure::Open)),
         ),
+        (
+            "parts/zz-buried.dat",
+            UNCERTIFIED_SLAB,
+            short_shadow,
+            Some((
+                Withholding::NotProvenOpen,
+                false,
+                EntranceClosure::Unmeasurable,
+            )),
+        ),
     ];
-    let library = with_parts(
-        pinned("ldraw"),
-        &cases.map(|(part, closed, _, _)| (part, peghole_pair(closed))),
-    );
+    let mut files: Vec<(&str, String)> = cases
+        .iter()
+        .map(|(part, at_free_end, _, _)| (*part, peghole_pair(at_free_end)))
+        .collect();
+    files.push(("parts/s/zz-slab.dat", SLAB_WITHOUT_BFC.to_string()));
+    let library = with_parts(pinned("ldraw"), &files);
     let shadow = memory(&cases.map(|(part, _, snap, _)| (part, snap)));
     let table: Value =
         serde_json::from_str(&fs::read_to_string(table_path()).expect("table")).expect("json");
