@@ -1,6 +1,8 @@
 import {
+  compareExactRational,
   isCanonicalExactDecimalText,
   isCanonicalExactRationalText,
+  parseExactRational,
   pose16,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
@@ -405,6 +407,22 @@ const EndRadii = v.pipe(
   v.description("the radius at `from` and at `to` in sixteenths, null where it didn't identify"),
 );
 
+export const UnreadRaw = v.pipe(
+  v.object({
+    from: ExactRationalText,
+    to: ExactRationalText,
+    radii: v.optional(v.tuple([v.nullable(ExactRationalText), v.nullable(ExactRationalText)])),
+  }),
+  v.check(
+    ({ from, to }) => compareExactRational(parseExactRational(from), parseExactRational(to)) <= 0,
+    "a raw band runs from no higher than `to`",
+  ),
+  v.description(
+    "the band as the reader measured it, never rounded or identified: each value the exact rational of its Float64. `from` and `to` are its ends in LDU along its axis (an unoriented band's along its own fitted line); `radii`, the radius at `from` and then at `to`, null where none was measured, appears wherever a radius was measured",
+  ),
+);
+export type UnreadRaw = v.InferOutput<typeof UnreadRaw>;
+
 const UnreadEnds = {
   from: v.optional(RollingAlong),
   to: v.optional(RollingAlong),
@@ -412,12 +430,13 @@ const UnreadEnds = {
 
 export const UnreadBand = v.pipe(
   v.variant("reason", [
-    v.object({ reason: v.literal("unoriented") }),
+    v.object({ reason: v.literal("unoriented"), raw: UnreadRaw }),
     v.object({
       reason: v.literal("centre"),
       axis: RollingAxis,
       radii: v.optional(EndRadii),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
       reason: v.literal("radius"),
@@ -425,6 +444,7 @@ export const UnreadBand = v.pipe(
       at: RollingAt,
       radii: EndRadii,
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
       reason: v.literal("width"),
@@ -432,13 +452,15 @@ export const UnreadBand = v.pipe(
       at: RollingAt,
       radii: v.tuple([Count, Count]),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
-      reason: v.picklist(["faceted", "partial", "facing", "irregular"]),
+      reason: v.picklist(["faceted", "partial", "facing", "irregular", "arcs"]),
       axis: RollingAxis,
       at: v.optional(RollingAt),
       radii: v.optional(EndRadii),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
   ]),
   v.check(
@@ -447,7 +469,7 @@ export const UnreadBand = v.pipe(
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify",
+    "a band the part compile found round evidence for (a ring fitting a circle with at least the coarse stud's facet count, or a revolution axis) but could not read as an outward rolling surface, one entry per band. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not (a cone; a cylinder's end is read inside the band). faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes), or curved about a part axis with no circle fitted. arcs: its ring fits a circle but its arcs don't go round (a band broken by prints or cut-outs). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify. `raw` carries the band as measured",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;
