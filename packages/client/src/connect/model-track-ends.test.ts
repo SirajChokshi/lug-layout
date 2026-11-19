@@ -4,7 +4,7 @@ import {
   type IAssetFetcher,
   type PartBundle,
 } from "@brr/catalog";
-import { MateReport, ModelConnectors } from "@brr/domain";
+import { MateReport, ModelConnectors, NO_INSTANCE } from "@brr/domain";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   STUD_LDU,
@@ -427,16 +427,24 @@ describe("modelTrackEnds", () => {
       bundle.trackCatalog,
     );
     const none = { count: 0, partIndex: [], matrices: new Float64Array(0) };
-    solver.insert(ModelConnectors.fromParts([], none, mating, run.openEnds), {
-      x: 0,
-      z: 0,
-      yPlates: 0,
-      rot: 0,
-    });
+    const RUN = 1;
+    solver.insert(
+      ModelConnectors.fromParts([], none, mating, run.openEnds),
+      { x: 0, z: 0, yPlates: 0, rot: 0 },
+      RUN,
+    );
     const held = ModelConnectors.fromParts([], none, mating, next.openEnds);
     const report = new MateReport();
     solver.evaluate(held, { x: 0, z: 0, yPlates: 0, rot: 0 }, report);
-    expect([report.count, report.family[0]]).toEqual([1, TRACK_FAMILY]);
+    expect({
+      mate: [report.count, report.family[0], report.partner[0]],
+      heldEndNamesItsPiece: (report.instance[0] ?? NO_INSTANCE) !== NO_INSTANCE,
+      partnerEndNamesItsPiece: (report.partnerInstance[0] ?? NO_INSTANCE) !== NO_INSTANCE,
+    }).toEqual({
+      mate: [1, TRACK_FAMILY, RUN],
+      heldEndNamesItsPiece: true,
+      partnerEndNamesItsPiece: true,
+    });
     solver.evaluate(held, { x: STUD_LDU, z: 0, yPlates: 0, rot: 0 }, report);
     expect(report.count).toBe(0);
   });
