@@ -14,6 +14,9 @@ pub const AXLE: u8 = 1;
 pub const SQUARE: u8 = 2;
 pub const FLARE_JOINS_PREVIOUS: u8 = 3;
 pub const FLARE_JOINS_NEXT: u8 = 4;
+pub const MALE_FINGER: u8 = 5;
+pub const FEMALE_FINGER: u8 = 6;
+pub const FINGER_RADIUS_UNSTATED: f64 = 0.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FaceSection {
@@ -39,7 +42,6 @@ pub struct MatingFace {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Unreadable {
-    FingerHinge,
     Generic,
     ClosedAtBothEnds,
 }
@@ -52,6 +54,22 @@ fn code(shape: SectionShape) -> u8 {
         SectionShape::FlexibleEnd => FLARE_JOINS_PREVIOUS,
         SectionShape::FlexibleStart => FLARE_JOINS_NEXT,
     }
+}
+
+fn finger_sections(first: Gender, widths: &[f64], radius: Option<f64>) -> Vec<FaceSection> {
+    widths
+        .iter()
+        .enumerate()
+        .map(|(k, &width)| FaceSection {
+            code: if (k % 2 == 0) == (first == Gender::Male) {
+                MALE_FINGER
+            } else {
+                FEMALE_FINGER
+            },
+            size: radius.unwrap_or(FINGER_RADIUS_UNSTATED),
+            length: width,
+        })
+        .collect()
 }
 
 fn reversed_section(section: &FaceSection) -> FaceSection {
@@ -177,7 +195,7 @@ fn contact_faces(connector: &Connector, gender: Gender, radius: f64) -> Vec<Mati
 }
 
 pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable> {
-    let (gender, sections, closed, center, slide) = match &connector.shape {
+    let (genders, sections, closed, center, slide) = match &connector.shape {
         Shape::Cylinder {
             gender,
             sections,
@@ -186,7 +204,7 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             slide,
             ..
         } => (
-            *gender,
+            vec![*gender],
             sections
                 .iter()
                 .map(|s| FaceSection {
@@ -205,7 +223,7 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             center,
             slide,
         } => (
-            Gender::Female,
+            vec![Gender::Female],
             vec![FaceSection {
                 code: ROUND,
                 size: *radius,
@@ -215,7 +233,18 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
             *center,
             *slide,
         ),
-        Shape::Finger { .. } => return Err(Unreadable::FingerHinge),
+        Shape::Finger {
+            first,
+            widths,
+            radius,
+            center,
+        } => (
+            vec![Gender::Male, Gender::Female],
+            finger_sections(*first, widths, *radius),
+            (false, false),
+            *center,
+            false,
+        ),
         Shape::Generic {
             gender,
             bounding: Bounding::Cylinder { radius, length },
@@ -226,15 +255,18 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
         }
         Shape::Generic { .. } => return Err(Unreadable::Generic),
     };
-    let cylinder = Cylinder {
-        source: connector.source,
-        status: connector.status,
-        group: &connector.group,
-        gender,
-        sections: &sections,
-        closed,
-        slide,
-    };
+    let cylinders: Vec<Cylinder> = genders
+        .into_iter()
+        .map(|gender| Cylinder {
+            source: connector.source,
+            status: connector.status,
+            group: &connector.group,
+            gender,
+            sections: &sections,
+            closed,
+            slide,
+        })
+        .collect();
     let total: f64 = sections.iter().map(|s| s.length).sum();
     let direction = column(&connector.placement, 1);
     let offsets = connector
@@ -248,7 +280,9 @@ pub fn mating_faces(connector: &Connector) -> Result<Vec<MatingFace>, Unreadable
         } else {
             anchor
         };
-        out.extend(cylinder.faces(start, direction)?);
+        for cylinder in &cylinders {
+            out.extend(cylinder.faces(start, direction)?);
+        }
     }
     Ok(out)
 }

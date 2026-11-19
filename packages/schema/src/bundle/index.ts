@@ -636,7 +636,7 @@ const ConnectorFreeFaces = v.object({
   axis: v.array(Finite),
 });
 
-export const UnreadableConnector = v.picklist(["fingerHinge", "generic", "closedAtBothEnds"]);
+export const UnreadableConnector = v.picklist(["generic", "closedAtBothEnds"]);
 export type UnreadableConnector = v.InferOutput<typeof UnreadableConnector>;
 
 export const ConnectorRecordFile = v.pipe(
