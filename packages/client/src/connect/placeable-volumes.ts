@@ -2,9 +2,19 @@ import { EMPTY_COLUMN } from "@brr/catalog";
 import type { CellVolumes } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { BOX_FLOATS } from "../edit/local-box.ts";
-import type { Placeable, PlaceableCells } from "../edit/placeable.ts";
+import type { PlaceableCells } from "../edit/placeable.ts";
 
-function slabBottoms(cells: PlaceableCells, slabBoxes: Float32Array): Float64Array {
+type ColumnCells = Pick<
+  PlaceableCells,
+  "cellX0" | "cellZ0" | "width" | "depth" | "columnBottom" | "columnTop"
+>;
+
+export interface PlaceableColumns {
+  readonly cells: ColumnCells;
+  readonly slabBoxes: Float32Array;
+}
+
+function slabBottoms(cells: ColumnCells, slabBoxes: Float32Array): Float64Array {
   const bottoms = new Float64Array(cells.width * cells.depth);
   for (let b = 0; b < slabBoxes.length; b += BOX_FLOATS) {
     const i0 = Math.max(0, Math.floor((slabBoxes[b] ?? 0) / STUD_LDU) - cells.cellX0);
@@ -22,30 +32,66 @@ function slabBottoms(cells: PlaceableCells, slabBoxes: Float32Array): Float64Arr
   return bottoms;
 }
 
-export function placeableVolumes(placeable: Placeable): CellVolumes {
-  const { cells, slabBoxes } = placeable;
-  const slab = slabBottoms(cells, slabBoxes);
-  let count = 0;
-  for (let c = 0; c < cells.width * cells.depth; c++) {
-    if ((cells.columnTop[c] ?? EMPTY_COLUMN) !== EMPTY_COLUMN) count++;
+export class FrozenVolumes implements CellVolumes {
+  readonly #cellX: Int32Array;
+  readonly #cellZ: Int32Array;
+  readonly #bottomLdu: Int32Array;
+  readonly #topLdu: Int32Array;
+
+  private constructor(
+    readonly count: number,
+    cellX: Int32Array,
+    cellZ: Int32Array,
+    bottomLdu: Int32Array,
+    topLdu: Int32Array,
+  ) {
+    this.#cellX = cellX;
+    this.#cellZ = cellZ;
+    this.#bottomLdu = bottomLdu;
+    this.#topLdu = topLdu;
   }
-  const cellX = new Int32Array(count);
-  const cellZ = new Int32Array(count);
-  const bottomLdu = new Int32Array(count);
-  const topLdu = new Int32Array(count);
-  let n = 0;
-  for (let j = 0; j < cells.depth; j++) {
-    for (let i = 0; i < cells.width; i++) {
-      const c = j * cells.width + i;
-      const top = cells.columnTop[c] ?? EMPTY_COLUMN;
-      if (top === EMPTY_COLUMN) continue;
-      const bottom = (cells.columnBottom[c] ?? 0) * PLATE_LDU;
-      cellX[n] = cells.cellX0 + i;
-      cellZ[n] = cells.cellZ0 + j;
-      bottomLdu[n] = bottom === 0 ? Math.floor(slab[c] ?? 0) : bottom;
-      topLdu[n] = top * PLATE_LDU;
-      n++;
+
+  get cellX(): ArrayLike<number> {
+    return this.#cellX;
+  }
+
+  get cellZ(): ArrayLike<number> {
+    return this.#cellZ;
+  }
+
+  get bottomLdu(): ArrayLike<number> {
+    return this.#bottomLdu;
+  }
+
+  get topLdu(): ArrayLike<number> {
+    return this.#topLdu;
+  }
+
+  static ofPlaceable(placeable: PlaceableColumns): FrozenVolumes {
+    const { cells, slabBoxes } = placeable;
+    const slab = slabBottoms(cells, slabBoxes);
+    let count = 0;
+    for (let c = 0; c < cells.width * cells.depth; c++) {
+      if ((cells.columnTop[c] ?? EMPTY_COLUMN) !== EMPTY_COLUMN) count++;
     }
+    const cellX = new Int32Array(count);
+    const cellZ = new Int32Array(count);
+    const bottomLdu = new Int32Array(count);
+    const topLdu = new Int32Array(count);
+    let n = 0;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const c = j * cells.width + i;
+        const top = cells.columnTop[c] ?? EMPTY_COLUMN;
+        if (top === EMPTY_COLUMN) continue;
+        const bottom = (cells.columnBottom[c] ?? 0) * PLATE_LDU;
+        cellX[n] = cells.cellX0 + i;
+        cellZ[n] = cells.cellZ0 + j;
+        bottomLdu[n] = bottom === 0 ? Math.floor(slab[c] ?? 0) : bottom;
+        topLdu[n] = top * PLATE_LDU;
+        n++;
+      }
+    }
+    return new FrozenVolumes(count, cellX, cellZ, bottomLdu, topLdu);
   }
-  return { count, cellX, cellZ, bottomLdu, topLdu };
 }

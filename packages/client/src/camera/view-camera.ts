@@ -227,6 +227,28 @@ export class ViewCamera {
     return { targetX, targetY, targetZ, distance, yaw, pitch };
   }
 
+  matchesView(view: SavedViewV1): boolean {
+    const pose = this.pose;
+    return (
+      pose.targetX === view.targetX &&
+      pose.targetY === view.targetY &&
+      pose.targetZ === view.targetZ &&
+      pose.distance === view.distance &&
+      pose.yaw === view.yaw &&
+      pose.pitch === view.pitch
+    );
+  }
+
+  copyView(out: SavedViewV1): void {
+    const pose = this.pose;
+    out.targetX = pose.targetX;
+    out.targetY = pose.targetY;
+    out.targetZ = pose.targetZ;
+    out.distance = pose.distance;
+    out.yaw = pose.yaw;
+    out.pitch = pose.pitch;
+  }
+
   restore(view: SavedViewV1 | null): void {
     this.tweening = false;
     this.tweenStartMs = Number.NaN;

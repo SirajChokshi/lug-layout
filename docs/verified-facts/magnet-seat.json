@@ -1,0 +1,323 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "connectivitySource": {
+    "kind": "github-mirror",
+    "repo": "RolandMelkert/LDCadShadowLibrary",
+    "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+    "root": ""
+  },
+  "inputs": [
+    {
+      "file": "parts/2920.dat",
+      "sha256": "6bc5d2d5f3cc009375a2a71e8147d061f3f0bfcd741536987e953e20e300ad5e"
+    },
+    {
+      "file": "parts/2959.dat",
+      "sha256": "b8732379020f6249841ff1376718687dbf583fcb63f91d95f6928fe74fc77273"
+    },
+    {
+      "shadow": true,
+      "file": "parts/2920.dat",
+      "sha256": "07bc6831d3802b81099c53fd0fef6b837832142b95664f82d102d3df96919b05"
+    }
+  ],
+  "models": [
+    {
+      "name": "7936-1.mpd",
+      "sha256": "f26bc3b65089335753e0b0d5d77c1b048dd7f2475cafd177a4c44ff440a4fd10"
+    },
+    {
+      "name": "10264-1.mpd",
+      "sha256": "e5168c0451039eef6dc26dcd52da2c8310b48e057ebd39ca146c83bab4a4f8b9"
+    },
+    {
+      "name": "10185-1.mpd",
+      "sha256": "59c1cacc8b01ff909c811b99e169184bb2847ffddedda8a2ddb467a3da33a59e"
+    },
+    {
+      "name": "10190-1.mpd",
+      "sha256": "33cadb0b8514e80512bbfcda352b4381e4593f981b868b6b79bc03b63350db9e"
+    },
+    {
+      "name": "10218-1.mpd",
+      "sha256": "30fd5ec2bc4ad6a7e875dfc4aaf69929edc9c7fd086d5ddfca55cc2cf5cf9e9a"
+    },
+    {
+      "name": "2150-1.mpd",
+      "sha256": "1633ac12ac0a76d5c56225fb7302720b198a81fd805b7ee6620a323305327d11"
+    },
+    {
+      "name": "4554-1.mpd",
+      "sha256": "583767c8d0e52be3d024c32b70491e2a3d8ea2de4b3df39cfc3cf2d38ada92c8"
+    },
+    {
+      "name": "4555-1.mpd",
+      "sha256": "c88e189b54d1a85e4e26d45634c4ead13186b2a8dbb001096e80e4c30460f024"
+    },
+    {
+      "name": "10128-1.mpd",
+      "sha256": "7928f4e259455ec49cc02c62acb1653f7a002824c789f099845936d0a2e8a0b9"
+    },
+    {
+      "name": "10133-1.mpd",
+      "sha256": "184552fadb29ed3659bca6004c5ab87b2a0c2cdadcf15ff07026dde4265ec9b1"
+    },
+    {
+      "name": "10014-1.mpd",
+      "sha256": "f3aead9fe55512171565803f187f3f7a952fb70515983c39970cffd89431644d"
+    },
+    {
+      "name": "10020-1.mpd",
+      "sha256": "6c35f5b15c1c65dc8d7363ee9ac2e89cd007e69a76bf904109ac5adb0c597282"
+    },
+    {
+      "name": "10022-1_Dining-Car.mpd",
+      "sha256": "956cf254e21d9284b7b7a63e34e41e0405113529a2e5e1fb75d2ae26d50451be"
+    },
+    {
+      "name": "10025-1_Baggage-Car.mpd",
+      "sha256": "6c630a8b627ee827a917a6464e99bdad66bc767c9680a8162e7e65a16ca532d7"
+    },
+    {
+      "name": "10205-1.mpd",
+      "sha256": "13e4cd9bc6b7bc79c61d5042b1a670e19e0e39add9fc2b27713a2a19d0011232"
+    },
+    {
+      "name": "10013-1.mpd",
+      "sha256": "1aaac96c6ed21aa482cde43aa1213e95f0026cc39910b81d9e1bf51549756e45"
+    },
+    {
+      "name": "10016-1.mpd",
+      "sha256": "81981f0124907de90eeb914f144c1a50ed3baebd5bee3fdc80dcf59a5ccd632b"
+    },
+    {
+      "name": "10017-1.mpd",
+      "sha256": "b0dd718aef85579deb3145bfe14a83e253a13aaec70c31443f3c4021bce2ad3f"
+    }
+  ],
+  "holder": "2920",
+  "casing": "2959",
+  "curatedPivot": [
+    0,
+    4,
+    -32
+  ],
+  "pinRadius": 2,
+  "pinSpans": [
+    {
+      "from": 15,
+      "to": 18
+    },
+    {
+      "from": -18,
+      "to": -15
+    }
+  ],
+  "pivotClearance": 2.5,
+  "seatCentre": [
+    4,
+    -32
+  ],
+  "alongDepth": [
+    {
+      "from": -40,
+      "to": -35.3125,
+      "fits": true,
+      "least": 2.0077,
+      "leastAt": -35.3125,
+      "largest": 2.5
+    },
+    {
+      "from": -35.25,
+      "to": -33.375,
+      "fits": false,
+      "least": 1.7678,
+      "leastAt": -34.25,
+      "largest": 1.9879
+    },
+    {
+      "from": -33.3125,
+      "to": -31.0625,
+      "fits": true,
+      "least": 2.0093,
+      "leastAt": -33.3125,
+      "largest": 2.5
+    },
+    {
+      "from": -31,
+      "to": -16.0625,
+      "fits": false,
+      "least": 0,
+      "leastAt": -29,
+      "largest": 1.9733
+    },
+    {
+      "from": -16,
+      "to": -12.9375,
+      "fits": true,
+      "least": 2.0358,
+      "leastAt": -16,
+      "largest": 3.5468
+    },
+    {
+      "from": -12.875,
+      "to": -9.3125,
+      "fits": false,
+      "least": 0,
+      "leastAt": -10.875,
+      "largest": 1.9843
+    }
+  ],
+  "alongHeight": [
+    {
+      "from": -5.25,
+      "to": 3.4375,
+      "fits": false,
+      "least": 0,
+      "leastAt": -3.5,
+      "largest": 1.9375
+    },
+    {
+      "from": 3.5,
+      "to": 4.5,
+      "fits": true,
+      "least": 2,
+      "leastAt": 3.5,
+      "largest": 2.5
+    },
+    {
+      "from": 4.5625,
+      "to": 13.25,
+      "fits": false,
+      "least": 0,
+      "leastAt": 6.5,
+      "largest": 1.9375
+    }
+  ],
+  "modelPoses": [
+    {
+      "axis": [
+        4,
+        -37
+      ],
+      "alongAxis": [
+        0,
+        0.01
+      ],
+      "clearance": 2.4083,
+      "fits": true,
+      "casings": [
+        "10014-1.mpd",
+        "10014-1.mpd"
+      ]
+    },
+    {
+      "axis": [
+        4,
+        -33
+      ],
+      "alongAxis": [
+        0,
+        0.01
+      ],
+      "clearance": 2.1742,
+      "fits": true,
+      "casings": [
+        "10205-1.mpd",
+        "10205-1.mpd"
+      ]
+    },
+    {
+      "axis": [
+        4.25,
+        -36
+      ],
+      "alongAxis": [
+        0,
+        0.01
+      ],
+      "clearance": 1.9885,
+      "fits": false,
+      "casings": [
+        "10022-1_Dining-Car.mpd",
+        "10022-1_Dining-Car.mpd",
+        "10025-1_Baggage-Car.mpd",
+        "10025-1_Baggage-Car.mpd"
+      ]
+    },
+    {
+      "axis": [
+        4,
+        -35
+      ],
+      "alongAxis": [
+        0.002
+      ],
+      "clearance": 1.9087,
+      "fits": false,
+      "casings": [
+        "4555-1.mpd",
+        "4555-1.mpd"
+      ]
+    },
+    {
+      "axis": [
+        3.75,
+        -33.25
+      ],
+      "alongAxis": [
+        0.02,
+        0.03
+      ],
+      "clearance": 1.8274,
+      "fits": false,
+      "casings": [
+        "10020-1.mpd",
+        "10020-1.mpd"
+      ]
+    },
+    {
+      "axis": [
+        4.25,
+        -35
+      ],
+      "alongAxis": [
+        0
+      ],
+      "clearance": 1.6716,
+      "fits": false,
+      "casings": [
+        "10133-1.mpd",
+        "10133-1.mpd"
+      ]
+    },
+    {
+      "axis": [
+        5,
+        -36
+      ],
+      "alongAxis": [
+        0.01,
+        1,
+        1.01
+      ],
+      "clearance": 1.2772,
+      "fits": false,
+      "casings": [
+        "10013-1.mpd",
+        "10013-1.mpd",
+        "10016-1.mpd",
+        "10016-1.mpd",
+        "10017-1.mpd",
+        "10017-1.mpd",
+        "10205-1.mpd",
+        "10205-1.mpd"
+      ]
+    }
+  ]
+}

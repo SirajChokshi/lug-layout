@@ -311,6 +311,161 @@
           "root": ""
         }
       }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "ungroupedTwin",
+      "measured": {
+        "replacedSecs": "R 4 1",
+        "secs": "R 4 1",
+        "title": "Wheel Hole Notched Through"
+      },
+      "part": "p/wpinhole",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [id=wpAxHole] [group=wpAxHole] [gender=F] [caps=none] [secs=R 4 1] [slide=true] [scale=YOnly]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredCaps",
+      "measured": {
+        "caps": "none",
+        "ends": {
+          "far": "free",
+          "start": "free"
+        },
+        "replacedCaps": "one",
+        "title": "Minifig Tool Wand"
+      },
+      "part": "36752a",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 6   R 2.75 20] [slide=true] [pos=0 -6 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=0 0 -1] [ori=1 0 0 0 0 1 0 -1 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=-1 0 0] [ori=0 -1 0 0 0 1 -1 0 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=none] [secs=R 4 2] [pos=0 -1 0] [ori=0 0 -1 0 -1 0 -1 0 0]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredCaps",
+      "measured": {
+        "caps": "one",
+        "ends": {
+          "far": "free",
+          "start": {
+            "gap": "0.0005",
+            "radius": "4"
+          }
+        },
+        "replacedCaps": "two",
+        "title": "Minifig Sextant"
+      },
+      "part": "30154",
+      "snap": 1,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 8] [slide=true] [pos=0 10 0] [ori=1 0 0 0 -1 0 0 0 -1]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 12] [slide=true] [pos=0 28 0] [ori=1 0 0 0 -1 0 0 0 -1]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredGender",
+      "measured": {
+        "gender": "F",
+        "openReceptors": 2,
+        "replacedSnap": "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]",
+        "title": "Slope Brick 45  1 x  2 Triple without Bottom Stud"
+      },
+      "part": "3048a",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=0 24 0] [grid=C 2 1 20 0]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    },
+    {
+      "added": "2026-11-18",
+      "feature": "measuredGender",
+      "measured": {
+        "gender": "F",
+        "openReceptors": 2,
+        "replacedSnap": "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=0 8 0] [grid=C 2 1 20 0]",
+        "title": "Plate  1 x  2 with  3 x  6 Hexagonal Extension with  2 Bars"
+      },
+      "part": "27259",
+      "snap": 0,
+      "status": "unverified",
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=0 8 0] [grid=C 2 1 20 0]",
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=two] [secs=R 4 8] [pos=-4 4 -60] [ori=0 -1 0 1 0 0 0 0 1] [grid=1 C 2 1 0 60 0]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
+    }
+  ],
+  "refusals": [
+    {
+      "added": "2026-11-18",
+      "feature": "measuredGender",
+      "measured": {
+        "reason": "parts/4343.dat: snap 0's female counterpart isn't an open receptor, so its geometry doesn't contradict the male"
+      },
+      "part": "4343",
+      "snap": 0,
+      "upstream": {
+        "snaps": [
+          "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=S 6 4] [pos=4 57 60] [ori=0 -1 0 1 0 0 0 0 1]"
+        ],
+        "source": {
+          "commit": "9b1131fb1991f8c0bfc072325e4e12f6271aba35",
+          "kind": "github-mirror",
+          "repo": "RolandMelkert/LDCadShadowLibrary",
+          "root": ""
+        }
+      }
     }
   ]
 }

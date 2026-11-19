@@ -5,8 +5,10 @@ import {
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
+  type RecordFiles,
 } from "@brr/import";
-import type { CompilerVehicles } from "@brr/schema/bundle";
+import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readFile } from "node:fs/promises";
 import { MessageChannel } from "node:worker_threads";
 import { afterEach, expect, it } from "vitest";
@@ -35,7 +37,12 @@ interface Manifest {
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
   readonly colors: ReadonlyArray<{ readonly code: number; readonly alpha: number }>;
   readonly tablePlane: { readonly depthBelowTopLdu: number };
-  readonly compiler: { readonly file: string; readonly vehicles?: CompilerVehicles };
+  readonly compiler: {
+    readonly file: string;
+    readonly vehicles?: CompilerVehicles;
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
+  };
 }
 
 const pinnedMirror: FetchFunction = async (url) => {
@@ -56,11 +63,18 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
   const partTable = JSON.parse(
     await readFile(new URL(manifest.partTable.file, bundleRoot), "utf8"),
   ) as { readonly parts: ReadonlyArray<{ readonly id: string }> };
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
   return (fileName: string, text: string, commit: string, helpers: ReadonlyArray<IBakeHelper>) => {
     const source = { ...manifest.source, commit };
     const engine = new ModelImportEngine(
       new BrickCompiler(module),
       new LdrawMirror(source, pinnedMirror),
+      { read: async () => ({ kind: "unlisted" }) },
+      null,
       () => 0,
       helpers,
     );
@@ -72,6 +86,8 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: [],
       primitives: null,
+      sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+      cavityProbe: manifest.compiler.cavityProbe,
       bundlePartIds: partTable.parts.map((part) => part.id),
       ldconfigCodes: manifest.colors.map((color) => color.code),
       translucentColors: manifest.colors
@@ -200,8 +216,42 @@ it("rejects a pending bake when the helper's end of the port closes", async () =
   const helper = new BakeHelperProxy(channel.port1 as unknown as MessagePort).helper(COMPILER_URL);
   const request = {} as Parameters<IBakeHelper["bake"]>[0];
 
-  const pending = helper.bake(request, { key: "unused", files: new Map(), absent: new Set() });
+  const pending = helper.bake(
+    request,
+    { key: "unused", files: new Map(), absent: new Set() },
+    null,
+  );
   channel.port2.close();
 
   await expect(pending).rejects.toThrow("port closed");
+});
+
+it("a helper bakes from exactly the records each request offers, resending one it dropped", async () => {
+  const offered: Array<ReadonlyMap<string, Uint8Array> | null> = [];
+  const recording = {
+    bake: (_request: unknown, _library: unknown, records: RecordFiles | null) => {
+      offered.push(records === null ? null : new Map(records.files));
+      return Promise.resolve({ status: "failed", message: "not baked" });
+    },
+  } as unknown as BrickCompiler;
+  const [helper] = helpersOverPorts([() => Promise.resolve(recording)]);
+  if (helper === undefined) throw new Error("no helper");
+  const brick = new Uint8Array([1]);
+  const slope = new Uint8Array([2]);
+  const both: RecordFiles = {
+    key: "pinned",
+    files: new Map([
+      ["3001.dat", brick],
+      ["3040b.dat", slope],
+    ]),
+  };
+  const brickOnly: RecordFiles = { key: "pinned", files: new Map([["3001.dat", brick]]) };
+  const library = { key: "library", files: new Map(), absent: new Set<string>() };
+  const request = {} as Parameters<IBakeHelper["bake"]>[0];
+
+  for (const records of [both, null, brickOnly, both]) {
+    await helper.bake(request, library, records);
+  }
+
+  expect(offered).toEqual([both.files, null, brickOnly.files, both.files]);
 });

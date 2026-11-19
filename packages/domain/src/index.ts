@@ -191,6 +191,9 @@ export {
   SOURCE_PATCH,
   SOURCE_PRIMITIVE,
   SOURCE_SHADOW,
+  axisDimension,
+  axisSign,
+  oppositeAxis,
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
 } from "./connect/connector-table.ts";
@@ -206,7 +209,8 @@ export {
   SnapShapes,
 } from "./connect/snap-shapes.ts";
 export { SnapMating, type MateFreedom } from "./connect/mating.ts";
-export { ModelConnectors } from "./connect/model-connectors.ts";
+export { ModelConnectors, NO_INSTANCE } from "./connect/model-connectors.ts";
+export { rotatedAxis } from "./connect/lattice-frame.ts";
 export {
   MATE_PASS_MODEL,
   MATE_PASS_PART,
@@ -229,12 +233,35 @@ export {
   type SubmodelInstances,
 } from "./connect/submodel-frames.ts";
 export { CandidatePoses, type LatticePose, type SnapWindow } from "./connect/candidate-poses.ts";
-export { MateReport } from "./connect/mate-report.ts";
+export {
+  ENGAGED_AXIS,
+  ENGAGED_FROM,
+  ENGAGED_RADIUS,
+  ENGAGED_TO,
+  ENGAGED_U,
+  ENGAGED_V,
+  ENGAGEMENT_FLOATS,
+  MateReport,
+  NOT_ENGAGED,
+  NO_PARTNER,
+} from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
 export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
 export { SparseConnectorFinder } from "./connect/sparse-connector-finder.ts";
 export { TrackEndFinder } from "./connect/track-end-finder.ts";
 export { ConnectionSolver } from "./connect/connection-solver.ts";
+export {
+  NO_TECHNIC_ITEM,
+  TECHNIC_BOX_FLOATS,
+  TECHNIC_WAIVER_INTS,
+  firstOtherAxis,
+  modelTechnic,
+  placeTechnicInto,
+  secondOtherAxis,
+  technicItemsOverlap,
+  technicScratch,
+  type TechnicSet,
+} from "./technic-fit.ts";
 export {
   VolumeIndex,
   firstOverlap,

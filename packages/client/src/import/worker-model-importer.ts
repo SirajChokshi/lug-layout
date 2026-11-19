@@ -2,7 +2,7 @@ import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@br
 import type { BundleLod } from "@brr/schema/bundle";
 import type { ImportInput, ImportJob, ImportResult } from "@brr/import";
 import { inject, injectable } from "inversify";
-import { IMPORT_WORKER_POOL, LDRAW_LIBRARY_BASE_URL } from "../tokens.ts";
+import { IMPORT_WORKER_POOL, LDRAW_LIBRARY_BASE_URL, LIBRARY_BAKE_BASE_URL } from "../tokens.ts";
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
 
 export interface IModelImporter {
@@ -17,6 +17,7 @@ export class WorkerModelImporter implements IModelImporter {
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
     @inject(LDRAW_LIBRARY_BASE_URL) private readonly ldrawLibraryBaseUrl: string | null,
+    @inject(LIBRARY_BAKE_BASE_URL) private readonly libraryBakeBaseUrl: string | null,
   ) {}
 
   async importText(
@@ -48,6 +49,8 @@ export class WorkerModelImporter implements IModelImporter {
       studPrimitives: context.studPrimitiveNames,
       unofficialAllowlist: context.unofficialAllowlist,
       primitives: context.primitives,
+      sectionVocabulary: context.sectionVocabulary.vocabulary,
+      cavityProbe: context.cavityProbe,
       bundlePartIds: context.partIds,
       ldconfigCodes: context.ldconfigCodes,
       translucentColors: context.translucentCodes,
@@ -62,14 +65,17 @@ export class WorkerModelImporter implements IModelImporter {
     transfer: Transferable[] = [],
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
-    const compilerUrl = new URL(
-      context.compilerPath,
-      new URL(this.bundleBaseUrl.replace(/\/?$/u, "/")),
-    ).href;
+    const bundleBase = new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
     return this.workers.run(
       {
-        compilerUrl,
+        compilerUrl: new URL(context.compilerPath, bundleBase).href,
+        bundleBaseUrl: bundleBase.href,
+        connectorIndexes: context.connectorIndexes,
+        connectorVocabulary: context.sectionVocabulary.sha256,
         ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
+        ...(this.libraryBakeBaseUrl === null || context.libraryBake === null
+          ? {}
+          : { libraryBake: { url: this.libraryBakeBaseUrl, pin: context.libraryBake } }),
         input,
       },
       transfer,
