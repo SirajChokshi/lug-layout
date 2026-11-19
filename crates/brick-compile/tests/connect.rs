@@ -6,11 +6,12 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, FaceSection, Gender, Grid, IncludeRefusal,
-    InferredFeatures, Issue, MatingFace, MetaError, Openness, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, Section, SectionShape, SectionVocabulary, ShadowPatches, ShadowSnaps, Shape,
-    Source, Status, Uninferred, Unreadable, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
-    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
+    mating_faces, Caps, Connector, ConnectorExtractor, EntranceClosure, FaceSection, Gender, Grid,
+    IncludeRefusal, InferredFeatures, Issue, MatingFace, MetaError, Openness, PartRecords,
+    PrimitiveConnectors, PrimitiveTable, Section, SectionShape, SectionVocabulary, ShadowPatches,
+    ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable, Withholding, CAP_FAR, CAP_ROOT,
+    FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER,
+    ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -340,7 +341,8 @@ fn published_records_keep_one_face_per_exact_slot_and_receptor_from_the_highest_
         PrimitiveConnectors::new(&library, table),
         InferredFeatures::new(&library, vocabulary, "p/probe.dat").expect("the probe measures"),
     );
-    let records = PartRecords::of(&extractor.extract("parts/zz-composite.dat"));
+    let extraction = extractor.extract("parts/zz-composite.dat");
+    let records = PartRecords::of(&extraction);
     let receptor = vec![(SQUARE, 6.0, 4.0)];
     let stud_hole = vec![(ROUND, 6.0, 4.0)];
     assert_eq!(
@@ -359,15 +361,107 @@ fn published_records_keep_one_face_per_exact_slot_and_receptor_from_the_highest_
             (Source::Shadow, 0, stud_hole, [0.0, 0.0, 10.0]),
         ])
     );
-    assert_eq!(
-        published_rows(&records.connectors.faces),
-        vec![(
-            Source::Primitive,
-            0,
-            vec![(ROUND, 8.0, 2.0), (ROUND, 6.0, 16.0), (ROUND, 8.0, 2.0)],
-            [0.0, 0.0, -10.0],
-        )]
+    assert!(records.connectors.faces.is_empty());
+    assert!(extraction.issues.contains(&Issue::FreeFaceWithheld {
+        origin: [0.0, 0.0, -10.0],
+        reason: Withholding::NotProvenOpen,
+        shadow_closes: false,
+        mesh: EntranceClosure::Unmeasurable,
+    }));
+}
+
+fn peghole_pair(closed_far_end: bool) -> String {
+    let disc = if closed_far_end {
+        "1 16 0 0 10 8 0 0 0 0 8 0 1 0 4-4disc.dat\n"
+    } else {
+        ""
+    };
+    format!(
+        "0 Peghole Pair\n0 BFC CERTIFY CCW\n\
+         1 16 0 0 10 1 0 0 0 0 1 0 -1 0 peghole.dat\n\
+         1 16 0 0 -10 1 0 0 0 0 1 0 1 0 peghole.dat\n\
+         1 16 0 0 -8 {BORE_ALONG_Z} 4-4cyli.dat\n{disc}"
+    )
+}
+
+#[test]
+fn a_partly_held_connector_keeps_a_free_face_only_where_shadow_and_mesh_leave_its_end_open() {
+    let short_shadow = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 8 4] [pos=0 0 -10] [ori=1 0 0 0 0 1 0 -1 0]\n";
+    let full_shadow = "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 8 2   R 6 16   R 8 2] [pos=0 0 -10] [ori=1 0 0 0 0 1 0 -1 0]\n";
+    let cases = [
+        ("parts/zz-open.dat", false, short_shadow, None),
+        (
+            "parts/zz-closed.dat",
+            true,
+            full_shadow,
+            Some((Withholding::ClosedByGeometry, true, EntranceClosure::Closed)),
+        ),
+        (
+            "parts/zz-mesh-closed.dat",
+            true,
+            short_shadow,
+            Some((
+                Withholding::ClosedByGeometry,
+                false,
+                EntranceClosure::Closed,
+            )),
+        ),
+        (
+            "parts/zz-disagree.dat",
+            false,
+            full_shadow,
+            Some((Withholding::SourcesDisagree, true, EntranceClosure::Open)),
+        ),
+    ];
+    let library = with_parts(
+        pinned("ldraw"),
+        &cases.map(|(part, closed, _, _)| (part, peghole_pair(closed))),
     );
+    let shadow = memory(&cases.map(|(part, _, snap, _)| (part, snap)));
+    let table: Value =
+        serde_json::from_str(&fs::read_to_string(table_path()).expect("table")).expect("json");
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        InferredFeatures::new(
+            &library,
+            shadow_vocabulary(&pinned("ldcad-shadow")),
+            "p/stud.dat",
+        )
+        .expect("the pinned stud measures"),
+    );
+    for (part, _, _, withheld) in cases {
+        let extraction = extractor.extract(part);
+        let free_end: Vec<MatingFace> = PartRecords::of(&extraction)
+            .connectors
+            .faces
+            .into_iter()
+            .filter(|face| face.source == Source::Primitive && face.origin == [0.0, 0.0, -10.0])
+            .collect();
+        let reported: Vec<_> = extraction
+            .issues
+            .iter()
+            .filter_map(|issue| match issue {
+                Issue::FreeFaceWithheld {
+                    origin,
+                    reason,
+                    shadow_closes,
+                    mesh,
+                } => Some((*origin, (*reason, *shadow_closes, *mesh))),
+                _ => None,
+            })
+            .collect();
+        match withheld {
+            None => {
+                assert_eq!(free_end.len(), 1, "{part}");
+                assert!(reported.is_empty(), "{part}");
+            }
+            Some(expected) => {
+                assert!(free_end.is_empty(), "{part}");
+                assert_eq!(reported, vec![([0.0, 0.0, -10.0], expected)], "{part}");
+            }
+        }
+    }
 }
 
 #[test]

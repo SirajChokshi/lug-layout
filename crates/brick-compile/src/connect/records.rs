@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::{
     joined_pieces, mating_faces, Extraction, Gender, MatingFace, Source, Status, Unreadable,
+    WithheldFace,
 };
 
 const FREE_AXIS: i64 = -1;
@@ -64,6 +65,60 @@ fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
     Some((gender_code(face.gender), face.sixteenths?, face.direction?))
 }
 
+pub(super) struct FreeFace {
+    pub connector: usize,
+    pub face: usize,
+    pub mating: MatingFace,
+    pub holders: Vec<MatingFace>,
+}
+
+pub(super) fn free_faces_of_partly_held(extraction: &Extraction) -> Vec<FreeFace> {
+    let faces: Vec<(usize, Vec<MatingFace>)> = extraction
+        .connectors
+        .iter()
+        .enumerate()
+        .filter_map(|(index, connector)| mating_faces(connector).ok().map(|f| (index, f)))
+        .collect();
+    let mut at_slot: HashMap<ExactSlot, Vec<&MatingFace>> = HashMap::new();
+    for (_, found) in &faces {
+        for face in found {
+            if let Some(slot) = exact_slot(face) {
+                at_slot.entry(slot).or_default().push(face);
+            }
+        }
+    }
+    let mut free = Vec::new();
+    for (connector, found) in &faces {
+        let own = tier(extraction.connectors[*connector].source);
+        let holders_at = |face: &MatingFace| -> Vec<MatingFace> {
+            exact_slot(face)
+                .and_then(|slot| at_slot.get(&slot))
+                .map(|held| {
+                    held.iter()
+                        .filter(|holder| tier(holder.source) < own)
+                        .map(|holder| (*holder).clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let holders: Vec<MatingFace> = found.iter().flat_map(holders_at).collect();
+        if holders.is_empty() {
+            continue;
+        }
+        for (index, face) in found.iter().enumerate() {
+            if holders_at(face).is_empty() {
+                free.push(FreeFace {
+                    connector: *connector,
+                    face: index,
+                    mating: face.clone(),
+                    holders: holders.clone(),
+                });
+            }
+        }
+    }
+    free
+}
+
 fn tier(source: Source) -> u8 {
     match source {
         Source::Shadow | Source::Patch => 1,
@@ -90,12 +145,23 @@ fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
 
 pub fn published_faces(extraction: &Extraction) -> Vec<PublishedFace> {
     let mut faces: Vec<PublishedFace> = Vec::new();
-    for connector in &extraction.connectors {
+    for (index, connector) in extraction.connectors.iter().enumerate() {
         if let Ok(found) = mating_faces(connector) {
-            faces.extend(found.into_iter().map(|face| PublishedFace {
-                face,
-                pieces: connector.pieces.clone(),
-            }));
+            faces.extend(
+                found
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(face, _)| {
+                        !extraction.withheld.contains(&WithheldFace {
+                            connector: index,
+                            face: *face,
+                        })
+                    })
+                    .map(|(_, face)| PublishedFace {
+                        face,
+                        pieces: connector.pieces.clone(),
+                    }),
+            );
         }
     }
     let mut at_slot: HashMap<ExactSlot, Vec<usize>> = HashMap::new();

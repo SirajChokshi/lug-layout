@@ -12,8 +12,8 @@ use super::axle::{AxleFound, AxleMiss, AxleProbe};
 use super::meta::{parse_metas, Meta};
 use super::profile::Profile;
 use super::solid::{
-    covers_circle, identified, plan_axes, sixteenth, span_of, Probe, RoundShape, RoundSurface,
-    Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
+    covers_circle, identified, plan_axes, sixteenth, sixteenths, span_of, Probe, RoundShape,
+    RoundSurface, Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
 };
 use super::{
     finished, joined_pieces, Caps, Connector, Gender, Issue, MatingFace, Scaling, Section,
@@ -522,6 +522,26 @@ pub enum Openness {
     Unmeasurable,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntranceClosure {
+    Open,
+    Closed,
+    Unmeasurable,
+}
+
+fn face_probe(face: &MatingFace) -> Option<Probe> {
+    let origin = [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
+    let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
+    let k = aligned_axis(axis)?;
+    let section = face.sections.first()?;
+    Some(Probe {
+        axis: k,
+        inward: -axis[k].signum(),
+        entrance: origin,
+        radius: section.size,
+    })
+}
+
 pub struct InferredFeatures<'a, L: Library + ?Sized> {
     library: &'a L,
     vocabulary: SectionVocabulary,
@@ -661,16 +681,8 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 
     fn face_openness(&self, solid: &Solid, face: &MatingFace) -> Openness {
-        let origin = [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
-        let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
-        let (Some(k), Some(section)) = (aligned_axis(axis), face.sections.first()) else {
+        let Some(probe) = face_probe(face) else {
             return Openness::Unmeasurable;
-        };
-        let probe = Probe {
-            axis: k,
-            inward: -axis[k].signum(),
-            entrance: origin,
-            radius: section.size,
         };
         let floor = solid.floor(&probe, probe.radius - IDENTIFY_LDU);
         if !floor.depth.is_finite() {
@@ -703,6 +715,32 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             return Openness::Unmeasurable;
         };
         self.candidate_openness(solid, candidate)
+    }
+
+    pub fn entrance_closure(&mut self, path: &str, face: &MatingFace) -> EntranceClosure {
+        let prepared = self.prepare(path);
+        let Some(solid) = &prepared.solid else {
+            return EntranceClosure::Unmeasurable;
+        };
+        let Some(probe) = face_probe(face) else {
+            return EntranceClosure::Unmeasurable;
+        };
+        let Some(plane) = sixteenths(probe.entrance[probe.axis]) else {
+            return EntranceClosure::Unmeasurable;
+        };
+        let floor = solid.floor(&probe, probe.radius - IDENTIFY_LDU);
+        if floor.faces_probe == Some(false) {
+            return EntranceClosure::Closed;
+        }
+        if !floor.depth.is_finite() {
+            return EntranceClosure::Open;
+        }
+        let floor_plane = probe.entrance[probe.axis] + probe.inward * floor.depth;
+        if sixteenths(floor_plane) == Some(plane) {
+            EntranceClosure::Closed
+        } else {
+            EntranceClosure::Open
+        }
     }
 
     pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Inference {

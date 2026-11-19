@@ -9,7 +9,7 @@ use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
     mating_faces, published_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue,
     MatingFace, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source,
-    Uninferred,
+    Uninferred, Withholding,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::ldraw::{parse, Line};
@@ -317,6 +317,14 @@ fn issue_key(issue: &Issue) -> String {
             source_key(lower.0)
         ),
         Issue::Uninferred { reason, .. } => format!("tier 4: {}", uninferred_key(reason)),
+        Issue::FreeFaceWithheld { reason, .. } => format!(
+            "free face of a partly held connector {}",
+            match reason {
+                Withholding::ClosedByGeometry => "closed by geometry",
+                Withholding::SourcesDisagree => "where the shadow and the mesh disagree",
+                Withholding::NotProvenOpen => "not proven open",
+            }
+        ),
     }
 }
 
