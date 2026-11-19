@@ -330,6 +330,122 @@ function wagons(secondX: number): Placement[] {
   ];
 }
 
+const COUPLER_FRAME: Part = {
+  connectors: [
+    ...FRAME.connectors,
+    { at: [40, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [20, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+  ],
+};
+const OUTSIDE_PIN = 3;
+const ON_AXLE_LINE_PIN = 4;
+const COUPLER_HOLDER: Part = {
+  connectors: [
+    { at: [0, -4, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+    { at: [12, 0, 0], axis: AXIS_POS_X, gender: GENDER_MALE },
+  ],
+};
+const HOLDER = 7;
+
+function truckCoupledCar(pin: number): Scenario {
+  const car = bogieCar();
+  const pinX = COUPLER_FRAME.connectors[pin]?.at[0] ?? 0;
+  return {
+    parts: { ...car.parts, couplerFrame: COUPLER_FRAME, holder: COUPLER_HOLDER },
+    placed: [
+      ...car.placed.map((placement, i) =>
+        i === 1 ? { ...placement, part: "couplerFrame" } : placement,
+      ),
+      { part: "holder", at: [60 + pinX, 34, 0] },
+    ],
+    mates: [...car.mates, { male: [HOLDER, 0], female: [1, pin] }],
+    exposed: [
+      [HOLDER, 1],
+      [0, 4],
+      [0, 8],
+    ],
+  };
+}
+
+function placedFirst(scenario: Scenario, instance: number): Scenario {
+  const moved = (i: number) => (i === instance ? 0 : i < instance ? i + 1 : i);
+  const placement = scenario.placed[instance];
+  if (!placement) throw new Error("the scenario has no such instance");
+  return {
+    ...scenario,
+    placed: [placement, ...scenario.placed.filter((_, i) => i !== instance)],
+    mates: scenario.mates.map((m) => ({
+      male: [moved(m.male[0]), m.male[1]],
+      female: [moved(m.female[0]), m.female[1]],
+    })),
+    exposed: scenario.exposed?.map(([i, c]) => [moved(i), c] as const),
+  };
+}
+
+function twoLineGroupCar(): Scenario {
+  const car = truckCoupledCar(OUTSIDE_PIN);
+  const link: Part = {
+    connectors: [
+      { at: [0, -4, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+      { at: [-20, 4, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    ],
+  };
+  const holderWithLink: Part = {
+    connectors: [
+      ...COUPLER_HOLDER.connectors,
+      { at: [20, 4, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+    ],
+  };
+  return {
+    ...car,
+    parts: {
+      ...car.parts,
+      holder: holderWithLink,
+      link,
+      couplerFrame: {
+        connectors: [
+          ...COUPLER_FRAME.connectors,
+          { at: [80, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+        ],
+      },
+    },
+    placed: [...car.placed, { part: "link", at: [140, 34, 0] }],
+    mates: [
+      ...car.mates,
+      { male: [HOLDER + 1, 0], female: [1, ON_AXLE_LINE_PIN + 1] },
+      { male: [HOLDER, 2], female: [HOLDER + 1, 1] },
+    ],
+  };
+}
+
+function wheeledHolderCar(): Scenario {
+  const car = truckCoupledCar(OUTSIDE_PIN);
+  return {
+    ...car,
+    placed: [...car.placed, { part: "wheels", at: [100, 7, 0] }],
+    mates: [...car.mates, { male: [HOLDER + 1, 0], female: [HOLDER, 1] }],
+    exposed: [],
+  };
+}
+
+function truckOutcome(scenario: Scenario) {
+  const gear = run(scenario);
+  const [vehicle] = gear.vehicles;
+  return {
+    vehicles: gear.vehicles.length,
+    bogies: vehicle?.bogies.map((b) => b.instances),
+    body: vehicle?.body,
+    leadingFront: vehicle?.frontEndCandidates[0],
+    unresolved: gear.unresolvedRunningGear,
+  };
+}
+
+function holderCredited(scenario: Scenario): boolean {
+  return run(scenario)
+    .vehicles.flatMap((v) => v.bogies)
+    .some((b) => b.instances.includes(HOLDER));
+}
+
 function twoPinTruck(): Scenario {
   const twoPins: Part = {
     connectors: [
@@ -758,7 +874,7 @@ describe("RunningGearDetector", () => {
     ]);
   });
 
-  it("reports a body on a single bogie, with the unread band rows on its instances", () => {
+  it("reports a body on a single bogie at a centred pivot, never folding it in as a pendant, with the unread band rows on its instances", () => {
     const unreadBody: Part = {
       connectors: [{ at: [0, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }],
       rolling: wheels([], [{ reason: "faceted", axis: 2 }]),
@@ -778,6 +894,52 @@ describe("RunningGearDetector", () => {
         r.unreadRows,
       ]),
     ).toEqual([["fewerThanTwoGuides", [0, 1, 2, 3], 2, [0]]]);
+  });
+
+  it("peels a bogie carrying a truck-mounted coupler outside its wheelbase, credits the holder to it, and makes the holder's outward face the leading end candidate", () => {
+    expect({
+      holderLast: truckOutcome(truckCoupledCar(OUTSIDE_PIN)),
+      holderFirst: truckOutcome(placedFirst(truckCoupledCar(OUTSIDE_PIN), HOLDER)),
+    }).toEqual({
+      holderLast: {
+        vehicles: 1,
+        bogies: [
+          [1, 2, 3, HOLDER],
+          [4, 5, 6],
+        ],
+        body: [0],
+        leadingFront: { instance: HOLDER, connector: 1 },
+        unresolved: [],
+      },
+      holderFirst: {
+        vehicles: 1,
+        bogies: [
+          [0, 2, 3, 4],
+          [5, 6, 7],
+        ],
+        body: [1],
+        leadingFront: { instance: 0, connector: 1 },
+        unresolved: [],
+      },
+    });
+  });
+
+  it("reports the same holder pinned on the bogie's outer axle line as one link with a pivot inside a support span, never a pendant", () => {
+    const gear = run(truckCoupledCar(ON_AXLE_LINE_PIN));
+    expect({
+      vehicles: gear.vehicles.length,
+      unresolved: gear.unresolvedRunningGear.map((r) => r.reason),
+    }).toEqual({ vehicles: 0, unresolved: ["pivotInsideSupportSpan"] });
+  });
+
+  it("never folds into a bogie a wheel-free group joined to it about two axis lines, or a group holding a wheelset", () => {
+    expect({
+      twoLines: holderCredited(twoLineGroupCar()),
+      wheeled: holderCredited(wheeledHolderCar()),
+    }).toEqual({
+      twoLines: false,
+      wheeled: false,
+    });
   });
 
   it("reports links whose pivot lies inside a support span: a Jacobs bogie and span bolsters", () => {

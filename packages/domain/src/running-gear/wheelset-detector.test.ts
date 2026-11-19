@@ -161,6 +161,7 @@ function summary(wheelset: DetectedWheelset) {
 const TREAD: Band = { from: 44, to: 54, radius: 7 };
 const FLANGE: Band = { from: 42, to: 44, radius: 8.75 };
 const WHEEL_PAIR = rolling(mirrored([TREAD, FLANGE]));
+const SPANNING_BAR: Band = { from: -60, to: 60, radius: 3 };
 
 describe("WheelsetDetector", () => {
   it("records a wheel pair centred in its lateral play; its flanges touch a head band only at other centres, so they give no radius", () => {
@@ -190,6 +191,50 @@ describe("WheelsetDetector", () => {
     const oneSide = rolling([TREAD, { from: -20, to: -12, radius: 7 }]);
     expect(detect(model([{ part: 0, matrix: at(0, 7, 0) }]), [wide]).wheelsets).toEqual([]);
     expect(detect(model([{ part: 0, matrix: at(0, 7, 0) }]), [oneSide]).wheelsets).toEqual([]);
+  });
+
+  it("never makes a round surface spanning both head bands a member: alone it gives no wheelset, and two wheels beside it keep theirs", () => {
+    const bar = rolling([SPANNING_BAR]);
+    const alone = detect(model([{ part: 0, matrix: at(40, 7, 0) }]), [bar]);
+    const { wheelsets } = detect(
+      model([
+        { part: 0, matrix: at(40, 7, 0) },
+        { part: 1, matrix: at(40, 7, 0) },
+      ]),
+      [WHEEL_PAIR, bar],
+    );
+    expect({
+      alone: alone.wheelsets,
+      members: wheelsets.map((w) => Array.from(w.memberInstances)),
+    }).toEqual({ alone: [], members: [[0, 0, 0, 0]] });
+  });
+
+  it("records a null rolling radius on a rail whose head bands the group meets only through a spanning surface", () => {
+    const { wheelsets } = new WheelsetDetector([NINE_VOLT, NARROW]).detect(
+      model([
+        { part: 0, matrix: at(40, 7, 0) },
+        { part: 1, matrix: at(40, 7, 0) },
+      ]),
+      [
+        PartRollingTable.fromRolling(WHEEL_PAIR),
+        PartRollingTable.fromRolling(rolling([SPANNING_BAR])),
+      ],
+    );
+    expect(wheelsets.map(summary)).toEqual([
+      {
+        members: [
+          [0, 0],
+          [0, 1],
+          [0, 2],
+          [0, 3],
+        ],
+        rail: 0,
+        trackCentre: 0,
+        contactRadii: ["7", "7"],
+        rollingRadius: "7",
+        rollingRadiusOnRail: ["7", null],
+      },
+    ]);
   });
 
   it("keeps a co-linear hub that touches no head band out of the members", () => {
