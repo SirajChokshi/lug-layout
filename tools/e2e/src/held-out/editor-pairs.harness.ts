@@ -39,7 +39,8 @@ const LIBRARY_CONNECTORS_ROOT = join(REPO_ROOT, "tools/asset-pipeline/dist/libra
 const SEED_RANGE = 2 ** 31;
 const DEFAULT_PAIRS = 3;
 const MAX_GENERATOR_ATTEMPTS_PER_PAIR = 8;
-const HARNESS_TIMEOUT_MS = 600_000;
+const PAIR_TIMEOUT_MS = 180_000;
+const FULL_SWEEP_TIMEOUT_FACTOR = 4;
 const FULL_SWEEP = process.env["HELD_OUT_SWEEP"] === "full";
 const MS_PER_SECOND = 1000;
 const ORIGIN = 0;
@@ -340,5 +341,5 @@ it(
       `every check passes for every generated pair; replay with HELD_OUT_SEED=${seed}`,
     ).toEqual([]);
   },
-  HARNESS_TIMEOUT_MS,
+  PAIR_TIMEOUT_MS * (pairCount() + 1) * (FULL_SWEEP ? FULL_SWEEP_TIMEOUT_FACTOR : 1),
 );
