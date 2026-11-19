@@ -20,7 +20,10 @@ import { StudBasisTable } from "./stud-basis-table.ts";
 
 const LINEAR = Float32Array.of(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9);
 const COLOR_ALPHA_SLOT = Uint8Array.of(0, 1, 0);
+const RENUMBERED_COLOR_ALPHA_SLOT = Uint8Array.of(1, 0, 1);
 const SWAPPED_COLOR_ALPHA_SLOT = Uint8Array.of(1, 0, 0);
+const PART_TRANSLATIONS_IN_CHUNK_ORDER = [[10], [90], [50], [70], [30]];
+const STUD_TRANSLATIONS_IN_CHUNK_ORDER = [[1], [4], [7]];
 const UPRIGHT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const TILTED = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0];
 
@@ -48,18 +51,22 @@ const STUDS: ReadonlyArray<Instance> = [
   { shape: 3, colorIndex: 2, voxelized: 0, matrix: at(TILTED, 7, 8, 9) },
 ];
 
-function chunkOf(parts: ReadonlyArray<Instance>, studs: ReadonlyArray<Instance>): ChunkInstances {
+function chunkOf(
+  parts: ReadonlyArray<Instance>,
+  studs: ReadonlyArray<Instance>,
+  paletteIndexOf: (shape: number) => number = (shape) => shape,
+): ChunkInstances {
   return {
     originX: 640,
     originZ: -1280,
     count: parts.length,
-    partIndex: Uint16Array.from(parts.map((p) => p.shape)),
+    partIndex: Uint16Array.from(parts.map((p) => paletteIndexOf(p.shape))),
     colorIndex: Uint16Array.from(parts.map((p) => p.colorIndex)),
     voxelized: Uint8Array.from(parts.map((p) => p.voxelized)),
     matrices: Float32Array.from(parts.flatMap((p) => p.matrix)),
     studs: {
       count: studs.length,
-      primitiveIndex: Uint8Array.from(studs.map((s) => s.shape)),
+      primitiveIndex: Uint8Array.from(studs.map((s) => paletteIndexOf(s.shape))),
       colorIndex: Uint16Array.from(studs.map((s) => s.colorIndex)),
       matrices: Float32Array.from(studs.flatMap((s) => s.matrix)),
     },
@@ -165,20 +172,20 @@ it("draws parts in runs of one part, alpha slot and instance class, and studs in
   const page = pageOf(chunk(), LINEAR, COLOR_ALPHA_SLOT, new StudBasisTable());
 
   expect(partRunTable(page.partRuns)).toEqual([
-    [1, 1, false, false, 0, 1],
-    [1, 1, true, true, 1, 2],
-    [2, 0, false, false, 2, 3],
-    [2, 0, true, false, 3, 4],
-    [2, 0, false, true, 4, 5],
+    [2, 0, false, false, 0, 1],
+    [2, 0, true, false, 1, 2],
+    [2, 0, false, true, 2, 3],
+    [1, 1, false, false, 3, 4],
+    [1, 1, true, true, 4, 5],
   ]);
-  expect(translationsIn(page, page.partRuns)).toEqual([[70], [30], [10], [90], [50]]);
+  expect(translationsIn(page, page.partRuns)).toEqual(PART_TRANSLATIONS_IN_CHUNK_ORDER);
   expect(runTable(page.studRuns)).toEqual([
-    [0, 0, 5, 6],
-    [3, 0, 6, 7],
-    [3, 1, 7, 8],
+    [3, 1, 5, 6],
+    [0, 0, 6, 7],
+    [3, 0, 7, 8],
   ]);
-  expect(translationsIn(page, page.studRuns)).toEqual([[4], [7], [1]]);
-  expect([groupRunEnd(page.partRuns, 0), groupRunEnd(page.partRuns, 2)]).toEqual([2, 5]);
+  expect(translationsIn(page, page.studRuns)).toEqual(STUD_TRANSLATIONS_IN_CHUNK_ORDER);
+  expect([groupRunEnd(page.partRuns, 0), groupRunEnd(page.partRuns, 3)]).toEqual([3, 5]);
   expect(Array.from(page.studRuns.instanceClass, (c) => isNotUpright(c) || isVoxelized(c))).toEqual(
     [false, false, false],
   );
@@ -188,38 +195,59 @@ it("draws parts in runs of one part, alpha slot and instance class, and studs in
   ]).toEqual([true, false]);
 });
 
-it("moves instances to their new runs when the palette gives their colours other alpha slots", () => {
-  const bases = new StudBasisTable();
-  const page = regroupedPage(
-    pageOf(chunk(), LINEAR, COLOR_ALPHA_SLOT, bases),
+it("page groups follow chunk instance order whatever palette indices its parts have", () => {
+  const swapped = new Map([
+    [0, 3],
+    [1, 2],
+    [2, 1],
+    [3, 0],
+  ]);
+  const page = pageOf(
+    chunkOf(PARTS, STUDS, (shape) => swapped.get(shape) ?? shape),
     LINEAR,
-    SWAPPED_COLOR_ALPHA_SLOT,
+    COLOR_ALPHA_SLOT,
+    new StudBasisTable(),
   );
+  const regrouped = regroupedPage(page, LINEAR, COLOR_ALPHA_SLOT);
 
-  expect(pageRows(page, bases)).toEqual(
-    [
-      ...PARTS.map((p) => expectedRow("part", p)),
-      ...STUDS.map((s) => expectedRow("stud", s)),
-    ].toSorted(),
+  for (const built of [page, regrouped]) {
+    expect(translationsIn(built, built.partRuns)).toEqual(PART_TRANSLATIONS_IN_CHUNK_ORDER);
+    expect(translationsIn(built, built.studRuns)).toEqual(STUD_TRANSLATIONS_IN_CHUNK_ORDER);
+  }
+});
+
+it("a regrouped page under a slot renumbering has the group order of a fresh page", () => {
+  const regrouped = regroupedPage(
+    pageOf(chunk(), LINEAR, COLOR_ALPHA_SLOT, new StudBasisTable()),
+    LINEAR,
+    RENUMBERED_COLOR_ALPHA_SLOT,
   );
-  expect(partRunTable(page.partRuns)).toEqual([
-    [1, 0, false, false, 0, 1],
-    [1, 0, true, true, 1, 2],
-    [2, 0, false, true, 2, 3],
-    [2, 1, false, false, 3, 4],
-    [2, 1, true, false, 4, 5],
-  ]);
-  expect(translationsIn(page, page.partRuns)).toEqual([[70], [30], [50], [10], [90]]);
-  expect([
-    groupRunEnd(page.partRuns, 0),
-    groupRunEnd(page.partRuns, 2),
-    groupRunEnd(page.partRuns, 3),
-  ]).toEqual([2, 3, 5]);
-  expect(runTable(page.studRuns)).toEqual([
-    [0, 1, 5, 6],
-    [3, 0, 6, 8],
-  ]);
-  expect(translationsIn(page, page.studRuns)).toEqual([[4], [7, 1]]);
+  const fresh = pageOf(chunk(), LINEAR, RENUMBERED_COLOR_ALPHA_SLOT, new StudBasisTable());
+
+  for (const page of [regrouped, fresh]) {
+    expect(partRunTable(page.partRuns)).toEqual([
+      [2, 1, false, false, 0, 1],
+      [2, 1, true, false, 1, 2],
+      [2, 1, false, true, 2, 3],
+      [1, 0, false, false, 3, 4],
+      [1, 0, true, true, 4, 5],
+    ]);
+    expect(translationsIn(page, page.partRuns)).toEqual(PART_TRANSLATIONS_IN_CHUNK_ORDER);
+    expect(runTable(page.studRuns)).toEqual([
+      [3, 0, 5, 6],
+      [0, 1, 6, 7],
+      [3, 1, 7, 8],
+    ]);
+    expect(translationsIn(page, page.studRuns)).toEqual(STUD_TRANSLATIONS_IN_CHUNK_ORDER);
+  }
+});
+
+it("refuses to regroup when the colour-to-slot map changes which colours share a slot", () => {
+  const page = pageOf(chunk(), LINEAR, COLOR_ALPHA_SLOT, new StudBasisTable());
+
+  expect(() => regroupedPage(page, LINEAR, SWAPPED_COLOR_ALPHA_SLOT)).toThrow(
+    "a page can only be regrouped when the same colours still share each alpha slot",
+  );
 });
 
 const QUARTER_TURN_ROWS = [0, 0, 1, 50, 0, 1, 0, 8, -1, 0, 0, 70];
@@ -335,7 +363,9 @@ it("keeps each stud's exact transform bit for bit, through regrouping, with shar
   const basisIndices = new Set(Array.from(page.studBasisAndColorIndex, studBasisIndexOf));
 
   expect(studBits(page, bases)).toEqual(expected);
-  expect(studBits(regroupedPage(page, LINEAR, SWAPPED_COLOR_ALPHA_SLOT), bases)).toEqual(expected);
+  expect(studBits(regroupedPage(page, LINEAR, RENUMBERED_COLOR_ALPHA_SLOT), bases)).toEqual(
+    expected,
+  );
   expect([basisIndices.size, bases.count]).toEqual([DISTINCT_EXACT_BASES, DISTINCT_EXACT_BASES]);
 });
 
