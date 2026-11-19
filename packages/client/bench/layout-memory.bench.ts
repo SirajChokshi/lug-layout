@@ -1,4 +1,4 @@
-import { ASSET_FETCHER, type IAssetFetcher } from "@brr/catalog";
+import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -28,11 +28,15 @@ import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getHeapStatistics, writeHeapSnapshot } from "node:v8";
+import { STUD_LDU } from "@brr/math";
 import { mainThreadModules } from "../src/client.module.ts";
 import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
 import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
+import type { IPlaceableCatalog } from "../src/catalog/placeable-catalog.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { WithFixtureModels } from "../src/edit/fixture-model.test-support.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
+import type { PlaceableCells } from "../src/edit/placeable.ts";
 import { parseHeapSnapshot, tallyOwners, type OwnerRules, type OwnerTally } from "./heap-owners.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -58,8 +62,28 @@ const SETS: ReadonlyArray<string> = [
   "omr:7936-1",
   "omr:10205-1",
 ];
-const ITEMS: ReadonlyArray<string> = [BASEPLATE, ROAD_PLATE, ...SETS];
-const SCALES: Readonly<Record<string, number>> = { small: 5, medium: 10, large: 18 };
+const TILE_ITEMS: ReadonlyArray<string> = [BASEPLATE, ROAD_PLATE, ...SETS];
+const DENSE_FIXTURE = "brick-2x4";
+const DENSE_BRICK = `generated:${DENSE_FIXTURE}`;
+const MS_PER_SECOND = 1000;
+const P50 = 0.5;
+const P95 = 0.95;
+
+type Layout =
+  | { readonly kind: "tiles"; readonly tiles: number }
+  | {
+      readonly kind: "dense";
+      readonly across: number;
+      readonly deep: number;
+      readonly layers: number;
+    };
+
+const SCALES: Readonly<Record<string, Layout>> = {
+  small: { kind: "tiles", tiles: 5 },
+  medium: { kind: "tiles", tiles: 10 },
+  large: { kind: "tiles", tiles: 18 },
+  dense: { kind: "dense", across: 16, deep: 16, layers: 4 },
+};
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -147,11 +171,19 @@ interface Snapshots {
   readonly layout: string;
 }
 
+interface PlacementTimes {
+  readonly totalSeconds: number;
+  readonly p50Ms: number;
+  readonly p95Ms: number;
+}
+
 interface RunResult {
   readonly scale: string;
-  readonly tiles: number;
+  readonly arrangement: string;
   readonly parts: number;
   readonly placements: number;
+  readonly footprintCells: number;
+  readonly placing: PlacementTimes;
   readonly studsDrawn: number;
   readonly studsTotal: number;
   readonly renderInput: string;
@@ -374,7 +406,62 @@ function tileCentre(index: number): number {
   return index * TILE_LDU + HALF_TILE_LDU;
 }
 
+interface DensePose {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+}
+
+function densePoses(
+  layout: Extract<Layout, { kind: "dense" }>,
+  brick: PlaceableCells,
+): ReadonlyArray<DensePose> {
+  const bond = Math.floor(brick.width / 2);
+  const poses: DensePose[] = [];
+  for (let layer = 0; layer < layout.layers; layer++) {
+    const shift = layer % 2 === 0 ? 0 : bond;
+    for (let row = 0; row < layout.deep; row++) {
+      for (let column = 0; column < layout.across; column++) {
+        poses.push({
+          x: (column * brick.width + shift - brick.cellX0) * STUD_LDU,
+          z: (row * brick.depth - brick.cellZ0) * STUD_LDU,
+          yPlates: layer * brick.heightPlates,
+        });
+      }
+    }
+  }
+  return poses;
+}
+
+function poseKey(x: number, z: number, yPlates: number): string {
+  return `${x},${z},${yPlates}`;
+}
+
+function misplacedBricks(editor: IEditor, expected: ReadonlyArray<DensePose>): string | null {
+  const { refs, placements } = editor.dump();
+  const wanted = new Map<string, number>();
+  for (const pose of expected) {
+    const key = poseKey(pose.x, pose.z, pose.yPlates);
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
+  }
+  let bricks = 0;
+  for (let i = 0; i < placements.refId.length; i++) {
+    if (refs[placements.refId[i] ?? -1] !== DENSE_BRICK) continue;
+    bricks++;
+    const key = poseKey(placements.x[i] ?? 0, placements.z[i] ?? 0, placements.yPlates[i] ?? 0);
+    const left = wanted.get(key) ?? 0;
+    if (left === 0)
+      return `a brick landed at ${key} (x, z, plates), which the dense rule never aims at`;
+    wanted.set(key, left - 1);
+  }
+  return bricks === expected.length
+    ? null
+    : `${bricks} bricks were placed where the dense rule aims ${expected.length}`;
+}
+
 class LayoutBuilder {
+  readonly times: number[] = [];
+
   constructor(
     private readonly editor: IEditor,
     private readonly backend: WindowlessBackend,
@@ -384,9 +471,11 @@ class LayoutBuilder {
     const editor = this.editor;
     editor.chooseItem(item);
     this.backend.aim(x, z);
-    editor.pointerMove(0, 0);
     const before = editor.snapshot().placements;
+    const started = performance.now();
+    editor.pointerMove(0, 0);
     editor.click(0, 0, 0);
+    this.times.push(performance.now() - started);
     if (editor.snapshot().placements !== before + 1) {
       throw new Error(
         `${item} at ${x}, ${z} was refused: ${editor.snapshot().lastRefusal?.reason}`,
@@ -413,7 +502,12 @@ class LayoutBuilder {
     }
   }
 
-  build(tiles: number): void {
+  buildDense(poses: ReadonlyArray<DensePose>): void {
+    for (const pose of poses) this.place(DENSE_BRICK, pose.x, pose.z);
+    this.editor.chooseItem(null);
+  }
+
+  buildTiles(tiles: number): void {
     for (let row = 0; row < tiles; row++) {
       for (let column = 0; column < tiles; column++) {
         this.place(BASEPLATE, tileCentre(column), tileCentre(row));
@@ -455,18 +549,101 @@ function partsOf(editor: IEditor): number {
   return total;
 }
 
+function footprintCellsOf(editor: IEditor): number {
+  const { refs, placements, covers } = editor.dump();
+  const cells = new Map(covers.map((cover) => [cover.id, cover.footprintCells]));
+  let total = 0;
+  for (let i = 0; i < placements.refId.length; i++) {
+    const ref = refs[placements.refId[i] ?? -1] ?? "";
+    const footprint = cells.get(ref);
+    if (footprint === undefined) throw new Error(`placed ${ref} has no footprint cells`);
+    total += footprint;
+  }
+  return total;
+}
+
+function placementTimes(times: ReadonlyArray<number>): PlacementTimes {
+  const sorted = times.toSorted((a, b) => a - b);
+  const at = (fraction: number): number =>
+    sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))] ?? 0;
+  return {
+    totalSeconds: times.reduce((sum, ms) => sum + ms, 0) / MS_PER_SECOND,
+    p50Ms: at(P50),
+    p95Ms: at(P95),
+  };
+}
+
+function itemsOf(layout: Layout): ReadonlyArray<string> {
+  switch (layout.kind) {
+    case "tiles":
+      return [...TILE_ITEMS, TRACK_ITEM];
+    case "dense":
+      return [DENSE_BRICK];
+    default: {
+      const unknown: never = layout;
+      throw new Error(`unknown layout ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
+function arrangementOf(layout: Layout): string {
+  switch (layout.kind) {
+    case "tiles":
+      return `${layout.tiles}×${layout.tiles} tiles`;
+    case "dense":
+      return `${layout.across}×${layout.deep}×${layout.layers} bricks`;
+    default: {
+      const unknown: never = layout;
+      throw new Error(`unknown layout ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
+function denseBrick(catalog: IPlaceableCatalog): PlaceableCells {
+  const brick = catalog.placeables().find((placeable) => placeable?.id === DENSE_BRICK);
+  if (!brick) throw new Error(`${DENSE_BRICK} is not loaded from the fixture bundle`);
+  return brick.cells;
+}
+
+function build(
+  layout: Layout,
+  builder: LayoutBuilder,
+  catalog: IPlaceableCatalog,
+): ReadonlyArray<DensePose> {
+  switch (layout.kind) {
+    case "tiles":
+      builder.buildTiles(layout.tiles);
+      return [];
+    case "dense": {
+      const poses = densePoses(layout, denseBrick(catalog));
+      builder.buildDense(poses);
+      return poses;
+    }
+    default: {
+      const unknown: never = layout;
+      throw new Error(`unknown layout ${JSON.stringify(unknown)}`);
+    }
+  }
+}
+
 async function runChild(
   scale: string,
   snapshotDir: string | null,
   worldsDir: string | null,
 ): Promise<RunResult> {
-  const tiles = SCALES[scale];
-  if (tiles === undefined) throw new Error(`unknown scale ${scale}`);
+  const plan = SCALES[scale];
+  if (plan === undefined) throw new Error(`unknown scale ${scale}`);
   Object.assign(globalThis, { requestAnimationFrame: () => 0 });
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   const files = new BundleDirectoryFetcher();
   container.rebind(ASSET_FETCHER).toConstantValue(files);
+  if (plan.kind === "dense") {
+    const shipped = container.get(PART_BUNDLE_LOADER);
+    container
+      .rebind(PART_BUNDLE_LOADER)
+      .toConstantValue(new WithFixtureModels(shipped, [DENSE_FIXTURE]));
+  }
   const backend = new WindowlessBackend(container.get(SCENE_BACKEND));
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const editor = container.get(EDITOR);
@@ -480,19 +657,23 @@ async function runChild(
   if (started.status !== "ready") throw new Error(`editor did not start: ${started.error ?? ""}`);
   await settled(editor, backend);
   const catalog = container.get(PLACEABLE_CATALOG);
-  for (const item of ITEMS) {
-    await loadCatalogItem(catalog, item);
+  for (const item of itemsOf(plan)) {
+    if (item !== TRACK_ITEM) await loadCatalogItem(catalog, item);
     editor.chooseItem(item);
   }
-  editor.chooseItem(TRACK_ITEM);
   editor.chooseItem(null);
   await settled(editor, backend);
   const baseline = measure();
   const baselineSnapshot = snapshotDir
     ? writeHeapSnapshot(join(snapshotDir, `${scale}-baseline.heapsnapshot`))
     : null;
-  new LayoutBuilder(editor, backend).build(tiles);
+  const builder = new LayoutBuilder(editor, backend);
+  const aimed = build(plan, builder, catalog);
   await settled(editor, backend);
+  if (plan.kind === "dense") {
+    const misplaced = misplacedBricks(editor, aimed);
+    if (misplaced) throw new Error(misplaced);
+  }
   const renderInput = backend.renderInputDigest();
   backend.forgetDigests();
   const layout = measure();
@@ -506,9 +687,11 @@ async function runChild(
   const studs = editor.snapshot().studs;
   return {
     scale,
-    tiles,
+    arrangement: arrangementOf(plan),
     parts: partsOf(editor),
     placements: editor.snapshot().placements,
+    footprintCells: footprintCellsOf(editor),
+    placing: placementTimes(builder.times),
     studsDrawn: studs?.drawn ?? 0,
     studsTotal: (studs?.drawn ?? 0) + (studs?.culledUnderFootprints ?? 0),
     renderInput,
@@ -582,8 +765,11 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
     `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
     `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags; ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
     "",
-    "| Scale | Tiles | Parts | Placements | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
-    "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+    `dense layout: ${DENSE_BRICK} (one 3001 from the fixture bundle) placed across × deep per layer for each of the layers, alternate layers shifted half a brick along its width, at the pitch and layer height of its compiled cells, each through hover and click so it rests on the bricks below; the run fails unless every brick lands at the pose and layer its rule aims at`,
+    "placing: the editor's pointerMove and click per placement, summed over the layout (total) and as p50 and p95, medians of the runs",
+    "",
+    "| Scale | Layout | Parts | Placements | Footprint cells per part | Placing total, p50, p95 | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   const scales = [...new Set(results.map((result) => result.scale))];
   for (const scale of scales) {
@@ -594,8 +780,12 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
     const buffers = median(
       runs.map((r) => r.layout.arrayBufferBytes - r.baseline.arrayBufferBytes),
     );
+    const total = median(runs.map((r) => r.placing.totalSeconds));
+    const p50 = median(runs.map((r) => r.placing.p50Ms));
+    const p95 = median(runs.map((r) => r.placing.p95Ms));
+    const cellsPerPart = first.parts > 0 ? (first.footprintCells / first.parts).toFixed(2) : "n/a";
     lines.push(
-      `| ${scale} | ${first.tiles}×${first.tiles} | ${first.parts.toLocaleString("en-US")} | ${first.placements} | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
+      `| ${scale} | ${first.arrangement} | ${first.parts.toLocaleString("en-US")} | ${first.placements.toLocaleString("en-US")} | ${cellsPerPart} | ${total.toFixed(1)} s, ${p50.toFixed(2)} ms, ${p95.toFixed(2)} ms | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
     );
   }
   for (const split of splits) {
