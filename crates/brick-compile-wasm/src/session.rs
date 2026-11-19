@@ -18,6 +18,7 @@ use brick_compile::{
 
 const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
 
+use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
     BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
@@ -63,7 +64,7 @@ impl Session {
                 lod,
                 stud_primitives,
                 unofficial_allowlist,
-                primitives,
+                connectors,
                 parts,
                 inline_checks,
                 records,
@@ -77,12 +78,13 @@ impl Session {
                     lod: Lod::from(*lod),
                     stud_primitives: stud_primitives.clone(),
                     unofficial_allowlist: unofficial_allowlist.clone(),
-                    technic: primitives.as_ref().map_or_else(
+                    technic: connectors.primitives.as_ref().map_or_else(
                         || Ok(TechnicPrimitives::default()),
                         TechnicPrimitives::from_table,
                     )?,
                     rolling_mode,
                 };
+                let inference = ConnectorInference::new(connectors)?;
                 let model = request.text("source")?;
                 compile(
                     &self.library,
@@ -91,6 +93,7 @@ impl Session {
                         references: parts,
                         inline_checks,
                         stud_needs: &stud_needs,
+                        inference: &inference,
                         records: *records,
                     },
                     &model,
@@ -211,6 +214,7 @@ struct CompileWork<'a> {
     references: &'a [String],
     inline_checks: &'a [InlineCheck],
     stud_needs: &'a [String],
+    inference: &'a ConnectorInference<'a>,
     records: bool,
 }
 
@@ -240,6 +244,7 @@ fn compile(
         references,
         inline_checks,
         stud_needs,
+        inference,
         records,
     } = work;
     let mut parts = Vec::with_capacity(references.len());
@@ -247,6 +252,20 @@ fn compile(
         let result = compiled_part(library, reference, options, records);
         let mut requested = library.take_requested();
         requested.extend(stud_needs.iter().cloned());
+        let connectors = match &result {
+            Ok((compiled, _)) if requested.is_empty() && inference.wants(reference) => {
+                let header = &compiled.flattened_files[0].header;
+                let license = header.license.as_deref().unwrap_or_default();
+                let record = inference.record(library, reference, &compiled.path, license);
+                requested = library.take_requested();
+                if requested.is_empty() {
+                    Some(record?)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
         let reference = reference.clone();
         parts.push(match result {
             _ if !requested.is_empty() => PartOutcome::Need {
@@ -265,6 +284,7 @@ fn compile(
                 file: compiled.path.clone(),
                 header: Section::from(&compiled.flattened_files[0].header),
                 files: compiled.flattened_files.len(),
+                connectors,
             },
             Err(error) => PartOutcome::Failed {
                 reference,

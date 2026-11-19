@@ -9,13 +9,13 @@ import {
   StudioRead,
   type CompilerBaked,
   type CompilerBlobs,
+  type CompilerConnectorInputs,
   type CompilerEnvelope,
   type CompilerLibraryDelta,
   type CompilerRequest,
   type CompilerVehicle,
   type CompilerVehicles,
   type ModelSection,
-  type PrimitiveConnectorTable,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { WasiReactor } from "./wasi-reactor.ts";
@@ -59,7 +59,7 @@ export interface CompileRequest {
   readonly lod: CompileLod;
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
-  readonly primitives: PrimitiveConnectorTable | null;
+  readonly connectors: CompilerConnectorInputs;
   readonly parts: ReadonlyArray<string>;
   readonly model: string;
   readonly inlineChecks: ReadonlyArray<InlinePart>;

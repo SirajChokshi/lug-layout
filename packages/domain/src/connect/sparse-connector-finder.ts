@@ -1,6 +1,12 @@
 import { CHUNK_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
-import { VECTOR_FLOATS, axisDimension, axisSign, oppositeAxis } from "./connector-table.ts";
+import {
+  GENDER_MALE,
+  VECTOR_FLOATS,
+  axisDimension,
+  axisSign,
+  oppositeAxis,
+} from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import {
   PLATE_SIXTEENTHS,
@@ -17,9 +23,18 @@ import {
 } from "./lattice-frame.ts";
 import { MateClasses } from "./mate-classes.ts";
 import type { MateFinder } from "./mate-finder.ts";
-import type { MateReport } from "./mate-report.ts";
-import type { SnapMating } from "./mating.ts";
-import type { ModelConnectors } from "./model-connectors.ts";
+import {
+  ENGAGED_AXIS,
+  ENGAGED_FROM,
+  ENGAGED_RADIUS,
+  ENGAGED_TO,
+  ENGAGED_U,
+  ENGAGED_V,
+  ENGAGEMENT_FLOATS,
+  type MateReport,
+} from "./mate-report.ts";
+import { SPAN_FLOATS, SPAN_FROM, SPAN_TO, SPAN_WIDEST, type SnapMating } from "./mating.ts";
+import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 
 const CELL_SIXTEENTHS = STUD_SIXTEENTHS;
 const REGION_SIXTEENTHS = 8 * STUD_SIXTEENTHS;
@@ -40,6 +55,8 @@ const Y = 1;
 const Z = 2;
 const AXIAL_GROUP = -1;
 const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
+const JOINT_KEY_INTS = 6;
+const LINE_KEY_INTS = 4;
 
 function cellOf(ldu: number, size: number): number {
   return Math.floor(ldu / size);
@@ -137,6 +154,7 @@ class TurnedModel {
   columnStart = new Int32Array(1);
   columnOrder = new Int32Array(0);
   columnAlong = new Int32Array(0);
+  lineShared = new Uint8Array(0);
 }
 
 export class SparseConnectorFinder implements MateFinder {
@@ -156,6 +174,15 @@ export class SparseConnectorFinder implements MateFinder {
   private slotStatus = new Uint8Array(INITIAL_SLOTS);
   private slotNext = new Int32Array(INITIAL_SLOTS);
   private slotRegionNext = new Int32Array(INITIAL_SLOTS);
+  private slotOwner = new Int32Array(INITIAL_SLOTS);
+  private slotConnector = new Int32Array(INITIAL_SLOTS);
+  private slotInstance = new Int32Array(INITIAL_SLOTS);
+  private slotShape = new Uint16Array(INITIAL_SLOTS);
+  private slotLineShared = new Uint8Array(INITIAL_SLOTS);
+  private readonly span = new Float64Array(SPAN_FLOATS);
+  private readonly engaged = new Float64Array(ENGAGEMENT_FLOATS);
+  private readonly joints = new IntKeyMap(JOINT_KEY_INTS);
+  private readonly jointKey = new Int32Array(JOINT_KEY_INTS);
   private nearby = new Int32Array(0);
   private readonly poseBox = new Int32Array(BOX_INTS);
   private readonly block = new Int32Array(BOX_INTS);
@@ -175,7 +202,7 @@ export class SparseConnectorFinder implements MateFinder {
     this.classes = new MateClasses(mating);
   }
 
-  insert(model: ModelConnectors, pose: LatticePose): void {
+  insert(model: ModelConnectors, pose: LatticePose, owner: number): void {
     checkPose(pose);
     const turned = this.turn(model);
     for (let i = 0; i < model.count; i++) {
@@ -193,6 +220,11 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotClass[slot] = turned.connectorClass[i] ?? UNCLASSED;
       this.slotSource[slot] = model.source[i] ?? 0;
       this.slotStatus[slot] = model.status[i] ?? 0;
+      this.slotOwner[slot] = owner;
+      this.slotConnector[slot] = i;
+      this.slotInstance[slot] = model.instance[i] ?? NO_INSTANCE;
+      this.slotShape[slot] = model.shape[i] ?? 0;
+      this.slotLineShared[slot] = turned.lineShared[i] ?? 0;
       this.slotNext[slot] = this.cells.get(this.keyOf(x, y, z, CELL_SIXTEENTHS));
       this.cells.set(this.cellKey, slot);
       this.slotRegionNext[slot] = this.regions.get(this.keyOf(x, y, z, REGION_SIXTEENTHS));
@@ -202,7 +234,7 @@ export class SparseConnectorFinder implements MateFinder {
     this.revision++;
   }
 
-  remove(model: ModelConnectors, pose: LatticePose): void {
+  remove(model: ModelConnectors, pose: LatticePose, owner: number): void {
     checkPose(pose);
     const turned = this.turn(model);
     for (let i = 0; i < model.count; i++) {
@@ -212,7 +244,7 @@ export class SparseConnectorFinder implements MateFinder {
       const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
       const axis = turned.axis[pose.rot * model.count + i] ?? 0;
       if (isLatticeStud(axis, x, z)) continue;
-      const slot = this.unlinkCell(x, y, z, axis, turned.connectorClass[i] ?? UNCLASSED);
+      const slot = this.unlinkCell(x, y, z, owner, i);
       this.unlinkRegion(slot);
       this.countChunk(x, y, z, -1);
       this.slotNext[slot] = this.freeSlot;
@@ -285,6 +317,7 @@ export class SparseConnectorFinder implements MateFinder {
 
   private matesAt(model: ModelConnectors, pose: LatticePose, out: MateReport | null): number {
     const turned = this.turn(model);
+    this.joints.clear();
     const skipped = latticeKey(pose);
     const own = model.count - this.latticeGroupSize(turned, pose.rot, skipped, model.count);
     if (own === 0) return 0;
@@ -537,11 +570,20 @@ export class SparseConnectorFinder implements MateFinder {
         const d = Math.imul(sx, dx) + Math.imul(sy, dy) + Math.imul(sz, dz);
         if (sx !== dx * d || sy !== dy * d || sz !== dz * d) continue;
         if (!classes.engagesAt(own, this.slotClass[slot] ?? UNCLASSED, d)) continue;
+        if (!out) {
+          n += this.sharesLine(i, slot) ? this.newJoint(model, i, slot, axis, x, y, z) : 1;
+          continue;
+        }
         n++;
-        out?.push(
+        this.engage(model, i, x, y, z, axis, slot, d);
+        out.push(
           i,
           ownSource | (this.slotSource[slot] ?? 0),
           Math.max(ownStatus, this.slotStatus[slot] ?? 0),
+          this.slotOwner[slot] ?? 0,
+          model.instance[i] ?? NO_INSTANCE,
+          this.slotInstance[slot] ?? NO_INSTANCE,
+          this.engaged,
         );
       }
     }
@@ -597,10 +639,96 @@ export class SparseConnectorFinder implements MateFinder {
       const i = m - base;
       const d = Math.imul((turned.exactAlong[k] ?? 0) - along, sign);
       if (!classes.engagesAt(slotClass, turned.connectorClass[i] ?? UNCLASSED, d)) continue;
+      if (!out && !this.sharesLine(i, slot)) {
+        n++;
+        continue;
+      }
+      const at = m * VECTOR_FLOATS;
+      const x = (turned.position[at + X] ?? 0) + sixteenths(pose.x);
+      const y = (turned.position[at + Y] ?? 0) + pose.yPlates * PLATE_SIXTEENTHS;
+      const z = (turned.position[at + Z] ?? 0) + sixteenths(pose.z);
+      if (!out) {
+        n += this.newJoint(model, i, slot, wanted, x, y, z);
+        continue;
+      }
       n++;
-      out?.push(i, (model.source[i] ?? 0) | slotSource, Math.max(model.status[i] ?? 0, slotStatus));
+      this.engage(model, i, x, y, z, wanted, slot, d);
+      out.push(
+        i,
+        (model.source[i] ?? 0) | slotSource,
+        Math.max(model.status[i] ?? 0, slotStatus),
+        this.slotOwner[slot] ?? 0,
+        model.instance[i] ?? NO_INSTANCE,
+        this.slotInstance[slot] ?? NO_INSTANCE,
+        this.engaged,
+      );
     }
     return n;
+  }
+
+  private sharesLine(i: number, slot: number): boolean {
+    return this.turned.lineShared[i] === 1 || this.slotLineShared[slot] === 1;
+  }
+
+  private newJoint(
+    model: ModelConnectors,
+    i: number,
+    slot: number,
+    axis: number,
+    x: number,
+    y: number,
+    z: number,
+  ): number {
+    const instance = model.instance[i] ?? NO_INSTANCE;
+    const partnerInstance = this.slotInstance[slot] ?? NO_INSTANCE;
+    if (instance === NO_INSTANCE || partnerInstance === NO_INSTANCE) return 1;
+    const along = axisDimension(axis);
+    const key = this.jointKey;
+    key[0] = this.slotOwner[slot] ?? 0;
+    key[1] = instance;
+    key[2] = partnerInstance;
+    key[3] = along;
+    key[4] = along === X ? y : x;
+    key[5] = along === Z ? y : z;
+    if (this.joints.get(key) !== MISSING) return 0;
+    this.joints.set(key, 1);
+    return 1;
+  }
+
+  private engage(
+    model: ModelConnectors,
+    i: number,
+    x: number,
+    y: number,
+    z: number,
+    axis: number,
+    slot: number,
+    offset: number,
+  ): void {
+    const ownMale = model.gender[i] === GENDER_MALE;
+    const ownShape = model.shape[i] ?? 0;
+    const theirShape = this.slotShape[slot] ?? 0;
+    this.mating.engagedSpan(
+      ownMale ? ownShape : theirShape,
+      ownMale ? theirShape : ownShape,
+      offset,
+      this.span,
+    );
+    const maleAxis = ownMale ? axis : oppositeAxis(axis);
+    const along = axisDimension(maleAxis);
+    const sign = axisSign(maleAxis);
+    const maleX = ownMale ? x : (this.slotX[slot] ?? 0);
+    const maleY = ownMale ? y : (this.slotY[slot] ?? 0);
+    const maleZ = ownMale ? z : (this.slotZ[slot] ?? 0);
+    const root = along === X ? maleX : along === Y ? maleY : maleZ;
+    const from = root + sign * (this.span[SPAN_FROM] ?? 0);
+    const to = root + sign * (this.span[SPAN_TO] ?? 0);
+    this.engaged[ENGAGED_AXIS] = along;
+    this.engaged[ENGAGED_U] = along === X ? maleY : maleX;
+    this.engaged[ENGAGED_V] = along === Z ? maleY : maleZ;
+    this.engaged[ENGAGED_FROM] = Math.min(from, to);
+    this.engaged[ENGAGED_TO] = Math.max(from, to);
+    this.engaged[ENGAGED_RADIUS] = this.span[SPAN_WIDEST] ?? 0;
   }
 
   private proposeFromSlot(
@@ -786,6 +914,7 @@ export class SparseConnectorFinder implements MateFinder {
     }
     this.groupByPhase(turned, n);
     this.indexLines(turned, n);
+    turned.lineShared = sharedLines(model);
     turned.model = model;
     this.gatheredRevision.fill(-1);
     return turned;
@@ -864,16 +993,11 @@ export class SparseConnectorFinder implements MateFinder {
     return this.slots++;
   }
 
-  private unlinkCell(x: number, y: number, z: number, axis: number, own: number): number {
+  private unlinkCell(x: number, y: number, z: number, owner: number, connector: number): number {
     const key = this.keyOf(x, y, z, CELL_SIXTEENTHS);
     let previous = NO_SLOT;
     for (let slot = this.cells.get(key); slot !== NO_SLOT; slot = this.slotNext[slot] ?? NO_SLOT) {
-      const same =
-        this.slotX[slot] === x &&
-        this.slotY[slot] === y &&
-        this.slotZ[slot] === z &&
-        this.slotAxis[slot] === axis &&
-        this.slotClass[slot] === own;
+      const same = this.slotOwner[slot] === owner && this.slotConnector[slot] === connector;
       if (!same) {
         previous = slot;
         continue;
@@ -924,10 +1048,41 @@ export class SparseConnectorFinder implements MateFinder {
     this.slotStatus = grown(this.slotStatus, new Uint8Array(capacity));
     this.slotNext = grown(this.slotNext, new Int32Array(capacity));
     this.slotRegionNext = grown(this.slotRegionNext, new Int32Array(capacity));
+    this.slotOwner = grown(this.slotOwner, new Int32Array(capacity));
+    this.slotConnector = grown(this.slotConnector, new Int32Array(capacity));
+    this.slotInstance = grown(this.slotInstance, new Int32Array(capacity));
+    this.slotShape = grown(this.slotShape, new Uint16Array(capacity));
+    this.slotLineShared = grown(this.slotLineShared, new Uint8Array(capacity));
   }
 }
 
-function grown<T extends Int32Array | Int8Array | Uint8Array>(from: T, to: T): T {
+function sharedLines(model: ModelConnectors): Uint8Array<ArrayBuffer> {
+  const key = new Int32Array(LINE_KEY_INTS);
+  const counts = new IntKeyMap(LINE_KEY_INTS);
+  const lineKey = (i: number): Int32Array | null => {
+    const instance = model.instance[i] ?? NO_INSTANCE;
+    if (instance === NO_INSTANCE) return null;
+    const along = axisDimension(model.axis[i] ?? 0);
+    const at = i * VECTOR_FLOATS;
+    key[0] = instance;
+    key[1] = along;
+    key[2] = model.origin[at + ((along + 1) % VECTOR_FLOATS)] ?? 0;
+    key[3] = model.origin[at + ((along + 2) % VECTOR_FLOATS)] ?? 0;
+    return key;
+  };
+  for (let i = 0; i < model.count; i++) {
+    const line = lineKey(i);
+    if (line) counts.set(line, Math.max(0, counts.get(line)) + 1);
+  }
+  const shared = new Uint8Array(model.count);
+  for (let i = 0; i < model.count; i++) {
+    const line = lineKey(i);
+    if (line && counts.get(line) > 1) shared[i] = 1;
+  }
+  return shared;
+}
+
+function grown<T extends Int32Array | Int8Array | Uint8Array | Uint16Array>(from: T, to: T): T {
   to.set(from);
   return to;
 }

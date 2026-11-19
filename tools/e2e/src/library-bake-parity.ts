@@ -3,6 +3,8 @@ import {
   LibraryBakeBucket,
   LibraryBakeIndex,
   libraryBakeBucket,
+  SectionVocabularyFile,
+  type CompilerConnectorInputs,
   type LibraryBakeOptions,
   type LibraryBakePart,
 } from "@brr/schema/bundle";
@@ -12,6 +14,7 @@ import { availableParallelism } from "node:os";
 import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 import { isMainThread, parentPort, Worker, workerData } from "node:worker_threads";
+import * as v from "valibot";
 
 const INDEX_FILE = "library-bake.json";
 const PART_ID_PREFIX = "ldraw:";
@@ -19,6 +22,10 @@ const PART_EXTENSION = ".dat";
 const LIBRARY_KEY = "library-bake-parity";
 const BATCH_PARTS = 64;
 const MISMATCHES_SHOWN = 20;
+
+const InferredConnectors = v.object({ cavityProbe: v.string() });
+
+type InferenceInputs = Pick<CompilerConnectorInputs, "sectionVocabulary" | "cavityProbe">;
 
 type Expected =
   | { readonly id: string; readonly part: LibraryBakePart }
@@ -29,6 +36,7 @@ interface ShardJob {
   readonly wasm: string;
   readonly ldraw: string;
   readonly options: LibraryBakeOptions;
+  readonly inference: InferenceInputs;
   readonly expected: ReadonlyArray<Expected>;
 }
 
@@ -71,7 +79,7 @@ async function compareShard(job: ShardJob): Promise<ShardResult> {
       lod: "standard" as const,
       studPrimitives: job.options.studPrimitives,
       unofficialAllowlist: job.options.unofficialAllowlist,
-      primitives: job.options.primitives,
+      connectors: { primitives: job.options.primitives, ...job.inference, infer: [] },
       parts: batch.map(({ id }) => reference(id)),
       model: "",
       inlineChecks: [],
@@ -151,6 +159,24 @@ async function expectedParts(records: string): Promise<{
   };
 }
 
+async function inferenceInputs(
+  vocabularyPath: string,
+  inferredPath: string,
+): Promise<InferenceInputs> {
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, json(await readFile(vocabularyPath))),
+    vocabularyPath,
+  );
+  const inferred = decodedOrThrow(
+    decode(InferredConnectors, json(await readFile(inferredPath))),
+    inferredPath,
+  );
+  return {
+    sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+    cavityProbe: inferred.cavityProbe,
+  };
+}
+
 function runWorker(job: ShardJob): Promise<ShardResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL(import.meta.url), {
@@ -169,6 +195,8 @@ async function main(): Promise<void> {
   const { values } = parseArgs({
     options: {
       records: { type: "string", default: "../asset-pipeline/dist/library-bake" },
+      vocabulary: { type: "string", default: "../asset-pipeline/section-vocabulary.json" },
+      inferred: { type: "string", default: "../asset-pipeline/inferred-connectors.json" },
       wasm: {
         type: "string",
         default: "../../target/wasm32-wasip1/release/brick_compile_wasm.wasm",
@@ -180,6 +208,7 @@ async function main(): Promise<void> {
   const workers = Number(values.workers);
   const started = performance.now();
   const { options, expected } = await expectedParts(values.records);
+  const inference = await inferenceInputs(values.vocabulary, values.inferred);
   const shards = Array.from({ length: workers }, (): Expected[] => []);
   for (const [i, part] of expected.entries()) shards[i % workers]?.push(part);
   const results = await Promise.all(
@@ -189,6 +218,7 @@ async function main(): Promise<void> {
         wasm: values.wasm,
         ldraw: values.ldraw,
         options,
+        inference,
         expected: shard,
       }),
     ),

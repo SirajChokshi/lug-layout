@@ -48,6 +48,8 @@ export class WorkerModelImporter implements IModelImporter {
       studPrimitives: context.studPrimitiveNames,
       unofficialAllowlist: context.unofficialAllowlist,
       primitives: context.primitives,
+      sectionVocabulary: context.sectionVocabulary.vocabulary,
+      cavityProbe: context.cavityProbe,
       bundlePartIds: context.partIds,
       ldconfigCodes: context.ldconfigCodes,
       translucentColors: context.translucentCodes,
@@ -62,13 +64,13 @@ export class WorkerModelImporter implements IModelImporter {
     transfer: Transferable[] = [],
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
-    const compilerUrl = new URL(
-      context.compilerPath,
-      new URL(this.bundleBaseUrl.replace(/\/?$/u, "/")),
-    ).href;
+    const bundleBase = new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
     return this.workers.run(
       {
-        compilerUrl,
+        compilerUrl: new URL(context.compilerPath, bundleBase).href,
+        bundleBaseUrl: bundleBase.href,
+        connectorIndexes: context.connectorIndexes,
+        connectorVocabulary: context.sectionVocabulary.sha256,
         ...(this.ldrawLibraryBaseUrl === null ? {} : { ldrawLibraryUrl: this.ldrawLibraryBaseUrl }),
         input,
       },
