@@ -70,6 +70,7 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
       data-measuring={snapshot.measuring ? "1" : "0"}
     >
       {JSON.stringify({
+        hover: snapshot.hover,
         latencies: snapshot.latencies,
         stats: snapshot.stats,
         measurement: snapshot.measurement,
