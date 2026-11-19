@@ -83,9 +83,12 @@ export interface IPlacementSearch {
     boxes: PartBoxes,
     technic: TechnicSet,
     window: SnapWindow,
+    tableYPlates: number,
     moving: number | null,
     out: PlacementChoice,
   ): void;
+  evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void;
+  restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number>;
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
 }
 
@@ -252,6 +255,7 @@ export class PlacementSearch implements IPlacementSearch {
     boxes: PartBoxes,
     technic: TechnicSet,
     window: SnapWindow,
+    tableYPlates: number,
     moving: number | null,
     out: PlacementChoice,
   ): void {
@@ -261,27 +265,61 @@ export class PlacementSearch implements IPlacementSearch {
     out.accepted = false;
     out.walked = 0;
     out.overlap.owner = NO_PLACEMENT;
+    this.choose(out, 0);
+    let first = true;
     for (let i = 0; i < candidates.count; i++) {
-      const pose = this.candidatePose(i);
       out.walked = i + 1;
+      const votes = candidates.votes[i] ?? 0;
+      const yPlates = candidates.yPlates[i] ?? 0;
+      if (yPlates < tableYPlates) continue;
+      const pose = this.candidatePose(i);
       const placed = this.scratch.place(volumes, pose);
       this.zones.clear();
       let blocked = firstOverlap(placed, this.volumes, this.exempt, this.hit);
-      const mated = (candidates.votes[i] ?? 0) > 0;
-      if (blocked && mated && this.collectZones(model, boxes, technic, pose) > 0) {
+      if (blocked && votes > 0 && this.collectZones(model, boxes, technic, pose) > 0) {
         blocked =
           firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
           this.zones.firstOverlap(this.hit);
       }
-      if (i === 0 || !blocked) this.choose(out, i);
-      if (i === 0 && blocked) copyHit(this.hit, out.overlap);
-      if (blocked) continue;
+      const supported = votes > 0 || yPlates === tableYPlates;
+      if (first) {
+        this.choose(out, i);
+        if (blocked) copyHit(this.hit, out.overlap);
+        first = false;
+      }
+      if (blocked || !supported) continue;
+      this.choose(out, i);
       out.accepted = true;
       out.overlap.owner = NO_PLACEMENT;
       break;
     }
     this.moving = NO_PLACEMENT;
     this.zones.clear();
+  }
+
+  evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.solver.evaluate(model, pose, out);
+  }
+
+  restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number> {
+    const placed = this.scratch.place(volumes, pose);
+    const owners: number[] = [];
+    const seen: number[] = [];
+    const passed = (owner: number): boolean => owner === moving || seen.includes(owner);
+    for (let c = 0; c < placed.count; c++) {
+      const x = placed.cellX[c] ?? 0;
+      const z = placed.cellZ[c] ?? 0;
+      const bottom = placed.bottomLdu[c] ?? 0;
+      if ((placed.topLdu[c] ?? 0) <= bottom) continue;
+      seen.length = 0;
+      while (this.volumes.firstOverlap(x, z, bottom - 1, bottom, passed, this.hit)) {
+        seen.push(this.hit.owner);
+        if (this.hit.topLdu === bottom && !owners.includes(this.hit.owner)) {
+          owners.push(this.hit.owner);
+        }
+      }
+    }
+    return owners;
   }
 
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null {
