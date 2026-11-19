@@ -51,6 +51,8 @@ export interface IEditorCamera {
   viewFootprint(out: Float64Array): boolean;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
   savedView(): SavedViewV1;
+  matchesView(view: SavedViewV1): boolean;
+  copyView(out: SavedViewV1): void;
   restoreView(view: SavedViewV1 | null): void;
 }
 
@@ -247,6 +249,14 @@ export class EditorCamera implements IEditorCamera {
 
   savedView(): SavedViewV1 {
     return this.view.savedView();
+  }
+
+  matchesView(view: SavedViewV1): boolean {
+    return this.view.matchesView(view);
+  }
+
+  copyView(out: SavedViewV1): void {
+    this.view.copyView(out);
   }
 
   restoreView(view: SavedViewV1 | null): void {

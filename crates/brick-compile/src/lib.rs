@@ -17,6 +17,8 @@ pub mod license;
 pub mod mesh;
 pub mod model;
 pub mod occlusion;
+pub mod pieces;
+pub mod record;
 pub mod rolling;
 pub mod sixteenths;
 pub mod studio;

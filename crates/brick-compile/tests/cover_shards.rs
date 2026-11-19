@@ -141,6 +141,7 @@ fn baking_a_custom_pile_in_slices_hides_exactly_what_baking_it_whole_hides() {
             shard,
             table_depth,
         )
+        .expect("the pile's stud cover is allocated")
     };
 
     let whole = cover(CoverShard::WHOLE);

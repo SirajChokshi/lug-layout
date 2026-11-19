@@ -1,17 +1,17 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::affine::Vec3;
 use brick_compile::connect::{
     mating_faces, parse_metas, ConnectorExtractor, FaceSection, Gender, InferredFeatures,
-    MatingFace, Meta, PrimitiveConnectors, PrimitiveTable, SectionShape, SectionVocabulary,
-    ShadowPatches, ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    MatingFace, Meta, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowPatches,
+    ShadowSnaps, Shape, AXLE, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
 };
 use brick_compile::flatten::{resolve_reference, Lod};
 use brick_compile::model::{bake_model, official_reference};
-use brick_compile_cli::{shadow_texts, LazyLibrary};
+use brick_compile_cli::{read_section_vocabulary, LazyLibrary};
 use serde_json::{json, Value};
 
 const COAXIAL_LDU: f64 = 0.01;
@@ -228,8 +228,7 @@ fn run() -> Result<bool, String> {
     let probe_part = inferred["cavityProbe"]
         .as_str()
         .ok_or(format!("{inferred_path}: cavityProbe must be a part path"))?;
-    let vocabulary =
-        SectionVocabulary::from_metas(shadow_texts(&shadow_root).iter().map(String::as_str));
+    let vocabulary = read_section_vocabulary(Path::new(&take("--vocabulary")?))?;
     let patches = values
         .get("--patches")
         .map(|root| LazyLibrary::new(PathBuf::from(root)));
