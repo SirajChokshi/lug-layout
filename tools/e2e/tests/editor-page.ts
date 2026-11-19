@@ -1,3 +1,4 @@
+import type { PlacementHover } from "@brr/client";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -145,7 +146,10 @@ export interface LevelCrossing {
 }
 
 interface EditState {
+  readonly hover: { readonly placement: PlacementHover | null } | null;
   readonly world: {
+    readonly covers: ReadonlyArray<{ readonly id: string }>;
+    readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
     readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
@@ -680,6 +684,31 @@ export class EditorPage {
 
   async refs(): Promise<ReadonlyArray<string>> {
     return (await this.editState()).world.refs;
+  }
+
+  async hoverPlacement(): Promise<PlacementHover | null> {
+    return (await this.editState()).hover?.placement ?? null;
+  }
+
+  async hoverPlacementAt(item: string, target: LatticePoint): Promise<ScreenPoint> {
+    await this.escape();
+    const point = await this.screenOf(target);
+    await this.choose(item);
+    await this.page.mouse.move(point.sx, point.sy);
+    await expect
+      .poll(() => this.hoverPlacement(), { message: `${item} has a placement hover` })
+      .not.toBeNull();
+    return point;
+  }
+
+  async frameShift(item: string): Promise<readonly [number, number, number]> {
+    const { world } = await this.editState();
+    const index = world.covers.findIndex(
+      (cover) => item === cover.id || item.startsWith(`${cover.id}@`),
+    );
+    const shift = world.frameShifts[index];
+    if (index < 0 || !shift) throw new Error(`${item} has no loaded placeable`);
+    return shift;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {
