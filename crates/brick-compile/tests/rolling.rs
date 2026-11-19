@@ -410,8 +410,19 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
     );
     let extras = compiled.extras();
     assert_eq!(extras["rolling"]["surfaces"][0]["source"], "measured");
-    let unread = extras["rolling"]["unread"].as_array().expect("unread rows");
-    for row in unread {
+    let unread = compiled.rolling_diagnostics();
+    let served: Vec<Value> = unread
+        .iter()
+        .map(|row| {
+            let mut entry = json!({ "reason": row["reason"] });
+            if let Some(axis) = row.get("axis") {
+                entry["axis"] = axis.clone();
+            }
+            entry
+        })
+        .collect();
+    assert_eq!(extras["rolling"]["unread"], Value::Array(served));
+    for row in &unread {
         assert!(
             exact(&row["raw"]["from"]) <= exact(&row["raw"]["to"]),
             "{row}"

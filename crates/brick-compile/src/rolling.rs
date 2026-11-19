@@ -113,6 +113,15 @@ impl UnreadRow {
         out["raw"] = self.raw.json();
         out
     }
+
+    fn served_json(self) -> Value {
+        let full = self.band.json();
+        let mut out = json!({ "reason": full["reason"] });
+        if let Some(axis) = full.get("axis") {
+            out["axis"] = axis.clone();
+        }
+        out
+    }
 }
 
 const FRACTION_BITS: u32 = 52;
@@ -272,12 +281,16 @@ impl PartRolling {
                 })
             })
             .collect();
-        let unread: Vec<Value> = self.unread.iter().map(|row| row.json()).collect();
+        let unread: Vec<Value> = self.unread.iter().map(|row| row.served_json()).collect();
         json!({
             "stepsPerLdu": SIXTEENTHS_PER_LDU,
             "surfaces": surfaces,
             "unread": unread,
         })
+    }
+
+    pub fn diagnostics(&self) -> Vec<Value> {
+        self.unread.iter().map(|row| row.json()).collect()
     }
 }
 
