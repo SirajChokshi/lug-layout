@@ -18,6 +18,7 @@ import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IPlaceableCatalog } from "../src/catalog/placeable-catalog.ts";
 import type { IEditor } from "../src/edit/editor.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
+import type { Placeable } from "../src/edit/placeable.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const TILE_LDU = 640;
@@ -31,6 +32,7 @@ const ROAD_MODULE_ROW = RAIL_ROW + 1;
 const TRACK_ROW = ROAD_MODULE_ROW + 2;
 const MODULE_COLUMNS = 12;
 const TRACK_ROWS = 3;
+const SPARE_ROW = TRACK_ROW + TRACK_ROWS + 1;
 const TRACK_RUNS = 5;
 const TRACK_RUN_TILES = 2;
 const RAY_HEIGHT_LDU = 10_000;
@@ -45,6 +47,7 @@ const RAIL_MODULE = "generated:mils-rail-straight";
 const ROAD_MODULE = "generated:mils-road-straight";
 const TRACK_ITEM = "track:lego-9v";
 const TRACK_PIECE = "track-piece:ldraw:74746";
+const SET_ON_BASEPLATES = "omr:2150-1";
 const SETS: ReadonlyArray<string> = [
   "omr:10264-1",
   "omr:10185-1",
@@ -238,6 +241,23 @@ function tileCentre(index: number): number {
   return index * TILE_LDU + HALF_TILE_LDU;
 }
 
+function setsByTile(): ReadonlyMap<number, string> {
+  const sets = new Map<number, string>();
+  let set = 0;
+  for (let row = 0; row < GRID_TILES; row += SET_EVERY_TILES) {
+    for (let column = 0; column < GRID_TILES; column += 1) {
+      if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
+      sets.set(row * GRID_TILES + column, SETS[set % SETS.length] ?? "");
+      set++;
+    }
+  }
+  return sets;
+}
+
+function liesInBaseplateLayer(placeable: Placeable): boolean {
+  return placeable.slabBoxes.length > 0;
+}
+
 async function startEditor(): Promise<{
   editor: IEditor;
   backend: HeadlessBackend;
@@ -309,22 +329,31 @@ function partsOf(editor: IEditor): number {
 const loadStart = performance.now();
 const { editor, backend, catalog } = await startEditor();
 const loadMs = performance.now() - loadStart;
-for (const model of [...SETS, RAIL_MODULE, ROAD_MODULE]) await loadCatalogItem(catalog, model);
+const baseplateLayerSets = new Set<string>();
+for (const model of [...SETS, SET_ON_BASEPLATES, RAIL_MODULE, ROAD_MODULE]) {
+  const placeable = await loadCatalogItem(catalog, model);
+  if (SETS.includes(model) && liesInBaseplateLayer(placeable)) baseplateLayerSets.add(model);
+}
+const sets = setsByTile();
 const clickMs: number[] = [];
 const place = placer(editor, backend, clickMs);
 const buildStart = performance.now();
+let displacedBaseplates = 0;
 for (let row = 0; row < GRID_TILES; row++) {
   for (let column = 0; column < GRID_TILES; column++) {
+    const set = sets.get(row * GRID_TILES + column);
+    if (set !== undefined && baseplateLayerSets.has(set)) {
+      displacedBaseplates++;
+      continue;
+    }
     place(BASEPLATE, tileCentre(column), tileCentre(row));
   }
 }
-let set = 0;
-for (let row = 0; row < GRID_TILES; row += SET_EVERY_TILES) {
-  for (let column = 0; column < GRID_TILES; column += 1) {
-    if ((row / SET_EVERY_TILES + column) % 2 !== 0) continue;
-    place(SETS[set % SETS.length] ?? "", tileCentre(column), tileCentre(row));
-    set++;
-  }
+for (let i = 0; i < displacedBaseplates; i++) {
+  place(BASEPLATE, tileCentre(i % GRID_TILES), tileCentre(SPARE_ROW + Math.floor(i / GRID_TILES)));
+}
+for (const [tile, set] of sets) {
+  place(set, tileCentre(tile % GRID_TILES), tileCentre(Math.floor(tile / GRID_TILES)));
 }
 for (let row = ROAD_ROW; row < ROAD_ROW + ROAD_ROWS; row++) {
   for (let column = 0; column < GRID_TILES; column++) {
@@ -445,7 +474,13 @@ async function placeAndUndo(name: string, item: string, x: number, z: number): P
   record(`undo: ${name}`, undoCycle, gcs, digestOf(undoneSeen));
 }
 
-await placeAndUndo("10185-1 on a free baseplate", "omr:10185-1", tileCentre(1), tileCentre(1));
+await placeAndUndo(
+  "10185-1 flush beside the baseplates",
+  "omr:10185-1",
+  tileCentre(GRID_TILES),
+  tileCentre(1),
+);
+await placeAndUndo("2150-1 on free baseplates", SET_ON_BASEPLATES, tileCentre(1), tileCentre(1));
 await placeAndUndo(
   "road plate extending the road rows",
   ROAD_PLATE,

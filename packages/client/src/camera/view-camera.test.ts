@@ -1,6 +1,6 @@
 import { CAMERA_FOV_DEGREES } from "@brr/render";
 import { describe, expect, it } from "vitest";
-import { FOOTPRINT_FLOATS, ViewCamera, type ViewMode } from "./view-camera.ts";
+import { FOOTPRINT_FLOATS, ViewCamera, type CameraTarget, type ViewMode } from "./view-camera.ts";
 
 const WIDTH_PX = 1280;
 const HEIGHT_PX = 720;
@@ -366,3 +366,42 @@ describe.each([
     });
   },
 );
+
+it("sends the view to its target only when the eye, target or projection changes", () => {
+  const sent: Array<ReadonlyArray<number | undefined>> = [];
+  const target: CameraTarget = {
+    setView: (...view) => {
+      sent.push(view);
+    },
+  };
+  const camera = settledCamera("orbit");
+  const sends: number[] = [];
+  const applyAndCount = (): void => {
+    camera.apply(target);
+    sends.push(sent.length);
+  };
+
+  applyAndCount();
+  applyAndCount();
+  camera.orbit(20, 0);
+  applyAndCount();
+  camera.setMode("plan");
+  camera.step(SETTLED_MS + 1);
+  camera.step(SETTLED_MS * 2);
+  applyAndCount();
+  applyAndCount();
+  camera.zoomAtSafeCentre(-0.5);
+  applyAndCount();
+
+  const beforeZoom = sent.at(-2) ?? [];
+  const afterZoom = sent.at(-1) ?? [];
+  expect({
+    sends,
+    zoomKeepsEyeAndTarget: beforeZoom.slice(0, 6).join() === afterZoom.slice(0, 6).join(),
+    zoomChangesHalfHeight: beforeZoom[6] !== afterZoom[6],
+  }).toEqual({
+    sends: [1, 1, 2, 3, 3, 4],
+    zoomKeepsEyeAndTarget: true,
+    zoomChangesHalfHeight: true,
+  });
+});

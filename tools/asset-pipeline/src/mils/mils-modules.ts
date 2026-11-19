@@ -11,7 +11,15 @@ import {
   type TrackPiece,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
-import { attachPose16, composePose16, pose16, pose16Equals, zeta16, type Pose16 } from "@brr/math";
+import {
+  attachPose16,
+  composePose16,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
+  pose16,
+  pose16Equals,
+  zeta16,
+  type Pose16,
+} from "@brr/math";
 import type { Affine } from "../ldraw/affine.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
 import { ldrawPlacement } from "../track/catalog-scenes.ts";
@@ -84,7 +92,7 @@ function onAxisStuds(studs: number): Pose16 {
 
 function wholeLdu(value: number, what: string): number {
   const whole = Math.round(value);
-  if (Math.abs(value - whole) > CERTIFIED_RESIDUAL_LIMIT_LDU) {
+  if (Math.abs(value - whole) > IDENTIFICATION_ACCEPTED_DEVIATION_LDU) {
     throw new Error(
       `${what} is ${value}, not within ${CERTIFIED_RESIDUAL_LIMIT_LDU} of a lattice value`,
     );

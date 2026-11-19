@@ -38,12 +38,10 @@ jobs:
             tools/asset-pipeline/fixture-bundle
           key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
       - uses: dtolnay/rust-toolchain@master
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         with:
           toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
       - uses: actions/cache@v4
         with:
           path: |
@@ -62,6 +60,8 @@ jobs:
             tools/asset-pipeline/dist/bundle
             tools/asset-pipeline/fixture-bundle
           key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
+      - name: Precompile the pinned library's bake records the import fetches instead of compiling
+        run: pnpm --filter @brr/asset-pipeline library-bake --check
       - uses: actions/cache@v4
         with:
           path: |

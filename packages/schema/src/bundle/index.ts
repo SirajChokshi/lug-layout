@@ -561,6 +561,9 @@ export type SectionVocabulary = v.InferOutput<typeof SectionVocabulary>;
 export const SectionVocabularyRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 
+export const LibraryBakeIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -568,6 +571,7 @@ export const BundleCompiler = v.object({
   primitives: v.optional(PrimitiveConnectorTable),
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
+  libraryBake: v.optional(LibraryBakeIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -910,10 +914,12 @@ export const CompilerRequest = v.variant("op", [
       v.array(v.strictObject({ inline: v.string(), official: v.string() })),
       v.readonly(),
     ),
+    records: v.exactOptional(v.boolean()),
   }),
   v.strictObject({
     op: v.literal("bakeNeeds"),
     studPrimitives: StringList,
+    vehicles: v.exactOptional(v.nullable(CompilerVehicles)),
   }),
   v.strictObject({
     op: v.literal("bake"),
@@ -934,10 +940,18 @@ export const CompilerLibraryDelta = v.strictObject({
 });
 export type CompilerLibraryDelta = v.InferOutput<typeof CompilerLibraryDelta>;
 
+export const CompilerRecordDelta = v.strictObject({
+  key: v.string(),
+  files: v.pipe(v.array(v.strictObject({ reference: v.string(), bytes: ByteRange })), v.readonly()),
+  references: StringList,
+});
+export type CompilerRecordDelta = v.InferOutput<typeof CompilerRecordDelta>;
+
 export const CompilerEnvelope = v.strictObject({
   request: CompilerRequest,
   segments: v.record(v.string(), ByteRange),
   library: v.exactOptional(CompilerLibraryDelta),
+  records: v.exactOptional(CompilerRecordDelta),
 });
 export type CompilerEnvelope = v.InferOutput<typeof CompilerEnvelope>;
 
@@ -972,13 +986,22 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist(["unresolved", "tooDeep", "license", "unofficial", "noStudRing", "malformed"]),
+  kind: v.picklist([
+    "unresolved",
+    "tooDeep",
+    "license",
+    "unofficial",
+    "noStudRing",
+    "malformed",
+    "tooLarge",
+  ]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
   path: v.exactOptional(v.string()),
   ldrawOrg: v.exactOptional(v.string()),
   findings: v.exactOptional(v.array(MalformedFinding)),
+  cause: v.exactOptional(v.picklist(["beyondAddressSpace", "memoryUnavailable"])),
 });
 
 const Reference = { reference: v.string() };
@@ -992,6 +1015,7 @@ export const CompilerCompile = v.object({
         status: v.literal("compiled"),
         ...Reference,
         glb: ByteRange,
+        record: v.nullable(ByteRange),
         file: v.string(),
         header: ModelSection,
         files: Count,
@@ -1039,6 +1063,7 @@ export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
+  recordedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1352,6 +1377,69 @@ export const LdrawLibraryIndex = v.strictObject({
   files: v.record(v.string(), Sha256Hex),
 });
 export type LdrawLibraryIndex = v.InferOutput<typeof LdrawLibraryIndex>;
+
+export const LIBRARY_BAKE_FORMAT = 1;
+
+export const LibraryBakeOptions = v.strictObject({
+  studPrimitives: StringList,
+  unofficialAllowlist: StringList,
+  primitives: PrimitiveConnectorTable,
+});
+export type LibraryBakeOptions = v.InferOutput<typeof LibraryBakeOptions>;
+
+export const LibraryBakePart = v.strictObject({ record: v.string(), glb: v.string() });
+export type LibraryBakePart = v.InferOutput<typeof LibraryBakePart>;
+
+export const LIBRARY_BAKE_BUCKETS = 256;
+export const LIBRARY_BAKE_INDEX_FILE = "library-bake.json";
+export const CONTENT_DIGEST_HEX_DIGITS = 16;
+const ADDRESSED_NAME = /\.(?<digest>[0-9a-f]{16})(?<extension>\.[^./]+)$/u;
+
+export function contentAddressedFile(file: string, sha256: string): string {
+  const dot = file.lastIndexOf(".");
+  const stem = dot < 0 ? file : file.slice(0, dot);
+  const extension = dot < 0 ? "" : file.slice(dot);
+  return `${stem}.${sha256.slice(0, CONTENT_DIGEST_HEX_DIGITS)}${extension}`;
+}
+
+export function contentDigestOf(file: string): string | null {
+  return ADDRESSED_NAME.exec(file)?.groups?.["digest"] ?? null;
+}
+const FNV_OFFSET = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+
+export function libraryBakeBucket(partId: string): number {
+  let hash = FNV_OFFSET;
+  for (let unit = 0; unit < partId.length; unit++) {
+    hash = Math.imul(hash ^ partId.charCodeAt(unit), FNV_PRIME) >>> 0;
+  }
+  return hash % LIBRARY_BAKE_BUCKETS;
+}
+
+export const LibraryBakeBucket = v.strictObject({
+  bucket: v.pipe(Count, v.maxValue(LIBRARY_BAKE_BUCKETS - 1)),
+  parts: v.record(v.string(), LibraryBakePart),
+});
+export type LibraryBakeBucket = v.InferOutput<typeof LibraryBakeBucket>;
+
+export const LibraryBakeIndex = v.strictObject({
+  format: v.literal(LIBRARY_BAKE_FORMAT),
+  source: GithubMirror,
+  options: LibraryBakeOptions,
+  licenses: StringList,
+  buckets: v.pipe(v.array(v.string()), v.length(LIBRARY_BAKE_BUCKETS), v.readonly()),
+  failed: v.record(v.string(), v.string()),
+});
+export type LibraryBakeIndex = v.InferOutput<typeof LibraryBakeIndex>;
+
+export const LibraryBakePin = v.strictObject({
+  index: LibraryBakeIndexRef,
+  parts: Count,
+  records: Count,
+  failed: Count,
+  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
+});
+export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 
 export const CatalogSourceUse = v.picklist([
   "crosswalk",
