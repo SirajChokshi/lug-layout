@@ -106,7 +106,7 @@ pub(super) fn free_faces_of_partly_held(extraction: &Extraction) -> Vec<FreeFace
             continue;
         }
         for (index, face) in found.iter().enumerate() {
-            if holders_at(face).is_empty() {
+            if face.gender == Gender::Female && holders_at(face).is_empty() {
                 free.push(FreeFace {
                     connector: *connector,
                     face: index,

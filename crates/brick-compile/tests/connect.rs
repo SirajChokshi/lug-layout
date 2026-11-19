@@ -380,6 +380,58 @@ const SLAB_WITHOUT_BFC: &str = "0 Slab Without BFC\n\
      4 16 -12 -12 -1 -12 12 -1 -12 12 1 -12 -12 1\n\
      4 16 12 -12 -1 12 -12 1 12 12 1 12 12 -1\n";
 
+#[test]
+fn a_partly_held_connector_keeps_a_free_male_face_without_deciding_its_end() {
+    let [probe, probe_wall] = stud_probe();
+    let library = memory(&[
+        ("p/zz-twin-pin.dat", "0 Twin Pin\n"),
+        (
+            "parts/zz-pinned.dat",
+            "0 Pinned\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 zz-twin-pin.dat\n",
+        ),
+        (probe.0, &probe.1),
+        (probe_wall.0, &probe_wall.1),
+    ]);
+    let shadow = memory(&[(
+        "parts/zz-pinned.dat",
+        "0 !LDCAD SNAP_CYL [gender=M] [caps=one] [secs=R 4 16] [pos=0 -16 0] [ori=1 0 0 0 -1 0 0 0 -1]\n",
+    )]);
+    let table = json!({ "primitives": [
+        { "file": "p/zz-twin-pin.dat", "snaps": ["SNAP_CYL [gender=M] [caps=none] [secs=R 4 16]"] },
+    ] });
+    let vocabulary =
+        SectionVocabulary::from_metas(["0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 4]"]);
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&table).expect("table")),
+        InferredFeatures::new(&library, vocabulary, "p/probe.dat").expect("the probe measures"),
+    );
+    let extraction = extractor.extract("parts/zz-pinned.dat");
+    let records = PartRecords::of(&extraction);
+    assert_eq!(
+        published_rows(&records.connectivity.faces),
+        vec![(
+            Source::Shadow,
+            0,
+            vec![(ROUND, 4.0, 16.0)],
+            [0.0, 16.0, 0.0]
+        )]
+    );
+    assert_eq!(
+        published_rows(&records.connectors.faces),
+        vec![(
+            Source::Primitive,
+            0,
+            vec![(ROUND, 4.0, 16.0)],
+            [0.0, 0.0, 0.0]
+        )]
+    );
+    assert!(!extraction
+        .issues
+        .iter()
+        .any(|issue| matches!(issue, Issue::FreeFaceWithheld { .. })));
+}
+
 fn peghole_pair(at_free_end: &str) -> String {
     format!(
         "0 Peghole Pair\n0 BFC CERTIFY CCW\n\
