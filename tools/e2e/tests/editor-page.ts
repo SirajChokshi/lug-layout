@@ -1,4 +1,4 @@
-import type { PlacementHover } from "@brr/client";
+import type { PlacementHover, PlacementMode } from "@brr/client";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -110,8 +110,17 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface HoverState {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly placement: PlacementHover | null;
+}
+
 interface EditState {
-  readonly hover: { readonly placement: PlacementHover | null } | null;
+  readonly placementMode: PlacementMode;
+  readonly placementModeOverride: boolean;
+  readonly hover: HoverState | null;
   readonly world: {
     readonly covers: ReadonlyArray<{ readonly id: string }>;
     readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
@@ -531,6 +540,33 @@ export class EditorPage {
 
   async hoverPlacement(): Promise<PlacementHover | null> {
     return (await this.editState()).hover?.placement ?? null;
+  }
+
+  async hoverState(): Promise<HoverState | null> {
+    return (await this.editState()).hover;
+  }
+
+  async hoverIn(mode: PlacementMode): Promise<HoverState> {
+    await expect
+      .poll(async () => (await this.hoverPlacement())?.mode ?? null, {
+        message: `the hover is evaluated in ${mode} mode`,
+      })
+      .toBe(mode);
+    const hover = await this.hoverState();
+    if (!hover?.placement) throw new Error(`no placement hover in ${mode} mode`);
+    return hover;
+  }
+
+  placementSwitch(): Locator {
+    return this.page.getByRole("switch", { name: "Precise placement" });
+  }
+
+  async placementModes(): Promise<{
+    readonly mode: PlacementMode;
+    readonly override: boolean;
+  }> {
+    const state = await this.editState();
+    return { mode: state.placementMode, override: state.placementModeOverride };
   }
 
   async hoverPlacementAt(item: string, target: LatticePoint): Promise<ScreenPoint> {
