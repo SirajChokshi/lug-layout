@@ -25,9 +25,9 @@ const GENERATOR_ATTEMPTS = 8;
 const TOGGLE_KEY = "a";
 const ASSIST_FLOOR_LDU = STUD;
 const ASSIST_CAP_LDU = 3 * STUD;
-const ZOOM_STEP_IN = -400;
-const ZOOM_STEP_OUT = 400;
-const ZOOM_STEPS = 12;
+const ZOOM_STEP_IN = -150;
+const ZOOM_STEP_OUT = 150;
+const ZOOM_STEPS = 24;
 const HOLD_KEY = "Alt";
 
 type Vec3 = readonly [number, number, number];
@@ -382,25 +382,27 @@ test("a generated pinned module held against solid bricks is refused in both mod
   await expectMode(editor, "assist", "assist", false);
 });
 
-async function settledReach(
+async function reachAfterZooming(
   editor: EditorPage,
   partner: string,
   seam: Seam,
   wheelStep: number,
+  reached: (reach: number) => boolean,
 ): Promise<number> {
-  let reach = Number.NaN;
-  for (let step = 0; step < ZOOM_STEPS; step++) {
+  const readReach = async (): Promise<number> => {
+    await editor.hoverPlacementAt(partner, seam.cursorAt(0, -1));
+    return (await editor.hoverIn("assist")).placement?.assistNeighbourhood.ldu ?? Number.NaN;
+  };
+  let reach = await readReach();
+  for (let step = 0; step < ZOOM_STEPS && !reached(reach); step++) {
     await editor.escape();
     await editor.zoomAt(seam.flush, wheelStep);
-    await editor.hoverPlacementAt(partner, seam.cursorAt(0, -1));
-    const next = (await editor.hoverIn("assist")).placement?.assistNeighbourhood.ldu ?? Number.NaN;
-    if (next === reach) return reach;
-    reach = next;
+    reach = await readReach();
   }
   return reach;
 }
 
-test("the assist neighbourhood follows the zoom, settling on its floor up close and its cap in overview, and assist snaps exactly within it", async ({
+test("the assist neighbourhood follows the zoom, reaching exactly its floor up close and its cap in overview, and assist snaps exactly within it", async ({
   page,
 }) => {
   const pair = await freshPair();
@@ -409,14 +411,24 @@ test("the assist neighbourhood follows the zoom, settling on its floor up close 
   const placed = await placedAtOrigin(editor, subject);
   const seam = await seamBeside(editor, placed, partner, pair.partnerOffset, pair.alongEdge);
   const views = [
-    { view: "close", wheelStep: ZOOM_STEP_IN, settles: ASSIST_FLOOR_LDU },
-    { view: "overview", wheelStep: ZOOM_STEP_OUT, settles: ASSIST_CAP_LDU },
+    {
+      view: "close",
+      wheelStep: ZOOM_STEP_IN,
+      settles: ASSIST_FLOOR_LDU,
+      reached: (reach: number) => reach <= ASSIST_FLOOR_LDU,
+    },
+    {
+      view: "overview",
+      wheelStep: ZOOM_STEP_OUT,
+      settles: ASSIST_CAP_LDU,
+      reached: (reach: number) => reach >= ASSIST_CAP_LDU,
+    },
   ] as const;
-  for (const { view, wheelStep, settles } of views) {
-    const reach = await settledReach(editor, partner, seam, wheelStep);
+  for (const { view, wheelStep, settles, reached } of views) {
+    const reach = await reachAfterZooming(editor, partner, seam, wheelStep, reached);
     expect(
       reach,
-      `seed ${pair.seed}: at ${view} zoom the neighbourhood settles at ${settles} LDU`,
+      `seed ${pair.seed}: at ${view} zoom the neighbourhood reaches exactly ${settles} LDU`,
     ).toBe(settles);
     for (let studs = 1; studs * STUD <= reach + STUD; studs++) {
       await editor.hoverPlacementAt(partner, seam.cursorAt(0, -studs));
