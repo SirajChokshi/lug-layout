@@ -1280,6 +1280,27 @@ it("seats a set on a MILS module's surface where the cursor's ray reaches the mo
   }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
 }, 120_000);
 
+it("seats a set on a MILS module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
+  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const tablePastTheFarEdge = -12;
+  backend.aim(320, tablePastTheFarEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = editor.snapshot().hover?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
   const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);

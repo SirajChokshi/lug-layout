@@ -1549,7 +1549,7 @@ export class Editor implements IEditor, IEditedWorld {
     let nearest = Number.POSITIVE_INFINITY;
     let top = Number.NaN;
     for (const model of this.placed.models()) {
-      if (!model.rayTopOver(this.ray, this.hitX, this.hitZ, this.surface)) continue;
+      if (!model.aimedTop(this.ray, this.hitX, this.hitZ, this.surface)) continue;
       const t = this.surface[0] ?? Number.POSITIVE_INFINITY;
       if (t >= nearest) continue;
       nearest = t;

@@ -39,7 +39,7 @@ export interface PlacedModel {
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
   rayHit(ray: Float64Array): number;
-  rayTopOver(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
+  aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
 }
 
@@ -78,6 +78,23 @@ export function rayBoxDistance(
     slab(ray[1] ?? 0, ray[4] ?? 0, minY, maxY, rayRange) &&
     slab(ray[2] ?? 0, ray[5] ?? 0, minZ, maxZ, rayRange);
   return hit ? (rayRange[0] ?? 0) : Number.POSITIVE_INFINITY;
+}
+
+export function rayTopFaceDistance(
+  ray: Float64Array,
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  top: number,
+): number {
+  const down = ray[4] ?? 0;
+  if (down >= 0) return Number.POSITIVE_INFINITY;
+  const t = (top - (ray[1] ?? 0)) / down;
+  if (t < 0) return Number.POSITIVE_INFINITY;
+  const x = (ray[0] ?? 0) + (ray[3] ?? 0) * t;
+  const z = (ray[2] ?? 0) + (ray[5] ?? 0) * t;
+  return x >= minX && x <= maxX && z >= minZ && z <= maxZ ? t : Number.POSITIVE_INFINITY;
 }
 
 const FOOTPRINT_FLAG = 1;
@@ -531,7 +548,7 @@ class PlacedEntry implements PlacedModel {
     return nearest;
   }
 
-  rayTopOver(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean {
+  aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean {
     const box = this.box;
     if (
       rayBoxDistance(ray, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ) ===
@@ -555,9 +572,11 @@ class PlacedEntry implements PlacedModel {
       const maxX = Math.max(ax, bx);
       const minZ = Math.min(az, bz);
       const maxZ = Math.max(az, bz);
-      if (groundX < minX || groundX > maxX || groundZ < minZ || groundZ > maxZ) continue;
       const top = this.yLdu + (boxes[b + 4] ?? 0);
-      const t = rayBoxDistance(ray, minX, this.yLdu + (boxes[b + 1] ?? 0), minZ, maxX, top, maxZ);
+      const overGround = groundX >= minX && groundX <= maxX && groundZ >= minZ && groundZ <= maxZ;
+      const t = overGround
+        ? rayBoxDistance(ray, minX, this.yLdu + (boxes[b + 1] ?? 0), minZ, maxX, top, maxZ)
+        : rayTopFaceDistance(ray, minX, minZ, maxX, maxZ, top);
       if (t === Number.POSITIVE_INFINITY || (found && t >= (out[0] ?? 0))) continue;
       out[0] = t;
       out[1] = top;
