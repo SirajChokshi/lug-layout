@@ -1782,7 +1782,11 @@ impl Solid {
             });
             Some(inner)
         });
-        let mut depth = attaining.iter().map(|a| a.rim).fold(band, f64::min);
+        let shallowest = attaining
+            .iter()
+            .map(|a| a.rim)
+            .fold(f64::INFINITY, f64::min);
+        let mut depth = if shallowest < band { shallowest } else { band };
         let mut interior = band <= depth + IDENTIFY_LDU;
         if !interior && only_wall_feet_on_circle(&attaining, contact, depth) {
             depth = band;
