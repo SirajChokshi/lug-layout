@@ -1,5 +1,7 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   BogieDetector,
+  ConnectorTable,
   measuredRail,
   ModelConnectors,
   PartRollingTable,
@@ -8,7 +10,6 @@ import {
   SnapMating,
   SnapShapes,
   WheelsetDetector,
-  type ConnectorTable,
   type PartInstances,
   type RunningGear,
 } from "@brr/domain";
@@ -19,12 +20,12 @@ import { join } from "node:path";
 import * as v from "valibot";
 import { MANIFEST_FILE } from "./publish.ts";
 
-export type ConnectorTableLookup = (
-  partId: string,
-  shapes: SnapShapes,
-) => Promise<ConnectorTable | null>;
-
-const RunningGearManifest = v.pick(BundleIndexFields, ["models", "compiler"]);
+const RunningGearManifest = v.pick(BundleIndexFields, [
+  "models",
+  "compiler",
+  "connectors",
+  "connectivity",
+]);
 
 const RunningGearModel = v.object({
   parts: v.array(v.string()),
@@ -70,28 +71,36 @@ function runningGearFields(gear: RunningGear) {
   };
 }
 
-export async function attachRunningGear(
-  directory: string,
-  connectorTable: ConnectorTableLookup,
-): Promise<void> {
+export async function attachRunningGear(directory: string): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const manifest = decodedOrThrow(
     decode(RunningGearManifest, JSON.parse(await readFile(manifestPath, "utf8"))),
     manifestPath,
   );
-  const rails = manifest.compiler?.rails ?? [];
-  if (rails.length === 0) throw new Error(`${manifestPath}: the compiler names no measured rail`);
+  const { compiler } = manifest;
+  if (!compiler || compiler.rails.length === 0) {
+    throw new Error(`${manifestPath}: the compiler names no measured rail`);
+  }
+  const records = new ConnectorRecords(
+    async (path) => JSON.parse(await readFile(join(directory, path), "utf8")),
+    { connectivity: manifest.connectivity.file, connectors: manifest.connectors.file },
+    compiler.sectionVocabulary.sha256,
+  );
   const shapes = new SnapShapes();
   const mating = new SnapMating(shapes);
   const detector = new RunningGearDetector(
-    new WheelsetDetector(rails.map((rail) => measuredRail(rail.railHeads))),
+    new WheelsetDetector(compiler.rails.map((rail) => measuredRail(rail.railHeads))),
     new BogieDetector(mating),
   );
   const tables = new Map<string, Promise<ConnectorTable | null>>();
   const tableOf = (partId: string): Promise<ConnectorTable | null> => {
     let table = tables.get(partId);
     if (table === undefined) {
-      table = connectorTable(partId, shapes);
+      table = records
+        .load(partId)
+        .then((columns) =>
+          columns === null ? null : ConnectorTable.fromColumns(columns, shapes, partId),
+        );
       tables.set(partId, table);
     }
     return table;

@@ -9,18 +9,33 @@ import {
   type PartShapeAsset,
   type PartShapeRecord,
 } from "@brr/catalog";
-import type { PlacementTarget } from "@brr/domain";
+import {
+  BogieDetector,
+  ConnectorTable,
+  measuredRail,
+  ModelConnectors,
+  PartRollingTable,
+  RunningGearDetector,
+  runningGearInput,
+  SnapMating,
+  SnapShapes,
+  WheelsetDetector,
+  type PartInstances,
+  type PlacementTarget,
+} from "@brr/domain";
 import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
+import {
   ModelRunningGear,
-  NotDrawnSection,
+  type BundleColor,
+  type BundleIndex,
+  type BundleLod,
+  type BundleModelEntry,
+  type BundleRail,
+  type NotDrawnSection,
 } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
@@ -125,12 +140,23 @@ interface SkippedModel extends SkippedCatalogModel {
   readonly credit: ModelCredit;
 }
 
-const NOT_YET_DETECTED: ModelRunningGear = {
-  vehicles: [],
-  vehicleCouplings: [],
-  unresolvedRunningGear: [],
-  unreadRollingBands: { instance: [], band: [], reason: [] },
-};
+interface RunningGearDetection {
+  readonly shapes: SnapShapes;
+  readonly mating: SnapMating;
+  readonly detector: RunningGearDetector;
+}
+
+function runningGearDetection(rails: ReadonlyArray<BundleRail>): RunningGearDetection | null {
+  if (rails.length === 0) return null;
+  const shapes = new SnapShapes();
+  const mating = new SnapMating(shapes);
+  const detector = new RunningGearDetector(
+    new WheelsetDetector(rails.map((rail) => measuredRail(rail.railHeads))),
+    new BogieDetector(mating),
+  );
+  return { shapes, mating, detector };
+}
+
 const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
@@ -237,6 +263,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
 export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly listeners = new Set<() => void>();
   private lod: BundleLod = "standard";
+  private runningGear: RunningGearDetection | null = null;
   private bundleColors: ReadonlyArray<BundleColor> = [];
   private palette: MergedParts | null = null;
   private colorTable: ColorTable | null = null;
@@ -267,6 +294,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   async start(index: BundleIndex): Promise<StartedCatalog> {
     this.lod = index.lod;
+    this.runningGear = runningGearDetection(index.compiler?.rails ?? []);
     this.bundleColors = index.colors;
     const colorSource = { colors: index.colors, parts: [] };
     const colors = new ColorTable(colorSource);
@@ -509,7 +537,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       matrices: result.matrices,
       partTransforms: result.partTransforms,
       submodels: result.submodels,
-      runningGear: NOT_YET_DETECTED,
+      runningGear: this.importedRunningGear(result, set.parts),
     };
     const credit = {
       name: file.name,
@@ -537,6 +565,35 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
     return { ...reports, item: slot.view, credit };
+  }
+
+  private importedRunningGear(
+    result: ImportResult,
+    parts: ReadonlyArray<PartAsset>,
+  ): ModelRunningGear {
+    if (!this.runningGear) throw new Error("the bundle names no measured rail for running gear");
+    const { shapes, mating, detector } = this.runningGear;
+    const connectors = result.connectors.map((columns, p) =>
+      columns === null
+        ? null
+        : ConnectorTable.fromColumns(columns, shapes, result.partIds[p] ?? `part ${p}`),
+    );
+    const instances: PartInstances = {
+      count: result.instanceCount,
+      partIndex: result.partIndex,
+      matrices: result.partTransforms,
+      submodels: result.submodels,
+    };
+    const gear = detector.detect(
+      runningGearInput(
+        instances,
+        parts.map((part) => (part.rolling ? PartRollingTable.fromRolling(part.rolling) : null)),
+        connectors,
+        ModelConnectors.fromParts(connectors, instances, mating),
+        shapes,
+      ),
+    );
+    return decodedOrThrow(decode(ModelRunningGear, gear), result.report.fileName);
   }
 
   playModel(placeable: Placeable): PlayModel | null {

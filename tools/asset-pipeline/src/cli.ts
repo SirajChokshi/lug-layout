@@ -74,6 +74,7 @@ import {
   publishBundle,
 } from "./publish.ts";
 import { attachRecords } from "./records.ts";
+import { attachRunningGear } from "./running-gear.ts";
 import {
   extractShadowArchive,
   pinnedShadowArchive,
@@ -576,6 +577,7 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
   await attachRecords(out);
+  await attachRunningGear(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
   const inputs = { ...shared.inputs, paletteSha256: await fileSha256(palette) };
