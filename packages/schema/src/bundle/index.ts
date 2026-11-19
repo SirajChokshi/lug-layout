@@ -395,7 +395,7 @@ export const RollingSurface = v.pipe(
   }),
   v.check(({ from, to }) => from < to, "a rolling surface runs from below `to`"),
   v.description(
-    "an outward round band of the part's own triangles, identified to the sixteenth grid; the bands on one axis line together give its whole outward profile, and neighbours share their end sixteenths",
+    "an outward round band of the part's own triangles, with its ends in sixteenths: an end that identifies to the grid is published there, and a cylinder's end that doesn't is published at the nearest sixteenth inside the band, so a band never extends past its triangles; neighbours on one axis line share the end sixteenths that identify",
   ),
 );
 export type RollingSurface = v.InferOutput<typeof RollingSurface>;
