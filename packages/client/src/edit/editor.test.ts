@@ -44,6 +44,7 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
+import { CandidatePoses } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -72,7 +73,15 @@ import { commandEnabled, startPlay, type CommandId } from "../commands/editor-co
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import {
+  CONNECTION_SOLVER,
+  CONNECTOR_TABLES,
+  EDITOR,
+  MODEL_IMPORTER,
+  PLACEABLE_CATALOG,
+  PLACEMENT_SEARCH,
+  TRAIN_PLAY,
+} from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
@@ -1392,6 +1401,64 @@ it("publishes the assist radius as 32 px at the cursor, never under one stud nor
     { ldu: 20, cells: 1, plates: 2 },
   ]);
 }, 120_000);
+
+it("counts Technic, side-stud and track votes only where those finders propose a pose, over real modulars, a module and a set with track", async () => {
+  const fireBrigade = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+    "10190-1",
+    "10218-1",
+  ]);
+  for (const item of [PLAIN_MODULE, SET, fireBrigade, petShop])
+    await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(fireBrigade, 960, 320);
+  await place(SET, 320, 1600);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const tables = container.get(CONNECTOR_TABLES);
+  const proposals = new CandidatePoses();
+  const reach = { cells: 3, plates: 7, turns: 4 };
+  const missed: string[] = [];
+  let voted = 0;
+  const held: ReadonlyArray<readonly [string, number, number, number]> = [
+    [petShop, 1600, 320, 0],
+    [petShop, 1300, 320, 0],
+    [SET, 320, 320, 4],
+    [SET, 320, 1600 + 980, 0],
+  ];
+  for (const [item, x, z, yPlates] of held) {
+    const placeable = await loadCatalogItem(catalog, item);
+    const loaded = await tables.load(placeable);
+    const model = search.model(loaded.tables, placeable.partTransforms, []);
+    solver.proposeMates(model, { x, z, yPlates, rot: 0, ...reach }, proposals);
+    const proposed = new Set<string>();
+    for (let q = 0; q < proposals.count; q++) {
+      proposed.add(
+        `${proposals.x[q]},${proposals.z[q]},${proposals.yPlates[q]},${proposals.rot[q]}`,
+      );
+    }
+    for (let rot = 0; rot < reach.turns; rot++) {
+      for (let dy = -reach.plates; dy <= reach.plates; dy++) {
+        if (yPlates + dy < 0) continue;
+        for (let i = -reach.cells; i <= reach.cells; i++) {
+          for (let j = -reach.cells; j <= reach.cells; j++) {
+            const pose = { x: x + i * 20, z: z + j * 20, yPlates: yPlates + dy, rot };
+            if (solver.proposalVotes(model, pose) === 0) continue;
+            voted++;
+            const key = `${pose.x},${pose.z},${pose.yPlates},${pose.rot}`;
+            if (!proposed.has(key)) missed.push(`${item} ${key}`);
+          }
+        }
+      }
+    }
+  }
+
+  expect({ missed, votedSomewhere: voted > 0 }).toEqual({ missed: [], votedSomewhere: true });
+}, 600_000);
 
 it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
   const { editor, backend } = await startEditor([]);

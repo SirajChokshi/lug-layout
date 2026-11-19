@@ -246,6 +246,42 @@ function choose(
   return choice;
 }
 
+const TYPED_ARRAYS = [
+  "Float64Array",
+  "Float32Array",
+  "Int32Array",
+  "Uint32Array",
+  "Int16Array",
+  "Uint16Array",
+  "Int8Array",
+  "Uint8Array",
+] as const;
+
+function typedArraysConstructedDuring(run: () => void): number {
+  const global = globalThis as unknown as Record<string, new (...args: never[]) => unknown>;
+  const originals = TYPED_ARRAYS.map((name) => global[name]);
+  let constructed = 0;
+  TYPED_ARRAYS.forEach((name, i) => {
+    const Original = originals[i];
+    if (!Original) return;
+    global[name] = class extends (Original as new (...args: unknown[]) => object) {
+      constructor(...args: unknown[]) {
+        super(...args);
+        constructed++;
+      }
+    } as unknown as new (...args: never[]) => unknown;
+  });
+  try {
+    run();
+  } finally {
+    TYPED_ARRAYS.forEach((name, i) => {
+      const Original = originals[i];
+      if (Original) global[name] = Original;
+    });
+  }
+  return constructed;
+}
+
 function fullVerdict(choice: PlacementChoice) {
   return {
     pose: [choice.x, choice.z, choice.yPlates, choice.rot],
@@ -417,6 +453,20 @@ describe("PlacementSearch", () => {
       0,
       OTHER,
     ]);
+  });
+
+  it("constructs no typed array once warm, however the assist window moves", () => {
+    const f = fixture();
+    const plate = world(f);
+    const windows = [0, 1, 2, 3, 4].flatMap((i) =>
+      [0, 1, 2].map((j) => window(i * STUD_LDU, j * STUD_LDU, 2)),
+    );
+    const sweep = () => {
+      for (const at of windows) choose(f, plate, at);
+    };
+    sweep();
+
+    expect(typedArraysConstructedDuring(sweep)).toBe(0);
   });
 
   it("gives exactly precise's verdict wherever assist ends at the cursor pose: nothing mated in reach, or the cursor pose itself mated and free", () => {
