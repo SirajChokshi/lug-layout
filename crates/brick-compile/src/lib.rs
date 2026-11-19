@@ -1,10 +1,13 @@
 pub mod affine;
 pub mod bake;
+pub mod bands;
+pub mod bore;
 pub mod clip;
 pub mod colors;
 pub mod compile;
 pub mod connect;
 pub mod cover;
+pub mod ends;
 pub mod flatten;
 pub mod glb;
 pub mod inline;

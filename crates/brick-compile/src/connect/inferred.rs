@@ -13,7 +13,7 @@ use super::solid::{
     Slab, Solid, HALF_GRID_LDU, IDENTIFY_LDU,
 };
 use super::{
-    finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source,
+    finished, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source, Status,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -578,6 +578,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             })
             .map(|candidate| Connector {
                 source: Source::Inferred,
+                status: Status::Unverified,
                 ..candidate
             })
             .collect();
@@ -1512,6 +1513,7 @@ fn sectioned(
 ) -> Connector {
     Connector {
         source: Source::Inferred,
+        status: Status::Unverified,
         id: None,
         group: None,
         shape: Shape::Cylinder {
