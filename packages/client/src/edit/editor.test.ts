@@ -437,25 +437,22 @@ it("starts from the index and part shapes, fetching no model record and no part 
   expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
 }, 300_000);
 
-it("loads a set's record only once it is picked, refuses clicks until then, and fetches its meshes once placed", async () => {
+it("loads a set's record only once it is picked, places a click made while it loads once it has loaded, and fetches its meshes once placed", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
-  const { editor, backend, manifest, catalog } = await startEditor([PLACEABLE_SET], fetcher);
+  const { editor, backend, manifest } = await startEditor([PLACEABLE_SET], fetcher);
   const set = `omr:${PLACEABLE_SET}`;
   const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
-  const place = placer(editor, backend);
   const placeNow = placerNow(editor, backend);
 
   expect(fetcher.paths).not.toContain(record);
-  const whileLoading = placeNow(set, 640, 640);
-  expect(whileLoading).toEqual({
-    placements: 0,
-    refusedClicks: 1,
-    reason: expect.stringContaining("is still loading"),
-  });
-  await loadCatalogItem(catalog, set);
+  const whileLoading = { ...placeNow(set, 640, 640), ...queuedOf(editor) };
+  await settledChoice(editor);
   expect(fetcher.paths).toContain(record);
 
-  expect(await place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect({ whileLoading, loaded: editor.snapshot() }).toMatchObject({
+    whileLoading: { placements: 0, refusedClicks: 0, queuedPlacement: { item: set } },
+    loaded: { placements: 1, refusedClicks: 0, queuedPlacement: null },
+  });
   await vi.waitFor(() => {
     const { detailedPartMeshes } = editor.snapshot().meshes;
     expect(detailedPartMeshes.wanted).toBeGreaterThan(0);
@@ -682,6 +679,10 @@ function placerNow(editor: IEditor, backend: AimedBackend) {
     const { placements, refusedClicks, lastRefusal } = editor.snapshot();
     return { placements, refusedClicks, reason: lastRefusal?.reason ?? null };
   };
+}
+
+function queuedOf(editor: IEditor) {
+  return { queuedPlacement: editor.snapshot().queuedPlacement };
 }
 
 function placer(editor: IEditor, backend: AimedBackend) {
@@ -2096,29 +2097,52 @@ class HeldText implements IAssetFetcher {
   }
 }
 
-it("refuses to place an item until its connector tables have loaded, then places it", async () => {
-  const gate = new HeldText(new BundleDirectoryFetcher(), (path) =>
-    path.includes("/connectivity-3811."),
-  );
+function heldConnectivity(): HeldText {
+  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-3811."));
+}
+
+it("places nothing while an item's connector tables load, and places a click made meanwhile once they load", async () => {
+  const gate = heldConnectivity();
   const { editor, backend } = await startEditor([], gate);
 
-  const whileLoading = placerNow(editor, backend)(BASEPLATE, 0, 0);
-  const pending = editor.snapshot().pendingItem;
+  const whileLoading = { ...placerNow(editor, backend)(BASEPLATE, 640, 640), ...queuedOf(editor) };
+  backend.aim(646, 634);
+  editor.pointerMove(0, 0);
   await vi.waitFor(() => expect(gate.held).toBe(1));
-  const stillPending = editor.snapshot().pendingItem;
+  const { pendingItem, placements } = editor.snapshot();
   gate.open();
   await settledChoice(editor);
-  const loaded = await placer(editor, backend)(BASEPLATE, 0, 0);
 
-  expect({ whileLoading, pending, stillPending, placements: loaded.placements }).toEqual({
-    whileLoading: {
-      placements: 0,
-      refusedClicks: 1,
-      reason: expect.stringContaining("is still loading"),
+  expect({ whileLoading, whileHeld: { pendingItem, placements }, placed: posesOf(editor) }).toEqual(
+    {
+      whileLoading: {
+        placements: 0,
+        refusedClicks: 0,
+        reason: null,
+        queuedPlacement: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+      },
+      whileHeld: { pendingItem: BASEPLATE, placements: 0 },
+      placed: [expect.stringMatching(/ 640,640 y0$/u)],
     },
-    pending: BASEPLATE,
-    stillPending: BASEPLATE,
-    placements: 1,
+  );
+}, 120_000);
+
+it("lets go of a click made while an item loads once the pointer leaves that stud", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend } = await startEditor([], gate);
+
+  placerNow(editor, backend)(BASEPLATE, 640, 640);
+  const queued = editor.snapshot().queuedPlacement;
+  backend.aim(1280, 640);
+  editor.pointerMove(0, 0);
+  const afterMove = editor.snapshot().queuedPlacement;
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ queued: queued !== null, afterMove, placements: editor.snapshot().placements }).toEqual({
+    queued: true,
+    afterMove: null,
+    placements: 0,
   });
 }, 120_000);
 

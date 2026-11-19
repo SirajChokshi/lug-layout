@@ -218,6 +218,19 @@ export interface RefusedClick {
   readonly reason: string;
 }
 
+export interface QueuedPlacement {
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+}
+
+interface QueuedClick extends QueuedPlacement {
+  readonly ndcX: number;
+  readonly ndcY: number;
+  readonly eventTimeMs: number;
+}
+
 export type FarTierStatus = "loading" | "ready" | "unavailable";
 
 export interface TrackBomLine {
@@ -338,6 +351,7 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
   readonly connectorGaps: ReadonlyArray<PartWithoutConnectorRecord>;
+  readonly queuedPlacement: QueuedPlacement | null;
 }
 
 export interface EditorCredits {
@@ -605,6 +619,7 @@ export class Editor implements IEditor, IEditedWorld {
     roadErase: false,
     modelImport: null,
     connectorGaps: [],
+    queuedPlacement: null,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -622,6 +637,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverZ = 0;
   private hoverYPlates = 0;
   private hoverRefusal: string | null = null;
+  private queuedClick: QueuedClick | null = null;
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -1218,6 +1234,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   chooseItem(id: string | null): void {
     if (id !== null && this.state.readOnly) return;
+    this.queueClick(null);
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
     if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
       this.enterRoadMode(id);
@@ -1300,10 +1317,14 @@ export class Editor implements IEditor, IEditedWorld {
       .then((placeable) => this.connectorTables.load(placeable))
       .then(
         () => {
-          if (this.state.pendingItem === id) this.chooseItem(id);
+          if (this.state.pendingItem !== id) return;
+          const queued = this.queuedClick;
+          this.chooseItem(id);
+          if (queued?.item === id) this.commitQueuedClick(queued);
         },
         (error: unknown) => {
           if (this.state.pendingItem !== id) return;
+          this.queueClick(null);
           this.update({
             mode: "select",
             activeItem: null,
@@ -1523,6 +1544,8 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
+    const queued = this.queuedClick;
+    if (queued && !(this.hovering && this.onQueuedCell(queued))) this.queueClick(null);
     const snap = this.snapGhost();
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
@@ -1542,7 +1565,29 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerLeave(): void {
     this.hovering = false;
+    this.queueClick(null);
     this.update({ hover: null });
+  }
+
+  private onQueuedCell(queued: QueuedClick): boolean {
+    return snapToLattice(this.hitX) === queued.x && snapToLattice(this.hitZ) === queued.z;
+  }
+
+  private queueClick(queued: QueuedClick | null): void {
+    if (queued === null && this.queuedClick === null) return;
+    this.queuedClick = queued;
+    this.update({
+      queuedPlacement:
+        queued === null ? null : { item: queued.item, x: queued.x, z: queued.z, rot: queued.rot },
+    });
+  }
+
+  private commitQueuedClick(queued: QueuedClick): void {
+    const holding = this.active !== null && !this.state.readOnly && this.state.pendingItem === null;
+    if (!holding || !this.groundHit(queued.ndcX, queued.ndcY)) return;
+    if (!this.onQueuedCell(queued)) return;
+    this.pointerMove(queued.ndcX, queued.ndcY);
+    this.click(queued.ndcX, queued.ndcY, queued.eventTimeMs);
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
@@ -1557,13 +1602,15 @@ export class Editor implements IEditor, IEditedWorld {
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
       if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
-      this.refuse(
-        pendingItem,
-        snapToLattice(this.hitX),
-        snapToLattice(this.hitZ),
-        this.placeRot,
-        `${this.labelOf(pendingItem)} is still loading`,
-      );
+      this.queueClick({
+        item: pendingItem,
+        x: snapToLattice(this.hitX),
+        z: snapToLattice(this.hitZ),
+        rot: this.placeRot,
+        ndcX,
+        ndcY,
+        eventTimeMs,
+      });
       return;
     }
     if (this.active && !this.state.readOnly) {
