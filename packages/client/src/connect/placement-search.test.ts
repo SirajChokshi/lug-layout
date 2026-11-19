@@ -498,6 +498,37 @@ describe("PlacementSearch mate zones", () => {
     });
   });
 
+  it("lands a pin held where it clears a sliding bore on the stud lattice, not at the nearest depth the slide allows", () => {
+    const f = fixture();
+    place(f, BORED, {
+      connectors: f.connectors([
+        table([
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z],
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, STUD_LDU, AXIS_POS_Z],
+        ]),
+      ]),
+      volumes: columns(2, 1, 0, BRICK_LDU),
+      parts: partsOf([BLOCK], [bore(0)]),
+    });
+    const held = {
+      connectors: f.connectors([
+        table([
+          [f.freePin, GENDER_MALE, LINE_X, LINE_Y, -HALF, AXIS_POS_Z],
+          [f.freePin, GENDER_MALE, LINE_X, LINE_Y, STUD_LDU + HALF, AXIS_NEG_Z],
+        ]),
+      ]),
+      volumes: columns(2, 3, 0, BRICK_LDU, 0, -1),
+      parts: partsOf([[LINE_X - 6, LINE_Y - 6, -HALF, LINE_X + 6, LINE_Y + 6, STUD_LDU + HALF]]),
+    };
+    const choice = choose(f, held, window(0, 2 * STUD_LDU, 1, 0, 0));
+    expect([choice.accepted, choice.x, choice.z, choice.votes > 0]).toEqual([
+      true,
+      0,
+      STUD_LDU,
+      true,
+    ]);
+  });
+
   it("seats a free pin through a through bore, whose two end faces pair with the bore's two openings as one joint", () => {
     const f = fixture();
     place(f, BORED, {

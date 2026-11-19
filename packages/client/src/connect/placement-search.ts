@@ -271,7 +271,7 @@ export class PlacementSearch implements IPlacementSearch {
       out.walked = i + 1;
       const votes = candidates.votes[i] ?? 0;
       const yPlates = candidates.yPlates[i] ?? 0;
-      if (yPlates < tableYPlates) continue;
+      if (yPlates < tableYPlates || !this.onWindowLattice(window, i)) continue;
       const pose = this.candidatePose(i);
       const placed = this.scratch.place(volumes, pose);
       this.zones.clear();
@@ -344,6 +344,12 @@ export class PlacementSearch implements IPlacementSearch {
     }
     this.solver.insert(removed.model, removed.pose, placement);
     return stranded;
+  }
+
+  private onWindowLattice(window: SnapWindow, index: number): boolean {
+    const dx = (this.candidates.x[index] ?? 0) - window.x;
+    const dz = (this.candidates.z[index] ?? 0) - window.z;
+    return dx % STUD_LDU === 0 && dz % STUD_LDU === 0;
   }
 
   private candidatePose(index: number): Pose {
