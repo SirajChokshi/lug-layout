@@ -5,6 +5,7 @@ import {
   measuredRail,
   ModelConnectors,
   PartRollingTable,
+  partExtents,
   RunningGearDetector,
   runningGearInput,
   SnapMating,
@@ -113,7 +114,14 @@ export async function attachRunningGear(directory: string): Promise<void> {
     const connectors = await Promise.all(model.parts.map(tableOf));
     const connected = ModelConnectors.fromParts(connectors, instances, mating);
     const gear = detector.detect(
-      runningGearInput(instances, rollingTables(model), connectors, connected, shapes),
+      runningGearInput(
+        instances,
+        rollingTables(model),
+        model.shapes.map((shape) => partExtents(shape.extents)),
+        connectors,
+        connected,
+        shapes,
+      ),
     );
     await writeFile(path, JSON.stringify({ ...raw, ...runningGearFields(gear) }));
   }

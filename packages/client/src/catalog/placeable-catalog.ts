@@ -15,6 +15,7 @@ import {
   measuredRail,
   ModelConnectors,
   PartRollingTable,
+  partExtents,
   RunningGearDetector,
   runningGearInput,
   SnapMating,
@@ -588,6 +589,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       runningGearInput(
         instances,
         parts.map((part) => (part.rolling ? PartRollingTable.fromRolling(part.rolling) : null)),
+        parts.map((part) => partExtents(part.extents)),
         connectors,
         ModelConnectors.fromParts(connectors, instances, mating),
         shapes,

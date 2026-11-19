@@ -1,4 +1,4 @@
-import { SIXTEENTHS_PER_LDU } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, exactRationalFromFloat64 } from "@brr/math";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import type { PartRolling } from "@brr/schema/bundle";
@@ -19,6 +19,7 @@ import { MODEL_ROOT, type PartInstances } from "../src/connect/submodel-frames.t
 import { MATE_PASS_MODEL, MATE_PASS_SUBMODEL, MatePairs } from "../src/connect/mate-pairs.ts";
 import { BogieDetector } from "../src/running-gear/bogie-detector.ts";
 import { measuredRail } from "../src/running-gear/measured-rail.ts";
+import type { PartExtents } from "../src/running-gear/part-extents.ts";
 import { PartRollingTable } from "../src/running-gear/part-rolling.ts";
 import { RunningGearDetector } from "../src/running-gear/running-gear-detector.ts";
 import { WheelsetDetector } from "../src/running-gear/wheelset-detector.ts";
@@ -37,6 +38,8 @@ const PIN = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [4], [8]);
 const HOLE = shapes.intern(CAP_FAR, false, [SECTION_ROUND], [4], [8]);
 const EXTRA_HUBS_PER_AXLE = 3;
 const HANGING_GROUPS = 1_500;
+const CLEARANCE_BRICKS = 3_000;
+const CLEARANCE_CAR_ORIGIN = [0.11, 0.6667, 0.07] as const;
 const HANGER_SPACING_LDU = 4;
 const OUTSIDE_WHEELBASE_LDU = 40;
 const rails = [
@@ -136,8 +139,8 @@ const HANGER_FRAME = table([
 const HANGER = table([[0, -4, 0, AXIS_NEG_Y, GENDER_MALE]]);
 const FIRST_HANGER_HOLE = 3;
 const PIN_BODY = table([
-  [60, -10, 0, AXIS_NEG_Y, GENDER_MALE],
-  [-60, -10, 0, AXIS_NEG_Y, GENDER_MALE],
+  [60, 0, 0, AXIS_NEG_Y, GENDER_MALE],
+  [-60, 0, 0, AXIS_NEG_Y, GENDER_MALE],
   [100, 0, 0, AXIS_POS_X, GENDER_MALE],
 ]);
 
@@ -235,6 +238,68 @@ function build(hanging: boolean): Synthetic {
   };
 }
 
+function clearanceCar(): Synthetic {
+  const parts: number[] = [];
+  const matrices: number[] = [];
+  const ofPart: number[] = [];
+  const mates: Array<readonly [number, number, number, number, number]> = [];
+  const car = 0;
+  const bogieFrames = [1, 2];
+  const [ox, oy, oz] = CLEARANCE_CAR_ORIGIN;
+  const frameAt = (x: number) => [1, 0, 0, ox + x, 0, 1, 0, oy, 0, 0, 1, oz];
+  const place = (part: number, x: number, y: number, z: number, submodel: number): number => {
+    parts.push(part);
+    matrices.push(1, 0, 0, ox + x, 0, 1, 0, oy + y, 0, 0, 1, oz + z);
+    ofPart.push(submodel);
+    return parts.length - 1;
+  };
+  const body = place(1, 0, 30, 0, car);
+  for (let b = 0; b < CLEARANCE_BRICKS; b++) {
+    const at = place(0, (b % 50) * 200, 100 + Math.floor(b / 50) * 24, 0, car);
+    if (b === 0) mates.push([body, 2, at, 10, MATE_PASS_MODEL]);
+    else {
+      mates.push([at, 0, at - 1, 10, MATE_PASS_MODEL]);
+      mates.push([at, 1, at - 1, 11, MATE_PASS_MODEL]);
+    }
+  }
+  bogieFrames.forEach((bogieFrame, g) => {
+    const x = g === 0 ? 60 : -60;
+    const frame = place(2, x, 20, 0, bogieFrame);
+    mates.push([body, g, frame, 0, MATE_PASS_SUBMODEL]);
+    for (let a = 0; a < AXLES_PER_BOGIE; a++) {
+      const ax = x + (a === 0 ? -20 : 20);
+      mates.push([place(3, ax, 7, 0, bogieFrame), 0, frame, 1 + a, MATE_PASS_SUBMODEL]);
+      mates.push([place(4, ax, 7, 0, bogieFrame), 0, frame, 1 + a, MATE_PASS_SUBMODEL]);
+    }
+  });
+  return {
+    instances: {
+      count: parts.length,
+      partIndex: Uint32Array.from(parts),
+      matrices: Float64Array.from(matrices),
+      submodels: {
+        count: 3,
+        parent: Int32Array.of(MODEL_ROOT, car, car),
+        matrices: Float64Array.of(...frameAt(0), ...frameAt(60), ...frameAt(-60)),
+        ofPart: Int32Array.from(ofPart),
+      },
+    },
+    mates,
+  };
+}
+
+function exactTriple(v: readonly number[]) {
+  return [
+    exactRationalFromFloat64(v[0] ?? 0),
+    exactRationalFromFloat64(v[1] ?? 0),
+    exactRationalFromFloat64(v[2] ?? 0),
+  ] as const;
+}
+
+function boxExtents(min: readonly number[], max: readonly number[]): PartExtents {
+  return { min: exactTriple(min), max: exactTriple(max) };
+}
+
 function percentile(samples: ReadonlyArray<number>, p: number): number {
   const sorted = samples.toSorted((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] ?? 0;
@@ -296,6 +361,7 @@ function matePairs(synthetic: Synthetic): MatePairs {
   );
 }
 
+const noExtents = connectorTables.map(() => null);
 const { instances, mates } = build(false);
 const graph = matePairs({ instances, mates });
 const hangingModel = build(true);
@@ -328,6 +394,7 @@ const found = wheelsets.detect(instances, onRails);
 const resolved = gear.detect({
   instances,
   rolling: onRails,
+  extents: noExtents,
   connectors: connectorTables,
   mates: graph,
   exposed,
@@ -335,11 +402,19 @@ const resolved = gear.detect({
 const baseline = await time(() => wheelsets.detect(instances, onRails));
 const largerGroups = await time(() => wheelsets.detect(instances, moreHubs));
 const whole = await time(() =>
-  gear.detect({ instances, rolling: onRails, connectors: connectorTables, mates: graph, exposed }),
+  gear.detect({
+    instances,
+    rolling: onRails,
+    extents: noExtents,
+    connectors: connectorTables,
+    mates: graph,
+    exposed,
+  }),
 );
 const hangingInput = {
   instances: hangingModel.instances,
   rolling: onRails,
+  extents: noExtents,
   connectors: connectorTables,
   mates: hangingGraph,
   exposed,
@@ -350,6 +425,29 @@ const credited =
   hangingBogies.reduce((n, bogie) => n + bogie.instances.length, 0) -
   hangingBogies.length * (1 + 2 * AXLES_PER_BOGIE);
 const partition = await time(() => gear.detect(hangingInput));
+const clearanceModel = clearanceCar();
+const clearanceInput = {
+  instances: clearanceModel.instances,
+  rolling: onRails,
+  extents: [
+    boxExtents([-100, -12, -10], [100, 12, 10]),
+    boxExtents([-100, -10, -60], [100, 10, 60]),
+    boxExtents([-30, -10, -40], [30, 10, 40]),
+    null,
+    null,
+    null,
+    null,
+  ],
+  connectors: connectorTables,
+  mates: matePairs(clearanceModel),
+  exposed: { ...exposed, count: 0 },
+};
+const clearanceResolved = gear.detect(clearanceInput);
+const clearanceSeated = clearanceResolved.vehicles.flatMap((vehicle) =>
+  vehicle.wheelsets.filter((wheelset) => wheelset.seated),
+).length;
+const checked = await time(() => gear.detect(clearanceInput));
+const unchecked = await time(() => gear.detect({ ...clearanceInput, extents: noExtents }));
 const row = (label: string, t: Timing): string =>
   `| ${label} | ${t.p50.toFixed(2)} | ${t.p95.toFixed(2)} | ${t.gcs} | ${t.heapGrowthBytes} |`;
 process.stdout.write(
@@ -358,6 +456,7 @@ process.stdout.write(
     `model: ${instances.count.toLocaleString("en-US")} instances, ${connectorCount.toLocaleString("en-US")} exposed connectors, ${mates.length.toLocaleString("en-US")} internal mates, ${instances.submodels?.count ?? 0} sub-model instances (car and bogie frames, placed off the grid like the official trains), ${surfaces.toLocaleString("en-US")} wheel surfaces plus ${hubs} co-linear non-member hubs`,
     `found: ${found.wheelsets.length} wheelsets, ${resolved.vehicles.length} vehicles, ${resolved.unresolvedRunningGear.length} unresolved`,
     `partition model: ${hangingModel.instances.count.toLocaleString("en-US")} instances, ${HANGING_GROUPS.toLocaleString("en-US")} wheel-free groups hanging from one bogie outside its wheelbase and one outboard pendant on every other bogie; found ${hangingResolved.vehicles.length} vehicles, ${hangingBogies.length} bogies, ${credited.toLocaleString("en-US")} pendants credited`,
+    `clearance model: ${clearanceModel.instances.count.toLocaleString("en-US")} instances in one car on ${clearanceSeated} seated wheelsets; found ${clearanceResolved.vehicles.length} vehicles, ${clearanceResolved.unresolvedRunningGear.length} unresolved`,
     "| step | p50 ms | p95 ms | GCs | heap growth bytes |",
     "|---|---|---|---|---|",
     row("WheelsetDetector.detect: pairing and membership, 5 surfaces per axle line", baseline),
@@ -367,6 +466,8 @@ process.stdout.write(
     ),
     row("RunningGearDetector.detect, whole model", whole),
     row("RunningGearDetector.detect, partition model with the block-cut pass", partition),
+    row("RunningGearDetector.detect, clearance model, every instance's extents checked", checked),
+    row("RunningGearDetector.detect, clearance model, no extents (no clearance work)", unchecked),
     "",
   ].join("\n"),
 );

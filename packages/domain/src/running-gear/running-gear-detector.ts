@@ -27,7 +27,10 @@ import {
 } from "../connect/submodel-frames.ts";
 import type { MatePairs } from "../connect/mate-pairs.ts";
 import type { BogieDetector, DetectedBogie, RunningGearPartition } from "./bogie-detector.ts";
+import { clearance, type ClearanceWheelset } from "./clearance.ts";
+import type { PartExtents } from "./part-extents.ts";
 import type { PartRollingTable } from "./part-rolling.ts";
+import { AxleHeights } from "./support-plane.ts";
 import type { DetectedWheelset, WheelsetDetector } from "./wheelset-detector.ts";
 
 const SIXTEENTHS_PER_LDU = 16;
@@ -48,6 +51,7 @@ export interface ExposedConnectors {
 export interface RunningGearInput {
   readonly instances: PartInstances;
   readonly rolling: ReadonlyArray<PartRollingTable | null>;
+  readonly extents: ReadonlyArray<PartExtents | null>;
   readonly connectors: ReadonlyArray<ConnectorTable | null>;
   readonly mates: MatePairs;
   readonly exposed: ExposedConnectors;
@@ -123,7 +127,7 @@ export class RunningGearDetector {
   ) {}
 
   detect(input: RunningGearInput): RunningGear {
-    const { instances, rolling, connectors, mates, exposed } = input;
+    const { instances, rolling, extents, connectors, mates, exposed } = input;
     const detection = this.wheelsetDetector.detect(instances, rolling);
     const wheelsets = detection.wheelsets;
     const partition = this.bogieDetector.partition(instances, connectors, mates, wheelsets);
@@ -249,9 +253,43 @@ export class RunningGearDetector {
       );
       excluded.add(gear.body);
     }
+    const attachedTo = this.soleNeighbours(partition);
+    const heights = new AxleHeights(frames);
+    for (const gear of gears) {
+      if (excluded.has(gear.body)) continue;
+      const own = this.ownWheelsets(gear, partition);
+      const seated = own.filter((w) => partition.seated[w] === 1);
+      const members = new Set(seated.flatMap((w) => [...(wheelsets[w]?.memberInstances ?? [])]));
+      const subAssemblies = [
+        ...this.bodySubAssemblies(gear, attachedTo),
+        ...gear.bogies.flatMap((bogie) => [bogie.subAssembly, ...bogie.pendants]),
+      ];
+      const checked = subAssemblies
+        .flatMap((s) => [...(partition.subAssemblies[s]?.instances ?? [])])
+        .filter((instance) => !members.has(instance));
+      const failure = clearance(
+        frames,
+        heights,
+        instances,
+        extents,
+        seated.flatMap((w) => this.clearanceWheelset(wheelsets[w])),
+        checked,
+      );
+      if (!failure) continue;
+      unresolved.push({
+        reason: failure.reason,
+        instances: failure.instances.toSorted((a, b) => a - b),
+        wheelsets: own.flatMap((w) => {
+          const wheelset = wheelsets[w];
+          return wheelset ? [this.wheelsetRecord(wheelset, partition.seated[w] === 1)] : [];
+        }),
+        mates: [],
+        unreadRows: unreadRows(subAssemblies),
+      });
+      excluded.add(gear.body);
+    }
     const resolved = gears.filter((gear) => !excluded.has(gear.body));
     const vehicleOf = new Map(resolved.map((gear, index) => [gear.body, index]));
-    const attachedTo = this.soleNeighbours(partition);
     const bodies = resolved.map((gear) => this.bodyInstances(gear, partition, attachedTo));
     const vehicleOfInstance = new Int32Array(instances.count).fill(-1);
     resolved.forEach((gear, v) => {
@@ -429,6 +467,20 @@ export class RunningGearDetector {
     });
   }
 
+  private ownWheelsets(gear: BodyGear, partition: RunningGearPartition): number[] {
+    return [
+      ...gear.bogies.flatMap(
+        (bogie) => partition.subAssemblies[bogie.subAssembly]?.wheelsets ?? [],
+      ),
+      ...gear.fixedAxles,
+    ];
+  }
+
+  private clearanceWheelset(wheelset: DetectedWheelset | undefined): ClearanceWheelset[] {
+    const headBands = wheelset ? this.wheelsetDetector.headBands(wheelset.rail) : null;
+    return wheelset && headBands ? [{ wheelset, headBands }] : [];
+  }
+
   private wheelsetRecord(wheelset: DetectedWheelset, seated: boolean): VehicleWheelset {
     const line = wheelset.axisLine;
     return {
@@ -471,7 +523,7 @@ export class RunningGearDetector {
     const bogieWheelsets = gear.bogies.map(
       (bogie) => partition.subAssemblies[bogie.subAssembly]?.wheelsets ?? [],
     );
-    const own = [...bogieWheelsets.flat(), ...gear.fixedAxles];
+    const own = this.ownWheelsets(gear, partition);
     const local = new Map(own.map((w, index) => [w, index]));
     const front = gear.guides[0];
     const rear = gear.guides.at(-1);
@@ -538,15 +590,19 @@ export class RunningGearDetector {
     return sole;
   }
 
+  private bodySubAssemblies(gear: BodyGear, attachedTo: ReadonlyMap<number, number>): number[] {
+    const subAssemblies = [gear.body];
+    for (const [attachment, body] of attachedTo)
+      if (body === gear.body) subAssemblies.push(attachment);
+    return subAssemblies;
+  }
+
   private bodyInstances(
     gear: BodyGear,
     partition: RunningGearPartition,
     attachedTo: ReadonlyMap<number, number>,
   ): number[] {
-    const subAssemblies = [gear.body];
-    for (const [attachment, body] of attachedTo)
-      if (body === gear.body) subAssemblies.push(attachment);
-    return subAssemblies
+    return this.bodySubAssemblies(gear, attachedTo)
       .flatMap((s) => [...(partition.subAssemblies[s]?.instances ?? [])])
       .toSorted((a, b) => a - b);
   }

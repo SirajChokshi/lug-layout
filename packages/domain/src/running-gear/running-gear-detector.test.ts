@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { exactRationalFromFloat64 } from "@brr/math";
 import type {
   ModelVehicle,
   PartRolling,
@@ -30,6 +31,7 @@ import { MODEL_ROOT, type PartInstances } from "../connect/submodel-frames.ts";
 import { MATE_PASS_MODEL, MatePairs } from "../connect/mate-pairs.ts";
 import { BogieDetector } from "./bogie-detector.ts";
 import { measuredRail } from "./measured-rail.ts";
+import type { PartExtents } from "./part-extents.ts";
 import { PartRollingTable } from "./part-rolling.ts";
 import { RunningGearDetector, type ExposedConnectors } from "./running-gear-detector.ts";
 import { WheelsetDetector } from "./wheelset-detector.ts";
@@ -114,12 +116,26 @@ const AXLE_MALE: ConnectorSpec = { at: [0, 0, 0], axis: AXIS_POS_Z, gender: GEND
 interface Part {
   readonly connectors: ReadonlyArray<ConnectorSpec>;
   readonly rolling?: PartRolling;
+  readonly extents?: { readonly min: Vec; readonly max: Vec };
 }
 
 interface Placement {
   readonly part: string;
   readonly at: Vec;
   readonly submodel?: number;
+  readonly rotation?: ReadonlyArray<number>;
+}
+
+const UPRIGHT = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+
+function exactExtents({ min, max }: { readonly min: Vec; readonly max: Vec }): PartExtents {
+  const exact = (v: Vec) =>
+    [
+      exactRationalFromFloat64(v[0]),
+      exactRationalFromFloat64(v[1]),
+      exactRationalFromFloat64(v[2]),
+    ] as const;
+  return { min: exact(min), max: exact(max) };
 }
 
 interface MateSpec {
@@ -153,7 +169,8 @@ function run(scenario: Scenario) {
     matrices: Float64Array.from(
       scenario.placed.flatMap((p) => {
         const [x, y, z] = translated(frameAt(p.submodel), p.at);
-        return [1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z];
+        const r = p.rotation ?? UPRIGHT;
+        return [r[0], r[1], r[2], x, r[3], r[4], r[5], y, r[6], r[7], r[8], z].map((v) => v ?? 0);
       }),
     ),
     submodels: {
@@ -207,6 +224,7 @@ function run(scenario: Scenario) {
     rolling: parts.map((part) =>
       part?.rolling ? PartRollingTable.fromRolling(part.rolling) : null,
     ),
+    extents: parts.map((part) => (part?.extents ? exactExtents(part.extents) : null)),
     connectors: parts.map((part) => (part ? connectors(part.connectors) : null)),
     mates: graph,
     exposed,
@@ -786,6 +804,74 @@ function spanBolsters(): Scenario {
       { male: [0, 0], female: [1, 2] },
       { male: [0, 1], female: [2, 2] },
     ],
+  };
+}
+
+function clearanceReports(reports: ReadonlyArray<UnresolvedRunningGear>) {
+  return reports.map((report) => ({
+    reason: report.reason,
+    instances: report.instances,
+    wheelsets: report.wheelsets.map((w) => w.members[0]?.instance),
+  }));
+}
+
+const HALF_ROOT_TWO = Math.SQRT1_2;
+const EIGHTH_TURN_ABOUT_X = [
+  1,
+  0,
+  0,
+  0,
+  HALF_ROOT_TWO,
+  -HALF_ROOT_TWO,
+  0,
+  HALF_ROOT_TWO,
+  HALF_ROOT_TWO,
+];
+const AUTHORED_THIRTY_DEGREES_ABOUT_Y = [-0.87, 0, -0.5, 0, 1, 0, 0.5, 0, -0.87];
+const ORNAMENT_SOCKET = 10;
+
+const FLANGED_WHEELS = { min: [-8, -8, -54], max: [8, 8, 54] } as const;
+
+function ornamentCar(height: number, rotation: ReadonlyArray<number>, z = 50): Scenario {
+  const car = bogieCar();
+  return {
+    ...car,
+    parts: {
+      ...PARTS,
+      body: {
+        connectors: [...BODY.connectors, { at: [0, 0, z], axis: AXIS_POS_Z, gender: GENDER_MALE }],
+      },
+      ornament: {
+        connectors: [{ at: [0, 0, 0], axis: AXIS_POS_Z, gender: GENDER_FEMALE }],
+        extents: { min: [-5, -5, -5], max: [5, 5, 5] },
+      },
+    },
+    placed: [...car.placed, { part: "ornament", at: [0, height, z], rotation }],
+    mates: [...car.mates, { male: [0, ORNAMENT_SOCKET], female: [7, 0] }],
+  };
+}
+
+function hangingFrameCar(halfWidth: number, bottom = -30): Scenario {
+  return {
+    ...bogieCar(),
+    parts: {
+      ...PARTS,
+      wheels: { ...PARTS["wheels"], connectors: [AXLE_MALE], extents: FLANGED_WHEELS },
+      frame: { ...FRAME, extents: { min: [-30, bottom, -halfWidth], max: [30, 0, halfWidth] } },
+    },
+  };
+}
+
+function shiftedOrnamentCar(z: number): Scenario {
+  const car = ornamentCar(2, UPRIGHT, z);
+  return {
+    ...car,
+    submodels: [[0, 0, 10]],
+    placed: car.placed.map((placement, index) =>
+      [2, 3, 5, 6].includes(index)
+        ? { ...placement, at: translated(placement.at, [0, 0, 10]), submodel: 0 }
+        : placement,
+    ),
   };
 }
 
@@ -1405,6 +1491,74 @@ describe("RunningGearDetector", () => {
           [2, 2],
         ],
       },
+    ]);
+  });
+
+  it("reports a building on round rails as fixed axles whose body reaches below the rail top over a head band, naming the instances below", () => {
+    const building: Part = {
+      connectors: BODY.connectors,
+      extents: { min: [-100, -74, -80], max: [100, 40, 80] },
+    };
+    const gear = run({
+      parts: { ...PARTS, body: building },
+      placed: [
+        { part: "body", at: [0, 30, 0] },
+        { part: "wheels", at: [60, 7, 0] },
+        { part: "wheels", at: [-60, 7, 0] },
+      ],
+      mates: [
+        { male: [1, 0], female: [0, 2] },
+        { male: [2, 0], female: [0, 3] },
+      ],
+    });
+    expect(gear.vehicles).toEqual([]);
+    expect(clearanceReports(gear.unresolvedRunningGear)).toEqual([
+      { reason: "belowRailTop", instances: [0], wheelsets: [1, 2] },
+    ]);
+  });
+
+  it("checks clearance only over the head bands: a frame hanging below the rail top between the rails resolves, and one reaching a band with positive length fails", () => {
+    const touching = run(hangingFrameCar(47.375));
+    expect(touching.unresolvedRunningGear).toEqual([]);
+    expect(touching.vehicles).toHaveLength(1);
+    const resting = run(hangingFrameCar(80, -20));
+    expect(resting.unresolvedRunningGear).toEqual([]);
+    expect(resting.vehicles).toHaveLength(1);
+    const reaching = run(hangingFrameCar(47.5));
+    expect(reaching.vehicles).toEqual([]);
+    expect(clearanceReports(reaching.unresolvedRunningGear)).toEqual([
+      { reason: "belowRailTop", instances: [1, 4], wheelsets: [2, 3, 5, 6] },
+    ]);
+  });
+
+  it("bounds a tilted part by the largest L1 norm of its extents' corners, scaled by its largest row entry above one: one whose bound dips over a head band fails though its corner clears, and one high above clears, an authored skewed rotation included", () => {
+    const tilted = (height: number) => run(ornamentCar(height, EIGHTH_TURN_ABOUT_X));
+    expect(clearanceReports(tilted(10).unresolvedRunningGear)).toEqual([
+      { reason: "belowRailTop", instances: [7], wheelsets: [2, 3, 5, 6] },
+    ]);
+    expect(tilted(30).unresolvedRunningGear).toEqual([]);
+    expect(tilted(30).vehicles).toHaveLength(1);
+    expect(run(ornamentCar(30, AUTHORED_THIRTY_DEGREES_ABOUT_Y)).unresolvedRunningGear).toEqual([]);
+    const scaled = EIGHTH_TURN_ABOUT_X.map((entry) => 2 * entry);
+    expect(run(ornamentCar(20, EIGHTH_TURN_ABOUT_X)).unresolvedRunningGear).toEqual([]);
+    expect(clearanceReports(run(ornamentCar(20, scaled)).unresolvedRunningGear)).toEqual([
+      { reason: "belowRailTop", instances: [7], wheelsets: [2, 3, 5, 6] },
+    ]);
+  });
+
+  it("places the head bands in the instance's lowest common frame with a wheelset held in its own sub-model", () => {
+    expect(run(shiftedOrnamentCar(50)).unresolvedRunningGear).toEqual([]);
+    expect(run(shiftedOrnamentCar(62)).unresolvedRunningGear).toEqual([]);
+    expect(clearanceReports(run(shiftedOrnamentCar(70)).unresolvedRunningGear)).toEqual([
+      { reason: "belowRailTop", instances: [7], wheelsets: [2, 3, 5, 6] },
+    ]);
+  });
+
+  it("reports a vehicle with an instance whose origin doesn't identify against a seated wheelset", () => {
+    const gear = run(ornamentCar(30.3, UPRIGHT));
+    expect(gear.vehicles).toEqual([]);
+    expect(clearanceReports(gear.unresolvedRunningGear)).toEqual([
+      { reason: "clearanceUnidentified", instances: [7], wheelsets: [2, 3, 5, 6] },
     ]);
   });
 

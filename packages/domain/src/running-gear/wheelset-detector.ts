@@ -166,6 +166,8 @@ function rollingRadiusOf({ contactRadii: [near, far] }: RailReading): ExactRatio
   return meanExactRational(near, far);
 }
 
+export type HeadBand = readonly [ExactRational, ExactRational];
+
 interface RailInSixteenths {
   readonly nearFrom: ExactRational;
   readonly nearTo: ExactRational;
@@ -358,6 +360,16 @@ export class WheelsetDetector {
   constructor(rails: ReadonlyArray<MeasuredRail>) {
     if (rails.length === 0) throw new RangeError("wheelsets need at least one measured rail");
     this.rails = rails.map(railInSixteenths);
+  }
+
+  headBands(rail: number): readonly [HeadBand, HeadBand] | null {
+    const bands = this.rails[rail];
+    return bands
+      ? [
+          [bands.nearFrom, bands.nearTo],
+          [bands.farFrom, bands.farTo],
+        ]
+      : null;
   }
 
   detect(
