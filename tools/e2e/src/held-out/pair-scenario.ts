@@ -7,6 +7,7 @@ import {
   type PinOutcome,
   type Vec3,
 } from "./assembly.ts";
+import { STUD_LDU } from "@brr/math";
 import type { ModulePair } from "./generator.ts";
 
 const AXIS_NAMES = ["x", "y", "z"] as const;
@@ -58,6 +59,65 @@ function described(outcomes: ReadonlyArray<PinOutcome>): string[] {
 export function shiftedOutcomes(pair: ModulePair, sign: number): ReadonlyArray<PinOutcome> {
   const partner: Assembly = translated(pair.partner.assembly, shiftedOffset(pair, sign));
   return pinOutcomes(pair.subject.assembly, partner);
+}
+
+export type SeamFit = "mated" | "free" | "out";
+
+export interface SeamPrediction {
+  readonly along: number;
+  readonly fit: SeamFit;
+  readonly joints: number;
+}
+
+function cellsUnder(part: AssemblyPart): ReadonlyArray<readonly [number, number]> {
+  const cells: Array<readonly [number, number]> = [];
+  const toX = Math.ceil(part.max[0] / STUD_LDU);
+  const toZ = Math.ceil(part.max[2] / STUD_LDU);
+  for (let x = Math.floor(part.min[0] / STUD_LDU); x < toX; x++) {
+    for (let z = Math.floor(part.min[2] / STUD_LDU); z < toZ; z++) cells.push([x, z]);
+  }
+  return cells;
+}
+
+function coversCell(part: AssemblyPart, [x, z]: readonly [number, number]): boolean {
+  return (
+    part.min[0] < (x + 1) * STUD_LDU &&
+    part.max[0] > x * STUD_LDU &&
+    part.min[2] < (z + 1) * STUD_LDU &&
+    part.max[2] > z * STUD_LDU
+  );
+}
+
+function columnBlocks(pin: AssemblyPart, neighbour: Assembly): boolean {
+  const slabTop = Math.max(...neighbour.map((part) => part.min[1]));
+  const aboveSlab = neighbour.filter((part) => part.min[1] < slabTop);
+  return cellsUnder(pin).some((cell) => {
+    const column = aboveSlab.filter((part) => coversCell(part, cell));
+    if (column.length === 0) return false;
+    const low = Math.min(...column.map((part) => part.min[1]));
+    const high = Math.max(...column.map((part) => part.max[1]));
+    return low < pin.max[1] && high > pin.min[1];
+  });
+}
+
+export function seamPredictions(pair: ModulePair, span: number): ReadonlyArray<SeamPrediction> {
+  const predictions: SeamPrediction[] = [];
+  for (let along = -span; along <= span; along++) {
+    const partner = translated(pair.partner.assembly, shiftedOffset(pair, along));
+    const outcomes = pinOutcomes(pair.subject.assembly, partner);
+    const out = outcomes.some(
+      (outcome) =>
+        outcome.kind === "colliding" ||
+        (outcome.kind === "free" && columnBlocks(outcome.pin, partner)),
+    );
+    const joints = outcomes.filter((outcome) => outcome.kind === "inHole").length;
+    predictions.push({
+      along: along + 0,
+      fit: out ? "out" : joints > 0 ? "mated" : "free",
+      joints,
+    });
+  }
+  return predictions;
 }
 
 export function solidShiftCollides(pair: ModulePair, sign: number): boolean {
