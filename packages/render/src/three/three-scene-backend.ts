@@ -9,6 +9,7 @@ import {
   FloatType,
   DirectionalLight,
   EdgesGeometry,
+  Euler,
   Group,
   HemisphereLight,
   InstancedBufferAttribute,
@@ -20,17 +21,19 @@ import {
   MeshBasicNodeMaterial,
   NearestFilter,
   NoColorSpace,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Quaternion,
   RGBAFormat,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGPURenderer,
+  type AnimationClip,
   type BufferGeometry,
   type Material,
   MeshStandardNodeMaterial,
-  type Object3D,
   type Sphere,
   type TextureNode,
 } from "three/webgpu";
@@ -154,7 +157,14 @@ const TIER_COUNT = 3;
 const TIER_NAMES: ReadonlyArray<ChunkTier> = ["near", "mid", "far"];
 const SPHERE_DOUBLES = 4;
 const MESH_SPHERE_DOUBLES = 2 * SPHERE_DOUBLES;
-const SHARED_IDENTITY = new Matrix4();
+const SHARED_IDENTITY = frozen(matrixWithFrozenElements());
+const SHARED_POSITION = frozen(new Vector3());
+const SHARED_ROTATION = frozen(new Euler());
+const SHARED_QUATERNION = frozen(new Quaternion());
+const SHARED_SCALE = frozen(new Vector3(1, 1, 1));
+const SHARED_UP = frozen(Object3D.DEFAULT_UP.clone());
+const NO_CHILDREN = frozen<Object3D[]>([]);
+const NO_ANIMATIONS = frozen<AnimationClip[]>([]);
 const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   near: TIER_NEAR,
   mid: TIER_MID,
@@ -342,10 +352,30 @@ function pageNeeds(page: InstancePage, tiered: boolean): ChunkNeeds {
   return needs.build();
 }
 
-function aliasParentWorld(mesh: Object3D, parent: Object3D): void {
+function frozen<T extends object>(value: T): T {
+  Object.freeze(value);
+  return value;
+}
+
+function matrixWithFrozenElements(): Matrix4 {
+  const matrix = new Matrix4();
+  frozen(matrix.elements);
+  return matrix;
+}
+
+function shareIdentityOnParent(mesh: InstancedMesh | StudMesh, parent: Object3D): void {
   mesh.matrix = SHARED_IDENTITY;
   mesh.matrixWorld = parent.matrixWorld;
   mesh.matrixWorldAutoUpdate = false;
+  Object.defineProperties(mesh, {
+    position: { configurable: true, enumerable: true, value: SHARED_POSITION },
+    rotation: { configurable: true, enumerable: true, value: SHARED_ROTATION },
+    quaternion: { configurable: true, enumerable: true, value: SHARED_QUATERNION },
+    scale: { configurable: true, enumerable: true, value: SHARED_SCALE },
+  });
+  mesh.up = SHARED_UP;
+  mesh.children = NO_CHILDREN;
+  mesh.animations = NO_ANIMATIONS;
 }
 
 function disposeInstancedChildren(layer: Group): void {
@@ -1587,7 +1617,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
           shellMaterials,
           swaps,
         );
-        aliasParentWorld(studMesh, holder);
+        shareIdentityOnParent(studMesh, holder);
         holder.add(studMesh);
         continue;
       }
@@ -1597,7 +1627,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         viewsEnd = end;
       }
       const partMesh = this.partRow(meshes, row, views, materials, shellMaterials, swaps);
-      aliasParentWorld(partMesh, holder);
+      shareIdentityOnParent(partMesh, holder);
       holder.add(partMesh);
       if (shadowCasters && !this.tiered) this.addShadowCaster(shadowCasters, meshes, row, views);
     }
@@ -1715,7 +1745,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
-    aliasParentWorld(mesh, layer);
+    shareIdentityOnParent(mesh, layer);
     layer.add(mesh);
   }
 
@@ -1801,7 +1831,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
-    aliasParentWorld(mesh, layer);
+    shareIdentityOnParent(mesh, layer);
     layer.add(mesh);
   }
 
