@@ -126,26 +126,36 @@ function plates(count: number): string {
   return `${count} ${count === 1 ? "plate" : "plates"}`;
 }
 
+function seamText(count: number, models: string | null, holesHeld: boolean): string {
+  const lineUp = verb(count, "lines up flush", "line up flush");
+  const goIn = `${counted(count, PIN)} ${verb(count, "goes in", "go in")}`;
+  if (holesHeld)
+    return `${counted(count, PIN_HOLE)} ${lineUp}${models ? ` with ${models}` : ""}, ${goIn}`;
+  return `${counted(count, PIN_HOLE)}${models ? ` on ${models}` : ""} ${lineUp}, ${goIn}`;
+}
+
 function mateText(mate: HoverMateCount): string {
   const count = mate.joints > 0 ? mate.joints : mate.connectors;
   const held = connectorNoun(mate.kind);
   const partner = sharedNoun(mate.partnerKinds);
   const models = modelNames(mate.partners);
+  const female = mate.kind.gender === "female";
+  const holes = female ? held : partner;
+  const pegs = female ? partner : held;
+  if (holes === PIN_HOLE && pegs === PIN) return seamText(count, models, female);
   if (held === HINGE_FINGER) {
     return `${counted(count, held)} ${verb(count, "interlocks", "interlock")}${models ? ` with ${models}` : ""}`;
   }
-  const goIn = verb(count, "goes in", "go in");
-  const lineUp = verb(count, "lines up flush", "line up flush");
-  if (mate.kind.gender === "female") {
-    const lined = `${counted(count, held)} ${lineUp}${models ? ` with ${models}` : ""}`;
-    return partner ? `${lined}, ${counted(count, partner)} ${goIn}` : lined;
+  if (female) {
+    const taken = partner
+      ? `${verb(count, "takes", "take")} ${counted(count, partner)}${models ? ` from ${models}` : ""}`
+      : `${verb(count, "engages", "engage")}${models ? ` ${models}` : ""}`;
+    return `${counted(count, held)} ${taken}`;
   }
-  if (partner) {
-    return `${counted(count, partner)}${models ? ` on ${models}` : ""} ${lineUp}, ${counted(count, held)} ${goIn}`;
-  }
-  return models
-    ? `${counted(count, held)} ${verb(count, "goes into", "go into")} ${models}`
-    : `${counted(count, held)} ${goIn}`;
+  const target = partner ? `${counted(count, partner)}${models ? ` on ${models}` : ""}` : models;
+  return target
+    ? `${counted(count, held)} ${verb(count, "goes into", "go into")} ${target}`
+    : `${counted(count, held)} ${verb(count, "goes in", "go in")}`;
 }
 
 function turnText(turnMates: ReadonlyArray<HoverMateCount>): string {

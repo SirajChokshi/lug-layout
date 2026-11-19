@@ -1081,7 +1081,7 @@ const OVERLAP_REFUSED = {
   ghostTone: "refused",
   hint: {
     tone: "warn",
-    detail: expect.stringContaining("Hits Baseplate 32 x 32 in 3811 Baseplate 32 x 32 at cell"),
+    detail: expect.stringContaining("Hits Baseplate 32 x 32 in 3811 Baseplate 32 x 32"),
   },
 };
 const PLACED_BESIDE = {
@@ -1089,6 +1089,14 @@ const PLACED_BESIDE = {
   ghostRefusal: null,
   ghostTone: "fits",
   hint: { tone: "place", detail: "0°" },
+};
+const SEATED_ON_STUDS = {
+  ...PLACED_BESIDE,
+  ghostTone: "mates",
+  hint: {
+    tone: "place",
+    detail: expect.stringMatching(/^0° · \d+ round sockets take \d+ round pegs/u),
+  },
 };
 
 it.each([
@@ -1111,7 +1119,7 @@ it.each([
     expected: OVERLAP_REFUSED,
   },
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
-  { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
+  { name: "a set on the 3811", held: SET, at: [0, 0], expected: SEATED_ON_STUDS },
 ] as const)(
   "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits, and the ghost and tool hint say so before the click",
   async ({ held, at, expected }) => {

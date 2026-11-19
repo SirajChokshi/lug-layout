@@ -112,7 +112,7 @@ it.each([
     name: "a pin hole entered by an axle, which is never called a pin",
     placement: { mates: [mate(TECHNIC_HOLE, [AXLE_END], 1, [PINNED])] },
     tone: "mates",
-    lines: ["1 pin hole lines up flush with custom-modular-pinned, 1 axle goes in"],
+    lines: ["1 pin hole takes 1 axle from custom-modular-pinned"],
   },
   {
     name: "a plain sliding tube, partners of mixed kinds, with unverified connectors",
@@ -120,9 +120,7 @@ it.each([
       mates: [mate(BAR_TUBE, [FRICTION_PIN, AXLE_END], 2, [PINNED, HOLED], { unverified: 3 })],
     },
     tone: "mates",
-    lines: [
-      "2 round sockets line up flush with custom-modular-pinned and custom-modular-holes (3 unverified)",
-    ],
+    lines: ["2 round sockets engage custom-modular-pinned and custom-modular-holes (3 unverified)"],
   },
   {
     name: "a pose lifted onto a baseplate, with an inferred mate",
