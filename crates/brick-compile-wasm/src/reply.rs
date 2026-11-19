@@ -65,6 +65,7 @@ pub enum Reply {
     Baked {
         instances: usize,
         recorded_parts: usize,
+        resumed_parts: usize,
         lattice: Option<Lattice>,
         #[serde(skip_serializing_if = "Option::is_none")]
         lattice_issue: Option<String>,

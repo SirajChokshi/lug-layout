@@ -1,4 +1,4 @@
-import type { ImportTimings } from "@brr/import";
+import type { BakePhases, ImportTimings } from "@brr/import";
 import { CHECKS, type CheckId, type Finding, type InputChecks } from "./checks.ts";
 import type { ConnectorFamily, PartConnectors } from "./part-connectors.ts";
 
@@ -312,16 +312,23 @@ function readinessTable(timed: ReadonlyArray<TimedInput>): string[] {
   ];
 }
 
+type PhaseName = keyof BakePhases;
+
+function bakeMs(input: TimedInput, phase: PhaseName): number {
+  const { bakePhases, coverPhases } = input.timings;
+  return (bakePhases?.[phase] ?? 0) + (coverPhases?.[phase] ?? 0);
+}
+
 const PHASES: ReadonlyArray<readonly [string, (input: TimedInput) => number]> = [
   ["Compiler start, per import", (input) => input.compilerStartMs],
   ["Read the file", (input) => input.timings.readMs],
   ["Record fetch", (input) => input.timings.recordFetchMs],
-  ["Record decode", (input) => input.timings.bakePhases?.decodeMs ?? 0],
-  ["Compile", (input) => input.timings.compileMs + (input.timings.bakePhases?.compileMs ?? 0)],
+  ["Record decode", (input) => bakeMs(input, "decodeMs")],
+  ["Compile", (input) => input.timings.compileMs + bakeMs(input, "compileMs")],
   ["LDraw fetch", (input) => input.timings.ldrawFetchMs],
-  ["Lattice", (input) => input.timings.bakePhases?.latticeMs ?? 0],
-  ["Cells and cover", (input) => input.timings.bakePhases?.coverMs ?? 0],
-  ["Vehicles", (input) => input.timings.bakePhases?.vehiclesMs ?? 0],
+  ["Lattice", (input) => bakeMs(input, "latticeMs")],
+  ["Cells and cover", (input) => bakeMs(input, "coverMs")],
+  ["Vehicles", (input) => bakeMs(input, "vehiclesMs")],
 ];
 
 function otherMs(input: TimedInput): number {
@@ -351,7 +358,7 @@ function phaseTable(
   return [
     "#### Where the import time goes",
     "",
-    `Summed over the ${timed.length} inputs that imported, ${milliseconds(importMs)} on the engine's clock; the compiler start is outside that clock. The bake phases are the primary bake's own clock inside the compiler. ${threadStartsMs.length} import ${threadStartsMs.length === 1 ? "thread" : "threads"} started in ${milliseconds(threads)} in all, opening the bundle once each.`,
+    `Summed over the ${timed.length} inputs that imported, ${milliseconds(importMs)} on the engine's clock; the compiler start is outside that clock. The bake phases are the primary's own clock inside the compiler: its placement call and its own slice of the stud cover. Bake helpers, when there are any, work in parallel and aren't counted. ${threadStartsMs.length} import ${threadStartsMs.length === 1 ? "thread" : "threads"} started in ${milliseconds(threads)} in all, opening the bundle once each.`,
     "",
     "| Phase | Total | Share of import time | Median per input | Slowest input |",
     "|---|---|---|---|---|",

@@ -20,6 +20,13 @@ const pinnedLibrary = fileURLToPath(new URL("../../../.cache/ldraw/", import.met
 const RECORD_MAGIC = "BRRBAKE1";
 const PARTS = ["3001.dat", "3040b.dat", "3626c.dat"];
 const COMPILE_TIMEOUT_MS = 60_000;
+const STACKED_BESIDE_A_SLOPE = [
+  "0 two stacked bricks beside a slope",
+  "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 2 80 0 0 1 0 0 0 1 0 0 0 1 3040b.dat",
+  "",
+].join("\n");
 const BRICK_ON_SLOPE = [
   "0 a slope on a brick",
   "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
@@ -158,6 +165,72 @@ async function baked(
     await hold(library, paths, outcome.paths);
   }
 }
+
+it(
+  "a placement bake keeps its parts for the cover bake that follows, which frees them, and the two make the whole bake",
+  async () => {
+    const recorded = await compileAll("standard", true);
+    const recordOf = (part: string): Uint8Array => {
+      const outcome = recorded.parts[PARTS.indexOf(part)];
+      if (outcome?.status !== "compiled" || outcome.record === null) {
+        throw new Error(`${part} has no record`);
+      }
+      return outcome.record;
+    };
+    const both: RecordFiles = {
+      key: "pinned",
+      files: new Map([
+        ["3001.dat", recordOf("3001.dat")],
+        ["3040b.dat", recordOf("3040b.dat")],
+      ]),
+    };
+    const brickOnly: RecordFiles = {
+      key: "pinned",
+      files: new Map([["3001.dat", recordOf("3001.dat")]]),
+    };
+    const { manifest, compiler } = await bundleCompiler();
+    const paths = await libraryPaths();
+    const library: HeldLibrary = { key: "split", files: new Map(), absent: new Set() };
+    const request: BakeRequest = {
+      source: STACKED_BESIDE_A_SLOPE,
+      drawn: new Uint8Array([1, 1, 1]),
+      studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+      unofficialAllowlist: [],
+      translucentColors: [],
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+      vehicles: null,
+    };
+    const placementRequest: BakeRequest = {
+      ...request,
+      shard: { from: 0, to: 0, of: 1, visibilityOnly: false },
+      keepParts: true,
+    };
+    const coverRequest: BakeRequest = {
+      ...request,
+      shard: { from: 0, to: 1, of: 1, visibilityOnly: true },
+    };
+
+    const whole = await baked(compiler, request, library, paths, both);
+    const placement = await baked(compiler, placementRequest, library, paths, both);
+    const cover = await baked(compiler, coverRequest, library, paths, both);
+    const again = await baked(compiler, coverRequest, library, paths, both);
+    await baked(compiler, coverRequest, library, paths, brickOnly);
+    await baked(compiler, placementRequest, library, paths, both);
+    const narrower = await baked(compiler, coverRequest, library, paths, brickOnly);
+
+    expect(whole.studCover.covered).toBeGreaterThan(0);
+    expect([placement, cover, again, narrower].map((bake) => bake.resumedParts)).toEqual([
+      0, 2, 0, 0,
+    ]);
+    expect(placement.studCover.covered).toBe(0);
+    expect(cover.studCover).toEqual(whole.studCover);
+    expect({ ...placement, studCover: cover.studCover }).toEqual({
+      ...whole,
+      phases: placement.phases,
+    });
+  },
+  COMPILE_TIMEOUT_MS,
+);
 
 it(
   "records shape only the bake that carries them, and a narrower set drops the rest until it is sent again",
