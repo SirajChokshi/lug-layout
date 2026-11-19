@@ -10,7 +10,8 @@ use crate::affine::Vec3;
 use crate::circle::{
     approximate_span, certainly_uncovered, contains as arc_contains,
     covers_circle as covers_exactly, covers_circle_filtered, inner_complete, inner_turns, span,
-    wraps as arc_wraps, Approximate, ApproximateSpan, ArcSpan, Bearing, Direction, Junction, TURNS,
+    wraps as arc_wraps, Approximate, ApproximateSpan, ArcSpan, Bearing, Direction, Junction,
+    ATAN2_SLACK, TURNS,
 };
 use crate::exact::{Decimal, Exact, ExactVec3};
 use crate::flatten::{ExactTriangle, Triangle};
@@ -363,12 +364,11 @@ struct Surroundings<'s> {
     polygons: Vec<Patch>,
     surfaces: Vec<&'s RoundSurface>,
     center: [f64; 2],
-    clearance: f64,
 }
 
 impl<'s> Surroundings<'s> {
-    fn along(&self, step: [f64; 2]) -> Surroundings<'s> {
-        let reach = self.clearance + IDENTIFY_LDU;
+    fn along(&self, step: [f64; 2], clearance: f64) -> Surroundings<'s> {
+        let reach = clearance + IDENTIFY_LDU;
         Surroundings {
             polygons: self
                 .polygons
@@ -378,7 +378,6 @@ impl<'s> Surroundings<'s> {
                 .collect(),
             surfaces: self.surfaces.clone(),
             center: self.center,
-            clearance: self.clearance,
         }
     }
 }
@@ -540,8 +539,6 @@ type Nearness = (i64, (i64, i64));
 fn nearness(key: (i64, i64), home: [i64; 2]) -> Nearness {
     (ring(key, home), key)
 }
-
-const ATAN2_SLACK: f64 = 64.0 * f64::EPSILON;
 
 fn box_span(center: &Direction, bounds: PlanBounds) -> Option<(f64, f64)> {
     let finite = bounds.low.iter().chain(&bounds.high).all(|v| v.is_finite());
@@ -2138,7 +2135,6 @@ impl Solid {
         probe: &Probe,
         range: (f64, f64),
         steps: &[[f64; 2]],
-        clearance: f64,
     ) -> Surroundings<'_> {
         let longest = steps
             .iter()
@@ -2172,45 +2168,56 @@ impl Solid {
             polygons,
             surfaces,
             center: probe.center(),
-            clearance,
         }
     }
 
-    fn sweep_collides(&self, around: &Surroundings, to: [f64; 2]) -> bool {
+    fn sweep_collides(&self, around: &Surroundings, to: [f64; 2], clearance: f64) -> bool {
         around
             .polygons
             .iter()
-            .any(|patch| patch.within(to, around.clearance))
+            .any(|patch| patch.within(to, clearance))
             || around
                 .surfaces
                 .iter()
-                .any(|surface| self.swept_reach(surface, around.center, to) < around.clearance)
+                .any(|surface| self.swept_reach(surface, around.center, to) < clearance)
     }
 
-    pub fn confined(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> bool {
-        let around = self.surroundings(probe, range, steps, probe.radius - IDENTIFY_LDU);
-        steps.iter().all(|&to| self.sweep_collides(&around, to))
-    }
-
-    pub fn travel(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> Vec<f64> {
-        let surroundings = self.surroundings(probe, range, steps, probe.radius);
-        steps
+    pub fn confined_travel(
+        &self,
+        probe: &Probe,
+        range: (f64, f64),
+        steps: &[[f64; 2]],
+    ) -> Option<Vec<f64>> {
+        let surroundings = self.surroundings(probe, range, steps);
+        let confining = probe.radius - IDENTIFY_LDU;
+        if !steps
+            .iter()
+            .all(|&to| self.sweep_collides(&surroundings, to, confining))
+        {
+            return None;
+        }
+        let clearance = probe.radius;
+        let travel = steps
             .iter()
             .map(|&step| {
-                let around = surroundings.along(step);
+                let around = surroundings.along(step, clearance);
                 let length = planar_length(step[0], step[1]);
                 let contact = IDENTIFY_LDU / length;
-                let (mut free, mut blocked) =
-                    if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
-                        (0.0, contact)
-                    } else if self.sweep_collides(&around, step) {
-                        (contact, 1.0)
-                    } else {
-                        return f64::INFINITY;
-                    };
+                let (mut free, mut blocked) = if self.sweep_collides(
+                    &around,
+                    [step[0] * contact, step[1] * contact],
+                    clearance,
+                ) {
+                    (0.0, contact)
+                } else if self.sweep_collides(&around, step, clearance) {
+                    (contact, 1.0)
+                } else {
+                    return f64::INFINITY;
+                };
                 while (blocked - free) * length > TRAVEL_PRECISION_LDU {
                     let middle = 0.5 * (free + blocked);
-                    if self.sweep_collides(&around, [step[0] * middle, step[1] * middle]) {
+                    if self.sweep_collides(&around, [step[0] * middle, step[1] * middle], clearance)
+                    {
                         blocked = middle;
                     } else {
                         free = middle;
@@ -2218,7 +2225,8 @@ impl Solid {
                 }
                 free * length
             })
-            .collect()
+            .collect();
+        Some(travel)
     }
 
     pub fn bore_continues_outward(&self, probe: &Probe) -> bool {
@@ -2565,6 +2573,13 @@ impl Solid {
         let mut shifted = Ring::empty();
         for p in clip.points.iter() {
             shifted.push([p[0] - center[0], p[1] - center[1], 0.0]);
+        }
+        if !uncertainty.is_finite()
+            || shifted
+                .iter()
+                .any(|p| !p[0].is_finite() || !p[1].is_finite())
+        {
+            return None;
         }
         let all = |test: &dyn Fn(&Local) -> bool| shifted.iter().all(test);
         if all(&|p| p[across] > uncertainty)
