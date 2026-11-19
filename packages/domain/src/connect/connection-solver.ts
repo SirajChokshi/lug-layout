@@ -82,23 +82,38 @@ export class ConnectionSolver {
     out.clear();
     out.add(window.x, window.z, window.yPlates, window.rot);
     for (let f = 0; f < this.finders.length; f++) this.finders[f]?.propose(model, window, out);
-    for (let i = 0; i < out.count; i++) {
-      const pose = this.pose.read(out, i);
-      let votes = 0;
-      for (let f = 0; f < this.finders.length; f++)
-        votes += this.finders[f]?.count(model, pose) ?? 0;
-      out.setVotes(i, votes);
-    }
+    for (let i = 0; i < out.count; i++) out.setVotes(i, this.votes(model, this.pose.read(out, i)));
     for (let i = 1; i < out.count; i++) {
       for (let j = i; j > 0 && ranksBefore(window, out, j, j - 1); j--) out.swap(j, j - 1);
     }
   }
 
+  votes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) votes += this.finders[f]?.count(model, pose) ?? 0;
+    return votes;
+  }
+
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, false);
+  }
+
+  partneredMates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, true);
+  }
+
+  private mates(
+    model: ModelConnectors,
+    pose: LatticePose,
+    out: MateReport,
+    partneredOnly: boolean,
+  ): void {
     out.clear();
     for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (!finder || (partneredOnly && !finder.namesPartners)) continue;
       const from = out.count;
-      this.finders[f]?.mates(model, pose, out);
+      finder.mates(model, pose, out);
       out.assignFamily(from, f);
     }
   }

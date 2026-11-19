@@ -36,6 +36,7 @@ function headingOfTurn(rot: number): number {
 }
 
 export class TrackEndFinder implements MateFinder {
+  readonly namesPartners = true;
   private readonly index = new IntKeyMap(KEY_INTS);
   private readonly key = new Int32Array(KEY_INTS);
   private slotPosition = new Int32Array(INITIAL_SLOTS * COEFFICIENTS);

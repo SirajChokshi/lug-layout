@@ -465,6 +465,8 @@ const ASSIST_BASIN_LDU = 3 * STUD_LDU;
 const PRECISE_RADIUS = 0;
 const NDC_SPAN = 2;
 const HELD_TURN_ONLY = 1;
+const HELD_TURN = 0;
+const NEXT_TURN = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 
@@ -477,6 +479,7 @@ class CursorPick implements PlacementWindow {
   plates = PRECISE_RADIUS;
   radiusLdu = PRECISE_RADIUS;
   turns = HELD_TURN_ONLY;
+  firstTurn = HELD_TURN;
 }
 
 function cellsWithin(reachLdu: number): number {
@@ -1649,8 +1652,10 @@ export class Editor implements IEditor, IEditedWorld {
     if (choice.accepted && choice.votes > 0) return false;
     const heldRot = this.pick.rot;
     this.pick.turns = EVERY_TURN;
+    this.pick.firstTurn = NEXT_TURN;
     this.searchPick(connected, null, this.turnChoice);
     this.pick.turns = HELD_TURN_ONLY;
+    this.pick.firstTurn = HELD_TURN;
     const turned = this.turnChoice;
     return turned.accepted && turned.votes > 0 && turned.rot !== heldRot;
   }

@@ -34,6 +34,7 @@ function centredCell(turned16: number): number {
 }
 
 export class LatticeStudFinder implements MateFinder {
+  readonly namesPartners = false;
   private readonly classes: MateClasses;
   private readonly levelYs: Int32Array[] = [];
   private readonly levelsOf: StudLevel[][] = [];

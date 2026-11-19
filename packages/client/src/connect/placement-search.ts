@@ -1,5 +1,4 @@
 import {
-  CandidatePoses,
   FootprintGrid,
   MateReport,
   VolumeIndex,
@@ -63,6 +62,7 @@ export type RestsOnTable = (placement: number) => boolean;
 
 export interface PlacementWindow extends SnapWindow {
   readonly radiusLdu: number;
+  readonly firstTurn: number;
 }
 
 export interface IPlacementSearch {
@@ -105,7 +105,8 @@ interface Placed extends PlacedParts {
 }
 
 const TURNS = 4;
-const INITIAL_ORDER = 64;
+const INITIAL_KEYS = 64;
+const TURN_KEYS = 3 * TURNS;
 
 class Bounds {
   cellX0 = 0;
@@ -190,16 +191,6 @@ class Pose implements LatticePose {
   rot = 0;
 }
 
-class CursorWindow implements SnapWindow {
-  x = 0;
-  z = 0;
-  yPlates = 0;
-  rot = 0;
-  readonly cells = 0;
-  readonly plates = 0;
-  readonly turns = 1;
-}
-
 function reachesBeyondCursor(window: PlacementWindow): boolean {
   return window.radiusLdu > 0 || window.plates > 0 || window.turns > 1;
 }
@@ -213,12 +204,10 @@ function quarterTurnsBetween(a: number, b: number): number {
 export class PlacementSearch implements IPlacementSearch {
   private readonly volumes = new VolumeIndex();
   private readonly placed = new Map<number, Placed>();
-  private readonly candidates = new CandidatePoses();
   private readonly report = new MateReport();
   private readonly tieReport = new MateReport();
-  private readonly cursor = new CursorWindow();
-  private order = new Int32Array(INITIAL_ORDER);
-  private reach = new Float64Array(INITIAL_ORDER);
+  private keys = new Float64Array(INITIAL_KEYS);
+  private keyVotes = new Int32Array(INITIAL_KEYS);
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
@@ -306,24 +295,20 @@ export class PlacementSearch implements IPlacementSearch {
     tableYPlates: number,
     out: PlacementChoice,
   ): void {
-    const cursor = this.cursor;
-    cursor.x = window.x;
-    cursor.z = window.z;
-    cursor.yPlates = window.yPlates;
-    cursor.rot = window.rot;
-    this.solver.rank(model, cursor, this.candidates);
-    let index = 0;
-    while (index < this.candidates.count && !this.isWindowPose(cursor, index)) index++;
-    this.choose(out, index);
+    const pose = this.pose;
+    pose.x = window.x;
+    pose.z = window.z;
+    pose.yPlates = window.yPlates;
+    pose.rot = window.rot;
+    this.chooseAt(out, pose, this.solver.votes(model, pose));
     out.walked++;
-    out.overlap.owner = NO_PLACEMENT;
     out.accepted = false;
-    if (out.yPlates < tableYPlates) return;
-    if (this.blocked(model, volumes, boxes, technic, this.candidatePose(index), out.votes)) {
+    if (pose.yPlates < tableYPlates) return;
+    if (this.blocked(model, volumes, boxes, technic, pose, out.votes)) {
       copyHit(this.hit, out.overlap);
       return;
     }
-    out.accepted = out.votes > 0 || out.yPlates === tableYPlates;
+    out.accepted = out.votes > 0 || pose.yPlates === tableYPlates;
   }
 
   private nearestMate(
@@ -335,84 +320,102 @@ export class PlacementSearch implements IPlacementSearch {
     tableYPlates: number,
     out: PlacementChoice,
   ): void {
-    const candidates = this.candidates;
-    this.solver.rank(model, window, candidates);
-    const kept = this.nearestFirst(window, tableYPlates);
-    let best = -1;
-    let bestReach = Number.POSITIVE_INFINITY;
-    let bestJoints = -1;
-    for (let k = 0; k < kept; k++) {
-      const i = this.order[k] ?? 0;
-      const reach = this.reach[k] ?? 0;
-      if (best >= 0 && reach > bestReach) break;
+    const count = this.matedInReachOrder(model, window, tableYPlates);
+    const pose = this.pose;
+    let found = false;
+    let bestKey = 0;
+    let bestReach = 0;
+    let bestJoints = 0;
+    let bestVotes = 0;
+    for (let k = 0; k < count; k++) {
+      const key = this.keys[k] ?? 0;
+      const reach = this.decode(window, key, pose);
+      if (found && reach > bestReach) break;
+      const votes = this.keyVotes[key % this.keyVotes.length] ?? 0;
       out.walked++;
-      const votes = candidates.votes[i] ?? 0;
-      if (this.blocked(model, volumes, boxes, technic, this.candidatePose(i), votes)) continue;
-      this.solver.evaluate(model, this.candidatePose(i), this.tieReport);
+      if (this.blocked(model, volumes, boxes, technic, pose, votes)) continue;
+      this.solver.evaluate(model, pose, this.tieReport);
       const joints = this.tieReport.jointCount;
-      const bestVotes = best >= 0 ? (candidates.votes[best] ?? 0) : -1;
-      if (best < 0 || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
-        best = i;
+      if (!found || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
+        found = true;
+        bestKey = key;
         bestReach = reach;
         bestJoints = joints;
+        bestVotes = votes;
       }
     }
-    if (best < 0) return;
-    this.choose(out, best);
+    if (!found) return;
+    this.decode(window, bestKey, pose);
+    this.chooseAt(out, pose, bestVotes);
     out.accepted = true;
-    out.overlap.owner = NO_PLACEMENT;
   }
 
-  private nearestFirst(window: PlacementWindow, tableYPlates: number): number {
-    const candidates = this.candidates;
-    if (this.order.length < candidates.count) {
-      this.order = new Int32Array(candidates.count);
-      this.reach = new Float64Array(candidates.count);
+  private matedInReachOrder(
+    model: ModelConnectors,
+    window: PlacementWindow,
+    tableYPlates: number,
+  ): number {
+    const across = 2 * window.cells + 1;
+    const levels = 2 * window.plates + 1;
+    const capacity = window.turns * levels * across * across;
+    if (this.keys.length < capacity) {
+      this.keys = new Float64Array(capacity);
+      this.keyVotes = new Int32Array(capacity);
     }
+    const slots = this.keyVotes.length;
     const radiusSquared = window.radiusLdu * window.radiusLdu;
-    let kept = 0;
-    for (let i = 0; i < candidates.count; i++) {
-      if ((candidates.votes[i] ?? 0) === 0 || this.isWindowPose(window, i)) continue;
-      const yPlates = candidates.yPlates[i] ?? 0;
-      if (yPlates < tableYPlates || !this.onWindowLattice(window, i)) continue;
-      const dx = (candidates.x[i] ?? 0) - window.x;
-      const dz = (candidates.z[i] ?? 0) - window.z;
-      const dy = (yPlates - window.yPlates) * PLATE_LDU;
-      const reach = dx * dx + dz * dz + dy * dy;
-      if (reach > radiusSquared) continue;
-      let k = kept++;
-      while (
-        k > 0 &&
-        this.ranksBefore(window, i, reach, this.order[k - 1] ?? 0, this.reach[k - 1] ?? 0)
-      ) {
-        this.order[k] = this.order[k - 1] ?? 0;
-        this.reach[k] = this.reach[k - 1] ?? 0;
-        k--;
+    const pose = this.pose;
+    let count = 0;
+    let slot = 0;
+    for (let turn = window.firstTurn; turn < window.turns; turn++) {
+      const turnRank = quarterTurnsBetween(window.rot + turn, window.rot) * TURNS + turn;
+      pose.rot = (window.rot + turn) % TURNS;
+      for (let level = 0; level < levels; level++) {
+        const dy = level - window.plates;
+        pose.yPlates = window.yPlates + dy;
+        if (pose.yPlates < tableYPlates) continue;
+        const dyLdu = dy * PLATE_LDU;
+        for (let i = 0; i < across; i++) {
+          const dx = (i - window.cells) * STUD_LDU;
+          for (let j = 0; j < across; j++) {
+            const dz = (j - window.cells) * STUD_LDU;
+            const reach = dx * dx + dz * dz + dyLdu * dyLdu;
+            if (reach > radiusSquared || (reach === 0 && turn === 0)) continue;
+            pose.x = window.x + dx;
+            pose.z = window.z + dz;
+            const votes = this.solver.votes(model, pose);
+            if (votes === 0) continue;
+            const place =
+              (((reach * TURN_KEYS + turnRank) * levels + level) * across + i) * across + j;
+            this.keyVotes[slot] = votes;
+            this.keys[count++] = place * slots + slot;
+            slot++;
+          }
+        }
       }
-      this.order[k] = i;
-      this.reach[k] = reach;
     }
-    return kept;
+    this.keys.fill(Number.POSITIVE_INFINITY, count);
+    this.keys.sort();
+    return count;
   }
 
-  private ranksBefore(
-    window: SnapWindow,
-    a: number,
-    reachA: number,
-    b: number,
-    reachB: number,
-  ): boolean {
-    if (reachA !== reachB) return reachA < reachB;
-    const candidates = this.candidates;
-    const turns =
-      quarterTurnsBetween(candidates.rot[a] ?? 0, window.rot) -
-      quarterTurnsBetween(candidates.rot[b] ?? 0, window.rot);
-    if (turns !== 0) return turns < 0;
-    const y = (candidates.yPlates[a] ?? 0) - (candidates.yPlates[b] ?? 0);
-    if (y !== 0) return y < 0;
-    const x = (candidates.x[a] ?? 0) - (candidates.x[b] ?? 0);
-    if (x !== 0) return x < 0;
-    return (candidates.z[a] ?? 0) < (candidates.z[b] ?? 0);
+  private decode(window: PlacementWindow, key: number, out: Pose): number {
+    const across = 2 * window.cells + 1;
+    const levels = 2 * window.plates + 1;
+    const slots = this.keyVotes.length;
+    let rest = (key - (key % slots)) / slots;
+    const j = rest % across;
+    rest = (rest - j) / across;
+    const i = rest % across;
+    rest = (rest - i) / across;
+    const level = rest % levels;
+    rest = (rest - level) / levels;
+    const turnRank = rest % TURN_KEYS;
+    out.x = window.x + (i - window.cells) * STUD_LDU;
+    out.z = window.z + (j - window.cells) * STUD_LDU;
+    out.yPlates = window.yPlates + level - window.plates;
+    out.rot = (window.rot + (turnRank % TURNS)) % TURNS;
+    return (rest - turnRank) / TURN_KEYS;
   }
 
   private blocked(
@@ -483,36 +486,13 @@ export class PlacementSearch implements IPlacementSearch {
     return stranded;
   }
 
-  private isWindowPose(window: SnapWindow, index: number): boolean {
-    return (
-      this.candidates.x[index] === window.x &&
-      this.candidates.z[index] === window.z &&
-      this.candidates.yPlates[index] === window.yPlates &&
-      this.candidates.rot[index] === window.rot
-    );
-  }
-
-  private onWindowLattice(window: SnapWindow, index: number): boolean {
-    const dx = (this.candidates.x[index] ?? 0) - window.x;
-    const dz = (this.candidates.z[index] ?? 0) - window.z;
-    return dx % STUD_LDU === 0 && dz % STUD_LDU === 0;
-  }
-
-  private candidatePose(index: number): Pose {
-    const pose = this.pose;
-    pose.x = this.candidates.x[index] ?? 0;
-    pose.z = this.candidates.z[index] ?? 0;
-    pose.yPlates = this.candidates.yPlates[index] ?? 0;
-    pose.rot = this.candidates.rot[index] ?? 0;
-    return pose;
-  }
-
-  private choose(out: PlacementChoice, index: number): void {
-    out.x = this.candidates.x[index] ?? 0;
-    out.z = this.candidates.z[index] ?? 0;
-    out.yPlates = this.candidates.yPlates[index] ?? 0;
-    out.rot = this.candidates.rot[index] ?? 0;
-    out.votes = this.candidates.votes[index] ?? 0;
+  private chooseAt(out: PlacementChoice, pose: LatticePose, votes: number): void {
+    out.x = pose.x;
+    out.z = pose.z;
+    out.yPlates = pose.yPlates;
+    out.rot = pose.rot;
+    out.votes = votes;
+    out.overlap.owner = NO_PLACEMENT;
   }
 
   private gridFor(
@@ -561,7 +541,7 @@ export class PlacementSearch implements IPlacementSearch {
     technic: TechnicSet,
     pose: LatticePose,
   ): number {
-    this.solver.evaluate(model, pose, this.report);
+    this.solver.partneredMates(model, pose, this.report);
     return this.zones.collect(this.report, boxes, technic, pose, this.placed);
   }
 }

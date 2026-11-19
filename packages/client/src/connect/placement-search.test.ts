@@ -256,7 +256,17 @@ function fullVerdict(choice: PlacementChoice) {
 }
 
 function window(x: number, z: number, cells: number, yPlates = 0, plates = 1): PlacementWindow {
-  return { x, z, yPlates, rot: 0, cells, plates, turns: 1, radiusLdu: cells * STUD_LDU };
+  return {
+    x,
+    z,
+    yPlates,
+    rot: 0,
+    cells,
+    plates,
+    turns: 1,
+    radiusLdu: cells * STUD_LDU,
+    firstTurn: 0,
+  };
 }
 
 function world(f: Fixture): Piece {
