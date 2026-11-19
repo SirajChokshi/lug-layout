@@ -56,6 +56,9 @@ export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",
 );
+export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryBakeBaseUrl",
+);
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
 );
