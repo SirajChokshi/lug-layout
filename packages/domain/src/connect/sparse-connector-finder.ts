@@ -138,6 +138,7 @@ class TurnedModel {
   classCount = 0;
   axisClasses = new Uint8Array(0);
   pairable = new Uint8Array(0);
+  pairsWith = new Uint8Array(0);
   position = new Int32Array(0);
   axis = new Int8Array(0);
   next = new Int32Array(0);
@@ -788,7 +789,9 @@ export class SparseConnectorFinder implements MateFinder {
     block[3] = cellOf(sx + spanXZ + ax, CELL_SIXTEENTHS);
     block[4] = cellOf(sy + spanY + ay, CELL_SIXTEENTHS);
     block[5] = cellOf(sz + spanXZ + az, CELL_SIXTEENTHS);
-    const found = this.inBlock(rot, wanted, block);
+    const found = latticeOnly
+      ? this.inBlockPairing(rot, wanted, block, slotClass)
+      : this.inBlock(rot, wanted, block);
     for (let j = 0; j < found; j++) {
       const m = this.candidates[j] ?? 0;
       const i = m - rot * connectors;
@@ -875,6 +878,46 @@ export class SparseConnectorFinder implements MateFinder {
     return found;
   }
 
+  private inBlockPairing(
+    rot: number,
+    wanted: number,
+    block: Int32Array,
+    slotClass: number,
+  ): number {
+    const turned = this.turned;
+    const dimension = axisDimension(wanted);
+    const across = (dimension + 1) % VECTOR_FLOATS;
+    const beyond = (dimension + 2) % VECTOR_FLOATS;
+    const alongLow = (block[dimension] ?? 0) * CELL_SIXTEENTHS;
+    const alongHigh = ((block[dimension + VECTOR_FLOATS] ?? 0) + 1) * CELL_SIXTEENTHS - 1;
+    const connectors = turned.connectorClass.length;
+    const classCount = turned.classCount;
+    let found = 0;
+    for (let a = block[across] ?? 0; a <= (block[across + VECTOR_FLOATS] ?? 0); a++) {
+      for (let b = block[beyond] ?? 0; b <= (block[beyond + VECTOR_FLOATS] ?? 0); b++) {
+        this.modelKey[0] = rot;
+        this.modelKey[1] = dimension;
+        this.modelKey[2] = a;
+        this.modelKey[3] = b;
+        const line = turned.columnLines.get(this.modelKey);
+        if (line === MISSING) continue;
+        const end = turned.columnStart[line + 1] ?? 0;
+        for (
+          let k = firstAtLeast(turned.columnAlong, turned.columnStart[line] ?? 0, end, alongLow);
+          k < end && (turned.columnAlong[k] ?? 0) <= alongHigh;
+          k++
+        ) {
+          const m = turned.columnOrder[k] ?? 0;
+          if (turned.axis[m] !== wanted) continue;
+          const own = turned.connectorClass[m - rot * connectors] ?? UNCLASSED;
+          if (own < 0 || turned.pairsWith[own * classCount + slotClass] !== 1) continue;
+          this.candidates[found++] = m;
+        }
+      }
+    }
+    return found;
+  }
+
   private scansBefore(a: number, b: number): boolean {
     const position = this.turned.position;
     for (let d = 0; d < VECTOR_FLOATS; d++) {
@@ -949,6 +992,14 @@ export class SparseConnectorFinder implements MateFinder {
     const classes = this.classes;
     const classCount = turned.classCount;
     turned.pairable = new Uint8Array(QUARTER_TURNS * classCount * AXIS_CODES);
+    turned.pairsWith = new Uint8Array(classCount * classCount);
+    for (const own of turned.classes) {
+      if (own < 0) continue;
+      for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+        const partner = classes.pairClass[p] ?? UNCLASSED;
+        if (partner >= 0) turned.pairsWith[own * classCount + partner] = 1;
+      }
+    }
     for (let rot = 0; rot < QUARTER_TURNS; rot++) {
       for (const own of turned.classes) {
         if (own < 0) continue;
