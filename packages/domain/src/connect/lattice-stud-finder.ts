@@ -12,9 +12,9 @@ import {
 } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
 import { MateClasses } from "./mate-classes.ts";
-import type { MateReport } from "./mate-report.ts";
+import { NO_PARTNER, type MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
-import type { ModelConnectors } from "./model-connectors.ts";
+import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 import { StudLevel } from "./stud-level.ts";
 
 const WORD_SHIFT = 5;
@@ -184,6 +184,10 @@ export class LatticeStudFinder implements MateFinder {
               i,
               ownSource | provenanceSource(provenance),
               Math.max(ownStatus, provenanceStatus(provenance)),
+              NO_PARTNER,
+              model.instance[i] ?? NO_INSTANCE,
+              NO_INSTANCE,
+              null,
             );
           }
         }
