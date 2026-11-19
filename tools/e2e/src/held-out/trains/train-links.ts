@@ -665,7 +665,7 @@ const spanBolster: Recipe = (context) => {
 
 const pivotOutsideWheelbase: Recipe = (context) => {
   const wheel = wheelFor(context, TWO_AXLE_BOGIE);
-  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  const car = carBody(context.model, context.pools, context.random, 0, 32, "car");
   if (!wheel || !car) return null;
   const middle = (car.x0 + car.x1) / 2;
   const truck = bogieWithAxles(

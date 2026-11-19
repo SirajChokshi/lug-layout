@@ -31,6 +31,7 @@ export interface BogieRequest {
   readonly cap: boolean;
   readonly pivotZ: number;
   readonly axleHeights?: ReadonlyArray<number>;
+  readonly sideRoom?: readonly [number, number] | null;
 }
 
 export interface HungBogie {
@@ -40,6 +41,16 @@ export interface HungBogie {
   readonly bodyIndices: ReadonlyArray<number>;
   readonly bogieIndices: ReadonlyArray<number>;
   readonly pivotParts: ReadonlyArray<number>;
+}
+
+function leavesSideRoom(
+  option: PivotOption,
+  hole: readonly [number, number],
+  room: readonly [number, number] | null | undefined,
+): boolean {
+  if (!room) return true;
+  const [length] = footprint(option.block, option.turns);
+  return hole[0] >= room[0] && length * STUD_LDU - hole[0] >= room[1];
 }
 
 function reachingLengths(
@@ -86,7 +97,13 @@ export function hangBogie(
     const holes =
       request.join === "two pivots"
         ? pickTwo(random, bogieOption.holes)
-        : [random.choice(bogieOption.holes)];
+        : [
+            random.choice(
+              bogieOption.holes.filter((hole) =>
+                leavesSideRoom(bogieOption, hole, request.sideRoom),
+              ),
+            ),
+          ];
     if (holes.some((hole) => hole === null)) continue;
     const firstHole = holes[0];
     if (!firstHole) continue;

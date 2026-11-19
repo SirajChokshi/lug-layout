@@ -149,7 +149,7 @@ export function bogieWithAxles(
   unitBogie: string,
   join: "pivot" | "rigid" | "two pivots",
   wheel: WheelPart,
-  axleSide: "around" | "behind" = "around",
+  axleSide: "around" | "behind" | "ahead" = "around",
   cap = false,
   pivotZ = 0,
   roomFor: 1 | 2 = count,
@@ -177,6 +177,10 @@ export function bogieWithAxles(
     cap,
     pivotZ,
     axleHeights,
+    sideRoom:
+      count === 2 && axleSide === "around"
+        ? [2 * wheel.radius, 2 * wheel.radius + extraStuds * STUD_LDU]
+        : null,
   });
   if (!hung) return null;
   const firstPivot = Math.min(...hung.pivots.map((pivot) => pivot[0]));
@@ -184,7 +188,7 @@ export function bogieWithAxles(
   const behindMiddle = (hung.bogie.x0 + firstPivot) / 2;
   const ranges: ReadonlyArray<readonly [number, number]> =
     count === 1
-      ? [[-WIDE, WIDE]]
+      ? [[axleSide === "ahead" ? lastPivot : -WIDE, WIDE]]
       : axleSide === "behind"
         ? [
             [-WIDE, behindMiddle],
@@ -710,7 +714,7 @@ const splitAcrossPivot: Recipe = (context) => {
     "front bogie",
     "pivot",
     wheel,
-    "around",
+    "ahead",
     false,
     -STUD_LDU,
     2,
