@@ -5,10 +5,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openBundleParts } from "../src/held-out/bundle.ts";
 import {
-  facingEdgeParts,
   fromLdrawFrame,
   hitIsReal,
   pinHoleJoints,
+  pinsOf,
+  posed,
 } from "../src/held-out/editor-pairs.ts";
 import { blockPools, modulePair, type ModulePair } from "../src/held-out/generator.ts";
 import { cachingFetch } from "../src/held-out/import-path.ts";
@@ -96,7 +97,8 @@ async function flushBeside(
   const heldShift = await editor.frameShift(heldItem);
   const offset = fromLdrawFrame(fileOffset);
   return {
-    origin: [placed.x + placedShift[0], 0, placed.z + placedShift[2]] as Vec3,
+    placedShift,
+    heldShift,
     flush: {
       x: placed.x + placedShift[0] + offset[0] - heldShift[0],
       z: placed.z + placedShift[2] + offset[2] - heldShift[2],
@@ -114,7 +116,12 @@ test("a freshly generated holed module snaps flush onto a pinned one through the
   const { editor, items } = await importModels(page, [pair.subject, pair.partner]);
   const [subject = "", partner = ""] = items;
   const placed = await placedAtOrigin(editor, subject);
-  const { flush, toward } = await flushBeside(editor, placed, partner, pair.partnerOffset);
+  const { placedShift, heldShift, flush, toward } = await flushBeside(
+    editor,
+    placed,
+    partner,
+    pair.partnerOffset,
+  );
   const at = (studs: number) => ({ x: flush.x + studs * toward.x, z: flush.z + studs * toward.z });
 
   for (const studs of [-1, 1]) {
@@ -142,9 +149,16 @@ test("a freshly generated holed module snaps flush onto a pinned one through the
   expect(refused?.hit?.placed.item, `seed ${pair.seed}: the hit names the pinned module`).toBe(
     subject,
   );
-  expect(refused?.hit?.part, `seed ${pair.seed}: the hit names the part it collides with`).not.toBe(
-    null,
-  );
+  expect(
+    refused !== null &&
+      hitIsReal(
+        refused.hit,
+        subject,
+        posed(pair.subject.assembly, placed, placedShift),
+        posed(pair.partner.assembly, refused.pose, heldShift),
+      ),
+    `seed ${pair.seed}: the hit (${JSON.stringify(refused?.hit)}) names a part of the pinned module where the two overlap`,
+  ).toBe(true);
   await page.mouse.click(point.sx, point.sy);
   expect(await editor.poses()).toEqual([placed]);
 });
@@ -161,7 +175,7 @@ test("a freshly generated pinned module held flush against solid bricks is refus
     0 - pair.partnerOffset[1],
     0 - pair.partnerOffset[2],
   ];
-  const { origin, flush } = await flushBeside(editor, placed, subject, heldOffset);
+  const { placedShift, heldShift, flush } = await flushBeside(editor, placed, subject, heldOffset);
 
   const point = await editor.hoverPlacementAt(subject, flush);
   const hover = await editor.hoverPlacement();
@@ -169,12 +183,13 @@ test("a freshly generated pinned module held flush against solid bricks is refus
   expect(hover?.pose, `seed ${pair.seed}: it stays where it was aimed`).toEqual(flush);
   expect(hover ? pinHoleJoints(hover.mates) : -1, `seed ${pair.seed}: no pin finds a hole`).toBe(0);
   expect(
-    hitIsReal(
-      hover?.hit ?? null,
-      solid,
-      facingEdgeParts(pair.solidPartner.assembly, heldOffset),
-      origin,
-    ),
+    hover !== null &&
+      hitIsReal(
+        hover.hit,
+        solid,
+        posed(pair.solidPartner.edgeRow, placed, placedShift),
+        posed(pinsOf(pair.subject.assembly), hover.pose, heldShift),
+      ),
     `seed ${pair.seed}: the hit (${JSON.stringify(hover?.hit)}) names a brick on the solid edge and a cell it covers`,
   ).toBe(true);
   await page.mouse.click(point.sx, point.sy);

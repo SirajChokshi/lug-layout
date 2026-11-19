@@ -10,7 +10,6 @@ import {
   holesAgainstHolesCheck,
   pairPoses,
   pinnedPairChecks,
-  facingEdgeParts,
   sameOutcomes,
   solidEdgeChecks,
   turnedAwayCheck,
@@ -217,24 +216,23 @@ async function checkPair(
   });
   const solidPose = await placeAtOrigin(path, solid);
   const heldOffset: [number, number, number] = [
-    -pair.partnerOffset[0],
-    -pair.partnerOffset[1],
-    -pair.partnerOffset[2],
+    0 - pair.partnerOffset[0],
+    0 - pair.partnerOffset[1],
+    0 - pair.partnerOffset[2],
   ];
-  const edgeBricks = facingEdgeParts(pair.solidPartner.assembly, heldOffset);
   const solidRun = await solidEdgeChecks(
     path,
     pairPoses(path, heldOffset, pair.alongEdge, solid, solidPose, subject),
-    pair.solidPartner.assembly,
-    edgeBricks,
+    pair.solidPartner,
+    pair.subject.assembly,
     solid,
     subject,
   );
   const solidRenamedRun = await solidEdgeChecks(
     path,
     pairPoses(path, heldOffset, pair.alongEdge, solid, solidPose, renamed),
-    pair.solidPartner.assembly,
-    edgeBricks,
+    pair.solidPartner,
+    pair.renamedSubject.assembly,
     solid,
     renamed,
   );

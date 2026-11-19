@@ -1,4 +1,4 @@
-import { STUD_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type {
   ConnectorKindView,
   HoverMateCount,
@@ -6,7 +6,7 @@ import type {
   IEditor,
   PlacementHover,
 } from "@brr/client";
-import type { Assembly } from "./assembly.ts";
+import type { Assembly, AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
 import { shiftedOutcomes } from "./pair-scenario.ts";
 import type { AimedBackend } from "./headless-editor.ts";
@@ -207,7 +207,8 @@ export function fromLdrawFrame(vector: Vec3): Vec3 {
 
 export interface PairPoses {
   readonly placed: Pose;
-  readonly placedOrigin: Vec3;
+  readonly placedShift: Vec3;
+  readonly heldShift: Vec3;
   readonly flush: Pose;
   readonly toward: Vec3;
   readonly along: Vec3;
@@ -235,8 +236,7 @@ export function pairPoses(
     0,
     -Math.sign(worldOffset[2]) * STUD_LDU,
   ];
-  const placedOrigin: Vec3 = [placed.x + placedShift[0], 0, placed.z + placedShift[2]];
-  return { placed, placedOrigin, flush, toward, along: fromLdrawFrame(alongEdge) };
+  return { placed, placedShift, heldShift, flush, toward, along: fromLdrawFrame(alongEdge) };
 }
 
 function offset(pose: Pose, by: Vec3, studs: number): Pose {
@@ -262,27 +262,62 @@ function namesPart(part: string | null, parts: Assembly): boolean {
   );
 }
 
-function partCells(parts: Assembly, origin: Vec3): ReadonlySet<string> {
-  const cells = new Set<string>();
-  for (const part of parts) {
-    const fromX = Math.floor((origin[0] + part.min[0]) / STUD_LDU);
-    const toX = Math.ceil((origin[0] + part.max[0]) / STUD_LDU) - 1;
-    const fromZ = Math.floor((origin[2] - part.max[2]) / STUD_LDU);
-    const toZ = Math.ceil((origin[2] - part.min[2]) / STUD_LDU) - 1;
-    for (let x = fromX; x <= toX; x++) for (let z = fromZ; z <= toZ; z++) cells.add(`${x},${z}`);
-  }
-  return cells;
+export interface PosedAssembly {
+  readonly parts: Assembly;
+  readonly origin: Vec3;
+}
+
+export function posed(parts: Assembly, pose: Pose, shift: Vec3): PosedAssembly {
+  if (pose.rot !== 0) throw new Error("the harness poses assemblies unturned only");
+  return {
+    parts,
+    origin: [pose.x + shift[0], pose.yPlates * PLATE_LDU + shift[1], pose.z + shift[2]],
+  };
+}
+
+export function pinsOf(parts: Assembly): Assembly {
+  return parts.filter((part) => part.pin !== null);
+}
+
+interface HitBox {
+  readonly cellX: number;
+  readonly cellZ: number;
+  readonly bottomLdu: number;
+  readonly topLdu: number;
+}
+
+function overlapsHit(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
+  const x0 = box.cellX * STUD_LDU;
+  const z0 = box.cellZ * STUD_LDU;
+  return (
+    origin[0] + part.min[0] < x0 + STUD_LDU &&
+    origin[0] + part.max[0] > x0 &&
+    origin[2] - part.max[2] < z0 + STUD_LDU &&
+    origin[2] - part.min[2] > z0 &&
+    origin[1] - part.max[1] < box.topLdu &&
+    origin[1] - part.min[1] > box.bottomLdu
+  );
 }
 
 export function hitIsReal(
   hit: HoverRefusalHit | null,
   placedItem: string,
-  placedParts: Assembly,
-  origin: Vec3,
+  named: PosedAssembly,
+  held: PosedAssembly,
 ): boolean {
   if (hit === null || hit.placed.item !== placedItem || hit.part === null) return false;
-  const named = placedParts.filter((part) => namesPart(hit.part, [part]));
-  return partCells(named, origin).has(`${hit.cellX},${hit.cellZ}`);
+  const box: HitBox = {
+    cellX: hit.cellX,
+    cellZ: hit.cellZ,
+    bottomLdu: Math.max(hit.placedBottomLdu, hit.heldBottomLdu),
+    topLdu: Math.min(hit.placedTopLdu, hit.heldTopLdu),
+  };
+  if (box.bottomLdu >= box.topLdu) return false;
+  return (
+    named.parts.some(
+      (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
+    ) && held.parts.some((part) => overlapsHit(part, held.origin, box))
+  );
 }
 
 export async function pinnedPairChecks(
@@ -350,7 +385,12 @@ export async function pinnedPairChecks(
         beyond.committed === null &&
         beyond.refused &&
         beyond.hover?.accepted === false &&
-        hitIsReal(beyondHit, placedItem, placedParts, poses.placedOrigin),
+        hitIsReal(
+          beyondHit,
+          placedItem,
+          posed(placedParts, poses.placed, poses.placedShift),
+          posed(pair.partner.assembly, beyond.hover.pose, poses.heldShift),
+        ),
       detail: `hover ${describeHover(beyond.hover)}; ${beyond.refused ? `refused: ${beyond.refusal ?? "no reason"}` : `committed ${describePose(beyond.committed)}`}`,
     },
     {
@@ -471,8 +511,8 @@ export async function cornerModuleCheck(
 export async function solidEdgeChecks(
   path: EditorPath,
   poses: PairPoses,
-  placedParts: Assembly,
-  edgeBricks: Assembly,
+  solid: { readonly assembly: Assembly; readonly edgeRow: Assembly },
+  heldParts: Assembly,
   placedItem: string,
   heldItem: string,
 ): Promise<PairRun> {
@@ -486,22 +526,27 @@ export async function solidEdgeChecks(
   };
   const flush = await run("flush", poses.flush);
   const inOne = await run("one stud in", offset(poses.flush, poses.toward, 1));
-  const refusedAt = (step: Step, parts: Assembly) =>
+  const refusedAt = (step: Step, named: Assembly, held: Assembly) =>
     step.committed === null &&
     step.refused &&
     step.hover?.accepted === false &&
     pinHoleJoints(step.hover.mates) === 0 &&
-    hitIsReal(step.hover.hit, placedItem, parts, poses.placedOrigin);
+    hitIsReal(
+      step.hover.hit,
+      placedItem,
+      posed(named, poses.placed, poses.placedShift),
+      posed(held, step.hover.pose, poses.heldShift),
+    );
   const checks: EditorCheck[] = [
     {
       label: "Pins against a solid edge, flush: refused, naming the brick and cell the pins hit",
-      passed: refusedAt(flush, edgeBricks),
+      passed: refusedAt(flush, solid.edgeRow, pinsOf(heldParts)),
       detail: solidDetail(flush),
     },
     {
       label:
         "Pins against a solid edge, one stud in: refused, naming the part and cell it hits, with no snap",
-      passed: refusedAt(inOne, placedParts),
+      passed: refusedAt(inOne, solid.assembly, heldParts),
       detail: solidDetail(inOne),
     },
   ];
@@ -513,16 +558,4 @@ function solidDetail(step: Step): string {
     ? `refused: ${step.refusal ?? "no reason"}`
     : `committed ${describePose(step.committed)}`;
   return `aimed ${describePose(step.aim)}; hover ${describeHover(step.hover)}; ${outcome}`;
-}
-
-export function facingEdgeParts(parts: Assembly, heldOffset: Vec3): Assembly {
-  const normal = heldOffset[0] === 0 ? 2 : 0;
-  const along = normal === 0 ? 2 : 0;
-  const size = Math.abs(heldOffset[normal]);
-  const plane = (Math.sign(heldOffset[normal]) * size) / 2;
-  return parts.filter(
-    (part) =>
-      (plane > 0 ? part.max[normal] === plane : part.min[normal] === plane) &&
-      part.max[along] - part.min[along] < size,
-  );
 }
