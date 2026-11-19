@@ -36,6 +36,9 @@ const mating = new SnapMating(shapes);
 const PIN = shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [4], [8]);
 const HOLE = shapes.intern(CAP_FAR, false, [SECTION_ROUND], [4], [8]);
 const EXTRA_HUBS_PER_AXLE = 3;
+const HANGING_GROUPS = 1_500;
+const HANGER_SPACING_LDU = 4;
+const OUTSIDE_WHEELBASE_LDU = 40;
 const rails = [
   measuredRail([
     { from: "-53.625", to: "-47.375" },
@@ -115,6 +118,23 @@ const FRAME = table([
   [20, -13, 0, AXIS_POS_Z, GENDER_FEMALE],
 ]);
 const AXLE = table([[0, 0, 0, AXIS_POS_Z, GENDER_MALE]]);
+const HANGER_FRAME = table([
+  [0, 10, 0, AXIS_POS_Y, GENDER_FEMALE],
+  [-20, -13, 0, AXIS_POS_Z, GENDER_FEMALE],
+  [20, -13, 0, AXIS_POS_Z, GENDER_FEMALE],
+  ...Array.from(
+    { length: HANGING_GROUPS },
+    (_, k): readonly [number, number, number, number, number] => [
+      OUTSIDE_WHEELBASE_LDU + k * HANGER_SPACING_LDU,
+      10,
+      0,
+      AXIS_POS_Y,
+      GENDER_FEMALE,
+    ],
+  ),
+]);
+const HANGER = table([[0, -4, 0, AXIS_NEG_Y, GENDER_MALE]]);
+const FIRST_HANGER_HOLE = 3;
 const PIN_BODY = table([
   [60, -10, 0, AXIS_NEG_Y, GENDER_MALE],
   [-60, -10, 0, AXIS_NEG_Y, GENDER_MALE],
@@ -126,7 +146,7 @@ interface Synthetic {
   readonly mates: Array<readonly [number, number, number, number, number]>;
 }
 
-function build(): Synthetic {
+function build(hanging: boolean): Synthetic {
   const parts: number[] = [];
   const matrices: number[] = [];
   const ofPart: number[] = [];
@@ -176,8 +196,20 @@ function build(): Synthetic {
         carOrigin[2],
       ];
       const bogieFrame = submodel(car, x, 0, 0, carOrigin);
-      const frame = place(2, 0, 20, 0, bogieFrame, bogieOrigin);
+      const frame = place(hanging ? 5 : 2, 0, 20, 0, bogieFrame, bogieOrigin);
       mates.push([body, g, frame, 0, MATE_PASS_SUBMODEL]);
+      const hangers = !hanging ? 0 : c === 0 && g === 0 ? HANGING_GROUPS : 1;
+      for (let k = 0; k < hangers; k++) {
+        const hanger = place(
+          6,
+          OUTSIDE_WHEELBASE_LDU + k * HANGER_SPACING_LDU,
+          34,
+          0,
+          bogieFrame,
+          bogieOrigin,
+        );
+        mates.push([hanger, 0, frame, FIRST_HANGER_HOLE + k, MATE_PASS_SUBMODEL]);
+      }
       for (let a = 0; a < AXLES_PER_BOGIE; a++) {
         const ax = a === 0 ? -20 : 20;
         const wheels = place(3, ax, 7, 0, bogieFrame, bogieOrigin);
@@ -249,21 +281,29 @@ async function time(run: () => unknown): Promise<Timing> {
   };
 }
 
-const { instances, mates } = build();
-const connectorTables = [BRICK, PIN_BODY, FRAME, AXLE, AXLE];
-const graph = new MatePairs(
-  Uint32Array.from(mates, (m) => m[0]),
-  Uint32Array.from(mates, (m) => m[2]),
-  Uint32Array.from(mates, (m) => m[1]),
-  Uint32Array.from(mates, (m) => m[3]),
-  Uint8Array.from(mates, (m) => m[4]),
-  Int8Array.from(mates, (m) => connectorTables[instances.partIndex[m[0]] ?? 0]?.axis[m[1]] ?? 0),
-  Int32Array.from(mates, () => mating.offsets(PIN, HOLE)[0] ?? 0),
-);
-const onRails = [null, null, null, wheelPair(0), HUB].map((r) =>
+const connectorTables = [BRICK, PIN_BODY, FRAME, AXLE, AXLE, HANGER_FRAME, HANGER];
+
+function matePairs(synthetic: Synthetic): MatePairs {
+  const { instances: placed, mates: rows } = synthetic;
+  return new MatePairs(
+    Uint32Array.from(rows, (m) => m[0]),
+    Uint32Array.from(rows, (m) => m[2]),
+    Uint32Array.from(rows, (m) => m[1]),
+    Uint32Array.from(rows, (m) => m[3]),
+    Uint8Array.from(rows, (m) => m[4]),
+    Int8Array.from(rows, (m) => connectorTables[placed.partIndex[m[0]] ?? 0]?.axis[m[1]] ?? 0),
+    Int32Array.from(rows, () => mating.offsets(PIN, HOLE)[0] ?? 0),
+  );
+}
+
+const { instances, mates } = build(false);
+const graph = matePairs({ instances, mates });
+const hangingModel = build(true);
+const hangingGraph = matePairs(hangingModel);
+const onRails = [null, null, null, wheelPair(0), HUB, null, null].map((r) =>
   r ? PartRollingTable.fromRolling(r) : null,
 );
-const moreHubs = [null, null, null, wheelPair(0), HUBS].map((r) =>
+const moreHubs = [null, null, null, wheelPair(0), HUBS, null, null].map((r) =>
   r ? PartRollingTable.fromRolling(r) : null,
 );
 const surfaces = CARS * BOGIES_PER_CAR * AXLES_PER_BOGIE * 4;
@@ -297,6 +337,19 @@ const largerGroups = await time(() => wheelsets.detect(instances, moreHubs));
 const whole = await time(() =>
   gear.detect({ instances, rolling: onRails, connectors: connectorTables, mates: graph, exposed }),
 );
+const hangingInput = {
+  instances: hangingModel.instances,
+  rolling: onRails,
+  connectors: connectorTables,
+  mates: hangingGraph,
+  exposed,
+};
+const hangingResolved = gear.detect(hangingInput);
+const hangingBogies = hangingResolved.vehicles.flatMap((vehicle) => vehicle.bogies);
+const credited =
+  hangingBogies.reduce((n, bogie) => n + bogie.instances.length, 0) -
+  hangingBogies.length * (1 + 2 * AXLES_PER_BOGIE);
+const partition = await time(() => gear.detect(hangingInput));
 const row = (label: string, t: Timing): string =>
   `| ${label} | ${t.p50.toFixed(2)} | ${t.p95.toFixed(2)} | ${t.gcs} | ${t.heapGrowthBytes} |`;
 process.stdout.write(
@@ -304,6 +357,7 @@ process.stdout.write(
     `running gear, cold path (${cpus()[0]?.model ?? "unknown cpu"}, Node ${process.version}, ${RUNS} runs after one warm-up; GCs and heap growth over those runs)`,
     `model: ${instances.count.toLocaleString("en-US")} instances, ${connectorCount.toLocaleString("en-US")} exposed connectors, ${mates.length.toLocaleString("en-US")} internal mates, ${instances.submodels?.count ?? 0} sub-model instances (car and bogie frames, placed off the grid like the official trains), ${surfaces.toLocaleString("en-US")} wheel surfaces plus ${hubs} co-linear non-member hubs`,
     `found: ${found.wheelsets.length} wheelsets, ${resolved.vehicles.length} vehicles, ${resolved.unresolvedRunningGear.length} unresolved`,
+    `partition model: ${hangingModel.instances.count.toLocaleString("en-US")} instances, ${HANGING_GROUPS.toLocaleString("en-US")} wheel-free groups hanging from one bogie outside its wheelbase and one outboard pendant on every other bogie; found ${hangingResolved.vehicles.length} vehicles, ${hangingBogies.length} bogies, ${credited.toLocaleString("en-US")} pendants credited`,
     "| step | p50 ms | p95 ms | GCs | heap growth bytes |",
     "|---|---|---|---|---|",
     row("WheelsetDetector.detect: pairing and membership, 5 surfaces per axle line", baseline),
@@ -312,6 +366,7 @@ process.stdout.write(
       largerGroups,
     ),
     row("RunningGearDetector.detect, whole model", whole),
+    row("RunningGearDetector.detect, partition model with the block-cut pass", partition),
     "",
   ].join("\n"),
 );
