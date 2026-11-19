@@ -295,6 +295,7 @@ fn walk(
             color: line_color,
             matrix: line_matrix,
             reference,
+            ..
         } = line
         else {
             continue;
