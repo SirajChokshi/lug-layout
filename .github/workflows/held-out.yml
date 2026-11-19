@@ -16,7 +16,7 @@ on:
 jobs:
   held-out:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -62,6 +62,24 @@ jobs:
             tools/asset-pipeline/dist/bundle
             tools/asset-pipeline/fixture-bundle
           key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
+      - id: library-connectors-output
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: library-connectors-output-${{ hashFiles('tools/asset-pipeline/library-connectors.json') }}
+      - uses: dtolnay/rust-toolchain@master
+        if: ${{ steps.library-connectors-output.outputs.cache-hit != 'true' && steps.bundle-cache.outputs.cache-hit == 'true' }}
+        with:
+          toolchain: 1.100.0
+      - uses: Swatinem/rust-cache@v2
+        if: ${{ steps.library-connectors-output.outputs.cache-hit != 'true' && steps.bundle-cache.outputs.cache-hit == 'true' }}
+      - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+        if: ${{ steps.library-connectors-output.outputs.cache-hit != 'true' }}
+      - uses: actions/cache/save@v4
+        if: ${{ steps.library-connectors-output.outputs.cache-hit != 'true' }}
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: ${{ steps.library-connectors-output.outputs.cache-primary-key }}
       - uses: actions/cache@v4
         with:
           path: |

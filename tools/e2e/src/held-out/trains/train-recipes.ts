@@ -608,7 +608,8 @@ const hingedBogieCar: Recipe = (context) => {
     wheel,
   );
   const hinged =
-    front !== null && hangHinge(context.model, context.pools, context.random, front.hung.bogie);
+    front !== null &&
+    hangHinge(context.model, context.pools, context.random, front.hung.bogie, car.bottom);
   const rear = hinged
     ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
     : null;

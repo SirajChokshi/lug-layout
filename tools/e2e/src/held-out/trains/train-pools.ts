@@ -31,6 +31,7 @@ import {
 import { CONTACT_FRACTION, type RailHeadBands } from "./placement.ts";
 import type { Vec3 } from "../assembly.ts";
 import type { Bundle } from "../bundle.ts";
+import type { ConnectorRecords } from "@brr/catalog/connector-records";
 import { producedColors } from "../generator.ts";
 
 export type Mat3 = readonly [
@@ -296,11 +297,31 @@ function bundleReferences(bundle: Bundle): ReadonlyArray<string> {
   );
 }
 
+const FEMALE = 1;
+const FAR_END_CLOSED = 2;
+const ORIGIN_SIXTEENTHS = 16;
+
+async function holeOpensThrough(connectors: ConnectorRecords, wheel: WheelPart): Promise<boolean> {
+  const record = await connectors.load(`ldraw:${wheel.reading.reference.replace(/\.dat$/u, "")}`);
+  if (!record) return false;
+  const [p, q] = across(wheel.hole.axis);
+  const onLine: number[] = [];
+  for (let k = 0; k < record.count; k++) {
+    const axis = record.axis[k] ?? -1;
+    if (record.gender[k] !== FEMALE || axis < 0 || axis >> 1 !== wheel.hole.axis) continue;
+    const atP = (record.origin[3 * k + p] ?? 0) / ORIGIN_SIXTEENTHS;
+    const atQ = (record.origin[3 * k + q] ?? 0) / ORIGIN_SIXTEENTHS;
+    if (atP === wheel.hole.at[0] && atQ === wheel.hole.at[1]) onLine.push(k);
+  }
+  return onLine.some((k) => ((record.caps[k] ?? 0) & FAR_END_CLOSED) === 0);
+}
+
 export async function trainPools(
   bundle: Bundle,
   library: PinnedLibrary,
   reader: PartReader,
   rails: ReadonlyArray<RailHeadBands>,
+  connectors: ConnectorRecords,
 ): Promise<TrainPools> {
   const studNames = bundle.job.studPrimitives;
   const spread = minimumWheelSpread(rails);
@@ -425,10 +446,14 @@ export async function trainPools(
     );
     return outer > 0 ? [reference] : [];
   });
-  const wheels = [...(await reader.read(roundWheelLike)).values()].flatMap((reading) => {
+  const readWheels = [...(await reader.read(roundWheelLike)).values()].flatMap((reading) => {
     const wheel = wheelOf(reading);
     return wheel ? [wheel] : [];
   });
+  const throughHoles = await Promise.all(
+    readWheels.map((wheel) => holeOpensThrough(connectors, wheel)),
+  );
+  const wheels = readWheels.filter((_, index) => throughHoles[index]);
 
   const runningFrames = await reader.frames(runningCandidates);
   const pairLike = [...runningFrames].flatMap(([reference, frames]) =>

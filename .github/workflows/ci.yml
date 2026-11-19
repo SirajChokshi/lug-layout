@@ -145,8 +145,19 @@ jobs:
         with:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - id: library-connectors-output
+        uses: actions/cache/restore@v4
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: library-connectors-output-${{ hashFiles('tools/asset-pipeline/library-connectors.json') }}
+          lookup-only: true
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+      - uses: actions/cache/save@v4
+        if: ${{ steps.library-connectors-output.outputs.cache-hit != 'true' }}
+        with:
+          path: tools/asset-pipeline/dist/library-connectors
+          key: ${{ steps.library-connectors-output.outputs.cache-primary-key }}
 
   import-bundle-models:
     runs-on: ubuntu-latest

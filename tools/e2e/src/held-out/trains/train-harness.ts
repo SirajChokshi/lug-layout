@@ -1,4 +1,5 @@
 import { PRIMITIVE_FAMILIES } from "./part-geometry.ts";
+import { openLibraryConnectors } from "../library-connectors.ts";
 import { PartReader } from "./part-readings.ts";
 import { PinnedLibrary } from "./pinned-library.ts";
 import type { RailHeadBands } from "./placement.ts";
@@ -132,6 +133,7 @@ export async function runTrains(
     library,
     new PartReader(bundle, library, vocabulary),
     rails,
+    await openLibraryConnectors(repoRoot),
   );
   const pooled = performance.now();
   const generation = generateTrains(pools, rails, seed, perKind);

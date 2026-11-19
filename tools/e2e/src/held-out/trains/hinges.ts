@@ -1,4 +1,4 @@
-import { STUD_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { SeededRandom } from "../generator.ts";
 import { type Sign, VERTICAL } from "./part-geometry.ts";
 import {
@@ -21,6 +21,7 @@ export function hangHinge(
   pools: TrainPools,
   random: SeededRandom,
   carrier: Carrier,
+  bodyBottom: number,
 ): boolean {
   const pin = random.choice(pools.pins);
   const options = bearingOptions(pools, LATERAL, true);
@@ -33,6 +34,8 @@ export function hangHinge(
     const zSize = depth * STUD_LDU;
     const columns = Math.floor((carrier.x1 - carrier.x0 - xSize) / STUD_LDU) + 1;
     if (columns < 1 || zSize > carrier.z1 - carrier.z0) continue;
+    const height = option.box.max[VERTICAL] - option.box.min[VERTICAL];
+    if (carrier.top + height > bodyBottom - PLATE_LDU) continue;
     const side: Sign = random.int(2) === 0 ? 1 : -1;
     const xCorner = carrier.x0 + STUD_LDU * random.int(columns);
     const checkpoint = model.checkpoint();
