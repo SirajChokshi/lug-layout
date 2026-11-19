@@ -33,6 +33,7 @@ export interface BogieRequest {
 export interface HungBogie {
   readonly bogie: Carrier;
   readonly pivots: ReadonlyArray<readonly [number, number]>;
+  readonly holes: ReadonlyArray<readonly [number, number]>;
   readonly bodyIndices: ReadonlyArray<number>;
   readonly bogieIndices: ReadonlyArray<number>;
   readonly pivotParts: ReadonlyArray<number>;
@@ -268,6 +269,7 @@ function finishBogie(
       z1: zCorner + width * STUD_LDU,
     },
     pivots,
+    holes: option.holes.map(([x, z]) => [xCorner + x, zCorner + z] as const),
     bodyIndices,
     bogieIndices,
     pivotParts,

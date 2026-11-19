@@ -4,11 +4,12 @@ import { carBody } from "./car-bodies.ts";
 import { type EndVariant, buildEnd } from "./end-features.ts";
 import { hangHinge } from "./hinges.ts";
 import { VERTICAL } from "./part-geometry.ts";
-import { pivotOptions, pivotPartAxles, stackAt } from "./pivot-stacks.ts";
+import { pivotOptions, pivotPartAxles, stackAt, verticalLink } from "./pivot-stacks.ts";
 import {
   type Carrier,
   PIVOT_PART_SUFFIX,
   type RailHeadBands,
+  onLattice,
   pickColor,
   placeAlong,
   pointOnLine,
@@ -99,8 +100,10 @@ export function bogieWithAxles(
   cap = false,
   pivotZ = 0,
   roomFor: 1 | 2 = count,
+  extraStuds = 0,
 ): { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> } | null {
-  const lengthStuds = roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2;
+  const lengthStuds =
+    (roomFor === 2 ? Math.ceil((4 * wheel.radius) / STUD_LDU) + 1 : 2) + extraStuds;
   const hung = hangBogie(context.model, context.pools, context.random, {
     body: carrier,
     pivotRange,
@@ -235,6 +238,94 @@ function bogieCar(axlesPerBogie: 1 | 2, capFront: boolean): Recipe {
     );
   };
 }
+
+const COUPLER_GAP_PLATES = [1, 2, 3, 4] as const;
+const COUPLER_ROOM_STUDS = 2;
+
+function hangCoupler(
+  context: RecipeContext,
+  bogie: { readonly hung: HungBogie; readonly axles: ReadonlyArray<HungAxle> },
+  unit: string,
+): boolean {
+  const { model, pools, random } = context;
+  const frame = bogie.hung.bogie;
+  const outerAxle = Math.max(...bogie.axles.map((axle) => axle.wheelset.x));
+  const holes = random.shuffled(bogie.hung.holes.filter(([x]) => x > outerAxle));
+  const holders = random.shuffled(pivotOptions(pools).filter((option) => option.holes.length > 0));
+  for (const [x, z] of holes) {
+    for (const holder of holders) {
+      const [hole] = holder.holes;
+      if (!hole) continue;
+      const corner = [x - hole[0], z - hole[1]] as const;
+      if (!onLattice(corner[0], frame.x0) || !onLattice(corner[1], frame.z0)) continue;
+      for (const gap of COUPLER_GAP_PLATES) {
+        const checkpoint = model.checkpoint();
+        const top = frame.bottom - gap * PLATE_LDU;
+        const placed = stackAt(
+          model,
+          pools,
+          holder,
+          corner,
+          top,
+          1,
+          pickColor(random, pools),
+          unit,
+          null,
+        );
+        const link = verticalLink(
+          model,
+          pools,
+          random,
+          [x, z],
+          top - PLATE_LDU,
+          frame.top,
+          [...placed, ...bogie.hung.bogieIndices],
+          unit,
+        );
+        if (link !== null && !model.collidesSince(checkpoint)) return true;
+        model.rollback(checkpoint);
+      }
+    }
+  }
+  return false;
+}
+
+const truckMountedCoupler: Recipe = (context) => {
+  const wheel = wheelFor(context);
+  const car = carBody(context.model, context.pools, context.random, 0, 24, "car");
+  if (!wheel || !car) return null;
+  const front = bogieWithAxles(
+    context,
+    car,
+    third(car, 2),
+    2,
+    "car",
+    "front bogie",
+    "pivot",
+    wheel,
+    "around",
+    false,
+    0,
+    2,
+    COUPLER_ROOM_STUDS,
+  );
+  const rear = front
+    ? bogieWithAxles(context, car, third(car, 0), 2, "car", "rear bogie", "pivot", wheel)
+    : null;
+  if (!front || !rear || !hangCoupler(context, front, "front bogie")) return null;
+  return single(
+    [...front.axles, ...rear.axles].map((axle) => axle.wheelset),
+    {
+      body: ["car"],
+      bogies: [
+        { unit: "front bogie", pivot: front.hung.pivots[0] ?? [0, 0] },
+        { unit: "rear bogie", pivot: rear.hung.pivots[0] ?? [0, 0] },
+      ],
+      front: "unasserted",
+      rear: "unasserted",
+    },
+  );
+};
 
 function locomotive(bogies: 1 | 2, ponyTruck: boolean): Recipe {
   return (context) => {
@@ -590,6 +681,7 @@ export const CAR_RECIPES: ReadonlyArray<readonly [string, Recipe]> = [
   ["roof turntable", roofTurntable],
   ["horizontal hinge on a bogie", hingedBogieCar],
   ["bush capping a pivot", bogieCar(2, true)],
+  ["truck-mounted coupler", truckMountedCoupler],
   ["co-linear wheels split across a pivot", splitAcrossPivot],
   ["gauge miss", negativeAxleCar(["gauge miss", "gauge miss"])],
   ["one head band", negativeAxleCar(["positive", "one head band", "positive"])],

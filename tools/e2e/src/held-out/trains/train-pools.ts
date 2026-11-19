@@ -105,6 +105,7 @@ export interface TrainPools {
   readonly colors: ReadonlyArray<number>;
 }
 
+const RIGID_BEARING_STUDS = 2;
 const LIBRARY_PART_PREFIX = /^parts\//u;
 const ROUND_OUTLINE_TOLERANCE = 0.02;
 const OUTER_PRIMITIVE_FRACTION = 0.9;
@@ -385,7 +386,8 @@ export async function trainPools(
     if (block.sideStuds.length > 0) continue;
     const roundHoles = block.holes.filter((hole) => hole.kind === "round");
     if (roundHoles.length !== block.holes.length || roundHoles.length === 0) continue;
-    if (roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
+    const rigid = block.width * block.depth >= RIGID_BEARING_STUDS;
+    if (rigid && roundHoles.every((hole) => hole.axis !== VERTICAL)) bearings.push(block);
     if (block.heightPlates === 1 && roundHoles.every((hole) => hole.axis === VERTICAL)) {
       pivotPlates.push(block);
     }
