@@ -13,7 +13,7 @@ Terraform for the server-side catalog search (`apps/catalog-api`) and for the bu
 | `cloudflare_r2_bucket_cors.part_bundles` | | `GET` and `HEAD` from any origin, so apps on Vercel can read the bucket. |
 | `cloudflare_r2_custom_domain.part_bundles` | `part_bundle_domain` | Public custom domain in `zone_id`, when `part_bundle_domain` is set. |
 | `cloudflare_r2_managed_domain.part_bundles` | `pub-….r2.dev` | The bucket's r2.dev domain, on while `part_bundle_r2_dev` is true (the default). Cloudflare rate-limits r2.dev, so set `part_bundle_domain` for production. |
-| `cloudflare_r2_bucket.ldraw_library` | `brr-ldraw-library` | The pinned LDraw library files the import worker reads, unmodified, at the same paths as on GitHub's raw mirror, plus one index per pinned commit. Written only by CI on `main` (`docs/ldraw-library.md`). Never pruned. |
+| `cloudflare_r2_bucket.ldraw_library` | `brr-ldraw-library` | The pinned LDraw library files the import worker reads, unmodified, at the same paths as on GitHub's raw mirror, plus one index per pinned commit. Written only by CI on `main` (`docs/ldraw-library.md`). Pruned to the current and previous commits plus those the live part bundles name. |
 | `cloudflare_r2_bucket_cors.ldraw_library` | | `GET` and `HEAD` from any origin, for the import worker. |
 | `cloudflare_r2_custom_domain.ldraw_library` | `ldraw_library_domain` | Optional public custom domain in `zone_id`. |
 | `cloudflare_r2_managed_domain.ldraw_library` | `pub-….r2.dev` | The library bucket's r2.dev domain, on while `ldraw_library_r2_dev` is true (the default). |
