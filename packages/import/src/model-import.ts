@@ -344,15 +344,15 @@ export class ModelImportEngine {
     const loading = Promise.all(
       assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
-    const loadedAt = loading.then(
-      () => this.now(),
-      () => this.now(),
+    const loaded = loading.then(
+      () => undefined,
+      () => undefined,
     );
-    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent);
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent, loaded);
     const loads = await loading;
     const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
-    const placedAt = baked.placedAt === null ? bakedAt : Math.max(baked.placedAt, await loadedAt);
+    const placedAt = baked.placedAt ?? bakedAt;
     return {
       ...assembled.result,
       connectors,
@@ -469,6 +469,7 @@ export class ModelImportEngine {
     drawn: Uint8Array,
     records: RecordFiles | null,
     spent: TimeSpent,
+    connectorsLoaded: Promise<void>,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) {
       return {
@@ -517,6 +518,7 @@ export class ModelImportEngine {
       );
       const primaryStarted = this.now();
       const placement = this.compiler.bake(placementRequest, library, records);
+      if (placement.status === "baked") await connectorsLoaded;
       const placedAt = this.now();
       const primaryCover =
         placement.status === "baked"

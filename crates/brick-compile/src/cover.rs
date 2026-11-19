@@ -824,6 +824,19 @@ fn cover_candidates(
     (visible, candidates)
 }
 
+#[derive(Clone, Copy)]
+pub struct CoverModel<'a, 'b> {
+    pub instances: &'b [CoverInstance<'a>],
+    pub solids: &'b [PartSolid],
+    pub opacity: &'b Opacity,
+    pub stud: StudShape,
+}
+
+#[derive(Default)]
+pub struct ProbeCache {
+    enclosed: FxHashMap<ProbeKey, Option<CoverKind>>,
+}
+
 pub fn model_cover(
     instances: &[CoverInstance],
     solids: &[PartSolid],
@@ -833,6 +846,34 @@ pub fn model_cover(
     shard: CoverShard,
     table_depth: f64,
 ) -> Result<ModelCover, ModelTooLarge> {
+    let model = CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    };
+    model_cover_with(
+        &model,
+        lattice,
+        shard,
+        table_depth,
+        &mut ProbeCache::default(),
+    )
+}
+
+pub fn model_cover_with(
+    model: &CoverModel,
+    lattice: Option<([u32; 2], f64)>,
+    shard: CoverShard,
+    table_depth: f64,
+    probes: &mut ProbeCache,
+) -> Result<ModelCover, ModelTooLarge> {
+    let CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    } = *model;
     let boxes: Vec<[Vec3; 2]> = instances
         .iter()
         .map(|instance| world_box(instance, &solids[instance.part]))
@@ -843,6 +884,7 @@ pub fn model_cover(
     }
     let model = ModelSolids::new(instances, &boxes, solids, opacity);
     let mut coverers = Coverers::new(&model, stud);
+    coverers.enclosed = std::mem::take(&mut probes.enclosed);
 
     let (mut visible, candidates) = if shard.takes_none() {
         let studs = instances.iter().map(|instance| instance.studs.len()).sum();
@@ -882,12 +924,13 @@ pub fn model_cover(
                 phase,
             )
         })
-        .transpose()
-        .map_err(|cells| ModelTooLarge {
-            cells,
-            x: axis_span(&boxes, 0),
-            z: axis_span(&boxes, 2),
-        })?;
+        .transpose();
+    probes.enclosed = std::mem::take(&mut coverers.enclosed);
+    let cells = cells.map_err(|cells| ModelTooLarge {
+        cells,
+        x: axis_span(&boxes, 0),
+        z: axis_span(&boxes, 2),
+    })?;
     Ok(ModelCover {
         visible,
         open_below,
