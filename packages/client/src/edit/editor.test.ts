@@ -2067,25 +2067,58 @@ class WithoutConnectorRecordsFor implements IAssetFetcher {
   }
 }
 
+class HeldText implements IAssetFetcher {
+  private release: () => void = () => undefined;
+  private readonly released = new Promise<void>((resolve) => {
+    this.release = resolve;
+  });
+  held = 0;
+
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly holds: (path: string) => boolean,
+  ) {}
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    if (this.holds(path)) {
+      this.held++;
+      await this.released;
+    }
+    return this.files.text(path);
+  }
+
+  open(): void {
+    this.release();
+  }
+}
+
 it("refuses to place an item until its connector tables have loaded, then places it", async () => {
-  const gate = new PathGate(new BundleDirectoryFetcher(), new Set());
-  gate.close((path) => path.includes("/connectivity-3811."));
+  const gate = new HeldText(new BundleDirectoryFetcher(), (path) =>
+    path.includes("/connectivity-3811."),
+  );
   const { editor, backend } = await startEditor([], gate);
 
   const whileLoading = placerNow(editor, backend)(BASEPLATE, 0, 0);
   const pending = editor.snapshot().pendingItem;
+  await vi.waitFor(() => expect(gate.held).toBe(1));
+  const stillPending = editor.snapshot().pendingItem;
   gate.open();
   await settledChoice(editor);
   const loaded = await placer(editor, backend)(BASEPLATE, 0, 0);
 
-  expect({ whileLoading, pending, loaded }).toEqual({
+  expect({ whileLoading, pending, stillPending, placements: loaded.placements }).toEqual({
     whileLoading: {
       placements: 0,
       refusedClicks: 1,
       reason: expect.stringContaining("is still loading"),
     },
     pending: BASEPLATE,
-    loaded: { placements: 1, refusedClicks: 1, reason: expect.any(String) },
+    stillPending: BASEPLATE,
+    placements: 1,
   });
 }, 120_000);
 

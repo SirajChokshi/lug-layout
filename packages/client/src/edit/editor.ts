@@ -1207,7 +1207,13 @@ export class Editor implements IEditor, IEditedWorld {
     this.roadDrawing?.cancel();
     if (this.roadDrawing) this.roadDrawing.erasing = false;
     this.clearRoadPreview();
-    this.update({ mode: "select", activeItem: null, roadStroke: null, roadErase: false });
+    this.update({
+      mode: "select",
+      activeItem: null,
+      pendingItem: null,
+      roadStroke: null,
+      roadErase: false,
+    });
   }
 
   chooseItem(id: string | null): void {
@@ -2089,10 +2095,12 @@ export class Editor implements IEditor, IEditedWorld {
         () => {
           if (this.placed.models().includes(model)) this.searchable(model);
         },
-        (error: unknown) =>
+        (error: unknown) => {
+          if (!this.placed.models().includes(model)) return;
           this.update({
             catalogError: `${model.placeable.label}'s connector records can't be read: ${errorText(error)}`,
-          }),
+          });
+        },
       );
       return;
     }
