@@ -65,7 +65,7 @@ it("reads the library-bake index every LOD manifest of the current, previous and
   );
 });
 
-it("every BundleCompiler field that names a published index has its publication's prune retain what the live bundle manifests name, and that publication publishes in part-bundle.yml's concurrency group", () => {
+it("BundleCompiler's fields are exactly these, so a new field that names a published index can't land until that publication's prune retains what the live bundle manifests name and it publishes in part-bundle.yml's concurrency group", () => {
   expect(Object.keys(BundleCompiler.entries)).toEqual([
     "file",
     "unofficialAllowlist",
