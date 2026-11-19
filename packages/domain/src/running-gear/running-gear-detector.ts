@@ -238,12 +238,16 @@ export class RunningGearDetector {
         couplingLinks.push(link);
       }
     }
+    const attachedTo = this.soleNeighbours(partition);
     for (const gear of gears) {
       if (excluded.has(gear.body) || spanned.has(gear.body)) continue;
       unresolved.push(
         report(
           "fewerThanTwoGuides",
-          [gear.body, ...gear.bogies.map((bogie) => bogie.subAssembly)],
+          [
+            ...this.bodySubAssemblies(gear, attachedTo),
+            ...gear.bogies.map((bogie) => bogie.subAssembly),
+          ],
           [
             ...gear.fixedAxles,
             ...gear.bogies.flatMap((b) => partition.subAssemblies[b.subAssembly]?.wheelsets ?? []),
@@ -253,7 +257,6 @@ export class RunningGearDetector {
       );
       excluded.add(gear.body);
     }
-    const attachedTo = this.soleNeighbours(partition);
     const heights = new AxleHeights(frames);
     for (const gear of gears) {
       if (excluded.has(gear.body)) continue;
@@ -569,23 +572,39 @@ export class RunningGearDetector {
   }
 
   private soleNeighbours(partition: RunningGearPartition): Map<number, number> {
-    const neighbours = new Map<number, Set<number>>();
     const attachments = new Set(partition.attachments);
+    const group = new Map<number, number>(partition.attachments.map((a) => [a, a]));
+    const root = (a: number): number => {
+      let current = a;
+      for (
+        let next = group.get(current);
+        next !== undefined && next !== current;
+        next = group.get(current)
+      ) {
+        current = next;
+      }
+      return current;
+    };
+    for (const edge of partition.edges) {
+      if (attachments.has(edge.a) && attachments.has(edge.b)) group.set(root(edge.a), root(edge.b));
+    }
+    const neighbours = new Map<number, Set<number>>();
     for (const edge of partition.edges) {
       for (const [from, to] of [
         [edge.a, edge.b],
         [edge.b, edge.a],
       ] as const) {
-        if (!attachments.has(from)) continue;
-        const set = neighbours.get(from) ?? new Set<number>();
+        if (!attachments.has(from) || attachments.has(to)) continue;
+        const set = neighbours.get(root(from)) ?? new Set<number>();
         set.add(to);
-        neighbours.set(from, set);
+        neighbours.set(root(from), set);
       }
     }
     const sole = new Map<number, number>();
-    for (const [attachment, set] of neighbours) {
-      const [only] = set;
-      if (set.size === 1 && only !== undefined) sole.set(attachment, only);
+    for (const attachment of partition.attachments) {
+      const set = neighbours.get(root(attachment));
+      const [only] = set ?? [];
+      if (set?.size === 1 && only !== undefined) sole.set(attachment, only);
     }
     return sole;
   }

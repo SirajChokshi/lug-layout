@@ -105,6 +105,22 @@ interface Edge {
 
 const REMOVED = -1;
 
+const MIN_GUIDES = 2;
+
+function distinctAxisLines(
+  indices: ReadonlyArray<number>,
+  wheelsets: ReadonlyArray<DetectedWheelset>,
+): number {
+  const lines = new Set<string>();
+  for (const w of indices) {
+    const wheelset = wheelsets[w];
+    if (!wheelset) continue;
+    const across = [0, 1, 2].filter((k) => k !== wheelset.modelDimension);
+    lines.add(across.map((k) => wheelset.axisLine[k] ?? 0).join(","));
+  }
+  return lines.size;
+}
+
 function pairKey(a: number, b: number, count: number): number {
   return a < b ? a * count + b : b * count + a;
 }
@@ -300,10 +316,9 @@ export class BogieDetector {
       pivotEdges,
       Int32Array.from(subAssemblies, (sub) => sub.wheelsets.length),
     );
-    const bogies: DetectedBogie[] = [];
-    const isBogie = new Uint8Array(subAssemblies.length);
+    const candidates: DetectedBogie[] = [];
     for (let s = 0; s < subAssemblies.length; s++) {
-      const bogie = this.bogieOf(
+      const candidate = this.bogieOf(
         s,
         subAssemblies,
         pivotEdges,
@@ -317,11 +332,19 @@ export class BogieDetector {
         mates,
         wheelsets,
       );
-      if (bogie) {
-        bogies.push(bogie);
-        isBogie[s] = 1;
-      }
+      if (candidate) candidates.push(candidate);
     }
+    const carriers = new Int32Array(subAssemblies.length);
+    for (const candidate of candidates) {
+      for (const body of candidate.carried) carriers[body] = (carriers[body] ?? 0) + 1;
+    }
+    const guidesOf = (body: number): number =>
+      (carriers[body] ?? 0) + distinctAxisLines(subAssemblies[body]?.wheelsets ?? [], wheelsets);
+    const bogies = candidates.filter((candidate) =>
+      candidate.carried.every((body) => guidesOf(body) >= MIN_GUIDES),
+    );
+    const isBogie = new Uint8Array(subAssemblies.length);
+    for (const bogie of bogies) isBogie[bogie.subAssembly] = 1;
     const carriedByBogie = new Uint8Array(subAssemblies.length);
     for (const bogie of bogies) for (const s of bogie.carried) carriedByBogie[s] = 1;
     const bodies: number[] = [];

@@ -676,15 +676,128 @@ function pinAndBushCar(): Scenario {
   };
 }
 
-function sharedBogie(): Scenario {
-  const shortBody: Part = {
-    connectors: [{ at: [0, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }],
+function bodyWithAxleAt(x: number): Part {
+  return {
+    connectors: [
+      { at: [0, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+      { at: [x, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    ],
   };
+}
+
+function sharedBogie(): Scenario {
   const shared = bogie(2, 0);
   return {
-    parts: { ...PARTS, body: shortBody },
-    placed: [{ part: "body", at: [0, 30, 0] }, { part: "body", at: [0, 30, 0] }, ...shared.placed],
-    mates: [...shared.mates, { male: [0, 0], female: [2, 0] }, { male: [1, 0], female: [2, 0] }],
+    parts: { ...PARTS, bodyA: bodyWithAxleAt(-60), bodyB: bodyWithAxleAt(60) },
+    placed: [
+      { part: "bodyA", at: [0, 30, 0] },
+      { part: "bodyB", at: [0, 30, 0] },
+      ...shared.placed,
+      { part: "wheels", at: [-60, 7, 0] },
+      { part: "wheels", at: [60, 7, 0] },
+    ],
+    mates: [
+      ...shared.mates,
+      { male: [0, 0], female: [2, 0] },
+      { male: [1, 0], female: [2, 0] },
+      { male: [5, 0], female: [0, 1] },
+      { male: [6, 0], female: [1, 1] },
+    ],
+  };
+}
+
+const WHEEL_FREE_BODY: Part = {
+  connectors: [{ at: [0, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }],
+};
+
+function wheelFreeBodyOnTruck(frame: "frame" | "couplerFrame", axles: 1 | 2): Scenario {
+  const truck = bogie(1, 0);
+  const placed = [{ part: "body", at: [0, 30, 0] as Vec }, ...truck.placed.slice(0, axles + 1)];
+  return {
+    parts: { ...PARTS, body: WHEEL_FREE_BODY, couplerFrame: COUPLER_FRAME, holder: COUPLER_HOLDER },
+    placed: placed.map((placement, i) => (i === 1 ? { ...placement, part: frame } : placement)),
+    mates: [...truck.mates.slice(0, axles), { male: [0, 0], female: [1, 0] }],
+  };
+}
+
+function turretOnWheelFreeBody(): Scenario {
+  const scenario = wheelFreeBodyOnTruck("frame", 2);
+  const turretBase: Part = {
+    connectors: [
+      ...WHEEL_FREE_BODY.connectors,
+      { at: [20, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    ],
+  };
+  return {
+    ...scenario,
+    parts: { ...scenario.parts, body: turretBase, turret: TURNTABLE },
+    placed: [...scenario.placed, { part: "turret", at: [20, 34, 0] }],
+    mates: [...scenario.mates, { male: [4, 0], female: [0, 1] }],
+  };
+}
+
+function coupledTruckUnderWheelFreeBody(): Scenario {
+  const scenario = wheelFreeBodyOnTruck("couplerFrame", 2);
+  const pinX = COUPLER_FRAME.connectors[OUTSIDE_PIN]?.at[0] ?? 0;
+  return {
+    ...scenario,
+    placed: [...scenario.placed, { part: "holder", at: [pinX, 34, 0] }],
+    mates: [...scenario.mates, { male: [4, 0], female: [1, OUTSIDE_PIN] }],
+    exposed: [[4, 1]],
+  };
+}
+
+const ROOF_CAR: Part = {
+  connectors: [
+    { at: [-30, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    { at: [30, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    { at: [0, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+  ],
+};
+const TURNTABLE: Part = {
+  connectors: [{ at: [0, -4, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }],
+};
+
+function roofTurntableCar(): Scenario {
+  return {
+    parts: { ...PARTS, car: ROOF_CAR, turntable: TURNTABLE },
+    placed: [
+      { part: "car", at: [0, 30, 0] },
+      { part: "wheels", at: [-30, 7, 0] },
+      { part: "wheels", at: [30, 7, 0] },
+      { part: "turntable", at: [0, 34, 0] },
+    ],
+    mates: [
+      { male: [1, 0], female: [0, 0] },
+      { male: [2, 0], female: [0, 1] },
+      { male: [3, 0], female: [0, 2] },
+    ],
+  };
+}
+
+function truckAndOwnAxleCar(): Scenario {
+  const front = bogie(1, 60);
+  return {
+    parts: PARTS,
+    placed: [
+      { part: "body", at: [0, 30, 0] },
+      ...front.placed,
+      { part: "wheels", at: [-60, 7, 0] },
+    ],
+    mates: [...front.mates, { male: [0, 0], female: [1, 0] }, { male: [4, 0], female: [0, 3] }],
+  };
+}
+
+function gearOutline(scenario: Scenario) {
+  const gear = run(scenario);
+  return {
+    vehicles: gear.vehicles.map((vehicle) => ({
+      body: vehicle.body,
+      bogies: vehicle.bogies.length,
+      fixedAxles: vehicle.fixedAxles.length,
+      leadingFront: vehicle.frontEndCandidates[0] ?? null,
+    })),
+    unresolved: gear.unresolvedRunningGear.map((r) => [r.reason, r.instances]),
   };
 }
 
@@ -1173,7 +1286,7 @@ describe("RunningGearDetector", () => {
     ).toEqual([
       {
         reason: "sharedBogie",
-        instances: [0, 1, 2, 3, 4],
+        instances: [0, 1, 2, 3, 4, 5, 6],
         wheelsets: [
           [3, 3],
           [4, 4],
@@ -1186,26 +1299,49 @@ describe("RunningGearDetector", () => {
     ]);
   });
 
-  it("reports a body on a single bogie at a centred pivot, never folding it in as a pendant, with the unread band rows on its instances", () => {
-    const unreadBody: Part = {
-      connectors: [{ at: [0, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }],
-      rolling: wheels([], [{ reason: "faceted", axis: 2 }]),
-    };
-    const single = bogie(1, 0);
-    const gear = run({
-      parts: { ...PARTS, body: unreadBody },
-      placed: [{ part: "body", at: [0, 30, 0] }, ...single.placed],
-      mates: [...single.mates, { male: [0, 0], female: [1, 0] }],
+  it("peels a truck candidate only when the body it carries then has two guides: a wheel-free body on one two-axle truck or a roof turntable is one vehicle on fixed axles with an attachment, a single-axle truck stays unresolved, and a truck plus one own fixed axle peels", () => {
+    expect({
+      centredTruck: gearOutline(wheelFreeBodyOnTruck("frame", 2)),
+      turretOnCarriedBody: gearOutline(turretOnWheelFreeBody()),
+      roofTurntable: gearOutline(roofTurntableCar()),
+      singleAxleTruck: gearOutline(wheelFreeBodyOnTruck("frame", 1)),
+      truckAndOwnAxle: gearOutline(truckAndOwnAxleCar()),
+    }).toEqual({
+      centredTruck: {
+        vehicles: [{ body: [0, 1, 2, 3], bogies: 0, fixedAxles: 2, leadingFront: null }],
+        unresolved: [],
+      },
+      turretOnCarriedBody: {
+        vehicles: [{ body: [0, 1, 2, 3, 4], bogies: 0, fixedAxles: 2, leadingFront: null }],
+        unresolved: [],
+      },
+      roofTurntable: {
+        vehicles: [{ body: [0, 1, 2, 3], bogies: 0, fixedAxles: 2, leadingFront: null }],
+        unresolved: [],
+      },
+      singleAxleTruck: {
+        vehicles: [],
+        unresolved: [["fewerThanTwoGuides", [0, 1, 2]]],
+      },
+      truckAndOwnAxle: {
+        vehicles: [{ body: [0, 4], bogies: 1, fixedAxles: 1, leadingFront: null }],
+        unresolved: [],
+      },
     });
-    expect(gear.unreadRollingBands).toEqual({ instance: [0], band: [0], reason: ["faceted"] });
-    expect(
-      gear.unresolvedRunningGear.map((r) => [
-        r.reason,
-        r.instances,
-        r.wheelsets.length,
-        r.unreadRows,
-      ]),
-    ).toEqual([["fewerThanTwoGuides", [0, 1, 2, 3], 2, [0]]]);
+  });
+
+  it("credits an unpeeled truck's outboard coupler holder to it and makes the holder's outward face an end candidate", () => {
+    expect(gearOutline(coupledTruckUnderWheelFreeBody())).toEqual({
+      vehicles: [
+        {
+          body: [0, 1, 2, 3, 4],
+          bogies: 0,
+          fixedAxles: 2,
+          leadingFront: { instance: 4, connector: 1 },
+        },
+      ],
+      unresolved: [],
+    });
   });
 
   it("peels a bogie carrying a truck-mounted coupler outside its wheelbase, credits the holder to it, and makes the holder's outward face the leading end candidate", () => {
@@ -1258,8 +1394,22 @@ describe("RunningGearDetector", () => {
     const jacobs = run(jacobsPair());
     expect(jacobs.vehicles).toEqual([]);
     expect(jacobs.unresolvedRunningGear.map(reportedLink)).toEqual([
-      { reason: "pivotInsideSupportSpan", instances: [0, 2, 9, 10], mates: [[0, 1, 2, 0]] },
-      { reason: "pivotInsideSupportSpan", instances: [1, 2, 9, 10], mates: [[1, 1, 2, 1]] },
+      {
+        reason: "pivotInsideSupportSpan",
+        instances: [0, 2, 3, 4, 5, 9, 10],
+        mates: [
+          [0, 0, 3, 0],
+          [0, 1, 2, 0],
+        ],
+      },
+      {
+        reason: "pivotInsideSupportSpan",
+        instances: [1, 2, 6, 7, 8, 9, 10],
+        mates: [
+          [1, 0, 6, 0],
+          [1, 1, 2, 1],
+        ],
+      },
     ]);
     const span = run(spanBolsters());
     expect(span.vehicles).toEqual([]);

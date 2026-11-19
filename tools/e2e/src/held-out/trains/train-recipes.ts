@@ -539,10 +539,10 @@ const singleBogieBody: Recipe = (context) => {
   if (!bogie) return null;
   return {
     wheelsets: bogie.axles.map((axle) => axle.wheelset),
-    vehicles: [],
-    attachments: [],
+    vehicles: [{ body: ["bogie"], bogies: [], front: "unasserted", rear: "unasserted" }],
+    attachments: ["car"],
     couplingsInModel: [],
-    unresolvedRunningGear: [{ units: ["car", "bogie"], reason: "fewer than two guides" }],
+    unresolvedRunningGear: [],
   };
 };
 
@@ -688,11 +688,7 @@ const roofTurntable: Recipe = (context) => {
     );
     for (const member of [...lowerStack, ...upperStack]) model.join(pin, member);
     if (!model.collidesSince(checkpoint)) {
-      return {
-        ...base,
-        vehicles: [],
-        unresolvedRunningGear: [{ units: ["car", "turntable"], reason: "fewer than two guides" }],
-      };
+      return { ...base, attachments: ["turntable"] };
     }
     model.rollback(checkpoint);
   }
