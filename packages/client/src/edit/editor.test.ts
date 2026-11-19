@@ -82,6 +82,7 @@ import { partConnectors } from "@brr/catalog/connector-records";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
+const PLAIN_MODULE_MODEL = "mils-plain";
 const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
 const VIEW_HALF_WIDTH_LDU = 1_000;
@@ -754,8 +755,8 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
   };
 }
 
-it("refuses to turn a MILS module while a set lifted onto it rests on it, turns the set itself, and turns the module once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+it("refuses to turn a module while a set lifted onto it rests on it, turns the set itself, and turns the module once the set is gone", async () => {
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1130,7 +1131,7 @@ it.each([
 ] as const)(
   "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits",
   async ({ held, at, expected }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -1266,8 +1267,8 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   });
 }, 120_000);
 
-it("seats a set on a MILS module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+it("seats a set on a module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1287,8 +1288,8 @@ it("seats a set on a MILS module's surface where the cursor's ray reaches the mo
   }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
 }, 120_000);
 
-it("seats a set on a MILS module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+it("seats a set on a module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1309,7 +1310,7 @@ it("seats a set on a MILS module's surface where the cursor's ray enters the mod
 }, 120_000);
 
 it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1327,7 +1328,7 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
 }, 120_000);
 
 it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1415,7 +1416,7 @@ it("leaves no placement verdict on the hover once road mode replaces a held mode
 }, 120_000);
 
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1466,7 +1467,7 @@ it.each([
 ] as const)(
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -2294,7 +2295,10 @@ it("decides a click queued while a set's tables load in the mode in effect when 
       new BundleDirectoryFetcher(),
       (path) => holding && path.includes("/connectivity-"),
     );
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET], gate);
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     await placer(editor, backend)(PLAIN_MODULE, 320, 320);
