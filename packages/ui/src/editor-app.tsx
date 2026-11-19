@@ -180,6 +180,7 @@ export function EditorApp({
           play={play}
           runningGear={runningGear}
           ready={snapshot.status === "ready"}
+          checkingStuds={snapshot.studChecks > 0}
         />
         <PalettePanel
           editor={editor}
