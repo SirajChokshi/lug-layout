@@ -18,7 +18,13 @@ import {
   type PackageAttribution,
   type PartConnectors,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  RollingDiagnosticsFile,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -122,6 +128,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.loader.loadBricklinkParts(lod);
+  }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
   }
 
   importContext(lod: BundleLod): Promise<ImportContext> {

@@ -1,6 +1,6 @@
 import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
-import type { ImportInput, ImportJob, ImportResult } from "@brr/import";
+import type { ImportInput, ImportJob, ImportResult, RollingDiagnosticsRows } from "@brr/import";
 import { inject, injectable } from "inversify";
 import { IMPORT_WORKER_POOL, LDRAW_LIBRARY_BASE_URL, LIBRARY_BAKE_BASE_URL } from "../tokens.ts";
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
@@ -8,6 +8,10 @@ import type { IImportWorkerPool } from "./import-worker-pool.ts";
 export interface IModelImporter {
   importText(fileName: string, text: string, lod?: BundleLod): Promise<ImportResult>;
   importStudio(fileName: string, bytes: Uint8Array, lod?: BundleLod): Promise<ImportResult>;
+  rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod?: BundleLod,
+  ): Promise<RollingDiagnosticsRows>;
 }
 
 @injectable()
@@ -38,6 +42,18 @@ export class WorkerModelImporter implements IModelImporter {
       this.loader.loadBricklinkParts(lod),
     ]);
     return this.request(lod, { kind: "studio", job, bytes, bricklinkParts }, [bytes.buffer]);
+  }
+
+  async rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod: BundleLod = "standard",
+  ): Promise<RollingDiagnosticsRows> {
+    const context = await this.loader.importContext(lod);
+    if (this.libraryBakeBaseUrl === null || context.libraryBake === null) return {};
+    return this.workers.rollingDiagnostics(
+      { url: this.libraryBakeBaseUrl, pin: context.libraryBake },
+      partIds,
+    );
   }
 
   private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {

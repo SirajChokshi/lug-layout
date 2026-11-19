@@ -10,7 +10,7 @@ import {
   type PartShapeRecord,
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
-import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
+import type { CompiledSource, ImportReport, ImportResult, StudioReport } from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import type {
@@ -26,6 +26,11 @@ import { MergedParts } from "../edit/merged-parts.ts";
 import { NO_MESHES, type MeshCounts, type MeshProgress } from "../edit/mesh-progress.ts";
 import { PartMeshStream } from "../edit/part-mesh-stream.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
+import {
+  diagnosedPart,
+  type DiagnosedPart,
+  type RollingDiagnosticsView,
+} from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
@@ -103,6 +108,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   load(refId: number): Promise<Placeable>;
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
+  rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
@@ -244,6 +250,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
+  private readonly compiledSources = new Map<string, CompiledSource>();
   private readonly farModelIndex = new Map<string, number>();
   private farReady = false;
 
@@ -473,6 +480,35 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), this.lod);
   }
 
+  async rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null> {
+    const refId = this.itemRefId(itemId);
+    if (refId === null) return null;
+    const placeable = await this.load(refId);
+    const parts = this.requirePalette().parts;
+    const diagnosed: DiagnosedPart[] = [];
+    for (const index of new Set(placeable.parts.partIndex)) {
+      const part = parts[index];
+      const served = part?.rolling?.unread ?? [];
+      if (part === undefined || served.length === 0) continue;
+      const source = this.compiledSources.get(part.id) ?? "bundle";
+      diagnosed.push({ partId: part.id, title: part.title, source, served });
+    }
+    diagnosed.sort((a, b) => (a.partId < b.partId ? -1 : a.partId > b.partId ? 1 : 0));
+    const fromBake = diagnosed.filter((part) => part.source === "library-bake");
+    const [bundle, bake] = await Promise.all([
+      diagnosed.some((part) => part.source === "bundle")
+        ? this.loader.loadRollingDiagnostics(this.lod)
+        : Promise.resolve(null),
+      fromBake.length > 0
+        ? this.importer.rollingDiagnostics(
+            fromBake.map((part) => part.partId),
+            this.lod,
+          )
+        : Promise.resolve({}),
+    ]);
+    return { item: itemId, parts: diagnosed.map((part) => diagnosedPart(part, bundle, bake)) };
+  }
+
   async addImported(file: ImportedFile): Promise<ImportOutcome> {
     const result = await this.importedResult(file);
     const reports = { report: result.report, studio: result.studio ?? null };
@@ -482,6 +518,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       return { ...reports, item: null, refusal };
     }
     const set = await this.loader.loadPartSet(this.lod, result.partIds, result.compiled);
+    for (const { partId, source } of result.compiled) this.compiledSources.set(partId, source);
     const palette = this.requirePalette();
     const colors = this.colors();
     const before = palette.parts.length;

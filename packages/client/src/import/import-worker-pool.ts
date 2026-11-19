@@ -1,4 +1,11 @@
-import type { ImportResult, ImportWorkerRequest, ImportWorkerResponse } from "@brr/import";
+import type {
+  ImportResult,
+  ImportWorkerRequest,
+  ImportWorkerResponse,
+  LibraryBakeSource,
+  RollingDiagnosticsRequest,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff } from "@brr/rpc";
 import { inject, injectable } from "inversify";
 import { IMPORT_BAKE_HELPERS, IMPORT_WORKER_FACTORY } from "../tokens.ts";
@@ -9,11 +16,18 @@ export type ImportRun = Omit<ImportWorkerRequest, "kind">;
 
 export interface IImportWorkerPool {
   run(request: ImportRun, transfer: Transferable[]): Promise<ImportResult>;
+  rollingDiagnostics(
+    libraryBake: LibraryBakeSource,
+    partIds: ReadonlyArray<string>,
+  ): Promise<RollingDiagnosticsRows>;
 }
 
 interface Primary {
   readonly worker: Worker;
-  readonly endpoint: RpcEndpoint<ImportWorkerRequest | BakeHelperHandoff, ImportWorkerResponse>;
+  readonly endpoint: RpcEndpoint<
+    ImportWorkerRequest | RollingDiagnosticsRequest | BakeHelperHandoff,
+    ImportWorkerResponse
+  >;
   readonly crashed: Promise<never>;
 }
 
@@ -54,6 +68,8 @@ export class ImportWorkerPool implements IImportWorkerPool {
           return response.model;
         case "failed":
           throw new Error(response.message);
+        case "rollingDiagnostics":
+          throw new Error("the import worker answered an import with rolling diagnostics");
         default: {
           const unhandled: never = response;
           throw new Error(`unhandled import worker response ${String(unhandled)}`);
@@ -61,6 +77,29 @@ export class ImportWorkerPool implements IImportWorkerPool {
       }
     } finally {
       this.scheduleIdleRelease();
+    }
+  }
+
+  async rollingDiagnostics(
+    libraryBake: LibraryBakeSource,
+    partIds: ReadonlyArray<string>,
+  ): Promise<RollingDiagnosticsRows> {
+    const primary = this.primary ?? this.startPrimary();
+    const response = await Promise.race([
+      primary.endpoint.request({ kind: "rollingDiagnostics", libraryBake, partIds }, []),
+      primary.crashed,
+    ]);
+    switch (response.kind) {
+      case "rollingDiagnostics":
+        return response.rows;
+      case "failed":
+        throw new Error(response.message);
+      case "imported":
+        throw new Error("the import worker answered a rolling diagnostics request with a model");
+      default: {
+        const unhandled: never = response;
+        throw new Error(`unhandled import worker response ${String(unhandled)}`);
+      }
     }
   }
 

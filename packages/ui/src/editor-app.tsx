@@ -192,7 +192,7 @@ export function EditorApp({
         />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
+        <Inspector editor={editor} snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />
         {snapshot.status === "ready" && (
           <BomPanel

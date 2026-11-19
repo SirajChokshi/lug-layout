@@ -26,6 +26,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
@@ -68,7 +69,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult } from "@brr/import";
+import type { ImportResult, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
@@ -240,6 +241,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.loader.loadBricklinkParts(lod);
+  }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
   }
 }
 
@@ -975,6 +980,10 @@ class RefusingModelImporter implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return refusedBake(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 

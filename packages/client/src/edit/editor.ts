@@ -125,6 +125,10 @@ import type {
   WorldContents,
   WorldSessionView,
 } from "./world-session.ts";
+import {
+  rollingDiagnosticsPanel,
+  type RollingDiagnosticsPanel,
+} from "../inspect/rolling-diagnostics.ts";
 
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
@@ -408,6 +412,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
+  rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null>;
   dump(): EditorDump;
 }
 
@@ -2260,6 +2265,11 @@ export class Editor implements IEditor, IEditedWorld {
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };
+  }
+
+  async rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null> {
+    const view = await this.catalog.rollingDiagnostics(item);
+    return view === null ? null : rollingDiagnosticsPanel(view);
   }
 
   dump(): EditorDump {

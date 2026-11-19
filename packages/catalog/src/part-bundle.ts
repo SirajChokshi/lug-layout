@@ -20,6 +20,7 @@ import {
   type PartTechnic,
   type ProducedColors,
   type PrimitiveConnectorTable,
+  type RollingDiagnosticsFile,
   type SectionVocabulary,
   type TrackEnd,
   type Vec3,
@@ -246,6 +247,7 @@ export interface IPartBundleLoader {
   ): Promise<PartBundle>;
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
 }
 
 export interface IAssetFetcher {
