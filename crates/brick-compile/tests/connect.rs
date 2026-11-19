@@ -1067,6 +1067,43 @@ fn inferred_origins_identify_to_sixteenths_or_stay_off_lattice_and_reported() {
 }
 
 #[test]
+fn a_through_hole_printed_within_the_limit_of_the_lattice_lands_on_it() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/nudged.dat",
+            "0 Nudged\n0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n0 BFC CERTIFY CCW\n1 16 0.0005 0.000014 0 1 0 0 0 1 0 0 0 1 3700.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let through_holes = |connectors: &[Connector]| -> Vec<MatingFace> {
+        faces_of(connectors)
+            .into_iter()
+            .filter(|f| f.gender == Gender::Female && f.caps == 0)
+            .map(|f| MatingFace { piece: 0, ..f })
+            .collect()
+    };
+    let printed = inferred.infer("parts/3700.dat");
+    let nudged = inferred.infer("parts/nudged.dat");
+    assert!(!through_holes(&printed.connectors).is_empty());
+    assert_eq!(
+        through_holes(&nudged.connectors),
+        through_holes(&printed.connectors)
+    );
+    assert!(nudged.off_lattice.is_empty());
+    assert!(!nudged.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::MergedIntoRejectedProbe { .. },
+            ..
+        }
+    )));
+}
+
+#[test]
 fn a_cavity_is_placed_only_where_its_free_travel_centres_the_stud_on_the_grid_point() {
     let shift = 0.0625;
     let library = with_parts(

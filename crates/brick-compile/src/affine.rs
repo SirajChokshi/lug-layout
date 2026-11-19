@@ -62,6 +62,15 @@ impl Affine {
         ]
     }
 
+    pub fn rotate(&self, v: Vec3) -> Vec3 {
+        let m = &self.m;
+        [
+            m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+            m[4] * v[0] + m[5] * v[1] + m[6] * v[2],
+            m[8] * v[0] + m[9] * v[1] + m[10] * v[2],
+        ]
+    }
+
     pub fn determinant(&self) -> f64 {
         let m = &self.m;
         m[0] * (m[5] * m[10] - m[6] * m[9]) - m[1] * (m[4] * m[10] - m[6] * m[8])

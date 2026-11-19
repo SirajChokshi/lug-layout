@@ -11,14 +11,13 @@ import {
   ModelConnectors,
   SECTION_ROUND,
   SOURCE_SHADOW,
-  modelTechnic,
   STATUS_VERIFIED,
   type LatticePose,
   type SnapWindow,
-  type TechnicSet,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
+import { EMPTY_COLUMN } from "@brr/catalog";
 import { PLATE_LDU, STUD_LDU, ZETA16_COEFFICIENT_COUNT, pose16, zeta16 } from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
@@ -26,6 +25,7 @@ import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
+import { FrozenTechnic } from "./frozen-technic.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
 import {
   placementChoice,
@@ -73,7 +73,7 @@ interface Fixture {
 
 interface Parts {
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 interface Piece {
@@ -190,7 +190,7 @@ function partsOf(
   const measured = partBoxes(boxes.flat());
   return {
     boxes: measured,
-    technic: modelTechnic(
+    technic: FrozenTechnic.ofParts(
       boxes.map((_, i) => technic[i] ?? null),
       {
         count: boxes.length,
@@ -381,6 +381,58 @@ describe("PlacementSearch", () => {
       0,
       3,
       4,
+    ]);
+  });
+
+  it("blocks one placeable's own cells at every pose it is placed at, through removals and re-adds", () => {
+    const f = fixture();
+    const [first, raised, turned, moved] = [11, 12, 13, 14];
+    const ell: Piece = {
+      connectors: f.connectors([null]),
+      volumes: FrozenVolumes.ofPlaceable({
+        cells: {
+          cellX0: 0,
+          cellZ0: 0,
+          width: 2,
+          depth: 2,
+          columnBottom: new Int16Array(4),
+          columnTop: Int16Array.of(3, 3, 3, EMPTY_COLUMN),
+        },
+        slabBoxes: new Float32Array(0),
+      }),
+      parts: partsOf([[0, 0, 0, 2 * STUD_LDU, BRICK_LDU, 2 * STUD_LDU]]),
+    };
+    const probe: Piece = {
+      connectors: f.connectors([null]),
+      volumes: columns(1, 1, 0, BRICK_LDU),
+      parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+    };
+    const at = (cellX: number, cellZ: number, yPlates = 0): readonly [boolean, number, number] => {
+      const choice = choose(f, probe, window(cellX * STUD_LDU, cellZ * STUD_LDU, 0, yPlates, 0));
+      return choice.accepted ? [true, 0, 0] : [false, choice.overlap.owner, choice.overlap.topLdu];
+    };
+    place(f, first, ell, ORIGIN);
+    place(f, raised, ell, { x: 5 * STUD_LDU + HALF, z: 2 * STUD_LDU, yPlates: 3, rot: 0 });
+    place(f, turned, ell, { x: -5 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 1 });
+    expect([at(1, 0), at(1, 1), at(7, 2), at(7, 2, 1), at(7, 3, 1), at(-5, 0), at(-4, 0)]).toEqual([
+      [false, first, BRICK_LDU],
+      [true, 0, 0],
+      [true, 0, 0],
+      [false, raised, 2 * BRICK_LDU],
+      [true, 0, 0],
+      [false, turned, BRICK_LDU],
+      [true, 0, 0],
+    ]);
+    f.search.remove(first);
+    f.search.remove(raised);
+    place(f, moved, ell, { x: 10 * STUD_LDU, z: -3 * STUD_LDU, yPlates: 2, rot: 0 });
+    expect([at(1, 0), at(7, 2, 1), at(11, -3), at(11, -2), at(10, -2), at(-5, 0)]).toEqual([
+      [true, 0, 0],
+      [true, 0, 0],
+      [false, moved, BRICK_LDU + 2 * PLATE_LDU],
+      [true, 0, 0],
+      [false, moved, BRICK_LDU + 2 * PLATE_LDU],
+      [false, turned, BRICK_LDU],
     ]);
   });
 

@@ -85,6 +85,8 @@ export function rayBoxDistance(
 
 const FOOTPRINT_FLAG = 1;
 const COLUMNS_FLAG = 2;
+const BORDER_FLAG = 4;
+const ANTI_STUD_FLAG = 8;
 const INITIAL_TOUCHED_CAPACITY = 4;
 const NOT_TOUCHED = -1;
 
@@ -130,6 +132,14 @@ class TouchedChunks {
     return ((this.flags[row] ?? 0) & COLUMNS_FLAG) !== 0;
   }
 
+  borders(row: number): boolean {
+    return ((this.flags[row] ?? 0) & BORDER_FLAG) !== 0;
+  }
+
+  hasAntiStudFootprint(row: number): boolean {
+    return ((this.flags[row] ?? 0) & ANTI_STUD_FLAG) !== 0;
+  }
+
   contributedKeys(): number[] {
     const keys: number[] = [];
     for (let row = 0; row < this.rows; row++) {
@@ -162,6 +172,14 @@ class TouchedChunks {
 
   markColumns(key: number): void {
     this.setFlag(key, COLUMNS_FLAG);
+  }
+
+  markBorder(key: number): void {
+    this.setFlag(key, BORDER_FLAG);
+  }
+
+  markAntiStudFootprint(key: number): void {
+    this.setFlag(key, ANTI_STUD_FLAG);
   }
 
   private setFlag(key: number, flag: number): void {
@@ -395,14 +413,17 @@ class PlacedEntry implements PlacedModel {
       for (let i = 0; i < cells.width; i++) {
         const cell = j * cells.width + i;
         const occupied = (cells.columnTop[cell] ?? EMPTY_COLUMN) !== EMPTY_COLUMN;
-        const footprint = (cells.footprint[cell] ?? FOOTPRINT_NONE) !== FOOTPRINT_NONE;
+        const kind = cells.footprint[cell] ?? FOOTPRINT_NONE;
+        const footprint = kind !== FOOTPRINT_NONE;
         if (!occupied && !footprint) continue;
         const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
         const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
         const key = cellChunkKey(wx, wz);
+        this.markChunksAcrossTheBorder(wx, wz, key);
         if (occupied) this.chunks.markColumns(key);
         if (footprint) {
           this.chunks.markFootprint(key);
+          if (kind === FOOTPRINT_ANTI_STUD) this.chunks.markAntiStudFootprint(key);
           if (!chunkOrigins.has(key)) {
             chunkOrigins.set(key, [
               chunkOf(wx * STUD_LDU + HALF_STUD_LDU),
@@ -410,6 +431,20 @@ class PlacedEntry implements PlacedModel {
             ]);
           }
         }
+      }
+    }
+  }
+
+  private markChunksAcrossTheBorder(worldCellX: number, worldCellZ: number, key: number): void {
+    const inChunkX = worldCellX - Math.floor(worldCellX / CHUNK_STUDS) * CHUNK_STUDS;
+    const inChunkZ = worldCellZ - Math.floor(worldCellZ / CHUNK_STUDS) * CHUNK_STUDS;
+    const interior =
+      inChunkX > 0 && inChunkX < CHUNK_STUDS - 1 && inChunkZ > 0 && inChunkZ < CHUNK_STUDS - 1;
+    if (interior) return;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const neighbour = cellChunkKey(worldCellX + dx, worldCellZ + dz);
+        if (neighbour !== key) this.chunks.markBorder(neighbour);
       }
     }
   }
@@ -605,10 +640,17 @@ class PlacedEntry implements PlacedModel {
       this.chunks.addStud(this.recordChunkKey(matrices, i, chunkOrigins));
   }
 
-  addRebuildKeys(out: Set<number>): void {
+  addRebuildKeys(out: Set<number>, hasAntiStudCovers: (key: number) => boolean): void {
     const { chunks } = this;
     for (let row = 0; row < chunks.length; row++) {
-      if (chunks.contributes(row) || chunks.hasFootprint(row)) out.add(chunks.keyAt(row));
+      const key = chunks.keyAt(row);
+      if (
+        chunks.contributes(row) ||
+        chunks.hasFootprint(row) ||
+        ((chunks.borders(row) || chunks.hasColumns(row)) && hasAntiStudCovers(key))
+      ) {
+        out.add(key);
+      }
     }
   }
 
@@ -820,6 +862,7 @@ export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
@@ -828,6 +871,8 @@ export class PlacedChunks {
   private readonly slabbed: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
+  private readonly hasAntiStudCovers = (key: number): boolean =>
+    (this.byAntiStudChunk.get(key)?.size ?? 0) > 0;
   private readonly footprints = new CellWindowIndex(false);
   private readonly columns = new CellWindowIndex(true);
   private cullingEpoch = 0;
@@ -877,14 +922,14 @@ export class PlacedChunks {
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
-      entry.addRebuildKeys(touched);
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
       removed.push(entry);
     }
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
       const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
-      entry.addRebuildKeys(touched);
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
       added.push(entry);
     }
     return { added, removed, report: this.rebuild(touched) };
@@ -1013,7 +1058,7 @@ export class PlacedChunks {
   addAll(placements: ReadonlyArray<PlacementSource>): RebuildReport {
     const keys = new Set<number>();
     for (const { placement, handle, placeable } of placements) {
-      this.insert(placement, handle, placeable).addRebuildKeys(keys);
+      this.insert(placement, handle, placeable).addRebuildKeys(keys, this.hasAntiStudCovers);
     }
     return this.rebuild([...keys].toSorted((a, b) => a - b));
   }
@@ -1025,6 +1070,7 @@ export class PlacedChunks {
     for (const key of this.byColumnChunk.keys()) this.occupancy.clearChunk(key);
     this.byChunk.clear();
     this.byFootprintChunk.clear();
+    this.byAntiStudChunk.clear();
     this.byColumnChunk.clear();
     this.slabbed.length = 0;
     this.chunkStuds.clear();
@@ -1044,6 +1090,7 @@ export class PlacedChunks {
       const key = chunks.keyAt(row);
       if (chunks.contributes(row)) addTo(this.byChunk, key, entry);
       if (chunks.hasFootprint(row)) addTo(this.byFootprintChunk, key, entry);
+      if (chunks.hasAntiStudFootprint(row)) addTo(this.byAntiStudChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
     if (entry.slab.length > 0) this.slabbed.push(entry);
@@ -1062,6 +1109,7 @@ export class PlacedChunks {
       const key = chunks.keyAt(row);
       this.byChunk.get(key)?.delete(entry);
       this.byFootprintChunk.get(key)?.delete(entry);
+      this.byAntiStudChunk.get(key)?.delete(entry);
       this.byColumnChunk.get(key)?.delete(entry);
     }
     const slabbed = this.slabbed.indexOf(entry);
