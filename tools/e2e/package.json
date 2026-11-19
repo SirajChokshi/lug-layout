@@ -14,6 +14,7 @@
     "held-out": "vitest run --config held-out.config.ts"
   },
   "dependencies": {
+    "@brr/catalog": "workspace:*",
     "@brr/import": "workspace:*",
     "@brr/math": "workspace:*",
     "@brr/schema": "workspace:*",

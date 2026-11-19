@@ -5,6 +5,7 @@ mod inferred;
 mod meta;
 mod primitive;
 mod profile;
+mod records;
 mod shadow;
 mod solid;
 
@@ -13,15 +14,19 @@ use std::collections::{HashMap, HashSet};
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
+use crate::pieces::NO_PIECE;
 
 pub use faces::{
-    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FLARE_JOINS_NEXT,
-    FLARE_JOINS_PREVIOUS, ROUND, SQUARE,
+    mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
+    FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
-pub use inferred::{Inference, InferredFeatures, SectionVocabulary, Uninferred};
+pub use inferred::{Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
-pub use shadow::{ShadowPatches, ShadowSnaps};
+pub use records::{
+    is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+};
+pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -239,6 +244,65 @@ pub struct Connector {
     pub shape: Shape,
     pub placement: Affine,
     pub grid: Option<Grid>,
+    pub pieces: Vec<u16>,
+}
+
+impl Connector {
+    pub fn piece(&self) -> u16 {
+        self.pieces.first().copied().unwrap_or(NO_PIECE)
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct Traced {
+    pub(crate) connector: Connector,
+    pub(crate) trail: Vec<u32>,
+}
+
+impl Traced {
+    pub(crate) fn declared(connector: Connector) -> Self {
+        Traced {
+            connector,
+            trail: Vec::new(),
+        }
+    }
+
+    pub(crate) fn through(&self, ordinal: u32, matrix: &Affine) -> Self {
+        let mut trail = Vec::with_capacity(self.trail.len() + 1);
+        trail.push(ordinal);
+        trail.extend_from_slice(&self.trail);
+        Traced {
+            connector: placed(&self.connector, matrix),
+            trail,
+        }
+    }
+}
+
+pub fn same_connector(a: &Connector, b: &Connector) -> bool {
+    let Connector {
+        source,
+        status,
+        id,
+        group,
+        shape,
+        placement,
+        grid,
+        pieces: _,
+    } = a;
+    *source == b.source
+        && *status == b.status
+        && *id == b.id
+        && *group == b.group
+        && *shape == b.shape
+        && *placement == b.placement
+        && *grid == b.grid
+}
+
+pub fn joined_pieces(a: &[u16], b: &[u16]) -> Vec<u16> {
+    let mut pieces: Vec<u16> = a.iter().chain(b).copied().collect();
+    pieces.sort_unstable();
+    pieces.dedup();
+    pieces
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -564,13 +628,17 @@ fn merge(
             .find_map(|key| occupied.get(key).copied());
         match holder {
             Some(Occupant::Tier(index)) => {
-                let kept = &extraction.connectors[index];
+                let kept = &mut extraction.connectors[index];
+                if candidate.source != Source::Inferred || kept.source == Source::Inferred {
+                    kept.pieces = joined_pieces(&kept.pieces, &candidate.pieces);
+                }
                 if !same_sections(&kept.shape, &candidate.shape) {
-                    extraction.issues.push(Issue::SectionDisagreement {
+                    let disagreement = Issue::SectionDisagreement {
                         origin: translation(&candidate.placement),
                         kept: (kept.source, kept.shape.clone()),
                         lower: (candidate.source, candidate.shape.clone()),
-                    });
+                    };
+                    extraction.issues.push(disagreement);
                 }
             }
             Some(Occupant::Cleared) => {}
@@ -650,6 +718,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                         sections: Vec::new(),
                         caps: 0,
                         slide: false,
+                        piece: NO_PIECE,
                     };
                     !held.contains(&face_slot(&entrance))
                 }

@@ -1,8 +1,10 @@
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import type { ImportJob } from "@brr/import";
 import {
   BundleIndex,
   CrosswalkFile,
   PartTableFile,
+  SectionVocabularyFile,
   type BundleColor,
   type ManifestPart,
 } from "@brr/schema/bundle";
@@ -19,6 +21,7 @@ export interface Bundle {
   readonly version: string;
   readonly source: ImportJob["source"];
   readonly compiler: WebAssembly.Module;
+  readonly connectors: ConnectorRecords;
   readonly parts: ReadonlyMap<string, ManifestPart>;
   readonly colors: ReadonlyArray<BundleColor>;
   readonly bricklinkParts: Readonly<Record<string, ReadonlyArray<string>>>;
@@ -36,16 +39,22 @@ export async function openBundle(root: string): Promise<Bundle> {
   const directory = join(root, LOD);
   const index = await decodedFile(BundleIndex, join(directory, "manifest.json"));
   if (!index.compiler) throw new Error(`bundle ${index.bundleVersion} ships no compiler`);
-  const [table, crosswalk, wasm] = await Promise.all([
+  const [table, crosswalk, wasm, vocabulary] = await Promise.all([
     decodedFile(PartTableFile, join(directory, index.partTable.file)),
     decodedFile(CrosswalkFile, join(directory, index.crosswalk.file)),
     readFile(join(directory, index.compiler.file)),
+    decodedFile(SectionVocabularyFile, join(directory, index.compiler.sectionVocabulary.file)),
   ]);
   return {
     directory,
     version: index.bundleVersion,
     source: index.source,
     compiler: await WebAssembly.compile(wasm),
+    connectors: new ConnectorRecords(
+      async (path) => JSON.parse(await readFile(join(directory, path), "utf8")),
+      { connectivity: index.connectivity.file, connectors: index.connectors.file },
+      index.compiler.sectionVocabulary.sha256,
+    ),
     parts: new Map(table.parts.map((part) => [part.id, part])),
     colors: index.colors,
     bricklinkParts: crosswalk.bricklinkParts,
@@ -55,6 +64,8 @@ export async function openBundle(root: string): Promise<Bundle> {
       studPrimitives: index.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: index.compiler.unofficialAllowlist,
       primitives: index.compiler.primitives ?? null,
+      sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+      cavityProbe: index.compiler.cavityProbe,
       bundlePartIds: table.parts.map((part) => part.id),
       ldconfigCodes: index.colors.map((color) => color.code),
       translucentColors: index.colors

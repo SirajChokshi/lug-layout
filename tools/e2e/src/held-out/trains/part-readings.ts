@@ -152,7 +152,12 @@ export class PartReader {
           lod: this.bundle.job.lod,
           studPrimitives: vocabulary,
           unofficialAllowlist: this.bundle.job.unofficialAllowlist,
-          primitives: this.bundle.job.primitives,
+          connectors: {
+            primitives: this.bundle.job.primitives,
+            sectionVocabulary: this.bundle.job.sectionVocabulary,
+            cavityProbe: this.bundle.job.cavityProbe,
+            infer: [],
+          },
           parts: references,
           model: "",
           inlineChecks: [],

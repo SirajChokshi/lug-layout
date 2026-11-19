@@ -7,12 +7,13 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Library, Lod};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, Line};
+use crate::pieces::{PieceMap, PieceNumbering};
 
 use super::meta::{parse_metas, Meta};
 use super::{
-    column, finished, grid_cell, length, linear_part, malformed_shape, placeable_cells, placed,
-    translation, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape, Shape, Source,
-    Status,
+    column, finished, grid_cell, joined_pieces, length, linear_part, malformed_shape,
+    placeable_cells, translation, Caps, Connector, Gender, Issue, Scaling, Section, SectionShape,
+    Shape, Source, Status, Traced,
 };
 
 const MAX_DEPTH: usize = 64;
@@ -100,24 +101,29 @@ struct PlacedEnd {
     primitive: String,
     end: HoleEnd,
     placement: Affine,
+    trail: Vec<u32>,
 }
 
 #[derive(Default)]
 struct Found {
-    connectors: Vec<Connector>,
-    where_open: Vec<Connector>,
+    connectors: Vec<Traced>,
+    where_open: Vec<Traced>,
     ends: Vec<PlacedEnd>,
     cylinders: Vec<Affine>,
     malformed: Vec<MalformedGeometry>,
 }
 
-fn open_cells(found: &Found) -> Vec<(Option<Malformation>, Connector)> {
+fn open_cells(found: &Found, pieces: &PieceMap) -> Vec<(Option<Malformation>, Connector)> {
     let mut ignored = Vec::new();
     let mut cells = Vec::new();
-    for raw in &found.where_open {
+    for traced in &found.where_open {
+        let raw = &traced.connector;
         let raw_finding =
             non_finite(&linear_part(&raw.placement)).then_some(Malformation::NonFinite);
-        let connector = finished(raw, &mut ignored);
+        let connector = Connector {
+            pieces: vec![pieces.piece(&traced.trail)],
+            ..finished(raw, &mut ignored)
+        };
         let offsets = connector
             .grid
             .map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
@@ -157,6 +163,7 @@ pub struct PrimitiveConnectors<'a, L: Library + ?Sized> {
     library: &'a L,
     table: PrimitiveTable,
     found: HashMap<String, Rc<Found>>,
+    numbering: PieceNumbering<'a, L>,
 }
 
 fn sub(a: Vec3, b: Vec3) -> Vec3 {
@@ -176,7 +183,7 @@ fn inward(end: &PlacedEnd) -> Vec3 {
     unit(column(&end.placement, 1))
 }
 
-fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
+fn through(a: &PlacedEnd, b: &PlacedEnd, pieces: &PieceMap) -> Connector {
     let along = inward(a);
     let scale_a = length(column(&a.placement, 1));
     let scale_b = length(column(&b.placement, 1));
@@ -225,6 +232,7 @@ fn through(a: &PlacedEnd, b: &PlacedEnd) -> Connector {
         },
         placement,
         grid: None,
+        pieces: joined_pieces(&[pieces.piece(&a.trail)], &[pieces.piece(&b.trail)]),
     }
 }
 
@@ -266,7 +274,12 @@ fn bore_is_drawn(a: &PlacedEnd, b: &PlacedEnd, cylinders: &[Affine]) -> bool {
     covered >= to - COAXIAL_LDU
 }
 
-fn paired(ends: &[PlacedEnd], cylinders: &[Affine], issues: &mut Vec<Issue>) -> Vec<Connector> {
+fn paired(
+    ends: &[PlacedEnd],
+    cylinders: &[Affine],
+    pieces: &PieceMap,
+    issues: &mut Vec<Issue>,
+) -> Vec<Connector> {
     let mut used = vec![false; ends.len()];
     let mut out = Vec::new();
     for (i, a) in ends.iter().enumerate() {
@@ -298,7 +311,7 @@ fn paired(ends: &[PlacedEnd], cylinders: &[Affine], issues: &mut Vec<Issue>) -> 
                 used[i] = true;
                 used[j] = true;
                 if bore_is_drawn(a, &ends[j], cylinders) {
-                    out.push(through(a, &ends[j]));
+                    out.push(through(a, &ends[j], pieces));
                 } else {
                     issues.push(Issue::UndrawnHoleInterior {
                         primitive: a.primitive.clone(),
@@ -321,11 +334,13 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
             library,
             table,
             found: HashMap::new(),
+            numbering: PieceNumbering::new(library),
         }
     }
 
     pub fn connectors(&mut self, path: &str) -> (Vec<Connector>, Vec<Issue>) {
         let found = self.find(path, 0);
+        let pieces = self.numbering.map(path);
         let mut malformed = found.malformed.clone();
         let mut kept = |finding: Option<Malformation>| match finding {
             Some(malformation) => {
@@ -335,12 +350,16 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
             None => true,
         };
         let mut raw: Vec<Connector> = Vec::with_capacity(found.connectors.len());
-        for connector in &found.connectors {
-            let (cells, findings) = placeable_cells(connector);
+        for traced in &found.connectors {
+            let (cells, findings) = placeable_cells(&traced.connector);
             for malformation in findings {
                 kept(Some(malformation));
             }
-            raw.extend(cells);
+            let piece = pieces.piece(&traced.trail);
+            raw.extend(cells.into_iter().map(|cell| Connector {
+                pieces: vec![piece],
+                ..cell
+            }));
         }
         let ends: Vec<PlacedEnd> = found
             .ends
@@ -354,11 +373,11 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
             .filter(|cylinder| kept(unplaceable(&cylinder.m)))
             .copied()
             .collect();
-        for (finding, _) in open_cells(&found) {
+        for (finding, _) in open_cells(&found, &pieces) {
             kept(finding);
         }
         let mut issues = Vec::new();
-        raw.extend(paired(&ends, &cylinders, &mut issues));
+        raw.extend(paired(&ends, &cylinders, &pieces, &mut issues));
         let connectors = raw
             .iter()
             .map(|connector| finished(connector, &mut issues))
@@ -370,7 +389,8 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
 
     pub fn where_open(&mut self, path: &str) -> Vec<Connector> {
         let found = self.find(path, 0);
-        open_cells(&found)
+        let pieces = self.numbering.map(path);
+        open_cells(&found, &pieces)
             .into_iter()
             .filter_map(|(finding, cell)| finding.is_none().then_some(cell))
             .collect()
@@ -387,6 +407,7 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                 if parsed.unparsed > 0 {
                     record(&mut out.malformed, path, Malformation::Unparsed);
                 }
+                let mut next_ordinal: u32 = 0;
                 for line in parsed.lines {
                     let Line::Subfile {
                         matrix, reference, ..
@@ -394,6 +415,8 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                     else {
                         continue;
                     };
+                    let ordinal = next_ordinal;
+                    next_ordinal += 1;
                     if non_finite(&matrix.m) {
                         record(&mut out.malformed, path, Malformation::NonFinite);
                         continue;
@@ -402,14 +425,14 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                     else {
                         continue;
                     };
+                    let template =
+                        |c: &Connector| Traced::declared(c.clone()).through(ordinal, &matrix);
                     if let Some(templates) = self.table.connectors.get(&child) {
-                        out.connectors
-                            .extend(templates.iter().map(|c| placed(c, &matrix)));
+                        out.connectors.extend(templates.iter().map(template));
                         continue;
                     }
                     if let Some(templates) = self.table.where_open.get(&child) {
-                        out.where_open
-                            .extend(templates.iter().map(|c| placed(c, &matrix)));
+                        out.where_open.extend(templates.iter().map(template));
                     }
                     if is_cylinder_primitive(&child) {
                         out.cylinders.push(matrix);
@@ -420,17 +443,23 @@ impl<'a, L: Library + ?Sized> PrimitiveConnectors<'a, L> {
                             primitive: child.clone(),
                             end: *end,
                             placement: matrix,
+                            trail: vec![ordinal],
                         });
                         continue;
                     }
                     let inner = self.find(&child, depth + 1);
                     out.connectors
-                        .extend(inner.connectors.iter().map(|c| placed(c, &matrix)));
+                        .extend(inner.connectors.iter().map(|c| c.through(ordinal, &matrix)));
                     out.where_open
-                        .extend(inner.where_open.iter().map(|c| placed(c, &matrix)));
-                    out.ends.extend(inner.ends.iter().map(|e| PlacedEnd {
-                        placement: matrix.then(&e.placement),
-                        ..e.clone()
+                        .extend(inner.where_open.iter().map(|c| c.through(ordinal, &matrix)));
+                    out.ends.extend(inner.ends.iter().map(|e| {
+                        PlacedEnd {
+                            placement: matrix.then(&e.placement),
+                            trail: std::iter::once(ordinal)
+                                .chain(e.trail.iter().copied())
+                                .collect(),
+                            ..e.clone()
+                        }
                     }));
                     out.cylinders
                         .extend(inner.cylinders.iter().map(|c| matrix.then(c)));

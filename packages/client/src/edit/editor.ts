@@ -16,6 +16,7 @@ import {
   RoadNetwork,
   World,
   addShards,
+  modelTechnic,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
@@ -26,6 +27,7 @@ import {
   type RoadPlacement,
   type CellVolumes,
   type ModelConnectors,
+  type TechnicSet,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -76,6 +78,7 @@ import {
   type FramedTrackPiece,
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
+import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
 import { placeableVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
@@ -439,6 +442,8 @@ export interface IEditor extends IBomSource, IWorldFiles {
 interface Connected {
   readonly model: ModelConnectors;
   readonly volumes: CellVolumes;
+  readonly boxes: PartBoxes;
+  readonly technic: TechnicSet;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -2201,13 +2206,21 @@ export class Editor implements IEditor, IEditedWorld {
   private connectedOf(placeable: Placeable): Connected {
     let connected = this.connected.get(placeable);
     if (!connected) {
+      const parts = this.catalog.parts();
+      const boxes = partBoxes(placeable.partBoxes);
       connected = {
         model: this.search.model(
-          this.catalog.parts().map(() => null),
+          parts.map(() => null),
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
         volumes: placeableVolumes(placeable),
+        boxes,
+        technic: modelTechnic(
+          parts.map((part) => part.technic),
+          placeable.partTransforms,
+          boxes.boxes,
+        ),
       };
       this.connected.set(placeable, connected);
     }
@@ -2216,9 +2229,9 @@ export class Editor implements IEditor, IEditedWorld {
 
   private searchable(model: PlacedModel): void {
     const id = this.nextSearchId++;
-    const { model: connectors, volumes } = this.connectedOf(model.placeable);
+    const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
     const { x, z, yPlates, rot } = model.handle;
-    this.search.add(id, connectors, volumes, { x, z, yPlates, rot });
+    this.search.add(id, connectors, volumes, boxes, technic, { x, z, yPlates, rot });
     this.searchIds.set(model, id);
     this.searchModels.set(id, model);
   }

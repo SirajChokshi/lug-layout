@@ -5,21 +5,32 @@ use crate::affine::{Affine, Vec3};
 use crate::flatten::{resolve_reference, Library, Lod};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, Line};
+use crate::pieces::PieceNumbering;
 
 use super::meta::{parse_metas, Meta, ParsedMeta};
 use super::{
-    finished, malformed_shape, placeable_cells, placed, slots, Connector, Extraction, Issue, Slot,
-    Source, Status,
+    finished, joined_pieces, malformed_shape, placeable_cells, placed, same_connector, slots,
+    Connector, Extraction, Issue, Slot, Source, Status, Traced,
 };
 
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+const SUBFILE_LINE: &str = "1";
+const SUBFILE_POSITION: std::ops::Range<usize> = 2..5;
+const SUBFILE_ORIENTATION: std::ops::Range<usize> = 5..14;
+const SUBFILE_REFERENCE: usize = 14;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IncludeRefusal {
+    NotInLibrary,
+    PiecesWouldBeLost,
+}
 
 #[derive(Default)]
 struct Gathered {
-    connectors: Vec<Connector>,
-    suppressed: Vec<Connector>,
+    connectors: Vec<Traced>,
+    suppressed: Vec<Traced>,
     issues: Vec<Issue>,
     children: Vec<String>,
     curated: bool,
@@ -41,6 +52,7 @@ pub struct ShadowSnaps<'a, L: Library + ?Sized, S: Library + ?Sized> {
     shadow: &'a S,
     patches: Option<ShadowPatches<'a, S>>,
     gathered: HashMap<String, Rc<Gathered>>,
+    numbering: PieceNumbering<'a, L>,
 }
 
 fn shifted(offset: Vec3) -> Affine {
@@ -54,6 +66,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             shadow,
             patches: None,
             gathered: HashMap::new(),
+            numbering: PieceNumbering::new(library),
         }
     }
 
@@ -64,22 +77,29 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
 
     pub fn snaps(&mut self, path: &str) -> Extraction {
         let gathered = self.gather(path, 0);
+        let pieces = self.numbering.map(path);
         let mut issues = Vec::new();
         let mut seen = HashSet::new();
         self.closure_issues(path, &mut seen, &mut issues);
         let mut malformed = Vec::new();
-        let mut placeable: Vec<Connector> = Vec::with_capacity(gathered.connectors.len());
-        for connector in &gathered.connectors {
-            let (cells, findings) = placeable_cells(connector);
+        let mut placeable: Vec<Traced> = Vec::with_capacity(gathered.connectors.len());
+        for traced in &gathered.connectors {
+            let (cells, findings) = placeable_cells(&traced.connector);
             for malformation in findings {
                 record(&mut malformed, path, malformation);
             }
-            placeable.extend(cells);
+            placeable.extend(cells.into_iter().map(|cell| Traced {
+                connector: cell,
+                trail: traced.trail.clone(),
+            }));
         }
         let mut connectors: Vec<Connector> = Vec::with_capacity(placeable.len());
         let mut at_slot: HashMap<Slot, Vec<usize>> = HashMap::new();
-        for connector in &placeable {
-            let connector = finished(connector, &mut issues);
+        for traced in &placeable {
+            let connector = Connector {
+                pieces: vec![pieces.piece(&traced.trail)],
+                ..finished(&traced.connector, &mut issues)
+            };
             if let Some(malformation) = malformed_shape(&connector) {
                 record(&mut malformed, path, malformation);
                 continue;
@@ -88,7 +108,12 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 continue;
             };
             let same = at_slot.entry(slot).or_default();
-            if same.iter().any(|&i| connectors[i] == connector) {
+            if let Some(&kept) = same
+                .iter()
+                .find(|&&i| same_connector(&connectors[i], &connector))
+            {
+                connectors[kept].pieces =
+                    joined_pieces(&connectors[kept].pieces, &connector.pieces);
                 continue;
             }
             same.push(connectors.len());
@@ -98,8 +123,8 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
         let suppressed = gathered
             .suppressed
             .iter()
-            .filter(|connector| !non_finite(&connector.placement.m))
-            .map(|connector| finished(connector, &mut ignored))
+            .filter(|traced| !non_finite(&traced.connector.placement.m))
+            .map(|traced| finished(&traced.connector, &mut ignored))
             .collect();
         for finding in malformed {
             let finding = Issue::from(finding);
@@ -114,6 +139,35 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             curated: gathered.curated,
             issues,
         }
+    }
+
+    pub fn inheritance_includes(&mut self, path: &str) -> Result<Vec<String>, IncludeRefusal> {
+        let library = self.library;
+        let text = library.source(path).ok_or(IncludeRefusal::NotInLibrary)?;
+        let mut includes = Vec::new();
+        for line in text.lines() {
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.first() != Some(&SUBFILE_LINE) || tokens.len() <= SUBFILE_REFERENCE {
+                continue;
+            }
+            let reference = tokens[SUBFILE_REFERENCE..].join(" ");
+            let Some(child) = resolve_reference(library, Lod::Standard, &reference) else {
+                continue;
+            };
+            let inherited = self.gather(&child, 1);
+            if inherited.connectors.is_empty() && inherited.suppressed.is_empty() {
+                continue;
+            }
+            includes.push(format!(
+                "0 !LDCAD SNAP_INCL [ref={reference}] [pos={}] [ori={}]",
+                tokens[SUBFILE_POSITION].join(" "),
+                tokens[SUBFILE_ORIENTATION].join(" ")
+            ));
+        }
+        if !includes.is_empty() && !self.numbering.map(path).is_empty() {
+            return Err(IncludeRefusal::PiecesWouldBeLost);
+        }
+        Ok(includes)
     }
 
     fn closure_issues(&self, path: &str, seen: &mut HashSet<String>, out: &mut Vec<Issue>) {
@@ -150,6 +204,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             if parsed.unparsed > 0 {
                 report(&mut out, path, Malformation::Unparsed);
             }
+            let mut next_ordinal: u32 = 0;
             for line in parsed.lines {
                 let Line::Subfile {
                     matrix, reference, ..
@@ -157,6 +212,8 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 else {
                     continue;
                 };
+                let ordinal = next_ordinal;
+                next_ordinal += 1;
                 if non_finite(&matrix.m) {
                     report(&mut out, path, Malformation::NonFinite);
                     continue;
@@ -166,10 +223,18 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 };
                 let inherited = self.gather(&child, depth + 1);
                 out.curated |= inherited.curated && child.starts_with(PART_FOLDER);
-                out.connectors
-                    .extend(inherited.connectors.iter().map(|c| placed(c, &matrix)));
-                out.suppressed
-                    .extend(inherited.suppressed.iter().map(|c| placed(c, &matrix)));
+                out.connectors.extend(
+                    inherited
+                        .connectors
+                        .iter()
+                        .map(|c| c.through(ordinal, &matrix)),
+                );
+                out.suppressed.extend(
+                    inherited
+                        .suppressed
+                        .iter()
+                        .map(|c| c.through(ordinal, &matrix)),
+                );
                 out.children.push(child);
             }
         }
@@ -223,10 +288,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
     fn apply(&mut self, path: &str, meta: Meta, tier: Tier, depth: usize, out: &mut Gathered) {
         match meta {
             Meta::Clear { id } => {
-                let (removed, kept): (Vec<Connector>, Vec<Connector>) =
-                    out.connectors.drain(..).partition(|connector| {
+                let (removed, kept): (Vec<Traced>, Vec<Traced>) =
+                    out.connectors.drain(..).partition(|traced| {
                         id.as_deref()
-                            .is_none_or(|id| connector.id.as_deref() == Some(id))
+                            .is_none_or(|id| traced.connector.id.as_deref() == Some(id))
                     });
                 out.connectors = kept;
                 out.suppressed.extend(removed);
@@ -251,10 +316,18 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                         report(out, path, malformation);
                         continue;
                     }
-                    out.connectors
-                        .extend(included.connectors.iter().map(|c| placed(c, &at)));
-                    out.suppressed
-                        .extend(included.suppressed.iter().map(|c| placed(c, &at)));
+                    out.connectors.extend(
+                        included
+                            .connectors
+                            .iter()
+                            .map(|c| Traced::declared(placed(&c.connector, &at))),
+                    );
+                    out.suppressed.extend(
+                        included
+                            .suppressed
+                            .iter()
+                            .map(|c| Traced::declared(placed(&c.connector, &at))),
+                    );
                 }
                 out.children.push(target);
             }
@@ -263,12 +336,13 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                 for malformation in findings {
                     report(out, path, malformation);
                 }
-                out.connectors
-                    .extend(cells.into_iter().map(|cell| Connector {
+                out.connectors.extend(cells.into_iter().map(|cell| {
+                    Traced::declared(Connector {
                         source: tier.source,
                         status: tier.status,
                         ..cell
-                    }));
+                    })
+                }));
             }
         }
     }

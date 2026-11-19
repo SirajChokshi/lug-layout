@@ -1,3 +1,5 @@
+import { SectionVocabularyFile } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +19,12 @@ const COMPILE_TIMEOUT_MS = 60_000;
 
 interface Manifest {
   readonly studPrimitives: ReadonlyArray<{ readonly name: string }>;
-  readonly compiler: { readonly file: string; readonly primitives?: CompileRequest["primitives"] };
+  readonly compiler: {
+    readonly file: string;
+    readonly primitives?: CompileRequest["connectors"]["primitives"];
+    readonly sectionVocabulary: { readonly file: string };
+    readonly cavityProbe: string;
+  };
 }
 
 async function libraryPaths(): Promise<Map<string, string>> {
@@ -37,13 +44,23 @@ async function compileAll(lod: CompileLod, records: boolean): Promise<CompileOut
   const compiler = new BrickCompiler(
     new WebAssembly.Module(await readFile(new URL(manifest.compiler.file, bundleRoot))),
   );
+  const vocabularyFile = new URL(manifest.compiler.sectionVocabulary.file, bundleRoot);
+  const vocabulary = decodedOrThrow(
+    decode(SectionVocabularyFile, JSON.parse(await readFile(vocabularyFile, "utf8"))),
+    vocabularyFile.pathname,
+  );
   const paths = await libraryPaths();
   const library = { key: "records", files: new Map<string, string>(), absent: new Set<string>() };
   const request = {
     lod,
     studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: [],
-    primitives: manifest.compiler.primitives ?? null,
+    connectors: {
+      primitives: manifest.compiler.primitives ?? null,
+      sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
+      cavityProbe: manifest.compiler.cavityProbe,
+      infer: [],
+    },
     parts: PARTS,
     model: "",
     inlineChecks: [],
