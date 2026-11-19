@@ -1,9 +1,9 @@
 use crate::affine::Vec3;
 use crate::connect::{column, Connector, Shape};
 use crate::flatten::Triangle;
+use crate::identify::IDENTIFY_LDU;
 use crate::lattice::STUD_LDU;
 
-const IDENTIFY_LDU: f64 = 0.0005;
 const FEMALE_REACH_LDU: f64 = STUD_LDU / 2.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
