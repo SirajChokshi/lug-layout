@@ -47,7 +47,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 
 **`pointer`** runs once `publish` succeeded or was skipped, unless `status` found the pointer already current. It waits up to 5 minutes for all three manifests to be served at the public URL, then writes `current/latest.json` naming them, in the `production` environment with the same token as `publish`.
 
-**Approval is requested only when the bundle is missing**, which is after a merge that changes bundle inputs. The bundle is then built and uploaded in about 20 minutes on `ubuntu-latest` (19.4 minutes for 4d08a77, 18.5 for 9cc703c), and the pointer moves right after. Runs share one concurrency group, so a merge that lands while another bundle is building waits for it, and only the newest queued run is kept.
+**The bundle is built only when it's missing**, which is after a merge that changes bundle inputs. The bundle is then built and uploaded in about 20 minutes on `ubuntu-latest` (19.4 minutes for 4d08a77, 18.5 for 9cc703c), and the pointer moves right after. Runs share one concurrency group, so a merge that lands while another bundle is building waits for it, and only the newest queued run is kept.
 
 ## Vercel
 
@@ -57,7 +57,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 - **Build:** `vercel-build.sh` exports the base URLs and runs `vite build` with `publicDir` off. It never contacts the bucket, never waits and knows nothing about the bundle. A Vercel build without `VITE_BUNDLE_BASE_URL` refuses to run.
 - **Runtime:** the app reads `current/latest.json` once per page load and loads whatever manifest it names, whatever version that is. If the pointer is missing or unreadable, it tries once more, then loads its fallback manifest, `VITE_BUNDLE_MANIFEST_FILE`. If that fails too, the editor shows "The part bundle is unreachable: …" with the file that failed.
 - **Fallback:** `vercel-build.sh` sets `VITE_BUNDLE_MANIFEST_FILE` from `manifest_file` in `infra/cloudflare/bundle-fallback.json`, a manifest that is published on R2, and `vite.config.ts` refuses a Vercel build without one, so a deployed build never asks for `manifest.json`. Bundles are never pruned, so the committed name stays valid; moving it to a newer published manifest is optional. Builds without it, such as local dev, fall back to `manifest.json`, which is what local dev serves. Because of the fallback, a deploy works before the `pointer` job has ever run, with no seeding and no approval.
-- **Skew:** the app and the bundle deploy independently, so right after a merge that changes the bundle format the new app can read the previous bundle until `publish` and `pointer` finish (about 20 minutes plus approval), and an app older than the bundle can read the new one. Either pairing can be partly broken during that window; nothing pins them together.
+- **Skew:** the app and the bundle deploy independently, so right after a merge that changes the bundle format the new app can read the previous bundle until `publish` and `pointer` finish (about 20 minutes), and an app older than the bundle can read the new one. Either pairing can be partly broken during that window; nothing pins them together.
 - **Previews:** previews build exactly like Production and read the same pointer.
 - **LDraw library:** while `public_base_url` in `infra/cloudflare/ldraw-library.json` is `null`, builds read the LDraw library from GitHub raw. Once it's committed, `vercel-build.sh` exports it as `VITE_LDRAW_LIBRARY_BASE_URL`; the build doesn't check that the library is published (`docs/ldraw-library.md`).
 - **Ignored builds:** `ignoreCommand` skips deploys whose changes are only Markdown, tests, benchmarks, `.cursor`, `.github`, `infra`, `apps/catalog-api` or `docs/research`. Any git error, such as no previous deployment, builds.
@@ -76,7 +76,7 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 - a **bake record**, which is everything the import-time bake reads from a compiled part;
 - its **standard GLB**, the same bytes the import compiler's `compile` op returns.
 
-They go to `tools/asset-pipeline/dist/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
+They go to `.cache/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
 
 **Compile options.** The records use the palette's `studPrimitives` and `unofficialAllowlist` and the Technic primitive table `primitive-connectors.json`, the same options the bundle manifest gives the import compiler. The index records all three, so a reader with other options can tell the records don't apply.
 
@@ -131,6 +131,38 @@ The index is two levels, so a reader fetches only what its parts need:
 
 The `compile` op returns records only at the standard LOD, and refuses `records` at any other.
 
+### At import
+**Where the import finds them.** `bundle` copies the pin's index into each manifest's `compiler.libraryBake`. The pin file is a bundle input: the records have to match the compiler that ships beside them.
+
+The import worker reads records from a base URL:
+- **`VITE_LIBRARY_BAKE_BASE_URL`**, when it's set;
+- otherwise **`library-bake/` beside the app** whenever the bundle is served locally. That's `pnpm --filter @brr/web dev` and `vite preview`, whose `brr-library-bake-files` plugin serves `.cache/library-bake` at `/library-bake/`. The records live outside `tools/asset-pipeline/dist`, so a local `vite build` doesn't copy their 2.5 GB into `apps/web/dist`.
+- **Deployed builds have none until `VITE_LIBRARY_BAKE_BASE_URL` points at the published records** (the bucket's public URL plus `library-bake/`; `vercel-build.sh` doesn't set it), and until then they import exactly as before.
+
+`.cache/library-bake` holds the top index under its content-addressed name too, `library-bake.<16 hex>.json`, as R2 will.
+
+**`LibraryBakeStore`** (`@brr/import`) verifies everything it reads:
+- the top index against the pinned SHA-256;
+- its LDraw source, stud primitives, unofficial allowlist and Technic primitive table against the import's;
+- every bucket, record and GLB against its content address.
+
+It keeps verified files in the worker's IndexedDB (`brr-library-bake`).
+
+**What comes from records.** For every official reference the index lists:
+- **GLB:** the standard GLB, and its header, come from the GLB's `extras` instead of the compile op. That's at the standard LOD only.
+- **Bake:** the bake takes the part's record. The solid is rebuilt from the record's tree order, and vehicle detection uses the record's bounds.
+
+**What still compiles.** The bake fetches LDraw only for the stud primitives, the wheelset, bogie-pivot and coupler parts vehicle detection analyses, and parts without a record. Parts the index doesn't list (MPD-embedded and Studio custom parts, and anything unresolvable) compile as before, and so do inline comparisons. If the store can't be read, or a file fails verification, those parts compile too.
+
+**The report.** `report.records` gives:
+- the pinned parts found;
+- the parts the bake actually took from records (`bakedFromRecords`, counted by the bake itself);
+- files fetched and cached, and bytes read.
+
+**Exactness and evidence.**
+- **Exactness:** an import that bakes and draws pinned parts from records equals the import that compiles them: the same part resolutions, GLBs, lattice, cover, cells and vehicles (`model-import.test.ts`, `tests/record.rs`).
+- **CI:** the held-out workflow builds `.cache/library-bake` with `library-bake --check`, and the harness reads it from disk. The report's import-time section says how many pinned parts used records.
+
 ### Publishing
 
 The records publish to `brr-part-bundles` under `library-bake/`, through `src/publication/pinned-publication.ts`; `src/library-bake/publish.ts` describes them to it:
@@ -175,7 +207,7 @@ Sharing a group across two differently triggered workflows has a catch: a newer 
 
 **Until deletion is enabled, every published library stays.** Each new one adds only its changed files: 1,813 objects (85.6 MB) for three LDraw syncs, and 2.58 GB only if every part changes. Once `prune` runs, the bucket holds the current and previous libraries between publishes, and briefly a third, the new upload, until `prune` deletes the oldest: about 7.75 GB for three full libraries sharing nothing, against 5.17 GB for two.
 
-The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]`. `upload` reads `dist/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
+The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]`. `upload` reads `.cache/library-bake`, so run `library-bake` first. Readers find the records at the bucket's public URL (`public_base_url` in `infra/cloudflare/part-bundles.json`, or `PART_BUNDLE_BASE_URL`) plus `library-bake/`.
 
 **Once deletion is enabled, a preview built against an older library loses its records.** A preview deployment built against a pin older than the previous one, and named by no live bundle, finds its records pruned, and its imports compile those parts instead.
 

@@ -109,6 +109,12 @@ it("files every part under its own bucket with content-addressed records and GLB
     failed: 0,
     refused: [],
   });
+  expect(
+    await readFile(
+      join(inputs.out, contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)),
+      "utf8",
+    ),
+  ).toBe(indexText);
   const index = await readIndex(inputs.out);
   expect(index.buckets).toHaveLength(LIBRARY_BAKE_BUCKETS);
   expect(index.licenses).toEqual([CA]);
@@ -210,6 +216,13 @@ async function filesUnder(root: string): Promise<string[]> {
     .map((entry) => relative(root, join(entry.parentPath, entry.name)));
 }
 
+async function filesBesideIndex(out: string, pin: LibraryBakePin): Promise<string[]> {
+  const pinnedIndex = contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256);
+  return (await filesUnder(out)).filter(
+    (file) => file !== LIBRARY_BAKE_INDEX && file !== pinnedIndex,
+  );
+}
+
 const PUBLISHED_TYPES: Readonly<Record<string, string>> = {
   records: "application/octet-stream",
   standard: "model/gltf-binary",
@@ -228,7 +241,7 @@ it("publishes every file the assembly wrote under library-bake/, records as byte
 
   const indexKey = `library-bake/library-bake.${pin.index.sha256.slice(0, 16)}.json`;
   expect(publicationIndexKey(libraryBakePublication, pin)).toBe(indexKey);
-  const addressed = (await filesUnder(inputs.out)).filter((file) => file !== LIBRARY_BAKE_INDEX);
+  const addressed = await filesBesideIndex(inputs.out, pin);
   const expected = new Map<string, string | undefined>([
     ...addressed.map((file): [string, string | undefined] => [
       `library-bake/${file}`,
@@ -293,7 +306,7 @@ it("the library-bake pointer's manifest references its index, every bucket, and 
   const { indexes, files: referenced } = await libraryBakePointer.references(pin.index, read);
   const leaves = referenced.map((file) => file.key);
 
-  const files = (await filesUnder(inputs.out)).filter((file) => file !== LIBRARY_BAKE_INDEX);
+  const files = await filesBesideIndex(inputs.out, pin);
   expect([...indexes, ...leaves].toSorted()).toEqual(
     [
       `library-bake/${contentAddressedName(LIBRARY_BAKE_INDEX, pin.index.sha256)}`,
