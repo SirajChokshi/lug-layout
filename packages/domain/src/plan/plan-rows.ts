@@ -13,11 +13,9 @@ const SEGMENTS = 2;
 const INITIAL_ROWS = 64;
 const INITIAL_SLOTS = 128;
 const HASH_MULTIPLIER = 0x9e3779b1;
-const LOAD_LIMIT = 0.7;
 const LIVE_LIMIT = 0.5;
 const SLOT_EMPTY = 0;
 const SLOT_LIVE = 1;
-const SLOT_TOMBSTONE = 2;
 
 function grownInt32(
   array: Int32Array<ArrayBuffer>,
@@ -63,106 +61,77 @@ class IdTable {
   private keys: Int32Array;
   private rows: Int32Array;
   private state: Uint8Array;
-  private twinKeys: Int32Array;
-  private twinRows: Int32Array;
-  private twinState: Uint8Array;
   private live = 0;
-  private tombstones = 0;
 
   constructor(slots: number) {
     this.keys = new Int32Array(slots);
     this.rows = new Int32Array(slots);
     this.state = new Uint8Array(slots);
-    this.twinKeys = new Int32Array(slots);
-    this.twinRows = new Int32Array(slots);
-    this.twinState = new Uint8Array(slots);
   }
 
   private home(key: number, slots: number): number {
     return (Math.imul(key, HASH_MULTIPLIER) >>> 0) & (slots - 1);
   }
 
-  get(key: number): number {
+  private slotOf(key: number): number {
     const slots = this.state.length;
     for (let i = this.home(key, slots), probes = 0; probes < slots; probes++) {
-      const state = this.state[i];
-      if (state === SLOT_EMPTY) return NO_ROW;
-      if (state === SLOT_LIVE && this.keys[i] === key) return this.rows[i] ?? NO_ROW;
+      if (this.state[i] === SLOT_EMPTY) return NO_ROW;
+      if (this.keys[i] === key) return i;
       i = (i + 1) & (slots - 1);
     }
     return NO_ROW;
   }
 
+  get(key: number): number {
+    const slot = this.slotOf(key);
+    return slot === NO_ROW ? NO_ROW : (this.rows[slot] ?? NO_ROW);
+  }
+
   set(key: number, row: number): void {
-    const slots = this.state.length;
-    if (this.live + this.tombstones + 1 > slots * LOAD_LIMIT) {
-      if (this.live + 1 > slots * LIVE_LIMIT) this.resize(slots * 2);
-      else this.rehashIntoTwin();
-    }
+    if (this.live + 1 > this.state.length * LIVE_LIMIT) this.resize(this.state.length * 2);
     this.insert(key, row);
   }
 
   delete(key: number): void {
+    let hole = this.slotOf(key);
+    if (hole === NO_ROW) return;
     const slots = this.state.length;
-    for (let i = this.home(key, slots), probes = 0; probes < slots; probes++) {
-      const state = this.state[i];
-      if (state === SLOT_EMPTY) return;
-      if (state === SLOT_LIVE && this.keys[i] === key) {
-        this.state[i] = SLOT_TOMBSTONE;
-        this.live--;
-        this.tombstones++;
-        return;
-      }
-      i = (i + 1) & (slots - 1);
+    const mask = slots - 1;
+    for (let next = (hole + 1) & mask; this.state[next] === SLOT_LIVE; next = (next + 1) & mask) {
+      const nextKey = this.keys[next] ?? 0;
+      const fromHome = (next - this.home(nextKey, slots)) & mask;
+      if (fromHome < ((next - hole) & mask)) continue;
+      this.keys[hole] = nextKey;
+      this.rows[hole] = this.rows[next] ?? NO_ROW;
+      hole = next;
     }
+    this.state[hole] = SLOT_EMPTY;
+    this.live--;
   }
 
   clear(): void {
     this.state.fill(SLOT_EMPTY);
     this.live = 0;
-    this.tombstones = 0;
   }
 
   private insert(key: number, row: number): void {
     const slots = this.state.length;
-    let reuse = NO_ROW;
     for (let i = this.home(key, slots), probes = 0; probes < slots; probes++) {
-      const state = this.state[i];
-      if (state === SLOT_LIVE && this.keys[i] === key) {
+      if (this.state[i] === SLOT_EMPTY) {
+        this.keys[i] = key;
         this.rows[i] = row;
+        this.state[i] = SLOT_LIVE;
+        this.live++;
         return;
       }
-      if (state === SLOT_TOMBSTONE && reuse === NO_ROW) reuse = i;
-      if (state === SLOT_EMPTY) {
-        const at = reuse === NO_ROW ? i : reuse;
-        if (reuse !== NO_ROW) this.tombstones--;
-        this.keys[at] = key;
-        this.rows[at] = row;
-        this.state[at] = SLOT_LIVE;
-        this.live++;
+      if (this.keys[i] === key) {
+        this.rows[i] = row;
         return;
       }
       i = (i + 1) & (slots - 1);
     }
     throw new Error("plan row id table is full");
-  }
-
-  private rehashIntoTwin(): void {
-    this.twinState.fill(SLOT_EMPTY);
-    const keys = this.keys;
-    const rows = this.rows;
-    const state = this.state;
-    this.keys = this.twinKeys;
-    this.rows = this.twinRows;
-    this.state = this.twinState;
-    this.twinKeys = keys;
-    this.twinRows = rows;
-    this.twinState = state;
-    this.live = 0;
-    this.tombstones = 0;
-    for (let i = 0; i < state.length; i++) {
-      if (state[i] === SLOT_LIVE) this.insert(keys[i] ?? 0, rows[i] ?? NO_ROW);
-    }
   }
 
   private resize(slots: number): void {
@@ -172,11 +141,7 @@ class IdTable {
     this.keys = new Int32Array(slots);
     this.rows = new Int32Array(slots);
     this.state = new Uint8Array(slots);
-    this.twinKeys = new Int32Array(slots);
-    this.twinRows = new Int32Array(slots);
-    this.twinState = new Uint8Array(slots);
     this.live = 0;
-    this.tombstones = 0;
     for (let i = 0; i < state.length; i++) {
       if (state[i] === SLOT_LIVE) this.insert(keys[i] ?? 0, rows[i] ?? NO_ROW);
     }
