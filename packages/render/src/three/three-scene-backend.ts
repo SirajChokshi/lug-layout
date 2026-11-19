@@ -86,6 +86,7 @@ import {
   linearColorsOf,
   matricesOf,
   pageOf,
+  preservesAlphaSlotSharing,
   regroupedPage,
   studBasisAndColorIndexOf,
   studTranslationsOf,
@@ -95,6 +96,7 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
 import {
   MESH_KIND_BODY,
   MESH_KIND_STUD,
@@ -538,6 +540,7 @@ class ChunkRecord {
     readonly page: InstancePage,
     readonly group: Group,
     readonly meshCount: number,
+    private readonly edgeSlot: number,
     private readonly swaps: SwapColumns | undefined,
     readonly shadowCasters: Group | undefined,
     readonly needs: ChunkNeeds,
@@ -555,9 +558,12 @@ class ChunkRecord {
     const name = TIER_NAMES[tier];
     if (!swaps || name === undefined) return;
     const children = this.group.children;
+    let ordinal = 0;
     for (let row = 0; row < this.meshCount; row++) {
       const mesh = children[row];
-      if (mesh && isInstanced(mesh)) swaps.show(row, mesh, mesh.boundingSphere, name);
+      if (!mesh || !isInstanced(mesh)) continue;
+      swaps.show(row, mesh, mesh.boundingSphere, name);
+      if (mesh.visible) writeEdgeId(mesh, ordinal++, this.edgeSlot);
     }
   }
 
@@ -607,6 +613,32 @@ const THUMBNAIL_FOV_DEGREES = 30;
 const THUMBNAIL_VIEW = new Vector3(0.9, 0.85, 1.15).normalize();
 const THUMBNAIL_MARGIN = 1.04;
 const THUMBNAIL_DEPTH_SLACK = 2;
+
+interface AlphaSlots {
+  readonly alphaSlots: number[];
+  readonly colorAlphaSlot: Uint8Array<ArrayBuffer>;
+}
+
+function alphaSlotsOf(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): AlphaSlots {
+  const colorCount = colorsSrgb.length / COLOR_CHANNELS;
+  const alphaSlots = [OPAQUE_ALPHA];
+  const colorAlphaSlot = new Uint8Array(colorCount);
+  for (let c = 0; c < colorCount; c++) {
+    const alpha = colorsAlpha[c] ?? OPAQUE_ALPHA;
+    let slot = alphaSlots.indexOf(alpha);
+    if (slot < 0) slot = alphaSlots.push(alpha) - 1;
+    colorAlphaSlot[c] = slot;
+  }
+  return { alphaSlots, colorAlphaSlot };
+}
+
+function writeNearEdgeIds(holder: Group, meshes: MeshPage, edgeSlot: number): void {
+  let ordinal = 0;
+  for (let row = 0; row < meshes.kind.length; row++) {
+    const mesh = holder.children[row];
+    if (mesh && (meshes.nearCount[row] ?? 0) > 0) writeEdgeId(mesh, ordinal++, edgeSlot);
+  }
+}
 
 @injectable()
 export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
@@ -944,8 +976,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private installColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
     const colorCount = colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
-    this.alphaSlots = [OPAQUE_ALPHA];
-    this.colorAlphaSlot = new Uint8Array(colorCount);
+    const slots = alphaSlotsOf(colorsSrgb, colorsAlpha);
+    this.alphaSlots = slots.alphaSlots;
+    this.colorAlphaSlot = slots.colorAlphaSlot;
     const lookup = new Float32Array(lookupLength(colorCount));
     for (let c = 0; c < colorCount; c++) {
       const o = c * COLOR_CHANNELS;
@@ -958,10 +991,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.linearColors[o] = this.scratchColor.r;
       this.linearColors[o + 1] = this.scratchColor.g;
       this.linearColors[o + 2] = this.scratchColor.b;
-      const alpha = colorsAlpha[c] ?? OPAQUE_ALPHA;
-      let slot = this.alphaSlots.indexOf(alpha);
-      if (slot < 0) slot = this.alphaSlots.push(alpha) - 1;
-      this.colorAlphaSlot[c] = slot;
       lookup.set(this.linearColors.subarray(o, o + COLOR_CHANNELS), c * LOOKUP_TEXEL_FLOATS);
       lookup[c * LOOKUP_TEXEL_FLOATS + COLOR_CHANNELS] = 1;
     }
@@ -969,12 +998,24 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    const { colorAlphaSlot } = alphaSlotsOf(colorsSrgb, colorsAlpha);
+    if (!this.everyPage((page) => preservesAlphaSlotSharing(page, colorAlphaSlot))) {
+      throw new Error(
+        "setColors may only append colours: an existing colour would change which colours share its alpha slot",
+      );
+    }
     this.changed = true;
     this.installColors(colorsSrgb, colorsAlpha);
     this.rebuildPages(
       () => true,
       (page) => regroupedPage(page, this.linearColors, this.colorAlphaSlot),
     );
+  }
+
+  private everyPage(test: (page: InstancePage) => boolean): boolean {
+    for (const record of this.chunks.values()) if (!test(record.page)) return false;
+    for (const record of this.vehicles.values()) if (!test(record.body.page)) return false;
+    return this.ghostPage === null || test(this.ghostPage);
   }
 
   private rebuildPages(
@@ -1102,7 +1143,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeChunk(key);
     const needs = samePage ? replaced.needs : pageNeeds(page, this.tiered);
-    const record = this.buildChunk(page, this.tiered ? this.levelCounts().far : undefined, needs);
+    const record = this.buildChunk(
+      page,
+      this.tiered ? this.levelCounts().far : undefined,
+      needs,
+      chunkEdgeSlot(page.originX, page.originZ),
+    );
     record.key = key;
     record.studPitchPx = this.studPitchPx(record, this.orthoStudPitchPx());
     record.applyTier(this.tierOf(record.studPitchPx));
@@ -1130,7 +1176,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeVehicle(vehicle);
     const needs = samePage ? replaced.needs : pageNeeds(page, false);
-    const body = this.buildChunk(page, undefined, needs);
+    const body = this.buildChunk(page, undefined, needs, vehicleEdgeSlot(vehicle));
     body.applyTier(TIER_NEAR);
     this.inheritHolds(body, replaced);
     this.syncNeeds(body);
@@ -1271,7 +1317,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    this.addNearInstances(ghost, page, this.ghostMaterials);
+    const ghostMeshes = this.addNearInstances(ghost, page, this.ghostMaterials);
+    writeNearEdgeIds(ghost, ghostMeshes, GHOST_EDGE_SLOT);
     this.ghost = ghost;
     this.scene.add(ghost);
     if (samePage && held) {
@@ -1532,6 +1579,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     page: InstancePage,
     far: LevelGeometryCounts | undefined,
     needs: ChunkNeeds,
+    edgeSlot: number,
   ): ChunkRecord {
     const group = new Group();
     group.matrixAutoUpdate = false;
@@ -1549,6 +1597,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       shadowCasters,
     );
     const meshCount = group.children.length;
+    if (!swaps) writeNearEdgeIds(group, meshes, edgeSlot);
     if (shadowCasters) group.add(shadowCasters);
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
@@ -1567,6 +1616,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       page,
       group,
       meshCount,
+      edgeSlot,
       swaps,
       shadowCasters,
       needs,
@@ -1586,9 +1636,14 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     };
   }
 
-  private addNearInstances(holder: Group, page: InstancePage, materials: PlasticMaterials): void {
+  private addNearInstances(
+    holder: Group,
+    page: InstancePage,
+    materials: PlasticMaterials,
+  ): MeshPage {
     const meshes = meshPageOf(page, this.levelCounts().detailed, undefined);
     this.addInstances(holder, page, meshes, materials, materials, undefined, undefined);
+    return meshes;
   }
 
   private addInstances(
