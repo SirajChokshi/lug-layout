@@ -734,7 +734,7 @@ async function pruneCommand<TPin, TManifest>(
       process.stdout.write(`would delete ${object.key} ${object.size}\n`);
   }
   process.stdout.write(
-    `${commands.pointer.prefixes.join(", ")}: ${live} objects live; ${dryRun ? "would delete" : "deleted"} ${dryRun ? doomed.length : deleted} objects, ${bytes} bytes\n`,
+    `${commands.pointer.prefixes.map((prefix) => prefix || "the whole bucket").join(", ")}: ${live} objects live; ${dryRun ? "would delete" : "deleted"} ${dryRun ? doomed.length : deleted} objects, ${bytes} bytes\n`,
   );
 }
 
