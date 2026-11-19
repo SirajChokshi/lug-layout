@@ -31,7 +31,6 @@ import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
-import { errorText } from "../edit/error-text.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
 import { thumbnailUrls } from "./thumbnail-urls.ts";
 
@@ -552,13 +551,18 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     if (!part) throw new Error(`no catalog part has index ${partIndex}`);
     const imported = this.importedRecords.get(part.id);
     if (imported) return imported;
-    try {
-      const connectors = await this.loader.loadPartConnectors(this.lod, part.id);
-      return connectors === null
-        ? { kind: "missing", reason: NOT_IN_BUNDLE_RECORDS }
-        : { kind: "record", connectors };
-    } catch (error) {
-      return { kind: "missing", reason: errorText(error) };
+    const loaded = await this.loader.readPartConnectors(this.lod, part.id);
+    switch (loaded.kind) {
+      case "loaded":
+        return { kind: "record", connectors: loaded.connectors };
+      case "unlisted":
+        return { kind: "missing", reason: NOT_IN_BUNDLE_RECORDS };
+      case "refused":
+        return { kind: "missing", reason: loaded.reason };
+      default: {
+        const unhandled: never = loaded;
+        throw new Error(`unhandled connector load ${String(unhandled)}`);
+      }
     }
   }
 

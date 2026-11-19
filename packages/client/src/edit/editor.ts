@@ -1193,6 +1193,8 @@ export class Editor implements IEditor, IEditedWorld {
       roadErase: false,
       mode: "road",
       activeItem: id,
+      pendingItem: null,
+      connectorGaps: [],
       ghostRot: this.ghostRot,
       roadKit: id,
       roadStroke: null,
@@ -1285,6 +1287,7 @@ export class Editor implements IEditor, IEditedWorld {
       pendingItem: id,
       snap: null,
       ghostRot: this.placeRot,
+      connectorGaps: [],
     });
     void this.catalog
       .load(refId)
@@ -2082,9 +2085,15 @@ export class Editor implements IEditor, IEditedWorld {
   private searchable(model: PlacedModel): void {
     if (this.searchIds.has(model)) return;
     if (!this.connectorTables.loaded(model.placeable)) {
-      void this.connectorTables.load(model.placeable).then(() => {
-        if (this.placed.models().includes(model)) this.searchable(model);
-      });
+      this.connectorTables.load(model.placeable).then(
+        () => {
+          if (this.placed.models().includes(model)) this.searchable(model);
+        },
+        (error: unknown) =>
+          this.update({
+            catalogError: `${model.placeable.label}'s connector records can't be read: ${errorText(error)}`,
+          }),
+      );
       return;
     }
     const id = this.nextSearchId++;

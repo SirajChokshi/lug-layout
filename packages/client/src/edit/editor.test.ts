@@ -18,6 +18,7 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
   type PackageAttribution,
+  type ConnectorLoad,
   type PartConnectors,
 } from "@brr/catalog";
 import type {
@@ -75,7 +76,8 @@ import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
-import { chosen } from "./editor-choice.test-support.ts";
+import { chosen, settledChoice } from "./editor-choice.test-support.ts";
+import { partConnectors } from "@brr/catalog/connector-records";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -217,6 +219,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return this.loader.loadPartConnectors(lod, partId);
+  }
+
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.loader.readPartConnectors(lod, partId);
   }
 
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -2019,7 +2025,7 @@ describe("frame loop in the editor's snapshot", () => {
     const { editor, backend, frame } = await startEditor([]);
     await frame();
     const queuedMs = 4;
-    editor.chooseItem(BASEPLATE);
+    await chosen(editor, BASEPLATE);
     backend.aim(0, 0);
     editor.pointerMove(0, 0);
 
@@ -2041,3 +2047,126 @@ describe("frame loop in the editor's snapshot", () => {
     });
   }, 120_000);
 });
+
+class WithoutConnectorRecordsFor implements IAssetFetcher {
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly partId: string,
+  ) {}
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    const text = await this.files.text(path);
+    if (!/\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u.test(path)) return text;
+    const index = JSON.parse(text) as { parts: Record<string, unknown> };
+    const { [this.partId]: _withdrawn, ...parts } = index.parts;
+    return JSON.stringify({ ...index, parts });
+  }
+}
+
+it("refuses to place an item until its connector tables have loaded, then places it", async () => {
+  const gate = new PathGate(new BundleDirectoryFetcher(), new Set());
+  gate.close((path) => path.includes("/connectivity-3811."));
+  const { editor, backend } = await startEditor([], gate);
+
+  const whileLoading = placerNow(editor, backend)(BASEPLATE, 0, 0);
+  const pending = editor.snapshot().pendingItem;
+  gate.open();
+  await settledChoice(editor);
+  const loaded = await placer(editor, backend)(BASEPLATE, 0, 0);
+
+  expect({ whileLoading, pending, loaded }).toEqual({
+    whileLoading: {
+      placements: 0,
+      refusedClicks: 1,
+      reason: expect.stringContaining("is still loading"),
+    },
+    pending: BASEPLATE,
+    loaded: { placements: 1, refusedClicks: 1, reason: expect.any(String) },
+  });
+}, 120_000);
+
+it("lists the held item's parts that have no connector record, and why, and still places it", async () => {
+  const { editor, backend } = await startEditor(
+    [],
+    new WithoutConnectorRecordsFor(new BundleDirectoryFetcher(), "ldraw:3811"),
+  );
+
+  await chosen(editor, BASEPLATE);
+  const gaps = editor.snapshot().connectorGaps;
+  const placed = await placer(editor, backend)(BASEPLATE, 0, 0);
+
+  expect({ gaps, placements: placed.placements }).toEqual({
+    gaps: [
+      {
+        partIndex: expect.any(Number),
+        partId: "ldraw:3811",
+        reason: "the bundle's connector packages don't list it",
+      },
+    ],
+    placements: 1,
+  });
+}, 120_000);
+
+class ImporterWithRecords implements IModelImporter {
+  constructor(
+    private readonly partIds: ReadonlyArray<string>,
+    private readonly connectors: ReadonlyArray<PartConnectors | null>,
+  ) {}
+
+  async importText(fileName: string): Promise<ImportResult> {
+    return {
+      ...refusedBake(fileName),
+      partIds: [...this.partIds],
+      connectors: [...this.connectors],
+    };
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return this.importText(fileName);
+  }
+}
+
+it("takes a part's connector record from an import that brought one before the bundle's packages, and the bundle's for every other part", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const brought = partConnectors([]);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const loader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(loader, []));
+  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+  container
+    .rebind(MODEL_IMPORTER)
+    .toConstantValue(new ImporterWithRecords(["ldraw:3811"], [brought]));
+  const editor = container.get(EDITOR);
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const parts = catalog.parts();
+  const baseplate = parts.findIndex((part) => part.id === "ldraw:3811");
+  const other = parts.findIndex((part) => part.id !== "ldraw:3811");
+  const otherId = parts[other]?.id ?? "";
+
+  await editor.importModelFile({
+    name: "brings-3811.ldr",
+    bytes: new TextEncoder().encode("0 x\n"),
+  });
+
+  expect(await catalog.partConnectorRecord(baseplate)).toEqual({
+    kind: "record",
+    connectors: brought,
+  });
+  expect(await catalog.partConnectorRecord(other)).toEqual({
+    kind: "record",
+    connectors: await loader.loadPartConnectors("standard", otherId),
+  });
+}, 120_000);

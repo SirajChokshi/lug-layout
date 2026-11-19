@@ -103,3 +103,27 @@ it("serves a placeable replaced by one with the same id from the same result at 
   expect(swapped).toBe(first);
   expect(asked).toEqual([WITH_FACES, WITHOUT_RECORD, WITHOUT_RECORD]);
 });
+
+it("rejects, and keeps nothing, when a part's record can't be read, so the next load reads it again", async () => {
+  let unreachable = true;
+  const source = recordSource();
+  const tables = new ConnectorTables(
+    {
+      parts: source.parts,
+      partConnectorRecord: async (partIndex) => {
+        if (unreachable) throw new Error("GET connectivity-3023b.json failed with 503");
+        return source.partConnectorRecord(partIndex);
+      },
+    },
+    new SnapShapes(),
+  );
+  const model = placeable("omr:retry", [0]);
+
+  await expect(tables.load(model)).rejects.toThrow("failed with 503");
+  const afterFailure = tables.loaded(model);
+  unreachable = false;
+  const retried = await tables.load(model);
+
+  expect(afterFailure).toBeNull();
+  expect(retried.tables[0]?.count).toBe(2);
+});
