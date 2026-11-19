@@ -263,3 +263,146 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/pointer/cli.ts prune
+
+  library-status:
+    name: Check the public LDraw library
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.needed.outputs.needed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Look for the pinned library's index at the public URL
+        id: served
+        env:
+          LDRAW_LIBRARY_BASE_URL: ${{ vars.LDRAW_LIBRARY_BASE_URL }}
+        run: node tools/asset-pipeline/src/library/cli.ts served
+      - name: Check whether index/latest.json already names the pinned library
+        id: current
+        env:
+          LDRAW_LIBRARY_BASE_URL: ${{ vars.LDRAW_LIBRARY_BASE_URL }}
+        run: node tools/asset-pipeline/src/library/cli.ts current
+      - name: Decide whether the library needs publishing or pruning
+        id: needed
+        env:
+          LDRAW_LIBRARY_BASE_URL: ${{ vars.LDRAW_LIBRARY_BASE_URL }}
+          EVENT: ${{ github.event_name }}
+          SERVED: ${{ steps.served.outputs.served }}
+          CURRENT: ${{ steps.current.outputs.current }}
+        run: |
+          : "${LDRAW_LIBRARY_BASE_URL:=$(node -p "require('./infra/cloudflare/ldraw-library.json').public_base_url ?? ''")}"
+          if [ "$EVENT" = workflow_dispatch ]; then
+            needed=true
+          elif [ -z "$LDRAW_LIBRARY_BASE_URL" ]; then
+            needed=false
+            echo "::notice::The LDraw library has no public URL, so only Run workflow publishes and prunes it; see docs/ldraw-library.md."
+          elif [ "$SERVED" = true ] && [ "$CURRENT" = true ]; then
+            needed=false
+          else
+            needed=true
+          fi
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+
+  library-publish:
+    name: Publish the LDraw library and prune old commits
+    needs: [library-status, pointer]
+    if: ${{ !cancelled() && needs.library-status.result == 'success' && needs.library-status.outputs.needed == 'true' }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Check the bucket for the library index
+        id: status
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library/cli.ts published
+      - name: Report missing credentials
+        if: steps.status.outputs.configured == 'false'
+        run: echo "::warning::LDraw library not published. The production environment has no Cloudflare token; see docs/ldraw-library.md."
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.status.outputs.published == 'false'
+        with:
+          path: .cache/catalog/ldraw-library
+          key: ldraw-library-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - name: Check the archive against ldraw.lock.json and the license gate
+        if: steps.status.outputs.published == 'false'
+        run: node tools/asset-pipeline/src/library/cli.ts check
+      - name: Upload the library files, then the index
+        if: steps.status.outputs.published == 'false'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library/cli.ts upload
+      - name: Verify every file the public URL serves for the pinned library against its index
+        if: steps.status.outputs.configured == 'true'
+        env:
+          LDRAW_LIBRARY_BASE_URL: ${{ vars.LDRAW_LIBRARY_BASE_URL }}
+        run: |
+          : "${LDRAW_LIBRARY_BASE_URL:=$(node -p "require('./infra/cloudflare/ldraw-library.json').public_base_url ?? ''")}"
+          if [ -z "$LDRAW_LIBRARY_BASE_URL" ]; then
+            echo "::notice::ldraw-library.json has no public_base_url yet and LDRAW_LIBRARY_BASE_URL is unset, so nothing can be checked through a public URL."
+            exit 0
+          fi
+          export LDRAW_LIBRARY_BASE_URL
+          node tools/asset-pipeline/src/library/cli.ts verify-served --all
+      - name: Move index/latest.json to the pinned library, keeping the one it replaces as previous
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/library/cli.ts point
+      - name: Verify the current and previous libraries and those the live bundles name through the served pointer
+        if: steps.status.outputs.configured == 'true'
+        env:
+          LDRAW_LIBRARY_BASE_URL: ${{ vars.LDRAW_LIBRARY_BASE_URL }}
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: |
+          : "${LDRAW_LIBRARY_BASE_URL:=$(node -p "require('./infra/cloudflare/ldraw-library.json').public_base_url ?? ''")}"
+          if [ -z "$LDRAW_LIBRARY_BASE_URL" ]; then
+            echo "::notice::ldraw-library.json has no public_base_url yet and LDRAW_LIBRARY_BASE_URL is unset; prune still reads and checks every kept index over the S3 API."
+            exit 0
+          fi
+          export LDRAW_LIBRARY_BASE_URL
+          node tools/asset-pipeline/src/library/cli.ts verify-pointer --wait
+      - name: List what pruning would delete
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library/cli.ts prune --dry-run
+      - name: Delete every library object that neither the current, the previous nor a live bundle's library references
+        if: steps.status.outputs.configured == 'true'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/library/cli.ts prune
+      - name: Summary
+        if: steps.status.outputs.configured == 'true'
+        env:
+          ALREADY_PUBLISHED: ${{ steps.status.outputs.published }}
+        run: |
+          echo "LDraw library \`$(node -p "require('./tools/asset-pipeline/ldraw.lock.json').source.commit")\`, already published before this run: $ALREADY_PUBLISHED" >> "$GITHUB_STEP_SUMMARY"
