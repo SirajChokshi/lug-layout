@@ -377,6 +377,30 @@ describe("PlacementSearch", () => {
     expect([freed.accepted, freed.votes]).toEqual([true, 4]);
   });
 
+  it("refuses an unmated model at the cursor where it collides, and never moves it to a free cell nearby", () => {
+    const f = fixture();
+    const plate = world(f);
+    const away = 10 * STUD_LDU;
+    place(
+      f,
+      OTHER,
+      {
+        connectors: f.connectors([null]),
+        volumes: columns(1, 1, 0, BRICK_LDU),
+        parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+      },
+      { x: away, z: away, yPlates: 0, rot: 0 },
+    );
+    const choice = choose(f, plate, window(away, away, 2));
+    expect([choice.accepted, choice.x, choice.z, choice.votes, choice.overlap.owner]).toEqual([
+      false,
+      away,
+      away,
+      0,
+      OTHER,
+    ]);
+  });
+
   it("stacks a brick on a brick through stud mates that name no partner, since columns stop at the body top below the studs", () => {
     const f = fixture();
     const brick: Piece = {

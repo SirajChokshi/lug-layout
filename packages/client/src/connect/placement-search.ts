@@ -266,12 +266,13 @@ export class PlacementSearch implements IPlacementSearch {
     out.walked = 0;
     out.overlap.owner = NO_PLACEMENT;
     this.choose(out, 0);
-    let first = true;
     for (let i = 0; i < candidates.count; i++) {
       out.walked = i + 1;
       const votes = candidates.votes[i] ?? 0;
       const yPlates = candidates.yPlates[i] ?? 0;
+      const cursor = this.isWindowPose(window, i);
       if (yPlates < tableYPlates || !this.onWindowLattice(window, i)) continue;
+      if (votes === 0 && !cursor) continue;
       const pose = this.candidatePose(i);
       const placed = this.scratch.place(volumes, pose);
       this.zones.clear();
@@ -281,17 +282,17 @@ export class PlacementSearch implements IPlacementSearch {
           firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
           this.zones.firstOverlap(this.hit);
       }
-      const supported = votes > 0 || yPlates === tableYPlates;
-      if (first) {
+      if (votes > 0 && !blocked) {
         this.choose(out, i);
-        if (blocked) copyHit(this.hit, out.overlap);
-        first = false;
+        out.accepted = true;
+        out.overlap.owner = NO_PLACEMENT;
+        break;
       }
-      if (blocked || !supported) continue;
+      if (!cursor) continue;
       this.choose(out, i);
-      out.accepted = true;
-      out.overlap.owner = NO_PLACEMENT;
-      break;
+      if (blocked) copyHit(this.hit, out.overlap);
+      else out.accepted = votes > 0 || yPlates === tableYPlates;
+      if (votes === 0) break;
     }
     this.moving = NO_PLACEMENT;
     this.zones.clear();
@@ -344,6 +345,15 @@ export class PlacementSearch implements IPlacementSearch {
     }
     this.solver.insert(removed.model, removed.pose, placement);
     return stranded;
+  }
+
+  private isWindowPose(window: SnapWindow, index: number): boolean {
+    return (
+      this.candidates.x[index] === window.x &&
+      this.candidates.z[index] === window.z &&
+      this.candidates.yPlates[index] === window.yPlates &&
+      this.candidates.rot[index] === window.rot
+    );
   }
 
   private onWindowLattice(window: SnapWindow, index: number): boolean {
