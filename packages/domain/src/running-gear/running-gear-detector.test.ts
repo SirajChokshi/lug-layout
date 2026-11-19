@@ -265,7 +265,7 @@ function wheelset(instance: number, seated = true) {
 
 const FRAME: Part = {
   connectors: [
-    { at: [0, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [0, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
     { at: [-20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
     { at: [20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
   ],
@@ -378,7 +378,9 @@ function placedFirst(scenario: Scenario, instance: number): Scenario {
       male: [moved(m.male[0]), m.male[1]],
       female: [moved(m.female[0]), m.female[1]],
     })),
-    exposed: scenario.exposed?.map(([i, c]) => [moved(i), c] as const),
+    ...(scenario.exposed
+      ? { exposed: scenario.exposed.map(([i, c]) => [moved(i), c] as const) }
+      : {}),
   };
 }
 
@@ -446,11 +448,148 @@ function holderCredited(scenario: Scenario): boolean {
     .some((b) => b.instances.includes(HOLDER));
 }
 
+const THROUGH_FRAME: Part = {
+  connectors: [
+    { at: [0, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [0, -8, 0], axis: AXIS_NEG_Y, gender: GENDER_FEMALE },
+    { at: [-20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    { at: [20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+  ],
+};
+const THROUGH_BODY: Part = {
+  connectors: [
+    { at: [60, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [60, -8, 0], axis: AXIS_NEG_Y, gender: GENDER_FEMALE },
+    { at: [-60, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [-60, -8, 0], axis: AXIS_NEG_Y, gender: GENDER_FEMALE },
+  ],
+};
+const PIVOT_AXLE: Part = {
+  connectors: [
+    { at: [0, -17, 0], axis: AXIS_POS_Y, gender: GENDER_MALE },
+    { at: [0, 17, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+  ],
+};
+
+function throughAxleCar(frameY: number, bodyY: number): Scenario {
+  const placed: Placement[] = [{ part: "body", at: [0, bodyY, 0] }];
+  const mates: MateSpec[] = [];
+  for (const [side, x] of [
+    [0, 60],
+    [1, -60],
+  ] as const) {
+    const frame = placed.length;
+    placed.push(
+      { part: "frame", at: [x, frameY, 0] },
+      { part: "wheels", at: [x - 20, frameY - 13, 0] },
+      { part: "wheels", at: [x + 20, frameY - 13, 0] },
+      { part: "pivot", at: [x, (frameY + bodyY) / 2 - 4, 0] },
+    );
+    mates.push(
+      { male: [frame + 1, 0], female: [frame, 2] },
+      { male: [frame + 2, 0], female: [frame, 3] },
+      { male: [frame + 3, 0], female: [frame, 1] },
+      { male: [frame + 3, 1], female: [frame, 0] },
+      { male: [frame + 3, 0], female: [0, 2 * side + 1] },
+      { male: [frame + 3, 1], female: [0, 2 * side] },
+    );
+  }
+  return {
+    parts: { ...PARTS, frame: THROUGH_FRAME, body: THROUGH_BODY, pivot: PIVOT_AXLE },
+    placed,
+    mates,
+  };
+}
+
+function throughAxleHole(connector: number): number {
+  return connector === 0 ? 0 : connector + 1;
+}
+
+function hungTruckCar(): Scenario {
+  const car = bogieCar();
+  return {
+    ...car,
+    parts: { ...car.parts, frame: THROUGH_FRAME },
+    mates: car.mates.map((m) =>
+      car.placed[m.female[0]]?.part === "frame"
+        ? { ...m, female: [m.female[0], throughAxleHole(m.female[1])] as const }
+        : m,
+    ),
+  };
+}
+
+function motorBodyOnMouldedPinTruck(): Scenario {
+  const truck: Part = {
+    connectors: [
+      { at: [0, 0, 0], axis: AXIS_POS_Y, gender: GENDER_MALE },
+      ...FRAME.connectors.slice(1),
+    ],
+  };
+  const motorBody: Part = {
+    connectors: [
+      { at: [60, -10, 0], axis: AXIS_NEG_Y, gender: GENDER_FEMALE },
+      { at: [-40, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    ],
+  };
+  const truckAt = bogie(1, 60);
+  return {
+    parts: { ...PARTS, frame: truck, body: motorBody },
+    placed: [
+      { part: "body", at: [0, 30, 0] },
+      ...truckAt.placed,
+      { part: "wheels", at: [-40, 7, 0] },
+    ],
+    mates: [...truckAt.mates, { male: [1, 0], female: [0, 0] }, { male: [4, 0], female: [0, 1] }],
+  };
+}
+
+const LOWER_CAR: Part = {
+  connectors: [
+    { at: [0, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    { at: [50, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+    { at: [-50, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+  ],
+};
+const UPPER_CAR: Part = {
+  connectors: [
+    { at: [0, -23, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
+    { at: [-50, 0, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+    { at: [50, 0, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
+  ],
+};
+
+function singleAxleCarsOnEndDrawbar(secondLink: boolean): Scenario {
+  const placed: Placement[] = [
+    { part: "lower", at: [0, 30, 0] },
+    { part: "wheels", at: [0, 7, 0] },
+    { part: "upper", at: [100, 30, 0] },
+    { part: "wheels", at: [100, 7, 0] },
+  ];
+  const mates: MateSpec[] = [
+    { male: [1, 0], female: [0, 0] },
+    { male: [3, 0], female: [2, 0] },
+    { male: [2, 1], female: [0, 1] },
+  ];
+  if (secondLink) {
+    placed.push({ part: "upper", at: [-100, 30, 0] }, { part: "wheels", at: [-100, 7, 0] });
+    mates.push({ male: [5, 0], female: [4, 0] }, { male: [4, 2], female: [0, 2] });
+  }
+  return { parts: { ...PARTS, lower: LOWER_CAR, upper: UPPER_CAR }, placed, mates };
+}
+
+function guideCounts(scenario: Scenario) {
+  return run(scenario).vehicles.map((v) => [v.bogies.length, v.fixedAxles.length, v.body]);
+}
+
+function bogieCount(scenario: Scenario): number {
+  return run(scenario).vehicles.reduce((n, v) => n + v.bogies.length, 0);
+}
+
 function twoPinTruck(): Scenario {
   const twoPins: Part = {
     connectors: [
-      { at: [-10, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
-      { at: [10, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+      { at: [-10, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+      { at: [10, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
       { at: [-20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
       { at: [20, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
     ],
@@ -721,7 +860,7 @@ describe("RunningGearDetector", () => {
     ]);
   });
 
-  it("never peels a wheeled sub-assembly whose pivot connectors point down", () => {
+  it("never peels a wheeled sub-assembly resting on top of its neighbour, whose upward connectors at the pivot lie above the neighbour's downward ones, or which has none there", () => {
     const upsideDown: Part = {
       connectors: [
         { at: [0, 10, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE },
@@ -730,14 +869,94 @@ describe("RunningGearDetector", () => {
       ],
     };
     const roof: Part = { connectors: [{ at: [0, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE }] };
-    const gear = run({
-      parts: { ...PARTS, frame: upsideDown, roof },
-      placed: [...bogie(0, 0).placed, { part: "roof", at: [0, 40, 0] }],
-      mates: [...bogie(0, 0).mates, { male: [0, 0], female: [3, 0] }],
+    const below: Part = { connectors: [{ at: [0, 0, 0], axis: AXIS_NEG_Y, gender: GENDER_MALE }] };
+    expect({
+      noneUpward: guideCounts({
+        parts: { ...PARTS, frame: upsideDown, roof },
+        placed: [...bogie(0, 0).placed, { part: "roof", at: [0, 40, 0] }],
+        mates: [...bogie(0, 0).mates, { male: [0, 0], female: [3, 0] }],
+      }),
+      upwardReachingAbove: bogieCount({
+        ...bogieCar(),
+        parts: {
+          ...PARTS,
+          frame: {
+            connectors: [
+              ...FRAME.connectors,
+              { at: [0, 16, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+            ],
+          },
+        },
+        mates: [...bogieCar().mates, { male: [0, 0], female: [1, 3] }],
+      }),
+      upwardAbove: guideCounts({
+        parts: { ...PARTS, roof: below },
+        placed: [...bogie(0, 0).placed, { part: "roof", at: [0, 12, 0] }],
+        mates: [...bogie(0, 0).mates, { male: [3, 0], female: [0, 0] }],
+      }),
+    }).toEqual({
+      noneUpward: [[0, 2, [0, 1, 2, 3]]],
+      upwardReachingAbove: 0,
+      upwardAbove: [[0, 2, [0, 1, 2, 3]]],
     });
-    expect(gear.vehicles.map((v) => [v.bogies.length, v.fixedAxles.length, v.body])).toEqual([
-      [0, 2, [0, 1, 2, 3]],
+  });
+
+  it("peels bogies on a through axle below the body and never the inverted ones above it", () => {
+    expect({
+      below: bogieCount(throughAxleCar(20, 30)),
+      above: bogieCount(throughAxleCar(40, 30)),
+    }).toEqual({
+      below: 2,
+      above: 0,
+    });
+  });
+
+  it("reads pivot heights in the pivot's lowest common frame: a car off the grid in its own sub-model peels its bogies, and a bogie off the grid alone isn't peeled", () => {
+    const car = bogieCar();
+    const wholeCar: Scenario = {
+      ...car,
+      submodels: [[0, 0.3, 0]],
+      placed: car.placed.map((placement) => ({ ...placement, submodel: 0 })),
+    };
+    const frontAlone: Scenario = {
+      ...car,
+      submodels: [[0, 0.3, 0]],
+      placed: car.placed.map((placement, i) =>
+        i >= 1 && i <= 3 ? { ...placement, submodel: 0 } : placement,
+      ),
+    };
+    const throughAxle = throughAxleCar(20, 30);
+    const bodyAlone: Scenario = {
+      ...throughAxle,
+      submodels: [[0, 0.3, 0]],
+      placed: throughAxle.placed.map((placement, i) =>
+        i === 0 ? { ...placement, submodel: 0 } : placement,
+      ),
+    };
+    expect({
+      wholeCar: bogieCount(wholeCar),
+      frontAlone: run(frontAlone).unresolvedRunningGear.map((r) => r.reason),
+      throughAxleBodyAlone: bogieCount(bodyAlone),
+    }).toEqual({ wholeCar: 2, frontAlone: ["pivotInsideSupportSpan"], throughAxleBodyAlone: 0 });
+  });
+
+  it("peels a hung truck, a pin down from the body into the truck's through-hole", () => {
+    expect(bogieCount(hungTruckCar())).toBe(2);
+  });
+
+  it("reads a single-axle motor body on a flush moulded-pin truck as one fixed axle and one bogie guide", () => {
+    const gear = run(motorBodyOnMouldedPinTruck());
+    expect(gear.vehicles.map((v) => v.guides.map((g) => g.kind).toSorted())).toEqual([
+      ["bogiePivot", "fixedAxle"],
     ]);
+  });
+
+  it("peels the lower of two single-axle cars on a stacked end drawbar as the other's truck, unless it joins another body on a second axis line", () => {
+    const single = run(singleAxleCarsOnEndDrawbar(false));
+    expect({
+      vehicles: single.vehicles.map((v) => v.guides.map((g) => g.kind).toSorted()),
+      withSecondLink: bogieCount(singleAxleCarsOnEndDrawbar(true)),
+    }).toEqual({ vehicles: [["bogiePivot", "fixedAxle"]], withSecondLink: 0 });
   });
 
   it("locks a truck held by two pins on distinct axis lines to its body, so its axles are fixed", () => {
@@ -761,7 +980,7 @@ describe("RunningGearDetector", () => {
   it("peels a single-axle pony truck pivoted ahead of its axle on a radius arm", () => {
     const ponyArm: Part = {
       connectors: [
-        { at: [-30, 10, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
+        { at: [-30, 0, 0], axis: AXIS_POS_Y, gender: GENDER_FEMALE },
         { at: [0, -13, 0], axis: AXIS_NEG_Z, gender: GENDER_FEMALE },
       ],
     };
@@ -1112,7 +1331,7 @@ describe("RunningGearDetector", () => {
       parts: { ...PARTS, body: carrier },
       placed: [
         ...car.placed,
-        { part: "frame", at: [0, 25, 0] },
+        { part: "frame", at: [0, 20, 0] },
         { part: "wheels", at: [-20, 12, 0] },
         { part: "wheels", at: [20, 12, 0] },
       ],
@@ -1151,8 +1370,10 @@ describe("RunningGearDetector", () => {
       ],
       placed: [
         { part: "body", at: [0, 30, 0] },
-        ...front.placed.map((placement) => ({ ...placement, submodel: 0 })),
-        ...rear.placed.map((placement) => ({ ...placement, submodel: 1 })),
+        ...front.placed.map((placement, k) =>
+          k === 0 ? placement : { ...placement, submodel: 0 },
+        ),
+        ...rear.placed.map((placement, k) => (k === 0 ? placement : { ...placement, submodel: 1 })),
       ],
       mates: [
         ...front.mates,

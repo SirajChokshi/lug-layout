@@ -3,15 +3,18 @@ import type { SnapMating } from "../connect/mating.ts";
 import {
   connectorOriginLdu,
   AXIS_FREE,
+  AXIS_NEG_Y,
   AXIS_POS_Y,
   VECTOR_FLOATS,
   axisDimension,
   axisSign,
+  oppositeAxis,
   type ConnectorTable,
 } from "../connect/connector-table.ts";
 import {
   IdentifiedPoint,
   MODEL_ROOT,
+  NO_FRAME,
   SubmodelFrames,
   TRANSFORM_FLOATS,
   coordinatesAcross,
@@ -89,6 +92,8 @@ export interface RunningGearPartition extends Classification {
 }
 
 const NOT_UNSEATED = -1;
+const NOT_VERTICAL_FREE = -2;
+const MODEL_UP = 1;
 
 interface Edge {
   a: number;
@@ -141,10 +146,13 @@ export class BogieDetector {
     const frames = new SubmodelFrames(instances);
     const sets = new UnionFind(instances.count);
     const verticalFree = new Uint8Array(mates.count);
+    const maleAxis = new Int8Array(mates.count).fill(AXIS_FREE);
     for (let m = 0; m < mates.count; m++) {
       if (!readsAcrossParts(mates, m)) continue;
-      if (this.freeAboutVertical(frames, instances, parts, mates, m)) {
+      const axis = this.verticalFreeAxis(frames, instances, parts, mates, m);
+      if (axis !== NOT_VERTICAL_FREE) {
         verticalFree[m] = 1;
+        maleAxis[m] = axis;
         continue;
       }
       sets.union(mates.maleInstance[m] ?? 0, mates.femaleInstance[m] ?? 0);
@@ -212,6 +220,7 @@ export class BogieDetector {
         classifiedOf,
         counted,
         pivotEdges,
+        maleAxis,
         frames,
         heights,
         instances,
@@ -263,6 +272,7 @@ export class BogieDetector {
     classifiedOf: Int32Array,
     counted: Uint8Array,
     pivotEdges: ReadonlyArray<PivotEdge>,
+    maleAxis: Int8Array,
     frames: SubmodelFrames,
     heights: AxleHeights,
     instances: PartInstances,
@@ -298,6 +308,7 @@ export class BogieDetector {
         pivotEdges,
         hanging[s] ?? [],
         classifiedOf,
+        maleAxis,
         frames,
         heights,
         instances,
@@ -353,28 +364,28 @@ export class BogieDetector {
     );
   }
 
-  private freeAboutVertical(
+  private verticalFreeAxis(
     frames: SubmodelFrames,
     instances: PartInstances,
     parts: ReadonlyArray<ConnectorTable | null>,
     mates: MatePairs,
     m: number,
-  ): boolean {
+  ): number {
     const male = mates.maleInstance[m] ?? 0;
     const maleConnector = mates.maleConnector[m] ?? 0;
     const malePart = parts[instances.partIndex[male] ?? -1];
     const femalePart = parts[instances.partIndex[mates.femaleInstance[m] ?? 0] ?? -1];
-    if (!malePart || !femalePart) return false;
+    if (!malePart || !femalePart) return NOT_VERTICAL_FREE;
     const freedom = this.mating.freedom(
       malePart.shape[maleConnector] ?? 0,
       femalePart.shape[mates.femaleConnector[m] ?? 0] ?? 0,
       mates.mateOffset[m] ?? 0,
       mates.mateAxis[m] ?? 0,
     );
-    if (freedom.freeAboutVertical) return true;
-    if (!freedom.spins) return false;
+    if (!freedom.freeAboutVertical && !freedom.spins) return NOT_VERTICAL_FREE;
     const axis = this.connectorAxis(frames, instances, parts, male, maleConnector);
-    return axis !== AXIS_FREE && axisDimension(axis) === VERTICAL;
+    if (freedom.freeAboutVertical) return axis;
+    return axis !== AXIS_FREE && axisDimension(axis) === VERTICAL ? axis : NOT_VERTICAL_FREE;
   }
 
   private pivotPoint(
@@ -644,6 +655,7 @@ export class BogieDetector {
     edges: ReadonlyArray<PivotEdge>,
     hanging: ReadonlyArray<HangingGroup>,
     classifiedOf: Int32Array,
+    maleAxis: Int8Array,
     frames: SubmodelFrames,
     heights: AxleHeights,
     instances: PartInstances,
@@ -666,20 +678,76 @@ export class BogieDetector {
       this.sameLine(frames, instances, parts, mates, m, firstMate),
     );
     if (!oneLine) return null;
-    for (const m of pivotMates) {
-      const male = mates.maleInstance[m] ?? 0;
-      const ownIsMale = classifiedOf[male] === s;
-      const instance = ownIsMale ? male : (mates.femaleInstance[m] ?? 0);
-      if (classifiedOf[instance] !== s) continue;
-      const connector = ownIsMale ? (mates.maleConnector[m] ?? 0) : (mates.femaleConnector[m] ?? 0);
-      if (this.connectorAxis(frames, instances, parts, instance, connector) !== AXIS_POS_Y)
-        return null;
+    if (
+      !this.carriesFromBelow(
+        s,
+        pivotMates,
+        classifiedOf,
+        maleAxis,
+        frames,
+        heights,
+        instances,
+        parts,
+        mates,
+      )
+    ) {
+      return null;
     }
     if (!this.pivotWithinWheelbase(sub, firstMate, frames, instances, parts, mates, wheelsets))
       return null;
     const carried = [...new Set(incident.map((edge) => (edge.a === s ? edge.b : edge.a)))];
     const pendants = pendantGroups.flatMap((group) => group.members).toSorted((a, b) => a - b);
     return { subAssembly: s, pivotMates, carried, pendants };
+  }
+
+  private carriesFromBelow(
+    s: number,
+    pivotMates: ReadonlyArray<number>,
+    classifiedOf: Int32Array,
+    maleAxis: Int8Array,
+    frames: SubmodelFrames,
+    heights: AxleHeights,
+    instances: PartInstances,
+    parts: ReadonlyArray<ConnectorTable | null>,
+    mates: MatePairs,
+  ): boolean {
+    let frame = NO_FRAME;
+    for (const m of pivotMates) {
+      for (const instance of [mates.maleInstance[m] ?? 0, mates.femaleInstance[m] ?? 0]) {
+        const own = frames.frameOf(instance);
+        frame = frame === NO_FRAME ? own : commonFrame(frames, frame, own);
+      }
+    }
+    let highestUp = Number.NEGATIVE_INFINITY;
+    let lowestDown = Number.POSITIVE_INFINITY;
+    for (const m of pivotMates) {
+      const axis = maleAxis[m] ?? AXIS_FREE;
+      if (axis !== AXIS_POS_Y && axis !== AXIS_NEG_Y) continue;
+      const sides = [
+        [mates.maleInstance[m] ?? 0, mates.maleConnector[m] ?? 0, axis],
+        [mates.femaleInstance[m] ?? 0, mates.femaleConnector[m] ?? 0, oppositeAxis(axis)],
+      ] as const;
+      for (const [instance, connector, facing] of sides) {
+        const own = classifiedOf[instance] === s;
+        if (own !== (facing === AXIS_POS_Y)) continue;
+        const part = parts[instances.partIndex[instance] ?? -1];
+        if (!part) return false;
+        const height = heights.along(
+          instance,
+          [0, 1, 2].map((k) => connectorOriginLdu(part, connector, k)),
+          frame,
+          MODEL_UP,
+        );
+        if (height === null) return false;
+        if (own) highestUp = Math.max(highestUp, height);
+        else lowestDown = Math.min(lowestDown, height);
+      }
+    }
+    return (
+      highestUp !== Number.NEGATIVE_INFINITY &&
+      lowestDown !== Number.POSITIVE_INFINITY &&
+      highestUp <= lowestDown
+    );
   }
 
   private outboardPendant(
