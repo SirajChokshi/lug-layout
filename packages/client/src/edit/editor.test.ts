@@ -945,6 +945,7 @@ function refusedBake(fileName: string): ImportResult {
         compileMs: 0,
         ldrawFetchMs: 0,
         bakePhases: null,
+        coverPhases: null,
       },
     },
     partIds: [],

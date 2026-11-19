@@ -108,6 +108,7 @@ export interface ImportTimings {
   readonly compileMs: number;
   readonly ldrawFetchMs: number;
   readonly bakePhases: BakePhases | null;
+  readonly coverPhases: BakePhases | null;
 }
 
 export interface ImportReport {
@@ -151,7 +152,7 @@ export interface CompiledGlb {
   readonly glb: Uint8Array;
 }
 
-export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "phases">;
+export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
 
 export interface IBakeHelper {
   bake(
@@ -220,7 +221,13 @@ function asksForHeldFiles(outcome: BakeOutcome, library: ImportLibrary): boolean
 }
 
 function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): ModelBake {
-  const { status: _baked, recordedParts: _recorded, phases: _phases, ...bake } = primary;
+  const {
+    status: _baked,
+    recordedParts: _recorded,
+    resumedParts: _resumed,
+    phases: _phases,
+    ...bake
+  } = primary;
   const { studs } = primary.studCover;
   const visibleBits = primary.studCover.visibleBits.slice();
   for (const other of others) {
@@ -280,6 +287,8 @@ interface BakeRounds {
   readonly helpersFailed: number;
   readonly recordedParts: number;
   readonly phases: BakePhases | null;
+  readonly coverPhases: BakePhases | null;
+  readonly placedAt: number | null;
 }
 
 function libraryKey(source: MirrorSource): string {
@@ -332,12 +341,18 @@ export class ModelImportEngine {
     const recordFiles = await spent.during("recordFetchMs", () =>
       this.recordFiles(read, assembled.drawn, officialOf, pinned),
     );
-    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent);
-    const loads = await Promise.all(
+    const loading = Promise.all(
       assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
+    const loadedAt = loading.then(
+      () => this.now(),
+      () => this.now(),
+    );
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent);
+    const loads = await loading;
     const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
+    const placedAt = baked.placedAt === null ? bakedAt : Math.max(baked.placedAt, await loadedAt);
     return {
       ...assembled.result,
       connectors,
@@ -368,9 +383,10 @@ export class ModelImportEngine {
           resolveMs: resolvedAt - readAt,
           bakeMs: bakedAt - resolvedAt,
           totalMs: bakedAt - started,
-          placementMs: bakedAt - started,
+          placementMs: placedAt - started,
           ...spent.spent(),
           bakePhases: baked.phases,
+          coverPhases: baked.coverPhases,
         },
       },
     };
@@ -462,6 +478,8 @@ export class ModelImportEngine {
         helpersFailed: 0,
         recordedParts: 0,
         phases: null,
+        coverPhases: null,
+        placedAt: null,
       };
     }
     const request: BakeRequest = {
@@ -474,10 +492,15 @@ export class ModelImportEngine {
       vehicles: job.vehicles,
     };
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;
-    const primaryRequest: BakeRequest =
-      this.helpers.length === 0
-        ? request
-        : { ...request, shard: { from: 0, to: PRIMARY_SLICES, of, visibilityOnly: false } };
+    const placementRequest: BakeRequest = {
+      ...request,
+      shard: { from: 0, to: 0, of, visibilityOnly: false },
+      keepParts: true,
+    };
+    const primaryCoverRequest: BakeRequest = {
+      ...request,
+      shard: { from: 0, to: PRIMARY_SLICES, of, visibilityOnly: true },
+    };
     const helperRequests = this.helpers.map((_, index): BakeRequest => {
       const from = PRIMARY_SLICES + HELPER_SLICES * index;
       return { ...request, shard: { from, to: from + HELPER_SLICES, of, visibilityOnly: true } };
@@ -493,13 +516,18 @@ export class ModelImportEngine {
         helper.bake(helperRequests[index] ?? request, library, records),
       );
       const primaryStarted = this.now();
-      const primary = this.compiler.bake(primaryRequest, library, records);
+      const placement = this.compiler.bake(placementRequest, library, records);
+      const placedAt = this.now();
+      const primaryCover =
+        placement.status === "baked"
+          ? this.compiler.bake(primaryCoverRequest, library, records)
+          : null;
       const deadlineMs =
         HELPER_DEADLINE_PER_PRIMARY_MS * (this.now() - primaryStarted) + HELPER_DEADLINE_SLACK_MS;
       const answered = await Promise.all(
         assisted.map((outcome) => settledWithin(outcome, deadlineMs)),
       );
-      const outcomes = [primary];
+      const outcomes = primaryCover === null ? [placement] : [placement, primaryCover];
       for (const [index, outcome] of answered.entries()) {
         if (outcome !== null && !asksForHeldFiles(outcome, library)) {
           outcomes.push(outcome);
@@ -529,6 +557,8 @@ export class ModelImportEngine {
               helpersFailed,
               recordedParts: 0,
               phases: null,
+              coverPhases: null,
+              placedAt: null,
             };
           case "need":
             throw new Error("a bake shard asked for files after the round that fetched them");
@@ -547,6 +577,8 @@ export class ModelImportEngine {
         helpersFailed,
         recordedParts: first.recordedParts,
         phases: first.phases,
+        coverPhases: primaryCover?.status === "baked" ? primaryCover.phases : null,
+        placedAt,
       };
     }
     throw new Error(`bake closure still growing after ${MAX_COMPILE_ROUNDS} rounds`);

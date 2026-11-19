@@ -929,6 +929,7 @@ export const CompilerRequest = v.variant("op", [
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
+    keepParts: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -1075,6 +1076,7 @@ export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
   recordedParts: Count,
+  resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
