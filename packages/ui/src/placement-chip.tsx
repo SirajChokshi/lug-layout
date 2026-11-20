@@ -71,8 +71,8 @@ export function PlacementChip({ snapshot }: { readonly snapshot: EditorSnapshot 
       aria-hidden="true"
     >
       {precise && <p className="placement-chip-mode">Precise: exactly at the cursor</p>}
-      {lines.map((line) => (
-        <p key={`${line.kind} ${line.text}`} className="placement-chip-line" data-line={line.kind}>
+      {lines.map((line, position) => (
+        <p key={`${position} ${line.kind}`} className="placement-chip-line" data-line={line.kind}>
           <span>{line.text}</span>
           {line.badges.map((badge) => (
             <span key={badge.badge} className="placement-chip-badge" data-badge={badge.badge}>
