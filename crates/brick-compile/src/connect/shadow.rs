@@ -52,6 +52,7 @@ pub struct ShadowSnaps<'a, L: Library + ?Sized, S: Library + ?Sized> {
     shadow: &'a S,
     patches: Option<ShadowPatches<'a, S>>,
     gathered: HashMap<String, Rc<Gathered>>,
+    executed_clears: HashMap<String, Rc<Vec<Option<String>>>>,
     numbering: PieceNumbering<'a, L>,
 }
 
@@ -66,6 +67,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             shadow,
             patches: None,
             gathered: HashMap::new(),
+            executed_clears: HashMap::new(),
             numbering: PieceNumbering::new(library),
         }
     }
@@ -189,6 +191,37 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             .or_else(|| resolve_reference(self.shadow, Lod::Standard, reference))
     }
 
+    fn clears_executed_by(&mut self, path: &str, depth: usize) -> Rc<Vec<Option<String>>> {
+        if let Some(found) = self.executed_clears.get(path) {
+            return Rc::clone(found);
+        }
+        let mut scopes = Vec::new();
+        if depth <= MAX_DEPTH {
+            let shadow = self.shadow;
+            let patch = self.patches.as_ref().map(|patches| patches.files);
+            let texts = [
+                shadow.source(path),
+                patch.and_then(|files| files.source(path)),
+            ];
+            for parsed in texts.into_iter().flatten().flat_map(parse_metas).flatten() {
+                match parsed.meta {
+                    Meta::Clear { id } => scopes.push(id),
+                    Meta::Include { reference, .. } => {
+                        if let Some(target) = self.resolve_include(&reference) {
+                            let nested = self.clears_executed_by(&target, depth + 1);
+                            scopes.extend(nested.iter().cloned());
+                        }
+                    }
+                    Meta::Snap(_) => {}
+                }
+            }
+        }
+        let scopes = Rc::new(scopes);
+        self.executed_clears
+            .insert(path.to_string(), Rc::clone(&scopes));
+        scopes
+    }
+
     fn gather(&mut self, path: &str, depth: usize) -> Rc<Gathered> {
         if let Some(found) = self.gathered.get(path) {
             return Rc::clone(found);
@@ -289,11 +322,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
     fn apply(&mut self, path: &str, meta: Meta, tier: Tier, depth: usize, out: &mut Gathered) {
         match meta {
             Meta::Clear { id } => {
-                let (removed, kept): (Vec<Traced>, Vec<Traced>) =
-                    out.connectors.drain(..).partition(|traced| {
-                        id.as_deref()
-                            .is_none_or(|id| traced.connector.id.as_deref() == Some(id))
-                    });
+                let (removed, kept): (Vec<Traced>, Vec<Traced>) = out
+                    .connectors
+                    .drain(..)
+                    .partition(|traced| removes(id.as_deref(), &traced.connector));
                 out.connectors = kept;
                 out.suppressed.extend(removed);
             }
@@ -309,6 +341,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                     });
                     return;
                 };
+                let clears = self.clears_executed_by(&target, depth + 1);
+                for traced in &mut out.connectors {
+                    if clears
+                        .iter()
+                        .any(|scope| removes(scope.as_deref(), &traced.connector))
+                    {
+                        traced.connector.status = Status::Unverified;
+                    }
+                }
                 let included = self.gather(&target, depth + 1);
                 let offsets = grid.map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
                 for offset in offsets {
@@ -347,6 +388,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             }
         }
     }
+}
+
+fn removes(scope: Option<&str>, connector: &Connector) -> bool {
+    scope.is_none_or(|id| connector.id.as_deref() == Some(id))
 }
 
 fn report(out: &mut Gathered, file: &str, malformation: Malformation) {
