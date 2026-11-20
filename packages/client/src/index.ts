@@ -214,6 +214,22 @@ export type {
   RollingDiagnosticsPartView,
   RollingDiagnosticsRowView,
 } from "./inspect/rolling-diagnostics.ts";
+export type {
+  AssistNeighbourhood,
+  ConnectorGender,
+  ConnectorKindView,
+  ConnectorSectionView,
+  HoverMateCount,
+  HoverRefusalHit,
+  HoverWait,
+  MagnetOffset,
+  PlacedModelView,
+  PlacementHover,
+  PlacementMode,
+  SectionProfile,
+} from "./edit/placement-hover.ts";
+export { distinctJoints } from "./edit/placement-hover.ts";
+export { effectivePlacementMode } from "./edit/placement-mode.ts";
 export {
   meshesSettled,
   type MeshCounts,
