@@ -14,6 +14,7 @@ interface StarterContents {
   readonly name: string;
   readonly placements: number;
   readonly track: number;
+  readonly trainsOnRails: number;
 }
 
 interface ShippedStarter extends StarterContents {
@@ -46,6 +47,7 @@ async function shippedStarters(): Promise<ReadonlyArray<ShippedStarter>> {
         name: manifest.name,
         placements: manifest.placements,
         track: manifest.track,
+        trainsOnRails: manifest.consists?.length ?? 0,
       };
     }),
   );
@@ -69,6 +71,7 @@ async function openedWorld(page: Page): Promise<StarterContents> {
       (await trackPanel.count()) === 0
         ? 0
         : Number(await trackPanel.getAttribute("data-track-pieces")),
+    trainsOnRails: Number(await page.locator("section.play-panel").getAttribute("data-trains")),
   };
 }
 
@@ -88,7 +91,7 @@ async function runATrain(page: Page): Promise<PlayOffer> {
 
 test.use({ viewport: VIEWPORT });
 
-test("a fresh profile opens on the welcome card, and each starter opens as its own world holding exactly its files, with Run a train offered or refused with a reason", async ({
+test("a fresh profile opens on the welcome card, and each starter opens as its own world holding exactly its files, its trains standing on the rails, with Run offered or refused with a reason", async ({
   page,
 }) => {
   const shipped = await shippedStarters();
@@ -124,7 +127,12 @@ test("a fresh profile opens on the welcome card, and each starter opens as its o
   expect(cardOnScreen, `the welcome card's box ${JSON.stringify(card)}`).toBe(true);
   expect(offered).toEqual(shipped.map((starter) => starter.id));
   expect(opened).toEqual(
-    shipped.map(({ name, placements, track }) => ({ name, placements, track })),
+    shipped.map(({ name, placements, track, trainsOnRails }) => ({
+      name,
+      placements,
+      track,
+      trainsOnRails,
+    })),
   );
   expect(play.filter((offer) => !offer.ran && offer.reason === "")).toEqual([]);
   expect(play.some((offer) => offer.ran)).toBe(true);

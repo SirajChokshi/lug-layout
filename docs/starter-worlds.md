@@ -21,7 +21,7 @@ The card's title and counts come from each starter's `manifest.json`; only the s
 ## Editing or adding a starter
 
 1. Start from an empty world named as the card should show it, or reopen a starter: pick it on the welcome card (the world menu's **Starter worlds** button shows the card).
-2. Build it with the editor like any layout. Placement rules apply as usual.
+2. Build it with the editor like any layout. Placement rules apply as usual. Set any train on the rails by holding it over laid track, so it's saved as a consist in the manifest and Play can run it as soon as the starter opens; a train placed off the track is only a model.
 3. Frame the view you want the starter to open on, then **Export .brr.zip**.
 4. Unzip the export into `apps/web/starters/<name>/` without `CREDITS.txt` (`unzip -o <file>.brr.zip -x CREDITS.txt -d apps/web/starters/<name>`), replacing the old files, run `pnpm format` so each record sits on its own line for review (any JSON layout reads the same), and add or update its entry in `starters.json`.
 
@@ -29,4 +29,4 @@ Keep starters small: everything a starter places is fetched the first time it op
 
 ## Checks
 
-`tools/e2e/tests/starter-worlds.spec.ts` opens every starter on the shelf in the built app against the part bundle, through the welcome card, and checks that each one loads with the placements and track its manifest lists. A starter that places a part the bundle no longer ships fails there, as it would for a user. The client test `starter-worlds.test.ts` covers the mechanism on a synthetic world: a model built from official parts that isn't a palette item, drawn track, and a starter that names a missing part.
+`tools/e2e/tests/starter-worlds.spec.ts` opens every starter on the shelf in the built app against the part bundle, through the welcome card, and checks that each one loads with the placements, track and trains on the rails its manifest lists, and that Run is offered or refused with a reason. A starter that places a part the bundle no longer ships fails there, as it would for a user. The client test `starter-worlds.test.ts` covers the mechanism on a synthetic world: a model built from official parts that isn't a palette item, drawn track with a train standing on it, and a starter that names a missing part.

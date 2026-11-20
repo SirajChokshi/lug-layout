@@ -2,7 +2,7 @@
   "starters": [
     {
       "world": "train-loop",
-      "summary": "An oval of 9V track on green baseplates, with a locomotive ready to go. Press Run a train."
+      "summary": "An oval of 9V track on green baseplates, with a locomotive standing on the rails ready to run."
     },
     {
       "world": "main-street",
@@ -10,7 +10,7 @@
     },
     {
       "world": "station-stop",
-      "summary": "A longer loop round a train station, with a steam locomotive waiting to pass the platform."
+      "summary": "A longer loop round a train station, with a steam locomotive standing at the platform."
     }
   ]
 }
