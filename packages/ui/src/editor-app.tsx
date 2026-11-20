@@ -17,7 +17,7 @@ import {
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
@@ -83,6 +83,27 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
       })}
     </pre>
   );
+}
+
+function CameraState({ camera }: { readonly camera: IEditorCamera }) {
+  const dump = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const element = dump.current;
+    if (!element) return;
+    const view = camera.savedView();
+    element.textContent = JSON.stringify(view);
+    let frame = 0;
+    const publish = (): void => {
+      if (!camera.matchesView(view)) {
+        camera.copyView(view);
+        element.textContent = JSON.stringify(view);
+      }
+      frame = requestAnimationFrame(publish);
+    };
+    frame = requestAnimationFrame(publish);
+    return () => cancelAnimationFrame(frame);
+  }, [camera]);
+  return <pre id="camera-state" ref={dump} />;
 }
 
 function PlanState({ plans }: { readonly plans: IPlanService }) {
@@ -206,6 +227,7 @@ export function EditorApp({
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
+      {showState && <CameraState camera={camera} />}
       <EditorFooter disclaimer={disclaimer} />
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (

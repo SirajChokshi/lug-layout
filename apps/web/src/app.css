@@ -680,7 +680,8 @@ footer {
 }
 
 #edit-state,
-#plan-state {
+#plan-state,
+#camera-state {
   display: none;
 }
 
