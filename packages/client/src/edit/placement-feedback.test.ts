@@ -90,6 +90,7 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
         magnet: { dxLdu: 0, dzLdu: 0, dyPlates: 0, distanceLdu: 0 },
         assistNeighbourhood: { ldu: 40, cells: 2, plates: 2 },
         settled: true,
+        turnSettled: true,
         ...placement,
       },
     },
@@ -204,6 +205,16 @@ it.each([
     ],
   },
   {
+    name: "a settled verdict whose turn probe hasn't settled, which says nothing about turning",
+    placement: {
+      turnSettled: false,
+      turnBlocksSnap: true,
+      turnMates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])],
+    },
+    tone: "fits",
+    lines: [],
+  },
+  {
     name: "a turn whose mates name no single kind",
     placement: {
       turnBlocksSnap: true,
@@ -267,4 +278,17 @@ it("reads an unsettled assist hover as a neutral search, never as precise's refu
       },
     },
   });
+});
+
+it("changes nothing when the turn probe settles without finding a snapping turn", () => {
+  const probing = hover({
+    turnSettled: false,
+    mates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])],
+  });
+  const probed = hover({
+    turnSettled: true,
+    mates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])],
+  });
+
+  expect(read(probed)).toEqual(read(probing));
 });

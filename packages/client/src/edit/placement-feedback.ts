@@ -38,7 +38,6 @@ export interface PlacementFeedback {
   readonly tone: PlacementTone;
   readonly mode: PlacementMode;
   readonly lines: ReadonlyArray<PlacementLine>;
-  readonly turnToSnap: boolean;
 }
 
 export interface PlacementHoverInput {
@@ -251,6 +250,10 @@ function placementTone(hover: PlacementHoverInput): PlacementTone {
   return placement.mates.length > 0 ? "mates" : "fits";
 }
 
+function turnToSnap(placement: PlacementHover): boolean {
+  return placement.turnSettled && placement.turnBlocksSnap;
+}
+
 function placementLines(hover: PlacementHoverInput, placement: PlacementHover): PlacementLine[] {
   const lines: PlacementLine[] = [];
   if (!placement.accepted) {
@@ -271,7 +274,7 @@ function placementLines(hover: PlacementHoverInput, placement: PlacementHover): 
       );
     }
   }
-  if (placement.turnBlocksSnap) lines.push(line("turn", turnText(placement.turnMates)));
+  if (turnToSnap(placement)) lines.push(line("turn", turnText(placement.turnMates)));
   return lines;
 }
 
@@ -282,21 +285,19 @@ export function placementFeedback(view: PlacementView): PlacementFeedback | null
   const mode = shownMode(view);
   const { placement } = hover;
   if (tone === "pending") {
-    return { tone, mode, lines: [line("pending", FINDING_A_FIT)], turnToSnap: false };
+    return { tone, mode, lines: [line("pending", FINDING_A_FIT)] };
   }
   if (placement) {
     return {
       tone,
       mode,
       lines: placementLines(hover, placement),
-      turnToSnap: placement.turnBlocksSnap,
     };
   }
   return {
     tone,
     mode,
     lines: hover.refusal === null ? [] : [line("refusal", hover.refusal)],
-    turnToSnap: false,
   };
 }
 

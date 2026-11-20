@@ -19,7 +19,7 @@ afterEach(() => {
 
 const PENDING_CUE_MS = 150;
 
-const REFUSED: Omit<PlacementHover, "settled"> = {
+const REFUSED: Omit<PlacementHover, "settled" | "turnSettled"> = {
   pose: { x: 0, z: 0, yPlates: 0, rot: 0 },
   accepted: false,
   hit: {
@@ -69,7 +69,7 @@ function holding(settled: boolean) {
       z: 0,
       yPlates: 0,
       refusal: "custom-modular-holes.ldr would hit Baseplate 16 x 16",
-      placement: { ...REFUSED, settled: isSettled },
+      placement: { ...REFUSED, settled: isSettled, turnSettled: isSettled },
     },
   });
   const view = (isSettled: boolean) =>
@@ -110,5 +110,66 @@ it("holds the live hint and shows a searching cue only after a beat while an ass
       hint: true,
       chip: "Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
     },
+  });
+});
+
+it("adds a late turn hint to the chip only, leaving the live hint's text alone", () => {
+  const container = new Container();
+  container.load(
+    ...mainThreadModules({
+      bundleBaseUrl: "unused",
+      disclaimer: "unused",
+      startSimWorker: () => new MessageChannel().port1,
+    }),
+  );
+  const editor = container.get(EDITOR);
+  const play = container.get(TRAIN_PLAY).snapshot();
+  const backwards = (turnSettled: boolean): EditorSnapshot => ({
+    ...editor.snapshot(),
+    status: "ready",
+    mode: "place",
+    hover: {
+      x: 0,
+      z: 0,
+      yPlates: 0,
+      refusal: null,
+      placement: {
+        ...REFUSED,
+        accepted: true,
+        hit: null,
+        settled: true,
+        turnSettled,
+        turnBlocksSnap: turnSettled,
+        turnMates: [],
+      },
+    },
+  });
+  const view = (turnSettled: boolean) =>
+    createElement(
+      Fragment,
+      null,
+      createElement(ToolHud, { snapshot: backwards(turnSettled), play }),
+      createElement(PlacementChip, { snapshot: backwards(turnSettled) }),
+    );
+  const { container: root, rerender } = render(view(false));
+  const said = () => ({
+    hint: screen.getByRole("status").textContent,
+    chip:
+      root.querySelector<HTMLElement>(".placement-chip")?.hidden === false
+        ? root.querySelector(".placement-chip")?.textContent
+        : null,
+  });
+  const before = said();
+  rerender(view(true));
+  const after = said();
+
+  expect({
+    hintUnchanged: after.hint === before.hint,
+    before: before.chip,
+    after: after.chip,
+  }).toEqual({
+    hintUnchanged: true,
+    before: null,
+    after: "Turn it to snap here",
   });
 });
