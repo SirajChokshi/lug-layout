@@ -1603,13 +1603,18 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private planOutline(piece: number): TrackOutline {
-    const catalogIndex = this.layout.piece(piece);
+    return this.outlineAt(this.layout.piece(piece), this.layout.pose(piece));
+  }
+
+  outlineAt(catalogIndex: number, pose: Pose16): TrackOutline {
     const edges = this.planEdges.get(catalogIndex);
     const connectors = this.pieces[catalogIndex]?.connectors;
-    if (!edges || !connectors) throw new Error(`laid track piece ${piece} has no plan outline`);
+    if (!edges || !connectors) {
+      throw new Error(`track catalog piece ${catalogIndex} has no plan outline`);
+    }
     return new TrackOutline(
       edges,
-      this.layout.pose(piece),
+      pose,
       connectors.map((connector) => connector.pose),
     );
   }
