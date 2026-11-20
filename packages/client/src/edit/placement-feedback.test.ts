@@ -6,6 +6,7 @@ import {
   placementFeedback,
   type PlacementView,
 } from "./placement-feedback.ts";
+import { distinctJoints } from "./placement-hover.ts";
 import type {
   ConnectorKindView,
   HoverMateCount,
@@ -56,13 +57,18 @@ function mate(
   partnerKinds: ReadonlyArray<ConnectorKindView>,
   joints: number,
   partners: ReadonlyArray<PlacedModelView>,
-  status: { readonly inferred?: number; readonly unverified?: number } = {},
+  status: {
+    readonly inferred?: number;
+    readonly unverified?: number;
+    readonly jointIds?: ReadonlyArray<number>;
+  } = {},
 ): HoverMateCount {
   return {
     kind,
     partnerKinds,
     connectors: joints * 2,
     joints,
+    jointIds: new Set(status.jointIds ?? Array.from({ length: joints }, (_, joint) => joint)),
     partners,
     inferred: status.inferred ?? 0,
     unverified: status.unverified ?? 0,
@@ -84,10 +90,12 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
         accepted: true,
         hit: null,
         mates: [],
+        joints: distinctJoints(placement.mates ?? []),
         lifted: false,
         restsOn: [],
         turnBlocksSnap: false,
         turnMates: [],
+        turnJoints: distinctJoints(placement.turnMates ?? []),
         mode: "assist",
         magnetised: false,
         magnet: { dxLdu: 0, dzLdu: 0, dyPlates: 0, distanceLdu: 0 },
@@ -343,5 +351,29 @@ it("tints a held group that would land, says nothing over it, and claims nothing
     lands: { tone: "fits", lines: [], ghost: { tone: "fits", hit: null, precise: false } },
     boxing: { tone: undefined, lines: undefined, ghost: null },
     filling: { tone: undefined, lines: undefined, ghost: null },
+  });
+});
+
+it("leads with the distinct joint count when kinds overlap on the same joints, never the per-kind sum, and keeps each kind's own line", () => {
+  const overlapping = hover({
+    mates: [
+      mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED], { jointIds: [7, 9] }),
+      mate(BAR_TUBE, [AXLE_END], 2, [PINNED], { jointIds: [7, 9] }),
+    ],
+  });
+  const placement = overlapping.hover?.placement;
+
+  expect({
+    joints: placement?.joints,
+    perKindSum: placement?.mates.reduce((sum, each) => sum + each.joints, 0),
+    lines: placementFeedback(overlapping)?.lines.map(lineText),
+  }).toEqual({
+    joints: 2,
+    perKindSum: 4,
+    lines: [
+      "Mates at 2 joints",
+      "2 pin holes line up flush with custom-modular-pinned, 2 pins go in",
+      "2 round sockets take 2 axles from custom-modular-pinned",
+    ],
   });
 });

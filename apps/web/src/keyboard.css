@@ -494,6 +494,10 @@ kbd {
   font-weight: 600;
 }
 
+.placement-chip-line[data-line="joints"] {
+  font-weight: 600;
+}
+
 .placement-chip-line[data-line="turn"] {
   color: #6e5300;
 }
