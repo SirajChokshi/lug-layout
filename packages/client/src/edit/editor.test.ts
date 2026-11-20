@@ -7311,6 +7311,32 @@ it("fills a user's track container across a road plate's roadway as track the pl
   expect(acrossTrack?.placed).toBeGreaterThan(0);
 }, 120_000);
 
+it("loads track support again on the next edit after a failed load, then reports unsupported track and clears the error", async () => {
+  let offline = true;
+  const { editor, backend } = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    const tables = bound.get(CONNECTOR_TABLES);
+    bound.rebind(CONNECTOR_TABLES).toConstantValue({
+      load: (placeable) =>
+        offline ? Promise.reject(new Error("offline")) : tables.load(placeable),
+      loaded: (placeable) => tables.loaded(placeable),
+    });
+  });
+  await vi.waitFor(() =>
+    expect(editor.snapshot().catalogError).toBe("track connector records can't be read: offline"),
+  );
+  const unknown = editor.snapshot().track?.unsupported ?? null;
+
+  offline = false;
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  await supportChecked(editor);
+
+  expect(unknown).toBeNull();
+  expect(editor.snapshot().track?.unsupported).toBeGreaterThan(0);
+  expect(editor.snapshot().catalogError).toBeNull();
+}, 120_000);
+
 const MY_COTTAGE = [
   "0 Custom cottage built from official parts",
   "0 Name: my-cottage.ldr",
