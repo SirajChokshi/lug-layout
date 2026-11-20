@@ -17,7 +17,7 @@ import type {
   SectionProfile,
 } from "./placement-hover.ts";
 
-export type PlacementTone = "fits" | "mates" | "refused";
+export type PlacementTone = "fits" | "mates" | "refused" | "pending";
 
 export type ConnectorBadge = "inferred" | "unverified";
 
@@ -26,7 +26,7 @@ export interface BadgeCount {
   readonly connectors: number;
 }
 
-export type PlacementLineKind = "refusal" | "snap" | "mates" | "lift" | "turn";
+export type PlacementLineKind = "pending" | "refusal" | "snap" | "mates" | "lift" | "turn";
 
 export interface PlacementLine {
   readonly kind: PlacementLineKind;
@@ -114,6 +114,7 @@ const ROUND_PEG = noun("round peg");
 const ROUND_SOCKET = noun("round socket");
 const NO_BADGES: ReadonlyArray<BadgeCount> = [];
 const UNPLACEABLE = "Can't place here";
+const FINDING_A_FIT = "Finding a fit…";
 
 function hasProfile(kind: ConnectorKindView, profile: SectionProfile): boolean {
   return kind.sections.some((section) => section.profile === profile);
@@ -238,8 +239,13 @@ function line(kind: PlacementLineKind, text: string): PlacementLine {
   return { kind, text, badges: NO_BADGES };
 }
 
+function searching(placement: PlacementHover | null): boolean {
+  return placement !== null && placement.mode === "assist" && !placement.settled;
+}
+
 function placementTone(hover: PlacementHoverInput): PlacementTone {
   const { placement } = hover;
+  if (searching(placement)) return "pending";
   if (!placement) return hover.refusal === null ? "fits" : "refused";
   if (!placement.accepted) return "refused";
   return placement.mates.length > 0 ? "mates" : "fits";
@@ -275,6 +281,9 @@ export function placementFeedback(view: PlacementView): PlacementFeedback | null
   const tone = placementTone(hover);
   const mode = shownMode(view);
   const { placement } = hover;
+  if (tone === "pending") {
+    return { tone, mode, lines: [line("pending", FINDING_A_FIT)], turnToSnap: false };
+  }
   if (placement) {
     return {
       tone,
@@ -318,9 +327,10 @@ export function ghostVerdict(view: PlacementView): GhostVerdict | null {
   const { hover } = view;
   if (view.mode !== PLACE_MODE || hover === null) return null;
   const precise = shownMode(view) === "precise";
-  if (view.ghostSettled) return { tone: null, hit: null, precise };
+  const tone = placementTone(hover);
+  if (view.ghostSettled || tone === "pending") return { tone: null, hit: null, precise };
   const hit = hover.placement?.accepted === false ? hover.placement.hit : null;
-  return { tone: placementTone(hover), hit: hit ? hitBox(hit) : null, precise };
+  return { tone, hit: hit ? hitBox(hit) : null, precise };
 }
 
 function sameBox(a: WorldBox | null, b: WorldBox | null): boolean {

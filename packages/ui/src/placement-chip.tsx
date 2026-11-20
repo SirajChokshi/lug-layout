@@ -1,7 +1,8 @@
 import { badgeText, placementFeedback, type EditorSnapshot } from "@brr/client";
-import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 const CURSOR_OFFSET_PX = 18;
+const PENDING_CUE_DELAY_MS = 150;
 const EDGE_MARGIN_PX = 8;
 
 interface PointerAt {
@@ -45,11 +46,29 @@ function useBesidePointer(chip: RefObject<HTMLDivElement | null>): void {
   });
 }
 
+function pendingSearch(snapshot: EditorSnapshot): string | null {
+  const pose = snapshot.hover?.placement?.pose;
+  if (!pose) return null;
+  return `${snapshot.activeItem ?? ""} ${pose.x} ${pose.z} ${pose.yPlates} ${pose.rot}`;
+}
+
+function useLateCue(search: string | null): boolean {
+  const [cuedFor, setCuedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (search === null) return undefined;
+    const timer = window.setTimeout(() => setCuedFor(search), PENDING_CUE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [search]);
+  return search !== null && cuedFor === search;
+}
+
 export function PlacementChip({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const chip = useRef<HTMLDivElement>(null);
   useBesidePointer(chip);
   const feedback = placementFeedback(snapshot);
-  const lines = feedback?.lines ?? [];
+  const pending = feedback?.tone === "pending";
+  const cueShown = useLateCue(pending ? pendingSearch(snapshot) : null);
+  const lines = pending && !cueShown ? [] : (feedback?.lines ?? []);
   const precise = feedback?.mode === "precise";
   return (
     <div

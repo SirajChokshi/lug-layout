@@ -18,7 +18,10 @@ export interface ToolHintView {
   readonly title: string;
   readonly detail: string | null;
   readonly hints: ReadonlyArray<ToolHint>;
+  readonly busy: boolean;
 }
+
+type HintView = Omit<ToolHintView, "busy">;
 
 const DEGREES_PER_QUARTER_TURN = 90;
 
@@ -45,7 +48,7 @@ function pieces(count: number): string {
   return `${count} ${count === 1 ? "piece" : "pieces"}`;
 }
 
-function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
+function dragView(drag: TrackDragView): Omit<HintView, "hints"> {
   const title = `Laying ${pieces(drag.pieces)}`;
   const refused = "Nothing to lay";
   switch (drag.closure) {
@@ -84,7 +87,7 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   }
 }
 
-function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView {
+function loadingView(snapshot: EditorSnapshot, held: HeldItemView): HintView {
   const { queued } = held;
   return {
     tone: "place",
@@ -101,7 +104,7 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView
   };
 }
 
-function view(snapshot: EditorSnapshot): ToolHintView {
+function view(snapshot: EditorSnapshot): HintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
   }
@@ -211,7 +214,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
   }
 }
 
-function playView(play: PlaySnapshot): ToolHintView {
+function playView(play: PlaySnapshot): HintView {
   const derailed = play.derailSpeedLduPerS > 0;
   return {
     tone: derailed ? "warn" : "play",
@@ -229,10 +232,11 @@ function playView(play: PlaySnapshot): ToolHintView {
 }
 
 export function toolHints(snapshot: EditorSnapshot, play?: PlaySnapshot): ToolHintView {
-  const hinted =
-    play?.status === "running" && snapshot.status === "ready" ? playView(play) : view(snapshot);
+  const playing = play?.status === "running" && snapshot.status === "ready";
+  const hinted = playing ? playView(play) : view(snapshot);
   return {
     ...hinted,
+    busy: !playing && placementFeedback(snapshot)?.tone === "pending",
     hints: hinted.hints.filter(
       (hint) => hint.kind !== "key" || commandEnabled(hint.command, snapshot, play),
     ),

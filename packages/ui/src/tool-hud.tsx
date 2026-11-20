@@ -53,7 +53,13 @@ interface ToolHudProps {
 export function ToolHud({ snapshot, play }: ToolHudProps) {
   const view = toolHints(snapshot, play);
   return (
-    <div className="tool-hud" data-tone={view.tone} role="status" aria-live="polite">
+    <div
+      className="tool-hud"
+      data-tone={view.tone}
+      role="status"
+      aria-live="polite"
+      aria-busy={view.busy}
+    >
       <span className="tool-title">
         {view.title}
         {view.detail !== null && <span className="tool-detail">{view.detail}</span>}

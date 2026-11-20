@@ -89,6 +89,7 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
         magnetised: false,
         magnet: { dxLdu: 0, dzLdu: 0, dyPlates: 0, distanceLdu: 0 },
         assistNeighbourhood: { ldu: 40, cells: 2, plates: 2 },
+        settled: true,
         ...placement,
       },
     },
@@ -237,4 +238,33 @@ it("marks the ghost precise when the hover was searched in precise mode, settled
     { tone: null, hit: null, precise: true },
     { tone: "fits", hit: null, precise: false },
   ]);
+});
+
+function read(view: PlacementView) {
+  return {
+    tone: placementFeedback(view)?.tone,
+    lines: placementFeedback(view)?.lines.map(lineText),
+    ghost: ghostVerdict(view),
+  };
+}
+
+it("reads an unsettled assist hover as a neutral search, never as precise's refusal, and the settled hover as its verdict", () => {
+  const provisional = hover({ accepted: false, hit: HIT, settled: false });
+  const settled = hover({ accepted: false, hit: HIT, settled: true });
+  expect({ provisional: read(provisional), settled: read(settled) }).toEqual({
+    provisional: {
+      tone: "pending",
+      lines: ["Finding a fit…"],
+      ghost: { tone: null, hit: null, precise: false },
+    },
+    settled: {
+      tone: "refused",
+      lines: ["Hits ldraw:3700 in Market Street at cell (16, -7)"],
+      ghost: {
+        tone: "refused",
+        hit: { minX: 320, minY: 8, minZ: -140, maxX: 340, maxY: 24, maxZ: -120 },
+        precise: false,
+      },
+    },
+  });
 });

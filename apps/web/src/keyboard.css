@@ -449,3 +449,28 @@ kbd {
 .placement-mode[data-held] .placement-mode-state {
   font-style: italic;
 }
+
+.placement-chip[data-tone="pending"] {
+  --tone: #8a96a3;
+}
+
+.placement-chip-line[data-line="pending"] {
+  color: #5b6b7a;
+  font-style: italic;
+}
+
+.placement-chip-line[data-line="pending"] > span:first-child {
+  animation: placement-chip-searching 1.2s ease-in-out infinite;
+}
+
+@keyframes placement-chip-searching {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placement-chip-line[data-line="pending"] > span:first-child {
+    animation: none;
+  }
+}
