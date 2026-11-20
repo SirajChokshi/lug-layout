@@ -2,13 +2,15 @@ import {
   RailNetwork,
   TrackGraph,
   WORLD_TRACK_FRAME,
+  sameCarrier,
   simTrackFromGraph,
+  type CarrierPose,
   type ConsistAnchor,
-  type TrackPieceKey,
+  type LaidPieceRef,
 } from "@brr/domain";
 import { pose16 } from "@brr/math";
 import type { TrackPiece } from "@brr/schema/bundle";
-import { decodeTrackPosition, encodeTrackPosition, type TrackPieceKeyV1 } from "@brr/schema/world";
+import { decodeTrackPosition, encodeTrackPosition, type LaidPieceV1 } from "@brr/schema/world";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import { routeSegments } from "../sim/sim-track-input.ts";
 
@@ -21,13 +23,21 @@ export interface RailHead {
   readonly offsetLdu: number;
 }
 
+export interface RailCarrier {
+  readonly pose: CarrierPose;
+  readonly first: number;
+  readonly count: number;
+}
+
 export interface SwitchSite {
   readonly label: string;
   readonly x: number;
   readonly z: number;
 }
 
-function keyText(key: TrackPieceKey): string {
+type PieceKey = Omit<LaidPieceRef, "kind">;
+
+function keyText(key: PieceKey): string {
   return [
     key.piece,
     key.placement.heading,
@@ -44,7 +54,10 @@ export class RailTrack {
   private readonly placements = new Map<string, number>();
   private readonly firstEdge: Int32Array;
 
-  constructor(readonly play: PlayTrack) {
+  constructor(
+    readonly play: PlayTrack,
+    private readonly carriers: ReadonlyArray<RailCarrier>,
+  ) {
     const { layout, pieces } = play;
     this.graph = new TrackGraph(layout);
     const graph = this.graph;
@@ -102,23 +115,54 @@ export class RailTrack {
   anchorOf(head: RailHead): ConsistAnchor | null {
     const { layout } = this.play;
     const placement = this.placementOf(head.edge);
-    if (placement < 0 || layout.frame(placement).id !== WORLD_TRACK_FRAME.id) return null;
-    return {
-      track: {
-        piece: layout.piece(placement),
-        placement: layout.pose(placement),
-        yPlates: layout.yPlates(placement),
-      },
-      route: this.graph.edgeRoute[head.edge] ?? 0,
-      reversed: head.edge % 2 === 1,
-      offsetLdu: head.offsetLdu,
-    };
+    if (placement < 0) return null;
+    const route = this.graph.edgeRoute[head.edge] ?? 0;
+    const reversed = head.edge % 2 === 1;
+    const offsetLdu = head.offsetLdu;
+    const carrier = this.carriers.find(
+      ({ first, count }) => placement >= first && placement < first + count,
+    );
+    if (carrier) {
+      const piece = placement - carrier.first;
+      return {
+        track: { kind: "carried", carrier: carrier.pose, piece },
+        route,
+        reversed,
+        offsetLdu,
+      };
+    }
+    if (layout.frame(placement).id !== WORLD_TRACK_FRAME.id) return null;
+    const track = {
+      kind: "laid",
+      piece: layout.piece(placement),
+      placement: layout.pose(placement),
+      yPlates: layout.yPlates(placement),
+    } as const;
+    return { track, route, reversed, offsetLdu };
+  }
+
+  private placementOfAnchor(anchor: ConsistAnchor): number | null {
+    const { track } = anchor;
+    switch (track.kind) {
+      case "laid":
+        return this.placements.get(keyText(track)) ?? null;
+      case "carried": {
+        const carrier = this.carriers.find((candidate) =>
+          sameCarrier(candidate.pose, track.carrier),
+        );
+        return carrier && track.piece < carrier.count ? carrier.first + track.piece : null;
+      }
+      default: {
+        const unhandled: never = track;
+        throw new Error(`unhandled track piece ref ${String(unhandled)}`);
+      }
+    }
   }
 
   headOf(anchor: ConsistAnchor): RailHead | null {
-    const placement = this.placements.get(keyText(anchor.track));
-    if (placement === undefined) return null;
-    const routes = this.play.pieces[anchor.track.piece]?.routes.length ?? 0;
+    const placement = this.placementOfAnchor(anchor);
+    if (placement === null) return null;
+    const routes = this.play.pieces[this.play.layout.piece(placement)]?.routes.length ?? 0;
     if (anchor.route >= routes) return null;
     const edge = (this.firstEdge[placement] ?? 0) + 2 * anchor.route + (anchor.reversed ? 1 : 0);
     if (anchor.offsetLdu > this.network.edgeLength(edge)) return null;
@@ -126,13 +170,11 @@ export class RailTrack {
   }
 }
 
-export function pieceRecord(
-  pieces: ReadonlyArray<TrackPiece>,
-  key: TrackPieceKey,
-): TrackPieceKeyV1 {
+export function laidPieceRecord(pieces: ReadonlyArray<TrackPiece>, key: PieceKey): LaidPieceV1 {
   const piece = pieces[key.piece];
   if (!piece) throw new Error(`track catalog has no piece ${key.piece}`);
   return {
+    on: "track",
     ref: piece.id,
     heading: key.placement.heading,
     position: encodeTrackPosition(key.placement.position),
@@ -140,13 +182,14 @@ export function pieceRecord(
   };
 }
 
-export function pieceKey(
+export function laidPieceRef(
   pieces: ReadonlyArray<TrackPiece>,
-  record: TrackPieceKeyV1,
-): TrackPieceKey | null {
+  record: LaidPieceV1,
+): LaidPieceRef | null {
   const piece = pieces.findIndex((candidate) => candidate.id === record.ref);
   if (piece < 0) return null;
   return {
+    kind: "laid",
     piece,
     placement: pose16(decodeTrackPosition(record.position), record.heading),
     yPlates: record.yPlates,

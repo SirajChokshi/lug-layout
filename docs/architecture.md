@@ -402,6 +402,8 @@ Extra plan rules:
 - **Track graph.** Derived from track-end joins. Nodes are the joined ends, each with a pose. Edges are the part's `trackPaths` (straight or arc, with exact length). A switch is a node with one entry, two exits and a state. Each physical edge gives two directed edges, so reversing loops and wyes work.
 - **Trains.** A consist is an ordered list of vehicles. Each vehicle has a length, bogie offsets, coupler points, max speed, acceleration and braking, a power system (9V, PF, PU or none; cosmetic) and discrete power steps.
   - A train's position is (directed edge, offset). Cars are placed by walking back along the path, and bogies pivot.
+  - **Trains stand on the rails.** A held model with detected running gear seats on laid track under the cursor: its head (the leading coupling face) goes a whole number of LDU along one route of one track piece, centred on the cursor and slid back from open ends, and its bogies are posed with the same poser the sim uses, so Play's first frame is the placed pose. Off the rails it places as an ordinary model. Two trains never hold the same track piece, which is the sim's per-piece reservation. Play runs every train on the rails from where it stands and drives one chosen train at a time.
+  - **The anchor is the piece's exact pose**, never its index: the catalog piece, its ℤ[ζ₁₆] pose in the world track frame and its height. Laid track and certified track inside placed models both have one. Track in a run frame (off the stud lattice inside its model) has none, so a train can't stand on it yet.
   - Control is manual throttle plus "go to": A* over the directed graph, throwing switches automatically.
   - The MVP prevents collisions by stopping a train on occupancy. Fixed-block signals come in P1.
 - **Vehicle data.** A sidecar file attached to the model hash holds the kind, bogies, couplers, axles, length and suggested minimum radius. It can optionally round-trip as `0 !BRKRR VEHICLE ...` metas in the LDraw file.
@@ -422,7 +424,7 @@ Extra plan rules:
 | Data | Format | Location |
 |---|---|---|
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and OPFS |
-| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists, vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
+| World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
 | Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
 | Printable plan | SVG in the MVP, PDF in P1 | Download |

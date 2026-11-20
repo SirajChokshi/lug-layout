@@ -164,12 +164,16 @@ function segmentDistance(
   const heading = track.segmentHeading[segment] ?? 0;
   const curvature = track.segmentCurvature[segment] ?? 0;
   if (curvature === 0) {
-    return Math.hypot(x0 + s * Math.cos(heading) - x, z0 + s * Math.sin(heading) - z);
+    return planDistance(x0 + s * Math.cos(heading) - x, z0 + s * Math.sin(heading) - z);
   }
   const turned = heading + curvature * s;
   const px = x0 + (Math.sin(turned) - Math.sin(heading)) / curvature;
   const pz = z0 - (Math.cos(turned) - Math.cos(heading)) / curvature;
-  return Math.hypot(px - x, pz - z);
+  return planDistance(px - x, pz - z);
+}
+
+function planDistance(dx: number, dz: number): number {
+  return Math.sqrt(dx * dx + dz * dz);
 }
 
 export class RailRun implements PathSampler {

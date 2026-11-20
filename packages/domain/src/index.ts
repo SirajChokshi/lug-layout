@@ -48,9 +48,13 @@ export {
   ConsistHandle,
   ConsistLayout,
   consistPoseProblem,
+  sameCarrier,
+  type CarriedPieceRef,
+  type CarrierPose,
   type ConsistAnchor,
   type ConsistPose,
-  type TrackPieceKey,
+  type LaidPieceRef,
+  type TrackPieceRef,
 } from "./rail/consist-layout.ts";
 export {
   RAIL_SPOT_FLOATS,

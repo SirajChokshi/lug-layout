@@ -66,7 +66,7 @@ describe("EditHistory", () => {
             refId: next() % 7,
             colorId: 0,
             anchor: {
-              track: { piece: next() % 5, placement: POSE16_IDENTITY, yPlates: 0 },
+              track: { kind: "laid", piece: next() % 5, placement: POSE16_IDENTITY, yPlates: 0 },
               route: next() % 2,
               reversed: next() % 2 === 0,
               offsetLdu: next() % 320,

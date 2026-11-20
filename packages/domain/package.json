@@ -9,7 +9,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.test.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
-    "bench": "node --experimental-transform-types --no-warnings --expose-gc bench/connection-solver.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/technic-fit.bench.ts"
+    "bench": "node --experimental-transform-types --no-warnings --expose-gc bench/connection-solver.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/technic-fit.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/rail-aim.bench.ts"
   },
   "dependencies": {
     "@brr/math": "workspace:*",

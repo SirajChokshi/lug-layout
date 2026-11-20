@@ -108,6 +108,11 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface TrackRoute {
+  readonly from: TrackEnd;
+  readonly to: TrackEnd;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
@@ -115,6 +120,7 @@ interface EditState {
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
   };
+  readonly routes: ReadonlyArray<TrackRoute>;
 }
 
 interface PlanState {
@@ -266,6 +272,14 @@ export class EditorPage {
   private forgetView(): void {
     this.map = null;
     this.samples.length = 0;
+  }
+
+  async goTo(target: LatticePoint): Promise<void> {
+    await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
+    await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
+    await this.page.getByRole("button", { name: "Go to x, z" }).click();
+    await this.settle();
+    this.forgetView();
   }
 
   async zoom(wheelDelta: number): Promise<void> {
@@ -490,6 +504,14 @@ export class EditorPage {
     return (await this.editState()).world.trackEnds;
   }
 
+  async trackRoutes(): Promise<ReadonlyArray<TrackRoute>> {
+    return (await this.editState()).routes;
+  }
+
+  async trainsOnRails(): Promise<number> {
+    return Number(await this.page.locator("section.play-panel").getAttribute("data-trains"));
+  }
+
   private async planState(): Promise<PlanState> {
     const text = await this.page.locator("#plan-state").textContent();
     if (!text) throw new Error("the plan state dump is empty; open the editor with state=1");
@@ -517,6 +539,13 @@ export class EditorPage {
   ): Promise<number> {
     return Number(await this.root.getAttribute(`data-${name}`));
   }
+}
+
+export function routeMiddle(route: TrackRoute): LatticePoint {
+  return {
+    x: Math.round((route.from.xLdu + route.to.xLdu) / 2 / STUD) * STUD,
+    z: Math.round((route.from.zLdu + route.to.zLdu) / 2 / STUD) * STUD,
+  };
 }
 
 export function nearestLattice(end: TrackEnd): LatticePoint {

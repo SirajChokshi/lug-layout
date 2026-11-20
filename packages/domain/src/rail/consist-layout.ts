@@ -1,13 +1,31 @@
-import { isLatticePose, type Pose16 } from "@brr/math";
+import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 
-export interface TrackPieceKey {
+export interface LaidPieceRef {
+  readonly kind: "laid";
   readonly piece: number;
   readonly placement: Pose16;
   readonly yPlates: number;
 }
 
+export interface CarrierPose {
+  readonly refId: number;
+  readonly colorId: number;
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly rot: number;
+}
+
+export interface CarriedPieceRef {
+  readonly kind: "carried";
+  readonly carrier: CarrierPose;
+  readonly piece: number;
+}
+
+export type TrackPieceRef = LaidPieceRef | CarriedPieceRef;
+
 export interface ConsistAnchor {
-  readonly track: TrackPieceKey;
+  readonly track: TrackPieceRef;
   readonly route: number;
   readonly reversed: boolean;
   readonly offsetLdu: number;
@@ -29,14 +47,47 @@ function isCount(value: number): boolean {
   return Number.isSafeInteger(value) && value >= 0;
 }
 
+function pieceProblem(track: TrackPieceRef): string | null {
+  switch (track.kind) {
+    case "laid":
+      if (!isCount(track.piece)) return "its track piece is not a catalog index";
+      if (!isLatticePose(0, 0, track.yPlates)) return "its track height is outside int16 plates";
+      return null;
+    case "carried": {
+      const { carrier } = track;
+      if (!isCount(track.piece)) return "its track piece is not an index into its model";
+      if (!isCount(carrier.refId) || !isCount(carrier.colorId)) {
+        return "the model carrying its track has no catalog ref";
+      }
+      if (!isLatticePose(carrier.x, carrier.z, carrier.yPlates) || !isRot90(carrier.rot)) {
+        return "the model carrying its track is not at a lattice pose";
+      }
+      return null;
+    }
+    default: {
+      const unhandled: never = track;
+      throw new Error(`unhandled track piece ref ${String(unhandled)}`);
+    }
+  }
+}
+
 export function consistPoseProblem(pose: ConsistPose): string | null {
   const { anchor } = pose;
   if (!isCount(pose.refId) || !isCount(pose.colorId)) return "its catalog ref is not an index";
-  if (!isCount(anchor.track.piece)) return "its track piece is not a catalog index";
-  if (!isLatticePose(0, 0, anchor.track.yPlates)) return "its track height is outside int16 plates";
   if (!isCount(anchor.route)) return "its route is not an index";
   if (!isCount(anchor.offsetLdu)) return "its offset along the route is not a whole LDU";
-  return null;
+  return pieceProblem(anchor.track);
+}
+
+export function sameCarrier(a: CarrierPose, b: CarrierPose): boolean {
+  return (
+    a.refId === b.refId &&
+    a.colorId === b.colorId &&
+    a.x === b.x &&
+    a.z === b.z &&
+    a.yPlates === b.yPlates &&
+    a.rot === b.rot
+  );
 }
 
 export class ConsistLayout {

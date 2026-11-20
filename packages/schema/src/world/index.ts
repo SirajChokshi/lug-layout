@@ -221,8 +221,9 @@ export const TrackRecordV1 = v.strictObject(
 );
 export type TrackRecordV1 = v.InferOutput<typeof TrackRecordV1>;
 
-export const TrackPieceKeyV1 = v.strictObject(
+export const LaidPieceV1 = v.strictObject(
   {
+    on: v.literal("track"),
     ref: TrackRecordV1.entries.ref,
     heading: TrackRecordV1.entries.heading,
     position: TrackRecordV1.entries.position,
@@ -230,13 +231,24 @@ export const TrackPieceKeyV1 = v.strictObject(
   },
   strictMessage,
 );
-export type TrackPieceKeyV1 = v.InferOutput<typeof TrackPieceKeyV1>;
+export type LaidPieceV1 = v.InferOutput<typeof LaidPieceV1>;
+
+export const CarriedPieceV1 = v.strictObject(
+  { on: v.literal("model"), ...PlacementRecordV1.entries, piece: Count },
+  strictMessage,
+);
+export type CarriedPieceV1 = v.InferOutput<typeof CarriedPieceV1>;
+
+export const ConsistPieceV1 = v.variant("on", [LaidPieceV1, CarriedPieceV1], (issue) =>
+  issue.received === "undefined" ? "is missing" : `must be "track" or "model"`,
+);
+export type ConsistPieceV1 = v.InferOutput<typeof ConsistPieceV1>;
 
 export const ConsistRecordV1 = v.strictObject(
   {
     ref: PlacementRecordV1.entries.ref,
     color: Count,
-    track: TrackPieceKeyV1,
+    track: ConsistPieceV1,
     route: Count,
     reversed: v.boolean(),
     offsetLdu: Count,

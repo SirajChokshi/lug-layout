@@ -50,10 +50,16 @@ const manifest = {
   disclaimer: "disclaimer",
 };
 
-const consist = {
+const consist: ConsistRecordV1 = {
   ref: "omr:10133-1",
   color: 0,
-  track: { ref: "ldraw:74746", heading: 3, position: ["2", ...ZEROS.slice(1)], yPlates: 0 },
+  track: {
+    on: "track",
+    ref: "ldraw:74746",
+    heading: 3,
+    position: ["2", ...ZEROS.slice(1)],
+    yPlates: 0,
+  },
   route: 0,
   reversed: true,
   offsetLdu: 120,
@@ -176,6 +182,27 @@ describe("world schema v1", () => {
       "$.consists.0.track.heading",
     ],
     ["a consist with an unknown key", withConsist({ facing: 1 }), "$.consists.0.facing"],
+    [
+      "a consist on a model off the lattice",
+      withConsist({
+        track: {
+          on: "model",
+          ref: "omr:7936-1",
+          color: 0,
+          x: 30,
+          z: 0,
+          yPlates: 0,
+          rot: 0,
+          piece: 2,
+        },
+      }),
+      "$.consists.0.track.x",
+    ],
+    [
+      "a consist on something that is neither track nor a model",
+      withConsist({ track: { ...consist.track, on: "table" } }),
+      "$.consists.0.track.on",
+    ],
   ])("rejects a manifest with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldManifestV1, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);
@@ -277,9 +304,23 @@ describe("world schema v1", () => {
 
   it("keeps the consists on the rails through an archive, and counts their imported files as used", () => {
     const sha256 = "a".repeat(64);
-    const consists: ReadonlyArray<ConsistRecordV1> = [
+    const consists: ConsistRecordV1[] = [
       { ...consist, ref: importRef(sha256) },
-      { ...consist, reversed: false, offsetLdu: 0 },
+      {
+        ...consist,
+        reversed: false,
+        offsetLdu: 0,
+        track: {
+          on: "model",
+          ref: "omr:7936-1",
+          color: 0,
+          x: 40,
+          z: -60,
+          yPlates: 0,
+          rot: 3,
+          piece: 2,
+        },
+      },
     ];
     const shards = worldShards(placements, track);
     const files = worldArchiveFiles({

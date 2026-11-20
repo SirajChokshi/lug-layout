@@ -23,7 +23,7 @@ import type { PlayModel } from "../play/play-models.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import { PLACEABLE_CATALOG, VEHICLE_IDS } from "../tokens.ts";
 import { ConsistBodies, standingGhost, type StandingConsist } from "./consist-bodies.ts";
-import { RailTrack, type RailHead } from "./rail-track.ts";
+import { RailTrack, type RailCarrier, type RailHead } from "./rail-track.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
 
 export interface RailSeat {
@@ -59,7 +59,7 @@ export interface RailGhost {
 }
 
 export interface IRailYard {
-  setTrack(track: PlayTrack | null): void;
+  setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void;
   rails(): RailTrack | null;
   aim(model: PlayModel, ray: Float64Array, reversed: boolean): RailAim;
   ghost(seat: RailSeat): RailGhost;
@@ -147,8 +147,8 @@ export class RailYard implements IRailYard {
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
   ) {}
 
-  setTrack(track: PlayTrack | null): void {
-    this.track = track && track.layout.count > 0 ? new RailTrack(track) : null;
+  setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void {
+    this.track = track && track.layout.count > 0 ? new RailTrack(track, carriers) : null;
     this.run = this.track ? new RailRun(this.track.network) : null;
     this.prepared.clear();
     for (const parked of this.parked) this.restand(parked);
@@ -397,9 +397,8 @@ export class RailYard implements IRailYard {
       if (edge !== NO_EDGE) pieces.add(rails.placementOf(edge));
     }
     const anchor = rails.anchorOf(head);
-    if (!anchor) {
-      return `${model.label} can't stand on this track: it lies off the stud grid inside its model, so the train has nothing exact to stand on.`;
-    }
+    if (!anchor)
+      return `${model.label} can't stand on this track: no laid piece or model holds it.`;
     const consist: StandingConsist = {
       model,
       vehicles: prepared.vehicles,

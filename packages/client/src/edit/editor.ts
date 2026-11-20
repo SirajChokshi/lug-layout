@@ -22,6 +22,7 @@ import {
   type ConsistHandle,
   type ConsistPose,
   type ConsistRef,
+  type TrackPieceRef,
   type EditKind,
   type HistoryStep,
   type PlacementHandle,
@@ -54,7 +55,13 @@ import {
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, StudioReport } from "@brr/import";
-import { importRef, worldTrack, type ConsistRecordV1, type ImportedFile } from "@brr/schema/world";
+import {
+  importRef,
+  worldTrack,
+  type ConsistPieceV1,
+  type ConsistRecordV1,
+  type ImportedFile,
+} from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
   notDrawnItems,
@@ -122,7 +129,7 @@ import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
 import type { IRailYard, RailAim } from "../trains/rail-yard.ts";
-import { pieceKey, pieceRecord } from "../trains/rail-track.ts";
+import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import type {
   ExportedWorld,
@@ -2205,16 +2212,48 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private consistRecords(): ReadonlyArray<ConsistRecordV1> {
-    const pieces = this.trackCatalog?.pieces ?? [];
-    const refs = this.catalog.refs();
     return this.consists.consists().map(({ pose }) => ({
-      ref: refs[pose.refId] ?? "",
+      ref: this.catalog.refs()[pose.refId] ?? "",
       color: pose.colorId,
-      track: pieceRecord(pieces, pose.anchor.track),
+      track: this.pieceRecord(pose.anchor.track),
       route: pose.anchor.route,
       reversed: pose.anchor.reversed,
       offsetLdu: pose.anchor.offsetLdu,
     }));
+  }
+
+  private pieceRecord(track: TrackPieceRef): ConsistPieceV1 {
+    switch (track.kind) {
+      case "laid":
+        return laidPieceRecord(this.trackCatalog?.pieces ?? [], track);
+      case "carried": {
+        const { refId, colorId, x, z, yPlates, rot } = track.carrier;
+        const ref = this.catalog.refs()[refId] ?? "";
+        return { on: "model", ref, color: colorId, x, z, yPlates, rot, piece: track.piece };
+      }
+      default: {
+        const unhandled: never = track;
+        throw new Error(`unhandled track piece ref ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private pieceRef(record: ConsistPieceV1): TrackPieceRef | null {
+    switch (record.on) {
+      case "track":
+        return laidPieceRef(this.trackCatalog?.pieces ?? [], record);
+      case "model": {
+        const target = this.catalog.resolveRef(record.ref, record.color);
+        if (!target) return null;
+        const { x, z, yPlates, rot, piece } = record;
+        const carrier = { refId: target.refId, colorId: target.colorId, x, z, yPlates, rot };
+        return { kind: "carried", carrier, piece };
+      }
+      default: {
+        const unhandled: never = record;
+        throw new Error(`unhandled consist piece ${String(unhandled)}`);
+      }
+    }
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
@@ -2353,7 +2392,16 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private railsChanged(): void {
-    this.railYard.setTrack(this.track?.playTrack() ?? null);
+    const track = this.track;
+    const laid = track?.pieceCount ?? 0;
+    const carriers = this.heldTrackModels.flatMap((model) => {
+      const range = this.heldRanges.get(model);
+      if (!range) return [];
+      const { refId, colorId, x, z, yPlates, rot } = model.handle;
+      const pose = { refId, colorId, x, z, yPlates, rot };
+      return [{ pose, first: laid + range[0], count: range[1] - range[0] }];
+    });
+    this.railYard.setTrack(track?.playTrack() ?? null, carriers);
     this.refreshTrains();
   }
 
@@ -2399,12 +2447,14 @@ export class Editor implements IEditor, IEditedWorld {
       const path = `consist ${index}`;
       const target = this.catalog.resolveRef(record.ref, record.color);
       const placeable = target ? this.catalog.placeables()[target.refId] : null;
-      const piece = pieceKey(this.trackCatalog?.pieces ?? [], record.track);
+      const piece = this.pieceRef(record.track);
       if (!target) issues.push({ path, message: `"${record.ref}" isn't in the catalog` });
       else if (placeable && !this.catalog.playModel(placeable)) {
         issues.push({ path, message: `${placeable.label} has no running gear to stand on rails` });
       }
-      if (!piece) issues.push({ path, message: `"${record.track.ref}" isn't a track piece` });
+      if (!piece) {
+        issues.push({ path, message: `"${record.track.ref}" isn't a track piece or a model` });
+      }
       if (!target || !piece) return;
       const pose: ConsistPose = {
         refId: target.refId,
