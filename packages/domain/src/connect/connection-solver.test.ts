@@ -25,6 +25,7 @@ import {
   AXIS_POS_Z,
   AXIS_FREE,
   ConnectorTable,
+  connectorOriginLdu,
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
@@ -107,10 +108,14 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Uint8Array.from(specs, (s) => s.gender),
     Uint8Array.from(specs, (s) => s.source ?? SOURCE_SHADOW),
     Uint8Array.from(specs, (s) => s.status ?? STATUS_VERIFIED),
-    Float32Array.from(specs.flatMap((s) => s.origin)),
+    Int32Array.from(
+      specs.flatMap((s) => (s.axis === AXIS_FREE ? [0, 0, 0] : s.origin.map(toSixteenths))),
+    ),
     Int8Array.from(specs, (s) => s.axis),
-    new Float32Array(specs.length * 3),
+    new Float64Array(specs.length * 3),
     Uint16Array.from(specs, (s) => s.piece ?? 0),
+    Float64Array.from(specs.flatMap((s) => (s.axis === AXIS_FREE ? s.origin : [0, 0, 0]))),
+    [],
   );
 }
 
@@ -161,7 +166,13 @@ function withProvenance(part: ConnectorTable, source: number, status: number): C
     part.axis,
     part.axisFree,
     part.piece,
+    part.originFree,
+    part.unreadable,
   );
+}
+
+function toSixteenths(ldu: number): number {
+  return ldu * SIXTEENTHS_PER_LDU;
 }
 
 function translation(x: number, y: number, z: number): number[] {
@@ -1133,10 +1144,12 @@ describe("ModelConnectors with composite parts", () => {
       Uint8Array.of(...composite.gender, legPin.gender),
       Uint8Array.of(...composite.source, SOURCE_SHADOW),
       Uint8Array.of(...composite.status, STATUS_VERIFIED),
-      Float32Array.of(...composite.origin, ...legPin.origin),
+      Int32Array.of(...composite.origin, ...legPin.origin.map(toSixteenths)),
       Int8Array.of(...composite.axis, legPin.axis),
-      new Float32Array((composite.count + 1) * 3),
+      new Float64Array((composite.count + 1) * 3),
       Uint16Array.of(...composite.piece, legPin.piece),
+      Float64Array.of(...composite.originFree, 0, 0, 0),
+      [],
     );
     expect(tally(alone(withLegPin, exact))).toEqual([2, 1, 1]);
     expect(tally(alone(withLegPin, dusty))).toEqual([0, 1, 3]);
@@ -1155,6 +1168,8 @@ describe("ModelConnectors with composite parts", () => {
         part.axis,
         part.axisFree,
         piece,
+        part.originFree,
+        part.unreadable,
       );
     expect(withPieces(new Uint16Array(part.count)).count).toBe(part.count);
     expect(() => withPieces(new Uint16Array(part.count - 1))).toThrow(RangeError);
@@ -2187,24 +2202,27 @@ function fingerHalf(
 }
 
 function freeFaces(part: ConnectorTable, shiftLdu: number): ConnectorTable {
-  const origin = Float32Array.from(part.origin, (value, k) =>
-    k % VECTOR_FLOATS === 0 ? value + shiftLdu : value,
-  );
-  const axisFree = new Float32Array(part.count * VECTOR_FLOATS);
+  const originFree = Float64Array.from({ length: part.count * VECTOR_FLOATS }, (_, k) => {
+    const coordinate = k % VECTOR_FLOATS;
+    const ldu = connectorOriginLdu(part, (k - coordinate) / VECTOR_FLOATS, coordinate);
+    return coordinate === 0 ? ldu + shiftLdu : ldu;
+  });
+  const axisFree = new Float64Array(part.count * VECTOR_FLOATS);
   for (let c = 0; c < part.count; c++) {
     const code = part.axis[c] ?? AXIS_FREE;
     axisFree[c * VECTOR_FLOATS + axisDimension(code)] = axisSign(code);
   }
-  const axis = new Int8Array(part.count).fill(AXIS_FREE);
   return new ConnectorTable(
     part.shape,
     part.gender,
     part.source,
     part.status,
-    origin,
-    axis,
+    new Int32Array(part.count * VECTOR_FLOATS),
+    new Int8Array(part.count).fill(AXIS_FREE),
     axisFree,
     part.piece,
+    originFree,
+    part.unreadable,
   );
 }
 

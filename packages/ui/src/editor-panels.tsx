@@ -19,6 +19,13 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
+function connectorGapsText(snapshot: EditorSnapshot): string {
+  if (snapshot.mode !== "place") return "–";
+  const gaps = snapshot.connectorGaps;
+  if (gaps.length === 0) return "every part has one";
+  return `${gaps.length} parts have none: ${gaps.map((gap) => `${gap.partId} (${gap.reason})`).join("; ")}`;
+}
+
 function countText(count: number, label: string): string {
   return count > 0 ? `, ${integer.format(count)} ${label}` : "";
 }
@@ -387,6 +394,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         ? "select"
         : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
+    ["Connector records", connectorGapsText(snapshot)],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],
     [
