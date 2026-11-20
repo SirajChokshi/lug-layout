@@ -432,7 +432,6 @@ function room(minX: number): PlanOverlay {
     room: worldBox(minX, 0, 1280),
     tables: [worldBox(minX, 0, 640)],
     obstacles: [],
-    gridStepLdu: 20,
     active: true,
   };
 }
