@@ -19,6 +19,7 @@ The source of truth is `docs/architecture.md`. Section numbers like "§14" refer
 ## Layout
 ```
 apps/web                Vite + React; main-thread composition root
+  starters              starter worlds the welcome card offers: unpacked world archives, data only (docs/starter-worlds.md)
 apps/catalog-api        Cloudflare Worker: catalog search over D1, release files in R2. Imports no @brr/* package.
 packages/
   config                shared tsconfig presets and the Vitest preset

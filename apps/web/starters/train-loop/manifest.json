@@ -1,0 +1,24 @@
+{
+  "bundleVersion": "f8839ec176d5893d",
+  "credits": "CREDITS.txt",
+  "disclaimer": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.",
+  "format": "brr.world",
+  "name": "Train loop",
+  "placements": 13,
+  "schemaVersion": 1,
+  "shards": [
+    { "placements": 2, "superChunk": [-1, -1], "track": 4 },
+    { "placements": 4, "superChunk": [-1, 0], "track": 5 },
+    { "placements": 2, "superChunk": [0, -1], "track": 5 },
+    { "placements": 5, "superChunk": [0, 0], "track": 6 }
+  ],
+  "track": 20,
+  "view": {
+    "distance": 5337.466237948953,
+    "pitch": 0.75,
+    "targetX": -98.13762207649363,
+    "targetY": 38.27236395097981,
+    "targetZ": 88.1314808446447,
+    "yaw": 1.5707963267948966
+  }
+}
