@@ -904,8 +904,78 @@ export const BakeShard = v.pipe(
 );
 export type BakeShard = v.InferOutput<typeof BakeShard>;
 
+export const AUTHORED_LINE_KINDS = ["instance", "placement"] as const;
+export const AUTHORED_GRIDS = [
+  "whole",
+  "half",
+  "quarter",
+  "eighth",
+  "sixteenth",
+  "unidentified",
+] as const;
+const AUTHORED_AXES = [0, 1, 2] as const;
+const AuthoredLineKind = v.picklist(AUTHORED_LINE_KINDS);
+
+export const AuthoredLines = v.pipe(
+  v.object({ line: v.array(Count), lineKind: v.array(AuthoredLineKind) }),
+  v.check(
+    ({ line, lineKind }) => line.length === lineKind.length,
+    "authored line columns must have equal lengths",
+  ),
+);
+export type AuthoredLines = v.InferOutput<typeof AuthoredLines>;
+
+export const AuthoredRows = v.pipe(
+  v.object({
+    line: v.array(Count),
+    lineKind: v.array(AuthoredLineKind),
+    axis: v.array(v.picklist(AUTHORED_AXES)),
+    printed: v.array(v.string()),
+    grid: v.array(v.picklist(AUTHORED_GRIDS)),
+    identified: v.array(v.nullable(ExactRationalText)),
+    residual: v.array(v.nullable(ExactRationalText)),
+  }),
+  v.check(
+    (rows) =>
+      [rows.lineKind, rows.axis, rows.printed, rows.grid, rows.identified, rows.residual].every(
+        (column) => column.length === rows.line.length,
+      ),
+    "authored row columns must have equal lengths",
+  ),
+  v.check(
+    ({ grid, identified, residual }) =>
+      grid.every(
+        (name, row) =>
+          (name === "unidentified") === (identified[row] === null) &&
+          (identified[row] === null) === (residual[row] === null),
+      ),
+    "an authored row has an identified value and residual exactly when its grid isn't unidentified",
+  ),
+);
+export type AuthoredRows = v.InferOutput<typeof AuthoredRows>;
+
+export const AuthoredIdentification = v.object({
+  ruleVersion: v.pipe(Integer, v.minValue(1)),
+  rows: AuthoredRows,
+  excludedRotated: AuthoredLines,
+});
+export type AuthoredIdentification = v.InferOutput<typeof AuthoredIdentification>;
+
+export function authoredLinesFit(
+  lines: AuthoredLines,
+  instanceCount: number,
+  placementCount: number,
+): boolean {
+  return lines.line.every((line, row) =>
+    lines.lineKind[row] === "instance" ? line < instanceCount : line < placementCount,
+  );
+}
+
 export const CompilerRequest = v.variant("op", [
-  v.strictObject({ op: v.literal("readModel") }),
+  v.strictObject({
+    op: v.literal("readModel"),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
+  }),
   v.strictObject({ op: v.literal("readStudio") }),
   v.strictObject({
     op: v.literal("compile"),
@@ -934,6 +1004,7 @@ export const CompilerRequest = v.variant("op", [
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
     keepParts: v.exactOptional(v.boolean()),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -972,6 +1043,7 @@ export const CompilerModelRead = v.object({
     v.object({ section: v.string(), triangles: Count, quads: Count, occurrences: Count }),
   ),
   instances: Count,
+  authoredIdentification: v.optional(AuthoredIdentification),
   blobs: CompilerBlobs,
 });
 export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
@@ -1178,6 +1250,7 @@ export const ModelFile = v.pipe(
     }),
     partTransforms: v.array(Finite),
     submodels: SubmodelTree,
+    authoredIdentification: v.optional(AuthoredIdentification),
   }),
   v.check(
     ({ parts, instances, partTransforms }) =>
@@ -1190,6 +1263,14 @@ export const ModelFile = v.pipe(
   v.check(
     ({ instances, submodels }) => submodelTreeFits(submodels, instances.part.length),
     "model sub-model tree is inconsistent",
+  ),
+  v.check(
+    ({ instances, submodels, authoredIdentification }) =>
+      authoredIdentification === undefined ||
+      [authoredIdentification.rows, authoredIdentification.excludedRotated].every((lines) =>
+        authoredLinesFit(lines, instances.part.length, submodels.parent.length),
+      ),
+    "authored identification names an instance or placement the model doesn't have",
   ),
   v.check(
     ({ parts, shapes }) =>
