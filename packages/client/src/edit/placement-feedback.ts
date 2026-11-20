@@ -27,7 +27,14 @@ export interface BadgeCount {
   readonly connectors: number;
 }
 
-export type PlacementLineKind = "pending" | "refusal" | "snap" | "mates" | "lift" | "turn";
+export type PlacementLineKind =
+  | "pending"
+  | "refusal"
+  | "joints"
+  | "snap"
+  | "mates"
+  | "lift"
+  | "turn";
 
 export interface PlacementLine {
   readonly kind: PlacementLineKind;
@@ -246,6 +253,10 @@ function moved(move: MagnetMove | null): move is MagnetMove {
   return move !== null && (move.studsX !== 0 || move.studsZ !== 0 || move.plates !== 0);
 }
 
+function jointsText(joints: number): string {
+  return `Mates at ${joints} ${joints === 1 ? "joint" : "joints"}`;
+}
+
 function snapText(move: MagnetMove, mates: ReadonlyArray<HoverMateCount>): string {
   const met = sharedNoun(mates.flatMap((mate) => mate.partnerKinds));
   const steps: string[] = [];
@@ -317,6 +328,7 @@ function placementLines(hover: PlacementHoverInput, placement: PlacementHover): 
     lines.push(line("refusal", reason));
   } else {
     const mates = joined(placement.mates);
+    if (mates.length > 1) lines.push(line("joints", jointsText(placement.joints)));
     const move = magnetMove(placement);
     if (moved(move) && mates.length > 0) lines.push(line("snap", snapText(move, mates)));
     for (const mate of mates) {
