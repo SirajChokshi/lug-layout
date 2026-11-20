@@ -11,7 +11,8 @@ import type {
 import { collisions, translated, type Assembly, type AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
 import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
-import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU, type AimedBackend } from "./headless-editor.ts";
+import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
+import type { AimedBackend } from "./headless-editor.ts";
 
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
