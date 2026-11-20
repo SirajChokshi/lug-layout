@@ -82,8 +82,9 @@ const SCALES: Readonly<Record<string, Layout>> = {
   small: { kind: "tiles", tiles: 5 },
   medium: { kind: "tiles", tiles: 10 },
   large: { kind: "tiles", tiles: 18 },
-  dense: { kind: "dense", across: 16, deep: 16, layers: 4 },
+  dense: { kind: "dense", across: 64, deep: 128, layers: 15 },
 };
+const DEFAULT_SCALES: ReadonlyArray<string> = ["small", "medium", "large"];
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -879,7 +880,7 @@ async function main(): Promise<void> {
     process.send?.(result);
     process.exit(0);
   }
-  const scales = process.env["LAYOUT_SCALES"]?.split(",") ?? Object.keys(SCALES);
+  const scales = process.env["LAYOUT_SCALES"]?.split(",") ?? DEFAULT_SCALES;
   const worlds = process.env["LAYOUT_WORLDS_DIR"] ?? null;
   if (worlds) mkdirSync(worlds, { recursive: true });
   const scratch = mkdtempSync(join(tmpdir(), "layout-memory-"));
