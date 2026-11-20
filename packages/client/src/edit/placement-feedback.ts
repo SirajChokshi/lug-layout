@@ -7,15 +7,16 @@ import {
   type MagnetMove,
   type PlacementModeView,
 } from "./placement-mode.ts";
-import type {
-  ConnectorKindView,
-  ConnectorSectionView,
-  HoverMateCount,
-  HoverRefusalHit,
-  PlacedModelView,
-  PlacementHover,
-  PlacementMode,
-  SectionProfile,
+import {
+  distinctJoints,
+  type ConnectorKindView,
+  type ConnectorSectionView,
+  type HoverMateCount,
+  type HoverRefusalHit,
+  type PlacedModelView,
+  type PlacementHover,
+  type PlacementMode,
+  type SectionProfile,
 } from "./placement-hover.ts";
 
 export type PlacementTone = "fits" | "mates" | "refused" | "pending";
@@ -219,12 +220,27 @@ function seamText(count: number, models: string | null, holesHeld: boolean): str
   return `${counted(count, PIN_HOLE)}${models ? ` on ${models}` : ""} ${lineUp}, ${goIn}`;
 }
 
-function mateText(mate: HoverMateCount): string {
-  const count = mate.joints;
-  const held = connectorNoun(mate.kind);
-  const partner = sharedNoun(mate.partnerKinds);
-  const models = modelNames(mate.partners);
-  const female = mate.kind.gender === "female";
+interface MateWording {
+  readonly held: ConnectorNoun;
+  readonly partner: ConnectorNoun | null;
+  readonly models: string | null;
+  readonly female: boolean;
+}
+
+function mateWording(mate: HoverMateCount): MateWording {
+  return {
+    held: connectorNoun(mate.kind),
+    partner: sharedNoun(mate.partnerKinds),
+    models: modelNames(mate.partners),
+    female: mate.kind.gender === "female",
+  };
+}
+
+function wordingKey({ held, partner, models, female }: MateWording): string {
+  return JSON.stringify([held.one, partner?.one ?? null, models, female]);
+}
+
+function mateText(count: number, { held, partner, models, female }: MateWording): string {
   const holes = female ? held : partner;
   const pegs = female ? partner : held;
   if (holes === PIN_HOLE && pegs === PIN) return seamText(count, models, female);
@@ -301,6 +317,25 @@ function joined(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<HoverMateCo
   return mates.filter((mate) => mate.joints > 0);
 }
 
+function mateLines(mates: ReadonlyArray<HoverMateCount>): PlacementLine[] {
+  const alike = new Map<
+    string,
+    { readonly wording: MateWording; readonly mates: HoverMateCount[] }
+  >();
+  for (const mate of mates) {
+    const wording = mateWording(mate);
+    const key = wordingKey(wording);
+    const group = alike.get(key);
+    if (group) group.mates.push(mate);
+    else alike.set(key, { wording, mates: [mate] });
+  }
+  return [...alike.values()].map(({ wording, mates: group }) => ({
+    kind: "mates",
+    text: mateText(distinctJoints(group), wording),
+    badges: badgesOf(group),
+  }));
+}
+
 function line(kind: PlacementLineKind, text: string): PlacementLine {
   return { kind, text, badges: NO_BADGES };
 }
@@ -328,12 +363,11 @@ function placementLines(hover: PlacementHoverInput, placement: PlacementHover): 
     lines.push(line("refusal", reason));
   } else {
     const mates = joined(placement.mates);
-    if (mates.length > 1) lines.push(line("joints", jointsText(placement.joints)));
+    const kindLines = mateLines(mates);
+    if (kindLines.length > 1) lines.push(line("joints", jointsText(placement.joints)));
     const move = magnetMove(placement);
     if (moved(move) && mates.length > 0) lines.push(line("snap", snapText(move, mates)));
-    for (const mate of mates) {
-      lines.push({ kind: "mates", text: mateText(mate), badges: badgesOf([mate]) });
-    }
+    lines.push(...kindLines);
     if (placement.lifted && placement.pose.yPlates > 0) {
       const on = modelNames(placement.restsOn);
       lines.push(

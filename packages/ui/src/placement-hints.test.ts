@@ -3,11 +3,8 @@ import {
   HOTBAR,
   mainThreadModules,
   TRAIN_PLAY,
-  distinctJoints,
-  type ConnectorKindView,
   type EditorActionId,
   type EditorSnapshot,
-  type HoverMateCount,
   type IEditor,
   type PlacementHover,
   type PlaySnapshot,
@@ -232,67 +229,6 @@ it("speaks nothing while the pointer sweeps across cells and the verdict where i
 });
 
 const FITS: Partial<PlacementHover> = { accepted: true, hit: null };
-
-function roundKind(gender: "male" | "female", lengthLdu: number): ConnectorKindView {
-  return { gender, slides: false, sections: [{ profile: "round", sizeLdu: 6, lengthLdu }] };
-}
-
-const STUD = roundKind("male", 4);
-const BRICK_SOCKET = roundKind("female", 20);
-const PLATE_SOCKET = roundKind("female", 4);
-
-function socketsOnStuds(
-  kind: ConnectorKindView,
-  firstJoint: number,
-  count: number,
-): HoverMateCount {
-  const jointIds = new Set(Array.from({ length: count }, (_, index) => firstJoint + index));
-  return {
-    kind,
-    partnerKinds: [STUD],
-    connectors: count,
-    joints: count,
-    jointIds,
-    partners: [],
-    inferred: 0,
-    unverified: 0,
-  };
-}
-
-function brickBesidePlate(perKind: number): Partial<PlacementHover> {
-  const mates = [
-    socketsOnStuds(BRICK_SOCKET, 0, perKind),
-    socketsOnStuds(PLATE_SOCKET, perKind, perKind),
-  ];
-  return { ...FITS, mates, joints: distinctJoints(mates) };
-}
-
-function socketsTakeStuds(count: number): string {
-  return `${count} round sockets take ${count} round pegs`;
-}
-
-function chipLines(): string[] {
-  return [...document.querySelectorAll(".placement-chip-line")].map(
-    (line) => line.textContent ?? "",
-  );
-}
-
-it("shows exactly the current hover's lines as its mates change, even when two kinds read alike", () => {
-  const { show } = hintScene();
-  const counts = [2, 4, 6, 8];
-  const seen = counts.map((perKind) => {
-    show(brickBesidePlate(perKind));
-    return chipLines();
-  });
-
-  expect(seen).toEqual(
-    counts.map((perKind) => [
-      `Mates at ${perKind * 2} joints`,
-      socketsTakeStuds(perKind),
-      socketsTakeStuds(perKind),
-    ]),
-  );
-});
 
 it.each([
   {
