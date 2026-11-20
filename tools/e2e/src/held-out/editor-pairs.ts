@@ -468,8 +468,6 @@ export function hitIsReal(
   whole: PosedPair = { placed: named, held },
 ): boolean {
   if (hit === null || hit.placed.item !== placedItem) return false;
-  if (hit.byColumnOnly) return hit.part === null && !partsCollide(whole);
-  if (hit.part === null) return false;
   const box: HitBox = {
     cellX: hit.cellX,
     cellZ: hit.cellZ,
@@ -477,6 +475,15 @@ export function hitIsReal(
     topLdu: Math.min(hit.placedTopLdu, hit.heldTopLdu),
   };
   if (box.bottomLdu >= box.topLdu) return false;
+  if (hit.byColumnOnly) {
+    return (
+      hit.part === null &&
+      !partsCollide(whole) &&
+      columnOverlapsHit(whole.placed, box) &&
+      columnOverlapsHit(whole.held, box)
+    );
+  }
+  if (hit.part === null) return false;
   return (
     named.parts.some(
       (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
