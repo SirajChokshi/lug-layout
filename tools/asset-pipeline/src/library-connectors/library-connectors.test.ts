@@ -1,6 +1,7 @@
 import {
   CONNECTIVITY_LICENSE,
   CONNECTOR_SOURCE,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   type LibraryConnectorsPin,
 } from "@brr/schema/bundle";
 import { execFile } from "node:child_process";
@@ -12,11 +13,8 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
-import {
-  assembleLibraryConnectors,
-  LIBRARY_CONNECTORS_INDEX,
-  LIBRARY_CONNECTORS_PIN,
-} from "./assemble.ts";
+import { contentAddressedName } from "../publish.ts";
+import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
 import { libraryConnectorsPublication } from "./publish.ts";
 import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
 import type { ObjectStore } from "../r2.ts";
@@ -110,7 +108,14 @@ it("publishes CA parts' records under their content addresses, stamps the connec
     records: { connectivity: 1, connectors: 1 },
     partsWithPieces: 1,
   });
-  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX), "utf8"));
+  const indexText = await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8");
+  expect(
+    await readFile(
+      join(out, contentAddressedName(LIBRARY_CONNECTORS_INDEX_FILE, pin.index.sha256)),
+      "utf8",
+    ),
+  ).toBe(indexText);
+  const index = JSON.parse(indexText);
   expect(index).toMatchObject({ format: 1, ldraw, shadow, sectionVocabulary: VOCABULARY });
   for (const [pkg, stamped] of [
     ["connectivity", undefined],
@@ -156,9 +161,11 @@ it("publishes every file the assembly wrote as JSON under library-connectors/, w
 
   const indexKey = `library-connectors/library-connectors.${pin.index.sha256.slice(0, 16)}.json`;
   expect(publicationIndexKey(libraryConnectorsPublication, pin)).toBe(indexKey);
-  const addressed = (await filesUnder(out)).filter((file) => file !== LIBRARY_CONNECTORS_INDEX);
+  const addressed = (await filesUnder(out)).filter(
+    (file) => file !== LIBRARY_CONNECTORS_INDEX_FILE,
+  );
   expect([...store.types.keys()].toSorted()).toEqual(
-    [...addressed.map((file) => `library-connectors/${file}`), indexKey].toSorted(),
+    [...new Set([...addressed.map((file) => `library-connectors/${file}`), indexKey])].toSorted(),
   );
   expect(new Set(store.types.values())).toEqual(new Set(["application/json"]));
 });

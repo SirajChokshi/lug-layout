@@ -1,5 +1,6 @@
 import {
   ConnectorIndexFile,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   LibraryConnectorsIndex,
   type ConnectorPackage,
   type LibraryConnectorsPin,
@@ -9,12 +10,11 @@ import {
   type IndexListing,
   type Publication,
 } from "../publication/pinned-publication.ts";
-import { LIBRARY_CONNECTORS_INDEX } from "./assemble.ts";
 
 const PACKAGES: ReadonlyArray<ConnectorPackage> = ["connectivity", "connectors"];
 
 function listed(file: string, bytes: Uint8Array, pin: LibraryConnectorsPin): IndexListing {
-  if (file === LIBRARY_CONNECTORS_INDEX) {
+  if (file === LIBRARY_CONNECTORS_INDEX_FILE) {
     const top = decodeJsonFile(LibraryConnectorsIndex, bytes, file);
     return {
       indexes: PACKAGES.map((pkg) => ({ file: top[pkg].file, leaves: pin.records[pkg] })),
@@ -30,7 +30,7 @@ function listed(file: string, bytes: Uint8Array, pin: LibraryConnectorsPin): Ind
 
 export const libraryConnectorsPublication: Publication<LibraryConnectorsPin> = {
   prefix: "library-connectors",
-  indexFile: LIBRARY_CONNECTORS_INDEX,
+  indexFile: LIBRARY_CONNECTORS_INDEX_FILE,
   leafNoun: "records",
   rebuildCommand: "library-connectors --check",
   pinnedIndex: (pin) => pin.index,

@@ -8,6 +8,7 @@ import {
   FarMeshGltfDocument,
   GltfDocument,
   LibraryBakePin,
+  LibraryConnectorsPin,
   ModelFile,
   PartShape,
   PartTableFile,
@@ -24,6 +25,7 @@ import {
   sectionVocabularyIssues,
   sectionVocabularyValues,
 } from "./connector-license.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
@@ -31,7 +33,6 @@ export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
 const LEAKED_PATHS_SHOWN = 3;
-export const CONTENT_HASH_HEX_DIGITS = 16;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
@@ -106,11 +107,11 @@ export function contentAddressedName(file: string, digest: string): string {
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
 }
 
-export async function attachLibraryBake(directory: string, pinPath: string): Promise<void> {
-  const pin = decodedOrThrow(
-    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
-    pinPath,
-  );
+async function attachCompilerPin(
+  directory: string,
+  field: "libraryBake" | "libraryConnectors",
+  index: { readonly file: string; readonly sha256: string },
+): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
@@ -119,8 +120,24 @@ export async function attachLibraryBake(directory: string, pinPath: string): Pro
   if (!isRecord(compiler)) throw new Error(`${manifestPath} has no compiler section`);
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...compiled, compiler: { ...compiler, libraryBake: pin.index } }, null, 2)}\n`,
+    `${JSON.stringify({ ...compiled, compiler: { ...compiler, [field]: index } }, null, 2)}\n`,
   );
+}
+
+export async function attachLibraryBake(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  await attachCompilerPin(directory, "libraryBake", pin.index);
+}
+
+export async function attachLibraryConnectors(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(LibraryConnectorsPin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  await attachCompilerPin(directory, "libraryConnectors", pin.index);
 }
 
 export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {
