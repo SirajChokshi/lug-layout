@@ -1,4 +1,4 @@
-import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
+import { NO_STUD, RoadFit, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { ANY_TURN, cellExtent, snapToRoadEdge } from "./road-snap.ts";
@@ -57,14 +57,10 @@ describe("road-edge snap", () => {
       );
       expect(snap).not.toBeNull();
       if (!snap) continue;
-      const fit = network.fit({
-        id: 1,
-        x: snap.x,
-        z: snap.z,
-        yLdu: 0,
-        rot: snap.rot,
-        surface: curve,
-      });
+      const fit = network.fit(
+        { id: 1, x: snap.x, z: snap.z, yLdu: 0, rot: snap.rot, surface: curve },
+        new RoadFit(),
+      );
       expect(fit.mismatchedCells).toBe(0);
       expect(fit.joinedRoadCells).toBeGreaterThan(0);
       expect(snap.joinedRoadCells).toBe(fit.joinedRoadCells);
@@ -113,9 +109,35 @@ describe("road-edge snap", () => {
     const sideX = cellExtent(straight).maxX;
     for (const cursorZ of [-260, -60, 0, 140, 300]) {
       const snap = snapToRoadEdge(network, extents, curve, 0, 1, 0, sideX + 300, cursorZ, ANY_TURN);
-      expect(snap?.joinedRoadCells).toBe(0);
-      expect(snap?.x).toBe(sideX + PLATE_SPAN / 2);
-      expect(snap?.z).toBe(straight.z);
+      expect(snap).toEqual({
+        x: sideX + PLATE_SPAN / 2,
+        z: straight.z,
+        rot: 2,
+        metCells: 32,
+        joinedCells: 0,
+        joinedRoadCells: 0,
+      });
+    }
+  });
+
+  it("never snaps a crossroads beside a straight's sidewalk, where every turn would butt a road end into it", () => {
+    const crossroads = roadBaseplate("44343");
+    const sideX = cellExtent(straight).maxX;
+    for (const preferred of QUARTER_TURNS) {
+      for (const cursorZ of [-260, 0, 300]) {
+        const snap = snapToRoadEdge(
+          network,
+          extents,
+          crossroads,
+          preferred,
+          1,
+          0,
+          sideX + 300,
+          cursorZ,
+          ANY_TURN,
+        );
+        expect(snap).toBeNull();
+      }
     }
   });
 
@@ -133,7 +155,7 @@ describe("road-edge snap", () => {
         openEnd + 200,
         ANY_TURN,
       );
-      expect(snap?.joinedRoadCells ?? 0).toBe(0);
+      expect(snap).toBeNull();
     }
   });
 });

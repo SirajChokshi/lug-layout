@@ -1,4 +1,4 @@
-import type { RoadNetwork, RoadPlacement, RoadSurface } from "@brr/domain";
+import { RoadFit, type RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 
@@ -13,6 +13,7 @@ export interface RoadSnap {
   readonly x: number;
   readonly z: number;
   readonly rot: number;
+  readonly metCells: number;
   readonly joinedCells: number;
   readonly joinedRoadCells: number;
 }
@@ -120,6 +121,7 @@ export function snapToRoadEdge(
 ): RoadSnap | null {
   let best: Ranked | null = null;
   const probe = { id: -1, x: 0, z: 0, yLdu, rot: 0, surface };
+  const probeFit = new RoadFit();
   for (let turn = 0; turn < turns; turn++) {
     const rot = quarterTurned(preferredRot, direction * turn);
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
@@ -144,11 +146,19 @@ export function snapToRoadEdge(
         );
         probe.x = x;
         probe.z = z;
-        const fit = network.cleanFit(probe);
+        const fit = cornerFlush(extent, ghost, x, z)
+          ? network.cleanContact(probe, probeFit)
+          : network.cleanFit(probe, probeFit);
         if (!fit) continue;
-        if (fit.joinedRoadCells === 0 && !cornerFlush(extent, ghost, x, z)) continue;
         const candidate: Ranked = {
-          snap: { x, z, rot, joinedCells: fit.joinedCells, joinedRoadCells: fit.joinedRoadCells },
+          snap: {
+            x,
+            z,
+            rot,
+            metCells: fit.metCells,
+            joinedCells: fit.joinedCells,
+            joinedRoadCells: fit.joinedRoadCells,
+          },
           distance,
           turn,
         };

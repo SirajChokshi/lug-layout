@@ -149,7 +149,7 @@ const NO_LOOK: LookSettings = {
 const BASEPLATE = "ldraw:3811@2";
 const USER_BRICK = "brick-2x4";
 const HELD_BRICK = `omr:${USER_BRICK}`;
-const ROAD_T_JUNCTION = "ldraw:44341p02@72";
+const DUAL_CARRIAGEWAY = "ldraw:30225b@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -1487,11 +1487,14 @@ it("refuses to turn a module while a set lifted onto it rests on it, turns the s
 
 it("refuses to turn a placed road plate into a mismatch with its neighbour, the same as placing it there, unless road snap is off", async () => {
   const { editor, backend } = await startEditor([]);
-  const place = placer(editor, backend);
   const straight = "ldraw:44336p04@72";
-  await place(straight, 320, 320);
-  await place(straight, 320, 960);
-  expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+  await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, 320);
+  await chosen(editor, straight);
+  editor.rotate(0, 1);
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  expect(editor.snapshot()).toMatchObject({ placements: 2, roads: { mismatchedCells: 0 } });
 
   expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
   const turned = turnOutcome(editor, 1);
@@ -1500,18 +1503,20 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   editor.setSnapRoads(false);
   const unsnapped = turnOutcome(editor, 1);
 
+  const refused = {
+    rot: 1,
+    yPlates: 0,
+    refusal: expect.stringContaining("road edges would mismatch"),
+    roadCells: expect.any(Number),
+  };
   expect({ turned, turnedBack, mismatchedWhileRefused, unsnapped }).toEqual({
-    turned: {
-      rot: 0,
-      yPlates: 0,
-      refusal: expect.stringContaining("road edges would mismatch"),
-      roadCells: expect.any(Number),
-    },
-    turnedBack: expect.objectContaining({ rot: 0 }),
+    turned: refused,
+    turnedBack: refused,
     mismatchedWhileRefused: 0,
-    unsnapped: expect.objectContaining({ rot: 1, refusal: null }),
+    unsnapped: expect.objectContaining({ rot: 2, refusal: null }),
   });
   expect(turned.roadCells).toBeGreaterThan(0);
+  expect(editor.snapshot().roads.mismatchedCells).toBeGreaterThan(0);
 }, 120_000);
 
 class OtherTabLocks implements IWorldLocks {
@@ -7070,11 +7075,12 @@ it.each([
   { snapRoads: true, mismatched: false },
   { snapRoads: false, mismatched: true },
 ] as const)(
-  "with road snapping $snapRoads, fills T-junctions so that their own edges mismatch only where a click would allow it",
+  "with road snapping $snapRoads, fills road straights so that their ends mismatch a dual carriageway's end only where a click would allow it",
   async ({ snapRoads, mismatched }) => {
     const { editor, backend } = await startEditor([]);
+    await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, -320);
     editor.setSnapRoads(snapRoads);
-    await chosen(editor, ROAD_T_JUNCTION);
+    await chosen(editor, ROAD_STRAIGHT);
     editor.cycleFillGrid();
     editor.cycleFillGrid();
 
@@ -7082,10 +7088,10 @@ it.each([
     const { lastFill, roads, placements } = editor.snapshot();
 
     expect({
-      refusedSome: (lastFill?.refused ?? 0) > 0,
+      refused: lastFill?.refused ?? 0,
       mismatched: roads.mismatchedCells > 0,
       placements: placements + (lastFill?.refused ?? 0),
-    }).toEqual({ refusedSome: !mismatched, mismatched, placements: 9 });
+    }).toEqual({ refused: mismatched ? 0 : 1, mismatched, placements: 1 + 9 });
   },
   120_000,
 );
