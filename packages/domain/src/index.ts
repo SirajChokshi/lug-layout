@@ -109,6 +109,18 @@ export {
   type VehicleGeometry,
 } from "./rail/running-gear.ts";
 export {
+  overUnder,
+  pierCourses,
+  rampRises,
+  reachablePlates,
+  runHeights,
+  type OverUnder,
+  type PierCourses,
+  type RunHeights,
+  type TrackSpan,
+} from "./track/elevation.ts";
+export {
+  INT8_MAX,
   TrackLayout,
   type TrackEndRef,
   type TrackPieceSpec,
@@ -263,8 +275,10 @@ export {
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  boxesOverlap,
   outlineBox,
   outlineContains,
+  outlinesOverlap,
   placedOutline,
   placedOutlineInto,
   rotateOutline,

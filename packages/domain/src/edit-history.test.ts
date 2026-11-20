@@ -48,7 +48,13 @@ function lcg(seed: number): () => number {
 }
 
 function straightAt(index: number, x: bigint): TrackPieceAt {
-  return { index, piece: 0, pose: pose16(zeta16([x, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0), yPlates: 0 };
+  return {
+    index,
+    piece: 0,
+    pose: pose16(zeta16([x, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+    yPlates: 0,
+    rise: 0,
+  };
 }
 
 const LATTICE_SPAN = 4096;
@@ -228,7 +234,11 @@ describe("EditHistory", () => {
         { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4 } },
       ]),
     ).toThrow(/quarter turn/u);
-    const straight = { piece: 0, pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0) };
+    const straight = {
+      piece: 0,
+      pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+      rise: 0,
+    };
     expect(() =>
       history.commit("remove", [{ placement, to: null }], {
         lift: [
@@ -244,6 +254,12 @@ describe("EditHistory", () => {
         lay: [{ ...straight, index: 0, yPlates: 2 ** 15 }],
       }),
     ).toThrow(/int16/u);
+    expect(() =>
+      history.commit("lay-track", [], {
+        lift: [],
+        lay: [{ ...straight, index: 0, yPlates: 0, rise: 2 ** 7 }],
+      }),
+    ).toThrow(/int8/u);
     expect(livePlacements(world)).toEqual(before);
     expect(history.undoDepth).toBe(1);
   });
