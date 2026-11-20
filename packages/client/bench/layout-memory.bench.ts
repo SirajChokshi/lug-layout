@@ -8,6 +8,7 @@ import {
   type EdgeMarker,
   type FarModelPlacement,
   type FrameStats,
+  type GroundSettings,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -313,6 +314,9 @@ class WindowlessBackend implements ISceneBackend {
   }
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
     this.scene.setTrackEnds(markers);
+  }
+  setGround(ground: GroundSettings | null): void {
+    this.scene.setGround(ground);
   }
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.scene.setPlanOverlays(overlays);

@@ -9,6 +9,7 @@ import type {
 import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
+import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
@@ -21,6 +22,7 @@ import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
+import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
@@ -46,6 +48,8 @@ export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for
 );
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
+export const SCALE_BAR: ServiceIdentifier<IScaleBar> = Symbol.for("brr.client.ScaleBar");
+export const TABLE_GROUND: ServiceIdentifier<ITableGround> = Symbol.for("brr.client.TableGround");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
 export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
   "brr.client.CatalogSearch",

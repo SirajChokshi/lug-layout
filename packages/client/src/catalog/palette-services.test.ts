@@ -96,6 +96,7 @@ class HeadlessBackend implements ISceneBackend {
   setSelectionBox(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
   aim(x: number, z: number): void {

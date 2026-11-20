@@ -9,6 +9,7 @@ export type {
   FrameStats,
   GeometrySet,
   GraphicsApi,
+  GroundSettings,
   ISceneBackend,
   IThumbnailRenderer,
   LdrawColor,

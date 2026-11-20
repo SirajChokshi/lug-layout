@@ -49,6 +49,7 @@ export interface IEditorCamera {
   lookAt(x: number, z: number, animate: boolean): void;
   viewPlan(planId: string): void;
   viewFootprint(out: Float64Array): boolean;
+  planLduPerPx(): number | null;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
   savedView(): SavedViewV1;
   matchesView(view: SavedViewV1): boolean;
@@ -241,6 +242,10 @@ export class EditorCamera implements IEditorCamera {
 
   viewFootprint(out: Float64Array): boolean {
     return this.view.footprint(out);
+  }
+
+  planLduPerPx(): number | null {
+    return this.view.planLduPerPx();
   }
 
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number } {

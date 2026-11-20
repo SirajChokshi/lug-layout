@@ -13,6 +13,7 @@ import {
   type IPaletteThumbnails,
   type IPlanService,
   type IRunningGear,
+  type IScaleBar,
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
@@ -30,6 +31,7 @@ import {
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -46,6 +48,7 @@ import { WorldMenu } from "./world-menu.tsx";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
@@ -97,6 +100,7 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 export function EditorApp({
   editor,
   camera,
+  scaleBar,
   plans,
   bomService,
   play,
@@ -163,6 +167,7 @@ export function EditorApp({
       <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
+      <PlanScaleBar scaleBar={scaleBar} />
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />

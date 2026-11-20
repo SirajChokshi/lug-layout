@@ -72,6 +72,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
       await page.locator('[data-action="new-plan"]').click();
       await expect(page.locator(".plan-panel")).toHaveAttribute("data-active-plan", /.+/u);
       await expect(page.locator(".view-controls")).toHaveAttribute("data-view", "plan");
+      await expect(page.locator(".scale-bar")).toBeVisible();
       return;
     default: {
       const unhandled: never = mode;

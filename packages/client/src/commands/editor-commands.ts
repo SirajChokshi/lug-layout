@@ -30,6 +30,7 @@ export type EditorActionId =
   | "zoom-in"
   | "zoom-out"
   | "toggle-joins"
+  | "toggle-grid"
   | "toggle-road-snap"
   | "cycle-tier"
   | "measure-frames";
@@ -238,6 +239,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle edges open mismatch",
   },
   {
+    id: "toggle-grid",
+    title: "Show the stud grid on the ground",
+    group: "View",
+    keys: [{ key: "#" }],
+    keywords: "toggle grid ground table floor studs lines guides",
+  },
+  {
     id: "toggle-road-snap",
     title: "Snap road pieces to matching edges",
     group: "Edit",
@@ -339,6 +347,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
   if (id === "toggle-joins") return snapshot.showJoins;
+  if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
   return false;
 }
@@ -362,6 +371,7 @@ const CAMERA_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
   "zoom-in",
   "zoom-out",
   "toggle-joins",
+  "toggle-grid",
 ]);
 
 export function runsDuringPlay(id: CommandId): boolean {
@@ -443,6 +453,7 @@ export function commandEnabled(
     case "zoom-in":
     case "zoom-out":
     case "toggle-joins":
+    case "toggle-grid":
     case "toggle-road-snap":
     case "cycle-tier":
     case "measure-frames":
@@ -554,6 +565,9 @@ export function runEditorAction(
       return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
+      return;
+    case "toggle-grid":
+      editor.setShowGrid(!editor.snapshot().showGrid);
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);

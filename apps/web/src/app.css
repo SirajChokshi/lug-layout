@@ -774,6 +774,33 @@ footer {
   color: #556;
 }
 
+.scale-bar {
+  position: fixed;
+  top: calc(var(--panel-edge) + var(--view-bar-height) + var(--panel-gap));
+  right: var(--centre-right);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  padding: 5px 8px 6px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.88);
+  color: #1b2a34;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.12);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.scale-bar-rule {
+  box-sizing: border-box;
+  height: 7px;
+  border: 2px solid currentColor;
+  border-top: none;
+}
+
 .view-scroll select {
   padding: 3px 4px;
 }

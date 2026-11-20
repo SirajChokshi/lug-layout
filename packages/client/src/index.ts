@@ -170,6 +170,7 @@ export {
   PLAN_SERVICE,
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
+  SCALE_BAR,
 } from "./tokens.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
@@ -215,6 +216,7 @@ export {
   type KeyPlatform,
 } from "./commands/key-chord.ts";
 export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
+export type { IScaleBar, ScaleBarView } from "./camera/scale-bar.ts";
 export { overviewOf, type OverviewItem, type OverviewView } from "./camera/overview.ts";
 export {
   PANEL_GAP_PX,
