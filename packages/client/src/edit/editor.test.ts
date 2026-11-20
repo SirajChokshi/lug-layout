@@ -51,7 +51,7 @@ import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { ZETA16_ORDER } from "@brr/math";
+import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -1565,6 +1565,13 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
   };
 
   await placer(editor, backend)(BASEPLATE, 0, 0);
+  plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
   const plansAt = [plans.materialize()];
   const gestures: Array<() => void> = [
     () => {
@@ -1633,6 +1640,77 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
   ]);
   expect(redone).toEqual(committed);
   expect(plansAt.at(-1)?.placements).toHaveLength(15);
+  expect(
+    plansAt.map(
+      (plan) => plan.checks[0]?.issues.filter((issue) => issue.rule === "trackOpenEnd").length,
+    ),
+  ).toEqual([0, 2, 2, 4, 6, 4, 7, 7]);
+}, 120_000);
+
+const STRAIGHT_53401_LDU = 320;
+const CROSSING_RUN_LDU = 3 * STRAIGHT_53401_LDU;
+const LONE_STRAIGHT_AT_LDU = { x: 320, z: 300 } as const;
+const LDU_PER_MM = 5 / 2;
+const PLAN_POSITION = /\((-?\d+) mm, (-?\d+) mm\)/u;
+
+function endPositionsLdu(
+  messages: ReadonlyArray<string>,
+): ReadonlyArray<readonly [number, number]> {
+  return messages.map((message) => {
+    const match = PLAN_POSITION.exec(message);
+    if (!match) throw new Error(`no plan position in "${message}"`);
+    return [Number(match[1]) * LDU_PER_MM, Number(match[2]) * LDU_PER_MM] as const;
+  });
+}
+
+function runsAlongZ(ends: ReadonlyArray<readonly [number, number]>) {
+  const byX = Map.groupBy(ends, ([x]) => x);
+  return [...byX]
+    .map(([x, run]) => {
+      const zs = run.map(([, z]) => z);
+      return {
+        x,
+        ends: run.length,
+        lengthLdu: Math.max(...zs) - Math.min(...zs),
+        midZ: (Math.max(...zs) + Math.min(...zs)) / 2,
+      };
+    })
+    .toSorted((a, b) => a.lengthLdu - b.lengthLdu);
+}
+
+it("lists a placed set's own open track ends in the plan where its file puts them, telling listeners once per place, undo and redo", async () => {
+  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET]);
+  const plans = container.get(PLAN_SERVICE);
+  const set = `omr:${PLACEABLE_SET}`;
+  await loadCatalogItem(catalog, set);
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
+  const rows = () =>
+    plans
+      .issues(planId)
+      .filter((issue) => issue.rule === "trackOpenEnd")
+      .map((issue) => issue.message);
+  const seen: Array<ReadonlyArray<string>> = [];
+  plans.subscribe(() => seen.push(rows()));
+  await placer(editor, backend)(set, 0, 0);
+  const placed = rows();
+  editor.undo(0);
+  editor.redo(0);
+  const [lone, crossing] = runsAlongZ(endPositionsLdu(placed));
+
+  expect([lone, crossing].map((run) => [run?.ends, run?.lengthLdu])).toEqual([
+    [2, STRAIGHT_53401_LDU],
+    [2, CROSSING_RUN_LDU],
+  ]);
+  expect(Math.abs((lone?.x ?? 0) - (crossing?.x ?? 0))).toBe(LONE_STRAIGHT_AT_LDU.x);
+  expect(Math.abs((lone?.midZ ?? 0) - (crossing?.midZ ?? 0))).toBe(LONE_STRAIGHT_AT_LDU.z);
+  for (const message of placed) expect(message).toContain(` on ${PLACEABLE_SET} `);
+  expect(seen).toEqual([placed, [], placed]);
 }, 120_000);
 
 it("refuses to throw a switch a train stands on, whether the throw comes from a click, an undo or a redo", async () => {
@@ -4565,7 +4643,49 @@ async function brickBesideRun() {
   return started;
 }
 
+const RUN_PLAN_ORIGIN_CHUNK = -2;
+
+function runPlanMm(ldu: number): number {
+  return (ldu - RUN_PLAN_ORIGIN_CHUNK * CHUNK_LDU) / LDU_PER_MM;
+}
+
 describe("selection groups with laid track", () => {
+  it("shows plan listeners only the track rows a group nudge or delete of a user's brick and laid track leaves", async () => {
+    const { editor, backend, container } = await brickBesideRun();
+    const plans = container.get(PLAN_SERVICE);
+    const planId = plans.createPlan({
+      name: "Room",
+      roomWidthMm: 4000,
+      roomDepthMm: 4000,
+      originChunkX: RUN_PLAN_ORIGIN_CHUNK,
+      originChunkZ: RUN_PLAN_ORIGIN_CHUNK,
+    });
+    const openEnds = () =>
+      plans
+        .issues(planId)
+        .filter((issue) => issue.rule === "trackOpenEnd")
+        .map((issue) => issue.message);
+    let seen: Array<ReadonlyArray<string>> = [];
+    plans.subscribe(() => seen.push(openEnds()));
+    boxSelect(editor, backend, [-520, -200], [520, 500]);
+    const before = openEnds();
+    seen = [];
+    editor.moveSelectionBy(0, STUD, 0);
+    const nudged = { seen, rows: openEnds() };
+    seen = [];
+    editor.deleteSelection(0);
+
+    const runEnds = (zLdu: number) => [
+      `Open track end at (${runPlanMm(-24 * STUD)} mm, ${runPlanMm(zLdu)} mm) on Train Track 9V Straight #1: nothing joins it.`,
+      `Open track end at (${runPlanMm(24 * STUD)} mm, ${runPlanMm(zLdu)} mm) on Train Track 9V Straight #3: nothing joins it.`,
+    ];
+
+    expect(before).toEqual(runEnds(0));
+    expect(nudged.seen).toEqual([runEnds(STUD)]);
+    expect(nudged.rows).toEqual(runEnds(STUD));
+    expect(seen).toEqual([[]]);
+  }, 120_000);
+
   it("box-selects a user's brick with laid track, nudges, turns and deletes them as one undo step each that redo repeats, and won't pull a piece off its join", async () => {
     const { editor, backend } = await brickBesideRun();
     const laid = groupOutcome(editor);
