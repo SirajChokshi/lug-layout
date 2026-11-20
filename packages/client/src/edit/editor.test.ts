@@ -119,6 +119,7 @@ import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
+import type { TrackRouteView } from "./track-drawing.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
@@ -657,6 +658,33 @@ function drawOval(editor: IEditor, backend: AimedBackend): void {
   editor.chooseItem(null);
 }
 
+const MY_WAGONS = new URL(
+  "../../../import/test-data/my-container-and-tank-wagons.ldr",
+  import.meta.url,
+);
+
+function isCurve(route: TrackRouteView): boolean {
+  return (route.to.heading - route.from.heading + ZETA16_ORDER) % ZETA16_ORDER !== ZETA16_ORDER / 2;
+}
+
+function curveFarthestFrom(
+  editor: IEditor,
+  taken: ReadonlyArray<{ readonly x: number; readonly z: number }>,
+): { readonly x: number; readonly z: number } {
+  const curves = editor
+    .trackRoutes()
+    .filter(isCurve)
+    .map((route) => ({
+      x: (route.from.xLdu + route.to.xLdu) / 2,
+      z: (route.from.zLdu + route.to.zLdu) / 2,
+    }));
+  const clearance = (point: { readonly x: number; readonly z: number }) =>
+    Math.min(...taken.map((other) => Math.hypot(point.x - other.x, point.z - other.z)));
+  const farthest = curves.toSorted((a, b) => clearance(b) - clearance(a))[0];
+  if (!farthest) throw new Error("the oval has no curve");
+  return farthest;
+}
+
 async function myBlueCaboose(): Promise<Uint8Array> {
   const official = await pinnedOmrModel("10014-1.mpd");
   const custom = official
@@ -727,7 +755,7 @@ async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<stri
   return gear.snapshot().error;
 }
 
-it("runs every train on the rails, an imported one included, from exactly where each stands on its saved running gear, and stands them back there when Play stops", async () => {
+it("runs every train on the rails, imported ones included, from exactly where each stands on its saved running gear, two cars of one file as one coupled consist, and stands them back there when Play stops", async () => {
   const sim = new InThreadSim();
   const overrides = new MemoryOverrideStore();
   const { editor, backend, container, catalog } = await startEditor(
@@ -749,12 +777,22 @@ it("runs every train on the rails, an imported one included, from exactly where 
     bytes: await myBlueCaboose(),
   });
   const custom = editor.snapshot().modelImport?.item ?? "";
+  const importedWagons = await editor.importModelFile({
+    name: "my-container-and-tank-wagons.ldr",
+    bytes: await readFile(MY_WAGONS),
+  });
+  const wagons = editor.snapshot().modelImport?.item ?? "";
   const place = placer(editor, backend);
   await place(LOCOMOTIVE, 0, 0);
   await place(custom, -100, 1600);
+  const curve = curveFarthestFrom(editor, [
+    { x: 0, z: 0 },
+    { x: -100, z: 1600 },
+  ]);
+  const wagonsPlaced = await place(wagons, curve.x, curve.z);
   editor.chooseItem(null);
   const gear = container.get(RUNNING_GEAR);
-  await vi.waitFor(() => expect(gear.snapshot().models).toHaveLength(2));
+  await vi.waitFor(() => expect(gear.snapshot().models).toHaveLength(3));
   const detected = standingPoses(backend);
   const saveError = await saveShiftedPivot(gear, LOCOMOTIVE.slice(4));
   await vi.waitFor(() => expect(sameStanding(standingPoses(backend), detected)).toBe(false));
@@ -767,23 +805,30 @@ it("runs every train on the rails, an imported one included, from exactly where 
   const trainAt = () => {
     const data = sim.latestFrame()?.data ?? new Float64Array(0);
     const { trainEdgeStart, trainOffsetStart } = sim.frameLayout();
-    return [0, 1].map((t) => [data[trainEdgeStart + t], data[trainOffsetStart + t]]);
+    return [0, 1, 2].map((t) => [data[trainEdgeStart + t], data[trainOffsetStart + t]]);
   };
   const before = trainAt();
   play.drive(TRAIN_SPEED_LDU_PER_S);
   play.chooseDriven(1);
   play.drive(-TRAIN_SPEED_LDU_PER_S);
+  play.chooseDriven(2);
+  play.drive(TRAIN_SPEED_LDU_PER_S);
   sim.advance(RUN_TICKS);
   const after = trainAt();
   play.stop();
 
   expect(saveError).toBeNull();
-  expect(imported).toBe(true);
-  expect(custom).toMatch(/^import:/u);
+  expect([imported, importedWagons]).toEqual([true, true]);
+  expect([custom, wagons]).toEqual([
+    expect.stringMatching(/^import:/u),
+    expect.stringMatching(/^import:/u),
+  ]);
+  expect(wagonsPlaced).toMatchObject({ placements: 0, refusedClicks: 0 });
   expect(started).toMatchObject({ status: "running", error: null });
-  expect(started.trains.map((train) => train.label)).toEqual([
-    "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
-    "my-blue-caboose.mpd",
+  expect(started.trains.map((train) => [train.label, train.vehicles])).toEqual([
+    ["10133-1 Burlington Northern Santa Fe Locomotive (2004)", 1],
+    ["my-blue-caboose.mpd", 1],
+    ["my-container-and-tank-wagons.ldr", 2],
   ]);
   expect(parked.length).toBeGreaterThan(0);
   expect(sameStanding(playing, parked)).toBe(true);
