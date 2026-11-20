@@ -166,10 +166,10 @@ export class EditorFrameLoop implements IEditorFrameLoop {
       const startMs = performance.now();
       this.camera.frame(startMs);
       this.session.pollCamera();
-      this.frameWork?.(startMs);
       const onPresented = this.onPresented;
       const awaitsGpu = onPresented !== null || this.measureIndex >= 0 || this.firstFrame;
       if (awaitsGpu || this.backend.needsFrame()) this.backend.renderFrame(this.frameStats);
+      this.frameWork?.(startMs);
       if (awaitsGpu) {
         void this.finishAwaitedFrame(startMs, onPresented);
         return;

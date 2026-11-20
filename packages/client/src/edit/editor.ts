@@ -486,6 +486,8 @@ const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 const ASSIST_SLICE_MS = 6;
 const ASSIST_FRAME_BUDGET_MS = 14;
+const ASSIST_UNIT_ALLOWANCE_MS = 2;
+const ASSIST_MIN_FRAME_SLICE_MS = 3;
 const ASSIST_IDLE = 0;
 const ASSIST_HELD = 1;
 const ASSIST_HELD_DUE = 2;
@@ -571,6 +573,12 @@ function cellsWithin(reachLdu: number): number {
 
 function platesWithin(reachLdu: number): number {
   return Math.floor(reachLdu / PLATE_LDU);
+}
+
+function frameSliceDeadlineMs(frameStartMs: number): number {
+  const sliceStartMs = performance.now();
+  const left = ASSIST_FRAME_BUDGET_MS - ASSIST_UNIT_ALLOWANCE_MS - (sliceStartMs - frameStartMs);
+  return sliceStartMs + Math.min(ASSIST_SLICE_MS, Math.max(ASSIST_MIN_FRAME_SLICE_MS, left));
 }
 
 function farthestLatticeReachLdu(limitLdu: number): number {
@@ -1805,7 +1813,11 @@ export class Editor implements IEditor, IEditedWorld {
     const placeable = this.assistPlaceable;
     const connected = this.assistConnected;
     if (!placeable || !connected) return false;
-    const deadline = heldOnly ? Number.POSITIVE_INFINITY : startedMs + ASSIST_SLICE_MS;
+    const deadline = heldOnly
+      ? Number.POSITIVE_INFINITY
+      : mayDefer
+        ? frameSliceDeadlineMs(startedMs)
+        : startedMs + ASSIST_SLICE_MS;
     let published = false;
     if (this.assistPhase === ASSIST_HELD) {
       if (!this.advanceAssist(deadline)) return false;

@@ -337,7 +337,10 @@ class HeadlessBackend implements ISceneBackend {
   }
   setView(): void {}
   resize(): void {}
-  renderFrame(): void {}
+  onRender: (() => void) | null = null;
+  renderFrame(): void {
+    this.onRender?.();
+  }
   needsFrame(): boolean {
     return true;
   }
@@ -1875,6 +1878,60 @@ it("shows precise's verdict at the cursor at once, then settles assist over late
   } finally {
     clock.mockRestore();
   }
+}, 240_000);
+
+const FINE_CLOCK_STEP_MS = 0.25;
+const NO_RENDER_MS = 0;
+const HEAVY_RENDER_MS = 10;
+const OVER_BUDGET_RENDER_MS = 14;
+const THREE_STUDS_IN_FROM_ONE_IN = 2 * STUD_LDU;
+
+async function settleBehindRender(renderMs: number) {
+  const scene = await setOneStudIntoSet();
+  let now = performance.now();
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += FINE_CLOCK_STEP_MS));
+  scene.backend.onRender = () => {
+    now += renderMs;
+  };
+  try {
+    scene.backend.aim(scene.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+    scene.editor.pointerMove(0, 0);
+    const frameMs: number[] = [];
+    while (unsettled(scene.editor.snapshot().hover?.placement)) {
+      if (frameMs.length >= SETTLE_FRAMES) throw new Error("the hover never settled");
+      const before = now;
+      await scene.frame();
+      frameMs.push(now - before);
+    }
+    return { frameMs, hover: scene.editor.snapshot().hover?.placement };
+  } finally {
+    clock.mockRestore();
+  }
+}
+
+it("slices assist around the frame's render: a slow render shrinks the slice, never below its floor, and the hover settles as a whole search does", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.backend.aim(whole.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const light = await settleBehindRender(NO_RENDER_MS);
+  const heavy = await settleBehindRender(HEAVY_RENDER_MS);
+  const overBudget = await settleBehindRender(OVER_BUDGET_RENDER_MS);
+
+  expect({ light: light.hover, heavy: heavy.hover, overBudget: overBudget.hover }).toEqual({
+    light: wholeHover,
+    heavy: wholeHover,
+    overBudget: wholeHover,
+  });
+  expect({
+    lightSpansFrames: light.frameMs.length > 2,
+    heavyFramesWithin16Ms: heavy.frameMs.every((ms) => ms <= 16),
+    overBudgetAtMostTwiceTheFrames: overBudget.frameMs.length <= 2 * light.frameMs.length + 2,
+  }).toEqual({
+    lightSpansFrames: true,
+    heavyFramesWithin16Ms: true,
+    overBudgetAtMostTwiceTheFrames: true,
+  });
 }, 240_000);
 
 it("commits the settled assist pose for a click made before the search settles, made at once or queued while the held set's tables load", async () => {
