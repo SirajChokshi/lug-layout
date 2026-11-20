@@ -125,6 +125,7 @@ import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type {
   HoverMateCount,
   HoverRefusalHit,
+  HoverWait,
   MagnetOffset,
   PlacedModelView,
   PlacementHover,
@@ -134,6 +135,7 @@ import { effectivePlacementMode } from "./placement-mode.ts";
 import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
+  NOT_WAITING,
   SETTLED_AT_ONCE,
   placementChoice,
   type IPlacementSearch,
@@ -364,8 +366,11 @@ export interface QueuedPlacement {
 }
 
 interface QueuedClick extends QueuedPlacement {
-  readonly ndcX: number;
-  readonly ndcY: number;
+  readonly mode: PlacementMode;
+  readonly ray: Float64Array;
+  readonly hitX: number;
+  readonly hitZ: number;
+  readonly reachLdu: number;
   readonly eventTimeMs: number;
 }
 
@@ -830,6 +835,7 @@ type SeatOnRails = "allowed" | "refused";
 interface PlacementCheck {
   aim: RailAim | null;
   yPlates: number;
+  waitingOn: number;
   refusal: string | null;
   trackBlock: TrackBlockView | null;
   road: RoadProbe | null;
@@ -859,6 +865,7 @@ function placementRefused(check: PlacementCheck, seat: SeatOnRails): boolean {
   const kind = check.aim?.kind;
   return (
     kind === "refused" ||
+    check.waitingOn !== NOT_WAITING ||
     (seat === "refused" && kind === "seat") ||
     check.refusal !== null ||
     check.trackBlock !== null ||
@@ -1050,6 +1057,13 @@ interface Copied {
   readonly pivot: LatticePoint;
 }
 
+type ModelStranding =
+  | { readonly kind: "none" }
+  | { readonly kind: "stranded"; readonly model: PlacedModel }
+  | { readonly kind: "waiting"; readonly model: PlacedModel; readonly failed: boolean };
+
+const NOT_STRANDED: ModelStranding = { kind: "none" };
+
 const ACTION_VERBS: Readonly<Record<GroupAction, string>> = {
   turn: "turning",
   move: "moving",
@@ -1093,6 +1107,14 @@ function refusedAt(
     overlappingCells: fit.overlappingCells,
     reason,
   };
+}
+
+function failedLoadText(subject: string, neighbour: string, place: string): string {
+  return `${subject} can't be placed ${place}: ${neighbour}'s connector data didn't load.`;
+}
+
+function waitingText(subject: string, neighbour: string, checked: string): string {
+  return `${subject}: ${neighbour} beside it is still reading its connectors, so ${checked} can't be checked yet.`;
 }
 
 function remedy(action: GroupAction, other: string): string {
@@ -1322,6 +1344,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly check: PlacementCheck = {
     aim: null,
     yPlates: 0,
+    waitingOn: NOT_WAITING,
     refusal: null,
     trackBlock: null,
     road: null,
@@ -1394,8 +1417,16 @@ export class Editor implements IEditor, IEditedWorld {
   private heldTrackModels: ReadonlyArray<PlacedModel> = [];
   private readonly heldRanges = new Map<PlacedModel, readonly [number, number]>();
   private readonly searchIds = new Map<PlacedModel, number>();
+  private readonly awaitingIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
   private readonly connected = new Map<Placeable, Connected>();
+  private readonly frozenVolumes = new Map<Placeable, FrozenVolumes>();
+  private replayReachLdu: number | null = null;
+  private waitingFill: {
+    readonly placeable: Placeable;
+    readonly rot: number;
+    readonly eventTimeMs: number;
+  } | null = null;
   private readonly studChecks = new Set<Placeable>();
   private nextSearchId = 1;
   private newTrack: (() => TrackDrawing) | null = null;
@@ -2169,6 +2200,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   dragStart(ndcX: number, ndcY: number): boolean {
     this.cancelFill();
+    this.waitingFill = null;
     this.fillTool?.end();
     if (this.state.mode === "measure") return this.rulerDragStart(ndcX, ndcY);
     if (this.state.mode === "table") return this.tableDragStart(ndcX, ndcY);
@@ -2354,6 +2386,15 @@ export class Editor implements IEditor, IEditedWorld {
     return true;
   }
 
+  private loadKitTables(kitId: string): void {
+    const kit = this.roadDrawing?.kitViews().find((view) => view.id === kitId);
+    for (const piece of kit?.pieces ?? []) {
+      const refId = this.catalog.itemRefId(piece.item);
+      const placeable = refId === null ? null : this.catalog.placeables()[refId];
+      if (placeable) this.connectorTables.load(placeable).catch(() => undefined);
+    }
+  }
+
   private requestKitMeshes(kitId: string): void {
     const kit = this.roadDrawing?.kitViews().find((view) => view.id === kitId);
     for (const piece of kit?.pieces ?? []) {
@@ -2365,6 +2406,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private enterRoadMode(id: string): void {
     this.requestKitMeshes(id);
+    this.loadKitTables(id);
     this.ghostRot = this.placeRot;
     if (this.roadDrawing) this.roadDrawing.preferredRot = this.placeRot;
     if (this.state.mode === "track") {
@@ -2408,6 +2450,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "measure") this.setMeasuring(false);
     if (this.state.mode === "table") this.setTableTool(false);
     this.cancelFill();
+    this.waitingFill = null;
     if (id !== null && this.state.readOnly) return;
     this.queueClick(null);
     this.cancelGesture();
@@ -2505,7 +2548,7 @@ export class Editor implements IEditor, IEditedWorld {
           if (this.state.pendingItem !== id) return;
           const queued = this.queuedClick;
           this.chooseItem(id);
-          if (queued?.item === id) this.commitQueuedClick(queued);
+          if (queued?.item === id) this.replayQueued(queued);
         },
         (error: unknown) => {
           if (this.state.pendingItem !== id) return;
@@ -2711,6 +2754,7 @@ export class Editor implements IEditor, IEditedWorld {
     const train = this.activeTrain;
     check.aim = train ? this.railYard.aim(train, aimRay, rot % 2 === 1) : null;
     check.yPlates = RESTS_ON_TABLE_Y_PLATES;
+    check.waitingOn = NOT_WAITING;
     check.refusal = null;
     check.trackBlock = null;
     check.road = null;
@@ -2726,6 +2770,12 @@ export class Editor implements IEditor, IEditedWorld {
     const choice = this.tileChoice;
     this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
     check.yPlates = pose.yPlates;
+    if (choice.waitingOn !== NOT_WAITING) {
+      const neighbour = this.searchModels.get(choice.waitingOn)?.placeable.label ?? "";
+      if (choice.waitFailed) check.refusal = failedLoadText(placeable.label, neighbour, "there");
+      else check.waitingOn = choice.waitingOn;
+      return check;
+    }
     if (!choice.accepted) {
       check.refusal = refusalText(
         placeable.label,
@@ -2836,6 +2886,13 @@ export class Editor implements IEditor, IEditedWorld {
         this.hoverCell.forget();
         return false;
       }
+      if (this.choice.waitingOn !== NOT_WAITING) {
+        const mode = this.assistMode;
+        const final = this.choice.waitFailed;
+        this.dropAssist();
+        this.publishHover(placeable, connected, mode, final, final, false);
+        return true;
+      }
       if (this.choice.accepted && this.choice.votes > 0) {
         this.settleAssist(placeable, connected);
         return true;
@@ -2935,7 +2992,10 @@ export class Editor implements IEditor, IEditedWorld {
     this.search.evaluate(connected.model, pose, this.mates);
     const mates = mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner));
     const joints = this.mates.jointCount;
-    const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
+    const waitingOn = this.hoverWait(choice);
+    const waiting = waitingOn !== null && !waitingOn.failed;
+    const hit =
+      choice.accepted || waitingOn ? null : this.refusalHit(connected, pose, null, choice.overlap);
     const blocked = choice.accepted ? this.heldPoseRefusal(placeable, pose) : null;
     this.hoverYPlates = pose.yPlates;
     this.hoverPlacement = {
@@ -2958,12 +3018,25 @@ export class Editor implements IEditor, IEditedWorld {
         cells: cellsWithin(this.assistLdu),
         plates: platesWithin(this.assistLdu),
       },
-      settled,
-      turnSettled,
+      settled: settled && !waiting,
+      turnSettled: turnSettled && !waiting,
+      waitingOn,
     };
-    this.hoverRefusal = choice.accepted ? blocked : refusalText(placeable.label, hit);
+    this.hoverRefusal = choice.accepted
+      ? blocked
+      : waitingOn
+        ? waitingOn.failed
+          ? failedLoadText(placeable.label, waitingOn.placed.label, "here")
+          : null
+        : refusalText(placeable.label, hit);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
     this.lastPublishMs = performance.now() - startedMs;
+  }
+
+  private hoverWait(choice: PlacementChoice): HoverWait | null {
+    if (choice.waitingOn === NOT_WAITING) return null;
+    const placed = this.placedViewOf(choice.waitingOn);
+    return placed ? { placed, failed: choice.waitFailed } : null;
   }
 
   private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
@@ -3002,7 +3075,7 @@ export class Editor implements IEditor, IEditedWorld {
     pick.yPlates = RESTS_ON_TABLE_Y_PLATES;
     pick.rot = rot;
     pick.turns = turns;
-    this.assistLdu = this.assistReachLdu();
+    this.assistLdu = this.replayReachLdu ?? this.assistReachLdu();
     const reach = mode === "assist" ? this.assistLdu : PRECISE_RADIUS;
     pick.radiusLdu = reach;
     pick.cells = cellsWithin(reach);
@@ -3221,8 +3294,6 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const queued = this.queuedClick;
-    if (queued && !(this.hovering && this.onQueuedCell(queued))) this.queueClick(null);
     const snap = this.snapGhost();
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
@@ -3246,16 +3317,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerLeave(): void {
     this.hovering = false;
-    this.queueClick(null);
     this.dropAssist();
     this.hoverCell.forget();
     this.hoverPlacement = null;
     this.update({ hover: null });
     if (this.state.mode === "table" && this.tables?.unhover()) this.showGuides();
-  }
-
-  private onQueuedCell(queued: QueuedClick): boolean {
-    return nearestStud(this.hitX) === queued.x && nearestStud(this.hitZ) === queued.z;
   }
 
   private queueClick(queued: QueuedClick | null): void {
@@ -3267,12 +3333,85 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
-  private commitQueuedClick(queued: QueuedClick): void {
-    const holding = this.active !== null && !this.state.readOnly && this.state.pendingItem === null;
-    if (!holding || !this.groundHit(queued.ndcX, queued.ndcY)) return;
-    if (!this.onQueuedCell(queued)) return;
-    this.pointerMove(queued.ndcX, queued.ndcY);
-    this.click(queued.ndcX, queued.ndcY, queued.eventTimeMs);
+  private clickedPick(item: string, eventTimeMs: number): QueuedClick {
+    return {
+      item,
+      x: this.pick.x,
+      z: this.pick.z,
+      rot: this.ghostRot,
+      mode: this.placementMode(),
+      ray: Float64Array.from(this.ray),
+      hitX: this.hitX,
+      hitZ: this.hitZ,
+      reachLdu: this.assistLdu,
+      eventTimeMs,
+    };
+  }
+
+  private replayQueued(queued: QueuedClick): void {
+    const active = this.active;
+    this.queueClick(null);
+    if (!active || active.id !== queued.item || this.state.readOnly) return;
+    if (this.state.pendingItem !== null || this.placementMode() !== queued.mode) return;
+    const pointer = { hovering: this.hovering, ndcX: this.pointerNdcX, ndcY: this.pointerNdcY };
+    const ghostRot = this.ghostRot;
+    this.ray.set(queued.ray);
+    this.hitX = queued.hitX;
+    this.hitZ = queued.hitZ;
+    this.hoverX = nearestStud(queued.hitX);
+    this.hoverZ = nearestStud(queued.hitZ);
+    this.ghostRot = queued.rot;
+    this.replayReachLdu = queued.reachLdu;
+    this.hovering = true;
+    try {
+      this.clickHeld(active, queued.eventTimeMs);
+    } finally {
+      this.replayReachLdu = null;
+      this.ghostRot = ghostRot;
+    }
+    if (pointer.hovering) this.pointerMove(pointer.ndcX, pointer.ndcY);
+    else this.pointerLeave();
+  }
+
+  private clickHeld(active: Placeable, eventTimeMs: number): void {
+    const snap = this.snapGhost();
+    this.placeGhost();
+    this.continueAssist(performance.now(), true, false);
+    const at = { x: this.hoverX, z: this.hoverZ, rot: this.placeRot };
+    if (snap?.state === "refused") {
+      this.update({ snap });
+      this.refuse(refusedAt(active.id, at, ROAD_REFUSAL, snap), null);
+      return;
+    }
+    const aim = this.trainAim;
+    if (aim && aim.kind !== "off") {
+      if (aim.kind === "refused") {
+        this.refuse(refusedAt(active.id, at, aim.reason), null);
+        return;
+      }
+      this.show(
+        this.history.placeConsist({
+          refId: this.activeRefId,
+          colorId: active.worldColor,
+          anchor: aim.seat.anchor,
+        }),
+        eventTimeMs,
+      );
+      return;
+    }
+    const placement = this.hoverPlacement;
+    if (!placement) return;
+    const { pose } = placement;
+    if (placement.waitingOn && !placement.waitingOn.failed) {
+      this.queueClick(this.clickedPick(active.id, eventTimeMs));
+      return;
+    }
+    if (!placement.accepted) {
+      this.refuse(refusedAt(active.id, pose, this.hoverRefusal ?? ""), null);
+      this.update({ hover: this.hoverView() });
+      return;
+    }
+    this.placeAt(active, pose, eventTimeMs);
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
@@ -3288,54 +3427,15 @@ export class Editor implements IEditor, IEditedWorld {
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
       if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
-      this.queueClick({
-        item: pendingItem,
-        x: nearestStud(this.hitX),
-        z: nearestStud(this.hitZ),
-        rot: this.placeRot,
-        ndcX,
-        ndcY,
-        eventTimeMs,
-      });
+      this.aimPick(this.ghostRot, HELD_TURN_ONLY, this.placementMode());
+      this.queueClick(this.clickedPick(pendingItem, eventTimeMs));
       return;
     }
     if (this.active && !this.state.readOnly) {
       if (!this.groundHit(ndcX, ndcY)) return;
+      this.queueClick(null);
       this.hovering = true;
-      const snap = this.snapGhost();
-      this.placeGhost();
-      this.continueAssist(performance.now(), true, false);
-      const at = { x: this.hoverX, z: this.hoverZ, rot: this.placeRot };
-      if (snap?.state === "refused") {
-        this.update({ snap });
-        this.refuse(refusedAt(this.active.id, at, ROAD_REFUSAL, snap), null);
-        return;
-      }
-      const aim = this.trainAim;
-      if (aim && aim.kind !== "off") {
-        if (aim.kind === "refused") {
-          this.refuse(refusedAt(this.active.id, at, aim.reason), null);
-          return;
-        }
-        this.show(
-          this.history.placeConsist({
-            refId: this.activeRefId,
-            colorId: this.active.worldColor,
-            anchor: aim.seat.anchor,
-          }),
-          eventTimeMs,
-        );
-        return;
-      }
-      const placement = this.hoverPlacement;
-      if (!placement) return;
-      const { pose } = placement;
-      if (!placement.accepted) {
-        this.refuse(refusedAt(this.active.id, pose, this.hoverRefusal ?? ""), null);
-        this.update({ hover: this.hoverView() });
-        return;
-      }
-      this.placeAt(this.active, pose, eventTimeMs);
+      this.clickHeld(this.active, eventTimeMs);
       return;
     }
     const gesture = this.gesture;
@@ -3840,12 +3940,26 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const reason = this.settleFill(fill, placeable);
+    if (reason.waitingOn !== NOT_WAITING) {
+      const neighbour = this.searchModels.get(reason.waitingOn)?.placeable.label ?? "";
+      this.waitingFill = { placeable, rot: this.ghostRot, eventTimeMs };
+      this.update({
+        fillDraft: null,
+        lastFill: {
+          item: placeable.id,
+          placed: 0,
+          refused: 0,
+          reason: waitingText(placeable.label, neighbour, "the fill"),
+        },
+      });
+      return;
+    }
     const requests = fill.requests(this.activeRefId, placeable.worldColor, this.ghostRot);
     const result: FillResult = {
       item: placeable.id,
       placed: requests.length,
       refused: fill.refused,
-      reason: fill.laid === 0 ? `No whole ${placeable.label} fits there.` : reason,
+      reason: fill.laid === 0 ? `No whole ${placeable.label} fits there.` : reason.refusal,
     };
     fill.cancel();
     if (requests.length > 0) this.show(this.history.commit("fill", requests), eventTimeMs);
@@ -3870,15 +3984,20 @@ export class Editor implements IEditor, IEditedWorld {
     if (fill.reframe(placeable.box, this.ghostRot, gridLdu)) this.previewFill(fill);
   }
 
-  private settleFill(fill: FillTool, placeable: Placeable): string | null {
+  private settleFill(
+    fill: FillTool,
+    placeable: Placeable,
+  ): { readonly refusal: string | null; readonly waitingOn: number } {
     const rot = this.ghostRot;
     const laid = this.state.snapRoads && placeable.road ? this.laidRoads : null;
     laid?.clear();
     let reason: string | null = null;
+    let waitingOn = NOT_WAITING;
     for (let tile = 0; tile < fill.laid; tile++) {
       const x = fill.xAt(tile);
       const z = fill.zAt(tile);
       const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), laid);
+      if (waitingOn === NOT_WAITING) waitingOn = check.waitingOn;
       const refused = placementRefused(check, "refused");
       if (refused && reason === null) reason = placementRefusal(placeable, check, "refused");
       if (!refused && laid && check.road) {
@@ -3887,7 +4006,7 @@ export class Editor implements IEditor, IEditedWorld {
       }
       fill.settle(tile, check.yPlates, refused);
     }
-    return reason;
+    return { refusal: reason, waitingOn };
   }
 
   private downRayAt(x: number, z: number): Float64Array {
@@ -3972,12 +4091,16 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   setPlacementMode(mode: PlacementMode): void {
+    const before = this.placementMode();
     this.update({ placementMode: mode });
+    if (this.placementMode() !== before) this.queueClick(null);
     this.rehover();
   }
 
   setPlacementModeOverride(held: boolean): void {
+    const before = this.placementMode();
     this.update({ placementModeOverride: held });
+    if (this.placementMode() !== before) this.queueClick(null);
     this.rehover();
   }
 
@@ -4364,6 +4487,7 @@ export class Editor implements IEditor, IEditedWorld {
   cancelGesture(): void {
     if (this.gesture) this.endGesture();
     this.cancelFill();
+    this.queueClick(null);
   }
 
   private endGesture(): void {
@@ -4652,7 +4776,7 @@ export class Editor implements IEditor, IEditedWorld {
   private searchIdsOf(models: ReadonlySet<PlacedModel>): ReadonlySet<number> {
     const ids = new Set<number>();
     for (const model of models) {
-      const id = this.searchIds.get(model);
+      const id = this.searchIds.get(model) ?? this.awaitingIds.get(model);
       if (id !== undefined) ids.add(id);
     }
     return ids;
@@ -4719,6 +4843,13 @@ export class Editor implements IEditor, IEditedWorld {
       const choice = this.groupChoice;
       const { model, volumes, boxes, technic } = connected;
       this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
+      if (choice.waitingOn !== NOT_WAITING) {
+        const neighbour = this.searchModels.get(choice.waitingOn)?.placeable.label ?? "";
+        const reason = choice.waitFailed
+          ? failedLoadText(placeable.label, neighbour, "there")
+          : waitingText(placeable.label, neighbour, "it there");
+        return refusedAt(placeable.id, pose, reason);
+      }
       const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
       if (hit) return refusedAt(placeable.id, pose, refusalText(placeable.label, hit));
       if (choice.accepted) supported.add(component);
@@ -4902,9 +5033,21 @@ export class Editor implements IEditor, IEditedWorld {
   ): RefusedClick | null {
     const [only, second] = chosen;
     if (!only) return null;
-    const stranded = this.strandedBy(new Set(chosen));
-    if (!stranded) return null;
+    const stranding = this.strandedBy(new Set(chosen));
     const verb = ACTION_VERBS[action];
+    if (stranding.kind === "none") return null;
+    if (stranding.kind === "waiting") {
+      const waiting = stranding.model;
+      const own = chosen.includes(waiting);
+      const neighbour = own ? "its" : `${waiting.placeable.label}'s`;
+      const reason = stranding.failed
+        ? `${only.placeable.label}: ${neighbour} connector data didn't load, so ${verb} it can't be checked.`
+        : own
+          ? `${waiting.placeable.label}: its connectors are still being read, so ${verb} it can't be checked yet.`
+          : waitingText(only.placeable.label, waiting.placeable.label, `${verb} it`);
+      return refusedAt(waiting.placeable.id, waiting.handle, reason);
+    }
+    const stranded = stranding.model;
     const left = stranded.placeable.label;
     const base = this.carrierAmong(stranded, chosen);
     if (base) {
@@ -5105,7 +5248,7 @@ export class Editor implements IEditor, IEditedWorld {
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
-        volumes: FrozenVolumes.ofPlaceable(placeable),
+        volumes: this.volumesOf(placeable),
         boxes,
         technic: FrozenTechnic.ofParts(
           parts.map((part) => part.technic),
@@ -5118,52 +5261,106 @@ export class Editor implements IEditor, IEditedWorld {
     return connected;
   }
 
+  private volumesOf(placeable: Placeable): FrozenVolumes {
+    let volumes = this.frozenVolumes.get(placeable);
+    if (!volumes) {
+      volumes = FrozenVolumes.ofPlaceable(placeable);
+      this.frozenVolumes.set(placeable, volumes);
+    }
+    return volumes;
+  }
+
   private searchable(model: PlacedModel): void {
     if (this.searchIds.has(model)) return;
+    const { x, z, yPlates, rot } = model.handle;
     if (!this.connectorTables.loaded(model.placeable)) {
+      if (this.awaitingIds.has(model)) return;
+      const awaiting = this.nextSearchId++;
+      this.search.awaitTables(awaiting, this.volumesOf(model.placeable), { x, z, yPlates, rot });
+      this.awaitingIds.set(model, awaiting);
+      this.searchModels.set(awaiting, model);
       this.connectorTables.load(model.placeable).then(
         () => {
-          if (this.placed.models().includes(model)) this.searchable(model);
+          if (!this.awaitingIds.has(model)) return;
+          for (const waiting of this.awaitingIds.keys()) {
+            if (waiting.placeable === model.placeable) this.searchable(waiting);
+          }
+          this.tablesArrived();
         },
         (error: unknown) => {
-          if (!this.placed.models().includes(model)) return;
+          if (!this.awaitingIds.has(model)) return;
+          for (const [waiting, id] of this.awaitingIds) {
+            if (waiting.placeable === model.placeable) this.search.tablesFailed(id);
+          }
           this.update({
             catalogError: `${model.placeable.label}'s connector records can't be read: ${errorText(error)}`,
           });
+          this.tablesArrived();
         },
       );
       return;
     }
-    const id = this.nextSearchId++;
+    const id = this.awaitingIds.get(model) ?? this.nextSearchId++;
+    this.awaitingIds.delete(model);
     const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
-    const { x, z, yPlates, rot } = model.handle;
     this.search.add(id, connectors, volumes, boxes, technic, { x, z, yPlates, rot });
     this.searchIds.set(model, id);
     this.searchModels.set(id, model);
   }
 
   private unsearchable(model: PlacedModel): void {
-    const id = this.searchIds.get(model);
+    const id = this.searchIds.get(model) ?? this.awaitingIds.get(model);
     if (id === undefined) return;
     this.search.remove(id);
     this.searchIds.delete(model);
+    this.awaitingIds.delete(model);
     this.searchModels.delete(id);
   }
 
-  private strandedBy(removed: ReadonlySet<PlacedModel>): PlacedModel | null {
-    const ids = new Set<number>();
-    for (const model of removed) {
-      const id = this.searchIds.get(model);
-      if (id !== undefined) ids.add(id);
-    }
-    if (ids.size === 0) return null;
-    const stranded = this.search.strandedByRemoval(
+  private tablesArrived(): void {
+    this.rehover();
+    const queued = this.queuedClick;
+    if (queued && this.active && queued.item === this.active.id) this.replayQueued(queued);
+    const waiting = this.waitingFill;
+    const fill = this.fillTool;
+    if (!waiting || !fill || this.active !== waiting.placeable || fill.drafting) return;
+    this.waitingFill = null;
+    if (this.ghostRot !== waiting.rot) return;
+    if (fill.laid > 0) this.commitFill(fill, waiting.placeable, waiting.eventTimeMs);
+    this.rehover();
+  }
+
+  private strandedBy(removed: ReadonlySet<PlacedModel>): ModelStranding {
+    const ids = this.searchIdsOf(removed);
+    if (ids.size === 0) return NOT_STRANDED;
+    const stranding = this.search.strandedByRemoval(
       ids,
       (other) =>
         (this.searchModels.get(other)?.handle.yPlates ?? RESTS_ON_TABLE_Y_PLATES) <=
         RESTS_ON_TABLE_Y_PLATES,
     );
-    return stranded === null ? null : (this.searchModels.get(stranded) ?? null);
+    switch (stranding.kind) {
+      case "none":
+        return NOT_STRANDED;
+      case "stranded":
+        return { kind: "stranded", model: this.searchModel(stranding.placement) };
+      case "waiting":
+        return {
+          kind: "waiting",
+          model: this.searchModel(stranding.placement),
+          failed: stranding.failed,
+        };
+      default: {
+        const unhandled: never = stranding;
+        throw new Error(`unhandled stranding ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private searchModel(placement: number): PlacedModel {
+    const model = this.searchModels.get(placement);
+    if (!model) throw new Error(`search placement ${placement} has no model`);
+    return model;
   }
 
   private trackOf(placeable: Placeable): ModelTrackEnds | null {

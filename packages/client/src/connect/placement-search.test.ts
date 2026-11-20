@@ -281,6 +281,10 @@ interface SlicedChoice {
   readonly slices: number;
 }
 
+function stranded(placement: number) {
+  return { kind: "stranded", placement };
+}
+
 function fullVerdict(choice: PlacementChoice) {
   return {
     pose: [choice.x, choice.z, choice.yPlates, choice.rot],
@@ -664,13 +668,16 @@ describe("PlacementSearch", () => {
     const plate = world(f);
     place(f, PLATE, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 0 });
     const onTable = (placement: number): boolean => placement === BASEPLATE;
-    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), onTable)).toBe(BRICK);
-    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), () => true)).toBeNull();
-    expect(f.search.strandedByRemoval(new Set([BASEPLATE, BRICK]), onTable)).toBe(PLATE);
+    const none = { kind: "none" };
+    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), onTable)).toEqual(stranded(BRICK));
+    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), () => true)).toEqual(none);
+    expect(f.search.strandedByRemoval(new Set([BASEPLATE, BRICK]), onTable)).toEqual(
+      stranded(PLATE),
+    );
     f.search.remove(BRICK);
-    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), onTable)).toBe(PLATE);
-    expect(f.search.strandedByRemoval(new Set([PLATE]), onTable)).toBeNull();
-    expect(f.search.strandedByRemoval(new Set([BASEPLATE, PLATE]), onTable)).toBeNull();
+    expect(f.search.strandedByRemoval(new Set([BASEPLATE]), onTable)).toEqual(stranded(PLATE));
+    expect(f.search.strandedByRemoval(new Set([PLATE]), onTable)).toEqual(none);
+    expect(f.search.strandedByRemoval(new Set([BASEPLATE, PLATE]), onTable)).toEqual(none);
     const choice = choose(f, plate, window(2 * STUD_LDU, 2 * STUD_LDU, 0), PLATE);
     expect([choice.accepted, choice.votes]).toEqual([true, 4]);
   });

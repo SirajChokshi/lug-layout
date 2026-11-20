@@ -44,8 +44,28 @@ export interface PlacementChoice {
   rot: number;
   votes: number;
   walked: number;
+  waitingOn: number;
+  waitFailed: boolean;
   readonly overlap: OverlapHit;
 }
+
+export const NOT_WAITING = -1;
+
+export type Stranding =
+  | { readonly kind: "none" }
+  | { readonly kind: "stranded"; readonly placement: number }
+  | { readonly kind: "waiting"; readonly placement: number; readonly failed: boolean };
+
+const NOT_STRANDED: Stranding = { kind: "none" };
+
+export interface SearchReach {
+  readonly cells: number;
+  readonly plates: number;
+  readonly turns: number;
+  readonly firstTurn: number;
+}
+
+const AT_POSE_ONLY: SearchReach = { cells: 0, plates: 0, turns: 1, firstTurn: 0 };
 
 export function placementChoice(): PlacementChoice {
   return {
@@ -56,6 +76,8 @@ export function placementChoice(): PlacementChoice {
     rot: 0,
     votes: 0,
     walked: 0,
+    waitingOn: NOT_WAITING,
+    waitFailed: false,
     overlap: {
       owner: NO_PLACEMENT,
       bottomLdu: 0,
@@ -93,6 +115,8 @@ export interface IPlacementSearch {
     technic: FrozenTechnic,
     pose: LatticePose,
   ): void;
+  awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void;
+  tablesFailed(placement: number): void;
   remove(placement: number): void;
   clear(): void;
   search(
@@ -119,7 +143,7 @@ export interface IPlacementSearch {
   cancel(): void;
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void;
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number>;
-  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null;
+  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): Stranding;
   withdrawn<T>(placements: ReadonlySet<number>, during: () => T): T;
   check(
     model: ModelConnectors,
@@ -167,6 +191,106 @@ const COVER_TURNED = 1;
 const COVER_DONE = 0;
 const COVER_RUNNING = 1;
 const COVER_NO_ROOM = 2;
+const AWAITED_ID = 0;
+const AWAITED_X0 = 1;
+const AWAITED_Z0 = 2;
+const AWAITED_X1 = 3;
+const AWAITED_Z1 = 4;
+const AWAITED_BOTTOM = 5;
+const AWAITED_TOP = 6;
+const AWAITED_FAILED = 7;
+const AWAITED_INTS = 8;
+const NO_SLOT = -1;
+const INITIAL_AWAITED = 4;
+const TOUCHING_CELLS = 1;
+
+class Reach {
+  x0 = 0;
+  z0 = 0;
+  x1 = 0;
+  z1 = 0;
+  bottom = 0;
+  top = 0;
+  empty = true;
+
+  start(): this {
+    this.empty = true;
+    return this;
+  }
+
+  grow(world: CellVolumes): this {
+    for (let c = 0; c < world.count; c++) {
+      const bottom = world.bottomLdu[c] ?? 0;
+      const top = world.topLdu[c] ?? 0;
+      if (top <= bottom) continue;
+      const x = world.cellX[c] ?? 0;
+      const z = world.cellZ[c] ?? 0;
+      if (this.empty) {
+        this.x0 = this.x1 = x;
+        this.z0 = this.z1 = z;
+        this.bottom = bottom;
+        this.top = top;
+        this.empty = false;
+        continue;
+      }
+      this.x0 = Math.min(this.x0, x);
+      this.z0 = Math.min(this.z0, z);
+      this.x1 = Math.max(this.x1, x);
+      this.z1 = Math.max(this.z1, z);
+      this.bottom = Math.min(this.bottom, bottom);
+      this.top = Math.max(this.top, top);
+    }
+    return this;
+  }
+
+  copy(from: Reach): this {
+    this.x0 = from.x0;
+    this.z0 = from.z0;
+    this.x1 = from.x1;
+    this.z1 = from.z1;
+    this.bottom = from.bottom;
+    this.top = from.top;
+    this.empty = from.empty;
+    return this;
+  }
+
+  planGapSquared(awaited: Int32Array, at: number): number {
+    if (this.empty) return 0;
+    const gapX = Math.max(
+      0,
+      (awaited[at + AWAITED_X0] ?? 0) - this.x1,
+      this.x0 - (awaited[at + AWAITED_X1] ?? 0),
+    );
+    const gapZ = Math.max(
+      0,
+      (awaited[at + AWAITED_Z0] ?? 0) - this.z1,
+      this.z0 - (awaited[at + AWAITED_Z1] ?? 0),
+    );
+    return gapX * gapX + gapZ * gapZ;
+  }
+
+  widen(cells: number, ldu: number): this {
+    this.x0 -= cells;
+    this.z0 -= cells;
+    this.x1 += cells;
+    this.z1 += cells;
+    this.bottom -= ldu;
+    this.top += ldu;
+    return this;
+  }
+
+  touches(awaited: Int32Array, at: number): boolean {
+    return (
+      !this.empty &&
+      (awaited[at + AWAITED_X0] ?? 0) <= this.x1 &&
+      (awaited[at + AWAITED_X1] ?? 0) >= this.x0 &&
+      (awaited[at + AWAITED_Z0] ?? 0) <= this.z1 &&
+      (awaited[at + AWAITED_Z1] ?? 0) >= this.z0 &&
+      (awaited[at + AWAITED_BOTTOM] ?? 0) <= this.top &&
+      (awaited[at + AWAITED_TOP] ?? 0) >= this.bottom
+    );
+  }
+}
 
 class Bounds {
   cellX0 = 0;
@@ -371,6 +495,11 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly hit = placementChoice().overlap;
   private readonly zones = new MateZones();
   private readonly bounds = new Bounds();
+  private readonly reach = new Reach();
+  private readonly footprint = new Reach();
+  private readonly reachPose = new Pose();
+  private awaited = new Int32Array(INITIAL_AWAITED * AWAITED_INTS);
+  private awaitedCount = 0;
   private readonly grids = new Map<FrozenVolumes, Array<FootprintGrid | undefined>>();
   private readonly gridUses = new Map<FootprintGrid, number>();
   private moving = NO_PLACEMENT;
@@ -404,6 +533,7 @@ export class PlacementSearch implements IPlacementSearch {
   ): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
+    this.forget(placement);
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
     const world = this.scratch.place(volumes, at);
     const bounds = this.bounds.measure(world);
@@ -415,7 +545,103 @@ export class PlacementSearch implements IPlacementSearch {
     this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
   }
 
+  awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void {
+    if (this.placed.has(placement) || this.awaitedAt(placement) !== NOT_WAITING) {
+      throw new RangeError(`placement ${placement} is already in the search`);
+    }
+    const reach = this.reach.start().grow(this.scratch.place(volumes, pose));
+    if (this.awaited.length < (this.awaitedCount + 1) * AWAITED_INTS) {
+      const grown = new Int32Array(this.awaited.length * 2);
+      grown.set(this.awaited);
+      this.awaited = grown;
+    }
+    const at = this.awaitedCount++ * AWAITED_INTS;
+    this.awaited[at + AWAITED_ID] = placement;
+    this.awaited[at + AWAITED_X0] = reach.empty ? 0 : reach.x0;
+    this.awaited[at + AWAITED_Z0] = reach.empty ? 0 : reach.z0;
+    this.awaited[at + AWAITED_X1] = reach.empty ? -1 : reach.x1;
+    this.awaited[at + AWAITED_Z1] = reach.empty ? -1 : reach.z1;
+    this.awaited[at + AWAITED_BOTTOM] = reach.bottom;
+    this.awaited[at + AWAITED_TOP] = reach.top;
+    this.awaited[at + AWAITED_FAILED] = 0;
+    this.edits++;
+  }
+
+  tablesFailed(placement: number): void {
+    const a = this.awaitedAt(placement);
+    if (a === NOT_WAITING) throw new RangeError(`placement ${placement} is not awaiting tables`);
+    this.awaited[a * AWAITED_INTS + AWAITED_FAILED] = 1;
+    this.edits++;
+  }
+
+  private awaitedAt(placement: number): number {
+    for (let a = 0; a < this.awaitedCount; a++) {
+      if (this.awaited[a * AWAITED_INTS + AWAITED_ID] === placement) return a;
+    }
+    return NOT_WAITING;
+  }
+
+  private forget(placement: number): boolean {
+    const a = this.awaitedAt(placement);
+    if (a === NOT_WAITING) return false;
+    const last = --this.awaitedCount;
+    this.awaited.copyWithin(a * AWAITED_INTS, last * AWAITED_INTS, (last + 1) * AWAITED_INTS);
+    this.edits++;
+    return true;
+  }
+
+  private awaitedTouching(reach: Reach, nearest: Reach): number {
+    let chosen = NO_SLOT;
+    for (let a = 0; a < this.awaitedCount; a++) {
+      const at = a * AWAITED_INTS;
+      const id = this.awaited[at + AWAITED_ID] ?? NOT_WAITING;
+      if (id === this.moving || (this.withheld.size > 0 && this.withheld.has(id))) continue;
+      if (!reach.touches(this.awaited, at)) continue;
+      if (chosen === NO_SLOT || this.awaitedBefore(a, chosen, nearest)) chosen = a;
+    }
+    return chosen;
+  }
+
+  private awaitedBefore(a: number, b: number, nearest: Reach): boolean {
+    const atA = a * AWAITED_INTS;
+    const atB = b * AWAITED_INTS;
+    const failedA = this.awaited[atA + AWAITED_FAILED] ?? 0;
+    const failedB = this.awaited[atB + AWAITED_FAILED] ?? 0;
+    if (failedA !== failedB) return failedA > failedB;
+    const gapA = nearest.planGapSquared(this.awaited, atA);
+    const gapB = nearest.planGapSquared(this.awaited, atB);
+    if (gapA !== gapB) return gapA < gapB;
+    return (this.awaited[atA + AWAITED_ID] ?? 0) < (this.awaited[atB + AWAITED_ID] ?? 0);
+  }
+
+  private chooseAwaited(slot: number, out: PlacementChoice): void {
+    out.waitingOn =
+      slot === NO_SLOT ? NOT_WAITING : (this.awaited[slot * AWAITED_INTS + AWAITED_ID] ?? 0);
+    out.waitFailed = slot !== NO_SLOT && this.awaited[slot * AWAITED_INTS + AWAITED_FAILED] === 1;
+  }
+
+  private awaitedWithin(volumes: CellVolumes, at: LatticePose, window: SearchReach): number {
+    if (this.awaitedCount === 0) return NO_SLOT;
+    const pose = this.reachPose;
+    pose.x = at.x;
+    pose.z = at.z;
+    pose.yPlates = at.yPlates;
+    pose.rot = at.rot;
+    const footprint = this.footprint.start().grow(this.scratch.place(volumes, pose));
+    const reach = this.reach.copy(footprint);
+    for (let turn = window.firstTurn; turn < window.turns; turn++) {
+      if (turn === 0) continue;
+      pose.rot = (at.rot + turn) % TURNS;
+      reach.grow(this.scratch.place(volumes, pose));
+    }
+    return this.awaitedTouching(
+      reach.widen(window.cells + TOUCHING_CELLS, window.plates * PLATE_LDU),
+      footprint,
+    );
+  }
+
   remove(placement: number): void {
+    if (this.forget(placement)) return;
     const placed = this.placed.get(placement);
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
     this.volumes.remove(placed.row);
@@ -427,6 +653,8 @@ export class PlacementSearch implements IPlacementSearch {
 
   clear(): void {
     for (const placement of this.placed.keys()) this.remove(placement);
+    if (this.awaitedCount > 0) this.edits++;
+    this.awaitedCount = 0;
   }
 
   search(
@@ -456,9 +684,13 @@ export class PlacementSearch implements IPlacementSearch {
     this.cancel();
     this.moving = moving ?? NO_PLACEMENT;
     out.walked = 0;
-    this.atCursor(model, volumes, boxes, technic, window, tableYPlates, out);
+    this.atCursor(model, volumes, boxes, technic, window, window, tableYPlates, out);
     this.zones.clear();
-    if ((out.accepted && out.votes > 0) || !reachesBeyondCursor(window)) {
+    if (
+      out.waitingOn !== NOT_WAITING ||
+      (out.accepted && out.votes > 0) ||
+      !reachesBeyondCursor(window)
+    ) {
       this.moving = NO_PLACEMENT;
       return SETTLED_AT_ONCE;
     }
@@ -514,6 +746,7 @@ export class PlacementSearch implements IPlacementSearch {
     boxes: PartBoxes,
     technic: TechnicSet,
     window: LatticePose,
+    reach: SearchReach,
     tableYPlates: number,
     out: PlacementChoice,
   ): void {
@@ -525,6 +758,8 @@ export class PlacementSearch implements IPlacementSearch {
     this.chooseAt(out, pose, this.solver.votes(model, pose));
     out.walked++;
     out.accepted = false;
+    this.chooseAwaited(this.awaitedWithin(volumes, pose, reach), out);
+    if (out.waitingOn !== NOT_WAITING) return;
     if (pose.yPlates < tableYPlates) return;
     if (this.blocked(model, volumes, boxes, technic, pose, out.votes > 0, false)) {
       copyHit(this.hit, out.overlap);
@@ -896,12 +1131,24 @@ export class PlacementSearch implements IPlacementSearch {
     return owners;
   }
 
-  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null {
+  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): Stranding {
     const removed: Array<readonly [number, Placed]> = [];
     for (const placement of placements) {
+      const own = this.awaitedAt(placement);
+      if (own !== NOT_WAITING) return this.waitingOn(own);
       const placed = this.placed.get(placement);
       if (!placed) throw new RangeError(`placement ${placement} is not placed`);
       removed.push([placement, placed]);
+    }
+    for (const [, placed] of removed) {
+      const footprint = this.footprint
+        .start()
+        .grow(this.scratch.place(placed.volumes, placed.pose));
+      const waiting = this.awaitedTouching(
+        this.reach.copy(footprint).widen(TOUCHING_CELLS, 0),
+        footprint,
+      );
+      if (waiting !== NO_SLOT) return this.waitingOn(waiting);
     }
     const before = new Map<number, number>();
     for (const [other, placed] of this.placed) {
@@ -925,7 +1172,15 @@ export class PlacementSearch implements IPlacementSearch {
     for (const [placement, placed] of removed) {
       this.solver.insert(placed.model, placed.pose, placement);
     }
-    return stranded;
+    return stranded === null ? NOT_STRANDED : { kind: "stranded", placement: stranded };
+  }
+
+  private waitingOn(slot: number): Stranding {
+    return {
+      kind: "waiting",
+      placement: this.awaited[slot * AWAITED_INTS + AWAITED_ID] ?? 0,
+      failed: this.awaited[slot * AWAITED_INTS + AWAITED_FAILED] === 1,
+    };
   }
 
   withdrawn<T>(placements: ReadonlySet<number>, during: () => T): T {
@@ -959,7 +1214,7 @@ export class PlacementSearch implements IPlacementSearch {
     out: PlacementChoice,
   ): void {
     out.walked = 0;
-    this.atCursor(model, volumes, boxes, technic, pose, tableYPlates, out);
+    this.atCursor(model, volumes, boxes, technic, pose, AT_POSE_ONLY, tableYPlates, out);
     this.zones.clear();
   }
 
@@ -969,6 +1224,8 @@ export class PlacementSearch implements IPlacementSearch {
     out.yPlates = pose.yPlates;
     out.rot = pose.rot;
     out.votes = votes;
+    out.waitingOn = NOT_WAITING;
+    out.waitFailed = false;
     out.overlap.owner = NO_PLACEMENT;
   }
 

@@ -221,6 +221,7 @@ export type {
   ConnectorSectionView,
   HoverMateCount,
   HoverRefusalHit,
+  HoverWait,
   MagnetOffset,
   PlacedModelView,
   PlacementHover,

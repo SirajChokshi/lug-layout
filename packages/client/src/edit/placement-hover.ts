@@ -33,6 +33,11 @@ export interface HoverMateCount {
   readonly unverified: number;
 }
 
+export interface HoverWait {
+  readonly placed: PlacedModelView;
+  readonly failed: boolean;
+}
+
 export interface HoverRefusalHit {
   readonly placed: PlacedModelView;
   readonly part: string | null;
@@ -78,6 +83,7 @@ export interface PlacementHover {
   readonly assistNeighbourhood: AssistNeighbourhood;
   readonly settled: boolean;
   readonly turnSettled: boolean;
+  readonly waitingOn: HoverWait | null;
 }
 
 export function distinctJoints(
