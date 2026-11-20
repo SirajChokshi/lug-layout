@@ -1,4 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { EditorPage } from "./editor-page.ts";
+
+const GREEN_BASEPLATE = "ldraw:3811@2";
+const FIVE_STUDS_OVER = { x: 100, z: 0 };
 
 const VIEWPORTS = [
   { width: 1024, height: 768 },
@@ -85,7 +89,7 @@ function measureOverlays(stepPx: number): OverlayBox[] {
   if (!root) throw new Error("the editor is not mounted");
   const panels = [...root.children]
     .filter((element): element is HTMLElement => element instanceof HTMLElement)
-    .filter((element) => !element.matches("canvas.scene, .overlay"))
+    .filter((element) => !element.matches("canvas.scene, .overlay, .placement-chip"))
     .filter((element) => getComputedStyle(element).position === "fixed")
     .map((element) => ({
       element,
@@ -158,6 +162,37 @@ async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void
   ).toEqual([]);
 }
 
+interface ChipPlacement {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly pointerEvents: string;
+}
+
+async function expectChipOnScreen(page: Page, viewport: Viewport): Promise<void> {
+  const chip = page.locator(".placement-chip");
+  await expect(chip).toBeVisible();
+  const placed = await chip.evaluate((element): ChipPlacement => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      pointerEvents: getComputedStyle(element).pointerEvents,
+    };
+  });
+  expect({
+    onScreen:
+      placed.left >= 0 &&
+      placed.top >= 0 &&
+      placed.right <= viewport.width &&
+      placed.bottom <= viewport.height,
+    pointerEvents: placed.pointerEvents,
+  }).toEqual({ onScreen: true, pointerEvents: "none" });
+}
+
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.width}×${viewport.height}`, () => {
     test.use({ viewport, actionTimeout: ACTION_TIMEOUT_MS });
@@ -172,5 +207,21 @@ for (const viewport of VIEWPORTS) {
         await expectOverlaysApart(page, viewport);
       });
     }
+
+    test("a refused hover's long tool hint, the placement chip and the mode switch held by Alt stay inside their boxes and on screen", async ({
+      page,
+    }) => {
+      const editor = await EditorPage.open(page);
+      await editor.placeAt(GREEN_BASEPLATE, { x: 0, z: 0 });
+      await editor.aim(GREEN_BASEPLATE, FIVE_STUDS_OVER);
+      await expect(page.locator(".tool-hud")).toHaveAttribute("data-tone", "warn");
+      await expectChipOnScreen(page, viewport);
+      await expectOverlaysApart(page, viewport);
+      await page.keyboard.down("Alt");
+      await expect(page.locator('[data-action="placement-mode"]')).toHaveAttribute("data-held", "");
+      await expectChipOnScreen(page, viewport);
+      await expectOverlaysApart(page, viewport);
+      await page.keyboard.up("Alt");
+    });
   });
 }
