@@ -1,11 +1,17 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
 import {
+  BundleIndex,
+  ModelFile as ModelFileSchema,
+  RollingDiagnosticsFile,
+  rollingDiagnosticsFit,
   SectionVocabularyFile,
   type CompilerVehicles,
   type LibraryBakePart,
+  type UnreadBandDiagnostic,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   AXIS_NEG_Y,
@@ -254,6 +260,10 @@ class CompiledRecords implements IPartRecords {
   private readonly held = new Map<string, Uint8Array>();
   private served = 0;
 
+  async rollingDiagnostics(): Promise<ReadonlyMap<string, ReadonlyArray<UnreadBandDiagnostic>>> {
+    return new Map();
+  }
+
   constructor(
     private readonly compiler: BrickCompiler,
     private readonly sectionVocabulary: SectionVocabulary,
@@ -320,6 +330,7 @@ class CompiledRecords implements IPartRecords {
 function comparable(result: ImportResult): unknown {
   return {
     ...result,
+    compiled: result.compiled.map((part) => ({ partId: part.partId, glb: part.glb })),
     report: {
       ...result.report,
       compileRounds: null,
@@ -431,6 +442,8 @@ it(
     expect(compiled.compiled.length).toBeGreaterThan(0);
     expect(compiled.bake?.vehicles.length).toBeGreaterThan(0);
     expect(recorded.report.records?.bakedFromRecords).toBeGreaterThan(0);
+    expect(new Set(compiled.compiled.map((part) => part.source))).toEqual(new Set(["import"]));
+    expect(recorded.compiled.some((part) => part.source === "library-bake")).toBe(true);
     expect(recorded.report.fetched.requests).toBeLessThan(compiled.report.fetched.requests);
     expect(recorded.report.compileRounds).toBeLessThan(compiled.report.compileRounds);
     expect(recorded.report.compileRounds + recorded.report.bakeRounds).toBeLessThanOrEqual(
@@ -736,6 +749,35 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
 
     beforeAll(async () => {
       compiler = await bundleCompiler();
+    });
+
+    it("decodes every served model file, whose shapes' unread bands each name the rolling diagnostics row at their index for the same part", async () => {
+      const raw: unknown = JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8"));
+      const manifest = decodedOrThrow(decode(BundleIndex, raw), "manifest.json");
+      const ref = manifest.rollingDiagnostics;
+      if (ref === undefined) throw new Error("the bundle names no rolling diagnostics");
+      const bytes = await readFile(new URL(ref.file, bundleRoot));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(ref.sha256);
+      const diagnostics = decodedOrThrow(
+        decode(RollingDiagnosticsFile, JSON.parse(bytes.toString("utf8"))),
+        ref.file,
+      );
+      let named = 0;
+      const mismatched: string[] = [];
+      for (const entry of manifest.models) {
+        const text = await readFile(new URL(entry.file, bundleRoot), "utf8");
+        const model = decodedOrThrow(decode(ModelFileSchema, JSON.parse(text)), entry.file);
+        for (const shape of model.shapes) {
+          const bands = shape.rolling?.unread ?? [];
+          if (bands.length === 0) continue;
+          if (!rollingDiagnosticsFit(bands, diagnostics.parts[shape.id] ?? [])) {
+            mismatched.push(shape.id);
+          }
+          named += bands.length;
+        }
+      }
+      expect(mismatched).toEqual([]);
+      expect(named).toBeGreaterThan(0);
     });
 
     async function importedAndRecorded(model: (typeof paletteModels)[number]) {

@@ -397,6 +397,22 @@ footer {
   color: #556;
 }
 
+.rolling-diagnostics-load {
+  margin-top: 8px;
+}
+
+.rolling-diagnostics-part {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+
+.rolling-diagnostics-part ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 #edit-state,
 #plan-state,
 #camera-state {
