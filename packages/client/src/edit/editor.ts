@@ -133,7 +133,7 @@ import type {
   PlacementMode,
 } from "./placement-hover.ts";
 import { effectivePlacementMode } from "./placement-mode.ts";
-import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
+import { mateCounts, refusalText } from "./placement-hover-view.ts";
 import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
@@ -141,7 +141,6 @@ import {
   SETTLED_AT_ONCE,
   placementChoice,
   type IPlacementSearch,
-  type OverlapNamer,
   type PlacementChoice,
   type PlacementWindow,
 } from "../connect/placement-search.ts";
@@ -1382,9 +1381,6 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverPlacement: PlacementHover | null = null;
   private readonly pick = new CursorPick();
   private readonly hoverCell = new HoverCell();
-  private readonly namedOverlap = placementChoice().overlap;
-  private hitPart: HitPart | null = null;
-  private namingIndices: ArrayLike<number> = [];
   private readonly surface = new Float64Array(3);
   private readonly topFaceShift = new Float64Array(2);
   private readonly sideRay = new Float64Array(6);
@@ -1410,7 +1406,6 @@ export class Editor implements IEditor, IEditedWorld {
   private sliceSinceFrame = false;
   private lastPublishMs = 0;
   private assistRevision = -1;
-  private namingBoxes = new Float64Array(0);
   private readonly mates = new MateReport();
   private shownVerdict: GhostVerdict | null = null;
   private dropping = false;
@@ -2850,10 +2845,7 @@ export class Editor implements IEditor, IEditedWorld {
       return check;
     }
     if (!choice.accepted) {
-      check.refusal = refusalText(
-        placeable.label,
-        this.refusalHit(connected, pose, null, choice.overlap),
-      );
+      check.refusal = refusalText(placeable.label, this.refusalHit(choice.overlap));
       return check;
     }
     check.trackBlock = this.modelTrackBlock(placeable, x, z, rot, check.yPlates, NO_TRACK_SKIP);
@@ -3067,8 +3059,7 @@ export class Editor implements IEditor, IEditedWorld {
     const joints = this.mates.jointCount;
     const waitingOn = this.hoverWait(choice);
     const waiting = waitingOn !== null && !waitingOn.failed;
-    const hit =
-      choice.accepted || waitingOn ? null : this.refusalHit(connected, pose, null, choice.overlap);
+    const hit = choice.accepted || waitingOn ? null : this.refusalHit(choice.overlap);
     const blocked = choice.accepted ? this.heldPoseRefusal(placeable, pose) : null;
     this.hoverYPlates = pose.yPlates;
     this.hoverPlacement = {
@@ -3254,64 +3245,25 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private refusalHit(
-    connected: Connected,
-    pose: LatticePose,
-    moving: number | null,
-    overlap: OverlapHit,
-  ): HoverRefusalHit | null {
-    if (this.namesPart(overlap)) return this.refusalView(overlap, false);
-    const named = this.namedOverlap;
-    const { model, volumes, boxes, technic } = connected;
-    if (this.search.nameOverlap(model, volumes, boxes, technic, pose, moving, this.namer, named)) {
-      this.namesPart(named);
-      return this.refusalView(named, false);
-    }
-    this.namesPart(overlap);
-    return this.refusalView(overlap, true);
-  }
-
-  private namesPart(hit: OverlapHit): boolean {
-    const model = this.searchModels.get(hit.owner);
-    this.hitPart = null;
-    if (!model) return false;
-    this.namingIndices = model.placeable.partTransforms.partIndex;
-    if (this.namingBoxes.length < model.placeable.partBoxes.length) {
-      this.namingBoxes = new Float64Array(model.placeable.partBoxes.length);
-    }
-    this.hitPart = partAtHit(
-      this.namingBoxes,
-      model.writeWorldPartBoxes(this.namingBoxes),
-      hit.cellX,
-      hit.cellZ,
-      Math.max(hit.bottomLdu, hit.candidateBottomLdu),
-      Math.min(hit.topLdu, hit.candidateTopLdu),
-      this.partOfInstance,
-    );
-    return this.hitPart !== null;
-  }
-
-  private readonly partOfInstance = (instance: number): HitPart | null => {
-    const asset = this.catalog.parts()[this.namingIndices[instance] ?? -1];
-    return asset ? { part: asset.id, partLabel: asset.title } : null;
-  };
-
-  private readonly namer: OverlapNamer = { names: (hit) => this.namesPart(hit) };
-
-  private refusalView(overlap: OverlapHit, byColumnOnly: boolean): HoverRefusalHit | null {
+  private refusalHit(overlap: OverlapHit): HoverRefusalHit | null {
+    const model = this.searchModels.get(overlap.owner);
     const placed = this.placedViewOf(overlap.owner);
-    if (!placed) return null;
+    if (!model || !placed) return null;
+    const partIndex = model.placeable.partTransforms.partIndex[overlap.instance];
+    const asset = this.catalog.parts()[partIndex ?? -1];
+    if (!asset) {
+      throw new Error(`${placed.label} has no catalogue part at instance ${overlap.instance}`);
+    }
     return {
       placed,
-      part: this.hitPart?.part ?? null,
-      partLabel: this.hitPart?.partLabel ?? null,
+      part: asset.id,
+      partLabel: asset.title,
       cellX: overlap.cellX,
       cellZ: overlap.cellZ,
       placedBottomLdu: overlap.bottomLdu,
       placedTopLdu: overlap.topLdu,
       heldBottomLdu: overlap.candidateBottomLdu,
       heldTopLdu: overlap.candidateTopLdu,
-      byColumnOnly,
     };
   }
 
@@ -4937,7 +4889,7 @@ export class Editor implements IEditor, IEditedWorld {
           : waitingText(placeable.label, neighbour, "it there");
         return refusedAt(placeable.id, pose, reason);
       }
-      const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
+      const hit = choice.accepted ? null : this.refusalHit(choice.overlap);
       if (hit) return refusedAt(placeable.id, pose, refusalText(placeable.label, hit));
       if (choice.accepted) supported.add(component);
       const low = lowest.get(component);

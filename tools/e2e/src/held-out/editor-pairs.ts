@@ -165,7 +165,7 @@ function describeHover(hover: PlacementHover | null): string {
   if (!hover) return "no placement hover";
   const verdict = hover.accepted ? "accepted" : "refused";
   const hit = hover.hit
-    ? `, hit ${hover.hit.partLabel ?? hover.hit.part ?? "a part"} of ${hover.hit.placed.label} in cell (${hover.hit.cellX}, ${hover.hit.cellZ})${hover.hit.byColumnOnly ? " by the column model only" : ""}`
+    ? `, hit ${hover.hit.partLabel} of ${hover.hit.placed.label} in cell (${hover.hit.cellX}, ${hover.hit.cellZ})`
     : "";
   const magnet = hover.magnetised
     ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
@@ -485,7 +485,6 @@ export function hitIsReal(
   placedItem: string,
   named: PosedAssembly,
   held: PosedAssembly,
-  whole: PosedPair = { placed: named, held },
 ): boolean {
   if (hit === null || hit.placed.item !== placedItem) return false;
   const box: HitBox = {
@@ -495,15 +494,6 @@ export function hitIsReal(
     topLdu: Math.min(hit.placedTopLdu, hit.heldTopLdu),
   };
   if (box.bottomLdu >= box.topLdu) return false;
-  if (hit.byColumnOnly) {
-    return (
-      hit.part === null &&
-      !partsCollide(whole) &&
-      columnOverlapsHit(whole.placed, box) &&
-      columnOverlapsHit(whole.held, box)
-    );
-  }
-  if (hit.part === null) return false;
   return (
     named.parts.some(
       (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
@@ -1239,10 +1229,6 @@ export async function solidEdgeChecks(
       placedItem,
       posed(named, poses.placed, poses.placedShift),
       posed(held, step.hover.pose, poses.heldShift),
-      {
-        placed: posed(solidParts, poses.placed, poses.placedShift),
-        held: posed(heldParts, step.hover.pose, poses.heldShift),
-      },
     );
   const bothModes = (item: Compared, holds: (step: Step) => boolean): boolean =>
     holds(item.assist) && holds(item.precise);

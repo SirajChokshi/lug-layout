@@ -44,7 +44,6 @@ export interface PlacedModel {
   rayHit(ray: Float64Array): number;
   aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
-  writeWorldPartBoxes(out: Float64Array): number;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
@@ -428,12 +427,11 @@ class PlacedEntry implements PlacedModel {
     return boxes;
   }
 
-  writeWorldPartBoxes(out: Float64Array): number {
+  private writeWorldPartBoxes(out: Float64Array): void {
     const local = this.placeable.partBoxes;
     for (let b = 0; b < local.length; b += BOX_FLOATS) {
       this.pose.worldBox(local, b, this.yLdu, out, b);
     }
-    return local.length;
   }
 
   private markCells(chunkOrigins: Map<number, readonly [number, number]>): void {

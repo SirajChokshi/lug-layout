@@ -1,4 +1,5 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
+import { modelPartCells } from "@brr/catalog/model-part-cells";
 import {
   type AuthoredIdentification,
   CompilerBake,
@@ -251,6 +252,13 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
             flat: new Uint32Array(bytesOf(body, blobs, "flat")),
             columnBottom: new Int16Array(bytesOf(body, blobs, "columnBottom")),
             columnTop: new Int16Array(bytesOf(body, blobs, "columnTop")),
+            partCells: modelPartCells(
+              new Uint32Array(bytesOf(body, blobs, "partCell")),
+              new Uint32Array(bytesOf(body, blobs, "partInstance")),
+              new Int32Array(bytesOf(body, blobs, "partBoxes")),
+              cells.size[0] * cells.size[1],
+              "the imported model",
+            ),
           },
     vehicles: bakedVehicles(header, body),
     vehicleIssue: header.vehicleIssue ?? null,

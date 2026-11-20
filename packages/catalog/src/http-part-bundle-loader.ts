@@ -29,6 +29,7 @@ import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { inject, injectable } from "inversify";
 import type * as v from "valibot";
 import { crosswalkMaps } from "./crosswalk.ts";
+import { modelPartCells } from "./model-part-cells.ts";
 import {
   parseFarMeshGlb,
   parseGlb,
@@ -96,7 +97,7 @@ function modelLattice(lattice: ModelFile["lattice"]): PartModelLattice | null {
   return { phaseX, phaseZ, aabbMin: lattice.aabb.min, aabbMax: lattice.aabb.max };
 }
 
-function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
+function modelCells(cells: ModelFile["cover"]["cells"], label: string): ModelCells | null {
   if (cells === null) return null;
   const [originX, originZ] = cells.origin;
   const [width, depth] = cells.size;
@@ -110,6 +111,15 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
+    partCells: cells.partCells
+      ? modelPartCells(
+          cells.partCells.cell,
+          cells.partCells.instance,
+          cells.partCells.boxes,
+          width * depth,
+          label,
+        )
+      : null,
   };
 }
 
@@ -677,7 +687,7 @@ function partModel(file: ModelFile): PartModel {
       covered: cover.coveredStuds,
       visibleBits: Uint32Array.from(cover.visibleBits),
     },
-    cells: modelCells(cover.cells),
+    cells: modelCells(cover.cells, file.name),
     instanceCount: file.instances.part.length,
     partIndex: Uint16Array.from(file.instances.part),
     ldrawColor: Uint32Array.from(file.instances.color),

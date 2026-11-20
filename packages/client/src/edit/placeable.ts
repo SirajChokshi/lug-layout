@@ -1,13 +1,21 @@
 import {
   EMPTY_COLUMN,
+  PART_CELL_HEIGHT_INTS,
+  PART_CELL_PLAN_INTS,
   type ModelCells,
+  type ModelPartCells,
   type ModelStudCover,
   type PartShapeAsset,
   type PartModel,
   type PartModelLattice,
 } from "@brr/catalog";
-import type { PartInstances, RoadSurface, SubmodelInstances } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import {
+  type CellParts,
+  type PartInstances,
+  type RoadSurface,
+  type SubmodelInstances,
+} from "@brr/domain";
+import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
 import type { Vec3 } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
@@ -18,6 +26,10 @@ import { roadSurface } from "./road-surface.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "model";
 
+export type PlaceablePartCells = ModelPartCells & CellParts;
+
+const CELL_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
+
 export interface PlaceableCells {
   readonly cellX0: number;
   readonly cellZ0: number;
@@ -26,6 +38,7 @@ export interface PlaceableCells {
   readonly footprint: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly parts: PlaceablePartCells;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
@@ -187,6 +200,25 @@ function wholeCells(ldu: number, what: string): number {
   return cells;
 }
 
+function bakedPartCells(parts: ModelPartCells | null, label: string): PlaceablePartCells {
+  if (!parts)
+    throw new Error(`model ${label} has no part cells from the bake, so it cannot be placed`);
+  return parts;
+}
+
+function slabPartCells(cells: number, bottomLdu: number, topLdu: number): PlaceablePartCells {
+  const start = Int32Array.from({ length: cells + 1 }, (_, c) => c);
+  const cellBox = new Int16Array(cells * PART_CELL_PLAN_INTS);
+  const heightBox = new Int32Array(cells * PART_CELL_HEIGHT_INTS);
+  for (let c = 0; c < cells; c++) {
+    cellBox[c * PART_CELL_PLAN_INTS + 2] = CELL_SIXTEENTHS;
+    cellBox[c * PART_CELL_PLAN_INTS + 3] = CELL_SIXTEENTHS;
+    heightBox[c * PART_CELL_HEIGHT_INTS] = Math.floor(bottomLdu * SIXTEENTHS_PER_LDU);
+    heightBox[c * PART_CELL_HEIGHT_INTS + 1] = Math.ceil(topLdu * SIXTEENTHS_PER_LDU);
+  }
+  return { start, instance: new Uint32Array(cells), cellBox, heightBox };
+}
+
 function modelCells(cells: ModelCells, shift: Vec3, label: string): PlaceableCells {
   const footprint = new Uint8Array(cells.width * cells.depth);
   for (const cell of cells.footprint) footprint[cell] = FOOTPRINT_ANTI_STUD;
@@ -213,6 +245,7 @@ function modelCells(cells: ModelCells, shift: Vec3, label: string): PlaceableCel
     footprint,
     columnBottom,
     columnTop,
+    parts: bakedPartCells(cells.partCells, label),
     footprintCells: cells.footprint.length,
     flatCells: cells.flat.length,
     heightPlates,
@@ -233,6 +266,7 @@ function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
     footprint: new Uint8Array(width * depth),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
+    parts: slabPartCells(width * depth, part.boundsMin[1] + shift[1], part.boundsMax[1] + shift[1]),
     footprintCells: 0,
     flatCells: 0,
     heightPlates,

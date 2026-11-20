@@ -1,3 +1,4 @@
+import type { ModelPartCells } from "./model-part-cells.ts";
 import type {
   ConnectorIndexPaths,
   ConnectorLoad,
@@ -112,6 +113,8 @@ export interface PartModelLattice {
 
 export { EMPTY_COLUMN } from "@brr/schema/bundle";
 
+export type { ModelPartCells } from "./model-part-cells.ts";
+
 export interface ModelCells {
   readonly originX: number;
   readonly originZ: number;
@@ -122,6 +125,7 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly partCells: ModelPartCells | null;
 }
 
 export interface ModelStudCover {

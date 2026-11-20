@@ -1,5 +1,6 @@
 import { ConnectorRecords, type PartConnectors } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
+import { modelPartCells } from "@brr/catalog/model-part-cells";
 import {
   BundleIndex,
   CONNECTOR_SOURCE,
@@ -140,6 +141,11 @@ interface BundledModel {
       readonly flat: ReadonlyArray<number>;
       readonly columnBottom: ReadonlyArray<number>;
       readonly columnTop: ReadonlyArray<number>;
+      readonly partCells?: {
+        readonly cell: ReadonlyArray<number>;
+        readonly instance: ReadonlyArray<number>;
+        readonly boxes: ReadonlyArray<number>;
+      };
     } | null;
   };
 }
@@ -1513,6 +1519,8 @@ it.each([0, 2])(
     expect(bake?.studCover.studs).toBe(bundled.cover.studs);
     expect(bake?.studCover.covered).toBe(bundled.cover.coveredStuds);
     expect([...(bake?.studCover.visibleBits ?? [])]).toEqual(bundled.cover.visibleBits);
+    if (cells === null) throw new Error("the bundled model has no cells");
+    const { partCells, ...columns } = cells;
     expect(
       bake?.cells && {
         origin: [bake.cells.originX, bake.cells.originZ],
@@ -1523,7 +1531,17 @@ it.each([0, 2])(
         columnBottom: [...bake.cells.columnBottom],
         columnTop: [...bake.cells.columnTop],
       },
-    ).toEqual(cells);
+    ).toEqual(columns);
+    expect(bake?.cells?.partCells).toEqual(
+      partCells &&
+        modelPartCells(
+          partCells.cell,
+          partCells.instance,
+          partCells.boxes,
+          cells.size[0] * cells.size[1],
+          "the bundled model",
+        ),
+    );
   },
   BAKE_TIMEOUT_MS,
 );

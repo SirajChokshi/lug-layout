@@ -1,5 +1,6 @@
 mod below;
 mod instance_tree;
+mod part_cells;
 mod ray;
 mod reservation;
 mod triangle_tree;
@@ -10,6 +11,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
+use self::part_cells::{part_cells, PartCellGrid};
+pub use self::part_cells::{
+    PartCells, BOX_BOTTOM, BOX_TOP, BOX_X0, BOX_X1, BOX_Z0, BOX_Z1, PART_BOX_INTS,
+};
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::reservation::{axis_span, cell_span, CellColumns};
 pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
@@ -346,6 +351,7 @@ pub struct ModelCells {
     pub flat: Vec<usize>,
     pub column_bottom: Vec<i32>,
     pub column_top: Vec<i32>,
+    pub part_cells: PartCells,
 }
 
 impl ModelCells {
@@ -1182,6 +1188,16 @@ fn model_cells(
         top[cell] = (plates(highest) - slack).ceil() as i32;
     }
 
+    let part_cells = part_cells(
+        instances,
+        solids,
+        &PartCellGrid {
+            origin,
+            width,
+            depth,
+            bottom_y,
+        },
+    );
     Ok(ModelCells {
         origin,
         width,
@@ -1191,6 +1207,7 @@ fn model_cells(
         flat,
         column_bottom: bottom,
         column_top: top,
+        part_cells,
     })
 }
 

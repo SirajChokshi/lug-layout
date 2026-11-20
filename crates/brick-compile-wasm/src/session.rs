@@ -704,6 +704,9 @@ fn put_cover(body: &mut Body, cover: &ModelCover) -> Result<(), String> {
         body.blob("flat", &cell_indices(&cells.flat)?);
         body.blob("columnBottom", &plates(&cells.column_bottom)?);
         body.blob("columnTop", &plates(&cells.column_top)?);
+        body.blob("partCell", &cells.part_cells.cell);
+        body.blob("partInstance", &cells.part_cells.instance);
+        body.blob("partBoxes", &cells.part_cells.boxes);
     }
     body.blob("visibleBits", &cover.visible_bits());
     Ok(())

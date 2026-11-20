@@ -2327,7 +2327,7 @@ function hoverOutcome(placement: PlacementHover | null | undefined) {
   };
 }
 
-async function setOneStudIntoPendingImport() {
+async function setTwoStudsIntoPendingImport() {
   const started = await checkingImport(
     new BundleDirectoryFetcher(),
     PLAIN_MODULE_MODEL,
@@ -2342,12 +2342,12 @@ async function setOneStudIntoPendingImport() {
   await place(SET, 320, 320);
   const wide = editor.snapshot().catalog.find((entry) => entry.id === SET)?.studsWide ?? 0;
   await chosen(editor, SET);
-  backend.aim(320 + wide * 20 - 20, 320);
+  backend.aim(320 + wide * 20 - 2 * STUD_LDU, 320);
   return { ...started, item };
 }
 
 it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
-  const { editor, importer, importedPlaceable, frame, item } = await setOneStudIntoPendingImport();
+  const { editor, importer, importedPlaceable, frame, item } = await setTwoStudsIntoPendingImport();
   const hover = async () => {
     editor.pointerMove(0, 0);
     return hoverOutcome((await settledHover(editor, frame))?.placement);
@@ -2536,7 +2536,7 @@ it("shows only the world that is open: no studs or far models after New World, t
 
 const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
-const OVERLAP = "would hit";
+const OVERLAP = "would overlap";
 
 function latticeKeys(poses: CandidatePoses, x: number, z: number): Set<string> {
   const found = new Set<string>();
@@ -2560,13 +2560,17 @@ const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
     refusedClicks: 1,
-    reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
+    reason: expect.stringContaining(
+      `${OVERLAP} Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32`,
+    ),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
   ghostTone: "refused",
   hint: {
     tone: "warn",
-    detail: expect.stringContaining("Hits Baseplate 32 x 32 in 3811 Baseplate 32 x 32"),
+    detail: expect.stringContaining(
+      "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32",
+    ),
   },
 };
 const PLACED_BESIDE = {
@@ -2737,7 +2741,7 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
 }, 120_000);
 
 it("claims nothing while an assist search is unsettled, though precise's provisional verdict is a refusal, and states the settled verdict", async () => {
-  const sliced = await setOneStudIntoSet();
+  const sliced = await setTwoStudsIntoSet();
   const clock = slowClock();
   const shown = () => {
     const { tone, detail, busy, waiting, speech } = toolHints(sliced.editor.snapshot());
@@ -3180,7 +3184,7 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
   });
 }, 120_000);
 
-it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
+it("assist moves a held set that would cut two studs into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
   const { editor, backend, catalog, frame } = await startEditor([
     PLAIN_MODULE_MODEL,
     PLACEABLE_SET,
@@ -3192,9 +3196,9 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
   await place(PLAIN_MODULE, 960, 320);
   await place(SET, 320, 320);
   const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
-  const oneStudIn = 320 + wide * 20 - 20;
+  const twoStudsIn = 320 + wide * 20 - 2 * STUD_LDU;
   await chosen(editor, SET);
-  backend.aim(oneStudIn, 320);
+  backend.aim(twoStudsIn, 320);
   const hover = async () => {
     editor.pointerMove(0, 0);
     const placement = (await settledHover(editor, frame))?.placement;
@@ -3202,7 +3206,7 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
       mode: placement?.mode,
       accepted: placement?.accepted,
       magnetised: placement?.magnetised,
-      atCursor: placement?.pose.x === oneStudIn && placement.pose.z === 320,
+      atCursor: placement?.pose.x === twoStudsIn && placement.pose.z === 320,
       hits: placement?.hit?.placed.item ?? null,
     };
   };
@@ -3238,7 +3242,7 @@ function slowClock() {
   return vi.spyOn(performance, "now").mockImplementation(() => (now += SLOW_CLOCK_STEP_MS));
 }
 
-async function setOneStudIntoSet(gate: IAssetFetcher = new BundleDirectoryFetcher()) {
+async function setTwoStudsIntoSet(gate: IAssetFetcher = new BundleDirectoryFetcher()) {
   const started = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET], gate);
   const { editor, backend, catalog } = started;
   await loadCatalogItem(catalog, PLAIN_MODULE);
@@ -3248,10 +3252,10 @@ async function setOneStudIntoSet(gate: IAssetFetcher = new BundleDirectoryFetche
   await place(PLAIN_MODULE, 960, 320);
   await place(SET, 320, 320);
   const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
-  const oneStudIn = 320 + wide * 20 - 20;
+  const twoStudsIn = 320 + wide * 20 - 2 * STUD_LDU;
   await chosen(editor, SET);
-  backend.aim(oneStudIn, 320);
-  return { ...started, oneStudIn };
+  backend.aim(twoStudsIn, 320);
+  return { ...started, twoStudsIn };
 }
 
 function publishedHovers(editor: IEditor): Array<PlacementHover | null> {
@@ -3271,10 +3275,10 @@ async function framesToSettle(editor: IEditor, frame: () => Promise<void>): Prom
 }
 
 it("shows precise's verdict at the cursor at once, then settles assist over later frames on exactly the hover a whole search gives", async () => {
-  const whole = await setOneStudIntoSet();
+  const whole = await setTwoStudsIntoSet();
   whole.editor.pointerMove(0, 0);
   const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
-  const sliced = await setOneStudIntoSet();
+  const sliced = await setTwoStudsIntoSet();
   const clock = slowClock();
   try {
     sliced.editor.pointerMove(0, 0);
@@ -3296,9 +3300,9 @@ it("shows precise's verdict at the cursor at once, then settles assist over late
       mode: "assist",
       accepted: false,
       magnetised: false,
-      pose: { x: sliced.oneStudIn, z: 320, yPlates: provisional?.pose.yPlates, rot: 0 },
+      pose: { x: sliced.twoStudsIn, z: 320, yPlates: provisional?.pose.yPlates, rot: 0 },
       hits: SET,
-      ghost: [sliced.oneStudIn, (provisional?.pose.yPlates ?? 0) * PLATE_LDU, 320],
+      ghost: [sliced.twoStudsIn, (provisional?.pose.yPlates ?? 0) * PLATE_LDU, 320],
     });
     expect({ settled, multiFrame: frames > 1 }).toEqual({ settled: wholeHover, multiFrame: true });
     expect(wholeHover).toMatchObject({ settled: true, accepted: true, magnetised: true });
@@ -3311,17 +3315,17 @@ const FINE_CLOCK_STEP_MS = 0.25;
 const NO_RENDER_MS = 0;
 const HEAVY_RENDER_MS = 10;
 const OVER_BUDGET_RENDER_MS = 14;
-const THREE_STUDS_IN_FROM_ONE_IN = 2 * STUD_LDU;
+const THREE_STUDS_IN_FROM_TWO_IN = STUD_LDU;
 
 async function settleBehindRender(renderMs: number) {
-  const scene = await setOneStudIntoSet();
+  const scene = await setTwoStudsIntoSet();
   let now = performance.now();
   const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += FINE_CLOCK_STEP_MS));
   scene.backend.onRender = () => {
     now += renderMs;
   };
   try {
-    scene.backend.aim(scene.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+    scene.backend.aim(scene.twoStudsIn - THREE_STUDS_IN_FROM_TWO_IN, 320);
     scene.editor.pointerMove(0, 0);
     const frameMs: number[] = [];
     while (unsettled(scene.editor.snapshot().hover?.placement)) {
@@ -3337,8 +3341,8 @@ async function settleBehindRender(renderMs: number) {
 }
 
 it("slices assist around the frame's render: a slow render shrinks the slice, never below its floor, and the hover settles as a whole search does", async () => {
-  const whole = await setOneStudIntoSet();
-  whole.backend.aim(whole.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+  const whole = await setTwoStudsIntoSet();
+  whole.backend.aim(whole.twoStudsIn - THREE_STUDS_IN_FROM_TWO_IN, 320);
   whole.editor.pointerMove(0, 0);
   const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
   const light = await settleBehindRender(NO_RENDER_MS);
@@ -3366,13 +3370,13 @@ it("slices assist around the frame's render: a slow render shrinks the slice, ne
 it("commits the settled assist pose for a click made before the search settles, made at once or queued while the held set's tables load", async () => {
   const setPoses = (editor: IEditor) => posesOf(editor).filter((pose) => pose.startsWith(SET));
   const atOnce = async (sliced: boolean) => {
-    const scene = await setOneStudIntoSet();
+    const scene = await setTwoStudsIntoSet();
     const clock = sliced ? slowClock() : null;
     try {
       scene.editor.pointerMove(0, 0);
       const settledAtClick = scene.editor.snapshot().hover?.placement?.settled;
       scene.editor.click(0, 0, 0);
-      return { settledAtClick, poses: setPoses(scene.editor), oneStudIn: scene.oneStudIn };
+      return { settledAtClick, poses: setPoses(scene.editor), twoStudsIn: scene.twoStudsIn };
     } finally {
       clock?.mockRestore();
     }
@@ -3419,7 +3423,7 @@ it("commits the settled assist pose for a click made before the search settles, 
     queued: wholeQueued.poses,
   });
   expect({
-    atOnceMoved: !slicedAtOnce.poses.includes(`${SET} ${slicedAtOnce.oneStudIn},320 y4`),
+    atOnceMoved: !slicedAtOnce.poses.includes(`${SET} ${slicedAtOnce.twoStudsIn},320 y4`),
     queuedOnTheModule: slicedQueued.poses.every(
       (pose) => pose.endsWith(" y4") && !pose.includes(` ${slicedQueued.clearOfModule},`),
     ),
@@ -3428,9 +3432,9 @@ it("commits the settled assist pose for a click made before the search settles, 
 
 it("drops an unsettled assist search when the pointer moves to another stud, the held set turns, the mode toggles or the pointer leaves, and never shows its result", async () => {
   const outcome = async (
-    trigger: (scene: Awaited<ReturnType<typeof setOneStudIntoSet>>) => void,
+    trigger: (scene: Awaited<ReturnType<typeof setTwoStudsIntoSet>>) => void,
   ) => {
-    const scene = await setOneStudIntoSet();
+    const scene = await setTwoStudsIntoSet();
     const clock = slowClock();
     try {
       scene.editor.pointerMove(0, 0);
@@ -3445,7 +3449,7 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
       clock.mockRestore();
     }
   };
-  const whole = await setOneStudIntoSet();
+  const whole = await setTwoStudsIntoSet();
   whole.editor.pointerMove(0, 0);
   const abandoned = (await settledHover(whole.editor, whole.frame))?.placement;
   const isAbandoned = (hover: PlacementHover | null) =>
@@ -3464,7 +3468,7 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
   });
   const turned = await outcome(({ editor }) => editor.rotate(0));
   const toggled = await outcome(({ editor }) => editor.setPlacementModeOverride(true));
-  const leaving = await setOneStudIntoSet();
+  const leaving = await setTwoStudsIntoSet();
   const leaveClock = slowClock();
   let left: { startedUnsettled: boolean; hover: unknown; ghostMoved: boolean };
   try {
@@ -3504,11 +3508,11 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
 }, 240_000);
 
 it("restarts an unsettled assist search when an import's studs land under it, and settles on the hover it had before they landed", async () => {
-  const whole = await setOneStudIntoPendingImport();
+  const whole = await setTwoStudsIntoPendingImport();
   whole.editor.pointerMove(0, 0);
   const before = (await settledHover(whole.editor, whole.frame))?.placement;
   whole.importer.release();
-  const sliced = await setOneStudIntoPendingImport();
+  const sliced = await setTwoStudsIntoPendingImport();
   const atLanding: Array<boolean | undefined> = [];
   const clock = slowClock();
   try {
@@ -3537,7 +3541,7 @@ it("restarts an unsettled assist search when an import's studs land under it, an
 }, 240_000);
 
 it("constructs no typed array once warm while hovers slice, settle and publish, refusals named included", async () => {
-  const { editor, backend, frame } = await setOneStudIntoSet();
+  const { editor, backend, frame } = await setTwoStudsIntoSet();
   const sweep = async () => {
     for (let x = 0; x <= 1_400; x += 20) {
       backend.aim(x, 320);
@@ -3610,9 +3614,9 @@ function orbitCameraAt(x: number, z: number, zoomLog: number): ViewCamera {
 }
 
 it("keeps the hover and never restarts its search while the pointer moves within one stud cell at a fixed zoom", async () => {
-  const scene = await setOneStudIntoSet();
+  const scene = await setTwoStudsIntoSet();
   const { editor, backend, frame } = scene;
-  backend.camera = orbitCameraAt(scene.oneStudIn, 320, ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG);
+  backend.camera = orbitCameraAt(scene.twoStudsIn, 320, ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG);
   editor.pointerMove(0, 0);
   await framesToSettle(editor, frame);
   const start = editor.snapshot().hover;
@@ -4371,7 +4375,7 @@ describe("selection groups", () => {
       },
       overTheCaboose: {
         poses: overCaboose.laid,
-        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8 in ${caboose ?? ""}`),
+        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8's bounds in ${caboose ?? ""}`),
         undoDepth: overCaboose.laid.length,
         refusedAt: [0, 1200],
       },
@@ -5902,7 +5906,7 @@ it.each([
     },
     decision: {
       placed: [],
-      refusal: expect.stringContaining("would hit Baseplate 32 x 32 Road"),
+      refusal: expect.stringContaining("would overlap Baseplate 32 x 32 Road"),
       hover: { waitingOn: null, accepted: false, settled: true },
     },
   },
@@ -6375,7 +6379,9 @@ it("skips and reports the tiles a click would refuse, places the rest, and one u
       placed: lastFill?.placed ?? null,
       refused: lastFill?.refused ?? null,
       overlap:
-        lastFill?.reason?.includes("would hit Baseplate 32 x 32 in 3811 Baseplate 32 x 32") ?? null,
+        lastFill?.reason?.includes(
+          "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32",
+        ) ?? null,
       undo: history.undoLabel,
     };
   };

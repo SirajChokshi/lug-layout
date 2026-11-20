@@ -3,11 +3,13 @@ import {
   FootprintGrid,
   MateReport,
   NO_OVERLAP,
+  NO_PART_INSTANCE,
   ProposalProgress,
   VolumeIndex,
   firstOverlap,
   firstOverlapFrom,
   ModelConnectors,
+  type CellParts,
   type CellVolumes,
   type ConnectionSolver,
   type ConnectorTable,
@@ -18,8 +20,9 @@ import {
   type SnapWindow,
   type TechnicSet,
   type TrackEnd,
+  type VolumeHit,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
@@ -80,6 +83,8 @@ export function placementChoice(): PlacementChoice {
     waitFailed: false,
     overlap: {
       owner: NO_PLACEMENT,
+      instance: NO_PART_INSTANCE,
+      candidateInstance: NO_PART_INSTANCE,
       bottomLdu: 0,
       topLdu: 0,
       cellX: 0,
@@ -91,10 +96,6 @@ export function placementChoice(): PlacementChoice {
 }
 
 export type RestsOnTable = (placement: number) => boolean;
-
-export interface OverlapNamer {
-  names(hit: OverlapHit): boolean;
-}
 
 export interface PlacementWindow extends SnapWindow {
   readonly radiusLdu: number;
@@ -155,16 +156,6 @@ export interface IPlacementSearch {
     out: PlacementChoice,
   ): void;
   revision(): number;
-  nameOverlap(
-    model: ModelConnectors,
-    volumes: CellVolumes,
-    boxes: PartBoxes,
-    technic: TechnicSet,
-    pose: LatticePose,
-    moving: number | null,
-    namer: OverlapNamer,
-    out: OverlapHit,
-  ): boolean;
 }
 
 interface Placed extends PlacedParts {
@@ -181,7 +172,6 @@ const TURN_KEYS = 3 * TURNS;
 const NO_REGION = -1;
 const COVER_ATTEMPTS = 2;
 const HINTS = 8;
-const INITIAL_SEEN = 8;
 const PROPOSAL_SLOTS = 64;
 const PHASE_IDLE = 0;
 const PHASE_COVER = 1;
@@ -319,18 +309,30 @@ class Bounds {
   }
 }
 
+const NO_CELL_PARTS: CellParts = {
+  start: new Int32Array(1),
+  instance: new Uint32Array(0),
+  cellBox: new Int16Array(0),
+  heightBox: new Int32Array(0),
+};
+
 class VolumeBuffer implements CellVolumes {
   count = 0;
   cellX: Int32Array;
   cellZ: Int32Array;
   bottomLdu: Int32Array;
   topLdu: Int32Array;
+  partsAt: Int32Array;
+  parts: CellParts = NO_CELL_PARTS;
+  turn = 0;
+  sixteenthsUp = 0;
 
   constructor(capacity: number) {
     this.cellX = new Int32Array(capacity);
     this.cellZ = new Int32Array(capacity);
     this.bottomLdu = new Int32Array(capacity);
     this.topLdu = new Int32Array(capacity);
+    this.partsAt = new Int32Array(capacity);
   }
 
   place(local: CellVolumes, pose: LatticePose): this {
@@ -339,10 +341,18 @@ class VolumeBuffer implements CellVolumes {
       this.cellZ = new Int32Array(local.count);
       this.bottomLdu = new Int32Array(local.count);
       this.topLdu = new Int32Array(local.count);
+      this.partsAt = new Int32Array(local.count);
     }
+    this.posedAs(local, pose);
     for (let c = 0; c < local.count; c++) placeCell(local, pose, c, this, c);
     this.count = local.count;
     return this;
+  }
+
+  posedAs(local: CellVolumes, pose: LatticePose): void {
+    this.parts = local.parts;
+    this.turn = (local.turn + (isRot90(pose.rot) ? pose.rot : 0)) % TURNS;
+    this.sixteenthsUp = local.sixteenthsUp + pose.yPlates * PLATE_LDU * SIXTEENTHS_PER_LDU;
   }
 }
 
@@ -363,10 +373,13 @@ function placeCell(
   out.cellZ[at] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
   out.bottomLdu[at] = (local.bottomLdu[c] ?? 0) + yLdu;
   out.topLdu[at] = (local.topLdu[c] ?? 0) + yLdu;
+  out.partsAt[at] = local.partsAt[c] ?? 0;
 }
 
 function copyHit(from: OverlapHit, to: OverlapHit): void {
   to.owner = from.owner;
+  to.instance = from.instance;
+  to.candidateInstance = from.candidateInstance;
   to.bottomLdu = from.bottomLdu;
   to.topLdu = from.topLdu;
   to.cellX = from.cellX;
@@ -487,12 +500,16 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly countPose = new Pose();
   private readonly oneCell = new VolumeBuffer(1);
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
-  private seen = new Int32Array(INITIAL_SEEN);
-  private seenOwners = 0;
   private nextHint = 0;
   private readonly scratch = new VolumeBuffer(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
+  private readonly contact: VolumeHit = {
+    owner: NO_PLACEMENT,
+    instance: NO_PART_INSTANCE,
+    bottomLdu: 0,
+    topLdu: 0,
+  };
   private readonly zones = new MateZones();
   private readonly bounds = new Bounds();
   private readonly reach = new Reach();
@@ -510,10 +527,15 @@ export class PlacementSearch implements IPlacementSearch {
     @inject(SNAP_MATING) private readonly mating: SnapMating,
   ) {}
 
-  private readonly exempt = (owner: number, cellX: number, cellZ: number): boolean =>
+  private readonly exempt = (
+    owner: number,
+    cellX: number,
+    cellZ: number,
+    heldCell: number,
+  ): boolean =>
     owner === this.moving ||
     (this.withheld.size > 0 && this.withheld.has(owner)) ||
-    this.zones.exempts(owner, cellX, cellZ);
+    this.zones.exempts(owner, cellX, cellZ, heldCell);
 
   model(
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -1022,22 +1044,25 @@ export class PlacementSearch implements IPlacementSearch {
       return true;
     }
     return (
-      firstOverlap(placed, this.volumes, this.exempt, this.hit) || this.zones.firstOverlap(this.hit)
+      firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
+      this.zones.firstOverlap(this.volumes, placed, this.hit)
     );
   }
 
   private hintBlocks(volumes: CellVolumes, pose: LatticePose): boolean {
     const one = this.oneCell;
+    one.posedAs(volumes, pose);
     for (let h = 0; h < HINTS; h++) {
       const cell = this.hints[h] ?? NO_OVERLAP;
       if (cell < 0 || cell >= volumes.count) continue;
       placeCell(volumes, pose, cell, one, 0);
-      const bottom = one.bottomLdu[0] ?? 0;
-      const top = one.topLdu[0] ?? 0;
-      if (top <= bottom) continue;
+      if ((one.topLdu[0] ?? 0) <= (one.bottomLdu[0] ?? 0)) continue;
       const x = one.cellX[0] ?? 0;
       const z = one.cellZ[0] ?? 0;
-      if (this.volumes.firstOverlap(x, z, bottom, top, this.exempt, this.hit)) return true;
+      if (!this.volumes.firstOverlap(x, z, one, 0, this.exempt, this.hit)) continue;
+      this.hit.cellX = x;
+      this.hit.cellZ = z;
+      return true;
     }
     return false;
   }
@@ -1056,76 +1081,16 @@ export class PlacementSearch implements IPlacementSearch {
     return this.edits;
   }
 
-  nameOverlap(
-    model: ModelConnectors,
-    volumes: CellVolumes,
-    boxes: PartBoxes,
-    technic: TechnicSet,
-    pose: LatticePose,
-    moving: number | null,
-    namer: OverlapNamer,
-    out: OverlapHit,
-  ): boolean {
-    this.moving = moving ?? NO_PLACEMENT;
-    this.zones.clear();
-    this.collectZones(model, boxes, technic, pose);
-    const placed = this.scratch.place(volumes, pose);
-    let named = false;
-    for (let c = 0; c < placed.count && !named; c++) {
-      const x = placed.cellX[c] ?? 0;
-      const z = placed.cellZ[c] ?? 0;
-      const bottom = placed.bottomLdu[c] ?? 0;
-      const top = placed.topLdu[c] ?? 0;
-      if (top <= bottom) continue;
-      this.seenOwners = 0;
-      while (this.volumes.firstOverlap(x, z, bottom, top, this.unseen, this.hit)) {
-        this.see(this.hit.owner);
-        this.hit.cellX = x;
-        this.hit.cellZ = z;
-        this.hit.candidateBottomLdu = bottom;
-        this.hit.candidateTopLdu = top;
-        if (!namer.names(this.hit)) continue;
-        copyHit(this.hit, out);
-        named = true;
-        break;
-      }
-    }
-    this.moving = NO_PLACEMENT;
-    this.zones.clear();
-    return named;
-  }
-
-  private see(owner: number): void {
-    if (this.seenOwners === this.seen.length) {
-      const grown = new Int32Array(this.seen.length * 2);
-      grown.set(this.seen);
-      this.seen = grown;
-    }
-    this.seen[this.seenOwners++] = owner;
-  }
-
-  private readonly unseen = (owner: number, cellX: number, cellZ: number): boolean => {
-    if (this.exempt(owner, cellX, cellZ)) return true;
-    for (let i = 0; i < this.seenOwners; i++) if (this.seen[i] === owner) return true;
-    return false;
-  };
-
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number> {
     const placed = this.scratch.place(volumes, pose);
     const owners: number[] = [];
-    const seen: number[] = [];
-    const passed = (owner: number): boolean => owner === moving || seen.includes(owner);
+    const passed = (owner: number): boolean => owner === moving || owners.includes(owner);
     for (let c = 0; c < placed.count; c++) {
+      if ((placed.topLdu[c] ?? 0) <= (placed.bottomLdu[c] ?? 0)) continue;
       const x = placed.cellX[c] ?? 0;
       const z = placed.cellZ[c] ?? 0;
-      const bottom = placed.bottomLdu[c] ?? 0;
-      if ((placed.topLdu[c] ?? 0) <= bottom) continue;
-      seen.length = 0;
-      while (this.volumes.firstOverlap(x, z, bottom - 1, bottom, passed, this.hit)) {
-        seen.push(this.hit.owner);
-        if (this.hit.topLdu === bottom && !owners.includes(this.hit.owner)) {
-          owners.push(this.hit.owner);
-        }
+      while (this.volumes.firstContactBelow(x, z, placed, c, passed, this.contact)) {
+        owners.push(this.contact.owner);
       }
     }
     return owners;
