@@ -270,7 +270,7 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       <h2>Inspector</h2>
       <dl>
         <div>
-          <dt>Model</dt>
+          <dt>{selection.kind === "track" ? "Track piece" : "Model"}</dt>
           <dd>{itemLabel(snapshot, selection.item)}</dd>
         </div>
         <div>
@@ -283,10 +283,12 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           <dt>Height (plates)</dt>
           <dd>{selection.yPlates}</dd>
         </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
+        {selection.kind === "model" && (
+          <div>
+            <dt>Rotation</dt>
+            <dd>{degrees(selection.rot)}</dd>
+          </div>
+        )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>

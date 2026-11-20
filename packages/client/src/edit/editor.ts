@@ -166,7 +166,10 @@ export interface LatencySample {
   readonly rebuiltStuds: number;
 }
 
+export type SelectionKind = "model" | "track";
+
 export interface SelectionView {
+  readonly kind: SelectionKind;
   readonly item: string;
   readonly x: number;
   readonly z: number;
@@ -660,6 +663,7 @@ export class Editor implements IEditor, IEditedWorld {
   private active: Placeable | null = null;
   private activeRefId = -1;
   private selected: PlacedModel | null = null;
+  private selectedTrack: number | null = null;
   private ghostRot = 0;
   private placeRot = 0;
   private turnDirection: TurnDirection = 1;
@@ -1394,10 +1398,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
+    const placement = this.track?.switchAt(xLdu, zLdu) ?? null;
+    return placement !== null && this.throwSwitch(placement, xLdu, zLdu, eventTimeMs);
+  }
+
+  private throwSwitch(placement: number, xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
     if (!track || this.state.readOnly) return false;
-    const placement = track.switchAt(xLdu, zLdu);
-    if (placement === null) return false;
     const thrown = track.switchThrow(placement);
     if (!thrown) return false;
     this.show(this.history.commit("throw-switch", [], thrown.change), eventTimeMs, {
@@ -1598,6 +1605,11 @@ export class Editor implements IEditor, IEditedWorld {
         best = model;
       }
     }
+    const trackHit = this.track?.pieceOnRay(this.ray) ?? null;
+    if (trackHit && trackHit.distance < bestT) {
+      this.clickTrack(trackHit.placement, ndcX, ndcY, eventTimeMs);
+      return;
+    }
     if (
       !best &&
       this.groundHit(ndcX, ndcY) &&
@@ -1606,6 +1618,11 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     this.select(best);
+  }
+
+  private clickTrack(placement: number, ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.groundHit(ndcX, ndcY)) this.throwSwitch(placement, this.hitX, this.hitZ, eventTimeMs);
+    this.selectTrack(placement);
   }
 
   private refuse(
@@ -1890,6 +1907,18 @@ export class Editor implements IEditor, IEditedWorld {
         uncounted: uncounted(),
       };
     }
+    const piece = this.selectedTrack;
+    if (piece !== null && this.track) {
+      const laid = this.track.laidPieceView(piece);
+      counter.add(laid.partIndex, colors.codeAt(laid.colorIndex), 1);
+      return {
+        name: `selection-${laid.piece.replace(FILE_NAME_UNSAFE, "_")}`,
+        lod: "standard",
+        placements: 1,
+        counter,
+        uncounted: [],
+      };
+    }
     const selected = this.selected;
     if (!selected?.handle.live) throw new Error("nothing is selected");
     contents.addTo(counter, selected.handle.refId, selected.handle.colorId);
@@ -1902,13 +1931,38 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
+  private selectTrack(placement: number): void {
+    const track = this.track;
+    if (!track) return;
+    const piece = track.laidPieceView(placement);
+    this.selected = null;
+    this.selectedTrack = placement;
+    this.backend.setSelectionBox(piece.box);
+    this.update({
+      selectionRefusal: null,
+      selection: {
+        kind: "track",
+        item: `${TRACK_PIECE_PREFIX}${piece.piece}`,
+        x: Math.round(piece.xLdu),
+        z: Math.round(piece.zLdu),
+        yPlates: piece.yPlates,
+        rot: 0,
+        chunkKey: piece.chunkKey,
+        slot: placement,
+        box: piece.box,
+      },
+    });
+  }
+
   private select(model: PlacedModel | null): void {
     this.selected = model;
+    this.selectedTrack = null;
     this.backend.setSelectionBox(model ? model.box : null);
     this.update({
       selectionRefusal: null,
       selection: model
         ? {
+            kind: "model",
             item: model.placeable.id,
             x: model.handle.x,
             z: model.handle.z,
@@ -2017,6 +2071,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   deleteSelection(eventTimeMs: number): void {
+    const piece = this.selectedTrack;
+    if (piece !== null) {
+      this.deleteTrackPiece(piece, eventTimeMs);
+      return;
+    }
     const model = this.selected;
     if (!model || this.state.readOnly) return;
     const rider = this.placed.strandedRider(model);
@@ -2043,6 +2102,13 @@ export class Editor implements IEditor, IEditedWorld {
     this.select(null);
   }
 
+  private deleteTrackPiece(placement: number, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track || this.state.readOnly) return;
+    this.show(this.history.commit("remove", [], track.removal(placement)), eventTimeMs);
+    this.select(null);
+  }
+
   undo(eventTimeMs: number): void {
     if (this.state.readOnly) return;
     this.replay(this.history.undo(), eventTimeMs);
@@ -2059,8 +2125,12 @@ export class Editor implements IEditor, IEditedWorld {
     const restored = this.show(edit, eventTimeMs).added.at(-1);
     if (this.held) this.showHeldPiece();
     if (this.active) return;
+    const [restoredPiece, ...more] = edit.track.lay;
+    const restoredTrack = edit.kind === "remove" && restoredPiece && more.length === 0;
     if (restored) this.select(restored);
+    else if (restoredTrack) this.selectTrack(restoredPiece.index);
     else if (selected && !selected.handle.live) this.select(null);
+    else if (this.selectedTrack !== null && edit.track.lift.length > 0) this.select(null);
   }
 
   goTo(x: number, z: number): void {

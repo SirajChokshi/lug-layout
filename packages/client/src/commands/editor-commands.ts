@@ -407,7 +407,7 @@ export function commandEnabled(
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
-          snapshot.selection !== null ||
+          snapshot.selection?.kind === "model" ||
           snapshot.track?.held != null)
       );
     case "flip-switch":
@@ -458,6 +458,7 @@ function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
   const selection = editor.snapshot().selection;
   if (!selection) return;
   editor.chooseItem(selection.item);
+  if (selection.kind === "track") return;
   const turns = (selection.rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
   const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
   const presses = direction === 1 ? turns : QUARTER_TURNS - turns;

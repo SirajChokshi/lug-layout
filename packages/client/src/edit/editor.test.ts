@@ -962,6 +962,48 @@ const STUD = 20;
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
 
+const NINE_VOLT_STRAIGHT = "ldraw:74746";
+
+it("selects a laid track piece by clicking it and deletes it as one step that undo restores and re-selects", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  const laid = layoutState(editor);
+
+  const picked = selectAt(editor, backend, 0, 0);
+  const cleared = selectAt(editor, backend, 0, 40 * STUD);
+  selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = layoutState(editor);
+  const afterDelete = editor.snapshot();
+  editor.undo(0);
+  const restored = layoutState(editor);
+  const reselected = editor.snapshot().selection;
+  editor.redo(0);
+
+  expect(picked).toMatchObject({
+    kind: "track",
+    item: `${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`,
+  });
+  expect(cleared).toBeNull();
+  expect({
+    pieces: deleted.laidTrack.length,
+    openEnds: deleted.openEnds,
+    joins: deleted.joins,
+    selection: afterDelete.selection,
+    undo: afterDelete.history.undoLabel,
+  }).toEqual({
+    pieces: laid.laidTrack.length - 1,
+    openEnds: (laid.openEnds ?? 0) + 2,
+    joins: (laid.joins ?? 0) - 2,
+    selection: null,
+    undo: "delete",
+  });
+  expect(restored).toEqual(laid);
+  expect(reselected).toEqual(picked);
+  expect(layoutState(editor)).toEqual(deleted);
+});
+
 it("undoes and redoes model and track edits in the order they happened, each track gesture one step named by what it laid", async () => {
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);

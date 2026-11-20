@@ -77,6 +77,7 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
+  SelectionKind,
   SelectionView,
   TrackBomLine,
   TrackCommitResult,
