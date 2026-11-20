@@ -121,6 +121,8 @@ import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 import { typedArraysConstructedDuring } from "../connect/typed-arrays.test-support.ts";
 import { mateCounts } from "./placement-hover-view.ts";
 import type { PlacementHover } from "./placement-hover.ts";
+import { placementModeSwitchEnabled } from "./placement-mode.ts";
+import type { PlaySnapshot } from "../play/train-play.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -1771,39 +1773,45 @@ it("keeps the end pointed at while a choice is picked off the canvas, and lays t
 
 const A_KEY = { key: "a", ctrlKey: false, metaKey: false, shiftKey: false, altKey: false };
 
-function whatADoes(editor: IEditor): string | null {
-  const acts = (id: CommandId): boolean => commandEnabled(id, editor.snapshot());
+function aState(editor: IEditor, play?: PlaySnapshot) {
+  const acts = (id: CommandId): boolean => commandEnabled(id, editor.snapshot(), play);
   const match = commandForKey(A_KEY, false, acts);
-  return match && acts(match.id) ? match.id : null;
+  return {
+    does: match && acts(match.id) ? match.id : null,
+    switchEnabled: placementModeSwitchEnabled(editor.snapshot(), play),
+    extends: acts("extend-left"),
+  };
 }
 
-it("gives A to an open end's left curve when nothing is held, to the placement mode while a track piece is held at that end or an item is placed, and to nothing in the track tool away from an end", async () => {
-  const { editor, backend } = await startEditor([]);
+it("gives A to the placement mode wherever its switch is enabled, except at an open track end, where it lays a left curve, and to nothing while a train runs", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const running: PlaySnapshot = { ...container.get(TRAIN_PLAY).snapshot(), status: "running" };
+  const selecting = aState(editor);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
   editor.dropTrackEnd();
   backend.aim(0, 40 * STUD);
   editor.pointerMove(0, 0);
-  const awayFromEnd = whatADoes(editor);
+  const awayFromEnd = aState(editor);
   backend.aim(16 * STUD, 0);
   editor.pointerMove(0, 0);
-  const atOpenEnd = whatADoes(editor);
+  const atOpenEnd = aState(editor);
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
   backend.aim(16 * STUD, 0);
   editor.pointerMove(0, 0);
-  const pieceAtEnd = {
-    does: whatADoes(editor),
-    extendable: editor.snapshot().track?.extend ?? null,
-    held: editor.snapshot().track?.held !== null,
-  };
+  const pieceAtEnd = aState(editor);
   await chosen(editor, BASEPLATE);
-  const placing = whatADoes(editor);
+  const placing = aState(editor);
+  const trainRunning = aState(editor, running);
 
-  expect({ awayFromEnd, atOpenEnd, pieceAtEnd, placing }).toEqual({
-    awayFromEnd: null,
-    atOpenEnd: "extend-left",
-    pieceAtEnd: { does: "toggle-placement-mode", extendable: null, held: true },
-    placing: "toggle-placement-mode",
+  const toggles = { does: "toggle-placement-mode", switchEnabled: true, extends: false };
+  expect({ selecting, awayFromEnd, atOpenEnd, pieceAtEnd, placing, trainRunning }).toEqual({
+    selecting: toggles,
+    awayFromEnd: toggles,
+    atOpenEnd: { does: "extend-left", switchEnabled: true, extends: true },
+    pieceAtEnd: toggles,
+    placing: toggles,
+    trainRunning: { does: null, switchEnabled: false, extends: false },
   });
 }, 120_000);
 

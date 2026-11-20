@@ -232,6 +232,7 @@ export {
   effectivePlacementMode,
   holdPlacementModeOverride,
   otherPlacementMode,
+  placementModeSwitchEnabled,
   togglePlacementMode,
   type PlacementModeView,
 } from "./edit/placement-mode.ts";

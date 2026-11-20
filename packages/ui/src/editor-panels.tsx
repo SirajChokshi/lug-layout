@@ -6,6 +6,7 @@ import {
   commandActive,
   commandEnabled,
   commandSpec,
+  placementModeSwitchEnabled,
   tallyText,
   type EditorActionId,
   type EditorSnapshot,
@@ -252,7 +253,7 @@ export function PlacementToolbar({
       </button>
       <PlacementModeSwitch
         snapshot={snapshot}
-        enabled={snapshot.status === "ready" && play.status !== "running"}
+        enabled={placementModeSwitchEnabled(snapshot, play)}
         onEditorAction={onEditorAction}
       />
       <button
