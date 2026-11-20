@@ -141,6 +141,52 @@ describe("road-edge snap", () => {
     }
   });
 
+  it("snaps a clean road join whether or not a crossroads beside it is flush with its corner", () => {
+    const turned: RoadPlacement = { ...straight, rot: 3 };
+    for (const crossroadsX of [-640, -660, -720]) {
+      const crossroads: RoadPlacement = {
+        id: 1,
+        x: crossroadsX,
+        z: -PLATE_SPAN,
+        yLdu: 0,
+        rot: 3,
+        surface: roadBaseplate("44343"),
+      };
+      const both = world([turned, crossroads]);
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        0,
+        1,
+        0,
+        -400,
+        -160,
+        ANY_TURN,
+      );
+      expect(snap).toMatchObject({ x: -PLATE_SPAN, z: 0, joinedRoadCells: 20 });
+    }
+  });
+
+  it("never snaps a piece onto the footprint of a road plate raised above it, where the joining pose isn't there", () => {
+    const raised: RoadPlacement = { ...straight, id: 1, z: PLATE_SPAN, yLdu: 8 };
+    const both = world([straight, raised]);
+    for (const preferred of QUARTER_TURNS) {
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        preferred,
+        1,
+        0,
+        0,
+        openEnd + 200,
+        ANY_TURN,
+      );
+      expect(snap).toBeNull();
+    }
+  });
+
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {
     const dual = roadBaseplate("30225b");
     for (const preferred of QUARTER_TURNS) {

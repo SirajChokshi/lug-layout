@@ -93,6 +93,25 @@ function within(extent: CellExtent, ghost: CellExtent, x: number, z: number): bo
   );
 }
 
+function hitsAny(
+  extents: ReadonlyArray<CellExtent>,
+  ghost: CellExtent,
+  x: number,
+  z: number,
+): boolean {
+  for (const extent of extents) {
+    if (
+      x + ghost.minX < extent.maxX &&
+      x + ghost.maxX > extent.minX &&
+      z + ghost.minZ < extent.maxZ &&
+      z + ghost.maxZ > extent.minZ
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 interface Ranked {
   readonly snap: RoadSnap;
   readonly distance: number;
@@ -122,13 +141,16 @@ export function snapToRoadEdge(
   let best: Ranked | null = null;
   const probe = { id: -1, x: 0, z: 0, yLdu, rot: 0, surface };
   const probeFit = new RoadFit();
+  const nearby: CellExtent[] = [];
   for (let turn = 0; turn < turns; turn++) {
     const rot = quarterTurned(preferredRot, direction * turn);
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
     probe.rot = rot;
-    for (let e = 0; e < placed.length; e++) {
-      const extent = placed[e];
-      if (!extent || !within(extent, ghost, cursorX, cursorZ)) continue;
+    nearby.length = 0;
+    for (const extent of placed) {
+      if (within(extent, ghost, cursorX, cursorZ)) nearby.push(extent);
+    }
+    for (const extent of nearby) {
       const zSteps = besideZSteps(extent, ghost);
       const positions = 2 * zSteps + 2 * besideXSteps(extent, ghost);
       for (let p = 0; p < positions; p++) {
@@ -146,10 +168,10 @@ export function snapToRoadEdge(
         );
         probe.x = x;
         probe.z = z;
-        const fit = cornerFlush(extent, ghost, x, z)
-          ? network.cleanContact(probe, probeFit)
-          : network.cleanFit(probe, probeFit);
-        if (!fit) continue;
+        const fit =
+          network.cleanFit(probe, probeFit) ??
+          (cornerFlush(extent, ghost, x, z) ? network.cleanContact(probe, probeFit) : null);
+        if (!fit || hitsAny(nearby, ghost, x, z)) continue;
         const candidate: Ranked = {
           snap: {
             x,
