@@ -135,7 +135,7 @@ function describeHover(hover: PlacementHover | null): string {
   const magnet = hover.magnetised
     ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
     : "";
-  return `${hover.mode} ${verdict} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}; ${describeMates(hover.mates)}`;
+  return `${hover.mode} ${verdict}${hover.settled ? "" : " (provisional, not settled)"} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}; ${describeMates(hover.mates)}`;
 }
 
 export class EditorPath {
@@ -305,10 +305,15 @@ function offset(pose: Pose, by: Vec3, studs: number): Pose {
   return { ...pose, x: pose.x + by[0] * studs, z: pose.z + by[2] * studs };
 }
 
+export interface LoggedStep {
+  readonly label: string;
+  readonly step: Step;
+}
+
 export interface PairRun {
   readonly placedLabel: string;
   readonly checks: ReadonlyArray<EditorCheck>;
-  readonly steps: ReadonlyArray<{ readonly label: string; readonly step: Step }>;
+  readonly steps: ReadonlyArray<LoggedStep>;
 }
 
 function stem(reference: string): string {
@@ -464,6 +469,26 @@ export function sameDistance(reported: number, expected: number): boolean {
   return Math.abs(reported - expected) <= DISTANCE_RELATIVE_SLACK * Math.max(1, expected);
 }
 
+function settledIn(hover: PlacementHover, mode: PlacementMode): boolean {
+  return hover.mode === mode && hover.settled;
+}
+
+function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
+  const provisional = steps.filter(({ step }) => step.hover !== null && !step.hover.settled);
+  return {
+    label:
+      "Every hover is settled on the first frame after the pointer moves, so no step needs a sliced assist search",
+    passed: provisional.length === 0,
+    detail:
+      provisional.length === 0
+        ? `${steps.length} hovers, each settled on the first frame`
+        : `${provisional.length} of ${steps.length} still provisional after the first frame: ${provisional
+            .slice(0, LISTED_FAILURES)
+            .map(({ label }) => label)
+            .join("; ")}`,
+  };
+}
+
 function magnetIsExact(hover: PlacementHover, cursor: Pose): boolean {
   const dx = hover.pose.x - cursor.x;
   const dz = hover.pose.z - cursor.z;
@@ -484,7 +509,7 @@ function snapsFlush(step: Step, seam: Seam, pins: number): boolean {
     hover !== null &&
     cursor !== null &&
     samePose(cursor, step.aim) &&
-    hover.mode === "assist" &&
+    settledIn(hover, "assist") &&
     hover.accepted &&
     samePose(hover.pose, seam.flush) &&
     !hover.lifted &&
@@ -499,7 +524,7 @@ function atCursor(step: Step, mode: PlacementMode): boolean {
     hover !== null &&
     cursor !== null &&
     samePose(cursor, step.aim) &&
-    hover.mode === mode &&
+    settledIn(hover, mode) &&
     samePose(hover.pose, cursor) &&
     magnetIsExact(hover, cursor)
   );
@@ -544,7 +569,7 @@ interface Compared {
 }
 
 class StepLog {
-  readonly steps: Array<{ readonly label: string; readonly step: Step }> = [];
+  readonly steps: LoggedStep[] = [];
 
   constructor(
     private readonly path: EditorPath,
@@ -643,7 +668,7 @@ function snapsToPredicted(step: Step, target: PredictedMate): boolean {
     hover !== null &&
     cursor !== null &&
     samePose(cursor, step.aim) &&
-    hover.mode === "assist" &&
+    settledIn(hover, "assist") &&
     hover.accepted &&
     samePose(hover.pose, target.pose) &&
     !hover.lifted &&
@@ -690,7 +715,7 @@ function snapsTo(step: Step, target: MatedPose): boolean {
     expected !== null &&
     cursor !== null &&
     samePose(cursor, step.aim) &&
-    hover.mode === "assist" &&
+    settledIn(hover, "assist") &&
     hover.accepted &&
     samePose(hover.pose, expected.pose) &&
     !hover.lifted &&
@@ -912,7 +937,7 @@ export async function pinnedPairChecks(
       detail: `forward: ${outcome(alongForward)}; back: ${outcome(alongBack)}`,
     },
   ];
-  return { placedLabel: "pinned", checks, steps: log.steps };
+  return { placedLabel: "pinned", checks: [...checks, settledCheck(log.steps)], steps: log.steps };
 }
 
 export async function holesAgainstHolesCheck(
@@ -1036,11 +1061,12 @@ export async function cornerModuleCheck(
     `${snapped.length} offsets within ${neighbourhood.ldu} LDU of a mated pose: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate; mated poses: ${describeMated(mated)}`,
   );
   const clickedFlush = snapsFlush(clicked, seam, pins) && samePose(clicked.committed, seam.flush);
+  const settled = settledCheck(log.steps);
   return {
     label:
-      "A generated module with corner Technic joins mates an official template: in assist, every offset within the neighbourhood of a mated pose snaps to the nearest one, flush engaging every pin, and a click from one stud short commits flush",
-    passed: sweep.passed && clickedFlush,
-    detail: `${sweep.detail}; one stud short, clicked: ${outcome(clicked)}`,
+      "A generated module with corner Technic joins mates an official template: in assist, every offset within the neighbourhood of a mated pose snaps to the nearest one, flush engaging every pin, and a click from one stud short commits flush; every hover settles on the first frame",
+    passed: sweep.passed && clickedFlush && settled.passed,
+    detail: `${sweep.detail}; one stud short, clicked: ${outcome(clicked)}; ${settled.detail}`,
   };
 }
 
@@ -1145,5 +1171,5 @@ export async function solidEdgeChecks(
           : `${shiftedRefused.length} of ${shifted.length} fail: ${shiftedRefused.slice(0, LISTED_FAILURES).map(describe).join("; ")}`,
     },
   ];
-  return { placedLabel: "solid", checks, steps: log.steps };
+  return { placedLabel: "solid", checks: [...checks, settledCheck(log.steps)], steps: log.steps };
 }
