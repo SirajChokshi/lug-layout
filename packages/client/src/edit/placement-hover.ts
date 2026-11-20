@@ -80,7 +80,9 @@ export interface PlacementHover {
   readonly turnSettled: boolean;
 }
 
-export function distinctJoints(mates: ReadonlyArray<HoverMateCount>): number {
+export function distinctJoints(
+  mates: ReadonlyArray<{ readonly jointIds: Iterable<number> }>,
+): number {
   const seen = new Set<number>();
   for (const mate of mates) {
     for (const joint of mate.jointIds) seen.add(joint);
