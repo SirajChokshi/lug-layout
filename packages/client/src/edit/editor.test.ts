@@ -1028,6 +1028,20 @@ class MemoryRepository implements IWorldRepository {
     this.worlds.delete(id);
   }
 
+  async copyWith(
+    id: string,
+    name: string,
+    extra: (placements: WorldShardV1["placements"]) => WorldShardV1["placements"],
+  ): Promise<string> {
+    const world = this.worlds.get(id);
+    if (!world) throw new Error(`world ${id} is not stored`);
+    const shards = [...world.shards.values()].map((shard) => ({
+      ...shard,
+      placements: [...shard.placements, ...extra(shard.placements)],
+    }));
+    return (await this.create({ ...world.header, name }, shards)).id;
+  }
+
   async shardFiles(): Promise<never[]> {
     return [];
   }
@@ -6777,6 +6791,148 @@ it("lets a run start from or close onto the open end of a user's track model and
   );
   expect(crossing.lastBlock).toEqual({ kind: "track" });
 }, 120_000);
+
+function overlapIssues(issues: ReadonlyArray<string>): number {
+  return issues.filter((issue) => issue.startsWith("overlap: ")).length;
+}
+
+it("keeps a plan's overlap and support after every edit exactly as reopening the world measures them, across overlapping and floating models loaded from a stored world", async () => {
+  const userModel = "brick-2x4";
+  const repository = new MemoryRepository();
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+    (bound) => bound.rebind(WORLD_REPOSITORY).toConstantValue(repository),
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const { planId } = plans.drawTable({ minX: 0, minZ: 0, maxX: 1920, maxZ: 1280 });
+  expect(await editor.newWorld("Built")).toBe(true);
+  const built = editor.snapshot().world?.id ?? "";
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 640, 640);
+  await place(brick, 520, 520);
+  await place(brick, 760, 760);
+  await place(brick, 800, 760);
+  await place(brick, 1400, 640);
+  const laid = posesOf(editor);
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(5));
+  const copy = await repository.copyWith(built, "Loaded", (placements) => {
+    const onTable = placements.find((p) => p.x === 1400 && p.z === 640);
+    const onPlate = placements.find((p) => p.x === 520 && p.z === 520);
+    if (!onTable || !onPlate) throw new Error("the built world lacks its bricks");
+    return [
+      { ...onTable, x: onTable.x + 20 },
+      { ...onPlate, x: onPlate.x + 40, yPlates: onPlate.yPlates + 6 },
+    ];
+  });
+  let stored = 12;
+  const issues = async () => {
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    return plans
+      .issues(planId)
+      .map((issue) => `${issue.rule}: ${issue.message}`)
+      .toSorted();
+  };
+  const step = async (edit: () => Promise<void> | void, placements: number) => {
+    await edit();
+    const poses = posesOf(editor);
+    const incremental = await issues();
+    stored += placements;
+    await vi.waitFor(() => expect(repository.storedPlacements()).toBe(stored));
+    expect(await editor.openWorld(built)).toBe(true);
+    expect(await editor.openWorld(copy)).toBe(true);
+    return { poses, turns: turnsOf(editor), incremental, reopened: await issues() };
+  };
+  const remove = (x: number, z: number) => () => {
+    selectAt(editor, backend, x, z);
+    editor.deleteSelection(0);
+  };
+  const moveOverlapPartner = () => {
+    selectAt(editor, backend, 1400, 640);
+    editor.moveSelectionBy(0, 200, 0);
+  };
+
+  expect(await editor.openWorld(copy)).toBe(true);
+  const loaded = await issues();
+  const steps = {
+    removedAndUndone: await step(() => {
+      remove(1400, 640)();
+      editor.undo(0);
+    }, 0),
+    stackedOnTheOverlap: await step(async () => {
+      await place(brick, 1400, 680);
+    }, 1),
+    stackedRemoved: await step(remove(1400, 660), -1),
+    partnerMovedAndUndone: await step(() => {
+      moveOverlapPartner();
+      editor.undo(0);
+    }, 0),
+    partnerMovedAway: await step(moveOverlapPartner, 0),
+    movedTurnedUndoneRedone: await step(() => {
+      selectAt(editor, backend, 1410, 840);
+      editor.rotate(0);
+      editor.undo(0);
+      editor.redo(0);
+    }, 0),
+    pairMovedUndoneRedone: await step(() => {
+      selectAt(editor, backend, 1410, 840);
+      backend.aim(1410, 640);
+      editor.toggleSelected(0, 0);
+      editor.moveSelectionBy(-200, 0, 0);
+      editor.undo(0);
+      editor.redo(0);
+    }, 0),
+    baseplateRemoved: await step(remove(400, 900), -1),
+    floatingHeldFromBelow: await step(async () => {
+      await place(brick, 500, 520);
+    }, 1),
+    floatingRemovedUndoneRedone: await step(() => {
+      remove(580, 520)();
+      editor.undo(0);
+      editor.redo(0);
+    }, -1),
+  };
+
+  expect(laid).toEqual(
+    [
+      expect.stringMatching(/ 640,640 y0$/u),
+      `${brick} 520,520 y0`,
+      `${brick} 760,760 y0`,
+      `${brick} 800,760 y3`,
+      `${brick} 1400,640 y0`,
+    ].toSorted(),
+  );
+  expect(loaded.filter((issue) => !issue.startsWith("bomMapping"))).toEqual([
+    expect.stringMatching(/^overlap: /u),
+    expect.stringMatching(/^overlap: /u),
+    expect.stringMatching(/^unsupported: brick-2x4 at 560, 520 /u),
+  ]);
+  for (const { incremental, reopened } of Object.values(steps)) {
+    expect(incremental).toEqual(reopened);
+  }
+  expect(Object.values(steps).map((done) => overlapIssues(done.incremental))).toEqual([
+    2, 2, 2, 2, 0, 0, 0, 0, 0, 0,
+  ]);
+  expect(steps.partnerMovedAway.poses).toContainEqual(expect.stringMatching(/ 14[02]0,840 y0$/u));
+  expect(steps.movedTurnedUndoneRedone.turns).not.toEqual(steps.partnerMovedAway.turns);
+  expect(steps.pairMovedUndoneRedone.poses).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/ 12[02]0,640 y0$/u),
+      expect.stringMatching(/ 12[02]0,840 y0$/u),
+    ]),
+  );
+  expect(steps.floatingHeldFromBelow.poses).toContainEqual(
+    expect.stringMatching(/ 5[0-2]0,520 y3$/u),
+  );
+  expect(steps.floatingHeldFromBelow.incremental).not.toContainEqual(
+    expect.stringMatching(/^unsupported: /u),
+  );
+  expect(steps.stackedOnTheOverlap.poses).toContain(`${brick} 1400,660 y3`);
+  expect(steps.baseplateRemoved.poses).not.toContainEqual(expect.stringMatching(/ 640,640 y0$/u));
+}, 240_000);
 
 it("fills a user's track container across a road plate's roadway as track the plan reports unsupported, and skips the tiles whose track would cross laid track", async () => {
   const { editor, backend, catalog, container } = await startEditor(
