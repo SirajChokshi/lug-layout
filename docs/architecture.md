@@ -124,6 +124,8 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 | Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
 | Backend (P1+) | server | Small API plus object storage | Accounts, cloud layouts, share links, model blob storage |
 
+**Single parts from the pinned library.** The standard bundle carries `libraryParts`, an index of every pinned part that LDraw lists in part lists (not moved, alias, `~` or baked-colour files), that is contributor-agreement licensed, sits in an active LDraw category and has at least one produced colour: its title, category, keywords, Rebrickable number and produced colours (`docs/part-bundle.md`). The palette searches it only once a query has two characters, on the All tab, under its own results, and leaves out parts the palette already offers. Search ranks on that metadata alone. Picking a part in a colour writes a one-line LDraw model, `1 <colour> 0 0 0 1 0 0 0 1 0 0 0 1 <part>.dat`, and hands it to the same import as a user's file. So placing and connecting it come only from the part's own geometry, through the import and bake, exactly as the same part inside any imported file. The bytes depend only on the part and colour, so picking it again finds the stored import by its SHA-256 and adds nothing.
+
 ## 5. Connector and placement schema
 
 Positions are in **integer LDU**. x and z are the plan axes and y points up. Layout heights are counted in **plates above the top surface of the baseplate**. Floats appear only in rendering, and in imported models' internal matrices, which are never used for joins.
