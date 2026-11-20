@@ -4,6 +4,7 @@ use std::f64::consts::TAU;
 
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::rolling::RollingSurface;
+use brick_compile::trig::{cos, sin};
 use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
 use common::{fixture_library, MemoryLibrary};
 use serde_json::json;
@@ -67,7 +68,7 @@ impl Band {
     }
 
     fn point(&self, t: f64, radius: f64, angle: f64) -> Point {
-        let (c, s) = (angle.cos(), angle.sin());
+        let (c, s) = (cos(angle), sin(angle));
         [0, 1, 2].map(|k| {
             self.centre[k]
                 + self.axis[k] * t
@@ -133,7 +134,7 @@ impl Band {
             let low = |angle| self.point(self.from, self.radii[0], angle);
             let high = |index: usize| {
                 let angle = self.angle(index);
-                let top = self.to + self.oblique_top * self.radii[1] * angle.cos();
+                let top = self.to + self.oblique_top * self.radii[1] * cos(angle);
                 let wobble = if index % 2 == 1 {
                     self.high_wobble
                 } else {
