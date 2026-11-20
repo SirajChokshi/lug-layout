@@ -70,7 +70,9 @@ import { commandEnabled, startPlay, type CommandId } from "../commands/editor-co
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG, PLAN_SERVICE } from "../tokens.ts";
+import type { PlacedForPlan } from "../plan/plan-service.ts";
+import { RecordingBackend, TodaysPlanService } from "../plan/plan-sync.test-support.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
@@ -1164,6 +1166,101 @@ it("places an import while its studs are checked, offers none of them to the sta
   });
   expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
   expect(posesOf(editor)).toEqual(posesPending);
+}, 120_000);
+
+it("keeps the plan equal to today's recompute when the checked studs land, with the swapped copies moved to the end as syncPlan listed them", async () => {
+  const importer = new GatedModelImporter();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  importer.serve(importedRecord("checking.mpd", record));
+  await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  const item = editor.snapshot().modelImport?.item ?? "";
+  const plans = container.get(PLAN_SERVICE);
+  const today = new TodaysPlanService(new RecordingBackend());
+  const regionIds = [plans, today].map((service) => {
+    const id = service.createPlan({
+      name: "Room",
+      roomWidthMm: 3200,
+      roomDepthMm: 1100,
+      originChunkX: -4,
+      originChunkZ: -2,
+    });
+    service.addTable(id, {
+      name: "Table",
+      rect: { x: 0, z: 0, width: 2000, depth: 1100 },
+      heightMm: 750,
+    });
+    return id;
+  });
+  const place = placer(editor, backend);
+  const refused = [
+    place(BASEPLATE, -2000, 0),
+    place(item, 0, 0),
+    place(BASEPLATE, 2000, 0),
+    place(item, 4000, 0),
+    place(BASEPLATE, 6000, 0),
+  ].map((placed) => placed.refusedClicks);
+  const placed = plans.materialize().placements;
+  const [plateWest, copyNear, plateMiddle, copyFar, plateEast] = placed;
+  const observed = () => {
+    const planId = regionIds[0] ?? "";
+    return {
+      state: JSON.stringify(plans.materialize()),
+      plans: plans.plans(),
+      activePlanId: plans.activePlanId(),
+      inside: plans.insideCount(planId),
+      issues: plans.issues(planId),
+      sandbox: plans.sandboxCount(),
+      placements: plans.placementCount(),
+    };
+  };
+  const recomputed = (order: ReadonlyArray<PlacedForPlan | undefined>) => {
+    today.setTableTopY(plans.tableTopY());
+    today.setPlacements(order.filter((entry) => entry !== undefined));
+    const snapshot = today.snapshot();
+    const check = snapshot.checks.find((c) => c.regionId === regionIds[1]);
+    return {
+      state: JSON.stringify({
+        plans: snapshot.plans,
+        checks: snapshot.checks,
+        placements: snapshot.placements,
+        sandboxPlacements: snapshot.sandboxPlacements,
+        tableTopY: snapshot.tableTopY,
+      }),
+      plans: snapshot.plans,
+      activePlanId: snapshot.activePlanId,
+      inside: check?.inside.length,
+      issues: check?.issues,
+      sandbox: snapshot.sandboxPlacements.length,
+      placements: snapshot.placements.length,
+    };
+  };
+  expect(refused).toEqual([0, 0, 0, 0, 0]);
+  const pending = observed();
+  expect({
+    inside: pending.inside,
+    issues: pending.issues.length,
+    sandbox: pending.sandbox,
+  }).toEqual({ inside: 4, issues: 1, sandbox: 1 });
+  expect(pending).toEqual(recomputed(placed));
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  expect(observed()).toEqual(recomputed([plateWest, plateMiddle, plateEast, copyNear, copyFar]));
+  editor.undo(0);
+  expect(observed()).toEqual(recomputed([plateWest, plateMiddle, copyNear, copyFar]));
+  editor.undo(0);
+  expect(observed()).toEqual(recomputed([plateWest, plateMiddle, copyNear]));
+  editor.redo(0);
+  expect(observed()).toEqual(recomputed([plateWest, plateMiddle, copyNear, copyFar]));
 }, 120_000);
 
 it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
