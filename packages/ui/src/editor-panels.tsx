@@ -200,7 +200,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
-        Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
+        Undo{history.undoLabel === null ? "" : ` ${history.undoLabel}`} ({shortcutText("undo")})
       </button>
       <button
         type="button"
@@ -208,7 +208,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
-        Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
+        Redo{history.redoLabel === null ? "" : ` ${history.redoLabel}`} ({shortcutText("redo")})
       </button>
       <button
         type="button"

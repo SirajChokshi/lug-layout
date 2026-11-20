@@ -15,6 +15,7 @@ import {
   solveClosure,
   solveDrag,
   NO_END,
+  NO_TRACK_CHANGE,
   TrackGraph,
   TrackLayout,
   footprintOutline,
@@ -22,6 +23,7 @@ import {
   type ClosureSite,
   type DrawingKit,
   type EndGap,
+  type TrackChange,
   type TrackEnd,
   type TrackFrame,
   type TrackMove,
@@ -92,11 +94,10 @@ export interface TrackDragView {
   readonly solveMs: number;
 }
 
-export interface TrackCommit {
-  readonly laid: number;
-  readonly joined: boolean;
+export interface DragOutcome {
+  readonly change: TrackChange;
+  readonly goal: Pose16 | null;
   readonly refusal: TrackRefusal | null;
-  readonly chunks: ReadonlyArray<number>;
 }
 
 export interface TrackFootprint {
@@ -133,7 +134,7 @@ export interface PieceSnap {
 }
 
 export interface SwitchThrow {
-  readonly chunk: number;
+  readonly change: TrackChange;
   readonly lever: Lever;
 }
 
@@ -702,7 +703,7 @@ export class TrackDrawing {
     this.drag = null;
   }
 
-  endDrag(): TrackCommit {
+  endDrag(): DragOutcome {
     const drag = this.drag;
     this.drag = null;
     if (
@@ -710,10 +711,10 @@ export class TrackDrawing {
       drag?.closure === "blocked" ||
       drag?.closure === "limit"
     ) {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+      return { change: NO_TRACK_CHANGE, goal: null, refusal: drag.closure };
     }
     if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, chunks: [] };
+      return { change: NO_TRACK_CHANGE, goal: null, refusal: null };
     }
     const { placed } = layMoves(drag.start, drag.moves);
     const entries: Placed[] = [];
@@ -721,27 +722,53 @@ export class TrackDrawing {
       const move = drag.moves[i];
       if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
     });
-    const chunks = this.commitPlaced(entries);
+    return { change: this.appended(entries), goal: drag.goal, refusal: null };
+  }
+
+  private appended(entries: ReadonlyArray<Placed>): TrackChange {
     return {
-      laid: entries.length,
-      joined: drag.goal !== null && this.graphJoins(drag.goal),
-      refusal: null,
-      chunks,
+      lift: [],
+      lay: entries.map((entry, i) => ({
+        index: this.layout.count + i,
+        piece: entry.part.catalogIndex,
+        pose: entry.placement,
+        yPlates: GROUND_PLATES,
+      })),
     };
   }
 
-  private commitPlaced(entries: ReadonlyArray<Placed>): ReadonlyArray<number> {
+  applyTrack(change: TrackChange): ReadonlyArray<number> {
     const touched = new Set<number>();
-    for (const entry of entries) {
-      const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
-      const key = this.chunkOfPlaced(entry);
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
+    for (let i = change.lift.length - 1; i >= 0; i--) {
+      const at = change.lift[i];
+      if (!at) continue;
+      const laid = this.placedAt(at.index);
+      const same =
+        laid.part.catalogIndex === at.piece &&
+        this.layout.yPlates(at.index) === at.yPlates &&
+        pose16Equals(laid.placement, at.pose);
+      if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
+      touched.add(this.chunkOfPlaced(laid));
+      this.layout.remove(at.index);
     }
+    for (const at of change.lay) {
+      const part = this.pieceByIndex(at.piece);
+      this.layout.insert(at.index, at.piece, at.pose, at.yPlates);
+      touched.add(this.chunkOfPlaced({ part, placement: at.pose }));
+    }
+    this.indexChunks();
     this.recomputeEnds();
     return [...touched];
+  }
+
+  private indexChunks(): void {
+    this.chunkMembers.clear();
+    for (let p = 0; p < this.layout.count; p++) {
+      const key = this.chunkOfPlaced(this.placedAt(p));
+      const members = this.chunkMembers.get(key);
+      if (members) members.push(p);
+      else this.chunkMembers.set(key, [p]);
+    }
   }
 
   private chunkOfPlaced(placed: Placed): number {
@@ -811,11 +838,8 @@ export class TrackDrawing {
     };
   }
 
-  placePiece(catalogIndex: number, placement: Pose16): TrackCommit {
-    const part = this.pieceByIndex(catalogIndex);
-    const before = this.graph.joinCount;
-    const chunks = this.commitPlaced([{ part, placement }]);
-    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+  pieceChange(catalogIndex: number, placement: Pose16): TrackChange {
+    return this.appended([{ part: this.pieceByIndex(catalogIndex), placement }]);
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
@@ -836,15 +860,19 @@ export class TrackDrawing {
     return best;
   }
 
-  throwSwitch(placement: number): SwitchThrow | null {
+  switchThrow(placement: number): SwitchThrow | null {
     const placed = this.placedAt(placement);
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
-    this.layout.replace(placement, thrown);
-    this.footprints = null;
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
-    return { chunk: this.chunkOfPlaced(placed), lever };
+    const lifted = {
+      index: placement,
+      piece: placed.part.catalogIndex,
+      pose: placed.placement,
+      yPlates: this.layout.yPlates(placement),
+    };
+    return { change: { lift: [lifted], lay: [{ ...lifted, piece: thrown }] }, lever };
   }
 
   switchLevers(): ReadonlyArray<SwitchLeverView> {
@@ -865,7 +893,7 @@ export class TrackDrawing {
     return levers;
   }
 
-  private graphJoins(end: Pose16): boolean {
+  joinsAt(end: Pose16): boolean {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
@@ -975,21 +1003,13 @@ export class TrackDrawing {
       }
     });
     if (issues.length > 0) return { ok: false, issues };
-    const touched = new Set<number>();
-    for (const record of records) {
+    const lay = records.flatMap((record, index) => {
       const part = this.byPieceId.get(record.ref);
-      if (!part) continue;
-      const placement = pose16(decodeTrackPosition(record.position), record.heading);
-      const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
-      const centre = partCentre({ part, placement });
-      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
-    }
-    this.recomputeEnds();
-    return { ok: true, value: [...touched] };
+      if (!part) return [];
+      const pose = pose16(decodeTrackPosition(record.position), record.heading);
+      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates }];
+    });
+    return { ok: true, value: this.applyTrack({ lift: [], lay }) };
   }
 
   chunkKeys(): ReadonlyArray<number> {

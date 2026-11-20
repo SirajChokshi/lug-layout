@@ -231,10 +231,10 @@ async function sessionWithFailingSaves() {
   await session.start(edited, "test");
   expect(session.view().world?.save).toBe("saved");
 
-  session.placementsEdited(edited.place(0));
+  session.worldEdited(edited.place(0));
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
   repository.failSaves = true;
-  session.placementsEdited(edited.place(1));
+  session.worldEdited(edited.place(1));
   await vi.waitFor(() => expect(session.view().world?.save).toBe("failed"));
   return { session, edited, repository };
 }

@@ -440,7 +440,9 @@ describe("modelTrackEnds", () => {
     );
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
-    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd));
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd)),
+    );
     expect(drawing.joinedPairs()).toBe(internalJoins);
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });

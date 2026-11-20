@@ -2,7 +2,6 @@ import {
   attachPose16,
   composePose16,
   pose16,
-  pose16Equals,
   zeta16,
   ZETA16_COEFFICIENT_COUNT,
   type Pose16,
@@ -82,6 +81,20 @@ export class TrackLayout {
     risePlates = 0,
     frame: TrackFrame = WORLD_TRACK_FRAME,
   ): number {
+    return this.insert(this.size, piece, placement, yPlates, risePlates, frame);
+  }
+
+  insert(
+    at: number,
+    piece: number,
+    placement: Pose16,
+    yPlates: number,
+    risePlates = 0,
+    frame: TrackFrame = WORLD_TRACK_FRAME,
+  ): number {
+    if (!isIntegerIn(at, 0, this.size)) {
+      throw new RangeError(`track placement ${at} is outside 0-${this.size}`);
+    }
     const spec = this.pieces[piece];
     if (!spec || !Number.isInteger(piece))
       throw new RangeError(`track piece ${piece} is not in the layout's piece table`);
@@ -113,14 +126,34 @@ export class TrackLayout {
     }
     this.frames.set(frame.id, frame);
     if (this.size === this.capacity) this.grow();
-    const slot = this.size++;
-    this.frameOf[slot] = frame.id;
-    this.pieceOf[slot] = piece;
-    this.headingOf[slot] = pose16(placement.position, placement.heading).heading;
-    this.yPlatesOf[slot] = yPlates;
-    this.riseOf[slot] = risePlates;
-    this.positionOf.set(placement.position, slot * ZETA16_COEFFICIENT_COUNT);
-    return slot;
+    this.moveTail(at, at + 1);
+    this.size++;
+    this.frameOf[at] = frame.id;
+    this.pieceOf[at] = piece;
+    this.headingOf[at] = pose16(placement.position, placement.heading).heading;
+    this.yPlatesOf[at] = yPlates;
+    this.riseOf[at] = risePlates;
+    this.positionOf.set(placement.position, at * ZETA16_COEFFICIENT_COUNT);
+    return at;
+  }
+
+  remove(placement: number): void {
+    this.checkPlacement(placement);
+    this.moveTail(placement + 1, placement);
+    this.size--;
+  }
+
+  private moveTail(from: number, to: number): void {
+    this.frameOf.copyWithin(to, from, this.size);
+    this.pieceOf.copyWithin(to, from, this.size);
+    this.headingOf.copyWithin(to, from, this.size);
+    this.yPlatesOf.copyWithin(to, from, this.size);
+    this.riseOf.copyWithin(to, from, this.size);
+    this.positionOf.copyWithin(
+      to * ZETA16_COEFFICIENT_COUNT,
+      from * ZETA16_COEFFICIENT_COUNT,
+      this.size * ZETA16_COEFFICIENT_COUNT,
+    );
   }
 
   attach(piece: number, connector: number, target: TrackEndRef): number {
@@ -134,25 +167,6 @@ export class TrackLayout {
       0,
       this.frame(target.placement),
     );
-  }
-
-  replace(placement: number, piece: number): void {
-    this.checkPlacement(placement);
-    const from = this.pieces[this.piece(placement)];
-    const to = this.pieces[piece];
-    if (!from || !to || !Number.isInteger(piece)) {
-      throw new RangeError(`track piece ${piece} is not in the layout's piece table`);
-    }
-    const sameEnds =
-      from.connectors.length === to.connectors.length &&
-      from.connectors.every((end, index) => {
-        const other = to.connectors[index];
-        return other !== undefined && pose16Equals(end, other);
-      });
-    if (!sameEnds) {
-      throw new RangeError(`track piece ${piece} does not have placement ${placement}'s ends`);
-    }
-    this.pieceOf[placement] = piece;
   }
 
   piece(placement: number): number {

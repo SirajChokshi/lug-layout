@@ -91,8 +91,7 @@ export interface IWorldSession extends IWorldFiles {
   view(): WorldSessionView;
   subscribe(listener: () => void): () => void;
   start(edited: IEditedWorld, bundleVersion: string): Promise<void>;
-  placementsEdited(edit: AppliedEdit): void;
-  trackEdited(): void;
+  worldEdited(edit: AppliedEdit): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput): Promise<string | null>;
 }
@@ -201,16 +200,16 @@ export class WorldSession implements IWorldSession {
     return run;
   }
 
-  placementsEdited(edit: AppliedEdit): void {
+  worldEdited(edit: AppliedEdit): void {
     for (const change of edit.changes) {
       if (change.from) this.dirty.touch(change.from.x, change.from.z);
       if (change.to) this.dirty.touch(change.to.x, change.to.z);
     }
-    this.scheduleSave();
-  }
-
-  trackEdited(): void {
-    this.dirty.touchTrack(this.editedWorld().contents().track);
+    const { lift, lay } = edit.track;
+    if (lift.length + lay.length > 0) {
+      this.dirty.touchTrackPieces(lift);
+      this.dirty.touchTrack(this.editedWorld().contents().track);
+    }
     this.scheduleSave();
   }
 

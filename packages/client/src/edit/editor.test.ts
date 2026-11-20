@@ -72,7 +72,7 @@ import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 
@@ -601,6 +601,14 @@ class MemoryRepository implements IWorldRepository {
     return count;
   }
 
+  storedTrack(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) {
+      for (const shard of world.shards.values()) count += shard.track.length;
+    }
+    return count;
+  }
+
   private entry(id: string, world: MemoryWorld): WorldIndexEntry {
     const manifest = worldManifest(world.header, [...world.shards.values()].map(shardEntry));
     return {
@@ -922,6 +930,139 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+}, 120_000);
+
+function dragTrack(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(...from);
+  editor.pointerMove(0, 0);
+  expect(editor.dragStart(0, 0)).toBe(true);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function layoutState(editor: IEditor) {
+  const { refs, placements, laidTrack } = editor.dump();
+  const poses = placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.x[i]} ${placements.z[i]} ${placements.yPlates[i]} ${placements.rot[i]}`,
+    )
+    .toSorted();
+  const track = editor.snapshot().track;
+  return { poses, laidTrack, openEnds: track?.openEnds, joins: track?.joins };
+}
+
+const STUD = 20;
+const RIGHT_SWITCH = "ldraw:75541-f1";
+const NINE_VOLT_CURVE = "ldraw:74747";
+
+it("undoes and redoes model and track edits in the order they happened, each track gesture one step named by what it laid", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const states = [layoutState(editor)];
+  const labels: Array<string | null> = [];
+  const laid: number[] = [];
+  const record = () => {
+    const before = layoutState(editor);
+    states.push(before);
+    labels.push(editor.snapshot().history.undoLabel);
+    laid.push(before.laidTrack.length - (states.at(-2)?.laidTrack.length ?? 0));
+  };
+
+  place(BASEPLATE, 0, 0);
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const heldCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [51 * STUD, 100 * STUD], [99 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [163 * STUD, 100 * STUD], [211 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [99 * STUD, 100 * STUD], [163 * STUD, 100 * STUD]);
+  const closureCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 200 * STUD);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  record();
+  const lever = editor.snapshot().track?.switches[0];
+  if (!lever) throw new Error("the laid switch has no lever");
+  selectAt(editor, backend, lever.xLdu, lever.zLdu);
+  record();
+  place(BASEPLATE, 64 * STUD, 0);
+  record();
+
+  expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
+  expect(labels).toEqual([
+    "place",
+    `lay ${laid[1]} pieces`,
+    "lay 1 piece",
+    `lay ${laid[3]} pieces`,
+    `lay ${laid[4]} pieces`,
+    `lay ${laid[5]} pieces`,
+    "lay 1 piece",
+    "throw switch",
+    "place",
+  ]);
+  expect(new Set(states.map((state) => JSON.stringify(state))).size).toBe(states.length);
+
+  for (let step = states.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(layoutState(editor), `after undoing edit ${step}`).toEqual(states[step - 1]);
+  }
+  expect(editor.snapshot().history.undo).toBeNull();
+  for (let step = 1; step < states.length; step++) {
+    expect(editor.snapshot().history.redoLabel).toBe(labels[step - 1]);
+    editor.redo(0);
+    expect(layoutState(editor), `after redoing edit ${step}`).toEqual(states[step]);
+  }
+  expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);
+
+it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const repository = new MemoryRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+
+  placer(editor, backend)(BASEPLATE, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const laid = editor.dump().laidTrack.length;
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
+  editor.undo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(0));
+  expect(repository.storedPlacements()).toBe(1);
+  editor.redo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
+  expect(laid).toBeGreaterThan(0);
 }, 120_000);
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";

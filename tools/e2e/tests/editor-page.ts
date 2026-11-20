@@ -60,6 +60,14 @@ export interface TrackEnd {
   readonly heading: number;
 }
 
+export interface LaidTrackPiece {
+  readonly index: number;
+  readonly ref: string;
+  readonly heading: number;
+  readonly position: ReadonlyArray<string>;
+  readonly yPlates: number;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -112,6 +120,7 @@ interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
+    readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
   };
@@ -488,6 +497,10 @@ export class EditorPage {
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
+  }
+
+  async laidTrack(): Promise<ReadonlyArray<LaidTrackPiece>> {
+    return (await this.editState()).world.laidTrack;
   }
 
   private async planState(): Promise<PlanState> {

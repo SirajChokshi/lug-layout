@@ -121,6 +121,20 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
+function commitDrag(layout: TrackDrawing) {
+  const outcome = layout.endDrag();
+  layout.applyTrack(outcome.change);
+  return {
+    laid: outcome.change.lay.length,
+    joined: outcome.goal !== null && layout.joinsAt(outcome.goal),
+    refusal: outcome.refusal,
+  };
+}
+
+function layPiece(layout: TrackDrawing, catalogIndex: number, placement: Pose16): void {
+  layout.applyTrack(layout.pieceChange(catalogIndex, placement));
+}
+
 const container = new Container();
 let drawing: TrackDrawing;
 let footprints: ReadonlyArray<TrackFootprint>;
@@ -131,7 +145,7 @@ function drag(from: readonly [number, number], to: readonly [number, number]): v
   const [tx, tz] = to;
   drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
   drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-  drawing.endDrag();
+  commitDrag(drawing);
 }
 
 beforeAll(async () => {
@@ -228,7 +242,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
       from[1] * STUD_LDU,
     );
     layout.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-    layout.endDrag();
+    commitDrag(layout);
   };
   const aim = (from: readonly [number, number], to: readonly [number, number]) => {
     layout.beginDrag(
@@ -274,7 +288,7 @@ it("starts a run drawn on open ground on the studs, facing a quarter turn, at an
     const run = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     run.beginDrag(0, 0, 0, 0);
     run.moveDrag(Math.cos(angle) * DRAG_STUDS * STUD_LDU, Math.sin(angle) * DRAG_STUDS * STUD_LDU);
-    expect(run.endDrag().laid).toBeGreaterThan(0);
+    expect(commitDrag(run).laid).toBeGreaterThan(0);
     const start = run.openEnds().find((end) => end.xLdu === 0 && end.zLdu === 0);
     if (start?.heading === undefined || start.heading % QUARTER_TURN_STEPS !== 0) {
       offGrid.push(`${((angle * 180) / Math.PI).toFixed(1)}°: ${JSON.stringify(start)}`);
@@ -312,7 +326,7 @@ it(
             const free = latticePose(x, z, heading);
             const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
             expect(snap.end).toBeNull();
-            yard.placePiece(part.catalogIndex, snap.placement);
+            layPiece(yard, part.catalogIndex, snap.placement);
           }
         }
       });
@@ -361,7 +375,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const snapAt = (piece: number, connector: number, end: { xLdu: number; zLdu: number }) => {
     const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, latticePose(0, 0));
     expect(snap.end).not.toBeNull();
-    siding.placePiece(piece, snap.placement);
+    layPiece(siding, piece, snap.placement);
   };
   const openEndNear = (xStuds: number, zStuds: number) => {
     const end = siding
@@ -371,7 +385,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
     return end;
   };
 
-  siding.placePiece(right, latticePose(0, 0));
+  layPiece(siding, right, latticePose(0, 0));
   snapAt(curve, 1, openEndNear(32.69, 12.96));
   const draw = (from: readonly [number, number], to: readonly [number, number]) => {
     siding.beginDrag(
@@ -381,7 +395,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
       from[1] * STUD_LDU,
     );
     siding.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-    return siding.endDrag();
+    return commitDrag(siding);
   };
   draw([32, 0], [80, 0]);
   snapAt(left, 1, openEndNear(80, 0));
@@ -393,7 +407,10 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.openEnds()).toHaveLength(2);
   expect(siding.gaps()).toHaveLength(0);
 
-  for (const lever of siding.switchLevers()) siding.throwSwitch(lever.placement);
+  for (const lever of siding.switchLevers()) {
+    const thrown = siding.switchThrow(lever.placement);
+    if (thrown) siding.applyTrack(thrown.change);
+  }
   expect(siding.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
@@ -435,7 +452,7 @@ function layRun(layout: TrackDrawing, start: Pose16, run: Run): Pose16 {
   for (const piece of placed) {
     const part = layout.kitParts().find((k) => k.def.id === piece.piece.id);
     if (!part) throw new Error(`${piece.piece.id} is not in the drawing kit`);
-    layout.placePiece(part.catalogIndex, piece.placement);
+    layPiece(layout, part.catalogIndex, piece.placement);
   }
   return end;
 }
@@ -596,7 +613,7 @@ function closeFrom(layout: TrackDrawing, from: TrackEndView, to: TrackEndView) {
   const view = layout.dragView();
   const target = layout.dragTarget();
   const ghost = layout.ghost();
-  const commit = layout.endDrag();
+  const commit = commitDrag(layout);
   return { view, target, ghost, commit };
 }
 
@@ -714,7 +731,7 @@ function snapOnto(layout: TrackDrawing, id: string, connector: number, end: Trac
   const piece = placeableIndex(layout, id);
   const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, studPose(0, 0, 0));
   if (snap.end === null) throw new Error(`${id} did not snap onto the open end`);
-  layout.placePiece(piece, snap.placement);
+  layPiece(layout, piece, snap.placement);
 }
 
 function sameEnd(a: TrackEndView, b: TrackEndView): boolean {
@@ -742,7 +759,7 @@ function addRung(layout: TrackDrawing, entry: TrackEndView) {
 }
 
 function buildLadder(layout: TrackDrawing, rungs: number): ReadonlyArray<TrackEndView> {
-  layout.placePiece(placeableIndex(layout, RIGHT_SWITCH), studPose(0, 0, 0));
+  layPiece(layout, placeableIndex(layout, RIGHT_SWITCH), studPose(0, 0, 0));
   const west = endAt(layout, 0, 0);
   const first = layout.openEnds().filter((e) => !sameEnd(e, west));
   const straight = first.find((e) => Math.abs(e.zLdu) < COINCIDENT_LDU);
