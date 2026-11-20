@@ -227,6 +227,7 @@ export type {
   PlacementMode,
   SectionProfile,
 } from "./edit/placement-hover.ts";
+export { distinctJoints } from "./edit/placement-hover.ts";
 export { effectivePlacementMode } from "./edit/placement-mode.ts";
 export {
   meshesSettled,

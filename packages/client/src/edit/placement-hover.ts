@@ -27,6 +27,7 @@ export interface HoverMateCount {
   readonly partnerKinds: ReadonlyArray<ConnectorKindView>;
   readonly connectors: number;
   readonly joints: number;
+  readonly jointIds: ReadonlySet<number>;
   readonly partners: ReadonlyArray<PlacedModelView>;
   readonly inferred: number;
   readonly unverified: number;
@@ -65,14 +66,24 @@ export interface PlacementHover {
   readonly accepted: boolean;
   readonly hit: HoverRefusalHit | null;
   readonly mates: ReadonlyArray<HoverMateCount>;
+  readonly joints: number;
   readonly lifted: boolean;
   readonly restsOn: ReadonlyArray<PlacedModelView>;
   readonly turnBlocksSnap: boolean;
   readonly turnMates: ReadonlyArray<HoverMateCount>;
+  readonly turnJoints: number;
   readonly mode: PlacementMode;
   readonly magnetised: boolean;
   readonly magnet: MagnetOffset;
   readonly assistNeighbourhood: AssistNeighbourhood;
   readonly settled: boolean;
   readonly turnSettled: boolean;
+}
+
+export function distinctJoints(mates: ReadonlyArray<HoverMateCount>): number {
+  const seen = new Set<number>();
+  for (const mate of mates) {
+    for (const joint of mate.jointIds) seen.add(joint);
+  }
+  return seen.size;
 }

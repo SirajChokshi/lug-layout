@@ -8,8 +8,10 @@ import {
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
+  MateReport,
   ModelConnectors,
   SECTION_ROUND,
+  type SnapShapes,
   SOURCE_SHADOW,
   STATUS_VERIFIED,
   type LatticePose,
@@ -30,7 +32,8 @@ import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { partAtHit } from "../edit/placement-hover-view.ts";
+import { distinctJoints } from "../edit/placement-hover.ts";
+import { mateCounts, partAtHit } from "../edit/placement-hover-view.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
@@ -71,6 +74,7 @@ type Spec = readonly [shape: number, gender: number, x: number, y: number, z: nu
 
 interface Fixture {
   readonly search: IPlacementSearch;
+  readonly shapes: SnapShapes;
   readonly connectors: (
     parts: ReadonlyArray<ConnectorTable | null>,
     trackEnds?: ReadonlyArray<TrackEnd>,
@@ -101,6 +105,7 @@ function fixture(): Fixture {
   const mating = container.get(SNAP_MATING);
   return {
     search: container.get(PLACEMENT_SEARCH),
+    shapes,
     connectors: (parts, trackEnds = []) =>
       ModelConnectors.fromParts(
         parts,
@@ -777,6 +782,51 @@ describe("PlacementSearch mate zones", () => {
       window(0, 0, 0, 0, 0),
     );
     expect(choice.accepted).toBe(true);
+  });
+
+  it("counts each joint once across kinds: a pin whose two faces are different kinds is one joint in its bore, beside held receptors each a joint on its own stud", () => {
+    const f = fixture();
+    place(f, BASEPLATE, {
+      connectors: f.connectors([grid(4, 4, f.stud, GENDER_MALE, 0, AXIS_POS_Y)]),
+      volumes: columns(4, 4, -SLAB_LDU, 0),
+      parts: partsOf([[0, -SLAB_LDU, 0, 4 * STUD_LDU, 0, 4 * STUD_LDU]]),
+    });
+    place(f, BORED, {
+      connectors: f.connectors([
+        table([
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z],
+          [f.slidingBoreEnd, GENDER_FEMALE, LINE_X, LINE_Y, STUD_LDU, AXIS_POS_Z],
+        ]),
+      ]),
+      volumes: columns(2, 1, 0, BRICK_LDU),
+      parts: partsOf([BLOCK], [bore(0)]),
+    });
+    const held = f.connectors([
+      table([
+        [f.freePin, GENDER_MALE, LINE_X, LINE_Y, -HALF, AXIS_POS_Z],
+        [f.pinEnd(2 * STUD_LDU), GENDER_MALE, LINE_X, LINE_Y, STUD_LDU + HALF, AXIS_NEG_Z],
+      ]),
+      grid(2, 1, f.receptor(4), GENDER_FEMALE, 0, AXIS_NEG_Y),
+    ]);
+    const report = new MateReport();
+    f.search.evaluate(held, ORIGIN, report);
+    const mates = mateCounts(report, f.shapes, () => null);
+    const studs = mates.filter((mate) => mate.kind.gender === "female");
+    const pins = mates.filter((mate) => mate.kind.gender === "male");
+
+    expect({
+      kinds: [studs.length, pins.length],
+      summedPerKind: mates.reduce((sum, mate) => sum + mate.joints, 0),
+      distinct: distinctJoints(mates),
+      solver: report.jointCount,
+      studsAndPins: [distinctJoints(studs), distinctJoints(pins)],
+    }).toEqual({
+      kinds: [1, 2],
+      summedPerKind: 4,
+      distinct: 3,
+      solver: 3,
+      studsAndPins: [2, 1],
+    });
   });
 
   it("excuses two track pieces' overlap only where their mated ends join them", () => {

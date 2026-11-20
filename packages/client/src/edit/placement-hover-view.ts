@@ -119,6 +119,7 @@ export function mateCounts(
     partnerKinds: [...tally.partnerKinds.values()],
     connectors: tally.connectors,
     joints: tally.joints.size,
+    jointIds: tally.joints,
     partners: [...tally.partners.values()],
     inferred: tally.inferred,
     unverified: tally.unverified,

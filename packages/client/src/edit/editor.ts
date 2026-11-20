@@ -807,6 +807,9 @@ interface RoadCellCounts {
   readonly overlappingCells: number;
 }
 const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
+type TurnMates = Pick<PlacementHover, "turnMates" | "turnJoints">;
+const NO_MATES: ReadonlyArray<HoverMateCount> = [];
+const NO_TURN_MATES: TurnMates = { turnMates: NO_MATES, turnJoints: 0 };
 
 function roadFitRefused(fit: RoadCellCounts): boolean {
   return fit.mismatchedCells > 0 || fit.overlappingCells > 0;
@@ -2877,7 +2880,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.hoverPlacement = {
       ...held,
       turnBlocksSnap,
-      turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
+      ...(turnBlocksSnap ? this.turnHover(connected) : NO_TURN_MATES),
       turnSettled: true,
     };
   }
@@ -2930,6 +2933,8 @@ export class Editor implements IEditor, IEditedWorld {
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
     const magnet = magnetOffset(this.assistPick, pose);
     this.search.evaluate(connected.model, pose, this.mates);
+    const mates = mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner));
+    const joints = this.mates.jointCount;
     const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
     const blocked = choice.accepted ? this.heldPoseRefusal(placeable, pose) : null;
     this.hoverYPlates = pose.yPlates;
@@ -2937,13 +2942,14 @@ export class Editor implements IEditor, IEditedWorld {
       pose,
       accepted: choice.accepted && blocked === null,
       hit,
-      mates: mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner)),
+      mates,
+      joints,
       lifted: pose.yPlates > RESTS_ON_TABLE_Y_PLATES,
       restsOn: this.search
         .restingOn(connected.volumes, pose, null)
         .flatMap((owner) => this.placedViewOf(owner) ?? []),
       turnBlocksSnap,
-      turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
+      ...(turnBlocksSnap ? this.turnHover(connected) : NO_TURN_MATES),
       mode,
       magnetised: magnet.distanceLdu > 0,
       magnet,
@@ -3072,14 +3078,17 @@ export class Editor implements IEditor, IEditedWorld {
     return true;
   }
 
-  private turnMates(connected: Connected): ReadonlyArray<HoverMateCount> {
+  private turnHover(connected: Connected): TurnMates {
     const turned = this.turnChoice;
     this.search.evaluate(
       connected.model,
       { x: turned.x, z: turned.z, yPlates: turned.yPlates, rot: turned.rot },
       this.mates,
     );
-    return mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner));
+    return {
+      turnMates: mateCounts(this.mates, this.shapes, (owner) => this.placedViewOf(owner)),
+      turnJoints: this.mates.jointCount,
+    };
   }
 
   private placedViewOf(owner: number): PlacedModelView | null {
