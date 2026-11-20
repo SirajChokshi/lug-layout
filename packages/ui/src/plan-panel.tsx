@@ -2,6 +2,8 @@ import {
   DEFAULT_TABLE_HEIGHT_MM,
   MM_PER_CM,
   MM_PER_STUD,
+  UNCHECKED_PLAN_RULES,
+  buildableAsPlanned,
   cmText,
   lduFromMm,
   studsText,
@@ -10,8 +12,8 @@ import {
   type IEditorCamera,
   type IPlanService,
   type MmRect,
-  type PlanIssue,
   type PlanRegion,
+  type PlanRuleId,
   type PlanTable,
   type TableTop,
 } from "@brr/client";
@@ -287,9 +289,7 @@ function RectFields({
 
 function planGlance(active: PlanRegion | null, plans: IPlanService): string {
   if (!active) return "No plan yet";
-  const issues = plans.issues(active.id).length;
-  const verdict = issues === 0 ? "no errors" : `${issues} ${issues === 1 ? "error" : "errors"}`;
-  return `${active.name} · ${verdict}`;
+  return `${active.name} · ${verdictText(plans, active.id, plans.issueCount(active.id))}`;
 }
 
 function NewPlanForm({
@@ -470,24 +470,71 @@ function ObstaclesEditor({
   );
 }
 
-function IssueList({ issues }: { readonly issues: ReadonlyArray<PlanIssue> }) {
+type CheckedRule = Exclude<PlanRuleId, "unchecked">;
+
+const PLAN_CHECKS = {
+  footprint: "Room, tables and obstacles are well formed",
+  crossesRegion: "Placements stay inside the plan",
+  fit: "Placements stand on the tables, clear of obstacles",
+  unsupported: "Placements are held: on studs or on the table",
+  seam: "No placement stands across a table seam",
+  reach: "Every part is within reach of a table edge",
+  overlap: "Placements don't overlap",
+  roadJoin: "Roads continue into their neighbours",
+  bomMapping: "Every part has a Rebrickable and BrickLink id",
+} satisfies Record<CheckedRule, string>;
+
+function isCheckedRule(rule: string): rule is CheckedRule {
+  return rule in PLAN_CHECKS;
+}
+
+const CHECKED_RULES: ReadonlyArray<CheckedRule> = Object.keys(PLAN_CHECKS).filter(isCheckedRule);
+
+function errorsText(count: number): string {
+  return `${count} ${count === 1 ? "error" : "errors"}`;
+}
+
+function verdictText(plans: IPlanService, planId: string, errors: number): string {
+  if (buildableAsPlanned(plans, planId)) return "Buildable as planned";
+  return errors === 0 ? "No errors in the checks so far" : errorsText(errors);
+}
+
+function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly planId: string }) {
+  const issues = plans.issues(planId);
+  const errors = plans.issueCount(planId);
+  const unmeasured = plans.unmeasuredCount(planId);
+  const byRule = new Map<PlanRuleId, number>();
+  for (const issue of issues) byRule.set(issue.rule, (byRule.get(issue.rule) ?? 0) + 1);
   return (
     <section className="plan-section" aria-label="Plan issues">
       <h3>
         Plan rules:{" "}
-        <span
-          className={issues.length === 0 ? "plan-ok" : "plan-errors"}
-          data-plan-errors={issues.length}
-        >
-          {issues.length === 0
-            ? "no errors"
-            : `${issues.length} ${issues.length === 1 ? "error" : "errors"}`}
+        <span className={errors === 0 ? "plan-ok" : "plan-errors"} data-plan-errors={errors}>
+          {verdictText(plans, planId, errors)}
         </span>
       </h3>
-      <p className="plan-meta">
-        Checked: footprint, fits the tables, inside the plan. Not checked yet: reach, seams,
-        complete BOM, so "Buildable as planned" is not shown.
+      <ul className="plan-checks">
+        {CHECKED_RULES.map((rule) => {
+          const count = byRule.get(rule) ?? 0;
+          return (
+            <li key={rule} data-check={rule} data-check-errors={count}>
+              <span className={count === 0 ? "plan-ok" : "plan-errors"}>
+                {count === 0 ? "ok" : errorsText(count)}
+              </span>{" "}
+              {PLAN_CHECKS[rule]}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="plan-meta" data-joined-road-cells={plans.joinedRoadCells(planId)}>
+        {plans.joinedRoadCells(planId)} road edge cells join their neighbours.
       </p>
+      {unmeasured > 0 && (
+        <p className="plan-errors" data-unmeasured={unmeasured}>
+          {unmeasured} {unmeasured === 1 ? "placement isn't" : "placements aren't"} fully checked
+          yet: their connector records or part mappings are loading or didn't load.
+        </p>
+      )}
       <ul className="plan-issues">
         {issues.map((issue, i) => (
           <li key={i} data-rule={issue.rule}>
@@ -495,6 +542,16 @@ function IssueList({ issues }: { readonly issues: ReadonlyArray<PlanIssue> }) {
           </li>
         ))}
       </ul>
+      <details className="plan-unchecked">
+        <summary>Not checked yet ({UNCHECKED_PLAN_RULES.length})</summary>
+        <ul>
+          {UNCHECKED_PLAN_RULES.map((rule) => (
+            <li key={rule.id} data-unchecked={rule.id}>
+              {rule.text} ({rule.owner})
+            </li>
+          ))}
+        </ul>
+      </details>
     </section>
   );
 }
@@ -537,6 +594,12 @@ function ActivePlan({
           value={plan.maxOverhangMm}
           onCommit={(maxOverhangMm) => plans.updatePlan(plan.id, { maxOverhangMm })}
         />
+        <MmField
+          name="max-reach"
+          label="Reach limit mm"
+          value={plan.maxReachMm}
+          onCommit={(maxReachMm) => plans.updatePlan(plan.id, { maxReachMm })}
+        />
       </div>
       <p className="plan-meta">
         Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
@@ -560,7 +623,7 @@ function ActivePlan({
         plans={plans}
       />
       <ObstaclesEditor plan={plan} plans={plans} />
-      <IssueList issues={plans.issues(plan.id)} />
+      <PlanChecks plans={plans} planId={plan.id} />
     </>
   );
 }

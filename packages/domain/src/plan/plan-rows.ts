@@ -1,8 +1,13 @@
+import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE, type PlacementKey } from "./plan-rules.ts";
+import { NO_SHAPE, ShapeTable, type PlanShape } from "./plan-shape.ts";
 
 export const MODEL_SEGMENT = 0;
 export const TRACK_SEGMENT = 1;
 export const NO_ROW = -1;
+export const HELD = 0;
+export const NOT_HELD = 1;
+export const CARRIED_TRACK_NOT_HELD = 2;
 export const BOX_READ = 0;
 export const BOX_Y_UNREADABLE = 1;
 export const BOX_PLAN_UNREADABLE = 2;
@@ -182,11 +187,19 @@ export class RowList {
   }
 
   link(rows: PlanRows, row: number): void {
+    this.linkAfter(rows, row, rows.segment[row] === TRACK_SEGMENT);
+  }
+
+  linkInOrder(rows: PlanRows, row: number): void {
+    this.linkAfter(rows, row, true);
+  }
+
+  private linkAfter(rows: PlanRows, row: number, bySource: boolean): void {
     const segment = rows.segment[row] ?? MODEL_SEGMENT;
     let before = this.tails[segment] ?? NO_ROW;
-    if (segment === TRACK_SEGMENT) {
-      const index = rows.source[row] ?? 0;
-      while (before !== NO_ROW && (rows.source[before] ?? 0) > index) {
+    if (bySource) {
+      const source = rows.source[row] ?? 0;
+      while (before !== NO_ROW && (rows.source[before] ?? 0) > source) {
         before = this.prev[before] ?? NO_ROW;
       }
     }
@@ -228,6 +241,9 @@ export class PlanRows {
   source = new Int32Array(INITIAL_ROWS);
   boxState = new Uint8Array(INITIAL_ROWS);
   unsupported = new Uint8Array(INITIAL_ROWS);
+  shape = new Int32Array(INITIAL_ROWS).fill(NO_SHAPE);
+  facts = new Int32Array(INITIAL_ROWS * FACT_STRIDE);
+  readonly shapes = new ShapeTable();
   readonly order = new RowList(INITIAL_ROWS);
   private free = new Int32Array(INITIAL_ROWS);
   private freeCount = 0;
@@ -241,6 +257,8 @@ export class PlanRows {
     this.segment[row] = segment;
     this.source[row] = source;
     this.unsupported[row] = 0;
+    this.shape[row] = NO_SHAPE;
+    clearFacts(this.facts, row * FACT_STRIDE);
     if (segment === TRACK_SEGMENT) this.setTrackRow(source, row);
     else this.models.set(source, row);
     this.order.link(this, row);
@@ -286,6 +304,10 @@ export class PlanRows {
     this.labelBase[row] = this.strings.intern(labelBase);
   }
 
+  shapeOf(row: number): PlanShape | null {
+    return this.shapes.at(this.shape[row] ?? NO_SHAPE);
+  }
+
   refOf(row: number): string {
     return this.strings.value(this.ref[row] ?? 0);
   }
@@ -320,6 +342,8 @@ export class PlanRows {
     this.source = grownInt32(this.source, capacity);
     this.boxState = grownUint8(this.boxState, capacity);
     this.unsupported = grownUint8(this.unsupported, capacity);
+    this.shape = grownInt32(this.shape, capacity, NO_SHAPE);
+    this.facts = grownInt32(this.facts, capacity * FACT_STRIDE);
     this.free = grownInt32(this.free, capacity);
     this.order.grow(capacity);
     this.capacity = capacity;

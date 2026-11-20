@@ -1,10 +1,13 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
+  FACT_STRIDE,
   OccupancyGrid,
   cellChunkKey,
+  clearFacts,
   type AppliedEdit,
   type PlacementHandle,
   type PlacementRef,
+  type PlanShape,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -26,6 +29,7 @@ import {
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
+import { planShapeOf } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
   FOOTPRINT_FLAT,
@@ -43,6 +47,8 @@ export interface PlacedModel {
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
   readonly slab: Float64Array;
+  readonly shape: PlanShape | null;
+  readonly facts: Int32Array;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
 }
@@ -401,7 +407,10 @@ function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: Lat
 class PlacedEntry implements PlacedModel {
   readonly chunks = new TouchedChunks();
   columnsIndexedIn = -1;
+  touchedIn = -1;
   readonly slab: Float64Array;
+  readonly shape: PlanShape | null;
+  readonly facts = new Int32Array(FACT_STRIDE);
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -432,6 +441,8 @@ class PlacedEntry implements PlacedModel {
       this.pose.worldBox(slabs, b, this.yLdu, this.slab, b);
     }
     this.box = this.worldBox();
+    this.shape = planShapeOf(placeable, handle.rot);
+    clearFacts(this.facts, 0);
   }
 
   worldPartBoxes(): Float64Array {
@@ -509,6 +520,35 @@ class PlacedEntry implements PlacedModel {
     if (cell < 0) return null;
     const top = this.placeable.cells.columnTop[cell] ?? EMPTY_COLUMN;
     return top === EMPTY_COLUMN ? null : this.handle.yPlates + top;
+  }
+
+  standsOnBareTable(byColumnChunk: ReadonlyMap<number, ReadonlySet<PlacedEntry>>): boolean {
+    const { cells } = this.placeable;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const cell = j * cells.width + i;
+        if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+        const bottom = this.handle.yPlates + (cells.columnBottom[cell] ?? 0);
+        if (bottom > 0) continue;
+        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+        if (!this.coveredAt(byColumnChunk.get(cellChunkKey(wx, wz)), wx, wz, bottom)) return true;
+      }
+    }
+    return false;
+  }
+
+  private coveredAt(
+    entries: ReadonlySet<PlacedEntry> | undefined,
+    worldCellX: number,
+    worldCellZ: number,
+    bottom: number,
+  ): boolean {
+    if (!entries) return false;
+    for (const base of entries) {
+      if (base !== this && base.columnTopPlates(worldCellX, worldCellZ) === bottom) return true;
+    }
+    return false;
   }
 
   restsOn(base: PlacedEntry): boolean {
@@ -817,6 +857,7 @@ class PlacedEntry implements PlacedModel {
 }
 
 export const NO_MODELS: ReadonlySet<PlacedModel> = new Set();
+const NO_ENTRIES: ReadonlyArray<PlacedEntry> = [];
 
 export interface RebuildReport {
   readonly chunks: number;
@@ -890,6 +931,7 @@ export class PlacedChunks {
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private readonly occupancy = new OccupancyGrid();
   private nextId = 0;
+  private touchEpoch = 0;
   private readonly slabbed: PlacedEntry[] = [];
   private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
@@ -994,6 +1036,42 @@ export class PlacedChunks {
     );
     if (keys.size > 0) this.restamp(keys, NO_MODELS);
     return heights;
+  }
+
+  touching(box: WorldBox, out: PlacedModel[]): void {
+    out.length = 0;
+    const epoch = ++this.touchEpoch;
+    const x0 = chunkOf(box.minX - STUD_LDU);
+    const x1 = chunkOf(box.maxX + STUD_LDU);
+    const z0 = chunkOf(box.minZ - STUD_LDU);
+    const z1 = chunkOf(box.maxZ + STUD_LDU);
+    for (let cz = z0; cz <= z1; cz++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        for (const entry of this.byColumnChunk.get(chunkKey(cx, cz)) ?? NO_ENTRIES) {
+          if (entry.touchedIn === epoch) continue;
+          entry.touchedIn = epoch;
+          const other = entry.box;
+          if (
+            other.minX <= box.maxX &&
+            box.minX <= other.maxX &&
+            other.minZ <= box.maxZ &&
+            box.minZ <= other.maxZ &&
+            other.minY <= box.maxY &&
+            box.minY <= other.maxY
+          ) {
+            out.push(entry);
+          }
+        }
+      }
+    }
+  }
+
+  contains(model: PlacedModel): boolean {
+    return this.entryOf(model) !== null;
+  }
+
+  standsOnBareTable(model: PlacedModel): boolean {
+    return this.entryOf(model)?.standsOnBareTable(this.byColumnChunk) ?? false;
   }
 
   restsOn(rider: PlacedModel, base: PlacedModel): boolean {

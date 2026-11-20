@@ -244,6 +244,7 @@ export function EditorApp({
             source={editor}
             region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
+            plans={plans}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
