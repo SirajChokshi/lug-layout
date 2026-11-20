@@ -43,6 +43,26 @@ const BAR_TUBE: ConnectorKindView = {
   slides: true,
   sections: [{ profile: "round", sizeLdu: 4, lengthLdu: 16 }],
 };
+const SHORT_TUBE: ConnectorKindView = {
+  gender: "female",
+  slides: true,
+  sections: [{ profile: "round", sizeLdu: 4, lengthLdu: 8 }],
+};
+const STUD: ConnectorKindView = {
+  gender: "male",
+  slides: false,
+  sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 4 }],
+};
+const BRICK_SOCKET: ConnectorKindView = {
+  gender: "female",
+  slides: false,
+  sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 20 }],
+};
+const PLATE_SOCKET: ConnectorKindView = {
+  gender: "female",
+  slides: false,
+  sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 4 }],
+};
 
 function model(label: string, x: number): PlacedModelView {
   return { item: `custom:${label}`, label, pose: { x, z: 0, yPlates: 0, rot: 0 } };
@@ -241,6 +261,38 @@ it.each([
     },
     tone: "fits",
     lines: [],
+  },
+  {
+    name: "stacked stud kinds that read alike as one line counting their distinct joints, badges summed, no lead line, no partner named and the support named from what it rests on",
+    placement: {
+      pose: { x: 0, z: 0, yPlates: 3, rot: 0 },
+      lifted: true,
+      restsOn: [PINNED],
+      mates: [
+        mate(BRICK_SOCKET, [STUD], 3, [], { jointIds: [0, 1, 2], unverified: 1 }),
+        mate(PLATE_SOCKET, [STUD], 2, [], { jointIds: [2, 3], unverified: 2 }),
+      ],
+    },
+    tone: "mates",
+    lines: [
+      "4 round sockets take 4 round pegs (3 unverified)",
+      "Lands 3 plates up on custom-modular-pinned",
+    ],
+  },
+  {
+    name: "kinds that read alike but name different partners as their own lines under the lead line",
+    placement: {
+      mates: [
+        mate(BAR_TUBE, [AXLE_END], 2, [PINNED], { jointIds: [0, 1] }),
+        mate(SHORT_TUBE, [AXLE_END], 2, [HOLED], { jointIds: [2, 3] }),
+      ],
+    },
+    tone: "mates",
+    lines: [
+      "Mates at 4 joints",
+      "2 round sockets take 2 axles from custom-modular-pinned",
+      "2 round sockets take 2 axles from custom-modular-holes",
+    ],
   },
   {
     name: "a turn whose mates name no single kind",
