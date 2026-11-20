@@ -7,6 +7,7 @@ import {
   type IBomService,
   type IEditor,
   type IEditorCamera,
+  type IHotbar,
   type IPaletteDrag,
   type IPaletteMemory,
   type IPalettePrefetch,
@@ -56,6 +57,7 @@ interface EditorAppProps {
   readonly palettePrefetch: IPalettePrefetch;
   readonly paletteMemory: IPaletteMemory;
   readonly paletteThumbnails: IPaletteThumbnails;
+  readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -126,6 +128,7 @@ export function EditorApp({
   palettePrefetch,
   paletteMemory,
   paletteThumbnails,
+  hotbar,
   runningGear,
   options,
   disclaimer,
@@ -146,6 +149,7 @@ export function EditorApp({
   useEditorKeys(editor, camera, {
     play,
     onShellCommand: toggleOverlay,
+    hotbar,
     overlayOpen: overlay !== null,
     closeOverlay,
   });
@@ -181,7 +185,7 @@ export function EditorApp({
         paletteDrag={paletteDrag}
         options={options}
       />
-      <ToolHud snapshot={snapshot} play={playSnapshot} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <PlanPanel camera={camera} plans={plans} />
