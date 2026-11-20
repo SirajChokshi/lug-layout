@@ -712,6 +712,22 @@ function queuedOf(editor: IEditor) {
   return { queuedPlacement: editor.snapshot().queuedPlacement };
 }
 
+const SETTLE_FRAMES = 10_000;
+
+function unsettled(placement: PlacementHover | null | undefined): boolean {
+  return placement?.settled === false || placement?.turnSettled === false;
+}
+
+async function settledHover(editor: IEditor, frame: () => Promise<void>) {
+  for (let frames = 0; unsettled(editor.snapshot().hover?.placement); frames++) {
+    if (frames >= SETTLE_FRAMES) {
+      throw new Error(`the hover is still unsettled after ${SETTLE_FRAMES} frames`);
+    }
+    await frame();
+  }
+  return editor.snapshot().hover;
+}
+
 function placer(editor: IEditor, backend: AimedBackend) {
   const now = placerNow(editor, backend);
   return async (item: string, x: number, z: number) => {
@@ -1331,7 +1347,7 @@ it("resolves clicks queued while the held item's tables load, over an import who
 }, 120_000);
 
 it("keeps the stud mates of a module loaded after an import that brought no record for the parts they share", async () => {
-  const { editor, backend, importer, catalog } = await checkingImport(
+  const { editor, backend, importer, catalog, frame } = await checkingImport(
     new BundleDirectoryFetcher(),
     PLAIN_MODULE_MODEL,
     [PLAIN_MODULE_MODEL, PLACEABLE_SET],
@@ -1343,7 +1359,7 @@ it("keeps the stud mates of a module loaded after an import that brought no reco
   await chosen(editor, SET);
   backend.aim(2_000, 320);
   editor.pointerMove(0, 0);
-  const hover = hoverOutcome(editor.snapshot().hover?.placement);
+  const hover = hoverOutcome((await settledHover(editor, frame))?.placement);
   importer.release();
 
   expect(hover).toMatchObject({ accepted: true, restsOn: [PLAIN_MODULE] });
@@ -1361,13 +1377,14 @@ function hoverOutcome(placement: PlacementHover | null | undefined) {
   };
 }
 
-it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
-  const { editor, backend, importer, importedPlaceable } = await checkingImport(
+async function setOneStudIntoPendingImport() {
+  const started = await checkingImport(
     new BundleDirectoryFetcher(),
     PLAIN_MODULE_MODEL,
     [PLACEABLE_SET],
     true,
   );
+  const { editor, backend } = started;
   const item = await importChecking(editor);
   const place = placer(editor, backend);
   await place(item, 320, 320);
@@ -1376,22 +1393,28 @@ it("decides assist over an import whose studs are being checked from its connect
   const wide = editor.snapshot().catalog.find((entry) => entry.id === SET)?.studsWide ?? 0;
   await chosen(editor, SET);
   backend.aim(320 + wide * 20 - 20, 320);
-  const hover = () => {
+  return { ...started, item };
+}
+
+it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
+  const { editor, importer, importedPlaceable, frame, item } = await setOneStudIntoPendingImport();
+  const hover = async () => {
     editor.pointerMove(0, 0);
-    return hoverOutcome(editor.snapshot().hover?.placement);
+    return hoverOutcome((await settledHover(editor, frame))?.placement);
   };
   const offersStuds = () => importedPlaceable()?.studLattice.onLattice.includes(1) ?? null;
   const pending = { studChecks: editor.snapshot().studChecks, offersStuds: offersStuds() };
-  const pendingHover = hover();
+  const pendingHover = await hover();
 
   importer.release();
   await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
-  const republished = hoverOutcome(editor.snapshot().hover?.placement);
+  const republished = hoverOutcome((await settledHover(editor, frame))?.placement);
+  const moved = await hover();
 
   expect(pending).toEqual({ studChecks: 1, offersStuds: false });
   expect(offersStuds()).toBe(true);
   expect(pendingHover).toMatchObject({ accepted: true, magnetised: true, restsOn: [item] });
-  expect({ republished, moved: hover() }).toEqual({
+  expect({ republished, moved }).toEqual({
     republished: pendingHover,
     moved: pendingHover,
   });
@@ -1511,7 +1534,10 @@ it.each([
 ] as const)(
   "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits",
   async ({ held, at, expected }) => {
-    const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+    const { editor, backend, catalog, frame } = await startEditor([
+      PLAIN_MODULE_MODEL,
+      PLACEABLE_SET,
+    ]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -1519,7 +1545,7 @@ it.each([
     await chosen(editor, held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
-    const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const ghostRefusal = (await settledHover(editor, frame))?.refusal ?? null;
     const outcome = await place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
@@ -1648,7 +1674,10 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
 }, 120_000);
 
 it("seats a set on a module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
-  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1658,7 +1687,7 @@ it("seats a set on a module's surface where the cursor's ray reaches the module 
   const justInsideTheFrontEdge = 620;
   backend.aim(320, justInsideTheFrontEdge, cameraAt45Degrees);
   editor.pointerMove(0, 0);
-  const hover = editor.snapshot().hover?.placement;
+  const hover = (await settledHover(editor, frame))?.placement;
 
   expect({
     accepted: hover?.accepted,
@@ -1669,7 +1698,10 @@ it("seats a set on a module's surface where the cursor's ray reaches the module 
 }, 120_000);
 
 it("seats a set on a module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
-  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1679,7 +1711,7 @@ it("seats a set on a module's surface where the cursor's ray enters the module's
   const tablePastTheFarEdge = -12;
   backend.aim(320, tablePastTheFarEdge, cameraAt45Degrees);
   editor.pointerMove(0, 0);
-  const hover = editor.snapshot().hover?.placement;
+  const hover = (await settledHover(editor, frame))?.placement;
 
   expect({
     accepted: hover?.accepted,
@@ -1690,7 +1722,10 @@ it("seats a set on a module's surface where the cursor's ray enters the module's
 }, 120_000);
 
 it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
-  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1698,6 +1733,7 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
   await chosen(editor, SET);
   backend.aim(320, 320);
   editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
   const [x = Number.NaN, yLdu = Number.NaN, z = Number.NaN] = backend.ghost;
   editor.click(0, 0, 0);
 
@@ -1708,7 +1744,10 @@ it("draws the held model's ghost exactly where a click commits it, seated on the
 }, 120_000);
 
 it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
-  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1719,9 +1758,9 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
   const oneStudIn = 320 + wide * 20 - 20;
   await chosen(editor, SET);
   backend.aim(oneStudIn, 320);
-  const hover = () => {
+  const hover = async () => {
     editor.pointerMove(0, 0);
-    const placement = editor.snapshot().hover?.placement;
+    const placement = (await settledHover(editor, frame))?.placement;
     return {
       mode: placement?.mode,
       accepted: placement?.accepted,
@@ -1730,13 +1769,13 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
       hits: placement?.hit?.placed.item ?? null,
     };
   };
-  const assist = hover();
+  const assist = await hover();
   editor.setPlacementModeOverride(true);
-  const held = hover();
+  const held = await hover();
   editor.setPlacementModeOverride(false);
-  const released = hover();
+  const released = await hover();
   editor.setPlacementMode("precise");
-  const chosenPrecise = hover();
+  const chosenPrecise = await hover();
 
   const snapped = { mode: "assist", accepted: true, magnetised: true, atCursor: false, hits: null };
   const refused = {
@@ -1753,6 +1792,236 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
     chosenPrecise: refused,
   });
 }, 120_000);
+
+const SLOW_CLOCK_STEP_MS = 1;
+
+function slowClock() {
+  let now = performance.now();
+  return vi.spyOn(performance, "now").mockImplementation(() => (now += SLOW_CLOCK_STEP_MS));
+}
+
+async function setOneStudIntoSet(gate: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const started = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET], gate);
+  const { editor, backend, catalog } = started;
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  return { ...started, oneStudIn };
+}
+
+function publishedHovers(editor: IEditor): Array<PlacementHover | null> {
+  const published: Array<PlacementHover | null> = [];
+  editor.subscribe(() => published.push(editor.snapshot().hover?.placement ?? null));
+  return published;
+}
+
+async function framesToSettle(editor: IEditor, frame: () => Promise<void>): Promise<number> {
+  let frames = 0;
+  while (unsettled(editor.snapshot().hover?.placement)) {
+    if (frames >= SETTLE_FRAMES) throw new Error("the hover never settled");
+    await frame();
+    frames++;
+  }
+  return frames;
+}
+
+it("shows precise's verdict at the cursor at once, then settles assist over later frames on exactly the hover a whole search gives", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const sliced = await setOneStudIntoSet();
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const provisional = sliced.editor.snapshot().hover?.placement;
+    const ghostAtOnce = [...sliced.backend.ghost];
+    const frames = await framesToSettle(sliced.editor, sliced.frame);
+    const settled = sliced.editor.snapshot().hover?.placement;
+
+    expect({
+      settled: provisional?.settled,
+      mode: provisional?.mode,
+      accepted: provisional?.accepted,
+      magnetised: provisional?.magnetised,
+      pose: provisional?.pose,
+      hits: provisional?.hit?.placed.item,
+      ghost: ghostAtOnce.slice(0, 3),
+    }).toEqual({
+      settled: false,
+      mode: "assist",
+      accepted: false,
+      magnetised: false,
+      pose: { x: sliced.oneStudIn, z: 320, yPlates: provisional?.pose.yPlates, rot: 0 },
+      hits: SET,
+      ghost: [sliced.oneStudIn, (provisional?.pose.yPlates ?? 0) * PLATE_LDU, 320],
+    });
+    expect({ settled, multiFrame: frames > 1 }).toEqual({ settled: wholeHover, multiFrame: true });
+    expect(wholeHover).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
+
+it("commits the settled assist pose for a click made before the search settles, made at once or queued while the held set's tables load", async () => {
+  const setPoses = (editor: IEditor) => posesOf(editor).filter((pose) => pose.startsWith(SET));
+  const atOnce = async (sliced: boolean) => {
+    const scene = await setOneStudIntoSet();
+    const clock = sliced ? slowClock() : null;
+    try {
+      scene.editor.pointerMove(0, 0);
+      const settledAtClick = scene.editor.snapshot().hover?.placement?.settled;
+      scene.editor.click(0, 0, 0);
+      return { settledAtClick, poses: setPoses(scene.editor), oneStudIn: scene.oneStudIn };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const queuedBesideModule = async (sliced: boolean) => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    const clock = sliced ? slowClock() : null;
+    try {
+      placerNow(editor, backend)(SET, clearOfModule, 320);
+      const queued = editor.snapshot().queuedPlacement !== null;
+      gate.open();
+      await settledChoice(editor);
+      return { queued, poses: setPoses(editor), clearOfModule };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const [wholeAtOnce, slicedAtOnce] = [await atOnce(false), await atOnce(true)];
+  const [wholeQueued, slicedQueued] = [
+    await queuedBesideModule(false),
+    await queuedBesideModule(true),
+  ];
+
+  expect({ settledAtClick: slicedAtOnce.settledAtClick, queued: slicedQueued.queued }).toEqual({
+    settledAtClick: false,
+    queued: true,
+  });
+  expect({ atOnce: slicedAtOnce.poses, queued: slicedQueued.poses }).toEqual({
+    atOnce: wholeAtOnce.poses,
+    queued: wholeQueued.poses,
+  });
+  expect({
+    atOnceMoved: !slicedAtOnce.poses.includes(`${SET} ${slicedAtOnce.oneStudIn},320 y4`),
+    queuedOnTheModule: slicedQueued.poses.every(
+      (pose) => pose.endsWith(" y4") && !pose.includes(` ${slicedQueued.clearOfModule},`),
+    ),
+  }).toEqual({ atOnceMoved: true, queuedOnTheModule: true });
+}, 240_000);
+
+it("drops an unsettled assist search when the pointer moves to another stud, the held set turns or the mode toggles, and never shows its result", async () => {
+  const outcome = async (
+    trigger: (scene: Awaited<ReturnType<typeof setOneStudIntoSet>>) => void,
+  ) => {
+    const scene = await setOneStudIntoSet();
+    const clock = slowClock();
+    try {
+      scene.editor.pointerMove(0, 0);
+      const startedUnsettled = scene.editor.snapshot().hover?.placement?.settled === false;
+      await scene.frame();
+      const published = publishedHovers(scene.editor);
+      trigger(scene);
+      await framesToSettle(scene.editor, scene.frame);
+      for (let frame = 0; frame < 4; frame++) await scene.frame();
+      return { startedUnsettled, published, scene };
+    } finally {
+      clock.mockRestore();
+    }
+  };
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const abandoned = (await settledHover(whole.editor, whole.frame))?.placement;
+  const isAbandoned = (hover: PlacementHover | null) =>
+    hover !== null &&
+    hover.pose.x === abandoned?.pose.x &&
+    hover.pose.z === abandoned.pose.z &&
+    hover.pose.rot === abandoned.pose.rot &&
+    hover.mode === "assist";
+  const awayX = 2_400;
+  const moved = await outcome(({ editor, backend }) => {
+    backend.aim(awayX, 320);
+    editor.pointerMove(0, 0);
+  });
+  const turned = await outcome(({ editor }) => editor.rotate(0));
+  const toggled = await outcome(({ editor }) => editor.setPlacementModeOverride(true));
+  whole.backend.aim(awayX, 320);
+  whole.editor.pointerMove(0, 0);
+  const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
+
+  expect([moved, turned, toggled].map(({ startedUnsettled }) => startedUnsettled)).toEqual([
+    true,
+    true,
+    true,
+  ]);
+  expect({
+    moved: moved.published.some(isAbandoned),
+    turned: turned.published.some(isAbandoned),
+    toggled: toggled.published.some(isAbandoned),
+  }).toEqual({ moved: false, turned: false, toggled: false });
+  expect({
+    moved: moved.scene.editor.snapshot().hover?.placement,
+    turnedRot: turned.scene.editor.snapshot().hover?.placement?.pose.rot,
+    toggled: toggled.published
+      .slice(toggled.published.findIndex((hover) => hover?.mode === "precise"))
+      .every((hover) => hover?.mode === "precise" && hover.settled),
+  }).toEqual({ moved: awayHover, turnedRot: 1, toggled: true });
+}, 240_000);
+
+it("restarts an unsettled assist search when an import's studs land under it, and settles on the hover it had before they landed", async () => {
+  const whole = await setOneStudIntoPendingImport();
+  whole.editor.pointerMove(0, 0);
+  const before = (await settledHover(whole.editor, whole.frame))?.placement;
+  whole.importer.release();
+  const sliced = await setOneStudIntoPendingImport();
+  const atLanding: Array<boolean | undefined> = [];
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const startedUnsettled = sliced.editor.snapshot().hover?.placement?.settled === false;
+    sliced.editor.subscribe(() => {
+      const { studChecks, hover } = sliced.editor.snapshot();
+      if (studChecks === 0) atLanding.push(hover?.placement?.settled);
+    });
+    sliced.importer.release();
+    while (sliced.editor.snapshot().studChecks > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await framesToSettle(sliced.editor, sliced.frame);
+    const after = sliced.editor.snapshot().hover?.placement;
+
+    expect({ startedUnsettled, restarted: atLanding[0] }).toEqual({
+      startedUnsettled: true,
+      restarted: false,
+    });
+    expect(after).toEqual(before);
+    expect(before).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
 
 it("publishes the assist radius as 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
   const { editor, backend } = await startEditor([]);

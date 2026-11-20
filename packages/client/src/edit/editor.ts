@@ -102,6 +102,7 @@ import { effectivePlacementMode } from "./placement-mode.ts";
 import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
+  SETTLED_AT_ONCE,
   placementChoice,
   type IPlacementSearch,
   type OverlapNamer,
@@ -483,6 +484,10 @@ const HELD_TURN = 0;
 const NEXT_TURN = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
+const ASSIST_SLICE_MS = 8;
+const ASSIST_IDLE = 0;
+const ASSIST_HELD = 1;
+const ASSIST_TURN = 2;
 
 class CursorPick implements PlacementWindow {
   x = 0;
@@ -494,6 +499,18 @@ class CursorPick implements PlacementWindow {
   radiusLdu = PRECISE_RADIUS;
   turns = HELD_TURN_ONLY;
   firstTurn = HELD_TURN;
+
+  copy(from: CursorPick): void {
+    this.x = from.x;
+    this.z = from.z;
+    this.yPlates = from.yPlates;
+    this.rot = from.rot;
+    this.cells = from.cells;
+    this.plates = from.plates;
+    this.radiusLdu = from.radiusLdu;
+    this.turns = from.turns;
+    this.firstTurn = from.firstTurn;
+  }
 }
 
 class HoverCell {
@@ -538,6 +555,10 @@ class HoverCell {
     this.mode = mode;
     this.radiusLdu = pick.radiusLdu;
     this.revision = search.revision();
+  }
+
+  forget(): void {
+    this.placeable = null;
   }
 }
 
@@ -773,6 +794,13 @@ export class Editor implements IEditor, IEditedWorld {
   private assistLdu = 0;
   private readonly choice = placementChoice();
   private readonly turnChoice = placementChoice();
+  private readonly assistPick = new CursorPick();
+  private assistPhase = ASSIST_IDLE;
+  private assistTicket = SETTLED_AT_ONCE;
+  private assistPlaceable: Placeable | null = null;
+  private assistConnected: Connected | null = null;
+  private assistMode: PlacementMode = "assist";
+  private sliceSinceFrame = false;
   private readonly mates = new MateReport();
   private hovering = false;
   private hitX = 0;
@@ -815,6 +843,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.state = { ...this.state, ...session.view(), ...frames.view() };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
+    frames.setFrameWork(this.assistFrame);
     catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
   }
 
@@ -1697,6 +1726,7 @@ export class Editor implements IEditor, IEditedWorld {
   private placeGhost(): void {
     const placeable = this.active;
     if (!placeable || !this.hovering) {
+      this.dropAssist();
       this.hoverPlacement = null;
       this.hoverRefusal = null;
       return;
@@ -1706,13 +1736,115 @@ export class Editor implements IEditor, IEditedWorld {
     this.aimPick(this.placeRot, HELD_TURN_ONLY, mode);
     if (this.hoverPlacement && this.hoverCell.holds(placeable, this.pick, mode, this.search))
       return;
+    this.dropAssist();
+    this.assistPick.copy(this.pick);
+    this.assistPlaceable = placeable;
+    this.assistConnected = connected;
+    this.assistMode = mode;
+    this.assistPhase = ASSIST_HELD;
+    this.assistTicket = this.search.begin(
+      connected.model,
+      connected.volumes,
+      connected.boxes,
+      connected.technic,
+      this.assistPick,
+      RESTS_ON_TABLE_Y_PLATES,
+      null,
+      this.choice,
+    );
+    this.hoverCell.keep(placeable, this.pick, mode, this.search);
+    this.sliceSinceFrame = true;
+    if (!this.continueAssist(performance.now() + ASSIST_SLICE_MS, false)) {
+      this.publishHover(placeable, connected, mode, false, false, false);
+    }
+  }
+
+  private readonly assistFrame = (startMs: number): void => {
+    const sliced = this.sliceSinceFrame;
+    this.sliceSinceFrame = false;
+    if (sliced || this.assistPhase === ASSIST_IDLE) return;
+    if (this.continueAssist(startMs + ASSIST_SLICE_MS, false)) {
+      this.update({ hover: this.hoverView() });
+    } else if (this.assistPhase === ASSIST_IDLE) {
+      this.placeGhost();
+      this.update({ hover: this.hoverView() });
+    }
+  };
+
+  private continueAssist(deadlineMs: number, heldOnly: boolean): boolean {
+    const placeable = this.assistPlaceable;
+    const connected = this.assistConnected;
+    if (!placeable || !connected) return false;
+    let published = false;
+    if (this.assistPhase === ASSIST_HELD) {
+      if (!this.advanceAssist(deadlineMs)) return false;
+      if (this.choice.accepted && this.choice.votes > 0) {
+        this.settleAssist(placeable, connected, false);
+        return true;
+      }
+      this.publishHover(placeable, connected, this.assistMode, true, false, false);
+      published = true;
+      this.assistPick.turns = EVERY_TURN;
+      this.assistPick.firstTurn = NEXT_TURN;
+      this.assistPhase = ASSIST_TURN;
+      this.assistTicket = this.search.begin(
+        connected.model,
+        connected.volumes,
+        connected.boxes,
+        connected.technic,
+        this.assistPick,
+        RESTS_ON_TABLE_Y_PLATES,
+        null,
+        this.turnChoice,
+      );
+      if (heldOnly) return true;
+    }
+    if (!this.advanceAssist(deadlineMs)) return published;
+    const turned = this.turnChoice;
+    const turnBlocksSnap =
+      turned.accepted && turned.votes > 0 && turned.rot !== this.assistPick.rot;
+    this.settleAssist(placeable, connected, turnBlocksSnap);
+    return true;
+  }
+
+  private advanceAssist(deadlineMs: number): boolean {
+    if (this.assistTicket === SETTLED_AT_ONCE) return true;
+    const step = this.search.advance(this.assistTicket, deadlineMs);
+    if (step === "running") return false;
+    this.assistTicket = SETTLED_AT_ONCE;
+    if (step === "settled") return true;
+    this.dropAssist();
+    this.hoverCell.forget();
+    return false;
+  }
+
+  private settleAssist(placeable: Placeable, connected: Connected, turnBlocksSnap: boolean): void {
+    const mode = this.assistMode;
+    this.dropAssist();
+    this.publishHover(placeable, connected, mode, true, true, turnBlocksSnap);
+  }
+
+  private dropAssist(): void {
+    if (this.assistTicket !== SETTLED_AT_ONCE) this.search.cancel();
+    this.assistTicket = SETTLED_AT_ONCE;
+    this.assistPhase = ASSIST_IDLE;
+    this.assistPlaceable = null;
+    this.assistConnected = null;
+  }
+
+  private publishHover(
+    placeable: Placeable,
+    connected: Connected,
+    mode: PlacementMode,
+    settled: boolean,
+    turnSettled: boolean,
+    turnBlocksSnap: boolean,
+  ): void {
     const choice = this.choice;
-    this.searchPick(connected, null, choice);
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
-    const magnet = magnetOffset(this.pick, pose);
+    const magnet = magnetOffset(this.assistPick, pose);
     this.search.evaluate(connected.model, pose, this.mates);
     const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
-    const turnBlocksSnap = this.turnBlocksSnap(connected, choice);
     this.hoverYPlates = pose.yPlates;
     this.hoverPlacement = {
       pose,
@@ -1733,10 +1865,10 @@ export class Editor implements IEditor, IEditedWorld {
         cells: cellsWithin(this.assistLdu),
         plates: platesWithin(this.assistLdu),
       },
-      settled: true,
+      settled,
+      turnSettled,
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
-    this.hoverCell.keep(placeable, this.pick, mode, this.search);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
   }
 
@@ -1795,18 +1927,6 @@ export class Editor implements IEditor, IEditedWorld {
       moving,
       out,
     );
-  }
-
-  private turnBlocksSnap(connected: Connected, choice: PlacementChoice): boolean {
-    if (choice.accepted && choice.votes > 0) return false;
-    const heldRot = this.pick.rot;
-    this.pick.turns = EVERY_TURN;
-    this.pick.firstTurn = NEXT_TURN;
-    this.searchPick(connected, null, this.turnChoice);
-    this.pick.turns = HELD_TURN_ONLY;
-    this.pick.firstTurn = HELD_TURN;
-    const turned = this.turnChoice;
-    return turned.accepted && turned.votes > 0 && turned.rot !== heldRot;
   }
 
   private turnMates(connected: Connected): ReadonlyArray<HoverMateCount> {
@@ -2013,6 +2133,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.hovering = true;
       const snap = this.snapGhost();
       this.placeGhost();
+      this.continueAssist(Number.POSITIVE_INFINITY, true);
       if (snap?.state === "refused") {
         this.update({
           snap,

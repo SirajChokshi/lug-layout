@@ -52,7 +52,10 @@ export interface IEditorFrameLoop {
   start(canvas: HTMLCanvasElement, reportFailure: (error: unknown) => void): void;
   measureFrames(): void;
   timeNextFrame(onPresented: (frame: FrameTimes) => void): void;
+  setFrameWork(work: FrameWork | null): void;
 }
+
+export type FrameWork = (startMs: number) => void;
 
 const STATS_INTERVAL_MS = 500;
 const MEASURE_WARMUP_FRAMES = 5;
@@ -92,6 +95,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
   private stopped = false;
   private firstFrame = false;
   private onPresented: ((frame: FrameTimes) => void) | null = null;
+  private frameWork: FrameWork | null = null;
   private measureIndex = -1;
   private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
   private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
@@ -152,12 +156,17 @@ export class EditorFrameLoop implements IEditorFrameLoop {
     this.onPresented = onPresented;
   }
 
+  setFrameWork(work: FrameWork | null): void {
+    this.frameWork = work;
+  }
+
   private readonly step = (): void => {
     try {
       this.resizeToCanvas();
       const startMs = performance.now();
       this.camera.frame(startMs);
       this.session.pollCamera();
+      this.frameWork?.(startMs);
       const onPresented = this.onPresented;
       const awaitsGpu = onPresented !== null || this.measureIndex >= 0 || this.firstFrame;
       if (awaitsGpu || this.backend.needsFrame()) this.backend.renderFrame(this.frameStats);

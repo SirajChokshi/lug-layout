@@ -36,6 +36,7 @@ import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
 import {
+  SETTLED_AT_ONCE,
   placementChoice,
   type IPlacementSearch,
   type PlacementChoice,
@@ -246,6 +247,32 @@ function choose(
     choice,
   );
   return choice;
+}
+
+const EVERY_SLICE_OVERDUE = 0;
+
+function chooseInSlices(f: Fixture, piece: Piece, at: PlacementWindow): SlicedChoice {
+  const choice = placementChoice();
+  const ticket = f.search.begin(
+    piece.connectors,
+    piece.volumes,
+    piece.parts.boxes,
+    piece.parts.technic,
+    at,
+    TABLE_Y_PLATES,
+    null,
+    choice,
+  );
+  let slices = 1;
+  if (ticket !== SETTLED_AT_ONCE) {
+    while (f.search.advance(ticket, EVERY_SLICE_OVERDUE) === "running") slices++;
+  }
+  return { choice, slices };
+}
+
+interface SlicedChoice {
+  readonly choice: PlacementChoice;
+  readonly slices: number;
 }
 
 const TYPED_ARRAYS = [
@@ -528,18 +555,37 @@ describe("PlacementSearch", () => {
     }).toEqual({ refused: [0, 0], named: [1, 0], onlyByColumn: null });
   });
 
-  it("constructs no typed array once warm, however the assist window moves", () => {
+  it("constructs no typed array once warm, however the assist window moves, searched whole or one unit per slice", () => {
     const f = fixture();
     const plate = world(f);
     const windows = [0, 1, 2, 3, 4].flatMap((i) =>
       [0, 1, 2].map((j) => window(i * STUD_LDU, j * STUD_LDU, 2)),
     );
     const sweep = () => {
-      for (const at of windows) choose(f, plate, at);
+      for (const at of windows) {
+        choose(f, plate, at);
+        chooseInSlices(f, plate, at);
+      }
     };
     sweep();
 
     expect(typedArraysConstructedDuring(sweep)).toBe(0);
+  });
+
+  it("settles a search advanced one unit per slice on exactly the choice it makes whole, held turn and turn probe alike", () => {
+    const f = fixture();
+    const plate = world(f);
+    const windows = [0, 1, 2, 3, 4].flatMap((i) =>
+      [0, 1, 2].flatMap((j) => {
+        const held = window(i * STUD_LDU, j * STUD_LDU, 2, 0, 2);
+        return [held, { ...held, turns: 4, firstTurn: 1 }];
+      }),
+    );
+    const whole = windows.map((at) => fullVerdict(choose(f, plate, at)));
+    const sliced = windows.map((at) => chooseInSlices(f, plate, at));
+
+    expect(sliced.map(({ choice }) => fullVerdict(choice))).toEqual(whole);
+    expect(Math.max(...sliced.map(({ slices }) => slices))).toBeGreaterThan(1);
   });
 
   it("gives exactly precise's verdict wherever assist ends at the cursor pose: nothing mated in reach, or the cursor pose itself mated and free", () => {

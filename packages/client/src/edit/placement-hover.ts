@@ -74,4 +74,5 @@ export interface PlacementHover {
   readonly magnet: MagnetOffset;
   readonly assistNeighbourhood: AssistNeighbourhood;
   readonly settled: boolean;
+  readonly turnSettled: boolean;
 }

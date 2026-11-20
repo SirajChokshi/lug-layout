@@ -3,6 +3,7 @@ import {
   FootprintGrid,
   MateReport,
   NO_OVERLAP,
+  ProposalProgress,
   VolumeIndex,
   firstOverlap,
   firstOverlapFrom,
@@ -29,6 +30,10 @@ import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const NO_PLACEMENT = -1;
+
+export const SETTLED_AT_ONCE = 0;
+
+export type SearchStep = "settled" | "running" | "stale";
 
 export interface PlacementChoice {
   accepted: boolean;
@@ -99,6 +104,18 @@ export interface IPlacementSearch {
     moving: number | null,
     out: PlacementChoice,
   ): void;
+  begin(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    window: PlacementWindow,
+    tableYPlates: number,
+    moving: number | null,
+    out: PlacementChoice,
+  ): number;
+  advance(ticket: number, deadlineMs: number): SearchStep;
+  cancel(): void;
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void;
   restingOn(volumes: CellVolumes, pose: LatticePose, moving: number | null): ReadonlyArray<number>;
   strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
@@ -130,6 +147,15 @@ const NO_REGION = -1;
 const COVER_ATTEMPTS = 2;
 const HINTS = 8;
 const INITIAL_SEEN = 8;
+const PROPOSAL_SLOTS = 64;
+const PHASE_IDLE = 0;
+const PHASE_COVER = 1;
+const PHASE_WALK = 2;
+const COVER_HELD = 0;
+const COVER_TURNED = 1;
+const COVER_DONE = 0;
+const COVER_RUNNING = 1;
+const COVER_NO_ROOM = 2;
 
 class Bounds {
   cellX0 = 0;
@@ -229,6 +255,71 @@ class RegionWindow implements SnapWindow {
   cells = NO_REGION;
   plates = 0;
   turns = 1;
+
+  copy(from: SnapWindow): void {
+    this.x = from.x;
+    this.z = from.z;
+    this.yPlates = from.yPlates;
+    this.rot = from.rot;
+    this.cells = from.cells;
+    this.plates = from.plates;
+    this.turns = from.turns;
+  }
+}
+
+class Flight implements PlacementWindow {
+  x = 0;
+  z = 0;
+  yPlates = 0;
+  rot = 0;
+  cells = 0;
+  plates = 0;
+  turns = 1;
+  radiusLdu = 0;
+  firstTurn = 0;
+  model: ModelConnectors | null = null;
+  volumes: CellVolumes | null = null;
+  boxes: PartBoxes | null = null;
+  technic: TechnicSet | null = null;
+  out: PlacementChoice | null = null;
+  tableYPlates = 0;
+  moving = NO_PLACEMENT;
+  revision = -1;
+  keyCount = 0;
+  nextKey = 0;
+  found = false;
+  bestKey = 0;
+  bestReach = 0;
+  bestJoints = 0;
+  bestVotes = 0;
+  coverAttempt = 0;
+  coverStage = COVER_HELD;
+  covering = false;
+  phase = PHASE_IDLE;
+  ticket = SETTLED_AT_ONCE;
+
+  copyWindow(window: PlacementWindow): void {
+    this.x = window.x;
+    this.z = window.z;
+    this.yPlates = window.yPlates;
+    this.rot = window.rot;
+    this.cells = window.cells;
+    this.plates = window.plates;
+    this.turns = window.turns;
+    this.radiusLdu = window.radiusLdu;
+    this.firstTurn = window.firstTurn;
+  }
+
+  release(): void {
+    this.phase = PHASE_IDLE;
+    this.covering = false;
+    this.model = null;
+    this.volumes = null;
+    this.boxes = null;
+    this.technic = null;
+    this.out = null;
+    this.ticket++;
+  }
 }
 
 function reachesBeyondCursor(window: PlacementWindow): boolean {
@@ -251,6 +342,9 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly memo = new PoseMemo();
   private readonly heldRegion = new RegionWindow();
   private readonly turnedRegion = new RegionWindow();
+  private readonly proposing = new RegionWindow();
+  private readonly progress = new ProposalProgress();
+  private readonly flight = new Flight();
   private memoModel: ModelConnectors | null = null;
   private memoRevision = -1;
   private memoMoving = NO_PLACEMENT;
@@ -331,14 +425,73 @@ export class PlacementSearch implements IPlacementSearch {
     moving: number | null,
     out: PlacementChoice,
   ): void {
+    const ticket = this.begin(model, volumes, boxes, technic, window, tableYPlates, moving, out);
+    if (ticket !== SETTLED_AT_ONCE) this.advance(ticket, Number.POSITIVE_INFINITY);
+  }
+
+  begin(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    window: PlacementWindow,
+    tableYPlates: number,
+    moving: number | null,
+    out: PlacementChoice,
+  ): number {
+    this.cancel();
     this.moving = moving ?? NO_PLACEMENT;
     out.walked = 0;
     this.atCursor(model, volumes, boxes, technic, window, tableYPlates, out);
-    if (!(out.accepted && out.votes > 0) && reachesBeyondCursor(window)) {
-      this.nearestMate(model, volumes, boxes, technic, window, tableYPlates, out);
+    this.zones.clear();
+    if ((out.accepted && out.votes > 0) || !reachesBeyondCursor(window)) {
+      this.moving = NO_PLACEMENT;
+      return SETTLED_AT_ONCE;
     }
+    const flight = this.flight;
+    flight.copyWindow(window);
+    flight.model = model;
+    flight.volumes = volumes;
+    flight.boxes = boxes;
+    flight.technic = technic;
+    flight.tableYPlates = tableYPlates;
+    flight.moving = this.moving;
+    flight.out = out;
+    flight.revision = this.edits;
+    flight.keyCount = this.reachOrder(flight, tableYPlates);
+    this.prepareMemo(model, flight.keyCount);
+    flight.nextKey = 0;
+    flight.found = false;
+    flight.coverAttempt = 0;
+    flight.coverStage = COVER_HELD;
+    flight.covering = false;
+    flight.phase = PHASE_COVER;
+    this.moving = NO_PLACEMENT;
+    return flight.ticket;
+  }
+
+  advance(ticket: number, deadlineMs: number): SearchStep {
+    const flight = this.flight;
+    if (ticket !== flight.ticket || flight.phase === PHASE_IDLE) return "stale";
+    if (flight.revision !== this.edits) {
+      this.cancel();
+      return "stale";
+    }
+    this.moving = flight.moving;
+    if (flight.phase === PHASE_COVER && this.coverStep(flight, deadlineMs)) {
+      flight.phase = PHASE_WALK;
+    }
+    const settled = flight.phase === PHASE_WALK && this.walkStep(flight, deadlineMs);
     this.moving = NO_PLACEMENT;
     this.zones.clear();
+    if (!settled) return "running";
+    this.finishWalk(flight);
+    this.cancel();
+    return "settled";
+  }
+
+  cancel(): void {
+    this.flight.release();
   }
 
   private atCursor(
@@ -366,58 +519,6 @@ export class PlacementSearch implements IPlacementSearch {
     out.accepted = out.votes > 0 || pose.yPlates === tableYPlates;
   }
 
-  private nearestMate(
-    model: ModelConnectors,
-    volumes: CellVolumes,
-    boxes: PartBoxes,
-    technic: TechnicSet,
-    window: PlacementWindow,
-    tableYPlates: number,
-    out: PlacementChoice,
-  ): void {
-    const count = this.reachOrder(window, tableYPlates);
-    this.prepareMemo(model, count);
-    this.coverProposals(model, window, count);
-    const memo = this.memo;
-    const pose = this.pose;
-    let found = false;
-    let bestKey = 0;
-    let bestReach = 0;
-    let bestJoints = 0;
-    let bestVotes = 0;
-    for (let k = 0; k < count; k++) {
-      const key = this.keys[k] ?? 0;
-      const reach = this.decode(window, key, pose);
-      if (found && reach > bestReach) break;
-      const slot = memo.slot(pose.x, pose.z, pose.yPlates, pose.rot);
-      if (memo.dense[slot] === UNKNOWN) this.countLevel(model, window, pose.rot, pose.yPlates);
-      const dense = memo.dense[slot] ?? 0;
-      const proposed = memo.proposed[slot] === 1;
-      if (dense === 0 && !proposed) continue;
-      if (memo.verdict[slot] === 0) {
-        const blocked = this.blocked(model, volumes, boxes, technic, pose, proposed, true);
-        memo.verdict[slot] = blocked ? BLOCKED : FREE;
-      }
-      if (memo.verdict[slot] === BLOCKED) continue;
-      const votes = dense + this.proposalAt(model, pose, slot);
-      if (votes === 0) continue;
-      out.walked++;
-      this.solver.evaluate(model, pose, this.tieReport);
-      const joints = this.tieReport.jointCount;
-      if (!found || joints > bestJoints || (joints === bestJoints && votes > bestVotes)) {
-        found = true;
-        bestKey = key;
-        bestReach = reach;
-        bestJoints = joints;
-        bestVotes = votes;
-      }
-    }
-    if (!found) return;
-    this.decode(window, bestKey, pose);
-    this.chooseAt(out, pose, bestVotes);
-    out.accepted = true;
-  }
-
   private prepareMemo(model: ModelConnectors, count: number): void {
     if (
       model === this.memoModel &&
@@ -435,62 +536,141 @@ export class PlacementSearch implements IPlacementSearch {
     this.turnedRegion.cells = NO_REGION;
   }
 
-  private coverProposals(model: ModelConnectors, window: PlacementWindow, count: number): void {
-    const held = window.firstTurn === 0;
-    const turned = window.turns - 1;
-    const nextRot = (window.rot + 1) % TURNS;
-    for (let attempt = 0; attempt < COVER_ATTEMPTS; attempt++) {
-      const lastAttempt = attempt === COVER_ATTEMPTS - 1;
-      if (
-        (!held || this.cover(model, window, count, this.heldRegion, window.rot, 1, lastAttempt)) &&
-        (turned <= 0 ||
-          this.cover(model, window, count, this.turnedRegion, nextRot, turned, lastAttempt))
-      ) {
-        return;
+  private coverStep(flight: Flight, deadlineMs: number): boolean {
+    for (;;) {
+      const held = flight.coverStage === COVER_HELD;
+      const turns = held ? 1 : flight.turns - 1;
+      if ((held && flight.firstTurn !== 0) || turns <= 0) {
+        if (!held) return true;
+        flight.coverStage = COVER_TURNED;
+        continue;
       }
-      this.memo.reset();
-      this.heldRegion.cells = NO_REGION;
-      this.turnedRegion.cells = NO_REGION;
+      const region = held ? this.heldRegion : this.turnedRegion;
+      const rot = held ? flight.rot : (flight.rot + 1) % TURNS;
+      const covered = this.coverRegion(flight, region, rot, turns, deadlineMs);
+      if (covered === COVER_RUNNING) return false;
+      if (covered === COVER_NO_ROOM) {
+        this.memo.reset();
+        this.heldRegion.cells = NO_REGION;
+        this.turnedRegion.cells = NO_REGION;
+        flight.coverAttempt++;
+        flight.coverStage = COVER_HELD;
+        continue;
+      }
+      if (!held) return true;
+      flight.coverStage = COVER_TURNED;
     }
   }
 
-  private cover(
-    model: ModelConnectors,
-    window: PlacementWindow,
-    count: number,
+  private coverRegion(
+    flight: Flight,
     region: RegionWindow,
     rot: number,
     turns: number,
-    regardlessOfRoom: boolean,
-  ): boolean {
-    if (
-      region.cells !== NO_REGION &&
-      region.rot === rot &&
-      region.turns >= turns &&
-      Math.abs(window.x - region.x) + window.cells * STUD_LDU <= region.cells * STUD_LDU &&
-      Math.abs(window.z - region.z) + window.cells * STUD_LDU <= region.cells * STUD_LDU &&
-      Math.abs(window.yPlates - region.yPlates) + window.plates <= region.plates
-    ) {
-      return true;
+    deadlineMs: number,
+  ): number {
+    const proposing = this.proposing;
+    if (!flight.covering) {
+      if (
+        region.cells !== NO_REGION &&
+        region.rot === rot &&
+        region.turns >= turns &&
+        Math.abs(flight.x - region.x) + flight.cells * STUD_LDU <= region.cells * STUD_LDU &&
+        Math.abs(flight.z - region.z) + flight.cells * STUD_LDU <= region.cells * STUD_LDU &&
+        Math.abs(flight.yPlates - region.yPlates) + flight.plates <= region.plates
+      ) {
+        return COVER_DONE;
+      }
+      proposing.x = flight.x;
+      proposing.z = flight.z;
+      proposing.yPlates = flight.yPlates;
+      proposing.rot = rot;
+      proposing.turns = turns;
+      proposing.cells = flight.cells;
+      proposing.plates = flight.plates;
+      this.progress.restart();
+      flight.covering = true;
     }
-    region.x = window.x;
-    region.z = window.z;
-    region.yPlates = window.yPlates;
-    region.rot = rot;
-    region.turns = turns;
-    region.cells = window.cells;
-    region.plates = window.plates;
+    const model = flight.model;
+    if (!model) throw new Error("a placement search flight lost its held model");
     const proposals = this.proposals;
-    this.solver.proposeMates(model, region, proposals);
-    if (!regardlessOfRoom && !this.memo.roomFor(count + proposals.count)) return false;
+    while (
+      !this.solver.proposeMatesFrom(model, proposing, proposals, this.progress, PROPOSAL_SLOTS)
+    ) {
+      if (performance.now() >= deadlineMs) return COVER_RUNNING;
+    }
+    flight.covering = false;
+    const lastAttempt = flight.coverAttempt >= COVER_ATTEMPTS - 1;
+    if (!lastAttempt && !this.memo.roomFor(flight.keyCount + proposals.count)) return COVER_NO_ROOM;
+    region.copy(proposing);
     for (let q = 0; q < proposals.count; q++) {
       const x = proposals.x[q] ?? 0;
       const z = proposals.z[q] ?? 0;
-      if ((x - window.x) % STUD_LDU !== 0 || (z - window.z) % STUD_LDU !== 0) continue;
+      if ((x - flight.x) % STUD_LDU !== 0 || (z - flight.z) % STUD_LDU !== 0) continue;
       const slot = this.memo.slot(x, z, proposals.yPlates[q] ?? 0, proposals.rot[q] ?? 0);
       this.memo.proposed[slot] = 1;
     }
+    return COVER_DONE;
+  }
+
+  private walkStep(flight: Flight, deadlineMs: number): boolean {
+    const model = flight.model;
+    const volumes = flight.volumes;
+    const boxes = flight.boxes;
+    const technic = flight.technic;
+    const out = flight.out;
+    if (!model || !volumes || !boxes || !technic || !out) {
+      throw new Error("a placement search flight lost its held model");
+    }
+    const memo = this.memo;
+    const pose = this.pose;
+    let first = true;
+    while (flight.nextKey < flight.keyCount) {
+      if (!first && performance.now() >= deadlineMs) return false;
+      first = false;
+      const key = this.keys[flight.nextKey++] ?? 0;
+      const reach = this.decode(flight, key, pose);
+      if (flight.found && reach > flight.bestReach) {
+        flight.nextKey = flight.keyCount;
+        return true;
+      }
+      const slot = memo.slot(pose.x, pose.z, pose.yPlates, pose.rot);
+      if (memo.dense[slot] === UNKNOWN) this.countLevel(model, flight, pose.rot, pose.yPlates);
+      const dense = memo.dense[slot] ?? 0;
+      const proposed = memo.proposed[slot] === 1;
+      if (dense === 0 && !proposed) continue;
+      if (memo.verdict[slot] === 0) {
+        const blocked = this.blocked(model, volumes, boxes, technic, pose, proposed, true);
+        memo.verdict[slot] = blocked ? BLOCKED : FREE;
+      }
+      if (memo.verdict[slot] === BLOCKED) continue;
+      const votes = dense + this.proposalAt(model, pose, slot);
+      if (votes === 0) continue;
+      out.walked++;
+      this.solver.evaluate(model, pose, this.tieReport);
+      const joints = this.tieReport.jointCount;
+      if (
+        !flight.found ||
+        joints > flight.bestJoints ||
+        (joints === flight.bestJoints && votes > flight.bestVotes)
+      ) {
+        flight.found = true;
+        flight.bestKey = key;
+        flight.bestReach = reach;
+        flight.bestJoints = joints;
+        flight.bestVotes = votes;
+      }
+    }
     return true;
+  }
+
+  private finishWalk(flight: Flight): void {
+    const out = flight.out;
+    if (!flight.found || !out) return;
+    const pose = this.pose;
+    this.decode(flight, flight.bestKey, pose);
+    this.chooseAt(out, pose, flight.bestVotes);
+    out.accepted = true;
   }
 
   private proposalAt(model: ModelConnectors, pose: LatticePose, slot: number): number {
