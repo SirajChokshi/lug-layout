@@ -40,6 +40,8 @@ function closureText(drag: TrackDragView): string {
       return "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
     case "limit":
       return "the search hit its time limit before finding an exact join: release lays nothing";
+    case "pending":
+      return "a model under this join is still checking its studs: release lays nothing yet";
     case null:
       return drag.pieces === 0
         ? "drag away from the start"
@@ -97,6 +99,8 @@ function commitText(track: TrackView): string {
       return "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
+    case "refused-pending":
+      return "refused: a model under the join was still checking its studs";
     case "switch-straight":
       return "switch thrown to the straight route";
     case "switch-branching":
