@@ -1219,15 +1219,7 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist([
-    "unresolved",
-    "tooDeep",
-    "license",
-    "unofficial",
-    "noStudRing",
-    "malformed",
-    "tooLarge",
-  ]),
+  kind: v.picklist(["unresolved", "tooDeep", "unofficial", "noStudRing", "malformed", "tooLarge"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
@@ -1616,7 +1608,6 @@ export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex
 export const LibraryConnectorsPin = v.strictObject({
   index: LibraryConnectorsIndexRef,
   parts: Count,
-  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
   faces: v.strictObject({ connectivity: Count, connectors: Count }),
   partsWithPieces: Count,
@@ -1719,7 +1710,6 @@ export const LibraryBakePin = v.strictObject({
   parts: Count,
   records: Count,
   failed: Count,
-  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
 });
 export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 
