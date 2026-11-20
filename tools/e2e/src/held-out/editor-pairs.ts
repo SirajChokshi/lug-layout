@@ -12,13 +12,13 @@ import { collisions, translated, type Assembly, type AssemblyPart } from "./asse
 import type { ModulePair } from "./generator.ts";
 import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
 import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
+import type { AimedBackend } from "./headless-editor.ts";
 import {
   EDITOR_FIRST_SLICE_MS,
   FIRST_SLICE_READ_BUDGET,
   SLICE_CLOCK_STEP_MS,
-  type AimedBackend,
   type SliceClock,
-} from "./headless-editor.ts";
+} from "./slice-clock.ts";
 
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
