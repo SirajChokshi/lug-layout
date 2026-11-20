@@ -201,6 +201,7 @@ export {
 } from "./commands/editor-commands.ts";
 export {
   toolHints,
+  trackBlockText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -231,6 +232,7 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  TrackBlockView,
   TrackDragView,
   SwitchLeverView,
   TrackEndView,

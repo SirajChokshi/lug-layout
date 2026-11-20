@@ -89,6 +89,7 @@ import {
   TrackDrawing,
   type PieceSnap,
   type SwitchLeverView,
+  type TrackBlockView,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -101,7 +102,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { trackObstacleRects } from "./track-obstacles.ts";
+import { trackObstacles } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -265,6 +266,7 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
+  readonly lastBlock: TrackBlockView | null;
   readonly solve: TrackSolveStats | null;
 }
 
@@ -633,6 +635,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
   private placedTrains: ReadonlyArray<PlayModel> = [];
   private lastTrackCommit: TrackCommitResult | null = null;
+  private lastTrackBlock: TrackBlockView | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
@@ -985,6 +988,7 @@ export class Editor implements IEditor, IEditedWorld {
       held: this.heldView(track),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
+      lastBlock: this.lastTrackBlock,
       solve:
         samples.length === 0
           ? null
@@ -1083,8 +1087,10 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
-    track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
+    track.setObstacles(trackObstacles(this.placed.models(), track.verticalRange()));
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    this.lastTrackCommit = null;
+    this.lastTrackBlock = null;
     this.update({ track: this.trackView() });
     return true;
   }
@@ -1154,6 +1160,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    this.lastTrackBlock = commit.blocked;
     this.update({ track: this.trackView() });
   }
 

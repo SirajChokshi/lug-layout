@@ -4,22 +4,17 @@ import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
   NEAR_MISS_RADIUS_LDU,
-  NO_OBSTACLE,
-  TrackClearance,
+  KitOutlines,
+  StrokeRouter,
   drawingKit,
   endGaps,
   FOOTPRINT_FLOATS,
   freePlacement,
   layMoves,
-  runMoves,
-  solveClosure,
-  solveDrag,
   NO_END,
   TrackGraph,
   TrackLayout,
   footprintOutline,
-  type ClosureResult,
-  type ClosureSite,
   type DrawingKit,
   type EndGap,
   type TrackEnd,
@@ -43,8 +38,6 @@ import {
   posesJoin16,
   pose16,
   pose16Equals,
-  QUARTER_TURN_16,
-  zeta16,
   zeta16Direction,
   zeta16ToStuds,
   type Pose16,
@@ -54,17 +47,34 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
+import {
+  DragField,
+  TrackDrag,
+  type DragEnds,
+  type DragTargetView,
+  type TrackBlockView,
+  type TrackDragView,
+  type TrackPieceOutline,
+  type TrackRefusal,
+} from "./track-drag.ts";
+import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+
+export type {
+  ClosureState,
+  DragTargetView,
+  TrackBlockView,
+  TrackDragView,
+  TrackRefusal,
+} from "./track-drag.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
-const QUARTER_TURN_RADIANS = Math.PI / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
-const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
-const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const REFUSED_PIECE_LDRAW_COLOR = 4;
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -78,26 +88,21 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit";
-const OBSTACLE_RECT_FLOATS = 4;
-
-export interface TrackDragView {
-  readonly pieces: number;
-  readonly straights: number;
-  readonly curves: number;
-  readonly missStuds: number;
-  readonly closure: ClosureState;
-  readonly fromOpenEnd: boolean;
-  readonly solveMs: number;
-}
-
 export interface TrackCommit {
   readonly laid: number;
   readonly joined: boolean;
   readonly refusal: TrackRefusal | null;
+  readonly blocked: TrackBlockView | null;
   readonly chunks: ReadonlyArray<number>;
 }
+
+const NOTHING_LAID: TrackCommit = {
+  laid: 0,
+  joined: false,
+  refusal: null,
+  blocked: null,
+  chunks: [],
+};
 
 export interface TrackFootprint {
   readonly key: { readonly chunkKey: number; readonly slot: number };
@@ -155,31 +160,6 @@ export interface TrackGapView {
   readonly asideStuds: number;
   readonly headingErrorSteps: number;
   readonly headingErrorDegrees: number;
-}
-
-export interface DragTargetView {
-  readonly end: number;
-  readonly joins: boolean;
-}
-
-interface Drag {
-  readonly anchorX: number;
-  readonly anchorZ: number;
-  readonly fromEnd: number | null;
-  start: Pose16 | null;
-  previousKey: string | null;
-  moves: ReadonlyArray<TrackMove>;
-  closure: ClosureState;
-  goal: Pose16 | null;
-  missStuds: number;
-  target: number | null;
-  clearance: DragClearance | null;
-  readonly closures: Map<string, ClosureResult>;
-}
-
-interface DragClearance {
-  readonly field: TrackClearance;
-  readonly pieceIds: Int32Array;
 }
 
 interface Placed {
@@ -316,10 +296,12 @@ export class TrackDrawing {
   private ends: Pose16[] = [];
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
-  private obstacleRects: Float64Array = new Float64Array(0);
+  private obstacles: TrackObstacles = NO_TRACK_OBSTACLES;
   private gapList: ReadonlyArray<EndGap> = [];
   private footprints: ReadonlyArray<TrackFootprint> | null = null;
-  private drag: Drag | null = null;
+  private readonly router: StrokeRouter;
+  private readonly refusedColor: number;
+  private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
   private ghostColors = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -368,6 +350,16 @@ export class TrackDrawing {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
+    this.router = new StrokeRouter(
+      new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline),
+    );
+    this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
+  }
+
+  private placeablePiece(id: string): KitPart {
+    const part = this.byPieceId.get(id);
+    if (!part) throw new Error(`${id} is not a placeable track piece`);
+    return part;
   }
 
   kitParts(): ReadonlyArray<KitPart> {
@@ -496,29 +488,29 @@ export class TrackDrawing {
   }
 
   beginDrag(hitX: number, hitZ: number, latticeX: number, latticeZ: number): void {
-    const fromEnd = this.endNear(hitX, hitZ, null);
-    const end = fromEnd === null ? undefined : this.ends[fromEnd];
-    this.drag = {
-      anchorX: latticeX,
-      anchorZ: latticeZ,
-      fromEnd,
-      start: end ?? null,
-      previousKey: null,
-      moves: [],
-      closure: null,
-      goal: null,
-      missStuds: 0,
-      target: null,
-      clearance: null,
-      closures: new Map(),
+    const field = this.dragField();
+    const ends: DragEnds = {
+      near: (x, z, except) => this.endNear(x, z, except),
+      pose: (end) => {
+        const pose = this.ends[end];
+        if (!pose) throw new RangeError(`open end ${end} is out of range`);
+        return pose;
+      },
+      owner: (end) => field.pieceOwner(this.endOwners[end]),
     };
+    this.drag = new TrackDrag(
+      this.kit,
+      this.router,
+      field,
+      ends,
+      () => performance.now(),
+      { hitX, hitZ, latticeX, latticeZ },
+      this.endNear(hitX, hitZ, null),
+    );
   }
 
-  setObstacles(rects: Float64Array): void {
-    if (rects.length % OBSTACLE_RECT_FLOATS !== 0) {
-      throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
-    }
-    this.obstacleRects = rects;
+  setObstacles(obstacles: TrackObstacles): void {
+    this.obstacles = obstacles;
   }
 
   verticalRange(): readonly [number, number] {
@@ -531,155 +523,58 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private clearanceOf(drag: Drag): DragClearance {
-    if (drag.clearance) return drag.clearance;
-    const field = new TrackClearance();
-    const pieceIds = new Int32Array(this.layout.count).fill(NO_OBSTACLE);
+  private dragField(): DragField {
     const [, top] = this.verticalRange();
+    const pieces: Array<TrackPieceOutline | null> = [];
     for (let p = 0; p < this.layout.count; p++) {
-      if (this.layout.yPlates(p) * PLATE_LDU >= top) continue;
+      if (this.layout.yPlates(p) * PLATE_LDU >= top) {
+        pieces.push(null);
+        continue;
+      }
       const placed = this.placedAt(p);
-      pieceIds[p] = field.addPiece(placed.part.outline, placed.placement);
+      pieces.push({ outline: placed.part.outline, placement: placed.placement });
     }
-    const rects = this.obstacleRects;
-    for (let r = 0; r < rects.length; r += OBSTACLE_RECT_FLOATS) {
-      field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
-    }
-    drag.clearance = { field, pieceIds };
-    return drag.clearance;
-  }
-
-  private closureSite(drag: Drag, target: number): ClosureSite {
-    const { field, pieceIds } = this.clearanceOf(drag);
-    const owner = (end: number | null): number => {
-      const placement = end === null ? undefined : this.endOwners[end];
-      return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
-    };
-    return {
-      clearance: field,
-      outlineOf: (piece) => {
-        const part = this.byPieceId.get(piece.id);
-        if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
-        return part.outline;
-      },
-      startOwner: owner(drag.fromEnd),
-      goalOwner: owner(target),
-    };
-  }
-
-  private closure(drag: Drag, start: Pose16, target: number, goal: Pose16): ClosureResult {
-    const key = `${target}|${start.heading}|${start.position.join(",")}`;
-    const cached = drag.closures.get(key);
-    if (cached) return cached;
-    const result = solveClosure(
-      this.kit,
-      start,
-      goal,
-      { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
-      this.closureSite(drag, target),
-    );
-    drag.closures.set(key, result);
-    return result;
-  }
-
-  private newRunStart(drag: Drag, hitX: number, hitZ: number): Pose16 | null {
-    const dx = hitX - drag.anchorX;
-    const dz = hitZ - drag.anchorZ;
-    if (Math.hypot(dx, dz) < MIN_START_DRAG_LDU) return null;
-    const quarterTurns = Math.round(Math.atan2(dz, dx) / QUARTER_TURN_RADIANS);
-    const heading = normalizeHeading16(quarterTurns * QUARTER_TURN_16);
-    const position = zeta16([
-      BigInt(drag.anchorX / STUD_LDU),
-      0n,
-      0n,
-      0n,
-      BigInt(drag.anchorZ / STUD_LDU),
-      0n,
-      0n,
-      0n,
-    ]);
-    return pose16(position, heading);
+    return new DragField(pieces, this.obstacles);
   }
 
   moveDrag(hitX: number, hitZ: number): void {
     const drag = this.drag;
     if (!drag) return;
-    if (drag.fromEnd === null && drag.moves.length === 0) {
-      drag.start = this.newRunStart(drag, hitX, hitZ);
-    }
-    const start = drag.start;
-    if (!start) return;
     const began = performance.now();
-    const target = this.endNear(hitX, hitZ, drag.fromEnd);
-    const goal = target === null ? undefined : this.ends[target];
-    drag.target = target;
-    drag.goal = goal ?? null;
-    if (target !== null && goal) {
-      const result = this.closure(drag, start, target, goal);
-      drag.closure = result.kind;
-      drag.moves = result.kind === "exact" ? runMoves(this.kit, result.run) : [];
-      drag.missStuds = 0;
-      this.recordSolve(began);
-      return;
-    } else {
-      drag.closure = null;
-    }
-    const plan = solveDrag(
-      this.kit,
-      start,
-      { x: hitX / STUD_LDU, z: hitZ / STUD_LDU },
-      drag.previousKey,
-    );
-    drag.previousKey = plan.key;
-    drag.moves = runMoves(this.kit, plan);
-    drag.missStuds = plan.missStuds;
-    this.recordSolve(began);
-  }
-
-  private recordSolve(began: number): void {
+    drag.extend(hitX, hitZ);
     this.lastSolveMs = performance.now() - began;
     this.solveSamplesMs.push(this.lastSolveMs);
   }
 
   dragView(): TrackDragView | null {
-    const drag = this.drag;
-    if (!drag) return null;
-    const straights = drag.moves.filter((m) => m.turn === 0).length;
-    return {
-      pieces: drag.moves.length,
-      straights,
-      curves: drag.moves.length - straights,
-      missStuds: drag.missStuds,
-      closure: drag.closure,
-      fromOpenEnd: drag.fromEnd !== null,
-      solveMs: this.lastSolveMs,
-    };
+    return this.drag?.view(this.lastSolveMs) ?? null;
   }
 
   dragTarget(): DragTargetView | null {
-    const drag = this.drag;
-    if (!drag || drag.target === null) return null;
-    return { end: drag.target, joins: drag.closure === "exact" };
+    return this.drag?.targetView() ?? null;
   }
 
   ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
-    const drag = this.drag;
-    if (!drag?.start || drag.moves.length === 0) return null;
-    const { placed } = layMoves(drag.start, drag.moves);
+    const route = this.drag?.route();
+    const start = route?.start;
+    if (!route || !start) return null;
+    const moves = route.blockedMove ? [...route.moves, route.blockedMove] : route.moves;
+    if (moves.length === 0) return null;
+    const { placed } = layMoves(start, moves);
     const count = placed.length;
     this.growGhostScratch(count);
     const partIndex = this.ghostParts.subarray(0, count);
     const colorIndex = this.ghostColors.subarray(0, count);
     const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
-    const origin = zeta16ToStuds(drag.start.position);
+    const origin = zeta16ToStuds(start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = moves[i];
       if (!move) return;
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
-      colorIndex[i] = part.color;
+      colorIndex[i] = i < route.moves.length ? part.color : this.refusedColor;
       writeMatrix(matrices, i, piece.placement, part.piece.partFrame, part.yLdu, originX, originZ);
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
@@ -703,29 +598,26 @@ export class TrackDrawing {
   }
 
   endDrag(): TrackCommit {
-    const drag = this.drag;
+    const route = this.drag?.route();
     this.drag = null;
-    if (
-      drag?.closure === "impossible" ||
-      drag?.closure === "blocked" ||
-      drag?.closure === "limit"
-    ) {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+    if (!route) return NOTHING_LAID;
+    const { closure, blocked } = route;
+    if (closure === "impossible" || closure === "blocked" || closure === "limit") {
+      return { ...NOTHING_LAID, refusal: closure, blocked };
     }
-    if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, chunks: [] };
-    }
-    const { placed } = layMoves(drag.start, drag.moves);
+    if (!route.start || route.moves.length === 0) return { ...NOTHING_LAID, blocked };
+    const { placed } = layMoves(route.start, route.moves);
     const entries: Placed[] = [];
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = route.moves[i];
       if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
     });
     const chunks = this.commitPlaced(entries);
     return {
       laid: entries.length,
-      joined: drag.goal !== null && this.graphJoins(drag.goal),
+      joined: route.goal !== null && this.graphJoins(route.goal),
       refusal: null,
+      blocked,
       chunks,
     };
   }
@@ -815,7 +707,7 @@ export class TrackDrawing {
     const part = this.pieceByIndex(catalogIndex);
     const before = this.graph.joinCount;
     const chunks = this.commitPlaced([{ part, placement }]);
-    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+    return { ...NOTHING_LAID, laid: 1, joined: this.graph.joinCount > before, chunks };
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {

@@ -1,5 +1,5 @@
-import type { EditorSnapshot } from "../edit/editor.ts";
-import type { TrackDragView } from "../edit/track-drawing.ts";
+import type { EditorSnapshot, TrackView } from "../edit/editor.ts";
+import type { TrackBlockView, TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
@@ -35,6 +35,29 @@ function pieces(count: number): string {
   return `${count} ${count === 1 ? "piece" : "pieces"}`;
 }
 
+export function trackBlockText(block: TrackBlockView): string {
+  switch (block.kind) {
+    case "track":
+      return "cross the track laid there";
+    case "run":
+      return "cross this run";
+    case "model":
+      return block.unseated
+        ? `sit on ${block.label} where it has no studs`
+        : `run into ${block.label}`;
+    default: {
+      const unhandled: never = block;
+      throw new Error(`unhandled block ${String(unhandled)}`);
+    }
+  }
+}
+
+function blockedJoinText(block: TrackBlockView | null): string {
+  return block === null
+    ? "every exact join here is blocked"
+    : `every exact join here would ${trackBlockText(block)}`;
+}
+
 function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   const title = `Laying ${pieces(drag.pieces)}`;
   const refused = "Nothing to lay";
@@ -51,11 +74,18 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
       return {
         tone: "warn",
         title: refused,
-        detail: "every exact join here is blocked, so release lays nothing",
+        detail: `${blockedJoinText(drag.blocked)}, so release lays nothing`,
       };
     case "limit":
       return { tone: "warn", title: refused, detail: "the join search ran out of time here" };
     case null:
+      if (drag.blocked) {
+        return {
+          tone: "warn",
+          title,
+          detail: `stops short: the next piece would ${trackBlockText(drag.blocked)}`,
+        };
+      }
       return {
         tone: "track",
         title,
@@ -64,6 +94,34 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
     default: {
       const unhandled: never = drag.closure;
       throw new Error(`unhandled closure ${String(unhandled)}`);
+    }
+  }
+}
+
+function releaseView(track: TrackView): Omit<ToolHintView, "hints"> | null {
+  const block = track.lastBlock;
+  switch (track.lastCommit) {
+    case "refused-impossible":
+      return { tone: "warn", title: "Nothing laid", detail: "no exact join reaches that end" };
+    case "refused-blocked":
+      return { tone: "warn", title: "Nothing laid", detail: blockedJoinText(block) };
+    case "refused-limit":
+      return { tone: "warn", title: "Nothing laid", detail: "the join search ran out of time" };
+    case "laid":
+    case null:
+      if (block === null) return null;
+      return {
+        tone: "warn",
+        title: track.lastCommit === "laid" ? "Stopped short" : "Nothing laid",
+        detail: `the next piece would ${trackBlockText(block)}`,
+      };
+    case "joined":
+    case "switch-straight":
+    case "switch-branching":
+      return null;
+    default: {
+      const unhandled: never = track.lastCommit;
+      throw new Error(`unhandled commit ${String(unhandled)}`);
     }
   }
 }
@@ -91,11 +149,14 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     case "track": {
       const drag = snapshot.track?.drag ?? null;
       if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };
+      const hints = [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")];
+      const released = snapshot.track ? releaseView(snapshot.track) : null;
+      if (released) return { ...released, hints };
       return {
         tone: "track",
         title: "Drawing track",
         detail: "start on an open end to continue a line",
-        hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
+        hints,
       };
     }
     case "road": {
