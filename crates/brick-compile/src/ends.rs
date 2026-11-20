@@ -3,6 +3,7 @@ use crate::connect::{column, Connector, Shape};
 use crate::flatten::Triangle;
 use crate::identify::IDENTIFY_LDU;
 use crate::lattice::STUD_LDU;
+use crate::trig::planar_length;
 
 const FEMALE_REACH_LDU: f64 = STUD_LDU / 2.0;
 
@@ -84,7 +85,10 @@ fn blocking_part(points: &[Vec3; 3], end: &End) -> Option<Blocking> {
         return None;
     }
     let flat: Vec<[f64; 2]> = polygon.iter().map(|&(_, xy)| xy).collect();
-    let outermost = flat.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max);
+    let outermost = flat
+        .iter()
+        .map(|p| planar_length(p[0], p[1]))
+        .fold(0.0, f64::max);
     let innermost = distance_to_origin(&flat);
     let enters = outermost > end.radius + IDENTIFY_LDU && innermost <= FEMALE_REACH_LDU;
     enters.then(|| Blocking {
@@ -142,7 +146,7 @@ fn distance_to_origin(polygon: &[[f64; 2]]) -> f64 {
         } else {
             0.0
         };
-        nearest = nearest.min((a[0] + edge[0] * s).hypot(a[1] + edge[1] * s));
+        nearest = nearest.min(planar_length(a[0] + edge[0] * s, a[1] + edge[1] * s));
     }
     if inside && sign != 0.0 {
         0.0

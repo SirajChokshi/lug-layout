@@ -4,6 +4,7 @@ use std::f64::consts::TAU;
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::identify::{decimal_sixteenths, identifies, sixteenths, BeyondExactRange};
 use brick_compile::rolling::RollingSurface;
+use brick_compile::trig::{cos, sin};
 use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
 
 const STANDARD_FACETS: usize = 16;
@@ -24,7 +25,7 @@ impl Library for MemoryLibrary {
 fn band_along_y(x: f64, z: f64, from: f64, to: f64, radii: [f64; 2], facets: usize) -> String {
     let [from_radius, to_radius] = radii;
     let point =
-        |y: f64, radius: f64, angle: f64| [x + radius * angle.cos(), y, z + radius * angle.sin()];
+        |y: f64, radius: f64, angle: f64| [x + radius * cos(angle), y, z + radius * sin(angle)];
     (0..facets)
         .map(|k| {
             let angle = |index: usize| TAU * (index % facets) as f64 / facets as f64;
