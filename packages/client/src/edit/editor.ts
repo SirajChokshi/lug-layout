@@ -16,7 +16,6 @@ import {
   RoadNetwork,
   World,
   addShards,
-  modelTechnic,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
@@ -26,7 +25,6 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
   type ModelConnectors,
-  type TechnicSet,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -71,6 +69,7 @@ import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame
 import {
   colorOf,
   type CatalogItemView,
+  type CheckedStuds,
   type IPlaceableCatalog,
   type SkippedCatalogModel,
 } from "../catalog/placeable-catalog.ts";
@@ -83,6 +82,7 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
+import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
@@ -102,7 +102,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { trackObstacleRects } from "./track-obstacles.ts";
+import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -237,6 +237,7 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-blocked"
   | "refused-limit"
+  | "refused-pending"
   | "switch-straight"
   | "switch-branching";
 
@@ -279,13 +280,14 @@ export interface HoverView {
 export interface PlaceableCoverView {
   readonly id: string;
   readonly studsDrawnPerPlacement: number;
-  readonly studsCulledAtBake: number;
+  readonly studsPending: boolean;
+  readonly studsCulledAtBake: number | null;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
 }
 
-export type ModelImportStatus = "importing" | "placeable" | "refused";
+export type ModelImportStatus = "importing" | "checking" | "placeable" | "check-failed" | "refused";
 
 export interface ModelImportView {
   readonly file: string;
@@ -335,6 +337,7 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
+  readonly studChecks: number;
 }
 
 export interface EditorCredits {
@@ -374,6 +377,7 @@ export interface EditorDump {
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
   readonly studs: StudTotals;
+  readonly studChecks: number;
 }
 
 export interface EditorOptions {
@@ -416,7 +420,7 @@ interface Connected {
   readonly model: ModelConnectors;
   readonly volumes: FrozenVolumes;
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -601,6 +605,7 @@ export class Editor implements IEditor, IEditedWorld {
     lastRoadStroke: null,
     roadErase: false,
     modelImport: null,
+    studChecks: 0,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -628,6 +633,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly searchIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
   private readonly connected = new Map<Placeable, Connected>();
+  private readonly studChecks = new Set<Placeable>();
   private nextSearchId = 1;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
@@ -779,19 +785,118 @@ export class Editor implements IEditor, IEditedWorld {
     } as const;
     this.update({ modelImport: importing });
     const outcome = await this.catalog.addImported(file);
-    const reported = { ...importing, report: outcome.report, studio: outcome.studio };
-    if (outcome.item === null) {
-      this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
-      return null;
+    switch (outcome.kind) {
+      case "refused": {
+        const reported = { ...importing, report: outcome.report, studio: outcome.studio };
+        this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
+        return null;
+      }
+      case "placeable": {
+        const reported = { ...importing, report: outcome.report, studio: outcome.studio };
+        this.addImportedItem(outcome.item, outcome.credit, {
+          ...reported,
+          status: "placeable",
+          item: outcome.item.id,
+        });
+        return outcome.item.id;
+      }
+      case "checking": {
+        this.studChecks.add(outcome.pending);
+        this.addImportedItem(outcome.item, outcome.credit, {
+          ...importing,
+          status: "checking",
+          item: outcome.item.id,
+        });
+        void outcome.checked.then((checked) => this.studsChecked(outcome.pending, checked));
+        return outcome.item.id;
+      }
+      default: {
+        const unhandled: never = outcome;
+        throw new Error(`unhandled import outcome ${String(unhandled)}`);
+      }
     }
-    this.catalogItems = [...this.catalogItems, outcome.item];
+  }
+
+  private addImportedItem(
+    item: CatalogItemView,
+    credit: ModelCredit,
+    modelImport: ModelImportView,
+  ): void {
+    this.catalogItems = [...this.catalogItems, item];
     const credits = this.state.credits;
     this.update({
-      catalog: [...this.state.catalog, outcome.item],
-      modelImport: { ...reported, status: "placeable", item: outcome.item.id },
-      ...(credits ? { credits: { ...credits, models: [...credits.models, outcome.credit] } } : {}),
+      catalog: [...this.state.catalog, item],
+      modelImport,
+      studChecks: this.studChecks.size,
+      ...(credits ? { credits: { ...credits, models: [...credits.models, credit] } } : {}),
     });
-    return outcome.item.id;
+  }
+
+  private studsChecked(pending: Placeable, checked: CheckedStuds): void {
+    this.studChecks.delete(pending);
+    const current = this.state.modelImport;
+    const ours = current !== null && current.item === pending.id;
+    switch (checked.kind) {
+      case "checked": {
+        this.studsLanded(pending, checked.placeable);
+        if (ours) {
+          const { report, studio } = checked;
+          this.update({ modelImport: { ...current, status: "placeable", report, studio } });
+        }
+        break;
+      }
+      case "failed": {
+        if (ours) {
+          const { report, studio } = checked;
+          const reason = `stud check failed: ${checked.failure}`;
+          this.update({
+            modelImport: { ...current, status: "check-failed", reason, report, studio },
+          });
+        }
+        break;
+      }
+      default: {
+        const unhandled: never = checked;
+        throw new Error(`unhandled stud check ${String(unhandled)}`);
+      }
+    }
+    this.update({
+      studChecks: this.studChecks.size,
+      studs: this.placed.studTotals(),
+      hover: this.hoverView(),
+    });
+  }
+
+  private studsLanded(pending: Placeable, checked: Placeable): void {
+    const connected = this.connected.get(pending);
+    if (connected) this.connected.set(checked, connected);
+    const track = this.modelTrack.get(pending);
+    if (track) this.modelTrack.set(checked, track);
+    const view = this.placed.replacePlaceable(pending, checked);
+    view.removed.forEach((model, index) => {
+      this.unsearchable(model);
+      const replaced = view.added[index];
+      if (!replaced) return;
+      this.searchable(replaced);
+      if (this.selected === model) this.selected = replaced;
+    });
+    this.refreshRoads();
+    this.syncModelTrack();
+    this.refreshTrains();
+    this.placeGhost();
+    this.syncPlan();
+    const drawing = this.track;
+    if (drawing?.dragView()) {
+      this.setTrackObstacles(drawing);
+      drawing.moveDrag(this.hitX, this.hitZ);
+      this.update({ track: this.trackView() });
+    }
+  }
+
+  private setTrackObstacles(drawing: TrackDrawing): void {
+    const models = this.placed.models();
+    const range = drawing.verticalRange();
+    drawing.setObstacles(trackObstacleRects(models, range), seatsPending(models, range));
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
@@ -1084,7 +1189,7 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
-    track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
+    this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.update({ track: this.trackView() });
     return true;
@@ -2050,7 +2155,7 @@ export class Editor implements IEditor, IEditedWorld {
         ),
         volumes: FrozenVolumes.ofPlaceable(placeable),
         boxes,
-        technic: modelTechnic(
+        technic: FrozenTechnic.ofParts(
           parts.map((part) => part.technic),
           placeable.partTransforms,
           boxes.boxes,
@@ -2254,7 +2359,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   playSetup(): PlaySetup | null {
     const track = this.track;
-    if (!track) return null;
+    if (!track || this.studChecks.size > 0) return null;
     return {
       track: track.playTrack(),
       models: this.placedTrains,
@@ -2279,6 +2384,7 @@ export class Editor implements IEditor, IEditedWorld {
       covers: this.loadedPlaceables().map((p) => ({
         id: p.id,
         studsDrawnPerPlacement: p.studs.count,
+        studsPending: p.studsPending,
         studsCulledAtBake: p.bakedCoveredStuds,
         footprintCells: p.cells.footprintCells,
         flatCells: p.cells.flatCells,
@@ -2313,6 +2419,7 @@ export class Editor implements IEditor, IEditedWorld {
       })),
       roads: this.roadReport,
       studs: this.placed.studTotals(),
+      studChecks: this.studChecks.size,
     };
   }
 }

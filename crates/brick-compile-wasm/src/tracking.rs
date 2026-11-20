@@ -33,6 +33,10 @@ impl TrackingLibrary {
         self.absent.extend(absent);
     }
 
+    pub fn key(&self) -> &str {
+        &self.key
+    }
+
     pub fn take_requested(&self) -> Vec<String> {
         std::mem::take(&mut *self.requested.borrow_mut())
             .into_iter()

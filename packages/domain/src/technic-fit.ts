@@ -19,17 +19,34 @@ const WAIVER_TO = 4;
 
 export interface TechnicSet {
   readonly count: number;
-  readonly itemOfInstance: Int32Array;
-  readonly kind: Uint8Array;
+  readonly itemOfInstance: ArrayLike<number>;
+  readonly kind: ArrayLike<number>;
+  readonly box: ArrayLike<number>;
+  readonly featureStart: ArrayLike<number>;
+  readonly axis: ArrayLike<number>;
+  readonly atU: ArrayLike<number>;
+  readonly atV: ArrayLike<number>;
+  readonly from: ArrayLike<number>;
+  readonly bins: ArrayLike<number>;
+  readonly radiusStart: ArrayLike<number>;
+  readonly radii: ArrayLike<number>;
+}
+
+export interface PosedTechnic extends TechnicSet {
   readonly box: Float64Array;
-  readonly featureStart: Int32Array;
   readonly axis: Uint8Array;
   readonly atU: Int32Array;
   readonly atV: Int32Array;
   readonly from: Int32Array;
+  readonly radii: Int32Array;
+}
+
+export interface TechnicColumns extends PosedTechnic {
+  readonly itemOfInstance: Int32Array;
+  readonly kind: Uint8Array;
+  readonly featureStart: Int32Array;
   readonly bins: Int32Array;
   readonly radiusStart: Int32Array;
-  readonly radii: Int32Array;
 }
 
 export function firstOtherAxis(axis: number): number {
@@ -84,7 +101,7 @@ class SignedPermutation {
     return true;
   }
 
-  turnBox(from: Float64Array, at: number, out: Float64Array): void {
+  turnBox(from: ArrayLike<number>, at: number, out: Float64Array): void {
     for (let row = 0; row < AXES; row++) {
       const axis = this.sourceOf(row);
       const sign = this.linear[row * AXES + axis] ?? 0;
@@ -96,7 +113,7 @@ class SignedPermutation {
     }
   }
 
-  turnFeature(from: TechnicSet, f: number, out: TechnicSet): void {
+  turnFeature(from: TechnicSet, f: number, out: PosedTechnic): void {
     const axis = from.axis[f] ?? 0;
     const atU = from.atU[f] ?? 0;
     const atV = from.atV[f] ?? 0;
@@ -162,7 +179,7 @@ function profileBins(technic: PartTechnic): number {
 }
 
 function writeFeature(
-  set: TechnicSet,
+  set: TechnicColumns,
   f: number,
   r: number,
   axis: number,
@@ -183,7 +200,7 @@ export function modelTechnic(
   parts: ReadonlyArray<PartTechnic | null>,
   instances: PartInstances,
   boxes: ArrayLike<number>,
-): TechnicSet {
+): TechnicColumns {
   const turn = new SignedPermutation();
   const itemOfInstance = new Int32Array(instances.count).fill(NO_TECHNIC_ITEM);
   let items = 0;
@@ -196,7 +213,7 @@ export function modelTechnic(
     features += profiles(technic);
     bins += profileBins(technic);
   }
-  const set: TechnicSet = {
+  const set: TechnicColumns = {
     count: items,
     itemOfInstance,
     kind: new Uint8Array(items),
@@ -240,7 +257,7 @@ export function modelTechnic(
   return set;
 }
 
-export function technicScratch(local: TechnicSet): TechnicSet {
+export function technicScratch(local: TechnicSet): PosedTechnic {
   return {
     count: local.count,
     itemOfInstance: local.itemOfInstance,
@@ -259,10 +276,53 @@ export function technicScratch(local: TechnicSet): TechnicSet {
 
 const placement = new SignedPermutation();
 
-export function placeTechnicInto(local: TechnicSet, pose: LatticePose, out: TechnicSet): void {
+export function placeTechnicInto(local: TechnicSet, pose: LatticePose, out: PosedTechnic): void {
   const turn = placement.quarterTurn(pose);
   for (let i = 0; i < local.count; i++) turn.turnBox(local.box, i * TECHNIC_BOX_FLOATS, out.box);
   for (let f = 0; f < local.axis.length; f++) turn.turnFeature(local, f, out);
+}
+
+const NONE: ArrayLike<number> = new Int32Array(0);
+
+export class PosedTechnicBuffer implements PosedTechnic {
+  count = 0;
+  itemOfInstance = NONE;
+  kind = NONE;
+  featureStart = NONE;
+  bins = NONE;
+  radiusStart = NONE;
+  box = new Float64Array(0);
+  axis = new Uint8Array(0);
+  atU = new Int32Array(0);
+  atV = new Int32Array(0);
+  from = new Int32Array(0);
+  radii = new Int32Array(0);
+
+  placeItem(local: TechnicSet, item: number, pose: LatticePose): this {
+    this.reserve(local);
+    this.count = local.count;
+    this.itemOfInstance = local.itemOfInstance;
+    this.kind = local.kind;
+    this.featureStart = local.featureStart;
+    this.bins = local.bins;
+    this.radiusStart = local.radiusStart;
+    const turn = placement.quarterTurn(pose);
+    turn.turnBox(local.box, item * TECHNIC_BOX_FLOATS, this.box);
+    const end = local.featureStart[item + 1] ?? 0;
+    for (let f = local.featureStart[item] ?? 0; f < end; f++) turn.turnFeature(local, f, this);
+    return this;
+  }
+
+  private reserve(local: TechnicSet): void {
+    if (this.box.length < local.box.length) this.box = new Float64Array(local.box.length);
+    if (this.axis.length < local.axis.length) {
+      this.axis = new Uint8Array(local.axis.length);
+      this.atU = new Int32Array(local.axis.length);
+      this.atV = new Int32Array(local.axis.length);
+      this.from = new Int32Array(local.axis.length);
+    }
+    if (this.radii.length < local.radii.length) this.radii = new Int32Array(local.radii.length);
+  }
 }
 
 function boxesOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number): boolean {
@@ -386,9 +446,9 @@ function shaftFits(
 }
 
 export function technicItemsOverlap(
-  a: TechnicSet,
+  a: PosedTechnic,
   ai: number,
-  b: TechnicSet,
+  b: PosedTechnic,
   bi: number,
   waivers: Int32Array,
   waiverCount: number,

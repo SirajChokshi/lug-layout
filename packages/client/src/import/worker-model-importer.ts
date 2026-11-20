@@ -1,6 +1,6 @@
 import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
-import type { ImportInput, ImportJob, ImportResult } from "@brr/import";
+import type { ImportInput, ImportJob, ImportResult, PlacementListener } from "@brr/import";
 import { inject, injectable } from "inversify";
 import {
   IMPORT_WORKER_POOL,
@@ -11,8 +11,18 @@ import {
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
 
 export interface IModelImporter {
-  importText(fileName: string, text: string, lod?: BundleLod): Promise<ImportResult>;
-  importStudio(fileName: string, bytes: Uint8Array, lod?: BundleLod): Promise<ImportResult>;
+  importText(
+    fileName: string,
+    text: string,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult>;
+  importStudio(
+    fileName: string,
+    bytes: Uint8Array,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult>;
 }
 
 @injectable()
@@ -30,20 +40,24 @@ export class WorkerModelImporter implements IModelImporter {
     fileName: string,
     text: string,
     lod: BundleLod = "standard",
+    onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
-    return this.request(lod, { kind: "ldraw", job: { ...(await this.job(fileName, lod)), text } });
+    const job = { ...(await this.job(fileName, lod)), text };
+    return this.request(lod, { kind: "ldraw", job }, [], onPlaced);
   }
 
   async importStudio(
     fileName: string,
     bytes: Uint8Array,
     lod: BundleLod = "standard",
+    onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
     const [job, bricklinkParts] = await Promise.all([
       this.job(fileName, lod),
       this.loader.loadBricklinkParts(lod),
     ]);
-    return this.request(lod, { kind: "studio", job, bytes, bricklinkParts }, [bytes.buffer]);
+    const input = { kind: "studio", job, bytes, bricklinkParts } as const;
+    return this.request(lod, input, [bytes.buffer], onPlaced);
   }
 
   private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {
@@ -68,7 +82,8 @@ export class WorkerModelImporter implements IModelImporter {
   private async request(
     lod: BundleLod,
     input: ImportInput,
-    transfer: Transferable[] = [],
+    transfer: Transferable[],
+    onPlaced: PlacementListener | undefined,
   ): Promise<ImportResult> {
     const context = await this.loader.importContext(lod);
     const bundleBase = new URL(this.bundleBaseUrl.replace(/\/?$/u, "/"));
@@ -93,6 +108,7 @@ export class WorkerModelImporter implements IModelImporter {
         input,
       },
       transfer,
+      onPlaced,
     );
   }
 }

@@ -25,7 +25,8 @@ interface ThreadRoots {
   readonly libraryConnectors: string;
 }
 
-function startThread(roots: ThreadRoots): Promise<Worker> {
+function startThread(roots: ThreadRoots, started: (ms: number) => void): Promise<Worker> {
+  const starting = performance.now();
   const worker = new Worker(IMPORT_THREAD, {
     argv: [roots.bundle, roots.ldrawCache, roots.records, roots.libraryConnectors],
     execArgv: THREAD_NODE_OPTIONS,
@@ -35,6 +36,7 @@ function startThread(roots: ThreadRoots): Promise<Worker> {
     worker.once("error", reject);
     worker.once("message", () => {
       worker.off("error", reject);
+      started(performance.now() - starting);
       resolve(worker);
     });
   });
@@ -62,9 +64,11 @@ function settledReply(worker: Worker, limitSeconds: number): Promise<Settled> {
 
 export function importsWithinLimit(roots: ThreadRoots, limitSeconds: number) {
   let thread: Promise<Worker> | null = null;
+  const threadStartsMs: number[] = [];
   return {
+    threadStartsMs: (): ReadonlyArray<number> => threadStartsMs,
     async run(input: HeldOutInput): Promise<{ outcome: LimitedOutcome; seconds: number }> {
-      thread ??= startThread(roots);
+      thread ??= startThread(roots, (ms) => threadStartsMs.push(ms));
       const worker = await thread;
       const started = performance.now();
       worker.postMessage(input, []);

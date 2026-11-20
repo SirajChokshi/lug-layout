@@ -3,10 +3,10 @@ use std::f64::consts::PI;
 use crate::affine::Vec3;
 use crate::bands::coaxial_radius;
 use crate::flatten::{ReferenceSpan, Triangle};
-use crate::sixteenths;
+use crate::identify::{identifies, sixteenth, IDENTIFY_LDU};
 use crate::technic::is_circular_primitive;
+use crate::trig::{cos, sin};
 
-const IDENTIFY_LDU: f64 = 0.0005;
 const DIRECTIONS: usize = 64;
 const ARMS: usize = 4;
 
@@ -110,7 +110,7 @@ fn wall_radii(
                 let on_wall = triangles[index]
                     .points
                     .iter()
-                    .all(|&p| (radial(p, axis) - radius).abs() <= IDENTIFY_LDU);
+                    .all(|&p| identifies(radial(p, axis) - radius));
                 if on_wall {
                     walls[index] = Some(radius);
                 }
@@ -130,7 +130,7 @@ fn free_radii(
     (0..DIRECTIONS)
         .map(|k| {
             let angle = 2.0 * PI * k as f64 / DIRECTIONS as f64;
-            let ray = [0, 1, 2].map(|i| e1[i] * angle.cos() + e2[i] * angle.sin());
+            let ray = [0, 1, 2].map(|i| e1[i] * cos(angle) + e2[i] * sin(angle));
             triangles
                 .iter()
                 .zip(walls)
@@ -151,9 +151,7 @@ fn locks(free: &[f64], tip: f64) -> bool {
 }
 
 fn identified(value: f64) -> Result<f64, BoreError> {
-    sixteenths::identified(value)
-        .map(|steps| f64::from(steps) / f64::from(sixteenths::PER_LDU))
-        .ok_or(BoreError::Unidentified)
+    sixteenth(value).ok_or(BoreError::Unidentified)
 }
 
 pub fn bore_sections(
@@ -171,7 +169,7 @@ pub fn bore_sections(
         .chain([axis.from, axis.to])
         .collect();
     depths.sort_by(f64::total_cmp);
-    depths.dedup_by(|a, b| (*a - *b).abs() <= IDENTIFY_LDU);
+    depths.dedup_by(|a, b| identifies(*a - *b));
     let mut sections: Vec<BoreSection> = Vec::new();
     for pair in depths.windows(2) {
         let centre = along(axis.point, axis.direction, (pair[0] + pair[1]) / 2.0);
