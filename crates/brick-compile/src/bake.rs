@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use crate::affine::{Affine, Vec3};
 use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::cover::{
-    model_cover, AxisSpan, CellsTooLarge, CoverInstance, CoverShard, ModelCover, ModelTooLarge,
-    Opacity, PartSolid, StudShape,
+    model_cover_with, AxisSpan, CellsTooLarge, CoverInstance, CoverModel, CoverShard, ModelCover,
+    ModelTooLarge, Opacity, PartSolid, ProbeCache, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
 use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice, StudPose};
@@ -67,14 +68,14 @@ impl std::fmt::Display for PartSpan {
     }
 }
 
-pub type RecordShelf = HashMap<String, BakeRecord>;
+pub type RecordShelf = HashMap<String, Arc<BakeRecord>>;
 
-enum PartSource<'a> {
+enum PartSource {
     Compiled(Box<CompiledPart>),
-    Recorded(&'a BakeRecord),
+    Recorded(Arc<BakeRecord>),
 }
 
-impl PartSource<'_> {
+impl PartSource {
     fn mesh(&self) -> &Mesh {
         match self {
             PartSource::Compiled(part) => &part.mesh,
@@ -181,10 +182,43 @@ pub struct ModelBaker<'a, L: Library> {
     opacity: Opacity,
     index: HashMap<String, usize>,
     records: Option<&'a RecordShelf>,
-    sources: Vec<PartSource<'a>>,
+    sources: Vec<PartSource>,
     solids: Vec<PartSolid>,
     studs: Vec<Vec<Affine>>,
+    probes: ProbeCache,
     table_depth: f64,
+}
+
+pub struct KeptParts {
+    options: CompileOptions,
+    stud_shape: StudShape,
+    translucent: HashSet<u32>,
+    opacity: Opacity,
+    index: HashMap<String, usize>,
+    sources: Vec<PartSource>,
+    solids: Vec<PartSolid>,
+    studs: Vec<Vec<Affine>>,
+    probes: ProbeCache,
+    table_depth: f64,
+}
+
+impl KeptParts {
+    pub fn part_count(&self) -> usize {
+        self.sources.len()
+    }
+
+    pub fn serves(
+        &self,
+        stud_primitives: &[String],
+        unofficial_allowlist: &[String],
+        translucent: &HashSet<u32>,
+        table_depth: f64,
+    ) -> bool {
+        self.options.stud_primitives == stud_primitives
+            && self.options.unofficial_allowlist == unofficial_allowlist
+            && &self.translucent == translucent
+            && self.table_depth.to_bits() == table_depth.to_bits()
+    }
 }
 
 impl<'a, L: Library> ModelBaker<'a, L> {
@@ -214,6 +248,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             sources: Vec::new(),
             solids: Vec::new(),
             studs: Vec::new(),
+            probes: ProbeCache::default(),
             table_depth,
         })
     }
@@ -221,6 +256,63 @@ impl<'a, L: Library> ModelBaker<'a, L> {
     pub fn with_records(mut self, records: &'a RecordShelf) -> Self {
         self.records = Some(records);
         self
+    }
+
+    pub fn resume(library: &'a L, kept: KeptParts) -> Self {
+        let KeptParts {
+            options,
+            stud_shape,
+            translucent,
+            opacity,
+            index,
+            sources,
+            solids,
+            studs,
+            probes,
+            table_depth,
+        } = kept;
+        ModelBaker {
+            library,
+            options,
+            stud_shape,
+            translucent,
+            opacity,
+            index,
+            records: None,
+            sources,
+            solids,
+            studs,
+            probes,
+            table_depth,
+        }
+    }
+
+    pub fn keep(self) -> KeptParts {
+        let ModelBaker {
+            options,
+            stud_shape,
+            translucent,
+            opacity,
+            index,
+            sources,
+            solids,
+            studs,
+            probes,
+            table_depth,
+            ..
+        } = self;
+        KeptParts {
+            options,
+            stud_shape,
+            translucent,
+            opacity,
+            index,
+            sources,
+            solids,
+            studs,
+            probes,
+            table_depth,
+        }
     }
 
     fn slot(&mut self, reference: &str) -> Result<usize, BakeError> {
@@ -234,7 +326,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
                     error,
                 })?;
                 self.solids.push(solid);
-                PartSource::Recorded(record)
+                PartSource::Recorded(Arc::clone(record))
             }
             None => {
                 let compiled = compile_part(self.library, reference, &self.options)?;
@@ -318,14 +410,18 @@ impl<'a, L: Library> ModelBaker<'a, L> {
                 studs: &self.studs[slot],
             })
             .collect();
-        model_cover(
-            &instances,
-            &self.solids,
-            &self.opacity,
+        let model = CoverModel {
+            instances: &instances,
+            solids: &self.solids,
+            opacity: &self.opacity,
+            stud: self.stud_shape,
+        };
+        model_cover_with(
+            &model,
             lattice.map(|lattice| (lattice.phase, lattice.phase_layer_y)),
-            self.stud_shape,
             shard,
             self.table_depth,
+            &mut self.probes,
         )
         .map_err(|ModelTooLarge { cells, x, z }| BakeError::Cover {
             cells,
@@ -343,7 +439,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         let recorded = self
             .index
             .iter()
-            .filter_map(|(reference, &slot)| match self.sources[slot] {
+            .filter_map(|(reference, &slot)| match &self.sources[slot] {
                 PartSource::Recorded(record) => Some((reference.clone(), record.whole_bounds)),
                 PartSource::Compiled(_) => None,
             })

@@ -1,7 +1,7 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
 import type { PinnedRecords } from "./library-bake-store.ts";
-import type { ImportResult, ImportJob, ModelBake } from "./model-import.ts";
+import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
 
 export interface LdrawTextInput {
   readonly kind: "ldraw";
@@ -24,6 +24,7 @@ export interface LibraryBakeSource {
 
 export interface ImportWorkerRequest {
   readonly kind: "import";
+  readonly ticket: number;
   readonly compilerUrl: string;
   readonly bundleBaseUrl: string;
   readonly connectorIndexes: ConnectorIndexPaths;
@@ -36,6 +37,12 @@ export interface ImportWorkerRequest {
 export type ImportWorkerResponse =
   | { readonly kind: "imported"; readonly model: ImportResult }
   | { readonly kind: "failed"; readonly message: string };
+
+export interface ImportWorkerPlaced {
+  readonly kind: "placed";
+  readonly ticket: number;
+  readonly placed: PlacedImport;
+}
 
 export function bakeTransferables(bake: ModelBake): Transferable[] {
   return [

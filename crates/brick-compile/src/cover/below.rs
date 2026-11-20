@@ -7,6 +7,7 @@ use super::{
     BELOW_ELEVATION_STEP_DEGREES, BELOW_HEIGHT_STEPS, BELOW_REACH_LDU, BELOW_START_OUTSIDE,
 };
 use crate::affine::Vec3;
+use crate::trig::sincos;
 
 const FLOAT_ERROR_BOUND_LDU: f64 = 1e-6;
 const SAME_POSE_BOUND_LDU: f64 = 1e-9;
@@ -440,11 +441,7 @@ pub(super) struct BelowCertifier<'m, 'a> {
 impl<'m, 'a> BelowCertifier<'m, 'a> {
     pub fn new(model: &'m ModelSolids<'a>, shape: StudShape) -> Self {
         let slopes = (1..=BELOW_ELEVATION_STEPS)
-            .map(|step| {
-                (-BELOW_ELEVATION_STEP_DEGREES * step as f64)
-                    .to_radians()
-                    .sin_cos()
-            })
+            .map(|step| sincos((-BELOW_ELEVATION_STEP_DEGREES * step as f64).to_radians()))
             .collect();
         BelowCertifier {
             model,
@@ -985,7 +982,7 @@ mod tests {
 
     fn tube(radius: f64, depth: f64) -> PartSolid {
         let corner = |k: usize, y: f64| {
-            let (sin, cos) = (std::f64::consts::TAU * k as f64 / TUBE_SIDES as f64).sin_cos();
+            let (sin, cos) = sincos(std::f64::consts::TAU * k as f64 / TUBE_SIDES as f64);
             [radius * cos, y, radius * sin]
         };
         let mut t = Vec::new();
@@ -1302,10 +1299,9 @@ mod tests {
         let (low, middle, high) = (0, BELOW_ELEVATION_STEPS / 2, BELOW_ELEVATION_STEPS - 1);
         let opacity = Opacity::new([CLEAR]);
         let tilt = |y: f64| {
-            let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * (middle + 1) as f64)
-                .to_radians()
-                .sin_cos();
-            let turn = (-(rise.atan2(run) + std::f64::consts::FRAC_PI_2)).sin_cos();
+            let (rise, run) =
+                sincos((-BELOW_ELEVATION_STEP_DEGREES * (middle + 1) as f64).to_radians());
+            let turn = sincos(-(crate::trig::atan2(rise, run) + std::f64::consts::FRAC_PI_2));
             Affine {
                 m: [
                     turn.1, -turn.0, 0.0, 0.0, turn.0, turn.1, 0.0, y, 0.0, 0.0, 1.0, 0.0,

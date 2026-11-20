@@ -929,6 +929,7 @@ export const CompilerRequest = v.variant("op", [
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
+    keepParts: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -1060,10 +1061,22 @@ export const CompilerVehicle = v.object({
 });
 export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 
+const Duration = v.pipe(Finite, v.minValue(0));
+
+export const CompilerBakePhases = v.object({
+  decodeMs: Duration,
+  compileMs: Duration,
+  latticeMs: Duration,
+  coverMs: Duration,
+  vehiclesMs: Duration,
+});
+export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
   recordedParts: Count,
+  resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1076,6 +1089,7 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
