@@ -5783,6 +5783,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.heldTrackModels = [];
     this.search.clear();
     this.searchIds.clear();
+    this.awaitingIds.clear();
     this.searchModels.clear();
     this.unsupportedLaid = NO_IDS;
     this.unsupportedCarriers = NO_IDS;

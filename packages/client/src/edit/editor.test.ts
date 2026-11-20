@@ -6122,6 +6122,21 @@ it.each([
   240_000,
 );
 
+it("leaves nothing of a world it switched away from while that world's plates read their connector tables: their arrival places no ghost to collide with", async () => {
+  const gate = roadPlatesReading();
+  const { editor, backend } = await streamingEditor({ models: [], tier: null, fetcher: gate });
+  strokeRoad(editor, backend);
+  expect(posesOf(editor)).toHaveLength(3);
+  await vi.waitFor(() => expect(gate.held).toBeGreaterThan(0));
+  expect(await editor.newWorld("Second")).toBe(true);
+  gate.open();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const [x, z] = OVER_THE_ROAD;
+  expect((await placer(editor, backend)(BASEPLATE, x, z)).placements).toBe(1);
+  expect(posesOf(editor)).toEqual([`${BASEPLATE} ${x},${z} y0`]);
+}, 120_000);
+
 type PendingNeighbourCommit = (editor: IEditor, backend: AimedBackend) => Promise<void>;
 
 const BESIDE_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
