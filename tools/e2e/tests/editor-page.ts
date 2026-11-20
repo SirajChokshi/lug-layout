@@ -108,6 +108,22 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface CrossingRamp {
+  readonly part: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly studMates: number;
+}
+
+export interface LevelCrossing {
+  readonly tracks: ReadonlyArray<number>;
+  readonly roads: ReadonlyArray<number>;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRamp>;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
@@ -115,6 +131,7 @@ interface EditState {
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
     readonly studChecks: number;
+    readonly crossings: ReadonlyArray<LevelCrossing>;
   };
 }
 
@@ -492,6 +509,14 @@ export class EditorPage {
         rot: column(placements.rot, i),
       }))
       .toSorted(byPosition);
+  }
+
+  async crossings(): Promise<ReadonlyArray<LevelCrossing>> {
+    return (await this.editState()).world.crossings;
+  }
+
+  async trackRefusal(): Promise<string> {
+    return (await this.page.locator("section.track-panel .track-refusal").textContent()) ?? "";
   }
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {

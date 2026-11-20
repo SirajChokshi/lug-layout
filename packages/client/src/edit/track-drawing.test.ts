@@ -37,7 +37,13 @@ import {
   type TrackEndView,
   type TrackFootprint,
 } from "./track-drawing.ts";
-import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
+import {
+  NO_TRACK_PARTS,
+  RECT_FLOATS,
+  seatsPending,
+  trackObstacles,
+  type TrackObstacles,
+} from "./track-obstacles.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const MM_PER_LDU = 1 / lduFromMm(1);
@@ -45,6 +51,19 @@ const SHRINK_MM = 2;
 const RENDER_FLOAT_LDU = 1e-3;
 const SWEEP_TIMEOUT_MS = 60_000;
 const CLOSURE_SEARCH_TIMEOUT_MS = 30_000;
+
+function solidOnly(rects: ReadonlyArray<number>): TrackObstacles {
+  const count = rects.length / RECT_FLOATS;
+  return {
+    solid: {
+      rects: Float64Array.from(rects),
+      owner: new Int32Array(count),
+      part: new Int32Array(count),
+    },
+    studless: new Float64Array(0),
+    seatsPending: false,
+  };
+}
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -654,7 +673,7 @@ it("routes a closure around a road plate in its way with no extra loop", async (
     { kind: "straight", count: 4 },
   ]);
   const plate = plateRect(bundle.parts, "ldraw:69958", -40, 40);
-  layout.setObstacles(Float64Array.from(plate), false);
+  layout.setObstacles(solidOnly(plate));
   const top = endAt(layout, 0, 80);
   const bottom = endAt(layout, 0, 0);
   const fewest = unobstructedFewest(layout, top, bottom);
@@ -676,7 +695,7 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
-  layout.setObstacles(Float64Array.from(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)), false);
+  layout.setObstacles(solidOnly(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)));
   const before = layout.pieceCount;
 
   const { view, target, ghost, commit } = closeFrom(
@@ -838,7 +857,7 @@ it("closes straights flush along a road plate's edge", async () => {
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, centreOffset),
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, -centreOffset),
   ];
-  layout.setObstacles(Float64Array.from(plates.flat()), false);
+  layout.setObstacles(solidOnly(plates.flat()));
 
   closesWithFewest(layout, endAt(layout, straightStuds, 0), endAt(layout, gapEnd, 0));
   expect(crossings(layout, bundle.parts, plates)).toEqual([]);
@@ -899,7 +918,7 @@ it(
       }
       if (!rect) throw new Error(`no clear plate position at step ${step}`);
       const layout = base();
-      layout.setObstacles(Float64Array.from(rect), false);
+      layout.setObstacles(solidOnly(rect));
       closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
       expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
     }
@@ -968,7 +987,10 @@ async function trackOver(
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const range = layout.verticalRange();
-  layout.setObstacles(trackObstacleRects(ground, range), pendingSeats(range));
+  layout.setObstacles({
+    ...trackObstacles(ground, range, () => NO_TRACK_PARTS),
+    seatsPending: pendingSeats(range),
+  });
   return layout;
 }
 

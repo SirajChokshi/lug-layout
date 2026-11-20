@@ -2179,3 +2179,145 @@ describe("frame loop in the editor's snapshot", () => {
     });
   }, 120_000);
 });
+
+const TRACK = "track:lego-9v";
+const ROAD_STRAIGHT = "ldraw:44336p04@72";
+const RAISED_ROAD = "ldraw:69958@72";
+const USER_BRICK = "brick-2x4";
+const USER_TRACK = "switch-then-reversed-curve";
+const DRAG_STEP_LDU = 40;
+const QUARTER_TURN_STEPS = 4;
+const REACH_LDU = 400;
+
+type PlanPoint = readonly [number, number];
+
+function trackDrawer(editor: IEditor, backend: HeadlessBackend) {
+  return (from: PlanPoint, to: PlanPoint) => {
+    editor.chooseItem(TRACK);
+    backend.aim(from[0], from[1]);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    const steps = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / DRAG_STEP_LDU);
+    for (let step = 1; step <= steps; step++) {
+      backend.aim(
+        from[0] + ((to[0] - from[0]) * step) / steps,
+        from[1] + ((to[1] - from[1]) * step) / steps,
+      );
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+    editor.chooseItem(null);
+    const { track, refusedClicks } = editor.snapshot();
+    return {
+      pieces: track?.pieces ?? 0,
+      lastCommit: track?.lastCommit ?? null,
+      refusal: track?.refusal ?? null,
+      refusedClicks,
+    };
+  };
+}
+
+it("finds a crossing where track covers a road plate's roadway and seats ramps on its studs, and a raised plate refuses track in either order", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+
+  place(ROAD_STRAIGHT, 0, 0);
+  const across = draw([-480, 0], [480, 0]);
+  const [crossing, ...others] = editor.dump().crossings;
+  expect(across).toMatchObject({ lastCommit: "laid", refusal: null });
+  expect(others).toEqual([]);
+  expect(crossing?.ramps.length).toBeGreaterThan(0);
+  for (const ramp of crossing?.ramps ?? []) expect(ramp.studMates).toBeGreaterThan(0);
+
+  place(RAISED_ROAD, 0, 1600);
+  const through = draw([-480, 1600], [480, 1600]);
+  expect(through).toMatchObject({
+    pieces: across.pieces,
+    lastCommit: "refused-collision",
+    refusal: expect.stringContaining("69958"),
+    refusedClicks: 1,
+  });
+
+  editor.setSnapRoads(false);
+  const onto = place(RAISED_ROAD, -500, 0);
+  expect(onto).toMatchObject({
+    placements: 2,
+    refusedClicks: 2,
+    reason: expect.stringContaining("would run into Train Track"),
+  });
+}, 120_000);
+
+it("refuses a run through a user's brick model or across track it doesn't join, names what it hits, and lays a run that joins an open end", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_BRICK,
+  ]);
+  const brick = `omr:${USER_BRICK}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+  place(brick, 0, 0);
+
+  const throughBrick = draw([-480, 0], [480, 0]);
+  const beside = draw([-480, 400], [480, 400]);
+  const acrossTrack = draw([-200, 100], [-200, 700]);
+  const fromOpenEnd = draw([480, 400], [800, 400]);
+  const brickOntoTrack = place(brick, 0, 400);
+
+  expect(throughBrick).toMatchObject({
+    pieces: 0,
+    lastCommit: "refused-collision",
+    refusal: expect.stringMatching(/would run into 3001 of /u),
+  });
+  expect(beside).toMatchObject({ lastCommit: "laid", refusal: null });
+  expect(acrossTrack).toMatchObject({
+    pieces: beside.pieces,
+    lastCommit: "refused-collision",
+    refusal: expect.stringMatching(/would cross Train Track .* #\d+, which it doesn't join/u),
+  });
+  expect(fromOpenEnd.pieces).toBeGreaterThan(beside.pieces);
+  expect(fromOpenEnd).toMatchObject({ lastCommit: "laid", refusal: null });
+  expect(brickOntoTrack).toMatchObject({
+    placements: 1,
+    reason: expect.stringMatching(/its 3001 would run into Train Track .* #\d+/u),
+  });
+}, 120_000);
+
+function outward(end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number }) {
+  const radians = (end.heading * Math.PI) / (2 * QUARTER_TURN_STEPS);
+  return [
+    end.xLdu + REACH_LDU * Math.cos(radians),
+    end.zLdu + REACH_LDU * Math.sin(radians),
+  ] as const;
+}
+
+it("lets a run join the open end of a user's track model and refuses one that crosses its track", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
+  const container = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, container);
+  placer(editor, backend)(container, 0, 0);
+  const draw = trackDrawer(editor, backend);
+  const end = editor
+    .dump()
+    .trackEnds.find(
+      (open) =>
+        open.heading % QUARTER_TURN_STEPS === 0 &&
+        Number.isInteger(open.xLdu / 20) &&
+        Number.isInteger(open.zLdu / 20),
+    );
+  if (!end) throw new Error(`${USER_TRACK} has no open end on the stud grid facing a quarter turn`);
+
+  const joined = draw([end.xLdu, end.zLdu], outward(end));
+  const crossing = draw([-160, -600], [-160, 400]);
+
+  expect(joined).toMatchObject({ pieces: 1, lastCommit: "laid", refusal: null });
+  expect(crossing).toMatchObject({
+    pieces: 1,
+    lastCommit: "refused-collision",
+    refusal: expect.stringMatching(
+      new RegExp(`would cross the Train Track .* in ${USER_TRACK}, which it doesn't join`, "u"),
+    ),
+  });
+}, 120_000);

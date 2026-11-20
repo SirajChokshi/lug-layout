@@ -55,6 +55,9 @@ export type {
 } from "./edit/editor-frame-loop.ts";
 export type {
   CatalogPartView,
+  CrossingDump,
+  CrossingRampView,
+  CrossingView,
   EditAction,
   EditorCredits,
   EditorDump,

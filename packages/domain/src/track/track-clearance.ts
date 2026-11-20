@@ -175,6 +175,8 @@ export function boxesOverlap(
 
 export const NO_OBSTACLE = -1;
 
+export type ClearanceExcuse = (obstacle: number) => boolean;
+
 export class TrackClearance {
   private readonly outlines: Float64Array[] = [];
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
@@ -182,6 +184,10 @@ export class TrackClearance {
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
   private visit = new Uint32Array(64);
   private generation = 0;
+  private exceptA = NO_OBSTACLE;
+  private exceptB = NO_OBSTACLE;
+  private readonly excusedPair: ClearanceExcuse = (obstacle) =>
+    obstacle === this.exceptA || obstacle === this.exceptB;
 
   add(outline: Float64Array): number {
     const id = this.outlines.length;
@@ -205,11 +211,6 @@ export class TrackClearance {
     return id;
   }
 
-  addPiece(outline: Float64Array, placement: Pose16): number {
-    const at = poseLdu(placement);
-    return this.add(rotateOutline(outline, placement.heading, at.x, at.z));
-  }
-
   addRect(minX: number, minZ: number, maxX: number, maxZ: number): number {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
   }
@@ -223,24 +224,43 @@ export class TrackClearance {
     exceptA: number,
     exceptB: number,
   ): boolean {
+    this.exceptA = exceptA;
+    this.exceptB = exceptB;
+    return this.firstBlocker(outline, box, boxAt, x, z, this.excusedPair) !== NO_OBSTACLE;
+  }
+
+  firstBlocker(
+    outline: Float64Array,
+    box: Float64Array,
+    boxAt: number,
+    x: number,
+    z: number,
+    excused: ClearanceExcuse,
+  ): number {
     this.generation++;
     if (this.generation === 0xffffffff) {
       this.visit.fill(0);
       this.generation = 1;
     }
     const generation = this.generation;
-    return this.forCells(box, boxAt, x, z, (key) => {
+    let blocker = NO_OBSTACLE;
+    this.forCells(box, boxAt, x, z, (key) => {
       const members = this.cells.get(key);
       if (!members) return false;
       for (const id of members) {
-        if (id === exceptA || id === exceptB || this.visit[id] === generation) continue;
+        if (this.visit[id] === generation) continue;
         this.visit[id] = generation;
+        if (excused(id)) continue;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
-        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) return true;
+        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) {
+          blocker = id;
+          return true;
+        }
       }
       return false;
     });
+    return blocker;
   }
 
   private forCells(

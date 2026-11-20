@@ -88,8 +88,10 @@ import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
   TrackDrawing,
+  type ModelTrackBlocker,
   type PieceSnap,
   type SwitchLeverView,
+  type TrackBlocker,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -102,7 +104,16 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
+import {
+  NO_TRACK_PARTS,
+  modelSolidRects,
+  solidRects,
+  trackObstacles,
+  type TrackObstacles,
+  type TrackPartsOf,
+} from "./track-obstacles.ts";
+import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
+import { OBSTACLE_PART, type Obstacle, type ObstacleExcuse } from "./track-collision.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -238,6 +249,7 @@ export type TrackCommitResult =
   | "refused-blocked"
   | "refused-limit"
   | "refused-pending"
+  | "refused-collision"
   | "switch-straight"
   | "switch-branching";
 
@@ -250,6 +262,18 @@ export interface TrackPieceView {
   readonly connector: number;
   readonly connectors: number;
   readonly mirror: string | null;
+}
+
+export interface CrossingRampView {
+  readonly part: string;
+  readonly title: string;
+  readonly count: number;
+}
+
+export interface CrossingView {
+  readonly tracks: number;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRampView>;
 }
 
 export interface TrackView {
@@ -267,6 +291,8 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
+  readonly refusal: string | null;
+  readonly crossings: ReadonlyArray<CrossingView>;
   readonly solve: TrackSolveStats | null;
 }
 
@@ -366,6 +392,22 @@ export interface ModelBakeView {
   };
 }
 
+export interface RampDump {
+  readonly part: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly studMates: number;
+}
+
+export interface CrossingDump {
+  readonly tracks: ReadonlyArray<number>;
+  readonly roads: ReadonlyArray<number>;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<RampDump>;
+}
+
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly chunkCounts: ReadonlyArray<readonly [number, number, number]>;
@@ -376,6 +418,7 @@ export interface EditorDump {
   readonly placements: PlacementDump;
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
+  readonly crossings: ReadonlyArray<CrossingDump>;
   readonly studs: StudTotals;
   readonly studChecks: number;
 }
@@ -424,6 +467,14 @@ interface Connected {
 }
 
 const EDITOR_LOD: BundleLod = "standard";
+const NOTHING_OWNED: ObstacleExcuse = () => false;
+const LDRAW_ID_PREFIX = "ldraw:";
+const DRAWN_AS_TRACK = 1;
+const ROOM_FOR_TRACK = "Track only goes where the bricks leave room for it.";
+
+function partName(id: string): string {
+  return id.startsWith(LDRAW_ID_PREFIX) ? id.slice(LDRAW_ID_PREFIX.length) : id;
+}
 export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
@@ -640,6 +691,13 @@ export class Editor implements IEditor, IEditedWorld {
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
   private placedTrains: ReadonlyArray<PlayModel> = [];
   private lastTrackCommit: TrackCommitResult | null = null;
+  private trackRefusal: string | null = null;
+  private crossingRamps: CrossingRamps | null = null;
+  private crossings: ReadonlyArray<SuggestedCrossing> = [];
+  private rampChunks: ReadonlyArray<number> = [];
+  private heldTrackOwners: ReadonlyArray<PlacedModel> = [];
+  private readonly drawnTrackParts = new Map<Placeable, Uint8Array>();
+  private readonly trackPartsOf: TrackPartsOf = (model) => this.drawnTrackPartsOf(model.placeable);
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
@@ -705,6 +763,11 @@ export class Editor implements IEditor, IEditedWorld {
       this.trackCatalog = index.trackCatalog;
       this.newTrack = () => new TrackDrawing(index, this.catalog.parts(), this.catalog.colors());
       this.track = this.newTrack();
+      this.crossingRamps = new CrossingRamps(
+        index.levelCrossing,
+        this.catalog.parts(),
+        this.catalog.colors(),
+      );
       const parts = this.catalog.parts();
       const trackItems = [
         this.trackItem(this.track, parts),
@@ -884,19 +947,12 @@ export class Editor implements IEditor, IEditedWorld {
     this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
-    this.syncPlan();
+    this.layoutChanged();
     const drawing = this.track;
     if (drawing?.dragView()) {
-      this.setTrackObstacles(drawing);
       drawing.moveDrag(this.hitX, this.hitZ);
       this.update({ track: this.trackView() });
     }
-  }
-
-  private setTrackObstacles(drawing: TrackDrawing): void {
-    const models = this.placed.models();
-    const range = drawing.verticalRange();
-    drawing.setObstacles(trackObstacleRects(models, range), seatsPending(models, range));
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
@@ -948,6 +1004,166 @@ export class Editor implements IEditor, IEditedWorld {
       ...this.placed.models().map((model) => this.planEntry(model)),
       ...(this.track?.planFootprints() ?? []),
     ]);
+  }
+
+  private layoutChanged(): void {
+    const track = this.track;
+    if (track) track.setObstacles(this.trackObstaclesFor(track));
+    this.syncPlan();
+    this.syncCrossings();
+  }
+
+  private syncCrossings(): void {
+    const track = this.track;
+    const ramps = this.crossingRamps;
+    if (!track || !ramps) return;
+    const models = this.placed.models();
+    this.crossings = ramps.suggest(this.roadPlacements(), track.crossingPieces(), models, (band) =>
+      track.runFrameFieldWith(modelSolidRects(models, band, this.trackPartsOf).rects),
+    );
+    const chunks = ramps.instances(this.crossings);
+    for (const key of this.rampChunks) if (!chunks.has(key)) this.backend.deleteChunk(key);
+    for (const [key, chunk] of chunks) {
+      this.catalog.requestMeshes(new Set(chunk.partIndex));
+      this.backend.setChunk(key, chunk);
+    }
+    this.rampChunks = [...chunks.keys()];
+  }
+
+  private crossingView({ crossing, ramps }: SuggestedCrossing): CrossingView {
+    const parts = this.catalog.parts();
+    const counts = new Map<string, number>();
+    for (const ramp of ramps) counts.set(ramp.part, (counts.get(ramp.part) ?? 0) + 1);
+    return {
+      tracks: crossing.tracks.length,
+      roadwayCells: crossing.roadwayCells,
+      ramps: [...counts].map(([part, count]) => ({
+        part: partName(part),
+        title: parts.find((asset) => asset.id === part)?.title ?? part,
+        count,
+      })),
+    };
+  }
+
+  private drawnTrackPartsOf(placeable: Placeable): Uint8Array {
+    const known = this.drawnTrackParts.get(placeable);
+    if (known) return known;
+    const track = this.trackOf(placeable);
+    const drawing = this.track;
+    if (!track || !drawing) return NO_TRACK_PARTS;
+    const mask = new Uint8Array(placeable.parts.count);
+    for (const piece of [...track.pieces, ...track.runs.flatMap((run) => run.pieces)]) {
+      if (drawing.drawsOutlineOf(piece.catalogIndex)) mask[piece.instance] = DRAWN_AS_TRACK;
+    }
+    this.drawnTrackParts.set(placeable, mask);
+    return mask;
+  }
+
+  private trackObstaclesFor(track: TrackDrawing): TrackObstacles {
+    return trackObstacles(this.placed.models(), track.verticalRange(), this.trackPartsOf);
+  }
+
+  private partIdOf(placeable: Placeable, instance: number): string {
+    const part = this.catalog.parts()[placeable.parts.partIndex[instance] ?? -1];
+    return partName(part?.id ?? "?");
+  }
+
+  private trackPieceLabel(track: TrackDrawing, placement: number): string {
+    const title = track.pieceTitle(placement);
+    if (track.isDrawn(placement)) return `${title} #${placement + 1}`;
+    const owner = this.heldTrackOwners[placement - track.pieceCount];
+    return owner ? `the ${title} in ${owner.placeable.label}` : title;
+  }
+
+  private obstacleLabel(track: TrackDrawing, obstacle: Obstacle): string {
+    switch (obstacle.kind) {
+      case "part": {
+        const solid = track.solidObstacles();
+        const model = this.placed.models()[solid.owner[obstacle.rect] ?? -1];
+        if (!model) return "a placed part";
+        const part = this.partIdOf(model.placeable, solid.part[obstacle.rect] ?? -1);
+        return `${part} of ${model.placeable.label}`;
+      }
+      case "track":
+        return this.trackPieceLabel(track, obstacle.placement);
+      default: {
+        const unhandled: never = obstacle;
+        throw new Error(`unhandled obstacle ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private trackBlockerReason(track: TrackDrawing, { title, hits }: TrackBlocker): string {
+    switch (hits.kind) {
+      case "part":
+        return `${title} would run into ${this.obstacleLabel(track, hits)}. ${ROOM_FOR_TRACK}`;
+      case "track":
+        return `${title} would cross ${this.trackPieceLabel(track, hits.placement)}, which it doesn't join.`;
+      case "self":
+        return `${title} would cross piece ${hits.piece + 1} of the same run.`;
+      default: {
+        const unhandled: never = hits;
+        throw new Error(`unhandled track blocker ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private ownedBy(track: TrackDrawing, model: PlacedModel | null): ObstacleExcuse {
+    if (!model) return NOTHING_OWNED;
+    const index = this.placed.models().indexOf(model);
+    const solid = track.solidObstacles();
+    return (kind, ref) =>
+      kind === OBSTACLE_PART
+        ? solid.owner[ref] === index
+        : !track.isDrawn(ref) && this.heldTrackOwners[ref - track.pieceCount] === model;
+  }
+
+  private modelTrackRefusal(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+    ignore: PlacedModel | null,
+  ): string | null {
+    const track = this.track;
+    if (!track) return null;
+    const mask = this.drawnTrackPartsOf(placeable);
+    const rects = solidRects(
+      this.placed.posedPartBoxes(placeable, x, z, rot, yPlates),
+      track.verticalRange(),
+      mask,
+    );
+    const blocker: ModelTrackBlocker | null = track.modelBlocker(
+      rects,
+      this.heldTrackAt(placeable, x, z, rot, yPlates),
+      this.ownedBy(track, ignore),
+    );
+    if (!blocker) return null;
+    const part = this.partIdOf(placeable, blocker.part);
+    return `${placeable.label}: its ${part} would run into ${this.obstacleLabel(track, blocker.hits)}. ${ROOM_FOR_TRACK}`;
+  }
+
+  private heldTrackAt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+  ): ReadonlyArray<FramedTrackPiece> {
+    const track = this.trackOf(placeable);
+    const frame = latticeFrame(x, z, rot);
+    if (!track || !frame) return [];
+    return [
+      ...heldPieces(track, frame, yPlates),
+      ...heldRuns(track, frame, yPlates, WORLD_TRACK_FRAME.id + 1),
+    ];
+  }
+
+  private refuseTrack(reason: string): void {
+    this.lastTrackCommit = "refused-collision";
+    this.trackRefusal = reason;
+    this.update({ refusedClicks: this.state.refusedClicks + 1, track: this.trackView() });
   }
 
   cycleTier(): void {
@@ -1091,6 +1307,8 @@ export class Editor implements IEditor, IEditedWorld {
       held: this.heldView(track),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
+      refusal: this.trackRefusal,
+      crossings: this.crossings.map((crossing) => this.crossingView(crossing)),
       solve:
         samples.length === 0
           ? null
@@ -1189,7 +1407,6 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
-    this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.update({ track: this.trackView() });
     return true;
@@ -1224,6 +1441,14 @@ export class Editor implements IEditor, IEditedWorld {
     const hit = this.groundHit(ndcX, ndcY);
     if (hit) track.moveDrag(this.hitX, this.hitZ);
     const stayed = (track.dragView()?.pieces ?? 0) === 0;
+    const blocker = stayed ? null : track.dragBlocker();
+    if (blocker) {
+      track.cancelDrag();
+      this.backend.setGhost(null);
+      this.showTrackEnds(null);
+      this.refuseTrack(this.trackBlockerReason(track, blocker));
+      return;
+    }
     const commit = track.endDrag();
     if (hit && stayed && this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) {
       this.backend.setGhost(null);
@@ -1255,8 +1480,9 @@ export class Editor implements IEditor, IEditedWorld {
       });
     }
     if (commit.laid > 0) {
-      this.syncPlan();
+      this.layoutChanged();
       this.session.trackEdited();
+      this.trackRefusal = null;
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
     else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
@@ -1436,6 +1662,11 @@ export class Editor implements IEditor, IEditedWorld {
     const held = this.held;
     const snap = held?.snap;
     if (!track || !held || !snap) return;
+    const blocker = track.pieceBlocker(held.catalogIndex, snap.placement);
+    if (blocker) {
+      this.refuseTrack(this.trackBlockerReason(track, blocker));
+      return;
+    }
     const commit = track.placePiece(held.catalogIndex, snap.placement);
     const report = this.rebuildTrackChunks(track, commit.chunks);
     this.timeEdit({
@@ -1449,9 +1680,10 @@ export class Editor implements IEditor, IEditedWorld {
       rebuiltMs: performance.now(),
       report,
     });
-    this.syncPlan();
+    this.layoutChanged();
     this.session.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    this.trackRefusal = null;
     this.held = { ...held, snap: null };
     this.showTrackEnds(null);
     this.showHeldPiece();
@@ -1490,7 +1722,7 @@ export class Editor implements IEditor, IEditedWorld {
       rebuiltMs: performance.now(),
       report,
     });
-    this.syncPlan();
+    this.layoutChanged();
     this.session.trackEdited();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
@@ -1725,8 +1957,10 @@ export class Editor implements IEditor, IEditedWorld {
     ignore: PlacedModel | null,
   ): string | null {
     const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
-    if (!overlap) return null;
-    return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
+    if (overlap) {
+      return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
+    }
+    return this.modelTrackRefusal(placeable, x, z, rot, yPlates, ignore);
   }
 
   private labelOf(id: string): string {
@@ -1803,7 +2037,7 @@ export class Editor implements IEditor, IEditedWorld {
       studs: this.placed.studTotals(),
       history: this.historyView(),
     });
-    this.syncPlan();
+    this.layoutChanged();
     return view;
   }
 
@@ -2239,18 +2473,22 @@ export class Editor implements IEditor, IEditedWorld {
     if (unchanged) return;
     this.heldTrackModels = carrying;
     const held: FramedTrackPiece[] = [];
+    const owners: PlacedModel[] = [];
     let nextRunFrame = WORLD_TRACK_FRAME.id + 1;
     for (const model of carrying) {
       const track = this.trackOf(model.placeable);
       const { x, z, yPlates, rot } = model.handle;
       const frame = latticeFrame(x, z, rot);
       if (!track || !frame) continue;
-      held.push(
+      const pieces = [
         ...heldPieces(track, frame, yPlates),
         ...heldRuns(track, frame, yPlates, nextRunFrame),
-      );
+      ];
+      held.push(...pieces);
+      for (let i = 0; i < pieces.length; i++) owners.push(model);
       nextRunFrame += track.runs.length;
     }
+    this.heldTrackOwners = owners;
     drawing.syncHeld(held);
     this.showTrackEnds(null);
     this.update({ track: this.trackView() });
@@ -2275,7 +2513,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.refreshRoads();
     this.syncModelTrack();
     this.refreshTrains();
-    this.syncPlan();
+    this.layoutChanged();
     return [];
   }
 
@@ -2418,6 +2656,19 @@ export class Editor implements IEditor, IEditedWorld {
         rot: model.handle.rot,
       })),
       roads: this.roadReport,
+      crossings: this.crossings.map(({ crossing, trackPlacements, ramps }) => ({
+        tracks: trackPlacements,
+        roads: crossing.roads,
+        roadwayCells: crossing.roadwayCells,
+        ramps: ramps.map(({ part, x, y, z, rot, studMates }) => ({
+          part,
+          x,
+          y,
+          z,
+          rot,
+          studMates,
+        })),
+      })),
       studs: this.placed.studTotals(),
       studChecks: this.studChecks.size,
     };

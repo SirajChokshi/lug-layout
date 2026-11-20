@@ -5,6 +5,8 @@ import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@b
 import {
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
+  OUTLINE_BOX_FLOATS,
+  PlacedOutline,
   TrackClearance,
   drawingKit,
   endGaps,
@@ -18,10 +20,14 @@ import {
   TrackGraph,
   TrackLayout,
   footprintOutline,
+  outlineBox,
+  rotateOutline,
+  type ClearanceExcuse,
   type ClosureResult,
   type ClosureSite,
   type DrawingKit,
   type EndGap,
+  type OutlineRing,
   type TrackEnd,
   type TrackFrame,
   type TrackMove,
@@ -55,6 +61,21 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import {
+  NO_TRACK_OBSTACLES,
+  RECT_FLOATS,
+  type SolidRects,
+  type TrackObstacles,
+} from "./track-obstacles.ts";
+import {
+  OBSTACLE_TRACK,
+  RECT_OUTLINE_FLOATS,
+  TrackCollisionField,
+  rectOutlineInto,
+  type Obstacle,
+  type ObstacleExcuse,
+  type PlacedTrackOutline,
+} from "./track-collision.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -69,6 +90,7 @@ const GHOST_SCRATCH_PIECES = 64;
 export interface KitPart {
   readonly footprints: Float64Array;
   readonly outline: Float64Array;
+  readonly planOutline: ReadonlyArray<OutlineRing>;
   readonly meshY: readonly [number, number];
   readonly catalogIndex: number;
   readonly piece: TrackPiece;
@@ -80,7 +102,23 @@ export interface KitPart {
 
 export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
 export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
-const OBSTACLE_RECT_FLOATS = 4;
+
+export interface TrackBlocker {
+  readonly title: string;
+  readonly hits: Obstacle | { readonly kind: "self"; readonly piece: number };
+}
+
+export interface ModelTrackBlocker {
+  readonly part: number;
+  readonly hits: Obstacle;
+}
+
+export interface PlacedTrackPiece {
+  readonly placement: number;
+  readonly outline: PlacedOutline;
+  readonly bedLdu: number;
+  readonly system: string;
+}
 
 export interface TrackDragView {
   readonly pieces: number;
@@ -173,13 +211,7 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
-  clearance: DragClearance | null;
   readonly closures: Map<string, ClosureResult>;
-}
-
-interface DragClearance {
-  readonly field: TrackClearance;
-  readonly pieceIds: Int32Array;
 }
 
 interface Placed {
@@ -301,6 +333,16 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
+function placedOutline(part: KitPart, placement: Pose16, frame: TrackFrame): Float64Array {
+  const studs = zeta16ToStuds(placement.position);
+  return rotateOutline(
+    part.outline,
+    placement.heading,
+    studs.x * STUD_LDU + frame.xLdu,
+    studs.z * STUD_LDU + frame.zLdu,
+  );
+}
+
 export class TrackDrawing {
   readonly kit: DrawingKit;
   private readonly byDef = new Map<string, KitPart>();
@@ -316,8 +358,12 @@ export class TrackDrawing {
   private ends: Pose16[] = [];
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
-  private obstacleRects: Float64Array = new Float64Array(0);
-  private seatsPending = false;
+  private obstacles: TrackObstacles = NO_TRACK_OBSTACLES;
+  private collision: TrackCollisionField | null = null;
+  private studlessTops: TrackClearance | null = null;
+  private readonly crossingOutlines = new Map<number, PlacedOutline>();
+  private readonly outlineBoxScratch = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly rectOutlineScratch = new Float64Array(RECT_OUTLINE_FLOATS);
   private gapList: ReadonlyArray<EndGap> = [];
   private footprints: ReadonlyArray<TrackFootprint> | null = null;
   private drag: Drag | null = null;
@@ -352,6 +398,7 @@ export class TrackDrawing {
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
         outline: footprintOutline(shape, piece.partFrame),
+        planOutline: shape.outline,
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -510,22 +557,28 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
-      clearance: null,
       closures: new Map(),
     };
   }
 
-  setObstacles(rects: Float64Array, seatsPending: boolean): void {
-    if (rects.length % OBSTACLE_RECT_FLOATS !== 0) {
-      throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
+  setObstacles(obstacles: TrackObstacles): void {
+    for (const rects of [obstacles.solid.rects, obstacles.studless]) {
+      if (rects.length % RECT_FLOATS !== 0) {
+        throw new RangeError(`obstacle rects come in ${RECT_FLOATS} floats each`);
+      }
     }
-    this.obstacleRects = rects;
-    this.seatsPending = seatsPending;
-    const drag = this.drag;
-    if (drag) {
-      drag.clearance = null;
-      drag.closures.clear();
-    }
+    this.obstacles = obstacles;
+    this.collision = null;
+    this.studlessTops = null;
+    this.drag?.closures.clear();
+  }
+
+  solidObstacles(): SolidRects {
+    return this.obstacles.solid;
+  }
+
+  drawsOutlineOf(catalogIndex: number): boolean {
+    return this.byCatalogIndex.has(catalogIndex);
   }
 
   verticalRange(): readonly [number, number] {
@@ -538,32 +591,55 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private clearanceOf(drag: Drag): DragClearance {
-    if (drag.clearance) return drag.clearance;
-    const field = new TrackClearance();
-    const pieceIds = new Int32Array(this.layout.count).fill(NO_OBSTACLE);
+  private trackOutlines(inRunFramesOnly: boolean): ReadonlyArray<PlacedTrackOutline> {
+    const layout = this.combined;
+    const outlines: PlacedTrackOutline[] = [];
     const [, top] = this.verticalRange();
-    for (let p = 0; p < this.layout.count; p++) {
-      if (this.layout.yPlates(p) * PLATE_LDU >= top) continue;
-      const placed = this.placedAt(p);
-      pieceIds[p] = field.addPiece(placed.part.outline, placed.placement);
+    for (let p = 0; p < layout.count; p++) {
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (!part || layout.yPlates(p) * PLATE_LDU >= top) continue;
+      if (inRunFramesOnly && layout.frame(p).id === WORLD_TRACK_FRAME.id) continue;
+      outlines.push({
+        placement: p,
+        outline: placedOutline(part, layout.pose(p), layout.frame(p)),
+      });
     }
-    const rects = this.obstacleRects;
-    for (let r = 0; r < rects.length; r += OBSTACLE_RECT_FLOATS) {
-      field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
+    return outlines;
+  }
+
+  private fieldWith(partRects: Float64Array): TrackCollisionField {
+    return new TrackCollisionField(this.combined.count, this.trackOutlines(false), partRects);
+  }
+
+  runFrameFieldWith(partRects: Float64Array): TrackCollisionField {
+    return new TrackCollisionField(this.combined.count, this.trackOutlines(true), partRects);
+  }
+
+  private collisionField(): TrackCollisionField {
+    this.collision ??= this.fieldWith(this.obstacles.solid.rects);
+    return this.collision;
+  }
+
+  private studlessField(): TrackClearance {
+    if (this.studlessTops) return this.studlessTops;
+    const clearance = new TrackClearance();
+    const rects = this.obstacles.studless;
+    for (let r = 0; r < rects.length; r += RECT_FLOATS) {
+      clearance.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
     }
-    drag.clearance = { field, pieceIds };
-    return drag.clearance;
+    this.studlessTops = clearance;
+    return clearance;
   }
 
   private closureSite(drag: Drag, target: number): ClosureSite {
-    const { field, pieceIds } = this.clearanceOf(drag);
+    const field = this.collisionField();
     const owner = (end: number | null): number => {
       const placement = end === null ? undefined : this.endOwners[end];
-      return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
+      return placement === undefined ? NO_OBSTACLE : field.idOf(placement);
     };
     return {
-      clearance: field,
+      clearance: field.clearance,
+      studlessTops: this.studlessField(),
       outlineOf: (piece) => {
         const part = this.byPieceId.get(piece.id);
         if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
@@ -621,7 +697,7 @@ export class TrackDrawing {
     const goal = target === null ? undefined : this.ends[target];
     drag.target = target;
     drag.goal = goal ?? null;
-    if (target !== null && goal && this.seatsPending) {
+    if (target !== null && goal && this.obstacles.seatsPending) {
       drag.closure = "pending";
       drag.moves = [];
       drag.missStuds = 0;
@@ -716,6 +792,130 @@ export class TrackDrawing {
     this.drag = null;
   }
 
+  private dragEntries(drag: Drag, start: Pose16): ReadonlyArray<Placed> {
+    const { placed } = layMoves(start, drag.moves);
+    const entries: Placed[] = [];
+    placed.forEach((piece, i) => {
+      const move = drag.moves[i];
+      if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
+    });
+    return entries;
+  }
+
+  private joinedPlacements(part: KitPart, placement: Pose16, out: number[]): void {
+    out.length = 0;
+    for (const own of part.def.connectors) {
+      const pose = composePose16(placement, own);
+      for (let e = 0; e < this.ends.length; e++) {
+        const end = this.ends[e];
+        const owner = this.endOwners[e];
+        if (end && owner !== undefined && posesJoin16(end, pose)) out.push(owner);
+      }
+    }
+  }
+
+  private runBlocker(entries: ReadonlyArray<Placed>): TrackBlocker | null {
+    const field = this.collisionField();
+    const run = new TrackClearance();
+    const boxes = new Float64Array(entries.length * OUTLINE_BOX_FLOATS);
+    const joined: number[] = [];
+    const joins: ObstacleExcuse = (kind, ref) => kind === OBSTACLE_TRACK && joined.includes(ref);
+    let previous = NO_OBSTACLE;
+    const neighbour: ClearanceExcuse = (piece) => piece === previous;
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      if (!entry) continue;
+      const outline = placedOutline(entry.part, entry.placement, WORLD_TRACK_FRAME);
+      const at = i * OUTLINE_BOX_FLOATS;
+      outlineBox(outline, boxes, at);
+      this.joinedPlacements(entry.part, entry.placement, joined);
+      const title = entry.part.piece.title;
+      const hits = field.firstHit(outline, boxes, at, joins);
+      if (hits) return { title, hits };
+      const piece = run.firstBlocker(outline, boxes, at, 0, 0, neighbour);
+      if (piece !== NO_OBSTACLE) return { title, hits: { kind: "self", piece } };
+      previous = run.add(outline);
+    }
+    return null;
+  }
+
+  dragBlocker(): TrackBlocker | null {
+    const drag = this.drag;
+    if (!drag?.start || drag.moves.length === 0) return null;
+    if (drag.closure !== null && drag.closure !== "exact") return null;
+    return this.runBlocker(this.dragEntries(drag, drag.start));
+  }
+
+  pieceBlocker(catalogIndex: number, placement: Pose16): TrackBlocker | null {
+    return this.runBlocker([{ part: this.pieceByIndex(catalogIndex), placement }]);
+  }
+
+  modelBlocker(
+    rects: SolidRects,
+    held: ReadonlyArray<FramedTrackPiece>,
+    owns: ObstacleExcuse,
+  ): ModelTrackBlocker | null {
+    const field = this.collisionField();
+    if (field.tracks === 0 && held.length === 0) return null;
+    const box = this.outlineBoxScratch;
+    const trackNotOwned: ObstacleExcuse = (kind, ref) => kind !== OBSTACLE_TRACK || owns(kind, ref);
+    const rect = this.rectOutlineScratch;
+    for (let r = 0; field.tracks > 0 && r * RECT_FLOATS < rects.rects.length; r++) {
+      rectOutlineInto(rect, rects.rects, r * RECT_FLOATS);
+      outlineBox(rect, box, 0);
+      const hits = field.firstHit(rect, box, 0, trackNotOwned);
+      if (hits) return { part: rects.part[r] ?? 0, hits };
+    }
+    const joined: number[] = [];
+    const ownedOrJoined: ObstacleExcuse = (kind, ref) =>
+      owns(kind, ref) || (kind === OBSTACLE_TRACK && joined.includes(ref));
+    const [, top] = this.verticalRange();
+    for (const piece of held) {
+      const part = this.byCatalogIndex.get(piece.catalogIndex);
+      if (!part || piece.yPlates * PLATE_LDU >= top) continue;
+      const outline = placedOutline(part, piece.placement, piece.frame);
+      outlineBox(outline, box, 0);
+      if (piece.frame.id === WORLD_TRACK_FRAME.id) {
+        this.joinedPlacements(part, piece.placement, joined);
+      } else joined.length = 0;
+      const hits = field.firstHit(outline, box, 0, ownedOrJoined);
+      if (hits) return { part: piece.instance, hits };
+    }
+    return null;
+  }
+
+  pieceTitle(placement: number): string {
+    const part = this.byCatalogIndex.get(this.combined.piece(placement));
+    if (!part) throw new RangeError(`placement ${placement} is not a placeable track piece`);
+    return part.piece.title;
+  }
+
+  isDrawn(placement: number): boolean {
+    return placement < this.layout.count;
+  }
+
+  crossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    const layout = this.combined;
+    const pieces: PlacedTrackPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (!part) continue;
+      let outline = this.crossingOutlines.get(p);
+      if (!outline) {
+        outline = PlacedOutline.ofTrackPiece(part.planOutline, layout.pose(p));
+        this.crossingOutlines.set(p, outline);
+      }
+      pieces.push({
+        placement: p,
+        outline,
+        bedLdu: layout.yPlates(p) * PLATE_LDU + part.yLdu + part.meshY[0],
+        system: part.piece.system,
+      });
+    }
+    return pieces;
+  }
+
   endDrag(): TrackCommit {
     const drag = this.drag;
     this.drag = null;
@@ -730,12 +930,7 @@ export class TrackDrawing {
     if (!drag?.start || drag.moves.length === 0) {
       return { laid: 0, joined: false, refusal: null, chunks: [] };
     }
-    const { placed } = layMoves(drag.start, drag.moves);
-    const entries: Placed[] = [];
-    placed.forEach((piece, i) => {
-      const move = drag.moves[i];
-      if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
-    });
+    const entries = this.dragEntries(drag, drag.start);
     const chunks = this.commitPlaced(entries);
     return {
       laid: entries.length,
@@ -856,7 +1051,7 @@ export class TrackDrawing {
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
     this.layout.replace(placement, thrown);
-    this.footprints = null;
+    this.recomputeEnds();
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
     return { chunk: this.chunkOfPlaced(placed), lever };
@@ -912,6 +1107,8 @@ export class TrackDrawing {
 
   private recomputeEnds(): void {
     this.footprints = null;
+    this.collision = null;
+    this.crossingOutlines.clear();
     this.combined = this.combine();
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];

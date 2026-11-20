@@ -5,12 +5,15 @@ import type { PlacedModel } from "./placed-chunks.ts";
 const CELL_KEY_STRIDE = 2 ** 26;
 const CELL_KEY_OFFSET = 2 ** 25;
 const ON_LATTICE = 1;
+const DRAWN_AS_TRACK = 1;
+export const RECT_FLOATS = 4;
+export const NO_TRACK_PARTS: Uint8Array = new Uint8Array(0);
 
-function cellKey(cellX: number, cellZ: number): number {
+export function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
 }
 
-function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
+export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
   const seats = new Set<number>();
   for (const model of models) {
     const onLattice = model.placeable.studLattice.onLattice;
@@ -20,6 +23,80 @@ function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<numbe
     }
   }
   return seats;
+}
+
+export type TrackPartsOf = (model: PlacedModel) => Uint8Array;
+
+export interface SolidRects {
+  readonly rects: Float64Array;
+  readonly owner: Int32Array;
+  readonly part: Int32Array;
+}
+
+export interface TrackObstacles {
+  readonly solid: SolidRects;
+  readonly studless: Float64Array;
+  readonly seatsPending: boolean;
+}
+
+export const NO_TRACK_OBSTACLES: TrackObstacles = {
+  solid: { rects: new Float64Array(0), owner: new Int32Array(0), part: new Int32Array(0) },
+  studless: new Float64Array(0),
+  seatsPending: false,
+};
+
+class SolidList {
+  private readonly rects: number[] = [];
+  private readonly owners: number[] = [];
+  private readonly parts: number[] = [];
+
+  add(
+    boxes: Float64Array,
+    band: readonly [number, number],
+    drawn: Uint8Array,
+    owner: number,
+  ): void {
+    const [bottom, top] = band;
+    for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      const part = b / BOX_FLOATS;
+      if (drawn[part] === DRAWN_AS_TRACK) continue;
+      if ((boxes[b + 1] ?? 0) >= top || (boxes[b + 4] ?? 0) <= bottom) continue;
+      this.rects.push(boxes[b] ?? 0, boxes[b + 2] ?? 0, boxes[b + 3] ?? 0, boxes[b + 5] ?? 0);
+      this.owners.push(owner);
+      this.parts.push(part);
+    }
+  }
+
+  frozen(): SolidRects {
+    return {
+      rects: Float64Array.from(this.rects),
+      owner: Int32Array.from(this.owners),
+      part: Int32Array.from(this.parts),
+    };
+  }
+}
+
+export function solidRects(
+  boxes: Float64Array,
+  band: readonly [number, number],
+  drawn: Uint8Array,
+): SolidRects {
+  const list = new SolidList();
+  list.add(boxes, band, drawn, 0);
+  return list.frozen();
+}
+
+export function modelSolidRects(
+  models: ReadonlyArray<PlacedModel>,
+  band: readonly [number, number],
+  trackParts: TrackPartsOf,
+): SolidRects {
+  const list = new SolidList();
+  models.forEach((model, owner) => {
+    if (model.box.minY >= band[1] || model.box.maxY <= band[0]) return;
+    list.add(model.worldPartBoxes(), band, trackParts(model), owner);
+  });
+  return list.frozen();
 }
 
 function pushUnseated(
@@ -67,25 +144,34 @@ export function seatsPending(
   });
 }
 
-export function trackObstacleRects(
-  models: ReadonlyArray<PlacedModel>,
-  trackRange: readonly [number, number],
-): Float64Array {
-  const [bottom, top] = trackRange;
-  const seats = seatsAt(models, bottom);
+function studlessRects(models: ReadonlyArray<PlacedModel>, bottom: number): Float64Array {
+  const seats = studSeats(models, bottom);
   const rects: number[] = [];
   for (const model of models) {
     const boxes = model.worldPartBoxes();
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
-      const minX = boxes[b] ?? 0;
-      const minY = boxes[b + 1] ?? 0;
-      const minZ = boxes[b + 2] ?? 0;
-      const maxX = boxes[b + 3] ?? 0;
-      const maxY = boxes[b + 4] ?? 0;
-      const maxZ = boxes[b + 5] ?? 0;
-      if (minY < top && maxY > bottom) rects.push(minX, minZ, maxX, maxZ);
-      else if (maxY === bottom) pushUnseated(rects, seats, minX, minZ, maxX, maxZ);
+      if ((boxes[b + 4] ?? 0) !== bottom) continue;
+      pushUnseated(
+        rects,
+        seats,
+        boxes[b] ?? 0,
+        boxes[b + 2] ?? 0,
+        boxes[b + 3] ?? 0,
+        boxes[b + 5] ?? 0,
+      );
     }
   }
   return Float64Array.from(rects);
+}
+
+export function trackObstacles(
+  models: ReadonlyArray<PlacedModel>,
+  trackRange: readonly [number, number],
+  trackParts: TrackPartsOf,
+): TrackObstacles {
+  return {
+    solid: modelSolidRects(models, trackRange, trackParts),
+    studless: studlessRects(models, trackRange[0]),
+    seatsPending: seatsPending(models, trackRange),
+  };
 }

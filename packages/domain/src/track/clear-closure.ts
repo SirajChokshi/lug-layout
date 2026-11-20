@@ -26,6 +26,7 @@ import { runMoves, runOfMoves, type TrackRun } from "./track-solver.ts";
 
 export interface ClosureSite {
   readonly clearance: TrackClearance;
+  readonly studlessTops: TrackClearance;
   readonly outlineOf: (piece: TrackPieceDef) => Float64Array;
   readonly startOwner: number;
   readonly goalOwner: number;
@@ -249,14 +250,17 @@ class ClosureGeometry {
   ): boolean {
     const outline = frame.outlines[heading];
     if (!outline) throw new RangeError(`no outline at heading ${heading}`);
-    return this.site.clearance.blocks(
-      outline,
-      frame.boxes,
-      heading * OUTLINE_BOX_FLOATS,
-      x,
-      z,
-      first ? this.site.startOwner : NO_OBSTACLE,
-      last ? this.site.goalOwner : NO_OBSTACLE,
+    const at = heading * OUTLINE_BOX_FLOATS;
+    return (
+      this.site.clearance.blocks(
+        outline,
+        frame.boxes,
+        at,
+        x,
+        z,
+        first ? this.site.startOwner : NO_OBSTACLE,
+        last ? this.site.goalOwner : NO_OBSTACLE,
+      ) || this.site.studlessTops.blocks(outline, frame.boxes, at, x, z, NO_OBSTACLE, NO_OBSTACLE)
     );
   }
 

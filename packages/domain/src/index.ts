@@ -129,14 +129,19 @@ export {
 } from "./track/closure.ts";
 export {
   NO_OBSTACLE,
+  OUTLINE_BOX_FLOATS,
   TrackClearance,
   footprintOutline,
+  outlineBox,
+  rotateOutline,
+  type ClearanceExcuse,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";
 export {
   FOOTPRINT_FLOATS,
   HEADING_FOOTPRINT_FLOATS,
+  convexHull,
   headingFootprints,
   planHull,
   verticalRange,
@@ -274,3 +279,16 @@ export {
   type OwnerFilter,
   type VolumeHit,
 } from "./volume-index.ts";
+export {
+  PlacedOutline,
+  type AxisEdge,
+  type OutlinePoint,
+  type OutlineRing,
+} from "./plan/placed-outline.ts";
+export {
+  levelCrossings,
+  type CrossingTrack,
+  type LevelCrossing,
+  type RampCandidate,
+  type RampPart,
+} from "./level-crossings.ts";

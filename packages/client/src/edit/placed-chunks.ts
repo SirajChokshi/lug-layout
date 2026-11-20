@@ -1006,6 +1006,22 @@ export class PlacedChunks {
     return null;
   }
 
+  posedPartBoxes(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    yPlates: number,
+  ): Float64Array {
+    const local = placeable.partBoxes;
+    const pose = this.probe.at(x, z, rot);
+    const boxes = new Float64Array(local.length);
+    for (let b = 0; b < local.length; b += BOX_FLOATS) {
+      pose.worldBox(local, b, yPlates * PLATE_LDU, boxes, b);
+    }
+    return boxes;
+  }
+
   strandedRider(removed: PlacedModel): PlacedModel | null {
     const base = this.entries.find((entry) => entry === removed);
     if (!base) return null;
