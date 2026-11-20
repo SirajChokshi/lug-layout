@@ -961,6 +961,49 @@ footer a {
   color: #b0141c;
 }
 
+.track-extend {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+}
+
+.track-extend p {
+  margin: 0;
+}
+
+.track-extend ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.track-extend li {
+  padding: 3px 8px;
+  border: 1px solid #c9ccd6;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.track-extend li.joins {
+  border-color: #1fbf4a;
+}
+
+.track-extend li[aria-current="true"] {
+  border-color: #ff8c00;
+  background: #ff8c00;
+  color: #fff;
+  font-weight: 600;
+}
+
+.track-extend li.joins[aria-current="true"] {
+  border-color: #1a9e3e;
+  background: #1fbf4a;
+}
+
 .gear-panel select {
   width: 100%;
   margin-bottom: 6px;

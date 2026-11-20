@@ -41,6 +41,7 @@ export interface PlacedModel {
   studCellX(stud: number): number;
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
+  studSeats(baseLdu: number, seat: (cellX: number, cellZ: number) => void): void;
   readonly slab: Float64Array;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
@@ -575,6 +576,19 @@ class PlacedEntry implements PlacedModel {
 
   studBaseLdu(stud: number): number {
     return this.yLdu + (this.placeable.studLattice.baseLdu[stud] ?? 0);
+  }
+
+  studSeats(baseLdu: number, seat: (cellX: number, cellZ: number) => void): void {
+    for (const lattice of [this.placeable.studLattice, this.placeable.coveredStudLattice]) {
+      for (let i = 0; i < lattice.onLattice.length; i++) {
+        if (lattice.onLattice[i] !== 1 || this.yLdu + (lattice.baseLdu[i] ?? 0) !== baseLdu) {
+          continue;
+        }
+        const x = lattice.cellX[i] ?? 0;
+        const z = lattice.cellZ[i] ?? 0;
+        seat(this.pose.worldCellX(x, z), this.pose.worldCellZ(x, z));
+      }
+    }
   }
 
   private isStudCulled(

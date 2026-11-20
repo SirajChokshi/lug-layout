@@ -66,14 +66,20 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
+import {
+  commandEnabled,
+  runEditorAction,
+  startPlay,
+  type CommandId,
+} from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import { EDITOR, EDITOR_CAMERA, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
+import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -959,6 +965,7 @@ function layoutState(editor: IEditor) {
 }
 
 const STUD = 20;
+const HALF_TURN_CURVES = 8;
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
 
@@ -1040,6 +1047,50 @@ it("undoes and redoes model and track edits in the order they happened, each tra
     expect(layoutState(editor), `after redoing edit ${step}`).toEqual(states[step]);
   }
   expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);
+
+it("lays each piece added to an open end, and the join that closes the loop, as one undo step each", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  const pieces = () => editor.dump().laidTrack.length;
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
+  const continuing = editor.snapshot().track?.extend?.continuing;
+  const turns: ReadonlyArray<ExtensionTurn> = [
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES).fill("left"),
+    ...Array<ExtensionTurn>(4).fill("straight"),
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES / 2).fill("left"),
+  ];
+  const laid = [pieces()];
+  const labels: Array<string | null> = [];
+  for (const turn of [...turns, null]) {
+    editor.extendTrack(turn, 0);
+    laid.push(pieces());
+    labels.push(editor.snapshot().history.undoLabel);
+  }
+  const closed = editor.snapshot().track;
+
+  expect(continuing).toBe(true);
+  expect(laid).toEqual([...turns.map((_, i) => 4 + i), 4 + turns.length, 8 + turns.length]);
+  expect(labels).toEqual([...turns.map(() => "lay 1 piece"), "lay 4 pieces"]);
+  expect(closed).toMatchObject({ lastCommit: "joined", openEnds: 0, extend: null });
+  expect(closed?.joins).toBe(laid.at(-1));
+  for (let step = laid.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(pieces(), `after undoing step ${step}`).toBe(laid[step - 1]);
+  }
+
+  backend.aim(32 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const hovered = editor.snapshot().track?.extend?.continuing;
+  editor.extendTrack("straight", 0);
+  runEditorAction(editor, camera, "select-tool", 0);
+  const afterFirstEscape = editor.snapshot();
+  runEditorAction(editor, camera, "select-tool", 0);
+  expect(hovered).toBe(false);
+  expect(afterFirstEscape.mode).toBe("track");
+  expect(afterFirstEscape.track?.extend).toBeNull();
+  expect(editor.snapshot().mode).toBe("select");
 }, 120_000);
 
 it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {

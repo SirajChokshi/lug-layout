@@ -1,9 +1,12 @@
-import type {
-  EditorSnapshot,
-  TrackDragView,
-  TrackGapView,
-  TrackPieceView,
-  TrackView,
+import {
+  unjoinedText,
+  type EditorSnapshot,
+  type TrackChoiceView,
+  type TrackDragView,
+  type TrackExtendView,
+  type TrackGapView,
+  type TrackPieceView,
+  type TrackView,
 } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -85,6 +88,60 @@ function dragRows(drag: TrackDragView): ReadonlyArray<readonly [string, string]>
   ];
 }
 
+function choiceLabel(choice: TrackChoiceView): string {
+  switch (choice.kind) {
+    case "straight":
+      return "Straight";
+    case "left":
+      return "Curve left";
+    case "right":
+      return "Curve right";
+    case "join":
+      return `Join: ${choice.straights + choice.curves} pieces`;
+    default: {
+      const unhandled: never = choice.kind;
+      throw new Error(`unhandled choice ${String(unhandled)}`);
+    }
+  }
+}
+
+function choiceDetail(choice: TrackChoiceView): string {
+  const run = `${choice.straights} straight, ${choice.curves} curve`;
+  return choice.joinsEnd ? `${run}; joins an open end exactly` : run;
+}
+
+function ExtendStrip({ extend }: { readonly extend: TrackExtendView }) {
+  const current = extend.choices[extend.index];
+  return (
+    <div
+      className="track-extend"
+      data-choice={current?.kind ?? ""}
+      data-choice-index={extend.index}
+      data-choice-pieces={current ? current.straights + current.curves : 0}
+      data-choice-joins={current?.joinsEnd ? "true" : "false"}
+      data-unjoined={extend.unjoined?.refusal ?? ""}
+    >
+      <p>{extend.continuing ? "Next piece from the last end" : "Next piece on this open end"}</p>
+      <ol aria-label="Choices for the next piece">
+        {extend.choices.map((choice, index) => (
+          <li
+            key={`${choice.kind}-${index}`}
+            aria-current={index === extend.index ? "true" : undefined}
+            className={choice.joinsEnd ? "joins" : undefined}
+            title={choiceDetail(choice)}
+          >
+            {choiceLabel(choice)}
+          </li>
+        ))}
+      </ol>
+      <p>
+        {current ? choiceDetail(current) : ""}
+        {extend.unjoined ? `. ${unjoinedText(extend.unjoined)}.` : ""}
+      </p>
+    </div>
+  );
+}
+
 function commitText(track: TrackView): string {
   switch (track.lastCommit) {
     case "joined":
@@ -162,11 +219,14 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       <h2>Track</h2>
       {snapshot.mode === "track" && !track.held && (
         <p className="toolbar-hint">
-          Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
-          but don't join.
+          Point at an open end to preview the next piece, then click to lay it and keep going: W, A
+          and D lay a straight, a left or a right curve, Enter lays the preview, and , and . show
+          the other choices, including exact joins to nearby ends. Drag from an end or from empty
+          ground to lay a whole run. Amber arrows mark open ends; red arrows mark two ends that
+          nearly meet but don't join.
         </p>
       )}
+      {snapshot.mode === "track" && track.extend && <ExtendStrip extend={track.extend} />}
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>

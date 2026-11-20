@@ -109,13 +109,17 @@ describe("editor keys and focused controls", () => {
     expect(opened).toEqual(["show-shortcuts", "open-palette"]);
   });
 
-  it("leaves Space to buttons, checkboxes and summaries, and arrows to sliders", () => {
+  it("leaves Space and Enter to buttons, checkboxes and summaries, and arrows to sliders", () => {
     expect(controlTakesKey(element('<input type="checkbox">'), " ")).toBe(true);
     expect(controlTakesKey(element("<button>Go</button>"), " ")).toBe(true);
     expect(controlTakesKey(element("<summary>Road joins</summary>"), " ")).toBe(true);
+    expect(controlTakesKey(element("<button>Go</button>"), "Enter")).toBe(true);
+    expect(controlTakesKey(element('<a href="#about">About</a>'), "Enter")).toBe(true);
     expect(controlTakesKey(element('<input type="range">'), "ArrowLeft")).toBe(true);
     expect(controlTakesKey(element("<button>Go</button>"), "ArrowLeft")).toBe(false);
     expect(controlTakesKey(element("<canvas></canvas>"), " ")).toBe(false);
+    expect(controlTakesKey(element("<canvas></canvas>"), "Enter")).toBe(false);
     expect(controlTakesKey(document.body, " ")).toBe(false);
+    expect(controlTakesKey(document.body, "Enter")).toBe(false);
   });
 });

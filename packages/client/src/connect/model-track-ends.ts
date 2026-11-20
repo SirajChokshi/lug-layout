@@ -59,6 +59,10 @@ export interface FramedTrackPiece extends HeldTrackPiece {
   readonly frame: TrackFrame;
 }
 
+export interface ModelTrackPiece extends HeldTrackPiece {
+  readonly instance: number;
+}
+
 export interface TrackRun {
   readonly pieces: ReadonlyArray<HeldTrackPiece>;
   readonly originStuds: PlaneStuds;
@@ -72,7 +76,7 @@ export interface UncertifiedPiece {
 }
 
 export interface ModelTrackEnds {
-  readonly pieces: ReadonlyArray<HeldTrackPiece>;
+  readonly pieces: ReadonlyArray<ModelTrackPiece>;
   readonly openEnds: ReadonlyArray<TrackEnd>;
   readonly runs: ReadonlyArray<TrackRun>;
   readonly uncertified: ReadonlyArray<UncertifiedPiece>;
@@ -599,7 +603,7 @@ export function modelTrackEnds(
   const { runs, contradicted } = runFrames(candidates, index, unanchoredOnly);
   const inRun = new Uint8Array(candidates.length);
   for (const run of runs) for (const i of run.members) inRun[i] = 1;
-  const pieces: HeldTrackPiece[] = [];
+  const pieces: ModelTrackPiece[] = [];
   const ends: TrackEnd[] = [];
   outcomes.forEach((placement, i) => {
     const candidate = candidates[i];
@@ -613,6 +617,7 @@ export function modelTrackEnds(
       catalogIndex: candidate.piece.catalogIndex,
       placement,
       yPlates: candidate.plates,
+      instance: candidate.instance,
     });
     for (const connector of candidate.piece.connectors) {
       ends.push({

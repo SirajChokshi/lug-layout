@@ -49,6 +49,7 @@ export interface Placeable {
   readonly partTransforms: PartInstances;
   readonly studs: StudInstances;
   readonly studLattice: StudLattice;
+  readonly coveredStudLattice: StudLattice;
   readonly bakedCoveredStuds: number;
   readonly cells: PlaceableCells;
   readonly box: LocalBox;
@@ -121,26 +122,40 @@ function composed(
   );
 }
 
-function studLattice(
+interface StudLattices {
+  readonly visible: StudLattice;
+  readonly covered: StudLattice;
+}
+
+function emptyLattice(count: number): StudLattice {
+  return {
+    onLattice: new Uint8Array(count),
+    cellX: new Int32Array(count),
+    cellZ: new Int32Array(count),
+    baseLdu: new Int32Array(count),
+  };
+}
+
+function studLattices(
   transforms: PartInstances,
   parts: ReadonlyArray<PartShapeAsset>,
   cover: ModelStudCover | undefined,
   count: number,
-): StudLattice {
-  const onLattice = new Uint8Array(count);
-  const cellX = new Int32Array(count);
-  const cellZ = new Int32Array(count);
-  const baseLdu = new Int32Array(count);
+): StudLattices {
+  const visibleLattice = emptyLattice(count);
+  const coveredLattice = emptyLattice(cover?.covered ?? 0);
   const m = transforms.matrices;
   let stud = 0;
   let visible = 0;
+  let covered = 0;
   for (let i = 0; i < transforms.count; i++) {
     const part = parts[transforms.partIndex[i] ?? 0];
     if (!part) continue;
     const o = i * INSTANCE_MATRIX_FLOATS;
     for (let s = 0; s < part.studPrimitiveIndex.length; s++, stud++) {
-      if (!bakedVisible(cover, stud)) continue;
-      const at = visible++;
+      const shown = bakedVisible(cover, stud);
+      const lattice = shown ? visibleLattice : coveredLattice;
+      const at = shown ? visible++ : covered++;
       const n = s * INSTANCE_MATRIX_FLOATS;
       const local = part.studMatrices;
       const upright =
@@ -151,10 +166,10 @@ function studLattice(
       const z = latticeCell(composed(m, o, local, n, ROW_Z, COLUMN_TRANSLATION));
       const base = composed(m, o, local, n, ROW_Y, COLUMN_TRANSLATION);
       if (!upright || x === null || z === null || !Number.isInteger(base)) continue;
-      onLattice[at] = 1;
-      cellX[at] = x;
-      cellZ[at] = z;
-      baseLdu[at] = base;
+      lattice.onLattice[at] = 1;
+      lattice.cellX[at] = x;
+      lattice.cellZ[at] = z;
+      lattice.baseLdu[at] = base;
     }
   }
   if (visible !== count) {
@@ -162,7 +177,12 @@ function studLattice(
       `the part transforms give ${visible} visible studs but the render has ${count}`,
     );
   }
-  return { onLattice, cellX, cellZ, baseLdu };
+  if (covered !== coveredLattice.onLattice.length) {
+    throw new Error(
+      `the part transforms give ${covered} covered studs but the bake covers ${coveredLattice.onLattice.length}`,
+    );
+  }
+  return { visible: visibleLattice, covered: coveredLattice };
 }
 
 function wholeCells(ldu: number, what: string): number {
@@ -376,6 +396,7 @@ export function modelPlaceable(
     matrices: shiftedTransforms(model.partTransforms, model.instanceCount, shift),
     submodels: shiftedSubmodels(model.submodels, shift),
   };
+  const lattices = studLattices(partTransforms, parts, model.studCover, studs.count);
   return {
     id,
     label,
@@ -386,7 +407,8 @@ export function modelPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice: studLattice(partTransforms, parts, model.studCover, studs.count),
+    studLattice: lattices.visible,
+    coveredStudLattice: lattices.covered,
     bakedCoveredStuds: model.studCover.covered,
     cells: modelCells(cells, shift, name),
     box,
@@ -446,6 +468,7 @@ export function partPlaceable(
     partIndex: local.partIndex,
     matrices: shiftedTransforms(IDENTITY_TRANSFORM, 1, shift),
   };
+  const lattices = studLattices(partTransforms, parts, undefined, studs.count);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -456,7 +479,8 @@ export function partPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice: studLattice(partTransforms, parts, undefined, studs.count),
+    studLattice: lattices.visible,
+    coveredStudLattice: lattices.covered,
     bakedCoveredStuds: 0,
     cells: partCells(part, shift),
     box,

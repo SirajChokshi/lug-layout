@@ -201,6 +201,7 @@ export {
 } from "./commands/editor-commands.ts";
 export {
   toolHints,
+  unjoinedText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -237,6 +238,14 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export type {
+  ExtensionKind,
+  ExtensionTurn,
+  TrackChoiceView,
+  TrackExtendView,
+  TrackRefusal,
+  UnjoinedEndView,
+} from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {

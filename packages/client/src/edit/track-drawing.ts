@@ -57,6 +57,12 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import {
+  TrackExtension,
+  type ExtensionRun,
+  type ExtensionSite,
+  type TrackRefusal,
+} from "./track-extension.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -80,8 +86,7 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit";
+export type ClosureState = "exact" | TrackRefusal | null;
 const OBSTACLE_RECT_FLOATS = 4;
 
 export interface TrackDragView {
@@ -97,7 +102,15 @@ export interface TrackDragView {
 export interface DragOutcome {
   readonly change: TrackChange;
   readonly goal: Pose16 | null;
+  readonly end: Pose16 | null;
   readonly refusal: TrackRefusal | null;
+}
+
+export interface ExtensionPlan {
+  readonly run: ExtensionRun;
+  readonly change: TrackChange;
+  readonly goal: Pose16 | null;
+  readonly end: Pose16;
 }
 
 export interface TrackFootprint {
@@ -174,11 +187,15 @@ interface Drag {
   goal: Pose16 | null;
   missStuds: number;
   target: number | null;
-  clearance: DragClearance | null;
   readonly closures: Map<string, ClosureResult>;
 }
 
-interface DragClearance {
+interface PreviewRun {
+  readonly start: Pose16;
+  readonly moves: ReadonlyArray<TrackMove>;
+}
+
+interface Clearance {
   readonly field: TrackClearance;
   readonly pieceIds: Int32Array;
 }
@@ -302,11 +319,13 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-export class TrackDrawing {
+export class TrackDrawing implements ExtensionSite {
   readonly kit: DrawingKit;
+  readonly extension: TrackExtension;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
+  private readonly outlines = new Map<number, Float64Array>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
@@ -320,6 +339,7 @@ export class TrackDrawing {
   private obstacleRects: Float64Array = new Float64Array(0);
   private gapList: ReadonlyArray<EndGap> = [];
   private footprints: ReadonlyArray<TrackFootprint> | null = null;
+  private clearance: Clearance | null = null;
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -339,7 +359,11 @@ export class TrackDrawing {
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
+      if (piece.status !== "certified") return;
+      const shape = kitFootprints(piece, shapes);
+      const outline = footprintOutline(shape, piece.partFrame);
+      this.outlines.set(catalogIndex, outline);
+      if (piece.system !== TRACK_SYSTEM) return;
       const inKit = piece.kind === "straight" || piece.kind === "curve";
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
@@ -348,10 +372,9 @@ export class TrackDrawing {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
-        outline: footprintOutline(shape, piece.partFrame),
+        outline,
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -369,6 +392,7 @@ export class TrackDrawing {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
+    this.extension = new TrackExtension(this);
   }
 
   kitParts(): ReadonlyArray<KitPart> {
@@ -421,6 +445,10 @@ export class TrackDrawing {
 
   openEnds(): ReadonlyArray<TrackEndView> {
     return this.openList.map((end) => endView(end.pose, end.frame));
+  }
+
+  endPoses(): ReadonlyArray<Pose16> {
+    return this.ends;
   }
 
   gaps(): ReadonlyArray<TrackGapView> {
@@ -510,7 +538,6 @@ export class TrackDrawing {
       goal: null,
       missStuds: 0,
       target: null,
-      clearance: null,
       closures: new Map(),
     };
   }
@@ -520,6 +547,8 @@ export class TrackDrawing {
       throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
     }
     this.obstacleRects = rects;
+    this.clearance = null;
+    this.extension.endsChanged();
   }
 
   verticalRange(): readonly [number, number] {
@@ -532,26 +561,29 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private clearanceOf(drag: Drag): DragClearance {
-    if (drag.clearance) return drag.clearance;
+  private clearanceField(): Clearance {
+    if (this.clearance) return this.clearance;
     const field = new TrackClearance();
-    const pieceIds = new Int32Array(this.layout.count).fill(NO_OBSTACLE);
+    const combined = this.combined;
+    const pieceIds = new Int32Array(combined.count).fill(NO_OBSTACLE);
     const [, top] = this.verticalRange();
-    for (let p = 0; p < this.layout.count; p++) {
-      if (this.layout.yPlates(p) * PLATE_LDU >= top) continue;
-      const placed = this.placedAt(p);
-      pieceIds[p] = field.addPiece(placed.part.outline, placed.placement);
+    for (let p = 0; p < combined.count; p++) {
+      if (combined.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      if (combined.yPlates(p) * PLATE_LDU >= top) continue;
+      const outline = this.outlines.get(combined.piece(p));
+      if (!outline) throw new Error(`catalog piece ${combined.piece(p)} has no certified outline`);
+      pieceIds[p] = field.addPiece(outline, combined.pose(p));
     }
     const rects = this.obstacleRects;
     for (let r = 0; r < rects.length; r += OBSTACLE_RECT_FLOATS) {
       field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
     }
-    drag.clearance = { field, pieceIds };
-    return drag.clearance;
+    this.clearance = { field, pieceIds };
+    return this.clearance;
   }
 
-  private closureSite(drag: Drag, target: number): ClosureSite {
-    const { field, pieceIds } = this.clearanceOf(drag);
+  private closureSite(from: number | null, target: number): ClosureSite {
+    const { field, pieceIds } = this.clearanceField();
     const owner = (end: number | null): number => {
       const placement = end === null ? undefined : this.endOwners[end];
       return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
@@ -563,22 +595,38 @@ export class TrackDrawing {
         if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
         return part.outline;
       },
-      startOwner: owner(drag.fromEnd),
+      startOwner: owner(from),
       goalOwner: owner(target),
     };
   }
 
-  private closure(drag: Drag, start: Pose16, target: number, goal: Pose16): ClosureResult {
-    const key = `${target}|${start.heading}|${start.position.join(",")}`;
-    const cached = drag.closures.get(key);
-    if (cached) return cached;
-    const result = solveClosure(
+  private solveBetween(
+    start: Pose16,
+    from: number | null,
+    target: number,
+    goal: Pose16,
+  ): ClosureResult {
+    return solveClosure(
       this.kit,
       start,
       goal,
       { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
-      this.closureSite(drag, target),
+      this.closureSite(from, target),
     );
+  }
+
+  closure(from: number, to: number): ClosureResult {
+    const start = this.ends[from];
+    const goal = this.ends[to];
+    if (!start || !goal) throw new RangeError(`no open ends ${from} and ${to} to join`);
+    return this.solveBetween(start, from, to, goal);
+  }
+
+  private dragClosure(drag: Drag, start: Pose16, target: number, goal: Pose16): ClosureResult {
+    const key = `${target}|${start.heading}|${start.position.join(",")}`;
+    const cached = drag.closures.get(key);
+    if (cached) return cached;
+    const result = this.solveBetween(start, drag.fromEnd, target, goal);
     drag.closures.set(key, result);
     return result;
   }
@@ -616,7 +664,7 @@ export class TrackDrawing {
     drag.target = target;
     drag.goal = goal ?? null;
     if (target !== null && goal) {
-      const result = this.closure(drag, start, target, goal);
+      const result = this.dragClosure(drag, start, target, goal);
       drag.closure = result.kind;
       drag.moves = result.kind === "exact" ? runMoves(this.kit, result.run) : [];
       drag.missStuds = 0;
@@ -663,20 +711,29 @@ export class TrackDrawing {
     return { end: drag.target, joins: drag.closure === "exact" };
   }
 
-  ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
+  private previewRun(): PreviewRun | null {
     const drag = this.drag;
-    if (!drag?.start || drag.moves.length === 0) return null;
-    const { placed } = layMoves(drag.start, drag.moves);
+    if (drag) {
+      return drag.start && drag.moves.length > 0 ? { start: drag.start, moves: drag.moves } : null;
+    }
+    const run = this.extension.chosen();
+    return run ? { start: run.start, moves: run.choice.moves } : null;
+  }
+
+  ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
+    const run = this.previewRun();
+    if (!run) return null;
+    const { placed } = layMoves(run.start, run.moves);
     const count = placed.length;
     this.growGhostScratch(count);
     const partIndex = this.ghostParts.subarray(0, count);
     const colorIndex = this.ghostColors.subarray(0, count);
     const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
-    const origin = zeta16ToStuds(drag.start.position);
+    const origin = zeta16ToStuds(run.start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = run.moves[i];
       if (!move) return;
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
@@ -711,18 +768,52 @@ export class TrackDrawing {
       drag?.closure === "blocked" ||
       drag?.closure === "limit"
     ) {
-      return { change: NO_TRACK_CHANGE, goal: null, refusal: drag.closure };
+      return { change: NO_TRACK_CHANGE, goal: null, end: null, refusal: drag.closure };
     }
     if (!drag?.start || drag.moves.length === 0) {
-      return { change: NO_TRACK_CHANGE, goal: null, refusal: null };
+      return { change: NO_TRACK_CHANGE, goal: null, end: null, refusal: null };
     }
-    const { placed } = layMoves(drag.start, drag.moves);
+    const { change, end } = this.runChange({ start: drag.start, moves: drag.moves });
+    return { change, goal: drag.goal, end, refusal: null };
+  }
+
+  extensionPlan(): ExtensionPlan | null {
+    const run = this.extension.chosen();
+    if (!run || this.drag) return null;
+    const { change, end } = this.runChange({ start: run.start, moves: run.choice.moves });
+    const goal = run.choice.joins === null ? null : (this.ends[run.choice.joins] ?? null);
+    return { run, change, goal, end };
+  }
+
+  extensionEnds(): ReadonlyArray<number> {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return [];
+    return run.choice.joins === null ? [run.from] : [run.from, run.choice.joins];
+  }
+
+  onExtension(xLdu: number, zLdu: number): boolean {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return false;
+    const at = zeta16ToStuds(run.start.position);
+    if (Math.hypot(at.x * STUD_LDU - xLdu, at.z * STUD_LDU - zLdu) <= END_PICK_RADIUS_LDU) {
+      return true;
+    }
+    return layMoves(run.start, run.choice.moves).placed.some((piece, i) => {
+      const move = run.choice.moves[i];
+      if (!move) return false;
+      const box = partBox({ part: this.kitPart(move), placement: piece.placement });
+      return xLdu >= box.minX && xLdu <= box.maxX && zLdu >= box.minZ && zLdu <= box.maxZ;
+    });
+  }
+
+  private runChange(run: PreviewRun): { readonly change: TrackChange; readonly end: Pose16 } {
+    const { placed, end } = layMoves(run.start, run.moves);
     const entries: Placed[] = [];
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = run.moves[i];
       if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
     });
-    return { change: this.appended(entries), goal: drag.goal, refusal: null };
+    return { change: this.appended(entries), end };
   }
 
   private appended(entries: ReadonlyArray<Placed>): TrackChange {
@@ -949,6 +1040,8 @@ export class TrackDrawing {
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
+    this.clearance = null;
+    this.extension.endsChanged();
   }
 
   planFootprints(): ReadonlyArray<TrackFootprint> {

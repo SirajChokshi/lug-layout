@@ -4,7 +4,6 @@ import type { PlacedModel } from "./placed-chunks.ts";
 
 const CELL_KEY_STRIDE = 2 ** 26;
 const CELL_KEY_OFFSET = 2 ** 25;
-const ON_LATTICE = 1;
 
 function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
@@ -13,11 +12,7 @@ function cellKey(cellX: number, cellZ: number): number {
 function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
   const seats = new Set<number>();
   for (const model of models) {
-    const onLattice = model.placeable.studLattice.onLattice;
-    for (let i = 0; i < model.placeable.studs.count; i++) {
-      if (onLattice[i] !== ON_LATTICE || model.studBaseLdu(i) !== baseLdu) continue;
-      seats.add(cellKey(model.studCellX(i), model.studCellZ(i)));
-    }
+    model.studSeats(baseLdu, (cellX, cellZ) => seats.add(cellKey(cellX, cellZ)));
   }
   return seats;
 }
@@ -55,13 +50,16 @@ function pushUnseated(
 export function trackObstacleRects(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],
+  carriedTrack: (model: PlacedModel) => ReadonlySet<number>,
 ): Float64Array {
   const [bottom, top] = trackRange;
   const seats = seatsAt(models, bottom);
   const rects: number[] = [];
   for (const model of models) {
     const boxes = model.worldPartBoxes();
+    const track = carriedTrack(model);
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      if (track.has(b / BOX_FLOATS)) continue;
       const minX = boxes[b] ?? 0;
       const minY = boxes[b + 1] ?? 0;
       const minZ = boxes[b + 2] ?? 0;

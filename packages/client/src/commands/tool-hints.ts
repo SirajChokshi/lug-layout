@@ -1,5 +1,6 @@
-import type { EditorSnapshot } from "../edit/editor.ts";
+import type { EditorSnapshot, TrackCommitResult } from "../edit/editor.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
+import type { TrackExtendView, TrackRefusal, UnjoinedEndView } from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
@@ -68,6 +69,119 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   }
 }
 
+export function refusalText(refusal: TrackRefusal): string {
+  switch (refusal) {
+    case "impossible":
+      return "no run of 9V straights and R40 curves meets it exactly";
+    case "blocked":
+      return "every exact join would cross track, a plate, a model or itself";
+    case "limit":
+      return "the join search ran out of time";
+    default: {
+      const unhandled: never = refusal;
+      throw new Error(`unhandled refusal ${String(unhandled)}`);
+    }
+  }
+}
+
+export function unjoinedText(unjoined: UnjoinedEndView): string {
+  const studs = Math.round(unjoined.studs);
+  return `the open end ${studs} studs ahead can't be joined: ${refusalText(unjoined.refusal)}`;
+}
+
+function releaseRefusal(commit: TrackCommitResult | null): TrackRefusal | null {
+  switch (commit) {
+    case "refused-impossible":
+      return "impossible";
+    case "refused-blocked":
+      return "blocked";
+    case "refused-limit":
+      return "limit";
+    case "laid":
+    case "joined":
+    case "switch-straight":
+    case "switch-branching":
+    case null:
+      return null;
+    default: {
+      const unhandled: never = commit;
+      throw new Error(`unhandled commit ${String(unhandled)}`);
+    }
+  }
+}
+
+function extendTitle(extend: TrackExtendView): string {
+  const choice = extend.choices[extend.index];
+  if (!choice) return "Next piece";
+  const pieceCount = pieces(choice.straights + choice.curves);
+  switch (choice.kind) {
+    case "straight":
+      return "Next piece: straight";
+    case "left":
+      return "Next piece: curve left";
+    case "right":
+      return "Next piece: curve right";
+    case "join":
+      return `Close the gap: ${pieceCount}`;
+    default: {
+      const unhandled: never = choice.kind;
+      throw new Error(`unhandled choice ${String(unhandled)}`);
+    }
+  }
+}
+
+function trackView(snapshot: EditorSnapshot): ToolHintView {
+  const track = snapshot.track;
+  const drag = track?.drag ?? null;
+  if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };
+  const held = track?.held ?? null;
+  if (held) {
+    return {
+      tone: "place",
+      title: `Holding ${held.label}`,
+      detail: held.snapped ? "attaches to the open end exactly" : "free on the stud grid",
+      hints: [
+        gesture("Click", "lay it"),
+        key("next-connector", "next end"),
+        key("flip-switch", "other hand"),
+        key("rotate", "turn"),
+        key("select-tool", "done"),
+      ],
+    };
+  }
+  const refusal = releaseRefusal(track?.lastCommit ?? null);
+  const extend = track?.extend ?? null;
+  if (extend) {
+    const joins = extend.choices[extend.index]?.joinsEnd ?? false;
+    return {
+      tone: refusal ? "warn" : "track",
+      title: refusal ? "Nothing laid" : extendTitle(extend),
+      detail: refusal
+        ? refusalText(refusal)
+        : extend.unjoined
+          ? unjoinedText(extend.unjoined)
+          : joins
+            ? "joins the open end exactly"
+            : null,
+      hints: [
+        gesture("Click", "lay it"),
+        key("extend-straight", "straight"),
+        key("extend-left", "left"),
+        key("extend-right", "right"),
+        key("extend-preview", joins ? "join" : "lay it"),
+        key("undo", "undo"),
+        key("select-tool", extend.continuing ? "let go of the end" : "done"),
+      ],
+    };
+  }
+  return {
+    tone: refusal ? "warn" : "track",
+    title: refusal ? "Nothing laid" : "Drawing track",
+    detail: refusal ? refusalText(refusal) : "point at an open end to add the next piece",
+    hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
+  };
+}
+
 function view(snapshot: EditorSnapshot): ToolHintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
@@ -88,16 +202,8 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("select-tool", "done"),
         ],
       };
-    case "track": {
-      const drag = snapshot.track?.drag ?? null;
-      if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };
-      return {
-        tone: "track",
-        title: "Drawing track",
-        detail: "start on an open end to continue a line",
-        hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
-      };
-    }
+    case "track":
+      return trackView(snapshot);
     case "road": {
       const kit = snapshot.roadKits.find((k) => k.id === snapshot.roadKit)?.label ?? "no kit";
       if (snapshot.roadErase) {
