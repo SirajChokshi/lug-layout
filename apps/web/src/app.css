@@ -411,6 +411,26 @@ footer {
   color: #8a1043;
 }
 
+.plan-checks {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-note {
+  color: #556;
+}
+
+.plan-unchecked {
+  margin-top: 6px;
+  color: #556;
+}
+
+.plan-unchecked ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
+}
+
 .inspector dl {
   margin: 0;
 }
