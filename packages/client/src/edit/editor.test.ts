@@ -3228,6 +3228,9 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
     hover.pose.rot === abandoned.pose.rot &&
     hover.mode === "assist";
   const awayX = 2_400;
+  whole.backend.aim(awayX, 320);
+  whole.editor.pointerMove(0, 0);
+  const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
   const moved = await outcome(({ editor, backend }) => {
     backend.aim(awayX, 320);
     editor.pointerMove(0, 0);
@@ -3252,9 +3255,6 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
   } finally {
     leaveClock.mockRestore();
   }
-  whole.backend.aim(awayX, 320);
-  whole.editor.pointerMove(0, 0);
-  const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
 
   expect([moved, turned, toggled].map(({ startedUnsettled }) => startedUnsettled)).toEqual([
     true,
@@ -5712,7 +5712,7 @@ it.each([
       editor.pointerMove(0, 0);
     },
     release: (gate: HeldText) => gate.open(),
-    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.settled === true,
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
     whileReading: {
       queued: null,
       hover: {
@@ -5758,7 +5758,7 @@ it.each([
       editor.pointerMove(0, 0);
     },
     release: (gate: HeldText) => gate.open(),
-    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.settled === true,
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
     whileReading: {
       queued: null,
       hover: {
@@ -5792,7 +5792,7 @@ it.each([
   "waits on $gesture while a road stroke's plates read their connector tables, never committing a 3811 onto a plate",
   async ({ act, release, decided, whileReading, decision }) => {
     const gate = roadPlatesReading();
-    const { editor, backend } = await startEditor([], gate);
+    const { editor, backend, frame } = await startEditor([], gate);
     strokeRoad(editor, backend);
     const laid = posesOf(editor);
     await chosen(editor, BASEPLATE);
@@ -5809,6 +5809,7 @@ it.each([
     });
     release(gate);
     await vi.waitFor(() => expect(decided(editor)).toBe(true), { timeout: 60_000 });
+    await settledHover(editor, frame);
 
     expect({
       placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
