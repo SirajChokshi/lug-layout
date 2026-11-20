@@ -32,7 +32,9 @@ import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } fr
 import { inject, injectable } from "inversify";
 
 export const DEFAULT_MAX_OVERHANG_MM = 0;
+export const DEFAULT_MAX_REACH_MM = 700;
 export const DEFAULT_TABLE_HEIGHT_MM = 750;
+const NO_CARRIERS: ReadonlySet<number> = new Set();
 
 export interface PlacedForPlan {
   readonly key: PlacementKey;
@@ -55,9 +57,13 @@ export interface PlanView {
   readonly obstacles: ReadonlyArray<LduRect>;
 }
 
+export type PlanRowSegment = "model" | "track";
+
 export interface PlanPlacementsView {
   first(): number;
   next(row: number): number;
+  segmentOf(row: number): PlanRowSegment;
+  sourceOf(row: number): number;
   refOf(row: number): string;
   labelOf(row: number): string;
   keyOf(row: number): PlacementKey;
@@ -78,7 +84,7 @@ export interface NewPlan {
 }
 
 export type PlanPatch = Partial<
-  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm">
+  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm" | "maxReachMm">
 > &
   Partial<Pick<PlanRegion["footprint"], "roomWidthMm" | "roomDepthMm">>;
 
@@ -99,6 +105,10 @@ export interface IPlanService {
   regionView(planId: string): PlanView;
   insideCount(planId: string): number;
   issueCount(planId: string): number;
+  joinedRoadCells(planId: string): number;
+  unmeasuredCount(planId: string): number;
+  customParts(planId: string): number;
+  contains(planId: string, row: number): boolean;
   issueVersion(planId: string): number;
   issues(planId: string): ReadonlyArray<PlanIssue>;
   sandboxCount(): number;
@@ -106,7 +116,11 @@ export interface IPlanService {
   placements(): PlanPlacementsView;
   materialize(): PlanStateDump;
   apply(delta: PlanDelta): void;
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void;
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
@@ -174,6 +188,12 @@ function planOverlays(
   });
 }
 
+function segmentName(segment: number): PlanRowSegment {
+  if (segment === MODEL_SEGMENT) return "model";
+  if (segment === TRACK_SEGMENT) return "track";
+  throw new Error(`unknown plan row segment ${segment}`);
+}
+
 function onlyName(patch: object): boolean {
   for (const key of Object.keys(patch)) {
     if (key !== "name" && (patch as Record<string, unknown>)[key] !== undefined) return false;
@@ -233,6 +253,8 @@ export class PlanService implements IPlanService {
     this.view = {
       first: () => rows.first(),
       next: (row) => rows.after(row),
+      segmentOf: (row) => segmentName(rows.segment[row] ?? -1),
+      sourceOf: (row) => rows.source[row] ?? -1,
       refOf: (row) => rows.refOf(row),
       labelOf: (row) => rows.labelOf(row),
       keyOf: (row) => rows.keyOf(row),
@@ -285,6 +307,26 @@ export class PlanService implements IPlanService {
   issueCount(planId: string): number {
     const index = this.indexOf(planId);
     return this.evaluation.unchecked() ? 1 : this.evaluation.issueCount(index);
+  }
+
+  joinedRoadCells(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.joinedRoadCells(index);
+  }
+
+  unmeasuredCount(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.unmeasuredCount(index);
+  }
+
+  customParts(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.customParts(index);
+  }
+
+  contains(planId: string, row: number): boolean {
+    const index = this.indexOf(planId);
+    return !this.evaluation.unchecked() && this.evaluation.isInside(index, row);
   }
 
   issueVersion(planId: string): number {
@@ -388,12 +430,16 @@ export class PlanService implements IPlanService {
     this.afterChange(false);
   }
 
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
     const evaluation = this.evaluation;
     evaluation.resetChanges();
-    evaluation.setUnsupported(TRACK_SEGMENT, track);
-    evaluation.setUnsupported(MODEL_SEGMENT, models);
-    this.afterChange(false);
+    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track, NO_CARRIERS);
+    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models, carriers);
+    if (trackChanged || modelsChanged) this.afterChange(false);
   }
 
   private newId(prefix: string): string {
@@ -461,6 +507,7 @@ export class PlanService implements IPlanService {
         obstacles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
+      maxReachMm: DEFAULT_MAX_REACH_MM,
     };
   }
 
@@ -525,6 +572,7 @@ export class PlanService implements IPlanService {
         originChunkX: patch.originChunkX ?? plan.originChunkX,
         originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
         maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
+        maxReachMm: patch.maxReachMm ?? plan.maxReachMm,
         footprint: {
           ...plan.footprint,
           roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,

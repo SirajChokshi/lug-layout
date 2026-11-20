@@ -17,6 +17,7 @@ function region(tables: PlanTable[], overrides: Partial<PlanRegion> = {}): PlanR
     originChunkZ: -2,
     footprint: { roomWidthMm: 4000, roomDepthMm: 3000, tables, obstacles: [] },
     maxOverhangMm: 0,
+    maxReachMm: 100_000,
     ...overrides,
   };
 }

@@ -16,7 +16,8 @@ import { inject, injectable } from "inversify";
 export type BomScope =
   | { readonly kind: "world" }
   | { readonly kind: "region"; readonly region: PlacementRegion }
-  | { readonly kind: "selection" };
+  | { readonly kind: "selection" }
+  | { readonly kind: "plan"; readonly planId: string };
 
 export function sceneRegion(scope: BomScope): PlacementRegion | null {
   switch (scope.kind) {
@@ -26,6 +27,8 @@ export function sceneRegion(scope: BomScope): PlacementRegion | null {
       return scope.region;
     case "selection":
       throw new Error("this scene has no selection; choose World or Region");
+    case "plan":
+      throw new Error("this scene has no plans; choose World or Region");
     default: {
       const unhandled: never = scope;
       throw new Error(`unhandled scope ${String(unhandled)}`);
