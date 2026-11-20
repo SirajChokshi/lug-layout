@@ -70,8 +70,8 @@ export function WelcomeCard({
       >
         <h2 id="welcome-title">Start a layout</h2>
         <p className="welcome-intro">
-          Open a starter world to see a train run and a street stand within a minute. Each one opens
-          as a new world of your own, built from real parts, so change anything you like.
+          Open a starter world and have a train running in under a minute. Each one opens as a new
+          world of your own, built from real parts, so you can change anything in it.
         </p>
         {reading && <p className="welcome-note">Loading the starter worlds…</p>}
         <ul className="starter-list">
