@@ -52,7 +52,7 @@ describe("planShapeOf", () => {
     });
   });
 
-  it("keeps a slab in the footing when a protrusion hangs lower, and the lowest layer when the slab box meets only part of it", () => {
+  it("keeps the slab, its level and the lowest layer in the footing, whether a protrusion hangs lower, the slab box meets only part of it, or both", () => {
     const hanging = source(
       2,
       [
@@ -73,12 +73,23 @@ describe("planShapeOf", () => {
       ],
       [-STUD_LDU, -0.125, 0, 0, 0, STUD_LDU],
     );
-    expect([
-      studs(planShapeOf(hanging, 0)?.footing),
-      studs(planShapeOf(overshoot, 0)?.footing),
-    ]).toEqual([
+    const both = source(
+      3,
+      [
+        [
+          [0, 1],
+          [0, 1],
+          [-2, 1],
+        ],
+      ],
+      [-STUD_LDU, -0.125, 0, 0, 0, STUD_LDU],
+    );
+    expect(
+      [hanging, overshoot, both].map((shape) => studs(planShapeOf(shape, 0)?.footing)),
+    ).toEqual([
       [-1, 0, 1, 1],
       [-1, 0, 1, 1],
+      [-1, 0, 2, 1],
     ]);
   });
 

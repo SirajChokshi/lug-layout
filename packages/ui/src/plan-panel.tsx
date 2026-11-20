@@ -289,8 +289,7 @@ function RectFields({
 
 function planGlance(active: PlanRegion | null, plans: IPlanService): string {
   if (!active) return "No plan yet";
-  const errors = plans.issueCount(active.id);
-  return `${active.name} · ${errors === 0 ? "no errors so far" : errorsText(errors)}`;
+  return `${active.name} · ${verdictText(plans, active.id, plans.issueCount(active.id))}`;
 }
 
 function NewPlanForm({

@@ -233,6 +233,7 @@ type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 
 interface DomainExtras {
   readonly unsupported: boolean;
+  readonly carriedTrackUnsupported: boolean;
   readonly shape: PlanShape | null;
   readonly anchor: { readonly x: number; readonly z: number };
   readonly facts: PlacementFacts | undefined;
@@ -282,6 +283,7 @@ function todaysToDomain(placement: PlacedForPlan, extras: DomainExtras | undefin
     label: placement.label,
     box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
     unsupported: extras?.unsupported ?? false,
+    carriedTrackUnsupported: extras?.carriedTrackUnsupported ?? false,
     shape: extras?.shape ?? null,
     anchor: extras?.anchor ?? { x: 0, z: 0 },
     ...(extras?.facts ? { facts: extras.facts } : {}),
@@ -302,6 +304,7 @@ class TodaysPlanService {
   private models: ReadonlyArray<TodaysModel> = [];
   private unsupportedTrack: ReadonlySet<number> = new Set();
   private unsupportedModels: ReadonlySet<number> = new Set();
+  private unsupportedCarriers: ReadonlySet<number> = new Set();
   private state: PlanSnapshot = {
     plans: [],
     activePlanId: null,
@@ -506,9 +509,14 @@ class TodaysPlanService {
     this.commit({ placements: [...models.map((model) => model.todays), ...track] });
   }
 
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
     this.unsupportedTrack = new Set(track);
     this.unsupportedModels = new Set(models);
+    this.unsupportedCarriers = new Set(carriers);
     this.commit({});
   }
 
@@ -519,6 +527,7 @@ class TodaysPlanService {
       if (model === undefined) {
         return {
           unsupported: this.unsupportedTrack.has(i - models.length),
+          carriedTrackUnsupported: false,
           shape: null,
           anchor: { x: 0, z: 0 },
           facts: undefined,
@@ -526,6 +535,8 @@ class TodaysPlanService {
       }
       return {
         unsupported: this.unsupportedModels.has(model.id),
+        carriedTrackUnsupported:
+          !this.unsupportedModels.has(model.id) && this.unsupportedCarriers.has(model.id),
         shape: model.shape,
         anchor: { x: model.handle.x, z: model.handle.z },
         facts: todaysFacts(model.facts, this.partnerLabel(placements, model.facts)),
@@ -935,7 +946,9 @@ export class Pair {
     const models = new Set<number>();
     for (const model of this.models) if (this.next() < 0.3) models.add(model.id);
     if (this.next() < 0.2) models.add(this.nextModel);
-    this.both((s) => s.setUnsupported(pieces, models));
+    const carriers = new Set<number>();
+    for (const model of this.models) if (this.next() < 0.2) carriers.add(model.id);
+    this.both((s) => s.setUnsupported(pieces, models, carriers));
   }
 
   load(): void {
@@ -1347,7 +1360,9 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
       p.trackLay(3);
       p.place();
       const carrier = p.models.at(-1)?.id ?? -1;
-      p.both((s) => s.setUnsupported(new Set([0, 2, MAX_PIECES + 1]), new Set([carrier])));
+      p.both((s) =>
+        s.setUnsupported(new Set([0, 2, MAX_PIECES + 1]), new Set(), new Set([carrier])),
+      );
       p.trackLay(1);
       p.switchThrow(0);
       p.remove();

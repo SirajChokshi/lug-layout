@@ -26,7 +26,7 @@ import {
   type PlacementFacts,
 } from "./plan-facts.ts";
 import { ReachScratch, reachContext, reachFails, type ReachContext } from "./plan-reach.ts";
-import type { PlanRows } from "./plan-rows.ts";
+import { HELD, type PlanRows } from "./plan-rows.ts";
 import { RECT_FLOATS, type PlanShape } from "./plan-shape.ts";
 import {
   ALONG_X,
@@ -66,6 +66,7 @@ export interface PlanPlacement {
   readonly label: string;
   readonly box: LduRect;
   readonly unsupported?: boolean;
+  readonly carriedTrackUnsupported?: boolean;
   readonly shape?: PlanShape | null;
   readonly anchor?: { readonly x: number; readonly z: number };
   readonly facts?: PlacementFacts;
@@ -564,7 +565,7 @@ export function placementIssueCount(
   const minZ = box[offset + BOX_MIN_Z] ?? Number.NaN;
   const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
   const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
-  let count = rows.unsupported[row] === 1 ? 1 : 0;
+  let count = rows.unsupported[row] === HELD ? 0 : 1;
   if (!(minX >= room.minX && maxX <= room.maxX && minZ >= room.minZ && maxZ <= room.maxZ)) count++;
   const obstacles = ctx.obstacleEdges;
   for (let i = 0; i < obstacles.length; i += RECT_STRIDE) {
@@ -636,6 +637,14 @@ export function placementIssues(
         "unsupported",
         [key],
         `${label} isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.`,
+      ),
+    );
+  } else if (placement.carriedTrackUnsupported) {
+    out.push(
+      issue(
+        "unsupported",
+        [key],
+        `${label} carries track that isn't held: none of that track's anti-studs sits on a stud, and it doesn't stand on the bare table.`,
       ),
     );
   }

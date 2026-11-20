@@ -14,6 +14,7 @@ const CERTIFIED_MAGNITUDE = 2 ** 1021;
 const INITIAL_PIECE_FLOATS = 64;
 const POINT_FLOATS = 2;
 const ENDS_PER_EDGE = 2;
+const FLOAT_MARGIN = 2 ** -40;
 
 export interface ReachContext {
   readonly limitLdu: number;
@@ -184,7 +185,43 @@ function endCentres(frame: ExactFrame, ends: Float64Array): Array<readonly [bigi
   return centres;
 }
 
+function everyDiskMisses(reach: ReachContext, clip: Float64Array): boolean {
+  const { ends, limitLdu } = reach;
+  const reached = limitLdu * limitLdu * (1 + FLOAT_MARGIN);
+  const minX = clip[0] ?? NaN;
+  const minZ = clip[1] ?? NaN;
+  const maxX = clip[2] ?? NaN;
+  const maxZ = clip[3] ?? NaN;
+  for (let e = 0; e < ends.length; e += POINT_FLOATS) {
+    const x = ends[e] ?? NaN;
+    const z = ends[e + 1] ?? NaN;
+    const gapX = Math.max(minX - x, x - maxX, 0);
+    const gapZ = Math.max(minZ - z, z - maxZ, 0);
+    if (!(gapX * gapX + gapZ * gapZ > reached)) return false;
+  }
+  return true;
+}
+
+function oneDiskHolds(reach: ReachContext, clip: Float64Array): boolean {
+  const { ends, limitLdu } = reach;
+  const held = limitLdu * limitLdu * (1 - FLOAT_MARGIN);
+  const minX = clip[0] ?? NaN;
+  const minZ = clip[1] ?? NaN;
+  const maxX = clip[2] ?? NaN;
+  const maxZ = clip[3] ?? NaN;
+  for (let e = 0; e < ends.length; e += POINT_FLOATS) {
+    const x = ends[e] ?? NaN;
+    const z = ends[e + 1] ?? NaN;
+    const farX = Math.max(Math.abs(minX - x), Math.abs(maxX - x));
+    const farZ = Math.max(Math.abs(minZ - z), Math.abs(maxZ - z));
+    if (farX * farX + farZ * farZ < held) return true;
+  }
+  return false;
+}
+
 function clipDisksCover(reach: ReachContext, clip: Float64Array): boolean {
+  if (everyDiskMisses(reach, clip)) return false;
+  if (oneDiskHolds(reach, clip)) return true;
   const frame = new ExactFrame([...clip, ...reach.ends, reach.limitLdu]);
   const rect: ExactRect = {
     minX: frame.of(clip[0] ?? NaN),

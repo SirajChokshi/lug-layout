@@ -522,6 +522,35 @@ class PlacedEntry implements PlacedModel {
     return top === EMPTY_COLUMN ? null : this.handle.yPlates + top;
   }
 
+  standsOnBareTable(byColumnChunk: ReadonlyMap<number, ReadonlySet<PlacedEntry>>): boolean {
+    const { cells } = this.placeable;
+    for (let j = 0; j < cells.depth; j++) {
+      for (let i = 0; i < cells.width; i++) {
+        const cell = j * cells.width + i;
+        if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
+        const bottom = this.handle.yPlates + (cells.columnBottom[cell] ?? 0);
+        if (bottom > 0) continue;
+        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
+        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
+        if (!this.coveredAt(byColumnChunk.get(cellChunkKey(wx, wz)), wx, wz, bottom)) return true;
+      }
+    }
+    return false;
+  }
+
+  private coveredAt(
+    entries: ReadonlySet<PlacedEntry> | undefined,
+    worldCellX: number,
+    worldCellZ: number,
+    bottom: number,
+  ): boolean {
+    if (!entries) return false;
+    for (const base of entries) {
+      if (base !== this && base.columnTopPlates(worldCellX, worldCellZ) === bottom) return true;
+    }
+    return false;
+  }
+
   restsOn(base: PlacedEntry): boolean {
     const { cells } = this.placeable;
     for (let j = 0; j < cells.depth; j++) {
@@ -828,6 +857,7 @@ class PlacedEntry implements PlacedModel {
 }
 
 export const NO_MODELS: ReadonlySet<PlacedModel> = new Set();
+const NO_ENTRIES: ReadonlyArray<PlacedEntry> = [];
 
 export interface RebuildReport {
   readonly chunks: number;
@@ -1017,7 +1047,7 @@ export class PlacedChunks {
     const z1 = chunkOf(box.maxZ + STUD_LDU);
     for (let cz = z0; cz <= z1; cz++) {
       for (let cx = x0; cx <= x1; cx++) {
-        for (const entry of this.byColumnChunk.get(chunkKey(cx, cz)) ?? []) {
+        for (const entry of this.byColumnChunk.get(chunkKey(cx, cz)) ?? NO_ENTRIES) {
           if (entry.touchedIn === epoch) continue;
           entry.touchedIn = epoch;
           const other = entry.box;
@@ -1040,15 +1070,8 @@ export class PlacedChunks {
     return this.entryOf(model) !== null;
   }
 
-  carried(model: PlacedModel): boolean {
-    const rider = this.entryOf(model);
-    if (!rider) return false;
-    for (const key of rider.chunks.keysWithColumns()) {
-      for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== rider && rider.restsOn(entry)) return true;
-      }
-    }
-    return false;
+  standsOnBareTable(model: PlacedModel): boolean {
+    return this.entryOf(model)?.standsOnBareTable(this.byColumnChunk) ?? false;
   }
 
   restsOn(rider: PlacedModel, base: PlacedModel): boolean {

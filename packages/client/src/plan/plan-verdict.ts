@@ -19,7 +19,7 @@ export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   },
   {
     id: "modelTrackOverlap",
-    text: "Models overlapping laid track: refused while editing, not checked in a loaded world",
+    text: "Models overlapping laid track: refused while editing, not checked in a loaded world, where support is judged as if that track weren't there",
     owner: NOT_YET_ASSIGNED,
   },
   {

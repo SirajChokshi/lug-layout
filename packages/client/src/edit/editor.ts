@@ -148,7 +148,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { PlanFacts, restsOnTable } from "./plan-facts.ts";
+import { PlanFacts } from "./plan-facts.ts";
 import {
   OBSTACLE_RECT_FLOATS,
   seatsPending,
@@ -1646,7 +1646,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureTrackObstacles(track);
     const unsupported = track.unsupportedPieces();
     this.unsupportedTrack = unsupported;
-    if (!unsupported) return;
+    if (!unsupported) {
+      this.unsupportedLaid = NO_IDS;
+      this.unsupportedCarriers = NO_IDS;
+      return;
+    }
     const laid = new Set<number>();
     const carriers = new Set<number>();
     for (const { piece } of unsupported) {
@@ -1661,15 +1665,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private pushUnsupported(): void {
-    const measured = this.facts.unsupported;
-    const carriers = this.unsupportedCarriers;
-    const models =
-      carriers.size === 0
-        ? measured
-        : measured.size === 0
-          ? carriers
-          : new Set([...carriers, ...measured]);
-    this.plans.setUnsupported(this.unsupportedLaid, models);
+    this.plans.setUnsupported(
+      this.unsupportedLaid,
+      this.facts.unsupported,
+      this.unsupportedCarriers,
+    );
   }
 
   private unsupportedSince(firstPiece: number): TrackUnsupportedView | null {
@@ -4639,10 +4639,10 @@ export class Editor implements IEditor, IEditedWorld {
       if (this.search.has(model.id)) ids.add(model.id);
     }
     if (ids.size === 0) return null;
-    const stranded = this.search.strandedByRemoval(ids, (other) => {
-      const model = this.searchModels.get(other);
-      return model === undefined || restsOnTable(model);
-    });
+    const stranded = this.search.strandedByRemoval(
+      ids,
+      (other) => (this.searchModels.get(other)?.handle.yPlates ?? 0) <= 0,
+    );
     return stranded === null ? null : (this.searchModels.get(stranded) ?? null);
   }
 

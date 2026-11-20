@@ -38,16 +38,22 @@ function footingCells(source: ShapeSource): Uint8Array {
   const { cells, slabBoxes } = source;
   const chosen = new Uint8Array(cells.width * cells.depth);
   let lowest = Number.POSITIVE_INFINITY;
-  for (let cell = 0; cell < chosen.length; cell++) {
-    if (occupied(cells, cell)) lowest = Math.min(lowest, cells.columnBottom[cell] ?? 0);
-  }
+  let slabLevel = Number.POSITIVE_INFINITY;
   for (let j = 0; j < cells.depth; j++) {
     for (let i = 0; i < cells.width; i++) {
       const cell = j * cells.width + i;
       if (!occupied(cells, cell)) continue;
-      if (cells.columnBottom[cell] === lowest || meetsSlab(cells, slabBoxes, i, j))
-        chosen[cell] = 1;
+      const bottom = cells.columnBottom[cell] ?? 0;
+      lowest = Math.min(lowest, bottom);
+      if (!meetsSlab(cells, slabBoxes, i, j)) continue;
+      chosen[cell] = 1;
+      slabLevel = Math.min(slabLevel, bottom);
     }
+  }
+  for (let cell = 0; cell < chosen.length; cell++) {
+    if (!occupied(cells, cell)) continue;
+    const bottom = cells.columnBottom[cell];
+    if (bottom === lowest || bottom === slabLevel) chosen[cell] = 1;
   }
   return chosen;
 }

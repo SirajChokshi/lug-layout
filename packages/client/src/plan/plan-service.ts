@@ -34,6 +34,7 @@ import { inject, injectable } from "inversify";
 export const DEFAULT_MAX_OVERHANG_MM = 0;
 export const DEFAULT_MAX_REACH_MM = 700;
 export const DEFAULT_TABLE_HEIGHT_MM = 750;
+const NO_CARRIERS: ReadonlySet<number> = new Set();
 
 export interface PlacedForPlan {
   readonly key: PlacementKey;
@@ -114,7 +115,11 @@ export interface IPlanService {
   placements(): PlanPlacementsView;
   materialize(): PlanStateDump;
   apply(delta: PlanDelta): void;
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void;
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
@@ -419,11 +424,15 @@ export class PlanService implements IPlanService {
     this.afterChange(false);
   }
 
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
     const evaluation = this.evaluation;
     evaluation.resetChanges();
-    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track);
-    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models);
+    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track, NO_CARRIERS);
+    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models, carriers);
     if (trackChanged || modelsChanged) this.afterChange(false);
   }
 

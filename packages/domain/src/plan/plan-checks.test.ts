@@ -45,6 +45,7 @@ interface Shaped {
   readonly footing?: ReadonlyArray<number>;
   readonly occupancy?: ReadonlyArray<number>;
   readonly unsupported?: boolean;
+  readonly carriedTrackUnsupported?: boolean;
   readonly facts?: Partial<PlacementFacts>;
 }
 
@@ -61,6 +62,7 @@ function placed(slot: number, xMm: number, zMm: number, shaped: Shaped = {}): Pl
     shape: { footing: Float64Array.from(footing), occupancy: Float64Array.from(occupancy) },
     anchor: { x, z },
     unsupported: shaped.unsupported ?? false,
+    carriedTrackUnsupported: shaped.carriedTrackUnsupported ?? false,
     facts: {
       unmeasured: false,
       overlapWith: null,
@@ -146,13 +148,14 @@ describe("reach from the free table edges", () => {
 });
 
 describe("measured facts on a placement", () => {
-  it("reports the footprint first, then unmapped parts per catalog, then each placement's held, overlap and road issues in rule order", () => {
+  it("reports the footprint first, then unmapped parts per catalog, then each placement's support, overlap and road issues in rule order", () => {
     const plan = region([table("A", 0, 0, 1000, 1000)], { maxReachMm: -1 });
     const loose = placed(0, 200, 200, {
       unsupported: true,
       facts: { overlapWith: "brick 1", roadMismatchedCells: 3, unmappedRebrickable: 2 },
     });
     const pending = placed(1, 600, 600, {
+      carriedTrackUnsupported: true,
       facts: { unmeasured: true, unmappedRebrickable: 1, unmappedBrickLink: 1 },
     });
     expect(checkPlan(plan, [loose, pending]).issues.map((i) => [i.rule, i.message])).toEqual([
@@ -173,6 +176,10 @@ describe("measured facts on a placement", () => {
       [
         "roadJoin",
         "brick 0's road doesn't continue into its neighbour on 3 edge cells: the lanes or curbs differ.",
+      ],
+      [
+        "unsupported",
+        "brick 1 carries track that isn't held: none of that track's anti-studs sits on a stud, and it doesn't stand on the bare table.",
       ],
     ]);
   });

@@ -54,6 +54,7 @@ const COVERING_REACH_MM = 1100;
 const DEFAULT_REACH_MM = 700;
 const FALLBACK_REACH_MM = 100;
 const JOINED_ROAD_CELLS = 8;
+const MID_TABLE_BRICK = 64 * 64 + 32;
 const FLAG_ROOM_DEPTH_MM = 4300;
 const FLAG_SHIFT_LDU = 5400;
 const TABLE_HEIGHT_MM = 750;
@@ -924,7 +925,6 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
   const removeSpareTable = (): void => plans.removeTable(planId, spareTable);
   const addSparePlan = (): void => {
     sparePlan = plans.createPlan(tableRegion(ROOM_MM));
-    plans.updatePlan(sparePlan, { maxReachMm: COVERING_REACH_MM });
   };
   const removeSparePlan = (): void => {
     plans.removePlan(sparePlan);
@@ -1020,6 +1020,22 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
   lines.push(
     `| typing a width, four commits (2, 24, 240, 2400 mm), the whole burst | plan path | ${summary(await measure(REGION_EDITS, burst, restore))} |`,
   );
+  plans.updatePlan(planId, { maxReachMm: DEFAULT_REACH_MM });
+  const middle = brick(MID_TABLE_BRICK, ids.fresh(), 0);
+  const one: PlanModelSource[] = [middle];
+  const add = { added: one, removed: NONE };
+  const drop = { added: NONE, removed: one };
+  const click = (): void => {
+    middle.id = ids.fresh();
+    applyView(built, add);
+  };
+  const unclick = (): void => applyView(built, drop);
+  click();
+  unclick();
+  lines.push(
+    `| a click adding one brick mid-table at ${DEFAULT_REACH_MM} mm reach, so its row takes the end-disk test | plan path | ${summary(await measure(COST_WINDOWS, click, unclick))} |`,
+  );
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   lines.push(
     `| typing a width, four commits, the whole burst | plus the panel's reads and the minimap's overviewOf per commit | ${summary(
       await measure(

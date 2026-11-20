@@ -30,10 +30,23 @@ import {
   type PlanPlacement,
   type PlanRegionContext,
 } from "./plan-rules.ts";
-import { BOX_PLAN_UNREADABLE, NO_ROW, PlanRows, RowList } from "./plan-rows.ts";
+import {
+  BOX_PLAN_UNREADABLE,
+  CARRIED_TRACK_NOT_HELD,
+  HELD,
+  NOT_HELD,
+  NO_ROW,
+  PlanRows,
+  RowList,
+} from "./plan-rows.ts";
 
 const BOM_SUMS = 2;
 const NO_SOURCES: ReadonlySet<number> = new Set();
+
+interface UnsupportedSources {
+  readonly itself: ReadonlySet<number>;
+  readonly carriedTrack: ReadonlySet<number>;
+}
 
 function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
   if (a.size !== b.size) return false;
@@ -139,7 +152,8 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
     key: rows.keyOf(row),
     ref: rows.refOf(row),
     label: rows.labelOf(row),
-    unsupported: rows.unsupported[row] === 1,
+    unsupported: rows.unsupported[row] === NOT_HELD,
+    carriedTrackUnsupported: rows.unsupported[row] === CARRIED_TRACK_NOT_HELD,
     shape: rows.shapeOf(row),
     anchor: { x: rows.labelA[row] ?? 0, z: rows.labelB[row] ?? 0 },
     facts: factsOf(rows, row),
@@ -167,7 +181,7 @@ export class PlanEvaluation {
   private flagged = new Uint32Array(0);
   private readonly flaggedRows = new RowList(0);
   private readonly unsupportedRows = new Set<number>();
-  private readonly unsupportedSources = new Map<number, ReadonlySet<number>>();
+  private readonly unsupportedSources = new Map<number, UnsupportedSources>();
   private before = new Uint32Array(4);
   private bomBefore = new Float64Array(4 * BOM_SUMS);
   private readonly scratch = new CoverageScratch();
@@ -284,30 +298,53 @@ export class PlanEvaluation {
     }
   }
 
-  setUnsupported(segment: number, sources: ReadonlySet<number>): boolean {
-    if (sameMembers(this.unsupportedSources.get(segment) ?? NO_SOURCES, sources)) return false;
-    this.unsupportedSources.set(segment, new Set(sources));
+  setUnsupported(
+    segment: number,
+    itself: ReadonlySet<number>,
+    carriedTrack: ReadonlySet<number>,
+  ): boolean {
+    const known = this.unsupportedSources.get(segment);
+    if (
+      sameMembers(known?.itself ?? NO_SOURCES, itself) &&
+      sameMembers(known?.carriedTrack ?? NO_SOURCES, carriedTrack)
+    ) {
+      return false;
+    }
+    this.unsupportedSources.set(segment, {
+      itself: new Set(itself),
+      carriedTrack: new Set(carriedTrack),
+    });
     const rows = this.rows;
-    const wanted = new Set<number>();
-    for (const source of sources) {
+    const wanted = new Map<number, number>();
+    for (const source of carriedTrack) {
       const row = rows.find(segment, source);
-      if (row !== NO_ROW) wanted.add(row);
+      if (row !== NO_ROW) wanted.set(row, CARRIED_TRACK_NOT_HELD);
+    }
+    for (const source of itself) {
+      const row = rows.find(segment, source);
+      if (row !== NO_ROW) wanted.set(row, NOT_HELD);
     }
     for (const row of this.unsupportedRows) {
       if (rows.segment[row] !== segment || wanted.has(row)) continue;
-      this.reflag(row, 0);
+      this.reflag(row, HELD);
     }
-    for (const row of wanted) {
-      if (rows.unsupported[row] === 1) continue;
-      this.reflag(row, 1);
+    for (const [row, held] of wanted) {
+      if (rows.unsupported[row] !== held) this.reflag(row, held);
     }
     this.version++;
     return true;
   }
 
+  private unsupportedOf(segment: number, source: number): number {
+    const sources = this.unsupportedSources.get(segment);
+    if (!sources) return HELD;
+    if (sources.itself.has(source)) return NOT_HELD;
+    return sources.carriedTrack.has(source) ? CARRIED_TRACK_NOT_HELD : HELD;
+  }
+
   private reflag(row: number, unsupported: number): void {
-    if (unsupported === 1) this.unsupportedRows.add(row);
-    else this.unsupportedRows.delete(row);
+    if (unsupported === HELD) this.unsupportedRows.delete(row);
+    else this.unsupportedRows.add(row);
     const wasUnreadable = this.beginRewrite(row);
     this.rows.unsupported[row] = unsupported;
     this.endRewrite(row, wasUnreadable);
@@ -409,8 +446,9 @@ export class PlanEvaluation {
     const row = this.rows.add(segment, source);
     this.fit();
     this.copyRow(delta, entry, row);
-    if (this.unsupportedSources.get(segment)?.has(source) === true) {
-      this.rows.unsupported[row] = 1;
+    const held = this.unsupportedOf(segment, source);
+    if (held !== HELD) {
+      this.rows.unsupported[row] = held;
       this.unsupportedRows.add(row);
     }
     this.regionsIn[row] = 0;

@@ -464,15 +464,21 @@ describe("PlacementSearch", () => {
     expect([choice.accepted, choice.votes]).toEqual([true, 4]);
   });
 
-  it("counts as holding a placed model only the mates on its downward connectors", () => {
+  it("counts as holding a placed model the mates on its connectors that don't face up: under it or beside it, never above it", () => {
     const f = fixture();
     const plate = world(f);
     const floating = 31;
+    const pinned = 32;
     place(f, PLATE, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 0 });
     place(f, floating, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 5, rot: 0 });
+    const far = 40 * STUD_LDU;
+    place(f, BORED, boredBlock(f), { x: far, z: 0, yPlates: 4, rot: 0 });
+    place(f, pinned, pinnedBlock(f, STUD_LDU), { x: far, z: 0, yPlates: 4, rot: 0 });
     expect(
-      [BASEPLATE, BRICK, PLATE, floating].map((placement) => f.search.restingMates(placement)),
-    ).toEqual([0, 1, 4, 0]);
+      [BASEPLATE, BRICK, PLATE, floating, BORED, pinned].map((placement) =>
+        f.search.holdingMates(placement),
+      ),
+    ).toEqual([0, 1, 4, 0, 1, 1]);
   });
 });
 

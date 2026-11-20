@@ -31,10 +31,6 @@ interface UnmappedParts {
   readonly bricklink: number;
 }
 
-export function restsOnTable(model: PlacedModel): boolean {
-  return model.handle.yPlates <= 0;
-}
-
 function unmappedIn(
   lines: ReadonlyArray<BomLine>,
   crosswalk: Crosswalk,
@@ -158,8 +154,7 @@ export class PlanFacts {
   }
 
   private held(model: PlacedModel): boolean {
-    if (this.search.restingMates(model.id) > 0) return true;
-    return restsOnTable(model) && !this.placed.carried(model);
+    return this.search.holdingMates(model.id) > 0 || this.placed.standsOnBareTable(model);
   }
 
   private searchable(model: PlacedModel): boolean {

@@ -1,5 +1,5 @@
 import {
-  AXIS_NEG_Y,
+  AXIS_POS_Y,
   CandidatePoses,
   FootprintGrid,
   MateReport,
@@ -90,7 +90,7 @@ export interface IPlacementSearch {
   ): void;
   strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null;
   has(placement: number): boolean;
-  restingMates(placement: number): number;
+  holdingMates(placement: number): number;
   overlapOf(placement: number): number;
 }
 
@@ -325,16 +325,16 @@ export class PlacementSearch implements IPlacementSearch {
     return this.placed.has(placement);
   }
 
-  restingMates(placement: number): number {
+  holdingMates(placement: number): number {
     const { model, pose } = this.placedAt(placement);
     const report = this.report;
     this.solver.evaluate(model, pose, report);
-    let resting = 0;
+    let holding = 0;
     for (let k = 0; k < report.count; k++) {
       if (report.family[k] === TRACK_FAMILY) continue;
-      if (model.axis[report.connector[k] ?? 0] === AXIS_NEG_Y) resting++;
+      if (model.axis[report.connector[k] ?? 0] !== AXIS_POS_Y) holding++;
     }
-    return resting;
+    return holding;
   }
 
   overlapOf(placement: number): number {
