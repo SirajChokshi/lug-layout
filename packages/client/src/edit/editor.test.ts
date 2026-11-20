@@ -45,6 +45,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
+import { STUD_LDU } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -70,9 +71,10 @@ import { commandEnabled, startPlay, type CommandId } from "../commands/editor-co
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import { BOM_SERVICE, EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import type { BomScope } from "../bom/bom-service.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 
@@ -566,6 +568,60 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
   expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
   expect(started).toMatchObject({ status: "loading", error: null });
 }, 120_000);
+
+const TRACK_STRAIGHT = "ldraw:74746";
+const STRAIGHTS_IN_RUN = 4;
+
+it.each([
+  { scope: "world", regionStraights: null, straights: STRAIGHTS_IN_RUN, brick: 1 },
+  { scope: "region", regionStraights: 2, straights: 2, brick: 0 },
+] as const)(
+  "counts each drawn track piece once in the $scope parts list, beside a user's model, by its part origin",
+  async ({ regionStraights, straights, brick }) => {
+    const userModel = "brick-2x4";
+    const { editor, backend, container, catalog, manifest } = await startEditor(
+      [],
+      new BundleDirectoryFetcher(),
+      [userModel],
+    );
+    const straight = manifest.catalogParts.find((part) => part.id === TRACK_STRAIGHT);
+    const straightLdu = (straight?.trackEnds?.[1]?.xStuds ?? 0) * STUD_LDU;
+    await loadCatalogItem(catalog, `omr:${userModel}`);
+    expect(placer(editor, backend)(`omr:${userModel}`, 1600, 1600).placements).toBe(1);
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(STRAIGHTS_IN_RUN * straightLdu, 0);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+    const scope: BomScope =
+      regionStraights === null
+        ? { kind: "world" }
+        : {
+            kind: "region",
+            region: {
+              minX: 0,
+              minZ: -straightLdu,
+              maxX: regionStraights * straightLdu,
+              maxZ: straightLdu,
+            },
+          };
+
+    const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, scope);
+
+    expect(editor.snapshot().track?.pieces).toBe(STRAIGHTS_IN_RUN);
+    expect({ placements: bom.placements, parts: bom.parts, ldraw: bom.ldraw }).toEqual({
+      placements: straights + brick,
+      parts: straights + brick,
+      ldraw: [
+        ...(brick > 0 ? [{ part: "ldraw:3001", ldrawColor: 16, quantity: brick }] : []),
+        { part: TRACK_STRAIGHT, ldrawColor: straight?.displayColor?.ldraw, quantity: straights },
+      ],
+    });
+  },
+  120_000,
+);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();

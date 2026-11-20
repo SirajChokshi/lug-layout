@@ -1831,12 +1831,10 @@ export class Editor implements IEditor, IEditedWorld {
         return notDrawnItems(placeable.id, this.catalog.notDrawn(placeable), count);
       });
     if (scope.kind !== "selection") {
-      const placements = countPlacements(
-        this.world,
-        contents,
-        counter,
-        scope.kind === "region" ? scope.region : null,
-      );
+      const region = scope.kind === "region" ? scope.region : null;
+      const placements =
+        countPlacements(this.world, contents, counter, region) +
+        (this.track?.countParts(counter, region) ?? 0);
       return {
         name: EDITOR_WORLD_NAME,
         lod: "standard",
