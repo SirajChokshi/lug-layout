@@ -16,7 +16,7 @@ import {
   type Zeta16,
 } from "@brr/math";
 import type { WorldBox } from "@brr/render";
-import { quarterTurned, type TurnDirection } from "./turn.ts";
+import { quarterTurned } from "./turn.ts";
 
 export const QUAD_FLOATS = 8;
 const QUAD_CORNERS = 4;
@@ -65,9 +65,9 @@ export function translated(pose: PlacementPose, dx: number, dz: number): Placeme
 export function turnedAbout(
   pose: PlacementPose,
   pivot: LatticePoint,
-  direction: TurnDirection,
+  turns: number,
 ): PlacementPose {
-  const turn = quarterTurn(direction);
+  const turn = quarterTurn(turns);
   const cos = rot90Cos(turn);
   const sin = rot90Sin(turn);
   const dx = pose.x - pivot.x;
@@ -76,7 +76,7 @@ export function turnedAbout(
     ...pose,
     x: pivot.x + cos * dx + sin * dz + 0,
     z: pivot.z - sin * dx + cos * dz + 0,
-    rot: quarterTurned(pose.rot, direction),
+    rot: quarterTurned(pose.rot, turns),
   };
 }
 
@@ -88,13 +88,9 @@ export function pieceTranslated(pose: Pose16, dx: number, dz: number): Pose16 {
   return pose16(addZeta16(pose.position, latticeZeta16(dx, dz)), pose.heading);
 }
 
-export function pieceTurnedAbout(
-  pose: Pose16,
-  pivot: LatticePoint,
-  direction: TurnDirection,
-): Pose16 {
+export function pieceTurnedAbout(pose: Pose16, pivot: LatticePoint, turns: number): Pose16 {
   const centre = latticeZeta16(pivot.x, pivot.z);
-  const steps = -QUARTER_TURN_16 * direction;
+  const steps = -QUARTER_TURN_16 * turns;
   const offset = rotateZeta16(subtractZeta16(pose.position, centre), steps);
   return pose16(addZeta16(centre, offset), normalizeHeading16(pose.heading + steps));
 }
