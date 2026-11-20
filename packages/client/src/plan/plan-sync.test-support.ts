@@ -1,6 +1,13 @@
 import {
   BOX_STRIDE,
   checkPlan,
+  emptyFacts,
+  FACT_FLAGS,
+  FACT_ROAD_JOINED,
+  FACT_ROAD_MISMATCHED,
+  FACT_UNMAPPED_BRICKLINK,
+  FACT_UNMAPPED_REBRICKABLE,
+  FLAG_UNMEASURED,
   LABEL_NUMBERED,
   mmRectFromWorld,
   mmRectInWorld,
@@ -16,7 +23,9 @@ import {
   type PlanCheck,
   type PlanPlacement,
   type PlanRegion,
+  type PlanShape,
   type PlanState,
+  type PlacementFacts,
 } from "@brr/domain";
 import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
@@ -33,6 +42,7 @@ import {
 } from "./plan-producer.ts";
 import {
   DEFAULT_MAX_OVERHANG_MM,
+  DEFAULT_MAX_REACH_MM,
   DEFAULT_TABLE_HEIGHT_MM,
   PlanService,
   type NewPlan,
@@ -216,13 +226,31 @@ export class RecordingBackend implements ISceneBackend, Recorder {
 
 type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 
+interface DomainExtras {
+  readonly unsupported: boolean;
+  readonly shape: PlanShape | null;
+  readonly anchor: { readonly x: number; readonly z: number };
+  readonly facts: PlacementFacts | undefined;
+}
+
+function todaysFacts(facts: Int32Array): PlacementFacts {
+  return {
+    unmeasured: ((facts[FACT_FLAGS] ?? 0) & FLAG_UNMEASURED) !== 0,
+    overlapWith: null,
+    roadJoinedCells: facts[FACT_ROAD_JOINED] ?? 0,
+    roadMismatchedCells: facts[FACT_ROAD_MISMATCHED] ?? 0,
+    unmappedRebrickable: facts[FACT_UNMAPPED_REBRICKABLE] ?? 0,
+    unmappedBrickLink: facts[FACT_UNMAPPED_BRICKLINK] ?? 0,
+  };
+}
+
 function todaysEvaluate(
   plans: ReadonlyArray<PlanRegion>,
   placed: ReadonlyArray<PlacedForPlan>,
-  unsupported: ReadonlyArray<boolean>,
+  extras: ReadonlyArray<DomainExtras>,
 ): Evaluation {
   try {
-    const domain = placed.map((placement, i) => todaysToDomain(placement, unsupported[i] === true));
+    const domain = placed.map((placement, i) => todaysToDomain(placement, extras[i]));
     return {
       checks: plans.map((plan) => checkPlan(plan, domain)),
       sandboxPlacements: domain
@@ -241,26 +269,32 @@ function todaysPlacementId(key: PlacementKey): string {
   return `${key.chunkKey}:${key.slot}`;
 }
 
-function todaysToDomain(placement: PlacedForPlan, unsupported: boolean): PlanPlacement {
+function todaysToDomain(placement: PlacedForPlan, extras: DomainExtras | undefined): PlanPlacement {
   const { box } = placement;
   return {
     key: placement.key,
     ref: placement.ref,
     label: placement.label,
     box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
-    unsupported,
+    unsupported: extras?.unsupported ?? false,
+    shape: extras?.shape ?? null,
+    anchor: extras?.anchor ?? { x: 0, z: 0 },
+    ...(extras?.facts ? { facts: extras.facts } : {}),
   };
 }
 
 interface TodaysModel {
   readonly id: number;
   readonly todays: PlacedForPlan;
+  readonly handle: { readonly x: number; readonly z: number };
+  readonly shape: PlanShape | null;
+  readonly facts: Int32Array;
 }
 
 class TodaysPlanService {
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
-  private modelIds: ReadonlyArray<number> = [];
+  private models: ReadonlyArray<TodaysModel> = [];
   private unsupportedTrack: ReadonlySet<number> = new Set();
   private unsupportedModels: ReadonlySet<number> = new Set();
   private state: PlanSnapshot = {
@@ -313,6 +347,7 @@ class TodaysPlanService {
         obstacles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
+      maxReachMm: DEFAULT_MAX_REACH_MM,
     };
     this.commit({ plans: [...this.state.plans, region], activePlanId: id });
     return id;
@@ -325,6 +360,7 @@ class TodaysPlanService {
       originChunkX: patch.originChunkX ?? plan.originChunkX,
       originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
       maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
+      maxReachMm: patch.maxReachMm ?? plan.maxReachMm,
       footprint: {
         ...plan.footprint,
         roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,
@@ -461,7 +497,7 @@ class TodaysPlanService {
   }
 
   setPlacements(models: ReadonlyArray<TodaysModel>, track: ReadonlyArray<PlacedForPlan>): void {
-    this.modelIds = models.map((model) => model.id);
+    this.models = models;
     this.commit({ placements: [...models.map((model) => model.todays), ...track] });
   }
 
@@ -471,13 +507,24 @@ class TodaysPlanService {
     this.commit({});
   }
 
-  private unsupportedFlags(placements: ReadonlyArray<PlacedForPlan>): boolean[] {
-    const models = this.modelIds;
+  private domainExtras(placements: ReadonlyArray<PlacedForPlan>): DomainExtras[] {
+    const models = this.models;
     return placements.map((_, i) => {
-      const id = models[i];
-      return id === undefined
-        ? this.unsupportedTrack.has(i - models.length)
-        : this.unsupportedModels.has(id);
+      const model = models[i];
+      if (model === undefined) {
+        return {
+          unsupported: this.unsupportedTrack.has(i - models.length),
+          shape: null,
+          anchor: { x: 0, z: 0 },
+          facts: undefined,
+        };
+      }
+      return {
+        unsupported: this.unsupportedModels.has(model.id),
+        shape: model.shape,
+        anchor: { x: model.handle.x, z: model.handle.z },
+        facts: todaysFacts(model.facts),
+      };
     });
   }
 
@@ -489,7 +536,7 @@ class TodaysPlanService {
     const next = { ...this.state, ...patch };
     this.state = {
       ...next,
-      ...todaysEvaluate(next.plans, next.placements, this.unsupportedFlags(next.placements)),
+      ...todaysEvaluate(next.plans, next.placements, this.domainExtras(next.placements)),
     };
     this.draw();
     for (const listener of this.listeners) listener();
@@ -544,6 +591,14 @@ class TodaysPlanService {
 const EDITS = 1_000;
 const MAX_MODELS = 24;
 const MAX_PIECES = 10;
+const TEST_SHAPES: ReadonlyArray<PlanShape> = [
+  {
+    footing: Float64Array.of(0, 0, 40, 40, 80, 0, 120, 40),
+    occupancy: Float64Array.of(0, 0, 120, 60),
+  },
+  { footing: Float64Array.of(0, 0, 640, 640), occupancy: Float64Array.of(-20, 0, 660, 640) },
+  { footing: Float64Array.of(-40, -40, 40, 40), occupancy: Float64Array.of(-40, -40, 40, 40) },
+];
 const MAX_REGIONS = 3;
 const SAVED_PLAN_STATES = 4;
 const CHUNK = 640;
@@ -714,8 +769,24 @@ export class Pair {
       },
       placeable: { id: `ref-${this.int(5)}`, label: `Item ${this.int(5)}` },
       box,
+      shape: this.next() < 0.5 ? this.pick(TEST_SHAPES) : null,
+      facts: this.randomFacts(),
     };
     return { ...source, todays: todaysEntry(source) };
+  }
+
+  randomFacts(): Int32Array {
+    const facts = emptyFacts();
+    if (this.next() < 0.1) facts[FACT_FLAGS] = FLAG_UNMEASURED;
+    if (this.next() < 0.15) facts[FACT_ROAD_JOINED] = this.int(20);
+    if (this.next() < 0.1) facts[FACT_ROAD_MISMATCHED] = 1 + this.int(4);
+    if (this.next() < 0.1) facts[FACT_UNMAPPED_REBRICKABLE] = 1 + this.int(5);
+    if (this.next() < 0.1) facts[FACT_UNMAPPED_BRICKLINK] = 1 + this.int(5);
+    return facts;
+  }
+
+  renumbered(model: TestModel): TestModel {
+    return { ...model, id: this.nextModel++ };
   }
 
   unreadableModel(field: BoxField): TestModel {
@@ -814,7 +885,10 @@ export class Pair {
   }
 
   load(): void {
-    this.models = this.models.filter(() => this.next() < 0.8).toSorted(() => this.next() - 0.5);
+    this.models = this.models
+      .filter(() => this.next() < 0.8)
+      .toSorted(() => this.next() - 0.5)
+      .map((model) => this.renumbered(model));
     this.track.pieces.length = Math.min(this.track.pieces.length, this.int(MAX_PIECES));
     writeFullRebuild(this.delta, this.models, this.track);
     this.sut.apply(this.delta);
@@ -876,6 +950,7 @@ export class Pair {
       { roomWidthMm: 1000 + this.int(3000) },
       { originChunkX: this.int(3) - 2 },
       { maxOverhangMm: this.int(60) },
+      { maxReachMm: this.int(1500) },
       { name: `Renamed ${this.int(9)}`, roomDepthMm: 1000 + this.int(3000) },
     ]);
   }

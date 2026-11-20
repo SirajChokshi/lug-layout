@@ -2,6 +2,7 @@ import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
 import type { PlanRegion, PlanTable } from "../src/plan/plan-region.ts";
+import { MODEL_SEGMENT, PlanRows } from "../src/plan/plan-rows.ts";
 import {
   BOX_STRIDE,
   CoverageScratch,
@@ -18,6 +19,7 @@ const BRICK_HALF_X = 40;
 const BRICK_HALF_Z = 20;
 const BRICK_HEIGHT = 24;
 const ROOM_MM = 2100;
+const COVERING_REACH_MM = 1100;
 const TABLE_HEIGHT_MM = 750;
 const WARMUP_PASSES = 8;
 const PASSES = 32;
@@ -32,6 +34,13 @@ const COUNTED_SPACES = new Set([
   "old_space",
   "large_object_space",
 ]);
+
+function rowsOf(boxes: Float64Array, count: number): PlanRows {
+  const rows = new PlanRows();
+  for (let i = 0; i < count; i++) rows.add(MODEL_SEGMENT, i);
+  rows.box.set(boxes.subarray(0, count * BOX_STRIDE));
+  return rows;
+}
 
 function denseBoxes(count: number): Float64Array {
   const boxes = new Float64Array(count * BOX_STRIDE);
@@ -68,9 +77,11 @@ const region: PlanRegion = {
   originChunkZ: 0,
   footprint: { roomWidthMm: ROOM_MM, roomDepthMm: ROOM_MM, tables: [table], obstacles: [] },
   maxOverhangMm: 0,
+  maxReachMm: COVERING_REACH_MM,
 };
 const ctx = regionContext(region);
 const boxes = denseBoxes(ROWS);
+const rows = rowsOf(boxes, ROWS);
 const scratch = new CoverageScratch();
 
 let collections = 0;
@@ -95,7 +106,7 @@ function settle(): Promise<void> {
 function pass(): number {
   let issues = 0;
   for (let row = 0; row < ROWS; row++) {
-    issues += placementIssueCount(ctx, boxes, row * BOX_STRIDE, scratch);
+    issues += placementIssueCount(ctx, rows, row, scratch);
   }
   return issues;
 }
@@ -163,9 +174,9 @@ interface FallbackCost {
 
 async function fallbackCost(tables: number): Promise<FallbackCost> {
   const coverage = coverageContext(uncertifiedTables(tables), 2.5);
-  const box = Float64Array.of(TWO_53 - 2000, 0, 10, TWO_53 + 2, 0, 20);
+  const box = rowsOf(Float64Array.of(TWO_53 - 2000, 0, 10, TWO_53 + 2, 0, 20), 1);
   const room = { minX: -EVERYWHERE, minZ: -EVERYWHERE, maxX: EVERYWHERE, maxZ: EVERYWHERE };
-  const fitCtx = { ...ctx, room, coverage };
+  const fitCtx = { ...ctx, room, coverage, reach: null };
   const decide = (): number => {
     let issues = 0;
     for (let k = 0; k < FALLBACK_DECISIONS; k++)
