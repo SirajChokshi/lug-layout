@@ -4,6 +4,7 @@ import { writeStoredZip } from "@brr/storage/zip";
 import { EditorPage, byPosition, type LatticePoint } from "./editor-page.ts";
 
 const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
+const NON_CA = "Not redistributable : see NonCAreadme.txt";
 const PINNED_LIBRARY = new URL("../../../.cache/ldraw/", import.meta.url);
 const BASEPLATE = "ldraw:3811@2";
 const PLATES_PER_BRICK = 3;
@@ -72,7 +73,7 @@ async function studioArchive(): Promise<Uint8Array> {
     {
       name: "CustomParts/studiobrick.dat",
       bytes: utf8.encode(
-        customPart("studiobrick.dat", CC_BY_4, "parts/3001.dat", brick).slice(1, -1).join("\n"),
+        customPart("studiobrick.dat", NON_CA, "parts/3001.dat", brick).slice(1, -1).join("\n"),
       ),
     },
   ]);
@@ -84,7 +85,7 @@ async function openReport(page: Page, file: string) {
   return status;
 }
 
-test("CA-licensed custom parts from an MPD and a Studio file are drawn and badged, seat on a baseplate and take a copy on their studs, and a part without a CA header is reported", async ({
+test("custom parts from an MPD and a Studio file are drawn and badged whatever licence they name, or none, seat on a baseplate and take a copy on their studs", async ({
   page,
 }) => {
   const mpd = test.info().outputPath("custom-bricks.mpd");
@@ -98,14 +99,15 @@ test("CA-licensed custom parts from an MPD and a Studio file are drawn and badge
   expect(fromMpd.status, fromMpd.text).toBe("placeable");
   const report = await openReport(page, "custom-bricks.mpd");
   const custom = report.locator('[data-kind="custom"]');
-  await expect(custom).toHaveCount(2);
+  await expect(custom).toHaveCount(3);
   await expect(report.locator('[data-kind="custom"][data-part$="/stud-brick.dat"]')).toContainText(
     "Unofficial_Part",
   );
-  await expect(custom.locator('[data-badge="custom"]')).toHaveCount(2);
-  await expect(report.locator('.not-drawn [data-kind="customRefused"]')).toContainText(
-    "no CA licence header",
+  await expect(report.locator('[data-kind="custom"][data-part$="/unlicensed.dat"]')).toContainText(
+    "no licence",
   );
+  await expect(custom.locator('[data-badge="custom"]')).toHaveCount(3);
+  await expect(report.locator(".not-drawn")).toHaveCount(0);
   await expect(
     page.locator(`.palette [data-item="${fromMpd.item}"] [data-badge="custom"]`),
   ).toBeVisible();
@@ -117,6 +119,7 @@ test("CA-licensed custom parts from an MPD and a Studio file are drawn and badge
   await expect(studioReport.locator('[data-kind="custom"]')).toContainText(
     "a Studio CustomParts file",
   );
+  await expect(studioReport.locator('[data-kind="custom"]')).toContainText(NON_CA);
   await expect(
     page.locator(`.palette [data-item="${fromStudio.item}"] [data-badge="custom"]`),
   ).toBeVisible();
