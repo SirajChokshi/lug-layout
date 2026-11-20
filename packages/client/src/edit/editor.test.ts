@@ -7642,11 +7642,12 @@ const PIER_SIDE_INSET_LDU = 30;
 const PIER_BRICK = "ldraw:3001";
 const PIER_PLATE = "ldraw:3020";
 
-async function raisedEditor(models: ReadonlyArray<string>) {
+async function raisedEditor(models: ReadonlyArray<string>, repository = new MemoryRepository()) {
   const started = await startEditor(models, new BundleDirectoryFetcher(), [], (bound) => {
     bound
       .rebind(MODEL_IMPORTER)
       .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   });
   const place = placer(started.editor, started.backend);
   for (const x of [-32, 0, 32]) {
@@ -7780,6 +7781,7 @@ it("lays a bridge over laid track wherever its own height clears, reports one lo
   const underLowBridge = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
   editor.chooseItem(null);
   editor.undo(0);
+  const issuesUndone = plans.issues(planId).filter((issue) => issue.rule === "clearance");
   const seated = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
   editor.chooseItem(TRACK_ITEM_ID);
   await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
@@ -7807,6 +7809,7 @@ it("lays a bridge over laid track wherever its own height clears, reports one lo
   });
   expect(hint).toMatchObject({ tone: "warn", title: "Laid too low", detail: tooLow });
   expect(issues).toEqual([expect.stringContaining(tooLow)]);
+  expect(issuesUndone).toEqual([]);
   expect(labels).toEqual([`35 plates (112 mm) clear: too low for ${TALLEST_TRAIN}`]);
   expect(underLowBridge).toMatchObject({
     refusedClicks: 1,
@@ -7971,4 +7974,26 @@ it("measures the tallest train from every train in the catalog, and again when a
   expect(imported).toBe(true);
   expect(bundled?.model).toBe(TALLEST_TRAIN);
   expect(tallest()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
+}, 180_000);
+
+it("reopens a saved world with its raised run, its generated piers and a ramp's rises exactly as laid, the run still held by its piers", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-48 * STUD, -16 * STUD], [-32 * STUD, -16 * STUD]);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, -16 * STUD], [16 * STUD, -16 * STUD]);
+  await layRaised(editor, backend, [-16 * STUD, 16 * STUD], [16 * STUD, 16 * STUD]);
+  const laid = { state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported };
+  const first = editor.snapshot().world?.id ?? "";
+  await editor.newWorld("Second");
+  const fresh = editor.dump().laidTrack.length;
+  const reopened = await editor.openWorld(first);
+  await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).not.toBeNull());
+
+  expect(laid.state.laidTrack.some((piece) => (piece.rise ?? 0) !== 0)).toBe(true);
+  expect(placedImports(editor)).toHaveLength(2);
+  expect({ fresh, reopened }).toEqual({ fresh: 0, reopened: true });
+  expect({ state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported }).toEqual(
+    laid,
+  );
 }, 180_000);

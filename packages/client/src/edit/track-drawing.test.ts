@@ -39,7 +39,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { writeFullRebuild } from "../plan/plan-producer.ts";
+import { writeFullRebuild, writeTrackChange, writeTrackLay } from "../plan/plan-producer.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE, SNAP_SHAPES } from "../tokens.ts";
 import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
@@ -2108,4 +2109,63 @@ it("draws a ramp piece sheared between its two end heights, and keeps both heigh
   expect(restored.ok).toBe(true);
   expect(reloaded.records()).toEqual(records);
   expect(reloaded.laidPiece(ramp)).toMatchObject({ yPlates: 3, rise: 2 });
+});
+
+function clearanceIssues(plans: IPlanService, planId: string): ReadonlyArray<string> {
+  return plans
+    .issues(planId)
+    .filter((issue) => issue.rule === "clearance")
+    .map((issue) => issue.message);
+}
+
+it("lists a bridge lower than the measured train as a plan clearance issue that follows the bridge's own row: absent until the row is written, renamed with the train, gone once the bridge is lifted", async () => {
+  const layout = await bareDrawing();
+  layout.setTallestTrain(MY_TRAIN);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  layAt(layout, studPose(-halfLength, 0, 0), 0);
+  const plans = container.get(PLAN_SERVICE);
+  const planId = plans.createPlan({
+    name: "Bridge table",
+    roomWidthMm: 4000,
+    roomDepthMm: 3000,
+    originChunkX: -1,
+    originChunkZ: -1,
+  });
+  plans.addTable(planId, {
+    name: "Table",
+    rect: { x: 0, z: 0, width: 4000, depth: 3000 },
+    heightMm: 750,
+  });
+  const delta = new PlanDelta();
+  writeFullRebuild(delta, [], layout);
+  plans.apply(delta);
+  const [, railTop] = layout.verticalRange();
+  const lowPlates = Math.ceil((railTop + MY_TRAIN.heightLdu) / PLATE_LDU) - 1;
+  const bridge = layAt(layout, studPose(0, -halfLength, ACROSS), lowPlates);
+  const low = new Map(
+    (layout.lowClearances() ?? []).map(({ piece, needPlates, hasPlates }) => [
+      piece,
+      { needPlates, hasPlates },
+    ]),
+  );
+  plans.setLowClearance(low, new Map(), MY_TRAIN.model);
+  const beforeRow = clearanceIssues(plans, planId);
+  writeTrackLay(delta, layout, 1);
+  plans.apply(delta);
+  const withRow = clearanceIssues(plans, planId);
+  plans.setLowClearance(low, new Map(), "my other train");
+  const renamed = clearanceIssues(plans, planId);
+  const lift = { lift: [layout.laidPiece(bridge)], lay: [] };
+  layout.applyTrack(lift);
+  writeTrackChange(delta, layout, lift);
+  plans.apply(delta);
+  const lifted = clearanceIssues(plans, planId);
+  plans.removePlan(planId);
+  const finding = `needs ${lowPlates + 1} plates, this bridge has ${lowPlates}.`;
+
+  expect([...low.keys()]).toEqual([bridge]);
+  expect(beforeRow).toEqual([]);
+  expect(withRow).toEqual([expect.stringContaining(`${MY_TRAIN.model} ${finding}`)]);
+  expect(renamed).toEqual([expect.stringContaining(`my other train ${finding}`)]);
+  expect(lifted).toEqual([]);
 });

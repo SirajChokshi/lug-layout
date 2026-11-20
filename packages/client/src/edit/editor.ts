@@ -1225,6 +1225,8 @@ function sameHover(a: HoverView | null, b: HoverView | null): boolean {
   return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates;
 }
 
+const NO_LOW_CLEARANCE: ReadonlyMap<number, PlateHeights> = new Map();
+
 function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
   if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
   const rect = Float64Array.of(
@@ -2015,7 +2017,10 @@ export class Editor implements IEditor, IEditedWorld {
     if (track.raisedCount() > 0 || track.drawingPlates > 0) this.measureTallestTrain();
     const low = track.lowClearances();
     this.lowTrack = low;
-    if (!low) return;
+    if (!low) {
+      this.plans.setLowClearance(NO_LOW_CLEARANCE, NO_LOW_CLEARANCE, "");
+      return;
+    }
     const laid = new Map<number, PlateHeights>();
     const carriers = new Map<number, PlateHeights>();
     for (const { piece, needPlates, hasPlates } of low) {
