@@ -74,7 +74,7 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readFixtureModels, readPalette } from "./palette.ts";
+import { readFixtureModels, readPalette, readPrimitiveTable, studPrimitives } from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
@@ -111,6 +111,7 @@ import {
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
+const primitiveTablePath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
@@ -173,6 +174,7 @@ async function fetchCommand(): Promise<void> {
     ldrawRoot,
     bundleConnectivityRoot,
     modelSources,
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
     [inferred.cavityProbe, inferred.axleProbe],
   );
   const audit = await fetchAuditInputs(
@@ -378,7 +380,12 @@ async function factsCommand(check: boolean): Promise<void> {
       auditLibrary,
       shadowLibrary,
     }),
-    ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
+    ...geometryReports(
+      lock.source,
+      auditLibrary,
+      shadowLibrary,
+      studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+    ),
     ...trackCatalogReports(auditLibrary, palette),
     ...magnetSeatReports(
       lock,
@@ -577,7 +584,7 @@ async function compileLod(
     "--palette",
     palette,
     "--primitives",
-    join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
+    primitiveTablePath,
     "--inferred",
     join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
     "--vocabulary",

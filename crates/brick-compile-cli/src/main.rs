@@ -6,7 +6,9 @@ use std::process::ExitCode;
 use brick_compile::authored::AUTHORED_RULE_VERSION;
 use brick_compile::bake::{drawn_lattice, FarVoxels, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
+use brick_compile::compile::{
+    modified_note, required_stud_roundness, stud_primitives_from_table, RollingMode, MODIFIED_NOTE,
+};
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
     PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
@@ -504,12 +506,6 @@ fn run(args: &Args) -> Result<(), String> {
         &fs::read(&args.palette).map_err(|e| format!("{}: {e}", args.palette.display()))?,
     )
     .map_err(|e| e.to_string())?;
-    let stud_primitives: Vec<String> = palette["studPrimitives"]
-        .as_array()
-        .ok_or("palette.studPrimitives must be an array")?
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
     let unofficial_allowlist: Vec<String> = palette["unofficialAllowlist"]
         .as_array()
         .map(|list| {
@@ -523,6 +519,7 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
+    let stud_primitives = stud_primitives_from_table(&primitive_table)?;
     let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
     let inferred: Value = serde_json::from_slice(
         &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
