@@ -173,7 +173,7 @@ async function expectMode(
   await expect(control).toHaveAttribute("data-effective-mode", effective);
   if (held) await expect(control).toHaveAttribute("data-held", /.*/);
   else await expect(control).not.toHaveAttribute("data-held", /.*/);
-  await expect(editor.root).toHaveAttribute("data-placement-mode", effective);
+  await expect(control).toHaveAttribute("data-placement-mode", persistent);
   await expect.poll(() => editor.placementModes()).toEqual({ mode: persistent, override: held });
   await editor.hoverIn(effective);
 }
