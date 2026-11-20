@@ -14,6 +14,7 @@ import {
   TRACK_SEGMENT,
   WRITE_ADD,
   WRITE_UPDATE,
+  type CarriedTrack,
   type PlanDelta,
   type PlanShape,
   type TrackChange,
@@ -31,6 +32,7 @@ export interface PlanModelSource {
   readonly placeable: { readonly id: string; readonly label: string };
   readonly box: WorldBox;
   readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
   readonly facts: Int32Array;
 }
 
@@ -84,6 +86,7 @@ export function writeModelRow(delta: PlanDelta, kind: number, model: PlanModelSo
   delta.labelA[entry] = handle.x;
   delta.labelB[entry] = handle.z;
   delta.shape[entry] = model.shape;
+  delta.carried[entry] = model.carried;
   const facts = model.facts;
   const factsAt = entry * FACT_STRIDE;
   for (let k = 0; k < FACT_STRIDE; k++) delta.facts[factsAt + k] = facts[k] ?? 0;

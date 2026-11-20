@@ -1,12 +1,17 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
+  BOX_MAX_X,
+  BOX_MIN_X,
+  BOX_STRIDE,
   FACT_STRIDE,
   cellChunkKey,
   clearFacts,
   type AppliedEdit,
+  type CarriedTrack,
   type PlacementHandle,
   type PlacementRef,
   type PlanShape,
+  type TrackOutline,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -46,12 +51,27 @@ export interface PlacedModel {
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
   readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
   readonly facts: Int32Array;
   rayHit(ray: Float64Array): number;
   aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
   writeWorldPartBoxes(out: Float64Array): number;
 }
+
+export interface CarriedTrackParts {
+  readonly instances: ReadonlySet<number>;
+  readonly outlines: ReadonlyArray<TrackOutline>;
+}
+
+export type CarriedTrackSource = (
+  placeable: Placeable,
+  handle: PlacementHandle,
+) => CarriedTrackParts | null;
+
+const NO_CARRIED_TRACK: CarriedTrackSource = () => null;
+const NO_INSTANCES: ReadonlySet<number> = new Set();
+const AXES = 3;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const THROUGH_SIDE = 0;
@@ -403,6 +423,7 @@ class PlacedEntry implements PlacedModel {
   columnsIndexedIn = -1;
   touchedIn = -1;
   readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
   readonly facts = new Int32Array(FACT_STRIDE);
   readonly box: WorldBox;
   readonly pose: LatticePose;
@@ -418,6 +439,7 @@ class PlacedEntry implements PlacedModel {
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
+    carriedTrack: CarriedTrackSource,
   ) {
     this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
@@ -429,8 +451,34 @@ class PlacedEntry implements PlacedModel {
     this.tallyStuds(chunkOrigins);
     this.markCells(chunkOrigins);
     this.box = this.worldBox();
-    this.shape = planShapeOf(placeable, handle.rot);
+    const carried = carriedTrack(placeable, handle);
+    this.shape = planShapeOf(placeable, handle.rot, carried?.instances ?? NO_INSTANCES);
+    this.carried =
+      carried === null
+        ? null
+        : { outlines: carried.outlines, bodyBox: this.bodyBox(carried.instances) };
     clearFacts(this.facts, 0);
+  }
+
+  private bodyBox(without: ReadonlySet<number>): Float64Array | null {
+    const local = this.placeable.partBoxes;
+    const part = new Float64Array(BOX_STRIDE);
+    const body = new Float64Array(BOX_STRIDE);
+    let found = false;
+    for (let b = 0, instance = 0; b < local.length; b += BOX_FLOATS, instance++) {
+      if (without.has(instance)) continue;
+      this.pose.worldBox(local, b, this.yLdu, part, 0);
+      if (!found) {
+        body.set(part);
+        found = true;
+        continue;
+      }
+      for (let axis = 0; axis < AXES; axis++) {
+        body[BOX_MIN_X + axis] = Math.min(body[BOX_MIN_X + axis] ?? 0, part[BOX_MIN_X + axis] ?? 0);
+        body[BOX_MAX_X + axis] = Math.max(body[BOX_MAX_X + axis] ?? 0, part[BOX_MAX_X + axis] ?? 0);
+      }
+    }
+    return found ? body : null;
   }
 
   worldPartBoxes(): Float64Array {
@@ -911,7 +959,10 @@ export class PlacedChunks {
     entry.indexColumns(this.columns);
   };
 
-  constructor(private readonly backend: ISceneBackend) {}
+  constructor(
+    private readonly backend: ISceneBackend,
+    private readonly carriedTrack: CarriedTrackSource = NO_CARRIED_TRACK,
+  ) {}
 
   private farModelOf(placeable: Placeable): number | null {
     return this.farModels.get(placeable) ?? placeable.farModel;
@@ -1081,7 +1132,14 @@ export class PlacedChunks {
     handle: PlacementHandle,
     placeable: Placeable,
   ): PlacedEntry {
-    const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
+    const entry = new PlacedEntry(
+      this.nextId++,
+      placement,
+      handle,
+      placeable,
+      this.chunkOrigins,
+      this.carriedTrack,
+    );
     this.entries.push(entry);
     this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);

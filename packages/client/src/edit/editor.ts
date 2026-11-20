@@ -168,6 +168,7 @@ import {
   NO_MODELS,
   ON_TOP_FACE,
   PlacedChunks,
+  type CarriedTrackParts,
   posedBox,
   writePosedPartBoxes,
   type PlacedModel,
@@ -1460,6 +1461,7 @@ export class Editor implements IEditor, IEditedWorld {
   private track: TrackDrawing | null = null;
   private trackCatalog: TrackCatalog | null = null;
   private readonly modelTrack = new Map<Placeable, ModelTrackEnds>();
+  private readonly exactTrackParts = new Map<Placeable, ReadonlySet<number>>();
   private heldTrackModels: ReadonlyArray<PlacedModel> = [];
   private readonly heldRanges = new Map<PlacedModel, readonly [number, number]>();
   private readonly searchIds = new Map<PlacedModel, number>();
@@ -1522,7 +1524,9 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(TABLE_GROUND) private readonly ground: ITableGround,
     @inject(RAIL_YARD) private readonly railYard: IRailYard,
   ) {
-    this.placed = new PlacedChunks(backend);
+    this.placed = new PlacedChunks(backend, (placeable, handle) =>
+      this.carriedTrackAt(placeable, handle),
+    );
     this.facts = new PlanFacts(
       this.placed,
       search,
@@ -5613,6 +5617,24 @@ export class Editor implements IEditor, IEditedWorld {
     const model = this.searchModels.get(placement);
     if (!model) throw new Error(`search placement ${placement} has no model`);
     return model;
+  }
+
+  private carriedTrackAt(placeable: Placeable, handle: PlacementHandle): CarriedTrackParts | null {
+    const drawing = this.track;
+    const carried = this.trackOf(placeable);
+    const frame = latticeFrame(handle.x, handle.z, handle.rot);
+    if (!drawing || !carried || !frame || carried.pieces.length === 0) return null;
+    let instances = this.exactTrackParts.get(placeable);
+    if (!instances) {
+      instances = new Set(carried.pieces.map((piece) => piece.instance));
+      this.exactTrackParts.set(placeable, instances);
+    }
+    return {
+      instances,
+      outlines: heldPieces(carried, frame, 0).map((piece) =>
+        drawing.outlineAt(piece.catalogIndex, piece.placement),
+      ),
+    };
   }
 
   private trackOf(placeable: Placeable): ModelTrackEnds | null {
