@@ -19,6 +19,7 @@ use brick_compile::lattice::{Malformation, STUD_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::pieces::PieceNumbering;
 use brick_compile::technic::is_circular_primitive;
+use brick_compile::trig::planar_length;
 use brick_compile::Library;
 use serde_json::{json, Value};
 use std::collections::HashSet;
@@ -637,7 +638,7 @@ fn ring_radii(library: &MemoryLibrary, reference: &str) -> (f64, f64) {
             _ => None,
         })
         .flatten()
-        .map(|p| p[0].hypot(p[2]))
+        .map(|p| planar_length(p[0], p[2]))
         .collect();
     (
         radii.iter().copied().fold(f64::INFINITY, f64::min),
@@ -659,7 +660,7 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
         let cylinder = |radius: f64, from: f64, to: f64| {
             lines.iter().any(|(reference, m)| {
                 reference == "4-4cyli.dat"
-                    && m[0].hypot(m[8]) == radius
+                    && planar_length(m[0], m[8]) == radius
                     && (m[7].min(m[7] + m[5]), m[7].max(m[7] + m[5])) == (from, to)
             })
         };
@@ -722,12 +723,12 @@ fn the_primitive_table_matches_the_pinned_primitive_geometry() {
                         reference == "4-4cyli.dat"
                             && (m[7].min(m[7] + m[5]), m[7].max(m[7] + m[5])) == (rim, rim + reach)
                     })
-                    .map(|(_, m)| m[0].hypot(m[8]))
+                    .map(|(_, m)| planar_length(m[0], m[8]))
                     .collect();
                 let outer = walls.iter().copied().fold(0.0, f64::max);
                 let grid = connector.grid.expect("a neighbour grid");
                 for offset in grid.offsets() {
-                    let apart = offset[0].hypot(offset[2]);
+                    let apart = planar_length(offset[0], offset[2]);
                     assert!(
                         apart - outer >= sections[0].radius,
                         "{file}: a receptor at {offset:?} cuts the radius-{outer} wall"
@@ -1052,6 +1053,44 @@ fn round_face(gender: Gender, origin: [f64; 3], axis_y: i64, radius: f64, length
     )
 }
 
+fn unanchored_boundaries(second_facet_height: &str) -> Vec<f64> {
+    let part = format!(
+        "0 Slab boundary beside a plane without exact provenance\n\
+         0 Name: boundary.dat\n\
+         0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n\
+         3 16 -20 0.03 -20 20 0.03 -20 20 0.03 20\n\
+         3 16 -20 {second_facet_height} -20 20 {second_facet_height} 20 -20 {second_facet_height} 20\n\
+         3 16 5 0.0305 5 8 0.0305 5 5 0.0305 8\n"
+    );
+    let library = with_parts(pinned("ldraw"), &[("parts/boundary.dat", part)]);
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    inferred
+        .infer("parts/boundary.dat")
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::Uninferred {
+                reason: Uninferred::SlabBoundaryWithoutExactPlane { distance },
+                ..
+            } => Some(*distance),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_piece_within_the_guard_of_a_slab_plane_without_exact_provenance_is_reported() {
+    let reported = unanchored_boundaries("0.0301");
+    assert!(!reported.is_empty());
+    assert!(
+        reported.iter().all(|d| *d > 0.0 && *d <= 1e-9),
+        "{reported:?}"
+    );
+    assert!(unanchored_boundaries("0.03").is_empty());
+}
+
 #[test]
 fn a_custom_plate_gets_its_studs_tube_interiors_and_hollow_stud_bore_and_reports_tube_gap_cavities()
 {
@@ -1335,6 +1374,104 @@ fn inferred_origins_identify_to_sixteenths_or_stay_off_lattice_and_reported() {
         issue,
         Issue::Uninferred {
             reason: Uninferred::UnidentifiedOrigin,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn walls_identified_with_the_probe_circle_do_not_stop_it_so_a_nudged_part_keeps_its_receptors() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/nudged.dat",
+            "0 Nudged\n0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n0 BFC CERTIFY CCW\n1 16 0.0005 0.000014 0 1 0 0 0 1 0 0 0 1 3700.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let females = |connectors: &[Connector]| -> Vec<MatingFace> {
+        faces_of(connectors)
+            .into_iter()
+            .filter(|f| f.gender == Gender::Female)
+            .map(|f| MatingFace { piece: 0, ..f })
+            .collect()
+    };
+    let printed = females(&inferred.infer("parts/3700.dat").connectors);
+    assert!(printed.iter().any(|f| f.caps != 0));
+    assert_eq!(
+        females(&inferred.infer("parts/nudged.dat").connectors),
+        printed
+    );
+}
+
+#[test]
+fn a_through_hole_printed_beyond_the_limit_stays_off_the_lattice_though_within_the_guard() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/beyond.dat",
+            "0 Beyond\n0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n0 BFC CERTIFY CCW\n1 16 0 0.0005000001 0 1 0 0 0 1 0 0 0 1 3700.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let through = |connectors: &[Connector]| -> usize {
+        faces_of(connectors)
+            .iter()
+            .filter(|f| f.gender == Gender::Female && f.caps == 0)
+            .count()
+    };
+    let printed = inferred.infer("parts/3700.dat");
+    let beyond = inferred.infer("parts/beyond.dat");
+    assert!(through(&printed.connectors) > 0);
+    assert_eq!(through(&beyond.connectors), 0);
+    assert_eq!(through(&beyond.off_lattice), through(&printed.connectors));
+    assert!(beyond.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::UnidentifiedOrigin,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn a_through_hole_printed_within_the_limit_of_the_lattice_lands_on_it() {
+    let library = with_parts(
+        pinned("ldraw"),
+        &[(
+            "parts/nudged.dat",
+            "0 Nudged\n0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n0 BFC CERTIFY CCW\n1 16 0.0005 0.000014 0 1 0 0 0 1 0 0 0 1 3700.dat\n"
+                .to_string(),
+        )],
+    );
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let through_holes = |connectors: &[Connector]| -> Vec<MatingFace> {
+        faces_of(connectors)
+            .into_iter()
+            .filter(|f| f.gender == Gender::Female && f.caps == 0)
+            .map(|f| MatingFace { piece: 0, ..f })
+            .collect()
+    };
+    let printed = inferred.infer("parts/3700.dat");
+    let nudged = inferred.infer("parts/nudged.dat");
+    assert!(!through_holes(&printed.connectors).is_empty());
+    assert_eq!(
+        through_holes(&nudged.connectors),
+        through_holes(&printed.connectors)
+    );
+    assert!(nudged.off_lattice.is_empty());
+    assert!(!nudged.issues.iter().any(|issue| matches!(
+        issue,
+        Issue::Uninferred {
+            reason: Uninferred::MergedIntoRejectedProbe { .. },
             ..
         }
     )));
@@ -2999,6 +3136,110 @@ fn every_shadow_and_primitive_face_of_a_composite_takes_the_lowest_piece_whose_o
         }
     }
     assert!([1, 2, 3].iter().all(|piece| labelled.contains(piece)));
+}
+
+fn inferred_segments(library: &MemoryLibrary, part: &str) -> Vec<(Gender, u8, [[i64; 3]; 2])> {
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    let sixteenths = |p: Vec3| p.map(|c| (c * 16.0).round() as i64);
+    let inference = inferred.infer(part);
+    let mut out: Vec<(Gender, u8, [[i64; 3]; 2])> = inference
+        .connectors
+        .iter()
+        .chain(&inference.off_lattice)
+        .flat_map(|connector| mating_faces(connector).expect("mating faces"))
+        .map(|face| {
+            let length: f64 = face.sections.iter().map(|s| s.length).sum();
+            let tip = [0, 1, 2].map(|k| face.origin[k] + face.axis[k] * length);
+            let mut ends = [sixteenths(face.origin), sixteenths(tip)];
+            ends.sort_unstable();
+            (face.gender, face.caps, ends)
+        })
+        .collect();
+    out.sort_unstable_by_key(|(gender, caps, ends)| (*gender as u8, *caps, *ends));
+    out
+}
+
+fn mapped(
+    segments: &[(Gender, u8, [[i64; 3]; 2])],
+    map: impl Fn([i64; 3]) -> [i64; 3],
+) -> Vec<(Gender, u8, [[i64; 3]; 2])> {
+    let mut out: Vec<_> = segments
+        .iter()
+        .map(|(gender, caps, ends)| {
+            let mut moved = ends.map(&map);
+            moved.sort_unstable();
+            (*gender, *caps, moved)
+        })
+        .collect();
+    out.sort_unstable_by_key(|(gender, caps, ends)| (*gender as u8, *caps, *ends));
+    out
+}
+
+fn with_compositions(files: &[(&str, &str)]) -> MemoryLibrary {
+    let mut library = pinned("ldraw");
+    for (path, reference) in files {
+        library.0.insert(
+            path.to_string(),
+            format!("0 {path}\n0 BFC CERTIFY CCW\n{reference}\n"),
+        );
+    }
+    library
+}
+
+#[test]
+fn a_mirrored_wheel_infers_the_mirrored_faces() {
+    let wheel = "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3464b.dat\n1 256 0 0 0 -1 0 0 0 1 0 0 0 -1 3641.dat";
+    let library = with_compositions(&[
+        ("parts/wheel.dat", wheel),
+        (
+            "parts/wheel-z.dat",
+            "1 16 0 0 0 1 0 0 0 1 0 0 0 -1 wheel.dat",
+        ),
+        (
+            "parts/wheel-x.dat",
+            "1 16 0 0 0 -1 0 0 0 1 0 0 0 1 wheel.dat",
+        ),
+    ]);
+    let wheel = inferred_segments(&library, "parts/wheel.dat");
+    assert!(!wheel.is_empty());
+    assert_eq!(
+        inferred_segments(&library, "parts/wheel-z.dat"),
+        mapped(&wheel, |[x, y, z]| [x, y, -z])
+    );
+    assert_eq!(
+        inferred_segments(&library, "parts/wheel-x.dat"),
+        mapped(&wheel, |[x, y, z]| [-x, y, z])
+    );
+}
+
+#[test]
+fn quarter_turns_about_the_vertical_infer_the_turned_faces() {
+    let library = with_compositions(&[
+        (
+            "parts/turn-1.dat",
+            "1 16 0 0 0 0 0 1 0 1 0 -1 0 0 26047.dat",
+        ),
+        (
+            "parts/turn-2.dat",
+            "1 16 0 0 0 -1 0 0 0 1 0 0 0 -1 26047.dat",
+        ),
+        (
+            "parts/turn-3.dat",
+            "1 16 0 0 0 0 0 -1 0 1 0 1 0 0 26047.dat",
+        ),
+    ]);
+    let quarter = |[x, y, z]: [i64; 3]| [-z, y, x];
+    let mut expected = inferred_segments(&library, "parts/26047.dat");
+    assert!(expected.len() >= 3);
+    for turn in 1..=3 {
+        expected = mapped(&expected, quarter);
+        assert_eq!(
+            inferred_segments(&library, &format!("parts/turn-{turn}.dat")),
+            expected
+        );
+    }
 }
 
 #[test]

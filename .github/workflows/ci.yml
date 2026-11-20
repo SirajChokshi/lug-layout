@@ -10,7 +10,70 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      key: ${{ steps.bundle-key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: bundle-key
+        run: |
+          input_key=$(node tools/asset-pipeline/src/input-key-cli.ts)
+          echo "key=part-bundle-${input_key}-${{ hashFiles('pnpm-lock.yaml') }}" >> "$GITHUB_OUTPUT"
+      - id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          key: ${{ steps.bundle-key.outputs.key }}
+          lookup-only: true
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: pnpm/action-setup@v4
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+          targets: wasm32-wasip1
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: Swatinem/rust-cache@v2
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/ldraw
+            .cache/ldraw-audit
+            .cache/ldcad-shadow
+            .cache/omr
+            .cache/catalog
+          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        run: pnpm --filter @brr/asset-pipeline build
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          key: ${{ steps.bundle-key.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: part-bundle
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          if-no-files-found: error
+          retention-days: 1
+
   verify:
+    needs: bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -31,18 +94,18 @@ jobs:
           terraform_version: 1.17.2
           terraform_wrapper: false
       - run: pnpm install --frozen-lockfile
-      - id: bundle-key
-        run: |
-          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
-          input_key=${manifest_file#manifest.}
-          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
           path: |
             tools/asset-pipeline/dist/bundle
             tools/asset-pipeline/fixture-bundle
-          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
+          key: ${{ needs.bundle.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: part-bundle
+          path: tools/asset-pipeline
       - uses: actions/cache@v4
         with:
           path: |
@@ -59,20 +122,16 @@ jobs:
       - run: pnpm format:check
       - run: pnpm check:infra
       - run: pnpm check:rust
+      - run: pnpm test:wasm
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
       - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check
       - run: pnpm turbo run typecheck build
+      - run: cargo build --release -p brick-compile-cli --bin library-connectors
       - run: pnpm turbo run test --concurrency=1
-      - uses: actions/cache/save@v4
-        if: ${{ !cancelled() && steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
-        with:
-          path: |
-            tools/asset-pipeline/dist/bundle
-            tools/asset-pipeline/fixture-bundle
-          key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
 
   e2e:
+    needs: bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -87,25 +146,18 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: bundle-key
-        run: |
-          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
-          input_key=${manifest_file#manifest.}
-          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
           path: |
             tools/asset-pipeline/dist/bundle
             tools/asset-pipeline/fixture-bundle
-          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - uses: dtolnay/rust-toolchain@master
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+          key: ${{ needs.bundle.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
         with:
-          toolchain: 1.100.0
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+          name: part-bundle
+          path: tools/asset-pipeline
       - uses: actions/cache@v4
         with:
           path: |
@@ -149,6 +201,7 @@ jobs:
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
 
   import-bundle-models:
+    needs: bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -159,25 +212,18 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - id: bundle-key
-        run: |
-          manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
-          input_key=${manifest_file#manifest.}
-          echo "input-key=${input_key%.json}" >> "$GITHUB_OUTPUT"
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
           path: |
             tools/asset-pipeline/dist/bundle
             tools/asset-pipeline/fixture-bundle
-          key: part-bundle-${{ steps.bundle-key.outputs.input-key }}-${{ hashFiles('pnpm-lock.yaml') }}
-      - uses: dtolnay/rust-toolchain@master
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+          key: ${{ needs.bundle.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
         with:
-          toolchain: 1.100.0
-          targets: wasm32-wasip1
-      - uses: Swatinem/rust-cache@v2
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+          name: part-bundle
+          path: tools/asset-pipeline
       - uses: actions/cache@v4
         with:
           path: |
@@ -220,16 +266,17 @@ jobs:
 
   check:
     if: ${{ always() }}
-    needs: [verify, e2e, library-connectors, import-bundle-models, library-bake]
+    needs: [bundle, verify, e2e, library-connectors, import-bundle-models, library-bake]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - env:
+          BUNDLE: ${{ needs.bundle.result }}
           VERIFY: ${{ needs.verify.result }}
           E2E: ${{ needs.e2e.result }}
           LIBRARY_CONNECTORS: ${{ needs.library-connectors.result }}
           IMPORT_BUNDLE_MODELS: ${{ needs.import-bundle-models.result }}
           LIBRARY_BAKE: ${{ needs.library-bake.result }}
         run: |
-          echo "verify: $VERIFY, e2e: $E2E, library connectors: $LIBRARY_CONNECTORS, import-bundle-models: $IMPORT_BUNDLE_MODELS, library-bake: $LIBRARY_BAKE"
-          test "$VERIFY" = success && test "$E2E" = success && test "$LIBRARY_CONNECTORS" = success && test "$IMPORT_BUNDLE_MODELS" = success && test "$LIBRARY_BAKE" = success
+          echo "bundle: $BUNDLE, verify: $VERIFY, e2e: $E2E, library connectors: $LIBRARY_CONNECTORS, import-bundle-models: $IMPORT_BUNDLE_MODELS, library-bake: $LIBRARY_BAKE"
+          test "$BUNDLE" = success && test "$VERIFY" = success && test "$E2E" = success && test "$LIBRARY_CONNECTORS" = success && test "$IMPORT_BUNDLE_MODELS" = success && test "$LIBRARY_BAKE" = success
