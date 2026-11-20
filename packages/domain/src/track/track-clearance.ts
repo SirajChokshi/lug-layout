@@ -195,6 +195,7 @@ export function boxesOverlap(
 }
 
 export const NO_OBSTACLE = -1;
+export const RUN_CROSSING = -2;
 
 export class TrackClearance {
   private readonly outlines: Float64Array[] = [];
@@ -203,6 +204,22 @@ export class TrackClearance {
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
   private visit = new Uint32Array(64);
   private generation = 0;
+
+  get count(): number {
+    return this.outlines.length;
+  }
+
+  truncate(count: number): void {
+    for (let id = this.outlines.length - 1; id >= count; id--) {
+      this.forCells(this.boxes, id * OUTLINE_BOX_FLOATS, 0, 0, (key) => {
+        const members = this.cells.get(key);
+        if (members?.at(-1) === id) members.pop();
+        if (members?.length === 0) this.cells.delete(key);
+        return false;
+      });
+      this.outlines.pop();
+    }
+  }
 
   add(outline: Float64Array): number {
     const id = this.outlines.length;
@@ -235,7 +252,7 @@ export class TrackClearance {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
   }
 
-  blocks(
+  blocker(
     outline: Float64Array,
     box: Float64Array,
     boxAt: number,
@@ -243,25 +260,28 @@ export class TrackClearance {
     z: number,
     exceptA: number,
     exceptB: number,
-  ): boolean {
+  ): number {
     this.generation++;
     if (this.generation === 0xffffffff) {
       this.visit.fill(0);
       this.generation = 1;
     }
     const generation = this.generation;
-    return this.forCells(box, boxAt, x, z, (key) => {
+    let found = NO_OBSTACLE;
+    this.forCells(box, boxAt, x, z, (key) => {
       const members = this.cells.get(key);
       if (!members) return false;
       for (const id of members) {
+        if (found !== NO_OBSTACLE && id >= found) break;
         if (id === exceptA || id === exceptB || this.visit[id] === generation) continue;
         this.visit[id] = generation;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
-        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) return true;
+        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) found = id;
       }
-      return false;
+      return found === 0;
     });
+    return found;
   }
 
   private forCells(
