@@ -640,7 +640,7 @@ L0  math
 | `sim` | math, schema, domain (graph types) |
 | `import` | math, schema, domain, catalog, compile-wasm |
 | `client` | math, schema (`@brr/schema/decode`, bundle wire types and running-gear overrides, world files), domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
-| `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
+| `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify. `workers/import-worker` also depends on `storage`, whose IndexedDB asset cache (`brr-assets`) holds the precompiled library-bake records it reads; persistence runs in the main thread and the worker (§4). |
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries), and *types only* from schema (owner ruling, 2026-11-17: no re-export layers, so `apps/web` names wire types where they are defined) |
 | `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
@@ -682,7 +682,7 @@ export class LayoutService implements ILayoutService {
 - Each thread owns **its own Inversify container**, built in its worker entry from that worker's modules. No singletons and no service instances are shared across threads.
   - **Main thread:** client, render (MVP), storage and ui-facing modules. Remote engines are bound to **proxy implementations** from `rpc`: `SIM_CLIENT → SimWorkerProxy`, `IMPORT_CLIENT → ImportWorkerProxy`.
   - **Sim worker:** `sim` engine, a track/road graph snapshot and a clock. It exposes `ISimEngine` over `rpc`.
-  - **Import worker:** `import`, `catalog` (read-only) and compile-wasm. It exposes `IImportEngine`.
+  - **Import worker:** `import`, `catalog` (read-only), compile-wasm and `storage` (the asset cache, shared with the main thread through IndexedDB). It exposes `IImportEngine`.
   - **Render worker (P1):** `render`, `catalog` and the OffscreenCanvas. The main thread then binds `SCENE_BACKEND → RenderWorkerProxy`.
 - Cross-thread traffic only goes through `rpc` messages:
   - typed request and response unions;
