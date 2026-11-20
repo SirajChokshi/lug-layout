@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main, "siraj/queue-tail-*"]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
