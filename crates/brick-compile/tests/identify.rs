@@ -21,13 +21,20 @@ impl Library for MemoryLibrary {
     }
 }
 
-fn band_along_y(x: f64, z: f64, from: f64, to: f64, radius: f64, facets: usize) -> String {
-    let point = |y: f64, angle: f64| [x + radius * angle.cos(), y, z + radius * angle.sin()];
+fn band_along_y(x: f64, z: f64, from: f64, to: f64, radii: [f64; 2], facets: usize) -> String {
+    let [from_radius, to_radius] = radii;
+    let point =
+        |y: f64, radius: f64, angle: f64| [x + radius * angle.cos(), y, z + radius * angle.sin()];
     (0..facets)
         .map(|k| {
             let angle = |index: usize| TAU * (index % facets) as f64 / facets as f64;
             let (a, b) = (angle(k), angle(k + 1));
-            let corners = [point(from, b), point(from, a), point(to, a), point(to, b)];
+            let corners = [
+                point(from, from_radius, b),
+                point(from, from_radius, a),
+                point(to, to_radius, a),
+                point(to, to_radius, b),
+            ];
             let numbers: Vec<String> = corners.iter().flatten().map(|v| format!("{v}")).collect();
             format!("4 16 {}\n", numbers.join(" "))
         })
@@ -46,12 +53,15 @@ fn rolled(bands: &str) -> Vec<RollingSurface> {
                 "p/stud.dat",
                 part(
                     "Stud",
-                    &band_along_y(0.0, 0.0, -4.0, 0.0, 6.0, STANDARD_FACETS),
+                    &band_along_y(0.0, 0.0, -4.0, 0.0, [6.0, 6.0], STANDARD_FACETS),
                 ),
             ),
             (
                 "p/8/stud.dat",
-                part("Stud", &band_along_y(0.0, 0.0, -4.0, 0.0, 6.0, LOW_FACETS)),
+                part(
+                    "Stud",
+                    &band_along_y(0.0, 0.0, -4.0, 0.0, [6.0, 6.0], LOW_FACETS),
+                ),
             ),
         ]
         .into_iter()
@@ -155,13 +165,29 @@ fn the_guard_agrees_with_exact_decimals_at_the_limit_across_magnitudes() {
 }
 
 #[test]
-fn band_ends_at_odd_sixteenths_identify_at_every_magnitude_and_beyond_the_limit_stay_unread() {
+fn band_ends_at_odd_sixteenths_identify_at_every_magnitude_and_beyond_the_limit_read_inward_or_stay_unread(
+) {
     let bands = [
-        band_along_y(0.0, 0.0, -20.063, -0.063, 10.0, STANDARD_FACETS),
-        band_along_y(40.0, 0.0, -100.063, -20.062, 10.0, STANDARD_FACETS),
-        band_along_y(-40.0, 0.0, 20.063, 100.063, 10.0, STANDARD_FACETS),
-        band_along_y(80.0, 0.0, 0.062, 20.062, 10.0, STANDARD_FACETS),
-        band_along_y(-80.0, 0.0, -8.0, -0.063_000_002, 10.0, STANDARD_FACETS),
+        band_along_y(0.0, 0.0, -20.063, -0.063, [10.0, 10.0], STANDARD_FACETS),
+        band_along_y(40.0, 0.0, -100.063, -20.062, [10.0, 10.0], STANDARD_FACETS),
+        band_along_y(-40.0, 0.0, 20.063, 100.063, [10.0, 10.0], STANDARD_FACETS),
+        band_along_y(80.0, 0.0, 0.062, 20.062, [10.0, 10.0], STANDARD_FACETS),
+        band_along_y(
+            -80.0,
+            0.0,
+            -8.0,
+            -0.063_000_002,
+            [10.0, 10.0],
+            STANDARD_FACETS,
+        ),
+        band_along_y(
+            120.0,
+            0.0,
+            -8.0,
+            -0.063_000_002,
+            [10.0, 12.0],
+            STANDARD_FACETS,
+        ),
     ]
     .concat();
     let mut surfaces = rolled(&bands);
@@ -173,6 +199,7 @@ fn band_ends_at_odd_sixteenths_identify_at_every_magnitude_and_beyond_the_limit_
     assert_eq!(
         read,
         vec![
+            (-1280, 2, 128),
             (-640, -1601, -321),
             (0, 1, 321),
             (640, 321, 1601),
