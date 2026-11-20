@@ -142,7 +142,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
   }
   return (
     <section
-      className="inspector track-panel"
+      className="stats-section track-panel"
       aria-label="Track"
       data-track-pieces={track.pieces}
       data-model-pieces={track.modelPieces}
@@ -159,14 +159,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-snapped={track.held?.snapped ? "1" : ""}
       data-held-misses={track.held?.misses ?? 0}
     >
-      <h2>Track</h2>
-      {snapshot.mode === "track" && !track.held && (
-        <p className="toolbar-hint">
-          Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
-          but don't join.
-        </p>
-      )}
+      <h3>Track</h3>
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>

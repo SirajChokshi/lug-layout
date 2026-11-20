@@ -37,3 +37,8 @@ export function shortcutText(id: CommandId): string {
   const [first] = commandSpec(id).keys;
   return first ? chordText(first, PLATFORM) : "";
 }
+
+export function FirstChord({ id }: { readonly id: CommandId }) {
+  const [first] = commandSpec(id).keys;
+  return first ? <Chord chord={first} /> : null;
+}

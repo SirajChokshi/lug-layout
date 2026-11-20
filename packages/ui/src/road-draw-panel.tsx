@@ -7,6 +7,7 @@ import type {
   RoadStrokeView,
   RoadTileIssue,
 } from "@brr/client";
+import { FirstChord } from "./keys.tsx";
 
 const SHAPES: ReadonlyArray<RoadShape> = ["straight", "curve", "t-junction", "crossroads"];
 
@@ -97,12 +98,11 @@ export function RoadKitList({ editor, snapshot, kits }: KitsProps) {
         disabled={snapshot.roadKit === null || snapshot.readOnly}
         onClick={() => editor.chooseItem(drawing ? null : snapshot.roadKit)}
       >
-        {drawing ? "Drawing road: press Esc or G to stop" : "Draw road (G)"}
+        {drawing ? "Drawing road" : "Draw road"} <FirstChord id="draw-road" />
       </button>
       <p className="palette-hint">
-        Drag across the ground. Each tile gets the real straight, curve, T-junction or crossroads
-        its neighbours need, and branching off a road upgrades the plate there. A plain baseplate
-        exactly under a tile is swapped for the road piece. R turns a lone tile.
+        Drag across the ground: each tile gets the straight, curve, T-junction or crossroads its
+        neighbours need, and a plain baseplate under a tile becomes road.
       </p>
       <ul className="road-kit-list">
         {kits.map((kit) => (

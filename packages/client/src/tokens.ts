@@ -10,6 +10,7 @@ import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
@@ -23,6 +24,7 @@ import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
+import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -97,6 +99,11 @@ export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
 );
+export const PALETTE: ServiceIdentifier<IPalette> = Symbol.for("brr.client.Palette");
+export const PANEL_LAYOUT_STORE: ServiceIdentifier<IPanelLayoutStore> = Symbol.for(
+  "brr.client.PanelLayoutStore",
+);
+export const PANEL_LAYOUT: ServiceIdentifier<IPanelLayout> = Symbol.for("brr.client.PanelLayout");
 export const SNAP_SHAPES: ServiceIdentifier<SnapShapes> = Symbol.for("brr.client.SnapShapes");
 export const SNAP_MATING: ServiceIdentifier<SnapMating> = Symbol.for("brr.client.SnapMating");
 export const LATTICE_STUD_FINDER: ServiceIdentifier<LatticeStudFinder> = Symbol.for(

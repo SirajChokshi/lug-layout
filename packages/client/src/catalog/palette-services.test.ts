@@ -374,8 +374,9 @@ describe("palette item labels", () => {
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
     expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
-    expect(pieces.map((item) => item.shortLabel)).toEqual(pieces.map(() => "Track"));
+    expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);
   }, 120_000);
 });
 

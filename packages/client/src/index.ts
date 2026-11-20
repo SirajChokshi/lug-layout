@@ -161,15 +161,12 @@ export {
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
+  PALETTE,
+  PANEL_LAYOUT,
   SIM_CLIENT,
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
-  PALETTE_MEMORY,
-  PALETTE_THUMBNAILS,
 } from "./tokens.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
@@ -273,3 +270,5 @@ export type {
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+export type { IPalette } from "./catalog/palette.ts";
+export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

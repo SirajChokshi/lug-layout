@@ -912,7 +912,7 @@ export class Editor implements IEditor, IEditedWorld {
       return {
         id: `${TRACK_PIECE_PREFIX}${kit.piece.id}`,
         label: `${element.replace(/^[a-z]+:/u, "")} ${title}`,
-        shortLabel: TRACK_SHORT_LABEL,
+        shortLabel: title,
         group: TRACK_PIECE_GROUP,
         groupLabel: TRACK_PIECE_GROUP_LABEL,
         color: null,
