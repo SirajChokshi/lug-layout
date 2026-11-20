@@ -128,6 +128,22 @@ export interface TrackRoute {
   readonly to: TrackEnd;
 }
 
+export interface CrossingRamp {
+  readonly part: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly studMates: number;
+}
+
+export interface LevelCrossing {
+  readonly tracks: ReadonlyArray<number>;
+  readonly roads: ReadonlyArray<number>;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRamp>;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
@@ -136,6 +152,7 @@ interface EditState {
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
     readonly studChecks: number;
+    readonly crossings: ReadonlyArray<LevelCrossing>;
   };
   readonly routes: ReadonlyArray<TrackRoute>;
 }
@@ -681,6 +698,16 @@ export class EditorPage {
         rot: column(placements.rot, i),
       }))
       .toSorted(byPosition);
+  }
+
+  async crossings(): Promise<ReadonlyArray<LevelCrossing>> {
+    return (await this.editState()).world.crossings;
+  }
+
+  async unsupportedTrack(): Promise<number> {
+    const panel = this.page.locator("section.track-panel");
+    await expect(panel).not.toHaveAttribute("data-unsupported", "");
+    return Number(await panel.getAttribute("data-unsupported"));
   }
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
