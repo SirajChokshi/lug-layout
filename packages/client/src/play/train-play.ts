@@ -9,7 +9,7 @@ import type { ISimClient } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
-import type { PlayModel, PlaySetup } from "./play-models.ts";
+import { NO_TRACK_LAID, NO_TRAIN_PLACED, type PlayModel, type PlaySetup } from "./play-models.ts";
 import { edgeLengths, trainStart } from "./train-start.ts";
 
 export type PlayStatus = "idle" | "loading" | "running" | "error";
@@ -162,9 +162,9 @@ export class TrainPlay implements ITrainPlay {
   private async load(setup: PlaySetup): Promise<void> {
     const model =
       setup.models.find((candidate) => candidate.name === this.state.trainModel) ?? setup.models[0];
-    if (!model) throw new Error("No train is placed on the layout.");
+    if (!model) throw new Error(NO_TRAIN_PLACED);
     const { layout, pieces } = setup.track;
-    if (layout.count === 0) throw new Error("Lay some track first: there is nothing to run on.");
+    if (layout.count === 0) throw new Error(NO_TRACK_LAID);
     const graph = new TrackGraph(layout);
     await this.runningGear.setModels([model.gear]);
     const consist = consistVehicles(

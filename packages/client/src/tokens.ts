@@ -32,6 +32,8 @@ import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
+import type { IStarterFiles } from "./starters/starter-files.ts";
+import type { IStarterWorlds } from "./starters/starter-worlds.ts";
 
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
@@ -113,4 +115,12 @@ export const CONNECTION_SOLVER: ServiceIdentifier<ConnectionSolver> = Symbol.for
 );
 export const PLACEMENT_SEARCH: ServiceIdentifier<IPlacementSearch> = Symbol.for(
   "brr.client.PlacementSearch",
+);
+export const STARTER_FILE_URLS: ServiceIdentifier<ReadonlyMap<string, string>> = Symbol.for(
+  "brr.client.StarterFileUrls",
+);
+export const STARTER_FILES: ServiceIdentifier<IStarterFiles> =
+  Symbol.for("brr.client.StarterFiles");
+export const STARTER_WORLDS: ServiceIdentifier<IStarterWorlds> = Symbol.for(
+  "brr.client.StarterWorlds",
 );

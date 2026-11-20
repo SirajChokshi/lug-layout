@@ -170,9 +170,16 @@ export {
   PLAN_SERVICE,
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
+  STARTER_WORLDS,
 } from "./tokens.ts";
+export type {
+  IStarterWorlds,
+  StarterShelfStatus,
+  StarterWorldView,
+  WelcomeView,
+} from "./starters/starter-worlds.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export { playRefusal, type PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {

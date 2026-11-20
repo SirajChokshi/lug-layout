@@ -1,6 +1,6 @@
 import { DirtyShards, worldPlacements, type AppliedEdit, type World } from "@brr/domain";
 import { CAMERA_FOV_DEGREES } from "@brr/render";
-import { decode, issueText, type Issue } from "@brr/schema/decode";
+import { decode, issueText, type Decoded, type Issue } from "@brr/schema/decode";
 import {
   WORLD_NAME_MAX_LENGTH,
   WorldName,
@@ -12,6 +12,7 @@ import {
   type ImportedFile,
   type SavedViewV1,
   type TrackRecordV1,
+  type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
   type WorldManifestV1,
@@ -95,6 +96,7 @@ export interface IWorldSession extends IWorldFiles {
   trackEdited(): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput): Promise<string | null>;
+  importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
 }
 
 export interface ModelFileInput {
@@ -603,9 +605,17 @@ export class WorldSession implements IWorldSession {
   }
 
   importWorld(bytes: Uint8Array): Promise<boolean> {
+    return this.importArchive(() => this.repository.readArchive(bytes));
+  }
+
+  importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean> {
+    return this.importArchive(() => this.repository.readArchiveFiles(files));
+  }
+
+  private importArchive(read: () => Promise<Decoded<WorldArchive>>): Promise<boolean> {
     return this.fileAction("import", async () => {
       const started = performance.now();
-      const archive = await this.repository.readArchive(bytes);
+      const archive = await read();
       if (!archive.ok) throw new Error(issueText(archive.issues));
       const { manifest, shards, imports } = archive.value;
       const carried = new Map(imports.map((file) => [file.sha256, file]));

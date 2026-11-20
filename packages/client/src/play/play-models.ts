@@ -47,3 +47,11 @@ export interface PlaySetup {
   readonly parts: ReadonlyArray<PartAsset>;
   readonly colors: ColorTable;
 }
+
+export const NO_TRAIN_PLACED = "No train is placed on the layout.";
+export const NO_TRACK_LAID = "Lay some track first: there is nothing to run on.";
+
+export function playRefusal(setup: PlaySetup): string | null {
+  if (setup.models.length === 0) return NO_TRAIN_PLACED;
+  return setup.track.layout.count === 0 ? NO_TRACK_LAID : null;
+}

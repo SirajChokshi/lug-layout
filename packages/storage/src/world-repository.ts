@@ -63,6 +63,7 @@ export interface IWorldRepository {
   shardFiles(id: string): Promise<ReadonlyArray<ShardFile>>;
   packArchive(archive: WorldArchive): Uint8Array;
   readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>>;
+  readArchiveFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldArchive>>;
   putImportedFile(file: ImportedFile): Promise<void>;
   importedFile(sha256: string): Promise<ImportedFile | undefined>;
 }
@@ -301,12 +302,15 @@ export class IndexedDbWorldRepository implements IWorldRepository {
 
   async readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>> {
     const zip = await readZip(bytes);
-    if (!zip.ok) return zip;
+    return zip.ok ? this.readArchiveFiles(zip.value) : zip;
+  }
+
+  async readArchiveFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldArchive>> {
     const texts = new Map<string, string>();
     const imports: ImportedFile[] = [];
     const issues: Issue[] = [];
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    for (const [name, data] of zip.value) {
+    for (const [name, data] of files) {
       if (name.startsWith(IMPORT_DIRECTORY)) {
         const path = parseImportPath(name);
         if (path === null) {
