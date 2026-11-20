@@ -168,6 +168,7 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
     unsupported: rows.unsupported[row] === NOT_HELD,
     carriedTrackUnsupported: rows.unsupported[row] === CARRIED_TRACK_NOT_HELD,
     shape: rows.shapeOf(row),
+    outline: rows.outline[row] ?? null,
     anchor: { x: rows.labelA[row] ?? 0, z: rows.labelB[row] ?? 0 },
     facts: factsOf(rows, row),
     box: {
@@ -551,6 +552,7 @@ export class PlanEvaluation {
     for (let k = 0; k < BOX_STRIDE; k++) rows.box[to + k] = delta.box[from + k] ?? 0;
     rows.boxState[row] = delta.boxState[entry] ?? 0;
     rows.shape[row] = rows.shapes.intern(delta.shape[entry] ?? null);
+    rows.outline[row] = delta.outline[entry] ?? null;
     copyFacts(delta.facts, entry * FACT_STRIDE, rows.facts, row * FACT_STRIDE);
   }
 
