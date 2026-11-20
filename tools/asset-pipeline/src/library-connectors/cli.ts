@@ -16,6 +16,8 @@ import {
   pinnedArchive,
   publicObjectUrl,
 } from "../library/ldraw-library.ts";
+import { bundleBaseUrl, liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
+import { runPointerCommand } from "../publication/pinned-publication.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
 import {
   CONNECTOR_SOURCE_USE,
@@ -26,6 +28,7 @@ import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts
 import {
   areLibraryConnectorsPublished,
   libraryConnectorsIndexKey,
+  libraryConnectorsPointer,
   uploadLibraryConnectors,
   verifyServedLibraryConnectors,
 } from "./publish.ts";
@@ -39,6 +42,7 @@ const buildRoot = join(repoRoot, ".cache", "library-connectors-build");
 const outRoot = join(toolRoot, "dist", "library-connectors");
 const binary = join(repoRoot, "target", "release", "library-connectors");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 interface StoreConfig {
   readonly bucket_name?: string;
@@ -285,6 +289,15 @@ async function verifyServedCommand(all: boolean, wait: boolean): Promise<void> {
   process.stdout.write(`${baseUrl}: ${checked} match their content addresses\n`);
 }
 
+const libraryConnectorsPointerRetainingLiveBundles = {
+  ...libraryConnectorsPointer,
+  retained: async () =>
+    liveBundleLibraryConnectorsIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
     await publishedCommand();
@@ -298,13 +311,27 @@ switch (process.argv[2]) {
   case "verify-served":
     await verifyServedCommand(process.argv.includes("--all"), process.argv.includes("--wait"));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      {
+        storeConfigPath,
+        readPin,
+        pointer: libraryConnectorsPointerRetainingLiveBundles,
+        manifestOf: (pin) => pin.index,
+      },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
     process.stderr.write(
-      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait]\n",
+      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
     );
     process.exitCode = 1;
 }

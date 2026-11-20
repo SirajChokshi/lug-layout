@@ -10,6 +10,13 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type * as v from "valibot";
 import type { ObjectReader } from "../library/ldraw-library.ts";
+import {
+  pinnedIndexPointer,
+  type IndexListing,
+  type PinnedIndex,
+  type PointerAdapter,
+  type Publication,
+} from "../publication/pinned-publication.ts";
 import { contentAddressedName } from "../publish.ts";
 import { sha256Hex, type ObjectStore } from "../r2.ts";
 import { isContentAddressed, type UploadResult } from "../remote-bundle.ts";
@@ -41,6 +48,32 @@ function decodeJson<const TSchema extends v.GenericSchema>(
 function packageFiles(index: ConnectorIndexFile): string[] {
   return Object.values(index.parts).flatMap((entry) => (entry === null ? [] : [entry.file]));
 }
+
+function listed(file: string, bytes: Uint8Array): IndexListing {
+  if (file === LIBRARY_CONNECTORS_INDEX_FILE) {
+    const top = decodeJson(LibraryConnectorsIndex, bytes, file);
+    return { indexes: PACKAGES.map((pkg) => ({ file: top[pkg].file })), leaves: [] };
+  }
+  return { indexes: [], leaves: packageFiles(decodeJson(ConnectorIndexFile, bytes, file)) };
+}
+
+export const libraryConnectorsPublication: Publication<LibraryConnectorsPin> = {
+  prefix: LIBRARY_CONNECTORS_PREFIX,
+  indexFile: LIBRARY_CONNECTORS_INDEX_FILE,
+  leafNoun: "records",
+  rebuildCommand: "library-connectors --check",
+  pinnedIndex: (pin) => pin.index,
+  list: listed,
+  contentType: () => JSON_CONTENT_TYPE,
+};
+
+export const LIBRARY_CONNECTORS_POINTER = "latest.json";
+
+export const libraryConnectorsPointer: PointerAdapter<PinnedIndex> = pinnedIndexPointer(
+  libraryConnectorsPublication,
+  listed,
+  LIBRARY_CONNECTORS_POINTER,
+);
 
 async function runAll<T>(items: ReadonlyArray<T>, work: (item: T) => Promise<void>): Promise<void> {
   const pending = [...items];

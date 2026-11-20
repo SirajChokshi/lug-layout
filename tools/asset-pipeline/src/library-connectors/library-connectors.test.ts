@@ -12,11 +12,15 @@ import { contentAddressedName } from "../publish.ts";
 import { assembleLibraryConnectors } from "./assemble.ts";
 import {
   libraryConnectorsIndexKey,
+  libraryConnectorsPointer,
   LIBRARY_CONNECTORS_PREFIX,
   uploadLibraryConnectors,
   verifyServedLibraryConnectors,
 } from "./publish.ts";
-import type { ObjectStore } from "../r2.ts";
+import { liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
+import { partBundlePointer } from "../pointer/part-bundle-pointer.ts";
+import { movePointer, pruneUnreferenced } from "../publication/pinned-publication.ts";
+import type { PrunableStore, StoredObject } from "../r2.ts";
 import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
 
 const [PART_LICENSE = ""] = CA_LICENSE_LINES;
@@ -54,14 +58,18 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-async function assembled(): Promise<{ readonly out: string; readonly pin: LibraryConnectorsPin }> {
+async function assembled(
+  connectivityPiece = 2,
+): Promise<{ readonly out: string; readonly pin: LibraryConnectorsPin }> {
   const build = await mkdtemp(join(tmpdir(), "brr-library-build-"));
   const out = await mkdtemp(join(tmpdir(), "brr-library-out-"));
   directories.push(build, out);
   for (const pkg of ["connectivity", "connectors"]) await mkdir(join(build, pkg));
   await writeFile(
     join(build, "connectivity", "3815c01.json"),
-    JSON.stringify(record("ldraw:3815c01", CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow, 2)),
+    JSON.stringify(
+      record("ldraw:3815c01", CONNECTIVITY_LICENSE, CONNECTOR_SOURCE.shadow, connectivityPiece),
+    ),
   );
   await writeFile(
     join(build, "connectors", "3815c01.json"),
@@ -129,7 +137,7 @@ it("publishes CA parts' records under their content addresses, stamps the connec
   }
 });
 
-class MemoryStore implements ObjectStore {
+class MemoryStore implements PrunableStore {
   readonly objects = new Map<string, Uint8Array>();
   readonly order: string[] = [];
 
@@ -143,6 +151,20 @@ class MemoryStore implements ObjectStore {
   }
 
   readonly read = async (key: string): Promise<Uint8Array | undefined> => this.objects.get(key);
+
+  async get(key: string): Promise<Uint8Array | undefined> {
+    return this.objects.get(key);
+  }
+
+  async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
+    return [...this.objects]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, body]) => ({ key, size: body.length }));
+  }
+
+  async delete(keys: ReadonlyArray<string>): Promise<void> {
+    for (const key of keys) this.objects.delete(key);
+  }
 }
 
 async function addressedFiles(out: string): Promise<string[]> {
@@ -206,4 +228,113 @@ it("finds a served record that differs from its content address only when every 
   expect(await verifyServedLibraryConnectors(store.read, pin, "all")).toEqual([
     `${key} differs from its content address`,
   ]);
+});
+
+it("the library-connectors pointer's manifest references the pinned index, both package indexes and every record they list", async () => {
+  const { out, pin } = await assembled();
+  const store = new MemoryStore();
+  await uploadLibraryConnectors(store, out, pin);
+
+  const { indexes, files } = await libraryConnectorsPointer.references(pin.index, store.read);
+
+  expect(indexes).toHaveLength(3);
+  expect([...indexes, ...files.map((file) => file.key)].toSorted()).toEqual(
+    [...store.objects.keys()].toSorted(),
+  );
+});
+
+it("prune keeps the current and previous indexes and every record they share, deletes the rest, and refuses while a kept package index is missing", async () => {
+  const store = new MemoryStore();
+  const pins: LibraryConnectorsPin[] = [];
+  for (const piece of [2, 3, 4]) {
+    const { out, pin } = await assembled(piece);
+    await uploadLibraryConnectors(store, out, pin);
+    pins.push(pin);
+  }
+  const [first, second, third] = pins;
+  if (!first || !second || !third) throw new Error("three pins");
+  for (const pin of pins) await movePointer(libraryConnectorsPointer, store, pin.index);
+  const keys = async (pin: LibraryConnectorsPin) => {
+    const { indexes, files } = await libraryConnectorsPointer.references(pin.index, store.read);
+    return [...indexes, ...files.map((file) => file.key)];
+  };
+  const kept = new Set([...(await keys(second)), ...(await keys(third))]);
+  const firstOnly = (await keys(first)).filter((key) => !kept.has(key));
+  const shared = (await keys(first)).filter((key) => kept.has(key));
+  expect(shared.length).toBeGreaterThan(0);
+
+  const outcome = await pruneUnreferenced(libraryConnectorsPointer, store, false);
+
+  expect(outcome.doomed.map((object) => object.key).toSorted()).toEqual(firstOnly.toSorted());
+  expect(shared.every((key) => store.objects.has(key))).toBe(true);
+  expect((await pruneUnreferenced(libraryConnectorsPointer, store, false)).deleted).toBe(0);
+
+  const [, secondPackage] = (await libraryConnectorsPointer.references(second.index, store.read))
+    .indexes;
+  if (secondPackage === undefined) throw new Error("a package index");
+  store.objects.delete(secondPackage);
+  const before = [...store.objects.keys()].toSorted();
+  await expect(pruneUnreferenced(libraryConnectorsPointer, store, false)).rejects.toThrow(
+    "is not stored",
+  );
+  expect([...store.objects.keys()].toSorted()).toEqual(before);
+});
+
+it("the library-connectors prune keeps the index a live bundle manifest names beyond its own current and previous, and refuses while a named index is missing", async () => {
+  const store = new MemoryStore();
+  const pins: LibraryConnectorsPin[] = [];
+  for (const piece of [2, 3, 4, 5]) {
+    const { out, pin } = await assembled(piece);
+    await uploadLibraryConnectors(store, out, pin);
+    pins.push(pin);
+  }
+  const [fallbackPin, firstPin, secondPin, thirdPin] = pins;
+  if (!fallbackPin || !firstPin || !secondPin || !thirdPin) throw new Error("four pins");
+  const root = await mkdtemp(join(tmpdir(), "brr-library-live-"));
+  directories.push(root);
+  const fallbackPath = join(root, "bundle-fallback.json");
+  const manifests = {
+    fallback: "manifest.0000000000000001.json",
+    current: "manifest.0000000000000002.json",
+  };
+  await writeFile(fallbackPath, JSON.stringify({ manifest_file: manifests.fallback }));
+  const nameIndex = async (manifest: string, index: LibraryConnectorsPin["index"]) => {
+    for (const lod of ["standard", "low", "far"]) {
+      await store.put(
+        `${lod}/${manifest}`,
+        new TextEncoder().encode(JSON.stringify({ compiler: { libraryConnectors: index } })),
+      );
+    }
+  };
+  await nameIndex(manifests.fallback, fallbackPin.index);
+  await nameIndex(manifests.current, thirdPin.index);
+  const bundle = partBundlePointer(fallbackPath);
+  await store.put(bundle.key, bundle.encode({ current: manifests.current, previous: null }));
+  const adapter = {
+    ...libraryConnectorsPointer,
+    retained: () => liveBundleLibraryConnectorsIndexes(store.read, fallbackPath),
+  };
+  for (const pin of [firstPin, secondPin, thirdPin]) await movePointer(adapter, store, pin.index);
+  const keys = async (pin: LibraryConnectorsPin) => {
+    const { indexes, files } = await adapter.references(pin.index, store.read);
+    return [...indexes, ...files.map((file) => file.key)];
+  };
+  const kept = new Set([
+    ...(await keys(fallbackPin)),
+    ...(await keys(secondPin)),
+    ...(await keys(thirdPin)),
+  ]);
+  const firstOnly = (await keys(firstPin)).filter((key) => !kept.has(key));
+  expect(firstOnly.length).toBeGreaterThan(0);
+
+  const outcome = await pruneUnreferenced(adapter, store, false);
+
+  expect(outcome.doomed.map((object) => object.key).toSorted()).toEqual(firstOnly.toSorted());
+  expect((await keys(fallbackPin)).every((key) => store.objects.has(key))).toBe(true);
+  expect((await pruneUnreferenced(adapter, store, false)).deleted).toBe(0);
+
+  await nameIndex(manifests.fallback, firstPin.index);
+  const before = [...store.objects.keys()].toSorted();
+  await expect(pruneUnreferenced(adapter, store, false)).rejects.toThrow("is not stored");
+  expect([...store.objects.keys()].toSorted()).toEqual(before);
 });
