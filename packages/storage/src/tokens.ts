@@ -1,5 +1,6 @@
 import type { ServiceIdentifier } from "inversify";
 import type { IAssetCache } from "./asset-cache.ts";
+import type { IOwnedPartsRepository } from "./owned-parts-repository.ts";
 import type { PersistentStorage } from "./persistent-storage.ts";
 import type { IWorldLocks } from "./world-locks.ts";
 import type { IWorldRepository } from "./world-repository.ts";
@@ -12,6 +13,9 @@ export const WORLD_REPOSITORY: ServiceIdentifier<IWorldRepository> = Symbol.for(
   "brr.storage.WorldRepository",
 );
 export const WORLD_LOCKS: ServiceIdentifier<IWorldLocks> = Symbol.for("brr.storage.WorldLocks");
+export const OWNED_PARTS_REPOSITORY: ServiceIdentifier<IOwnedPartsRepository> = Symbol.for(
+  "brr.storage.OwnedPartsRepository",
+);
 export const ASSET_CACHE_BUDGET: ServiceIdentifier<number> = Symbol.for(
   "brr.storage.AssetCacheBudget",
 );
