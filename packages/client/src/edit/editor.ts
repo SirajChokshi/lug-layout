@@ -1808,7 +1808,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (heldOnly) return published;
     if (this.assistPhase === ASSIST_TURN_NEXT) {
-      if (mayDefer && performance.now() >= deadline) return published;
+      if (performance.now() >= deadline) return published;
       this.beginTurnProbe(connected);
     }
     if (!this.advanceAssist(deadline)) return published;
