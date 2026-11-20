@@ -5,8 +5,6 @@ import {
   VolumeIndex,
   firstOverlap,
   ModelConnectors,
-  placeTechnicInto,
-  technicScratch,
   type CellVolumes,
   type ConnectionSolver,
   type ConnectorTable,
@@ -22,6 +20,7 @@ import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
+import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
 import type { FrozenVolumes } from "./placeable-volumes.ts";
 
@@ -73,7 +72,7 @@ export interface IPlacementSearch {
     model: ModelConnectors,
     volumes: FrozenVolumes,
     boxes: PartBoxes,
-    technic: TechnicSet,
+    technic: FrozenTechnic,
     pose: LatticePose,
   ): void;
   remove(placement: number): void;
@@ -93,6 +92,7 @@ export interface IPlacementSearch {
 interface Placed extends PlacedParts {
   readonly model: ModelConnectors;
   readonly volumes: FrozenVolumes;
+  readonly technic: FrozenTechnic;
   readonly row: number;
   readonly grid: FootprintGrid;
 }
@@ -218,21 +218,19 @@ export class PlacementSearch implements IPlacementSearch {
     model: ModelConnectors,
     volumes: FrozenVolumes,
     boxes: PartBoxes,
-    technic: TechnicSet,
+    technic: FrozenTechnic,
     pose: LatticePose,
   ): void {
     if (this.placed.has(placement))
       throw new RangeError(`placement ${placement} is already placed`);
     const at: LatticePose = { x: pose.x, z: pose.z, yPlates: pose.yPlates, rot: pose.rot };
-    const posed = technicScratch(technic);
-    placeTechnicInto(technic, at, posed);
     const world = this.scratch.place(volumes, at);
     const bounds = this.bounds.measure(world);
     const yLdu = at.yPlates * PLATE_LDU;
     const grid = this.gridFor(volumes, at.rot, world, yLdu);
     const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
     this.solver.insert(model, at, placement);
-    this.placed.set(placement, { model, volumes, boxes, technic: posed, pose: at, row, grid });
+    this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
   }
 
   remove(placement: number): void {

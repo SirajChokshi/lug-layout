@@ -7,10 +7,12 @@ use std::time::Instant;
 
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
-    mating_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue, MatingFace,
-    PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source, Uninferred,
+    mating_faces, published_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue,
+    MatingFace, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source,
+    Uninferred, Withholding,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
+use brick_compile::identify::{self, identifies, SIXTEENTHS_PER_LDU};
 use brick_compile::ldraw::{parse, Line};
 use brick_compile::model::{bake_model, official_reference};
 use brick_compile_cli::{read_section_vocabulary, LazyLibrary};
@@ -25,8 +27,6 @@ const EXAMPLES: usize = 12;
 const TUBE_TITLE: &str = "Stud Tube Open";
 const AXLE_TITLE: &str = "Technic Axle";
 const FACE_KEY_STEPS: f64 = 2000.0;
-const SIXTEENTHS: f64 = 16.0;
-const IDENTIFY_LDU: f64 = 0.0005;
 const CLEARANCE_STEPS: f64 = 1000.0;
 
 type AuditSlot = (Option<Gender>, [i64; 3], [i64; 3]);
@@ -316,6 +316,14 @@ fn issue_key(issue: &Issue) -> String {
             source_key(lower.0)
         ),
         Issue::Uninferred { reason, .. } => format!("tier 4: {}", uninferred_key(reason)),
+        Issue::FreeFaceWithheld { reason, .. } => format!(
+            "free face of a partly held connector {}",
+            match reason {
+                Withholding::ClosedByGeometry => "closed by geometry",
+                Withholding::SourcesDisagree => "where the shadow and the mesh disagree",
+                Withholding::NotProvenOpen => "not proven open",
+            }
+        ),
     }
 }
 
@@ -337,10 +345,16 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
             "probe gripped but its free travel along a lattice line is not centred on the grid point"
         }
         Uninferred::UnpairedThroughCavity { .. } => "through cavity whose far end was not probed",
+        Uninferred::MergedIntoRejectedProbe { .. } => {
+            "probe the cavity checks accept, merged on its key into one they rejected"
+        }
         Uninferred::TiltedRound { .. } => "round feature on a tilted axis",
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
         Uninferred::Unflattened => "part does not flatten",
+        Uninferred::SlabBoundaryWithoutExactPlane { .. } => {
+            "clipped piece within the representation guard of a slab plane without exact provenance"
+        }
         Uninferred::Oversized { .. } => {
             "geometry spanning more than 65,536 half-stud squares on some axis; on that axis it stays off the cell index and seeds no probes of its own"
         }
@@ -350,13 +364,10 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
 type FaceKey = (u8, [i64; 3], [i64; 3]);
 
 fn face_key(face: &MatingFace) -> FaceKey {
-    let sixteenths = |c: f64| {
-        let steps = (c * SIXTEENTHS).round();
-        if (c - steps / SIXTEENTHS).abs() <= IDENTIFY_LDU {
-            steps as i64 * FACE_KEY_STEPS as i64
-        } else {
-            (c * SIXTEENTHS * FACE_KEY_STEPS).round() as i64
-        }
+    let per_ldu = f64::from(SIXTEENTHS_PER_LDU);
+    let sixteenths = |c: f64| match identify::sixteenths(c) {
+        Some(steps) => steps * FACE_KEY_STEPS as i64,
+        None => (c * per_ldu * FACE_KEY_STEPS).round() as i64,
     };
     (
         u8::from(face.gender == Gender::Female),
@@ -391,7 +402,7 @@ fn face_family(face: &MatingFace) -> String {
 }
 
 fn section_agreement(kept: &MatingFace, inferred: &MatingFace) -> &'static str {
-    let same = |a: f64, b: f64| (a - b).abs() <= 0.0005;
+    let same = |a: f64, b: f64| identifies(a - b);
     let identical = kept.sections.len() == inferred.sections.len()
         && kept
             .sections
@@ -702,6 +713,70 @@ fn parts(values: &HashMap<String, String>, ldraw: &Path) -> Result<Vec<String>, 
 }
 
 #[derive(Default)]
+struct HeldTwice {
+    faces: usize,
+    parts: usize,
+    pairs: BTreeMap<String, usize>,
+    examples: Vec<Value>,
+}
+
+impl HeldTwice {
+    fn count(&mut self, part: &str, faces: &[MatingFace]) {
+        let females: Vec<&MatingFace> = faces
+            .iter()
+            .filter(|f| f.gender == Gender::Female)
+            .collect();
+        let mut part_duplicates = 0;
+        for (index, face) in females.iter().enumerate() {
+            let earlier = females[..index].iter().find(|other| {
+                dot(face.axis, other.axis) >= 1.0 - PARALLEL
+                    && norm(sub(face.origin, other.origin)) <= SAME_LDU
+            });
+            let Some(other) = earlier else {
+                continue;
+            };
+            part_duplicates += 1;
+            let same_size = match (face.sections.first(), other.sections.first()) {
+                (Some(a), Some(b)) => a.code == b.code && (a.size - b.size).abs() <= SAME_LDU,
+                _ => false,
+            };
+            *self
+                .pairs
+                .entry(format!(
+                    "{} then {}{}",
+                    source_key(other.source),
+                    source_key(face.source),
+                    if same_size {
+                        ", same section size"
+                    } else {
+                        ", different section"
+                    }
+                ))
+                .or_default() += 1;
+            if self.examples.len() < 40 {
+                self.examples.push(json!({
+                    "part": part,
+                    "at": face.origin,
+                    "held": [source_key(other.source), other.sections.first().map(|s| s.length)],
+                    "second": [source_key(face.source), face.sections.first().map(|s| s.length)],
+                }));
+            }
+        }
+        self.faces += part_duplicates;
+        self.parts += usize::from(part_duplicates > 0);
+    }
+
+    fn json(&self) -> Value {
+        json!({
+            "faces": self.faces,
+            "parts": self.parts,
+            "byPair": table(self.pairs.clone()),
+            "examples": self.examples,
+        })
+    }
+}
+
+#[derive(Default)]
 struct Tally {
     parts: usize,
     with_connectors: usize,
@@ -892,9 +967,8 @@ fn run() -> Result<(), String> {
     let mut axle_examples: Vec<Value> = Vec::new();
     let mut disagreeing_faces: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
-    let mut duplicate_faces = [0usize; 2];
-    let mut duplicate_pairs: BTreeMap<String, usize> = BTreeMap::new();
-    let mut duplicate_examples: Vec<Value> = Vec::new();
+    let mut held_twice = HeldTwice::default();
+    let mut published_held_twice = HeldTwice::default();
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
     let mut tier2_shapes: BTreeMap<String, usize> = BTreeMap::new();
@@ -1067,46 +1141,12 @@ fn run() -> Result<(), String> {
             }
         }
         let all_faces = faces_of(&extraction.connectors, None);
-        let females: Vec<&MatingFace> = all_faces
-            .iter()
-            .filter(|f| f.gender == Gender::Female)
+        held_twice.count(part, &all_faces);
+        let published: Vec<MatingFace> = published_faces(&extraction)
+            .into_iter()
+            .map(|published| published.face)
             .collect();
-        let mut part_duplicates = 0;
-        for (index, face) in females.iter().enumerate() {
-            let earlier = females[..index].iter().find(|other| {
-                dot(face.axis, other.axis) >= 1.0 - PARALLEL
-                    && norm(sub(face.origin, other.origin)) <= SAME_LDU
-            });
-            if let Some(other) = earlier {
-                part_duplicates += 1;
-                let same_size = match (face.sections.first(), other.sections.first()) {
-                    (Some(a), Some(b)) => a.code == b.code && (a.size - b.size).abs() <= SAME_LDU,
-                    _ => false,
-                };
-                *duplicate_pairs
-                    .entry(format!(
-                        "{} then {}{}",
-                        source_key(other.source),
-                        source_key(face.source),
-                        if same_size {
-                            ", same section size"
-                        } else {
-                            ", different section"
-                        }
-                    ))
-                    .or_default() += 1;
-                if duplicate_examples.len() < 40 {
-                    duplicate_examples.push(json!({
-                        "part": part,
-                        "at": face.origin,
-                        "held": [source_key(other.source), other.sections.first().map(|s| s.length)],
-                        "second": [source_key(face.source), face.sections.first().map(|s| s.length)],
-                    }));
-                }
-            }
-        }
-        duplicate_faces[0] += part_duplicates;
-        duplicate_faces[1] += usize::from(part_duplicates > 0);
+        published_held_twice.count(part, &published);
         let inferred_kept = faces_of(&extraction.connectors, Some(Source::Inferred));
         let before_any = extraction
             .connectors
@@ -1433,12 +1473,8 @@ fn run() -> Result<(), String> {
         },
         "tubeNeighbourReceptorsOnCuratedPartsWithFemales": { "emitted": tube_oracle[0], "atATier1Female": tube_oracle[1] },
         "tubeInteriors": table(tubes),
-        "femaleFacesHeldTwice": {
-            "faces": duplicate_faces[0],
-            "parts": duplicate_faces[1],
-            "byPair": table(duplicate_pairs),
-            "examples": duplicate_examples,
-        },
+        "femaleFacesHeldTwice": held_twice.json(),
+        "publishedFemaleFacesHeldTwice": published_held_twice.json(),
         "axleFeatures": {
             "partsWithAxlePrimitives": axle_census[0],
             "axlePrimitives": axle_census[1],

@@ -1,4 +1,3 @@
-use crate::sixteenths;
 use std::f64::consts::PI;
 use std::ops::Range;
 
@@ -6,9 +5,10 @@ use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{ReferenceSpan, Triangle, VisitedFile};
+use crate::identify::{identifies, sixteenths, IDENTIFY_LDU, SIXTEENTHS_PER_LDU};
+use crate::trig::{cos, planar_length};
 
-pub const STEPS_PER_LDU: i32 = sixteenths::PER_LDU;
-const IDENTIFY_LDU: f64 = 0.0005;
+pub const STEPS_PER_LDU: i32 = SIXTEENTHS_PER_LDU;
 const UNBOUNDED_STEPS: i32 = 1 << 20;
 const DEGENERATE_LDU: f64 = 1e-9;
 const STANDARD_SEGMENTS: f64 = 16.0;
@@ -170,7 +170,7 @@ impl TechnicPart {
 
 fn identify(v: f64) -> Option<i32> {
     let r = v.round();
-    ((v - r).abs() <= IDENTIFY_LDU).then_some(r as i32)
+    identifies(v - r).then_some(r as i32)
 }
 
 fn identify_down(v: f64) -> i32 {
@@ -185,8 +185,9 @@ fn stepped(r: f64, outward: fn(f64) -> f64) -> i32 {
     if !r.is_finite() {
         return UNBOUNDED_STEPS;
     }
-    let value =
-        sixteenths::identified(r).unwrap_or_else(|| outward(r * f64::from(STEPS_PER_LDU)) as i32);
+    let value = sixteenths(r)
+        .and_then(|steps| i32::try_from(steps).ok())
+        .unwrap_or_else(|| outward(r * f64::from(STEPS_PER_LDU)) as i32);
     value.min(UNBOUNDED_STEPS)
 }
 
@@ -216,8 +217,8 @@ fn unit_axis(v: Vec3) -> Option<(usize, i32)> {
         return None;
     }
     let n = v.map(|c| c / l);
-    let axis = (0..3).find(|&k| (n[k].abs() - 1.0).abs() <= IDENTIFY_LDU)?;
-    let sideways = (0..3).all(|k| k == axis || n[k].abs() <= IDENTIFY_LDU);
+    let axis = (0..3).find(|&k| identifies(n[k].abs() - 1.0))?;
+    let sideways = (0..3).all(|k| k == axis || identifies(n[k]));
     sideways.then_some((axis, if n[axis] > 0.0 { 1 } else { -1 }))
 }
 
@@ -231,7 +232,7 @@ fn others(axis: usize) -> [usize; 2] {
 
 fn radial(p: Vec3, line: Line) -> f64 {
     let [a, b] = others(line.axis);
-    (p[a] - f64::from(line.at[0])).hypot(p[b] - f64::from(line.at[1]))
+    planar_length(p[a] - f64::from(line.at[0]), p[b] - f64::from(line.at[1]))
 }
 
 fn line_through(m: &Affine) -> Option<(Line, i32)> {
@@ -252,8 +253,8 @@ fn on_line(m: &Affine, line: Line) -> bool {
     let o = origin(m);
     let [a, b] = others(line.axis);
     axis == line.axis
-        && (o[a] - f64::from(line.at[0])).abs() <= IDENTIFY_LDU
-        && (o[b] - f64::from(line.at[1])).abs() <= IDENTIFY_LDU
+        && identifies(o[a] - f64::from(line.at[0]))
+        && identifies(o[b] - f64::from(line.at[1]))
 }
 
 fn vertices<'a>(
@@ -274,7 +275,7 @@ fn facing(span: &ReferenceSpan, triangles: &[Triangle]) -> Option<i32> {
         sum += p[axis] - o[axis];
         count += 1.0;
     }
-    if count == 0.0 || (sum / count).abs() <= IDENTIFY_LDU {
+    if count == 0.0 || identifies(sum / count) {
         return None;
     }
     Some(if sum > 0.0 { 1 } else { -1 })
@@ -309,7 +310,7 @@ fn sagitta(span: &ReferenceSpan, triangles: &[Triangle]) -> f64 {
         ];
         reach = reach.max(length(off));
     }
-    reach * (1.0 - (PI / segments(&span.path)).cos())
+    reach * (1.0 - cos(PI / segments(&span.path)))
 }
 
 fn slacks(triangles: &[Triangle], spans: &[ReferenceSpan], line: Line) -> Vec<f64> {
@@ -348,16 +349,15 @@ fn cylinder(span: &ReferenceSpan, triangles: &[Triangle], line: Line) -> Option<
     let x = column(&span.matrix, 0);
     let z = column(&span.matrix, 2);
     let radius = length(x);
-    let round = (length(z) - radius).abs() <= IDENTIFY_LDU
-        && x[line.axis].abs() <= IDENTIFY_LDU
-        && z[line.axis].abs() <= IDENTIFY_LDU;
+    let round =
+        identifies(length(z) - radius) && identifies(x[line.axis]) && identifies(z[line.axis]);
     if !round || span.triangles.is_empty() {
         return None;
     }
     let mut from = f64::INFINITY;
     let mut to = f64::NEG_INFINITY;
     for p in vertices(triangles, &span.triangles) {
-        if (radial(p, line) - radius).abs() > IDENTIFY_LDU {
+        if !identifies(radial(p, line) - radius) {
             return None;
         }
         from = from.min(p[line.axis]);
@@ -417,7 +417,7 @@ fn segment_distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     } else {
         (-(a[0] * d[0] + a[1] * d[1]) / span).clamp(0.0, 1.0)
     };
-    (a[0] + d[0] * t).hypot(a[1] + d[1] * t)
+    planar_length(a[0] + d[0] * t, a[1] + d[1] * t)
 }
 
 fn polygon_distance(points: &[Vec3], line: Line) -> f64 {

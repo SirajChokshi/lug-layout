@@ -11,22 +11,28 @@ import {
   ModelConnectors,
   SECTION_ROUND,
   SOURCE_SHADOW,
-  modelTechnic,
   STATUS_VERIFIED,
   type LatticePose,
   type SnapWindow,
-  type TechnicSet,
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
 import { EMPTY_COLUMN } from "@brr/catalog";
-import { PLATE_LDU, STUD_LDU, ZETA16_COEFFICIENT_COUNT, pose16, zeta16 } from "@brr/math";
+import {
+  PLATE_LDU,
+  pose16,
+  SIXTEENTHS_PER_LDU,
+  STUD_LDU,
+  zeta16,
+  ZETA16_COEFFICIENT_COUNT,
+} from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
+import { FrozenTechnic } from "./frozen-technic.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
 import {
   placementChoice,
@@ -74,7 +80,7 @@ interface Fixture {
 
 interface Parts {
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 interface Piece {
@@ -128,10 +134,15 @@ function table(specs: ReadonlyArray<Spec>): ConnectorTable {
     Uint8Array.from(specs, ([, gender]) => gender),
     new Uint8Array(specs.length).fill(SOURCE_SHADOW),
     new Uint8Array(specs.length).fill(STATUS_VERIFIED),
-    Float32Array.from(specs.flatMap(([, , x, y, z]) => [x, y, z])),
+    Int32Array.from(
+      specs.flatMap(([, , x, y, z]) => [x, y, z]),
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
+    ),
     Int8Array.from(specs, ([, , , , , axis]) => axis),
-    new Float32Array(specs.length * 3),
+    new Float64Array(specs.length * 3),
     new Uint16Array(specs.length),
+    new Float64Array(specs.length * 3),
+    [],
   );
 }
 
@@ -191,7 +202,7 @@ function partsOf(
   const measured = partBoxes(boxes.flat());
   return {
     boxes: measured,
-    technic: modelTechnic(
+    technic: FrozenTechnic.ofParts(
       boxes.map((_, i) => technic[i] ?? null),
       {
         count: boxes.length,
