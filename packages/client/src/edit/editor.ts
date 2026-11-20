@@ -1419,6 +1419,9 @@ export class Editor implements IEditor, IEditedWorld {
     hovered: boolean;
     refusal: string | null;
     placement: PlacementHover | null;
+    grouped: boolean;
+    groupRefusal: string | null;
+    filling: boolean;
     settled: boolean;
     placementMode: PlacementMode | null;
     override: boolean;
@@ -1427,6 +1430,9 @@ export class Editor implements IEditor, IEditedWorld {
     hovered: false,
     refusal: null,
     placement: null,
+    grouped: false,
+    groupRefusal: null,
+    filling: false,
     settled: false,
     placementMode: null,
     override: false,
@@ -1554,15 +1560,22 @@ export class Editor implements IEditor, IEditedWorld {
 
   private showGhostVerdict(): void {
     const { mode, hover, ghostSettled, placementMode, placementModeOverride } = this.state;
+    const { gesture, fillDraft } = this.state;
     const hovered = hover !== null;
     const refusal = hover?.refusal ?? null;
     const placement = hover?.placement ?? null;
+    const grouped = gesture !== null && gesture.kind !== "box";
+    const groupRefusal = gesture !== null && gesture.kind !== "box" ? gesture.refusal : null;
+    const filling = fillDraft !== null;
     const shown = this.verdictShownFor;
     if (
       shown.mode === mode &&
       shown.hovered === hovered &&
       shown.refusal === refusal &&
       shown.placement === placement &&
+      shown.grouped === grouped &&
+      shown.groupRefusal === groupRefusal &&
+      shown.filling === filling &&
       shown.settled === ghostSettled &&
       shown.placementMode === placementMode &&
       shown.override === placementModeOverride
@@ -1573,6 +1586,9 @@ export class Editor implements IEditor, IEditedWorld {
     shown.hovered = hovered;
     shown.refusal = refusal;
     shown.placement = placement;
+    shown.grouped = grouped;
+    shown.groupRefusal = groupRefusal;
+    shown.filling = filling;
     shown.settled = ghostSettled;
     shown.placementMode = placementMode;
     shown.override = placementModeOverride;
@@ -4024,8 +4040,17 @@ export class Editor implements IEditor, IEditedWorld {
       reason: fill.laid === 0 ? `No whole ${placeable.label} fits there.` : reason.refusal,
     };
     fill.cancel();
-    if (requests.length > 0) this.show(this.history.commit("fill", requests), eventTimeMs);
+    if (requests.length > 0) this.dropFill(requests, eventTimeMs);
     this.update({ fillDraft: null, lastFill: result });
+  }
+
+  private dropFill(requests: Parameters<EditHistory["commit"]>[1], eventTimeMs: number): void {
+    this.dropping = true;
+    try {
+      this.show(this.history.commit("fill", requests), eventTimeMs);
+    } finally {
+      this.dropping = false;
+    }
   }
 
   private cancelFill(): void {

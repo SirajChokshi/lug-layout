@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { FillView } from "./fill-tool.ts";
 import {
   ghostVerdict,
   lineText,
@@ -72,6 +73,8 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
   return {
     mode: "place",
     ghostSettled: false,
+    gesture: null,
+    fillDraft: null,
     placementMode: "assist",
     placementModeOverride: false,
     hover: {
@@ -96,6 +99,8 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
     },
   };
 }
+
+const FILL: FillView = { wanted: 4, refused: 0, overLimit: false };
 
 const HIT: HoverRefusalHit = {
   placed: model("Market Street", 0),
@@ -306,4 +311,37 @@ it("changes nothing when the turn probe settles without finding a snapping turn"
   });
 
   expect(read(probed)).toEqual(read(probing));
+});
+
+function holdingGroup(refusal: string | null): PlacementView {
+  return {
+    ...hover({ magnetised: true, mates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])] }),
+    mode: "select",
+    gesture: { kind: "move", refusal },
+  };
+}
+
+it.each([
+  "brick-2x4 would hit Plate 2 x 8 in 10014-1 Caboose (2001) at cell 3, -2",
+  "MILS Basic Terrain Module would hit Technic Brick 1 x 4 with Holes in MILS Basic Terrain Module at cell -11, 64",
+  "brick-2x4 has nothing to rest on here: none of its connectors mate, and it isn't on the table",
+])("presents a held group's refusal as it reads, %s, and never a snap or a mate", (refusal) => {
+  expect(read(holdingGroup(refusal))).toEqual({
+    tone: "refused",
+    lines: [refusal],
+    ghost: { tone: "refused", hit: null, precise: false },
+  });
+});
+
+it("tints a held group that would land, says nothing over it, and claims nothing over a box drag or a fill", () => {
+  const filling = { ...hover({ accepted: false, hit: HIT }), fillDraft: FILL };
+  expect({
+    lands: read(holdingGroup(null)),
+    boxing: read({ ...holdingGroup(null), gesture: { kind: "box" } }),
+    filling: read(filling),
+  }).toEqual({
+    lands: { tone: "fits", lines: [], ghost: { tone: "fits", hit: null, precise: false } },
+    boxing: { tone: undefined, lines: undefined, ghost: null },
+    filling: { tone: undefined, lines: undefined, ghost: null },
+  });
 });
