@@ -166,7 +166,7 @@ export class PlanFacts {
   }
 
   private partnerOf(id: number): number {
-    const owner = this.search.overlapOf(id, this.tableYPlates);
+    const owner = this.search.overlapOf(id);
     if (owner === NOT_PLACED) return NOT_PLACED;
     const partner = this.searched.modelAt(owner);
     if (!partner) throw new RangeError(`search owner ${owner} names no placed model`);
@@ -174,9 +174,7 @@ export class PlanFacts {
   }
 
   private held(id: number): boolean {
-    return (
-      this.search.holdingMates(id) > 0 || this.search.standsOnTable(id, this.tableYPlates)
-    );
+    return this.search.holdingMates(id) > 0 || this.search.standsOnTable(id, this.tableYPlates);
   }
 
   private measurableIdOf(model: PlacedModel): number {

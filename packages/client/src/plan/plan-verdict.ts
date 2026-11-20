@@ -14,8 +14,8 @@ export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   { id: "trackSeam", text: "Track across a table seam", owner: NOT_YET_ASSIGNED },
   {
     id: "seamJoins",
-    text: "Whether placements meeting at a seam join or leave a gap",
-    owner: "E6 (#511)",
+    text: "Whether placements meeting at a seam join or leave a gap: stud mates name no partner, so a join through a bridging part can't be told from a gap yet",
+    owner: NOT_YET_ASSIGNED,
   },
   {
     id: "modelTrackOverlap",

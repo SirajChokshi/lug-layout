@@ -169,7 +169,7 @@ export interface IPlacementSearch {
   ): boolean;
   has(placement: number): boolean;
   holdingMates(placement: number): number;
-  overlapOf(placement: number, tableYPlates: number): number;
+  overlapOf(placement: number): number;
   standsOnTable(placement: number, tableYPlates: number): boolean;
 }
 
@@ -510,8 +510,6 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly gridUses = new Map<FootprintGrid, number>();
   private moving = NO_PLACEMENT;
   private withheld = NO_PLACEMENTS;
-  private readonly alone = new Set<number>();
-  private readonly measured = placementChoice();
   private standing = NO_PLACEMENT;
 
   constructor(
@@ -1231,20 +1229,18 @@ export class PlacementSearch implements IPlacementSearch {
     return holding;
   }
 
-  overlapOf(placement: number, tableYPlates: number): number {
-    const placed = this.placedAt(placement);
+  overlapOf(placement: number): number {
+    const { model, volumes, boxes, technic, pose } = this.placedAt(placement);
     const moving = this.moving;
-    this.moving = NO_PLACEMENT;
-    this.alone.clear();
-    this.alone.add(placement);
+    this.moving = placement;
     try {
-      return this.withdrawn(this.alone, () => {
-        const { model, volumes, boxes, technic, pose } = placed;
-        this.check(model, volumes, boxes, technic, pose, tableYPlates, this.measured);
-        return this.measured.overlap.owner;
-      });
+      const mated = this.solver.votes(model, pose) > 0;
+      return this.blocked(model, volumes, boxes, technic, pose, mated, false)
+        ? this.hit.owner
+        : NO_PLACEMENT;
     } finally {
       this.moving = moving;
+      this.zones.clear();
     }
   }
 
@@ -1253,16 +1249,20 @@ export class PlacementSearch implements IPlacementSearch {
     const world = this.scratch.place(placed.volumes, placed.pose);
     const table = tableYPlates * PLATE_LDU;
     this.standing = placement;
-    for (let c = 0; c < world.count; c++) {
-      const bottom = world.bottomLdu[c] ?? 0;
-      if (bottom > table || (world.topLdu[c] ?? 0) <= bottom) continue;
-      const x = world.cellX[c] ?? 0;
-      const z = world.cellZ[c] ?? 0;
-      if (!this.volumes.firstOverlap(x, z, bottom - 1, bottom, this.isStanding, this.hit)) {
-        return true;
+    try {
+      for (let c = 0; c < world.count; c++) {
+        const bottom = world.bottomLdu[c] ?? 0;
+        if (bottom > table || (world.topLdu[c] ?? 0) <= bottom) continue;
+        const x = world.cellX[c] ?? 0;
+        const z = world.cellZ[c] ?? 0;
+        if (!this.volumes.firstOverlap(x, z, bottom - 1, bottom, this.isStanding, this.hit)) {
+          return true;
+        }
       }
+      return false;
+    } finally {
+      this.standing = NO_PLACEMENT;
     }
-    return false;
   }
 
   private placedAt(placement: number): Placed {
