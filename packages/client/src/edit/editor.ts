@@ -159,6 +159,7 @@ import { TrackSupport, antiStudsOf } from "./track-support.ts";
 import { BOX_FLOATS } from "./local-box.ts";
 import {
   NO_MODELS,
+  ON_TOP_FACE,
   PlacedChunks,
   posedBox,
   writePosedPartBoxes,
@@ -1108,15 +1109,13 @@ function byIndex(a: TrackPieceAt, b: TrackPieceAt): number {
   return a.index - b.index;
 }
 
-function joinBreakReason(join: GroupJoin, sameHeight: boolean, action: GroupAction): string {
+function joinBreakReason(join: GroupJoin, action: GroupAction): string {
   const { endLabel, partnerLabel } = join;
   const verb = ACTION_VERBS[action];
   if (join.partner.kind === "fixed") {
     return `${endLabel} is joined to ${partnerLabel}, so ${verb} it would pull that join apart. ${remedy(action, partnerLabel)}`;
   }
-  return sameHeight
-    ? `${endLabel} is joined to ${partnerLabel}, so ${verb} them there would pull that join apart.`
-    : `${endLabel} is joined to ${partnerLabel}, so ${verb} them there would rest them at different heights and pull that join apart.`;
+  return `${endLabel} is joined to ${partnerLabel}, so ${verb} them there would pull that join apart.`;
 }
 
 function moveRefused(edit: GroupEdit): string {
@@ -1359,7 +1358,8 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly namedOverlap = placementChoice().overlap;
   private hitPart: HitPart | null = null;
   private namingIndices: ArrayLike<number> = [];
-  private readonly surface = new Float64Array(2);
+  private readonly surface = new Float64Array(3);
+  private readonly topFaceShift = new Float64Array(2);
   private readonly sideRay = new Float64Array(6);
   private readonly verticalRay = new Float64Array(6);
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
@@ -3008,18 +3008,24 @@ export class Editor implements IEditor, IEditedWorld {
     pick.cells = cellsWithin(reach);
     pick.plates = platesWithin(reach);
     pick.yPlates = this.aimedYPlates(this.ray, this.hitX, this.hitZ);
+    pick.x = this.hoverX + nearestStud(this.topFaceShift[0] ?? 0);
+    pick.z = this.hoverZ + nearestStud(this.topFaceShift[1] ?? 0);
   }
 
   private aimedYPlates(ray: Float64Array, groundX: number, groundZ: number): number {
     let nearest = Number.POSITIVE_INFINITY;
     let top = Number.NaN;
+    let onTopFace = false;
     for (const model of this.placed.models()) {
       if (!model.aimedTop(ray, groundX, groundZ, this.surface)) continue;
       const t = this.surface[0] ?? Number.POSITIVE_INFINITY;
       if (t >= nearest) continue;
       nearest = t;
       top = this.surface[1] ?? Number.NaN;
+      onTopFace = this.surface[2] === ON_TOP_FACE;
     }
+    this.topFaceShift[0] = onTopFace ? (ray[0] ?? 0) + (ray[3] ?? 0) * nearest - groundX : 0;
+    this.topFaceShift[1] = onTopFace ? (ray[2] ?? 0) + (ray[5] ?? 0) * nearest - groundZ : 0;
     if (!Number.isFinite(top)) return RESTS_ON_TABLE_Y_PLATES;
     return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
   }
@@ -4838,9 +4844,8 @@ export class Editor implements IEditor, IEditedWorld {
       const end = this.placedEnd(edit, placed, join.end);
       const partner = this.placedEnd(edit, placed, join.partner);
       if (!end || !partner) continue;
-      const sameHeight = end.yPlates === partner.yPlates;
-      if (sameHeight && posesJoin16(end.pose, partner.pose)) continue;
-      return { ...join.at, reason: joinBreakReason(join, sameHeight, edit.action) };
+      if (end.yPlates === partner.yPlates && posesJoin16(end.pose, partner.pose)) continue;
+      return { ...join.at, reason: joinBreakReason(join, edit.action) };
     }
     return null;
   }

@@ -48,6 +48,8 @@ export interface PlacedModel {
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+const THROUGH_SIDE = 0;
+export const ON_TOP_FACE = 1;
 
 function slab(
   origin: number,
@@ -737,6 +739,8 @@ class PlacedEntry implements PlacedModel {
       if (t === Number.POSITIVE_INFINITY || (found && t >= (out[0] ?? 0))) continue;
       out[0] = t;
       out[1] = top;
+      const entersTop = !overGround || t === (top - (ray[1] ?? 0)) / (ray[4] ?? 0);
+      out[2] = entersTop ? ON_TOP_FACE : THROUGH_SIDE;
       found = true;
     }
     return found;

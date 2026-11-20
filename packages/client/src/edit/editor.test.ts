@@ -2909,6 +2909,28 @@ it("seats a set on a module's surface where the cursor's ray enters the module's
   }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
 }, 120_000);
 
+it("seats a user's brick on a stack of three where a low camera's ray meets the stack's top face, though that ray reaches the table beyond assist's reach", async () => {
+  const { editor, backend, catalog, frame } = await startEditor(
+    [USER_BRICK],
+    new BundleDirectoryFetcher(),
+    [USER_BRICK],
+  );
+  await loadCatalogItem(catalog, HELD_BRICK);
+  const place = placer(editor, backend);
+  for (let level = 0; level < 3; level++) await place(HELD_BRICK, 0, 0);
+  await chosen(editor, HELD_BRICK);
+  const stackTopLdu = 9 * PLATE_LDU;
+  const lowCamera = 2;
+  backend.aim(0, -stackTopLdu * lowCamera, lowCamera);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({ accepted: hover?.accepted, pose: hover?.pose }).toEqual({
+    accepted: true,
+    pose: { x: 0, z: 0, yPlates: 9, rot: 0 },
+  });
+}, 120_000);
+
 it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
   const { editor, backend, catalog, frame } = await startEditor([
     PLAIN_MODULE_MODEL,
