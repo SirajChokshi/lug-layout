@@ -2,9 +2,12 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  LevelCrossingFacts,
+  PlanOutlinesFile,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
+  type PlanOutline,
   type CatalogSourceUse,
   type CrosswalkFile,
   type Palette,
@@ -89,8 +92,10 @@ import {
 } from "./remote-bundle.ts";
 import {
   geometryReports,
+  levelCrossingReports,
   licenseAuditReport,
   magnetSeatReports,
+  paletteTrackCatalog,
   readSources,
   trackCatalogReports,
   writeReports,
@@ -349,6 +354,7 @@ async function factsCommand(check: boolean): Promise<void> {
   }
   const auditLibrary = new LdrawLibrary([auditRoot]);
   const shadowLibrary = new LdrawLibrary([connectivityRoot]);
+  const catalog = paletteTrackCatalog(auditLibrary, palette);
   const reports = [
     licenseAuditReport({
       lock,
@@ -361,7 +367,13 @@ async function factsCommand(check: boolean): Promise<void> {
       shadowLibrary,
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
-    ...trackCatalogReports(auditLibrary, palette),
+    ...trackCatalogReports(auditLibrary, catalog),
+    ...levelCrossingReports(
+      new LdrawLibrary([ldrawRoot, auditRoot]),
+      palette,
+      catalog,
+      lock.source,
+    ),
     ...magnetSeatReports(
       lock,
       connectivity,
@@ -475,10 +487,25 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   const geometryPath = join(repoRoot, BUNDLE_DATA_FILES.geometry);
   const geometry: Record<string, unknown> = JSON.parse(await readFile(geometryPath, "utf8"));
   const tablePlane = decodedOrThrow(decode(TablePlane, geometry["tablePlane"]), geometryPath);
+  const crossingPath = join(repoRoot, BUNDLE_DATA_FILES.levelCrossing);
+  const crossing = decodedOrThrow(
+    decode(LevelCrossingFacts, JSON.parse(await readFile(crossingPath, "utf8"))),
+    crossingPath,
+  );
+  const levelCrossing = { systems: crossing.systems, ramps: crossing.ramps };
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane, levelCrossing }, null, 2)}\n`,
   );
+}
+
+async function readPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> {
+  const path = join(repoRoot, BUNDLE_DATA_FILES.planOutlines);
+  const { outlines } = decodedOrThrow(
+    decode(PlanOutlinesFile, JSON.parse(await readFile(path, "utf8"))),
+    path,
+  );
+  return new Map(outlines.map((outline) => [outline.part, outline.rings]));
 }
 
 const BYTES_PER_KB = 1024;
@@ -530,6 +557,7 @@ interface SharedBuild {
   readonly coverCache: string;
   readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
   readonly categories: LdrawCategories;
+  readonly outlines: ReadonlyMap<string, PlanOutline>;
 }
 
 async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild): Promise<void> {
@@ -574,7 +602,7 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
-  await attachRecords(out);
+  await attachRecords(out, shared.outlines);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
@@ -639,7 +667,8 @@ async function bundleCommand(): Promise<void> {
     lockSha256: await fileSha256(lockPath),
   };
   const ldrawParts = crosswalkInputs.ldrawParts;
-  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories };
+  const outlines = await readPlanOutlines();
+  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, outlines };
   for (const build of builds) await compileLod(build, shared);
   await recordBundleBuild(bundleRoot, buildKey);
 }

@@ -2,9 +2,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AuditLock, ConnectivityLock, InputLock } from "../fetch-ldraw.ts";
 import type { LdrawLibrary } from "../ldraw/library.ts";
-import type { Palette } from "@brr/schema/bundle";
+import { OUTLINE_UNITS_PER_LDU, type Palette } from "@brr/schema/bundle";
 import { CATALOG_LAYOUTS, catalogScene } from "../track/catalog-scenes.ts";
-import { buildTrackCatalog } from "../track/track-catalog.ts";
+import { buildTrackCatalog, type TrackCatalogReport } from "../track/track-catalog.ts";
+import {
+  LEVEL_CROSSING_FILE,
+  levelCrossingData,
+  PLAN_OUTLINES_FILE,
+} from "../crossing/level-crossing.ts";
 import { loadTrackEndMarkers } from "../track/track-ends.ts";
 import { measureBaseplate } from "./geometry.ts";
 import { buildGeometryReport } from "./geometry-report.ts";
@@ -170,13 +175,16 @@ export function geometryReports(
 
 export const TRACK_CATALOG_FILE = "track-catalog.json";
 
+export function paletteTrackCatalog(library: LdrawLibrary, palette: Palette): TrackCatalogReport {
+  const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
+  return buildTrackCatalog(library, trackParts, loadTrackEndMarkers());
+}
+
 export function trackCatalogReports(
   library: LdrawLibrary,
-  palette: Palette,
+  catalog: TrackCatalogReport,
 ): ReadonlyArray<FactReport> {
   const markers = loadTrackEndMarkers();
-  const trackParts = palette.parts.filter((part) => part.role === "track").map((part) => part.id);
-  const catalog = buildTrackCatalog(library, trackParts, markers);
   const scenes = CATALOG_LAYOUTS.map((layout) => ({
     layout,
     scene: catalogScene(library, markers, catalog.pieces, layout),
@@ -190,6 +198,51 @@ export function trackCatalogReports(
       fileName: `scenes/${layout.name}.ldr`,
       render: () => scene.ldraw,
     })),
+  ];
+}
+
+export function levelCrossingReports(
+  library: LdrawLibrary,
+  palette: Palette,
+  catalog: TrackCatalogReport,
+  source: InputLock["source"],
+): ReadonlyArray<FactReport> {
+  const data = levelCrossingData(library, palette, catalog.pieces);
+  const frame = "part frame, bundle +Y up (z = −z_LDraw), LDU";
+  return [
+    {
+      fileName: PLAN_OUTLINES_FILE,
+      render: () =>
+        asJson({
+          source,
+          frame,
+          unitsPerLdu: OUTLINE_UNITS_PER_LDU,
+          derivation:
+            "exact union of the plan projections of every face of the part, from its LDraw decimals, in integer millionths of an LDU; outer rings counter-clockwise in (x, z), holes clockwise. Coordinates with up to six decimal places, and crossings of plan-axis edges, are exact; roundedLdu is the largest distance any coordinate moved to its millionth (longer products of subfile matrices, and crossings of oblique edges, which are rationals no decimal unit holds)",
+          outlines: [],
+        }).replace(
+          '"outlines": []',
+          `"outlines": [\n${data.outlines.map((outline) => `    ${JSON.stringify(outline)}`).join(",\n")}\n  ]`,
+        ),
+    },
+    {
+      fileName: LEVEL_CROSSING_FILE,
+      render: () =>
+        asJson({
+          source,
+          frame,
+          derivation: {
+            railTopLdu:
+              "rail head top above the underside of the system's certified straight (measureRails)",
+            ramps:
+              "every palette part whose highest tilted top face rises one way along a plan axis and reaches the part's downhill side; edge heights above the underside, run along the rise",
+            antiStuds:
+              "stud-lattice points under the underside where a cylinder of the measured stud's radius and height is free of the part's solid and touched by it",
+          },
+          systems: data.systems,
+          ramps: data.ramps,
+        }),
+    },
   ];
 }
 

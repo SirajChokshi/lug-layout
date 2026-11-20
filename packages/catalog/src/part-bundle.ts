@@ -18,6 +18,7 @@ import {
   type PartRole,
   type PartRolling,
   type PartTechnic,
+  type PlanOutline,
   type ProducedColors,
   type PrimitiveConnectorTable,
   type SectionVocabulary,
@@ -61,6 +62,7 @@ export interface PartShapeAsset {
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
   readonly rolling: PartRolling | null;
+  readonly outline: PlanOutline | null;
 }
 
 export interface PartAsset extends PartShapeAsset {

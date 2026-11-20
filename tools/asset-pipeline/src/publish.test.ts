@@ -67,6 +67,7 @@ function compiledManifest() {
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
     tablePlane: { part: "3811", depthBelowTopLdu: 4 },
+    levelCrossing: { systems: [], ramps: [] },
     compiler: null as { file: string; unofficialAllowlist: string[]; cavityProbe: string } | null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },

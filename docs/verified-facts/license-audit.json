@@ -1231,6 +1231,26 @@
       }
     },
     {
+      "id": "4515",
+      "group": "slope",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
+      "id": "3297",
+      "group": "slope",
+      "status": "absent",
+      "header": null,
+      "dependencyFiles": null,
+      "missingDependencies": [],
+      "unofficialDependencies": [],
+      "ldcad": null
+    },
+    {
       "id": "3811",
       "group": "baseplate",
       "status": "officialCA",
