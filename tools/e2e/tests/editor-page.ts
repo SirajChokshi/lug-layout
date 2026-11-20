@@ -557,7 +557,10 @@ export class EditorPage {
 
   async importModel(file: string): Promise<ModelImport> {
     await this.page.locator("input.model-file-import").setInputFiles(file);
-    const name = basename(file);
+    return this.importOutcome(basename(file));
+  }
+
+  private async importOutcome(name: string): Promise<ModelImport> {
     const status = this.page.locator(
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
@@ -567,6 +570,33 @@ export class EditorPage {
       item: (await status.getAttribute("data-item")) ?? "",
       text: (await status.locator("p").first().textContent()) ?? "",
     };
+  }
+
+  async searchPalette(query: string): Promise<void> {
+    await this.page.locator(".palette-search").fill(query);
+    await expect(this.page.locator(".palette-library")).toHaveAttribute(
+      "data-library-status",
+      "ready",
+      { timeout: READY_TIMEOUT_MS },
+    );
+  }
+
+  async libraryParts(): Promise<ReadonlyArray<string>> {
+    return this.page
+      .locator(".palette-library [data-library-part]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-library-part") ?? ""));
+  }
+
+  async pickLibraryPart(part: string, color: number): Promise<ModelImport> {
+    const swatch = this.page.locator(`.palette-library [data-library-item="${part}@${color}"]`);
+    const partInColor = await swatch.getAttribute("aria-label");
+    if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
+    await swatch.click();
+    return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async refs(): Promise<ReadonlyArray<string>> {
+    return (await this.editState()).world.refs;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {

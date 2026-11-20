@@ -137,6 +137,12 @@ function fileProblem(facts: LdrawPartFacts): string | null {
   return null;
 }
 
+export function listedCategory(facts: LdrawPartFacts, categories: LdrawCategories): string | null {
+  if (fileProblem(facts) !== null) return null;
+  const category = ldrawCategoryOf(facts, categories);
+  return category !== null && categories.active.has(category) ? category : null;
+}
+
 function roleProblem(role: PartRole, category: string, facts: LdrawPartFacts): string | null {
   const rule = ROLE_RULES[role];
   if (rule === null) return `has role ${role}, which no palette part may carry`;
