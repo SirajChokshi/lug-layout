@@ -8,11 +8,7 @@ import {
 } from "@brr/domain";
 import { pose16 } from "@brr/math";
 import type { TrackPiece } from "@brr/schema/bundle";
-import {
-  decodeTrackPosition,
-  encodeTrackPosition,
-  type TrackPieceKeyV1,
-} from "@brr/schema/world";
+import { decodeTrackPosition, encodeTrackPosition, type TrackPieceKeyV1 } from "@brr/schema/world";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import { routeSegments } from "../sim/sim-track-input.ts";
 
@@ -32,9 +28,12 @@ export interface SwitchSite {
 }
 
 function keyText(key: TrackPieceKey): string {
-  return [key.piece, key.placement.heading, key.yPlates, ...encodeTrackPosition(key.placement.position)].join(
-    " ",
-  );
+  return [
+    key.piece,
+    key.placement.heading,
+    key.yPlates,
+    ...encodeTrackPosition(key.placement.position),
+  ].join(" ");
 }
 
 export class RailTrack {
@@ -55,7 +54,11 @@ export class RailTrack {
     }
     for (let p = 0; p < layout.count; p++) {
       if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
-      const text = keyText({ piece: layout.piece(p), placement: layout.pose(p), yPlates: layout.yPlates(p) });
+      const text = keyText({
+        piece: layout.piece(p),
+        placement: layout.pose(p),
+        yPlates: layout.yPlates(p),
+      });
       if (!this.placements.has(text)) this.placements.set(text, p);
     }
     const sites: SwitchSite[] = [];
@@ -123,7 +126,10 @@ export class RailTrack {
   }
 }
 
-export function pieceRecord(pieces: ReadonlyArray<TrackPiece>, key: TrackPieceKey): TrackPieceKeyV1 {
+export function pieceRecord(
+  pieces: ReadonlyArray<TrackPiece>,
+  key: TrackPieceKey,
+): TrackPieceKeyV1 {
   const piece = pieces[key.piece];
   if (!piece) throw new Error(`track catalog has no piece ${key.piece}`);
   return {

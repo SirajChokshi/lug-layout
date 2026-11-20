@@ -54,13 +54,7 @@ import {
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, StudioReport } from "@brr/import";
-import {
-  importRef,
-  worldTrack,
-  type ConsistRecordV1,
-  type ImportedFile,
-  type WorldShardV1,
-} from "@brr/schema/world";
+import { importRef, worldTrack, type ConsistRecordV1, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
   notDrawnItems,

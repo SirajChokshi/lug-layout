@@ -152,7 +152,13 @@ function nearestOnSegment(
   return pastEnd < beforeStart ? length : 0;
 }
 
-function segmentDistance(track: SimTrack, segment: number, s: number, x: number, z: number): number {
+function segmentDistance(
+  track: SimTrack,
+  segment: number,
+  s: number,
+  x: number,
+  z: number,
+): number {
   const x0 = track.segmentX[segment] ?? 0;
   const z0 = track.segmentZ[segment] ?? 0;
   const heading = track.segmentHeading[segment] ?? 0;

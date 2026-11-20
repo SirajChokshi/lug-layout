@@ -385,8 +385,7 @@ export class TrackDrawing {
       pieces: this.pieces,
       railPart: straight.piece.part,
       railTopY: straight.yLdu + part.boundsMax[1],
-      halfWidthLdu:
-        Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
+      halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
 

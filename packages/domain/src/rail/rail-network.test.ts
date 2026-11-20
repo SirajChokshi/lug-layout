@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { NO_SWITCH } from "../track/track-graph.ts";
-import { placeSegments, segmentsEnd, type PlanPose, type SimPathSegment } from "./route-geometry.ts";
+import {
+  placeSegments,
+  segmentsEnd,
+  type PlanPose,
+  type SimPathSegment,
+} from "./route-geometry.ts";
 import {
   RAIL_SPOT_FLOATS,
   RailNetwork,
@@ -124,7 +129,9 @@ describe("RailNetwork", () => {
     const nearStart = seat(0, 10);
 
     expect(middle.ok && middle.wholeLdu).toBe(true);
-    expect(Math.abs(middle.headAlong - (along(rails, forwardEdge(2), 50) + consist / 2))).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(middle.headAlong - (along(rails, forwardEdge(2), 50) + consist / 2)),
+    ).toBeLessThanOrEqual(1);
     expect(nearEnd).toMatchObject({ ok: true, wholeLdu: true });
     expect(nearEnd.headAlong).toBeCloseTo(LINE_LDU, 9);
     expect(nearStart).toMatchObject({ ok: true, wholeLdu: true });

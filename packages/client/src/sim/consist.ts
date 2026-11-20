@@ -1,12 +1,7 @@
 import type { PartModel, PartVehicle } from "@brr/catalog";
 import type { VehicleCoupler } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
-import type {
-  CouplerGeometry,
-  CouplerMount,
-  GuideGeometry,
-  VehicleGeometry,
-} from "@brr/domain";
+import type { CouplerGeometry, CouplerMount, GuideGeometry, VehicleGeometry } from "@brr/domain";
 import type { VehicleSpec } from "@brr/sim";
 
 export interface RigidBodyInstances {

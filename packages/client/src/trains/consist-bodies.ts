@@ -157,8 +157,24 @@ export class ConsistBodies {
       spacing === 0 ? 0 : Math.atan2(frontY - rearY, spacing),
       roll,
     );
-    this.place(this.ids[base + FRONT_BOGIE] ?? NO_BODY, data, at + POSE_FRONT_BOGIE, frontY, kink, 0, roll);
-    this.place(this.ids[base + REAR_BOGIE] ?? NO_BODY, data, at + POSE_REAR_BOGIE, rearY, kink, 0, roll);
+    this.place(
+      this.ids[base + FRONT_BOGIE] ?? NO_BODY,
+      data,
+      at + POSE_FRONT_BOGIE,
+      frontY,
+      kink,
+      0,
+      roll,
+    );
+    this.place(
+      this.ids[base + REAR_BOGIE] ?? NO_BODY,
+      data,
+      at + POSE_REAR_BOGIE,
+      rearY,
+      kink,
+      0,
+      roll,
+    );
   }
 
   private place(

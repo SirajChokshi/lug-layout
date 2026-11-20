@@ -1,10 +1,5 @@
 import type { TrackPiece } from "@brr/schema/bundle";
-import type {
-  SimPathSegment,
-  TrackGraph,
-  TrackGraphTopology,
-  TrackLayout,
-} from "@brr/domain";
+import type { SimPathSegment, TrackGraph, TrackGraphTopology, TrackLayout } from "@brr/domain";
 
 export function simTopology(graph: TrackGraph): TrackGraphTopology {
   return {
