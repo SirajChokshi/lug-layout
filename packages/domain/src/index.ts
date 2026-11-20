@@ -108,7 +108,10 @@ export {
   type PathSampler,
   type VehicleGeometry,
 } from "./rail/running-gear.ts";
+export { pierCourses, type PierCourses } from "./track/pier-courses.ts";
+export { rampRises, reachablePlates, runHeights, type RunHeights } from "./track/ramp-heights.ts";
 export {
+  INT8_MAX,
   TrackLayout,
   type TrackEndRef,
   type TrackPieceSpec,
@@ -178,6 +181,7 @@ export {
   type PlanIssue,
   type PlanPlacement,
   type CarriedTrack,
+  type PlateClearance,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
@@ -195,7 +199,7 @@ export {
   TRACK_SEGMENT,
 } from "./plan/plan-rows.ts";
 export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
-export { PlanEvaluation } from "./plan/plan-evaluation.ts";
+export { PlanEvaluation, type PlateHeights } from "./plan/plan-evaluation.ts";
 export { RECT_FLOATS, type PlanShape } from "./plan/plan-shape.ts";
 export {
   FACT_CUSTOM_PARTS,
@@ -263,8 +267,10 @@ export {
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  boxesOverlap,
   outlineBox,
   outlineContains,
+  outlinesOverlap,
   placedOutline,
   placedOutlineInto,
   rotateOutline,

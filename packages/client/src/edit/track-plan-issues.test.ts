@@ -225,6 +225,7 @@ function layFrom(at: Room, start: Pose16, partIds: ReadonlyArray<string>): Track
       piece: catalogIndex(partId),
       pose,
       yPlates: 0,
+      rise: 0,
     })),
   };
 }
@@ -360,8 +361,8 @@ it("counts a point where laid track meets without joining only in a room one of 
   at.plans.removeTable(at.planId, at.tableId);
   const corner = { chunk: 1, sizeMm: 80 };
   const layL = () => {
-    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 0)));
-    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 12)));
+    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 0), 0));
+    commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(22n, 47n, 12), 0));
   };
   layL();
   const wholeRoom = at.plans.issues(at.planId).map((issue) => issue.rule);
@@ -444,7 +445,10 @@ it("warns that a user's model holds a straight turned off the exact track field,
 
 it("counts a track row only in a plan whose room holds its piece, keeps the plan's list as it was while track is laid outside the room, and relabels the rows of a thrown switch", () => {
   const at = room();
-  commit(at, at.drawing.pieceChange(catalogIndex(RIGHT_SWITCH), studPose(FAR_EAST_STUDS, 0n, 0)));
+  commit(
+    at,
+    at.drawing.pieceChange(catalogIndex(RIGHT_SWITCH), studPose(FAR_EAST_STUDS, 0n, 0), 0),
+  );
   const outside = { issues: at.plans.issueCount(at.planId), boxes: at.backend.boxes.length };
   const grownMm = 8000;
   at.plans.updatePlan(at.planId, { roomWidthMm: grownMm });
@@ -453,7 +457,7 @@ it("counts a track row only in a plan whose room holds its piece, keeps the plan
   });
   const grown = at.plans.issues(at.planId);
   const boxes = at.backend.boxes;
-  commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(-FAR_EAST_STUDS, 0n, 0)));
+  commit(at, at.drawing.pieceChange(catalogIndex(STRAIGHT), studPose(-FAR_EAST_STUDS, 0n, 0), 0));
   const laidOutside = { issues: at.plans.issues(at.planId), boxes: at.backend.boxes };
   const lever = at.drawing.switchLevers()[0];
   const thrown = lever ? at.drawing.switchThrow(lever.placement) : null;

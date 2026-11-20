@@ -28,6 +28,8 @@ const CATALOG_REF = /^[a-z][a-z0-9]*:[A-Za-z0-9._-]+$/;
 export const SafeInteger = v.pipe(v.number(), v.safeInteger("must be an integer"));
 export const Count = v.pipe(SafeInteger, v.minValue(0, "must not be negative"));
 const INT64_MIN = -(2n ** 63n);
+const TRACK_RISE_MIN = -(2 ** 7);
+const TRACK_RISE_MAX = 2 ** 7 - 1;
 const INT64_MAX = 2n ** 63n - 1n;
 
 const SchemaVersion = v.literal(WORLD_SCHEMA_VERSION, (issue) =>
@@ -223,6 +225,17 @@ export const TrackRecordV1 = v.strictObject(
         v.check((yPlates) => isLatticePose(0, 0, yPlates), "is outside the int16 plate range"),
       ),
       { abortPipeEarly: true },
+    ),
+    rise: v.exactOptional(
+      v.config(
+        v.pipe(
+          SafeInteger,
+          v.minValue(TRACK_RISE_MIN, "must be a rise of -128 to 127 plates"),
+          v.maxValue(TRACK_RISE_MAX, "must be a rise of -128 to 127 plates"),
+          v.check((rise) => rise !== 0, "is written only when the piece ramps"),
+        ),
+        { abortPipeEarly: true },
+      ),
     ),
   },
   strictMessage,

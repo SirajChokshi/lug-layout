@@ -103,8 +103,25 @@ function placedPartPose(frame: TrackPartFrame, placement: Pose16): PartPose {
   };
 }
 
+const NO_CELLS = new Int32Array(0);
+
 export class TrackSupport {
   constructor(private readonly antiStuds: ReadonlyMap<number, Int32Array>) {}
+
+  antiStudCells(catalogIndex: number, frame: TrackPartFrame, placement: Pose16): Int32Array {
+    const origins = this.antiStuds.get(catalogIndex);
+    const part = exactPartPose(frame, placement);
+    if (!origins || !part) return NO_CELLS;
+    const cells: number[] = [];
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      const cellX = studCell(part.x + part.cos * ox - part.sin * oz);
+      const cellZ = studCell(part.z + part.sin * ox + part.cos * oz);
+      if (Number.isInteger(cellX) && Number.isInteger(cellZ)) cells.push(cellX, cellZ);
+    }
+    return Int32Array.from(cells);
+  }
 
   supported(
     catalogIndex: number,
@@ -135,9 +152,13 @@ export class TrackSupport {
   }
 }
 
+function studCell(sixteenths: number): number {
+  return (sixteenths - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+}
+
 function onStud(x: number, z: number, seats: ReadonlySet<number>): boolean {
-  const cellX = (x - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
-  const cellZ = (z - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+  const cellX = studCell(x);
+  const cellZ = studCell(z);
   return Number.isInteger(cellX) && Number.isInteger(cellZ) && seats.has(cellKey(cellX, cellZ));
 }
 
