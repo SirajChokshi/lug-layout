@@ -1,4 +1,4 @@
-import type { PlacementHover, PlacementMode } from "@brr/client";
+import type { HoverMateCount, PlacementHover, PlacementMode } from "@brr/client";
 import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
@@ -160,11 +160,20 @@ export interface LevelCrossing {
   readonly ramps: ReadonlyArray<CrossingRamp>;
 }
 
+export interface DumpedMateCount extends Omit<HoverMateCount, "jointIds"> {
+  readonly jointIds: ReadonlyArray<number>;
+}
+
+export interface DumpedPlacementHover extends Omit<PlacementHover, "mates" | "turnMates"> {
+  readonly mates: ReadonlyArray<DumpedMateCount>;
+  readonly turnMates: ReadonlyArray<DumpedMateCount>;
+}
+
 export interface HoverState {
   readonly x: number;
   readonly z: number;
   readonly yPlates: number;
-  readonly placement: PlacementHover | null;
+  readonly placement: DumpedPlacementHover | null;
 }
 
 interface EditState {
@@ -717,7 +726,7 @@ export class EditorPage {
     return (await this.editState()).world.refs;
   }
 
-  async hoverPlacement(): Promise<PlacementHover | null> {
+  async hoverPlacement(): Promise<DumpedPlacementHover | null> {
     return (await this.editState()).hover?.placement ?? null;
   }
 

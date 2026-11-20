@@ -1,4 +1,4 @@
-import type { PlacementHover, PlacementMode } from "@brr/client";
+import type { PlacementMode } from "@brr/client";
 import { expect, test, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -21,6 +21,7 @@ import {
   EditorPage,
   pinnedLdrawFetch,
   STUD,
+  type DumpedPlacementHover,
   type HoverState,
   type Pose,
   type ScreenPoint,
@@ -479,9 +480,9 @@ test("the assist neighbourhood follows the zoom, reaching exactly its floor up c
 });
 
 interface RacedClick {
-  readonly atClick: PlacementHover | null;
+  readonly atClick: DumpedPlacementHover | null;
   readonly committed: ReadonlyArray<Pose>;
-  readonly settled: PlacementHover;
+  readonly settled: DumpedPlacementHover;
 }
 
 async function placeRowPrecisely(
