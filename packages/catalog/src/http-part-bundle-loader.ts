@@ -416,6 +416,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         .map((color) => color.code),
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
+      libraryBake: manifest.compiler.libraryBake ?? null,
+      libraryConnectors: manifest.compiler.libraryConnectors ?? null,
     };
   }
 

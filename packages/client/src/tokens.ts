@@ -19,6 +19,7 @@ import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
+import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
@@ -40,6 +41,9 @@ export const WORLD_SESSION: ServiceIdentifier<IWorldSession> =
 export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.for(
   "brr.client.PlaceableCatalog",
 );
+export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for(
+  "brr.client.EditorFrameLoop",
+);
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
@@ -55,6 +59,12 @@ export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
 );
 export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Symbol.for(
   "brr.client.ImportWorkerFactory",
+);
+export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryBakeBaseUrl",
+);
+export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryConnectorsBaseUrl",
 );
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",

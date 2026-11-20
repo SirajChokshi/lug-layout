@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
 use crate::flatten::{StudReference, INHERIT_COLOR};
-use crate::lattice::{model_lattice, LatticeError, LatticeInstance};
+use crate::lattice::{model_lattice, LatticeError, LatticeInstance, StudPose};
 use crate::mesh::{ColorGroup, Mesh, WELD_EPSILON_LDU};
 
 pub const CELL_LDU: [i64; 3] = [20, 8, 20];
@@ -65,7 +65,7 @@ type CellKey = (i64, i64, i64);
 
 fn lattice_instances<'a>(
     parts: &'a [VoxelPart],
-    studs: &'a [Vec<Vec3>],
+    studs: &'a [Vec<StudPose>],
 ) -> Vec<LatticeInstance<'a>> {
     parts
         .iter()
@@ -83,12 +83,12 @@ fn lattice_instances<'a>(
 }
 
 pub fn grid_phase(parts: &[VoxelPart]) -> Result<[i64; 3], VoxelError> {
-    let studs: Vec<Vec<Vec3>> = parts
+    let studs: Vec<Vec<StudPose>> = parts
         .iter()
         .map(|part| {
             part.studs
                 .iter()
-                .map(|stud| [stud.matrix.m[3], stud.matrix.m[7], stud.matrix.m[11]])
+                .map(|stud| StudPose::of(&stud.matrix))
                 .collect()
         })
         .collect();

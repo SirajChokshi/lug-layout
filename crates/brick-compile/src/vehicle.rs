@@ -1,9 +1,11 @@
 use std::collections::{HashMap, VecDeque};
 
 use crate::affine::{Affine, Vec3};
+use crate::compile::CompileError;
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::model::ModelInstance;
+use crate::trig::{atan2, planar_length};
 
 pub const CONTACT_OVERLAP_LDU: f64 = 2.0;
 const VERTICAL_AXIS_MIN_COSINE: f64 = 0.999;
@@ -147,6 +149,36 @@ impl From<FlattenError> for VehicleError {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum GeometryError {
+    Flatten(FlattenError),
+    Malformed { findings: Vec<MalformedGeometry> },
+}
+
+impl From<FlattenError> for GeometryError {
+    fn from(error: FlattenError) -> Self {
+        GeometryError::Flatten(error)
+    }
+}
+
+impl From<GeometryError> for VehicleError {
+    fn from(error: GeometryError) -> Self {
+        match error {
+            GeometryError::Flatten(error) => VehicleError::Flatten(error),
+            GeometryError::Malformed { findings } => VehicleError::Malformed { findings },
+        }
+    }
+}
+
+impl From<GeometryError> for CompileError {
+    fn from(error: GeometryError) -> Self {
+        match error {
+            GeometryError::Flatten(error) => CompileError::Flatten(error),
+            GeometryError::Malformed { findings } => CompileError::Malformed { findings },
+        }
+    }
+}
+
 type Bounds = [Vec3; 2];
 
 fn ldraw_point_to_y_up(p: Vec3) -> Vec3 {
@@ -220,9 +252,13 @@ struct Geometry<'a, L: Library> {
 
 impl<'a, L: Library> Geometry<'a, L> {
     fn new(library: &'a L) -> Self {
+        Geometry::with_bounds(library, HashMap::new())
+    }
+
+    fn with_bounds(library: &'a L, bounds: HashMap<String, Bounds>) -> Self {
         Geometry {
             library,
-            bounds: HashMap::new(),
+            bounds,
             triangles: HashMap::new(),
         }
     }
@@ -236,20 +272,20 @@ impl<'a, L: Library> Geometry<'a, L> {
             })
     }
 
-    fn flatten(&self, part: &str, targets: &[String]) -> Result<Flattened, VehicleError> {
+    fn flatten(&self, part: &str, targets: &[String]) -> Result<Flattened, GeometryError> {
         let path = self.path(part)?;
         let mut flattener = Flattener::new(self.library, Lod::Standard, targets);
         let flattened = flattener.flatten(&path)?;
         if flattener.malformed().is_empty() {
             Ok(flattened)
         } else {
-            Err(VehicleError::Malformed {
+            Err(GeometryError::Malformed {
                 findings: flattener.malformed().to_vec(),
             })
         }
     }
 
-    fn triangles(&mut self, part: &str) -> Result<&[Triangle], VehicleError> {
+    fn triangles(&mut self, part: &str) -> Result<&[Triangle], GeometryError> {
         if !self.triangles.contains_key(part) {
             let flattened = self.flatten(part, &[])?;
             self.triangles.insert(part.to_string(), flattened.triangles);
@@ -261,26 +297,16 @@ impl<'a, L: Library> Geometry<'a, L> {
             .unwrap_or_default())
     }
 
-    fn bounds(&mut self, part: &str) -> Result<Bounds, VehicleError> {
+    fn bounds(&mut self, part: &str) -> Result<Bounds, GeometryError> {
         if let Some(bounds) = self.bounds.get(part) {
             return Ok(*bounds);
         }
-        let mut min = [f64::INFINITY; 3];
-        let mut max = [f64::NEG_INFINITY; 3];
-        for triangle in self.triangles(part)? {
-            for point in triangle.points {
-                let p = ldraw_point_to_y_up(point);
-                for axis in 0..3 {
-                    min[axis] = min[axis].min(p[axis]);
-                    max[axis] = max[axis].max(p[axis]);
-                }
-            }
-        }
-        self.bounds.insert(part.to_string(), [min, max]);
-        Ok([min, max])
+        let bounds = triangle_bounds(self.triangles(part)?);
+        self.bounds.insert(part.to_string(), bounds);
+        Ok(bounds)
     }
 
-    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, VehicleError> {
+    fn obsolete_sources(&self, part: &str) -> Result<Vec<String>, GeometryError> {
         Ok(self
             .flatten(part, &[])?
             .files
@@ -294,9 +320,28 @@ impl<'a, L: Library> Geometry<'a, L> {
         &self,
         part: &str,
         targets: &[String],
-    ) -> Result<Vec<StudReference>, VehicleError> {
+    ) -> Result<Vec<StudReference>, GeometryError> {
         Ok(self.flatten(part, targets)?.studs)
     }
+}
+
+fn triangle_bounds(triangles: &[Triangle]) -> Bounds {
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for triangle in triangles {
+        for point in triangle.points {
+            let p = ldraw_point_to_y_up(point);
+            for axis in 0..3 {
+                min[axis] = min[axis].min(p[axis]);
+                max[axis] = max[axis].max(p[axis]);
+            }
+        }
+    }
+    [min, max].map(|corner| corner.map(|v| v + 0.0))
+}
+
+pub fn part_bounds<L: Library>(library: &L, part: &str) -> Result<[Vec3; 2], GeometryError> {
+    Geometry::new(library).bounds(part)
 }
 
 fn world_bounds(matrix: &Affine, local: Bounds) -> Bounds {
@@ -499,7 +544,7 @@ fn pivot_point<L: Library>(
         .iter()
         .flat_map(|t| t.points)
         .map(|p| placed.matrix.apply(ldraw_point_to_y_up(p)))
-        .filter(|p| (p[0] - point[0]).hypot(p[2] - point[2]) > PIN_CLEARANCE_LDU)
+        .filter(|p| planar_length(p[0] - point[0], p[2] - point[2]) > PIN_CLEARANCE_LDU)
         .map(|p| p[1])
         .fold(f64::NEG_INFINITY, f64::max);
     Ok(Pivot { point, plate_top })
@@ -584,7 +629,17 @@ pub fn detect_vehicles<L: Library>(
     signatures: &VehicleSignatures,
     rails: &[RailHeadBand],
 ) -> Result<Vec<Vehicle>, VehicleError> {
-    let mut geometry = Geometry::new(library);
+    detect_vehicles_with_bounds(library, instances, signatures, rails, HashMap::new())
+}
+
+pub fn detect_vehicles_with_bounds<L: Library>(
+    library: &L,
+    instances: &[ModelInstance],
+    signatures: &VehicleSignatures,
+    rails: &[RailHeadBand],
+    known_bounds: HashMap<String, [Vec3; 2]>,
+) -> Result<Vec<Vehicle>, VehicleError> {
+    let mut geometry = Geometry::with_bounds(library, known_bounds);
     let mut bounds = Vec::with_capacity(instances.len());
     for placed in instances {
         bounds.push(world_bounds(&placed.matrix, geometry.bounds(&placed.part)?));
@@ -655,12 +710,13 @@ fn analyse<L: Library>(
     let pivots: Vec<Vec3> = bogie_members.iter().map(|(p, _)| *p).collect();
     let guides = choose_guides(&pivots, &fixed)?;
     let forward = sub(guides.front, guides.rear);
-    let yaw = forward[2].atan2(forward[0]);
+    let yaw = atan2(forward[2], forward[0]);
     let centre = midpoint(guides.front, guides.rear);
+    let plan_length = planar_length(forward[0], forward[2]);
     let frame = PlanFrame {
         origin: [centre[0], centre[2]],
-        cos: yaw.cos(),
-        sin: yaw.sin(),
+        cos: forward[0] / plan_length,
+        sin: forward[2] / plan_length,
     };
     let bogies = bogie_members
         .iter()
@@ -748,6 +804,7 @@ mod tests {
 
     use super::*;
     use crate::lattice::Malformation;
+    use crate::trig::{cos, sin};
 
     struct Files(HashMap<String, String>);
 
@@ -814,7 +871,7 @@ mod tests {
         for k in 0..steps {
             let a = k as f64 * std::f64::consts::TAU / steps as f64;
             let b = (k + 1) as f64 * std::f64::consts::TAU / steps as f64;
-            let ring = |angle: f64, x: f64| [x, radius * angle.cos(), radius * angle.sin()];
+            let ring = |angle: f64, x: f64| [x, radius * cos(angle), radius * sin(angle)];
             triangles.extend([ring(a, 40.0), ring(b, 40.0), ring(b, 60.0)]);
             triangles.extend([ring(a, 40.0), ring(b, 60.0), ring(a, 60.0)]);
         }

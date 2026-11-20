@@ -68,7 +68,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult } from "@brr/import";
+import type { ImportResult, PlacementListener } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
@@ -313,6 +313,7 @@ class HeadlessBackend implements ISceneBackend {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -320,9 +321,14 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
   userModels: ReadonlyArray<string> = [],
+  importer: IModelImporter | null = null,
 ) {
   const backend = new HeadlessBackend();
-  vi.stubGlobal("requestAnimationFrame", () => 0);
+  let scheduled: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    scheduled = callback;
+    return 1;
+  });
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -346,6 +352,7 @@ async function startEditor(
       );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  if (importer !== null) container.rebind(MODEL_IMPORTER).toConstantValue(importer);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -354,12 +361,20 @@ async function startEditor(
   } as unknown as HTMLCanvasElement;
 
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const frame = async (): Promise<void> => {
+    const callback = scheduled;
+    if (!callback) throw new Error("no frame is scheduled");
+    scheduled = null;
+    callback(performance.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
   return {
     editor,
     backend,
     container,
     catalog: container.get(PLACEABLE_CATALOG),
     manifest: await realLoader.loadManifest("standard"),
+    frame,
   };
 }
 
@@ -934,7 +949,19 @@ function refusedBake(fileName: string): ImportResult {
       bakeIssue: NO_LATTICE_REASON,
       bakeHelpersFailed: 0,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
-      timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
+      records: null,
+      timings: {
+        readMs: 0,
+        resolveMs: 0,
+        bakeMs: 0,
+        totalMs: 0,
+        placementMs: 0,
+        recordFetchMs: 0,
+        compileMs: 0,
+        ldrawFetchMs: 0,
+        bakePhases: null,
+        coverPhases: null,
+      },
     },
     partIds: [],
     instanceCount: 0,
@@ -1002,6 +1029,141 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
     reason: NO_LATTICE_REASON,
     listed: false,
   });
+}, 120_000);
+
+function importedRecord(fileName: string, record: ModelRecord): ImportResult {
+  const { model, parts } = record;
+  const refused = refusedBake(fileName);
+  const partIds = parts.map((part) => part.id);
+  return {
+    ...refused,
+    report: { ...refused.report, sections: model.sections, bakeIssue: null },
+    partIds,
+    instanceCount: model.instanceCount,
+    partIndex: Uint32Array.from(model.partIndex),
+    ldrawColor: model.ldrawColor,
+    matrices: model.matrices,
+    partTransforms: model.partTransforms,
+    submodels: model.submodels,
+    connectors: partIds.map(() => null),
+    bake: {
+      lattice: model.lattice,
+      latticeIssue: null,
+      studCover: model.studCover,
+      cells: model.cells,
+      vehicles: model.vehicles,
+      vehicleIssue: null,
+    },
+  };
+}
+
+class GatedModelImporter implements IModelImporter {
+  private result: ImportResult | null = null;
+  private open: () => void = () => undefined;
+  private readonly opened = new Promise<void>((resolve) => {
+    this.open = resolve;
+  });
+
+  serve(result: ImportResult): void {
+    this.result = result;
+  }
+
+  release(): void {
+    this.open();
+  }
+
+  async importText(
+    _fileName: string,
+    _text: string,
+    _lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    const { result } = this;
+    if (!result?.bake) throw new Error("the gated importer was given no baked result");
+    const { bake, report, studio: _studio, ...shape } = result;
+    const { studCover: _studCover, ...placement } = bake;
+    onPlaced?.({ ...shape, sections: report.sections, bake: placement });
+    await this.opened;
+    return result;
+  }
+
+  importStudio(
+    fileName: string,
+    _bytes: Uint8Array,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    return this.importText(fileName, "", lod, onPlaced);
+  }
+}
+
+it("places an import while its studs are checked, offers none of them to the stats or Play meanwhile, and gives every placed copy exactly the checked studs when they land", async () => {
+  const importer = new GatedModelImporter();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  const { covered } = record.model.studCover;
+  importer.serve(importedRecord("checking.mpd", record));
+  const imported = await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  const item = editor.snapshot().modelImport?.item ?? "";
+  const place = placer(editor, backend);
+  const copies = [place(item, 0, 0), place(item, 2_000, 0)];
+  const coverOf = () => editor.dump().covers.find((cover) => cover.id === item);
+  const readiness = () => {
+    const { modelImport, studChecks, studs, placements } = editor.snapshot();
+    const cover = coverOf();
+    return {
+      status: modelImport?.status,
+      reported: modelImport?.report !== null,
+      studChecks,
+      placements,
+      culledInsideModels: studs?.culledInsideModels,
+      pending: cover?.studsPending,
+      culledAtBake: cover?.studsCulledAtBake,
+      play: editor.playSetup() === null ? "waits" : "runs",
+    };
+  };
+  const pending = readiness();
+  const drawnPending = editor.snapshot().studs?.drawn ?? 0;
+  const posesPending = posesOf(editor);
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+
+  expect(covered).toBeGreaterThan(0);
+  expect({ imported, copies: copies.map((copy) => copy.refusedClicks) }).toEqual({
+    imported: true,
+    copies: [0, 0],
+  });
+  expect(pending).toEqual({
+    status: "checking",
+    reported: false,
+    studChecks: 1,
+    placements: 2,
+    culledInsideModels: null,
+    pending: true,
+    culledAtBake: null,
+    play: "waits",
+  });
+  expect(readiness()).toEqual({
+    status: "placeable",
+    reported: true,
+    studChecks: 0,
+    placements: 2,
+    culledInsideModels: 2 * covered,
+    pending: false,
+    culledAtBake: covered,
+    play: "runs",
+  });
+  expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
+  expect(posesOf(editor)).toEqual(posesPending);
 }, 120_000);
 
 it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
@@ -1969,5 +2131,85 @@ it("loads and applies a placed set's far model once, however often the set is pl
       placementsUsing: 3,
       counts: { wanted: 1, loaded: 1, failed: 0, absent: 0 },
     },
+  });
+}, 120_000);
+
+describe("frame loop in the editor's snapshot", () => {
+  it("the snapshot carries the frame loop's tier and first-frame time", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const { editor, frame } = await startEditor([]);
+    const beforeFirstFrame = editor.snapshot().coldStartMs;
+
+    await frame();
+    const firstFramePresentedMs = performance.now();
+    editor.cycleTier();
+
+    const { coldStartMs, tier } = editor.snapshot();
+    expect({ beforeFirstFrame, coldStartMs, tier }).toEqual({
+      beforeFirstFrame: null,
+      coldStartMs: firstFramePresentedMs,
+      tier: "near",
+    });
+  }, 120_000);
+
+  it("an edit's latency sample takes its times from the frame that presented it", async () => {
+    vi.useFakeTimers({ toFake: ["performance"] });
+    const { editor, backend, frame } = await startEditor([]);
+    await frame();
+    const queuedMs = 4;
+    editor.chooseItem(BASEPLATE);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+
+    editor.click(0, 0, performance.now());
+    vi.advanceTimersByTime(queuedMs);
+    await frame();
+
+    expect(editor.snapshot().lastLatency).toMatchObject({
+      step: "do",
+      action: "place",
+      item: BASEPLATE,
+      x: 0,
+      z: 0,
+      ms: queuedMs,
+      rebuildMs: 0,
+      queueMs: queuedMs,
+      submitMs: 0,
+      gpuWaitMs: 0,
+    });
+  }, 120_000);
+});
+
+it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a chunk edge, so its tiles share column chunks", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  place(BASEPLATE, 0, 320);
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  const stroke = () => {
+    backend.aim(0, 320);
+    editor.dragStart(0, 0);
+    for (const x of [640, 1280]) {
+      backend.aim(x, 320);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+  };
+  const xs = () => Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+  editor.chooseItem(kit.id);
+  stroke();
+  const laid = xs();
+  editor.undo(0);
+  const undone = xs();
+  editor.redo(0);
+  const redone = xs();
+  editor.setRoadErase(true);
+  stroke();
+  const erased = xs();
+  expect({ laid, undone, redone, erased }).toEqual({
+    laid: [0, 640, 1280],
+    undone: [0],
+    redone: [0, 640, 1280],
+    erased: [0],
   });
 }, 120_000);

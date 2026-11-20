@@ -30,6 +30,8 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
       return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
     case "malformed":
       return `Refused before drawing: ${part.message}.`;
+    case "tooLarge":
+      return `Not drawn: ${part.message}.`;
     case "failed":
       return part.message;
     default: {
@@ -161,13 +163,28 @@ export function ImportReportDetails({
         </div>
         {report.refusedConnectorRecords.length > 0 && (
           <div data-kind="refusedConnectorRecords">
-            <dt>Connector records refused</dt>
+            <dt>Connector records refused or unreadable</dt>
             <dd>
               {report.refusedConnectorRecords.map(({ partId, reason }) => (
                 <div key={partId}>
                   <code>{partId}</code>: {reason}
                 </div>
               ))}
+            </dd>
+          </div>
+        )}
+        {report.withoutConnectorRecords.length > 0 && (
+          <div data-kind="withoutConnectorRecords">
+            <dt>Without connector records</dt>
+            <dd>
+              Drawn with no connectors, because the import found no connector record for{" "}
+              {report.withoutConnectorRecords.map((partId, index) => (
+                <span key={partId}>
+                  {index > 0 ? ", " : ""}
+                  <code>{partId}</code>
+                </span>
+              ))}
+              .
             </dd>
           </div>
         )}

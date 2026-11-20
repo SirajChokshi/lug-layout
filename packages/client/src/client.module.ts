@@ -31,6 +31,7 @@ import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
+import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
@@ -60,6 +61,8 @@ import {
   IMPORT_BAKE_HELPERS,
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
+  LIBRARY_BAKE_BASE_URL,
+  LIBRARY_CONNECTORS_BASE_URL,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -78,6 +81,7 @@ import {
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
+  EDITOR_FRAME_LOOP,
   WORLD_SESSION,
 } from "./tokens.ts";
 
@@ -86,6 +90,7 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
+  bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
@@ -151,6 +156,8 @@ export interface MainThreadConfig {
   readonly importBakeHelpers?: number;
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
+  readonly libraryBakeBaseUrl?: string;
+  readonly libraryConnectorsBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly disclaimer: string;
@@ -170,6 +177,8 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       config.bundleManifestFile ?? DEFAULT_BUNDLE_MANIFEST_FILE,
     );
     bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
+    bind(LIBRARY_BAKE_BASE_URL).toConstantValue(config.libraryBakeBaseUrl ?? null);
+    bind(LIBRARY_CONNECTORS_BASE_URL).toConstantValue(config.libraryConnectorsBaseUrl ?? null);
     if (config.catalogApiBaseUrl !== undefined) {
       bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
     }

@@ -25,7 +25,7 @@ export interface HeldOutInput {
 }
 
 export type ImportOutcome =
-  | { readonly kind: "imported"; readonly result: ImportResult }
+  | { readonly kind: "imported"; readonly result: ImportResult; readonly compilerStartMs: number }
   | {
       readonly kind: "rejected";
       readonly rejection: StudioRejection;
@@ -82,15 +82,25 @@ export async function importThroughWorkerPath(
   fetchUrl: FetchFunction,
   input: HeldOutInput,
 ): Promise<ImportOutcome> {
+  const compilerStarting = now();
   const compiler = new BrickCompiler(bundle.compiler);
+  const compilerStartMs = now() - compilerStarting;
   const mirror = new LdrawMirror(bundle.source, fetchUrl);
-  const engine = new ModelImportEngine(compiler, mirror, bundle.connectors, now, NO_BAKE_HELPERS);
+  const engine = new ModelImportEngine(
+    compiler,
+    mirror,
+    bundle.connectors,
+    bundle.records,
+    now,
+    NO_BAKE_HELPERS,
+  );
   const job = { ...bundle.job, fileName: input.name };
   try {
     switch (input.format) {
       case "ldraw":
         return {
           kind: "imported",
+          compilerStartMs,
           result: await engine.importText({
             ...job,
             text: new TextDecoder().decode(input.bytes),
@@ -99,6 +109,7 @@ export async function importThroughWorkerPath(
       case "studio":
         return {
           kind: "imported",
+          compilerStartMs,
           result: await importStudioFile(engine, compiler, mirror, {
             kind: "studio",
             job,

@@ -1,12 +1,19 @@
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { appendFile, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
-import type * as v from "valibot";
+import * as v from "valibot";
 import { httpReader, publicObjectUrl, type ObjectReader } from "../library/ldraw-library.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "../content-hash.ts";
 import { contentAddressedName } from "../publish.ts";
-import { R2ObjectStore, sha256Hex, type ObjectStore } from "../r2.ts";
+import {
+  R2ObjectStore,
+  sha256Hex,
+  type ObjectStore,
+  type PrunableStore,
+  type StoredObject,
+} from "../r2.ts";
 import { isContentAddressed, type UploadResult } from "../remote-bundle.ts";
 
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -371,6 +378,367 @@ export async function runPublicationCommand<TPin>(
         argv.includes("--all") ? "all" : "indexes",
         argv.includes("--wait"),
       );
+      return true;
+    default:
+      return false;
+  }
+}
+
+export interface PublicationPointer<TManifest> {
+  readonly current: TManifest;
+  readonly previous: TManifest | null;
+}
+
+export interface ReferencedFile {
+  readonly key: string;
+  readonly sha256Prefix: string;
+}
+
+export interface ManifestReferences {
+  readonly indexes: ReadonlyArray<string>;
+  readonly files: ReadonlyArray<ReferencedFile>;
+}
+
+export interface PointerAdapter<TManifest> {
+  readonly key: string;
+  readonly prefixes: ReadonlyArray<string>;
+  readonly headers: Readonly<Record<string, string>>;
+  decode(bytes: Uint8Array): PublicationPointer<TManifest>;
+  encode(pointer: PublicationPointer<TManifest>): Uint8Array;
+  sameManifest(a: TManifest, b: TManifest): boolean;
+  describeManifest(manifest: TManifest): string;
+  references(manifest: TManifest, read: ObjectReader): Promise<ManifestReferences>;
+  retained(): Promise<ReadonlyArray<TManifest>>;
+}
+
+export function nextPointer<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  existing: PublicationPointer<TManifest> | null,
+  manifest: TManifest,
+): PublicationPointer<TManifest> {
+  if (existing !== null && adapter.sameManifest(existing.current, manifest)) return existing;
+  return { current: manifest, previous: existing?.current ?? null };
+}
+
+export async function readPointer<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  read: ObjectReader,
+): Promise<PublicationPointer<TManifest> | null> {
+  const bytes = await read(adapter.key);
+  return bytes === undefined ? null : adapter.decode(bytes);
+}
+
+function sameManifests<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  a: ReadonlyArray<TManifest>,
+  b: ReadonlyArray<TManifest>,
+): boolean {
+  const covers = (from: ReadonlyArray<TManifest>, to: ReadonlyArray<TManifest>) =>
+    from.every((manifest) => to.some((other) => adapter.sameManifest(manifest, other)));
+  return covers(a, b) && covers(b, a);
+}
+
+async function keptManifests<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  pointer: PublicationPointer<TManifest>,
+): Promise<TManifest[]> {
+  const kept: TManifest[] = [];
+  const previous = pointer.previous === null ? [] : [pointer.previous];
+  const candidates = [pointer.current, ...previous, ...(await adapter.retained())];
+  for (const manifest of candidates) {
+    if (!kept.some((known) => adapter.sameManifest(known, manifest))) kept.push(manifest);
+  }
+  return kept;
+}
+
+const HEX = /^[0-9a-f]+$/u;
+const SHA256_HEX_DIGITS = 64;
+
+function contentAddressOf(file: string): string {
+  const extension = extname(file);
+  const stem = file.slice(0, file.length - extension.length);
+  const digest = stem.slice(stem.lastIndexOf(".") + 1);
+  if (extension === "" || digest.length !== CONTENT_HASH_HEX_DIGITS || !HEX.test(digest)) {
+    throw new Error(`${file} is not content-addressed`);
+  }
+  return digest;
+}
+
+function digestProblem(file: ReferencedFile, bytes: Uint8Array): string | undefined {
+  const prefix = file.sha256Prefix;
+  if (
+    prefix.length < CONTENT_HASH_HEX_DIGITS ||
+    prefix.length > SHA256_HEX_DIGITS ||
+    !HEX.test(prefix)
+  ) {
+    return `${file.key} names no usable SHA-256 prefix`;
+  }
+  return sha256Hex(bytes).startsWith(prefix) ? undefined : `${file.key} differs from its SHA-256`;
+}
+
+export function pinnedIndexReferences<TPin>(
+  publication: Publication<TPin>,
+  list: (file: string, bytes: Uint8Array) => IndexListing,
+): (manifest: PinnedIndex, read: ObjectReader) => Promise<ManifestReferences> {
+  return async (manifest, read) => {
+    const top = objectKey(publication, contentAddressedName(manifest.file, manifest.sha256));
+    const bytes = await read(top);
+    if (bytes === undefined) throw new Error(`${top} is not stored`);
+    if (sha256Hex(bytes) !== manifest.sha256) {
+      throw new Error(`${top} differs from its pinned SHA-256`);
+    }
+    const indexes = [top];
+    const files: ReferencedFile[] = [];
+    const seen = new Set<string>([manifest.file]);
+    const descend = async (listing: IndexListing): Promise<void> => {
+      files.push(
+        ...listing.leaves.map((file) => ({
+          key: objectKey(publication, file),
+          sha256Prefix: contentAddressOf(file),
+        })),
+      );
+      for (const { file } of listing.indexes) {
+        if (seen.has(file)) throw new Error(`${file} is listed by more than one index`);
+        seen.add(file);
+        const key = objectKey(publication, file);
+        const inner = await read(key);
+        if (inner === undefined) throw new Error(`${key} is not stored`);
+        if (!isContentAddressed(file, inner)) {
+          throw new Error(`${key} differs from its content address`);
+        }
+        indexes.push(key);
+        await descend(list(file, inner));
+      }
+    };
+    await descend(list(manifest.file, bytes));
+    return { indexes, files };
+  };
+}
+
+export function pinnedIndexPointer<TPin>(
+  publication: Publication<TPin>,
+  list: (file: string, bytes: Uint8Array) => IndexListing,
+  file: string,
+): PointerAdapter<PinnedIndex> {
+  const PinnedIndexEntry = v.strictObject({
+    file: v.string(),
+    sha256: v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u)),
+  });
+  const PointerFile = v.strictObject({
+    current: PinnedIndexEntry,
+    previous: v.nullable(PinnedIndexEntry),
+  });
+  const key = objectKey(publication, file);
+  return {
+    key,
+    prefixes: [`${publication.prefix}/`],
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    decode: (bytes) => decodeJsonFile(PointerFile, bytes, key),
+    encode: (pointer) => new TextEncoder().encode(JSON.stringify(pointer)),
+    sameManifest: (a, b) => a.file === b.file && a.sha256 === b.sha256,
+    describeManifest: (manifest) =>
+      `${manifest.file} ${manifest.sha256.slice(0, CONTENT_HASH_HEX_DIGITS)}`,
+    references: pinnedIndexReferences(publication, list),
+    retained: async () => [],
+  };
+}
+
+export interface PointerMove<TManifest> {
+  readonly pointer: PublicationPointer<TManifest>;
+  readonly moved: boolean;
+}
+
+export async function movePointer<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  store: PrunableStore,
+  manifest: TManifest,
+): Promise<PointerMove<TManifest>> {
+  const read = (key: string) => store.get(key);
+  await adapter.references(manifest, read);
+  const existing = await readPointer(adapter, read);
+  const pointer = nextPointer(adapter, existing, manifest);
+  const moved = pointer !== existing;
+  if (moved) await store.put(adapter.key, adapter.encode(pointer), adapter.headers);
+  return { pointer, moved };
+}
+
+export async function verifyServedPointer<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  read: ObjectReader,
+  scope: ServedScope,
+): Promise<string[]> {
+  const pointer = await readPointer(adapter, read).catch((error: unknown) => {
+    throw new Error(`${adapter.key}: ${String(error)}`);
+  });
+  if (pointer === null) return [`${adapter.key} is not served`];
+  const problems: string[] = [];
+  for (const manifest of await keptManifests(adapter, pointer)) {
+    const listed = await adapter
+      .references(manifest, read)
+      .catch((error: unknown): ManifestReferences => {
+        problems.push(`${adapter.describeManifest(manifest)}: ${String(error)}`);
+        return { indexes: [], files: [] };
+      });
+    if (scope !== "all") continue;
+    await runAll(listed.files, async (file) => {
+      const bytes = await read(file.key);
+      const problem =
+        bytes === undefined ? `${file.key} is not served` : digestProblem(file, bytes);
+      if (problem !== undefined) problems.push(problem);
+    });
+  }
+  return problems.toSorted();
+}
+
+export interface PruneOutcome {
+  readonly live: number;
+  readonly doomed: ReadonlyArray<StoredObject>;
+  readonly deleted: number;
+}
+
+export async function pruneUnreferenced<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  store: PrunableStore,
+  dryRun: boolean,
+): Promise<PruneOutcome> {
+  const read = (key: string) => store.get(key);
+  const pointerBytes = await read(adapter.key);
+  if (pointerBytes === undefined) {
+    throw new Error(`${adapter.key} is not stored, so nothing says what is live`);
+  }
+  const kept = await keptManifests(adapter, adapter.decode(pointerBytes));
+  const live = new Set<string>();
+  for (const manifest of kept) {
+    const { indexes, files } = await adapter.references(manifest, read);
+    for (const key of indexes) live.add(key);
+    for (const file of files) live.add(file.key);
+  }
+  if (live.size === 0) throw new Error(`the manifests ${adapter.key} names reference nothing`);
+  live.add(adapter.key);
+  const stored = (await Promise.all(adapter.prefixes.map((prefix) => store.list(prefix)))).flat();
+  const pointerAfterListing = await read(adapter.key);
+  if (pointerAfterListing === undefined || !isDeepStrictEqual(pointerAfterListing, pointerBytes)) {
+    throw new Error(`${adapter.key} changed during the prune, so nothing was deleted`);
+  }
+  const keptAfterListing = await keptManifests(adapter, adapter.decode(pointerAfterListing));
+  if (!sameManifests(adapter, kept, keptAfterListing)) {
+    throw new Error(
+      `the manifests ${adapter.key} keeps changed during the prune, so nothing was deleted`,
+    );
+  }
+  const doomed = stored.filter((object) => !live.has(object.key));
+  if (!dryRun) await store.delete(doomed.map((object) => object.key));
+  return { live: live.size, doomed, deleted: dryRun ? 0 : doomed.length };
+}
+
+export interface PointerCommands<TPin, TManifest> extends PublicationCommands<TPin> {
+  readonly pointer: PointerAdapter<TManifest>;
+  manifestOf(pin: TPin): TManifest;
+}
+
+async function pointCommand<TPin, TManifest>(
+  commands: PointerCommands<TPin, TManifest>,
+): Promise<void> {
+  const store = await bucketStore(commands.storeConfigPath);
+  if (store === undefined) throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
+  const { pointer, moved } = await movePointer(
+    commands.pointer,
+    store,
+    commands.manifestOf(await commands.readPin()),
+  );
+  const previous =
+    pointer.previous === null ? "none" : commands.pointer.describeManifest(pointer.previous);
+  process.stdout.write(
+    `${commands.pointer.key}: current ${commands.pointer.describeManifest(pointer.current)}, previous ${previous}${moved ? "" : " (unchanged)"}\n`,
+  );
+}
+
+async function currentCommand<TPin, TManifest>(
+  commands: PointerCommands<TPin, TManifest>,
+): Promise<void> {
+  const baseUrl = await publicBaseUrl(commands.storeConfigPath);
+  const pointer =
+    baseUrl === undefined
+      ? null
+      : await readPointer(commands.pointer, httpReader(baseUrl)).catch(() => null);
+  const manifest = commands.manifestOf(await commands.readPin());
+  const current = pointer !== null && commands.pointer.sameManifest(pointer.current, manifest);
+  process.stdout.write(
+    `${commands.pointer.key}: ${current ? "names" : "does not name"} the pinned manifest as current\n`,
+  );
+  await writeStepOutput("current", String(current));
+}
+
+async function verifyPointerCommand<TPin, TManifest>(
+  commands: PointerCommands<TPin, TManifest>,
+  scope: ServedScope,
+  wait: boolean,
+): Promise<void> {
+  const baseUrl = await publicBaseUrl(commands.storeConfigPath);
+  if (baseUrl === undefined) throw new Error("set PART_BUNDLE_BASE_URL");
+  if (wait) await waitUntilServed(publicObjectUrl(baseUrl, commands.pointer.key));
+  const problems = await verifyServedPointer(commands.pointer, httpReader(baseUrl), scope);
+  if (problems.length > 0) {
+    process.stderr.write(`${problems.join("\n")}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  process.stdout.write(
+    `${baseUrl}: the current and previous manifests ${commands.pointer.key} names, and ${scope === "all" ? "every file they reference" : "their index files"}, and every manifest the adapter retains, match their pins and SHA-256 digests\n`,
+  );
+}
+
+async function pruneCommand<TPin, TManifest>(
+  commands: PointerCommands<TPin, TManifest>,
+  dryRun: boolean,
+): Promise<void> {
+  const store = await bucketStore(commands.storeConfigPath);
+  if (store === undefined) throw new Error("set CLOUDFLARE_API_TOKEN and CLOUDFLARE_API_TOKEN_ID");
+  const { live, doomed, deleted } = await pruneUnreferenced(commands.pointer, store, dryRun);
+  const bytes = doomed.reduce((sum, object) => sum + object.size, 0);
+  if (dryRun) {
+    for (const object of doomed)
+      process.stdout.write(`would delete ${object.key} ${object.size}\n`);
+  }
+  process.stdout.write(
+    `${commands.pointer.prefixes.join(", ")}: ${live} objects live; ${dryRun ? "would delete" : "deleted"} ${dryRun ? doomed.length : deleted} objects, ${bytes} bytes\n`,
+  );
+}
+
+function pointerFlags(argv: ReadonlyArray<string>, allowed: ReadonlyArray<string>): Set<string> {
+  const given = argv.slice(1);
+  const unknown = given.filter((flag) => !allowed.includes(flag));
+  if (unknown.length > 0) {
+    const accepted = allowed.length === 0 ? "no flags" : allowed.join(", ");
+    throw new Error(`${argv[0]} takes ${accepted}; it does not take ${unknown.join(", ")}`);
+  }
+  return new Set(given);
+}
+
+export async function runPointerCommand<TPin, TManifest>(
+  commands: PointerCommands<TPin, TManifest>,
+  argv: ReadonlyArray<string>,
+): Promise<boolean> {
+  switch (argv[0]) {
+    case "point":
+      pointerFlags(argv, []);
+      await pointCommand(commands);
+      return true;
+    case "current":
+      pointerFlags(argv, []);
+      await currentCommand(commands);
+      return true;
+    case "verify-pointer": {
+      const flags = pointerFlags(argv, ["--all", "--wait"]);
+      await verifyPointerCommand(
+        commands,
+        flags.has("--all") ? "all" : "indexes",
+        flags.has("--wait"),
+      );
+      return true;
+    }
+    case "prune":
+      await pruneCommand(commands, pointerFlags(argv, ["--dry-run"]).has("--dry-run"));
       return true;
     default:
       return false;

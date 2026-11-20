@@ -10,7 +10,13 @@ import {
   type PartShapeRecord,
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
-import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
+import type {
+  ImportReport,
+  ImportResult,
+  PlacedImport,
+  PlacementListener,
+  StudioReport,
+} from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import type {
@@ -25,7 +31,12 @@ import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { NO_MESHES, type MeshCounts, type MeshProgress } from "../edit/mesh-progress.ts";
 import { PartMeshStream } from "../edit/part-mesh-stream.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
+import {
+  modelPlaceable,
+  partPlaceable,
+  type Placeable,
+  type PlacementModel,
+} from "../edit/placeable.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
@@ -80,9 +91,29 @@ interface ImportReports {
   readonly studio: StudioReport | null;
 }
 
+export type CheckedStuds =
+  | (ImportReports & { readonly kind: "checked"; readonly placeable: Placeable })
+  | {
+      readonly kind: "failed";
+      readonly failure: string;
+      readonly report: ImportReport | null;
+      readonly studio: StudioReport | null;
+    };
+
 export type ImportOutcome =
-  | (ImportReports & { readonly item: CatalogItemView; readonly credit: ModelCredit })
-  | (ImportReports & { readonly item: null; readonly refusal: string });
+  | (ImportReports & {
+      readonly kind: "placeable";
+      readonly item: CatalogItemView;
+      readonly credit: ModelCredit;
+    })
+  | {
+      readonly kind: "checking";
+      readonly item: CatalogItemView;
+      readonly credit: ModelCredit;
+      readonly pending: Placeable;
+      readonly checked: Promise<CheckedStuds>;
+    }
+  | (ImportReports & { readonly kind: "refused"; readonly refusal: string });
 
 export interface ICatalogAssets {
   meshProgress(): MeshProgress;
@@ -125,6 +156,41 @@ const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
 const IMPORTED_SOURCE = "imported file";
+
+interface AddedPlaceable {
+  readonly placeable: Placeable;
+  readonly model: PlacementModel;
+  readonly credit: ModelCredit;
+  readonly slot: CatalogSlot;
+}
+
+type PlacedSource = Pick<
+  PlacedImport,
+  | "sections"
+  | "bake"
+  | "instanceCount"
+  | "partIndex"
+  | "ldrawColor"
+  | "matrices"
+  | "partTransforms"
+  | "submodels"
+>;
+
+function placedModel(placed: PlacedSource): PlacementModel {
+  return {
+    sections: placed.sections,
+    lattice: placed.bake.lattice,
+    studCover: null,
+    cells: placed.bake.cells,
+    instanceCount: placed.instanceCount,
+    partIndex: Uint16Array.from(placed.partIndex),
+    ldrawColor: placed.ldrawColor,
+    matrices: placed.matrices,
+    partTransforms: placed.partTransforms,
+    submodels: placed.submodels,
+    vehicles: placed.bake.vehicles,
+  };
+}
 
 export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
   const color = colors.find((c) => c.code === code);
@@ -466,59 +532,109 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
   }
 
-  private importedResult(file: ImportedFile): Promise<ImportResult> {
+  private importedResult(file: ImportedFile, onPlaced: PlacementListener): Promise<ImportResult> {
     if (STUDIO_FILE.test(file.name)) {
-      return this.importer.importStudio(file.name, file.bytes.slice(), this.lod);
+      return this.importer.importStudio(file.name, file.bytes.slice(), this.lod, onPlaced);
     }
-    return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), this.lod);
+    const text = new TextDecoder().decode(file.bytes);
+    return this.importer.importText(file.name, text, this.lod, onPlaced);
   }
 
   async addImported(file: ImportedFile): Promise<ImportOutcome> {
-    const result = await this.importedResult(file);
+    let announce: PlacementListener | null = null;
+    const placement = new Promise<PlacedImport>((resolve) => {
+      announce = resolve;
+    });
+    const imported = this.importedResult(file, (placed) => announce?.(placed));
+    const first = await Promise.race([placement, imported.then(() => null)]);
+    if (first === null || first.bake.lattice === null || first.bake.cells === null) {
+      return this.completeImport(file, await imported);
+    }
+    const added = await this.addPlaceable(file, placedModel(first), first);
+    return {
+      kind: "checking",
+      item: added.slot.view,
+      credit: added.credit,
+      pending: added.placeable,
+      checked: imported.then(
+        (result) => this.checkStuds(added.placeable, added.model, result),
+        (error: unknown) => ({
+          kind: "failed",
+          failure: error instanceof Error ? error.message : String(error),
+          report: null,
+          studio: null,
+        }),
+      ),
+    };
+  }
+
+  private async completeImport(file: ImportedFile, result: ImportResult): Promise<ImportOutcome> {
     const reports = { report: result.report, studio: result.studio ?? null };
     const { bake } = result;
     if (!bake || bake.lattice === null || bake.cells === null) {
       const refusal = result.report.bakeIssue ?? bake?.latticeIssue ?? NO_LATTICE_REASON;
-      return { ...reports, item: null, refusal };
+      return { ...reports, kind: "refused", refusal };
     }
-    const set = await this.loader.loadPartSet(this.lod, result.partIds, result.compiled);
+    const placed = { ...result, sections: result.report.sections, bake };
+    const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
+    const added = await this.addPlaceable(file, model, result);
+    return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
+  }
+
+  private async addPlaceable(
+    file: ImportedFile,
+    model: PlacementModel,
+    parts: Pick<ImportResult, "partIds" | "compiled">,
+  ): Promise<AddedPlaceable> {
+    const set = await this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled);
     const palette = this.requirePalette();
-    const colors = this.colors();
     const before = palette.parts.length;
-    const model: PartModel = {
-      sections: result.report.sections,
-      lattice: bake.lattice,
-      studCover: bake.studCover,
-      cells: bake.cells,
-      instanceCount: result.instanceCount,
-      partIndex: Uint16Array.from(result.partIndex),
-      ldrawColor: result.ldrawColor,
-      matrices: result.matrices,
-      partTransforms: result.partTransforms,
-      submodels: result.submodels,
-      vehicles: bake.vehicles,
-    };
+    const remapped = palette.remap(model, set.parts);
     const credit = {
       name: file.name,
       source: `${IMPORTED_SOURCE} ${file.name}`,
-      sections: result.report.sections,
+      sections: model.sections,
     };
-    const placeable = modelPlaceable(
-      importRef(file.sha256),
-      file.name,
-      file.name,
-      palette.remap(model, set.parts),
-      credit,
-      palette.parts,
-      colors,
-      null,
-    );
+    const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
     this.installMerged(palette, before);
-    this.bakes.set(placeable, model);
+    this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
-    return { ...reports, item: slot.view, credit };
+    return { placeable, model: remapped, credit, slot };
+  }
+
+  private importedPlaceable(
+    id: string,
+    name: string,
+    model: PlacementModel,
+    credit: ModelCredit,
+  ): Placeable {
+    const palette = this.requirePalette();
+    return modelPlaceable(id, name, name, model, credit, palette.parts, this.colors(), null);
+  }
+
+  private checkStuds(
+    pending: Placeable,
+    model: PlacementModel,
+    result: ImportResult,
+  ): CheckedStuds {
+    const reports = { report: result.report, studio: result.studio ?? null };
+    const { bake } = result;
+    if (!bake) {
+      return { ...reports, kind: "failed", failure: result.report.bakeIssue ?? NO_LATTICE_REASON };
+    }
+    const refId = this.placeablesByRefId.indexOf(pending);
+    const { credit } = pending;
+    if (refId < 0 || credit === null) {
+      throw new Error(`${pending.label} left the catalog before its studs were checked`);
+    }
+    const covered = { ...model, studCover: bake.studCover };
+    const checked = this.importedPlaceable(pending.id, pending.label, covered, credit);
+    this.placeablesByRefId[refId] = checked;
+    this.bakes.delete(pending);
+    this.bakes.set(checked, model);
+    return { ...reports, kind: "checked", placeable: checked };
   }
 
   playModel(placeable: Placeable): PlayModel | null {

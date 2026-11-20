@@ -1,12 +1,20 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
+  BundleThenLibraryConnectors,
+  IGNORE_PLACEMENT,
   importStudioFile,
+  LibraryBakeStore,
+  LibraryConnectorStore,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
+  type IByteCache,
   type ImportResult,
+  type PlacementListener,
   type ImportWorkerRequest,
+  type IPartRecords,
   type LdrawMirror,
+  type LibraryBakeSource,
   type MirrorSource,
   type ModelImportEngine,
   type PartConnectorSource,
@@ -17,13 +25,15 @@ import type { ICompilerLoader } from "./compiler-loader.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
+  CONNECTOR_RECORD_CACHE,
   IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
+  RECORD_CACHE,
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
-  run(request: ImportWorkerRequest): Promise<ImportResult>;
+  run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -32,12 +42,15 @@ export type ModelImportEngineFactory = (
   compiler: BrickCompiler,
   mirror: LdrawMirror,
   connectors: PartConnectorSource,
+  records: IPartRecords | null,
   helpers: ReadonlyArray<IBakeHelper>,
 ) => ModelImportEngine;
 
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
-  private readonly records = new Map<string, ConnectorRecords>();
+  private readonly connectorStores = new Map<string, ConnectorRecords>();
+  private readonly libraryConnectorStores = new Map<string, LibraryConnectorStore>();
+  private readonly recordStores = new Map<string, IPartRecords>();
 
   constructor(
     @inject(COMPILER_LOADER) private readonly compilers: ICompilerLoader,
@@ -45,12 +58,14 @@ export class ImportWorkerService implements IImportWorkerService {
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
     @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
+    @inject(RECORD_CACHE) private readonly recordCache: IByteCache,
+    @inject(CONNECTOR_RECORD_CACHE) private readonly connectorRecordCache: IByteCache,
   ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
     const base = new URL(request.bundleBaseUrl.replace(/\/?$/u, "/"));
     const key = JSON.stringify([base.href, request.connectorIndexes, request.connectorVocabulary]);
-    let records = this.records.get(key);
+    let records = this.connectorStores.get(key);
     if (records === undefined) {
       records = new ConnectorRecords(
         async (path) => {
@@ -62,23 +77,60 @@ export class ImportWorkerService implements IImportWorkerService {
         request.connectorIndexes,
         request.connectorVocabulary,
       );
-      this.records.set(key, records);
+      this.connectorStores.set(key, records);
     }
     return records;
   }
 
-  async run(request: ImportWorkerRequest): Promise<ImportResult> {
+  private partConnectors(request: ImportWorkerRequest): PartConnectorSource {
+    const bundle = this.connectorRecords(request);
+    const source = request.libraryConnectors;
+    if (source === undefined) return bundle;
+    const key = `${source.url} ${source.pin.sha256}`;
+    let store = this.libraryConnectorStores.get(key);
+    if (store === undefined) {
+      store = new LibraryConnectorStore(
+        source.url,
+        source.pin,
+        this.fetchUrl,
+        this.connectorRecordCache,
+      );
+      this.libraryConnectorStores.set(key, store);
+    }
+    const library = store.source({
+      source: request.input.job.source,
+      sectionVocabulary: request.connectorVocabulary,
+    });
+    return new BundleThenLibraryConnectors(bundle, library);
+  }
+
+  private partRecords(source: LibraryBakeSource | undefined): IPartRecords | null {
+    if (source === undefined) return null;
+    const key = `${source.url} ${source.pin.sha256}`;
+    let store = this.recordStores.get(key);
+    if (store === undefined) {
+      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.recordCache);
+      this.recordStores.set(key, store);
+    }
+    return store;
+  }
+
+  async run(
+    request: ImportWorkerRequest,
+    onPlaced: PlacementListener = IGNORE_PLACEMENT,
+  ): Promise<ImportResult> {
     const compiler = await this.compilers.load(request.compilerUrl);
     const helpers = this.bakeHelpers.helpers(request.compilerUrl);
-    const connectors = this.connectorRecords(request);
+    const connectors = this.partConnectors(request);
+    const records = this.partRecords(request.libraryBake);
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
-    const engine = this.createEngine(compiler, mirror, connectors, helpers);
+    const engine = this.createEngine(compiler, mirror, connectors, records, helpers);
     switch (input.kind) {
       case "ldraw":
-        return engine.importText(input.job);
+        return engine.importText(input.job, onPlaced);
       case "studio":
-        return importStudioFile(engine, compiler, mirror, input);
+        return importStudioFile(engine, compiler, mirror, input, onPlaced);
       default: {
         const unhandled: never = input;
         throw new Error(`unhandled import input ${JSON.stringify(unhandled)}`);

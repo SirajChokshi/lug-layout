@@ -5,6 +5,8 @@ const STDERR = 2;
 const IOVEC_BYTES = 8;
 const MAX_RANDOM_BYTES_PER_CALL = 65_536;
 const NANOSECONDS_PER_MILLISECOND = 1_000_000n;
+const NANOSECONDS_PER_MILLISECOND_NUMBER = 1_000_000;
+const CLOCK_MONOTONIC = 1;
 
 class WasiExit {
   constructor(readonly code: number) {}
@@ -62,8 +64,11 @@ function instantiate(module: WebAssembly.Module): Instantiated {
     environ_get(): number {
       return ERRNO_SUCCESS;
     },
-    clock_time_get(_clock: number, _precision: bigint, time: number): number {
-      const now = BigInt(Math.round(Date.now())) * NANOSECONDS_PER_MILLISECOND;
+    clock_time_get(clock: number, _precision: bigint, time: number): number {
+      const now =
+        clock === CLOCK_MONOTONIC
+          ? BigInt(Math.round(performance.now() * NANOSECONDS_PER_MILLISECOND_NUMBER))
+          : BigInt(Math.round(Date.now())) * NANOSECONDS_PER_MILLISECOND;
       view().setBigUint64(time, now, true);
       return ERRNO_SUCCESS;
     },

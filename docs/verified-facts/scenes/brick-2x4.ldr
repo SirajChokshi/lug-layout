@@ -1,0 +1,4 @@
+0 Brick 2x4
+0 Name: brick-2x4.ldr
+0 Author: Brick Railroad tools/asset-pipeline (cli.ts facts), one 3001 at the identity pose
+1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat

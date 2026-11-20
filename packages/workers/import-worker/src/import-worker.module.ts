@@ -6,8 +6,14 @@ import { CompilerLoader } from "./compiler-loader.ts";
 import { ImportWorkerHost } from "./import-worker-host.ts";
 import { ImportWorkerService } from "./import-worker-service.ts";
 import {
+  IndexedDbByteCache,
+  LIBRARY_BAKE_DATABASE,
+  LIBRARY_CONNECTORS_DATABASE,
+} from "./record-cache.ts";
+import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
+  CONNECTOR_RECORD_CACHE,
   IMPORT_CLOCK,
   IMPORT_FETCH,
   IMPORT_PORT,
@@ -15,6 +21,7 @@ import {
   IMPORT_WORKER_SERVICE,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
+  RECORD_CACHE,
 } from "./tokens.ts";
 
 export function importWorkerModule(port: RpcPort): ContainerModule {
@@ -32,9 +39,15 @@ export function importWorkerModule(port: RpcPort): ContainerModule {
     bind(MODEL_IMPORT_ENGINE_FACTORY)
       .toDynamicValue((context) => {
         const now = context.get(IMPORT_CLOCK);
-        return (compiler, mirror, connectors, helpers) =>
-          new ModelImportEngine(compiler, mirror, connectors, now, helpers);
+        return (compiler, mirror, connectors, records, helpers) =>
+          new ModelImportEngine(compiler, mirror, connectors, records, now, helpers);
       })
+      .inSingletonScope();
+    bind(RECORD_CACHE)
+      .toDynamicValue(() => new IndexedDbByteCache(LIBRARY_BAKE_DATABASE))
+      .inSingletonScope();
+    bind(CONNECTOR_RECORD_CACHE)
+      .toDynamicValue(() => new IndexedDbByteCache(LIBRARY_CONNECTORS_DATABASE))
       .inSingletonScope();
     bind(BAKE_HELPER_REGISTRY).to(BakeHelperRegistry).inSingletonScope();
     bind(IMPORT_WORKER_SERVICE).to(ImportWorkerService).inSingletonScope();

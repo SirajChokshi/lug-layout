@@ -15,6 +15,22 @@ pub struct Envelope {
     pub request: Operation,
     pub segments: HashMap<String, Range>,
     pub library: Option<LibraryDelta>,
+    pub records: Option<RecordDelta>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordDelta {
+    pub key: String,
+    pub files: Vec<RecordFile>,
+    pub references: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RecordFile {
+    pub reference: String,
+    pub bytes: Range,
 }
 
 #[derive(Deserialize)]
@@ -40,7 +56,10 @@ pub struct LibraryFile {
     deny_unknown_fields
 )]
 pub enum Operation {
-    ReadModel,
+    ReadModel {
+        #[serde(default)]
+        omr_authoring_identification: bool,
+    },
     ReadStudio,
     Compile {
         lod: LodName,
@@ -49,9 +68,13 @@ pub enum Operation {
         connectors: ConnectorInputs,
         parts: Vec<String>,
         inline_checks: Vec<InlineCheck>,
+        #[serde(default)]
+        records: bool,
     },
     BakeNeeds {
         stud_primitives: Vec<String>,
+        #[serde(default)]
+        vehicles: Option<VehicleInputs>,
     },
     Bake {
         stud_primitives: Vec<String>,
@@ -60,6 +83,10 @@ pub enum Operation {
         table_depth_ldu: f64,
         vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
+        #[serde(default)]
+        keep_parts: bool,
+        #[serde(default)]
+        omr_authoring_identification: bool,
     },
 }
 

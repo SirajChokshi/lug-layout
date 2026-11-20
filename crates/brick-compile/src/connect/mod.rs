@@ -13,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::flatten::Library;
+use crate::identify::{identifies, sixteenths};
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 use crate::pieces::NO_PIECE;
 
@@ -20,17 +21,19 @@ pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
     FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
-pub use inferred::{Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred};
+pub use inferred::{
+    EntranceClosure, Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred,
+};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
-    is_connectivity, record_json, source_code, status_code, PartRecords, TierRecord,
+    is_connectivity, published_faces, record_json, source_code, status_code, PartRecords,
+    PublishedFace, TierRecord,
 };
 pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
-const SAME_PLACE_LDU: f64 = 0.0005;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Source {
@@ -348,6 +351,12 @@ pub enum Issue {
         origin: Vec3,
         reason: Uninferred,
     },
+    FreeFaceWithheld {
+        origin: Vec3,
+        reason: Withholding,
+        shadow_closes: bool,
+        mesh: EntranceClosure,
+    },
 }
 
 impl From<MalformedGeometry> for Issue {
@@ -366,6 +375,20 @@ pub struct Extraction {
     pub off_lattice: Vec<Connector>,
     pub curated: bool,
     pub issues: Vec<Issue>,
+    pub withheld: Vec<WithheldFace>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WithheldFace {
+    pub connector: usize,
+    pub face: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Withholding {
+    ClosedByGeometry,
+    SourcesDisagree,
+    NotProvenOpen,
 }
 
 pub(crate) fn column(m: &Affine, c: usize) -> Vec3 {
@@ -465,9 +488,9 @@ const FREE_AXIS_STEPS: f64 = 1e6;
 
 fn direction_code(axis: Vec3) -> Option<u8> {
     (0..3).find_map(|k| {
-        let aligned = (0..3).all(|j| j == k || axis[j].abs() <= SAME_PLACE_LDU);
+        let aligned = (0..3).all(|j| j == k || identifies(axis[j]));
         let sign = axis[k];
-        match aligned && (sign.abs() - 1.0).abs() <= SAME_PLACE_LDU {
+        match aligned && identifies(sign.abs() - 1.0) {
             true if sign > 0.0 => Some(2 * k as u8),
             true => Some(2 * k as u8 + 1),
             false => None,
@@ -516,7 +539,7 @@ fn symmetric(shape: &Shape) -> bool {
 
 fn slots(connector: &Connector) -> Vec<Slot> {
     let mut axis = column(&connector.placement, 1);
-    let first = axis.iter().copied().find(|c| c.abs() > SAME_PLACE_LDU);
+    let first = axis.iter().copied().find(|&c| !identifies(c));
     if symmetric(&connector.shape) && first.is_some_and(|c| c < 0.0) {
         axis = axis.map(|c| -c);
     }
@@ -528,7 +551,7 @@ fn slots(connector: &Connector) -> Vec<Slot> {
         .into_iter()
         .map(|offset| {
             let origin = connector.placement.apply(offset);
-            let lattice = [0, 1, 2].map(|k| solid::sixteenths(origin[k]));
+            let lattice = [0, 1, 2].map(|k| sixteenths(origin[k]));
             match (lattice, code) {
                 ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
                     polarity,
@@ -551,8 +574,8 @@ fn same_sections(a: &Shape, b: &Shape) -> bool {
             x.len() == y.len()
                 && x.iter().zip(y).all(|(p, q)| {
                     p.shape == q.shape
-                        && (p.radius - q.radius).abs() <= SAME_PLACE_LDU
-                        && (p.length - q.length).abs() <= SAME_PLACE_LDU
+                        && identifies(p.radius - q.radius)
+                        && identifies(p.length - q.length)
                 })
         }
         _ => a == b,
@@ -580,7 +603,7 @@ fn face_slot(face: &MatingFace) -> Slot {
         Gender::Male => 0,
         Gender::Female => 1,
     };
-    let lattice = face.origin.map(solid::sixteenths);
+    let lattice = face.origin.map(sixteenths);
     match (lattice, direction_code(face.axis)) {
         ([Some(x), Some(y), Some(z)], Some(axis)) => Slot::Lattice {
             polarity,
@@ -651,6 +674,20 @@ fn merge(
             }
         }
     }
+}
+
+fn closes_far_end_at(holder: &MatingFace, free: &MatingFace) -> bool {
+    let (Some(at), Some(direction), Some(holder_direction)) =
+        (free.sixteenths, free.direction, holder.direction)
+    else {
+        return false;
+    };
+    if holder.caps & CAP_FAR == 0 || holder_direction ^ 1 != direction {
+        return false;
+    }
+    let length: f64 = holder.sections.iter().map(|section| section.length).sum();
+    let far = [0, 1, 2].map(|k| holder.origin[k] - holder.axis[k] * length);
+    far.map(sixteenths) == at.map(|steps| Some(i64::from(steps)))
 }
 
 pub struct ConnectorExtractor<'a, L: Library + ?Sized, S: Library + ?Sized> {
@@ -726,6 +763,29 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
         merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        for free in records::free_faces_of_partly_held(&extraction) {
+            let shadow_closes = free
+                .holders
+                .iter()
+                .any(|holder| closes_far_end_at(holder, &free.mating));
+            let mesh = self.inferred.entrance_closure(path, &free.mating);
+            let reason = match (shadow_closes, mesh) {
+                (false, EntranceClosure::Open) => continue,
+                (_, EntranceClosure::Closed) => Withholding::ClosedByGeometry,
+                (true, EntranceClosure::Open) => Withholding::SourcesDisagree,
+                (_, EntranceClosure::Unmeasurable) => Withholding::NotProvenOpen,
+            };
+            extraction.withheld.push(WithheldFace {
+                connector: free.connector,
+                face: free.face,
+            });
+            extraction.issues.push(Issue::FreeFaceWithheld {
+                origin: free.mating.origin,
+                reason,
+                shadow_closes,
+                mesh,
+            });
+        }
         let mut reported: Vec<Issue> = Vec::new();
         extraction.issues.retain(|issue| match issue {
             Issue::MalformedGeometry { .. } if reported.contains(issue) => false,

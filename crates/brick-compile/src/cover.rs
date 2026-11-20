@@ -1,6 +1,7 @@
 mod below;
 mod instance_tree;
 mod ray;
+mod reservation;
 mod triangle_tree;
 
 use std::thread;
@@ -10,12 +11,16 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
+use self::reservation::{axis_span, cell_span, CellColumns};
+pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
 use self::triangle_tree::{TriangleHit, TriangleTree};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
 use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
+use crate::record::{BakeRecord, RecordError};
+use crate::trig::sincos;
 
 pub const PLATE_LDU: f64 = 8.0;
 pub const EMPTY_COLUMN: i32 = -1;
@@ -91,25 +96,84 @@ pub struct PartSolid {
     max: Vec3,
 }
 
+fn mesh_triangles(mesh: &Mesh) -> (Vec<[Vec3; 3]>, Vec<u32>) {
+    let point = |index: u32| {
+        let k = index as usize * 3;
+        [
+            f64::from(mesh.positions[k]),
+            f64::from(mesh.positions[k + 1]),
+            f64::from(mesh.positions[k + 2]),
+        ]
+    };
+    let mut triangles = Vec::new();
+    let mut colors = Vec::new();
+    for group in &mesh.groups {
+        for t in group.indices.as_chunks::<3>().0 {
+            triangles.push([point(t[0]), point(t[1]), point(t[2])]);
+            colors.push(group.color);
+        }
+    }
+    (triangles, colors)
+}
+
+pub fn tree_order(mesh: &Mesh) -> Vec<usize> {
+    TriangleTree::build(&mesh_triangles(mesh).0).1
+}
+
+fn is_permutation(order: &[usize], count: usize) -> bool {
+    let mut seen = vec![false; count];
+    order.len() == count
+        && order
+            .iter()
+            .all(|&t| t < count && !std::mem::replace(&mut seen[t], true))
+}
+
 impl PartSolid {
     pub fn from_mesh(mesh: &Mesh) -> Self {
-        let point = |index: u32| {
-            let k = index as usize * 3;
-            [
-                f64::from(mesh.positions[k]),
-                f64::from(mesh.positions[k + 1]),
-                f64::from(mesh.positions[k + 2]),
-            ]
-        };
-        let mut triangles = Vec::new();
-        let mut colors = Vec::new();
-        for group in &mesh.groups {
-            for t in group.indices.as_chunks::<3>().0 {
-                triangles.push([point(t[0]), point(t[1]), point(t[2])]);
-                colors.push(group.color);
-            }
-        }
+        let (triangles, colors) = mesh_triangles(mesh);
         let (tree, order) = TriangleTree::build(&triangles);
+        PartSolid::assemble(mesh, triangles, &colors, tree, &order)
+    }
+
+    pub fn from_record(record: &BakeRecord) -> Result<Self, RecordError> {
+        let (triangles, colors) = mesh_triangles(&record.mesh);
+        if !is_permutation(&record.tree_order, triangles.len()) {
+            return Err(RecordError::Order);
+        }
+        let tree = TriangleTree::from_order(&triangles, &record.tree_order);
+        Ok(PartSolid::assemble(
+            &record.mesh,
+            triangles,
+            &colors,
+            tree,
+            &record.tree_order,
+        ))
+    }
+
+    pub fn same_bits(&self, other: &PartSolid) -> bool {
+        let points = |list: &[[Vec3; 3]]| -> Vec<u64> {
+            list.iter()
+                .flatten()
+                .flatten()
+                .map(|v| v.to_bits())
+                .collect()
+        };
+        points(&self.triangles) == points(&other.triangles)
+            && points(&self.tree_points) == points(&other.tree_points)
+            && self.tree_colors == other.tree_colors
+            && self.certifiable == other.certifiable
+            && self.min.map(f64::to_bits) == other.min.map(f64::to_bits)
+            && self.max.map(f64::to_bits) == other.max.map(f64::to_bits)
+            && self.tree.same_bits(&other.tree)
+    }
+
+    fn assemble(
+        mesh: &Mesh,
+        triangles: Vec<[Vec3; 3]>,
+        colors: &[u32],
+        tree: TriangleTree,
+        order: &[usize],
+    ) -> Self {
         let [min, max] = mesh
             .bounds()
             .unwrap_or([[0.0; 3]; 2])
@@ -159,9 +223,9 @@ fn below_azimuth(k: usize) -> f64 {
 fn enclosure_directions() -> Vec<Vec3> {
     let mut directions = vec![UP];
     for elevation in ENCLOSURE_ELEVATIONS_DEGREES {
-        let (rise, run) = elevation.to_radians().sin_cos();
+        let (rise, run) = sincos(elevation.to_radians());
         for k in 0..AZIMUTH_RAYS {
-            let (sin, cos) = azimuth(k).sin_cos();
+            let (sin, cos) = sincos(azimuth(k));
             directions.push([run * cos, rise, run * sin]);
         }
     }
@@ -206,7 +270,7 @@ impl StudFrame {
     }
 
     fn radial(&self, k: usize) -> Vec3 {
-        let (sin, cos) = below_azimuth(k).sin_cos();
+        let (sin, cos) = sincos(below_azimuth(k));
         [0, 1, 2].map(|axis| self.across[axis] * cos + self.along[axis] * sin)
     }
 
@@ -225,7 +289,7 @@ impl StudFrame {
     fn radials(&self) -> Vec<Vec3> {
         let mut radials: Vec<Vec3> = (0..BELOW_AZIMUTH_RAYS).map(|k| self.radial(k)).collect();
         for k in 0..BELOW_AZIMUTH_RAYS {
-            let (sin, cos) = below_azimuth(k).sin_cos();
+            let (sin, cos) = sincos(below_azimuth(k));
             let lattice = [cos, 0.0, sin];
             let rise = dot(lattice, self.up);
             let flat = [0, 1, 2].map(|axis| lattice[axis] - self.up[axis] * rise);
@@ -258,6 +322,10 @@ impl CoverShard {
     fn takes(&self, candidate: usize) -> bool {
         let slot = (candidate / CANDIDATES_PER_DEAL) % self.of;
         (self.from..self.to).contains(&slot)
+    }
+
+    pub fn takes_none(&self) -> bool {
+        self.from == self.to
     }
 }
 
@@ -606,7 +674,9 @@ impl Coverers<'_, '_> {
             return *known;
         }
         let found = self.enclosure(placed, local);
-        self.enclosed.insert(key, found);
+        if self.enclosed.try_reserve(1).is_ok() {
+            self.enclosed.insert(key, found);
+        }
         found
     }
 
@@ -728,26 +798,10 @@ fn column_floor_y(underside_y: f64, stud_layer_y: f64, table_depth: f64) -> f64 
     }
 }
 
-pub fn model_cover(
+fn cover_candidates(
     instances: &[CoverInstance],
-    solids: &[PartSolid],
-    opacity: &Opacity,
-    lattice: Option<([u32; 2], f64)>,
-    stud: StudShape,
-    shard: CoverShard,
-    table_depth: f64,
-) -> ModelCover {
-    let boxes: Vec<[Vec3; 2]> = instances
-        .iter()
-        .map(|instance| world_box(instance, &solids[instance.part]))
-        .collect();
-    let mut aabb = Bounds::EMPTY;
-    for [min, max] in &boxes {
-        aabb = aabb.grow(*min).grow(*max);
-    }
-    let model = ModelSolids::new(instances, &boxes, solids, opacity);
-    let mut coverers = Coverers::new(&model, stud);
-
+    coverers: &mut Coverers,
+) -> (Vec<bool>, Vec<(usize, BelowStud)>) {
     let mut visible = Vec::new();
     let mut candidates = Vec::new();
     for (owner, instance) in instances.iter().enumerate() {
@@ -768,6 +822,77 @@ pub fn model_cover(
             visible.push(true);
         }
     }
+    (visible, candidates)
+}
+
+#[derive(Clone, Copy)]
+pub struct CoverModel<'a, 'b> {
+    pub instances: &'b [CoverInstance<'a>],
+    pub solids: &'b [PartSolid],
+    pub opacity: &'b Opacity,
+    pub stud: StudShape,
+}
+
+#[derive(Default)]
+pub struct ProbeCache {
+    enclosed: FxHashMap<ProbeKey, Option<CoverKind>>,
+}
+
+pub fn model_cover(
+    instances: &[CoverInstance],
+    solids: &[PartSolid],
+    opacity: &Opacity,
+    lattice: Option<([u32; 2], f64)>,
+    stud: StudShape,
+    shard: CoverShard,
+    table_depth: f64,
+) -> Result<ModelCover, ModelTooLarge> {
+    let model = CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    };
+    model_cover_with(
+        &model,
+        lattice,
+        shard,
+        table_depth,
+        &mut ProbeCache::default(),
+    )
+}
+
+pub fn model_cover_with(
+    model: &CoverModel,
+    lattice: Option<([u32; 2], f64)>,
+    shard: CoverShard,
+    table_depth: f64,
+    probes: &mut ProbeCache,
+) -> Result<ModelCover, ModelTooLarge> {
+    let CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    } = *model;
+    let boxes: Vec<[Vec3; 2]> = instances
+        .iter()
+        .map(|instance| world_box(instance, &solids[instance.part]))
+        .collect();
+    let mut aabb = Bounds::EMPTY;
+    for [min, max] in &boxes {
+        aabb = aabb.grow(*min).grow(*max);
+    }
+    let model = ModelSolids::new(instances, &boxes, solids, opacity);
+    let mut coverers = Coverers::new(&model, stud);
+    coverers.enclosed = std::mem::take(&mut probes.enclosed);
+
+    let (mut visible, candidates) = if shard.takes_none() {
+        let studs = instances.iter().map(|instance| instance.studs.len()).sum();
+        (vec![true; studs], Vec::new())
+    } else {
+        cover_candidates(instances, &mut coverers)
+    };
     let (indices, candidates): (Vec<usize>, Vec<BelowStud>) = candidates
         .into_iter()
         .enumerate()
@@ -787,23 +912,31 @@ pub fn model_cover(
         .iter()
         .map(|instance| solids[instance.part].lowest_y(instance.matrix))
         .fold(f64::INFINITY, f64::min);
-    let cells = lattice.map(|(phase, stud_layer_y)| {
-        let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
-        model_cells(
-            instances,
-            &boxes,
-            solids,
-            &mut coverers,
-            aabb,
-            [underside_y, floor_y],
-            phase,
-        )
-    });
-    ModelCover {
+    let cells = lattice
+        .map(|(phase, stud_layer_y)| {
+            let floor_y = column_floor_y(underside_y, stud_layer_y, table_depth);
+            model_cells(
+                instances,
+                &boxes,
+                solids,
+                &mut coverers,
+                aabb,
+                [underside_y, floor_y],
+                phase,
+            )
+        })
+        .transpose();
+    probes.enclosed = std::mem::take(&mut coverers.enclosed);
+    let cells = cells.map_err(|cells| ModelTooLarge {
+        cells,
+        x: axis_span(&boxes, 0),
+        z: axis_span(&boxes, 2),
+    })?;
+    Ok(ModelCover {
         visible,
         open_below,
         cells,
-    }
+    })
 }
 
 struct ColumnReach {
@@ -816,13 +949,20 @@ struct ColumnReach {
 }
 
 impl ColumnReach {
-    fn new(origin: [f64; 2], width: usize, depth: usize, bounded: bool) -> Self {
+    fn new(
+        origin: [f64; 2],
+        [width, depth]: [usize; 2],
+        bounded: bool,
+        [mut lowest, mut highest]: [Vec<f64>; 2],
+    ) -> Self {
+        lowest.resize(width * depth, f64::INFINITY);
+        highest.resize(width * depth, f64::NEG_INFINITY);
         ColumnReach {
             origin,
             width,
             depth,
-            lowest: vec![f64::INFINITY; width * depth],
-            highest: vec![f64::NEG_INFINITY; width * depth],
+            lowest,
+            highest,
             bounded,
         }
     }
@@ -978,20 +1118,27 @@ fn model_cells(
     aabb: Bounds,
     [underside_y, bottom_y]: [f64; 2],
     phase: [u32; 2],
-) -> ModelCells {
+) -> Result<ModelCells, CellsTooLarge> {
     let [phase_x, phase_z] = phase.map(f64::from);
     let (first_x, last_x) = cell_range(aabb.min[0], aabb.max[0], phase_x);
     let (first_z, last_z) = cell_range(aabb.min[2], aabb.max[2], phase_z);
-    let width = (last_x - first_x + 1) as usize;
-    let depth = (last_z - first_z + 1) as usize;
+    let CellColumns {
+        width,
+        depth,
+        count,
+        lowest,
+        highest,
+        mut bottom,
+        mut top,
+        mut footprint,
+        mut flat,
+    } = CellColumns::reserve(cell_span((first_x, last_x)), cell_span((first_z, last_z)))?;
     let origin = [
         phase_x - HALF_STUD_LDU + STUD_LDU * first_x as f64,
         phase_z - HALF_STUD_LDU + STUD_LDU * first_z as f64,
     ];
     let centre = |axis: usize, i: usize| origin[axis] + HALF_STUD_LDU + STUD_LDU * i as f64;
 
-    let mut footprint = Vec::new();
-    let mut flat = Vec::new();
     for j in 0..depth {
         for i in 0..width {
             let cell = j * width + i;
@@ -1007,7 +1154,12 @@ fn model_cells(
         }
     }
 
-    let mut reach = ColumnReach::new(origin, width, depth, coverers.model.coordinates_bounded);
+    let mut reach = ColumnReach::new(
+        origin,
+        [width, depth],
+        coverers.model.coordinates_bounded,
+        [lowest, highest],
+    );
     let mut faces: Vec<Option<Faces>> = solids.iter().map(|_| None).collect();
     for index in extremes_first(boxes) {
         if reach.brackets_box(boxes[index]) {
@@ -1020,26 +1172,26 @@ fn model_cells(
     }
     let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
     let slack = WELD_EPSILON_LDU / PLATE_LDU;
-    let mut column_bottom = vec![EMPTY_COLUMN; width * depth];
-    let mut column_top = vec![EMPTY_COLUMN; width * depth];
+    bottom.resize(count, EMPTY_COLUMN);
+    top.resize(count, EMPTY_COLUMN);
     for (cell, (&lowest, &highest)) in reach.lowest.iter().zip(&reach.highest).enumerate() {
         if lowest > highest {
             continue;
         }
-        column_bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
-        column_top[cell] = (plates(highest) - slack).ceil() as i32;
+        bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
+        top[cell] = (plates(highest) - slack).ceil() as i32;
     }
 
-    ModelCells {
+    Ok(ModelCells {
         origin,
         width,
         depth,
         bottom_y,
         footprint,
         flat,
-        column_bottom,
-        column_top,
-    }
+        column_bottom: bottom,
+        column_top: top,
+    })
 }
 
 #[cfg(test)]
@@ -1110,6 +1262,20 @@ mod tests {
             );
         }
         PartSolid::from_mesh(&mesh::build(&t, &[]))
+    }
+
+    #[test]
+    fn same_bits_tells_a_solid_with_another_tree_apart() {
+        let part = tessellated([0.0; 3], [40.0, 24.0, 20.0], 3);
+        let mut retreed = tessellated([0.0; 3], [40.0, 24.0, 20.0], 3);
+        assert!(retreed.same_bits(&part));
+        let shifted: Vec<[Vec3; 3]> = part
+            .tree_points
+            .iter()
+            .map(|t| t.map(|p| [p[0] + 1.0, p[1], p[2]]))
+            .collect();
+        retreed.tree = TriangleTree::build(&shifted).0;
+        assert!(!retreed.same_bits(&part));
     }
 
     fn tessellated(min: Vec3, max: Vec3, divisions: usize) -> PartSolid {
@@ -1196,6 +1362,7 @@ mod tests {
             CoverShard::WHOLE,
             TABLE_DEPTH,
         )
+        .expect("a test model's stud cover is allocated")
     }
 
     const COLUMN_SCENES: u64 = 12;
@@ -1232,7 +1399,7 @@ mod tests {
                 m: [0.0, 0.0, 1.0, x, 0.0, 1.0, 0.0, y, -1.0, 0.0, 0.0, z],
             },
             2 => {
-                let (sin, cos) = (draws.unit() * 0.6).sin_cos();
+                let (sin, cos) = sincos(draws.unit() * 0.6);
                 Affine {
                     m: [1.0, 0.0, 0.0, x, 0.0, cos, -sin, y, 0.0, sin, cos, z],
                 }
@@ -1493,7 +1660,7 @@ mod tests {
 
     #[test]
     fn a_box_within_rounding_of_an_unknown_cell_or_height_is_never_skipped() {
-        let mut reach = ColumnReach::new([0.0, 0.0], 2, 1, true);
+        let mut reach = ColumnReach::new([0.0, 0.0], [2, 1], true, [Vec::new(), Vec::new()]);
         reach.lowest[0] = 0.0;
         reach.highest[0] = 10.0;
         let next_square = STUD_LDU + WELD_EPSILON_LDU;
@@ -1610,7 +1777,7 @@ mod tests {
             true,
             -8.0,
         )];
-        let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+        let (sin, cos) = sincos(30.0_f64.to_radians());
         let tilted = Affine {
             m: [
                 1.0, 0.0, 0.0, 100.0, 0.0, cos, -sin, -10.0, 0.0, sin, cos, 0.0,
@@ -1634,9 +1801,8 @@ mod tests {
                     STUD.radius * BELOW_START_OUTSIDE,
                 );
                 (1..=BELOW_ELEVATION_STEPS).all(|step| {
-                    let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * step as f64)
-                        .to_radians()
-                        .sin_cos();
+                    let (rise, run) =
+                        sincos((-BELOW_ELEVATION_STEP_DEGREES * step as f64).to_radians());
                     let direction = [0, 1, 2].map(|axis| radial[axis] * run + stud.up[axis] * rise);
                     let segment = Segment::new(origin, direction, BELOW_REACH_LDU);
                     (0..model.placed.len())

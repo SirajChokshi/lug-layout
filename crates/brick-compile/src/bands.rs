@@ -1,8 +1,7 @@
 use crate::affine::{Affine, Vec3};
 use crate::flatten::{ReferenceSpan, Triangle};
+use crate::identify::{identifies, IDENTIFY_LDU};
 use crate::technic::is_circular_primitive;
-
-const IDENTIFY_LDU: f64 = 0.0005;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RoundBand {
@@ -75,7 +74,7 @@ impl Axis {
         let leading = self
             .direction
             .iter()
-            .find(|c| c.abs() > IDENTIFY_LDU)
+            .find(|c| !identifies(**c))
             .copied()
             .unwrap_or(1.0);
         let sign = if leading < 0.0 { -1.0 } else { 1.0 };
@@ -92,14 +91,14 @@ fn round_frame(span: &ReferenceSpan) -> Option<(Axis, f64)> {
     let z = column(&span.matrix, 2);
     let radius = length(x);
     let height = length(y);
-    if radius <= IDENTIFY_LDU || height <= IDENTIFY_LDU {
+    if identifies(radius) || identifies(height) {
         return None;
     }
     let direction = scaled(y, 1.0 / height);
-    let round = (length(z) - radius).abs() <= IDENTIFY_LDU
-        && dot(x, direction).abs() <= IDENTIFY_LDU
-        && dot(z, direction).abs() <= IDENTIFY_LDU
-        && dot(x, z).abs() <= IDENTIFY_LDU * radius;
+    let round = identifies(length(z) - radius)
+        && identifies(dot(x, direction))
+        && identifies(dot(z, direction))
+        && identifies(dot(x, z) / radius);
     round.then(|| {
         (
             Axis {
@@ -113,8 +112,8 @@ fn round_frame(span: &ReferenceSpan) -> Option<(Axis, f64)> {
 
 pub(crate) fn coaxial_radius(span: &ReferenceSpan, point: Vec3, direction: Vec3) -> Option<f64> {
     let (axis, radius) = round_frame(span)?;
-    let parallel = (dot(axis.direction, direction).abs() - 1.0).abs() <= IDENTIFY_LDU;
-    let on_line = length(Axis { point, direction }.off(axis.point)) <= IDENTIFY_LDU;
+    let parallel = identifies(dot(axis.direction, direction).abs() - 1.0);
+    let on_line = identifies(length(Axis { point, direction }.off(axis.point)));
     (parallel && on_line).then_some(radius)
 }
 
@@ -135,7 +134,7 @@ fn outward_band(span: &ReferenceSpan, triangles: &[Triangle]) -> Option<RoundBan
         .filter(|t| {
             t.points
                 .iter()
-                .all(|&p| (axis.radial(p) - radius).abs() <= IDENTIFY_LDU)
+                .all(|&p| identifies(axis.radial(p) - radius))
         })
         .collect();
     if surface.is_empty() || surface.iter().any(|t| t.double_sided) {
@@ -168,10 +167,8 @@ fn outward_band(span: &ReferenceSpan, triangles: &[Triangle]) -> Option<RoundBan
 }
 
 fn same_line(a: &RoundBand, b: &RoundBand) -> bool {
-    (0..3).all(|k| {
-        (a.axis[k] - b.axis[k]).abs() <= IDENTIFY_LDU
-            && (a.point[k] - b.point[k]).abs() <= IDENTIFY_LDU
-    }) && (a.radius - b.radius).abs() <= IDENTIFY_LDU
+    (0..3).all(|k| identifies(a.axis[k] - b.axis[k]) && identifies(a.point[k] - b.point[k]))
+        && identifies(a.radius - b.radius)
 }
 
 pub fn outward_round_bands(spans: &[ReferenceSpan], triangles: &[Triangle]) -> Vec<RoundBand> {
@@ -205,7 +202,7 @@ fn plane_face(band: &RoundBand, triangles: &[Triangle], at: f64, normal: Vec3) -
         .filter(|t| {
             t.points
                 .iter()
-                .all(|&p| within(p) && (axis.along(p) - at).abs() <= IDENTIFY_LDU)
+                .all(|&p| within(p) && identifies(axis.along(p) - at))
         })
         .collect();
     let radius = in_plane

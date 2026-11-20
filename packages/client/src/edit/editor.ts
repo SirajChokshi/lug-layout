@@ -13,10 +13,10 @@ import {
   WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
+  PlanDelta,
   RoadNetwork,
   World,
   addShards,
-  modelTechnic,
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
@@ -25,9 +25,7 @@ import {
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
-  type CellVolumes,
   type ModelConnectors,
-  type TechnicSet,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -45,7 +43,6 @@ import {
   type BackendInfo,
   type EdgeMarker,
   type ChunkTier,
-  type FrameStats,
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
@@ -63,10 +60,17 @@ import {
 } from "../bom/bom-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
-import { PLACEABLE_CATALOG, PLACEMENT_SEARCH, WORLD_SESSION } from "../tokens.ts";
+import {
+  EDITOR_FRAME_LOOP,
+  PLACEABLE_CATALOG,
+  PLACEMENT_SEARCH,
+  WORLD_SESSION,
+} from "../tokens.ts";
+import type { FrameLoopView, FrameTimes, IEditorFrameLoop } from "./editor-frame-loop.ts";
 import {
   colorOf,
   type CatalogItemView,
+  type CheckedStuds,
   type IPlaceableCatalog,
   type SkippedCatalogModel,
 } from "../catalog/placeable-catalog.ts";
@@ -79,7 +83,8 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import { partBoxes, type PartBoxes } from "../connect/part-boxes.ts";
-import { placeableVolumes } from "../connect/placeable-volumes.ts";
+import { FrozenTechnic } from "../connect/frozen-technic.ts";
+import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import type { IPlacementSearch } from "../connect/placement-search.ts";
 import {
   TRACK_SYSTEM,
@@ -98,7 +103,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { trackObstacleRects } from "./track-obstacles.ts";
+import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -109,7 +114,13 @@ import {
   type RoadStrokeView,
 } from "./road-drawing.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
-import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
+import {
+  writeFullRebuild,
+  writeTrackLay,
+  writeTrackThrow,
+  writeViewUpdate,
+} from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel, PlaySetup } from "../play/play-models.ts";
 import { errorText } from "./error-text.ts";
@@ -212,32 +223,6 @@ export interface RefusedClick {
   readonly reason: string;
 }
 
-export interface EditorStats {
-  readonly fps: number;
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly renderOriginChunkX: number;
-  readonly renderOriginChunkZ: number;
-  readonly rebases: number;
-  readonly nearChunks: number;
-  readonly midChunks: number;
-  readonly farChunks: number;
-  readonly nearestStudPitchPx: number;
-}
-
-export interface FrameMeasurement {
-  readonly frames: number;
-  readonly medianFrameMs: number;
-  readonly p95FrameMs: number;
-  readonly medianCpuSubmitMs: number;
-  readonly drawCalls: number;
-  readonly triangles: number;
-  readonly nearChunks: number;
-  readonly midChunks: number;
-  readonly farChunks: number;
-  readonly nearestStudPitchPx: number;
-}
-
 export type FarTierStatus = "loading" | "ready" | "unavailable";
 
 export interface TrackBomLine {
@@ -259,6 +244,7 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-blocked"
   | "refused-limit"
+  | "refused-pending"
   | "switch-straight"
   | "switch-branching";
 
@@ -301,13 +287,14 @@ export interface HoverView {
 export interface PlaceableCoverView {
   readonly id: string;
   readonly studsDrawnPerPlacement: number;
-  readonly studsCulledAtBake: number;
+  readonly studsPending: boolean;
+  readonly studsCulledAtBake: number | null;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
 }
 
-export type ModelImportStatus = "importing" | "placeable" | "refused";
+export type ModelImportStatus = "importing" | "checking" | "placeable" | "check-failed" | "refused";
 
 export interface ModelImportView {
   readonly file: string;
@@ -318,7 +305,7 @@ export interface ModelImportView {
   readonly studio: StudioReport | null;
 }
 
-export interface EditorSnapshot extends WorldSessionView {
+export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly status: EditorStatus;
   readonly error: string | null;
   readonly loadMs: number | null;
@@ -336,15 +323,11 @@ export interface EditorSnapshot extends WorldSessionView {
   readonly history: HistoryView;
   readonly lastLatency: LatencySample | null;
   readonly latencies: ReadonlyArray<LatencySample>;
-  readonly stats: EditorStats | null;
   readonly studs: StudTotals | null;
-  readonly tier: ChunkTier | null;
   readonly farTier: FarTierStatus;
   readonly farTierError: string | null;
   readonly pendingItem: string | null;
   readonly meshes: MeshProgress;
-  readonly measuring: boolean;
-  readonly measurement: FrameMeasurement | null;
   readonly credits: EditorCredits | null;
   readonly roads: RoadJoinView;
   readonly showJoins: boolean;
@@ -355,13 +338,13 @@ export interface EditorSnapshot extends WorldSessionView {
   readonly track: TrackView | null;
   readonly bundleVersion: string | null;
   readonly catalogError: string | null;
-  readonly coldStartMs: number | null;
   readonly roadKits: ReadonlyArray<RoadKitView>;
   readonly roadKit: string | null;
   readonly roadStroke: RoadStrokeView | null;
   readonly lastRoadStroke: RoadStrokeResult | null;
   readonly roadErase: boolean;
   readonly modelImport: ModelImportView | null;
+  readonly studChecks: number;
 }
 
 export interface EditorCredits {
@@ -401,6 +384,7 @@ export interface EditorDump {
   readonly roadPlacements: ReadonlyArray<RoadPlacementDump>;
   readonly roads: RoadJoinReport;
   readonly studs: StudTotals;
+  readonly studChecks: number;
 }
 
 export interface EditorOptions {
@@ -441,9 +425,9 @@ export interface IEditor extends IBomSource, IWorldFiles {
 
 interface Connected {
   readonly model: ModelConnectors;
-  readonly volumes: CellVolumes;
+  readonly volumes: FrozenVolumes;
   readonly boxes: PartBoxes;
-  readonly technic: TechnicSet;
+  readonly technic: FrozenTechnic;
 }
 
 const EDITOR_LOD: BundleLod = "standard";
@@ -462,10 +446,6 @@ interface RoadCellCounts {
   readonly overlappingCells: number;
 }
 const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
-const STATS_INTERVAL_MS = 500;
-const MEASURE_WARMUP_FRAMES = 5;
-const MEASURED_FRAMES = 60;
-const TIER_CYCLE: ReadonlyArray<ChunkTier | null> = [null, "near", "mid", "far"];
 
 const MARKER_WIDTH_LDU = 6;
 const MARKER_LIFT_LDU = 1;
@@ -551,16 +531,6 @@ interface PendingAction {
   readonly report: RebuildReport;
 }
 
-interface FrameTimes {
-  readonly startMs: number;
-  readonly submittedMs: number;
-  readonly presentedMs: number;
-}
-
-function quantileOfSorted(sorted: Float64Array, fraction: number): number {
-  return sorted[Math.min(sorted.length - 1, Math.ceil(fraction * sorted.length) - 1)] ?? Number.NaN;
-}
-
 interface RestoredWorld {
   readonly world: World;
   readonly handles: ReadonlyArray<PlacementHandle>;
@@ -642,22 +612,11 @@ export class Editor implements IEditor, IEditedWorld {
     lastRoadStroke: null,
     roadErase: false,
     modelImport: null,
+    studChecks: 0,
   };
   private world = new World();
   private history = new EditHistory(this.world);
-  private firstWorldFrame = false;
   private readonly ray = new Float64Array(RAY_FLOATS);
-  private readonly frameStats: FrameStats = {
-    drawCalls: 0,
-    triangles: 0,
-    nearChunks: 0,
-    midChunks: 0,
-    farChunks: 0,
-    nearestStudPitchPx: 0,
-    renderOriginChunkX: 0,
-    renderOriginChunkZ: 0,
-    rebaseCount: 0,
-  };
   private catalogItems: ReadonlyArray<CatalogItemView> = [];
   private bundleColorCodes: ReadonlyArray<number> | null = null;
   private placed: PlacedChunks;
@@ -681,6 +640,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly searchIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
   private readonly connected = new Map<Placeable, Connected>();
+  private readonly studChecks = new Set<Placeable>();
   private nextSearchId = 1;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
@@ -689,18 +649,11 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
-  private pending: PendingAction | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
-  private canvas: HTMLCanvasElement | null = null;
-  private framesSinceStats = 0;
-  private measureFrame = -1;
-  private readonly measuredFrameMs = new Float64Array(MEASURED_FRAMES);
-  private readonly measuredCpuMs = new Float64Array(MEASURED_FRAMES);
-  private statsSince = 0;
-  private readonly planEntries = new WeakMap<PlacedModel, PlacedForPlan>();
+  private readonly planDelta = new PlanDelta();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -708,12 +661,14 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(PLAN_SERVICE) private readonly plans: IPlanService,
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(WORLD_SESSION) private readonly session: IWorldSession,
+    @inject(EDITOR_FRAME_LOOP) private readonly frames: IEditorFrameLoop,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
   ) {
     this.placed = new PlacedChunks(backend);
-    this.state = { ...this.state, ...session.view() };
+    this.state = { ...this.state, ...session.view(), ...frames.view() };
     session.subscribe(() => this.sessionChanged());
+    frames.subscribe(() => this.update(this.frames.view()));
     catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
   }
 
@@ -741,7 +696,6 @@ export class Editor implements IEditor, IEditedWorld {
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {
     try {
       const started = performance.now();
-      this.canvas = canvas;
       const backend = await this.backend.init({
         canvas,
         api: options.api,
@@ -749,8 +703,7 @@ export class Editor implements IEditor, IEditedWorld {
         antialias: true,
         look: options.look,
       });
-      this.backend.forceTier(options.tier);
-      this.update({ tier: options.tier });
+      this.frames.forceTier(options.tier);
       const index = await this.loader.loadIndex(EDITOR_LOD);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
@@ -772,7 +725,6 @@ export class Editor implements IEditor, IEditedWorld {
       );
       const loadMs = performance.now() - started;
       await this.session.start(this, index.bundleVersion);
-      this.firstWorldFrame = true;
       this.update({
         status: "ready",
         loadMs,
@@ -786,10 +738,7 @@ export class Editor implements IEditor, IEditedWorld {
         track: this.trackView(),
         credits: { partFiles: 0, partFilesLod: EDITOR_LOD, models: catalog.credits },
       });
-      this.statsSince = performance.now();
-      this.resizeToCanvas();
-      this.camera.frame(performance.now());
-      requestAnimationFrame(this.step);
+      this.frames.start(canvas, (error) => this.update({ status: "error", error: String(error) }));
       void this.startFarTier();
       void this.countCreditedFiles();
     } catch (error) {
@@ -843,19 +792,119 @@ export class Editor implements IEditor, IEditedWorld {
     } as const;
     this.update({ modelImport: importing });
     const outcome = await this.catalog.addImported(file);
-    const reported = { ...importing, report: outcome.report, studio: outcome.studio };
-    if (outcome.item === null) {
-      this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
-      return null;
+    switch (outcome.kind) {
+      case "refused": {
+        const reported = { ...importing, report: outcome.report, studio: outcome.studio };
+        this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
+        return null;
+      }
+      case "placeable": {
+        const reported = { ...importing, report: outcome.report, studio: outcome.studio };
+        this.addImportedItem(outcome.item, outcome.credit, {
+          ...reported,
+          status: "placeable",
+          item: outcome.item.id,
+        });
+        return outcome.item.id;
+      }
+      case "checking": {
+        this.studChecks.add(outcome.pending);
+        this.addImportedItem(outcome.item, outcome.credit, {
+          ...importing,
+          status: "checking",
+          item: outcome.item.id,
+        });
+        void outcome.checked.then((checked) => this.studsChecked(outcome.pending, checked));
+        return outcome.item.id;
+      }
+      default: {
+        const unhandled: never = outcome;
+        throw new Error(`unhandled import outcome ${String(unhandled)}`);
+      }
     }
-    this.catalogItems = [...this.catalogItems, outcome.item];
+  }
+
+  private addImportedItem(
+    item: CatalogItemView,
+    credit: ModelCredit,
+    modelImport: ModelImportView,
+  ): void {
+    this.catalogItems = [...this.catalogItems, item];
     const credits = this.state.credits;
     this.update({
-      catalog: [...this.state.catalog, outcome.item],
-      modelImport: { ...reported, status: "placeable", item: outcome.item.id },
-      ...(credits ? { credits: { ...credits, models: [...credits.models, outcome.credit] } } : {}),
+      catalog: [...this.state.catalog, item],
+      modelImport,
+      studChecks: this.studChecks.size,
+      ...(credits ? { credits: { ...credits, models: [...credits.models, credit] } } : {}),
     });
-    return outcome.item.id;
+  }
+
+  private studsChecked(pending: Placeable, checked: CheckedStuds): void {
+    this.studChecks.delete(pending);
+    const current = this.state.modelImport;
+    const ours = current !== null && current.item === pending.id;
+    switch (checked.kind) {
+      case "checked": {
+        this.studsLanded(pending, checked.placeable);
+        if (ours) {
+          const { report, studio } = checked;
+          this.update({ modelImport: { ...current, status: "placeable", report, studio } });
+        }
+        break;
+      }
+      case "failed": {
+        if (ours) {
+          const { report, studio } = checked;
+          const reason = `stud check failed: ${checked.failure}`;
+          this.update({
+            modelImport: { ...current, status: "check-failed", reason, report, studio },
+          });
+        }
+        break;
+      }
+      default: {
+        const unhandled: never = checked;
+        throw new Error(`unhandled stud check ${String(unhandled)}`);
+      }
+    }
+    this.update({
+      studChecks: this.studChecks.size,
+      studs: this.placed.studTotals(),
+      hover: this.hoverView(),
+    });
+  }
+
+  private studsLanded(pending: Placeable, checked: Placeable): void {
+    const connected = this.connected.get(pending);
+    if (connected) this.connected.set(checked, connected);
+    const track = this.modelTrack.get(pending);
+    if (track) this.modelTrack.set(checked, track);
+    const view = this.placed.replacePlaceable(pending, checked);
+    view.removed.forEach((model, index) => {
+      this.unsearchable(model);
+      const replaced = view.added[index];
+      if (!replaced) return;
+      this.searchable(replaced);
+      if (this.selected === model) this.selected = replaced;
+    });
+    this.refreshRoads();
+    this.syncModelTrack();
+    this.refreshTrains();
+    this.placeGhost();
+    writeViewUpdate(this.planDelta, view);
+    this.plans.apply(this.planDelta);
+    const drawing = this.track;
+    if (drawing?.dragView()) {
+      this.setTrackObstacles(drawing);
+      drawing.moveDrag(this.hitX, this.hitZ);
+      this.update({ track: this.trackView() });
+    }
+  }
+
+  private setTrackObstacles(drawing: TrackDrawing): void {
+    const models = this.placed.models();
+    const range = drawing.verticalRange();
+    drawing.setObstacles(trackObstacleRects(models, range), seatsPending(models, range));
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
@@ -889,139 +938,17 @@ export class Editor implements IEditor, IEditedWorld {
     return baseplate.box.min[1];
   }
 
-  private planEntry(model: PlacedModel): PlacedForPlan {
-    const known = this.planEntries.get(model);
-    if (known) return known;
-    const entry: PlacedForPlan = {
-      key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
-      ref: model.placeable.id,
-      label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
-      box: model.box,
-    };
-    this.planEntries.set(model, entry);
-    return entry;
-  }
-
-  private syncPlan(): void {
-    this.plans.setPlacements([
-      ...this.placed.models().map((model) => this.planEntry(model)),
-      ...(this.track?.planFootprints() ?? []),
-    ]);
-  }
-
-  private readonly step = (): void => {
-    void this.frame();
-  };
-
-  private async frame(): Promise<void> {
-    try {
-      this.resizeToCanvas();
-      const startMs = performance.now();
-      this.camera.frame(startMs);
-      this.session.pollCamera();
-      const pending = this.pending;
-      if (
-        pending !== null ||
-        this.measureFrame >= 0 ||
-        this.firstWorldFrame ||
-        this.backend.needsFrame()
-      ) {
-        this.backend.renderFrame(this.frameStats);
-      }
-      if (pending) {
-        this.pending = null;
-        const submittedMs = performance.now();
-        await this.backend.waitForGpu();
-        this.recordLatency(pending, { startMs, submittedMs, presentedMs: performance.now() });
-      } else if (this.measureFrame >= 0) {
-        const submittedMs = performance.now();
-        await this.backend.waitForGpu();
-        this.recordMeasuredFrame(startMs, submittedMs, performance.now());
-      }
-      if (this.firstWorldFrame) {
-        this.firstWorldFrame = false;
-        await this.backend.waitForGpu();
-        this.update({ coldStartMs: performance.now() });
-      }
-      this.tallyStats();
-      requestAnimationFrame(this.step);
-    } catch (error) {
-      this.update({ status: "error", error: String(error) });
-    }
-  }
-
-  private resizeToCanvas(): void {
-    const canvas = this.canvas;
-    if (!canvas) return;
-    const width = canvas.clientWidth;
-    const height = canvas.clientHeight;
-    if (canvas.dataset["cssSize"] === `${width}x${height}`) return;
-    canvas.dataset["cssSize"] = `${width}x${height}`;
-    this.backend.resize(width, height);
-    this.camera.resize(width, height);
-  }
-
-  private tallyStats(): void {
-    this.framesSinceStats++;
-    const now = performance.now();
-    const elapsed = now - this.statsSince;
-    if (elapsed < STATS_INTERVAL_MS) return;
-    this.update({
-      stats: {
-        fps: (this.framesSinceStats * 1000) / elapsed,
-        drawCalls: this.frameStats.drawCalls,
-        triangles: this.frameStats.triangles,
-        renderOriginChunkX: this.frameStats.renderOriginChunkX,
-        renderOriginChunkZ: this.frameStats.renderOriginChunkZ,
-        rebases: this.frameStats.rebaseCount,
-        nearChunks: this.frameStats.nearChunks,
-        midChunks: this.frameStats.midChunks,
-        farChunks: this.frameStats.farChunks,
-        nearestStudPitchPx: this.frameStats.nearestStudPitchPx,
-      },
-    });
-    this.framesSinceStats = 0;
-    this.statsSince = now;
-  }
-
   cycleTier(): void {
-    const next = TIER_CYCLE[(TIER_CYCLE.indexOf(this.state.tier) + 1) % TIER_CYCLE.length] ?? null;
-    this.backend.forceTier(next);
-    this.update({ tier: next, measurement: null });
+    this.frames.cycleTier();
   }
 
   measureFrames(): void {
-    if (this.measureFrame >= 0 || this.state.status !== "ready") return;
-    this.measureFrame = 0;
-    this.update({ measuring: true });
+    if (this.state.status !== "ready") return;
+    this.frames.measureFrames();
   }
 
-  private recordMeasuredFrame(startMs: number, submittedMs: number, presentedMs: number): void {
-    const index = this.measureFrame - MEASURE_WARMUP_FRAMES;
-    this.measureFrame++;
-    if (index < 0) return;
-    this.measuredFrameMs[index] = presentedMs - startMs;
-    this.measuredCpuMs[index] = submittedMs - startMs;
-    if (index < MEASURED_FRAMES - 1) return;
-    this.measureFrame = -1;
-    const frames = this.measuredFrameMs.toSorted();
-    const cpu = this.measuredCpuMs.toSorted();
-    const stats = this.frameStats;
-    this.update({
-      measuring: false,
-      measurement: {
-        frames: MEASURED_FRAMES,
-        medianFrameMs: quantileOfSorted(frames, 0.5),
-        p95FrameMs: quantileOfSorted(frames, P95),
-        medianCpuSubmitMs: quantileOfSorted(cpu, 0.5),
-        drawCalls: stats.drawCalls,
-        triangles: stats.triangles,
-        nearChunks: stats.nearChunks,
-        midChunks: stats.midChunks,
-        farChunks: stats.farChunks,
-        nearestStudPitchPx: stats.nearestStudPitchPx,
-      },
-    });
+  private timeEdit(pending: PendingAction): void {
+    this.frames.timeNextFrame((frame) => this.recordLatency(pending, frame));
   }
 
   private recordLatency(pending: PendingAction, frame: FrameTimes): void {
@@ -1250,7 +1177,7 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
     if (!this.groundHit(ndcX, ndcY)) return false;
-    track.setObstacles(trackObstacleRects(this.placed.models(), track.verticalRange()));
+    this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.update({ track: this.trackView() });
     return true;
@@ -1303,7 +1230,7 @@ export class Editor implements IEditor, IEditedWorld {
       studs += chunk.studs.count;
     }
     if (commit.laid > 0) {
-      this.pending = {
+      this.timeEdit({
         step: "do",
         action: "track",
         item: TRACK_ITEM_ID,
@@ -1313,10 +1240,11 @@ export class Editor implements IEditor, IEditedWorld {
         startMs: eventTimeMs,
         rebuiltMs: performance.now(),
         report: { chunks: commit.chunks.length, instances, studs },
-      };
+      });
     }
     if (commit.laid > 0) {
-      this.syncPlan();
+      writeTrackLay(this.planDelta, track, commit.laid);
+      this.plans.apply(this.planDelta);
       this.session.trackEdited();
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
@@ -1499,7 +1427,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!track || !held || !snap) return;
     const commit = track.placePiece(held.catalogIndex, snap.placement);
     const report = this.rebuildTrackChunks(track, commit.chunks);
-    this.pending = {
+    this.timeEdit({
       step: "do",
       action: "track",
       item: `${TRACK_PIECE_PREFIX}${track.pieceByIndex(held.catalogIndex).piece.id}`,
@@ -1509,8 +1437,9 @@ export class Editor implements IEditor, IEditedWorld {
       startMs: eventTimeMs,
       rebuiltMs: performance.now(),
       report,
-    };
-    this.syncPlan();
+    });
+    writeTrackLay(this.planDelta, track, commit.laid);
+    this.plans.apply(this.planDelta);
     this.session.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.held = { ...held, snap: null };
@@ -1540,7 +1469,7 @@ export class Editor implements IEditor, IEditedWorld {
     const thrown = track.throwSwitch(placement);
     if (!thrown) return false;
     const report = this.rebuildTrackChunks(track, [thrown.chunk]);
-    this.pending = {
+    this.timeEdit({
       step: "do",
       action: "track",
       item: `switch #${placement + 1}`,
@@ -1550,8 +1479,9 @@ export class Editor implements IEditor, IEditedWorld {
       startMs: eventTimeMs,
       rebuiltMs: performance.now(),
       report,
-    };
-    this.syncPlan();
+    });
+    writeTrackThrow(this.planDelta, track, placement);
+    this.plans.apply(this.planDelta);
     this.session.trackEdited();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
@@ -1833,7 +1763,10 @@ export class Editor implements IEditor, IEditedWorld {
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
     for (const model of view.added) this.searchable(model);
-    for (const placeable of new Set(view.added.map((model) => model.placeable))) {
+    const { added } = view;
+    for (let i = 0; i < added.length; i++) {
+      const placeable = added[i]?.placeable;
+      if (!placeable || this.seenEarlier(added, i, placeable)) continue;
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
@@ -1841,7 +1774,7 @@ export class Editor implements IEditor, IEditedWorld {
     const primary = edit.changes[0];
     const pose = primary?.to ?? primary?.from ?? null;
     if (pose) {
-      this.pending = {
+      this.timeEdit({
         step: edit.step,
         action: edit.kind,
         item: this.placeableAt(pose.refId).id,
@@ -1851,7 +1784,7 @@ export class Editor implements IEditor, IEditedWorld {
         startMs: eventTimeMs,
         rebuiltMs: performance.now(),
         report: view.report,
-      };
+      });
     }
     this.refreshRoads();
     this.syncModelTrack();
@@ -1864,8 +1797,20 @@ export class Editor implements IEditor, IEditedWorld {
       studs: this.placed.studTotals(),
       history: this.historyView(),
     });
-    this.syncPlan();
+    writeViewUpdate(this.planDelta, view);
+    this.plans.apply(this.planDelta);
     return view;
+  }
+
+  private seenEarlier(
+    models: ReadonlyArray<PlacedModel>,
+    before: number,
+    placeable: Placeable,
+  ): boolean {
+    for (let i = 0; i < before; i++) {
+      if (models[i]?.placeable === placeable) return true;
+    }
+    return false;
   }
 
   private roadPlacements(): ReadonlyArray<RoadPlacement> {
@@ -2214,9 +2159,9 @@ export class Editor implements IEditor, IEditedWorld {
           placeable.partTransforms,
           this.trackOf(placeable)?.openEnds ?? [],
         ),
-        volumes: placeableVolumes(placeable),
+        volumes: FrozenVolumes.ofPlaceable(placeable),
         boxes,
-        technic: modelTechnic(
+        technic: FrozenTechnic.ofParts(
           parts.map((part) => part.technic),
           placeable.partTransforms,
           boxes.boxes,
@@ -2336,7 +2281,9 @@ export class Editor implements IEditor, IEditedWorld {
     this.refreshRoads();
     this.syncModelTrack();
     this.refreshTrains();
-    this.syncPlan();
+    const fullRebuild = new PlanDelta();
+    writeFullRebuild(fullRebuild, this.placed.models(), this.track);
+    this.plans.apply(fullRebuild);
     return [];
   }
 
@@ -2420,7 +2367,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   playSetup(): PlaySetup | null {
     const track = this.track;
-    if (!track) return null;
+    if (!track || this.studChecks.size > 0) return null;
     return {
       track: track.playTrack(),
       models: this.placedTrains,
@@ -2445,6 +2392,7 @@ export class Editor implements IEditor, IEditedWorld {
       covers: this.loadedPlaceables().map((p) => ({
         id: p.id,
         studsDrawnPerPlacement: p.studs.count,
+        studsPending: p.studsPending,
         studsCulledAtBake: p.bakedCoveredStuds,
         footprintCells: p.cells.footprintCells,
         flatCells: p.cells.flatCells,
@@ -2479,6 +2427,7 @@ export class Editor implements IEditor, IEditedWorld {
       })),
       roads: this.roadReport,
       studs: this.placed.studTotals(),
+      studChecks: this.studChecks.size,
     };
   }
 }

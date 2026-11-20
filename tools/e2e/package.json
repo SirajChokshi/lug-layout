@@ -10,6 +10,7 @@
     "measure-layout": "node src/measure-layout.ts",
     "typecheck": "tsc -p tsconfig.json",
     "compiler-parity": "node --experimental-transform-types --no-warnings src/compiler-parity.ts",
+    "library-bake-parity": "node --experimental-transform-types --no-warnings src/library-bake-parity.ts",
     "held-out": "vitest run --config held-out.config.ts"
   },
   "dependencies": {

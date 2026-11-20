@@ -1,10 +1,15 @@
 import react from "@vitejs/plugin-react";
 import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv, type Connect, type Plugin } from "vite";
 
 const appRoot = fileURLToPath(new URL(".", import.meta.url));
 const assetBundleRoot = fileURLToPath(new URL("../../tools/asset-pipeline/dist", import.meta.url));
+const libraryBakeRoot = fileURLToPath(new URL("../../.cache/library-bake", import.meta.url));
+const LIBRARY_BAKE_PATH = /^\/library-bake\/(?<file>(?:[\w.-]+\/)?[\w.-]+)$/u;
+const HTTP_NOT_FOUND = 404;
 const BUNDLE_PATH = /^\/bundle\/[^/]+\/(?<file>.+)$/u;
 const CONTENT_ADDRESSED_FILE = /\.[0-9a-f]{16}\.(?:glb|json|wasm|png)$/u;
 const ABSOLUTE_HTTP_URL = /^https?:\/\//u;
@@ -24,6 +29,35 @@ const applyBundleCacheControl: Connect.NextHandleFunction = (request, response, 
   const cacheControl = bundleCacheControl(new URL(request.url ?? "/", "http://localhost").pathname);
   if (cacheControl !== undefined) response.setHeader("Cache-Control", cacheControl);
   next();
+};
+
+const serveLibraryBake: Connect.NextHandleFunction = (request, response, next) => {
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  const file = LIBRARY_BAKE_PATH.exec(pathname)?.groups?.["file"];
+  if (file === undefined || file.split("/").some((segment) => segment.startsWith("."))) {
+    next();
+    return;
+  }
+  readFile(join(libraryBakeRoot, file)).then(
+    (bytes) => {
+      response.setHeader("Cache-Control", IMMUTABLE);
+      response.end(bytes);
+    },
+    () => {
+      response.statusCode = HTTP_NOT_FOUND;
+      response.end();
+    },
+  );
+};
+
+const libraryBakeFiles: Plugin = {
+  name: "brr-library-bake-files",
+  configureServer(server) {
+    server.middlewares.use(serveLibraryBake);
+  },
+  configurePreviewServer(server) {
+    server.middlewares.use(serveLibraryBake);
+  },
 };
 
 const bundleCacheHeaders: Plugin = {
@@ -65,9 +99,12 @@ function requireRemoteLdrawLibrary(env: Record<string, string>): void {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, appRoot, "VITE_");
   requireRemoteLdrawLibrary(env);
+  const remote = servesRemoteBundle(env);
   return {
-    plugins: [react(), bundleCacheHeaders],
-    publicDir: servesRemoteBundle(env) ? false : assetBundleRoot,
+    plugins: remote
+      ? [react(), bundleCacheHeaders]
+      : [react(), bundleCacheHeaders, libraryBakeFiles],
+    publicDir: remote ? false : assetBundleRoot,
     build: { target: "es2022" },
   };
 });

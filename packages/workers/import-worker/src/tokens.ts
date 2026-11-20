@@ -1,4 +1,4 @@
-import type { FetchFunction } from "@brr/import";
+import type { FetchFunction, IByteCache } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
@@ -30,3 +30,9 @@ export const BAKE_HELPER_REGISTRY: ServiceIdentifier<IBakeHelperRegistry> = Symb
 );
 export const IMPORT_WORKER_HOST: ServiceIdentifier<ImportWorkerHost> =
   Symbol.for("brr.importWorker.Host");
+export const RECORD_CACHE: ServiceIdentifier<IByteCache> = Symbol.for(
+  "brr.importWorker.RecordCache",
+);
+export const CONNECTOR_RECORD_CACHE: ServiceIdentifier<IByteCache> = Symbol.for(
+  "brr.importWorker.ConnectorRecordCache",
+);

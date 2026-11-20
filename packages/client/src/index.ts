@@ -47,6 +47,13 @@ export type {
   StartedCatalog,
 } from "./catalog/placeable-catalog.ts";
 export type {
+  EditorStats,
+  FrameLoopView,
+  FrameMeasurement,
+  FrameTimes,
+  IEditorFrameLoop,
+} from "./edit/editor-frame-loop.ts";
+export type {
   CatalogPartView,
   EditAction,
   EditorCredits,
@@ -54,11 +61,9 @@ export type {
   EditorMode,
   EditorOptions,
   EditorSnapshot,
-  EditorStats,
   EditorStatus,
   HistoryView,
   HoverView,
-  FrameMeasurement,
   IEditor,
   LatencySample,
   ModelBakeView,
@@ -120,15 +125,15 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export { MM_PER_STUD, STUD_LDU } from "@brr/math";
+export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   PLAN_GRID_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
-  type PlacedForPlan,
   type PlanPatch,
-  type PlanSnapshot,
+  type PlanPlacementsView,
   type TableInput,
 } from "./plan/plan-service.ts";
 export type {
@@ -210,7 +215,7 @@ export {
   type KeyPlatform,
 } from "./commands/key-chord.ts";
 export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
-export { overviewOf, type OverviewItem, type OverviewView } from "./camera/overview.ts";
+export { overviewOf, type OverviewView } from "./camera/overview.ts";
 export {
   PANEL_GAP_PX,
   safeInsets,

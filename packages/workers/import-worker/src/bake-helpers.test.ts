@@ -5,6 +5,7 @@ import {
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
+  type RecordFiles,
 } from "@brr/import";
 import { SectionVocabularyFile, type CompilerVehicles } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -73,6 +74,7 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       new BrickCompiler(module),
       new LdrawMirror(source, pinnedMirror),
       { read: async () => ({ kind: "unlisted" }) },
+      null,
       () => 0,
       helpers,
     );
@@ -214,8 +216,42 @@ it("rejects a pending bake when the helper's end of the port closes", async () =
   const helper = new BakeHelperProxy(channel.port1 as unknown as MessagePort).helper(COMPILER_URL);
   const request = {} as Parameters<IBakeHelper["bake"]>[0];
 
-  const pending = helper.bake(request, { key: "unused", files: new Map(), absent: new Set() });
+  const pending = helper.bake(
+    request,
+    { key: "unused", files: new Map(), absent: new Set() },
+    null,
+  );
   channel.port2.close();
 
   await expect(pending).rejects.toThrow("port closed");
+});
+
+it("a helper bakes from exactly the records each request offers, resending one it dropped", async () => {
+  const offered: Array<ReadonlyMap<string, Uint8Array> | null> = [];
+  const recording = {
+    bake: (_request: unknown, _library: unknown, records: RecordFiles | null) => {
+      offered.push(records === null ? null : new Map(records.files));
+      return Promise.resolve({ status: "failed", message: "not baked" });
+    },
+  } as unknown as BrickCompiler;
+  const [helper] = helpersOverPorts([() => Promise.resolve(recording)]);
+  if (helper === undefined) throw new Error("no helper");
+  const brick = new Uint8Array([1]);
+  const slope = new Uint8Array([2]);
+  const both: RecordFiles = {
+    key: "pinned",
+    files: new Map([
+      ["3001.dat", brick],
+      ["3040b.dat", slope],
+    ]),
+  };
+  const brickOnly: RecordFiles = { key: "pinned", files: new Map([["3001.dat", brick]]) };
+  const library = { key: "library", files: new Map(), absent: new Set<string>() };
+  const request = {} as Parameters<IBakeHelper["bake"]>[0];
+
+  for (const records of [both, null, brickOnly, both]) {
+    await helper.bake(request, library, records);
+  }
+
+  expect(offered).toEqual([both.files, null, brickOnly.files, both.files]);
 });
