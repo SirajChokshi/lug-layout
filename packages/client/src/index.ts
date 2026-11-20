@@ -77,6 +77,7 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
+  QueuedPlacement,
   SelectionView,
   TrackBomLine,
   TrackCommitResult,
@@ -84,6 +85,7 @@ export type {
   TrackSolveStats,
   TrackView,
 } from "./edit/editor.ts";
+export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type {
   ExportedWorld,
   ModelFileInput,

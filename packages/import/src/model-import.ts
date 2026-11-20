@@ -158,6 +158,7 @@ export type PlacementBake = Omit<ModelBake, "studCover">;
 
 export interface PlacedImport extends Omit<ImportResult, "bake" | "report" | "studio"> {
   readonly sections: ReadonlyArray<LdrawHeader>;
+  readonly refusedConnectorRecords: ReadonlyArray<RefusedConnectorRecord>;
   readonly bake: PlacementBake;
 }
 
@@ -198,6 +199,16 @@ export interface RefusedConnectorRecord {
 }
 
 const MAX_COMPILE_ROUNDS = 64;
+
+function refusedRecords(
+  partIds: ReadonlyArray<string>,
+  loads: ReadonlyArray<ConnectorLoad>,
+): ReadonlyArray<RefusedConnectorRecord> {
+  return partIds.flatMap((partId, index) => {
+    const load = loads[index];
+    return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
+  });
+}
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
 const RECORDED_LOD: CompileLod = "standard";
 const PRIMARY_SLICES = 1;
@@ -376,6 +387,7 @@ export class ModelImportEngine {
         ...shape,
         sections: report.sections,
         connectors: loads.map((load) => (load.kind === "loaded" ? load.connectors : null)),
+        refusedConnectorRecords: refusedRecords(shape.partIds, loads),
         bake: placementBake(placement),
       });
     };
@@ -393,10 +405,7 @@ export class ModelImportEngine {
         withoutConnectorRecords: assembled.result.partIds.filter(
           (_, index) => loads[index]?.kind === "unlisted",
         ),
-        refusedConnectorRecords: assembled.result.partIds.flatMap((partId, index) => {
-          const load = loads[index];
-          return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
-        }),
+        refusedConnectorRecords: refusedRecords(assembled.result.partIds, loads),
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,
