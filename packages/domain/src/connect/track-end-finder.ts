@@ -15,6 +15,7 @@ import { SOURCE_SHADOW, STATUS_VERIFIED } from "./connector-table.ts";
 import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import { QUARTER_TURNS, checkPose } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import type { ProposalProgress } from "./proposal-progress.ts";
 import { NO_SHAPE, type MateReport } from "./mate-report.ts";
 import { NO_INSTANCE, type ModelConnectors } from "./model-connectors.ts";
 
@@ -89,8 +90,15 @@ export class TrackEndFinder implements MateFinder {
     }
   }
 
-  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+  proposeOnLattice(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    _progress: ProposalProgress,
+    _slotBudget: number,
+  ): boolean {
     this.propose(model, window, out);
+    return true;
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {

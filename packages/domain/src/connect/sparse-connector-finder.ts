@@ -23,6 +23,7 @@ import {
 } from "./lattice-frame.ts";
 import { MateClasses } from "./mate-classes.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import { NO_PROPOSAL_SLOT, ProposalProgress } from "./proposal-progress.ts";
 import {
   ENGAGED_AXIS,
   ENGAGED_FROM,
@@ -188,6 +189,7 @@ export class SparseConnectorFinder implements MateFinder {
   private readonly block = new Int32Array(BOX_INTS);
   private candidates = new Int32Array(0);
   private readonly proposeBox = new Int32Array(BOX_INTS);
+  private readonly wholeWalk = new ProposalProgress();
   private readonly gatheredBox = new Int32Array(QUARTER_TURNS * BOX_INTS);
   private readonly gathered: Int32Array[] = [];
   private readonly gatheredCount = new Int32Array(QUARTER_TURNS);
@@ -254,11 +256,18 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
-    this.proposeStepping(model, window, out, false);
+    this.wholeWalk.restart();
+    this.proposeStepping(model, window, out, false, this.wholeWalk, Number.POSITIVE_INFINITY);
   }
 
-  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
-    this.proposeStepping(model, window, out, true);
+  proposeOnLattice(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    progress: ProposalProgress,
+    slotBudget: number,
+  ): boolean {
+    return this.proposeStepping(model, window, out, true, progress, slotBudget);
   }
 
   private proposeStepping(
@@ -266,8 +275,14 @@ export class SparseConnectorFinder implements MateFinder {
     window: SnapWindow,
     out: CandidatePoses,
     latticeOnly: boolean,
-  ): void {
+    progress: ProposalProgress,
+    slotBudget: number,
+  ): boolean {
     checkPose(window);
+    if (progress.resumed && progress.revision !== this.revision) {
+      throw new RangeError("the placed connectors changed while a proposal walk was paused");
+    }
+    progress.revision = this.revision;
     const turned = this.turn(model);
     const reach = this.modelTravel(turned);
     const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
@@ -275,7 +290,8 @@ export class SparseConnectorFinder implements MateFinder {
     const baseX = sixteenths(window.x);
     const baseY = window.yPlates * PLATE_SIXTEENTHS;
     const baseZ = sixteenths(window.z);
-    for (let t = 0; t < window.turns; t++) {
+    let left = slotBudget;
+    for (let t = progress.turn; t < window.turns; t++) {
       const rot = (window.rot + t) % QUARTER_TURNS;
       const b = rot * BOX_INTS;
       const minX = baseX + (turned.box[b] ?? 0) - spanXZ;
@@ -285,11 +301,11 @@ export class SparseConnectorFinder implements MateFinder {
       const minZ = baseZ + (turned.box[b + 2] ?? 0) - spanXZ;
       const maxZ = baseZ + (turned.box[b + 5] ?? 0) + spanXZ;
       const fromX = cellOf(minX, REGION_SIXTEENTHS);
-      const toX = cellOf(maxX, REGION_SIXTEENTHS);
       const fromY = cellOf(minY, REGION_SIXTEENTHS);
-      const toY = cellOf(maxY, REGION_SIXTEENTHS);
       const fromZ = cellOf(minZ, REGION_SIXTEENTHS);
-      const toZ = cellOf(maxZ, REGION_SIXTEENTHS);
+      const acrossY = cellOf(maxY, REGION_SIXTEENTHS) - fromY + 1;
+      const acrossZ = cellOf(maxZ, REGION_SIXTEENTHS) - fromZ + 1;
+      const cells = (cellOf(maxX, REGION_SIXTEENTHS) - fromX + 1) * acrossY * acrossZ;
       const near = this.proposeBox;
       near[0] = minX + reach;
       near[1] = minY + reach;
@@ -297,26 +313,36 @@ export class SparseConnectorFinder implements MateFinder {
       near[3] = maxX - reach;
       near[4] = maxY - reach;
       near[5] = maxZ - reach;
-      for (let rx = fromX; rx <= toX; rx++) {
-        for (let ry = fromY; ry <= toY; ry++) {
-          for (let rz = fromZ; rz <= toZ; rz++) {
-            this.cellKey[0] = rx;
-            this.cellKey[1] = ry;
-            this.cellKey[2] = rz;
-            for (
-              let slot = this.regions.get(this.cellKey);
-              slot !== NO_SLOT;
-              slot = this.slotRegionNext[slot] ?? NO_SLOT
-            ) {
-              if (latticeOnly && !this.pairableSlot(turned, slot, rot)) continue;
-              if (!this.reachable(slot, near, 0, reach)) continue;
-              const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
-              this.proposeFromSlot(slot, model.count, rot, window, travel, latticeOnly, out);
-            }
+      for (let c = progress.cell; c < cells; c++) {
+        this.cellKey[0] = fromX + Math.floor(c / (acrossY * acrossZ));
+        this.cellKey[1] = fromY + (Math.floor(c / acrossZ) % acrossY);
+        this.cellKey[2] = fromZ + (c % acrossZ);
+        let slot =
+          progress.slot === NO_PROPOSAL_SLOT ? this.regions.get(this.cellKey) : progress.slot;
+        progress.slot = NO_PROPOSAL_SLOT;
+        while (slot !== NO_SLOT) {
+          if (left <= 0) {
+            progress.turn = t;
+            progress.cell = c;
+            progress.slot = slot;
+            progress.resumed = true;
+            return false;
           }
+          left--;
+          const next = this.slotRegionNext[slot] ?? NO_SLOT;
+          if (
+            (!latticeOnly || this.pairableSlot(turned, slot, rot)) &&
+            this.reachable(slot, near, 0, reach)
+          ) {
+            const travel = Math.min(reach, this.travelOf(this.slotClass[slot] ?? UNCLASSED));
+            this.proposeFromSlot(slot, model.count, rot, window, travel, latticeOnly, out);
+          }
+          slot = next;
         }
       }
+      progress.cell = 0;
     }
+    return true;
   }
 
   count(model: ModelConnectors, pose: LatticePose): number {

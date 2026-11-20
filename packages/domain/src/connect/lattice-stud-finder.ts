@@ -11,6 +11,7 @@ import {
   verticalSign,
 } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import type { ProposalProgress } from "./proposal-progress.ts";
 import { MateClasses } from "./mate-classes.ts";
 import { NO_PARTNER, type MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
@@ -83,8 +84,15 @@ export class LatticeStudFinder implements MateFinder {
     this.stamp(model, pose, false);
   }
 
-  proposeOnLattice(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+  proposeOnLattice(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    _progress: ProposalProgress,
+    _slotBudget: number,
+  ): boolean {
     this.propose(model, window, out);
+    return true;
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {

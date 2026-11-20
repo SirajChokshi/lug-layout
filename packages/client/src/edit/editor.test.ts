@@ -44,7 +44,7 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
-import { CandidatePoses, MateReport } from "@brr/domain";
+import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -1831,7 +1831,7 @@ it("counts Technic, side-stud and track votes only where those finders propose a
   expect({ missed, votedSomewhere: voted > 0 }).toEqual({ missed: [], votedSomewhere: true });
 }, 600_000);
 
-it("proposes on the stud lattice exactly the lattice poses of the full slot walk, a held Technic hole's facade pin among the side studs and bars included", async () => {
+it("proposes on the stud lattice exactly the lattice poses of the full slot walk, one slot per slice, a held Technic hole's facade pin among the side studs and bars included", async () => {
   const marketStreet = "omr:10190-1";
   const petShop = "omr:10218-1";
   const { editor, backend, catalog, container } = await startEditor(["10190-1", "10218-1"]);
@@ -1847,12 +1847,15 @@ it("proposes on the stud lattice exactly the lattice poses of the full slot walk
   const full = new CandidatePoses();
   const lattice = new CandidatePoses();
   const report = new MateReport();
+  const progress = new ProposalProgress();
   const differing: string[] = [];
   let technicMates = 0;
+  let slices = 0;
   for (const x of [600, 640, 680]) {
     const window = { x, z: 0, yPlates: 0, rot: 0, cells: 3, plates: 7, turns: 4 };
     sparse.propose(model, window, full);
-    sparse.proposeOnLattice(model, window, lattice);
+    progress.restart();
+    while (!sparse.proposeOnLattice(model, window, lattice, progress, 1)) slices++;
     const walked = latticeKeys(full, x, 0);
     const indexed = latticeKeys(lattice, x, 0);
     for (const key of walked) if (!indexed.has(key)) differing.push(`missing ${key}`);
@@ -1869,9 +1872,10 @@ it("proposes on the stud lattice exactly the lattice poses of the full slot walk
     }
   }
 
-  expect({ differing, technicMates: technicMates > 0 }).toEqual({
+  expect({ differing, technicMates: technicMates > 0, sliced: slices > 0 }).toEqual({
     differing: [],
     technicMates: true,
+    sliced: true,
   });
 }, 600_000);
 

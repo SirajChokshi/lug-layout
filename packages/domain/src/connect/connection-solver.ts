@@ -3,6 +3,7 @@ import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
+import { ProposalProgress } from "./proposal-progress.ts";
 
 const QUARTER_TURNS = 4;
 
@@ -64,6 +65,7 @@ function ranksBefore(
 
 export class ConnectionSolver {
   private readonly pose = new CandidatePose();
+  private readonly wholeProposal = new ProposalProgress();
 
   constructor(private readonly finders: ReadonlyArray<MateFinder>) {
     if (finders.length === 0) throw new RangeError("a connection solver needs at least one finder");
@@ -111,12 +113,28 @@ export class ConnectionSolver {
   }
 
   proposeMates(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.wholeProposal.restart();
+    this.proposeMatesFrom(model, window, out, this.wholeProposal, Number.POSITIVE_INFINITY);
+  }
+
+  proposeMatesFrom(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    progress: ProposalProgress,
+    slotBudget: number,
+  ): boolean {
     checkWindow(window);
-    out.clear();
-    for (let f = 0; f < this.finders.length; f++) {
-      const finder = this.finders[f];
-      if (finder && !finder.proposesEveryPose) finder.proposeOnLattice(model, window, out);
+    if (!progress.started) {
+      out.clear();
+      progress.started = true;
     }
+    for (; progress.finder < this.finders.length; progress.finishFinder()) {
+      const finder = this.finders[progress.finder];
+      if (!finder || finder.proposesEveryPose) continue;
+      if (!finder.proposeOnLattice(model, window, out, progress, slotBudget)) return false;
+    }
+    return true;
   }
 
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {

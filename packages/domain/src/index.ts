@@ -282,6 +282,7 @@ export {
   NO_SHAPE,
 } from "./connect/mate-report.ts";
 export type { MateFinder } from "./connect/mate-finder.ts";
+export { NO_PROPOSAL_SLOT, ProposalProgress } from "./connect/proposal-progress.ts";
 export { LatticeStudFinder } from "./connect/lattice-stud-finder.ts";
 export { SparseConnectorFinder } from "./connect/sparse-connector-finder.ts";
 export { TrackEndFinder } from "./connect/track-end-finder.ts";
