@@ -64,6 +64,7 @@ const REFUSED: PlacementHover = {
   assistNeighbourhood: { ldu: 40, cells: 2, plates: 2 },
   settled: true,
   turnSettled: true,
+  waitingOn: null,
 };
 
 function services() {
@@ -82,10 +83,15 @@ function services() {
   };
 }
 
-function placing(editor: IEditor, placement: Partial<PlacementHover>): EditorSnapshot {
+function placing(
+  editor: IEditor,
+  placement: Partial<PlacementHover>,
+  held: Partial<EditorSnapshot> = {},
+): EditorSnapshot {
   const hovered = { ...REFUSED, ...placement };
   return {
     ...editor.snapshot(),
+    ...held,
     status: "ready",
     mode: "place",
     hover: {
@@ -99,10 +105,10 @@ function placing(editor: IEditor, placement: Partial<PlacementHover>): EditorSna
   };
 }
 
-function hintScene() {
+function hintScene(first: Partial<PlacementHover> = { settled: false }) {
   const { editor, play, hotbar } = services();
-  const view = (placement: Partial<PlacementHover>) => {
-    const snapshot = placing(editor, placement);
+  const view = (placement: Partial<PlacementHover>, held: Partial<EditorSnapshot> = {}) => {
+    const snapshot = placing(editor, placement, held);
     return createElement(
       Fragment,
       null,
@@ -110,7 +116,7 @@ function hintScene() {
       createElement(PlacementChip, { snapshot }),
     );
   };
-  const { container, rerender } = render(view({ settled: false }));
+  const { container, rerender } = render(view(first));
   const hud = (): HTMLElement => {
     const found = container.querySelector<HTMLElement>(".tool-hud");
     if (!found) throw new Error("the tool hint is not mounted");
@@ -131,8 +137,15 @@ function hintScene() {
     busy: spoken("verdict").getAttribute("aria-busy"),
     said: spoken("verdict").textContent,
   });
-  const show = (placement: Partial<PlacementHover>) => rerender(view(placement));
-  return { shown, show, spoken };
+  const chipLines = (): string[] =>
+    chip()?.hidden === false
+      ? [...(chip()?.querySelectorAll(".placement-chip-line") ?? [])].map(
+          (line) => line.textContent ?? "",
+        )
+      : [];
+  const show = (placement: Partial<PlacementHover>, held: Partial<EditorSnapshot> = {}) =>
+    rerender(view(placement, held));
+  return { shown, show, spoken, chipLines };
 }
 
 function wait(ms: number): void {
@@ -226,6 +239,93 @@ it("speaks nothing while the pointer sweeps across cells and the verdict where i
   expect(heard.filter((said) => said !== "")).toEqual([
     "Magnetic, 0°. Refused: Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-6, -8)",
   ]);
+});
+
+const ROAD_WAIT: Partial<PlacementHover> = {
+  accepted: false,
+  hit: null,
+  settled: false,
+  turnSettled: false,
+  waitingOn: {
+    placed: {
+      item: "ldraw:44336p04@72",
+      label: "Baseplate 32 x 32 Road 6-Stud Straight",
+      pose: { x: -320, z: 320, yPlates: 0, rot: 0 },
+    },
+    failed: false,
+  },
+};
+const WAITING_LINE = "Waiting for Baseplate 32 x 32 Road 6-Stud Straight's connector data…";
+const QUEUED_LINE = "Queued: placing at -320, 320 when ready";
+const QUEUED = { queuedPlacement: { item: "ldraw:3811@2", x: -320, z: 320, rot: 0 } };
+
+function waitingAt(cellX: number, rot: number): Partial<PlacementHover> {
+  return { ...ROAD_WAIT, pose: { x: cellX * 20, z: 0, yPlates: 0, rot } };
+}
+
+it("shows a wait on a neighbour's connector data after a beat, with the ghost's search unspoken, and announces it once however the pointer sweeps or turns", () => {
+  const { shown, show, spoken } = hintScene(ROAD_WAIT);
+  const verdictChanges = changes(spoken("verdict"));
+  const atOnce = shown();
+  wait(PENDING_CUE_MS);
+  const afterBeat = shown();
+  wait(STEADY_SPEECH_MS);
+  const announced = { said: shown().said, changed: verdictChanges() > 0 };
+  for (let cellX = 1; cellX <= 5; cellX++) {
+    show(waitingAt(cellX, cellX % 4), { ghostRot: cellX % 4 });
+    wait(SWEEP_STEP_MS);
+  }
+  wait(STEADY_SPEECH_MS);
+
+  expect({ atOnce, afterBeat, announced, changedAgain: verdictChanges() > 0 }).toEqual({
+    atOnce: {
+      region: "status off",
+      tone: "place",
+      detail: "Magnetic · 0°",
+      chip: null,
+      busy: "false",
+      said: "",
+    },
+    afterBeat: {
+      region: "status off",
+      tone: "place",
+      detail: `Magnetic · 0° · ${WAITING_LINE}`,
+      chip: WAITING_LINE,
+      busy: "false",
+      said: "",
+    },
+    announced: { said: WAITING_LINE, changed: true },
+    changedAgain: false,
+  });
+});
+
+it("shows a queued click at once wherever the pointer goes, ahead of the wait once its beat passes, until the queue clears", () => {
+  const { show, chipLines } = hintScene(ROAD_WAIT);
+  wait(PENDING_CUE_MS);
+  show(ROAD_WAIT, QUEUED);
+  const clicked = chipLines();
+  show(waitingAt(1, 0), QUEUED);
+  const moved = chipLines();
+  wait(PENDING_CUE_MS);
+  const movedAfterBeat = chipLines();
+  show(waitingAt(1, 0), { queuedPlacement: null });
+
+  expect({ clicked, moved, movedAfterBeat, cleared: chipLines() }).toEqual({
+    clicked: [QUEUED_LINE, WAITING_LINE],
+    moved: [QUEUED_LINE],
+    movedAfterBeat: [QUEUED_LINE, WAITING_LINE],
+    cleared: [WAITING_LINE],
+  });
+});
+
+it("says a click queued while the held item's own connector data loads in the same words in the tool hint and the chip", () => {
+  const { show, shown, chipLines } = hintScene(ROAD_WAIT);
+  show({}, { activeItem: "ldraw:3811@2", pendingItem: "ldraw:3811@2", ...QUEUED });
+
+  expect({ detail: shown().detail, chip: chipLines() }).toEqual({
+    detail: `loading connectors… · ${QUEUED_LINE}`,
+    chip: [QUEUED_LINE],
+  });
 });
 
 const FITS: Partial<PlacementHover> = { accepted: true, hit: null };

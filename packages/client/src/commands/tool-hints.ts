@@ -12,8 +12,11 @@ import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import {
   lineText,
   placementFeedback,
+  queuedText,
+  showsLate,
   type PlacementFeedback,
   type PlacementLine,
+  type PlacementTone,
 } from "../edit/placement-feedback.ts";
 import { effectivePlacementMode, otherPlacementMode } from "../edit/placement-mode.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
@@ -384,7 +387,7 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): HintView {
     detail:
       queued === null
         ? "loading connectors… a click places it once they load"
-        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} (Esc cancels)`,
+        : `loading connectors… · ${queuedText(queued)}`,
     hints: [
       gesture("Click", "place once loaded"),
       key("open-palette", "another part"),
@@ -405,6 +408,7 @@ function measureDetail(snapshot: EditorSnapshot): string {
 function verdictSpeech(feedback: PlacementFeedback, heading: string): string | null {
   if (feedback.tone === "pending") return null;
   const said = feedback.lines.filter(unturned).map(lineText).join(" · ");
+  if (feedback.tone === "waiting") return said || null;
   if (feedback.tone === "refused") return `${heading}. Refused: ${said}`;
   return `${heading}. ${said || "Fits here"}`;
 }
@@ -418,9 +422,13 @@ function unturned(placementLine: PlacementLine): boolean {
   return placementLine.kind !== "turn";
 }
 
+function clickText(tone: PlacementTone | undefined): string {
+  if (tone === "refused") return "refused here";
+  return tone === "waiting" ? "place when ready" : "place";
+}
+
 function placeHints(snapshot: EditorSnapshot, feedback: PlacementFeedback | null): ToolHint[] {
-  const refused = feedback?.tone === "refused";
-  const click = gesture("Click", refused ? "refused here" : "place");
+  const click = gesture("Click", clickText(feedback?.tone));
   const kept = MODE_NAMES[snapshot.placementMode].toLowerCase();
   if (snapshot.placementModeOverride) return [click, holdAlt(`${kept} again`, true)];
   const turning = feedback?.lines.some((placementLine) => !unturned(placementLine)) ?? false;
@@ -455,17 +463,16 @@ function placeView(snapshot: EditorSnapshot, name: string): HintView {
     effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
   const degrees = `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`;
   const title = `Placing ${name}`;
-  const said = pending ? [] : (feedback?.lines.map(lineText) ?? []);
-  const turn = pending
-    ? undefined
-    : feedback?.lines.find((placementLine) => !unturned(placementLine));
+  const lines = feedback?.lines ?? [];
+  const said = lines.filter((placementLine) => !showsLate(placementLine)).map(lineText);
+  const turn = lines.find((placementLine) => !unturned(placementLine));
   return {
     tone: feedback?.tone === "refused" ? "warn" : "place",
     title,
     detail: [MODE_NAMES[mode], degrees, ...said].join(" · "),
     hints,
     busy: pending,
-    waiting: feedback?.tone === "pending" ? (feedback.lines[0]?.text ?? null) : null,
+    waiting: lines.find(showsLate)?.text ?? null,
     speech: {
       verdict: feedback
         ? verdictSpeech(feedback, `${MODE_NAMES[mode]}, ${degrees}`)

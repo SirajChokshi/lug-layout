@@ -573,8 +573,19 @@ kbd {
   font-style: italic;
 }
 
-.placement-chip[data-tone="pending"] {
+.placement-chip[data-tone="pending"],
+.placement-chip[data-tone="waiting"] {
   --tone: #8a96a3;
+}
+
+.placement-chip-line[data-line="waiting"] {
+  color: #5b6b7a;
+  font-style: italic;
+}
+
+.placement-chip-line[data-line="queued"] {
+  color: #0a3069;
+  font-weight: 600;
 }
 
 .placement-chip-line[data-line="pending"] {

@@ -240,6 +240,7 @@ export {
 export {
   badgeText,
   placementFeedback,
+  showsLate,
   type BadgeCount,
   type ConnectorBadge,
   type PlacementFeedback,

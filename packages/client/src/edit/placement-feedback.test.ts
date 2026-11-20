@@ -71,6 +71,10 @@ function model(label: string, x: number): PlacedModelView {
 const PINNED = model("custom-modular-pinned", 0);
 const HOLED = model("custom-modular-holes", 320);
 const BASEPLATE = model("Baseplate 32 x 32", 0);
+const ROAD = model("Baseplate 32 x 32 Road 6-Stud Straight", -320);
+const UNLABELLED_ROAD = { ...model("", -320), item: "custom:road-loop.mpd" };
+const WAITING = { settled: false, turnSettled: false, accepted: false, hit: null };
+const QUEUED = { queuedPlacement: { x: -320, z: 320 } };
 
 function mate(
   kind: ConnectorKindView,
@@ -95,12 +99,17 @@ function mate(
   };
 }
 
-function hover(placement: Partial<PlacementHover>): PlacementView {
+function hover(
+  placement: Partial<PlacementHover>,
+  view: Partial<PlacementView> = {},
+): PlacementView {
   return {
     mode: "place",
     ghostSettled: false,
     gesture: null,
     fillDraft: null,
+    pendingItem: null,
+    queuedPlacement: null,
     placementMode: "assist",
     placementModeOverride: false,
     hover: {
@@ -122,9 +131,11 @@ function hover(placement: Partial<PlacementHover>): PlacementView {
         assistNeighbourhood: { ldu: 40, cells: 2, plates: 2 },
         settled: true,
         turnSettled: true,
+        waitingOn: null,
         ...placement,
       },
     },
+    ...view,
   };
 }
 
@@ -303,8 +314,50 @@ it.each([
     tone: "fits",
     lines: ["Turn it to snap here"],
   },
-] as const)("states $name", ({ placement, tone, lines }) => {
-  const feedback = placementFeedback(hover(placement));
+  {
+    name: "a wait on a neighbour's connector data, naming the neighbour and nothing else",
+    placement: { ...WAITING, waitingOn: { placed: ROAD, failed: false } },
+    tone: "waiting",
+    lines: ["Waiting for Baseplate 32 x 32 Road 6-Stud Straight's connector data…"],
+  },
+  {
+    name: "a neighbour whose connector data failed to load, as a refusal that names it",
+    placement: { ...WAITING, settled: true, waitingOn: { placed: ROAD, failed: true } },
+    tone: "refused",
+    lines: [
+      "Can't place here: Baseplate 32 x 32 Road 6-Stud Straight's connector data didn't load",
+    ],
+  },
+  {
+    name: "a click queued while waiting on a neighbour with no label, the wait last and named by the neighbour's id",
+    placement: { ...WAITING, waitingOn: { placed: UNLABELLED_ROAD, failed: false } },
+    view: QUEUED,
+    tone: "waiting",
+    lines: [
+      "Queued: placing at -320, 320 when ready",
+      "Waiting for custom:road-loop.mpd's connector data…",
+    ],
+  },
+  {
+    name: "a click still queued after the pointer moved on to a pose that mates",
+    placement: { mates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])] },
+    view: QUEUED,
+    tone: "mates",
+    lines: [
+      "2 pin holes line up flush with custom-modular-pinned, 2 pins go in",
+      "Queued: placing at -320, 320 when ready",
+    ],
+  },
+  {
+    name: "a click queued while the held item's own connector data loads, as the queue alone",
+    placement: {},
+    view: { ...QUEUED, pendingItem: "ldraw:3811@2", hover: { refusal: null, placement: null } },
+    tone: "waiting",
+    lines: ["Queued: placing at -320, 320 when ready"],
+  },
+] as const)("states $name", (row) => {
+  const { placement, tone, lines } = row;
+  const feedback = placementFeedback(hover(placement, "view" in row ? row.view : {}));
 
   expect({ tone: feedback?.tone, lines: feedback?.lines.map(lineText) }).toEqual({ tone, lines });
 });
@@ -339,15 +392,24 @@ function read(view: PlacementView) {
   };
 }
 
-it("reads an unsettled assist hover as a neutral search, never as precise's refusal, and the settled hover as its verdict", () => {
+it("reads an unsettled assist hover or a wait on connector data as neutral, never as precise's refusal, and the settled hover or failed load as its verdict", () => {
   const provisional = hover({ accepted: false, hit: HIT, settled: false });
   const settled = hover({ accepted: false, hit: HIT, settled: true });
-  expect({ provisional: read(provisional), settled: read(settled) }).toEqual({
+  const waiting = hover({ ...WAITING, waitingOn: { placed: ROAD, failed: false } });
+  const failed = hover({ ...WAITING, settled: true, waitingOn: { placed: ROAD, failed: true } });
+  expect({
+    provisional: read(provisional),
+    waiting: read(waiting).ghost,
+    failed: read(failed).ghost,
+    settled: read(settled),
+  }).toEqual({
     provisional: {
       tone: "pending",
       lines: ["Finding a fit…"],
       ghost: { tone: null, hit: null, precise: false },
     },
+    waiting: { tone: null, hit: null, precise: false },
+    failed: { tone: "refused", hit: null, precise: false },
     settled: {
       tone: "refused",
       lines: ["Hits ldraw:3700 in Market Street at cell (16, -7)"],

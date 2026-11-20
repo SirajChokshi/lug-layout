@@ -13,13 +13,14 @@ import {
   type ConnectorSectionView,
   type HoverMateCount,
   type HoverRefusalHit,
+  type HoverWait,
   type PlacedModelView,
   type PlacementHover,
   type PlacementMode,
   type SectionProfile,
 } from "./placement-hover.ts";
 
-export type PlacementTone = "fits" | "mates" | "refused" | "pending";
+export type PlacementTone = "fits" | "mates" | "refused" | "pending" | "waiting";
 
 export type ConnectorBadge = "inferred" | "unverified";
 
@@ -30,6 +31,8 @@ export interface BadgeCount {
 
 export type PlacementLineKind =
   | "pending"
+  | "waiting"
+  | "queued"
   | "refusal"
   | "joints"
   | "snap"
@@ -60,12 +63,19 @@ export type PlacementGestureView =
 
 type HeldGroupGesture = Extract<PlacementGestureView, { readonly kind: "move" | "paste" }>;
 
+export interface QueuedPlacementView {
+  readonly x: number;
+  readonly z: number;
+}
+
 export interface PlacementView extends PlacementModeView {
   readonly mode: string;
   readonly hover: PlacementHoverInput | null;
   readonly ghostSettled: boolean;
   readonly gesture: PlacementGestureView | null;
   readonly fillDraft: FillView | null;
+  readonly pendingItem: string | null;
+  readonly queuedPlacement: QueuedPlacementView | null;
 }
 
 export interface SettleView extends PlacementModeView {
@@ -346,6 +356,7 @@ function searching(placement: PlacementHover | null): boolean {
 
 function placementTone(hover: PlacementHoverInput): PlacementTone {
   const { placement } = hover;
+  if (placement?.waitingOn) return placement.waitingOn.failed ? "refused" : "waiting";
   if (searching(placement)) return "pending";
   if (!placement) return hover.refusal === null ? "fits" : "refused";
   if (!placement.accepted) return "refused";
@@ -392,29 +403,49 @@ export function placementFeedback(view: PlacementView): PlacementFeedback | null
   return feedback;
 }
 
+function waitLine({ placed, failed }: HoverWait): PlacementLine {
+  const model = placed.label || placed.item;
+  return failed
+    ? line("refusal", `${UNPLACEABLE}: ${model}'s connector data didn't load`)
+    : line("waiting", `Waiting for ${model}'s connector data…`);
+}
+
+export function queuedText({ x, z }: QueuedPlacementView): string {
+  return `Queued: placing at ${x}, ${z} when ready`;
+}
+
+function heldTone(view: PlacementView, hover: PlacementHoverInput): PlacementTone {
+  return view.pendingItem === null ? placementTone(hover) : "waiting";
+}
+
+function heldLines(
+  view: PlacementView,
+  hover: PlacementHoverInput,
+  tone: PlacementTone,
+): PlacementLine[] {
+  const { placement } = hover;
+  if (view.pendingItem !== null) return [];
+  if (placement?.waitingOn) return [waitLine(placement.waitingOn)];
+  if (tone === "pending") return [line("pending", FINDING_A_FIT)];
+  if (placement) return placementLines(hover, placement);
+  return hover.refusal === null ? [] : [line("refusal", hover.refusal)];
+}
+
 function feedbackOf(view: PlacementView): PlacementFeedback | null {
   const group = heldGroup(view);
   if (group) return groupFeedback(view, group);
   const hover = heldHover(view);
   if (!hover) return null;
-  const tone = placementTone(hover);
-  const mode = shownMode(view);
-  const { placement } = hover;
-  if (tone === "pending") {
-    return { tone, mode, lines: [line("pending", FINDING_A_FIT)] };
-  }
-  if (placement) {
-    return {
-      tone,
-      mode,
-      lines: placementLines(hover, placement),
-    };
-  }
-  return {
-    tone,
-    mode,
-    lines: hover.refusal === null ? [] : [line("refusal", hover.refusal)],
-  };
+  const tone = heldTone(view, hover);
+  const lines = heldLines(view, hover, tone);
+  const queued = view.queuedPlacement;
+  if (queued) lines.push(line("queued", queuedText(queued)));
+  const onTime = lines.filter((placementLine) => !showsLate(placementLine));
+  return { tone, mode: shownMode(view), lines: [...onTime, ...lines.filter(showsLate)] };
+}
+
+export function showsLate(placementLine: PlacementLine): boolean {
+  return placementLine.kind === "pending" || placementLine.kind === "waiting";
 }
 
 export function badgeText(badge: BadgeCount): string {
@@ -449,8 +480,10 @@ export function ghostVerdict(view: PlacementView): GhostVerdict | null {
   const { hover } = view;
   if (view.mode !== PLACE_MODE || hover === null || view.fillDraft !== null) return null;
   const precise = shownMode(view) === "precise";
-  const tone = placementTone(hover);
-  if (view.ghostSettled || tone === "pending") return { tone: null, hit: null, precise };
+  const tone = heldTone(view, hover);
+  if (view.ghostSettled || tone === "pending" || tone === "waiting") {
+    return { tone: null, hit: null, precise };
+  }
   const hit = hover.placement?.accepted === false ? hover.placement.hit : null;
   return { tone, hit: hit ? hitBox(hit) : null, precise };
 }
