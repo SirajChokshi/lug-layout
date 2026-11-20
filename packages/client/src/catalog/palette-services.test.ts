@@ -19,6 +19,7 @@ import type { MeshCounts } from "../edit/mesh-progress.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
   EDITOR,
+  HOTBAR,
   PALETTE_DRAG,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
@@ -402,5 +403,26 @@ describe("palette drag", () => {
     backend.aim(2560, 2560);
     drag.drop(0, 0, 0);
     expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
+  }, 120_000);
+});
+
+describe("hotbar", () => {
+  it("gives each part the editor picks its own slot, keeps it through a deselect, and picks it again by slot", async () => {
+    const { container, editor } = await startEditor();
+    const hotbar = container.get(HOTBAR);
+    const slots = (): ReadonlyArray<string> => hotbar.snapshot().slots.map((slot) => slot.item);
+
+    editor.chooseItem(GREEN_BASEPLATE);
+    editor.chooseItem(SET);
+    editor.chooseItem(TRACK_ITEM_ID);
+    editor.chooseItem(null);
+    editor.chooseItem(GREEN_BASEPLATE);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+
+    hotbar.pick(1);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    hotbar.pick(5);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
   }, 120_000);
 });

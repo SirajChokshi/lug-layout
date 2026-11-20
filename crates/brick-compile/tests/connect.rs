@@ -2027,6 +2027,120 @@ fn inheritance_includes_let_a_clearing_patch_keep_what_a_part_inherits() {
     assert_eq!(restored, inherited);
 }
 
+fn statuses_by_id(connectors: &[Connector]) -> Vec<(String, Status)> {
+    let mut found: Vec<(String, Status)> = connectors
+        .iter()
+        .map(|c| (c.id.clone().unwrap_or_default(), c.status))
+        .collect();
+    found.sort_by(|a, b| a.0.cmp(&b.0));
+    found
+}
+
+const SUBFILE_HALF: &str = "1 16 0 0 0 1 0 0 0 1 0 0 0 1 half.dat\n";
+const SUBFILE_HOLE: &str = "1 16 0 0 0 1 0 0 0 1 0 0 0 1 hole.dat\n";
+
+#[test]
+fn a_face_an_included_clear_would_remove_is_unverified_and_passes_the_flag_on() {
+    let library = memory(&[
+        ("parts/half.dat", "0 Half\n"),
+        ("parts/whole.dat", &format!("0 Whole\n{SUBFILE_HALF}")),
+        ("parts/relay.dat", "0 Relay\n"),
+        ("parts/pin.dat", &format!("0 Pin\n{SUBFILE_HALF}")),
+        ("parts/relayed.dat", &format!("0 Relayed\n{SUBFILE_HALF}")),
+        ("parts/repinned.dat", "0 Repinned\n"),
+        (
+            "parts/assembly.dat",
+            "0 Assembly\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 pin.dat\n",
+        ),
+        (
+            "parts/referenced.dat",
+            &format!("0 Referenced\n{SUBFILE_HALF}1 16 0 0 0 1 0 0 0 1 0 0 0 1 whole.dat\n"),
+        ),
+    ]);
+    let shadow = memory(&[
+        (
+            "parts/half.dat",
+            "0 !LDCAD SNAP_CYL [id=half] [gender=M] [caps=one] [secs=R 6 16]\n",
+        ),
+        (
+            "parts/whole.dat",
+            "0 !LDCAD SNAP_CLEAR\n0 !LDCAD SNAP_CYL [id=whole] [gender=M] [caps=none] [secs=R 6 32] [center=true]\n",
+        ),
+        ("parts/relay.dat", "0 !LDCAD SNAP_INCL [ref=whole.dat]\n"),
+        ("parts/pin.dat", "0 !LDCAD SNAP_INCL [ref=whole.dat]\n"),
+        ("parts/relayed.dat", "0 !LDCAD SNAP_INCL [ref=relay.dat]\n"),
+        ("parts/repinned.dat", "0 !LDCAD SNAP_INCL [ref=pin.dat]\n"),
+    ]);
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let flagged = vec![
+        ("half".to_string(), Status::Unverified),
+        ("whole".to_string(), Status::Verified),
+    ];
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/pin.dat").connectors),
+        flagged
+    );
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/relayed.dat").connectors),
+        flagged
+    );
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/assembly.dat").connectors),
+        flagged
+    );
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/repinned.dat").connectors),
+        flagged
+    );
+    assert_eq!(
+        statuses_by_id(&snaps.snaps("parts/referenced.dat").connectors),
+        vec![
+            ("half".to_string(), Status::Verified),
+            ("whole".to_string(), Status::Verified),
+        ]
+    );
+}
+
+#[test]
+fn an_included_clear_scoped_to_an_id_flags_only_faces_with_that_id() {
+    let library = memory(&[
+        ("parts/half.dat", "0 Half\n"),
+        ("parts/hole.dat", "0 Hole\n"),
+        ("parts/rebored.dat", "0 Rebored\n"),
+        (
+            "parts/brick.dat",
+            &format!("0 Brick\n{SUBFILE_HALF}{SUBFILE_HOLE}"),
+        ),
+    ]);
+    let shadow = memory(&[
+        (
+            "parts/half.dat",
+            "0 !LDCAD SNAP_CYL [id=half] [gender=M] [caps=one] [secs=R 6 16]\n",
+        ),
+        (
+            "parts/hole.dat",
+            "0 !LDCAD SNAP_CYL [id=hole] [gender=F] [caps=none] [secs=A 6 20] [pos=0 0 40]\n",
+        ),
+        (
+            "parts/rebored.dat",
+            "0 !LDCAD SNAP_CLEAR [id=hole]\n0 !LDCAD SNAP_CYL [id=rebore] [gender=F] [caps=none] [secs=A 6 20] [pos=0 0 80]\n",
+        ),
+        ("parts/brick.dat", "0 !LDCAD SNAP_INCL [ref=rebored.dat]\n"),
+    ]);
+    assert_eq!(
+        statuses_by_id(
+            &ShadowSnaps::new(&library, &shadow)
+                .snaps("parts/brick.dat")
+                .connectors
+        ),
+        vec![
+            ("half".to_string(), Status::Verified),
+            ("hole".to_string(), Status::Unverified),
+            ("rebore".to_string(), Status::Verified),
+        ]
+    );
+}
+
 #[test]
 fn inheritance_includes_refuse_a_part_whose_inherited_snaps_belong_to_numbered_pieces() {
     let pair = "0 Custom Pair\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n1 16 20 0 0 1 0 0 0 1 0 0 0 1 3005.dat\n";

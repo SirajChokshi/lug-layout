@@ -11,11 +11,12 @@ alwaysApply: true
 - Redistribute Studio's part library or any BrickLink or LEGO proprietary assets.
 - Scrape BrickLink or LEGO.com. Use only Rebrickable dumps and APIs and BrickLink Wanted List XML (the BrickLink API waits on a terms review).
 - Use the LEGO logo, stud logos, red-square branding, LEGO fonts or trade dress, the minifigure as an icon, box art, instruction images, or "LEGO" in product names.
-- Ship third-party vendor geometry (BrickTracks, TrixBrix, …) until it's licensed. Unofficial LDraw parts are opt-in by allowlist only, and badged.
+- Ship third-party vendor geometry (BrickTracks, TrixBrix, …) until it's licensed. Unofficial LDraw parts we ship are opt-in by allowlist only, and badged. The allowlist governs only parts we ship: the pipeline, the bundle, the precompiled library-bake records and library resolution at import.
 
 **Always:**
 - Keep LDraw attribution: authors, license and a "modified from LDraw" note in `extras.ldraw` and the generated credits.
 - Keep LDCad-derived connectivity in its own CC BY-SA 4.0 data package with attribution to Roland Melkert. App code never inlines it.
 - Show the trademark disclaimer in the footer, the about page and every export.
+- Treat custom parts from the user's own imported file (MPD-embedded, inline parts that differ from the library, Studio `CustomParts`) as the user's content. Draw one only if every file it reaches inside the user's file carries a CA `!LICENSE` header, whatever its `!LDRAW_ORG`, `Unofficial_*` included. Refuse and report it otherwise. Library files it reaches stay under library resolution and its allowlist. Keep it local: never in the pipeline, the bundle, the LDraw library mirror, the library-bake or library connector records, or any other published file. Badge it custom with a `custom:` id, flag its connectors as inferred and unverified, and list it as not buyable in the parts list.
 - Keep test fixtures license-clean: CA parts and OMR models only, with original headers intact and listed in `packages/test-fixtures/ATTRIBUTION.md`. User-supplied `.io` or `.mpd` samples need explicit permission.
 - Never commit large upstream archives (`complete.zip`, Rebrickable dumps). The pipeline fetches and pins them by hash.
