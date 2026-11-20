@@ -63,8 +63,11 @@ const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
-const DRAWN_CUSTOM_INSTANCES: Readonly<Record<string, number>> = { "10218-1": 2 };
 const CA_LICENSE_TEXT = /CC BY [24]\.0|CCAL version 2\.0/u;
+
+function bySection(a: { readonly section: string }, b: { readonly section: string }): number {
+  return a.section < b.section ? -1 : a.section > b.section ? 1 : 0;
+}
 const OPAQUE_ALPHA = 255;
 const paletteFile = new URL("../../../tools/asset-pipeline/palette.json", import.meta.url);
 const shadowLibraryDist = new URL(
@@ -870,35 +873,40 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       return { imported, record, added, custom: drawnCustomParts(result), entry };
     }
 
-    function expectOnlyLicensedCustomPartsAdded(
-      name: string,
-      { added, custom, entry }: Awaited<ReturnType<typeof importedAndRecorded>>,
-    ): void {
-      const notDrawn = new Map(
-        (entry?.notDrawn ?? []).flatMap((section) =>
-          section.kind === "customPart" ? [[section.section.toLowerCase(), section] as const] : [],
-        ),
+    function expectOnlyLicensedCustomPartsAdded({
+      added,
+      custom,
+      entry,
+    }: Awaited<ReturnType<typeof importedAndRecorded>>): void {
+      const notDrawn = (entry?.notDrawn ?? []).flatMap((section) =>
+        section.kind === "customPart"
+          ? [
+              {
+                section: section.section.toLowerCase(),
+                instances: section.instances ?? 0,
+                colors: (section.colors ?? [])
+                  .flatMap(({ color, instances }) => Array.from({ length: instances }, () => color))
+                  .toSorted(),
+              },
+            ]
+          : [],
       );
+      const drawn = custom.map((part) => {
+        const colors = added
+          .filter(({ partId }) => partId === part.partId)
+          .map(({ color }) => color)
+          .toSorted();
+        return { section: part.reference, instances: colors.length, colors };
+      });
 
-      expect(added).toHaveLength(DRAWN_CUSTOM_INSTANCES[name] ?? 0);
-      expect(new Set(added.map(({ partId }) => partId))).toEqual(
-        new Set(custom.map(({ partId }) => partId)),
-      );
+      expect(drawn.toSorted(bySection)).toEqual(notDrawn.toSorted(bySection));
+      expect(added).toHaveLength(notDrawn.reduce((sum, { instances }) => sum + instances, 0));
       for (const part of custom) {
-        const bundled = notDrawn.get(part.reference);
         expect(part.partId).toMatch(customIdPattern(part.reference));
         expect(["mpd", "inlineDiffers"]).toContain(part.origin);
         expect(part.header.license).toMatch(CA_LICENSE_TEXT);
-        expect(bundled?.kind === "customPart" ? bundled.instances : null).toBe(part.instances);
-        expect(
-          added
-            .filter(({ partId }) => partId === part.partId)
-            .map(({ color }) => color)
-            .toSorted(),
-        ).toEqual(
-          (bundled?.kind === "customPart" ? (bundled.colors ?? []) : [])
-            .flatMap(({ color, instances }) => Array.from({ length: instances }, () => color))
-            .toSorted(),
+        expect(drawn.find(({ section }) => section === part.reference)?.instances).toBe(
+          part.instances,
         );
       }
     }
@@ -909,7 +917,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         const imports = await importedAndRecorded(model);
         const { imported, record } = imports;
 
-        expectOnlyLicensedCustomPartsAdded(model.name, imports);
+        expectOnlyLicensedCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeUndefined();
         expect(imported).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
       },
@@ -924,7 +932,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         const depth = (submodel: number): number =>
           submodel === MODEL_ROOT ? 0 : 1 + depth(record.submodels.parent[submodel] ?? MODEL_ROOT);
 
-        expectOnlyLicensedCustomPartsAdded(model.name, imports);
+        expectOnlyLicensedCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeDefined();
         expect({ parent: imported.parent, ofPart: imported.ofPart }).toEqual({
           parent: record.submodels.parent,
