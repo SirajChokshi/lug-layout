@@ -686,6 +686,7 @@ export class ModelImportEngine {
           sectionVocabulary: job.sectionVocabulary,
           cavityProbe: job.cavityProbe,
           infer: ONLY_PINNED_PARTS_ARE_COMPILED,
+          shadowPatchManifest: null,
         },
         parts: pendingParts,
         model: job.text,
