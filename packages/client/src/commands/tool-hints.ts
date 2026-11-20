@@ -5,6 +5,7 @@ import type {
   FillResult,
   GestureView,
   SelectionTally,
+  TrackLowClearanceView,
   TrackUnsupportedView,
   TrackView,
 } from "../edit/editor.ts";
@@ -130,6 +131,12 @@ function gestureView(drag: GestureView): HintView {
   }
 }
 
+const LAYOUT_CHANGED =
+  "the layout changed while the run's piers were being built, so draw it again";
+
+export const TOO_STEEP =
+  "the run can't climb to that end's height: it has too few pieces at the ramp's rise per piece, a grade no source verifies";
+
 function pieces(count: number): string {
   return counted(count, "piece", "pieces");
 }
@@ -153,10 +160,21 @@ function withheldJoinText(withheld: JoinWithheld, block: TrackBlockView | null):
   }
 }
 
-function unsupportedText({ pieces: count, block }: TrackUnsupportedView): string {
-  const rest = count === 1 ? "rests" : "rest";
+function unsupportedText({ pieces: count, block, tilted }: TrackUnsupportedView): string {
+  const flat = count - tilted;
+  const ramps =
+    tilted === 0
+      ? ""
+      : `${pieces(tilted)} ${tilted === 1 ? "is" : "are"} tilted on the ramp, so no exact stud mate is possible`;
+  if (flat === 0) return `${ramps}: ${tilted === 1 ? "it isn't" : "they aren't"} supported`;
+  const rest = flat === 1 ? "rests" : "rest";
   const where = block?.kind === "model" ? ` on ${block.label}` : "";
-  return `${pieces(count)} ${rest}${where} where it has no studs, so ${count === 1 ? "it isn't" : "they aren't"} supported`;
+  const level = `${pieces(flat)} ${rest}${where} where it has no studs, so ${flat === 1 ? "it isn't" : "they aren't"} supported`;
+  return tilted === 0 ? level : `${level}; ${ramps}`;
+}
+
+export function lowClearanceText({ train, needPlates, hasPlates }: TrackLowClearanceView): string {
+  return `too low for the tallest train: ${train} needs ${needPlates} plates, this bridge has ${hasPlates}`;
 }
 
 function dragView(drag: TrackDragView): Omit<HintView, "hints"> {
@@ -180,6 +198,8 @@ function dragView(drag: TrackDragView): Omit<HintView, "hints"> {
       };
     case "limit":
       return { tone: "warn", title: refused, detail: "the join search ran out of time here" };
+    case "too-steep":
+      return { tone: "warn", title: refused, detail: `${TOO_STEEP}, so release lays nothing` };
     case "pending":
       return withheldDragView(drag, "pending", title, refused);
     case null:
@@ -227,6 +247,10 @@ function releaseView(track: TrackView): Omit<HintView, "hints"> | null {
       return { tone: "warn", title: "Nothing laid", detail: blockedJoinText(block) };
     case "refused-limit":
       return { tone: "warn", title: "Nothing laid", detail: "the join search ran out of time" };
+    case "refused-too-steep":
+      return { tone: "warn", title: "Nothing laid", detail: TOO_STEEP };
+    case "refused-changed":
+      return { tone: "warn", title: "Nothing laid", detail: LAYOUT_CHANGED };
     case "laid":
     case "joined":
     case null:
@@ -249,6 +273,8 @@ function joinRefusalText(refusal: TrackRefusal, blocked: TrackBlockView | null):
       return blockedJoinText(blocked);
     case "limit":
       return "the join search ran out of time";
+    case "too-steep":
+      return TOO_STEEP;
     case "pending":
       return "a model under it is still checking its studs";
     default: {
@@ -371,6 +397,13 @@ function laidView(track: TrackView, block: TrackBlockView | null): Omit<HintView
     };
   }
   if (unsupported) return { tone: "warn", title: "Laid unsupported", detail: unsupported };
+  if (track.lastLowClearance) {
+    return {
+      tone: "warn",
+      title: "Laid too low",
+      detail: lowClearanceText(track.lastLowClearance),
+    };
+  }
   if (block === null || track.lastCommit === "joined") return null;
   return {
     tone: "warn",

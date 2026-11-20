@@ -38,6 +38,7 @@ import {
   type PlacementPose,
   type PlacementRegion,
   type PlacementRequest,
+  type PlateHeights,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -50,6 +51,7 @@ import {
   roadwayCells,
   PartTally,
   type PartSink,
+  outlinesOverlap,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -108,6 +110,8 @@ import {
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   RAIL_YARD,
+  TALLEST_TRAIN,
+  TRACK_PIERS,
   SNAP_SHAPES,
   WORLD_SESSION,
 } from "../tokens.ts";
@@ -166,9 +170,14 @@ import {
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
-  type SupportBand,
   type UnsupportedPiece,
+  type RaisedPiece,
+  type LowClearance,
+  RAMP_RATES,
 } from "./track-drawing.ts";
+import type { SupportBand } from "./track-bands.ts";
+import type { ITrackPiers, PierPiece } from "./track-piers.ts";
+import type { ITallestTrain, TallestTrain } from "../trains/tallest-train.ts";
 import type { ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 import { BOX_FLOATS } from "./local-box.ts";
@@ -198,6 +207,7 @@ import {
   seatsPending,
   solidRectsIn,
   trackObstacles,
+  withOutlines,
 } from "./track-obstacles.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
 import { ANY_TURN, HELD_TURN, cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
@@ -245,7 +255,7 @@ import {
 } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
-import type { IRailYard, RailAim } from "../trains/rail-yard.ts";
+import type { IRailYard, RailAim, VehicleFootprint } from "../trains/rail-yard.ts";
 import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
@@ -425,6 +435,8 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-blocked"
   | "refused-limit"
+  | "refused-too-steep"
+  | "refused-changed"
   | "switch-straight"
   | "switch-branching";
 
@@ -461,11 +473,32 @@ export interface TrackView {
   readonly unsupported: number | null;
   readonly crossings: ReadonlyArray<CrossingView>;
   readonly solve: TrackSolveStats | null;
+  readonly placingPiers: boolean;
+  readonly lowClearance: number | null;
+  readonly lastLowClearance: TrackLowClearanceView | null;
+  readonly height: TrackHeightView;
 }
 
 export interface TrackUnsupportedView {
   readonly pieces: number;
   readonly block: TrackBlockView | null;
+  readonly tilted: number;
+}
+
+export interface TrackLowClearanceView {
+  readonly pieces: number;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+  readonly train: string;
+}
+
+export interface TrackHeightView {
+  readonly drawingPlates: number;
+  readonly drawingLdu: number;
+  readonly rampPlates: number;
+  readonly rampRates: ReadonlyArray<number>;
+  readonly gradePercent: number;
+  readonly tallestTrain: TallestTrain | null;
 }
 
 export interface CrossingRampView {
@@ -665,6 +698,8 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   cycleConnector(): void;
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void;
   cycleTrackChoice(step: 1 | -1): void;
+  raiseTrack(plates: number): void;
+  setTrackRampPlates(plates: number): void;
   selectTrackChoice(index: number): void;
   dropTrackEnd(): boolean;
   deleteSelection(eventTimeMs: number): void;
@@ -921,6 +956,7 @@ interface PieceMember {
   readonly piece: number;
   readonly pose: Pose16;
   readonly yPlates: number;
+  readonly rise: number;
 }
 
 interface GroupTargets {
@@ -1189,8 +1225,26 @@ function sameHover(a: HoverView | null, b: HoverView | null): boolean {
   return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates;
 }
 
+const NO_LOW_CLEARANCE: ReadonlyMap<number, PlateHeights> = new Map();
+
+function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
+  if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
+  const rect = Float64Array.of(
+    box.minX,
+    box.minZ,
+    box.maxX,
+    box.minZ,
+    box.maxX,
+    box.maxZ,
+    box.minX,
+    box.maxZ,
+  );
+  return outlinesOverlap(vehicle.outline, 0, 0, rect, 0, 0);
+}
+
 function labelsNeedUpdate(previous: EditorSnapshot, next: EditorSnapshot): boolean {
   if (next.mode !== previous.mode || next.selection !== previous.selection) return true;
+  if (next.mode === "track" && next.track !== previous.track) return true;
   return (
     next.mode === "place" &&
     (!sameHover(next.hover, previous.hover) ||
@@ -1400,6 +1454,7 @@ export class Editor implements IEditor, IEditedWorld {
     readonly eventTimeMs: number;
   } | null = null;
   private readonly studChecks = new Set<Placeable>();
+  private readonly studsLanding = new Map<string, Promise<void>>();
   private nextSearchId = 1;
   private readonly facts: PlanFacts;
   private readonly factUpdates: PlacedModel[] = [];
@@ -1415,6 +1470,10 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackWithheld: JoinWithheld | null = null;
   private lastTrackUnsupported: TrackUnsupportedView | null = null;
   private trackSupport: TrackSupport | null = null;
+  private trackPiering = false;
+  private trackSupportLoad: Promise<void> | null = null;
+  private lowTrack: ReadonlyArray<LowClearance> | null = null;
+  private lastTrackLow: TrackLowClearanceView | null = null;
   private trackSupportLoading = false;
   private trackSupportError: string | null = null;
   private layoutVersion = 0;
@@ -1449,6 +1508,8 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(CONNECTOR_TABLES) private readonly connectorTables: IConnectorTables,
     @inject(TABLE_GROUND) private readonly ground: ITableGround,
     @inject(RAIL_YARD) private readonly railYard: IRailYard,
+    @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
+    @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
   ) {
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.carriedTrackAt(placeable, handle),
@@ -1519,6 +1580,9 @@ export class Editor implements IEditor, IEditedWorld {
       );
     }
     if (state.selection) labels.push(boxLabel("selection", "selection", state.selection.box));
+    if (state.mode === "track" && this.track) {
+      labels.push(...this.track.heightLabels(), ...this.track.previewLabels());
+    }
     return labels;
   }
 
@@ -1683,6 +1747,7 @@ export class Editor implements IEditor, IEditedWorld {
         const refId = this.catalog.itemRefId(outcome.item.id);
         const imported = refId === null ? null : this.catalog.placeables()[refId];
         if (imported) await this.connectorTables.load(imported);
+        this.remeasureTrains(imported);
         const reported = { ...importing, report: outcome.report, studio: outcome.studio };
         this.addImportedItem(outcome.item, outcome.credit, {
           ...reported,
@@ -1693,13 +1758,18 @@ export class Editor implements IEditor, IEditedWorld {
       }
       case "checking": {
         await this.connectorTables.load(outcome.pending);
+        this.remeasureTrains(outcome.pending);
         this.studChecks.add(outcome.pending);
         this.addImportedItem(outcome.item, outcome.credit, {
           ...importing,
           status: "checking",
           item: outcome.item.id,
         });
-        void outcome.checked.then((checked) => this.studsChecked(outcome.pending, checked));
+        const landed = outcome.checked.then((checked) =>
+          this.studsChecked(outcome.pending, checked),
+        );
+        this.studsLanding.set(outcome.item.id, landed);
+        void landed.finally(() => this.studsLanding.delete(outcome.item.id));
         return outcome.item.id;
       }
       default: {
@@ -1803,12 +1873,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private setTrackObstacles(drawing: TrackDrawing): void {
-    const models = this.placed.models();
-    const range = drawing.verticalRange();
-    drawing.setObstacles(
-      trackObstacles(models, range, (model) => this.trackPartsOf(model.placeable)),
-      seatsPending(models, range),
-    );
+    drawing.setBands((low, high) => this.supportBand(drawing, low, high));
     this.obstaclesVersion = this.layoutVersion;
   }
 
@@ -1828,7 +1893,7 @@ export class Editor implements IEditor, IEditedWorld {
         matrices: new Float64Array(0),
       },
     };
-    this.connectorTables.load(tables).then(
+    this.trackSupportLoad = this.connectorTables.load(tables).then(
       (loaded) => {
         const parts = this.catalog.parts();
         const antiStuds = new Map<number, Int32Array>();
@@ -1862,6 +1927,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private layoutChanged(): void {
     this.reportSupport();
+    if (this.track) this.reportClearance(this.track);
     this.syncCrossings();
   }
 
@@ -1920,7 +1986,7 @@ export class Editor implements IEditor, IEditedWorld {
   private measureTrackSupport(track: TrackDrawing): void {
     if (!this.trackSupport) this.loadTrackSupport(track);
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureTrackObstacles(track);
-    const unsupported = track.unsupportedPieces((yPlates) => this.supportBand(track, yPlates));
+    const unsupported = track.unsupportedPieces();
     this.unsupportedTrack = unsupported;
     if (!unsupported) {
       this.unsupportedLaid = NO_IDS;
@@ -1948,15 +2014,172 @@ export class Editor implements IEditor, IEditedWorld {
     );
   }
 
-  private supportBand(track: TrackDrawing, yPlates: number): SupportBand {
-    const lift = yPlates * PLATE_LDU;
+  private reportClearance(track: TrackDrawing): void {
+    if (track.raisedCount() > 0 || track.drawingPlates > 0) this.measureTallestTrain();
+    const low = track.lowClearances();
+    this.lowTrack = low;
+    if (!low) {
+      this.plans.setLowClearance(NO_LOW_CLEARANCE, NO_LOW_CLEARANCE, "");
+      return;
+    }
+    const laid = new Map<number, PlateHeights>();
+    const carriers = new Map<number, PlateHeights>();
+    for (const { piece, needPlates, hasPlates } of low) {
+      const heights = { needPlates, hasPlates };
+      if (piece < track.pieceCount) {
+        laid.set(piece, heights);
+        continue;
+      }
+      const carrier = this.carrierOf(piece);
+      const known = carrier ? carriers.get(carrier.id) : undefined;
+      if (carrier && (!known || known.needPlates < needPlates)) carriers.set(carrier.id, heights);
+    }
+    this.plans.setLowClearance(laid, carriers, track.tallestTrain?.model ?? "");
+  }
+
+  private lowClearanceSince(firstPiece: number): TrackLowClearanceView | null {
+    const pieceCount = this.track?.pieceCount ?? 0;
+    const laid = (this.lowTrack ?? []).filter(
+      ({ piece }) => piece >= firstPiece && piece < pieceCount,
+    );
+    const worst = laid.reduce<LowClearance | null>(
+      (most, low) => (most === null || low.needPlates > most.needPlates ? low : most),
+      null,
+    );
+    if (!worst) return null;
+    const { needPlates, hasPlates, train } = worst;
+    return { pieces: laid.length, needPlates, hasPlates, train: train.model };
+  }
+
+  private measureTallestTrain(): void {
+    const track = this.track;
+    if (!track) return;
+    this.tallestTrains.measure(track.playTrack().railPart).then(
+      () => this.applyTallestTrain(),
+      (error: unknown) => {
+        this.update({
+          catalogError: `trains can't be measured for clearance: ${errorText(error)}`,
+        });
+      },
+    );
+  }
+
+  private applyTallestTrain(): void {
+    const track = this.track;
+    const tallest = this.tallestTrains.current();
+    if (!track || track.tallestTrain === tallest) return;
+    track.setTallestTrain(tallest);
+    this.layoutChanged();
+    this.repaintTrackPreview();
+    this.update({ track: this.trackView() });
+  }
+
+  private remeasureTrains(placeable: Placeable | undefined | null): void {
+    if (!placeable || !this.catalog.playModel(placeable)) return;
+    this.tallestTrains.invalidate();
+    if (this.track?.tallestTrain) this.measureTallestTrain();
+  }
+
+  private async loadedSupport(track: TrackDrawing): Promise<TrackSupport | null> {
+    if (!this.trackSupport) this.loadTrackSupport(track);
+    await this.trackSupportLoad;
+    return this.trackSupport;
+  }
+
+  private async piersFor(
+    track: TrackDrawing,
+    raised: ReadonlyArray<RaisedPiece>,
+    change: TrackChange,
+  ): Promise<ReadonlyArray<PlacementPose>> {
+    const support = await this.loadedSupport(track);
+    if (!support) return [];
+    const unseated = raised.filter((piece) => !track.seated(piece));
+    if (unseated.length === 0) return [];
+    const pieces = unseated.map((piece): PierPiece => {
+      const { partFrame } = track.pieceByIndex(piece.catalogIndex).piece;
+      const box = track.pieceBox(piece.catalogIndex, piece.placement);
+      return {
+        index: piece.index,
+        bottomLdu: track.bandBottomLdu(piece.yPlates),
+        antiStuds: support.antiStudCells(piece.catalogIndex, partFrame, piece.placement),
+        centreX: (box.minX + box.maxX) / 2,
+        centreZ: (box.minZ + box.maxZ) / 2,
+      };
+    });
+    const trains = this.railYard.standingFootprints();
+    return this.piers.piersFor({
+      pieces,
+      studsChecked: (item) => this.studsLanding.get(item) ?? Promise.resolve(),
+      fits: (pier, pose, posed, piece) => {
+        if (track.changeOverlaps(change, piece.index, posed)) return false;
+        if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
+        const member = { model: null, placeable: pier, pose, component: 0 };
+        const roads = this.roadsWithout(NO_MODELS);
+        return this.modelRefusal([member], [pose], NO_MODELS, roads, NO_TRACK_SKIP) === null;
+      },
+    });
+  }
+
+  private commitTrack(
+    change: TrackChange,
+    eventTimeMs: number,
+    sample: EditSample | undefined,
+    laid: () => void,
+  ): void {
+    const track = this.track;
+    if (!track) return;
+    const raised = track.levelRaisedPieces(change);
+    const allSeated = this.trackSupport !== null && raised.every((piece) => track.seated(piece));
+    if (raised.length === 0 || allSeated) {
+      const edit = this.history.commit("lay-track", [], change);
+      if (sample) this.show(edit, eventTimeMs, sample);
+      else this.show(edit, eventTimeMs);
+      laid();
+      return;
+    }
+    const depth = this.history.undoDepth;
+    const redo = this.history.redoDepth;
+    this.trackPiering = true;
+    this.update({ track: this.trackView() });
+    this.piersFor(track, raised, change).then(
+      (piers) => {
+        this.trackPiering = false;
+        const unchanged =
+          this.track === track &&
+          this.history.undoDepth === depth &&
+          this.history.redoDepth === redo;
+        if (!unchanged) {
+          this.lastTrackCommit = "refused-changed";
+          this.update({ track: this.trackView() });
+          return;
+        }
+        const requests = piers.map((to) => ({ placement: null, to }));
+        const edit = this.history.commit("lay-track", requests, change);
+        if (sample) this.show(edit, eventTimeMs, sample);
+        else this.show(edit, eventTimeMs);
+        laid();
+        this.update({ track: this.trackView() });
+        this.repaintTrackPreview();
+      },
+      (error: unknown) => {
+        this.trackPiering = false;
+        this.update({
+          track: this.trackView(),
+          catalogError: `track piers can't be built: ${errorText(error)}`,
+        });
+      },
+    );
+  }
+
+  private supportBand(track: TrackDrawing, lowPlates: number, highPlates: number): SupportBand {
     const [bottom, top] = track.verticalRange();
-    const band = [bottom + lift, top + lift] as const;
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
     const models = this.placed.models();
-    return {
-      obstacles: trackObstacles(models, band, (model) => this.trackPartsOf(model.placeable)),
-      pending: seatsPending(models, band),
-    };
+    const placed = trackObstacles(models, band, (model) => this.trackPartsOf(model.placeable));
+    const trains = this.railYard
+      .standingFootprints()
+      .filter((vehicle) => vehicle.railTopLdu < band[1] && band[0] < vehicle.topLdu);
+    return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, band) };
   }
 
   private unsupportedSince(firstPiece: number): TrackUnsupportedView | null {
@@ -1964,8 +2187,9 @@ export class Editor implements IEditor, IEditedWorld {
     const laid = (this.unsupportedTrack ?? []).filter(
       ({ piece }) => piece >= firstPiece && piece < pieceCount,
     );
-    const [first] = laid;
-    return first ? { pieces: laid.length, block: first.block } : null;
+    const flat = laid.find((piece) => !piece.tilted);
+    const tilted = laid.filter((piece) => piece.tilted).length;
+    return laid.length > 0 ? { pieces: laid.length, block: flat?.block ?? null, tilted } : null;
   }
 
   private trackPartsOf(placeable: Placeable): ReadonlySet<number> {
@@ -2155,6 +2379,17 @@ export class Editor implements IEditor, IEditedWorld {
       lastUnsupported: this.lastTrackUnsupported,
       unsupported: this.unsupportedTrack?.length ?? null,
       crossings: this.crossings.map((crossing) => this.crossingView(crossing)),
+      placingPiers: this.trackPiering,
+      lowClearance: this.lowTrack?.length ?? null,
+      lastLowClearance: this.lastTrackLow,
+      height: {
+        drawingPlates: track.drawingPlates,
+        drawingLdu: track.drawingPlates * PLATE_LDU,
+        rampPlates: track.rampPlates,
+        rampRates: RAMP_RATES,
+        gradePercent: track.gradePercent(),
+        tallestTrain: track.tallestTrain,
+      },
       solve:
         samples.length === 0
           ? null
@@ -2175,7 +2410,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.backend.setTrackEnds(
       track.openEnds().map((end, index) => ({
         xLdu: end.xLdu,
-        yLdu: 0,
+        yLdu: track.bandBottomLdu(end.yPlates),
         zLdu: end.zLdu,
         headingRadians: end.heading * TRACK_HEADING_RADIANS,
         kind: targets.includes(index)
@@ -2286,7 +2521,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "place") return this.fillDragStart(ndcX, ndcY);
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
-    if (!this.groundHit(ndcX, ndcY)) return false;
+    if (this.trackPiering || !this.groundHit(ndcX, ndcY)) return false;
     this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
     this.trackPress = { x: this.hoverX, z: this.hoverZ };
@@ -2294,6 +2529,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.lastTrackBlock = null;
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     this.backend.setGhost(null);
     this.showTrackEnds([]);
     this.update({ track: this.trackView() });
@@ -2391,16 +2627,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (outcome.refusal) {
       this.lastTrackCommit = `refused-${outcome.refusal}`;
     } else if (outcome.change.lay.length > 0) {
-      this.show(this.history.commit("lay-track", [], outcome.change), eventTimeMs, {
-        item: TRACK_ITEM_ID,
-        rot: 0,
-        x: this.hoverX,
-        z: this.hoverZ,
+      const sample = { item: TRACK_ITEM_ID, rot: 0, x: this.hoverX, z: this.hoverZ };
+      this.commitTrack(outcome.change, eventTimeMs, sample, () => {
+        this.lastTrackCommit =
+          outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
+        track.extension.continueFrom(outcome.end);
+        this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+        this.lastTrackLow = this.lowClearanceSince(firstLaid);
       });
-      this.lastTrackCommit =
-        outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
-      track.extension.continueFrom(outcome.end);
-      this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
     }
     this.lastTrackBlock = outcome.blocked;
     this.lastTrackWithheld = outcome.withheld;
@@ -2424,12 +2658,13 @@ export class Editor implements IEditor, IEditedWorld {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return;
-    if (track.dragView()) return;
+    if (track.dragView() || this.trackPiering) return;
     if (turn !== null && !track.extension.choose(turn)) return;
     const plan = track.extensionPlan();
     if (!plan) return;
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     if (plan.run.choice.blocked !== null) {
       this.lastTrackCommit = null;
       this.lastTrackBlock = plan.run.choice.blocked;
@@ -2438,11 +2673,35 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.lastTrackBlock = null;
     const firstLaid = track.pieceCount;
-    this.show(this.history.commit("lay-track", [], plan.change), eventTimeMs);
-    this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
-    this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
-    track.extension.laid(plan.run, plan.end);
+    this.commitTrack(plan.change, eventTimeMs, undefined, () => {
+      this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
+      this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+      this.lastTrackLow = this.lowClearanceSince(firstLaid);
+      track.extension.laid(plan.run, plan.end);
+    });
     this.repaintTrackPreview();
+  }
+
+  raiseTrack(plates: number): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || this.state.readOnly) return;
+    const height = Math.max(0, track.drawingPlates + plates);
+    if (height === track.drawingPlates) return;
+    track.setDrawingPlates(height);
+    if (height > 0) this.measureTallestTrain();
+    if (this.hovering) this.groundHit(this.pointerNdcX, this.pointerNdcY);
+    if (track.dragView()) this.resolveDrag(track);
+    else this.refreshTrackPreview();
+    this.update({ track: this.trackView(), hover: this.hoverView() });
+  }
+
+  setTrackRampPlates(plates: number): void {
+    const track = this.track;
+    if (!track || this.state.readOnly) return;
+    track.setRampPlates(plates);
+    if (track.dragView()) this.resolveDrag(track);
+    else this.repaintTrackPreview();
+    this.update({ track: this.trackView() });
   }
 
   cycleTrackChoice(step: 1 | -1): void {
@@ -2671,7 +2930,7 @@ export class Editor implements IEditor, IEditedWorld {
     );
     const snap = track.snapPiece(held.catalogIndex, held.connector, this.hitX, this.hitZ, free);
     this.held = { ...held, snap };
-    const ghost = track.pieceGhost(held.catalogIndex, snap.placement);
+    const ghost = track.pieceGhost(held.catalogIndex, snap.placement, snap.yPlates);
     this.backend.setGhost(ghost.instances);
     this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
     this.targetTrackEnds(snap.end === null ? [] : [snap.end], snap.misses);
@@ -2682,11 +2941,12 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     const held = this.held;
     const snap = held?.snap;
-    if (!track || !held || !snap) return;
+    if (!track || !held || !snap || this.trackPiering) return;
     this.setTrackObstacles(track);
-    const block = track.pieceBlock(held.catalogIndex, snap.placement);
+    const block = track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     if (block) {
       const label = track.pieceByIndex(held.catalogIndex).piece.title;
       this.lastTrackCommit = null;
@@ -2701,11 +2961,13 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const joins = track.joinedPairs();
     const firstLaid = track.pieceCount;
-    const change = track.pieceChange(held.catalogIndex, snap.placement);
-    this.show(this.history.commit("lay-track", [], change), eventTimeMs);
-    this.lastTrackCommit = track.joinedPairs() > joins ? "joined" : "laid";
+    const change = track.pieceChange(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastTrackBlock = null;
-    this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+    this.commitTrack(change, eventTimeMs, undefined, () => {
+      this.lastTrackCommit = track.joinedPairs() > joins ? "joined" : "laid";
+      this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+      this.lastTrackLow = this.lowClearanceSince(firstLaid);
+    });
     this.held = { ...held, snap: null };
     this.showHeldPiece();
     this.update({ track: this.trackView() });
@@ -2798,21 +3060,33 @@ export class Editor implements IEditor, IEditedWorld {
     this.showHeldPiece();
   }
 
-  private groundPoint(ndcX: number, ndcY: number, out: Float64Array, at: number): boolean {
+  private groundPoint(
+    ndcX: number,
+    ndcY: number,
+    out: Float64Array,
+    at: number,
+    planeY = 0,
+  ): boolean {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
-    if (directionY >= 0) return false;
-    const t = -originY / directionY;
+    if (directionY >= 0 || originY <= planeY) return false;
+    const t = (planeY - originY) / directionY;
     out[at] = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
     out[at + 1] = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
     return true;
   }
 
+  private drawingTrack(): TrackDrawing | null {
+    return this.state.mode === "track" ? this.track : null;
+  }
+
   private groundHit(ndcX: number, ndcY: number): boolean {
     this.pointerNdcX = ndcX;
     this.pointerNdcY = ndcY;
-    if (!this.groundPoint(ndcX, ndcY, this.groundScratch, 0)) return false;
+    const drawing = this.drawingTrack();
+    const planeY = drawing ? drawing.bandBottomLdu(drawing.drawingPlates) : 0;
+    if (!this.groundPoint(ndcX, ndcY, this.groundScratch, 0, planeY)) return false;
     this.hitX = this.groundScratch[0] ?? 0;
     this.hitZ = this.groundScratch[1] ?? 0;
     this.hoverX = nearestStud(this.hitX);
@@ -2830,7 +3104,7 @@ export class Editor implements IEditor, IEditedWorld {
   ): PlacementCheck {
     const check = this.check;
     const train = this.activeTrain;
-    check.aim = train ? this.railYard.aim(train, aimRay, rot % 2 === 1) : null;
+    check.aim = train ? this.aimTrain(train, aimRay, rot % 2 === 1) : null;
     check.yPlates = RESTS_ON_TABLE_Y_PLATES;
     check.waitingOn = NOT_WAITING;
     check.refusal = null;
@@ -3038,9 +3312,23 @@ export class Editor implements IEditor, IEditedWorld {
     );
   }
 
+  private aimTrain(train: PlayModel, ray: Float64Array, reversed: boolean): RailAim {
+    const aim = this.railYard.aim(train, ray, reversed);
+    const track = this.track;
+    if (aim.kind !== "seat" || !track || track.raisedCount() === 0) return aim;
+    const meets = this.railYard
+      .seatFootprints(aim.seat, train)
+      .some(({ outline, railTopLdu, topLdu }) =>
+        track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
+      );
+    if (!meets) return aim;
+    const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;
+    return { kind: "refused", reason, seat: aim.seat };
+  }
+
   private placeOnRails(placeable: Placeable): boolean {
     const train = this.activeTrain;
-    const aim = train ? this.railYard.aim(train, this.ray, this.placeRot % 2 === 1) : null;
+    const aim = train ? this.aimTrain(train, this.ray, this.placeRot % 2 === 1) : null;
     this.trainAim = aim;
     if (!aim || aim.kind === "off") {
       if (this.ghostOnRails) {
@@ -3144,7 +3432,7 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       x: this.hoverX,
       z: this.hoverZ,
-      yPlates: this.assist.yPlates,
+      yPlates: this.drawingTrack()?.drawingPlates ?? this.assist.yPlates,
       refusal: onRails ? this.railRefusal : this.assist.refusal,
       onRails,
       placement: this.assist.placement,
@@ -3440,8 +3728,11 @@ export class Editor implements IEditor, IEditedWorld {
         : [];
     if (pieces.length === 0 && drawing.pieceCount + this.heldTrackModels.length === 0) return null;
     this.ensureTrackObstacles(drawing);
-    const floats = this.solidRectsAt(placeable, x, z, rot, yPlates, drawing.verticalRange());
-    return drawing.modelBlocker(this.solidRects, floats, pieces, skip.moving, skip.owners);
+    const rectsIn = (bottomLdu: number, topLdu: number) => {
+      const floats = this.solidRectsAt(placeable, x, z, rot, yPlates, [bottomLdu, topLdu]);
+      return { rects: this.solidRects, floats };
+    };
+    return drawing.modelBlocker(rectsIn, pieces, skip.moving, skip.owners);
   }
 
   private trackSkip(
@@ -4770,8 +5061,8 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     if (!track) return NO_PIECES;
     return indices.map((index) => {
-      const { piece, pose, yPlates } = track.laidPiece(index);
-      return { index, piece, pose, yPlates };
+      const { piece, pose, yPlates, rise } = track.laidPiece(index);
+      return { index, piece, pose, yPlates, rise };
     });
   }
 
@@ -4784,10 +5075,10 @@ export class Editor implements IEditor, IEditedWorld {
     const lift: TrackPieceAt[] = [];
     const lay: TrackPieceAt[] = [];
     let appended = track.pieceCount;
-    pieces.forEach(({ index, piece, yPlates }, member) => {
+    pieces.forEach(({ index, piece, yPlates, rise }, member) => {
       if (index !== null) lift.push(track.laidPiece(index));
       const pose = targets?.[member];
-      if (pose) lay.push({ index: index ?? appended++, piece, pose, yPlates });
+      if (pose) lay.push({ index: index ?? appended++, piece, pose, yPlates, rise });
     });
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
   }
@@ -4958,7 +5249,8 @@ export class Editor implements IEditor, IEditedWorld {
       const member = edit.pieces[index];
       const pose = poses[index];
       if (!member || !pose) continue;
-      const blocked = track.pieceBlock(member.piece, pose, member.yPlates, moving, owners);
+      const { piece, yPlates, rise } = member;
+      const blocked = track.pieceBlock(piece, pose, yPlates, rise, moving, owners);
       if (!blocked) continue;
       const label = this.pieceLabel(member);
       const at = { ...latticeCentre(track.pieceBox(member.piece, pose)), rot: 0 };
@@ -5374,11 +5666,12 @@ export class Editor implements IEditor, IEditedWorld {
       pose,
       component: OPENED_PLAN_COMPONENT,
     }));
-    const pieces = laid.value.map(({ piece, pose, yPlates }) => ({
+    const pieces = laid.value.map(({ piece, pose, yPlates, rise }) => ({
       index: null,
       piece,
       pose,
       yPlates,
+      rise,
     }));
     const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
     const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
@@ -5784,6 +6077,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private replaceWorld({ world, handles, track }: RestoredWorld): void {
+    this.trackPiering = false;
     this.cancelGesture();
     this.select([]);
     this.cancelFill();
@@ -5794,6 +6088,7 @@ export class Editor implements IEditor, IEditedWorld {
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;
     if (track && this.trackSupport) track.setSupport(this.trackSupport);
+    track?.setTallestTrain(this.tallestTrains.current());
     for (const key of track?.chunkKeys() ?? []) {
       const chunk = track?.chunkInstances(key);
       if (chunk) this.backend.setChunk(key, chunk);
@@ -5818,6 +6113,7 @@ export class Editor implements IEditor, IEditedWorld {
     for (const model of this.placed.models()) this.searchable(model);
     this.facts.noteWorld(this.placed.models());
     if (track && this.state.mode === "track") this.setTrackObstacles(track);
+    this.layoutChanged();
     this.update({
       placements: world.size,
       history: this.historyView(),
