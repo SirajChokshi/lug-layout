@@ -268,10 +268,6 @@ impl From<&CompileError> for Failure {
                 ..failure("unresolved")
             },
             CompileError::Flatten(FlattenError::TooDeep { .. }) => failure("tooDeep"),
-            CompileError::License { path, .. } => Failure {
-                path: Some(path.clone()),
-                ..failure("license")
-            },
             CompileError::NoStudRing => failure("noStudRing"),
             CompileError::TooLarge { path, cells, .. } => Failure {
                 path: Some(path.clone()),
