@@ -75,6 +75,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import {
   commandEnabled,
+  commandForKey,
   runEditorAction,
   startPlay,
   type CommandId,
@@ -1766,6 +1767,44 @@ it("keeps the end pointed at while a choice is picked off the canvas, and lays t
   expect(picked).toBe(right);
   expect(editor.dump().laidTrack.at(-1)?.ref).toBe(NINE_VOLT_CURVE);
   expect(editor.snapshot().track?.extend?.continuing).toBe(true);
+}, 120_000);
+
+const A_KEY = { key: "a", ctrlKey: false, metaKey: false, shiftKey: false, altKey: false };
+
+function whatADoes(editor: IEditor): string | null {
+  const acts = (id: CommandId): boolean => commandEnabled(id, editor.snapshot());
+  const match = commandForKey(A_KEY, false, acts);
+  return match && acts(match.id) ? match.id : null;
+}
+
+it("gives A to an open end's left curve when nothing is held, to the placement mode while a track piece is held at that end or an item is placed, and to nothing in the track tool away from an end", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
+  backend.aim(0, 40 * STUD);
+  editor.pointerMove(0, 0);
+  const awayFromEnd = whatADoes(editor);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const atOpenEnd = whatADoes(editor);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const pieceAtEnd = {
+    does: whatADoes(editor),
+    extendable: editor.snapshot().track?.extend ?? null,
+    held: editor.snapshot().track?.held !== null,
+  };
+  await chosen(editor, BASEPLATE);
+  const placing = whatADoes(editor);
+
+  expect({ awayFromEnd, atOpenEnd, pieceAtEnd, placing }).toEqual({
+    awayFromEnd: null,
+    atOpenEnd: "extend-left",
+    pieceAtEnd: { does: "toggle-placement-mode", extendable: null, held: true },
+    placing: "toggle-placement-mode",
+  });
 }, 120_000);
 
 it("selects nothing on a laid piece clicked in the track tool, leaves the tool on one Esc with nothing to let go of, and extends an open end clicked there", async () => {
