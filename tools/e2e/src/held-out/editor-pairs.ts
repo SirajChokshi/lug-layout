@@ -4,6 +4,7 @@ import type {
   ConnectorKindView,
   HoverMateCount,
   HoverRefusalHit,
+  HoverWait,
   IEditor,
   PlacementHover,
   PlacementMode,
@@ -152,6 +153,14 @@ function describeMates(mates: ReadonlyArray<HoverMateCount>): string {
     .join("; ");
 }
 
+function describeWait(wait: HoverWait | null): string {
+  if (!wait) return "";
+  const placed = `${wait.placed.label} at ${describePose(wait.placed.pose)}`;
+  return wait.failed
+    ? `, ${placed} failed to load its connector data`
+    : `, waiting on ${placed} to load its connector data`;
+}
+
 function describeHover(hover: PlacementHover | null): string {
   if (!hover) return "no placement hover";
   const verdict = hover.accepted ? "accepted" : "refused";
@@ -162,7 +171,7 @@ function describeHover(hover: PlacementHover | null): string {
     ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
     : "";
   const unsettled = unsettledFlags(settleFlags(hover));
-  return `${hover.mode} ${verdict}${unsettled.length === 0 ? "" : ` (${unsettled.join(" and ")} false)`} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}; ${describeMates(hover.mates)}`;
+  return `${hover.mode} ${verdict}${unsettled.length === 0 ? "" : ` (${unsettled.join(" and ")} false)`} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}${describeWait(hover.waitingOn)}; ${describeMates(hover.mates)}`;
 }
 
 function settleFlags(hover: PlacementHover | null): SettleFlags | null {
