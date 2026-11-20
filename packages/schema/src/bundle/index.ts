@@ -622,6 +622,7 @@ export const PrimitiveConnectorTable = v.strictObject({
         }),
       ),
       technic: v.optional(v.picklist(TECHNIC_ROLES)),
+      stud: v.optional(v.literal(true)),
     }),
   ),
 });
@@ -1646,7 +1647,6 @@ export type CatalogSource = v.InferOutput<typeof CatalogSource>;
 export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
-  studPrimitives: v.array(v.string()),
   unofficialAllowlist: v.array(v.string()),
   parts: v.array(
     v.strictObject({

@@ -6,7 +6,6 @@
     "root": "ldraw"
   },
   "config": ["LDConfig.ldr"],
-  "studPrimitives": ["stud.dat", "stud2.dat"],
   "unofficialAllowlist": [],
   "parts": [
     {

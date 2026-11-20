@@ -1,4 +1,4 @@
-import { LIBRARY_BAKE_BUCKETS, LibraryBakePin, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { LIBRARY_BAKE_BUCKETS, LibraryBakePin } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
 import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import { readPrimitiveTable, studPrimitives } from "../palette.ts";
 import {
   runPointerCommand,
   runPublicationCommand,
@@ -29,7 +30,6 @@ const binary = join(repoRoot, "target", "release", "library-bake");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
 
 interface PaletteOptions {
-  readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
 }
 
@@ -86,17 +86,15 @@ async function precompute(check: boolean): Promise<void> {
     ),
   );
   const palette = JSON.parse(await readFile(palettePath, "utf8")) as PaletteOptions;
+  const primitives = await readPrimitiveTable(primitivesPath);
   const pin = await assembleLibraryBake({
     build: buildRoot,
     out: outRoot,
     source: pinnedArchive(lock).mirror,
     options: {
-      studPrimitives: palette.studPrimitives,
+      studPrimitives: studPrimitives(primitives),
       unofficialAllowlist: palette.unofficialAllowlist,
-      primitives: decodedOrThrow(
-        decode(PrimitiveConnectorTable, JSON.parse(await readFile(primitivesPath, "utf8"))),
-        primitivesPath,
-      ),
+      primitives,
     },
   });
   await rm(buildRoot, { recursive: true, force: true });
