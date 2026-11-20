@@ -1,7 +1,7 @@
 import { NO_STUD, RoadFit, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { ANY_TURN, cellExtent, coveredCells, snapToRoadEdge } from "./road-snap.ts";
+import { ANY_TURN, cellExtent, coveredCells, coversRoad, snapToRoadEdge } from "./road-snap.ts";
 
 const STUD = 20;
 const PLATE_SPAN = 640;
@@ -233,6 +233,30 @@ describe("road-edge snap", () => {
       coveredCells([piece(half, 0), piece(-2 * PLATE_SPAN, 2 * PLATE_SPAN)], ghost, 0, 0),
     ).toBe(16 * 32);
     expect(coveredCells([piece(7 - half, 0), piece(7 + half, 0)], ghost, 0, 0)).toBe(32 * 32);
+  });
+
+  it("finds a road footprint under the held piece down to a 1 LDU sliver on every side, and none flush beside it", () => {
+    const ghost = cellExtent({ ...straight, x: 0, z: 0 });
+    const piece = (x: number, z: number) => [cellExtent({ ...straight, id: 1, x, z })];
+    const near = PLATE_SPAN - 1;
+    const covering = [
+      [near, 0],
+      [-near, 0],
+      [0, near],
+      [0, -near],
+      [near, near],
+    ] as const;
+    const clear = [
+      [PLATE_SPAN, 0],
+      [PLATE_SPAN + 1, 0],
+      [-PLATE_SPAN, 0],
+      [PLATE_SPAN, PLATE_SPAN],
+      [near, -PLATE_SPAN],
+    ] as const;
+    for (const [x, z] of covering)
+      expect(coversRoad(piece(x, z), ghost, 0, 0), `${x}, ${z}`).toBe(true);
+    for (const [x, z] of clear)
+      expect(coversRoad(piece(x, z), ghost, 0, 0), `${x}, ${z}`).toBe(false);
   });
 
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {

@@ -1422,6 +1422,15 @@ it("refuses a road plate on another road plate's footprint alike by click, fill 
   const clicking = await withBaseplate();
   const clicked = await placer(clicking.editor, clicking.backend)(plate, 320, 320);
 
+  const hovering = await withBaseplate();
+  await chosen(hovering.editor, plate);
+  hovering.backend.aim(320, 320);
+  hovering.editor.pointerMove(0, 0);
+  expect(hovering.editor.snapshot().hover).toMatchObject({
+    refusal: expect.stringContaining("road edges"),
+    placement: { accepted: false },
+  });
+
   const filling = await withBaseplate();
   await chosen(filling.editor, plate);
   filling.editor.cycleFillGrid();
