@@ -198,6 +198,7 @@ export class EditorPath {
   }
 
   async hold(item: string, turns = 0): Promise<void> {
+    this.editor.pointerLeave();
     this.editor.chooseItem(item);
     const deadline = performance.now() + LOAD_TIMEOUT_MS;
     while (
@@ -544,7 +545,17 @@ function settledIn(hover: PlacementHover, mode: PlacementMode): boolean {
   return hover.mode === mode && hover.settled && hover.turnSettled;
 }
 
-function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
+function settledOnFirstFrame(step: Step): boolean {
+  return !unsettledFlags(step.firstFrame).includes("settled");
+}
+
+function firstFrameNote(step: Step): string {
+  return settledOnFirstFrame(step)
+    ? "its pose settled on the first frame"
+    : "its pose needed later frames to settle";
+}
+
+export function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
   const lateOn = (flag: string): ReadonlyArray<LoggedStep> =>
     steps.filter(({ step }) => unsettledFlags(step.firstFrame).includes(flag));
   const listed = (late: ReadonlyArray<LoggedStep>): string =>
@@ -1053,14 +1064,15 @@ export async function holesAgainstHolesCheck(
 ): Promise<EditorCheck> {
   const step = await new StepLog(path, heldItem, poses).at("assist", AT_FLUSH, true);
   return {
-    label: "Holes against holes place flush",
+    label: "Holes against holes place flush, with the pose settled on the first frame",
     passed:
       step.hover?.accepted === true &&
       !step.hover.lifted &&
       step.hover.hit === null &&
       pinHoleJoints(step.hover.mates) === 0 &&
-      samePose(step.committed, poses.flush),
-    detail: `expected ${describePose(poses.flush)} with no pin/hole joint; ${outcome(step)}`,
+      samePose(step.committed, poses.flush) &&
+      settledOnFirstFrame(step),
+    detail: `expected ${describePose(poses.flush)} with no pin/hole joint; ${outcome(step)}; ${firstFrameNote(step)}`,
   };
 }
 
@@ -1075,14 +1087,15 @@ export async function turnedAwayCheck(
   await path.hold(heldItem, 0);
   return {
     label:
-      "Turned 180° so the holes face away, assist doesn't snap: no pin/hole mates and the cursor pose is kept, while turnBlocksSnap and turnMates say a turn would engage every pin",
+      "Turned 180° so the holes face away, assist doesn't snap: no pin/hole mates and the cursor pose is kept, settled on the first frame, while turnBlocksSnap and turnMates say a turn would engage every pin",
     passed:
       step.hover !== null &&
       atCursor(step, "assist") &&
       pinHoleJoints(step.hover.mates) === 0 &&
       step.hover.turnBlocksSnap &&
-      pinHoleJoints(step.hover.turnMates) === pins,
-    detail: `held turned ${QUARTER_TURNS_AWAY} quarter turns, aimed one stud short; ${outcome(step)}${step.hover?.turnBlocksSnap ? `; a turn would snap: ${describeMates(step.hover.turnMates)}` : ""}`,
+      pinHoleJoints(step.hover.turnMates) === pins &&
+      settledOnFirstFrame(step),
+    detail: `held turned ${QUARTER_TURNS_AWAY} quarter turns, aimed one stud short; ${outcome(step)}${step.hover?.turnBlocksSnap ? `; a turn would snap: ${describeMates(step.hover.turnMates)}` : ""}; ${firstFrameNote(step)}`,
   };
 }
 

@@ -11,6 +11,7 @@ import {
   pairPoses,
   pinnedPairChecks,
   sameOutcomes,
+  settledCheck,
   solidEdgeChecks,
   turnedAwayCheck,
   type EditorCheck,
@@ -168,6 +169,12 @@ async function placeAtOrigin(path: EditorPath, item: string): Promise<Pose> {
   return step.committed;
 }
 
+function renamedSettleNote(settled: EditorCheck): string {
+  return settled.passed
+    ? "every renamed hover's pose settled on the first frame"
+    : `renamed copy: ${settled.detail}`;
+}
+
 async function checkPair(
   bundle: Bundle,
   fetchUrl: FetchFunction,
@@ -254,6 +261,8 @@ async function checkPair(
     (along) => solidShiftCollides(pair, 0 - along),
   );
   const solidDifferences = sameOutcomes(solidRun, solidRenamedRun);
+  const solidRenamedSettled = settledCheck(solidRenamedRun.steps);
+  const renamedSettled = settledCheck(renamedRun.steps);
   const sameSubjectPose = JSON.stringify(subjectPose) === JSON.stringify(renamedPose);
 
   return {
@@ -266,21 +275,26 @@ async function checkPair(
       turned,
       ...solidRun.checks,
       {
-        label: "Against the solid edge, a renamed copy of the pinned module behaves identically",
-        passed: solidDifferences.length === 0,
-        detail:
+        label:
+          "Against the solid edge, a renamed copy of the pinned module behaves identically, and every hover's pose settles on the first frame",
+        passed: solidDifferences.length === 0 && solidRenamedSettled.passed,
+        detail: `${
           solidDifferences.length === 0
             ? "every hover verdict, hit and refusal matches"
-            : `differs at: ${solidDifferences.join(", ")}`,
+            : `differs at: ${solidDifferences.join(", ")}`
+        }; ${renamedSettleNote(solidRenamedSettled)}`,
       },
       {
-        label: "A random rename of the file, model and submodel names behaves identically",
-        passed: sameSubjectPose && differences.length === 0,
-        detail: sameSubjectPose
-          ? differences.length === 0
-            ? "every hover verdict, pose, mate count, hit and committed pose matches"
-            : `differs at: ${differences.join(", ")}`
-          : `the renamed copy lands at a different pose on the empty table`,
+        label:
+          "A random rename of the file, model and submodel names behaves identically, and every hover's pose settles on the first frame",
+        passed: sameSubjectPose && differences.length === 0 && renamedSettled.passed,
+        detail: `${
+          sameSubjectPose
+            ? differences.length === 0
+              ? "every hover verdict, pose, mate count, hit and committed pose matches"
+              : `differs at: ${differences.join(", ")}`
+            : `the renamed copy lands at a different pose on the empty table`
+        }; ${renamedSettleNote(renamedSettled)}`,
       },
     ],
   };
