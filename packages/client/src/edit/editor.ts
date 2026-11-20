@@ -20,6 +20,7 @@ import {
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
+  type PlanChange,
   type PlacementHandle,
   type PlacementContents,
   type RoadEdgeSegment,
@@ -131,6 +132,7 @@ import type { PlayModel, PlaySetup } from "../play/play-models.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
 import { MeasureTool } from "./measure-tool.ts";
+import { TableTool } from "./table-tool.ts";
 import type {
   ExportedWorld,
   IEditedWorld,
@@ -148,7 +150,7 @@ import {
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
-export type EditorMode = "place" | "select" | "track" | "road" | "measure";
+export type EditorMode = "place" | "select" | "track" | "road" | "measure" | "table";
 export interface RoadStrokeResult {
   readonly result: "laid" | "refused";
   readonly stroke: RoadStrokeView;
@@ -373,6 +375,7 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView, GroundV
   readonly queuedPlacement: QueuedPlacement | null;
   readonly rulers: number;
   readonly rulerDraft: boolean;
+  readonly hoveredTable: string | null;
   readonly labels: ReadonlyArray<LabelView>;
 }
 
@@ -450,6 +453,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
   setMeasuring(on: boolean): void;
+  setTableTool(on: boolean): void;
   clearRulers(): void;
   projectLabels(out: Float64Array): void;
   playSetup(): PlaySetup | null;
@@ -542,6 +546,7 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   }
 }
 const GHOST_LIFT_LDU = BRICK_LDU;
+const HANDLE_TOLERANCE_PX = 8;
 
 interface HeldPiece {
   readonly catalogIndex: number;
@@ -672,6 +677,7 @@ export class Editor implements IEditor, IEditedWorld {
     queuedPlacement: null,
     rulers: 0,
     rulerDraft: false,
+    hoveredTable: null,
     labels: [],
   };
   private world = new World();
@@ -716,6 +722,8 @@ export class Editor implements IEditor, IEditedWorld {
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private readonly planDelta = new PlanDelta();
   private measure: MeasureTool | null = null;
+  private tables: TableTool | null = null;
+  private canvas: HTMLCanvasElement | null = null;
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -735,6 +743,8 @@ export class Editor implements IEditor, IEditedWorld {
     frames.subscribe(() => this.update(this.frames.view()));
     ground.subscribe(() => this.update(this.ground.view()));
     catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
+    plans.subscribe(() => this.plansChanged());
+    plans.onEdit((change) => this.planEdited(change));
   }
 
   private sessionChanged(): void {
@@ -764,6 +774,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private labelsOf(state: EditorSnapshot): ReadonlyArray<LabelView> {
     const labels = [...(this.measure?.labels() ?? [])];
+    if (state.mode === "table" && this.tables) labels.push(...this.tables.labels());
     const active = this.active;
     if (state.mode === "place" && active && state.hover) {
       const { x, z, yPlates } = state.hover;
@@ -788,7 +799,9 @@ export class Editor implements IEditor, IEditedWorld {
       this.frames.forceTier(options.tier);
       const index = await this.loader.loadIndex(EDITOR_LOD);
       this.ground.lay(index.tablePlane);
+      this.canvas = canvas;
       this.measure = new MeasureTool(-index.tablePlane.depthBelowTopLdu);
+      this.tables = new TableTool(this.plans, -index.tablePlane.depthBelowTopLdu);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
       this.bundleColorCodes = index.colors.map((color) => color.code);
@@ -1263,6 +1276,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   dragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.mode === "measure") return this.rulerDragStart(ndcX, ndcY);
+    if (this.state.mode === "table") return this.tableDragStart(ndcX, ndcY);
     if (this.state.mode === "road") return this.roadDragStart(ndcX, ndcY);
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return false;
@@ -1276,7 +1290,14 @@ export class Editor implements IEditor, IEditedWorld {
   dragMove(ndcX: number, ndcY: number): void {
     if (this.measure?.drafting) {
       if (this.groundHit(ndcX, ndcY) && this.measure.drag(this.hoverX, this.hoverZ)) {
-        this.showMeasurements();
+        this.showGuides();
+      }
+      return;
+    }
+    if (this.state.mode === "table") {
+      const tables = this.tables;
+      if (tables?.dragging && this.groundHit(ndcX, ndcY) && tables.move(this.hitX, this.hitZ)) {
+        this.showGuides();
       }
       return;
     }
@@ -1303,7 +1324,16 @@ export class Editor implements IEditor, IEditedWorld {
     if (measure?.drafting) {
       if (this.groundHit(ndcX, ndcY)) measure.drag(this.hoverX, this.hoverZ);
       measure.end();
-      this.showMeasurements();
+      this.showGuides();
+      return;
+    }
+    if (this.state.mode === "table") {
+      const tables = this.tables;
+      if (tables?.dragging) {
+        if (this.groundHit(ndcX, ndcY)) tables.move(this.hitX, this.hitZ);
+        tables.end();
+      }
+      this.showGuides();
       return;
     }
     if (this.state.mode === "road") {
@@ -1406,6 +1436,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   chooseItem(id: string | null): void {
     if (this.state.mode === "measure") this.setMeasuring(false);
+    if (this.state.mode === "table") this.setTableTool(false);
     if (id !== null && this.state.readOnly) return;
     this.queueClick(null);
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
@@ -1725,6 +1756,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
     }
+    const tables = this.tables;
+    if (this.state.mode === "table" && tables && this.hovering) {
+      if (tables.hoverAt(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY))) {
+        this.showGuides();
+      }
+    }
     const track = this.track;
     if (this.held) this.showHeldPiece();
     else if (this.state.mode === "track" && track && !track.dragView()) {
@@ -1742,6 +1779,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.hovering = false;
     this.queueClick(null);
     this.update({ hover: null });
+    if (this.state.mode === "table" && this.tables?.unhover()) this.showGuides();
   }
 
   private onQueuedCell(queued: QueuedClick): boolean {
@@ -1766,7 +1804,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {
-    if (this.state.mode === "road" || this.state.mode === "measure") return;
+    const mode = this.state.mode;
+    if (mode === "road" || mode === "measure" || mode === "table") return;
     if (this.state.mode === "track") {
       if (!this.held || this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
       this.hovering = true;
@@ -1910,7 +1949,13 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
+  private planEdited(change: PlanChange): void {
+    this.show(this.history.commitPlan(change), performance.now());
+  }
+
   private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
+    if (edit.plan) this.plans.restore(edit.plan.after);
+    const worldChanged = edit.changes.length > 0 || edit.plan === null;
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
     for (const model of view.added) this.searchable(model);
@@ -1921,7 +1966,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
-    this.session.placementsEdited(edit);
+    if (worldChanged) this.session.placementsEdited(edit);
     const primary = edit.changes[0];
     const pose = primary?.to ?? primary?.from ?? null;
     if (pose) {
@@ -1937,10 +1982,12 @@ export class Editor implements IEditor, IEditedWorld {
         report: view.report,
       });
     }
-    this.refreshRoads();
-    this.syncModelTrack();
-    this.refreshTrains();
-    this.placeGhost();
+    if (worldChanged) {
+      this.refreshRoads();
+      this.syncModelTrack();
+      this.refreshTrains();
+      this.placeGhost();
+    }
     this.update({
       selectionRefusal: null,
       placements: this.world.size,
@@ -1948,8 +1995,10 @@ export class Editor implements IEditor, IEditedWorld {
       studs: this.placed.studTotals(),
       history: this.historyView(),
     });
-    writeViewUpdate(this.planDelta, view);
-    this.plans.apply(this.planDelta);
+    if (worldChanged) {
+      writeViewUpdate(this.planDelta, view);
+      this.plans.apply(this.planDelta);
+    }
     return view;
   }
 
@@ -2057,7 +2106,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (on === (this.state.mode === "measure")) return;
     if (!on) {
       this.measure?.cancel();
-      this.showMeasurements();
+      this.showGuides();
       this.update({ mode: "select" });
       return;
     }
@@ -2067,9 +2116,25 @@ export class Editor implements IEditor, IEditedWorld {
     this.update({ mode: "measure", activeItem: null });
   }
 
+  setTableTool(on: boolean): void {
+    if (on === (this.state.mode === "table")) return;
+    if (!on) {
+      this.tables?.cancel();
+      this.update({ mode: "select" });
+      this.showGuides();
+      return;
+    }
+    if (this.state.status !== "ready") return;
+    this.chooseItem(null);
+    this.select(null);
+    this.tables?.planChanged();
+    this.update({ mode: "table", activeItem: null });
+    this.showGuides();
+  }
+
   clearRulers(): void {
     this.measure?.clear();
-    this.showMeasurements();
+    this.showGuides();
   }
 
   projectLabels(out: Float64Array): void {
@@ -2086,15 +2151,40 @@ export class Editor implements IEditor, IEditedWorld {
     const measure = this.measure;
     if (!measure || !this.groundHit(ndcX, ndcY)) return false;
     measure.begin(this.hoverX, this.hoverZ);
-    this.showMeasurements();
+    this.showGuides();
     return true;
   }
 
-  private showMeasurements(): void {
-    this.backend.setGuides(this.measure?.guides() ?? []);
+  private tableDragStart(ndcX: number, ndcY: number): boolean {
+    const tables = this.tables;
+    if (!tables || !this.groundHit(ndcX, ndcY)) return false;
+    tables.begin(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY));
+    this.showGuides();
+    return true;
+  }
+
+  private handleToleranceLdu(ndcX: number, ndcY: number): number {
+    const x = this.hitX;
+    const z = this.hitZ;
+    const widthPx = this.canvas?.clientWidth ?? 0;
+    const reached = widthPx > 0 && this.groundHit(ndcX + (2 * HANDLE_TOLERANCE_PX) / widthPx, ndcY);
+    const tolerance = reached ? Math.hypot(this.hitX - x, this.hitZ - z) : 0;
+    this.groundHit(ndcX, ndcY);
+    return Math.max(STUD_LDU, tolerance);
+  }
+
+  private plansChanged(): void {
+    if (this.state.mode === "table" && this.tables?.planChanged()) this.showGuides();
+  }
+
+  private showGuides(): void {
+    const tables = this.state.mode === "table" ? this.tables : null;
+    const measured = this.measure?.guides() ?? [];
+    this.backend.setGuides(tables ? [...measured, ...tables.guides()] : measured);
     this.update({
       rulers: this.measure?.count ?? 0,
       rulerDraft: this.measure?.drafting ?? false,
+      hoveredTable: tables?.hoveredTable ?? null,
       labels: this.labelsOf(this.state),
     });
   }
@@ -2287,7 +2377,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "measure" && measure) {
       if (measure.drafting) measure.cancel();
       else measure.removeLast();
-      this.showMeasurements();
+      this.showGuides();
+      return;
+    }
+    if (this.state.mode === "table") {
+      this.tables?.removeHovered();
+      this.showGuides();
       return;
     }
     const model = this.selected;
@@ -2317,12 +2412,12 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   undo(eventTimeMs: number): void {
-    if (this.state.readOnly) return;
+    if (this.state.readOnly && this.history.nextUndo() !== "plan") return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
-    if (this.state.readOnly) return;
+    if (this.state.readOnly && this.history.nextRedo() !== "plan") return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 

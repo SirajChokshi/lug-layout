@@ -38,6 +38,7 @@ export {
   type AppliedEdit,
   type EditKind,
   type HistoryStep,
+  type PlanChange,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
@@ -67,9 +68,11 @@ export {
   type TrackFrame,
 } from "./track/end-gaps.ts";
 export {
+  mmRectFromWorld,
   mmRectInWorld,
   rectContains,
   rectsOverlap,
+  regionAround,
   regionOriginX,
   regionOriginZ,
   roomRect,
@@ -79,6 +82,7 @@ export {
   type PlanFootprint,
   type PlanObstacle,
   type PlanRegion,
+  type PlanState,
   type PlanTable,
   type StudRect,
 } from "./plan/plan-region.ts";

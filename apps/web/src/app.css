@@ -328,6 +328,44 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 
+.table-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.stud-cm {
+  display: grid;
+  grid-template-columns: 96px 1fr 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.stud-cm-label {
+  color: #445;
+}
+
+.scaled-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.scaled-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.scaled-unit {
+  color: #667;
+  font-size: 11px;
+}
+
 .plan-new {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
@@ -576,6 +614,10 @@ footer {
 
 .scene-label[data-kind="selection"] .scene-label-pill {
   fill: rgb(204 112 0);
+}
+
+.scene-label[data-kind="table"] .scene-label-pill {
+  fill: rgb(107 79 46);
 }
 
 .toolbar-hint {

@@ -79,6 +79,7 @@ import {
   EDITOR,
   MODEL_IMPORTER,
   PLACEMENT_SEARCH,
+  PLAN_SERVICE,
   TRAIN_PLAY,
   PLACEABLE_CATALOG,
 } from "../tokens.ts";
@@ -994,14 +995,15 @@ class HeldElsewhereLocks implements IWorldLocks {
   }
 }
 
-it("offers none of the editing commands on a selection in a world another tab holds", async () => {
+it("offers none of the world's editing commands in a world another tab holds, but draws a table and undoes it, as plans aren't in the world", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const locks = new HeldElsewhereLocks();
@@ -1032,6 +1034,24 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+
+  const plans = container.get(PLAN_SERVICE);
+  const tablesAndUndo = () => ({
+    tables: plans.plans().flatMap((plan) => plan.footprint.tables).length,
+    undo: commandEnabled("undo", editor.snapshot()),
+  });
+  editor.setTableTool(true);
+  backend.aim(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(640, 640);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const drawn = tablesAndUndo();
+  editor.undo(0);
+  expect({ drawn, undone: tablesAndUndo() }).toEqual({
+    drawn: { tables: 1, undo: true },
+    undone: { tables: 0, undo: false },
+  });
 }, 120_000);
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
@@ -1762,6 +1782,96 @@ it("clears the rulers when another world opens", async () => {
     rulers: 0,
     labels: [],
   });
+}, 120_000);
+
+it("draws and resizes a table on the 8-stud grid, checks a user's model against it, and undo and redo walk table, plan-field and placement edits in one order", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const drag = (from: readonly [number, number], to: readonly [number, number]): void => {
+    backend.aim(...from);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const state = () => {
+    const planId = plans.activePlanId();
+    const view = planId === null ? null : plans.regionView(planId);
+    return {
+      placements: editor.snapshot().placements,
+      tables: (view?.tables ?? []).map(({ surface, heightMm }) => ({ ...surface, heightMm })),
+      issues: planId === null ? [] : plans.issues(planId).map((issue) => issue.rule),
+    };
+  };
+
+  await place(brick, 1600, 1600);
+  editor.setTableTool(true);
+  drag([1290, 1300], [2250, 2090]);
+  const drawn = {
+    ...state(),
+    labels: editor.snapshot().labels.map((label) => `${label.kind}: ${label.text}`),
+  };
+  drag([1285, 1700], [1700, 1700]);
+  const resized = state();
+  const planId = plans.activePlanId() ?? "";
+  plans.updateTable(planId, plans.regionView(planId).tables[0]?.id ?? "", { heightMm: 900 });
+  await place(brick, 2000, 1600);
+  editor.setTableTool(true);
+  backend.aim(2100, 1500);
+  editor.pointerMove(0, 0);
+  editor.pointerLeave();
+  const deletableOffCanvas = commandEnabled("delete", editor.snapshot());
+  editor.pointerMove(0, 0);
+  plans.activatePlan(null);
+  const deletableInNoPlan = commandEnabled("delete", editor.snapshot());
+  plans.activatePlan(planId);
+  editor.pointerMove(0, 0);
+  const deletable = commandEnabled("delete", editor.snapshot());
+  editor.deleteSelection(0);
+  const removed = state();
+  const undone = [];
+  for (let step = 0; step < 6; step++) {
+    undone.push({ undo: editor.snapshot().history.undo, ...state() });
+    editor.undo(0);
+  }
+  const start = { ...state(), plans: plans.plans().length };
+  for (let step = 0; step < 6; step++) editor.redo(0);
+
+  const table = { minX: 1280, minZ: 1280, maxX: 2240, maxZ: 2080, heightMm: 750 };
+  const narrowed = { ...table, minX: 1760 };
+  const raised = { ...narrowed, heightMm: 900 };
+  expect({ drawn, resized, deletableOffCanvas, deletableInNoPlan, deletable, removed }).toEqual({
+    drawn: {
+      placements: 1,
+      tables: [table],
+      issues: [],
+      labels: ["table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
+    },
+    resized: { placements: 1, tables: [narrowed], issues: ["fit"] },
+    deletableOffCanvas: false,
+    deletableInNoPlan: false,
+    deletable: true,
+    removed: { placements: 2, tables: [], issues: ["fit", "fit"] },
+  });
+  expect(undone).toEqual([
+    { undo: "plan", placements: 2, tables: [], issues: ["fit", "fit"] },
+    { undo: "place", placements: 2, tables: [raised], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [raised], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [narrowed], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [table], issues: [] },
+    { undo: "place", placements: 1, tables: [], issues: [] },
+  ]);
+  expect(start).toEqual({ placements: 0, tables: [], issues: [], plans: 0 });
+  expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
 }, 120_000);
 
 function placedHeights(backend: HeadlessBackend, partId: string) {

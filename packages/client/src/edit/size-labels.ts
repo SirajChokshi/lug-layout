@@ -1,10 +1,10 @@
 import { MM_PER_STUD, STUD_LDU } from "@brr/math";
 import type { WorldBox } from "@brr/render";
 
-const MM_PER_CM = 10;
+export const MM_PER_CM = 10;
 const TENTHS = 10;
 
-export type LabelKind = "ruler" | "draft" | "ghost" | "selection";
+export type LabelKind = "ruler" | "draft" | "ghost" | "selection" | "table";
 
 export interface LabelView {
   readonly id: string;

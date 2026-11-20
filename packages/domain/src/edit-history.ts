@@ -1,10 +1,16 @@
 import { isLatticePose, isRot90 } from "@brr/math";
+import type { PlanState } from "./plan/plan-region.ts";
 import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
-export type EditKind = "place" | "rotate" | "remove" | "road";
+export type EditKind = "place" | "rotate" | "remove" | "road" | "plan";
 export type HistoryStep = "do" | "undo" | "redo";
+
+export interface PlanChange {
+  readonly before: PlanState;
+  readonly after: PlanState;
+}
 
 export interface PlacementPose {
   readonly refId: number;
@@ -36,6 +42,7 @@ export interface AppliedEdit {
   readonly kind: EditKind;
   readonly step: HistoryStep;
   readonly changes: ReadonlyArray<AppliedChange>;
+  readonly plan: PlanChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -53,6 +60,7 @@ interface Change {
 interface Edit {
   readonly kind: EditKind;
   readonly changes: ReadonlyArray<Change>;
+  readonly plan: PlanChange | null;
 }
 
 function poseOf(handle: PlacementHandle): PlacementPose {
@@ -134,7 +142,14 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    const edit: Edit = { kind, changes };
+    return this.record({ kind, changes, plan: null });
+  }
+
+  commitPlan(change: PlanChange): AppliedEdit {
+    return this.record({ kind: "plan", changes: [], plan: change });
+  }
+
+  private record(edit: Edit): AppliedEdit {
     const applied = this.apply(edit, "do");
     this.done.push(edit);
     this.undone.length = 0;
@@ -193,6 +208,8 @@ export class EditHistory {
       if (added) change.ref.handle = added;
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
     }
-    return { kind: edit.kind, step, changes };
+    const plan =
+      backwards && edit.plan ? { before: edit.plan.after, after: edit.plan.before } : edit.plan;
+    return { kind: edit.kind, step, changes, plan };
   }
 }

@@ -144,6 +144,7 @@ describe("play commands", () => {
       "draw-track",
       "draw-road",
       "measure",
+      "draw-tables",
       "rotate",
       "rotate-back",
       "flip-switch",
