@@ -10,7 +10,9 @@ import {
   NO_ROW,
   PlanEvaluation,
   mmRectFromWorld,
+  MODEL_SEGMENT,
   regionAround,
+  TRACK_SEGMENT,
   uncheckedPlan,
   WRITE_UPDATE,
   type LduRect,
@@ -104,6 +106,7 @@ export interface IPlanService {
   placements(): PlanPlacementsView;
   materialize(): PlanStateDump;
   apply(delta: PlanDelta): void;
+  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
@@ -382,6 +385,14 @@ export class PlanService implements IPlanService {
         caught: delta.caught[e],
       });
     }
+    this.afterChange(false);
+  }
+
+  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+    const evaluation = this.evaluation;
+    evaluation.resetChanges();
+    evaluation.setUnsupported(TRACK_SEGMENT, track);
+    evaluation.setUnsupported(MODEL_SEGMENT, models);
     this.afterChange(false);
   }
 

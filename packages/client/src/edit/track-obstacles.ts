@@ -14,6 +14,7 @@ export interface TrackObstacles {
   readonly owners: Int32Array;
   readonly unseated: Uint8Array;
   readonly labels: ReadonlyArray<string>;
+  readonly seats: ReadonlySet<number>;
 }
 
 export const NO_TRACK_OBSTACLES: TrackObstacles = {
@@ -21,13 +22,14 @@ export const NO_TRACK_OBSTACLES: TrackObstacles = {
   owners: new Int32Array(0),
   unseated: new Uint8Array(0),
   labels: [],
+  seats: new Set(),
 };
 
-function cellKey(cellX: number, cellZ: number): number {
+export function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
 }
 
-function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
+export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
   const seats = new Set<number>();
   for (const model of models) {
     const onLattice = model.placeable.studLattice.onLattice;
@@ -55,13 +57,14 @@ class ObstacleList {
     this.owners[kind].push(owner);
   }
 
-  obstacles(labels: ReadonlyArray<string>): TrackObstacles {
+  obstacles(labels: ReadonlyArray<string>, seats: ReadonlySet<number>): TrackObstacles {
     const { solid, unseated } = this.owners;
     return {
       rects: Float64Array.from([...this.rects.solid, ...this.rects.unseated]),
       owners: Int32Array.from([...solid, ...unseated]),
       unseated: Uint8Array.from([...solid.map(() => 0), ...unseated.map(() => 1)]),
       labels,
+      seats,
     };
   }
 
@@ -119,7 +122,7 @@ export function trackObstacles(
   trackParts: (model: PlacedModel) => ReadonlySet<number>,
 ): TrackObstacles {
   const [bottom, top] = trackRange;
-  const seats = seatsAt(models, bottom);
+  const seats = studSeats(models, bottom);
   const list = new ObstacleList();
   models.forEach((model, owner) => {
     const boxes = model.worldPartBoxes();
@@ -136,5 +139,27 @@ export function trackObstacles(
       else if (maxY === bottom) list.pushUnseated(owner, seats, minX, minZ, maxX, maxZ);
     }
   });
-  return list.obstacles(models.map((model) => model.placeable.label));
+  return list.obstacles(
+    models.map((model) => model.placeable.label),
+    seats,
+  );
+}
+
+export function solidRectsIn(
+  models: ReadonlyArray<PlacedModel>,
+  [bottom, top]: readonly [number, number],
+  trackParts: (model: PlacedModel) => ReadonlySet<number>,
+): Float64Array {
+  const rects: number[] = [];
+  for (const model of models) {
+    if (model.box.minY >= top || model.box.maxY <= bottom) continue;
+    const boxes = model.worldPartBoxes();
+    const track = trackParts(model);
+    for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      if (track.has(b / BOX_FLOATS)) continue;
+      if ((boxes[b + 1] ?? 0) >= top || (boxes[b + 4] ?? 0) <= bottom) continue;
+      rects.push(boxes[b] ?? 0, boxes[b + 2] ?? 0, boxes[b + 3] ?? 0, boxes[b + 5] ?? 0);
+    }
+  }
+  return Float64Array.from(rects);
 }

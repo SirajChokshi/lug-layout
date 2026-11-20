@@ -6,7 +6,7 @@ import {
   subtractZeta16,
   type Pose16,
 } from "@brr/math";
-import { shortClearClosure, type ClosureSite } from "./clear-closure.ts";
+import { shortClearClosure, type ClosureSite, type SupportSite } from "./clear-closure.ts";
 import type { ClosureResult } from "./closure.ts";
 import {
   addRotated,
@@ -21,18 +21,30 @@ import {
   PROJECTION_FLOATS,
   type StrokePath,
 } from "./stroke-path.ts";
-import { NO_OBSTACLE, RUN_CROSSING, poseLdu, type TrackClearance } from "./track-clearance.ts";
+import {
+  NO_OBSTACLE,
+  RUN_CROSSING,
+  poseLdu,
+  studlessTopBlocker,
+  type TrackClearance,
+} from "./track-clearance.ts";
 import { advance, type TrackMove } from "./track-pose.ts";
 import { runMoves } from "./track-solver.ts";
 
 export interface StrokeSite {
   readonly clearance: TrackClearance;
+  readonly support: SupportSite;
   readonly startOwner: number;
 }
 
 export interface StrokeGoal {
   readonly pose: Pose16;
   readonly owner: number;
+}
+
+export interface StudlessScan {
+  readonly supportedPieces: number;
+  readonly blocker: number;
 }
 
 export interface FollowedRun {
@@ -159,7 +171,8 @@ export class StrokeRouter {
     if (followed.joined) return { kind: "exact", moves: followed.moves };
     const { outlines } = this;
     const { kit } = outlines;
-    const { clearance } = site;
+    const { clearance, support } = site;
+    const { supportedPieces } = this.studlessScan(start, followed.moves, site, NO_OBSTACLE);
     const mark = clearance.count;
     const poses: Pose16[] = [start];
     try {
@@ -170,8 +183,9 @@ export class StrokeRouter {
         pose = advance(pose, move);
         poses.push(pose);
       }
-      const backoffTo = Math.max(1, followed.moves.length - JOIN_BACKOFF_PIECES);
-      for (let k = followed.moves.length; k >= backoffTo; k--) {
+      const backoffFrom = Math.min(followed.moves.length, supportedPieces);
+      const backoffTo = Math.max(1, backoffFrom - JOIN_BACKOFF_PIECES);
+      for (let k = backoffFrom; k >= backoffTo; k--) {
         clearance.truncate(mark + k);
         const from = poses[k];
         if (!from) continue;
@@ -181,7 +195,7 @@ export class StrokeRouter {
           kit,
           from,
           goal.pose,
-          { clearance, outlines, startOwner: mark + k - 1, goalOwner: goal.owner },
+          { clearance, support, outlines, startOwner: mark + k - 1, goalOwner: goal.owner },
           maxPieces,
         );
         if (run) {
@@ -191,6 +205,7 @@ export class StrokeRouter {
       clearance.truncate(mark);
       const whole = closeWhole({
         clearance,
+        support,
         outlines,
         startOwner: site.startOwner,
         goalOwner: goal.owner,
@@ -207,6 +222,44 @@ export class StrokeRouter {
           throw new Error(`unhandled closure ${String(unhandled)}`);
         }
       }
+    } finally {
+      clearance.truncate(mark);
+    }
+  }
+
+  studlessScan(
+    start: Pose16,
+    moves: ReadonlyArray<TrackMove>,
+    site: StrokeSite,
+    goalOwner: number,
+  ): StudlessScan {
+    const { outlines } = this;
+    const { clearance, support } = site;
+    const mark = clearance.count;
+    try {
+      let pose = start;
+      for (let i = 0; i < moves.length; i++) {
+        const move = moves[i];
+        if (!move) continue;
+        const frame = outlines.frameFor(move);
+        const at = poseLdu(pose);
+        const top = outlines.blockerBesideJoins(
+          support.studlessTops,
+          clearance,
+          frame,
+          pose.heading,
+          at.x,
+          at.z,
+          i === 0 ? site.startOwner : mark + i - 1,
+          i === moves.length - 1 ? goalOwner : NO_OBSTACLE,
+        );
+        if (top !== NO_OBSTACLE && !support.supported(frame, pose)) {
+          return { supportedPieces: i, blocker: studlessTopBlocker(top) };
+        }
+        outlines.addTo(clearance, frame, pose.heading, at.x, at.z);
+        pose = advance(pose, move);
+      }
+      return { supportedPieces: moves.length, blocker: NO_OBSTACLE };
     } finally {
       clearance.truncate(mark);
     }
