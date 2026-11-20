@@ -840,6 +840,17 @@ function trackRefusal(placeable: Placeable, block: TrackBlockView): string {
   return `${placeable.label} would ${trackBlockText(block)}.`;
 }
 
+function boxesTouch(a: WorldBox, b: WorldBox): boolean {
+  return (
+    a.minX <= b.maxX &&
+    b.minX <= a.maxX &&
+    a.minY <= b.maxY &&
+    b.minY <= a.maxY &&
+    a.minZ <= b.maxZ &&
+    b.minZ <= a.maxZ
+  );
+}
+
 function placementRefused(check: PlacementCheck, seat: SeatOnRails): boolean {
   const kind = check.aim?.kind;
   return (
@@ -944,6 +955,7 @@ interface ModelMember {
   readonly model: PlacedModel | null;
   readonly placeable: Placeable;
   readonly pose: PlacementPose;
+  readonly component: number;
 }
 
 interface PieceMember {
@@ -1350,6 +1362,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
   private readonly tileChoice = placementChoice();
   private readonly groupChoice = placementChoice();
+  private readonly memberMates = new MateReport();
   private solidBoxes = new Float64Array(0);
   private solidRects = new Float64Array(0);
   private canvas: HTMLCanvasElement | null = null;
@@ -4527,7 +4540,43 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private modelMembers(chosen: ReadonlyArray<PlacedModel>): ReadonlyArray<ModelMember> {
-    return chosen.map((model) => ({ model, placeable: model.placeable, pose: poseOf(model) }));
+    const components = this.joinedComponents(chosen);
+    return chosen.map((model, index) => ({
+      model,
+      placeable: model.placeable,
+      pose: poseOf(model),
+      component: components[index] ?? index,
+    }));
+  }
+
+  private joinedComponents(chosen: ReadonlyArray<PlacedModel>): ReadonlyArray<number> {
+    const parent = chosen.map((_, index) => index);
+    const root = (index: number): number => {
+      let at = index;
+      while (parent[at] !== at) at = parent[at] ?? at;
+      return at;
+    };
+    const mates = chosen.map((model) => (this.searchIds.has(model) ? this.mateCountOf(model) : 0));
+    chosen.forEach((carrier, j) => {
+      const id = this.searchIds.get(carrier);
+      if (id === undefined) return;
+      const touching = chosen.flatMap((model, i) =>
+        i !== j && (mates[i] ?? 0) > 0 && boxesTouch(model.box, carrier.box) ? [i] : [],
+      );
+      if (touching.length === 0) return;
+      this.search.withdrawn(new Set([id]), () => {
+        for (const i of touching) {
+          const model = chosen[i];
+          if (model && this.mateCountOf(model) < (mates[i] ?? 0)) parent[root(i)] = root(j);
+        }
+      });
+    });
+    return parent.map((_, index) => root(index));
+  }
+
+  private mateCountOf(model: PlacedModel): number {
+    this.search.evaluate(this.connectedOf(model.placeable).model, poseOf(model), this.memberMates);
+    return this.memberMates.count;
   }
 
   private pieceMembers(indices: ReadonlyArray<number>): ReadonlyArray<PieceMember> {
@@ -4643,12 +4692,13 @@ export class Editor implements IEditor, IEditedWorld {
     roads: RoadContext,
     skip: TrackSkip,
   ): RefusedClick | null {
-    let supported = false;
-    let lowest = -1;
+    const supported = new Set<number>();
+    const lowest = new Map<number, number>();
     for (let index = 0; index < poses.length; index++) {
       const pose = poses[index];
-      const placeable = members[index]?.placeable;
-      if (!pose || !placeable) continue;
+      const member = members[index];
+      if (!pose || !member) continue;
+      const { placeable, component } = member;
       const { x, z, yPlates, rot } = pose;
       const connected = this.connectedOf(placeable);
       const choice = this.groupChoice;
@@ -4656,8 +4706,11 @@ export class Editor implements IEditor, IEditedWorld {
       this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
       const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
       if (hit) return refusedAt(placeable.id, pose, refusalText(placeable.label, hit));
-      if (choice.accepted) supported = true;
-      if (lowest < 0 || yPlates < (poses[lowest]?.yPlates ?? yPlates)) lowest = index;
+      if (choice.accepted) supported.add(component);
+      const low = lowest.get(component);
+      if (low === undefined || yPlates < (poses[low]?.yPlates ?? yPlates)) {
+        lowest.set(component, index);
+      }
       const track = this.trackPlacementRefusal(placeable, pose, exempt, skip);
       if (track !== null) return refusedAt(placeable.id, pose, track);
       const surface = placeable.road;
@@ -4667,10 +4720,13 @@ export class Editor implements IEditor, IEditedWorld {
         return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
       }
     }
-    const base = members[lowest]?.placeable;
-    const basePose = poses[lowest];
-    if (supported || !base || !basePose) return null;
-    return refusedAt(base.id, basePose, refusalText(base.label, null));
+    for (const [component, index] of lowest) {
+      const base = members[index]?.placeable;
+      const basePose = poses[index];
+      if (supported.has(component) || !base || !basePose) continue;
+      return refusedAt(base.id, basePose, refusalText(base.label, null));
+    }
+    return null;
   }
 
   private pieceRefusal(edit: GroupEdit, poses: ReadonlyArray<Pose16>): RefusedClick | null {

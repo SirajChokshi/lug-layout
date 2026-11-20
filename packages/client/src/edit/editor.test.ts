@@ -3639,6 +3639,11 @@ function selectedItems(editor: IEditor): ReadonlyArray<string> {
   return (editor.snapshot().selection?.members ?? []).map((member) => member.item).toSorted();
 }
 
+function groupMoveOutcome(editor: IEditor) {
+  const { lastRefusal } = editor.snapshot();
+  return { ...editOutcome(editor), refusedAt: lastRefusal ? [lastRefusal.x, lastRefusal.z] : null };
+}
+
 function editOutcome(editor: IEditor) {
   const { selectionRefusal, history } = editor.snapshot();
   return { poses: posesOf(editor), refusal: selectionRefusal, undoDepth: history.undoDepth };
@@ -4062,63 +4067,72 @@ describe("selection groups", () => {
     });
   }, 120_000);
 
-  it("moves a group rigidly at its exact poses, held up by any member's mate outside it, never lifted onto a model it doesn't mate nor dropped onto the table", async () => {
-    const { editor, backend, catalog } = await startEditor(
-      [CABOOSE.slice("omr:".length)],
-      new BundleDirectoryFetcher(),
-      [USER_BRICK],
-    );
-    await loadCatalogItem(catalog, HELD_BRICK);
-    await loadCatalogItem(catalog, CABOOSE);
-    editor.setPlacementMode("precise");
-    const place = placer(editor, backend);
-    for (const [x, z] of [
-      [0, 0],
-      [200, 0],
-      [0, 400],
-      [0, 0],
-      [200, 0],
-    ] as const) {
-      await place(HELD_BRICK, x, z);
-    }
-    await place(CABOOSE, 0, 1200);
-    const caboose = (editor.snapshot().catalog.find((item) => item.id === CABOOSE)?.label ?? "")
-      .replaceAll("(", "\\(")
-      .replaceAll(")", "\\)");
-    const laid = posesOf(editor);
-    selectAt(editor, backend, 0, 0);
-    toggleAt(editor, backend, [200, 0]);
+  it("moves a group rigidly at its exact poses, each joined part of it held up only by its own mate outside the group or the table, and names a hit rather than lift it", async () => {
+    const raisedPair = async (secondAt: readonly [number, number]) => {
+      const started = await startEditor(
+        [CABOOSE.slice("omr:".length)],
+        new BundleDirectoryFetcher(),
+        [USER_BRICK],
+      );
+      const { editor, backend, catalog } = started;
+      await loadCatalogItem(catalog, HELD_BRICK);
+      await loadCatalogItem(catalog, CABOOSE);
+      editor.setPlacementMode("precise");
+      const place = placer(editor, backend);
+      for (const [x, z] of [[0, 0], [200, 0], [0, 400], [0, 0], secondAt] as const) {
+        await place(HELD_BRICK, x, z);
+      }
+      await place(CABOOSE, 0, 1200);
+      return { ...started, laid: posesOf(editor) };
+    };
+    const apart = await raisedPair([200, 0]);
+    selectAt(apart.editor, apart.backend, 0, 0);
+    toggleAt(apart.editor, apart.backend, [200, 0]);
+    apart.editor.moveSelectionBy(0, 400, 0);
+    const oneOverAir = groupMoveOutcome(apart.editor);
 
-    editor.moveSelectionBy(0, 400, 0);
-    const oneMemberMates = editOutcome(editor);
-    editor.moveSelectionBy(0, 800, 0);
-    const overTheCaboose = editOutcome(editor);
-    editor.moveSelectionBy(1_600, 0, 0);
-    const overNothing = editOutcome(editor);
+    const overCaboose = await raisedPair([200, 0]);
+    selectAt(overCaboose.editor, overCaboose.backend, 0, 0);
+    toggleAt(overCaboose.editor, overCaboose.backend, [200, 0]);
+    overCaboose.editor.moveSelectionBy(0, 1_200, 0);
+    const overTheCaboose = groupMoveOutcome(overCaboose.editor);
+    const caboose = overCaboose.editor
+      .snapshot()
+      .catalog.find((item) => item.id === CABOOSE)?.label;
 
-    expect(laid.filter((pose) => pose.endsWith(" y3"))).toEqual([
-      `${HELD_BRICK} 0,0 y3`,
-      `${HELD_BRICK} 200,0 y3`,
-    ]);
-    expect({ oneMemberMates, overTheCaboose, overNothing }).toEqual({
-      oneMemberMates: {
-        poses: laid
-          .map((pose) => pose.replace(" 0,0 y3", " 0,400 y3").replace(" 200,0 y3", " 200,400 y3"))
-          .toSorted(),
-        refusal: null,
-        undoDepth: laid.length + 1,
+    const joined = await raisedPair([20, 0]);
+    selectAt(joined.editor, joined.backend, 50, 0);
+    toggleAt(joined.editor, joined.backend, [-30, 0]);
+    joined.editor.moveSelectionBy(0, 400, 0);
+    const carried = groupMoveOutcome(joined.editor);
+
+    expect({
+      apart: apart.laid.filter((pose) => !pose.endsWith(" y0")),
+      joined: joined.laid.filter((pose) => !pose.endsWith(" y0")),
+    }).toEqual({
+      apart: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 200,0 y3`],
+      joined: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 20,0 y6`],
+    });
+    expect({ oneOverAir, overTheCaboose, carried }).toEqual({
+      oneOverAir: {
+        poses: apart.laid,
+        refusal: expect.stringMatching(/^Can't move them there\. .*has nothing to rest on here/u),
+        undoDepth: apart.laid.length,
+        refusedAt: [200, 400],
       },
       overTheCaboose: {
-        poses: oneMemberMates.poses,
-        refusal: expect.stringMatching(
-          new RegExp(`^Can't move them there\\. .*${OVERLAP} .* in ${caboose}`, "u"),
-        ),
-        undoDepth: laid.length + 1,
+        poses: overCaboose.laid,
+        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8 in ${caboose ?? ""}`),
+        undoDepth: overCaboose.laid.length,
+        refusedAt: [0, 1200],
       },
-      overNothing: {
-        poses: oneMemberMates.poses,
-        refusal: expect.stringMatching(/^Can't move them there\. .*has nothing to rest on here/u),
-        undoDepth: laid.length + 1,
+      carried: {
+        poses: joined.laid
+          .map((pose) => pose.replace(" 0,0 y3", " 0,400 y3").replace(" 20,0 y6", " 20,400 y6"))
+          .toSorted(),
+        refusal: null,
+        undoDepth: joined.laid.length + 1,
+        refusedAt: null,
       },
     });
   }, 120_000);
