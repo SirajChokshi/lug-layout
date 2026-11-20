@@ -34,6 +34,7 @@ export interface PlanRegion {
   readonly originChunkZ: number;
   readonly footprint: PlanFootprint;
   readonly maxOverhangMm: number;
+  readonly maxReachMm: number;
 }
 
 export interface PlanState {

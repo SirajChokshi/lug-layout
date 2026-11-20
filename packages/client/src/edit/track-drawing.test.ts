@@ -1914,9 +1914,9 @@ it("reports unsupported track inside a plan as a plan issue, so the plan isn't V
   writeFullRebuild(delta, ground, layout);
   plans.apply(delta);
   const unsupported = (layout.unsupportedPieces() ?? []).map(({ piece }) => piece);
-  plans.setUnsupported(new Set(unsupported), new Set());
+  plans.setUnsupported(new Set(unsupported), new Set(), new Set());
   const flagged = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
-  plans.setUnsupported(new Set(), new Set());
+  plans.setUnsupported(new Set(), new Set(), new Set());
   const cleared = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
   plans.removePlan(planId);
 
