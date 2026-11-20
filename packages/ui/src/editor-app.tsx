@@ -29,7 +29,7 @@ import {
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
-import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { PlanPanel } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -40,6 +40,7 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
+import { usePlanVersion } from "./use-plan-version.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
@@ -101,16 +102,10 @@ function CameraState({ camera }: { readonly camera: IEditorCamera }) {
 }
 
 function PlanState({ plans }: { readonly plans: IPlanService }) {
-  const snapshot = usePlanSnapshot(plans);
+  usePlanVersion(plans);
   return (
-    <pre id="plan-state" data-plans={snapshot.plans.length}>
-      {JSON.stringify({
-        plans: snapshot.plans,
-        checks: snapshot.checks,
-        placements: snapshot.placements,
-        sandboxPlacements: snapshot.sandboxPlacements,
-        tableTopY: snapshot.tableTopY,
-      })}
+    <pre id="plan-state" data-plans={plans.plans().length}>
+      {JSON.stringify(plans.materialize())}
     </pre>
   );
 }
