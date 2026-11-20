@@ -1,6 +1,7 @@
 import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE, type PlacementKey } from "./plan-rules.ts";
 import { NO_SHAPE, ShapeTable, type PlanShape } from "./plan-shape.ts";
+import type { TrackOutline } from "./track-outline.ts";
 
 export const MODEL_SEGMENT = 0;
 export const TRACK_SEGMENT = 1;
@@ -248,6 +249,7 @@ export class PlanRows {
   unsupported = new Uint8Array(INITIAL_ROWS);
   shape = new Int32Array(INITIAL_ROWS).fill(NO_SHAPE);
   facts = new Int32Array(INITIAL_ROWS * FACT_STRIDE);
+  readonly outline: Array<TrackOutline | null> = Array.from({ length: INITIAL_ROWS }, () => null);
   readonly shapes = new ShapeTable();
   readonly order = new RowList(INITIAL_ROWS);
   private free = new Int32Array(INITIAL_ROWS);
@@ -263,6 +265,7 @@ export class PlanRows {
     this.source[row] = source;
     this.unsupported[row] = 0;
     this.shape[row] = NO_SHAPE;
+    this.outline[row] = null;
     clearFacts(this.facts, row * FACT_STRIDE);
     if (segment === TRACK_SEGMENT) this.setTrackRow(source, row);
     else this.models.set(source, row);
@@ -276,6 +279,7 @@ export class PlanRows {
     const source = this.source[row] ?? 0;
     if (this.segment[row] === TRACK_SEGMENT) this.trackRows[source] = NO_ROW;
     else this.models.delete(source);
+    this.outline[row] = null;
     this.free[this.freeCount++] = row;
     this.count--;
   }
@@ -284,6 +288,7 @@ export class PlanRows {
     this.order.clear();
     this.models.clear();
     this.trackRows.fill(NO_ROW);
+    this.outline.fill(null);
     this.freeCount = 0;
     this.allocated = 0;
     this.count = 0;
@@ -351,6 +356,7 @@ export class PlanRows {
     this.unsupported = grownUint8(this.unsupported, capacity);
     this.shape = grownInt32(this.shape, capacity, NO_SHAPE);
     this.facts = grownInt32(this.facts, capacity * FACT_STRIDE);
+    for (let row = this.outline.length; row < capacity; row++) this.outline.push(null);
     this.free = grownInt32(this.free, capacity);
     this.order.grow(capacity);
     this.capacity = capacity;

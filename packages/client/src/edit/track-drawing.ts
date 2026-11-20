@@ -42,6 +42,8 @@ import {
   solveClosure,
   studlessTopBlocker,
   PlacedOutline,
+  OutlineEdges,
+  TrackOutline,
   type TrackClearance,
   type MoveFrame,
   type OutlineRing,
@@ -491,6 +493,7 @@ export class TrackDrawing implements ExtensionSite {
   private field: DragField | null = null;
   private skipped: SkippedIds | null = null;
   private readonly crossingShapes = new Map<number, CrossingShape>();
+  private readonly planEdges = new Map<number, OutlineEdges>();
   private readonly supportPartList: SupportPart[] = [];
   private readonly crossingOutlines = new Map<number, PlacedOutline>();
   private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
@@ -527,6 +530,7 @@ export class TrackDrawing implements ExtensionSite {
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
       this.supportPartList.push({ catalogIndex, partIndex });
+      this.planEdges.set(catalogIndex, new OutlineEdges(shape.outline));
       this.crossingShapes.set(catalogIndex, {
         planOutline: shape.outline,
         bedLdu: shape.minY - part.boundsMin[1],
@@ -1561,6 +1565,7 @@ export class TrackDrawing implements ExtensionSite {
     delta.chunkKey[entry] = footprint.key.chunkKey;
     delta.labelA[entry] = piece + 1;
     delta.labelB[entry] = 0;
+    delta.outline[entry] = this.planOutline(piece);
     const { box } = footprint;
     const at = entry * BOX_STRIDE;
     delta.box[at + BOX_MIN_X] = box.minX;
@@ -1569,6 +1574,18 @@ export class TrackDrawing implements ExtensionSite {
     delta.box[at + BOX_MAX_X] = box.maxX;
     delta.box[at + BOX_MAX_Y] = box.maxY;
     delta.box[at + BOX_MAX_Z] = box.maxZ;
+  }
+
+  private planOutline(piece: number): TrackOutline {
+    const catalogIndex = this.layout.piece(piece);
+    const edges = this.planEdges.get(catalogIndex);
+    const connectors = this.pieces[catalogIndex]?.connectors;
+    if (!edges || !connectors) throw new Error(`laid track piece ${piece} has no plan outline`);
+    return new TrackOutline(
+      edges,
+      this.layout.pose(piece),
+      connectors.map((connector) => connector.pose),
+    );
   }
 
   writeIssues(delta: PlanDelta): void {
