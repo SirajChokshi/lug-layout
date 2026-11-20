@@ -5,7 +5,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import * as v from "valibot";
 import { httpReader, publicObjectUrl, type ObjectReader } from "../library/ldraw-library.ts";
-import { CONTENT_HASH_HEX_DIGITS, contentAddressedName } from "../publish.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "../content-hash.ts";
+import { contentAddressedName } from "../publish.ts";
 import {
   R2ObjectStore,
   sha256Hex,

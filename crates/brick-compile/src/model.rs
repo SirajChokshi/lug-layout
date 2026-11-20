@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::affine::Affine;
+use crate::authored::{identify_authored, is_signed_permutation, Authored, Rational};
 use crate::flatten::INHERIT_COLOR;
-use crate::ldraw::{self, Header, Line};
+use crate::ldraw::{self, Header, Line, PrintedDecimal};
 
 const MAX_SUBMODEL_DEPTH: usize = 32;
 pub const MODEL_ROOT: i64 = -1;
@@ -11,6 +12,140 @@ const UNOFFICIAL_PREFIX: &str = "unofficial_";
 const PART_FILE_EXTENSION: &str = ".dat";
 const SUBPART_DIRECTORY: &str = "s/";
 const OMR_SET_SEPARATOR: &str = " - ";
+const TRANSLATION_ENTRIES: [usize; 3] = [3, 7, 11];
+const ROTATION_ENTRIES: [usize; 9] = [0, 1, 2, 4, 5, 6, 8, 9, 10];
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BakeOptions {
+    pub omr_authoring_identification: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AuthoredLineKind {
+    Instance,
+    Placement,
+}
+
+impl AuthoredLineKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            AuthoredLineKind::Instance => "instance",
+            AuthoredLineKind::Placement => "placement",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AuthoredPrinted {
+    Decimal(PrintedDecimal),
+    Float(f64),
+}
+
+impl std::fmt::Display for AuthoredPrinted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            AuthoredPrinted::Float(value) => write!(f, "{value:?}"),
+            AuthoredPrinted::Decimal(PrintedDecimal { units, scale }) => {
+                let digits = units.unsigned_abs().to_string();
+                let scale = scale as usize;
+                let sign = if units < 0 { "-" } else { "" };
+                if scale == 0 {
+                    return write!(f, "{sign}{digits}");
+                }
+                let padded = format!("{digits:0>width$}", width = scale + 1);
+                let (whole, fraction) = padded.split_at(padded.len() - scale);
+                write!(f, "{sign}{whole}.{fraction}")
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct AuthoredRow {
+    pub kind: AuthoredLineKind,
+    pub line: usize,
+    pub axis: u8,
+    pub printed: AuthoredPrinted,
+    pub outcome: Authored,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AuthoredIdentification {
+    pub rows: Vec<AuthoredRow>,
+    pub excluded_rotated: Vec<(AuthoredLineKind, usize)>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AuthoredColumns {
+    pub line: Vec<usize>,
+    pub line_kind: Vec<&'static str>,
+    pub axis: Vec<u8>,
+    pub printed: Vec<String>,
+    pub grid: Vec<&'static str>,
+    pub identified: Vec<Option<RationalText>>,
+    pub residual: Vec<Option<RationalText>>,
+    pub excluded_line: Vec<usize>,
+    pub excluded_line_kind: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RationalText {
+    pub numerator: String,
+    pub denominator: String,
+}
+
+impl From<Rational> for RationalText {
+    fn from(value: Rational) -> Self {
+        RationalText {
+            numerator: value.numerator.to_string(),
+            denominator: value.denominator.to_string(),
+        }
+    }
+}
+
+const UNIDENTIFIED_GRID: &str = "unidentified";
+
+impl AuthoredIdentification {
+    pub fn columns(&self, drawn_instance: impl Fn(usize) -> Option<usize>) -> AuthoredColumns {
+        let line_of = |kind: AuthoredLineKind, line: usize| match kind {
+            AuthoredLineKind::Instance => drawn_instance(line),
+            AuthoredLineKind::Placement => Some(line),
+        };
+        let mut columns = AuthoredColumns::default();
+        for row in &self.rows {
+            let Some(line) = line_of(row.kind, row.line) else {
+                continue;
+            };
+            columns.line.push(line);
+            columns.line_kind.push(row.kind.name());
+            columns.axis.push(row.axis);
+            columns.printed.push(row.printed.to_string());
+            match row.outcome {
+                Authored::Identified {
+                    grid,
+                    value,
+                    residual,
+                } => {
+                    columns.grid.push(grid.name());
+                    columns.identified.push(Some(value.into()));
+                    columns.residual.push(Some(residual.into()));
+                }
+                Authored::SixteenthStep(_) | Authored::Unidentified => {
+                    columns.grid.push(UNIDENTIFIED_GRID);
+                    columns.identified.push(None);
+                    columns.residual.push(None);
+                }
+            }
+        }
+        for &(kind, line) in &self.excluded_rotated {
+            if let Some(line) = line_of(kind, line) {
+                columns.excluded_line.push(line);
+                columns.excluded_line_kind.push(kind.name());
+            }
+        }
+        columns
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModelInstance {
@@ -34,6 +169,7 @@ pub struct BakedModel {
     pub submodels: Vec<SubmodelInstance>,
     pub inline_parts: Vec<InlinePart>,
     pub loose_geometry: Vec<LooseGeometry>,
+    pub authored_identification: Option<AuthoredIdentification>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,6 +308,10 @@ pub fn mpd_sections(source: &str) -> HashMap<String, String> {
 }
 
 pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
+    bake_model_with(source, BakeOptions::default())
+}
+
+pub fn bake_model_with(source: &str, options: BakeOptions) -> Result<BakedModel, ModelError> {
     let (names, bodies) = split_sections(source);
     if names.is_empty() {
         return Err(ModelError::Empty);
@@ -193,7 +333,12 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         .enumerate()
         .map(|(i, name)| (name.as_str(), i))
         .collect();
-    let mut out = WalkOutput::default();
+    let mut out = WalkOutput {
+        authored: options
+            .omr_authoring_identification
+            .then(AuthoredIdentification::default),
+        ..WalkOutput::default()
+    };
     walk(
         &Walk {
             sections: &sections,
@@ -213,6 +358,7 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
         inline_parts,
         reached,
         loose,
+        authored,
     } = out;
     for instance in &mut instances {
         instance.matrix = y_up(&instance.matrix);
@@ -245,6 +391,7 @@ pub fn bake_model(source: &str) -> Result<BakedModel, ModelError> {
                 }
             })
             .collect(),
+        authored_identification: authored,
     })
 }
 
@@ -261,6 +408,46 @@ struct WalkOutput {
     inline_parts: BTreeMap<String, String>,
     reached: BTreeSet<usize>,
     loose: BTreeMap<usize, usize>,
+    authored: Option<AuthoredIdentification>,
+}
+
+impl WalkOutput {
+    fn identified_line(
+        &mut self,
+        line_matrix: &Affine,
+        printed: &[Option<PrintedDecimal>; 3],
+        kind: AuthoredLineKind,
+        line: usize,
+    ) -> Affine {
+        let Some(authored) = self.authored.as_mut() else {
+            return *line_matrix;
+        };
+        if !is_signed_permutation(ROTATION_ENTRIES.map(|entry| line_matrix.m[entry])) {
+            authored.excluded_rotated.push((kind, line));
+            return *line_matrix;
+        }
+        let mut identified = *line_matrix;
+        for (axis, (&entry, &decimal)) in TRANSLATION_ENTRIES.iter().zip(printed).enumerate() {
+            let authored_value = line_matrix.m[entry];
+            let outcome = identify_authored(decimal, authored_value);
+            if let Some(value) = outcome.value() {
+                identified.m[entry] = value.to_f64();
+            }
+            if !matches!(outcome, Authored::SixteenthStep(_)) {
+                authored.rows.push(AuthoredRow {
+                    kind,
+                    line,
+                    axis: axis as u8,
+                    printed: decimal.map_or(
+                        AuthoredPrinted::Float(authored_value),
+                        AuthoredPrinted::Decimal,
+                    ),
+                    outcome,
+                });
+            }
+        }
+        identified
+    }
 }
 
 struct Walk<'a> {
@@ -294,8 +481,8 @@ fn walk(
         let Line::Subfile {
             color: line_color,
             matrix: line_matrix,
+            printed_translation,
             reference,
-            ..
         } = line
         else {
             continue;
@@ -305,7 +492,17 @@ fn walk(
         } else {
             *line_color
         };
-        let child_matrix = matrix.then(line_matrix);
+        let placement = model
+            .index
+            .get(reference.as_str())
+            .is_some_and(|&child| !model.sections[child].is_part());
+        let (kind, line_index) = if placement {
+            (AuthoredLineKind::Placement, out.submodels.len())
+        } else {
+            (AuthoredLineKind::Instance, out.instances.len())
+        };
+        let line_matrix = out.identified_line(line_matrix, printed_translation, kind, line_index);
+        let child_matrix = matrix.then(&line_matrix);
         match model.index.get(reference.as_str()) {
             Some(&child) if model.sections[child].is_part() => {
                 let official = official_reference(&model.names[child]);
@@ -418,6 +615,131 @@ mod tests {
                 occurrences: 1,
             }]
         );
+    }
+
+    const OMR: BakeOptions = BakeOptions {
+        omr_authoring_identification: true,
+    };
+
+    fn part_line(x: &str, rotation: &str) -> String {
+        format!("1 16 {x} 0 0 {rotation} 3001.dat\n")
+    }
+
+    fn rational(numerator: i128, denominator: i128) -> Option<RationalText> {
+        Some(RationalText {
+            numerator: numerator.to_string(),
+            denominator: denominator.to_string(),
+        })
+    }
+
+    type Provenance = Option<(&'static str, Option<RationalText>, Option<RationalText>)>;
+
+    #[test]
+    fn omr_identification_takes_whole_ldu_within_r1_and_finer_grids_only_within_the_print_bound() {
+        let identity = "1 0 0 0 1 0 0 0 1";
+        let cases: [(&str, f64, Provenance); 12] = [
+            (
+                "10.02",
+                10.0,
+                Some(("whole", rational(10, 1), rational(-1, 50))),
+            ),
+            (
+                "-7.05",
+                -7.0,
+                Some(("whole", rational(-7, 1), rational(1, 20))),
+            ),
+            (
+                "10.06",
+                10.0625,
+                Some(("sixteenth", rational(161, 16), rational(1, 400))),
+            ),
+            (
+                "3.13",
+                3.125,
+                Some(("eighth", rational(25, 8), rational(-1, 200))),
+            ),
+            ("0.185", 0.185, Some(("unidentified", None, None))),
+            ("4.1", 4.1, Some(("unidentified", None, None))),
+            ("20.063", 20.0625, None),
+            ("5.5", 5.5, None),
+            (
+                "3.125e-2",
+                0.0,
+                Some(("whole", rational(0, 1), rational(-1, 32))),
+            ),
+            ("6.3e-2", 0.0625, None),
+            ("1.3e-1", 0.13, Some(("unidentified", None, None))),
+            ("5.8e-2", 0.058, Some(("unidentified", None, None))),
+        ];
+        let source: String = std::iter::once("0 FILE main.ldr\n0 !LDRAW_ORG Model\n".to_string())
+            .chain(cases.iter().map(|(x, _, _)| part_line(x, identity)))
+            .collect();
+        let baked = bake_model_with(&source, OMR).unwrap_or_else(|e| panic!("bakes: {e}"));
+        let columns = baked
+            .authored_identification
+            .as_ref()
+            .unwrap_or_else(|| panic!("the option records provenance"))
+            .columns(Some);
+        let mut row = 0;
+        for (line, (printed, value, provenance)) in cases.iter().enumerate() {
+            assert_eq!(baked.instances[line].matrix.m[3], *value, "{printed}");
+            let Some((grid, identified, residual)) = provenance else {
+                continue;
+            };
+            assert_eq!(
+                (
+                    columns.line[row],
+                    columns.line_kind[row],
+                    columns.axis[row],
+                    columns.grid[row],
+                    &columns.identified[row],
+                    &columns.residual[row],
+                ),
+                (line, "instance", 0, *grid, identified, residual),
+                "{printed}"
+            );
+            row += 1;
+        }
+        assert_eq!(columns.line.len(), row);
+        assert!(columns.excluded_line.is_empty());
+    }
+
+    #[test]
+    fn omr_identification_leaves_turned_lines_as_authored_and_identifies_placements_in_their_parent_frame(
+    ) {
+        let source = "0 FILE main.ldr\n0 !LDRAW_ORG Model\n1 16 40.02 0 0 1 0 0 0 1 0 0 0 1 sub.ldr\n1 16 10.02 0 0 0.866025 0 0.5 0 1 0 -0.5 0 0.866025 3001.dat\n0 FILE sub.ldr\n0 !LDRAW_ORG Model\n1 4 0.01 0 20 1 0 0 0 1 0 0 0 1 3003.dat\n";
+        let baked = bake_model_with(source, OMR).unwrap_or_else(|e| panic!("bakes: {e}"));
+        let columns = baked
+            .authored_identification
+            .as_ref()
+            .unwrap_or_else(|| panic!("the option records provenance"))
+            .columns(Some);
+        assert_eq!(baked.submodels[0].matrix.m[3], 40.0);
+        assert_eq!(baked.instances[0].matrix.m[3], 40.0);
+        assert_eq!(baked.instances[1].matrix.m[3], 10.02);
+        assert_eq!(
+            (columns.line, columns.line_kind, columns.printed),
+            (
+                vec![0, 0],
+                vec!["placement", "instance"],
+                vec!["40.02".to_string(), "0.01".to_string()]
+            )
+        );
+        assert_eq!(
+            (columns.excluded_line, columns.excluded_line_kind),
+            (vec![1], vec!["instance"])
+        );
+    }
+
+    #[test]
+    fn without_the_option_the_bake_keeps_authored_positions_and_records_no_provenance() {
+        let source = format!(
+            "0 FILE main.ldr\n0 !LDRAW_ORG Model\n{}",
+            part_line("10.02", "1 0 0 0 1 0 0 0 1")
+        );
+        let baked = bake_model(&source).unwrap_or_else(|e| panic!("bakes: {e}"));
+        assert_eq!(baked.instances[0].matrix.m[3], 10.02);
+        assert!(baked.authored_identification.is_none());
     }
 
     #[test]
