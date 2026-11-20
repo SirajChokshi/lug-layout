@@ -1,39 +1,39 @@
 import {
   HALF_TURN_16,
-  STUD_LDU,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
   normalizeHeading16,
-  rotateZeta16,
   subtractZeta16,
-  zeta16ToStuds,
   type Pose16,
-  type Zeta16,
 } from "@brr/math";
 import type { DrawingKit } from "./drawing-kit.ts";
 import {
-  NO_OBSTACLE,
-  OUTLINE_BOX_FLOATS,
-  boxesOverlap,
-  outlineBox,
-  outlinesOverlap,
-  poseLdu,
-  rotateOutline,
-  type TrackClearance,
-} from "./track-clearance.ts";
-import type { TrackMove, TrackPieceDef } from "./track-pose.ts";
-import { runMoves, runOfMoves, type TrackRun } from "./track-solver.ts";
+  addRotated,
+  coefficientNumbers,
+  coefficientsLdu,
+  type KitOutlines,
+  type MoveFrame,
+} from "./kit-outlines.ts";
+import { NO_OBSTACLE, RUN_CROSSING, poseLdu, type TrackClearance } from "./track-clearance.ts";
+import type { TrackMove } from "./track-pose.ts";
+import {
+  DEFAULT_CLOSURE_TURNS,
+  closuresWithinTurns,
+  runMoves,
+  runOfMoves,
+  type TrackRun,
+} from "./track-solver.ts";
 
 export interface ClosureSite {
   readonly clearance: TrackClearance;
-  readonly outlineOf: (piece: TrackPieceDef) => Float64Array;
+  readonly outlines: KitOutlines;
   readonly startOwner: number;
   readonly goalOwner: number;
 }
 
 export type ClearClosureResult =
   | { readonly kind: "exact"; readonly run: TrackRun }
-  | { readonly kind: "blocked" }
+  | { readonly kind: "blocked"; readonly blocker: number }
   | { readonly kind: "limit" };
 
 export interface AlgebraicClosure {
@@ -45,22 +45,12 @@ export interface AlgebraicClosure {
 const TABLE_DEPTH = 7;
 const SEARCH_NODES = 4096;
 const DETOUR_PIECES = 3 * ZETA16_ORDER;
-const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const BOUND_SLACK = 1e-9;
 const PIECE_COST = 1e6;
 const SEGMENT_COST = 1e-3;
 const NO_MOVE = -1;
 const KEY_HALF = 0x10000;
 const ORIGIN = new Float64Array(ZETA16_COEFFICIENT_COUNT);
-
-interface MoveFrame {
-  readonly move: TrackMove;
-  readonly delta: Float64Array;
-  readonly turn: number;
-  readonly lengthLdu: number;
-  readonly outlines: ReadonlyArray<Float64Array>;
-  readonly boxes: Float64Array;
-}
 
 interface SearchNode {
   readonly coefficients: Float64Array;
@@ -72,39 +62,6 @@ interface SearchNode {
   readonly parent: SearchNode | null;
   readonly move: number;
   readonly priority: number;
-}
-
-const BASIS_X = Float64Array.from({ length: ZETA16_COEFFICIENT_COUNT }, (_v, k) =>
-  Math.cos(k * HEADING_RADIANS),
-);
-const BASIS_Z = Float64Array.from({ length: ZETA16_COEFFICIENT_COUNT }, (_v, k) =>
-  Math.sin(k * HEADING_RADIANS),
-);
-
-function numbers(value: Zeta16): Float64Array {
-  return Float64Array.from(value, (c) => Number(c));
-}
-
-function arcLengthLdu(move: TrackMove): number {
-  const studs = zeta16ToStuds(move.delta);
-  const chord = Math.hypot(studs.x, studs.z) * STUD_LDU;
-  const steps = Math.min(move.turn, ZETA16_ORDER - move.turn);
-  if (steps === 0) return chord;
-  const angle = steps * HEADING_RADIANS;
-  return (chord * angle) / (2 * Math.sin(angle / 2));
-}
-
-function addRotated(delta: Float64Array, steps: number, out: Float64Array, sign: number): void {
-  const turns = normalizeHeading16(steps);
-  for (let power = 0; power < ZETA16_COEFFICIENT_COUNT; power++) {
-    const source = power - turns;
-    let value: number;
-    if (source >= 0) value = delta[source] ?? 0;
-    else if (source + ZETA16_COEFFICIENT_COUNT >= 0) {
-      value = -(delta[source + ZETA16_COEFFICIENT_COUNT] ?? 0);
-    } else value = delta[source + ZETA16_ORDER] ?? 0;
-    out[power] = (out[power] ?? 0) + sign * value;
-  }
 }
 
 function keyOf(coefficients: Float64Array, heading: number): string {
@@ -171,58 +128,24 @@ class ClosureGeometry {
   readonly finalHeading: number;
   private readonly originX: number;
   private readonly originZ: number;
-  private readonly shifted = new Float64Array(OUTLINE_BOX_FLOATS);
 
   constructor(
     readonly kit: DrawingKit,
     readonly start: Pose16,
     goal: Pose16,
-    private readonly site: ClosureSite,
+    readonly site: ClosureSite,
   ) {
-    this.frames = [kit.straight, kit.left, kit.right].map((move) => this.frameOf(move));
-    this.final = numbers(subtractZeta16(goal.position, start.position));
+    this.frames = site.outlines.frames;
+    this.final = coefficientNumbers(subtractZeta16(goal.position, start.position));
     this.finalHeading = normalizeHeading16(goal.heading + HALF_TURN_16);
     const origin = poseLdu(start);
     this.originX = origin.x;
     this.originZ = origin.z;
   }
 
-  private frameOf(move: TrackMove): MoveFrame {
-    const entry = move.piece.connectors[move.from];
-    if (!entry) throw new RangeError(`${move.piece.id} has no connector ${move.from}`);
-    const outline = this.site.outlineOf(move.piece);
-    const outlines: Float64Array[] = [];
-    const boxes = new Float64Array(ZETA16_ORDER * OUTLINE_BOX_FLOATS);
-    for (let heading = 0; heading < ZETA16_ORDER; heading++) {
-      const placementHeading = heading + HALF_TURN_16 - entry.heading;
-      const offset = zeta16ToStuds(rotateZeta16(entry.position, placementHeading));
-      const placed = rotateOutline(
-        outline,
-        placementHeading,
-        -offset.x * STUD_LDU,
-        -offset.z * STUD_LDU,
-      );
-      outlines.push(placed);
-      outlineBox(placed, boxes, heading * OUTLINE_BOX_FLOATS);
-    }
-    return {
-      move,
-      delta: numbers(move.delta),
-      turn: move.turn,
-      lengthLdu: arcLengthLdu(move),
-      outlines,
-      boxes,
-    };
-  }
-
   worldOf(coefficients: Float64Array): readonly [number, number] {
-    let x = 0;
-    let z = 0;
-    for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
-      x += (coefficients[k] ?? 0) * (BASIS_X[k] ?? 0);
-      z += (coefficients[k] ?? 0) * (BASIS_Z[k] ?? 0);
-    }
-    return [this.originX + x * STUD_LDU, this.originZ + z * STUD_LDU];
+    const [x, z] = coefficientsLdu(coefficients);
+    return [this.originX + x, this.originZ + z];
   }
 
   isFinal(coefficients: Float64Array, heading: number): boolean {
@@ -233,26 +156,18 @@ class ClosureGeometry {
     return true;
   }
 
-  private frameFor(move: TrackMove): MoveFrame {
-    const frame = this.frames.find((f) => f.move === move);
-    if (!frame) throw new Error(`${move.piece.id} is not a drawing-kit move`);
-    return frame;
-  }
-
-  laidBlocked(
+  laidBlocker(
     frame: MoveFrame,
     heading: number,
     x: number,
     z: number,
     first: boolean,
     last: boolean,
-  ): boolean {
-    const outline = frame.outlines[heading];
-    if (!outline) throw new RangeError(`no outline at heading ${heading}`);
-    return this.site.clearance.blocks(
-      outline,
-      frame.boxes,
-      heading * OUTLINE_BOX_FLOATS,
+  ): number {
+    return this.site.outlines.blocker(
+      this.site.clearance,
+      frame,
+      heading,
       x,
       z,
       first ? this.site.startOwner : NO_OBSTACLE,
@@ -270,17 +185,7 @@ class ClosureGeometry {
     bx: number,
     bz: number,
   ): boolean {
-    const shifted = this.shifted;
-    const bo = bHeading * OUTLINE_BOX_FLOATS;
-    shifted[0] = (b.boxes[bo] ?? 0) + bx;
-    shifted[1] = (b.boxes[bo + 1] ?? 0) + bz;
-    shifted[2] = (b.boxes[bo + 2] ?? 0) + bx;
-    shifted[3] = (b.boxes[bo + 3] ?? 0) + bz;
-    if (!boxesOverlap(a.boxes, aHeading * OUTLINE_BOX_FLOATS, ax, az, shifted, 0)) return false;
-    const aOutline = a.outlines[aHeading];
-    const bOutline = b.outlines[bHeading];
-    if (!aOutline || !bOutline) return false;
-    return outlinesOverlap(aOutline, ax, az, bOutline, bx, bz);
+    return this.site.outlines.meet(a, aHeading, ax, az, b, bHeading, bx, bz);
   }
 
   endsBlocked(): boolean {
@@ -293,18 +198,20 @@ class ClosureGeometry {
       after.fill(0);
       addRotated(frame.delta, this.start.heading, after, 1);
       const last = this.isFinal(after, normalizeHeading16(this.start.heading + frame.turn));
-      if (!this.laidBlocked(frame, this.start.heading, x, z, true, last)) firstFree = true;
+      if (this.laidBlocker(frame, this.start.heading, x, z, true, last) === NO_OBSTACLE) {
+        firstFree = true;
+      }
       const heading = normalizeHeading16(this.finalHeading - frame.turn);
       before.set(this.final);
       addRotated(frame.delta, heading, before, -1);
       const first = heading === this.start.heading && before.every((c) => c === 0);
       const [bx, bz] = this.worldOf(before);
-      if (!this.laidBlocked(frame, heading, bx, bz, first, true)) lastFree = true;
+      if (this.laidBlocker(frame, heading, bx, bz, first, true) === NO_OBSTACLE) lastFree = true;
     }
     return !firstFree || !lastFree;
   }
 
-  fits(moves: ReadonlyArray<TrackMove>): boolean {
+  firstBlocker(moves: ReadonlyArray<TrackMove>): number {
     const coefficients = new Float64Array(ZETA16_COEFFICIENT_COUNT);
     const xs = new Float64Array(moves.length);
     const zs = new Float64Array(moves.length);
@@ -314,16 +221,17 @@ class ClosureGeometry {
     for (let i = 0; i < moves.length; i++) {
       const move = moves[i];
       if (!move) continue;
-      const frame = this.frameFor(move);
+      const frame = this.site.outlines.frameFor(move);
       const [x, z] = this.worldOf(coefficients);
-      if (this.laidBlocked(frame, heading, x, z, i === 0, i === moves.length - 1)) return false;
+      const blocker = this.laidBlocker(frame, heading, x, z, i === 0, i === moves.length - 1);
+      if (blocker !== NO_OBSTACLE) return blocker;
       for (let j = 0; j < i - 1; j++) {
         const earlier = frames[j];
         if (!earlier) continue;
         if (
           this.piecesMeet(frame, heading, x, z, earlier, headings[j] ?? 0, xs[j] ?? 0, zs[j] ?? 0)
         ) {
-          return false;
+          return RUN_CROSSING;
         }
       }
       frames.push(frame);
@@ -333,14 +241,14 @@ class ClosureGeometry {
       addRotated(frame.delta, heading, coefficients, 1);
       heading = normalizeHeading16(heading + frame.turn);
     }
-    return true;
+    return NO_OBSTACLE;
   }
 
   costOf(moves: ReadonlyArray<TrackMove>): number {
     let cost = 0;
     let previous: TrackMove | null = null;
     for (const move of moves) {
-      cost += PIECE_COST + this.frameFor(move).lengthLdu;
+      cost += PIECE_COST + this.site.outlines.frameFor(move).lengthLdu;
       if (move !== previous) cost += SEGMENT_COST;
       previous = move;
     }
@@ -350,8 +258,6 @@ class ClosureGeometry {
 
 class ClearClosureSearch {
   private readonly table = new Map<string, number>();
-  private readonly maxStepLdu: number;
-  private readonly minLengthLdu: number;
   private readonly finalX: number;
   private readonly finalZ: number;
   private readonly scratch = new Float64Array(ZETA16_COEFFICIENT_COUNT);
@@ -361,15 +267,6 @@ class ClearClosureSearch {
     private readonly geometry: ClosureGeometry,
     private readonly lowerBound: number,
   ) {
-    let maxStep = 0;
-    let minLength = Number.POSITIVE_INFINITY;
-    for (const frame of geometry.frames) {
-      const studs = zeta16ToStuds(frame.move.delta);
-      maxStep = Math.max(maxStep, Math.hypot(studs.x, studs.z) * STUD_LDU);
-      minLength = Math.min(minLength, frame.lengthLdu);
-    }
-    this.maxStepLdu = maxStep;
-    this.minLengthLdu = minLength;
     [this.finalX, this.finalZ] = geometry.worldOf(geometry.final);
     this.buildTable();
   }
@@ -401,7 +298,10 @@ class ClearClosureSearch {
       Math.max(
         TABLE_DEPTH + 1,
         headingSteps(heading, this.geometry.finalHeading),
-        Math.ceil(Math.hypot(this.finalX - x, this.finalZ - z) / this.maxStepLdu - BOUND_SLACK),
+        Math.ceil(
+          Math.hypot(this.finalX - x, this.finalZ - z) / this.geometry.site.outlines.maxStepLdu -
+            BOUND_SLACK,
+        ),
       );
     return Math.max(bound, this.lowerBound - pieces);
   }
@@ -426,13 +326,17 @@ class ClearClosureSearch {
       cost,
       parent,
       move,
-      priority: cost + left * (PIECE_COST + this.minLengthLdu),
+      priority: cost + left * (PIECE_COST + this.geometry.site.outlines.minLengthLdu),
     };
   }
 
   private pieceBlocked(at: SearchNode, frame: MoveFrame, last: boolean): boolean {
     const geometry = this.geometry;
-    if (geometry.laidBlocked(frame, at.heading, at.x, at.z, at.parent === null, last)) return true;
+    if (
+      geometry.laidBlocker(frame, at.heading, at.x, at.z, at.parent === null, last) !== NO_OBSTACLE
+    ) {
+      return true;
+    }
     for (let earlier = at.parent; earlier?.parent; earlier = earlier.parent) {
       const laidFrom = earlier.parent;
       const earlierFrame = geometry.frames[earlier.move];
@@ -521,6 +425,40 @@ class ClearClosureSearch {
   }
 }
 
+interface Candidate {
+  readonly run: TrackRun;
+  readonly moves: ReadonlyArray<TrackMove>;
+  readonly cost: number;
+}
+
+function cheapestFirst(
+  geometry: ClosureGeometry,
+  kit: DrawingKit,
+  runs: ReadonlyArray<TrackRun>,
+): ReadonlyArray<Candidate> {
+  return runs
+    .map((run) => {
+      const moves = runMoves(kit, run);
+      return { run, moves, cost: geometry.costOf(moves) };
+    })
+    .toSorted((a, b) => a.cost - b.cost);
+}
+
+export function shortClearClosure(
+  kit: DrawingKit,
+  start: Pose16,
+  goal: Pose16,
+  site: ClosureSite,
+  maxPieces: number,
+): TrackRun | null {
+  const geometry = new ClosureGeometry(kit, start, goal, site);
+  const runs = closuresWithinTurns(kit, start, goal, DEFAULT_CLOSURE_TURNS, maxPieces);
+  for (const candidate of cheapestFirst(geometry, kit, runs)) {
+    if (geometry.firstBlocker(candidate.moves) === NO_OBSTACLE) return candidate.run;
+  }
+  return null;
+}
+
 export function clearClosure(
   kit: DrawingKit,
   start: Pose16,
@@ -529,23 +467,21 @@ export function clearClosure(
   algebraic: AlgebraicClosure,
 ): ClearClosureResult {
   const geometry = new ClosureGeometry(kit, start, goal, site);
-  if (algebraic.run && geometry.fits(runMoves(kit, algebraic.run))) {
-    return { kind: "exact", run: algebraic.run };
+  let blocker = NO_OBSTACLE;
+  if (algebraic.run) {
+    blocker = geometry.firstBlocker(runMoves(kit, algebraic.run));
+    if (blocker === NO_OBSTACLE) return { kind: "exact", run: algebraic.run };
   }
-  if (geometry.endsBlocked()) return { kind: "blocked" };
+  if (geometry.endsBlocked()) return { kind: "blocked", blocker };
   let sawBlockedJoin = algebraic.run !== null;
-  const candidates = algebraic.withinTurns
-    .map((run) => {
-      const moves = runMoves(kit, run);
-      return { run, moves, cost: geometry.costOf(moves) };
-    })
-    .toSorted((a, b) => a.cost - b.cost);
-  let incumbent: { readonly run: TrackRun; readonly cost: number } | null = null;
-  for (const candidate of candidates) {
-    if (geometry.fits(candidate.moves)) {
+  let incumbent: Candidate | null = null;
+  for (const candidate of cheapestFirst(geometry, kit, algebraic.withinTurns)) {
+    const hit = geometry.firstBlocker(candidate.moves);
+    if (hit === NO_OBSTACLE) {
       incumbent = candidate;
       break;
     }
+    if (blocker === NO_OBSTACLE) blocker = hit;
     sawBlockedJoin = true;
   }
   if (incumbent && incumbent.run.pieces <= algebraic.fewestPieces) {
@@ -557,5 +493,5 @@ export function clearClosure(
   if (found !== null && found !== "limit") return { kind: "exact", run: found };
   if (incumbent) return { kind: "exact", run: incumbent.run };
   if (found === "limit" && !sawBlockedJoin && !search.sawBlockedJoin) return { kind: "limit" };
-  return { kind: "blocked" };
+  return { kind: "blocked", blocker };
 }

@@ -46,6 +46,7 @@ const OUTSIDE_THE_JOIN_LOOKUP_LDU = 0.003;
 const AGAINST_IT_LDU = -0.0002;
 const OFF_THE_FIELD_LDU = { x: 0.0003, z: -0.0002 };
 const CIRCLE_CURVES = 16;
+const QUARTER_TURN_CURVES = CIRCLE_CURVES / 4;
 const TURNED_A_STEP = 1;
 const CURVE_PART = "ldraw:74747";
 const STRAIGHT_PART = "ldraw:74746";
@@ -69,14 +70,12 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 const container = new Container();
 let bundle: PartBundle;
 
-function laid(
-  drags: ReadonlyArray<readonly [readonly [number, number], readonly [number, number]]>,
-): TrackDrawing {
+function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): TrackDrawing {
   const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  for (const [[fx, fz], [tx, tz]] of drags) {
-    drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
-    drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-    drawing.endDrag();
+  for (const [partId, placement] of chain(start, partIds)) {
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement),
+    );
   }
   return drawing;
 }
@@ -84,7 +83,11 @@ function laid(
 function asModel(drawing: TrackDrawing): TrackInstances {
   const partIndex: number[] = [];
   const matrices: number[] = [];
-  for (const key of new Set(drawing.planFootprints().map((f) => f.key.chunkKey))) {
+  const keys = Array.from(
+    { length: drawing.pieceCount },
+    (_, p) => drawing.footprintAt(p).key.chunkKey,
+  );
+  for (const key of new Set(keys)) {
     const chunk = drawing.chunkInstances(key);
     if (!chunk) continue;
     for (let i = 0; i < chunk.count; i++) {
@@ -102,14 +105,11 @@ function asModel(drawing: TrackDrawing): TrackInstances {
 
 function cornerRun(): TrackDrawing {
   return laid([
-    [
-      [0, 0],
-      [32, 0],
-    ],
-    [
-      [32, 0],
-      [32, 48],
-    ],
+    STRAIGHT_PART,
+    STRAIGHT_PART,
+    ...Array.from({ length: QUARTER_TURN_CURVES }, () => CURVE_PART),
+    STRAIGHT_PART,
+    STRAIGHT_PART,
   ]);
 }
 
@@ -216,12 +216,7 @@ beforeAll(async () => {
 
 describe("modelTrackEnds", () => {
   it("recovers exactly the open ends of straight track saved into a model", () => {
-    const drawing = laid([
-      [
-        [0, 0],
-        [64, 0],
-      ],
-    ]);
+    const drawing = laid([STRAIGHT_PART, STRAIGHT_PART, STRAIGHT_PART, STRAIGHT_PART]);
     const ends = modelTrackEnds(asModel(drawing), bundle.parts, bundle.trackCatalog);
     expect(ends.uncertified).toEqual([]);
     const recovered = ends.openEnds.map((end) => {
@@ -440,7 +435,9 @@ describe("modelTrackEnds", () => {
     );
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
-    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd));
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd)),
+    );
     expect(drawing.joinedPairs()).toBe(internalJoins);
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });
@@ -448,27 +445,12 @@ describe("modelTrackEnds", () => {
   it("joins a model's track to another model's exactly where the laid run continues", () => {
     const mating = container.get(SNAP_MATING);
     const solver = container.get(CONNECTION_SOLVER);
-    const run = modelTrackEnds(
-      asModel(
-        laid([
-          [
-            [0, 0],
-            [32, 0],
-          ],
-        ]),
-      ),
-      bundle.parts,
-      bundle.trackCatalog,
-    );
+    const twoStraights = [STRAIGHT_PART, STRAIGHT_PART];
+    const [, , continued] = chain(pose16(STUD_POINT, 0), [...twoStraights, STRAIGHT_PART]);
+    if (!continued) throw new Error("a chain of three straights has a third");
+    const run = modelTrackEnds(asModel(laid(twoStraights)), bundle.parts, bundle.trackCatalog);
     const next = modelTrackEnds(
-      asModel(
-        laid([
-          [
-            [32, 0],
-            [64, 0],
-          ],
-        ]),
-      ),
+      asModel(laid(twoStraights, continued[1])),
       bundle.parts,
       bundle.trackCatalog,
     );

@@ -2,6 +2,7 @@ import { CHUNK_LDU } from "@brr/math";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import {
   compareSuperChunks,
+  encodeTrackPosition,
   shardName,
   superChunkOf,
   superChunkOfChunk,
@@ -12,6 +13,7 @@ import {
   type TrackRecordV1,
   type WorldShardV1,
 } from "@brr/schema/world";
+import type { TrackPieceAt } from "./edit-history.ts";
 import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
 
 export interface PlacementTarget {
@@ -76,6 +78,13 @@ export class DirtyShards {
   touchTrack(track: ReadonlyArray<TrackRecordV1>): void {
     for (const piece of track) {
       const superChunk = superChunkOfTrack(piece.position);
+      this.dirty.set(shardName(superChunk), superChunk);
+    }
+  }
+
+  touchTrackPieces(pieces: ReadonlyArray<TrackPieceAt>): void {
+    for (const piece of pieces) {
+      const superChunk = superChunkOfTrack(encodeTrackPosition(piece.pose.position));
       this.dirty.set(shardName(superChunk), superChunk);
     }
   }

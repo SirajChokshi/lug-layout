@@ -1,4 +1,4 @@
-import { NO_SWITCH, type TrackGraph } from "@brr/domain";
+import { NO_SWITCH, type TrackGraph } from "../track/track-graph.ts";
 import { ZETA16_ORDER } from "@brr/math";
 import { buildSimTrack, type BuiltSimTrack, type SimRoute } from "./sim-track.ts";
 import type { PlanPose, SimPathSegment } from "./route-geometry.ts";

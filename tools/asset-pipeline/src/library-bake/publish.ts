@@ -24,7 +24,10 @@ function listed(file: string, bytes: Uint8Array): IndexListing {
   const bucket = decodeJsonFile(LibraryBakeBucket, bytes, file);
   return {
     indexes: [],
-    leaves: Object.values(bucket.parts).flatMap((part) => [part.record, part.glb]),
+    leaves: [
+      ...Object.values(bucket.parts).flatMap((part) => [part.record, part.glb]),
+      ...(bucket.rollingDiagnostics === undefined ? [] : [bucket.rollingDiagnostics.file]),
+    ],
   };
 }
 

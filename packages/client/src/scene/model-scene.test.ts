@@ -89,6 +89,7 @@ class RecordingBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   setTrackEnds(): void {}
+  setGround(): void {}
   forceTier(): void {}
   setFarModel(_id: number, placement: FarModelPlacement | null): void {
     this.farModels.push(placement);

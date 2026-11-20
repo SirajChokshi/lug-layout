@@ -1,11 +1,11 @@
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
+import { assetCacheModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { BakeHelperRegistry } from "./bake-helper-registry.ts";
 import { CompilerLoader } from "./compiler-loader.ts";
 import { ImportWorkerHost } from "./import-worker-host.ts";
 import { ImportWorkerService } from "./import-worker-service.ts";
-import { IndexedDbByteCache } from "./record-cache.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
@@ -16,10 +16,9 @@ import {
   IMPORT_WORKER_SERVICE,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
-  RECORD_CACHE,
 } from "./tokens.ts";
 
-export function importWorkerModule(port: RpcPort): ContainerModule {
+function importWorkerModule(port: RpcPort): ContainerModule {
   return new ContainerModule(({ bind }) => {
     bind(IMPORT_PORT).toConstantValue(port);
     bind(IMPORT_FETCH).toConstantValue((url) => fetch(url));
@@ -38,9 +37,12 @@ export function importWorkerModule(port: RpcPort): ContainerModule {
           new ModelImportEngine(compiler, mirror, connectors, records, now, helpers);
       })
       .inSingletonScope();
-    bind(RECORD_CACHE).to(IndexedDbByteCache).inSingletonScope();
     bind(BAKE_HELPER_REGISTRY).to(BakeHelperRegistry).inSingletonScope();
     bind(IMPORT_WORKER_SERVICE).to(ImportWorkerService).inSingletonScope();
     bind(IMPORT_WORKER_HOST).to(ImportWorkerHost).inSingletonScope();
   });
+}
+
+export function importWorkerModules(port: RpcPort): ContainerModule[] {
+  return [importWorkerModule(port), assetCacheModule];
 }
