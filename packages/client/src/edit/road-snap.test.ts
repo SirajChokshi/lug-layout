@@ -187,6 +187,32 @@ describe("road-edge snap", () => {
     }
   });
 
+  it("snaps a piece flush against a road plate at a sub-stud phase, joining its road end, never into it or short of it", () => {
+    for (const offsetZ of [-7, 7]) {
+      const offset: RoadPlacement = { ...straight, id: 1, x: PLATE_SPAN, z: PLATE_SPAN + offsetZ };
+      const both = world([straight, offset]);
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        0,
+        1,
+        0,
+        PLATE_SPAN + 80,
+        0,
+        ANY_TURN,
+      );
+      expect(snap).toEqual({
+        x: PLATE_SPAN,
+        z: offsetZ,
+        rot: 0,
+        metCells: 32,
+        joinedCells: 32,
+        joinedRoadCells: 20,
+      });
+    }
+  });
+
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {
     const dual = roadBaseplate("30225b");
     for (const preferred of QUARTER_TURNS) {

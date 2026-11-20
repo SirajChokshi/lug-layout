@@ -40,12 +40,12 @@ export function cellExtent(placement: RoadPlacement): CellExtent {
     for (let column = 0; column < surface.columns; column += cornerStep(surface.columns)) {
       const localX = surface.minX + column * STUD_LDU + HALF_STUD_LDU;
       const localZ = surface.minZ + row * STUD_LDU + HALF_STUD_LDU;
-      const cellX = Math.floor((placement.x + cos * localX + sin * localZ) / STUD_LDU);
-      const cellZ = Math.floor((placement.z - sin * localX + cos * localZ) / STUD_LDU);
-      minX = Math.min(minX, cellX * STUD_LDU);
-      maxX = Math.max(maxX, (cellX + 1) * STUD_LDU);
-      minZ = Math.min(minZ, cellZ * STUD_LDU);
-      maxZ = Math.max(maxZ, (cellZ + 1) * STUD_LDU);
+      const centreX = placement.x + cos * localX + sin * localZ;
+      const centreZ = placement.z - sin * localX + cos * localZ;
+      minX = Math.min(minX, centreX - HALF_STUD_LDU);
+      maxX = Math.max(maxX, centreX + HALF_STUD_LDU);
+      minZ = Math.min(minZ, centreZ - HALF_STUD_LDU);
+      maxZ = Math.max(maxZ, centreZ + HALF_STUD_LDU);
     }
   }
   return { minX, maxX, minZ, maxZ };
@@ -99,8 +99,10 @@ function hitsAny(
   x: number,
   z: number,
 ): boolean {
-  for (const extent of extents) {
+  for (let e = 0; e < extents.length; e++) {
+    const extent = extents[e];
     if (
+      extent &&
       x + ghost.minX < extent.maxX &&
       x + ghost.maxX > extent.minX &&
       z + ghost.minZ < extent.maxZ &&
@@ -147,10 +149,13 @@ export function snapToRoadEdge(
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
     probe.rot = rot;
     nearby.length = 0;
-    for (const extent of placed) {
-      if (within(extent, ghost, cursorX, cursorZ)) nearby.push(extent);
+    for (let e = 0; e < placed.length; e++) {
+      const extent = placed[e];
+      if (extent && within(extent, ghost, cursorX, cursorZ)) nearby.push(extent);
     }
-    for (const extent of nearby) {
+    for (let e = 0; e < nearby.length; e++) {
+      const extent = nearby[e];
+      if (!extent) continue;
       const zSteps = besideZSteps(extent, ghost);
       const positions = 2 * zSteps + 2 * besideXSteps(extent, ghost);
       for (let p = 0; p < positions; p++) {

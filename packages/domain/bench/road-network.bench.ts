@@ -16,6 +16,7 @@ const ROOF_ROWS = 8;
 const QUARTER_TURNS = 4;
 const HOVER_ROUNDS = 40;
 const WARMUP_CALLS = 200;
+const WARMUP_CHANGES = 1000;
 const FAR_LDU = 1_000_000;
 const REPORTS = 20;
 const BUILDS = 20;
@@ -191,6 +192,7 @@ function settle(): Promise<void> {
 
 const collect: unknown = Reflect.get(globalThis, "gc");
 if (typeof collect !== "function") throw new Error("run the road network bench with --expose-gc");
+for (let change = 0; change < WARMUP_CHANGES; change++) changeNetwork();
 for (let warm = 0; warm < WARMUP_CALLS; warm++) {
   changeNetwork();
   probeHover(1);
@@ -220,6 +222,8 @@ const calls = hoverCalls(HOVER_ROUNDS);
 const coldNs = (cold.ms * 1e6) / calls;
 const perCallNs = ((busy.endMs - busy.startMs) * 1e6) / calls;
 const fresh = new RoadNetwork(placements);
+collect();
+await settle();
 const buffersBefore = process.memoryUsage().arrayBuffers;
 fresh.cleanFit(probe, fit);
 const memoBytes = process.memoryUsage().arrayBuffers - buffersBefore;
@@ -231,7 +235,7 @@ const cells = placements.reduce((sum, p) => sum + p.surface.columns * p.surface.
 process.stdout.write(
   [
     `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
-    `method: ${CITY_SIDE}×${CITY_SIDE} measured 44336 straights, each with a ${ROOF_COLUMNS}×${ROOF_ROWS} studless roof stacked ${ROOF_TOP_LDU} LDU up on its roadway, and a row of ${PLATE_ROW} measured 69958 plates (${placements.length} placements, ${cells.toLocaleString("en-US")} cells; ${report.joinedCells} joined, ${report.openCells} open, ${report.mismatchedCells} mismatched). Hover: in each quarter turn, a 44336 slid stud by stud along the city's open road ends and again half overlapping the last row (cleanFit, as road snapping probes), plus a 69958 slid along the plate row on the lattice and ${OFF_LATTICE_LDU} LDU off it (fit). First fits after a change: each of ${HOVER_ROUNDS} timed rounds follows an untimed add of a one-cell marker far away, so no pose is remembered. Repeated poses: ${HOVER_ROUNDS} timed rounds of the same probes. ${WARMUP_CALLS} warm-up runs of both first; young-generation bytes (less an empty probe's own) and GCs counted over the timed rounds only. Report and build: median of ${REPORTS} and ${BUILDS} runs.`,
+    `method: ${CITY_SIDE}×${CITY_SIDE} measured 44336 straights, each with a ${ROOF_COLUMNS}×${ROOF_ROWS} studless roof stacked ${ROOF_TOP_LDU} LDU up on its roadway, and a row of ${PLATE_ROW} measured 69958 plates (${placements.length} placements, ${cells.toLocaleString("en-US")} cells; ${report.joinedCells} joined, ${report.openCells} open, ${report.mismatchedCells} mismatched). Hover: in each quarter turn, a 44336 slid stud by stud along the city's open road ends and again half overlapping the last row (cleanFit, as road snapping probes), plus a 69958 slid along the plate row on the lattice and ${OFF_LATTICE_LDU} LDU off it (fit). First fits after a change: each of ${HOVER_ROUNDS} timed rounds follows an untimed add of a one-cell marker far away, so no pose is remembered. Repeated poses: ${HOVER_ROUNDS} timed rounds of the same probes. ${WARMUP_CHANGES} warm-up changes and ${WARMUP_CALLS} warm-up runs of both first; young-generation bytes (less an empty probe's own) and GCs counted over the timed rounds only. Report and build: median of ${REPORTS} and ${BUILDS} runs.`,
     "",
     "| Work | Calls | ns per call | Calls that join | GCs during run | Bytes allocated during run |",
     "|---|---:|---:|---:|---:|---:|",
