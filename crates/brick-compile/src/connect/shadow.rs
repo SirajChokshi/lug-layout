@@ -138,6 +138,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             off_lattice: Vec::new(),
             curated: gathered.curated,
             issues,
+            withheld: Vec::new(),
         }
     }
 

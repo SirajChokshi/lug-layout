@@ -1,17 +1,17 @@
 {
   "index": {
     "file": "library-connectors.json",
-    "sha256": "f9aedd9b3e07918fff3207a8dcfdc55526d0790d58787c74dea026a51071270b"
+    "sha256": "6263b9c60a077535357f10104130f31e9477803a2c996f35fe54945812f90aca"
   },
   "parts": 24985,
   "refused": [],
   "records": {
     "connectivity": 19058,
-    "connectors": 7375
+    "connectors": 7348
   },
   "faces": {
-    "connectivity": 371953,
-    "connectors": 59393
+    "connectivity": 369026,
+    "connectors": 58845
   },
-  "partsWithPieces": 7389
+  "partsWithPieces": 7384
 }
