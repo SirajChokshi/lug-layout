@@ -428,6 +428,21 @@ footer {
   cursor: grabbing;
 }
 
+.scene[data-drag="move"] {
+  cursor: move;
+}
+
+.marquee {
+  position: absolute;
+  border: 1px dashed #ff8c00;
+  background: rgb(255 140 0 / 12%);
+  pointer-events: none;
+}
+
+.marquee[hidden] {
+  display: none;
+}
+
 .view-controls {
   position: fixed;
   top: var(--panel-edge);

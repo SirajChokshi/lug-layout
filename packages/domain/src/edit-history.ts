@@ -4,7 +4,14 @@ import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
 
-export type EditKind = "place" | "rotate" | "remove" | "road" | "lay-track" | "throw-switch";
+export type EditKind =
+  | "place"
+  | "rotate"
+  | "move"
+  | "remove"
+  | "road"
+  | "lay-track"
+  | "throw-switch";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -22,7 +29,7 @@ export interface TrackChange {
 export const NO_TRACK_CHANGE: TrackChange = { lift: [], lay: [] };
 
 export type EditSummary =
-  | { readonly kind: "place" | "rotate" | "remove" }
+  | { readonly kind: "place" | "rotate" | "move" | "remove" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number };
@@ -144,6 +151,7 @@ function summary(edit: Edit): EditSummary {
   switch (edit.kind) {
     case "place":
     case "rotate":
+    case "move":
     case "remove":
       return { kind: edit.kind };
     case "throw-switch":

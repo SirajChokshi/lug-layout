@@ -802,7 +802,7 @@ class PlacedEntry implements PlacedModel {
   }
 }
 
-const NO_ENTRIES: ReadonlySet<PlacedEntry> = new Set();
+export const NO_MODELS: ReadonlySet<PlacedModel> = new Set();
 
 export interface RebuildReport {
   readonly chunks: number;
@@ -836,6 +836,13 @@ function addTo(index: Map<number, Set<PlacedEntry>>, key: number, entry: PlacedE
   set.add(entry);
 }
 
+export interface RestProbe {
+  readonly placeable: Placeable;
+  readonly x: number;
+  readonly z: number;
+  readonly rot: number;
+}
+
 export interface PlacementSource {
   readonly placement: PlacementRef;
   readonly handle: PlacementHandle;
@@ -860,6 +867,7 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
 
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
+  private readonly live = new Set<PlacedEntry>();
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
@@ -919,7 +927,7 @@ export class PlacedChunks {
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
     const vacated = new Set<number>();
-    const removed: PlacedModel[] = [];
+    const removed: PlacedEntry[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
@@ -927,7 +935,7 @@ export class PlacedChunks {
       for (const key of entry.chunks.keysWithColumns()) vacated.add(key);
       removed.push(entry);
     }
-    this.restamp(vacated, NO_ENTRIES);
+    this.restamp(vacated, NO_MODELS);
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
@@ -947,7 +955,7 @@ export class PlacedChunks {
     const added: PlacedModel[] = [];
     for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
       const detached = this.detach(entry.handle);
-      this.restamp(detached.chunks.keysWithColumns(), NO_ENTRIES);
+      this.restamp(detached.chunks.keysWithColumns(), NO_MODELS);
       detached.addRebuildKeys(touched, this.hasAntiStudCovers);
       removed.push(detached);
       const replaced = this.insert(detached.placement, detached.handle, next);
@@ -957,29 +965,31 @@ export class PlacedChunks {
     return { added, removed, report: this.rebuild(touched) };
   }
 
-  restingHeight(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    ignore: PlacedModel | null,
-  ): number {
-    let ignored: PlacedEntry | null = null;
-    for (let e = 0; e < this.entries.length; e++) {
-      if (this.entries[e] === ignore) ignored = this.entries[e] ?? null;
-    }
-    if (ignored) this.restamp(ignored.chunks.keysWithColumns(), new Set([ignored]));
-    const yPlates = restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
-    if (ignored) this.restamp(ignored.chunks.keysWithColumns(), NO_ENTRIES);
-    return yPlates;
+  restingHeights(
+    probes: ReadonlyArray<RestProbe>,
+    exempt: ReadonlySet<PlacedModel>,
+  ): ReadonlyArray<number> {
+    const keys = this.columnKeysOf(exempt);
+    if (keys.size > 0) this.restamp(keys, exempt);
+    const heights = probes.map(({ placeable, x, z, rot }) =>
+      restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot)),
+    );
+    if (keys.size > 0) this.restamp(keys, NO_MODELS);
+    return heights;
   }
 
-  riderOn(model: PlacedModel): PlacedModel | null {
-    const base = this.entries.find((entry) => entry === model);
+  restsOn(rider: PlacedModel, base: PlacedModel): boolean {
+    const riding = this.entryOf(rider);
+    const carrier = this.entryOf(base);
+    return riding !== null && carrier !== null && riding !== carrier && riding.restsOn(carrier);
+  }
+
+  riderOn(model: PlacedModel, carried: ReadonlySet<PlacedModel>): PlacedModel | null {
+    const base = this.entryOf(model);
     if (!base) return null;
     for (const key of base.chunks.keysWithColumns()) {
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== base && entry.restsOn(base)) return entry;
+        if (entry !== base && !carried.has(entry) && entry.restsOn(base)) return entry;
       }
     }
     return null;
@@ -991,7 +1001,7 @@ export class PlacedChunks {
     z: number,
     rot: number,
     yPlates: number,
-    ignore: PlacedModel | null,
+    exempt: ReadonlySet<PlacedModel>,
   ): PlacedModel | null {
     const slabs = placeable.slabBoxes;
     const pose = this.probe.at(x, z, rot);
@@ -1000,7 +1010,7 @@ export class PlacedChunks {
       pose.worldBox(slabs, b, yLdu, scratchBox, 0);
       for (let e = 0; e < this.slabbed.length; e++) {
         const entry = this.slabbed[e];
-        if (!entry || entry === ignore) continue;
+        if (!entry || exempt.has(entry)) continue;
         const theirs = entry.slab;
         for (let t = 0; t < theirs.length; t += BOX_FLOATS) {
           if (boxesOverlap(scratchBox, 0, theirs, t)) return entry;
@@ -1010,24 +1020,37 @@ export class PlacedChunks {
     return null;
   }
 
-  strandedRider(removed: PlacedModel): PlacedModel | null {
-    const base = this.entries.find((entry) => entry === removed);
-    if (!base) return null;
+  strandedRider(removed: ReadonlySet<PlacedModel>): PlacedModel | null {
     const riders = new Set<PlacedEntry>();
-    for (const key of base.chunks.keysWithColumns()) {
+    for (const key of this.columnKeysOf(removed)) {
       for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== base && entry.handle.yPlates > 0) riders.add(entry);
+        if (!removed.has(entry) && entry.handle.yPlates > 0) riders.add(entry);
       }
     }
+    const vacated = this.columnKeysOf(removed);
     for (const rider of riders) {
-      const without = new Set([base, rider]);
-      const keys = new Set([...base.chunks.keysWithColumns(), ...rider.chunks.keysWithColumns()]);
+      const without = new Set<PlacedModel>(removed).add(rider);
+      const keys = new Set([...vacated, ...rider.chunks.keysWithColumns()]);
       this.restamp(keys, without);
       const yPlates = restingHeight(this.occupancy, rider.placeable, rider.pose);
-      this.restamp(keys, NO_ENTRIES);
+      this.restamp(keys, NO_MODELS);
       if (yPlates < rider.handle.yPlates) return rider;
     }
     return null;
+  }
+
+  private entryOf(model: PlacedModel): PlacedEntry | null {
+    return model instanceof PlacedEntry && this.live.has(model) ? model : null;
+  }
+
+  private columnKeysOf(models: ReadonlySet<PlacedModel>): ReadonlySet<number> {
+    const keys = new Set<number>();
+    for (const model of models) {
+      const entry = this.entryOf(model);
+      if (!entry) continue;
+      for (const key of entry.chunks.keysWithColumns()) keys.add(key);
+    }
+    return keys;
   }
 
   studTotals(): StudTotals {
@@ -1072,7 +1095,7 @@ export class PlacedChunks {
     }
   }
 
-  private restamp(keys: Iterable<number>, except: ReadonlySet<PlacedEntry>): void {
+  private restamp(keys: Iterable<number>, except: ReadonlySet<PlacedModel>): void {
     for (const key of keys) {
       this.occupancy.clearChunk(key);
       for (const entry of this.byColumnChunk.get(key) ?? []) {
@@ -1102,6 +1125,7 @@ export class PlacedChunks {
     this.slabbed.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
+    this.live.clear();
   }
 
   private insert(
@@ -1111,6 +1135,7 @@ export class PlacedChunks {
   ): PlacedEntry {
     const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
+    this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
@@ -1130,6 +1155,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.live.delete(entry);
     this.backend.setFarModel(entry.id, null);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
