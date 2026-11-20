@@ -1,7 +1,7 @@
 import { STUD_LDU } from "@brr/math";
 import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
-import { togglePlacementMode } from "../edit/placement-mode.ts";
+import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placement-mode.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
@@ -399,7 +399,8 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
   },
   {
     id: "toggle-placement-mode",
-    title: "Switch between magnetic and precise placement, while placing or holding a piece",
+    title:
+      "Switch between magnetic and precise placement (at an open track end, A lays a left curve)",
     group: "Edit",
     keys: [{ key: "a" }],
     keywords: "snap magnet magnetic assist precise exact free toggle",
@@ -612,7 +613,7 @@ export function commandEnabled(
     case "cancel":
       return snapshot.gesture !== null || snapshot.fillDraft !== null;
     case "toggle-placement-mode":
-      return snapshot.mode === "place" || snapshot.track?.held != null;
+      return placementModeSwitchEnabled(snapshot, play);
     case "rotate":
     case "rotate-back":
       return (

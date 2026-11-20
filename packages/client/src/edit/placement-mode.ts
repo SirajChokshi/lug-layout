@@ -1,5 +1,6 @@
 import { STUD_LDU } from "@brr/math";
-import type { IEditor } from "./editor.ts";
+import type { PlaySnapshot } from "../play/train-play.ts";
+import type { EditorSnapshot, IEditor } from "./editor.ts";
 import type { PlacementHover, PlacementMode } from "./placement-hover.ts";
 
 export function effectivePlacementMode(
@@ -33,6 +34,13 @@ export function magnetMove(placement: PlacementHover): MagnetMove | null {
   if (placement.mode !== "assist" || !placement.magnetised) return null;
   const { dxLdu, dzLdu, dyPlates } = placement.magnet;
   return { studsX: studsAlong(dxLdu), studsZ: studsAlong(dzLdu), plates: dyPlates };
+}
+
+export function placementModeSwitchEnabled(
+  snapshot: Pick<EditorSnapshot, "status">,
+  play?: Pick<PlaySnapshot, "status">,
+): boolean {
+  return snapshot.status === "ready" && play?.status !== "running";
 }
 
 export function togglePlacementMode(editor: IEditor): void {
