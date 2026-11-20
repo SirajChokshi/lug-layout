@@ -1,10 +1,9 @@
-import { layMoves, runMoves, type DrawingKit, type TrackMove, type TrackRun } from "@brr/domain";
+import { runMoves, type DrawingKit, type TrackMove, type TrackRun } from "@brr/domain";
 import {
   HALF_TURN_16,
   STUD_LDU,
   normalizeHeading16,
   pose16Equals,
-  posesJoin16,
   zeta16Direction,
   zeta16ToStuds,
   type Pose16,
@@ -41,7 +40,7 @@ type PieceChoice = Extract<ExtensionChoice, { readonly kind: ExtensionTurn }>;
 export interface ExtensionSite {
   readonly kit: DrawingKit;
   endPoses(): ReadonlyArray<Pose16>;
-  layableEnd(end: number): boolean;
+  joinedEnd(from: number, move: TrackMove): number | null;
   closure(from: number, to: number): ExtensionJoin;
   crosses(from: number, move: TrackMove, joins: number | null): TrackBlockView | null;
 }
@@ -162,8 +161,7 @@ export class TrackExtension {
   }
 
   focusOn(hovered: number | null): void {
-    const pointed = hovered !== null && this.site.layableEnd(hovered) ? hovered : null;
-    const from = pointed ?? (this.anchor === null ? null : this.endIndex(this.anchor));
+    const from = hovered ?? (this.anchor === null ? null : this.endIndex(this.anchor));
     if (from === (this.focus?.from ?? null)) return;
     this.changes++;
     if (from === null) {
@@ -239,14 +237,6 @@ export class TrackExtension {
     );
   }
 
-  private joinedEnd(start: Pose16, move: TrackMove): number | null {
-    const { end } = layMoves(start, [move]);
-    const joined = this.site
-      .endPoses()
-      .findIndex((open, index) => this.site.layableEnd(index) && posesJoin16(end, open));
-    return joined < 0 ? null : joined;
-  }
-
   private optionsFrom(from: number): EndOptions {
     const cached = this.options.get(from);
     if (cached) return cached;
@@ -256,7 +246,7 @@ export class TrackExtension {
     if (!start) throw new RangeError(`there is no open end ${from}`);
     const pieces = [kit.straight, kit.left, kit.right]
       .map((move): PieceChoice => {
-        const joins = this.joinedEnd(start, move);
+        const joins = this.site.joinedEnd(from, move);
         return {
           kind: turnSeenFromAbove(move),
           moves: [move],
@@ -266,9 +256,7 @@ export class TrackExtension {
       })
       .toSorted((a, b) => TURN_ORDER.indexOf(a.kind) - TURN_ORDER.indexOf(b.kind));
     const nearest = ends
-      .flatMap((end, index) =>
-        this.site.layableEnd(index) ? (targetAhead(start, end, index) ?? []) : [],
-      )
+      .flatMap((end, index) => (index === from ? [] : (targetAhead(start, end, index) ?? [])))
       .toSorted((a, b) => a.distanceLdu - b.distanceLdu)
       .slice(0, JOIN_TARGETS);
     const joins: ExtensionChoice[] = [];

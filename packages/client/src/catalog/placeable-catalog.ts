@@ -9,6 +9,7 @@ import {
   type PartModel,
   type PartShapeAsset,
   type PartShapeRecord,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
 import type {
@@ -49,6 +50,7 @@ import {
 } from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
+import type { RollingStock } from "../edit/train-gauge.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
@@ -152,10 +154,16 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   addImported(file: ImportedFile): Promise<ImportOutcome>;
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
+  rollingStock(): Promise<RollingStockSet>;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
+}
+
+export interface RollingStockSet {
+  readonly trains: ReadonlyArray<RollingStock>;
+  readonly studPrimitives: ReadonlyArray<StudPrimitiveAsset>;
 }
 
 interface CatalogSlot {
@@ -328,6 +336,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
+  private studPrimitiveAssets: ReadonlyArray<StudPrimitiveAsset> = [];
+  private trainRefIds: ReadonlyArray<number> = [];
   private placeablesByRefId: Array<Placeable | null> = [];
   private readonly loads = new Map<number, Promise<Placeable>>();
   private readonly modelNames = new Map<Placeable, string>();
@@ -361,6 +371,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     ]);
     const palette = new MergedParts(shapes.map(undrawnPart));
     this.palette = palette;
+    this.studPrimitiveAssets = studPrimitives;
     this.meshes = new PartMeshStream(this.loader, this.backend, palette, index.lod, (progress) => {
       this.progress = { ...progress, farModelMeshes: this.progress.farModelMeshes };
       this.notify();
@@ -425,6 +436,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         : [],
     );
     const skipped: SkippedModel[] = [];
+    const trains: number[] = [];
     for (const entry of index.models) {
       if (entry.lattice === null) {
         skipped.push({
@@ -434,9 +446,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         });
         continue;
       }
+      if (entry.vehicles > 0) trains.push(slots.length);
       placeables.push(null);
       slots.push(lazySlot(entry, thumbnails));
     }
+    this.trainRefIds = trains;
     this.slots = slots;
     this.placeablesByRefId = placeables;
     return skipped;
@@ -756,6 +770,17 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   playModel(placeable: Placeable): PlayModel | null {
     return this.playModels.get(placeable) ?? null;
+  }
+
+  async rollingStock(): Promise<RollingStockSet> {
+    await Promise.all(this.trainRefIds.map((refId) => this.load(refId)));
+    const trains = [...this.playModels.values()].map(({ name, model }) => ({
+      name,
+      partIndex: model.partIndex,
+      matrices: model.matrices,
+      vehicles: model.vehicles,
+    }));
+    return { trains, studPrimitives: this.studPrimitiveAssets };
   }
 
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {

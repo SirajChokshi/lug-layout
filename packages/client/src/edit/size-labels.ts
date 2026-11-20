@@ -4,7 +4,7 @@ import type { WorldBox } from "@brr/render";
 export const MM_PER_CM = 10;
 const TENTHS = 10;
 
-export type LabelKind = "ruler" | "draft" | "ghost" | "selection" | "table";
+export type LabelKind = "ruler" | "draft" | "ghost" | "selection" | "table" | "height";
 
 export interface LabelView {
   readonly id: string;

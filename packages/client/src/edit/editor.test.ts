@@ -7632,3 +7632,272 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 }, 120_000);
+
+const PIER_PLATES = 5;
+const TALLEST_TRAIN = "10014-1";
+const BRIDGE_PLATES = 39;
+const PIER_SIDE_SLOPE = 10;
+const PIER_SIDE_INSET_LDU = 30;
+const PIER_BRICK = "ldraw:3001";
+const PIER_PLATE = "ldraw:3020";
+
+async function raisedEditor(models: ReadonlyArray<string>) {
+  const started = await startEditor(models, new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+  });
+  const place = placer(started.editor, started.backend);
+  for (const x of [-32, 0, 32]) {
+    for (const z of [-32, 0, 32]) await place(BASEPLATE, x * STUD, z * STUD);
+  }
+  return started;
+}
+
+async function layRaised(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): Promise<void> {
+  dragTrack(editor, backend, from, to);
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
+    timeout: 60_000,
+  });
+}
+
+function placedImports(editor: IEditor) {
+  const { refs, placements } = editor.dump();
+  return placements.refId.flatMap((ref, i) =>
+    refs[ref]?.startsWith("import:")
+      ? [
+          {
+            ref: refs[ref] ?? "",
+            x: placements.x[i] ?? 0,
+            z: placements.z[i] ?? 0,
+            yPlates: placements.yPlates[i] ?? 0,
+            rot: placements.rot[i] ?? 0,
+          },
+        ]
+      : [],
+  );
+}
+
+function catalogLabel(editor: IEditor, ref: string): string {
+  return editor.snapshot().catalog.find((item) => item.id === ref)?.label ?? ref;
+}
+
+function laidHeights(editor: IEditor) {
+  return editor.dump().laidTrack.map((piece) => [piece.yPlates, piece.rise ?? 0]);
+}
+
+function selectFromSide(editor: IEditor, backend: AimedBackend, x: number, z: number) {
+  editor.chooseItem(null);
+  backend.aim(x, z - PIER_SIDE_INSET_LDU, PIER_SIDE_SLOPE);
+  editor.click(0, 0, 0);
+  return editor.snapshot().selection?.primary ?? null;
+}
+
+it("lays raised runs on generated brick piers of real parts, each piece held only by its anti-studs on a pier's studs: joined, reported unsupported once its pier is removed, and undone and redone with its piers as one edit", async () => {
+  const { editor, backend, catalog } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, 0], [0, 0]);
+  await layRaised(editor, backend, [16 * STUD, 0], [48 * STUD, 0]);
+  await layRaised(editor, backend, [0, 0], [16 * STUD, 0]);
+  const closed = editor.snapshot().track?.lastCommit;
+  const piers = placedImports(editor);
+  const pierRef = piers[0]?.ref ?? "";
+  const pier = catalog.placeables()[catalog.itemRefId(pierRef) ?? -1];
+  const pierParts = Array.from(pier?.parts.partIndex ?? [], (index) => catalog.parts()[index]?.id);
+  const supported = editor.snapshot().track?.unsupported;
+  const laid = editor.dump().laidTrack.length;
+  const heights = laidHeights(editor);
+  const raisedLabels = editor.snapshot().labels.filter((label) => label.kind === "height");
+  const removed = selectFromSide(editor, backend, piers[0]?.x ?? 0, piers[0]?.z ?? 0);
+  editor.deleteSelection(0);
+  const afterRemoval = editor.snapshot().track?.unsupported;
+  editor.undo(0);
+  const pierBack = editor.snapshot().track?.unsupported;
+  const before = layoutState(editor);
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack.length, piers: placedImports(editor).length };
+  editor.redo(0);
+
+  expect(closed).toBe("joined");
+  expect(catalogLabel(editor, pierRef)).toBe(`track-pier-${PIER_PLATES}-plates.ldr`);
+  expect(pierParts.toSorted()).toEqual([PIER_BRICK, PIER_PLATE, PIER_PLATE]);
+  expect(heights).toEqual(Array.from({ length: laid }, () => [PIER_PLATES, 0]));
+  expect(piers).toHaveLength(laid);
+  expect(piers.every((placed) => placed.ref === pierRef && placed.yPlates === 0)).toBe(true);
+  expect(supported).toBe(0);
+  expect(raisedLabels.length).toBeGreaterThan(0);
+  expect(raisedLabels.every((label) => label.text.startsWith(`${PIER_PLATES} plates`))).toBe(true);
+  expect(removed).toMatchObject({ kind: "model", item: pierRef });
+  expect(afterRemoval).toBe(1);
+  expect(pierBack).toBe(0);
+  expect(undone).toEqual({ laid: laid - 1, piers: laid - 1 });
+  expect(layoutState(editor)).toEqual(before);
+}, 180_000);
+
+it("passes track over laid track only where the tallest train measured from the bundle fits under it: a plate lower stops the run before the crossing and names the train", async () => {
+  const { editor, backend } = await raisedEditor([TALLEST_TRAIN]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-8 * STUD, -40 * STUD], [-8 * STUD, 40 * STUD]);
+  const ground = editor.dump().laidTrack.length;
+  editor.raiseTrack(BRIDGE_PLATES - 1);
+  await vi.waitFor(() => expect(editor.snapshot().track?.height.gauge).not.toBeNull(), {
+    timeout: 60_000,
+  });
+  const gauge = editor.snapshot().track?.height.gauge;
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const low = {
+    commit: editor.snapshot().track?.lastCommit,
+    block: editor.snapshot().track?.lastBlock,
+    raised: editor.dump().laidTrack.length - ground,
+  };
+  editor.undo(0);
+  editor.raiseTrack(1);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const clear = {
+    commit: editor.snapshot().track?.lastCommit,
+    block: editor.snapshot().track?.lastBlock,
+    raised: editor.dump().laidTrack.length - ground,
+    unsupported: editor.snapshot().track?.unsupported,
+  };
+  const clearance = editor
+    .snapshot()
+    .labels.filter((label) => label.kind === "height" && label.text.endsWith("clear"));
+
+  expect(gauge?.model).toBe(TALLEST_TRAIN);
+  expect(gauge?.heightLdu).toBeCloseTo(282.92, 2);
+  expect(low).toEqual({
+    commit: "laid",
+    block: { kind: "clearance", gapLdu: 280, above: true, gauge },
+    raised: 1,
+  });
+  expect(clear).toEqual({ commit: "laid", block: null, raised: 3, unsupported: 0 });
+  expect(clearance.map((label) => label.text)).toEqual(["36 plates (115.2 mm) clear"]);
+}, 180_000);
+
+const MY_PIER = `0 My viaduct pier
+0 Name: my-viaduct-pier.ldr
+0 Author: A Builder
+1 15 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 3022.dat
+1 15 0 -16 0 1 0 0 0 1 0 0 0 1 3022.dat
+`;
+
+it("holds raised track on a user's own pier of official parts exactly like a generated one, and builds piers only where nothing holds a piece already", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  const imported = await editor.importModelFile({
+    name: "my-viaduct-pier.ldr",
+    bytes: new TextEncoder().encode(MY_PIER),
+  });
+  const mine = editor.snapshot().modelImport?.item ?? "";
+  const placed = placerNow(editor, backend)(mine, -8 * STUD, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const imports = placedImports(editor);
+
+  expect(imported).toBe(true);
+  expect(placed).toMatchObject({ refusedClicks: 0 });
+  expect(imports.filter((pier) => pier.ref === mine)).toHaveLength(1);
+  expect(imports.filter((pier) => pier.ref !== mine)).toHaveLength(1);
+  expect(laidHeights(editor)).toEqual([
+    [PIER_PLATES, 0],
+    [PIER_PLATES, 0],
+  ]);
+  expect(editor.snapshot().track?.unsupported).toBe(0);
+}, 180_000);
+
+it("ramps a run from a raised end toward the drawing height one plate per straight, reports its tilted pieces unsupported, and refuses a join it can't climb to in its pieces as too steep", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [32 * STUD, 0], [48 * STUD, 0]);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-48 * STUD, 0], [-32 * STUD, 0]);
+  await layRaised(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
+  const steep = editor.snapshot().track?.lastCommit;
+  editor.raiseTrack(-PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const ramp = laidHeights(editor).slice(2);
+  const unsupported = editor.snapshot().track?.lastUnsupported;
+
+  expect(steep).toBe("refused-too-steep");
+  expect(ramp).toEqual([
+    [PIER_PLATES, -1],
+    [PIER_PLATES - 1, -1],
+    [PIER_PLATES - 2, -1],
+  ]);
+  expect(unsupported).toMatchObject({ pieces: 3, tilted: 3 });
+}, 180_000);
+
+class StudsLandLaterImporter implements IModelImporter {
+  private readonly gate = Promise.withResolvers<void>();
+
+  constructor(private readonly inner: IModelImporter) {}
+
+  release(): void {
+    this.gate.resolve();
+  }
+
+  async importText(
+    fileName: string,
+    text: string,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    const result = await this.inner.importText(fileName, text, lod);
+    if (!result.bake) throw new Error(`${fileName} has no bake`);
+    const { bake, report, studio: _studio, ...shape } = result;
+    const { studCover: _studCover, ...placement } = bake;
+    onPlaced?.({
+      ...shape,
+      sections: report.sections,
+      refusedConnectorRecords: report.refusedConnectorRecords,
+      bake: placement,
+    });
+    await this.gate.promise;
+    return result;
+  }
+
+  importStudio(): Promise<ImportResult> {
+    throw new Error("piers are LDraw files");
+  }
+
+  rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return this.inner.rollingDiagnostics([], "standard");
+  }
+}
+
+it("waits for a generated pier's studs to be checked before laying the raised run on it, then lays the run and its piers together", async () => {
+  let importer: StudsLandLaterImporter | null = null;
+  const started = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    importer = new StudsLandLaterImporter(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer);
+  });
+  const { editor, backend } = started;
+  const place = placer(editor, backend);
+  for (const x of [-32, 0, 32]) await place(BASEPLATE, x * STUD, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(1));
+  const waiting = {
+    placing: editor.snapshot().track?.placingPiers,
+    laid: editor.dump().laidTrack.length,
+    piers: placedImports(editor).length,
+  };
+  (importer as StudsLandLaterImporter | null)?.release();
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false));
+
+  expect(waiting).toEqual({ placing: true, laid: 0, piers: 0 });
+  expect(laidHeights(editor)).toEqual([
+    [PIER_PLATES, 0],
+    [PIER_PLATES, 0],
+  ]);
+  expect(placedImports(editor)).toHaveLength(2);
+  expect(editor.snapshot().track?.unsupported).toBe(0);
+}, 180_000);

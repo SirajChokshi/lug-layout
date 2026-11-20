@@ -28,16 +28,36 @@ import {
   type Pose16,
 } from "@brr/math";
 import { OBSTACLE_RECT_FLOATS, type TrackObstacles } from "./track-obstacles.ts";
+import { heightText, type TrainGauge } from "./train-gauge.ts";
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
+export type ClosureState =
+  | "exact"
+  | "impossible"
+  | "blocked"
+  | "limit"
+  | "pending"
+  | "too-steep"
+  | null;
+export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending" | "too-steep";
 export type DragRefusal = Exclude<TrackRefusal, "pending">;
 export type JoinWithheld = "unsupported" | "pending";
 
 export type TrackBlockView =
   | { readonly kind: "track" }
   | { readonly kind: "run" }
-  | { readonly kind: "model"; readonly label: string; readonly unseated: boolean };
+  | { readonly kind: "model"; readonly label: string; readonly unseated: boolean }
+  | {
+      readonly kind: "clearance";
+      readonly gapLdu: number;
+      readonly above: boolean;
+      readonly gauge: TrainGauge | null;
+    };
+
+function clearanceText(gapLdu: number, above: boolean, gauge: TrainGauge | null): string {
+  const gap = `${heightText(gapLdu)} ${above ? "over the rails of track laid below" : "under raised track, above its rails"}`;
+  if (gauge === null) return `leave ${gap} while the tallest train is still being measured`;
+  return `leave only ${gap}, but the tallest train, ${gauge.model}, stands ${heightText(gauge.heightLdu)} above its rails`;
+}
 
 export function trackBlockText(block: TrackBlockView): string {
   switch (block.kind) {
@@ -49,6 +69,8 @@ export function trackBlockText(block: TrackBlockView): string {
       return block.unseated
         ? `sit on ${block.label} where it has no studs`
         : `run into ${block.label}`;
+    case "clearance":
+      return clearanceText(block.gapLdu, block.above, block.gauge);
     default: {
       const unhandled: never = block;
       throw new Error(`unhandled block ${String(unhandled)}`);
@@ -92,6 +114,7 @@ export interface DragRoute {
   readonly blockedMove: TrackMove | null;
   readonly closure: ClosureState;
   readonly goal: Pose16 | null;
+  readonly goalEnd: number | null;
   readonly blocked: TrackBlockView | null;
   readonly withheld: JoinWithheld | null;
 }
@@ -107,10 +130,15 @@ export type SupportedPiece = (
   studlessTops: TrackClearance,
 ) => boolean;
 
+export type TrackViewOf = (placement: number) => TrackBlockView;
+
+const CROSSED_TRACK: TrackViewOf = () => ({ kind: "track" });
+
 export class DragField {
   readonly clearance = new TrackClearance();
   readonly support: SupportSite;
   private readonly pieceIds: Int32Array;
+  private readonly placementOf: Int32Array;
   private readonly rectBase: number;
   private readonly solidRectOf: Int32Array;
   private readonly studlessRectOf: Int32Array;
@@ -119,6 +147,7 @@ export class DragField {
     outlines: ReadonlyArray<Float64Array | null>,
     private readonly obstacles: TrackObstacles,
     supported: SupportedPiece,
+    private readonly trackView: TrackViewOf = CROSSED_TRACK,
   ) {
     const studlessTops = new TrackClearance();
     this.support = {
@@ -126,9 +155,13 @@ export class DragField {
       supported: (frame, pose) => supported(frame, pose, studlessTops),
     };
     this.pieceIds = new Int32Array(outlines.length).fill(NO_OBSTACLE);
+    const placements: number[] = [];
     outlines.forEach((outline, placement) => {
-      if (outline) this.pieceIds[placement] = this.clearance.add(outline);
+      if (!outline) return;
+      this.pieceIds[placement] = this.clearance.add(outline);
+      placements.push(placement);
     });
+    this.placementOf = Int32Array.from(placements);
     this.rectBase = this.clearance.count;
     const { rects, unseated } = obstacles;
     const solid: number[] = [];
@@ -177,7 +210,7 @@ export class DragField {
     const top = studlessTopOf(blocker);
     if (top !== NO_OBSTACLE) return this.modelView(this.studlessRectOf[top] ?? -1);
     if (blocker < 0) return null;
-    if (blocker < this.rectBase) return { kind: "track" };
+    if (blocker < this.rectBase) return this.trackView(this.placementOf[blocker] ?? NO_OBSTACLE);
     return this.modelView(this.solidRectOf[blocker - this.rectBase] ?? -1);
   }
 
@@ -217,6 +250,7 @@ export class TrackDrag {
   private target: number | null = null;
   private goal: Pose16 | null = null;
   private missStuds = 0;
+  private revised = 0;
 
   constructor(
     private readonly kit: DrawingKit,
@@ -235,7 +269,12 @@ export class TrackDrag {
     this.site = this.siteOf(field);
   }
 
+  get revision(): number {
+    return this.revised;
+  }
+
   reseat(field: DragField, seatsPending: boolean): void {
+    this.revised++;
     this.field = field;
     this.seatsPending = seatsPending;
     this.site = this.siteOf(field);
@@ -256,6 +295,7 @@ export class TrackDrag {
   }
 
   extend(hitX: number, hitZ: number): void {
+    this.revised++;
     this.stroke.extend(hitX, hitZ);
     if (this.fromEnd === null) this.start = this.newRunStart();
     const start = this.start;
@@ -366,6 +406,7 @@ export class TrackDrag {
       blockedMove: this.blockedMove,
       closure: this.closure,
       goal: this.goal,
+      goalEnd: this.goal === null ? null : this.target,
       blocked: this.field.describe(this.blocker),
       withheld: this.withheld,
     };
