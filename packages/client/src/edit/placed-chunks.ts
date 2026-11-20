@@ -31,6 +31,7 @@ import {
   FOOTPRINT_FLAT,
   FOOTPRINT_NONE,
   type Placeable,
+  type StudLattice,
 } from "./placeable.ts";
 
 export interface PlacedModel {
@@ -38,10 +39,9 @@ export interface PlacedModel {
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
   readonly box: WorldBox;
-  studCellX(stud: number): number;
-  studCellZ(stud: number): number;
-  studBaseLdu(stud: number): number;
-  studSeats(baseLdu: number, seat: (cellX: number, cellZ: number) => void): void;
+  studCellX(lattice: StudLattice, stud: number): number;
+  studCellZ(lattice: StudLattice, stud: number): number;
+  studBaseLdu(lattice: StudLattice, stud: number): number;
   readonly slab: Float64Array;
   rayHit(ray: Float64Array): number;
   worldPartBoxes(): Float64Array;
@@ -564,31 +564,16 @@ class PlacedEntry implements PlacedModel {
     }
   }
 
-  studCellX(stud: number): number {
-    const lattice = this.placeable.studLattice;
+  studCellX(lattice: StudLattice, stud: number): number {
     return this.pose.worldCellX(lattice.cellX[stud] ?? 0, lattice.cellZ[stud] ?? 0);
   }
 
-  studCellZ(stud: number): number {
-    const lattice = this.placeable.studLattice;
+  studCellZ(lattice: StudLattice, stud: number): number {
     return this.pose.worldCellZ(lattice.cellX[stud] ?? 0, lattice.cellZ[stud] ?? 0);
   }
 
-  studBaseLdu(stud: number): number {
-    return this.yLdu + (this.placeable.studLattice.baseLdu[stud] ?? 0);
-  }
-
-  studSeats(baseLdu: number, seat: (cellX: number, cellZ: number) => void): void {
-    for (const lattice of [this.placeable.studLattice, this.placeable.coveredStudLattice]) {
-      for (let i = 0; i < lattice.onLattice.length; i++) {
-        if (lattice.onLattice[i] !== 1 || this.yLdu + (lattice.baseLdu[i] ?? 0) !== baseLdu) {
-          continue;
-        }
-        const x = lattice.cellX[i] ?? 0;
-        const z = lattice.cellZ[i] ?? 0;
-        seat(this.pose.worldCellX(x, z), this.pose.worldCellZ(x, z));
-      }
-    }
+  studBaseLdu(lattice: StudLattice, stud: number): number {
+    return this.yLdu + (lattice.baseLdu[stud] ?? 0);
   }
 
   private isStudCulled(
@@ -597,9 +582,10 @@ class PlacedEntry implements PlacedModel {
     columns: CellWindowIndex,
   ): boolean {
     if (this.placeable.studLattice.onLattice[stud] !== 1) return false;
-    const cx = this.studCellX(stud);
-    const cz = this.studCellZ(stud);
-    const base = this.studBaseLdu(stud);
+    const lattice = this.placeable.studLattice;
+    const cx = this.studCellX(lattice, stud);
+    const cz = this.studCellZ(lattice, stud);
+    const base = this.studBaseLdu(lattice, stud);
     const end = footprints.end(cx, cz);
     for (let r = footprints.firstAtOrAbove(cx, cz, base); r < end; r++) {
       if (footprints.low(r) !== base) break;

@@ -981,27 +981,40 @@ footer a {
   list-style: none;
 }
 
-.track-extend li {
+.track-extend button {
   padding: 3px 8px;
   border: 1px solid #c9ccd6;
   border-radius: 999px;
   background: #fff;
+  font: inherit;
+  cursor: pointer;
 }
 
-.track-extend li.joins {
+.track-extend button.joins {
   border-color: #1fbf4a;
 }
 
-.track-extend li[aria-current="true"] {
+.track-extend button.blocked {
+  border-color: #d64545;
+  color: #8a1f1f;
+  text-decoration: line-through;
+}
+
+.track-extend button[aria-pressed="true"] {
   border-color: #ff8c00;
   background: #ff8c00;
   color: #fff;
   font-weight: 600;
 }
 
-.track-extend li.joins[aria-current="true"] {
+.track-extend button.joins[aria-pressed="true"] {
   border-color: #1a9e3e;
   background: #1fbf4a;
+}
+
+.track-extend button.blocked[aria-pressed="true"] {
+  border-color: #b02a2a;
+  background: #d64545;
 }
 
 .gear-panel select {

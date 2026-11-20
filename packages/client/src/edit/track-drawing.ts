@@ -334,6 +334,7 @@ export class TrackDrawing implements ExtensionSite {
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private ends: Pose16[] = [];
+  private endPlates: number[] = [];
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
   private obstacleRects: Float64Array = new Float64Array(0);
@@ -451,6 +452,10 @@ export class TrackDrawing implements ExtensionSite {
     return this.ends;
   }
 
+  layableEnd(end: number): boolean {
+    return this.endPlates[end] === GROUND_PLATES;
+  }
+
   gaps(): ReadonlyArray<TrackGapView> {
     return this.gapList.map((gap) => {
       const endA = this.openList[gap.a];
@@ -548,6 +553,7 @@ export class TrackDrawing implements ExtensionSite {
     }
     this.obstacleRects = rects;
     this.clearance = null;
+    this.drag?.closures.clear();
     this.extension.endsChanged();
   }
 
@@ -582,22 +588,35 @@ export class TrackDrawing implements ExtensionSite {
     return this.clearance;
   }
 
+  private clearanceOwner(end: number | null): number {
+    const placement = end === null ? undefined : this.endOwners[end];
+    if (placement === undefined) return NO_OBSTACLE;
+    return this.clearanceField().pieceIds[placement] ?? NO_OBSTACLE;
+  }
+
   private closureSite(from: number | null, target: number): ClosureSite {
-    const { field, pieceIds } = this.clearanceField();
-    const owner = (end: number | null): number => {
-      const placement = end === null ? undefined : this.endOwners[end];
-      return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
-    };
     return {
-      clearance: field,
+      clearance: this.clearanceField().field,
       outlineOf: (piece) => {
         const part = this.byPieceId.get(piece.id);
         if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
         return part.outline;
       },
-      startOwner: owner(from),
-      goalOwner: owner(target),
+      startOwner: this.clearanceOwner(from),
+      goalOwner: this.clearanceOwner(target),
     };
+  }
+
+  crosses(from: number, move: TrackMove, joins: number | null): boolean {
+    const start = this.ends[from];
+    const placed = start ? layMoves(start, [move]).placed[0] : undefined;
+    if (!placed) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
+    return this.clearanceField().field.blocksPiece(
+      this.kitPart(move).outline,
+      placed.placement,
+      this.clearanceOwner(from),
+      this.clearanceOwner(joins),
+    );
   }
 
   private solveBetween(
@@ -783,12 +802,6 @@ export class TrackDrawing implements ExtensionSite {
     const { change, end } = this.runChange({ start: run.start, moves: run.choice.moves });
     const goal = run.choice.joins === null ? null : (this.ends[run.choice.joins] ?? null);
     return { run, change, goal, end };
-  }
-
-  extensionEnds(): ReadonlyArray<number> {
-    const run = this.drag ? null : this.extension.chosen();
-    if (!run) return [];
-    return run.choice.joins === null ? [run.from] : [run.from, run.choice.joins];
   }
 
   onExtension(xLdu: number, zLdu: number): boolean {
@@ -1037,10 +1050,12 @@ export class TrackDrawing implements ExtensionSite {
       world.push(open);
     }
     this.ends = world.map((end) => end.pose);
+    this.endPlates = world.map((end) => end.yPlates);
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
     this.clearance = null;
+    this.drag = null;
     this.extension.endsChanged();
   }
 

@@ -1,6 +1,7 @@
 import {
   unjoinedText,
   type EditorSnapshot,
+  type IEditor,
   type TrackChoiceView,
   type TrackDragView,
   type TrackExtendView,
@@ -107,10 +108,16 @@ function choiceLabel(choice: TrackChoiceView): string {
 
 function choiceDetail(choice: TrackChoiceView): string {
   const run = `${choice.straights} straight, ${choice.curves} curve`;
+  if (choice.blocked) return `${run}; would cross track, a plate or a model`;
   return choice.joinsEnd ? `${run}; joins an open end exactly` : run;
 }
 
-function ExtendStrip({ extend }: { readonly extend: TrackExtendView }) {
+interface ExtendStripProps {
+  readonly editor: IEditor;
+  readonly extend: TrackExtendView;
+}
+
+function ExtendStrip({ editor, extend }: ExtendStripProps) {
   const current = extend.choices[extend.index];
   return (
     <div
@@ -119,18 +126,22 @@ function ExtendStrip({ extend }: { readonly extend: TrackExtendView }) {
       data-choice-index={extend.index}
       data-choice-pieces={current ? current.straights + current.curves : 0}
       data-choice-joins={current?.joinsEnd ? "true" : "false"}
+      data-choice-blocked={current?.blocked ? "true" : "false"}
       data-unjoined={extend.unjoined?.refusal ?? ""}
     >
       <p>{extend.continuing ? "Next piece from the last end" : "Next piece on this open end"}</p>
       <ol aria-label="Choices for the next piece">
         {extend.choices.map((choice, index) => (
-          <li
-            key={`${choice.kind}-${index}`}
-            aria-current={index === extend.index ? "true" : undefined}
-            className={choice.joinsEnd ? "joins" : undefined}
-            title={choiceDetail(choice)}
-          >
-            {choiceLabel(choice)}
+          <li key={`${choice.kind}-${index}`}>
+            <button
+              type="button"
+              aria-pressed={index === extend.index}
+              className={choice.blocked ? "blocked" : choice.joinsEnd ? "joins" : undefined}
+              title={choiceDetail(choice)}
+              onClick={() => editor.selectTrackChoice(index)}
+            >
+              {choiceLabel(choice)}
+            </button>
           </li>
         ))}
       </ol>
@@ -154,6 +165,8 @@ function commitText(track: TrackView): string {
       return "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
+    case "refused-crossing":
+      return "refused: the piece would cross track, a plate or a model";
     case "switch-straight":
       return "switch thrown to the straight route";
     case "switch-branching":
@@ -167,7 +180,12 @@ function commitText(track: TrackView): string {
   }
 }
 
-export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+interface TrackPanelProps {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}
+
+export function TrackPanel({ editor, snapshot }: TrackPanelProps) {
   const { track } = snapshot;
   if (!track || (snapshot.mode !== "track" && track.pieces === 0)) return null;
   const rows: Array<readonly [string, string]> = [
@@ -219,14 +237,16 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       <h2>Track</h2>
       {snapshot.mode === "track" && !track.held && (
         <p className="toolbar-hint">
-          Point at an open end to preview the next piece, then click to lay it and keep going: W, A
-          and D lay a straight, a left or a right curve, Enter lays the preview, and , and . show
-          the other choices, including exact joins to nearby ends. Drag from an end or from empty
-          ground to lay a whole run. Amber arrows mark open ends; red arrows mark two ends that
-          nearly meet but don't join.
+          Point at an open end to preview the next piece, then click to lay it and keep going. W, A
+          and D lay a straight, a left curve or a right curve; Enter lays the preview. Pick another
+          choice below, or step through them with , and . (exact joins to nearby ends are among
+          them). Drag from an end or from empty ground to lay a whole run. Amber arrows mark open
+          ends; red arrows mark two ends that nearly meet but don't join.
         </p>
       )}
-      {snapshot.mode === "track" && track.extend && <ExtendStrip extend={track.extend} />}
+      {snapshot.mode === "track" && track.extend && (
+        <ExtendStrip editor={editor} extend={track.extend} />
+      )}
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>

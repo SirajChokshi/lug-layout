@@ -765,11 +765,42 @@ it("extends an open end one previewed piece at a time and closes the loop throug
     straights: 0,
     curves: HALF_TURN_CURVES / 2,
     joinsEnd: true,
+    blocked: false,
   });
   expect(extend(layout, null)).toBe(true);
   expect(layout.openEnds()).toHaveLength(0);
   expect(layout.joinedPairs()).toBe(layout.pieceCount);
   expect(layout.extension.view()).toBeNull();
+});
+
+function singlesAt(layout: TrackDrawing, xStuds: number, zStuds: number) {
+  focusEnd(layout, endAt(layout, xStuds, zStuds));
+  const view = layout.extension.view();
+  if (!view) throw new Error("the open end offers nothing");
+  return view.choices
+    .filter((choice) => choice.kind !== "join")
+    .map((choice) => [choice.kind, choice.blocked]);
+}
+
+it("offers each single piece that would run into an obstacle as blocked, and none of them as a lay", async () => {
+  const bundle = await trackAndRoadBundle();
+  const clear = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const walled = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  for (const layout of [clear, walled]) {
+    layRun(layout, studPose(56, 0, 0), [{ kind: "straight", count: 2 }]);
+  }
+  walled.setObstacles(Float64Array.from(plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0)));
+  expect(singlesAt(clear, 88, 0)).toEqual([
+    ["straight", false],
+    ["left", false],
+    ["right", false],
+  ]);
+  expect(singlesAt(walled, 88, 0)).toEqual([
+    ["straight", true],
+    ["left", true],
+    ["right", true],
+  ]);
+  expect(walled.extensionPlan()?.run.choice.blocked).toBe(true);
 });
 
 it.each<
@@ -1163,6 +1194,16 @@ it("judges a road plate inside a model by the same geometry as one placed alone"
   expect(await verdicts(roadContainer)).toEqual(loose);
 });
 
+function eastEnd(layout: TrackDrawing): Pose16 {
+  const east = layout.endPoses().find((end) => end.heading === 0);
+  if (!east) throw new Error("the carried straight has no end facing east");
+  return east;
+}
+
+function shifted(pose: Pose16, x: bigint, z: bigint, heading: number): Pose16 {
+  return pose16(addZeta16(pose.position, zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n])), heading);
+}
+
 it("closes onto the open end of track a model carries, and runs no join through that track", async () => {
   const bundle = await trackAndRoadBundle();
   const carrying = () => {
@@ -1177,20 +1218,12 @@ it("closes onto the open end of track a model carries, and runs no join through 
     ]);
     return layout;
   };
-  const eastEnd = (layout: TrackDrawing): Pose16 => {
-    const east = layout.endPoses().find((end) => end.heading === 0);
-    if (!east) throw new Error("the carried straight has no end facing east");
-    return east;
-  };
-  const shifted = (pose: Pose16, x: bigint, z: bigint, heading: number): Pose16 =>
-    pose16(addZeta16(pose.position, zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n])), heading);
-
   const joining = carrying();
   const gap = layMoves(eastEnd(joining), [joining.kit.straight, joining.kit.straight]).end;
   layRun(joining, gap, [{ kind: "straight", count: 3 }]);
   focusAt(joining, gap);
   const offered = joining.extension.view();
-  const joined = extend(joining, null);
+  const closed = extend(joining, null);
 
   const across = carrying();
   const east = eastEnd(across);
@@ -1205,14 +1238,17 @@ it("closes onto the open end of track a model carries, and runs no join through 
     straights: 2,
     curves: 0,
     joinsEnd: true,
+    blocked: false,
   });
-  expect(joined).toBe(true);
+  expect(closed).toBe(true);
   expect(joining.openEnds()).toHaveLength(2);
   expect(joining.joinedPairs()).toBe(joining.pieceCount);
+  expect(throughIt).not.toBeNull();
   expect(throughIt?.choices).not.toContainEqual({
     kind: "join",
     straights: 5,
     curves: 0,
     joinsEnd: true,
+    blocked: false,
   });
 });

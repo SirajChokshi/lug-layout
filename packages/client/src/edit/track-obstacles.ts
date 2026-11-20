@@ -1,18 +1,33 @@
 import { STUD_LDU } from "@brr/math";
 import { BOX_FLOATS } from "./local-box.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
+import type { StudLattice } from "./placeable.ts";
 
 const CELL_KEY_STRIDE = 2 ** 26;
 const CELL_KEY_OFFSET = 2 ** 25;
+const ON_LATTICE = 1;
 
 function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
 }
 
+function addSeats(
+  seats: Set<number>,
+  model: PlacedModel,
+  lattice: StudLattice,
+  baseLdu: number,
+): void {
+  for (let i = 0; i < lattice.onLattice.length; i++) {
+    if (lattice.onLattice[i] !== ON_LATTICE || model.studBaseLdu(lattice, i) !== baseLdu) continue;
+    seats.add(cellKey(model.studCellX(lattice, i), model.studCellZ(lattice, i)));
+  }
+}
+
 function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
   const seats = new Set<number>();
   for (const model of models) {
-    model.studSeats(baseLdu, (cellX, cellZ) => seats.add(cellKey(cellX, cellZ)));
+    addSeats(seats, model, model.placeable.studLattice, baseLdu);
+    addSeats(seats, model, model.placeable.coveredStudLattice, baseLdu);
   }
   return seats;
 }

@@ -190,7 +190,7 @@ export function EditorApp({
           memory={paletteMemory}
           thumbnails={paletteThumbnails}
         />
-        <TrackPanel snapshot={snapshot} />
+        <TrackPanel editor={editor} snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <Inspector snapshot={snapshot} />
         <RoadJoins editor={editor} snapshot={snapshot} />

@@ -1,6 +1,11 @@
 import type { EditorSnapshot, TrackCommitResult } from "../edit/editor.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
-import type { TrackExtendView, TrackRefusal, UnjoinedEndView } from "../edit/track-extension.ts";
+import type {
+  TrackChoiceView,
+  TrackExtendView,
+  TrackRefusal,
+  UnjoinedEndView,
+} from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
@@ -89,14 +94,18 @@ export function unjoinedText(unjoined: UnjoinedEndView): string {
   return `the open end ${studs} studs ahead can't be joined: ${refusalText(unjoined.refusal)}`;
 }
 
-function releaseRefusal(commit: TrackCommitResult | null): TrackRefusal | null {
+const CROSSING_TEXT = "it would cross track, a plate or a model";
+
+function releaseRefusal(commit: TrackCommitResult | null): string | null {
   switch (commit) {
     case "refused-impossible":
-      return "impossible";
+      return refusalText("impossible");
     case "refused-blocked":
-      return "blocked";
+      return refusalText("blocked");
     case "refused-limit":
-      return "limit";
+      return refusalText("limit");
+    case "refused-crossing":
+      return CROSSING_TEXT;
     case "laid":
     case "joined":
     case "switch-straight":
@@ -110,10 +119,7 @@ function releaseRefusal(commit: TrackCommitResult | null): TrackRefusal | null {
   }
 }
 
-function extendTitle(extend: TrackExtendView): string {
-  const choice = extend.choices[extend.index];
-  if (!choice) return "Next piece";
-  const pieceCount = pieces(choice.straights + choice.curves);
+function extendTitle(choice: TrackChoiceView): string {
   switch (choice.kind) {
     case "straight":
       return "Next piece: straight";
@@ -122,12 +128,39 @@ function extendTitle(extend: TrackExtendView): string {
     case "right":
       return "Next piece: curve right";
     case "join":
-      return `Close the gap: ${pieceCount}`;
+      return `Next: join, ${pieces(choice.straights + choice.curves)}`;
     default: {
       const unhandled: never = choice.kind;
       throw new Error(`unhandled choice ${String(unhandled)}`);
     }
   }
+}
+
+function extendDetail(choice: TrackChoiceView, extend: TrackExtendView): string | null {
+  if (choice.blocked) return CROSSING_TEXT;
+  if (extend.unjoined) return unjoinedText(extend.unjoined);
+  return choice.joinsEnd ? "joins the open end exactly" : null;
+}
+
+function extendView(extend: TrackExtendView, refusal: string | null): ToolHintView {
+  const choice = extend.choices[extend.index];
+  const joins = choice?.joinsEnd ?? false;
+  const warn = refusal !== null || (choice?.blocked ?? false);
+  return {
+    tone: warn ? "warn" : "track",
+    title: refusal !== null ? "Nothing laid" : choice ? extendTitle(choice) : "Next piece",
+    detail: refusal ?? (choice ? extendDetail(choice, extend) : null),
+    hints: [
+      gesture("Click", "lay it"),
+      key("extend-straight", "straight"),
+      key("extend-left", "left"),
+      key("extend-right", "right"),
+      key("extend-preview", joins ? "join" : "lay it"),
+      key("next-track-choice", "other choices"),
+      key("undo", "undo"),
+      key("select-tool", extend.continuing ? "let go of the end" : "done"),
+    ],
+  };
 }
 
 function trackView(snapshot: EditorSnapshot): ToolHintView {
@@ -151,33 +184,11 @@ function trackView(snapshot: EditorSnapshot): ToolHintView {
   }
   const refusal = releaseRefusal(track?.lastCommit ?? null);
   const extend = track?.extend ?? null;
-  if (extend) {
-    const joins = extend.choices[extend.index]?.joinsEnd ?? false;
-    return {
-      tone: refusal ? "warn" : "track",
-      title: refusal ? "Nothing laid" : extendTitle(extend),
-      detail: refusal
-        ? refusalText(refusal)
-        : extend.unjoined
-          ? unjoinedText(extend.unjoined)
-          : joins
-            ? "joins the open end exactly"
-            : null,
-      hints: [
-        gesture("Click", "lay it"),
-        key("extend-straight", "straight"),
-        key("extend-left", "left"),
-        key("extend-right", "right"),
-        key("extend-preview", joins ? "join" : "lay it"),
-        key("undo", "undo"),
-        key("select-tool", extend.continuing ? "let go of the end" : "done"),
-      ],
-    };
-  }
+  if (extend) return extendView(extend, refusal);
   return {
-    tone: refusal ? "warn" : "track",
-    title: refusal ? "Nothing laid" : "Drawing track",
-    detail: refusal ? refusalText(refusal) : "point at an open end to add the next piece",
+    tone: refusal !== null ? "warn" : "track",
+    title: refusal !== null ? "Nothing laid" : "Drawing track",
+    detail: refusal ?? "point at an open end to add the next piece",
     hints: [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")],
   };
 }

@@ -966,6 +966,7 @@ function layoutState(editor: IEditor) {
 
 const STUD = 20;
 const HALF_TURN_CURVES = 8;
+const ROAD_STRAIGHT = "ldraw:44336p04@72";
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
 
@@ -1091,6 +1092,47 @@ it("lays each piece added to an open end, and the join that closes the loop, as 
   expect(afterFirstEscape.mode).toBe("track");
   expect(afterFirstEscape.track?.extend).toBeNull();
   expect(editor.snapshot().mode).toBe("select");
+}, 120_000);
+
+it("throws a switch clicked in the track tool", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const before = editor.snapshot().track?.switches[0];
+  if (!before) throw new Error("the switch was not laid");
+  backend.aim(before.xLdu, before.zLdu);
+  editor.pointerMove(0, 0);
+  expect(editor.dragStart(0, 0)).toBe(true);
+  editor.dragEnd(0, 0, 0);
+
+  expect(editor.snapshot().track?.switches[0]?.lever).not.toBe(before.lever);
+  expect(editor.snapshot().history.undoLabel).toBe("throw switch");
+}, 120_000);
+
+it("lays no piece that would run onto a road plate's roadway, and says why", async () => {
+  const { editor, backend } = await startEditor([]);
+  placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [0, -48 * STUD], [0, -16 * STUD]);
+  const laid = editor.dump().laidTrack.length;
+
+  editor.extendTrack("straight", 0);
+  const refused = { laid: editor.dump().laidTrack.length, hud: toolHints(editor.snapshot()) };
+  backend.aim(0, -48 * STUD);
+  editor.pointerMove(0, 0);
+  editor.extendTrack("straight", 0);
+
+  expect(refused.laid).toBe(laid);
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+  expect(refused.hud).toMatchObject({
+    tone: "warn",
+    title: "Nothing laid",
+    detail: "it would cross track, a plate or a model",
+  });
+  expect(editor.dump().laidTrack).toHaveLength(laid + 1);
 }, 120_000);
 
 it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {

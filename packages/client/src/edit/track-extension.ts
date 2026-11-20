@@ -25,15 +25,23 @@ export type ExtensionChoice =
       readonly kind: ExtensionTurn;
       readonly moves: readonly [TrackMove];
       readonly joins: number | null;
+      readonly blocked: boolean;
     }
-  | { readonly kind: "join"; readonly moves: ReadonlyArray<TrackMove>; readonly joins: number };
+  | {
+      readonly kind: "join";
+      readonly moves: ReadonlyArray<TrackMove>;
+      readonly joins: number;
+      readonly blocked: false;
+    };
 
 type PieceChoice = Extract<ExtensionChoice, { readonly kind: ExtensionTurn }>;
 
 export interface ExtensionSite {
   readonly kit: DrawingKit;
   endPoses(): ReadonlyArray<Pose16>;
+  layableEnd(end: number): boolean;
   closure(from: number, to: number): ClosureResult;
+  crosses(from: number, move: TrackMove, joins: number | null): boolean;
 }
 
 export interface ExtensionRun {
@@ -47,6 +55,7 @@ export interface TrackChoiceView {
   readonly straights: number;
   readonly curves: number;
   readonly joinsEnd: boolean;
+  readonly blocked: boolean;
 }
 
 export interface UnjoinedEndView {
@@ -72,14 +81,15 @@ interface Focus {
   index: number;
 }
 
-const JOIN_SEARCH_RADIUS_LDU = 96 * STUD_LDU;
-const JOIN_TARGETS = 4;
-const SUGGESTED_JOIN_PIECES = 4;
-
 interface JoinTarget {
   readonly index: number;
   readonly distanceLdu: number;
 }
+
+const JOIN_SEARCH_RADIUS_LDU = 96 * STUD_LDU;
+const JOIN_TARGETS = 4;
+const SUGGESTED_JOIN_PIECES = 4;
+const TURN_ORDER: ReadonlyArray<ExtensionTurn> = ["straight", "left", "right"];
 
 function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | null {
   const from = zeta16ToStuds(start.position);
@@ -92,19 +102,11 @@ function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | nu
   return distanceLdu <= JOIN_SEARCH_RADIUS_LDU ? { index, distanceLdu } : null;
 }
 
-function joinedEnd(start: Pose16, move: TrackMove, ends: ReadonlyArray<Pose16>): number | null {
-  const { end } = layMoves(start, [move]);
-  const joined = ends.findIndex((open) => posesJoin16(end, open));
-  return joined < 0 ? null : joined;
-}
-
 function turnSeenFromAbove(move: TrackMove): ExtensionTurn {
   const turn = normalizeHeading16(move.turn);
   if (turn === 0) return "straight";
   return turn < HALF_TURN_16 ? "right" : "left";
 }
-
-const TURN_ORDER: ReadonlyArray<ExtensionTurn> = ["straight", "left", "right"];
 
 function choiceView(choice: ExtensionChoice): TrackChoiceView {
   const straights = choice.moves.filter((move) => move.turn === 0).length;
@@ -113,6 +115,7 @@ function choiceView(choice: ExtensionChoice): TrackChoiceView {
     straights,
     curves: choice.moves.length - straights,
     joinsEnd: choice.joins !== null,
+    blocked: choice.blocked,
   };
 }
 
@@ -156,7 +159,8 @@ export class TrackExtension {
   }
 
   focusOn(hovered: number | null): void {
-    const from = hovered ?? (this.anchor === null ? null : this.endIndex(this.anchor));
+    const pointed = hovered !== null && this.site.layableEnd(hovered) ? hovered : null;
+    const from = pointed ?? (this.anchor === null ? null : this.endIndex(this.anchor));
     if (from === (this.focus?.from ?? null)) return;
     this.changes++;
     if (from === null) {
@@ -167,19 +171,21 @@ export class TrackExtension {
     this.focus = { from, options, index: this.suggested(options.choices) };
   }
 
-  cycle(step: number): boolean {
+  cycle(step: 1 | -1): boolean {
     const focus = this.focus;
     if (!focus) return false;
     const count = focus.options.choices.length;
-    focus.index = (((focus.index + step) % count) + count) % count;
-    this.changes++;
-    return true;
+    return this.select((((focus.index + step) % count) + count) % count);
   }
 
   choose(turn: ExtensionTurn): boolean {
+    const index = this.focus?.options.choices.findIndex((choice) => choice.kind === turn) ?? -1;
+    return this.select(index);
+  }
+
+  select(index: number): boolean {
     const focus = this.focus;
-    const index = focus?.options.choices.findIndex((choice) => choice.kind === turn) ?? -1;
-    if (!focus || index < 0) return false;
+    if (!focus || index < 0 || index >= focus.options.choices.length) return false;
     if (focus.index !== index) this.changes++;
     focus.index = index;
     return true;
@@ -191,6 +197,12 @@ export class TrackExtension {
     const start = focus ? this.site.endPoses()[focus.from] : undefined;
     if (!focus || !choice || !start) return null;
     return { from: focus.from, start, choice };
+  }
+
+  highlighted(): ReadonlyArray<number> {
+    const run = this.chosen();
+    if (!run) return [];
+    return run.choice.joins === null ? [run.from] : [run.from, run.choice.joins];
   }
 
   view(): TrackExtendView | null {
@@ -212,7 +224,8 @@ export class TrackExtension {
   private suggested(choices: ReadonlyArray<ExtensionChoice>): number {
     let shortest = -1;
     choices.forEach((choice, index) => {
-      if (choice.joins === null || choice.moves.length > SUGGESTED_JOIN_PIECES) return;
+      if (choice.blocked || choice.joins === null) return;
+      if (choice.moves.length > SUGGESTED_JOIN_PIECES) return;
       const best = choices[shortest];
       if (!best || choice.moves.length < best.moves.length) shortest = index;
     });
@@ -223,6 +236,14 @@ export class TrackExtension {
     );
   }
 
+  private joinedEnd(start: Pose16, move: TrackMove): number | null {
+    const { end } = layMoves(start, [move]);
+    const joined = this.site
+      .endPoses()
+      .findIndex((open, index) => this.site.layableEnd(index) && posesJoin16(end, open));
+    return joined < 0 ? null : joined;
+  }
+
   private optionsFrom(from: number): EndOptions {
     const cached = this.options.get(from);
     if (cached) return cached;
@@ -230,15 +251,21 @@ export class TrackExtension {
     const ends = this.site.endPoses();
     const start = ends[from];
     if (!start) throw new RangeError(`there is no open end ${from}`);
-    const choices = [kit.straight, kit.left, kit.right]
-      .map((move): PieceChoice => ({
-        kind: turnSeenFromAbove(move),
-        moves: [move],
-        joins: joinedEnd(start, move, ends),
-      }))
+    const pieces = [kit.straight, kit.left, kit.right]
+      .map((move): PieceChoice => {
+        const joins = this.joinedEnd(start, move);
+        return {
+          kind: turnSeenFromAbove(move),
+          moves: [move],
+          joins,
+          blocked: this.site.crosses(from, move, joins),
+        };
+      })
       .toSorted((a, b) => TURN_ORDER.indexOf(a.kind) - TURN_ORDER.indexOf(b.kind));
     const nearest = ends
-      .flatMap((end, index) => targetAhead(start, end, index) ?? [])
+      .flatMap((end, index) =>
+        this.site.layableEnd(index) ? (targetAhead(start, end, index) ?? []) : [],
+      )
       .toSorted((a, b) => a.distanceLdu - b.distanceLdu)
       .slice(0, JOIN_TARGETS);
     const joins: ExtensionChoice[] = [];
@@ -250,10 +277,10 @@ export class TrackExtension {
         return;
       }
       const moves = runMoves(kit, result.run);
-      if (moves.length > 1) joins.push({ kind: "join", moves, joins: index });
+      if (moves.length > 1) joins.push({ kind: "join", moves, joins: index, blocked: false });
     });
     const options: EndOptions = {
-      choices: [...choices, ...joins.toSorted((a, b) => a.moves.length - b.moves.length)],
+      choices: [...pieces, ...joins.toSorted((a, b) => a.moves.length - b.moves.length)],
       unjoined,
     };
     this.options.set(from, options);

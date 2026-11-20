@@ -248,6 +248,7 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-blocked"
   | "refused-limit"
+  | "refused-crossing"
   | "switch-straight"
   | "switch-branching";
 
@@ -412,6 +413,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   cycleConnector(): void;
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void;
   cycleTrackChoice(step: 1 | -1): void;
+  selectTrackChoice(index: number): void;
   dropTrackEnd(): boolean;
   deleteSelection(eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -540,6 +542,7 @@ interface PendingAction extends EditSample {
 }
 
 const NOTHING_REBUILT: RebuildReport = { chunks: 0, instances: 0, studs: 0 };
+const NO_PARTS: ReadonlySet<number> = new Set();
 
 function counted(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -690,6 +693,7 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackCommit: TrackCommitResult | null = null;
   private trackEndTarget = "";
   private previewVersion: number | null = null;
+  private trackPress: { readonly x: number; readonly z: number } | null = null;
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -1093,7 +1097,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (extension.version === this.previewVersion) return;
     this.previewVersion = extension.version;
     this.showTrackGhost(track);
-    this.targetTrackEnds(track.extensionEnds());
+    this.targetTrackEnds(extension.highlighted());
     this.update({ track: this.trackView() });
   }
 
@@ -1104,10 +1108,11 @@ export class Editor implements IEditor, IEditedWorld {
 
   private refreshTrackObstacles(track: TrackDrawing): void {
     track.setObstacles(
-      trackObstacleRects(this.placed.models(), track.verticalRange(), (model) => {
-        const carried = this.trackOf(model.placeable)?.pieces ?? [];
-        return new Set(carried.map((piece) => piece.instance));
-      }),
+      trackObstacleRects(
+        this.placed.models(),
+        track.verticalRange(),
+        (model) => this.trackOf(model.placeable)?.pieceParts ?? NO_PARTS,
+      ),
     );
   }
 
@@ -1174,7 +1179,10 @@ export class Editor implements IEditor, IEditedWorld {
     if (!this.groundHit(ndcX, ndcY)) return false;
     this.refreshTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    this.trackPress = { x: this.hoverX, z: this.hoverZ };
     this.lastTrackCommit = null;
+    this.backend.setGhost(null);
+    this.showTrackEnds([]);
     this.update({ track: this.trackView() });
     return true;
   }
@@ -1187,7 +1195,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const track = this.track;
-    if (!track || !this.groundHit(ndcX, ndcY)) return;
+    if (!track?.dragView() || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
     const target = track.dragTarget();
@@ -1204,14 +1212,20 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const track = this.track;
-    if (!track) return;
+    const press = this.trackPress;
+    this.trackPress = null;
+    if (!track?.dragView()) {
+      this.repaintTrackPreview();
+      return;
+    }
     const hit = this.groundHit(ndcX, ndcY);
     if (hit) track.moveDrag(this.hitX, this.hitZ);
     const stayed = (track.dragView()?.pieces ?? 0) === 0;
+    const unmoved = press !== null && press.x === this.hoverX && press.z === this.hoverZ;
     const outcome = track.endDrag();
     this.backend.setGhost(null);
     this.showTrackEnds([]);
-    if (hit && stayed && outcome.refusal === null) {
+    if (hit && stayed && (unmoved || outcome.refusal === null)) {
       this.hovering = true;
       this.trackClick(eventTimeMs);
       return;
@@ -1252,6 +1266,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (turn !== null && !track.extension.choose(turn)) return;
     const plan = track.extensionPlan();
     if (!plan) return;
+    if (plan.run.choice.blocked) {
+      this.lastTrackCommit = "refused-crossing";
+      this.update({ track: this.trackView() });
+      return;
+    }
     this.show(this.history.commit("lay-track", [], plan.change), eventTimeMs);
     this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
     track.extension.laid(plan.run, plan.end);
@@ -1263,6 +1282,12 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode !== "track" || !track || this.held) return;
     this.refreshTrackPreview();
     if (track.extension.cycle(step)) this.refreshTrackPreview();
+  }
+
+  selectTrackChoice(index: number): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || this.held) return;
+    if (track.extension.select(index)) this.refreshTrackPreview();
   }
 
   dropTrackEnd(): boolean {
