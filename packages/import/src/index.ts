@@ -59,13 +59,16 @@ export {
 } from "./model-import.ts";
 export {
   LibraryBakeStore,
-  NO_BYTE_CACHE,
-  type IByteCache,
   type IPartRecords,
   type PinnedRecords,
   type RecordOptions,
-  type RecordStats,
 } from "./library-bake-store.ts";
+export {
+  BundleThenLibraryConnectors,
+  LibraryConnectorStore,
+  type LibraryConnectorOptions,
+} from "./library-connector-store.ts";
+export { NO_BYTE_CACHE, type IByteCache, type RecordStats } from "./verified-files.ts";
 export {
   bakeTransferables,
   transferablesOf,
@@ -75,6 +78,7 @@ export {
   type ImportWorkerResponse,
   type LdrawTextInput,
   type LibraryBakeSource,
+  type LibraryConnectorsSource,
   type StudioFileInput,
 } from "./worker-protocol.ts";
 export type { LooseGeometry } from "./brick-compiler.ts";

@@ -5,10 +5,15 @@ import { BakeHelperRegistry } from "./bake-helper-registry.ts";
 import { CompilerLoader } from "./compiler-loader.ts";
 import { ImportWorkerHost } from "./import-worker-host.ts";
 import { ImportWorkerService } from "./import-worker-service.ts";
-import { IndexedDbByteCache } from "./record-cache.ts";
+import {
+  IndexedDbByteCache,
+  LIBRARY_BAKE_DATABASE,
+  LIBRARY_CONNECTORS_DATABASE,
+} from "./record-cache.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
+  CONNECTOR_RECORD_CACHE,
   IMPORT_CLOCK,
   IMPORT_FETCH,
   IMPORT_PORT,
@@ -38,7 +43,12 @@ export function importWorkerModule(port: RpcPort): ContainerModule {
           new ModelImportEngine(compiler, mirror, connectors, records, now, helpers);
       })
       .inSingletonScope();
-    bind(RECORD_CACHE).to(IndexedDbByteCache).inSingletonScope();
+    bind(RECORD_CACHE)
+      .toDynamicValue(() => new IndexedDbByteCache(LIBRARY_BAKE_DATABASE))
+      .inSingletonScope();
+    bind(CONNECTOR_RECORD_CACHE)
+      .toDynamicValue(() => new IndexedDbByteCache(LIBRARY_CONNECTORS_DATABASE))
+      .inSingletonScope();
     bind(BAKE_HELPER_REGISTRY).to(BakeHelperRegistry).inSingletonScope();
     bind(IMPORT_WORKER_SERVICE).to(ImportWorkerService).inSingletonScope();
     bind(IMPORT_WORKER_HOST).to(ImportWorkerHost).inSingletonScope();
