@@ -741,11 +741,28 @@ export class PlanService implements IPlanService {
     const changed =
       evaluation.uncheckedChanged ||
       evaluation.flaggedMembershipChanged ||
-      evaluation.flaggedBoxChanged;
+      evaluation.flaggedBoxChanged ||
+      evaluation.trackIssuesChanged;
     if (!changed) return;
     const boxes: WorldBox[] = [];
     for (let row = evaluation.firstFlagged(); row !== NO_ROW; row = evaluation.nextFlagged(row)) {
       boxes.push(this.boxOf(row));
+    }
+    const track = evaluation.trackIssues;
+    for (let issue = 0; issue < track.count; issue++) {
+      if (!evaluation.trackIssueInRegions(issue)) continue;
+      const last = track.ownerStart[issue + 1] ?? 0;
+      for (let owner = track.ownerStart[issue] ?? 0; owner < last; owner++) {
+        const at = owner * BOX_STRIDE;
+        boxes.push({
+          minX: track.ownerBox[at + BOX_MIN_X] ?? Number.NaN,
+          minY: track.ownerBox[at + BOX_MIN_Y] ?? Number.NaN,
+          minZ: track.ownerBox[at + BOX_MIN_Z] ?? Number.NaN,
+          maxX: track.ownerBox[at + BOX_MAX_X] ?? Number.NaN,
+          maxY: track.ownerBox[at + BOX_MAX_Y] ?? Number.NaN,
+          maxZ: track.ownerBox[at + BOX_MAX_Z] ?? Number.NaN,
+        });
+      }
     }
     this.backend.setIssueBoxes(boxes);
   }

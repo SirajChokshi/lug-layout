@@ -405,10 +405,18 @@ footer {
   color: #c0115f;
 }
 
+.plan-warnings {
+  color: var(--status-warn);
+}
+
 .plan-issues {
   margin: 0;
   padding-left: 16px;
   color: #8a1043;
+}
+
+.plan-issues li[data-severity="warning"] {
+  color: var(--status-warn);
 }
 
 .plan-checks {
