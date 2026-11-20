@@ -105,12 +105,11 @@ import {
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
 import {
-  NO_TRACK_PARTS,
   modelSolidRects,
   solidRects,
   trackObstacles,
+  type CarriedTrack,
   type TrackObstacles,
-  type TrackPartsOf,
 } from "./track-obstacles.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
 import { OBSTACLE_PART, type Obstacle, type ObstacleExcuse } from "./track-collision.ts";
@@ -469,7 +468,7 @@ interface Connected {
 const EDITOR_LOD: BundleLod = "standard";
 const NOTHING_OWNED: ObstacleExcuse = () => false;
 const LDRAW_ID_PREFIX = "ldraw:";
-const DRAWN_AS_TRACK = 1;
+const NO_PARTS: ReadonlySet<number> = new Set();
 const ROOM_FOR_TRACK = "Track only goes where the bricks leave room for it.";
 
 function partName(id: string): string {
@@ -696,8 +695,8 @@ export class Editor implements IEditor, IEditedWorld {
   private crossings: ReadonlyArray<SuggestedCrossing> = [];
   private rampChunks: ReadonlyArray<number> = [];
   private heldTrackOwners: ReadonlyArray<PlacedModel> = [];
-  private readonly drawnTrackParts = new Map<Placeable, Uint8Array>();
-  private readonly trackPartsOf: TrackPartsOf = (model) => this.drawnTrackPartsOf(model.placeable);
+  private readonly carriedTrack: CarriedTrack = (model) =>
+    this.trackOf(model.placeable)?.pieceParts ?? NO_PARTS;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
@@ -1018,8 +1017,11 @@ export class Editor implements IEditor, IEditedWorld {
     const ramps = this.crossingRamps;
     if (!track || !ramps) return;
     const models = this.placed.models();
-    this.crossings = ramps.suggest(this.roadPlacements(), track.crossingPieces(), models, (band) =>
-      track.runFrameFieldWith(modelSolidRects(models, band, this.trackPartsOf).rects),
+    this.crossings = ramps.suggest(
+      this.roadPlacements(),
+      track.crossingPieces(),
+      models,
+      (band) => modelSolidRects(models, band, this.carriedTrack).rects,
     );
     const chunks = ramps.instances(this.crossings);
     for (const key of this.rampChunks) if (!chunks.has(key)) this.backend.deleteChunk(key);
@@ -1045,22 +1047,8 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private drawnTrackPartsOf(placeable: Placeable): Uint8Array {
-    const known = this.drawnTrackParts.get(placeable);
-    if (known) return known;
-    const track = this.trackOf(placeable);
-    const drawing = this.track;
-    if (!track || !drawing) return NO_TRACK_PARTS;
-    const mask = new Uint8Array(placeable.parts.count);
-    for (const piece of [...track.pieces, ...track.runs.flatMap((run) => run.pieces)]) {
-      if (drawing.drawsOutlineOf(piece.catalogIndex)) mask[piece.instance] = DRAWN_AS_TRACK;
-    }
-    this.drawnTrackParts.set(placeable, mask);
-    return mask;
-  }
-
   private trackObstaclesFor(track: TrackDrawing): TrackObstacles {
-    return trackObstacles(this.placed.models(), track.verticalRange(), this.trackPartsOf);
+    return trackObstacles(this.placed.models(), track.verticalRange(), this.carriedTrack);
   }
 
   private partIdOf(placeable: Placeable, instance: number): string {
@@ -1128,36 +1116,33 @@ export class Editor implements IEditor, IEditedWorld {
   ): string | null {
     const track = this.track;
     if (!track) return null;
-    const mask = this.drawnTrackPartsOf(placeable);
+    const carried = this.trackOf(placeable);
     const rects = solidRects(
       this.placed.posedPartBoxes(placeable, x, z, rot, yPlates),
       track.verticalRange(),
-      mask,
+      carried?.pieceParts ?? NO_PARTS,
     );
-    const blocker: ModelTrackBlocker | null = track.modelBlocker(
+    const frame = latticeFrame(x, z, rot);
+    const blocker = track.modelBlocker(
       rects,
-      this.heldTrackAt(placeable, x, z, rot, yPlates),
+      carried && frame ? heldPieces(carried, frame, yPlates) : [],
       this.ownedBy(track, ignore),
     );
     if (!blocker) return null;
-    const part = this.partIdOf(placeable, blocker.part);
-    return `${placeable.label}: its ${part} would run into ${this.obstacleLabel(track, blocker.hits)}. ${ROOM_FOR_TRACK}`;
+    return `${placeable.label}: its ${this.blockingPartName(placeable, blocker)} would run into ${this.obstacleLabel(track, blocker.hits)}. ${ROOM_FOR_TRACK}`;
   }
 
-  private heldTrackAt(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    yPlates: number,
-  ): ReadonlyArray<FramedTrackPiece> {
-    const track = this.trackOf(placeable);
-    const frame = latticeFrame(x, z, rot);
-    if (!track || !frame) return [];
-    return [
-      ...heldPieces(track, frame, yPlates),
-      ...heldRuns(track, frame, yPlates, WORLD_TRACK_FRAME.id + 1),
-    ];
+  private blockingPartName(placeable: Placeable, blocker: ModelTrackBlocker): string {
+    switch (blocker.kind) {
+      case "part":
+        return this.partIdOf(placeable, blocker.part);
+      case "track":
+        return blocker.title;
+      default: {
+        const unhandled: never = blocker;
+        throw new Error(`unhandled model track blocker ${String(unhandled)}`);
+      }
+    }
   }
 
   private refuseTrack(reason: string): void {

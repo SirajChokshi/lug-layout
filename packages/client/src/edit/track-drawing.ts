@@ -59,7 +59,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
+import type { FramedTrackPiece, HeldTrackPiece } from "../connect/model-track-ends.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 import {
   NO_TRACK_OBSTACLES,
@@ -90,7 +90,6 @@ const GHOST_SCRATCH_PIECES = 64;
 export interface KitPart {
   readonly footprints: Float64Array;
   readonly outline: Float64Array;
-  readonly planOutline: ReadonlyArray<OutlineRing>;
   readonly meshY: readonly [number, number];
   readonly catalogIndex: number;
   readonly piece: TrackPiece;
@@ -98,6 +97,13 @@ export interface KitPart {
   readonly partIndex: number;
   readonly color: number;
   readonly yLdu: number;
+}
+
+interface CertifiedShape {
+  readonly piece: TrackPiece;
+  readonly outline: Float64Array;
+  readonly planOutline: ReadonlyArray<OutlineRing>;
+  readonly bedLdu: number;
 }
 
 export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
@@ -108,10 +114,9 @@ export interface TrackBlocker {
   readonly hits: Obstacle | { readonly kind: "self"; readonly piece: number };
 }
 
-export interface ModelTrackBlocker {
-  readonly part: number;
-  readonly hits: Obstacle;
-}
+export type ModelTrackBlocker =
+  | { readonly kind: "part"; readonly part: number; readonly hits: Obstacle }
+  | { readonly kind: "track"; readonly title: string; readonly hits: Obstacle };
 
 export interface PlacedTrackPiece {
   readonly placement: number;
@@ -333,14 +338,9 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-function placedOutline(part: KitPart, placement: Pose16, frame: TrackFrame): Float64Array {
+function placedOutline(outline: Float64Array, placement: Pose16): Float64Array {
   const studs = zeta16ToStuds(placement.position);
-  return rotateOutline(
-    part.outline,
-    placement.heading,
-    studs.x * STUD_LDU + frame.xLdu,
-    studs.z * STUD_LDU + frame.zLdu,
-  );
+  return rotateOutline(outline, placement.heading, studs.x * STUD_LDU, studs.z * STUD_LDU);
 }
 
 export class TrackDrawing {
@@ -348,6 +348,7 @@ export class TrackDrawing {
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
+  private readonly certified = new Map<number, CertifiedShape>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
@@ -385,27 +386,35 @@ export class TrackDrawing {
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
-      const inKit = piece.kind === "straight" || piece.kind === "curve";
+      if (piece.status !== "certified") return;
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
+      const shape = kitFootprints(piece, shapes);
+      const outline = footprintOutline(shape, piece.partFrame);
+      const yLdu = -part.boundsMin[1];
+      this.certified.set(catalogIndex, {
+        piece,
+        outline,
+        planOutline: shape.outline,
+        bedLdu: yLdu + shape.minY,
+      });
+      if (piece.system !== TRACK_SYSTEM) return;
+      const inKit = piece.kind === "straight" || piece.kind === "curve";
       if (part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
-        outline: footprintOutline(shape, piece.partFrame),
-        planOutline: shape.outline,
+        outline,
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
         def,
         partIndex,
         color: colors.indexOfCode(part.producedColor),
-        yLdu: -part.boundsMin[1],
+        yLdu,
       };
       if (inKit) this.byDef.set(piece.id, kitPart);
       this.byCatalogIndex.set(catalogIndex, kitPart);
@@ -577,10 +586,6 @@ export class TrackDrawing {
     return this.obstacles.solid;
   }
 
-  drawsOutlineOf(catalogIndex: number): boolean {
-    return this.byCatalogIndex.has(catalogIndex);
-  }
-
   verticalRange(): readonly [number, number] {
     let bottom = Number.POSITIVE_INFINITY;
     let top = Number.NEGATIVE_INFINITY;
@@ -591,32 +596,31 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private trackOutlines(inRunFramesOnly: boolean): ReadonlyArray<PlacedTrackOutline> {
+  private certifiedShape(catalogIndex: number): CertifiedShape {
+    const shape = this.certified.get(catalogIndex);
+    if (!shape) throw new RangeError(`catalog piece ${catalogIndex} is not certified track`);
+    return shape;
+  }
+
+  private trackOutlines(): ReadonlyArray<PlacedTrackOutline> {
     const layout = this.combined;
     const outlines: PlacedTrackOutline[] = [];
     const [, top] = this.verticalRange();
     for (let p = 0; p < layout.count; p++) {
-      const part = this.byCatalogIndex.get(layout.piece(p));
-      if (!part || layout.yPlates(p) * PLATE_LDU >= top) continue;
-      if (inRunFramesOnly && layout.frame(p).id === WORLD_TRACK_FRAME.id) continue;
-      outlines.push({
-        placement: p,
-        outline: placedOutline(part, layout.pose(p), layout.frame(p)),
-      });
+      if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      if (layout.yPlates(p) * PLATE_LDU >= top) continue;
+      const { outline } = this.certifiedShape(layout.piece(p));
+      outlines.push({ placement: p, outline: placedOutline(outline, layout.pose(p)) });
     }
     return outlines;
   }
 
-  private fieldWith(partRects: Float64Array): TrackCollisionField {
-    return new TrackCollisionField(this.combined.count, this.trackOutlines(false), partRects);
-  }
-
-  runFrameFieldWith(partRects: Float64Array): TrackCollisionField {
-    return new TrackCollisionField(this.combined.count, this.trackOutlines(true), partRects);
-  }
-
   private collisionField(): TrackCollisionField {
-    this.collision ??= this.fieldWith(this.obstacles.solid.rects);
+    this.collision ??= new TrackCollisionField(
+      this.combined.count,
+      this.trackOutlines(),
+      this.obstacles.solid.rects,
+    );
     return this.collision;
   }
 
@@ -802,10 +806,10 @@ export class TrackDrawing {
     return entries;
   }
 
-  private joinedPlacements(part: KitPart, placement: Pose16, out: number[]): void {
+  private joinedPlacements(piece: TrackPiece, placement: Pose16, out: number[]): void {
     out.length = 0;
-    for (const own of part.def.connectors) {
-      const pose = composePose16(placement, own);
+    for (const own of piece.connectors) {
+      const pose = composePose16(placement, own.pose);
       for (let e = 0; e < this.ends.length; e++) {
         const end = this.ends[e];
         const owner = this.endOwners[e];
@@ -825,10 +829,10 @@ export class TrackDrawing {
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i];
       if (!entry) continue;
-      const outline = placedOutline(entry.part, entry.placement, WORLD_TRACK_FRAME);
+      const outline = placedOutline(entry.part.outline, entry.placement);
       const at = i * OUTLINE_BOX_FLOATS;
       outlineBox(outline, boxes, at);
-      this.joinedPlacements(entry.part, entry.placement, joined);
+      this.joinedPlacements(entry.part.piece, entry.placement, joined);
       const title = entry.part.piece.title;
       const hits = field.firstHit(outline, boxes, at, joins);
       if (hits) return { title, hits };
@@ -852,11 +856,11 @@ export class TrackDrawing {
 
   modelBlocker(
     rects: SolidRects,
-    held: ReadonlyArray<FramedTrackPiece>,
+    carried: ReadonlyArray<HeldTrackPiece>,
     owns: ObstacleExcuse,
   ): ModelTrackBlocker | null {
     const field = this.collisionField();
-    if (field.tracks === 0 && held.length === 0) return null;
+    if (field.tracks === 0 && carried.length === 0) return null;
     const box = this.outlineBoxScratch;
     const trackNotOwned: ObstacleExcuse = (kind, ref) => kind !== OBSTACLE_TRACK || owns(kind, ref);
     const rect = this.rectOutlineScratch;
@@ -864,30 +868,26 @@ export class TrackDrawing {
       rectOutlineInto(rect, rects.rects, r * RECT_FLOATS);
       outlineBox(rect, box, 0);
       const hits = field.firstHit(rect, box, 0, trackNotOwned);
-      if (hits) return { part: rects.part[r] ?? 0, hits };
+      if (hits) return { kind: "part", part: rects.part[r] ?? 0, hits };
     }
     const joined: number[] = [];
     const ownedOrJoined: ObstacleExcuse = (kind, ref) =>
       owns(kind, ref) || (kind === OBSTACLE_TRACK && joined.includes(ref));
     const [, top] = this.verticalRange();
-    for (const piece of held) {
-      const part = this.byCatalogIndex.get(piece.catalogIndex);
-      if (!part || piece.yPlates * PLATE_LDU >= top) continue;
-      const outline = placedOutline(part, piece.placement, piece.frame);
+    for (const held of carried) {
+      if (held.yPlates * PLATE_LDU >= top) continue;
+      const shape = this.certifiedShape(held.catalogIndex);
+      const outline = placedOutline(shape.outline, held.placement);
       outlineBox(outline, box, 0);
-      if (piece.frame.id === WORLD_TRACK_FRAME.id) {
-        this.joinedPlacements(part, piece.placement, joined);
-      } else joined.length = 0;
+      this.joinedPlacements(shape.piece, held.placement, joined);
       const hits = field.firstHit(outline, box, 0, ownedOrJoined);
-      if (hits) return { part: piece.instance, hits };
+      if (hits) return { kind: "track", title: shape.piece.title, hits };
     }
     return null;
   }
 
   pieceTitle(placement: number): string {
-    const part = this.byCatalogIndex.get(this.combined.piece(placement));
-    if (!part) throw new RangeError(`placement ${placement} is not a placeable track piece`);
-    return part.piece.title;
+    return this.certifiedShape(this.combined.piece(placement)).piece.title;
   }
 
   isDrawn(placement: number): boolean {
@@ -899,18 +899,17 @@ export class TrackDrawing {
     const pieces: PlacedTrackPiece[] = [];
     for (let p = 0; p < layout.count; p++) {
       if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
-      const part = this.byCatalogIndex.get(layout.piece(p));
-      if (!part) continue;
+      const shape = this.certifiedShape(layout.piece(p));
       let outline = this.crossingOutlines.get(p);
       if (!outline) {
-        outline = PlacedOutline.ofTrackPiece(part.planOutline, layout.pose(p));
+        outline = PlacedOutline.ofTrackPiece(shape.planOutline, layout.pose(p));
         this.crossingOutlines.set(p, outline);
       }
       pieces.push({
         placement: p,
         outline,
-        bedLdu: layout.yPlates(p) * PLATE_LDU + part.yLdu + part.meshY[0],
-        system: part.piece.system,
+        bedLdu: layout.yPlates(p) * PLATE_LDU + shape.bedLdu,
+        system: shape.piece.system,
       });
     }
     return pieces;

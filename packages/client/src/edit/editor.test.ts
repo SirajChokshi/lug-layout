@@ -2188,6 +2188,7 @@ const USER_TRACK = "switch-then-reversed-curve";
 const DRAG_STEP_LDU = 40;
 const QUARTER_TURN_STEPS = 4;
 const REACH_LDU = 400;
+const ONE_STRAIGHT_LDU = 320;
 
 type PlanPoint = readonly [number, number];
 
@@ -2283,15 +2284,15 @@ it("refuses a run through a user's brick model or across track it doesn't join, 
   });
 }, 120_000);
 
-function outward(end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number }) {
+function outward(
+  end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number },
+  reach: number,
+) {
   const radians = (end.heading * Math.PI) / (2 * QUARTER_TURN_STEPS);
-  return [
-    end.xLdu + REACH_LDU * Math.cos(radians),
-    end.zLdu + REACH_LDU * Math.sin(radians),
-  ] as const;
+  return [end.xLdu + reach * Math.cos(radians), end.zLdu + reach * Math.sin(radians)] as const;
 }
 
-it("lets a run join the open end of a user's track model and refuses one that crosses its track", async () => {
+it("lets a run start from or close onto the open end of a user's track model and refuses one that crosses its track", async () => {
   const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
     USER_TRACK,
   ]);
@@ -2299,22 +2300,30 @@ it("lets a run join the open end of a user's track model and refuses one that cr
   await loadCatalogItem(catalog, container);
   placer(editor, backend)(container, 0, 0);
   const draw = trackDrawer(editor, backend);
-  const end = editor
+  const [from, onto] = editor
     .dump()
-    .trackEnds.find(
+    .trackEnds.filter(
       (open) =>
         open.heading % QUARTER_TURN_STEPS === 0 &&
         Number.isInteger(open.xLdu / 20) &&
         Number.isInteger(open.zLdu / 20),
     );
-  if (!end) throw new Error(`${USER_TRACK} has no open end on the stud grid facing a quarter turn`);
+  if (!from || !onto) {
+    throw new Error(`${USER_TRACK} has no two open ends on the stud grid facing a quarter turn`);
+  }
 
-  const joined = draw([end.xLdu, end.zLdu], outward(end));
+  const joined = draw([from.xLdu, from.zLdu], outward(from, REACH_LDU));
+  const closed = draw(outward(onto, ONE_STRAIGHT_LDU), [onto.xLdu, onto.zLdu]);
+  const stillOpen = editor.dump().trackEnds;
   const crossing = draw([-160, -600], [-160, 400]);
 
   expect(joined).toMatchObject({ pieces: 1, lastCommit: "laid", refusal: null });
+  expect(closed).toMatchObject({ pieces: 2, lastCommit: "joined", refusal: null });
+  expect(stillOpen).not.toContainEqual(
+    expect.objectContaining({ xLdu: onto.xLdu, zLdu: onto.zLdu }),
+  );
   expect(crossing).toMatchObject({
-    pieces: 1,
+    pieces: 2,
     lastCommit: "refused-collision",
     refusal: expect.stringMatching(
       new RegExp(`would cross the Train Track .* in ${USER_TRACK}, which it doesn't join`, "u"),

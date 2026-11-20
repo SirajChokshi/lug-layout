@@ -15,7 +15,7 @@ export interface PlacedTrackOutline {
   readonly outline: Float64Array;
 }
 
-export const NOTHING_EXCUSED: ObstacleExcuse = () => false;
+const NOTHING_EXCUSED: ObstacleExcuse = () => false;
 export const RECT_OUTLINE_FLOATS = 8;
 
 export function rectOutlineInto(out: Float64Array, rects: ArrayLike<number>, at: number): void {

@@ -38,7 +38,6 @@ import {
   type TrackFootprint,
 } from "./track-drawing.ts";
 import {
-  NO_TRACK_PARTS,
   RECT_FLOATS,
   seatsPending,
   trackObstacles,
@@ -988,7 +987,7 @@ async function trackOver(
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const range = layout.verticalRange();
   layout.setObstacles({
-    ...trackObstacles(ground, range, () => NO_TRACK_PARTS),
+    ...trackObstacles(ground, range, () => new Set()),
     seatsPending: pendingSeats(range),
   });
   return layout;

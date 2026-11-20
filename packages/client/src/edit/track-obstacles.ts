@@ -5,9 +5,7 @@ import type { PlacedModel } from "./placed-chunks.ts";
 const CELL_KEY_STRIDE = 2 ** 26;
 const CELL_KEY_OFFSET = 2 ** 25;
 const ON_LATTICE = 1;
-const DRAWN_AS_TRACK = 1;
 export const RECT_FLOATS = 4;
-export const NO_TRACK_PARTS: Uint8Array = new Uint8Array(0);
 
 export function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
@@ -25,7 +23,7 @@ export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): 
   return seats;
 }
 
-export type TrackPartsOf = (model: PlacedModel) => Uint8Array;
+export type CarriedTrack = (model: PlacedModel) => ReadonlySet<number>;
 
 export interface SolidRects {
   readonly rects: Float64Array;
@@ -53,13 +51,13 @@ class SolidList {
   add(
     boxes: Float64Array,
     band: readonly [number, number],
-    drawn: Uint8Array,
+    carried: ReadonlySet<number>,
     owner: number,
   ): void {
     const [bottom, top] = band;
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
       const part = b / BOX_FLOATS;
-      if (drawn[part] === DRAWN_AS_TRACK) continue;
+      if (carried.has(part)) continue;
       if ((boxes[b + 1] ?? 0) >= top || (boxes[b + 4] ?? 0) <= bottom) continue;
       this.rects.push(boxes[b] ?? 0, boxes[b + 2] ?? 0, boxes[b + 3] ?? 0, boxes[b + 5] ?? 0);
       this.owners.push(owner);
@@ -79,22 +77,22 @@ class SolidList {
 export function solidRects(
   boxes: Float64Array,
   band: readonly [number, number],
-  drawn: Uint8Array,
+  carried: ReadonlySet<number>,
 ): SolidRects {
   const list = new SolidList();
-  list.add(boxes, band, drawn, 0);
+  list.add(boxes, band, carried, 0);
   return list.frozen();
 }
 
 export function modelSolidRects(
   models: ReadonlyArray<PlacedModel>,
   band: readonly [number, number],
-  trackParts: TrackPartsOf,
+  carriedTrack: CarriedTrack,
 ): SolidRects {
   const list = new SolidList();
   models.forEach((model, owner) => {
     if (model.box.minY >= band[1] || model.box.maxY <= band[0]) return;
-    list.add(model.worldPartBoxes(), band, trackParts(model), owner);
+    list.add(model.worldPartBoxes(), band, carriedTrack(model), owner);
   });
   return list.frozen();
 }
@@ -167,10 +165,10 @@ function studlessRects(models: ReadonlyArray<PlacedModel>, bottom: number): Floa
 export function trackObstacles(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],
-  trackParts: TrackPartsOf,
+  carriedTrack: CarriedTrack,
 ): TrackObstacles {
   return {
-    solid: modelSolidRects(models, trackRange, trackParts),
+    solid: modelSolidRects(models, trackRange, carriedTrack),
     studless: studlessRects(models, trackRange[0]),
     seatsPending: seatsPending(models, trackRange),
   };

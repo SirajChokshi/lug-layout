@@ -1,6 +1,8 @@
 import type { PartShapeAsset } from "@brr/catalog";
 import {
+  NO_OBSTACLE,
   OUTLINE_BOX_FLOATS,
+  TrackClearance,
   convexHull,
   levelCrossings,
   outlineBox,
@@ -18,9 +20,8 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
-import { NOTHING_EXCUSED, type TrackCollisionField } from "./track-collision.ts";
 import type { PlacedTrackPiece } from "./track-drawing.ts";
-import { cellKey, studSeats } from "./track-obstacles.ts";
+import { RECT_FLOATS, cellKey, studSeats } from "./track-obstacles.ts";
 
 export interface SeatedRamp extends RampCandidate {
   readonly studMates: number;
@@ -32,7 +33,7 @@ export interface SuggestedCrossing {
   readonly ramps: ReadonlyArray<SeatedRamp>;
 }
 
-export type ClearanceInBand = (band: readonly [number, number]) => TrackCollisionField;
+export type PartRectsInBand = (band: readonly [number, number]) => Float64Array;
 
 interface RampAsset {
   readonly part: RampPart;
@@ -62,13 +63,26 @@ function planHullOf(outline: RampPart["outline"]): Float64Array {
 
 class LayoutProbe {
   private readonly seats = new Map<number, ReadonlySet<number>>();
-  private readonly fields = new Map<string, TrackCollisionField>();
+  private readonly fields = new Map<string, TrackClearance>();
   private readonly box = new Float64Array(OUTLINE_BOX_FLOATS);
 
   constructor(
     private readonly models: ReadonlyArray<PlacedModel>,
-    private readonly clearanceIn: ClearanceInBand,
+    private readonly partRectsIn: PartRectsInBand,
   ) {}
+
+  private clearanceIn(band: readonly [number, number]): TrackClearance {
+    const key = `${band[0]}|${band[1]}`;
+    let field = this.fields.get(key);
+    if (field) return field;
+    field = new TrackClearance();
+    const rects = this.partRectsIn(band);
+    for (let r = 0; r < rects.length; r += RECT_FLOATS) {
+      field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
+    }
+    this.fields.set(key, field);
+    return field;
+  }
 
   studMates(candidate: RampCandidate): number {
     let seats = this.seats.get(candidate.undersideLdu);
@@ -84,13 +98,7 @@ class LayoutProbe {
   }
 
   obstructed(candidate: RampCandidate, asset: RampAsset): boolean {
-    const band = [candidate.y + asset.minY, candidate.y + asset.maxY] as const;
-    const key = `${band[0]}|${band[1]}`;
-    let field = this.fields.get(key);
-    if (!field) {
-      field = this.clearanceIn(band);
-      this.fields.set(key, field);
-    }
+    const field = this.clearanceIn([candidate.y + asset.minY, candidate.y + asset.maxY]);
     const cos = rot90Cos(candidate.rot);
     const sin = rot90Sin(candidate.rot);
     const { hull } = asset;
@@ -102,7 +110,7 @@ class LayoutProbe {
       outline[p + 1] = candidate.z - sin * x + cos * z;
     }
     outlineBox(outline, this.box, 0);
-    return field.firstHit(outline, this.box, 0, NOTHING_EXCUSED) !== null;
+    return field.blocks(outline, this.box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
   }
 }
 
@@ -139,7 +147,7 @@ export class CrossingRamps {
     roads: ReadonlyArray<RoadPlacement>,
     pieces: ReadonlyArray<PlacedTrackPiece>,
     models: ReadonlyArray<PlacedModel>,
-    clearanceIn: ClearanceInBand,
+    partRectsIn: PartRectsInBand,
   ): ReadonlyArray<SuggestedCrossing> {
     if (roads.length === 0 || pieces.length === 0) return [];
     const tracks = pieces.map((piece): CrossingTrack => {
@@ -155,7 +163,7 @@ export class CrossingRamps {
       this.ramps.map((ramp) => ramp.part),
     );
     if (crossings.length === 0) return [];
-    const probe = new LayoutProbe(models, clearanceIn);
+    const probe = new LayoutProbe(models, partRectsIn);
     return crossings.map((crossing) => ({
       crossing,
       trackPlacements: crossing.tracks.map((track) => pieces[track]?.placement ?? 0),
