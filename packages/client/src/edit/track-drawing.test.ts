@@ -54,6 +54,7 @@ import {
   type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
+import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
   cellKey,
   seatsPending,
@@ -1672,15 +1673,18 @@ it("closes onto the open end of track a model carries, and runs no join through 
   const bundle = await trackAndRoadBundle();
   const carrying = (id: string) => {
     const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-    layout.syncHeld([
-      {
-        catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
-        placement: studPose(0, 0, 0),
-        yPlates: 0,
-        instance: 0,
-        frame: WORLD_TRACK_FRAME,
-      },
-    ]);
+    layout.syncHeld(
+      [
+        {
+          catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
+          placement: studPose(0, 0, 0),
+          yPlates: 0,
+          instance: 0,
+          frame: WORLD_TRACK_FRAME,
+        },
+      ],
+      [carrierAtOrigin(1)],
+    );
     return layout;
   };
   const joining = carrying(NINE_VOLT_STRAIGHT);

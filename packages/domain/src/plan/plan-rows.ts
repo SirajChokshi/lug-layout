@@ -22,6 +22,11 @@ const LIVE_LIMIT = 0.5;
 const SLOT_EMPTY = 0;
 const SLOT_LIVE = 1;
 
+export function placementLabel(kind: number, base: string, a: number, b: number): string {
+  if (kind === LABEL_NUMBERED) return `${base} #${a}`;
+  return `${base} at ${a}, ${b}`;
+}
+
 function grownInt32(
   array: Int32Array<ArrayBuffer>,
   length: number,
@@ -313,10 +318,12 @@ export class PlanRows {
   }
 
   labelOf(row: number): string {
-    const base = this.strings.value(this.labelBase[row] ?? 0);
-    const a = this.labelA[row] ?? 0;
-    if (this.labelKind[row] === LABEL_NUMBERED) return `${base} #${a}`;
-    return `${base} at ${a}, ${this.labelB[row] ?? 0}`;
+    return placementLabel(
+      this.labelKind[row] ?? LABEL_AT,
+      this.strings.value(this.labelBase[row] ?? 0),
+      this.labelA[row] ?? 0,
+      this.labelB[row] ?? 0,
+    );
   }
 
   keyOf(row: number): PlacementKey {
