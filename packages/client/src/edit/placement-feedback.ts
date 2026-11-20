@@ -1,5 +1,6 @@
 import { STUD_LDU } from "@brr/math";
 import type { GhostVerdict, WorldBox } from "@brr/render";
+import type { FillView } from "./fill-tool.ts";
 import {
   effectivePlacementMode,
   magnetMove,
@@ -45,10 +46,18 @@ export interface PlacementHoverInput {
   readonly placement: PlacementHover | null;
 }
 
+export type PlacementGestureView =
+  | { readonly kind: "box" }
+  | { readonly kind: "move" | "paste"; readonly refusal: string | null };
+
+type HeldGroupGesture = Extract<PlacementGestureView, { readonly kind: "move" | "paste" }>;
+
 export interface PlacementView extends PlacementModeView {
   readonly mode: string;
   readonly hover: PlacementHoverInput | null;
   readonly ghostSettled: boolean;
+  readonly gesture: PlacementGestureView | null;
+  readonly fillDraft: FillView | null;
 }
 
 export interface SettleView extends PlacementModeView {
@@ -62,16 +71,31 @@ export interface SettleView extends PlacementModeView {
 }
 
 const PLACE_MODE = "place";
+const SELECT_MODE = "select";
 
 function heldHover(view: PlacementView): PlacementHoverInput | null {
-  return view.mode === PLACE_MODE && !view.ghostSettled ? view.hover : null;
+  if (view.mode !== PLACE_MODE || view.ghostSettled || view.fillDraft !== null) return null;
+  return view.hover;
+}
+
+function heldGroup(view: PlacementView): HeldGroupGesture | null {
+  const { gesture } = view;
+  if (view.mode !== SELECT_MODE || gesture === null || gesture.kind === "box") return null;
+  return gesture;
+}
+
+function chosenMode(view: PlacementView): PlacementMode {
+  return effectivePlacementMode(view.placementMode, view.placementModeOverride);
+}
+
+function groupFeedback(view: PlacementView, group: HeldGroupGesture): PlacementFeedback {
+  const mode = chosenMode(view);
+  if (group.refusal === null) return { tone: "fits", mode, lines: NO_LINES };
+  return { tone: "refused", mode, lines: [line("refusal", group.refusal)] };
 }
 
 function shownMode(view: PlacementView): PlacementMode {
-  return (
-    view.hover?.placement?.mode ??
-    effectivePlacementMode(view.placementMode, view.placementModeOverride)
-  );
+  return view.hover?.placement?.mode ?? chosenMode(view);
 }
 
 function sameHeldCell(before: SettleView, after: SettleView): boolean {
@@ -120,6 +144,7 @@ const SQUARE_SOCKET = noun("square socket");
 const ROUND_PEG = noun("round peg");
 const ROUND_SOCKET = noun("round socket");
 const NO_BADGES: ReadonlyArray<BadgeCount> = [];
+const NO_LINES: ReadonlyArray<PlacementLine> = [];
 const UNPLACEABLE = "Can't place here";
 const FINDING_A_FIT = "Finding a fit…";
 
@@ -322,6 +347,8 @@ export function placementFeedback(view: PlacementView): PlacementFeedback | null
 }
 
 function feedbackOf(view: PlacementView): PlacementFeedback | null {
+  const group = heldGroup(view);
+  if (group) return groupFeedback(view, group);
   const hover = heldHover(view);
   if (!hover) return null;
   const tone = placementTone(hover);
@@ -368,8 +395,13 @@ function hitBox(hit: HoverRefusalHit): WorldBox | null {
 }
 
 export function ghostVerdict(view: PlacementView): GhostVerdict | null {
+  const group = heldGroup(view);
+  if (group) {
+    const tone = group.refusal === null ? "fits" : "refused";
+    return { tone, hit: null, precise: chosenMode(view) === "precise" };
+  }
   const { hover } = view;
-  if (view.mode !== PLACE_MODE || hover === null) return null;
+  if (view.mode !== PLACE_MODE || hover === null || view.fillDraft !== null) return null;
   const precise = shownMode(view) === "precise";
   const tone = placementTone(hover);
   if (view.ghostSettled || tone === "pending") return { tone: null, hit: null, precise };
