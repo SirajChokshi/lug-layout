@@ -16,16 +16,20 @@
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
+    "@brr/client": "workspace:*",
     "@brr/import": "workspace:*",
     "@brr/math": "workspace:*",
+    "@brr/render": "workspace:*",
     "@brr/schema": "workspace:*",
     "@brr/storage": "workspace:*",
+    "inversify": "8.3.0",
     "valibot": "1.5.0"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
     "@playwright/test": "1.58.2",
     "@types/node": "22.20.5",
+    "@webgpu/types": "0.1.74",
     "playwright-core": "1.58.2",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
