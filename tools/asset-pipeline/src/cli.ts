@@ -96,6 +96,7 @@ import {
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
+import { auditBundleStuds, summarizeStudAudit } from "./verify/stud-audit-bundle.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -655,7 +656,28 @@ async function bundleCommand(): Promise<void> {
   const ldrawParts = crosswalkInputs.ldrawParts;
   const shared = { inputs, crosswalk, coverCache, ldrawParts, categories };
   for (const build of builds) await compileLod(build, shared);
+  if (!(await studAuditCommand(undefined))) {
+    throw new Error("the stud audit found the bundle's studs disagreeing with LDraw");
+  }
   await recordBundleBuild(bundleRoot, buildKey);
+}
+
+const STUD_AUDIT_LOD: BundleLod = "standard";
+
+async function studAuditCommand(out: string | undefined): Promise<boolean> {
+  const report = await auditBundleStuds(
+    join(bundleRoot, STUD_AUDIT_LOD),
+    new LdrawLibrary([ldrawRoot]),
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+  );
+  if (out !== undefined) await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
+  const summary = summarizeStudAudit(report);
+  if (report.issues.length > 0) {
+    process.stderr.write(summary);
+    return false;
+  }
+  process.stdout.write(summary);
+  return true;
 }
 
 const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
@@ -812,6 +834,12 @@ switch (command) {
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
+  case "stud-audit": {
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (!(await studAuditCommand(out))) process.exitCode = 1;
+    break;
+  }
   case "section-vocabulary":
     await sectionVocabularyCommand(process.argv.includes("--check"));
     break;
@@ -838,7 +866,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }
