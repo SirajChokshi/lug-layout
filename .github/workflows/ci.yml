@@ -50,7 +50,7 @@ jobs:
         uses: ./.github/actions/ldraw-inputs
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm --filter @brr/asset-pipeline build
-      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: |

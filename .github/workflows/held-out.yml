@@ -46,7 +46,7 @@ jobs:
       - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - uses: actions/cache/save@v4
-        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' && github.event_name != 'pull_request' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
+        if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
         with:
           path: |
             tools/asset-pipeline/dist/bundle
