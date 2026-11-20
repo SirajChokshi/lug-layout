@@ -34,6 +34,7 @@ import { partAtHit } from "../edit/placement-hover-view.ts";
 import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
+import { typedArraysConstructedDuring } from "./typed-arrays.test-support.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
 import {
   SETTLED_AT_ONCE,
@@ -275,42 +276,6 @@ interface SlicedChoice {
   readonly slices: number;
 }
 
-const TYPED_ARRAYS = [
-  "Float64Array",
-  "Float32Array",
-  "Int32Array",
-  "Uint32Array",
-  "Int16Array",
-  "Uint16Array",
-  "Int8Array",
-  "Uint8Array",
-] as const;
-
-function typedArraysConstructedDuring(run: () => void): number {
-  const global = globalThis as unknown as Record<string, new (...args: never[]) => unknown>;
-  const originals = TYPED_ARRAYS.map((name) => global[name]);
-  let constructed = 0;
-  TYPED_ARRAYS.forEach((name, i) => {
-    const Original = originals[i];
-    if (!Original) return;
-    global[name] = class extends (Original as new (...args: unknown[]) => object) {
-      constructor(...args: unknown[]) {
-        super(...args);
-        constructed++;
-      }
-    } as unknown as new (...args: never[]) => unknown;
-  });
-  try {
-    run();
-  } finally {
-    TYPED_ARRAYS.forEach((name, i) => {
-      const Original = originals[i];
-      if (Original) global[name] = Original;
-    });
-  }
-  return constructed;
-}
-
 function fullVerdict(choice: PlacementChoice) {
   return {
     pose: [choice.x, choice.z, choice.yPlates, choice.rot],
@@ -525,6 +490,7 @@ describe("PlacementSearch", () => {
       names: (hit: OverlapHit) =>
         partAtHit(
           solid.parts.boxes.boxes,
+          solid.parts.boxes.boxes.length,
           hit.cellX,
           hit.cellZ,
           Math.max(hit.bottomLdu, hit.candidateBottomLdu),
@@ -555,7 +521,7 @@ describe("PlacementSearch", () => {
     }).toEqual({ refused: [0, 0], named: [1, 0], onlyByColumn: null });
   });
 
-  it("constructs no typed array once warm, however the assist window moves, searched whole or one unit per slice", () => {
+  it("constructs no typed array once warm, however the assist window moves, searched whole or one unit per slice", async () => {
     const f = fixture();
     const plate = world(f);
     const windows = [0, 1, 2, 3, 4].flatMap((i) =>
@@ -569,7 +535,7 @@ describe("PlacementSearch", () => {
     };
     sweep();
 
-    expect(typedArraysConstructedDuring(sweep)).toBe(0);
+    expect(await typedArraysConstructedDuring(sweep)).toBe(0);
   });
 
   it("settles a search advanced one unit per slice on exactly the choice it makes whole, held turn and turn probe alike", () => {

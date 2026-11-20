@@ -485,9 +485,12 @@ const NEXT_TURN = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
 const ASSIST_SLICE_MS = 6;
+const ASSIST_FRAME_WORK_MS = 12;
+const PUBLISH_COSTS = 32;
 const ASSIST_IDLE = 0;
 const ASSIST_HELD = 1;
-const ASSIST_TURN = 2;
+const ASSIST_TURN_NEXT = 2;
+const ASSIST_TURN = 3;
 
 class CursorPick implements PlacementWindow {
   x = 0;
@@ -801,6 +804,9 @@ export class Editor implements IEditor, IEditedWorld {
   private assistConnected: Connected | null = null;
   private assistMode: PlacementMode = "assist";
   private sliceSinceFrame = false;
+  private readonly publishCosts = new Float64Array(PUBLISH_COSTS);
+  private nextPublishCost = 0;
+  private namingBoxes = new Float64Array(0);
   private readonly mates = new MateReport();
   private hovering = false;
   private hitX = 0;
@@ -1755,7 +1761,7 @@ export class Editor implements IEditor, IEditedWorld {
     );
     this.hoverCell.keep(placeable, this.pick, mode, this.search);
     this.sliceSinceFrame = true;
-    if (!this.continueAssist(startedMs + ASSIST_SLICE_MS, false)) {
+    if (!this.continueAssist(startedMs, false)) {
       this.publishHover(placeable, connected, mode, false, false, false);
     }
   }
@@ -1764,7 +1770,7 @@ export class Editor implements IEditor, IEditedWorld {
     const sliced = this.sliceSinceFrame;
     this.sliceSinceFrame = false;
     if (sliced || this.assistPhase === ASSIST_IDLE) return;
-    if (this.continueAssist(startMs + ASSIST_SLICE_MS, false)) {
+    if (this.continueAssist(startMs, false)) {
       this.update({ hover: this.hoverView() });
     } else if (this.assistPhase === ASSIST_IDLE) {
       this.placeGhost();
@@ -1772,40 +1778,68 @@ export class Editor implements IEditor, IEditedWorld {
     }
   };
 
-  private continueAssist(deadlineMs: number, heldOnly: boolean): boolean {
+  private continueAssist(startedMs: number, heldOnly: boolean): boolean {
     const placeable = this.assistPlaceable;
     const connected = this.assistConnected;
     if (!placeable || !connected) return false;
     let published = false;
     if (this.assistPhase === ASSIST_HELD) {
-      if (!this.advanceAssist(deadlineMs)) return false;
+      const heldDeadline = heldOnly ? Number.POSITIVE_INFINITY : startedMs + this.heldSliceMs();
+      if (!this.advanceAssist(heldDeadline)) return false;
       if (this.choice.accepted && this.choice.votes > 0) {
-        this.settleAssist(placeable, connected, false);
+        this.settleAssist(placeable, connected);
         return true;
       }
       this.publishHover(placeable, connected, this.assistMode, true, false, false);
+      this.assistPhase = ASSIST_TURN_NEXT;
       published = true;
-      this.assistPick.turns = EVERY_TURN;
-      this.assistPick.firstTurn = NEXT_TURN;
-      this.assistPhase = ASSIST_TURN;
-      this.assistTicket = this.search.begin(
-        connected.model,
-        connected.volumes,
-        connected.boxes,
-        connected.technic,
-        this.assistPick,
-        RESTS_ON_TABLE_Y_PLATES,
-        null,
-        this.turnChoice,
-      );
-      if (heldOnly) return true;
     }
-    if (!this.advanceAssist(deadlineMs)) return published;
+    if (heldOnly) return published;
+    const deadline = startedMs + ASSIST_SLICE_MS;
+    if (this.assistPhase === ASSIST_TURN_NEXT) {
+      if (performance.now() >= deadline) return published;
+      this.beginTurnProbe(connected);
+    }
+    if (!this.advanceAssist(deadline)) return published;
+    this.settleTurn(connected);
+    return true;
+  }
+
+  private heldSliceMs(): number {
+    let reserve = 0;
+    for (let i = 0; i < PUBLISH_COSTS; i++) reserve = Math.max(reserve, this.publishCosts[i] ?? 0);
+    return Math.min(ASSIST_SLICE_MS, Math.max(0, ASSIST_FRAME_WORK_MS - reserve));
+  }
+
+  private beginTurnProbe(connected: Connected): void {
+    this.assistPick.turns = EVERY_TURN;
+    this.assistPick.firstTurn = NEXT_TURN;
+    this.assistPhase = ASSIST_TURN;
+    this.assistTicket = this.search.begin(
+      connected.model,
+      connected.volumes,
+      connected.boxes,
+      connected.technic,
+      this.assistPick,
+      RESTS_ON_TABLE_Y_PLATES,
+      null,
+      this.turnChoice,
+    );
+  }
+
+  private settleTurn(connected: Connected): void {
     const turned = this.turnChoice;
     const turnBlocksSnap =
       turned.accepted && turned.votes > 0 && turned.rot !== this.assistPick.rot;
-    this.settleAssist(placeable, connected, turnBlocksSnap);
-    return true;
+    const held = this.hoverPlacement;
+    this.dropAssist();
+    if (!held) return;
+    this.hoverPlacement = {
+      ...held,
+      turnBlocksSnap,
+      turnMates: turnBlocksSnap ? this.turnMates(connected) : [],
+      turnSettled: true,
+    };
   }
 
   private advanceAssist(deadlineMs: number): boolean {
@@ -1819,10 +1853,10 @@ export class Editor implements IEditor, IEditedWorld {
     return false;
   }
 
-  private settleAssist(placeable: Placeable, connected: Connected, turnBlocksSnap: boolean): void {
+  private settleAssist(placeable: Placeable, connected: Connected): void {
     const mode = this.assistMode;
     this.dropAssist();
-    this.publishHover(placeable, connected, mode, true, true, turnBlocksSnap);
+    this.publishHover(placeable, connected, mode, true, true, false);
   }
 
   private dropAssist(): void {
@@ -1841,6 +1875,7 @@ export class Editor implements IEditor, IEditedWorld {
     turnSettled: boolean,
     turnBlocksSnap: boolean,
   ): void {
+    const startedMs = performance.now();
     const choice = this.choice;
     const pose = { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
     const magnet = magnetOffset(this.assistPick, pose);
@@ -1871,6 +1906,8 @@ export class Editor implements IEditor, IEditedWorld {
     };
     this.hoverRefusal = choice.accepted ? null : refusalText(placeable.label, hit);
     this.backend.placeGhost(pose.x, pose.yPlates * PLATE_LDU, pose.z, pose.rot);
+    this.publishCosts[this.nextPublishCost] = performance.now() - startedMs;
+    this.nextPublishCost = (this.nextPublishCost + 1) % PUBLISH_COSTS;
   }
 
   private assistReachLdu(): number {
@@ -1973,8 +2010,12 @@ export class Editor implements IEditor, IEditedWorld {
     this.hitPart = null;
     if (!model) return false;
     this.namingIndices = model.placeable.partTransforms.partIndex;
+    if (this.namingBoxes.length < model.placeable.partBoxes.length) {
+      this.namingBoxes = new Float64Array(model.placeable.partBoxes.length);
+    }
     this.hitPart = partAtHit(
-      model.worldPartBoxes(),
+      this.namingBoxes,
+      model.writeWorldPartBoxes(this.namingBoxes),
       hit.cellX,
       hit.cellZ,
       Math.max(hit.bottomLdu, hit.candidateBottomLdu),
@@ -2134,7 +2175,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.hovering = true;
       const snap = this.snapGhost();
       this.placeGhost();
-      this.continueAssist(Number.POSITIVE_INFINITY, true);
+      this.continueAssist(performance.now(), true);
       if (snap?.state === "refused") {
         this.update({
           snap,

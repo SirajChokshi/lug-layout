@@ -132,6 +132,7 @@ export interface HitPart {
 
 export function partAtHit(
   worldBoxes: Float64Array,
+  boxFloats: number,
   cellX: number,
   cellZ: number,
   bottomLdu: number,
@@ -140,7 +141,7 @@ export function partAtHit(
 ): HitPart | null {
   const x0 = cellX * STUD_LDU;
   const z0 = cellZ * STUD_LDU;
-  for (let b = 0; b < worldBoxes.length; b += BOX_FLOATS) {
+  for (let b = 0; b < boxFloats; b += BOX_FLOATS) {
     if ((worldBoxes[b] ?? 0) >= x0 + STUD_LDU || (worldBoxes[b + MAX_X] ?? 0) <= x0) continue;
     if ((worldBoxes[b + 2] ?? 0) >= z0 + STUD_LDU || (worldBoxes[b + MAX_Z] ?? 0) <= z0) continue;
     if ((worldBoxes[b + MIN_Y] ?? 0) >= topLdu || (worldBoxes[b + MAX_Y] ?? 0) <= bottomLdu)

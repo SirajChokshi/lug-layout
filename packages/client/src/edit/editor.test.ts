@@ -90,6 +90,7 @@ import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
+import { typedArraysConstructedDuring } from "../connect/typed-arrays.test-support.ts";
 import { mateCounts } from "./placement-hover-view.ts";
 import type { PlacementHover } from "./placement-hover.ts";
 
@@ -2021,6 +2022,30 @@ it("restarts an unsettled assist search when an import's studs land under it, an
   } finally {
     clock.mockRestore();
   }
+}, 240_000);
+
+it("constructs no typed array once warm while hovers slice, settle and publish, refusals named included", async () => {
+  const { editor, backend, frame } = await setOneStudIntoSet();
+  const sweep = async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+    }
+  };
+  await sweep();
+  const refusals = () => (editor.snapshot().hover?.refusal ? 1 : 0);
+  let refused = 0;
+  const constructed = await typedArraysConstructedDuring(async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+      refused += refusals();
+    }
+  });
+
+  expect({ constructed, refused: refused > 0 }).toEqual({ constructed: 0, refused: true });
 }, 240_000);
 
 it("publishes the assist radius as 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
