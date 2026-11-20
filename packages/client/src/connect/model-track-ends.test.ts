@@ -76,7 +76,7 @@ function laid(
   for (const [[fx, fz], [tx, tz]] of drags) {
     drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
     drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-    drawing.endDrag();
+    drawing.applyTrack(drawing.endDrag().change);
   }
   return drawing;
 }

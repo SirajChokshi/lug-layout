@@ -106,7 +106,7 @@ describe("EditHistory", () => {
     expect(undone?.kind).toBe("rotate");
     expect(undone?.changes[0]?.to?.rot).toBe(0);
     expect(placement.handle?.rot).toBe(0);
-    expect(history.nextRedo()).toEqual({ kind: "rotate", placements: 1, laid: 0 });
+    expect(history.nextRedo()).toEqual({ kind: "rotate" });
   });
 
   it("keeps a track change as one step beside placements, handing it back reversed on undo and as made on redo", () => {
@@ -118,12 +118,12 @@ describe("EditHistory", () => {
 
     expect(history.commit("lay-track", [], run).track).toBe(run);
     expect(history.commit("throw-switch", [], thrown).track).toBe(thrown);
-    expect(history.nextUndo()).toEqual({ kind: "throw-switch", placements: 0, laid: 1 });
+    expect(history.nextUndo()).toEqual({ kind: "throw-switch" });
     expect(history.undo()?.track).toEqual({ lift: thrown.lay, lay: thrown.lift });
     expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
     expect(history.nextUndo()?.kind).toBe("place");
     expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
-    expect(history.nextRedo()).toEqual({ kind: "lay-track", placements: 0, laid: 2 });
+    expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2 });
     expect(history.redo()?.track).toBe(run);
     expect(history.redo()?.track).toBe(thrown);
     expect([history.undoDepth, history.redoDepth]).toEqual([3, 0]);

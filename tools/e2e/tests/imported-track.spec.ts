@@ -290,6 +290,7 @@ test("drawn track joined to an imported model's own 9V run is lifted by undo and
   const file = test.info().outputPath("nine-volt-run.ldr");
   await writeFile(file, text);
   const editor = await importAndPlace(page, file);
+  expect(pieces).toBe(2);
   expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
   const placed = await editor.poses();
   const modelEnds = await editor.trackEnds();
@@ -301,12 +302,8 @@ test("drawn track joined to an imported model's own 9V run is lifted by undo and
   const run = await editor.dragTrack(from, { x: from.x + DRAWN_RUN_LDU, z: from.z });
   const laid = await editor.laidTrack();
   const joinedEnds = await editor.trackEnds();
-  expect(run).toMatchObject({
-    lastCommit: "laid",
-    pieces: laid.length,
-    openEnds: 2,
-    joins: pieces + laid.length - 1,
-  });
+  expect(run).toEqual({ lastCommit: "laid", pieces: 2, openEnds: 2, joins: 3 });
+  expect(laid).toHaveLength(2);
   expect(joinedEnds).not.toContainEqual(east);
 
   await editor.undo();
@@ -318,8 +315,6 @@ test("drawn track joined to an imported model's own 9V run is lifted by undo and
   expect(await editor.laidTrack()).toEqual(laid);
   expect(await editor.trackEnds()).toEqual(joinedEnds);
   expect(await editor.trackCounts()).toEqual(run);
-  expect(pieces).toBe(2);
-  expect(laid.length).toBeGreaterThan(0);
 });
 
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {

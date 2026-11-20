@@ -139,8 +139,12 @@ export class TrackLayout {
 
   remove(placement: number): void {
     this.checkPlacement(placement);
+    const frame = this.frameOf[placement] ?? WORLD_TRACK_FRAME.id;
     this.moveTail(placement + 1, placement);
     this.size--;
+    if (frame !== WORLD_TRACK_FRAME.id && !this.frameOf.subarray(0, this.size).includes(frame)) {
+      this.frames.delete(frame);
+    }
   }
 
   private moveTail(from: number, to: number): void {

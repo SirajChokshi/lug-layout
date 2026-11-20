@@ -20,11 +20,10 @@ export interface TrackChange {
 
 export const NO_TRACK_CHANGE: TrackChange = { lift: [], lay: [] };
 
-export interface EditSummary {
-  readonly kind: EditKind;
-  readonly placements: number;
-  readonly laid: number;
-}
+export type EditSummary =
+  | { readonly kind: "place" | "rotate" | "remove" | "throw-switch" }
+  | { readonly kind: "road"; readonly placements: number }
+  | { readonly kind: "lay-track"; readonly pieces: number };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -114,7 +113,21 @@ function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof Track
 }
 
 function summary(edit: Edit): EditSummary {
-  return { kind: edit.kind, placements: edit.changes.length, laid: edit.track.lay.length };
+  switch (edit.kind) {
+    case "place":
+    case "rotate":
+    case "remove":
+    case "throw-switch":
+      return { kind: edit.kind };
+    case "road":
+      return { kind: edit.kind, placements: edit.changes.length };
+    case "lay-track":
+      return { kind: edit.kind, pieces: edit.track.lay.length };
+    default: {
+      const unhandled: never = edit.kind;
+      throw new Error(`unhandled edit ${String(unhandled)}`);
+    }
+  }
 }
 
 export class EditHistory {

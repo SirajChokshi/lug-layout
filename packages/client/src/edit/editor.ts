@@ -552,12 +552,12 @@ function editLabel(edit: EditSummary | null): string | null {
     case "road":
       return `road stroke (${counted(edit.placements, "plate", "plates")})`;
     case "lay-track":
-      return `lay ${counted(edit.laid, "piece", "pieces")}`;
+      return `lay ${counted(edit.pieces, "piece", "pieces")}`;
     case "throw-switch":
       return "throw switch";
     default: {
-      const unhandled: never = edit.kind;
-      throw new Error(`unhandled edit ${String(unhandled)}`);
+      const unhandled: never = edit;
+      throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
     }
   }
 }

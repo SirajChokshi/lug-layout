@@ -291,6 +291,7 @@ describe("draw road", () => {
       expect(roads.overlaps).toBe(0);
       expect(roads.joinedCells).toBeGreaterThan(0);
       expect(history.undo).toBe("road");
+      expect(history.undoLabel).toBe("road stroke (6 plates)");
       editor.undo(0);
       expect(editor.snapshot().placements).toBe(0);
       editor.chooseItem(null);

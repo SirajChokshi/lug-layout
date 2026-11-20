@@ -65,8 +65,9 @@ test("Ctrl+Z straight after drawing track lifts the track and keeps the baseplat
   const run = await editor.dragTrack({ x: -320, z: 0 }, { x: 320, z: 0 });
   const laid = await editor.laidTrack();
   const ends = await editor.trackEnds();
-  expect(run).toMatchObject({ lastCommit: "laid", pieces: laid.length, openEnds: 2 });
-  await expect(undoButton).toContainText(`Undo lay ${laid.length} pieces`);
+  expect(run).toMatchObject({ lastCommit: "laid", pieces: 2, openEnds: 2 });
+  expect(laid).toHaveLength(2);
+  await expect(undoButton).toContainText("Undo lay 2 pieces");
 
   await editor.undo();
   expect(await editor.poses()).toEqual(placed);
@@ -78,7 +79,6 @@ test("Ctrl+Z straight after drawing track lifts the track and keeps the baseplat
   expect(await editor.poses()).toEqual(placed);
   expect(await editor.laidTrack()).toEqual(laid);
   expect(await editor.trackEnds()).toEqual(ends);
-  expect(laid.length).toBeGreaterThan(0);
 
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("undo-track-redone.png") });

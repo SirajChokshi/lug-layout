@@ -967,12 +967,9 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   const place = placer(editor, backend);
   const states = [layoutState(editor)];
   const labels: Array<string | null> = [];
-  const laid: number[] = [];
   const record = () => {
-    const before = layoutState(editor);
-    states.push(before);
+    states.push(layoutState(editor));
     labels.push(editor.snapshot().history.undoLabel);
-    laid.push(before.laidTrack.length - (states.at(-2)?.laidTrack.length ?? 0));
   };
 
   place(BASEPLATE, 0, 0);
@@ -1009,16 +1006,28 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
   expect(labels).toEqual([
     "place",
-    `lay ${laid[1]} pieces`,
+    "lay 2 pieces",
     "lay 1 piece",
-    `lay ${laid[3]} pieces`,
-    `lay ${laid[4]} pieces`,
-    `lay ${laid[5]} pieces`,
+    "lay 3 pieces",
+    "lay 3 pieces",
+    "lay 4 pieces",
     "lay 1 piece",
     "throw switch",
     "place",
   ]);
-  expect(new Set(states.map((state) => JSON.stringify(state))).size).toBe(states.length);
+  expect(states.map((state) => [state.poses.length, state.laidTrack.length])).toEqual([
+    [0, 0],
+    [1, 0],
+    [1, 2],
+    [1, 3],
+    [1, 6],
+    [1, 9],
+    [1, 13],
+    [1, 14],
+    [1, 14],
+    [2, 14],
+  ]);
+  expect(states[8]?.laidTrack).not.toEqual(states[7]?.laidTrack);
 
   for (let step = states.length - 1; step > 0; step--) {
     editor.undo(0);
@@ -1056,13 +1065,13 @@ it("saves the world without a track run once it is undone, and with it again onc
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
   const laid = editor.dump().laidTrack.length;
+  expect(laid).toBe(2);
   await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
   editor.undo(0);
   await vi.waitFor(() => expect(repository.storedTrack()).toBe(0));
   expect(repository.storedPlacements()).toBe(1);
   editor.redo(0);
   await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
-  expect(laid).toBeGreaterThan(0);
 }, 120_000);
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";

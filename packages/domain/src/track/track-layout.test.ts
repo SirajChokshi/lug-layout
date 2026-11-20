@@ -60,8 +60,15 @@ function laidPieces(layout: TrackLayout) {
     pose: layout.pose(p),
     yPlates: layout.yPlates(p),
     rise: layout.rise(p),
+    frame: layout.frame(p),
   }));
 }
+
+const RUN_FRAMES: ReadonlyArray<TrackFrame> = [
+  WORLD_TRACK_FRAME,
+  { id: 1, xLdu: 0.25, zLdu: -0.125 },
+  { id: 2, xLdu: -0.5, zLdu: 0.375 },
+];
 
 function lcg(seed: number): () => number {
   let state = seed >>> 0;
@@ -77,7 +84,13 @@ it("removes any laid piece by its index and inserts it back there, leaving every
   const layout = new TrackLayout(pieces);
   for (let p = 0; p < 150; p++) {
     const coefficients = Array.from({ length: 8 }, () => BigInt((next() % 2001) - 1000));
-    layout.place(next() % pieces.length, pose16(zeta16(coefficients), next() % 16), next() % 5);
+    layout.place(
+      next() % pieces.length,
+      pose16(zeta16(coefficients), next() % 16),
+      next() % 5,
+      next() % 3,
+      RUN_FRAMES[next() % RUN_FRAMES.length],
+    );
   }
   const before = laidPieces(layout);
 
@@ -87,12 +100,29 @@ it("removes any laid piece by its index and inserts it back there, leaving every
     if (!removed) throw new Error(`no piece at ${at}`);
     layout.remove(at);
     expect(laidPieces(layout)).toEqual(before.toSpliced(at, 1));
-    expect(layout.insert(at, removed.piece, removed.pose, removed.yPlates)).toBe(at);
+    const { piece, pose, yPlates, rise, frame } = removed;
+    expect(layout.insert(at, piece, pose, yPlates, rise, frame)).toBe(at);
     expect(laidPieces(layout)).toEqual(before);
   }
   expect(() => layout.remove(layout.count)).toThrow(RangeError);
   expect(() => layout.insert(layout.count + 1, 0, POSE16_IDENTITY, 0)).toThrow(RangeError);
   expect(laidPieces(layout)).toEqual(before);
+});
+
+it("forgets a run frame's offset once its last piece is removed, as if it had never been laid", () => {
+  const layout = new TrackLayout([straight(16n)]);
+  const [world, run] = RUN_FRAMES;
+  if (!world || !run) throw new Error("no run frames");
+  layout.place(0, POSE16_IDENTITY, 0, 0, run);
+  layout.place(0, POSE16_IDENTITY, 0, 0, run);
+  layout.place(0, POSE16_IDENTITY, 0, 0, world);
+  const moved = { ...run, xLdu: run.xLdu + 1 };
+
+  layout.remove(0);
+  expect(() => layout.place(0, POSE16_IDENTITY, 0, 0, moved)).toThrow(RangeError);
+  layout.remove(0);
+  expect(layout.place(0, POSE16_IDENTITY, 0, 0, moved)).toBe(1);
+  expect(layout.frame(1)).toEqual(moved);
 });
 
 describe("track heights", () => {
