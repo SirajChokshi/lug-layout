@@ -9,7 +9,11 @@ export interface UncheckedPlanRule {
 export const NOT_YET_ASSIGNED = "not yet assigned";
 
 export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
-  { id: "trackSeam", text: "Track across a table seam", owner: NOT_YET_ASSIGNED },
+  {
+    id: "trackSeam",
+    text: "Track across a table seam",
+    owner: "track outline rules (follow-up to #593)",
+  },
   {
     id: "seamJoins",
     text: "Whether placements meeting at a seam join or leave a gap",
