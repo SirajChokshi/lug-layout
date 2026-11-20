@@ -9,6 +9,7 @@
     "./decode": "./src/decode/index.ts",
     "./palette": "./src/palette/index.ts",
     "./panels": "./src/panels/index.ts",
+    "./plan": "./src/plan/index.ts",
     "./starters": "./src/starters/index.ts",
     "./world": "./src/world/index.ts"
   },
