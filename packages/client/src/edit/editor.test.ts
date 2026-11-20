@@ -1826,6 +1826,7 @@ function importReport(
     bakeHelpersFailed: 0,
     fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
     records: null,
+    shadowLibrary: null,
     timings: {
       readMs: 0,
       resolveMs: 0,
@@ -1835,6 +1836,7 @@ function importReport(
       recordFetchMs: 0,
       compileMs: 0,
       ldrawFetchMs: 0,
+      shadowFetchMs: 0,
       bakePhases: null,
       coverPhases: null,
     },

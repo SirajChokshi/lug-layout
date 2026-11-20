@@ -14,6 +14,7 @@ import {
   type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
+  type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -195,6 +196,7 @@ export interface ImportContext {
   readonly vehicles: CompilerVehicles | null;
   readonly libraryBake: LibraryBakeIndexRef | null;
   readonly libraryConnectors: LibraryConnectorsIndexRef | null;
+  readonly shadowLibrary: ShadowLibraryIndexRef | null;
 }
 
 export interface CompiledPartGlb {

@@ -425,6 +425,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
+      shadowLibrary: manifest.compiler.shadowLibrary ?? null,
     };
   }
 

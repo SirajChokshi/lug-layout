@@ -79,6 +79,7 @@ import {
   attachCrosswalk,
   attachLibraryBake,
   attachLibraryConnectors,
+  attachShadowLibrary,
   attachLibraryParts,
   attachRollingDiagnostics,
   attachSectionVocabulary,
@@ -611,6 +612,7 @@ async function compileLod(
   await attachRecords(out);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
   await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
+  await attachShadowLibrary(out, join(repoRoot, BUNDLE_DATA_FILES.shadowLibraryPin));
   await attachRollingDiagnostics(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
