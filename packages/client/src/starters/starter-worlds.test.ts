@@ -10,6 +10,7 @@ import {
 import { decode, decodedOrThrow, type Decoded } from "@brr/schema/decode";
 import { STARTER_SHELF_FILE, starterFilePath, type StarterShelfV1 } from "@brr/schema/starters";
 import {
+  CREDITS_FILE,
   WorldShardV1,
   canonicalJson,
   shardEntry,
@@ -18,6 +19,7 @@ import {
   worldManifest,
   type ImportedFile,
   type WorldArchive,
+  type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
 } from "@brr/schema/world";
@@ -187,8 +189,8 @@ class MemoryRepository implements IWorldRepository {
     return this.archives.readArchive(bytes);
   }
 
-  readArchiveFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldArchive>> {
-    return this.archives.readArchiveFiles(files);
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>> {
+    return this.archives.readWorldFiles(files);
   }
 
   async putImportedFile(): Promise<void> {}
@@ -279,7 +281,9 @@ async function authorLoopAndBrick(): Promise<AuthoredWorld> {
   if (!archive.ok) throw new Error("the exported world can't be read back");
   return {
     files: new Map(
-      worldArchiveFiles(archive.value).map((file) => [file.name, utf8.encode(file.text)]),
+      worldArchiveFiles(archive.value)
+        .filter((file) => file.name !== CREDITS_FILE)
+        .map((file) => [file.name, utf8.encode(file.text)]),
     ),
     placed: placed(editor),
     trackPieces: track?.pieces ?? 0,

@@ -19,7 +19,7 @@ import {
   type ImportedFile,
   type SavedViewV1,
   type TrackRecordV1,
-  type WorldArchive,
+  type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
   type WorldManifestV1,
@@ -639,10 +639,10 @@ export class WorldSession implements IWorldSession {
   }
 
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean> {
-    return this.importArchive(() => this.repository.readArchiveFiles(files));
+    return this.importArchive(() => this.repository.readWorldFiles(files));
   }
 
-  private importArchive(read: () => Promise<Decoded<WorldArchive>>): Promise<boolean> {
+  private importArchive(read: () => Promise<Decoded<WorldFiles>>): Promise<boolean> {
     return this.fileAction("import", async () => {
       const started = performance.now();
       const archive = await read();

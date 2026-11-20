@@ -4,25 +4,26 @@ When a world opens empty (a fresh profile's first world, or a new one), the edit
 
 ## Starters are data
 
-A starter is an ordinary saved world: an unpacked `.brr.zip` in the world format (`packages/schema/src/world`), in its own directory under `apps/web/starters/`:
+A starter is an ordinary saved world: an unpacked `.brr.zip` in the world format (`packages/schema/src/world`), without its `CREDITS.txt`, in its own directory under `apps/web/starters/`:
 
 ```
 apps/web/starters/
   starters.json            the shelf: which starters the card offers, in order, with a one-line summary each
   <name>/manifest.json     world format v1, exactly as Export writes it
   <name>/shards/*.json
-  <name>/CREDITS.txt
   <name>/imports/<sha256>/<file>   only if the world places an imported model
 ```
 
-The card's title and counts come from each starter's `manifest.json`; only the summary lives in `starters.json`. The app bundles every file in the directory as an asset, and opening a starter hands its files to the same archive reader and the same import path as the world menu's **Import .brr.zip**, so a starter is checked and loaded exactly like a file a user imports. No code knows what any starter contains: there are no set numbers, categories, titles or per-starter branches, and a starter may place anything a world can, imported models included.
+`CREDITS.txt` is left out because it's generated: Export writes the credits of the bundle it runs against, about 175 KB stamped with that bundle's versions, and writes them again for every export. A world archive must carry it; a world's files don't. `readWorldArchive` is `readWorldFiles` plus that one required file, so nothing in the format changes.
+
+The card's title and counts come from each starter's `manifest.json`; only the summary lives in `starters.json`. The app bundles every file in the directory as an asset, and opening a starter hands its files to the same reader and the same import path as the world menu's **Import .brr.zip**, so a starter is checked and loaded exactly like a file a user imports. No code knows what any starter contains: there are no set numbers, categories, titles or per-starter branches, and a starter may place anything a world can, imported models included.
 
 ## Editing or adding a starter
 
-1. Zip the starter's directory (`cd apps/web/starters/<name> && zip -r /tmp/<name>.brr.zip .`) and import it in the editor with **Import .brr.zip**, or start from an empty world.
+1. Start from an empty world named as the card should show it, or reopen a starter: pick it on the welcome card (the world menu's **Starter worlds** button shows the card).
 2. Build it with the editor like any layout. Placement rules apply as usual.
 3. Frame the view you want the starter to open on, then **Export .brr.zip**.
-4. Unzip the export into `apps/web/starters/<name>/`, replacing the old files, and add or update its entry in `starters.json`.
+4. Unzip the export into `apps/web/starters/<name>/` without `CREDITS.txt` (`unzip -o <file>.brr.zip -x CREDITS.txt -d apps/web/starters/<name>`), replacing the old files, run `pnpm format` so each record sits on its own line for review (any JSON layout reads the same), and add or update its entry in `starters.json`.
 
 Keep starters small: everything a starter places is fetched the first time it opens.
 
