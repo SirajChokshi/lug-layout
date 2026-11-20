@@ -61,9 +61,9 @@ pub struct PublishedFace {
     pub pieces: Vec<u16>,
 }
 
-type ExactSlot = (u8, [i32; 3], u8);
+pub(super) type ExactSlot = (u8, [i32; 3], u8);
 
-fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
+pub(super) fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
     Some((gender_code(face.gender), face.sixteenths?, face.direction?))
 }
 
@@ -121,7 +121,7 @@ pub(super) fn free_faces_of_partly_held(extraction: &Extraction) -> Vec<FreeFace
     free
 }
 
-fn tier(source: Source) -> u8 {
+pub(super) fn tier(source: Source) -> u8 {
     match source {
         Source::Shadow | Source::Patch => 1,
         Source::Primitive => 2,

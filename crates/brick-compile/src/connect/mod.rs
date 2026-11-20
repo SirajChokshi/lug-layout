@@ -1,4 +1,5 @@
 mod axle;
+mod covered;
 mod depth_bands;
 mod faces;
 mod inferred;
@@ -17,6 +18,7 @@ use crate::identify::{identifies, sixteenths};
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 use crate::pieces::NO_PIECE;
 
+pub use covered::CoveredFloor;
 pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
     FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
@@ -357,6 +359,11 @@ pub enum Issue {
         shadow_closes: bool,
         mesh: EntranceClosure,
     },
+    CoveredInference {
+        inferred: MatingFace,
+        cover: MatingFace,
+        floor: CoveredFloor,
+    },
 }
 
 impl From<MalformedGeometry> for Issue {
@@ -632,6 +639,7 @@ fn merge(
     extraction: &mut Extraction,
     candidates: Vec<Connector>,
     keys: fn(&Connector) -> Vec<SlotKey>,
+    covers: &[MatingFace],
 ) {
     let mut occupied: HashMap<SlotKey, Occupant> = HashMap::new();
     for (index, connector) in extraction.connectors.iter().enumerate() {
@@ -666,7 +674,24 @@ fn merge(
             }
             Some(Occupant::Cleared) => {}
             None => {
+                let coverage = covered::covered_inference(covers, &candidate);
+                if coverage.whole() {
+                    for key in candidate_keys {
+                        occupied.insert(key, Occupant::Cleared);
+                    }
+                    extraction
+                        .issues
+                        .extend(coverage.covered.into_iter().map(|(_, issue)| issue));
+                    continue;
+                }
                 let index = extraction.connectors.len();
+                for (face, issue) in coverage.covered {
+                    extraction.withheld.push(WithheldFace {
+                        connector: index,
+                        face,
+                    });
+                    extraction.issues.push(issue);
+                }
                 for key in candidate_keys {
                     occupied.insert(key, Occupant::Tier(index));
                 }
@@ -713,12 +738,18 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
         let mut extraction = self.shadow.snaps(path);
         let (primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
-        merge(&mut extraction, primitive, anchor_keys);
+        merge(&mut extraction, primitive, anchor_keys, &[]);
         let candidates = self.primitives.where_open(path);
         let opened = self.inferred.open(path, candidates);
         extraction.issues.extend(opened.issues);
         extraction.off_lattice.extend(opened.off_lattice);
-        merge(&mut extraction, opened.connectors, anchor_and_face_keys);
+        let covers = covered::verified_covers(&extraction);
+        merge(
+            &mut extraction,
+            opened.connectors,
+            anchor_and_face_keys,
+            &covers,
+        );
         let inferred = self.inferred.infer(path);
         let held: HashSet<Slot> = extraction
             .connectors
@@ -762,8 +793,21 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 _ => true,
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
-        merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        let covers = covered::verified_covers(&extraction);
+        merge(
+            &mut extraction,
+            inferred.connectors,
+            anchor_and_face_keys,
+            &covers,
+        );
         for free in records::free_faces_of_partly_held(&extraction) {
+            let face = WithheldFace {
+                connector: free.connector,
+                face: free.face,
+            };
+            if extraction.withheld.contains(&face) {
+                continue;
+            }
             let shadow_closes = free
                 .holders
                 .iter()
@@ -775,10 +819,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 (true, EntranceClosure::Open) => Withholding::SourcesDisagree,
                 (_, EntranceClosure::Unmeasurable) => Withholding::NotProvenOpen,
             };
-            extraction.withheld.push(WithheldFace {
-                connector: free.connector,
-                face: free.face,
-            });
+            extraction.withheld.push(face);
             extraction.issues.push(Issue::FreeFaceWithheld {
                 origin: free.mating.origin,
                 reason,
