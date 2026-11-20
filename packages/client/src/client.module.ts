@@ -21,6 +21,7 @@ import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
+import { Palette } from "./catalog/palette.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
@@ -37,6 +38,7 @@ import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
+import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -69,6 +71,7 @@ import {
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
+  PALETTE,
   PALETTE_DRAG,
   HOTBAR,
   PALETTE_MEMORY,
@@ -76,6 +79,8 @@ import {
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
+  PANEL_LAYOUT,
+  PANEL_LAYOUT_STORE,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
@@ -154,6 +159,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
   bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();
+  bind(PALETTE).to(Palette).inSingletonScope();
+  bind(PANEL_LAYOUT_STORE).to(LocalStoragePanelLayoutStore).inSingletonScope();
+  bind(PANEL_LAYOUT).to(PanelLayoutService).inSingletonScope();
 });
 
 export interface MainThreadConfig {
