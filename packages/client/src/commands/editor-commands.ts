@@ -399,7 +399,7 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
   },
   {
     id: "toggle-placement-mode",
-    title: "Switch between magnetic and precise placement",
+    title: "Switch between magnetic and precise placement, while placing or holding a piece",
     group: "Edit",
     keys: [{ key: "a" }],
     keywords: "snap magnet magnetic assist precise exact free toggle",
@@ -611,6 +611,8 @@ export function commandEnabled(
   switch (id) {
     case "cancel":
       return snapshot.gesture !== null || snapshot.fillDraft !== null;
+    case "toggle-placement-mode":
+      return snapshot.mode === "place" || snapshot.track?.held != null;
     case "rotate":
     case "rotate-back":
       return (
@@ -695,7 +697,6 @@ export function commandEnabled(
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
-    case "toggle-placement-mode":
     case "cycle-tier":
     case "measure-frames":
       return true;

@@ -252,7 +252,7 @@ export function PlacementToolbar({
       </button>
       <PlacementModeSwitch
         snapshot={snapshot}
-        enabled={commandEnabled("toggle-placement-mode", snapshot, play)}
+        enabled={snapshot.status === "ready" && play.status !== "running"}
         onEditorAction={onEditorAction}
       />
       <button
@@ -335,7 +335,7 @@ function PlacementModeSwitch({
       data-placement-mode={snapshot.placementMode}
       data-effective-mode={effective}
       data-held={held ? "" : undefined}
-      title={`Magnetic placement snaps a held model onto connectors near the cursor; precise placement puts it exactly at the cursor. Hold ${alt} to switch while held (${alt} with a two-finger scroll still orbits).`}
+      title={`Press ${shortcutText("toggle-placement-mode")} or click to switch. Magnetic placement snaps a held model onto connectors near the cursor; precise placement puts it exactly at the cursor. Hold ${alt} to switch while held (${alt} with a two-finger scroll still orbits).`}
       onClick={(event) => onEditorAction("toggle-placement-mode", event.timeStamp)}
     >
       Precise placement

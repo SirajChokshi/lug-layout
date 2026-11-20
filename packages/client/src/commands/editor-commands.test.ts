@@ -20,7 +20,7 @@ const noneEnabled = (): boolean => false;
 const panOnly = (id: CommandId): boolean => id === "pan-left";
 
 describe("shortcut map", () => {
-  it("shares a chord only between a command that acts on a selection or a drag and the one it falls back to", () => {
+  it("shares a chord only between a command that acts on a selection, a drag or an open track end and the one it falls back to", () => {
     const shared = new Map<string, ReadonlyArray<CommandId>>();
     for (const spec of COMMANDS) {
       for (const chord of spec.keys) {
@@ -36,6 +36,7 @@ describe("shortcut map", () => {
     }
 
     expect(Object.fromEntries(shared)).toEqual({
+      A: ["extend-left", "toggle-placement-mode"],
       Esc: ["cancel", "select-tool"],
       "←": ["nudge-left", "pan-left"],
       "→": ["nudge-right", "pan-right"],
