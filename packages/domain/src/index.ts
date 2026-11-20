@@ -427,6 +427,7 @@ export {
   type OutlinePoint,
   type OutlineRing,
 } from "./plan/placed-outline.ts";
+export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
   levelCrossings,
   type CrossingTrack,
