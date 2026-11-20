@@ -71,7 +71,17 @@ import { commandEnabled, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, PLACEABLE_CATALOG, SIM_CLIENT, TRAIN_PLAY } from "../tokens.ts";
+import {
+  EDITOR,
+  MODEL_IMPORTER,
+  PLACEABLE_CATALOG,
+  RUNNING_GEAR_OVERRIDES,
+  SIM_CLIENT,
+  TRAIN_PLAY,
+} from "../tokens.ts";
+import { MemoryOverrideStore } from "../running-gear/memory-override-store.test-support.ts";
+import { RunningGearEditor } from "../running-gear/running-gear-editor.ts";
+import type { PlayModel } from "../play/play-models.ts";
 import {
   InThreadModelImporter,
   pinnedOmrModel,
@@ -508,6 +518,7 @@ const DRAG_STEPS = 8;
 const TRAIN_SPEED_LDU_PER_S = 200;
 const RUN_TICKS = 180;
 const SAME_POSE_LDU = 1e-9;
+const PIVOT_SHIFT_LDU = 8;
 
 function onLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU;
@@ -599,8 +610,23 @@ it("seats a held train on the rails of a hand-drawn oval where the cursor points
   ]);
 }, 120_000);
 
-it("runs every train on the rails, an imported one included, from exactly where each stands, and stands them back there when Play stops", async () => {
+async function saveShiftedPivot(
+  store: MemoryOverrideStore,
+  train: PlayModel,
+): Promise<string | null> {
+  const gear = new RunningGearEditor(store);
+  await gear.setModels([train.gear]);
+  gear.select(train.name, 0);
+  const pivot = gear.snapshot().view?.pivots[0];
+  if (!pivot) throw new Error(`${train.name} has no bogie pivot`);
+  gear.setPivot(0, pivot[0] + PIVOT_SHIFT_LDU, pivot[2]);
+  await gear.save();
+  return gear.snapshot().error;
+}
+
+it("runs every train on the rails, an imported one included, from exactly where each stands on its saved running gear, and stands them back there when Play stops", async () => {
   const sim = new InThreadSim();
+  const overrides = new MemoryOverrideStore();
   const { editor, backend, container, catalog } = await startEditor(
     [LOCOMOTIVE.slice(4)],
     new BundleDirectoryFetcher(),
@@ -610,10 +636,13 @@ it("runs every train on the rails, an imported one included, from exactly where 
         .rebind(MODEL_IMPORTER)
         .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
       bound.rebind(SIM_CLIENT).toConstantValue(sim);
+      bound.rebind(RUNNING_GEAR_OVERRIDES).toConstantValue(overrides);
     },
   );
   drawOval(editor, backend);
-  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const locomotive = catalog.playModel(await loadCatalogItem(catalog, LOCOMOTIVE));
+  if (!locomotive) throw new Error(`${LOCOMOTIVE} has no running gear`);
+  const saveError = await saveShiftedPivot(overrides, locomotive);
   const imported = await editor.importModelFile({
     name: "my-blue-caboose.mpd",
     bytes: await myBlueCaboose(),
@@ -623,6 +652,8 @@ it("runs every train on the rails, an imported one included, from exactly where 
   place(LOCOMOTIVE, 0, 0);
   place(custom, -100, 1600);
   editor.chooseItem(null);
+  const detected = standingPoses(backend);
+  await vi.waitFor(() => expect(sameStanding(standingPoses(backend), detected)).toBe(false));
   const parked = standingPoses(backend);
   const play = container.get(TRAIN_PLAY);
 
@@ -642,6 +673,7 @@ it("runs every train on the rails, an imported one included, from exactly where 
   const after = trainAt();
   play.stop();
 
+  expect(saveError).toBeNull();
   expect(imported).toBe(true);
   expect(custom).toMatch(/^import:/u);
   expect(started).toMatchObject({ status: "running", error: null });

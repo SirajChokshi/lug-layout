@@ -74,7 +74,17 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
               {trains.map((train, index) => (
                 <li key={index} data-on-rails={train.onRails}>
                   {train.label}
-                  {!train.onRails && <span className="play-error"> — its track is gone</span>}
+                  {!train.onRails && (
+                    <>
+                      <span className="play-error"> — off the rails</span>{" "}
+                      <button
+                        type="button"
+                        onClick={(event) => editor.removeTrain(index, event.timeStamp)}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
                 </li>
               ))}
             </ul>

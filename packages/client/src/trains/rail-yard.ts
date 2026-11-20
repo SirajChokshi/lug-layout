@@ -13,6 +13,7 @@ import {
   type ConsistAnchor,
   type ConsistHandle,
 } from "@brr/domain";
+import type { PartVehicle } from "@brr/catalog";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
@@ -21,7 +22,8 @@ import { BOX_FLOATS } from "../edit/local-box.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import type { PlayModel } from "../play/play-models.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
-import { PLACEABLE_CATALOG, VEHICLE_IDS } from "../tokens.ts";
+import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
+import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
 import { ConsistBodies, standingGhost, type StandingConsist } from "./consist-bodies.ts";
 import { RailTrack, type RailCarrier, type RailHead } from "./rail-track.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
@@ -139,18 +141,42 @@ export class RailYard implements IRailYard {
   private readonly prepared = new Map<PlayModel, Prepared | string>();
   private readonly parked: Parked[] = [];
   private hidden = false;
+  private gearModels = "";
 
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(VEHICLE_IDS) private readonly vehicleIds: IVehicleIds,
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
-  ) {}
+    @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
+  ) {
+    runningGear.subscribe(() => this.restandAll());
+  }
+
+  private restandAll(): void {
+    this.prepared.clear();
+    for (const parked of this.parked) this.restand(parked);
+  }
+
+  private registerGear(): void {
+    const models = [...new Set(this.parked.map((parked) => parked.model))];
+    const names = models
+      .map((model) => model.name)
+      .toSorted()
+      .join("\n");
+    if (names === this.gearModels) return;
+    this.gearModels = names;
+    void this.runningGear.setModels(models.map((model) => model.gear));
+  }
+
+  private gearOf(model: PlayModel): ReadonlyArray<PartVehicle> {
+    const known = this.runningGear.snapshot().models.some((gear) => gear.name === model.name);
+    return known ? this.runningGear.effectiveVehicles(model.name) : model.model.vehicles;
+  }
 
   setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void {
     this.track = track && track.layout.count > 0 ? new RailTrack(track, carriers) : null;
     this.run = this.track ? new RailRun(this.track.network) : null;
-    this.prepared.clear();
-    for (const parked of this.parked) this.restand(parked);
+    this.restandAll();
   }
 
   rails(): RailTrack | null {
@@ -210,6 +236,7 @@ export class RailYard implements IRailYard {
     const parked: Parked = { handle, model, seat: null, bodies: null };
     this.parked.push(parked);
     this.restand(parked);
+    this.registerGear();
   }
 
   remove(handle: ConsistHandle): void {
@@ -218,11 +245,13 @@ export class RailYard implements IRailYard {
     if (!parked) return;
     parked.bodies?.dispose();
     this.parked.splice(index, 1);
+    this.registerGear();
   }
 
   clear(): void {
     for (const parked of this.parked) parked.bodies?.dispose();
     this.parked.length = 0;
+    this.registerGear();
   }
 
   pick(ray: Float64Array): RailPick | null {
@@ -319,7 +348,8 @@ export class RailYard implements IRailYard {
     if (known !== undefined) return known;
     let prepared: Prepared | string;
     try {
-      const vehicles = consistVehicles(model.model, model.name, false, rails.railPart);
+      const gear = this.gearOf(model);
+      const vehicles = consistVehicles(model.model, model.name, false, rails.railPart, gear);
       const geometry = new Float64Array(vehicles.length * GEOMETRY_FIELDS);
       const geometryAt = new Int32Array(vehicles.length);
       let straightLdu = 0;

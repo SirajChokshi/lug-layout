@@ -432,6 +432,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   mirrorPiece(): void;
   cycleConnector(): void;
   deleteSelection(eventTimeMs: number): void;
+  removeTrain(index: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
@@ -2130,6 +2131,15 @@ export class Editor implements IEditor, IEditedWorld {
       rot,
       surface,
     });
+  }
+
+  removeTrain(index: number, eventTimeMs: number): void {
+    if (this.state.readOnly) return;
+    const handle = this.consists.consists()[index];
+    const ref = handle ? this.consistRefs.get(handle) : undefined;
+    if (!ref) return;
+    if (this.selectedTrain === handle) this.select(null);
+    this.show(this.history.removeConsist(ref), eventTimeMs);
   }
 
   deleteSelection(eventTimeMs: number): void {
