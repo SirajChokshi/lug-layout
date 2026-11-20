@@ -6844,11 +6844,15 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
     await vi.waitFor(() => expect(repository.storedPlacements()).toBe(stored));
     expect(await editor.openWorld(built)).toBe(true);
     expect(await editor.openWorld(copy)).toBe(true);
-    return { poses, incremental, reopened: await issues() };
+    return { poses, turns: turnsOf(editor), incremental, reopened: await issues() };
   };
   const remove = (x: number, z: number) => () => {
     selectAt(editor, backend, x, z);
     editor.deleteSelection(0);
+  };
+  const moveOverlapPartner = () => {
+    selectAt(editor, backend, 1400, 640);
+    editor.moveSelectionBy(0, 200, 0);
   };
 
   expect(await editor.openWorld(copy)).toBe(true);
@@ -6862,7 +6866,25 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
       await place(brick, 1400, 680);
     }, 1),
     stackedRemoved: await step(remove(1400, 660), -1),
-    overlapPartnerRemoved: await step(remove(1400, 640), -1),
+    partnerMovedAndUndone: await step(() => {
+      moveOverlapPartner();
+      editor.undo(0);
+    }, 0),
+    partnerMovedAway: await step(moveOverlapPartner, 0),
+    movedTurnedUndoneRedone: await step(() => {
+      selectAt(editor, backend, 1410, 840);
+      editor.rotate(0);
+      editor.undo(0);
+      editor.redo(0);
+    }, 0),
+    pairMovedUndoneRedone: await step(() => {
+      selectAt(editor, backend, 1410, 840);
+      backend.aim(1410, 640);
+      editor.toggleSelected(0, 0);
+      editor.moveSelectionBy(-200, 0, 0);
+      editor.undo(0);
+      editor.redo(0);
+    }, 0),
     baseplateRemoved: await step(remove(400, 900), -1),
     floatingHeldFromBelow: await step(async () => {
       await place(brick, 500, 520);
@@ -6892,8 +6914,16 @@ it("keeps a plan's overlap and support after every edit exactly as reopening the
     expect(incremental).toEqual(reopened);
   }
   expect(Object.values(steps).map((done) => overlapIssues(done.incremental))).toEqual([
-    2, 2, 2, 0, 0, 0, 0,
+    2, 2, 2, 2, 0, 0, 0, 0, 0, 0,
   ]);
+  expect(steps.partnerMovedAway.poses).toContainEqual(expect.stringMatching(/ 14[02]0,840 y0$/u));
+  expect(steps.movedTurnedUndoneRedone.turns).not.toEqual(steps.partnerMovedAway.turns);
+  expect(steps.pairMovedUndoneRedone.poses).toEqual(
+    expect.arrayContaining([
+      expect.stringMatching(/ 12[02]0,640 y0$/u),
+      expect.stringMatching(/ 12[02]0,840 y0$/u),
+    ]),
+  );
   expect(steps.floatingHeldFromBelow.poses).toContainEqual(
     expect.stringMatching(/ 5[0-2]0,520 y3$/u),
   );
