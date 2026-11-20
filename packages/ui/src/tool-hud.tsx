@@ -1,20 +1,48 @@
 import {
+  altKeyName,
   commandSpec,
   toolHints,
   type EditorSnapshot,
   type PlaySnapshot,
   type ToolHint,
 } from "@brr/client";
-import { Chord } from "./keys.tsx";
+import { Chord, PLATFORM } from "./keys.tsx";
 
 function hintKey(hint: ToolHint): string {
-  return hint.kind === "key" ? hint.command : hint.gesture;
+  switch (hint.kind) {
+    case "key":
+      return hint.command;
+    case "gesture":
+      return hint.gesture;
+    case "hold-alt":
+      return hint.kind;
+    default: {
+      const unhandled: never = hint;
+      throw new Error(`unhandled hint ${String(unhandled)}`);
+    }
+  }
 }
 
 function HintInput({ hint }: { readonly hint: ToolHint }) {
-  if (hint.kind === "gesture") return <span className="tool-gesture">{hint.gesture}</span>;
-  const [chord] = commandSpec(hint.command).keys;
-  return chord ? <Chord chord={chord} /> : null;
+  switch (hint.kind) {
+    case "gesture":
+      return <span className="tool-gesture">{hint.gesture}</span>;
+    case "hold-alt":
+      return (
+        <span className="chord">
+          <span className="tool-gesture">Hold</span>
+          <kbd>{altKeyName(PLATFORM)}</kbd>
+        </span>
+      );
+    case "key": {
+      const [chord] = commandSpec(hint.command).keys;
+      return chord ? <Chord chord={chord} /> : null;
+    }
+    default: {
+      const unhandled: never = hint;
+      throw new Error(`unhandled hint ${String(unhandled)}`);
+    }
+  }
 }
 
 interface ToolHudProps {

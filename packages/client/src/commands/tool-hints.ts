@@ -1,5 +1,7 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
+import { lineText, placementFeedback } from "../edit/placement-feedback.ts";
+import { effectivePlacementMode, otherPlacementMode } from "../edit/placement-mode.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -8,7 +10,8 @@ export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "play" 
 
 export type ToolHint =
   | { readonly kind: "key"; readonly command: CommandId; readonly text: string }
-  | { readonly kind: "gesture"; readonly gesture: string; readonly text: string };
+  | { readonly kind: "gesture"; readonly gesture: string; readonly text: string }
+  | { readonly kind: "hold-alt"; readonly text: string };
 
 export interface ToolHintView {
   readonly tone: ToolTone;
@@ -26,6 +29,12 @@ function key(command: CommandId, text: string): ToolHint {
 function gesture(name: string, text: string): ToolHint {
   return { kind: "gesture", gesture: name, text };
 }
+
+function holdAlt(text: string): ToolHint {
+  return { kind: "hold-alt", text };
+}
+
+const MODE_NAMES = { assist: "Magnetic", precise: "Precise" } as const;
 
 function itemName(snapshot: EditorSnapshot, id: string | null): string {
   const label = snapshot.catalog.find((item) => item.id === id)?.label ?? id ?? "";
@@ -103,13 +112,26 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     case "place": {
       const held = heldItem(snapshot);
       if (held?.tables === "loading") return loadingView(snapshot, held);
+      const feedback = placementFeedback(snapshot);
+      const refused = feedback?.tone === "refused";
+      const said = feedback?.lines.map(lineText) ?? [];
+      const mode =
+        feedback?.mode ??
+        effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
+      const other = MODE_NAMES[otherPlacementMode(snapshot.placementMode)].toLowerCase();
       return {
-        tone: "place",
+        tone: refused ? "warn" : "place",
         title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
-        detail: `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
+        detail: [
+          MODE_NAMES[mode],
+          `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
+          ...said,
+        ].join(" · "),
         hints: [
-          gesture("Click", "place"),
-          key("rotate", "rotate"),
+          gesture("Click", refused ? "refused here" : "place"),
+          key("rotate", feedback?.turnToSnap ? "turn to snap" : "rotate"),
+          key("toggle-placement-mode", other),
+          holdAlt(`${other} while held`),
           key("open-palette", "another part"),
           key("select-tool", "done"),
         ],
@@ -212,7 +234,7 @@ export function toolHints(snapshot: EditorSnapshot, play?: PlaySnapshot): ToolHi
   return {
     ...hinted,
     hints: hinted.hints.filter(
-      (hint) => hint.kind === "gesture" || commandEnabled(hint.command, snapshot, play),
+      (hint) => hint.kind !== "key" || commandEnabled(hint.command, snapshot, play),
     ),
   };
 }

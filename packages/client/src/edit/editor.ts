@@ -46,6 +46,7 @@ import {
   type BackendInfo,
   type EdgeMarker,
   type ChunkTier,
+  type GhostVerdict,
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
@@ -100,6 +101,7 @@ import type {
 } from "./placement-hover.ts";
 import { effectivePlacementMode } from "./placement-mode.ts";
 import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
+import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   SETTLED_AT_ONCE,
@@ -386,6 +388,7 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly studChecks: number;
   readonly connectorGaps: ReadonlyArray<PartWithoutConnectorRecord>;
   readonly queuedPlacement: QueuedPlacement | null;
+  readonly ghostSettled: boolean;
 }
 
 export interface EditorCredits {
@@ -795,6 +798,7 @@ export class Editor implements IEditor, IEditedWorld {
     studChecks: 0,
     connectorGaps: [],
     queuedPlacement: null,
+    ghostSettled: false,
   };
   private world = new World();
   private history = new EditHistory(this.world);
@@ -838,6 +842,15 @@ export class Editor implements IEditor, IEditedWorld {
   private assistRevision = -1;
   private namingBoxes = new Float64Array(0);
   private readonly mates = new MateReport();
+  private shownVerdict: GhostVerdict | null = null;
+  private dropping = false;
+  private readonly verdictShownFor: {
+    mode: EditorMode | null;
+    hover: HoverView | null;
+    settled: boolean;
+    placementMode: PlacementMode | null;
+    override: boolean;
+  } = { mode: null, hover: null, settled: false, placementMode: null, override: false };
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -900,8 +913,35 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private update(patch: Partial<EditorSnapshot>): void {
-    this.state = { ...this.state, ...patch };
+    const before = this.state;
+    const merged = { ...before, ...patch };
+    const ghostSettled = ghostSettles(before, merged, this.dropping);
+    this.state = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
+    this.showGhostVerdict();
     for (const listener of this.listeners) listener();
+  }
+
+  private showGhostVerdict(): void {
+    const { mode, hover, ghostSettled, placementMode, placementModeOverride } = this.state;
+    const shown = this.verdictShownFor;
+    if (
+      shown.mode === mode &&
+      shown.hover === hover &&
+      shown.settled === ghostSettled &&
+      shown.placementMode === placementMode &&
+      shown.override === placementModeOverride
+    ) {
+      return;
+    }
+    shown.mode = mode;
+    shown.hover = hover;
+    shown.settled = ghostSettled;
+    shown.placementMode = placementMode;
+    shown.override = placementModeOverride;
+    const verdict = ghostVerdict(this.state);
+    if (sameVerdict(verdict, this.shownVerdict)) return;
+    this.shownVerdict = verdict;
+    this.backend.setGhostVerdict(verdict);
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {
@@ -2252,7 +2292,9 @@ export class Editor implements IEditor, IEditedWorld {
         this.update({ hover: this.hoverView() });
         return;
       }
+      this.dropping = true;
       this.placeAt(this.active, pose, eventTimeMs);
+      this.dropping = false;
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);

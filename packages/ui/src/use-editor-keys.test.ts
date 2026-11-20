@@ -119,3 +119,66 @@ describe("editor keys and focused controls", () => {
     expect(controlTakesKey(document.body, " ")).toBe(false);
   });
 });
+
+function KeysOnly() {
+  const { editor, camera, play } = services();
+  function Keys() {
+    useEditorKeys(editor, camera, {
+      play,
+      onShellCommand: () => {},
+      overlayOpen: false,
+      closeOverlay: () => {},
+    });
+    return createElement("span", {
+      "data-override": String(editor.snapshot().placementModeOverride),
+    });
+  }
+  return { editor, keys: createElement(Keys) };
+}
+
+function send(type: string, init: KeyboardEventInit): void {
+  document.body.dispatchEvent(
+    new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }),
+  );
+}
+
+function movePointer(init: MouseEventInit): void {
+  document.body.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, ...init }));
+}
+
+describe("holding Alt for the other placement mode", () => {
+  it("flips the mode while Alt is held, never for AltGr, keeps a held Alt through a pointer that lost it, and releases on keyup or blur", () => {
+    const { editor, keys } = KeysOnly();
+    render(keys);
+    const held = (): boolean => editor.snapshot().placementModeOverride;
+    send("keydown", { key: "Alt", altKey: true });
+    const altDown = held();
+    movePointer({ altKey: false });
+    const pointerLostAlt = held();
+    send("keyup", { key: "Alt" });
+    const released = held();
+    send("keydown", { key: "AltGraph", altKey: true, ctrlKey: true });
+    movePointer({ altKey: true, ctrlKey: true });
+    const altGraph = held();
+    send("keyup", { key: "AltGraph" });
+    movePointer({ altKey: true });
+    const pointerWithAlt = held();
+    window.dispatchEvent(new Event("blur"));
+
+    expect({
+      altDown,
+      pointerLostAlt,
+      released,
+      altGraph,
+      pointerWithAlt,
+      blurred: held(),
+    }).toEqual({
+      altDown: true,
+      pointerLostAlt: true,
+      released: false,
+      altGraph: false,
+      pointerWithAlt: true,
+      blurred: false,
+    });
+  });
+});

@@ -1,4 +1,6 @@
 import {
+  altKeyName,
+  effectivePlacementMode,
   commandActive,
   commandEnabled,
   type EditorActionId,
@@ -11,9 +13,9 @@ import {
   type RoadIssueView,
   type ShellCommandId,
 } from "@brr/client";
-import { shortcutText } from "./keys.tsx";
+import { PLATFORM, shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
-import { useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent } from "react";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -194,6 +196,7 @@ export function PlacementToolbar({
       >
         Rotate ({shortcutText("rotate")})
       </button>
+      <PlacementModeSwitch snapshot={snapshot} onEditorAction={onEditorAction} />
       <button
         type="button"
         disabled={!commandEnabled("delete", snapshot, play)}
@@ -238,6 +241,47 @@ export function PlacementToolbar({
         selection.
       </p>
     </div>
+  );
+}
+
+function PlacementModeSwitch({
+  snapshot,
+  onEditorAction,
+}: {
+  readonly snapshot: EditorSnapshot;
+  readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
+}) {
+  const precise = snapshot.placementMode === "precise";
+  const effective = effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
+  const held = effective !== snapshot.placementMode;
+  const state = effective === "precise" ? "On" : "Off, magnetic";
+  const heldId = useId();
+  const alt = altKeyName(PLATFORM);
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="placement-mode"
+      aria-checked={precise}
+      aria-describedby={held ? heldId : undefined}
+      data-action="placement-mode"
+      data-placement-mode={snapshot.placementMode}
+      data-effective-mode={effective}
+      data-held={held ? "" : undefined}
+      title={`Magnetic placement snaps a held model onto connectors near the cursor; precise placement puts it exactly at the cursor. Hold ${alt} to switch while held (${alt} with a two-finger scroll still orbits).`}
+      onClick={(event) => onEditorAction("toggle-placement-mode", event.timeStamp)}
+    >
+      Precise placement
+      <span className="placement-mode-state" aria-hidden="true">
+        {held ? `${state} while ${alt} is held` : state} ({shortcutText("toggle-placement-mode")})
+      </span>
+      {held && (
+        <span id={heldId} hidden>
+          {effective === "precise" ? "Temporarily on" : "Temporarily off, magnetic"} while {alt} is
+          held
+        </span>
+      )}
+    </button>
   );
 }
 

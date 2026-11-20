@@ -8,6 +8,7 @@ import {
   type EdgeMarker,
   type FarModelPlacement,
   type FrameStats,
+  type GhostVerdict,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -308,6 +309,9 @@ class WindowlessBackend implements ISceneBackend {
   }
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     this.scene.placeGhost(x, yLdu, z, rot);
+  }
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.scene.setGhostVerdict(verdict);
   }
   setSelectionBox(box: WorldBox | null): void {
     this.scene.setSelectionBox(box);

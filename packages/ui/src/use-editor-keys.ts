@@ -2,6 +2,7 @@ import {
   commandEnabled,
   commandForKey,
   commandSpec,
+  holdPlacementModeOverride,
   isPlayCommand,
   isShellCommand,
   runEditorAction,
@@ -91,4 +92,52 @@ export function useEditorKeys(
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor, camera, play, onShellCommand, overlayOpen, closeOverlay]);
+  useAltHold(editor);
+}
+
+const ALT = "Alt";
+const ALT_GRAPH = "AltGraph";
+
+function useAltHold(editor: IEditor): void {
+  useEffect(() => {
+    let altDown = false;
+    const hold = (held: boolean): void => holdPlacementModeOverride(editor, held);
+    const placing = (): boolean => editor.snapshot().mode === "place";
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== ALT || event.ctrlKey || isTyping(event.target)) return;
+      if (placing()) event.preventDefault();
+      altDown = true;
+      hold(true);
+    };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key !== ALT && event.key !== ALT_GRAPH) return;
+      if (altDown && placing()) event.preventDefault();
+      altDown = false;
+      hold(false);
+    };
+    const onPointer = (event: PointerEvent): void => {
+      if (event.altKey && !event.ctrlKey && !isTyping(document.activeElement)) {
+        altDown = true;
+        hold(true);
+      } else if (!altDown) {
+        hold(false);
+      }
+    };
+    const release = (): void => {
+      altDown = false;
+      hold(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("pointermove", onPointer, { passive: true });
+    window.addEventListener("pointerdown", onPointer, { passive: true });
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("pointermove", onPointer);
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("blur", release);
+    };
+  }, [editor]);
 }

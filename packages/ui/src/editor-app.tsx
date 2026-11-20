@@ -1,6 +1,8 @@
 import {
+  effectivePlacementMode,
   heldItem,
   meshesSettled,
+  placementFeedback,
   runEditorAction,
   type EditorActionId,
   type EditorOptions,
@@ -30,6 +32,7 @@ import {
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
+import { PlacementChip } from "./placement-chip.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
@@ -155,6 +158,7 @@ export function EditorApp({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
   const compact = useCompactLayout();
+  const ghostTone = placementFeedback(snapshot)?.tone ?? "";
   return (
     <div
       ref={setRoot}
@@ -166,6 +170,11 @@ export function EditorApp({
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
       data-selection={snapshot.selection?.item ?? ""}
       data-ghost-rot={snapshot.ghostRot}
+      data-ghost={ghostTone}
+      data-placement-mode={effectivePlacementMode(
+        snapshot.placementMode,
+        snapshot.placementModeOverride,
+      )}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
       data-refused={snapshot.refusedClicks}
@@ -185,6 +194,7 @@ export function EditorApp({
         options={options}
       />
       <ToolHud snapshot={snapshot} play={playSnapshot} />
+      <PlacementChip snapshot={snapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <PlanPanel camera={camera} plans={plans} />
