@@ -18,6 +18,8 @@ import {
   type MirrorSource,
   type ModelImportEngine,
   type PartConnectorSource,
+  type RollingDiagnosticsRequest,
+  type RollingDiagnosticsRows,
 } from "@brr/import";
 import { inject, injectable } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
@@ -34,6 +36,7 @@ import {
 
 export interface IImportWorkerService {
   run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
+  rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -113,6 +116,12 @@ export class ImportWorkerService implements IImportWorkerService {
       this.recordStores.set(key, store);
     }
     return store;
+  }
+
+  async rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows> {
+    const records = this.partRecords(request.libraryBake);
+    if (records === null) return {};
+    return Object.fromEntries(await records.rollingDiagnostics(request.partIds));
   }
 
   async run(
