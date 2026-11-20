@@ -8,7 +8,7 @@ const BAKE_BUCKET = /\/library-bake\/buckets\//u;
 const BAKE_DIAGNOSTICS = /\/library-bake\/rolling-diagnostics\//u;
 const BUNDLE_DIAGNOSTICS = /\/rolling-diagnostics\.[0-9a-f]{16}\.json$/u;
 const PRINTED_ROUND_BRICK = "ldraw:3941p01";
-const PRINTED_ROUND_BRICK_ROWS = 13;
+const PRINTED_ROUND_BRICK_ROWS = 5;
 const PRINTED_ROUND_BRICK_ARCS = 5;
 
 function printedRoundBrickModel(): string {
