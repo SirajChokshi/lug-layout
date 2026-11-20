@@ -13,6 +13,10 @@ on:
         required: false
         default: ""
 
+concurrency:
+  group: held-out-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   held-out:
     runs-on: ubuntu-latest
