@@ -251,16 +251,14 @@ export class TrackClearance {
       const members = this.cells.get(key);
       if (!members) return false;
       for (const id of members) {
+        if (found !== NO_OBSTACLE && id >= found) break;
         if (id === exceptA || id === exceptB || this.visit[id] === generation) continue;
         this.visit[id] = generation;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
-        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) {
-          found = id;
-          return true;
-        }
+        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) found = id;
       }
-      return false;
+      return found === 0;
     });
     return found;
   }

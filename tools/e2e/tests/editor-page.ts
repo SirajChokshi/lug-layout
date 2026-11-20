@@ -393,6 +393,27 @@ export class EditorPage {
     return this.trackCounts();
   }
 
+  async strokeTrack(points: ReadonlyArray<LatticePoint>): Promise<TrackCounts> {
+    const [first, ...rest] = points;
+    if (!first) throw new Error("a stroke has at least one point");
+    const start = await this.screenOf(first);
+    const map = await this.groundMap();
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (const point of rest) {
+      const at = map.screenOf(point.x, point.z);
+      await this.page.mouse.move(at.sx, at.sy);
+    }
+    await this.page.mouse.up();
+    await this.settle();
+    return this.trackCounts();
+  }
+
+  async toolHint(): Promise<string> {
+    return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>

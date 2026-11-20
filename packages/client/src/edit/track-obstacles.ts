@@ -40,9 +40,8 @@ function seatsAt(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<numbe
 }
 
 class ObstacleList {
-  readonly rects: number[] = [];
-  readonly owners: number[] = [];
-  readonly unseated: number[] = [];
+  private readonly rects: Record<ObstacleKind, number[]> = { solid: [], unseated: [] };
+  private readonly owners: Record<ObstacleKind, number[]> = { solid: [], unseated: [] };
 
   push(
     owner: number,
@@ -52,9 +51,18 @@ class ObstacleList {
     maxX: number,
     maxZ: number,
   ): void {
-    this.rects.push(minX, minZ, maxX, maxZ);
-    this.owners.push(owner);
-    this.unseated.push(kind === "unseated" ? 1 : 0);
+    this.rects[kind].push(minX, minZ, maxX, maxZ);
+    this.owners[kind].push(owner);
+  }
+
+  obstacles(labels: ReadonlyArray<string>): TrackObstacles {
+    const { solid, unseated } = this.owners;
+    return {
+      rects: Float64Array.from([...this.rects.solid, ...this.rects.unseated]),
+      owners: Int32Array.from([...solid, ...unseated]),
+      unseated: Uint8Array.from([...solid.map(() => 0), ...unseated.map(() => 1)]),
+      labels,
+    };
   }
 
   pushUnseated(
@@ -110,10 +118,5 @@ export function trackObstacles(
       else if (maxY === bottom) list.pushUnseated(owner, seats, minX, minZ, maxX, maxZ);
     }
   });
-  return {
-    rects: Float64Array.from(list.rects),
-    owners: Int32Array.from(list.owners),
-    unseated: Uint8Array.from(list.unseated),
-    labels: models.map((model) => model.placeable.label),
-  };
+  return list.obstacles(models.map((model) => model.placeable.label));
 }
