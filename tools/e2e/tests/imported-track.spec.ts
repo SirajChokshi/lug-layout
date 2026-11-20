@@ -584,9 +584,11 @@ test("a plan lists an imported 9V run's open ends, clears them when the loop clo
     onTheRun,
   ]);
   expect(ruled(closed, "trackOpenEnd")).toEqual([]);
-  expect(ruled(closed, "fit").length).toBeGreaterThan(0);
-  for (const message of ruled(closed, "fit")) {
-    expect(message).toMatch(/^Train Track 9V Curved #\d+ overhangs the tables/u);
+  expect(ruled(closed, "trackOffTable").length).toBeGreaterThan(0);
+  for (const message of ruled(closed, "trackOffTable")) {
+    expect(message).toMatch(
+      /^Train Track 9V Curved #\d+ overhangs the tables: part of its outline/u,
+    );
   }
   expect(ruled(undone, "trackOpenEnd")).toEqual(ruled(open, "trackOpenEnd"));
   expect(redone).toEqual(closed);
@@ -664,9 +666,11 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, warns th
     },
   ]);
   expect(ruled(placed, "fit")).toEqual([]);
-  expect(ruled(drawn, "fit").length).toBeGreaterThan(0);
-  for (const message of ruled(drawn, "fit")) {
-    expect(message).toMatch(/^Train Track 9V Straight #\d+ overhangs the tables/u);
+  expect(ruled(drawn, "trackOffTable").length).toBeGreaterThan(0);
+  for (const message of ruled(drawn, "trackOffTable")) {
+    expect(message).toMatch(
+      /^Train Track 9V Straight #\d+ overhangs the tables: part of its outline/u,
+    );
   }
   expect(ruled(drawn, "trackJoin")).toEqual(ruled(placed, "trackJoin"));
   expect(ruled(drawn, "trackUnverified")).toEqual(ruled(placed, "trackUnverified"));
