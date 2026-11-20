@@ -8,7 +8,7 @@ import type {
   PlacementHover,
   PlacementMode,
 } from "@brr/client";
-import type { Assembly, AssemblyPart } from "./assembly.ts";
+import { collisions, translated, type Assembly, type AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
 import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
 import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU, type AimedBackend } from "./headless-editor.ts";
@@ -130,7 +130,7 @@ function describeHover(hover: PlacementHover | null): string {
   if (!hover) return "no placement hover";
   const verdict = hover.accepted ? "accepted" : "refused";
   const hit = hover.hit
-    ? `, hit ${hover.hit.partLabel ?? hover.hit.part ?? "a part"} of ${hover.hit.placed.label} in cell (${hover.hit.cellX}, ${hover.hit.cellZ})`
+    ? `, hit ${hover.hit.partLabel ?? hover.hit.part ?? "a part"} of ${hover.hit.placed.label} in cell (${hover.hit.cellX}, ${hover.hit.cellZ})${hover.hit.byColumnOnly ? " by the column model only" : ""}`
     : "";
   const magnet = hover.magnetised
     ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
@@ -374,13 +374,33 @@ function columnOverlapsHit(posedParts: PosedAssembly, box: HitBox): boolean {
   return inCell.length > 0 && bottom < box.topLdu && top > box.bottomLdu;
 }
 
+export interface PosedPair {
+  readonly placed: PosedAssembly;
+  readonly held: PosedAssembly;
+}
+
+function inFrameOf(base: PosedAssembly, other: PosedAssembly): Assembly {
+  return translated(other.parts, [
+    other.origin[0] - base.origin[0],
+    base.origin[1] - other.origin[1],
+    base.origin[2] - other.origin[2],
+  ]);
+}
+
+export function partsCollide({ placed, held }: PosedPair): boolean {
+  return collisions(placed.parts, inFrameOf(placed, held)) > 0;
+}
+
 export function hitIsReal(
   hit: HoverRefusalHit | null,
   placedItem: string,
   named: PosedAssembly,
   held: PosedAssembly,
+  whole: PosedPair = { placed: named, held },
 ): boolean {
-  if (hit === null || hit.placed.item !== placedItem || hit.part === null) return false;
+  if (hit === null || hit.placed.item !== placedItem) return false;
+  if (hit.byColumnOnly) return hit.part === null && !partsCollide(whole);
+  if (hit.part === null) return false;
   const box: HitBox = {
     cellX: hit.cellX,
     cellZ: hit.cellZ,
@@ -1055,6 +1075,10 @@ export async function solidEdgeChecks(
       placedItem,
       posed(named, poses.placed, poses.placedShift),
       posed(held, step.hover.pose, poses.heldShift),
+      {
+        placed: posed(solidParts, poses.placed, poses.placedShift),
+        held: posed(heldParts, step.hover.pose, poses.heldShift),
+      },
     );
   const bothModes = (item: Compared, holds: (step: Step) => boolean): boolean =>
     holds(item.assist) && holds(item.precise);

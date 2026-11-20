@@ -171,6 +171,7 @@ function realHit(
   held: Assembly,
   placed: Placed,
   seam: Seam,
+  whole: { readonly placed: Assembly; readonly held: Assembly } = { placed: named, held },
 ): boolean {
   const placement = hover.placement;
   return (
@@ -181,6 +182,10 @@ function realHit(
       placedItem,
       posed(named, placed, seam.placedShift),
       posed(held, placement.pose, seam.heldShift),
+      {
+        placed: posed(whole.placed, placed, seam.placedShift),
+        held: posed(whole.held, placement.pose, seam.heldShift),
+      },
     )
   );
 }
@@ -354,6 +359,7 @@ test("a generated pinned module held against solid bricks is refused in both mod
         pinsOf(pair.subject.assembly),
         placed,
         seam,
+        { placed: pair.solidPartner.assembly, held: pair.subject.assembly },
       ),
       `seed ${pair.seed}: ${mode} flush is refused, naming a part of the solid module and the pin cell it hits (${JSON.stringify(flush.placement?.hit)})`,
     ).toBe(true);
