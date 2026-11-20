@@ -13,6 +13,7 @@ import {
   WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
+  PlanDelta,
   RoadNetwork,
   World,
   addShards,
@@ -113,7 +114,13 @@ import {
   type RoadStrokeView,
 } from "./road-drawing.ts";
 import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
-import type { IPlanService, PlacedForPlan } from "../plan/plan-service.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
+import {
+  writeFullRebuild,
+  writeTrackLay,
+  writeTrackThrow,
+  writeViewUpdate,
+} from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel, PlaySetup } from "../play/play-models.ts";
 import { errorText } from "./error-text.ts";
@@ -646,7 +653,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
-  private readonly planEntries = new WeakMap<PlacedModel, PlacedForPlan>();
+  private readonly planDelta = new PlanDelta();
 
   constructor(
     @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
@@ -884,7 +891,8 @@ export class Editor implements IEditor, IEditedWorld {
     this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
-    this.syncPlan();
+    writeViewUpdate(this.planDelta, view);
+    this.plans.apply(this.planDelta);
     const drawing = this.track;
     if (drawing?.dragView()) {
       this.setTrackObstacles(drawing);
@@ -928,26 +936,6 @@ export class Editor implements IEditor, IEditedWorld {
     const baseplate = this.loadedPlaceables().find((p) => p.kind === "baseplate");
     if (!baseplate) throw new Error("the bundle has no baseplate");
     return baseplate.box.min[1];
-  }
-
-  private planEntry(model: PlacedModel): PlacedForPlan {
-    const known = this.planEntries.get(model);
-    if (known) return known;
-    const entry: PlacedForPlan = {
-      key: { chunkKey: model.handle.chunkKey, slot: model.handle.slot },
-      ref: model.placeable.id,
-      label: `${model.placeable.label} at ${model.handle.x}, ${model.handle.z}`,
-      box: model.box,
-    };
-    this.planEntries.set(model, entry);
-    return entry;
-  }
-
-  private syncPlan(): void {
-    this.plans.setPlacements([
-      ...this.placed.models().map((model) => this.planEntry(model)),
-      ...(this.track?.planFootprints() ?? []),
-    ]);
   }
 
   cycleTier(): void {
@@ -1255,7 +1243,8 @@ export class Editor implements IEditor, IEditedWorld {
       });
     }
     if (commit.laid > 0) {
-      this.syncPlan();
+      writeTrackLay(this.planDelta, track, commit.laid);
+      this.plans.apply(this.planDelta);
       this.session.trackEdited();
     }
     if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
@@ -1449,7 +1438,8 @@ export class Editor implements IEditor, IEditedWorld {
       rebuiltMs: performance.now(),
       report,
     });
-    this.syncPlan();
+    writeTrackLay(this.planDelta, track, commit.laid);
+    this.plans.apply(this.planDelta);
     this.session.trackEdited();
     this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.held = { ...held, snap: null };
@@ -1490,7 +1480,8 @@ export class Editor implements IEditor, IEditedWorld {
       rebuiltMs: performance.now(),
       report,
     });
-    this.syncPlan();
+    writeTrackThrow(this.planDelta, track, placement);
+    this.plans.apply(this.planDelta);
     this.session.trackEdited();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
@@ -1772,7 +1763,10 @@ export class Editor implements IEditor, IEditedWorld {
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
     for (const model of view.added) this.searchable(model);
-    for (const placeable of new Set(view.added.map((model) => model.placeable))) {
+    const { added } = view;
+    for (let i = 0; i < added.length; i++) {
+      const placeable = added[i]?.placeable;
+      if (!placeable || this.seenEarlier(added, i, placeable)) continue;
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
@@ -1803,8 +1797,20 @@ export class Editor implements IEditor, IEditedWorld {
       studs: this.placed.studTotals(),
       history: this.historyView(),
     });
-    this.syncPlan();
+    writeViewUpdate(this.planDelta, view);
+    this.plans.apply(this.planDelta);
     return view;
+  }
+
+  private seenEarlier(
+    models: ReadonlyArray<PlacedModel>,
+    before: number,
+    placeable: Placeable,
+  ): boolean {
+    for (let i = 0; i < before; i++) {
+      if (models[i]?.placeable === placeable) return true;
+    }
+    return false;
   }
 
   private roadPlacements(): ReadonlyArray<RoadPlacement> {
@@ -2275,7 +2281,9 @@ export class Editor implements IEditor, IEditedWorld {
     this.refreshRoads();
     this.syncModelTrack();
     this.refreshTrains();
-    this.syncPlan();
+    const fullRebuild = new PlanDelta();
+    writeFullRebuild(fullRebuild, this.placed.models(), this.track);
+    this.plans.apply(fullRebuild);
     return [];
   }
 
