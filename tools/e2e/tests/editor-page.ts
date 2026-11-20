@@ -69,6 +69,12 @@ export interface LaidTrackPiece {
   readonly yPlates: number;
 }
 
+export interface TrackChoice {
+  readonly kind: string;
+  readonly pieces: number;
+  readonly joins: boolean;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -504,6 +510,16 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async trackChoice(): Promise<TrackChoice | null> {
+    const strip = this.page.locator("section.track-extend-panel .track-extend");
+    if ((await strip.count()) === 0) return null;
+    return {
+      kind: (await strip.getAttribute("data-choice")) ?? "",
+      pieces: Number(await strip.getAttribute("data-choice-pieces")),
+      joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
   }
 
