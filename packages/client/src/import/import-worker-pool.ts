@@ -1,20 +1,38 @@
-import type { ImportResult, ImportWorkerRequest, ImportWorkerResponse } from "@brr/import";
+import type {
+  ImportResult,
+  ImportWorkerPlaced,
+  ImportWorkerRequest,
+  ImportWorkerResponse,
+  PlacementListener,
+} from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff } from "@brr/rpc";
 import { inject, injectable } from "inversify";
 import { IMPORT_BAKE_HELPERS, IMPORT_WORKER_FACTORY } from "../tokens.ts";
 
 export type ImportWorkerFactory = () => Worker;
 
-export type ImportRun = Omit<ImportWorkerRequest, "kind">;
+export type ImportRun = Omit<ImportWorkerRequest, "kind" | "ticket">;
 
 export interface IImportWorkerPool {
-  run(request: ImportRun, transfer: Transferable[]): Promise<ImportResult>;
+  run(
+    request: ImportRun,
+    transfer: Transferable[],
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult>;
 }
 
 interface Primary {
   readonly worker: Worker;
-  readonly endpoint: RpcEndpoint<ImportWorkerRequest | BakeHelperHandoff, ImportWorkerResponse>;
+  readonly endpoint: RpcEndpoint<
+    ImportWorkerRequest | BakeHelperHandoff,
+    ImportWorkerResponse | ImportWorkerPlaced
+  >;
   readonly crashed: Promise<never>;
+}
+
+interface Listening {
+  readonly ticket: number;
+  readonly onPlaced: PlacementListener | undefined;
 }
 
 const IDLE_HELPERS_RELEASED_AFTER_MS = 60_000;
@@ -26,26 +44,38 @@ export class ImportWorkerPool implements IImportWorkerPool {
   private helperFailed = false;
   private queue: Promise<unknown> = Promise.resolve();
   private idleRelease: ReturnType<typeof setTimeout> | null = null;
+  private nextTicket = 1;
+  private listening: Listening | null = null;
 
   constructor(
     @inject(IMPORT_WORKER_FACTORY) private readonly createWorker: ImportWorkerFactory,
     @inject(IMPORT_BAKE_HELPERS) private readonly helperCount: number,
   ) {}
 
-  run(request: ImportRun, transfer: Transferable[]): Promise<ImportResult> {
-    const result = this.queue.then(() => this.runAlone(request, transfer));
+  run(
+    request: ImportRun,
+    transfer: Transferable[],
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    const result = this.queue.then(() => this.runAlone(request, transfer, onPlaced));
     this.queue = result.catch(() => undefined);
     return result;
   }
 
-  private async runAlone(request: ImportRun, transfer: Transferable[]): Promise<ImportResult> {
+  private async runAlone(
+    request: ImportRun,
+    transfer: Transferable[],
+    onPlaced: PlacementListener | undefined,
+  ): Promise<ImportResult> {
     this.cancelIdleRelease();
     const primary = this.primary ?? this.startPrimary();
     if (this.helperFailed) this.releaseHelpers();
     if (this.helpers.length < this.helperCount) this.startHelpers(primary);
+    const ticket = this.nextTicket++;
+    this.listening = { ticket, onPlaced };
     try {
       const response = await Promise.race([
-        primary.endpoint.request({ ...request, kind: "import" }, transfer),
+        primary.endpoint.request({ ...request, kind: "import", ticket }, transfer),
         primary.crashed,
       ]);
       switch (response.kind) {
@@ -54,14 +84,23 @@ export class ImportWorkerPool implements IImportWorkerPool {
           return response.model;
         case "failed":
           throw new Error(response.message);
+        case "placed":
+          throw new Error("the import worker replied with a placement instead of a result");
         default: {
           const unhandled: never = response;
           throw new Error(`unhandled import worker response ${String(unhandled)}`);
         }
       }
     } finally {
+      this.listening = null;
       this.scheduleIdleRelease();
     }
+  }
+
+  private placed(message: ImportWorkerResponse | ImportWorkerPlaced): void {
+    if (message.kind !== "placed") return;
+    const listening = this.listening;
+    if (listening?.ticket === message.ticket) listening.onPlaced?.(message.placed);
   }
 
   private startPrimary(): Primary {
@@ -81,6 +120,7 @@ export class ImportWorkerPool implements IImportWorkerPool {
       endpoint: new RpcEndpoint(worker, IMPORT_PROTOCOL),
       crashed,
     };
+    primary.endpoint.listen((message) => this.placed(message));
     this.primary = primary;
     return primary;
   }

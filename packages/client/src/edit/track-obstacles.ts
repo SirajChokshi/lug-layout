@@ -52,6 +52,21 @@ function pushUnseated(
   }
 }
 
+export function seatsPending(
+  models: ReadonlyArray<PlacedModel>,
+  trackRange: readonly [number, number],
+): boolean {
+  const [bottom] = trackRange;
+  return models.some((model) => {
+    if (!model.placeable.studsPending) return false;
+    const boxes = model.worldPartBoxes();
+    for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      if ((boxes[b + 4] ?? 0) === bottom) return true;
+    }
+    return false;
+  });
+}
+
 export function trackObstacleRects(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],

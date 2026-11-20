@@ -402,6 +402,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       snapshot.hover?.refusal && snapshot.mode === "place" ? snapshot.hover.refusal : "–",
     ],
     ["Last refusal", snapshot.lastRefusal?.reason ?? "none"],
+    ["Stud check", snapshot.studChecks > 0 ? `Checking (${snapshot.studChecks})` : "done"],
     ["Placements", integer.format(snapshot.placements)],
     [
       "History (undo, redo)",
@@ -418,7 +419,12 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   if (snapshot.studs) {
     rows.push(
       ["Studs drawn", integer.format(snapshot.studs.drawn)],
-      ["Studs culled inside models", integer.format(snapshot.studs.culledInsideModels)],
+      [
+        "Studs culled inside models",
+        snapshot.studs.culledInsideModels === null
+          ? "Checking"
+          : integer.format(snapshot.studs.culledInsideModels),
+      ],
       ["Studs culled under footprints", integer.format(snapshot.studs.culledUnderFootprints)],
     );
   }

@@ -12,6 +12,7 @@ import {
   type BundleSource,
   type CompilerVehicles,
   type LibraryBakeIndexRef,
+  type LibraryConnectorsIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -191,6 +192,7 @@ export interface ImportContext {
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
   readonly libraryBake: LibraryBakeIndexRef | null;
+  readonly libraryConnectors: LibraryConnectorsIndexRef | null;
 }
 
 export interface CompiledPartGlb {

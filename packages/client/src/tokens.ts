@@ -63,6 +63,9 @@ export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Sym
 export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LibraryBakeBaseUrl",
 );
+export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryConnectorsBaseUrl",
+);
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
 );

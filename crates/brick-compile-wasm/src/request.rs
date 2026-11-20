@@ -80,6 +80,8 @@ pub enum Operation {
         table_depth_ldu: f64,
         vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
+        #[serde(default)]
+        keep_parts: bool,
     },
 }
 

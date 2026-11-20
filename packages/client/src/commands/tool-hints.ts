@@ -55,6 +55,12 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
       };
     case "limit":
       return { tone: "warn", title: refused, detail: "the join search ran out of time here" };
+    case "pending":
+      return {
+        tone: "warn",
+        title: "Waiting for the stud check",
+        detail: "a model under this join is still checking its studs, so release lays nothing yet",
+      };
     case null:
       return {
         tone: "track",
