@@ -76,7 +76,21 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     return { tone: "warn", title: "The editor couldn't start", detail: snapshot.error, hints: [] };
   }
   switch (snapshot.mode) {
-    case "place":
+    case "place": {
+      const hover = snapshot.hover;
+      if (hover?.onRails) {
+        return {
+          tone: hover.refusal === null ? "place" : "warn",
+          title: `Setting ${itemName(snapshot, snapshot.activeItem)} on the rails`,
+          detail: hover.refusal ?? "it follows the rails under the cursor",
+          hints: [
+            gesture("Click", "set it there"),
+            key("rotate", "turn round"),
+            key("open-palette", "another part"),
+            key("select-tool", "done"),
+          ],
+        };
+      }
       return {
         tone: "place",
         title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
@@ -88,6 +102,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("select-tool", "done"),
         ],
       };
+    }
     case "track": {
       const drag = snapshot.track?.drag ?? null;
       if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };

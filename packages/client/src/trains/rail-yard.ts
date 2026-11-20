@@ -63,14 +63,13 @@ export interface IRailYard {
   rails(): RailTrack | null;
   aim(model: PlayModel, ray: Float64Array, reversed: boolean): RailAim;
   ghost(seat: RailSeat): RailGhost;
-  add(handle: ConsistHandle, model: PlayModel): string | null;
+  add(handle: ConsistHandle, model: PlayModel): void;
   remove(handle: ConsistHandle): void;
   clear(): void;
   pick(ray: Float64Array): RailPick | null;
   box(handle: ConsistHandle): WorldBox | null;
   standingOn(placement: number): ConsistHandle | null;
   trains(): ReadonlyArray<RailTrain>;
-  unseated(): ReadonlyArray<ConsistHandle>;
   park(hidden: boolean): void;
 }
 
@@ -207,10 +206,10 @@ export class RailYard implements IRailYard {
     return standingGhost(seat.consist, seat.poses, this.track?.railTopY ?? 0);
   }
 
-  add(handle: ConsistHandle, model: PlayModel): string | null {
+  add(handle: ConsistHandle, model: PlayModel): void {
     const parked: Parked = { handle, model, seat: null, bodies: null };
     this.parked.push(parked);
-    return this.restand(parked);
+    this.restand(parked);
   }
 
   remove(handle: ConsistHandle): void {
@@ -285,31 +284,25 @@ export class RailYard implements IRailYard {
     );
   }
 
-  unseated(): ReadonlyArray<ConsistHandle> {
-    return this.parked.flatMap((parked) => (parked.seat ? [] : [parked.handle]));
-  }
-
   park(hidden: boolean): void {
     if (hidden === this.hidden) return;
     this.hidden = hidden;
     for (const parked of this.parked) this.show(parked);
   }
 
-  private restand(parked: Parked): string | null {
+  private restand(parked: Parked): void {
     parked.bodies?.dispose();
     parked.bodies = null;
     parked.seat = null;
     const rails = this.track;
-    if (!rails) return `${parked.model.label} has no track to stand on.`;
-    const head = rails.headOf(parked.handle.pose.anchor);
-    if (!head) return `the track ${parked.model.label} stood on is gone.`;
+    const head = rails?.headOf(parked.handle.pose.anchor) ?? null;
+    if (!rails || !head) return;
     const prepared = this.prepare(parked.model, rails);
-    if (typeof prepared === "string") return prepared;
-    const stood = this.stand(parked.model, prepared, rails, head);
-    if (typeof stood === "string") return stood;
+    const stood =
+      typeof prepared === "string" ? prepared : this.stand(parked.model, prepared, rails, head);
+    if (typeof stood === "string") return;
     parked.seat = stood;
     this.show(parked);
-    return null;
   }
 
   private show(parked: Parked): void {

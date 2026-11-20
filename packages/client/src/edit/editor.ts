@@ -306,6 +306,7 @@ export interface HoverView {
   readonly z: number;
   readonly yPlates: number;
   readonly refusal: string | null;
+  readonly onRails: boolean;
 }
 
 export interface PlaceableCoverView {
@@ -1530,6 +1531,7 @@ export class Editor implements IEditor, IEditedWorld {
       z: this.hoverZ,
       yPlates: this.hoverYPlates,
       refusal: this.hoverRefusal,
+      onRails: this.active !== null && this.trainAim !== null && this.trainAim.kind !== "off",
     };
   }
 
@@ -1808,10 +1810,9 @@ export class Editor implements IEditor, IEditedWorld {
     }
   }
 
-  private parkConsist(handle: ConsistHandle): string | null {
+  private parkConsist(handle: ConsistHandle): void {
     const model = this.catalog.playModel(this.placeableAt(handle.pose.refId));
-    if (!model) return `${this.placeableAt(handle.pose.refId).label} has no running gear`;
-    return this.railYard.add(handle, model);
+    if (model) this.railYard.add(handle, model);
   }
 
   private roadPlacements(): ReadonlyArray<RoadPlacement> {
