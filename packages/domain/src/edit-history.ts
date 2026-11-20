@@ -7,6 +7,7 @@ const QUARTER_TURNS = 4;
 
 export type EditKind =
   | "place"
+  | "fill"
   | "rotate"
   | "move"
   | "remove"
@@ -38,7 +39,7 @@ export interface PlanChange {
 export type EditSummary =
   | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
-  | { readonly kind: "road"; readonly placements: number }
+  | { readonly kind: "road" | "fill"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number };
 
 export interface PlacementPose {
@@ -167,6 +168,7 @@ function summary(edit: Edit): EditSummary {
     case "throw-switch":
       return { kind: edit.kind, switchAt: edit.track.lay[0]?.index ?? 0 };
     case "road":
+    case "fill":
       return { kind: edit.kind, placements: edit.changes.length };
     case "lay-track":
       return { kind: edit.kind, pieces: edit.track.lay.length };

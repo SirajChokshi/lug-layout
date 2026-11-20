@@ -7,11 +7,12 @@ import {
 } from "three/webgpu";
 import type { GuideKind, GuideSegment } from "../scene-backend.ts";
 
-const GUIDE_KINDS: ReadonlyArray<GuideKind> = ["ruler", "axis", "draft"];
+const GUIDE_KINDS: ReadonlyArray<GuideKind> = ["ruler", "axis", "draft", "refused"];
 const GUIDE_COLORS: Readonly<Record<GuideKind, number>> = {
   ruler: 0x1f62d1,
   axis: 0x16222c,
   draft: 0x2f74e8,
+  refused: 0xd32f2f,
 };
 const GUIDE_RENDER_ORDER = 3;
 const FLOATS_PER_VERTEX = 3;

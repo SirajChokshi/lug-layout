@@ -126,6 +126,7 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 const BASEPLATE = "ldraw:3811@2";
+const ROAD_T_JUNCTION = "ldraw:44341p02@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -578,6 +579,7 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
 }, 120_000);
 
 const LOCOMOTIVE = "omr:10133-1";
+const LOCOMOTIVE_LABEL = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
 const CABOOSE = "omr:10014-1";
 const MY_OWN_TRAIN = "omr:10205-1";
 const DRAG_STEPS = 8;
@@ -4711,4 +4713,230 @@ it("gives a part the bundle's packages don't list the record an import brought f
     gaps: editor.snapshot().connectorGaps,
     tabled: tables?.tables.filter((table) => table !== null).length,
   }).toEqual({ gaps: [], tabled: 1 });
+}, 120_000);
+
+function dragFill(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(from[0], from[1]);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(to[0], to[1]);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function placedPoses(editor: IEditor, refId: number) {
+  const { x, z, yPlates, refId: refs } = editor.dump().placements;
+  return x
+    .map((at, i) => ({ x: at, z: z[i] ?? 0, yPlates: yPlates[i] ?? 0, refId: refs[i] }))
+    .filter((pose) => pose.refId === refId)
+    .map(({ x: px, z: pz, yPlates: py }) => [px, pz, py] as const)
+    .toSorted((a, b) => a[1] - b[1] || a[0] - b[0]);
+}
+
+it("fills a dragged row with a user's model at its own size rounded up to the 8-, 16- or 32-stud grid, each tile resting where a click there would put it", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const refId = catalog.itemRefId(brick) ?? -1;
+  await chosen(editor, brick);
+  const steps: number[][] = [];
+  for (const _ of [8, 16, 32]) {
+    dragFill(editor, backend, [0, 0], [1300, 10]);
+    const xs = placedPoses(editor, refId).map(([x]) => x);
+    steps.push(xs.slice(1).map((x, i) => x - (xs[i] ?? 0)));
+    editor.undo(0);
+    editor.cycleFillGrid();
+  }
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+  const row = placedPoses(editor, refId);
+  editor.undo(0);
+  const under = row[2] ?? [0, 0, 0];
+  backend.aim(under[0], under[1]);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+
+  expect(steps).toEqual([Array(8).fill(160), Array(4).fill(320), Array(2).fill(640)]);
+  expect(placedPoses(editor, refId).filter(([, , y]) => y > 0)).toEqual([[under[0], under[1], 3]]);
+  expect(editor.snapshot().lastFill).toEqual({
+    item: brick,
+    placed: row.length,
+    refused: 0,
+    reason: null,
+  });
+}, 120_000);
+
+it("skips and reports the tiles a click would refuse, places the rest, and one undo takes the whole fill back", async () => {
+  const { editor, backend, catalog } = await startEditor([]);
+  const refId = catalog.itemRefId(BASEPLATE) ?? -1;
+  expect((await placer(editor, backend)(BASEPLATE, 960, 320)).placements).toBe(1);
+  editor.cycleFillGrid();
+  editor.cycleFillGrid();
+  const seen = () => {
+    const { placements, lastFill, history } = editor.snapshot();
+    return {
+      placements,
+      placed: lastFill?.placed ?? null,
+      refused: lastFill?.refused ?? null,
+      overlap: lastFill?.reason?.includes("would overlap 3811 Baseplate 32 x 32") ?? null,
+      undo: history.undoLabel,
+    };
+  };
+
+  dragFill(editor, backend, [0, 0], [1900, 10]);
+  const filled = seen();
+  editor.undo(0);
+  const undone = seen();
+  editor.redo(0);
+
+  expect(filled).toEqual({
+    placements: 3,
+    placed: 2,
+    refused: 1,
+    overlap: true,
+    undo: "fill (2 placements)",
+  });
+  expect(undone).toEqual({
+    placements: 1,
+    placed: null,
+    refused: null,
+    overlap: null,
+    undo: "place",
+  });
+  expect(placedPoses(editor, refId)).toEqual([
+    [320, 320, 0],
+    [960, 320, 0],
+    [1600, 320, 0],
+  ]);
+}, 120_000);
+
+it("fills the active plan's tables with a user's model, inside the tables, and the plan counts every tile", async () => {
+  const userModel = "brick-2x4";
+  const { editor, catalog, container } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -160, minZ: 0, maxX: 1440, maxZ: 640 });
+  await chosen(editor, brick);
+
+  editor.fillTables(0);
+  const filled = {
+    placements: editor.snapshot().placements,
+    inside: plans.insideCount(planId),
+    issues: plans.issues(planId).length,
+  };
+  editor.undo(0);
+
+  expect(filled).toEqual({ placements: 40, inside: 40, issues: 0 });
+  expect({ placements: editor.snapshot().placements, inside: plans.insideCount(planId) }).toEqual({
+    placements: 0,
+    inside: 0,
+  });
+}, 120_000);
+
+it.each([
+  { snapRoads: true, mismatched: false },
+  { snapRoads: false, mismatched: true },
+] as const)(
+  "with road snapping $snapRoads, fills T-junctions so that their own edges mismatch only where a click would allow it",
+  async ({ snapRoads, mismatched }) => {
+    const { editor, backend } = await startEditor([]);
+    editor.setSnapRoads(snapRoads);
+    await chosen(editor, ROAD_T_JUNCTION);
+    editor.cycleFillGrid();
+    editor.cycleFillGrid();
+
+    dragFill(editor, backend, [0, 0], [1900, 1900]);
+    const { lastFill, roads, placements } = editor.snapshot();
+
+    expect({
+      refusedSome: (lastFill?.refused ?? 0) > 0,
+      mismatched: roads.mismatchedCells > 0,
+      placements: placements + (lastFill?.refused ?? 0),
+    }).toEqual({ refusedSome: !mismatched, mismatched, placements: 9 });
+  },
+  120_000,
+);
+
+it("refuses a fill tile where a held train would stand on the rails, and places the rest on the ground", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await chosen(editor, LOCOMOTIVE);
+
+  dragFill(editor, backend, [-640, -640], [640, 640]);
+  const { lastFill, placements } = editor.snapshot();
+
+  expect({
+    placed: lastFill?.placed,
+    refusedSome: (lastFill?.refused ?? 0) > 0,
+    reason: lastFill?.reason,
+    placements,
+    trains: trainsOf(editor),
+  }).toEqual({
+    placed: placements,
+    refusedSome: true,
+    reason: `${LOCOMOTIVE_LABEL} would stand on the rails there. Set it on the rails with a click.`,
+    placements: expect.any(Number),
+    trains: [],
+  });
+  expect(placements).toBeGreaterThan(0);
+}, 120_000);
+
+it("offers the fill grid key only while a part is in hand, and leaves selecting and the camera live everywhere", async () => {
+  const { editor } = await startEditor([]);
+  const live = (id: CommandId) => commandEnabled(id, editor.snapshot());
+  const selecting = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+  await chosen(editor, BASEPLATE);
+  const placing = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+
+  expect({ selecting, placing }).toEqual({
+    selecting: [false, true, true, true],
+    placing: [true, true, true, true],
+  });
+}, 120_000);
+
+it("cancels a fill mid-drag with the part kept in hand, so its release places nothing and the next drag starts afresh", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(1900, 1900);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  const drafted = editor.snapshot().fillDraft?.wanted ?? 0;
+  const cancellable = commandEnabled("cancel", editor.snapshot());
+  editor.cancelGesture();
+  editor.dragEnd(0, 0, 0);
+  const released = {
+    placements: editor.snapshot().placements,
+    fillDraft: editor.snapshot().fillDraft,
+    lastFill: editor.snapshot().lastFill,
+    held: editor.snapshot().activeItem,
+    cancellable: commandEnabled("cancel", editor.snapshot()),
+  };
+  dragFill(editor, backend, [0, 0], [1260, 10]);
+
+  expect({ drafted: drafted > 1, cancellable }).toEqual({ drafted: true, cancellable: true });
+  expect(released).toEqual({
+    placements: 0,
+    fillDraft: null,
+    lastFill: null,
+    held: BASEPLATE,
+    cancellable: false,
+  });
+  expect(editor.snapshot().lastFill?.placed).toBe(editor.snapshot().placements);
+  expect(editor.snapshot().placements).toBe(2);
 }, 120_000);
