@@ -4,7 +4,6 @@ export {
   PLACEMENT_CELL_INTS,
   PLACEMENT_JOINED,
   PLACEMENT_MISMATCHED,
-  RoadFit,
   RoadNetwork,
   placedCells,
   roadwayCells,
@@ -15,6 +14,7 @@ export {
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+export { RoadFit } from "./road-fit.ts";
 export {
   ARM_BITS,
   armToward,

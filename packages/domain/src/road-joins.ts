@@ -1,7 +1,7 @@
 import { STUD_LDU, isLatticePose, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { LduRect } from "./plan/plan-region.ts";
 import { RoadCellGrid, int32, type RoadCellRect } from "./road-cell-grid.ts";
-import { CLASHED_FIT, COMPLETE_FIT, RoadFitMemo, type FitKey } from "./road-fit-memo.ts";
+import { CLASHED_FIT, COMPLETE_FIT, RoadFitMemo, type FitKey, type RoadFit } from "./road-fit.ts";
 
 export const NO_STUD = -0x4000_0000;
 export const NO_TOP = -0x4000_0000;
@@ -52,27 +52,10 @@ export interface RoadJoinReport {
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
 }
 
-export class RoadFit {
-  metCells = 0;
-  equalCells = 0;
-  joinedCells = 0;
-  joinedRoadCells = 0;
-  mismatchedCells = 0;
-  overlappingCells = 0;
-
-  reset(): this {
-    this.metCells = 0;
-    this.equalCells = 0;
-    this.joinedCells = 0;
-    this.joinedRoadCells = 0;
-    this.mismatchedCells = 0;
-    this.overlappingCells = 0;
-    return this;
-  }
-}
-
 interface PlacedCell {
   readonly placement: number;
+  readonly centreX: number;
+  readonly centreZ: number;
   readonly cellX: number;
   readonly cellZ: number;
   readonly top: number;
@@ -111,15 +94,19 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
   for (let row = 0; row < surface.rows; row++) {
     for (let column = 0; column < surface.columns; column++) {
       const index = row * surface.columns + column;
+      const top = surface.top[index] ?? NO_TOP;
+      if (top === NO_TOP) continue;
       const localX = surface.minX + column * STUD_LDU + HALF_STUD;
       const localZ = surface.minZ + row * STUD_LDU + HALF_STUD;
-      const worldX = placement.x + cos * localX + sin * localZ;
-      const worldZ = placement.z - sin * localX + cos * localZ;
+      const centreX = placement.x + cos * localX + sin * localZ;
+      const centreZ = placement.z - sin * localX + cos * localZ;
       cells.push({
         placement: placement.id,
-        cellX: Math.floor(worldX / STUD_LDU),
-        cellZ: Math.floor(worldZ / STUD_LDU),
-        top: (surface.top[index] ?? 0) + placement.yLdu,
+        centreX,
+        centreZ,
+        cellX: Math.floor(centreX / STUD_LDU),
+        cellZ: Math.floor(centreZ / STUD_LDU),
+        top: top + placement.yLdu,
         stud: raisedStud(surface.stud[index] ?? NO_STUD, placement.yLdu),
         road: surface.road[index] ?? 0,
       });
@@ -133,10 +120,10 @@ export function roadwayCells(placement: RoadPlacement): ReadonlyArray<LduRect> {
   for (const cell of placedCells(placement)) {
     if (cell.road === 0) continue;
     roadway.push({
-      minX: cell.cellX * STUD_LDU,
-      minZ: cell.cellZ * STUD_LDU,
-      maxX: (cell.cellX + 1) * STUD_LDU,
-      maxZ: (cell.cellZ + 1) * STUD_LDU,
+      minX: cell.centreX - HALF_STUD,
+      minZ: cell.centreZ - HALF_STUD,
+      maxX: cell.centreX + HALF_STUD,
+      maxZ: cell.centreZ + HALF_STUD,
     });
   }
   return roadway;

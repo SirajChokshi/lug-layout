@@ -2,13 +2,8 @@ import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
-import {
-  NO_STUD,
-  RoadFit,
-  RoadNetwork,
-  type RoadPlacement,
-  type RoadSurface,
-} from "../src/road-joins.ts";
+import { RoadFit } from "../src/road-fit.ts";
+import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "../src/road-joins.ts";
 
 const STUD = 20;
 const BASEPLATE_SPAN = 640;

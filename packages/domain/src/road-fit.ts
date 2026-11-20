@@ -9,13 +9,23 @@ export const CLASHED_FIT = 2;
 export type KnownFit = typeof COMPLETE_FIT | typeof CLASHED_FIT;
 export type MemoState = typeof UNKNOWN_FIT | KnownFit;
 
-export interface RoadFitCounts {
-  metCells: number;
-  equalCells: number;
-  joinedCells: number;
-  joinedRoadCells: number;
-  mismatchedCells: number;
-  overlappingCells: number;
+export class RoadFit {
+  metCells = 0;
+  equalCells = 0;
+  joinedCells = 0;
+  joinedRoadCells = 0;
+  mismatchedCells = 0;
+  overlappingCells = 0;
+
+  reset(): this {
+    this.metCells = 0;
+    this.equalCells = 0;
+    this.joinedCells = 0;
+    this.joinedRoadCells = 0;
+    this.mismatchedCells = 0;
+    this.overlappingCells = 0;
+    return this;
+  }
 }
 
 export interface FitKey {
@@ -37,10 +47,16 @@ function slotOf(key: FitKey): number {
   return hash & MEMO_MASK;
 }
 
+function emptySlots(count: number): Array<object | null> {
+  const slots: Array<object | null> = [];
+  slots.length = count;
+  return slots.fill(null);
+}
+
 export class RoadFitMemo {
   private generation = 1;
   private readonly entryGeneration = new Float64Array(MEMO_SLOTS);
-  private readonly stamp = Array.from<object | undefined>({ length: MEMO_SLOTS });
+  private readonly stamp = emptySlots(MEMO_SLOTS);
   private readonly offsetX = new Int32Array(MEMO_SLOTS);
   private readonly offsetZ = new Int32Array(MEMO_SLOTS);
   private readonly phase = new Int32Array(MEMO_SLOTS);
@@ -57,7 +73,7 @@ export class RoadFitMemo {
     this.generation++;
   }
 
-  recall(key: FitKey, into: RoadFitCounts): MemoState {
+  recall(key: FitKey, into: RoadFit): MemoState {
     const s = slotOf(key);
     const known =
       this.entryGeneration[s] === this.generation &&
@@ -77,7 +93,7 @@ export class RoadFitMemo {
     return COMPLETE_FIT;
   }
 
-  remember(key: FitKey, state: KnownFit, counts: RoadFitCounts): void {
+  remember(key: FitKey, state: KnownFit, counts: RoadFit): void {
     const s = slotOf(key);
     this.entryGeneration[s] = this.generation;
     this.stamp[s] = key.stamp;

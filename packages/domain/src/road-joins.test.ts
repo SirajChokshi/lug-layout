@@ -7,13 +7,15 @@ import {
   PLACEMENT_CELL_INTS,
   PLACEMENT_JOINED,
   PLACEMENT_MISMATCHED,
-  RoadFit,
   RoadNetwork,
+  placedCells,
+  roadwayCells,
   type RoadJoinReport,
   type RoadPlacement,
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+import { RoadFit } from "./road-fit.ts";
 
 interface MeasuredGeometry {
   readonly roadStudZones: ReadonlyArray<{
@@ -259,7 +261,7 @@ describe("road joins (layout rule 7)", () => {
 
   it("gives a cell with no surface nothing to overlap or meet: an L-shaped surface's missing corner takes another piece flush", () => {
     const ell = surfaceOf(4, 4, (column, row) =>
-      column >= 2 && row < 2 ? [NO_TOP, NO_STUD, 0] : [PLATE, NO_STUD, 1],
+      column >= 2 && row < 2 ? [NO_TOP, NO_STUD, 1] : [PLATE, NO_STUD, 1],
     );
     const corner = surfaceOf(2, 2, () => [PLATE, NO_STUD, 1]);
     const alone = new RoadNetwork([at(0, ell, 0, 0)]);
@@ -284,6 +286,17 @@ describe("road joins (layout rule 7)", () => {
 
   it("joins plates only where their cell edges coincide exactly, whatever whole-LDU pose they sit at", () => {
     const placed = new RoadNetwork([at(0, plate, 7, 3)]);
+    expect(seamAt(placed.report(), ACROSS_X, 167)).toEqual([
+      {
+        placement: 0,
+        side: "maxX",
+        line: 167,
+        from: -157,
+        to: 163,
+        topLdu: plateTop,
+        status: "open",
+      },
+    ]);
     expect(fitOf(placed, at(1, plate, 327, 3))).toEqual(joinedFit(16));
     for (const [x, z] of [
       [317, 3],
@@ -344,12 +357,25 @@ describe("road joins (layout rule 7)", () => {
     overlapping().fit(at(2, plate, 0, 320), reused);
     expect(cleanFitOf(overlapping(), at(2, plate, 0, 160), reused)).toBeNull();
     expect({ ...reused }).toEqual(NO_FIT);
+    overlapping().fit(at(2, plate, 0, 320), reused);
+    expect(cleanContactOf(overlapping(), at(2, plate, 0, 160), reused)).toBeNull();
+    expect({ ...reused }).toEqual(NO_FIT);
     expect(fitOf(overlapping(), at(2, plate, 0, 160)).overlappingCells).toBeGreaterThan(0);
     const single = () => new RoadNetwork([at(0, plate, 0, 0)]);
     expect(cleanFitOf(single(), at(1, plate, 0, 320))).toEqual(joinedFit(16));
     expect(fitOf(single(), at(1, plate, 0, 320))).toEqual(joinedFit(16));
     expect(cleanFitOf(single(), at(1, plate, 0, 320, 0, PLATE))).toBeNull();
     expect(cleanFitOf(single(), at(1, plate, 0, 640))).toBeNull();
+  });
+
+  it("refuses a pose it has already fitted as a clean join or contact when that fit mismatches or overlaps", () => {
+    const network = new RoadNetwork([at(0, plate, 0, 0)]);
+    for (const pose of [at(1, plate, 320, 20), at(1, plate, 160, 0)]) {
+      const fit = fitOf(network, pose);
+      expect(fit.mismatchedCells + fit.overlappingCells).toBeGreaterThan(0);
+      expect(cleanFitOf(network, pose)).toBeNull();
+      expect(cleanContactOf(network, pose)).toBeNull();
+    }
   });
 
   it("joins, overlaps and fits against pieces added one at a time after construction", () => {
@@ -376,6 +402,19 @@ describe("road joins (layout rule 7)", () => {
     expect(cleanContactOf(network, beside)).toBeNull();
   });
 
+  it("answers two surfaces asked at the same pose on one network each by its own cells", () => {
+    const network = new RoadNetwork([at(0, plate, 0, 0)]);
+    const sidewalk = surfaceOf(16, 16, () => [plateTop, NO_STUD, 0]);
+    const asPlate = fitOf(network, at(1, plate, 320, 0));
+    const asSidewalk = fitOf(network, at(1, sidewalk, 320, 0));
+    expect(asPlate).toEqual(joinedFit(16));
+    expect(asSidewalk).toEqual(
+      fitOf(new RoadNetwork([at(0, plate, 0, 0)]), at(1, sidewalk, 320, 0)),
+    );
+    expect(asSidewalk).not.toEqual(asPlate);
+    expect(fitOf(network, at(1, plate, 320, 0))).toEqual(joinedFit(16));
+  });
+
   it("answers the same pose on two networks with different pieces each by its own pieces", () => {
     const pose = at(9, plate, 320, 0);
     const joined = new RoadNetwork([at(0, plate, 0, 0)]);
@@ -385,9 +424,34 @@ describe("road joins (layout rule 7)", () => {
     expect(fitOf(joined, pose)).toEqual(joinedFit(16));
   });
 
-  it("fits beside the lowest of five plates stacked in one block", () => {
+  it("fits beside the lowest and the highest of five plates stacked in one block", () => {
     const stack = [0, 1, 2, 3, 4].map((level) => at(level, plate, 160, 160, 0, level * plateTop));
-    expect(fitOf(new RoadNetwork(stack), at(5, plate, 480, 160))).toEqual(joinedFit(16));
+    const network = new RoadNetwork(stack);
+    expect(fitOf(network, at(5, plate, 480, 160))).toEqual(joinedFit(16));
+    expect(fitOf(network, at(5, plate, 480, 160, 0, 4 * plateTop))).toEqual(joinedFit(16));
+  });
+
+  it("fits a plate raised off the table beside another raised the same height, where nothing sits at table height", () => {
+    const raised = 3 * PLATE;
+    const network = new RoadNetwork([at(0, plate, 0, 0, 0, raised)]);
+    expect(fitOf(network, at(1, plate, 320, 0, 0, raised))).toEqual(joinedFit(16));
+    expect(fitOf(network, at(1, plate, 320, 0))).toEqual(NO_FIT);
+  });
+
+  it("gives the roadway as the network's exact road squares, leaving out absent and sidewalk cells", () => {
+    const corner = surfaceOf(2, 2, (column, row) =>
+      column === 1 && row === 0
+        ? [NO_TOP, NO_STUD, 1]
+        : [PLATE, NO_STUD, column === 0 && row === 1 ? 0 : 1],
+    );
+    const placement = at(0, corner, 7, 3);
+    expect(placedCells(placement)).toHaveLength(3);
+    expect(roadwayCells(placement)).toEqual([
+      { minX: -13, minZ: -17, maxX: 7, maxZ: 3 },
+      { minX: 7, minZ: 3, maxX: 27, maxZ: 23 },
+    ]);
+    const tile = surfaceOf(1, 1, () => [PLATE, NO_STUD, 1]);
+    expect(fitOf(new RoadNetwork([placement]), at(1, tile, 37, 13))).toEqual(joinedFit(1));
   });
 
   it("forgets every piece on clear, and joins pieces added afterwards as if it were new", () => {
@@ -500,18 +564,21 @@ function randomSurface(random: () => number): RoadSurface {
   return { minX, minZ, columns, rows, top, stud, road };
 }
 
+const PHASES = [0, 3, 10, 17];
+
 function randomLayout(random: () => number, phased: boolean): ReadonlyArray<RoadPlacement> {
   const count = 2 + Math.floor(random() * 5);
   const surfaces = [randomSurface(random), randomSurface(random), randomSurface(random)];
-  const phases = [0, 0, pick(random, [3, 10, 17])];
-  const coordinate = () =>
-    STUD * Math.floor(random() * 7 - 3) + (phased ? pick(random, phases) : 0);
+  const shared = [pick(random, PHASES), pick(random, PHASES)] as const;
+  const phase = (axis: 0 | 1) =>
+    !phased ? 0 : random() < 0.9 ? shared[axis] : pick(random, PHASES);
+  const coordinate = (axis: 0 | 1) => STUD * Math.floor(random() * 7 - 3) + phase(axis);
   return Array.from({ length: count }, (_, id) =>
     at(
       id,
       pick(random, surfaces),
-      coordinate(),
-      coordinate(),
+      coordinate(0),
+      coordinate(1),
       Math.floor(random() * 4),
       pick(random, [0, PLATE]),
     ),
@@ -578,21 +645,27 @@ const DIRECTIONS = [
   [0, 1],
 ] as const;
 
-function squaresOf(placement: RoadPlacement): ReadonlyArray<string> {
+function squaresOf(placement: RoadPlacement): ReadonlyMap<string, string> {
   const { surface, rot } = placement;
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn`);
   const cos = rot90Cos(rot);
   const sin = rot90Sin(rot);
-  const squares: string[] = [];
+  const squares = new Map<string, string>();
   for (let row = 0; row < surface.rows; row++) {
     for (let column = 0; column < surface.columns; column++) {
-      const top = surface.top[row * surface.columns + column] ?? NO_TOP;
+      const index = row * surface.columns + column;
+      const top = surface.top[index] ?? NO_TOP;
       if (top === NO_TOP) continue;
+      const stud = surface.stud[index] ?? NO_STUD;
+      const raisedStud = stud === NO_STUD ? NO_STUD : stud + placement.yLdu;
       const localX = surface.minX + column * STUD + STUD / 2;
       const localZ = surface.minZ + row * STUD + STUD / 2;
       const centreX = placement.x + cos * localX + sin * localZ;
       const centreZ = placement.z - sin * localX + cos * localZ;
-      squares.push(`${centreX} ${centreZ} ${top + placement.yLdu}`);
+      squares.set(
+        `${centreX} ${centreZ} ${top + placement.yLdu}`,
+        `${surface.road[index] ?? 0} ${raisedStud}`,
+      );
     }
   }
   return squares;
@@ -604,12 +677,12 @@ function squareBeside(square: string, dx: number, dz: number): string {
 }
 
 function overlappingSquares(network: ReadonlyArray<RoadPlacement>, candidate: RoadPlacement) {
-  const placed = new Set(network.flatMap(squaresOf));
-  return squaresOf(candidate).filter((square) => placed.has(square)).length;
+  const placed = new Set(network.flatMap((placement) => [...squaresOf(placement).keys()]));
+  return [...squaresOf(candidate).keys()].filter((square) => placed.has(square)).length;
 }
 
 function overlapPairs(placements: ReadonlyArray<RoadPlacement>) {
-  const squares = placements.map((placement) => new Set(squaresOf(placement)));
+  const squares = placements.map((placement) => new Set(squaresOf(placement).keys()));
   const pairs: Array<readonly [number, number]> = [];
   placements.forEach((a, i) => {
     placements.forEach((b, j) => {
@@ -621,17 +694,33 @@ function overlapPairs(placements: ReadonlyArray<RoadPlacement>) {
 }
 
 function meetingSquares(network: ReadonlyArray<RoadPlacement>, candidate: RoadPlacement) {
-  const own = new Set(squaresOf(candidate));
-  const holders = network.map((placement) => new Set(squaresOf(placement)));
-  let pairs = 0;
-  for (const square of own) {
+  const own = squaresOf(candidate);
+  const holders = network.map(squaresOf);
+  let met = 0;
+  let equal = 0;
+  for (const [square, facts] of own) {
     for (const [dx, dz] of DIRECTIONS) {
       const beside = squareBeside(square, dx, dz);
       if (own.has(beside)) continue;
-      for (const held of holders) if (held.has(beside) && !held.has(square)) pairs++;
+      for (const held of holders) {
+        if (!held.has(beside) || held.has(square)) continue;
+        met++;
+        if (held.get(beside) === facts) equal++;
+      }
     }
   }
-  return pairs;
+  return { met, equal };
+}
+
+function movedSegmentKeys(report: RoadJoinReport, dx: number, dz: number): ReadonlyArray<string> {
+  return report.segments
+    .map((s) => {
+      const acrossX = s.side === "minX" || s.side === "maxX";
+      const line = s.line + (acrossX ? dx : dz);
+      const shift = acrossX ? dz : dx;
+      return `${s.placement} ${s.side} ${line} ${s.from + shift} ${s.to + shift} ${s.topLdu} ${s.status}`;
+    })
+    .toSorted();
 }
 
 describe("road joins on seeded layouts", () => {
@@ -698,7 +787,7 @@ describe("road joins on seeded layouts", () => {
       const shifted = new RoadNetwork(placements.map((p) => moved(p, dx, dz))).report();
       expect(counts(shifted)).toEqual(counts(report));
       expect(shifted.overlaps).toEqual(report.overlaps);
-      expect(shapeKeys(shifted)).toEqual(shapeKeys(report));
+      expect(segmentKeys(shifted)).toEqual(movedSegmentKeys(report, dx, dz));
     }
   });
 
@@ -707,7 +796,12 @@ describe("road joins on seeded layouts", () => {
     for (let layout = 0; layout < LAYOUTS; layout++) {
       const placements = randomLayout(random, true);
       const far = 4 * CHUNK * pick(random, [1, -1]);
-      const copy = placements.map((p) => moved(p, far, -far, placements.length));
+      const [dx, dz] = pick(random, [
+        [far, 0],
+        [0, far],
+        [far, -far],
+      ] as const);
+      const copy = placements.map((p) => moved(p, dx, dz, placements.length));
       const one = counts(new RoadNetwork(placements).report());
       const two = counts(new RoadNetwork([...placements, ...copy]).report());
       expect(two).toEqual({
@@ -729,8 +823,10 @@ describe("road joins on seeded layouts", () => {
       const after = new RoadNetwork(placements).report();
       expect(after.overlaps).toEqual(overlapPairs(placements));
       const fit = fitOf(new RoadNetwork(placed), candidate);
+      const meeting = meetingSquares(placed, candidate);
       expect(fit).toMatchObject({
-        metCells: meetingSquares(placed, candidate),
+        metCells: meeting.met,
+        equalCells: meeting.equal,
         joinedCells: after.joinedCells - before.joinedCells,
         mismatchedCells: after.mismatchedCells - before.mismatchedCells,
         overlappingCells: overlappingSquares(placed, candidate),
