@@ -127,11 +127,15 @@ export class StarterWorlds implements IStarterWorlds {
         this.offer = "none";
       }
     }
-    this.publish({});
+    if (this.offered() !== this.state.open) this.publish({});
+  }
+
+  private offered(): boolean {
+    return this.ready && this.offer !== "none";
   }
 
   private publish(patch: Partial<WelcomeView>): void {
-    const next = { ...this.state, ...patch, open: this.ready && this.offer !== "none" };
+    const next = { ...this.state, ...patch, open: this.offered() };
     if (sameView(next, this.state)) return;
     this.state = next;
     for (const listener of this.listeners) listener();
