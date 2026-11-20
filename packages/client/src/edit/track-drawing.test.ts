@@ -377,7 +377,7 @@ function unionOf(boxes: ReadonlyArray<WorldBox>): Extent {
   return extent;
 }
 
-function fitIssues(table: { x: number; z: number; width: number; depth: number }): number {
+function offTableIssues(table: { x: number; z: number; width: number; depth: number }): number {
   const plans = container.get(PLAN_SERVICE);
   const planId = plans.createPlan({
     name: "Tight table",
@@ -392,7 +392,7 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
   plans.apply(delta);
   const issues = plans.issues(planId);
   plans.removePlan(planId);
-  return issues.filter((issue) => issue.rule === "fit").length;
+  return issues.filter((issue) => issue.rule === "trackOffTable").length;
 }
 
 it("closes an oval drawn by hand in two strokes, every piece within half a straight of the stroke", () => {
@@ -419,9 +419,11 @@ it("fits a table cut to the oval's geometry and overhangs one cut two millimetre
   const z = Math.floor(rendered.minZ * MM_PER_LDU);
   const width = Math.ceil(rendered.maxX * MM_PER_LDU) - x;
   const depth = Math.ceil(rendered.maxZ * MM_PER_LDU) - z;
-  expect(fitIssues({ x, z, width, depth })).toBe(0);
-  expect(fitIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
-  expect(fitIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x, z, width, depth })).toBe(0);
+  expect(offTableIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(
+    0,
+  );
 });
 
 it("marks a drag target as joining only when the closure solver finds an exact join", async () => {
