@@ -1451,11 +1451,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private outlineGhost(ghost: Group, page: InstancePage): void {
-    const [x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0] = pageBox(
-      page,
-      this.partBounds,
-      this.ghostBox,
-    );
+    const box = pageBox(page, this.partBounds, this.ghostBox);
+    const x0 = box[0] ?? 0;
+    const y0 = box[1] ?? 0;
+    const z0 = box[2] ?? 0;
+    const x1 = box[3] ?? 0;
+    const y1 = box[4] ?? 0;
+    const z1 = box[5] ?? 0;
     const outline = this.ghostOutline;
     outline.matrixAutoUpdate = false;
     outline.renderOrder = 2;

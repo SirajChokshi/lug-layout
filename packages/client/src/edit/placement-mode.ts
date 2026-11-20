@@ -16,7 +16,8 @@ export interface PlacementModeView {
 }
 
 export interface MagnetMove {
-  readonly studs: number;
+  readonly studsX: number;
+  readonly studsZ: number;
   readonly plates: number;
 }
 
@@ -24,10 +25,14 @@ export function otherPlacementMode(mode: PlacementMode): PlacementMode {
   return effectivePlacementMode(mode, true);
 }
 
+function studsAlong(ldu: number): number {
+  return Math.round(Math.abs(ldu) / STUD_LDU);
+}
+
 export function magnetMove(placement: PlacementHover): MagnetMove | null {
-  if (!placement.magnetised) return null;
+  if (placement.mode !== "assist" || !placement.magnetised) return null;
   const { dxLdu, dzLdu, dyPlates } = placement.magnet;
-  return { studs: Math.round(Math.hypot(dxLdu, dzLdu) / STUD_LDU), plates: dyPlates };
+  return { studsX: studsAlong(dxLdu), studsZ: studsAlong(dzLdu), plates: dyPlates };
 }
 
 export function togglePlacementMode(editor: IEditor): void {

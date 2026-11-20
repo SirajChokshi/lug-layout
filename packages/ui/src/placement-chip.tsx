@@ -1,8 +1,8 @@
 import { badgeText, placementFeedback, type EditorSnapshot } from "@brr/client";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { pendingSearch, useLateCue } from "./late-cue.ts";
 
 const CURSOR_OFFSET_PX = 18;
-const PENDING_CUE_DELAY_MS = 150;
 const EDGE_MARGIN_PX = 8;
 
 interface PointerAt {
@@ -15,6 +15,7 @@ function clamp(value: number, low: number, high: number): number {
 }
 
 function placeBeside(chip: HTMLElement, pointer: PointerAt): void {
+  if (chip.hidden) return;
   const width = chip.offsetWidth;
   const height = chip.offsetHeight;
   const flipX = pointer.x + CURSOR_OFFSET_PX + width + EDGE_MARGIN_PX > window.innerWidth;
@@ -26,7 +27,7 @@ function placeBeside(chip: HTMLElement, pointer: PointerAt): void {
   chip.style.transform = `translate(${left}px, ${top}px)`;
 }
 
-function useBesidePointer(chip: RefObject<HTMLDivElement | null>): void {
+function useBesidePointer(chip: RefObject<HTMLDivElement | null>, content: string): void {
   const pointer = useRef<PointerAt>({ x: 0, y: 0 });
   useEffect(() => {
     const follow = (event: MouseEvent): void => {
@@ -42,34 +43,18 @@ function useBesidePointer(chip: RefObject<HTMLDivElement | null>): void {
     };
   }, [chip]);
   useLayoutEffect(() => {
-    if (chip.current) placeBeside(chip.current, pointer.current);
-  });
-}
-
-function pendingSearch(snapshot: EditorSnapshot): string | null {
-  const pose = snapshot.hover?.placement?.pose;
-  if (!pose) return null;
-  return `${snapshot.activeItem ?? ""} ${pose.x} ${pose.z} ${pose.yPlates} ${pose.rot}`;
-}
-
-function useLateCue(search: string | null): boolean {
-  const [cuedFor, setCuedFor] = useState<string | null>(null);
-  useEffect(() => {
-    if (search === null) return undefined;
-    const timer = window.setTimeout(() => setCuedFor(search), PENDING_CUE_DELAY_MS);
-    return () => window.clearTimeout(timer);
-  }, [search]);
-  return search !== null && cuedFor === search;
+    if (content !== "" && chip.current) placeBeside(chip.current, pointer.current);
+  }, [chip, content]);
 }
 
 export function PlacementChip({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const chip = useRef<HTMLDivElement>(null);
-  useBesidePointer(chip);
   const feedback = placementFeedback(snapshot);
   const pending = feedback?.tone === "pending";
   const cueShown = useLateCue(pending ? pendingSearch(snapshot) : null);
   const lines = pending && !cueShown ? [] : (feedback?.lines ?? []);
   const precise = feedback?.mode === "precise";
+  useBesidePointer(chip, lines.map((line) => line.text).join("\n"));
   return (
     <div
       ref={chip}

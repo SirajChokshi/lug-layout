@@ -235,6 +235,7 @@ export {
   toolHints,
   type ToolHint,
   type ToolHintView,
+  type ToolSpeech,
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";

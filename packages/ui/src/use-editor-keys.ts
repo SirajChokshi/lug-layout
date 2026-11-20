@@ -116,12 +116,8 @@ function useAltHold(editor: IEditor): void {
       hold(false);
     };
     const onPointer = (event: PointerEvent): void => {
-      if (event.altKey && !event.ctrlKey && !isTyping(document.activeElement)) {
-        altDown = true;
-        hold(true);
-      } else if (!altDown) {
-        hold(false);
-      }
+      altDown = event.altKey && !event.ctrlKey && !isTyping(document.activeElement);
+      hold(altDown);
     };
     const release = (): void => {
       altDown = false;
@@ -138,6 +134,7 @@ function useAltHold(editor: IEditor): void {
       window.removeEventListener("pointermove", onPointer);
       window.removeEventListener("pointerdown", onPointer);
       window.removeEventListener("blur", release);
+      release();
     };
   }, [editor]);
 }

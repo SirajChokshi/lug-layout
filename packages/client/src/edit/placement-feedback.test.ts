@@ -151,15 +151,30 @@ it.each([
     lines: ["1 axle goes in (1 inferred)", "Lands 3 plates up on Baseplate 32 x 32"],
   },
   {
-    name: "a refusal naming the hit part by id when it has no label, and a turn that would meet pins",
+    name: "a refusal naming the hit part by id when its label is empty, and a turn that would meet unverified pins",
     placement: {
       accepted: false,
-      hit: HIT,
+      hit: { ...HIT, partLabel: "" },
       turnBlocksSnap: true,
-      turnMates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED])],
+      turnMates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 2, [PINNED], { unverified: 2 })],
     },
     tone: "refused",
-    lines: ["Hits ldraw:3700 in Market Street at cell (16, -7)", "Turn it to meet the pins"],
+    lines: [
+      "Hits ldraw:3700 in Market Street at cell (16, -7)",
+      "Turn it to meet the pins (2 unverified)",
+    ],
+  },
+  {
+    name: "a precise hover still carrying a magnet, a mate with no joints and a lift of no plates, none of which it claims",
+    placement: {
+      mode: "precise",
+      magnetised: true,
+      magnet: { dxLdu: -20, dzLdu: 0, dyPlates: 0, distanceLdu: 20 },
+      mates: [mate(TECHNIC_HOLE, [FRICTION_PIN], 0, [PINNED])],
+      lifted: true,
+    },
+    tone: "fits",
+    lines: [],
   },
   {
     name: "a refusal from the column check alone, which names no part and invents none",
@@ -200,7 +215,7 @@ it.each([
     },
     tone: "mates",
     lines: [
-      "Snapped 2 studs and 3 plates up to mate",
+      "Snapped 2 by 1 studs and 3 plates up to mate",
       "1 round socket takes connectors from custom-modular-holes",
     ],
   },

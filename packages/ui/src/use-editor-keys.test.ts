@@ -147,14 +147,14 @@ function movePointer(init: MouseEventInit): void {
 }
 
 describe("holding Alt for the other placement mode", () => {
-  it("flips the mode while Alt is held, never for AltGr, keeps a held Alt through a pointer that lost it, and releases on keyup or blur", () => {
+  it("flips the mode while Alt is held, never for AltGr, follows the pointer's Alt when a key event was missed, and releases on keyup, blur or unmount", () => {
     const { editor, keys } = KeysOnly();
-    render(keys);
+    const { unmount } = render(keys);
     const held = (): boolean => editor.snapshot().placementModeOverride;
     send("keydown", { key: "Alt", altKey: true });
     const altDown = held();
-    movePointer({ altKey: false });
-    const pointerLostAlt = held();
+    movePointer({ altKey: true });
+    const pointerStillAlt = held();
     send("keyup", { key: "Alt" });
     const released = held();
     send("keydown", { key: "AltGraph", altKey: true, ctrlKey: true });
@@ -163,22 +163,32 @@ describe("holding Alt for the other placement mode", () => {
     send("keyup", { key: "AltGraph" });
     movePointer({ altKey: true });
     const pointerWithAlt = held();
+    movePointer({ altKey: false });
+    const pointerWithoutAlt = held();
+    send("keydown", { key: "Alt", altKey: true });
     window.dispatchEvent(new Event("blur"));
+    const blurred = held();
+    send("keydown", { key: "Alt", altKey: true });
+    unmount();
 
     expect({
       altDown,
-      pointerLostAlt,
+      pointerStillAlt,
       released,
       altGraph,
       pointerWithAlt,
-      blurred: held(),
+      pointerWithoutAlt,
+      blurred,
+      unmounted: held(),
     }).toEqual({
       altDown: true,
-      pointerLostAlt: true,
+      pointerStillAlt: true,
       released: false,
       altGraph: false,
       pointerWithAlt: true,
+      pointerWithoutAlt: false,
       blurred: false,
+      unmounted: false,
     });
   });
 });

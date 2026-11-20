@@ -5,8 +5,11 @@ import {
   type EditorSnapshot,
   type PlaySnapshot,
   type ToolHint,
+  type ToolHintView,
+  type ToolSpeech,
 } from "@brr/client";
 import { Chord, PLATFORM } from "./keys.tsx";
+import { pendingSearch, useLateCue, useSteadySpeech } from "./late-cue.ts";
 
 function hintKey(hint: ToolHint): string {
   switch (hint.kind) {
@@ -30,7 +33,7 @@ function HintInput({ hint }: { readonly hint: ToolHint }) {
     case "hold-alt":
       return (
         <span className="chord">
-          <span className="tool-gesture">Hold</span>
+          <span className="tool-gesture">{hint.held ? "Release" : "Hold"}</span>
           <kbd>{altKeyName(PLATFORM)}</kbd>
         </span>
       );
@@ -45,6 +48,44 @@ function HintInput({ hint }: { readonly hint: ToolHint }) {
   }
 }
 
+interface PlacementSpeechProps {
+  readonly speech: ToolSpeech | null;
+  readonly busy: boolean;
+}
+
+function PlacementSpeech({ speech, busy }: PlacementSpeechProps) {
+  const verdict = useSteadySpeech(speech?.verdict ?? null);
+  const turn = useSteadySpeech(speech?.turn ?? null);
+  return (
+    <>
+      <span
+        className="tool-speech"
+        data-speech="verdict"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        aria-busy={busy}
+      >
+        {verdict}
+      </span>
+      <span
+        className="tool-speech"
+        data-speech="turn"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {turn}
+      </span>
+    </>
+  );
+}
+
+function shownDetail(view: ToolHintView, cued: boolean): string | null {
+  if (view.detail === null || view.waiting === null || !cued) return view.detail;
+  return `${view.detail} · ${view.waiting}`;
+}
+
 interface ToolHudProps {
   readonly snapshot: EditorSnapshot;
   readonly play: PlaySnapshot;
@@ -52,17 +93,19 @@ interface ToolHudProps {
 
 export function ToolHud({ snapshot, play }: ToolHudProps) {
   const view = toolHints(snapshot, play);
+  const cued = useLateCue(view.waiting === null ? null : pendingSearch(snapshot));
+  const detail = shownDetail(view, cued);
+  const live = view.speech === null;
   return (
     <div
       className="tool-hud"
       data-tone={view.tone}
-      role="status"
-      aria-live="polite"
-      aria-busy={view.busy}
+      role={live ? "status" : undefined}
+      aria-live={live ? "polite" : undefined}
     >
       <span className="tool-title">
         {view.title}
-        {view.detail !== null && <span className="tool-detail">{view.detail}</span>}
+        {detail !== null && <span className="tool-detail">{detail}</span>}
       </span>
       {view.hints.length > 0 && (
         <ul className="tool-hints">
@@ -74,6 +117,7 @@ export function ToolHud({ snapshot, play }: ToolHudProps) {
           ))}
         </ul>
       )}
+      <PlacementSpeech speech={view.speech} busy={view.busy} />
     </div>
   );
 }

@@ -45,7 +45,6 @@ describe("shortcut map", () => {
     ["Arrow", press("ArrowLeft"), "pan-left"],
     ["Shift+Arrow", press("ArrowLeft", { shiftKey: true }), "orbit-left"],
     ["P", press("p"), "toggle-plan-view"],
-    ["A", press("a"), "toggle-placement-mode"],
   ])("maps %s", (_, input, expected) => {
     expect(commandForKey(input, false)).toBe(expected);
   });

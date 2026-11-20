@@ -51,10 +51,11 @@ export interface PlacementView extends PlacementModeView {
   readonly ghostSettled: boolean;
 }
 
-export interface SettleView {
+export interface SettleView extends PlacementModeView {
   readonly mode: string;
   readonly hover: { readonly x: number; readonly z: number } | null;
   readonly placements: number;
+  readonly refusedClicks: number;
   readonly ghostRot: number;
   readonly activeItem: string | null;
   readonly ghostSettled: boolean;
@@ -84,10 +85,17 @@ function sameHeldCell(before: SettleView, after: SettleView): boolean {
   );
 }
 
+function sameAsk(before: SettleView, after: SettleView): boolean {
+  return (
+    before.placementMode === after.placementMode &&
+    before.placementModeOverride === after.placementModeOverride &&
+    before.refusedClicks === after.refusedClicks
+  );
+}
+
 export function ghostSettles(before: SettleView, after: SettleView, dropping: boolean): boolean {
-  if (after.mode !== PLACE_MODE || before.mode !== PLACE_MODE || !sameHeldCell(before, after)) {
-    return false;
-  }
+  if (after.mode !== PLACE_MODE || before.mode !== PLACE_MODE) return false;
+  if (!sameHeldCell(before, after) || !sameAsk(before, after)) return false;
   if (after.placements !== before.placements)
     return dropping && after.placements > before.placements;
   return before.ghostSettled;
@@ -180,7 +188,7 @@ function seamText(count: number, models: string | null, holesHeld: boolean): str
 }
 
 function mateText(mate: HoverMateCount): string {
-  const count = mate.joints > 0 ? mate.joints : mate.connectors;
+  const count = mate.joints;
   const held = connectorNoun(mate.kind);
   const partner = sharedNoun(mate.partnerKinds);
   const models = modelNames(mate.partners);
@@ -201,15 +209,28 @@ function mateText(mate: HoverMateCount): string {
     : `${counted(count, held)} ${verb(count, "goes in", "go in")}`;
 }
 
+function studSteps(move: MagnetMove): string | null {
+  const most = Math.max(move.studsX, move.studsZ);
+  const least = Math.min(move.studsX, move.studsZ);
+  if (most === 0) return null;
+  if (least === 0) return `${most} ${most === 1 ? "stud" : "studs"}`;
+  return `${most} by ${least} studs`;
+}
+
+function moved(move: MagnetMove | null): move is MagnetMove {
+  return move !== null && (move.studsX !== 0 || move.studsZ !== 0 || move.plates !== 0);
+}
+
 function snapText(move: MagnetMove, mates: ReadonlyArray<HoverMateCount>): string {
   const met = sharedNoun(mates.flatMap((mate) => mate.partnerKinds));
   const steps: string[] = [];
-  if (move.studs !== 0) steps.push(`${move.studs} ${move.studs === 1 ? "stud" : "studs"}`);
+  const studs = studSteps(move);
+  if (studs !== null) steps.push(studs);
   if (move.plates !== 0) {
     steps.push(`${plates(Math.abs(move.plates))} ${move.plates > 0 ? "up" : "down"}`);
   }
-  const moved = `Snapped ${steps.join(" and ")}`;
-  return met ? `${moved} to meet the ${met.many}` : `${moved} to mate`;
+  const snapped = `Snapped ${steps.join(" and ")}`;
+  return met ? `${snapped} to meet the ${met.many}` : `${snapped} to mate`;
 }
 
 function turnText(turnMates: ReadonlyArray<HoverMateCount>): string {
@@ -218,7 +239,7 @@ function turnText(turnMates: ReadonlyArray<HoverMateCount>): string {
 }
 
 function refusalText(hit: HoverRefusalHit): string {
-  const part = hit.partLabel ?? hit.part;
+  const part = hit.partLabel || hit.part;
   const model = hit.placed.label || hit.placed.item;
   const cell = `cell (${hit.cellX}, ${hit.cellZ})`;
   if (hit.byColumnOnly) {
@@ -227,11 +248,21 @@ function refusalText(hit: HoverRefusalHit): string {
   return part === null ? `Hits ${model} at ${cell}` : `Hits ${part} in ${model} at ${cell}`;
 }
 
-function badgesOf(mate: HoverMateCount): ReadonlyArray<BadgeCount> {
+function badgesOf(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<BadgeCount> {
+  let inferred = 0;
+  let unverified = 0;
+  for (const mate of mates) {
+    inferred += mate.inferred;
+    unverified += mate.unverified;
+  }
   const badges: BadgeCount[] = [];
-  if (mate.inferred > 0) badges.push({ badge: "inferred", connectors: mate.inferred });
-  if (mate.unverified > 0) badges.push({ badge: "unverified", connectors: mate.unverified });
+  if (inferred > 0) badges.push({ badge: "inferred", connectors: inferred });
+  if (unverified > 0) badges.push({ badge: "unverified", connectors: unverified });
   return badges.length > 0 ? badges : NO_BADGES;
+}
+
+function joined(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<HoverMateCount> {
+  return mates.filter((mate) => mate.joints > 0);
 }
 
 function line(kind: PlacementLineKind, text: string): PlacementLine {
@@ -247,7 +278,7 @@ function placementTone(hover: PlacementHoverInput): PlacementTone {
   if (searching(placement)) return "pending";
   if (!placement) return hover.refusal === null ? "fits" : "refused";
   if (!placement.accepted) return "refused";
-  return placement.mates.length > 0 ? "mates" : "fits";
+  return joined(placement.mates).length > 0 ? "mates" : "fits";
 }
 
 function turnToSnap(placement: PlacementHover): boolean {
@@ -260,25 +291,37 @@ function placementLines(hover: PlacementHoverInput, placement: PlacementHover): 
     const reason = placement.hit ? refusalText(placement.hit) : (hover.refusal ?? UNPLACEABLE);
     lines.push(line("refusal", reason));
   } else {
+    const mates = joined(placement.mates);
     const move = magnetMove(placement);
-    if (move && (move.studs !== 0 || move.plates !== 0) && placement.mates.length > 0) {
-      lines.push(line("snap", snapText(move, placement.mates)));
+    if (moved(move) && mates.length > 0) lines.push(line("snap", snapText(move, mates)));
+    for (const mate of mates) {
+      lines.push({ kind: "mates", text: mateText(mate), badges: badgesOf([mate]) });
     }
-    for (const mate of placement.mates) {
-      lines.push({ kind: "mates", text: mateText(mate), badges: badgesOf(mate) });
-    }
-    if (placement.lifted) {
+    if (placement.lifted && placement.pose.yPlates > 0) {
       const on = modelNames(placement.restsOn);
       lines.push(
         line("lift", `Lands ${plates(placement.pose.yPlates)} up${on ? ` on ${on}` : ""}`),
       );
     }
   }
-  if (turnToSnap(placement)) lines.push(line("turn", turnText(placement.turnMates)));
+  if (turnToSnap(placement)) {
+    const { turnMates } = placement;
+    lines.push({ kind: "turn", text: turnText(turnMates), badges: badgesOf(turnMates) });
+  }
   return lines;
 }
 
+const feedbackShown = new WeakMap<PlacementView, PlacementFeedback | null>();
+
 export function placementFeedback(view: PlacementView): PlacementFeedback | null {
+  const known = feedbackShown.get(view);
+  if (known !== undefined) return known;
+  const feedback = feedbackOf(view);
+  feedbackShown.set(view, feedback);
+  return feedback;
+}
+
+function feedbackOf(view: PlacementView): PlacementFeedback | null {
   const hover = heldHover(view);
   if (!hover) return null;
   const tone = placementTone(hover);

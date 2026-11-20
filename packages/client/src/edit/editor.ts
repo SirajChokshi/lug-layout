@@ -846,11 +846,21 @@ export class Editor implements IEditor, IEditedWorld {
   private dropping = false;
   private readonly verdictShownFor: {
     mode: EditorMode | null;
-    hover: HoverView | null;
+    hovered: boolean;
+    refusal: string | null;
+    placement: PlacementHover | null;
     settled: boolean;
     placementMode: PlacementMode | null;
     override: boolean;
-  } = { mode: null, hover: null, settled: false, placementMode: null, override: false };
+  } = {
+    mode: null,
+    hovered: false,
+    refusal: null,
+    placement: null,
+    settled: false,
+    placementMode: null,
+    override: false,
+  };
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -923,10 +933,15 @@ export class Editor implements IEditor, IEditedWorld {
 
   private showGhostVerdict(): void {
     const { mode, hover, ghostSettled, placementMode, placementModeOverride } = this.state;
+    const hovered = hover !== null;
+    const refusal = hover?.refusal ?? null;
+    const placement = hover?.placement ?? null;
     const shown = this.verdictShownFor;
     if (
       shown.mode === mode &&
-      shown.hover === hover &&
+      shown.hovered === hovered &&
+      shown.refusal === refusal &&
+      shown.placement === placement &&
       shown.settled === ghostSettled &&
       shown.placementMode === placementMode &&
       shown.override === placementModeOverride
@@ -934,7 +949,9 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     shown.mode = mode;
-    shown.hover = hover;
+    shown.hovered = hovered;
+    shown.refusal = refusal;
+    shown.placement = placement;
     shown.settled = ghostSettled;
     shown.placementMode = placementMode;
     shown.override = placementModeOverride;
@@ -2293,8 +2310,11 @@ export class Editor implements IEditor, IEditedWorld {
         return;
       }
       this.dropping = true;
-      this.placeAt(this.active, pose, eventTimeMs);
-      this.dropping = false;
+      try {
+        this.placeAt(this.active, pose, eventTimeMs);
+      } finally {
+        this.dropping = false;
+      }
       return;
     }
     this.backend.rayThrough(ndcX, ndcY, this.ray);

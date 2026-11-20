@@ -1,6 +1,11 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
-import { lineText, placementFeedback } from "../edit/placement-feedback.ts";
+import {
+  lineText,
+  placementFeedback,
+  type PlacementFeedback,
+  type PlacementLine,
+} from "../edit/placement-feedback.ts";
 import { effectivePlacementMode, otherPlacementMode } from "../edit/placement-mode.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
@@ -11,17 +16,29 @@ export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "play" 
 export type ToolHint =
   | { readonly kind: "key"; readonly command: CommandId; readonly text: string }
   | { readonly kind: "gesture"; readonly gesture: string; readonly text: string }
-  | { readonly kind: "hold-alt"; readonly text: string };
+  | { readonly kind: "hold-alt"; readonly text: string; readonly held: boolean };
 
-export interface ToolHintView {
+export interface ToolSpeech {
+  readonly verdict: string | null;
+  readonly turn: string | null;
+}
+
+interface PlaceSpeechView {
+  readonly busy: boolean;
+  readonly waiting: string | null;
+  readonly speech: ToolSpeech | null;
+}
+
+export interface ToolHintView extends PlaceSpeechView {
   readonly tone: ToolTone;
   readonly title: string;
   readonly detail: string | null;
   readonly hints: ReadonlyArray<ToolHint>;
-  readonly busy: boolean;
 }
 
-type HintView = Omit<ToolHintView, "busy">;
+type HintView = Omit<ToolHintView, keyof PlaceSpeechView> & Partial<PlaceSpeechView>;
+
+const UNSPOKEN: PlaceSpeechView = { busy: false, waiting: null, speech: null };
 
 const DEGREES_PER_QUARTER_TURN = 90;
 
@@ -33,8 +50,8 @@ function gesture(name: string, text: string): ToolHint {
   return { kind: "gesture", gesture: name, text };
 }
 
-function holdAlt(text: string): ToolHint {
-  return { kind: "hold-alt", text };
+function holdAlt(text: string, held: boolean): ToolHint {
+  return { kind: "hold-alt", text, held };
 }
 
 const MODE_NAMES = { assist: "Magnetic", precise: "Precise" } as const;
@@ -104,6 +121,62 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): HintView {
   };
 }
 
+function verdictSpeech(feedback: PlacementFeedback, heading: string): string | null {
+  if (feedback.tone === "pending") return null;
+  const said = feedback.lines.filter(unturned).map(lineText).join(" · ");
+  if (feedback.tone === "refused") return `${heading}. Refused: ${said}`;
+  return `${heading}. ${said || "Fits here"}`;
+}
+
+function unturned(placementLine: PlacementLine): boolean {
+  return placementLine.kind !== "turn";
+}
+
+function placeHints(snapshot: EditorSnapshot, feedback: PlacementFeedback | null): ToolHint[] {
+  const refused = feedback?.tone === "refused";
+  const click = gesture("Click", refused ? "refused here" : "place");
+  const kept = MODE_NAMES[snapshot.placementMode].toLowerCase();
+  if (snapshot.placementModeOverride) return [click, holdAlt(`${kept} again`, true)];
+  const turning = feedback?.lines.some((placementLine) => !unturned(placementLine)) ?? false;
+  const other = MODE_NAMES[otherPlacementMode(snapshot.placementMode)].toLowerCase();
+  return [
+    click,
+    key("rotate", turning ? "turn to snap" : "rotate"),
+    key("toggle-placement-mode", other),
+    holdAlt(`${other} while held`, false),
+    key("open-palette", "another part"),
+    key("select-tool", "done"),
+  ];
+}
+
+function placeView(snapshot: EditorSnapshot): HintView {
+  const feedback = placementFeedback(snapshot);
+  const pending = feedback?.tone === "pending";
+  const mode =
+    feedback?.mode ??
+    effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
+  const degrees = `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`;
+  const title = `Placing ${itemName(snapshot, snapshot.activeItem)}`;
+  const said = pending ? [] : (feedback?.lines.map(lineText) ?? []);
+  const turn = pending
+    ? undefined
+    : feedback?.lines.find((placementLine) => !unturned(placementLine));
+  return {
+    tone: feedback?.tone === "refused" ? "warn" : "place",
+    title,
+    detail: [MODE_NAMES[mode], degrees, ...said].join(" · "),
+    hints: placeHints(snapshot, feedback),
+    busy: pending,
+    waiting: feedback?.tone === "pending" ? (feedback.lines[0]?.text ?? null) : null,
+    speech: {
+      verdict: feedback
+        ? verdictSpeech(feedback, `${MODE_NAMES[mode]}, ${degrees}`)
+        : `${title}. ${MODE_NAMES[mode]}, ${degrees}`,
+      turn: turn ? lineText(turn) : null,
+    },
+  };
+}
+
 function view(snapshot: EditorSnapshot): HintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
@@ -115,32 +188,7 @@ function view(snapshot: EditorSnapshot): HintView {
     case "place": {
       const held = heldItem(snapshot);
       if (held?.tables === "loading") return loadingView(snapshot, held);
-      const feedback = placementFeedback(snapshot);
-      const refused = feedback?.tone === "refused";
-      const said = feedback?.lines.map(lineText) ?? [];
-      const turning =
-        feedback?.lines.some((placementLine) => placementLine.kind === "turn") ?? false;
-      const mode =
-        feedback?.mode ??
-        effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
-      const other = MODE_NAMES[otherPlacementMode(snapshot.placementMode)].toLowerCase();
-      return {
-        tone: refused ? "warn" : "place",
-        title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
-        detail: [
-          MODE_NAMES[mode],
-          `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
-          ...said,
-        ].join(" · "),
-        hints: [
-          gesture("Click", refused ? "refused here" : "place"),
-          key("rotate", turning ? "turn to snap" : "rotate"),
-          key("toggle-placement-mode", other),
-          holdAlt(`${other} while held`),
-          key("open-palette", "another part"),
-          key("select-tool", "done"),
-        ],
-      };
+      return placeView(snapshot);
     }
     case "track": {
       const drag = snapshot.track?.drag ?? null;
@@ -237,8 +285,8 @@ export function toolHints(snapshot: EditorSnapshot, play?: PlaySnapshot): ToolHi
   const playing = play?.status === "running" && snapshot.status === "ready";
   const hinted = playing ? playView(play) : view(snapshot);
   return {
+    ...UNSPOKEN,
     ...hinted,
-    busy: !playing && placementFeedback(snapshot)?.tone === "pending",
     hints: hinted.hints.filter(
       (hint) => hint.kind !== "key" || commandEnabled(hint.command, snapshot, play),
     ),

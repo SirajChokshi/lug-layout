@@ -1648,7 +1648,7 @@ it("A switches to precise placement and back, the hold override flips the mode w
   });
 }, 120_000);
 
-it("settles the ghost to neutral after a click's drop until the pointer leaves the cell, never after a redo, while the hover keeps the solver's verdict", async () => {
+it("settles the ghost to neutral after a click's drop until the pointer leaves the cell, a click there is refused or the mode changes, never after a redo, while the hover keeps the solver's verdict", async () => {
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);
   await place(BASEPLATE, 0, 0);
@@ -1661,21 +1661,86 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
   backend.aim(5, 5);
   editor.pointerMove(0, 0);
   const sameCell = shown();
+  editor.click(0, 0, 0);
+  const clickedAgain = shown();
   backend.aim(100, 0);
   editor.pointerMove(0, 0);
   const moved = shown();
   editor.undo(0);
   const undone = shown();
   editor.redo(0);
+  const redone = shown();
+  await place(BASEPLATE, 640, 0);
+  const droppedBeside = shown();
+  editor.setPlacementModeOverride(true);
+  const heldPrecise = shown();
 
-  expect({ dropped, sameCell, moved, undone, redone: shown() }).toEqual({
+  expect({
+    dropped,
+    sameCell,
+    clickedAgain,
+    moved,
+    undone,
+    redone,
+    droppedBeside,
+    heldPrecise,
+  }).toEqual({
     dropped: { accepted: false, ghost: null, hint: "place" },
     sameCell: { accepted: false, ghost: null, hint: "place" },
+    clickedAgain: { accepted: false, ghost: "refused", hint: "warn" },
     moved: { accepted: false, ghost: "refused", hint: "warn" },
     undone: { accepted: true, ghost: "fits", hint: "place" },
     redone: { accepted: false, ghost: "refused", hint: "warn" },
+    droppedBeside: { accepted: false, ghost: null, hint: "place" },
+    heldPrecise: { accepted: false, ghost: "refused", hint: "warn" },
   });
 }, 120_000);
+
+it("claims nothing while an assist search is unsettled, though precise's provisional verdict is a refusal, and states the settled verdict", async () => {
+  const sliced = await setOneStudIntoSet();
+  const clock = slowClock();
+  const shown = () => {
+    const { tone, detail, busy, waiting, speech } = toolHints(sliced.editor.snapshot());
+    return {
+      settled: sliced.editor.snapshot().hover?.placement?.settled,
+      ghost: sliced.backend.verdict,
+      hint: { tone, detail, busy, waiting, verdict: speech?.verdict },
+    };
+  };
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const searching = shown();
+    await framesToSettle(sliced.editor, sliced.frame);
+    const settled = shown();
+
+    expect({ searching, settled }).toEqual({
+      searching: {
+        settled: false,
+        ghost: { tone: null, hit: null, precise: false },
+        hint: {
+          tone: "place",
+          detail: "Magnetic · 0°",
+          busy: true,
+          waiting: "Finding a fit…",
+          verdict: null,
+        },
+      },
+      settled: {
+        settled: true,
+        ghost: { tone: "mates", hit: null, precise: false },
+        hint: {
+          tone: "place",
+          detail: expect.stringMatching(/^Magnetic · 0° · Snapped 1 stud /u),
+          busy: false,
+          waiting: null,
+          verdict: expect.stringMatching(/^Magnetic, 0°\. Snapped 1 stud /u),
+        },
+      },
+    });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
 
 it.each([
   {

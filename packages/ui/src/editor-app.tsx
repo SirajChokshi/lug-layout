@@ -1,5 +1,4 @@
 import {
-  effectivePlacementMode,
   heldItem,
   meshesSettled,
   placementFeedback,
@@ -171,10 +170,6 @@ export function EditorApp({
       data-selection={snapshot.selection?.item ?? ""}
       data-ghost-rot={snapshot.ghostRot}
       data-ghost={ghostTone}
-      data-placement-mode={effectivePlacementMode(
-        snapshot.placementMode,
-        snapshot.placementModeOverride,
-      )}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
       data-refused={snapshot.refusedClicks}

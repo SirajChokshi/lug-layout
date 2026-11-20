@@ -3,6 +3,7 @@ import {
   effectivePlacementMode,
   commandActive,
   commandEnabled,
+  commandSpec,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
@@ -196,7 +197,11 @@ export function PlacementToolbar({
       >
         Rotate ({shortcutText("rotate")})
       </button>
-      <PlacementModeSwitch snapshot={snapshot} onEditorAction={onEditorAction} />
+      <PlacementModeSwitch
+        snapshot={snapshot}
+        enabled={commandEnabled("toggle-placement-mode", snapshot, play)}
+        onEditorAction={onEditorAction}
+      />
       <button
         type="button"
         disabled={!commandEnabled("delete", snapshot, play)}
@@ -244,19 +249,26 @@ export function PlacementToolbar({
   );
 }
 
+function switchState(precise: boolean, held: boolean, alt: string): string {
+  if (held) return `${precise ? "On" : "Off"} while ${alt} held`;
+  return precise ? "On" : "Off, magnetic";
+}
+
 function PlacementModeSwitch({
   snapshot,
+  enabled,
   onEditorAction,
 }: {
   readonly snapshot: EditorSnapshot;
+  readonly enabled: boolean;
   readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
 }) {
   const precise = snapshot.placementMode === "precise";
   const effective = effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
   const held = effective !== snapshot.placementMode;
-  const state = effective === "precise" ? "On" : "Off, magnetic";
   const heldId = useId();
   const alt = altKeyName(PLATFORM);
+  const [chord] = commandSpec("toggle-placement-mode").keys;
   return (
     <button
       type="button"
@@ -264,6 +276,8 @@ function PlacementModeSwitch({
       className="placement-mode"
       aria-checked={precise}
       aria-describedby={held ? heldId : undefined}
+      aria-keyshortcuts={chord?.key}
+      disabled={!enabled}
       data-action="placement-mode"
       data-placement-mode={snapshot.placementMode}
       data-effective-mode={effective}
@@ -273,7 +287,7 @@ function PlacementModeSwitch({
     >
       Precise placement
       <span className="placement-mode-state" aria-hidden="true">
-        {held ? `${state} while ${alt} is held` : state} ({shortcutText("toggle-placement-mode")})
+        {switchState(effective === "precise", held, alt)} ({shortcutText("toggle-placement-mode")})
       </span>
       {held && (
         <span id={heldId} hidden>
