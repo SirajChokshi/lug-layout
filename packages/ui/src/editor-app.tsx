@@ -1,6 +1,7 @@
 import {
   heldItem,
   meshesSettled,
+  placementFeedback,
   runEditorAction,
   type EditorActionId,
   type EditorOptions,
@@ -27,6 +28,7 @@ import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./edi
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
+import { PlacementChip } from "./placement-chip.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
 import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
@@ -176,6 +178,7 @@ export function EditorApp({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
   const compact = useCompactLayout();
+  const ghostTone = placementFeedback(snapshot)?.tone ?? "";
   return (
     <div
       ref={setRoot}
@@ -189,6 +192,7 @@ export function EditorApp({
       data-selection-count={snapshot.selection?.members.length ?? 0}
       data-gesture={snapshot.gesture?.kind ?? ""}
       data-ghost-rot={snapshot.ghostRot}
+      data-ghost={ghostTone}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
       data-refused={snapshot.refusedClicks}
@@ -209,6 +213,7 @@ export function EditorApp({
       />
       <SceneLabels editor={editor} snapshot={snapshot} />
       <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
+      <PlacementChip snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <LibraryColumn panels={panels}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />

@@ -69,6 +69,7 @@ import {
   type BackendInfo,
   type EdgeMarker,
   type ChunkTier,
+  type GhostVerdict,
   type GraphicsApi,
   type ChunkInstances,
   type LookSettings,
@@ -133,6 +134,7 @@ import type {
 } from "./placement-hover.ts";
 import { effectivePlacementMode } from "./placement-mode.ts";
 import { mateCounts, partAtHit, refusalText, type HitPart } from "./placement-hover-view.ts";
+import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
   NOT_WAITING,
@@ -550,6 +552,7 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView, GroundV
   readonly fillDraft: FillView | null;
   readonly lastFill: FillResult | null;
   readonly labels: ReadonlyArray<LabelView>;
+  readonly ghostSettled: boolean;
 }
 
 export interface EditorCredits {
@@ -1331,6 +1334,7 @@ export class Editor implements IEditor, IEditedWorld {
     fillDraft: null,
     lastFill: null,
     labels: [],
+    ghostSettled: false,
   };
   private world = new World();
   private consists = new ConsistLayout();
@@ -1408,6 +1412,25 @@ export class Editor implements IEditor, IEditedWorld {
   private assistRevision = -1;
   private namingBoxes = new Float64Array(0);
   private readonly mates = new MateReport();
+  private shownVerdict: GhostVerdict | null = null;
+  private dropping = false;
+  private readonly verdictShownFor: {
+    mode: EditorMode | null;
+    hovered: boolean;
+    refusal: string | null;
+    placement: PlacementHover | null;
+    settled: boolean;
+    placementMode: PlacementMode | null;
+    override: boolean;
+  } = {
+    mode: null,
+    hovered: false,
+    refusal: null,
+    placement: null,
+    settled: false,
+    placementMode: null,
+    override: false,
+  };
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
@@ -1501,11 +1524,15 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private update(patch: Partial<EditorSnapshot>): void {
-    const next = { ...this.state, ...patch };
+    const before = this.state;
+    const merged = { ...before, ...patch };
+    const ghostSettled = ghostSettles(before, merged, this.dropping);
+    const next = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
     this.state =
-      patch.labels === undefined && labelsNeedUpdate(this.state, next)
+      patch.labels === undefined && labelsNeedUpdate(before, next)
         ? { ...next, labels: this.labelsOf(next) }
         : next;
+    this.showGhostVerdict();
     for (const listener of this.listeners) listener();
   }
 
@@ -1523,6 +1550,36 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (state.selection) labels.push(boxLabel("selection", "selection", state.selection.box));
     return labels;
+  }
+
+  private showGhostVerdict(): void {
+    const { mode, hover, ghostSettled, placementMode, placementModeOverride } = this.state;
+    const hovered = hover !== null;
+    const refusal = hover?.refusal ?? null;
+    const placement = hover?.placement ?? null;
+    const shown = this.verdictShownFor;
+    if (
+      shown.mode === mode &&
+      shown.hovered === hovered &&
+      shown.refusal === refusal &&
+      shown.placement === placement &&
+      shown.settled === ghostSettled &&
+      shown.placementMode === placementMode &&
+      shown.override === placementModeOverride
+    ) {
+      return;
+    }
+    shown.mode = mode;
+    shown.hovered = hovered;
+    shown.refusal = refusal;
+    shown.placement = placement;
+    shown.settled = ghostSettled;
+    shown.placementMode = placementMode;
+    shown.override = placementModeOverride;
+    const verdict = ghostVerdict(this.state);
+    if (sameVerdict(verdict, this.shownVerdict)) return;
+    this.shownVerdict = verdict;
+    this.backend.setGhostVerdict(verdict);
   }
 
   async start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void> {
@@ -3411,7 +3468,12 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ hover: this.hoverView() });
       return;
     }
-    this.placeAt(active, pose, eventTimeMs);
+    this.dropping = true;
+    try {
+      this.placeAt(active, pose, eventTimeMs);
+    } finally {
+      this.dropping = false;
+    }
   }
 
   click(ndcX: number, ndcY: number, eventTimeMs: number): void {

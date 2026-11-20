@@ -195,6 +195,7 @@ describe("play commands", () => {
       "nudge-forward",
       "nudge-back",
       "toggle-road-snap",
+      "toggle-placement-mode",
     ]);
   });
 });

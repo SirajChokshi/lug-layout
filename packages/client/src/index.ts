@@ -229,7 +229,23 @@ export type {
   SectionProfile,
 } from "./edit/placement-hover.ts";
 export { distinctJoints } from "./edit/placement-hover.ts";
-export { effectivePlacementMode } from "./edit/placement-mode.ts";
+export {
+  effectivePlacementMode,
+  holdPlacementModeOverride,
+  otherPlacementMode,
+  togglePlacementMode,
+  type PlacementModeView,
+} from "./edit/placement-mode.ts";
+export {
+  badgeText,
+  placementFeedback,
+  type BadgeCount,
+  type ConnectorBadge,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementLineKind,
+  type PlacementTone,
+} from "./edit/placement-feedback.ts";
 export {
   meshesSettled,
   type MeshCounts,
@@ -270,10 +286,12 @@ export {
   unjoinedText,
   type ToolHint,
   type ToolHintView,
+  type ToolSpeech,
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
 export {
+  altKeyName,
   chordKeys,
   chordText,
   keyPlatform,
