@@ -343,6 +343,9 @@ fn uninferred_key(reason: &Uninferred) -> &'static str {
         Uninferred::UnknownFacing { .. } => "round feature without BFC facing",
         Uninferred::OpenArc { .. } => "inward open arc wider than half a circle",
         Uninferred::Unflattened => "part does not flatten",
+        Uninferred::SlabBoundaryWithoutExactPlane { .. } => {
+            "clipped piece within the representation guard of a slab plane without exact provenance"
+        }
         Uninferred::Oversized { .. } => {
             "geometry spanning more than 65,536 half-stud squares on some axis; on that axis it stays off the cell index and seeds no probes of its own"
         }
