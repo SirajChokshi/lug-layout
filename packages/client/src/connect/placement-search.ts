@@ -1,4 +1,5 @@
 import {
+  AXIS_POS_Y,
   CandidatePoses,
   FootprintGrid,
   MateReport,
@@ -22,6 +23,7 @@ import {
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
+import { TRACK_FAMILY } from "./finders.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import { BLOCKED, FREE, PoseMemo, UNKNOWN } from "./pose-memo.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
@@ -165,6 +167,10 @@ export interface IPlacementSearch {
     namer: OverlapNamer,
     out: OverlapHit,
   ): boolean;
+  has(placement: number): boolean;
+  holdingMates(placement: number): number;
+  overlapOf(placement: number, tableYPlates: number): number;
+  standsOnTable(placement: number, tableYPlates: number): boolean;
 }
 
 interface Placed extends PlacedParts {
@@ -504,11 +510,16 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly gridUses = new Map<FootprintGrid, number>();
   private moving = NO_PLACEMENT;
   private withheld = NO_PLACEMENTS;
+  private readonly alone = new Set<number>();
+  private readonly measured = placementChoice();
+  private standing = NO_PLACEMENT;
 
   constructor(
     @inject(CONNECTION_SOLVER) private readonly solver: ConnectionSolver,
     @inject(SNAP_MATING) private readonly mating: SnapMating,
   ) {}
+
+  private readonly isStanding = (owner: number): boolean => owner === this.standing;
 
   private readonly exempt = (owner: number, cellX: number, cellZ: number): boolean =>
     owner === this.moving ||
@@ -1202,6 +1213,62 @@ export class PlacementSearch implements IPlacementSearch {
         this.solver.insert(placed.model, placed.pose, placement);
       }
     }
+  }
+
+  has(placement: number): boolean {
+    return this.placed.has(placement);
+  }
+
+  holdingMates(placement: number): number {
+    const { model, pose } = this.placedAt(placement);
+    const report = this.report;
+    this.solver.evaluate(model, pose, report);
+    let holding = 0;
+    for (let k = 0; k < report.count; k++) {
+      if (report.family[k] === TRACK_FAMILY) continue;
+      if (model.axis[report.connector[k] ?? 0] !== AXIS_POS_Y) holding++;
+    }
+    return holding;
+  }
+
+  overlapOf(placement: number, tableYPlates: number): number {
+    const placed = this.placedAt(placement);
+    const moving = this.moving;
+    this.moving = NO_PLACEMENT;
+    this.alone.clear();
+    this.alone.add(placement);
+    try {
+      return this.withdrawn(this.alone, () => {
+        const { model, volumes, boxes, technic, pose } = placed;
+        this.check(model, volumes, boxes, technic, pose, tableYPlates, this.measured);
+        return this.measured.overlap.owner;
+      });
+    } finally {
+      this.moving = moving;
+    }
+  }
+
+  standsOnTable(placement: number, tableYPlates: number): boolean {
+    const placed = this.placedAt(placement);
+    const world = this.scratch.place(placed.volumes, placed.pose);
+    const table = tableYPlates * PLATE_LDU;
+    this.standing = placement;
+    for (let c = 0; c < world.count; c++) {
+      const bottom = world.bottomLdu[c] ?? 0;
+      if (bottom > table || (world.topLdu[c] ?? 0) <= bottom) continue;
+      const x = world.cellX[c] ?? 0;
+      const z = world.cellZ[c] ?? 0;
+      if (!this.volumes.firstOverlap(x, z, bottom - 1, bottom, this.isStanding, this.hit)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private placedAt(placement: number): Placed {
+    const placed = this.placed.get(placement);
+    if (!placed) throw new RangeError(`placement ${placement} is not placed`);
+    return placed;
   }
 
   check(

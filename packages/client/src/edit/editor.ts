@@ -13,6 +13,7 @@ import {
   WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
+  NO_ROW,
   PlanDelta,
   RoadNetwork,
   TrackClearance,
@@ -34,6 +35,7 @@ import {
   type PlacementHandle,
   type PlacementContents,
   type PlacementPose,
+  type PlacementRegion,
   type PlacementRequest,
   type RoadEdgeSegment,
   type RoadJoinReport,
@@ -173,6 +175,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
+import { PlanFacts } from "./plan-facts.ts";
 import {
   OBSTACLE_RECT_FLOATS,
   seatsPending,
@@ -217,7 +220,12 @@ import {
 import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
-import { writeFullRebuild, writeTrackChange, writeViewUpdate } from "../plan/plan-producer.ts";
+import {
+  writeFullRebuild,
+  writeModelUpdates,
+  writeTrackChange,
+  writeViewUpdate,
+} from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
 import type { IRailYard, RailAim } from "../trains/rail-yard.ts";
@@ -1161,6 +1169,7 @@ function restoredMembers(
 
 const EDITOR_WORLD_NAME = "editor-world";
 const NO_TRACK_PARTS: ReadonlySet<number> = new Set();
+const NO_IDS: ReadonlySet<number> = new Set();
 const TRACK_SUPPORT_TABLES = "track-drawing-kit";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
@@ -1458,6 +1467,12 @@ export class Editor implements IEditor, IEditedWorld {
   } | null = null;
   private readonly studChecks = new Set<Placeable>();
   private nextSearchId = 1;
+  private readonly facts: PlanFacts;
+  private readonly factUpdates: PlacedModel[] = [];
+  private factsQueued = false;
+  private mappingRequested = false;
+  private unsupportedLaid: ReadonlySet<number> = NO_IDS;
+  private unsupportedCarriers: ReadonlySet<number> = NO_IDS;
   private newTrack: (() => TrackDrawing) | null = null;
   private roadDrawing: RoadDrawing | null = null;
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
@@ -1500,6 +1515,16 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(RAIL_YARD) private readonly railYard: IRailYard,
   ) {
     this.placed = new PlacedChunks(backend);
+    this.facts = new PlanFacts(
+      this.placed,
+      search,
+      {
+        idOf: (model) => this.searchIds.get(model),
+        modelAt: (id) => this.searchModels.get(id),
+      },
+      catalog,
+      RESTS_ON_TABLE_Y_PLATES,
+    );
     this.state = { ...this.state, ...session.view(), ...frames.view(), ...ground.view() };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
@@ -1822,8 +1847,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
-    writeViewUpdate(this.planDelta, view);
-    this.plans.apply(this.planDelta);
+    this.applyModelView(view);
     this.layoutVersion++;
     const drawing = this.track;
     if (drawing && this.state.mode === "track") this.ensureTrackObstacles(drawing);
@@ -1937,11 +1961,19 @@ export class Editor implements IEditor, IEditedWorld {
 
   private reportSupport(): void {
     const track = this.track;
-    if (!track) return;
+    if (track) this.measureTrackSupport(track);
+    this.pushUnsupported();
+  }
+
+  private measureTrackSupport(track: TrackDrawing): void {
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureTrackObstacles(track);
     const unsupported = track.unsupportedPieces();
     this.unsupportedTrack = unsupported;
-    if (!unsupported) return;
+    if (!unsupported) {
+      this.unsupportedLaid = NO_IDS;
+      this.unsupportedCarriers = NO_IDS;
+      return;
+    }
     const laid = new Set<number>();
     const carriers = new Set<number>();
     for (const { piece } of unsupported) {
@@ -1951,7 +1983,16 @@ export class Editor implements IEditor, IEditedWorld {
         if (carrier) carriers.add(carrier.id);
       }
     }
-    this.plans.setUnsupported(laid, carriers);
+    this.unsupportedLaid = laid;
+    this.unsupportedCarriers = carriers;
+  }
+
+  private pushUnsupported(): void {
+    this.plans.setUnsupported(
+      this.unsupportedLaid,
+      this.facts.unsupported,
+      this.unsupportedCarriers,
+    );
   }
 
   private unsupportedSince(firstPiece: number): TrackUnsupportedView | null {
@@ -3705,6 +3746,30 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
+  private applyModelView(view: ViewUpdate): void {
+    this.facts.noteRemoved(view.removed);
+    this.facts.noteAdded(view.added);
+    const updated = this.facts.flush(this.factUpdates);
+    writeViewUpdate(this.planDelta, view);
+    writeModelUpdates(this.planDelta, this.factUpdates, updated);
+    this.plans.apply(this.planDelta);
+  }
+
+  private queueFactFlush(): void {
+    if (this.factsQueued) return;
+    this.factsQueued = true;
+    queueMicrotask(() => {
+      this.factsQueued = false;
+      const updated = this.facts.flush(this.factUpdates);
+      if (updated > 0) {
+        this.planDelta.reset();
+        writeModelUpdates(this.planDelta, this.factUpdates, updated);
+        this.plans.apply(this.planDelta);
+      }
+      this.pushUnsupported();
+    });
+  }
+
   private planEdited(change: PlanChange): void {
     this.show(this.history.commitPlan(change), performance.now());
   }
@@ -3754,10 +3819,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.placeGhost();
       if (!GROUP_EDITS.has(edit.kind)) this.followSelection(edit.track);
     }
-    if (worldChanged) {
-      writeViewUpdate(this.planDelta, view);
-      this.plans.apply(this.planDelta);
-    }
+    if (worldChanged) this.applyModelView(view);
     if (trackChanged && this.track) {
       writeTrackChange(this.planDelta, this.track, edit.track);
       this.plans.apply(this.planDelta);
@@ -3866,6 +3928,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.roadNetwork = new RoadNetwork(placements);
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
+    this.facts.noteRoads(this.roadReport, roadModels);
     this.rerunRoadDrawing();
     const checkMs = performance.now() - started;
     this.showMarkers();
@@ -4145,6 +4208,18 @@ export class Editor implements IEditor, IEditedWorld {
 
   private plansChanged(): void {
     if (this.state.mode === "table" && this.tables?.planChanged()) this.showGuides();
+    if (!this.mappingRequested && this.plans.plans().length > 0) void this.mapParts();
+  }
+
+  private async mapParts(): Promise<void> {
+    this.mappingRequested = true;
+    try {
+      this.facts.mapWith(await this.loader.loadCrosswalk(EDITOR_LOD));
+      this.queueFactFlush();
+    } catch (error) {
+      this.mappingRequested = false;
+      this.update({ catalogError: `part mappings can't be read: ${errorText(error)}` });
+    }
   }
 
   private showGuides(): void {
@@ -4228,30 +4303,101 @@ export class Editor implements IEditor, IEditedWorld {
         if (!placeable) return [];
         return notDrawnItems(placeable.id, this.catalog.notDrawn(placeable), count);
       });
-    if (scope.kind !== "selection") {
-      const region = scope.kind === "region" ? scope.region : null;
-      let placements =
-        countPlacements(this.world, contents, counter, region) +
-        (this.track?.countParts(counter, region) ?? 0);
-      for (const handle of this.consists.consists()) {
-        const box = this.railYard.box(handle);
-        if (region && !box) continue;
-        if (box && region) {
-          const x = (box.minX + box.maxX) / 2;
-          const z = (box.minZ + box.maxZ) / 2;
-          if (x < region.minX || x >= region.maxX || z < region.minZ || z >= region.maxZ) continue;
-        }
-        contents.addTo(counter, handle.pose.refId, handle.pose.colorId);
-        placements++;
+    switch (scope.kind) {
+      case "world":
+        return this.sceneBom(null, counter, contents, uncounted);
+      case "region":
+        return this.sceneBom(scope.region, counter, contents, uncounted);
+      case "selection":
+        return this.selectionBom(counter, contents, uncounted);
+      case "plan":
+        return this.planBom(scope.planId, counter, contents, uncounted);
+      default: {
+        const unhandled: never = scope;
+        throw new Error(`unhandled scope ${String(unhandled)}`);
       }
-      return {
-        name: EDITOR_WORLD_NAME,
-        lod: "standard",
-        placements,
-        counter,
-        uncounted: uncounted(),
-      };
     }
+  }
+
+  private sceneBom(
+    region: PlacementRegion | null,
+    counter: BomCounter,
+    contents: PlacementContents,
+    uncounted: () => BomInput["uncounted"],
+  ): BomInput {
+    let placements =
+      countPlacements(this.world, contents, counter, region) +
+      (this.track?.countParts(counter, region) ?? 0);
+    for (const handle of this.consists.consists()) {
+      const box = this.railYard.box(handle);
+      if (region && !box) continue;
+      if (box && region) {
+        const x = (box.minX + box.maxX) / 2;
+        const z = (box.minZ + box.maxZ) / 2;
+        if (x < region.minX || x >= region.maxX || z < region.minZ || z >= region.maxZ) continue;
+      }
+      contents.addTo(counter, handle.pose.refId, handle.pose.colorId);
+      placements++;
+    }
+    return {
+      name: EDITOR_WORLD_NAME,
+      lod: "standard",
+      placements,
+      counter,
+      uncounted: uncounted(),
+    };
+  }
+
+  private planBom(
+    planId: string,
+    counter: BomCounter,
+    contents: PlacementContents,
+    uncounted: () => BomInput["uncounted"],
+  ): BomInput {
+    const plan = this.plans.plans().find((region) => region.id === planId);
+    if (!plan) throw new Error(`no plan ${planId}`);
+    const unchecked = this.plans.issues(planId).find((issue) => issue.rule === "unchecked");
+    if (unchecked) throw new Error(unchecked.message);
+    const byId = new Map(this.placed.models().map((model) => [model.id, model]));
+    const track = this.track;
+    const rows = this.plans.placements();
+    let placements = 0;
+    for (let row = rows.first(); row !== NO_ROW; row = rows.next(row)) {
+      if (!this.plans.contains(planId, row)) continue;
+      const source = rows.sourceOf(row);
+      const segment = rows.segmentOf(row);
+      switch (segment) {
+        case "model": {
+          const model = byId.get(source);
+          if (!model) throw new Error(`plan row ${row} names model ${source}, which isn't placed`);
+          contents.addTo(counter, model.handle.refId, model.handle.colorId);
+          break;
+        }
+        case "track":
+          if (!track) throw new Error(`plan row ${row} names track piece ${source} with no track`);
+          track.countPiece(counter, source);
+          break;
+        default: {
+          const unhandled: never = segment;
+          throw new Error(`unhandled plan row segment ${String(unhandled)}`);
+        }
+      }
+      placements++;
+    }
+    return {
+      name: `plan-${plan.name.replace(FILE_NAME_UNSAFE, "_")}`,
+      lod: "standard",
+      placements,
+      counter,
+      uncounted: uncounted(),
+    };
+  }
+
+  private selectionBom(
+    counter: BomCounter,
+    contents: PlacementContents,
+    uncounted: () => BomInput["uncounted"],
+  ): BomInput {
     const track = this.track;
     const models = this.selection.models.filter((model) => model.handle.live);
     const trains = this.selection.trains.filter((train) => train.live);
@@ -5370,8 +5516,11 @@ export class Editor implements IEditor, IEditedWorld {
         () => {
           if (!this.awaitingIds.has(model)) return;
           for (const waiting of this.awaitingIds.keys()) {
-            if (waiting.placeable === model.placeable) this.searchable(waiting);
+            if (waiting.placeable !== model.placeable) continue;
+            this.searchable(waiting);
+            this.facts.noteSearchable(waiting);
           }
+          this.queueFactFlush();
           this.tablesArrived();
         },
         (error: unknown) => {
@@ -5567,6 +5716,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.parkConsist(handle);
     }
     this.refreshTrains();
+    this.facts.flush(this.factUpdates);
     const fullRebuild = new PlanDelta();
     writeFullRebuild(fullRebuild, this.placed.models(), this.track);
     this.plans.apply(fullRebuild);
@@ -5634,6 +5784,8 @@ export class Editor implements IEditor, IEditedWorld {
     this.search.clear();
     this.searchIds.clear();
     this.searchModels.clear();
+    this.unsupportedLaid = NO_IDS;
+    this.unsupportedCarriers = NO_IDS;
     this.showTrackEnds([]);
     this.world = world;
     this.consists = new ConsistLayout();
@@ -5645,6 +5797,7 @@ export class Editor implements IEditor, IEditedWorld {
       }),
     );
     for (const model of this.placed.models()) this.searchable(model);
+    this.facts.noteWorld(this.placed.models());
     if (track && this.state.mode === "track") this.setTrackObstacles(track);
     this.update({
       placements: world.size,

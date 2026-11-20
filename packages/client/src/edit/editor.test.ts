@@ -3006,6 +3006,81 @@ it("draws and resizes a table on the 8-stud grid, checks a user's model against 
   expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
 }, 120_000);
 
+it("checks a user's model in a two-table plan on plan sync: across the seam, out of reach, loose on a roadway and without catalog ids, and counts only the plan's rows in its parts list", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const planId = plans.createPlan({
+    name: "Two tables",
+    roomWidthMm: 3000,
+    roomDepthMm: 3000,
+    originChunkX: 0,
+    originChunkZ: 0,
+  });
+  plans.addTable(planId, {
+    name: "A",
+    rect: { x: 0, z: 0, width: 1000, depth: 2000 },
+    heightMm: 750,
+  });
+  plans.addTable(planId, {
+    name: "B",
+    rect: { x: 1000, z: 0, width: 1000, depth: 2000 },
+    heightMm: 750,
+  });
+
+  await place(brick, 2500, 1000);
+  await place(brick, 300, 300);
+  await place(brick, 2250, 2500);
+  await place(ROAD_STRAIGHT, 960, 4360);
+  await place(brick, 960, 4360);
+  await place(brick, -2000, 0);
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const planBom = editor.bomInput({ kind: "plan", planId });
+  const worldBom = editor.bomInput({ kind: "world" });
+
+  expect({
+    placements: editor.snapshot().placements,
+    inside: plans.insideCount(planId),
+    issues: plans.issues(planId).map((issue) => [issue.rule, issue.message]),
+    plan: [planBom.name, planBom.placements, planBom.counter.total()],
+    world: [worldBom.placements, worldBom.counter.total()],
+  }).toEqual({
+    placements: 6,
+    inside: 5,
+    issues: [
+      [
+        "bomMapping",
+        "4 parts in this plan have no Rebrickable part or colour id; the parts list names them.",
+      ],
+      [
+        "bomMapping",
+        "4 parts in this plan have no BrickLink part or colour id; the parts list names them.",
+      ],
+      [
+        "seam",
+        'brick-2x4 at 2500, 1000 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
+      ],
+      [
+        "reach",
+        "brick-2x4 at 2260, 2500 is out of reach: part of it is more than 700 mm from every table edge you can stand at.",
+      ],
+      [
+        "unsupported",
+        "brick-2x4 at 960, 4360 isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.",
+      ],
+    ],
+    plan: ["plan-Two_tables", 5, 5],
+    world: [6, 6],
+  });
+}, 120_000);
+
 function placedHeights(backend: HeadlessBackend, partId: string) {
   const heights = new Set<number>();
   let instances = 0;

@@ -681,6 +681,51 @@ describe("PlacementSearch", () => {
     const choice = choose(f, plate, window(2 * STUD_LDU, 2 * STUD_LDU, 0), PLATE);
     expect([choice.accepted, choice.votes]).toEqual([true, 4]);
   });
+
+  it("counts as holding a placed model the mates on its connectors that don't face up: under it or beside it, never above it", () => {
+    const f = fixture();
+    const plate = world(f);
+    const floating = 31;
+    const pinned = 32;
+    place(f, PLATE, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 0 });
+    place(f, floating, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 5, rot: 0 });
+    const far = 40 * STUD_LDU;
+    place(f, BORED, boredBlock(f), { x: far, z: 0, yPlates: 4, rot: 0 });
+    place(f, pinned, pinnedBlock(f, STUD_LDU), { x: far, z: 0, yPlates: 4, rot: 0 });
+    expect(
+      [BASEPLATE, BRICK, PLATE, floating, BORED, pinned].map((placement) =>
+        f.search.holdingMates(placement),
+      ),
+    ).toEqual([0, 1, 4, 0, 1, 1]);
+  });
+
+  it("stands a placed model on the table only where one of its cells reaches the table plane with nothing of another placement under it", () => {
+    const f = fixture();
+    const plate = world(f);
+    const straddling = 31;
+    const loose = 32;
+    const raised = 33;
+    const sunk = 34;
+    place(f, PLATE, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 0 });
+    place(f, straddling, plate, { x: 3 * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+    place(f, loose, plate, { x: 10 * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+    place(f, raised, plate, { x: 10 * STUD_LDU, z: 5 * STUD_LDU, yPlates: 3, rot: 0 });
+    place(
+      f,
+      sunk,
+      {
+        ...plate,
+        volumes: columns(2, 2, -2 * PLATE_LDU, PLATE_LDU),
+        parts: partsOf([[0, -2 * PLATE_LDU, 0, 2 * STUD_LDU, PLATE_LDU, 2 * STUD_LDU]]),
+      },
+      { x: 20 * STUD_LDU, z: 0, yPlates: 1, rot: 0 },
+    );
+    expect(
+      [BASEPLATE, BRICK, PLATE, straddling, loose, raised, sunk].map((placement) =>
+        f.search.standsOnTable(placement, TABLE_Y_PLATES),
+      ),
+    ).toEqual([true, false, false, true, true, false, true]);
+  });
 });
 
 describe("PlacementSearch mate zones", () => {
@@ -695,6 +740,27 @@ describe("PlacementSearch mate zones", () => {
       seated: [true, 1, -1],
       onePlateUp: [false, 0, BORED],
       matedOverHalfItsLength: [false, 1, BORED],
+    });
+  });
+
+  it("judges a placed pair's overlap as search judges the pose, from either side, with each one's own volume exempt", () => {
+    const f = fixture();
+    place(f, BORED, boredBlock(f));
+    const pinned = 21;
+    const placedAt = (pinLength: number, yPlates: number) => {
+      place(f, pinned, pinnedBlock(f, pinLength), { x: 0, z: 0, yPlates, rot: 0 });
+      const both = [f.search.overlapOf(pinned, TABLE_Y_PLATES), f.search.overlapOf(BORED, TABLE_Y_PLATES)];
+      f.search.remove(pinned);
+      return both;
+    };
+    expect({
+      seated: placedAt(STUD_LDU, 0),
+      onePlateUp: placedAt(STUD_LDU, 1),
+      matedOverHalfItsLength: placedAt(HALF, 0),
+    }).toEqual({
+      seated: [-1, -1],
+      onePlateUp: [BORED, pinned],
+      matedOverHalfItsLength: [BORED, pinned],
     });
   });
 
