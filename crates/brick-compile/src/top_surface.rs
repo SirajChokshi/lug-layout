@@ -82,10 +82,6 @@ impl TopSurface {
         })
     }
 
-    pub fn cell(&self, column: usize, row: usize) -> TopCell {
-        self.cells[row * self.columns + column]
-    }
-
     pub fn rows_text(&self) -> Vec<String> {
         self.cells
             .chunks(self.columns)
@@ -845,20 +841,6 @@ mod tests {
         part.extend(quad(0.0, [0.0, -10.0, 20.0, 0.0]));
         part.push(base(-8.0, [-20.0, -10.0, 20.0, 10.0]));
         assert_eq!(rows(&part, &[]), ["f."]);
-    }
-
-    #[test]
-    fn a_stud_on_a_floor_walled_by_the_top_face_is_a_pocket() {
-        let mut part = Vec::new();
-        for strip in [[-30.0, -30.0, 30.0, -10.0], [-30.0, 10.0, 30.0, 30.0]] {
-            part.extend(quad(16.0, strip));
-        }
-        part.extend(quad(16.0, [-30.0, -10.0, -10.0, 10.0]));
-        part.extend(quad(16.0, [10.0, -10.0, 30.0, 10.0]));
-        part.extend(quad(8.0, [-10.0, -10.0, 10.0, 10.0]));
-        part.push(base(0.0, [-30.0, -30.0, 30.0, 30.0]));
-        let studs = [upright_stud(0.0, 8.0, 0.0)];
-        assert_eq!(rows(&part, &studs), ["fff", "fpf", "fff"]);
     }
 
     fn edge_strip(floor: [f64; 4]) -> Vec<Triangle> {

@@ -643,7 +643,7 @@ export const PartTopSurface = v.pipe(
     "the cell rows don't match the grid size",
   ),
   v.description(
-    "what the part's top presents on each cell of its 20 LDU grid, read exactly from the LDraw decimals of its own Standard-LOD triangles. The grid covers the part's plan, which must be whole studs, and the top is the part's highest point, which must be on a sixteenth; otherwise the part has no top surface. f: faces lying wholly at the top height cover the cell's whole square (studs standing on it don't matter). p: an upright stud centred on the cell stands below the top, and every side of its group of such cells is the part's edge or an f cell. u: a face without exact geometry, or coplanar faces that overlap, leaves the coverage undecided. .: none of these",
+    "what the part's top presents on each cell of its 20 LDU grid, read exactly from the LDraw decimals of its own Standard-LOD triangles. The grid covers the part's plan, which must be whole studs, and the top is the part's highest point, which must be on a sixteenth; otherwise the part has no top surface. f: every point of the cell's square lies within the 0.0005 LDU identification residual of a face lying wholly at the top height (studs standing on it don't matter). p: an upright stud centred on the cell stands below the top, every side of its group of such cells is the part's edge or an f cell, and along x or z the group's run through the cell ends in f cells at both ends. u: the cell isn't covered and a face without exact geometry may lie at the top there. .: none of these",
   ),
 );
 export type PartTopSurface = v.InferOutput<typeof PartTopSurface>;
