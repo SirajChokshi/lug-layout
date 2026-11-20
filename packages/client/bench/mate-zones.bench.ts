@@ -1,4 +1,3 @@
-import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import {
@@ -65,15 +64,10 @@ function table(
     Uint8Array.from(rows, ([, gender]) => gender),
     new Uint8Array(rows.length).fill(SOURCE_SHADOW),
     new Uint8Array(rows.length).fill(STATUS_VERIFIED),
-    Int32Array.from(
-      rows.flatMap(([, , x, y, z]) => [x, y, z]),
-      (ldu) => ldu * SIXTEENTHS_PER_LDU,
-    ),
+    Float32Array.from(rows.flatMap(([, , x, y, z]) => [x, y, z])),
     Int8Array.from(rows, ([, , , , , axis]) => axis),
-    new Float64Array(rows.length * 3),
+    new Float32Array(rows.length * 3),
     new Uint16Array(rows.length),
-    new Float64Array(rows.length * 3),
-    [],
   );
 }
 

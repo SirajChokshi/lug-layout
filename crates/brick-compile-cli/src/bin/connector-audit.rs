@@ -7,9 +7,8 @@ use std::time::Instant;
 
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
-    mating_faces, published_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue,
-    MatingFace, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source,
-    Uninferred, Withholding,
+    mating_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue, MatingFace,
+    PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source, Uninferred,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::identify::{self, identifies, SIXTEENTHS_PER_LDU};
@@ -316,14 +315,6 @@ fn issue_key(issue: &Issue) -> String {
             source_key(lower.0)
         ),
         Issue::Uninferred { reason, .. } => format!("tier 4: {}", uninferred_key(reason)),
-        Issue::FreeFaceWithheld { reason, .. } => format!(
-            "free face of a partly held connector {}",
-            match reason {
-                Withholding::ClosedByGeometry => "closed by geometry",
-                Withholding::SourcesDisagree => "where the shadow and the mesh disagree",
-                Withholding::NotProvenOpen => "not proven open",
-            }
-        ),
     }
 }
 
@@ -713,70 +704,6 @@ fn parts(values: &HashMap<String, String>, ldraw: &Path) -> Result<Vec<String>, 
 }
 
 #[derive(Default)]
-struct HeldTwice {
-    faces: usize,
-    parts: usize,
-    pairs: BTreeMap<String, usize>,
-    examples: Vec<Value>,
-}
-
-impl HeldTwice {
-    fn count(&mut self, part: &str, faces: &[MatingFace]) {
-        let females: Vec<&MatingFace> = faces
-            .iter()
-            .filter(|f| f.gender == Gender::Female)
-            .collect();
-        let mut part_duplicates = 0;
-        for (index, face) in females.iter().enumerate() {
-            let earlier = females[..index].iter().find(|other| {
-                dot(face.axis, other.axis) >= 1.0 - PARALLEL
-                    && norm(sub(face.origin, other.origin)) <= SAME_LDU
-            });
-            let Some(other) = earlier else {
-                continue;
-            };
-            part_duplicates += 1;
-            let same_size = match (face.sections.first(), other.sections.first()) {
-                (Some(a), Some(b)) => a.code == b.code && (a.size - b.size).abs() <= SAME_LDU,
-                _ => false,
-            };
-            *self
-                .pairs
-                .entry(format!(
-                    "{} then {}{}",
-                    source_key(other.source),
-                    source_key(face.source),
-                    if same_size {
-                        ", same section size"
-                    } else {
-                        ", different section"
-                    }
-                ))
-                .or_default() += 1;
-            if self.examples.len() < 40 {
-                self.examples.push(json!({
-                    "part": part,
-                    "at": face.origin,
-                    "held": [source_key(other.source), other.sections.first().map(|s| s.length)],
-                    "second": [source_key(face.source), face.sections.first().map(|s| s.length)],
-                }));
-            }
-        }
-        self.faces += part_duplicates;
-        self.parts += usize::from(part_duplicates > 0);
-    }
-
-    fn json(&self) -> Value {
-        json!({
-            "faces": self.faces,
-            "parts": self.parts,
-            "byPair": table(self.pairs.clone()),
-            "examples": self.examples,
-        })
-    }
-}
-
-#[derive(Default)]
 struct Tally {
     parts: usize,
     with_connectors: usize,
@@ -967,8 +894,9 @@ fn run() -> Result<(), String> {
     let mut axle_examples: Vec<Value> = Vec::new();
     let mut disagreeing_faces: Vec<Value> = Vec::new();
     let mut tier2_alone = PrimitiveConnectors::new(&library, primitive_table);
-    let mut held_twice = HeldTwice::default();
-    let mut published_held_twice = HeldTwice::default();
+    let mut duplicate_faces = [0usize; 2];
+    let mut duplicate_pairs: BTreeMap<String, usize> = BTreeMap::new();
+    let mut duplicate_examples: Vec<Value> = Vec::new();
     let mut by_source: BTreeMap<String, usize> = BTreeMap::new();
     let mut by_family: BTreeMap<String, usize> = BTreeMap::new();
     let mut tier2_shapes: BTreeMap<String, usize> = BTreeMap::new();
@@ -1141,12 +1069,46 @@ fn run() -> Result<(), String> {
             }
         }
         let all_faces = faces_of(&extraction.connectors, None);
-        held_twice.count(part, &all_faces);
-        let published: Vec<MatingFace> = published_faces(&extraction)
-            .into_iter()
-            .map(|published| published.face)
+        let females: Vec<&MatingFace> = all_faces
+            .iter()
+            .filter(|f| f.gender == Gender::Female)
             .collect();
-        published_held_twice.count(part, &published);
+        let mut part_duplicates = 0;
+        for (index, face) in females.iter().enumerate() {
+            let earlier = females[..index].iter().find(|other| {
+                dot(face.axis, other.axis) >= 1.0 - PARALLEL
+                    && norm(sub(face.origin, other.origin)) <= SAME_LDU
+            });
+            if let Some(other) = earlier {
+                part_duplicates += 1;
+                let same_size = match (face.sections.first(), other.sections.first()) {
+                    (Some(a), Some(b)) => a.code == b.code && (a.size - b.size).abs() <= SAME_LDU,
+                    _ => false,
+                };
+                *duplicate_pairs
+                    .entry(format!(
+                        "{} then {}{}",
+                        source_key(other.source),
+                        source_key(face.source),
+                        if same_size {
+                            ", same section size"
+                        } else {
+                            ", different section"
+                        }
+                    ))
+                    .or_default() += 1;
+                if duplicate_examples.len() < 40 {
+                    duplicate_examples.push(json!({
+                        "part": part,
+                        "at": face.origin,
+                        "held": [source_key(other.source), other.sections.first().map(|s| s.length)],
+                        "second": [source_key(face.source), face.sections.first().map(|s| s.length)],
+                    }));
+                }
+            }
+        }
+        duplicate_faces[0] += part_duplicates;
+        duplicate_faces[1] += usize::from(part_duplicates > 0);
         let inferred_kept = faces_of(&extraction.connectors, Some(Source::Inferred));
         let before_any = extraction
             .connectors
@@ -1473,8 +1435,12 @@ fn run() -> Result<(), String> {
         },
         "tubeNeighbourReceptorsOnCuratedPartsWithFemales": { "emitted": tube_oracle[0], "atATier1Female": tube_oracle[1] },
         "tubeInteriors": table(tubes),
-        "femaleFacesHeldTwice": held_twice.json(),
-        "publishedFemaleFacesHeldTwice": published_held_twice.json(),
+        "femaleFacesHeldTwice": {
+            "faces": duplicate_faces[0],
+            "parts": duplicate_faces[1],
+            "byPair": table(duplicate_pairs),
+            "examples": duplicate_examples,
+        },
         "axleFeatures": {
             "partsWithAxlePrimitives": axle_census[0],
             "axlePrimitives": axle_census[1],

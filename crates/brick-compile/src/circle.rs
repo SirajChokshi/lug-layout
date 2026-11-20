@@ -6,7 +6,6 @@ use crate::identify::{identifies, IDENTIFY_LDU, IDENTIFY_REPRESENTATION_GUARD_LD
 pub type Direction = [Exact; 2];
 
 pub(crate) const TURNS: i32 = 48;
-pub(crate) const ATAN2_SLACK: f64 = 64.0 * f64::EPSILON;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Bearing {
@@ -296,7 +295,7 @@ impl Approximate {
         let radius = crate::trig::planar_length(x, y);
         Approximate::Raw {
             turns: crate::trig::atan2(y, x) * per_radian,
-            error: (4.0 * uncertainty / radius + ATAN2_SLACK) * per_radian,
+            error: (uncertainty / radius + f64::EPSILON) * per_radian * 4.0,
         }
     }
 

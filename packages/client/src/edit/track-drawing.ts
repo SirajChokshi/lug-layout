@@ -3,16 +3,6 @@ import type { TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle"
 import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
-  BOX_MAX_X,
-  BOX_MAX_Y,
-  BOX_MAX_Z,
-  BOX_MIN_X,
-  BOX_MIN_Y,
-  BOX_MIN_Z,
-  BOX_STRIDE,
-  LABEL_NUMBERED,
-  TRACK_SEGMENT,
-  type PlanDelta,
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
   TrackClearance,
@@ -329,6 +319,7 @@ export class TrackDrawing {
   private obstacleRects: Float64Array = new Float64Array(0);
   private seatsPending = false;
   private gapList: ReadonlyArray<EndGap> = [];
+  private footprints: ReadonlyArray<TrackFootprint> | null = null;
   private drag: Drag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -865,6 +856,7 @@ export class TrackDrawing {
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
     this.layout.replace(placement, thrown);
+    this.footprints = null;
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
     return { chunk: this.chunkOfPlaced(placed), lever };
@@ -919,6 +911,7 @@ export class TrackDrawing {
   }
 
   private recomputeEnds(): void {
+    this.footprints = null;
     this.combined = this.combine();
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];
@@ -945,39 +938,24 @@ export class TrackDrawing {
     this.gapList = endGaps(this.openList);
   }
 
-  footprintAt(piece: number): TrackFootprint {
-    const placed = this.placedAt(piece);
-    const centre = partCentre(placed);
-    return {
-      key: { chunkKey: trackChunkKey(chunkOf(centre.x), chunkOf(centre.z)), slot: piece },
-      ref: placed.part.piece.id,
-      label: `${placed.part.piece.title} #${piece + 1}`,
-      box: partBox(placed),
-    };
+  planFootprints(): ReadonlyArray<TrackFootprint> {
+    this.footprints ??= this.measureFootprints();
+    return this.footprints;
   }
 
-  writeFootprint(piece: number, delta: PlanDelta, kind: number): void {
-    const footprint = this.footprintAt(piece);
-    const entry = delta.write(
-      kind,
-      TRACK_SEGMENT,
-      piece,
-      footprint.key.slot,
-      footprint.ref,
-      LABEL_NUMBERED,
-      this.placedAt(piece).part.piece.title,
-    );
-    delta.chunkKey[entry] = footprint.key.chunkKey;
-    delta.labelA[entry] = piece + 1;
-    delta.labelB[entry] = 0;
-    const { box } = footprint;
-    const at = entry * BOX_STRIDE;
-    delta.box[at + BOX_MIN_X] = box.minX;
-    delta.box[at + BOX_MIN_Y] = box.minY;
-    delta.box[at + BOX_MIN_Z] = box.minZ;
-    delta.box[at + BOX_MAX_X] = box.maxX;
-    delta.box[at + BOX_MAX_Y] = box.maxY;
-    delta.box[at + BOX_MAX_Z] = box.maxZ;
+  private measureFootprints(): ReadonlyArray<TrackFootprint> {
+    const footprints: TrackFootprint[] = [];
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const centre = partCentre(placed);
+      footprints.push({
+        key: { chunkKey: trackChunkKey(chunkOf(centre.x), chunkOf(centre.z)), slot: p },
+        ref: placed.part.piece.id,
+        label: `${placed.part.piece.title} #${p + 1}`,
+        box: partBox(placed),
+      });
+    }
+    return footprints;
   }
 
   records(): TrackRecordV1[] {

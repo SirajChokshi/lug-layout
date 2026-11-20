@@ -6,7 +6,6 @@ import {
 } from "@brr/catalog";
 import {
   EditHistory,
-  PlanDelta,
   World,
   layMoves,
   runMoves,
@@ -27,7 +26,6 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { writeFullRebuild } from "../plan/plan-producer.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
@@ -148,7 +146,7 @@ beforeAll(async () => {
   drag([260, 190], [260, 270]);
   drag([260, 270], [180, 270]);
   drag([180, 270], [180, 190]);
-  footprints = Array.from({ length: drawing.pieceCount }, (_, p) => drawing.footprintAt(p));
+  footprints = drawing.planFootprints();
   rendered = emptyExtent();
   for (const key of new Set(footprints.map((f) => f.key.chunkKey))) {
     const chunk = drawing.chunkInstances(key);
@@ -187,12 +185,10 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
     originChunkZ: 0,
   });
   plans.addTable(planId, { name: "Table", rect: table, heightMm: 750 });
-  const delta = new PlanDelta();
-  writeFullRebuild(delta, [], drawing);
-  plans.apply(delta);
-  const issues = plans.issues(planId);
+  plans.setPlacements(footprints);
+  const check = plans.snapshot().checks.find((c) => c.regionId === planId);
   plans.removePlan(planId);
-  return issues.filter((issue) => issue.rule === "fit").length;
+  return check?.issues.filter((issue) => issue.rule === "fit").length ?? -1;
 }
 
 it("lays a closed oval of real 9V pieces from four drags", () => {
@@ -495,8 +491,7 @@ function rasterTriangles(
 function laidFootprints(layout: TrackDrawing, parts: ReadonlyArray<PartAsset>): Set<number>[] {
   const cells = Array.from({ length: layout.pieceCount }, () => new Set<number>());
   const byChunk = new Map<number, number[]>();
-  for (let p = 0; p < layout.pieceCount; p++) {
-    const footprint = layout.footprintAt(p);
+  for (const footprint of layout.planFootprints()) {
     const slots = byChunk.get(footprint.key.chunkKey) ?? [];
     slots.push(footprint.key.slot);
     byChunk.set(footprint.key.chunkKey, slots);
@@ -516,7 +511,10 @@ function laidFootprints(layout: TrackDrawing, parts: ReadonlyArray<PartAsset>): 
 
 function pieceEnds(layout: TrackDrawing): ReadonlyArray<ReadonlyArray<TrackEndView>> {
   const routes = layout.routes();
-  const refs = Array.from({ length: layout.pieceCount }, (_, p) => layout.footprintAt(p).ref);
+  const refs = layout
+    .planFootprints()
+    .toSorted((a, b) => a.key.slot - b.key.slot)
+    .map((f) => f.ref);
   let next = 0;
   return refs.map((ref) => {
     const part = layout.pieceParts().find((p) => p.piece.id === ref);

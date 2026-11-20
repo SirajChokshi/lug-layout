@@ -286,7 +286,7 @@ struct StudProbe {
 }
 
 enum Probed {
-    Blind { depth: f64, piece_depth: f64 },
+    Blind(f64),
     Through,
     Loose(f64),
     Sliding,
@@ -547,26 +547,6 @@ pub enum Openness {
     Unmeasurable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EntranceClosure {
-    Open,
-    Closed,
-    Unmeasurable,
-}
-
-fn face_probe(face: &MatingFace) -> Option<Probe> {
-    let origin = [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
-    let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
-    let k = aligned_axis(axis)?;
-    let section = face.sections.first()?;
-    Some(Probe {
-        axis: k,
-        inward: -axis[k].signum(),
-        entrance: origin,
-        radius: section.size,
-    })
-}
-
 pub struct InferredFeatures<'a, L: Library + ?Sized> {
     library: &'a L,
     vocabulary: SectionVocabulary,
@@ -709,8 +689,16 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
     }
 
     fn face_openness(&self, solid: &Solid, face: &MatingFace) -> Openness {
-        let Some(probe) = face_probe(face) else {
+        let origin = [face.origin[0], -face.origin[1], -face.origin[2]].map(|c| c + 0.0);
+        let axis = [face.axis[0], -face.axis[1], -face.axis[2]];
+        let (Some(k), Some(section)) = (aligned_axis(axis), face.sections.first()) else {
             return Openness::Unmeasurable;
+        };
+        let probe = Probe {
+            axis: k,
+            inward: -axis[k].signum(),
+            entrance: origin,
+            radius: section.size,
         };
         let floor = solid.floor(&probe, probe.radius);
         if !floor.depth.is_finite() {
@@ -743,34 +731,6 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
             return Openness::Unmeasurable;
         };
         self.candidate_openness(solid, candidate)
-    }
-
-    pub fn entrance_closure(&mut self, path: &str, face: &MatingFace) -> EntranceClosure {
-        let prepared = self.prepare(path);
-        let Some(solid) = &prepared.solid else {
-            return EntranceClosure::Unmeasurable;
-        };
-        let Some(probe) = face_probe(face) else {
-            return EntranceClosure::Unmeasurable;
-        };
-        let Some(plane) = sixteenths(probe.entrance[probe.axis]) else {
-            return EntranceClosure::Unmeasurable;
-        };
-        let floor = solid.floor(&probe, probe.radius);
-        if floor.faces_probe == Some(false) {
-            return EntranceClosure::Closed;
-        }
-        if !floor.depth.is_finite() {
-            return EntranceClosure::Open;
-        }
-        let floor_plane = probe.entrance[probe.axis] + probe.inward * floor.depth;
-        if sixteenths(floor_plane) == Some(plane) {
-            EntranceClosure::Closed
-        } else if floor.faces_probe == Some(true) {
-            EntranceClosure::Open
-        } else {
-            EntranceClosure::Unmeasurable
-        }
     }
 
     pub fn open(&mut self, path: &str, candidates: Vec<Connector>) -> Inference {
@@ -1253,19 +1213,16 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         {
             return Probed::Rejected;
         }
-        let Some(travel) = solid.confined_travel(probe, range, &LATTICE_STEPS) else {
+        if !solid.confined(probe, range, &LATTICE_STEPS) {
             return Probed::Sliding;
-        };
-        if let Some(offset) = off_centre(&travel) {
+        }
+        if let Some(offset) = off_centre(&solid.travel(probe, range, &LATTICE_STEPS)) {
             return Probed::OffCentre(offset);
         }
         if floor.depth.is_infinite() {
             Probed::Through
         } else {
-            Probed::Blind {
-                depth: floor.depth,
-                piece_depth: floor.piece_depth,
-            }
+            Probed::Blind(floor.depth)
         }
     }
 
@@ -1368,7 +1325,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         inference: &mut Inference,
     ) -> HashSet<(usize, i8, i64, i64, i64)> {
         let mut through: Vec<(Probe, Option<ExactPoint>)> = Vec::new();
-        let mut blind: Vec<(Probe, f64, f64, Option<ExactPoint>)> = Vec::new();
+        let mut blind: Vec<(Probe, f64, Option<ExactPoint>)> = Vec::new();
         let mut slabs: HashMap<(usize, i8, i64, Option<String>), Slab> = HashMap::new();
         let exact_reach = sixteenths(self.probe.reach).map(|_| Exact::from_f64(self.probe.reach));
         let range = (IDENTIFY_LDU, self.probe.reach - IDENTIFY_LDU);
@@ -1440,16 +1397,13 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 Probed::Through => {
                     through.push((*probe, exact_entrance(probe, exact_center, exact_at)))
                 }
-                Probed::Blind { depth, piece_depth } => blind.push((
-                    *probe,
-                    depth,
-                    piece_depth,
-                    exact_entrance(probe, exact_center, exact_at),
-                )),
+                Probed::Blind(depth) => {
+                    blind.push((*probe, depth, exact_entrance(probe, exact_center, exact_at)))
+                }
             }
         }
         let mut mouths = HashSet::new();
-        for (probe, depth, piece_depth, exact_anchor) in blind {
+        for (probe, depth, exact_anchor) in blind {
             let opens_further_out = columns[&column_of(&probe)].iter().any(|&other| {
                 let outer = &candidates[other];
                 let separation = depth_along(&probe) - depth_along(outer);
@@ -1481,7 +1435,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 .vocabulary
                 .length(SectionShape::Round, depth)
                 .unwrap_or(self.probe.reach);
-            let pieces = solid.contributors(&probe, range, Some(piece_depth));
+            let pieces = solid.contributors(&probe, range, Some(depth));
             self.keep(
                 cylinder(
                     Gender::Female,

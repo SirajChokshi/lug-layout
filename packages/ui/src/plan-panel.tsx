@@ -3,17 +3,23 @@ import {
   type IEditorCamera,
   type IPlanService,
   type MmRect,
-  type PlanIssue,
+  type PlanCheck,
   type PlanRegion,
-  type TableTop,
+  type PlanSnapshot,
 } from "@brr/client";
-import { useState } from "react";
-import { usePlanVersion } from "./use-plan-version.ts";
+import { useState, useSyncExternalStore } from "react";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
 const DEFAULT_TABLE: MmRect = { x: 800, z: 800, width: 2400, depth: 1200 };
 const DEFAULT_TABLE_HEIGHT_MM = 750;
 const DEFAULT_OBSTACLE: MmRect = { x: 0, z: 0, width: 400, depth: 400 };
+
+export function usePlanSnapshot(plans: IPlanService): PlanSnapshot {
+  return useSyncExternalStore(
+    (listener) => plans.subscribe(listener),
+    () => plans.snapshot(),
+  );
+}
 
 function MmField({
   label,
@@ -89,9 +95,9 @@ function RectFields({
   );
 }
 
-function planGlance(active: PlanRegion | null, plans: IPlanService): string {
+function planGlance(active: PlanRegion | null, snapshot: PlanSnapshot): string {
   if (!active) return "No plan yet";
-  const issues = plans.issues(active.id).length;
+  const issues = snapshot.checks.find((c) => c.regionId === active.id)?.issues.length ?? 0;
   const verdict = issues === 0 ? "no errors" : `${issues} ${issues === 1 ? "error" : "errors"}`;
   return `${active.name} · ${verdict}`;
 }
@@ -115,7 +121,7 @@ function NewPlanForm({
         onClick={() => {
           const origin = camera.targetChunk();
           const id = plans.createPlan({
-            name: `Plan ${plans.plans().length + 1}`,
+            name: `Plan ${plans.snapshot().plans.length + 1}`,
             roomWidthMm: width,
             roomDepthMm: depth,
             originChunkX: origin.chunkX,
@@ -130,19 +136,19 @@ function NewPlanForm({
   );
 }
 
-function studsText(tables: ReadonlyArray<TableTop>, tableId: string): string {
-  const top = tables.find((t) => t.id === tableId);
+function studsText(check: PlanCheck | undefined, tableId: string): string {
+  const top = check?.tables.find((t) => t.id === tableId);
   if (!top) return "";
   return `${top.studs.studsWide} × ${top.studs.studsDeep} studs (${top.studs.studsWide * MM_PER_STUD} × ${top.studs.studsDeep * MM_PER_STUD} mm on the lattice)`;
 }
 
 function TablesEditor({
   plan,
-  tops,
+  check,
   plans,
 }: {
   readonly plan: PlanRegion;
-  readonly tops: ReadonlyArray<TableTop>;
+  readonly check: PlanCheck | undefined;
   readonly plans: IPlanService;
 }) {
   return (
@@ -170,7 +176,7 @@ function TablesEditor({
             />
           </div>
           <p className="plan-meta" data-table-studs={table.id}>
-            {studsText(tops, table.id)}
+            {studsText(check, table.id)}
           </p>
         </div>
       ))}
@@ -234,7 +240,8 @@ function ObstaclesEditor({
   );
 }
 
-function IssueList({ issues }: { readonly issues: ReadonlyArray<PlanIssue> }) {
+function IssueList({ check }: { readonly check: PlanCheck | undefined }) {
+  const issues = check?.issues ?? [];
   return (
     <section className="plan-section" aria-label="Plan issues">
       <h3>
@@ -266,12 +273,15 @@ function IssueList({ issues }: { readonly issues: ReadonlyArray<PlanIssue> }) {
 function ActivePlan({
   camera,
   plans,
+  snapshot,
   plan,
 }: {
   readonly camera: IEditorCamera;
   readonly plans: IPlanService;
+  readonly snapshot: PlanSnapshot;
   readonly plan: PlanRegion;
 }) {
+  const check = snapshot.checks.find((c) => c.regionId === plan.id);
   return (
     <>
       <div className="plan-grid">
@@ -295,8 +305,8 @@ function ActivePlan({
         />
       </div>
       <p className="plan-meta">
-        Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
-        placements in this plan · {plans.sandboxCount()} in the sandbox
+        Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {check?.inside.length ?? 0}{" "}
+        placements in this plan · {snapshot.sandboxPlacements.length} in the sandbox
       </p>
       <div className="plan-actions">
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
@@ -306,9 +316,9 @@ function ActivePlan({
           Delete plan
         </button>
       </div>
-      <TablesEditor plan={plan} tops={plans.regionView(plan.id).tables} plans={plans} />
+      <TablesEditor plan={plan} check={check} plans={plans} />
       <ObstaclesEditor plan={plan} plans={plans} />
-      <IssueList issues={plans.issues(plan.id)} />
+      <IssueList check={check} />
     </>
   );
 }
@@ -320,10 +330,8 @@ export function PlanPanel({
   readonly camera: IEditorCamera;
   readonly plans: IPlanService;
 }) {
-  usePlanVersion(plans);
-  const regions = plans.plans();
-  const activePlanId = plans.activePlanId();
-  const active = regions.find((p) => p.id === activePlanId) ?? null;
+  const snapshot = usePlanSnapshot(plans);
+  const active = snapshot.plans.find((p) => p.id === snapshot.activePlanId) ?? null;
   const [open, setOpen] = useState(false);
   const [openedFor, setOpenedFor] = useState<string | null>(null);
   const activeId = active?.id ?? null;
@@ -341,14 +349,14 @@ export function PlanPanel({
     >
       <summary title={open ? "Fold the plan away" : "Plan a real table layout in millimetres"}>
         <h2>Plan (mm, true scale)</h2>
-        <span className="plan-glance">{planGlance(active, plans)}</span>
+        <span className="plan-glance">{planGlance(active, snapshot)}</span>
       </summary>
-      {regions.length > 1 && (
+      {snapshot.plans.length > 1 && (
         <select
-          value={activePlanId ?? ""}
+          value={snapshot.activePlanId ?? ""}
           onChange={(event) => plans.activatePlan(event.target.value)}
         >
-          {regions.map((p) => (
+          {snapshot.plans.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
@@ -356,7 +364,7 @@ export function PlanPanel({
         </select>
       )}
       {active ? (
-        <ActivePlan camera={camera} plans={plans} plan={active} />
+        <ActivePlan camera={camera} plans={plans} snapshot={snapshot} plan={active} />
       ) : (
         <p className="plan-meta">
           No plan yet. Outside plans the world is a sandbox and plan rules don't apply.

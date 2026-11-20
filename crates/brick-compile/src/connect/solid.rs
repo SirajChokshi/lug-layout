@@ -10,8 +10,7 @@ use crate::affine::Vec3;
 use crate::circle::{
     approximate_span, certainly_uncovered, contains as arc_contains,
     covers_circle as covers_exactly, covers_circle_filtered, inner_complete, inner_turns, span,
-    wraps as arc_wraps, Approximate, ApproximateSpan, ArcSpan, Bearing, Direction, Junction,
-    ATAN2_SLACK, TURNS,
+    wraps as arc_wraps, Approximate, ApproximateSpan, ArcSpan, Bearing, Direction, Junction, TURNS,
 };
 use crate::exact::{Decimal, Exact, ExactVec3};
 use crate::flatten::{ExactTriangle, Triangle};
@@ -189,76 +188,6 @@ impl RoundSurface {
 pub struct Floor {
     pub depth: f64,
     pub faces_probe: Option<bool>,
-    pub piece_depth: f64,
-}
-
-struct Attainer {
-    inner: f64,
-    rim: f64,
-    along: Option<f64>,
-    wall_foot: Option<Ring>,
-}
-
-fn circle_crossings(polygon: &[Local], radius: f64) -> Vec<Local> {
-    let squared = radius * radius;
-    let mut crossings = Vec::new();
-    for (k, a) in polygon.iter().enumerate() {
-        let b = polygon[(k + 1) % polygon.len()];
-        let (du, dv, dd) = (b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-        let qa = du * du + dv * dv;
-        if qa == 0.0 {
-            continue;
-        }
-        let qb = 2.0 * (a[0] * du + a[1] * dv);
-        let qc = a[0] * a[0] + a[1] * a[1] - squared;
-        let discriminant = qb * qb - 4.0 * qa * qc;
-        if discriminant < 0.0 {
-            continue;
-        }
-        let root = discriminant.sqrt();
-        for t in [(-qb - root) / (2.0 * qa), (-qb + root) / (2.0 * qa)] {
-            if (0.0..=1.0).contains(&t) {
-                crossings.push([a[0] + t * du, a[1] + t * dv, a[2] + t * dd]);
-            }
-        }
-    }
-    crossings
-}
-
-fn meets_circle_only_at_vertices(polygon: &[Local], contact: f64, depth: f64) -> bool {
-    let on_circle = |p: &Local| {
-        (planar_length(p[0], p[1]) - contact).abs() <= IDENTIFY_REPRESENTATION_GUARD_LDU
-    };
-    let at_vertex = |q: &Local| {
-        polygon.iter().any(|p| {
-            on_circle(p)
-                && planar_length(p[0] - q[0], p[1] - q[1]) <= IDENTIFY_REPRESENTATION_GUARD_LDU
-        })
-    };
-    let mut met = false;
-    for p in polygon {
-        if p[2] <= depth && planar_length(p[0], p[1]) <= contact + IDENTIFY_REPRESENTATION_GUARD_LDU
-        {
-            if !on_circle(p) {
-                return false;
-            }
-            met = true;
-        }
-    }
-    met && circle_crossings(polygon, contact)
-        .iter()
-        .all(|q| q[2] > depth || at_vertex(q))
-}
-
-fn only_wall_feet_on_circle(attaining: &[Attainer], contact: f64, depth: f64) -> bool {
-    let reach = depth + IDENTIFY_LDU;
-    let mut touching = attaining.iter().filter(|a| a.rim <= reach).peekable();
-    touching.peek().is_some()
-        && touching.all(|a| {
-            a.wall_foot
-                .as_ref()
-                .is_some_and(|polygon| meets_circle_only_at_vertices(polygon, contact, reach))
-        })
 }
 
 #[derive(Clone, Debug)]
@@ -434,11 +363,12 @@ struct Surroundings<'s> {
     polygons: Vec<Patch>,
     surfaces: Vec<&'s RoundSurface>,
     center: [f64; 2],
+    clearance: f64,
 }
 
 impl<'s> Surroundings<'s> {
-    fn along(&self, step: [f64; 2], clearance: f64) -> Surroundings<'s> {
-        let reach = clearance + IDENTIFY_LDU;
+    fn along(&self, step: [f64; 2]) -> Surroundings<'s> {
+        let reach = self.clearance + IDENTIFY_LDU;
         Surroundings {
             polygons: self
                 .polygons
@@ -448,6 +378,7 @@ impl<'s> Surroundings<'s> {
                 .collect(),
             surfaces: self.surfaces.clone(),
             center: self.center,
+            clearance: self.clearance,
         }
     }
 }
@@ -609,6 +540,8 @@ type Nearness = (i64, (i64, i64));
 fn nearness(key: (i64, i64), home: [i64; 2]) -> Nearness {
     (ring(key, home), key)
 }
+
+const ATAN2_SLACK: f64 = 64.0 * f64::EPSILON;
 
 fn box_span(center: &Direction, bounds: PlanBounds) -> Option<(f64, f64)> {
     let finite = bounds.low.iter().chain(&bounds.high).all(|v| v.is_finite());
@@ -1680,18 +1613,16 @@ impl Solid {
             }
         }
         if let Some(depth) = floor {
-            pieces.extend(self.floor_pieces(probe, probe.radius, depth));
+            pieces.extend(self.floor_pieces(probe, probe.radius - IDENTIFICATION_REACH_LDU, depth));
         }
         pieces.sort_unstable();
         pieces.dedup();
         pieces
     }
 
-    fn floor_pieces(&self, probe: &Probe, contact: f64, depth: f64) -> Vec<u16> {
-        let inside = contact - IDENTIFICATION_REACH_LDU;
+    fn floor_pieces(&self, probe: &Probe, inside: f64, depth: f64) -> Vec<u16> {
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
         let mut pieces = Vec::new();
-        let mut rim_only = Vec::new();
         for index in self.near(probe, inside + IDENTIFY_LDU, ANY_DEPTH) {
             if self.owned_by(index as usize, &coaxial) {
                 continue;
@@ -1701,14 +1632,8 @@ impl Solid {
                 continue;
             }
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
-            let Some(inner) = first_depth(&polygon, inside) else {
-                continue;
-            };
-            if inner <= depth + IDENTIFY_LDU {
+            if first_depth(&polygon, inside).is_some_and(|d| d <= depth + IDENTIFY_LDU) {
                 pieces.push(facet.piece);
-            } else if first_depth(&polygon, contact).is_some_and(|rim| rim <= depth + IDENTIFY_LDU)
-            {
-                rim_only.push(facet.piece);
             }
         }
         for &index in &coaxial {
@@ -1721,11 +1646,7 @@ impl Solid {
                 pieces.push(surface.piece);
             }
         }
-        if pieces.is_empty() {
-            rim_only
-        } else {
-            pieces
-        }
+        pieces
     }
 
     pub fn floor(&self, probe: &Probe, contact: f64) -> Floor {
@@ -1739,7 +1660,7 @@ impl Solid {
     fn floor_until(&self, probe: &Probe, contact: f64, limit: f64) -> Floor {
         let inside = contact - IDENTIFICATION_REACH_LDU;
         let coaxial = self.exact(probe, inside + IDENTIFY_LDU);
-        let mut attaining: Vec<Attainer> = Vec::new();
+        let mut attaining: Vec<(f64, Option<f64>)> = Vec::new();
         for &index in &coaxial {
             let surface = &self.surfaces[index];
             let (low, high) = surface.depths(probe);
@@ -1751,69 +1672,35 @@ impl Solid {
                 RoundShape::Annulus { .. } => surface.facing.map(|f| f * probe.inward),
                 RoundShape::Wall { .. } => Some(0.0),
             };
-            attaining.push(Attainer {
-                inner: d,
-                rim: d,
-                along,
-                wall_foot: None,
-            });
+            attaining.push((d, along));
         }
-        let analytic = attaining
-            .iter()
-            .map(|a| a.inner)
-            .fold(f64::INFINITY, f64::min);
+        let analytic = attaining.iter().map(|a| a.0).fold(f64::INFINITY, f64::min);
         let window = (inside + IDENTIFY_LDU, inside);
         let line = self.line(probe, LineUse::Floor, window, |index, facet| {
             !self.apart(probe, facet, inside) && !self.owned_by(index, &coaxial)
         });
-        let band = self.sweep(probe, &line, (analytic, limit), |facet| {
+        let depth = self.sweep(probe, &line, (analytic, limit), |facet| {
             let polygon = clip(self.polygon(probe, facet), -IDENTIFY_LDU, true);
             if polygon.is_empty() {
                 return None;
             }
-            let inner = first_depth(&polygon, inside)?;
-            let rim = first_depth(&polygon, contact).unwrap_or(inner);
-            let wall_foot = (rim < inner && newell(&polygon)[2] == 0.0).then_some(polygon);
-            attaining.push(Attainer {
-                inner,
-                rim,
-                along: facet.front.map(|front| front[probe.axis] * probe.inward),
-                wall_foot,
-            });
-            Some(inner)
+            let d = first_depth(&polygon, inside)?;
+            attaining.push((d, facet.front.map(|front| front[probe.axis] * probe.inward)));
+            Some(d)
         });
-        let shallowest = attaining
-            .iter()
-            .map(|a| a.rim)
-            .fold(f64::INFINITY, f64::min);
-        let mut depth = if shallowest < band { shallowest } else { band };
-        let mut interior = band <= depth + IDENTIFY_LDU;
-        if !interior && only_wall_feet_on_circle(&attaining, contact, depth) {
-            depth = band;
-            interior = true;
-        }
         let mut faces_probe = None;
-        for attainer in attaining {
-            let (reading, floor) = if interior {
-                (attainer.inner, band)
-            } else {
-                (attainer.rim, depth)
-            };
-            if reading > floor + IDENTIFY_LDU {
+        for (d, along) in attaining {
+            if d > depth + IDENTIFY_LDU {
                 continue;
             }
-            match attainer.along {
+            match along {
                 Some(along) if along != 0.0 => {
                     faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
                 }
                 _ => {}
             }
         }
-        Floor {
-            depth,
-            faces_probe,
-            piece_depth: if interior { band } else { depth },
-        }
+        Floor { depth, faces_probe }
     }
 
     pub fn cross_section(&self, probe: &Probe, range: (f64, f64), reach: f64) -> Vec<Vec<Point>> {
@@ -1884,11 +1771,7 @@ impl Solid {
                 faces_probe = Some(faces_probe.unwrap_or(true) && along < 0.0);
             }
         }
-        Floor {
-            depth,
-            faces_probe,
-            piece_depth: depth,
-        }
+        Floor { depth, faces_probe }
     }
 
     pub fn slab(
@@ -2251,6 +2134,7 @@ impl Solid {
         probe: &Probe,
         range: (f64, f64),
         steps: &[[f64; 2]],
+        clearance: f64,
     ) -> Surroundings<'_> {
         let longest = steps
             .iter()
@@ -2284,56 +2168,45 @@ impl Solid {
             polygons,
             surfaces,
             center: probe.center(),
+            clearance,
         }
     }
 
-    fn sweep_collides(&self, around: &Surroundings, to: [f64; 2], clearance: f64) -> bool {
+    fn sweep_collides(&self, around: &Surroundings, to: [f64; 2]) -> bool {
         around
             .polygons
             .iter()
-            .any(|patch| patch.within(to, clearance))
+            .any(|patch| patch.within(to, around.clearance))
             || around
                 .surfaces
                 .iter()
-                .any(|surface| self.swept_reach(surface, around.center, to) < clearance)
+                .any(|surface| self.swept_reach(surface, around.center, to) < around.clearance)
     }
 
-    pub fn confined_travel(
-        &self,
-        probe: &Probe,
-        range: (f64, f64),
-        steps: &[[f64; 2]],
-    ) -> Option<Vec<f64>> {
-        let surroundings = self.surroundings(probe, range, steps);
-        let confining = probe.radius - IDENTIFY_LDU;
-        if !steps
-            .iter()
-            .all(|&to| self.sweep_collides(&surroundings, to, confining))
-        {
-            return None;
-        }
-        let clearance = probe.radius;
-        let travel = steps
+    pub fn confined(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> bool {
+        let around = self.surroundings(probe, range, steps, probe.radius - IDENTIFY_LDU);
+        steps.iter().all(|&to| self.sweep_collides(&around, to))
+    }
+
+    pub fn travel(&self, probe: &Probe, range: (f64, f64), steps: &[[f64; 2]]) -> Vec<f64> {
+        let surroundings = self.surroundings(probe, range, steps, probe.radius);
+        steps
             .iter()
             .map(|&step| {
-                let around = surroundings.along(step, clearance);
+                let around = surroundings.along(step);
                 let length = planar_length(step[0], step[1]);
                 let contact = IDENTIFY_LDU / length;
-                let (mut free, mut blocked) = if self.sweep_collides(
-                    &around,
-                    [step[0] * contact, step[1] * contact],
-                    clearance,
-                ) {
-                    (0.0, contact)
-                } else if self.sweep_collides(&around, step, clearance) {
-                    (contact, 1.0)
-                } else {
-                    return f64::INFINITY;
-                };
+                let (mut free, mut blocked) =
+                    if self.sweep_collides(&around, [step[0] * contact, step[1] * contact]) {
+                        (0.0, contact)
+                    } else if self.sweep_collides(&around, step) {
+                        (contact, 1.0)
+                    } else {
+                        return f64::INFINITY;
+                    };
                 while (blocked - free) * length > TRAVEL_PRECISION_LDU {
                     let middle = 0.5 * (free + blocked);
-                    if self.sweep_collides(&around, [step[0] * middle, step[1] * middle], clearance)
-                    {
+                    if self.sweep_collides(&around, [step[0] * middle, step[1] * middle]) {
                         blocked = middle;
                     } else {
                         free = middle;
@@ -2341,8 +2214,7 @@ impl Solid {
                 }
                 free * length
             })
-            .collect();
-        Some(travel)
+            .collect()
     }
 
     pub fn bore_continues_outward(&self, probe: &Probe) -> bool {
@@ -2689,13 +2561,6 @@ impl Solid {
         let mut shifted = Ring::empty();
         for p in clip.points.iter() {
             shifted.push([p[0] - center[0], p[1] - center[1], 0.0]);
-        }
-        if !uncertainty.is_finite()
-            || shifted
-                .iter()
-                .any(|p| !p[0].is_finite() || !p[1].is_finite())
-        {
-            return None;
         }
         let all = |test: &dyn Fn(&Local) -> bool| shifted.iter().all(test);
         if all(&|p| p[across] > uncertainty)

@@ -218,7 +218,6 @@ function Swatches({
           data-item={item.id}
           data-current-color={item.color !== null && item.color.code === current}
           aria-pressed={snapshot.activeItem === item.id}
-          aria-busy={snapshot.pendingItem === item.id}
           aria-label={item.label}
           title={swatchTitle(item)}
           style={{ background: item.color?.rgb ?? "transparent" }}

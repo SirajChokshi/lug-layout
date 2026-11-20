@@ -1,48 +1,54 @@
-import { mmRectInWorld, NO_ROW, roomRect, type LduRect } from "@brr/domain";
-import type { IPlanService, PlanPlacementsView } from "../plan/plan-service.ts";
+import { mmRectInWorld, roomRect, type LduRect } from "@brr/domain";
+import type { PlanSnapshot } from "../plan/plan-service.ts";
+
+export interface OverviewItem {
+  readonly ref: string;
+  readonly rect: LduRect;
+}
 
 export interface OverviewView {
+  readonly items: ReadonlyArray<OverviewItem>;
   readonly rooms: ReadonlyArray<LduRect>;
   readonly tables: ReadonlyArray<LduRect>;
   readonly obstacles: ReadonlyArray<LduRect>;
   readonly bounds: LduRect | null;
 }
 
-function boundsOf(view: PlanPlacementsView, rooms: ReadonlyArray<LduRect>): LduRect | null {
-  let minX = Number.NaN;
-  let minZ = Number.NaN;
-  let maxX = Number.NaN;
-  let maxZ = Number.NaN;
-  let seen = false;
-  const fold = (rectMinX: number, rectMinZ: number, rectMaxX: number, rectMaxZ: number): void => {
-    if (!seen) {
-      seen = true;
-      minX = rectMinX;
-      minZ = rectMinZ;
-      maxX = rectMaxX;
-      maxZ = rectMaxZ;
-    }
-    minX = Math.min(minX, rectMinX);
-    minZ = Math.min(minZ, rectMinZ);
-    maxX = Math.max(maxX, rectMaxX);
-    maxZ = Math.max(maxZ, rectMaxZ);
-  };
-  for (let row = view.first(); row !== NO_ROW; row = view.next(row)) {
-    fold(view.minX(row), view.minZ(row), view.maxX(row), view.maxZ(row));
+function unionOf(rects: ReadonlyArray<LduRect>): LduRect | null {
+  const first = rects[0];
+  if (!first) return null;
+  let { minX, minZ, maxX, maxZ } = first;
+  for (const rect of rects) {
+    minX = Math.min(minX, rect.minX);
+    minZ = Math.min(minZ, rect.minZ);
+    maxX = Math.max(maxX, rect.maxX);
+    maxZ = Math.max(maxZ, rect.maxZ);
   }
-  for (const room of rooms) fold(room.minX, room.minZ, room.maxX, room.maxZ);
-  return seen ? { minX, minZ, maxX, maxZ } : null;
+  return { minX, minZ, maxX, maxZ };
 }
 
-export function overviewOf(plans: IPlanService): OverviewView {
-  const regions = plans.plans();
-  const view = plans.placements();
-  const rooms = regions.map(roomRect);
-  const tables = regions.flatMap((plan) =>
+export function overviewOf(snapshot: PlanSnapshot): OverviewView {
+  const items = snapshot.placements.map((placement) => ({
+    ref: placement.ref,
+    rect: {
+      minX: placement.box.minX,
+      minZ: placement.box.minZ,
+      maxX: placement.box.maxX,
+      maxZ: placement.box.maxZ,
+    },
+  }));
+  const rooms = snapshot.plans.map(roomRect);
+  const tables = snapshot.plans.flatMap((plan) =>
     plan.footprint.tables.map((table) => mmRectInWorld(plan, table.rect)),
   );
-  const obstacles = regions.flatMap((plan) =>
+  const obstacles = snapshot.plans.flatMap((plan) =>
     plan.footprint.obstacles.map((obstacle) => mmRectInWorld(plan, obstacle.rect)),
   );
-  return { rooms, tables, obstacles, bounds: boundsOf(view, rooms) };
+  return {
+    items,
+    rooms,
+    tables,
+    obstacles,
+    bounds: unionOf([...items.map((item) => item.rect), ...rooms]),
+  };
 }

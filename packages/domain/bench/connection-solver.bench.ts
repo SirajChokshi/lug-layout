@@ -1,6 +1,6 @@
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { cpus } from "node:os";
-import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import {
   CandidatePoses,
   type LatticePose,
@@ -194,7 +194,7 @@ function slab(
   const count = width * depth * (studs ? 2 : 1);
   const shape = new Uint16Array(count);
   const gender = new Uint8Array(count);
-  const origin = new Int32Array(count * 3);
+  const origin = new Float32Array(count * 3);
   const axis = new Int8Array(count);
   const cavityShape = receptor(cavity);
   let n = 0;
@@ -204,12 +204,7 @@ function slab(
       for (let i = 0; i < width; i++) {
         shape[n] = male ? STUD : cavityShape;
         gender[n] = male ? GENDER_MALE : GENDER_FEMALE;
-        origin.set(
-          [i * STUD_LDU + HALF, male ? height : 0, j * STUD_LDU + HALF].map(
-            (ldu) => ldu * SIXTEENTHS_PER_LDU,
-          ),
-          n * 3,
-        );
+        origin.set([i * STUD_LDU + HALF, male ? height : 0, j * STUD_LDU + HALF], n * 3);
         axis[n] = male ? AXIS_POS_Y : AXIS_NEG_Y;
         n++;
       }
@@ -222,10 +217,8 @@ function slab(
     new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
     axis,
-    new Float64Array(count * 3),
+    new Float32Array(count * 3),
     new Uint16Array(count),
-    new Float64Array(count * 3),
-    [],
   );
 }
 
@@ -233,13 +226,8 @@ type Spec = readonly [shape: number, gender: number, x: number, y: number, z: nu
 
 function connectors(specs: ReadonlyArray<Spec>): ConnectorTable {
   const count = specs.length;
-  const origin = new Int32Array(count * 3);
-  specs.forEach(([, , x, y, z], n) =>
-    origin.set(
-      [x, y, z].map((ldu) => ldu * SIXTEENTHS_PER_LDU),
-      n * 3,
-    ),
-  );
+  const origin = new Float32Array(count * 3);
+  specs.forEach(([, , x, y, z], n) => origin.set([x, y, z], n * 3));
   return new ConnectorTable(
     Uint16Array.from(specs, ([shape]) => shape),
     Uint8Array.from(specs, ([, gender]) => gender),
@@ -247,10 +235,8 @@ function connectors(specs: ReadonlyArray<Spec>): ConnectorTable {
     new Uint8Array(count).fill(STATUS_VERIFIED),
     origin,
     Int8Array.from(specs, (spec) => spec[5]),
-    new Float64Array(count * 3),
+    new Float32Array(count * 3),
     new Uint16Array(count),
-    new Float64Array(count * 3),
-    [],
   );
 }
 
@@ -328,7 +314,7 @@ function baseplate(): ConnectorTable {
   const count = studs + 2 * EDGE_HOLES_PER_SIDE;
   const shape = new Uint16Array(count).fill(STUD);
   const gender = new Uint8Array(count);
-  const origin = new Float64Array(count * 3);
+  const origin = new Float32Array(count * 3);
   const axis = new Int8Array(count).fill(AXIS_POS_Y);
   for (let j = 0; j < BASEPLATE_STUDS; j++) {
     for (let i = 0; i < BASEPLATE_STUDS; i++) {
@@ -353,12 +339,10 @@ function baseplate(): ConnectorTable {
     gender,
     new Uint8Array(count).fill(SOURCE_SHADOW),
     new Uint8Array(count).fill(STATUS_VERIFIED),
-    Int32Array.from(origin, (ldu) => ldu * SIXTEENTHS_PER_LDU),
+    origin,
     axis,
-    new Float64Array(count * 3),
+    new Float32Array(count * 3),
     new Uint16Array(count),
-    new Float64Array(count * 3),
-    [],
   );
 }
 

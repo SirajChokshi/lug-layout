@@ -1,5 +1,4 @@
 import {
-  connectorOriginLdu,
   AXIS_FREE,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -95,11 +94,12 @@ function identifyConnector(
     direction[Z] ?? 0,
   );
   if (axis === AXIS_FREE) return AXIS_FREE;
+  const v = connector * VECTOR_FLOATS;
   const identified = identifyPoint(
     transform,
-    connectorOriginLdu(part, connector, X),
-    connectorOriginLdu(part, connector, Y),
-    connectorOriginLdu(part, connector, Z),
+    part.origin[v + X] ?? 0,
+    part.origin[v + Y] ?? 0,
+    part.origin[v + Z] ?? 0,
     ALL_COORDINATES,
     point,
   );

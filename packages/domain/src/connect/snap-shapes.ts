@@ -24,12 +24,12 @@ export class SnapShapes {
   private lengthOf = new Float64Array(INITIAL_SHAPES);
   private groupOf = new Int32Array(INITIAL_SHAPES);
   private codeOf = new Uint8Array(INITIAL_SECTIONS);
-  private sizeOf = new Float64Array(INITIAL_SECTIONS);
-  private spanOf = new Float64Array(INITIAL_SECTIONS);
+  private sizeOf = new Float32Array(INITIAL_SECTIONS);
+  private spanOf = new Float32Array(INITIAL_SECTIONS);
   private maleCodeOf = new Uint8Array(INITIAL_SECTIONS);
-  private maleSizeOf = new Float64Array(INITIAL_SECTIONS);
+  private maleSizeOf = new Float32Array(INITIAL_SECTIONS);
   private femaleCodeOf = new Uint8Array(INITIAL_SECTIONS);
-  private femaleSizeOf = new Float64Array(INITIAL_SECTIONS);
+  private femaleSizeOf = new Float32Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
   private readonly groups = new Map<string, number>([[NO_GROUP, NO_GROUP_TOKEN]]);
 
@@ -171,12 +171,12 @@ export class SnapShapes {
   private growSections(): void {
     const capacity = this.codeOf.length * 2;
     this.codeOf = copied(this.codeOf, new Uint8Array(capacity));
-    this.sizeOf = copied(this.sizeOf, new Float64Array(capacity));
-    this.spanOf = copied(this.spanOf, new Float64Array(capacity));
+    this.sizeOf = copied(this.sizeOf, new Float32Array(capacity));
+    this.spanOf = copied(this.spanOf, new Float32Array(capacity));
     this.maleCodeOf = copied(this.maleCodeOf, new Uint8Array(capacity));
-    this.maleSizeOf = copied(this.maleSizeOf, new Float64Array(capacity));
+    this.maleSizeOf = copied(this.maleSizeOf, new Float32Array(capacity));
     this.femaleCodeOf = copied(this.femaleCodeOf, new Uint8Array(capacity));
-    this.femaleSizeOf = copied(this.femaleSizeOf, new Float64Array(capacity));
+    this.femaleSizeOf = copied(this.femaleSizeOf, new Float32Array(capacity));
   }
 }
 
@@ -204,12 +204,15 @@ function shapeKey(
 ): string {
   const parts = [String(caps), slide ? "slide" : "fixed", JSON.stringify(group)];
   for (let s = 0; s < codes.length; s++) {
-    parts.push(`${codes[s]}:${sizes[s] ?? 0}:${lengths[s] ?? 0}`);
+    parts.push(`${codes[s]}:${Math.fround(sizes[s] ?? 0)}:${Math.fround(lengths[s] ?? 0)}`);
   }
   return parts.join("|");
 }
 
-function copied<T extends Uint8Array | Int32Array | Float64Array>(from: T, to: T): T {
+function copied<T extends Uint8Array | Int32Array | Float32Array | Float64Array>(
+  from: T,
+  to: T,
+): T {
   to.set(from);
   return to;
 }

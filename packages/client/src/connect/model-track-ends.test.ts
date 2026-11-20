@@ -84,11 +84,7 @@ function laid(
 function asModel(drawing: TrackDrawing): TrackInstances {
   const partIndex: number[] = [];
   const matrices: number[] = [];
-  const keys = Array.from(
-    { length: drawing.pieceCount },
-    (_, p) => drawing.footprintAt(p).key.chunkKey,
-  );
-  for (const key of new Set(keys)) {
+  for (const key of new Set(drawing.planFootprints().map((f) => f.key.chunkKey))) {
     const chunk = drawing.chunkInstances(key);
     if (!chunk) continue;
     for (let i = 0; i < chunk.count; i++) {

@@ -29,7 +29,6 @@ import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
-import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
@@ -51,7 +50,6 @@ import {
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
   PLACEMENT_SEARCH,
-  CONNECTOR_TABLES,
   SNAP_MATING,
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
@@ -133,7 +131,6 @@ const clientModule = new ContainerModule(({ bind }) => {
     )
     .inSingletonScope();
   bind(PLACEMENT_SEARCH).to(PlacementSearch).inSingletonScope();
-  bind(CONNECTOR_TABLES).to(ConnectorTables).inSingletonScope();
   bind(CATALOG_SEARCH)
     .toDynamicValue(
       (context) =>

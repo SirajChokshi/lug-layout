@@ -1,13 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import {
-  modelStructure,
-  parseLdraw,
-  snapIncludeReferences,
-  splitMultiPart,
-  subfileReferences,
-} from "./ldraw/parse.ts";
+import { modelStructure, parseLdraw, splitMultiPart, subfileReferences } from "./ldraw/parse.ts";
 import type {
   CatalogLocation,
   CatalogSource,
@@ -88,44 +82,13 @@ export function libraryReference(path: string): string {
   return directory === undefined ? path : path.slice(directory.length);
 }
 
-class ConnectivityPins {
-  private readonly source: Source;
-  private readonly directory: string;
-  private readonly files: Record<string, string> = {};
-
-  constructor(source: Source, directory: string) {
-    this.source = source;
-    this.directory = directory;
-  }
-
-  async pin(path: string): Promise<string[]> {
-    if (path in this.files) return [];
-    const bytes = await download(this.source, path);
-    if (!bytes) return [];
-    await storeInto(this.directory, this.files, path, bytes);
-    return snapIncludeReferences(parseLdraw(new TextDecoder().decode(bytes)));
-  }
-
-  lock(): ConnectivityLock {
-    return { source: this.source, files: sortedRecord(this.files) };
-  }
-}
-
-export interface PinnedClosure {
-  readonly closure: InputLock;
-  readonly connectivity: ConnectivityLock;
-}
-
 export async function fetchClosure(
   palette: Palette,
   outDirectory: string,
-  connectivityDirectory: string,
   modelSources: ReadonlyArray<string>,
   probeParts: ReadonlyArray<string>,
-): Promise<PinnedClosure> {
+): Promise<InputLock> {
   const files: Record<string, string> = {};
-  const connectivity = new ConnectivityPins(palette.connectivitySource, connectivityDirectory);
-  await connectivity.pin(CONNECTIVITY_LICENSE);
   const queue: string[] = [
     ...new Set([
       ...palette.parts.map((part) => `${part.id}.dat`),
@@ -139,12 +102,11 @@ export async function fetchClosure(
   ];
   const seen = new Set<string>(queue);
 
-  async function store(path: string, bytes: Uint8Array): Promise<string[]> {
+  async function store(path: string, bytes: Uint8Array): Promise<void> {
     const target = join(outDirectory, path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, bytes);
     files[path] = sha256(bytes);
-    return connectivity.pin(path);
   }
 
   for (const configFile of palette.config) {
@@ -158,17 +120,13 @@ export async function fetchClosure(
     if (reference === undefined) break;
     const resolved = await resolveReference(palette.source, reference);
     if (!resolved) throw new Error(`unresolved LDraw reference ${reference}`);
-    const children = [
-      ...(await store(resolved.path, resolved.bytes)),
-      ...subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes))),
-    ];
+    await store(resolved.path, resolved.bytes);
+    const children = subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)));
     if (resolved.path.startsWith("p/") && !resolved.path.startsWith(LOW_RESOLUTION_DIRECTORY)) {
       const lowResolution = await download(palette.source, LOW_RESOLUTION_DIRECTORY + reference);
       if (lowResolution) {
-        children.push(
-          ...(await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution)),
-          ...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))),
-        );
+        await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution);
+        children.push(...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))));
       }
     }
     for (const child of children) {
@@ -178,10 +136,10 @@ export async function fetchClosure(
     }
   }
 
-  return {
-    closure: { source: palette.source, files: sortedRecord(files) },
-    connectivity: connectivity.lock(),
-  };
+  const sorted = Object.fromEntries(
+    Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b)),
+  );
+  return { source: palette.source, files: sorted };
 }
 
 function sortedRecord(files: Record<string, string>): Record<string, string> {
@@ -208,19 +166,9 @@ export async function fetchAuditInputs(
 ): Promise<AuditLock> {
   const files: Record<string, string> = {};
   const absentParts: string[] = [];
-  const connectivity = new ConnectivityPins(palette.connectivitySource, connectivityDirectory);
-  await connectivity.pin(CONNECTIVITY_LICENSE);
   const seeds = palette.audit.flatMap((group) => group.parts.map((part) => `${part}.dat`));
   const seen = new Set<string>(seeds);
   const queue = [...seeds];
-  const enqueue = (references: ReadonlyArray<string>): void => {
-    for (const reference of references) {
-      if (seen.has(reference)) continue;
-      seen.add(reference);
-      queue.push(reference);
-    }
-  };
-  for (const path of vocabularySnaps) enqueue(await connectivity.pin(path));
   for (let reference = queue.shift(); reference !== undefined; reference = queue.shift()) {
     const resolved = await resolveReference(palette.source, reference);
     if (!resolved) {
@@ -229,55 +177,51 @@ export async function fetchAuditInputs(
       continue;
     }
     await storeInto(auditDirectory, files, resolved.path, resolved.bytes);
-    enqueue(await connectivity.pin(resolved.path));
-    enqueue(subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes))));
+    for (const child of subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)))) {
+      if (seen.has(child)) continue;
+      seen.add(child);
+      queue.push(child);
+    }
   }
   return {
     files: sortedRecord(files),
     absentParts: absentParts.toSorted(),
-    connectivity: connectivity.lock(),
+    connectivity: await fetchConnectivity(
+      palette.connectivitySource,
+      [...Object.keys(files), ...vocabularySnaps],
+      connectivityDirectory,
+    ),
   };
+}
+
+export async function fetchConnectivity(
+  source: Palette["source"],
+  paths: ReadonlyArray<string>,
+  directory: string,
+): Promise<ConnectivityLock> {
+  const files: Record<string, string> = {};
+  for (const path of new Set([CONNECTIVITY_LICENSE, ...paths])) {
+    const bytes = await download(source, path);
+    if (bytes) await storeInto(directory, files, path, bytes);
+  }
+  return { source, files: sortedRecord(files) };
 }
 
 function sameSource(a: Palette["source"], b: Palette["source"]): boolean {
   return a.kind === b.kind && a.repo === b.repo && a.commit === b.commit && a.root === b.root;
 }
 
-async function unpinnedIncludes(
-  connectivity: Readonly<Record<string, string>>,
-  library: Readonly<Record<string, string>>,
-  directory: string,
-): Promise<string[]> {
-  const problems: string[] = [];
-  for (const path of Object.keys(connectivity)) {
-    const text = await readFile(join(directory, path), "utf8").catch(() => undefined);
-    if (text === undefined) continue;
-    for (const reference of snapIncludeReferences(parseLdraw(text))) {
-      if (SEARCH_DIRECTORIES.some((folder) => Object.hasOwn(library, folder + reference))) continue;
-      problems.push(
-        `${path} includes ${reference}, which the pinned closure leaves out; run fetch-ldraw`,
-      );
-    }
-  }
-  return problems;
-}
-
 export async function verifyConnectivity(
   lock: ConnectivityLock,
   source: Palette["source"],
   directory: string,
-  library: Readonly<Record<string, string>>,
 ): Promise<string[]> {
   const stale = sameSource(lock.source, source)
     ? []
     : [
         `ldraw.lock.json pins LDCad connectivity from ${lock.source.repo}@${lock.source.commit}, but the palette names ${source.repo}@${source.commit}; run fetch-ldraw`,
       ];
-  return [
-    ...stale,
-    ...(await hashProblems(lock.files, directory)),
-    ...(await unpinnedIncludes(lock.files, library, directory)),
-  ];
+  return [...stale, ...(await hashProblems(lock.files, directory))];
 }
 
 export async function fetchCatalogSources(
@@ -387,7 +331,6 @@ export async function verifyAuditInputs(
   return [
     ...(await hashProblems(audit.files, auditDirectory)),
     ...(await hashProblems(audit.connectivity.files, connectivityDirectory)),
-    ...(await unpinnedIncludes(audit.connectivity.files, audit.files, connectivityDirectory)),
   ];
 }
 

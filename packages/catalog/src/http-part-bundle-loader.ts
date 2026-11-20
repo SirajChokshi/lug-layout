@@ -1,7 +1,6 @@
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
-  type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
 } from "./connector-records.ts";
@@ -440,10 +439,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
 
   async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return (await this.records(lod)).load(partId);
-  }
-
-  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
-    return (await this.records(lod)).read(partId);
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {

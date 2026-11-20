@@ -1,4 +1,4 @@
-import { NO_ROW, roomRect, type LduRect } from "@brr/domain";
+import { roomRect, type LduRect } from "@brr/domain";
 import { chunkOf } from "@brr/math";
 import { CAMERA_FOV_DEGREES, SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import type { SavedViewV1 } from "@brr/schema/world";
@@ -92,35 +92,6 @@ function looksLikeTrackpad(input: WheelInput): boolean {
 
 function flatBox(rect: LduRect): WorldBox {
   return { minX: rect.minX, minY: 0, minZ: rect.minZ, maxX: rect.maxX, maxY: 0, maxZ: rect.maxZ };
-}
-
-function placementsUnion(plans: IPlanService): WorldBox | null {
-  const view = plans.placements();
-  const first = view.first();
-  if (first === NO_ROW) return null;
-  let minX = view.minX(first);
-  let minY = view.minY(first);
-  let minZ = view.minZ(first);
-  let maxX = view.maxX(first);
-  let maxY = view.maxY(first);
-  let maxZ = view.maxZ(first);
-  for (let row = first; row !== NO_ROW; row = view.next(row)) {
-    minX = Math.min(minX, view.minX(row));
-    minY = Math.min(minY, view.minY(row));
-    minZ = Math.min(minZ, view.minZ(row));
-    maxX = Math.max(maxX, view.maxX(row));
-    maxY = Math.max(maxY, view.maxY(row));
-    maxZ = Math.max(maxZ, view.maxZ(row));
-  }
-  return { minX, minY, minZ, maxX, maxY, maxZ };
-}
-
-export function fitAllBox(plans: IPlanService): WorldBox {
-  return (
-    placementsUnion(plans) ??
-    union(plans.plans().map((plan) => flatBox(roomRect(plan)))) ??
-    HOME_BOX
-  );
 }
 
 function union(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
@@ -248,7 +219,12 @@ export class EditorCamera implements IEditorCamera {
   }
 
   fitAll(): void {
-    this.view.frame(fitAllBox(this.plans));
+    const { placements, plans } = this.plans.snapshot();
+    const box =
+      union(placements.map((placement) => placement.box)) ??
+      union(plans.map((plan) => flatBox(roomRect(plan)))) ??
+      HOME_BOX;
+    this.view.frame(box);
   }
 
   lookAt(x: number, z: number, animate: boolean): void {
@@ -257,7 +233,7 @@ export class EditorCamera implements IEditorCamera {
   }
 
   viewPlan(planId: string): void {
-    const plan = this.plans.plans().find((p) => p.id === planId);
+    const plan = this.plans.snapshot().plans.find((p) => p.id === planId);
     if (!plan) return;
     this.view.setMode("plan", flatBox(roomRect(plan)));
     if (this.state.mode !== "plan") this.update({ mode: "plan" });

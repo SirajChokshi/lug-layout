@@ -1,5 +1,4 @@
 import {
-  heldItem,
   meshesSettled,
   runEditorAction,
   type EditorActionId,
@@ -30,7 +29,7 @@ import {
 } from "./editor-panels.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
-import { PlanPanel } from "./plan-panel.tsx";
+import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -41,7 +40,6 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
-import { usePlanVersion } from "./use-plan-version.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
@@ -64,18 +62,14 @@ interface EditorAppProps {
 
 function EditorState({ editor }: { readonly editor: IEditor }) {
   const snapshot = useEditorSnapshot(editor);
-  const held = heldItem(snapshot);
   return (
     <pre
       id="edit-state"
       data-placements={snapshot.placements}
       data-samples={snapshot.latencies.length}
       data-measuring={snapshot.measuring ? "1" : "0"}
-      data-held-item={held?.item}
-      data-held-tables={held?.tables}
     >
       {JSON.stringify({
-        held,
         latencies: snapshot.latencies,
         stats: snapshot.stats,
         measurement: snapshot.measurement,
@@ -107,10 +101,16 @@ function CameraState({ camera }: { readonly camera: IEditorCamera }) {
 }
 
 function PlanState({ plans }: { readonly plans: IPlanService }) {
-  usePlanVersion(plans);
+  const snapshot = usePlanSnapshot(plans);
   return (
-    <pre id="plan-state" data-plans={plans.plans().length}>
-      {JSON.stringify(plans.materialize())}
+    <pre id="plan-state" data-plans={snapshot.plans.length}>
+      {JSON.stringify({
+        plans: snapshot.plans,
+        checks: snapshot.checks,
+        placements: snapshot.placements,
+        sandboxPlacements: snapshot.sandboxPlacements,
+        tableTopY: snapshot.tableTopY,
+      })}
     </pre>
   );
 }

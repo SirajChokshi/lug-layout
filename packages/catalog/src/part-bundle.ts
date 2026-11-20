@@ -1,6 +1,5 @@
 import type {
   ConnectorIndexPaths,
-  ConnectorLoad,
   PackageAttribution,
   PartConnectors,
 } from "./connector-records.ts";
@@ -240,7 +239,6 @@ export interface IPartBundleLoader {
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
   importContext(lod: BundleLod): Promise<ImportContext>;
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
-  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad>;
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
   loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(

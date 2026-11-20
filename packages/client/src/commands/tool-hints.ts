@@ -1,5 +1,4 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
-import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -75,23 +74,6 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   }
 }
 
-function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView {
-  const { queued } = held;
-  return {
-    tone: "place",
-    title: `Loading ${itemName(snapshot, held.item)}`,
-    detail:
-      queued === null
-        ? "loading connectors… a click places it once they load"
-        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} if the pointer stays there`,
-    hints: [
-      gesture("Click", "place once loaded"),
-      key("open-palette", "another part"),
-      key("select-tool", "cancel"),
-    ],
-  };
-}
-
 function view(snapshot: EditorSnapshot): ToolHintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
@@ -100,9 +82,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     return { tone: "warn", title: "The editor couldn't start", detail: snapshot.error, hints: [] };
   }
   switch (snapshot.mode) {
-    case "place": {
-      const held = heldItem(snapshot);
-      if (held?.tables === "loading") return loadingView(snapshot, held);
+    case "place":
       return {
         tone: "place",
         title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
@@ -114,7 +94,6 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("select-tool", "done"),
         ],
       };
-    }
     case "track": {
       const drag = snapshot.track?.drag ?? null;
       if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };

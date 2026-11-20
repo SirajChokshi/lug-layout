@@ -77,7 +77,6 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
-  QueuedPlacement,
   SelectionView,
   TrackBomLine,
   TrackCommitResult,
@@ -85,7 +84,6 @@ export type {
   TrackSolveStats,
   TrackView,
 } from "./edit/editor.ts";
-export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type {
   ExportedWorld,
   ModelFileInput,
@@ -127,15 +125,15 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export { MM_PER_STUD, STUD_LDU } from "@brr/math";
-export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   PLAN_GRID_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
+  type PlacedForPlan,
   type PlanPatch,
-  type PlanPlacementsView,
+  type PlanSnapshot,
   type TableInput,
 } from "./plan/plan-service.ts";
 export type {
@@ -217,7 +215,7 @@ export {
   type KeyPlatform,
 } from "./commands/key-chord.ts";
 export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
-export { overviewOf, type OverviewView } from "./camera/overview.ts";
+export { overviewOf, type OverviewItem, type OverviewView } from "./camera/overview.ts";
 export {
   PANEL_GAP_PX,
   safeInsets,

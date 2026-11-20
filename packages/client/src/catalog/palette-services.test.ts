@@ -28,7 +28,6 @@ import {
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
-import { chosen } from "../edit/editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -381,23 +380,18 @@ describe("palette item labels", () => {
 });
 
 describe("palette drag", () => {
-  it("places the dragged item where it is dropped, even before it has loaded, gives back the item picked before, and ignores a drop with no drag", async () => {
+  it("places the dragged item where it is dropped, gives back the item picked before, and ignores a drop with no drag", async () => {
     const { container, editor, backend } = await startEditor();
     const drag = container.get(PALETTE_DRAG);
-    await chosen(editor, CROSSROADS);
+    editor.chooseItem(CROSSROADS);
 
     backend.aim(0, 0);
     drag.start(GREEN_BASEPLATE);
-    const pending = editor.snapshot().pendingItem;
+    expect(editor.snapshot().activeItem).toBe(GREEN_BASEPLATE);
     drag.drop(0, 0, 0);
     drag.end();
-    const beforeLoad = placedItems(editor);
-    await vi.waitFor(() => expect(editor.snapshot().activeItem).toBe(CROSSROADS));
-    expect({ pending, beforeLoad, placed: placedItems(editor) }).toEqual({
-      pending: GREEN_BASEPLATE,
-      beforeLoad: [],
-      placed: [GREEN_BASEPLATE],
-    });
+    expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
+    expect(editor.snapshot().activeItem).toBe(CROSSROADS);
 
     backend.aim(2560, 2560);
     drag.drop(0, 0, 0);
