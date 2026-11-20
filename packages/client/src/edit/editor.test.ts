@@ -1399,6 +1399,17 @@ function placer(editor: IEditor, backend: AimedBackend) {
   };
 }
 
+it("reads a road plate held over a placed road plate of another thickness as refused, as the click is", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)("ldraw:69958@72", 320, 320);
+  await chosen(editor, "ldraw:44336p04@72");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  expect(editor.snapshot().snap).toMatchObject({ state: "refused", overlappingCells: 256 });
+  editor.click(0, 0, 0);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);
+
 it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
   const { editor, backend } = await startEditor([]);
   await chosen(editor, "ldraw:44336p04@72");

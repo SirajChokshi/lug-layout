@@ -93,25 +93,27 @@ function within(extent: CellExtent, ghost: CellExtent, x: number, z: number): bo
   );
 }
 
-function hitsAny(
+function coveredSpan(from: number, span: number, min: number, max: number): number {
+  const first = Math.max(0, Math.floor((min - from) / STUD_LDU));
+  const last = Math.min(span / STUD_LDU - 1, Math.ceil((max - from) / STUD_LDU) - 1);
+  return Math.max(0, last - first + 1);
+}
+
+export function coveredCells(
   extents: ReadonlyArray<CellExtent>,
   ghost: CellExtent,
   x: number,
   z: number,
-): boolean {
+): number {
+  let cells = 0;
   for (let e = 0; e < extents.length; e++) {
     const extent = extents[e];
-    if (
-      extent &&
-      x + ghost.minX < extent.maxX &&
-      x + ghost.maxX > extent.minX &&
-      z + ghost.minZ < extent.maxZ &&
-      z + ghost.maxZ > extent.minZ
-    ) {
-      return true;
-    }
+    if (!extent) continue;
+    cells +=
+      coveredSpan(x + ghost.minX, ghost.maxX - ghost.minX, extent.minX, extent.maxX) *
+      coveredSpan(z + ghost.minZ, ghost.maxZ - ghost.minZ, extent.minZ, extent.maxZ);
   }
-  return false;
+  return cells;
 }
 
 interface Ranked {
@@ -176,7 +178,7 @@ export function snapToRoadEdge(
         const fit =
           network.cleanFit(probe, probeFit) ??
           (cornerFlush(extent, ghost, x, z) ? network.cleanContact(probe, probeFit) : null);
-        if (!fit || hitsAny(nearby, ghost, x, z)) continue;
+        if (!fit || coveredCells(nearby, ghost, x, z) > 0) continue;
         const candidate: Ranked = {
           snap: {
             x,

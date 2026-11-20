@@ -1,7 +1,7 @@
 import { NO_STUD, RoadFit, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { ANY_TURN, cellExtent, snapToRoadEdge } from "./road-snap.ts";
+import { ANY_TURN, cellExtent, coveredCells, snapToRoadEdge } from "./road-snap.ts";
 
 const STUD = 20;
 const PLATE_SPAN = 640;
@@ -211,6 +211,16 @@ describe("road-edge snap", () => {
         joinedRoadCells: 20,
       });
     }
+  });
+
+  it("counts the held piece's exact cells inside other road pieces' footprints, at any whole-LDU offset", () => {
+    const ghost = cellExtent({ ...straight, x: 0, z: 0 });
+    const at = (x: number) => [cellExtent({ ...straight, id: 1, x, z: 0 })];
+    expect(coveredCells(at(PLATE_SPAN / 2), ghost, 0, 0)).toBe(16 * 32);
+    expect(coveredCells(at(PLATE_SPAN), ghost, 0, 0)).toBe(0);
+    expect(coveredCells(at(PLATE_SPAN - 7), ghost, 0, 0)).toBe(32);
+    expect(coveredCells(at(PLATE_SPAN + 7), ghost, 0, 0)).toBe(0);
+    expect(coveredCells(at(PLATE_SPAN), ghost, 7, 0)).toBe(32);
   });
 
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {

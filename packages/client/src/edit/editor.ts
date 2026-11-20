@@ -201,7 +201,14 @@ import {
   trackObstacles,
 } from "./track-obstacles.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
-import { ANY_TURN, HELD_TURN, cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import {
+  ANY_TURN,
+  HELD_TURN,
+  cellExtent,
+  coveredCells,
+  snapToRoadEdge,
+  type CellExtent,
+} from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   QUAD_FLOATS,
@@ -3186,7 +3193,13 @@ export class Editor implements IEditor, IEditedWorld {
       { id: -1, x: this.hoverX, z: this.hoverZ, yLdu: 0, rot: this.placeRot, surface },
       this.roadFit,
     );
-    return { state: roadFitRefused(fit) ? "refused" : "free", ...fit };
+    const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot: this.placeRot, surface });
+    const covered = coveredCells(this.roadExtents, ghost, this.hoverX, this.hoverZ);
+    return {
+      state: roadFitRefused(fit) || covered > 0 ? "refused" : "free",
+      ...fit,
+      overlappingCells: Math.max(fit.overlappingCells, covered),
+    };
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
