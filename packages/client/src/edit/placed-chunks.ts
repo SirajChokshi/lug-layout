@@ -944,13 +944,17 @@ export class PlacedChunks {
     if (farModel !== undefined) this.farModels.set(next, farModel);
     this.farModels.delete(previous);
     const touched = new Set<number>();
-    const removed: PlacedModel[] = [];
-    const added: PlacedModel[] = [];
+    const vacated = new Set<number>();
+    const removed: PlacedEntry[] = [];
     for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
       const detached = this.detach(entry.handle);
-      this.restamp(detached.chunks.keysWithColumns(), NO_ENTRIES);
       detached.addRebuildKeys(touched, this.hasAntiStudCovers);
+      for (const key of detached.chunks.keysWithColumns()) vacated.add(key);
       removed.push(detached);
+    }
+    this.restamp(vacated, NO_ENTRIES);
+    const added: PlacedModel[] = [];
+    for (const detached of removed) {
       const replaced = this.insert(detached.placement, detached.handle, next);
       replaced.addRebuildKeys(touched, this.hasAntiStudCovers);
       added.push(replaced);
