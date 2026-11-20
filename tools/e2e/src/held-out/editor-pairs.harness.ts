@@ -124,8 +124,8 @@ async function checkCornerModule(
 ): Promise<PairOutcome> {
   const started = performance.now();
   const corner = cornerJoinedModule(pools, seed, template.edges);
-  const { editor, backend } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
-  const path = new EditorPath(editor, backend);
+  const { editor, backend, frame } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
+  const path = new EditorPath(editor, backend, frame);
   const templateItem = editor
     .snapshot()
     .catalog.find((item) => item.id.endsWith(`:${template.name}`))?.id;
@@ -156,7 +156,7 @@ async function checkCornerModule(
 
 async function placeAtOrigin(path: EditorPath, item: string): Promise<Pose> {
   await path.hold(item);
-  const step = path.step(ORIGIN, ORIGIN, true);
+  const step = await path.step(ORIGIN, ORIGIN, true);
   if (!step.committed)
     throw new Error(
       `placing ${item} on the empty table was refused: ${step.refusal ?? "no reason"}`,
@@ -170,8 +170,8 @@ async function checkPair(
   pair: ModulePair,
 ): Promise<PairOutcome> {
   const started = performance.now();
-  const { editor, backend } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
-  const path = new EditorPath(editor, backend);
+  const { editor, backend, frame } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
+  const path = new EditorPath(editor, backend, frame);
   const subject = await path.importModel({
     name: pair.subject.names.file,
     text: pair.subject.text,

@@ -29,6 +29,7 @@ const MIDDLE_VIEW_HALF_WIDTH_LDU = 440;
 const LOAD_POLL_MS = 10;
 const LOAD_TIMEOUT_MS = 60_000;
 const NO_TIME = 0;
+const SETTLE_FRAME_LIMIT = 1_000;
 
 export interface Pose {
   readonly x: number;
@@ -45,10 +46,16 @@ export interface EditorCheck {
   readonly detail: string;
 }
 
+interface SettleFlags {
+  readonly settled: boolean;
+  readonly turnSettled: boolean;
+}
+
 interface Step {
   readonly aim: Pose;
   readonly cursor: Pose | null;
   readonly hover: PlacementHover | null;
+  readonly firstFrame: SettleFlags | null;
   readonly hoverText: string | null;
   readonly committed: Pose | null;
   readonly refused: boolean;
@@ -136,13 +143,24 @@ function describeHover(hover: PlacementHover | null): string {
   const magnet = hover.magnetised
     ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
     : "";
-  return `${hover.mode} ${verdict}${hover.settled ? "" : " (provisional, not settled)"} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}; ${describeMates(hover.mates)}`;
+  const unsettled = unsettledFlags(settleFlags(hover));
+  return `${hover.mode} ${verdict}${unsettled.length === 0 ? "" : ` (${unsettled.join(" and ")} false)`} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}; ${describeMates(hover.mates)}`;
+}
+
+function settleFlags(hover: PlacementHover | null): SettleFlags | null {
+  return hover ? { settled: hover.settled, turnSettled: hover.turnSettled } : null;
+}
+
+function unsettledFlags(flags: SettleFlags | null): ReadonlyArray<string> {
+  if (flags === null) return [];
+  return [...(flags.settled ? [] : ["settled"]), ...(flags.turnSettled ? [] : ["turnSettled"])];
 }
 
 export class EditorPath {
   constructor(
     private readonly editor: IEditor,
     private readonly backend: AimedBackend,
+    private readonly frame: () => Promise<void>,
   ) {}
 
   async importModel(model: ModelInput): Promise<string> {
@@ -198,26 +216,61 @@ export class EditorPath {
     this.backend.viewHalfWidth(ldu);
   }
 
-  hoverAt(
+  private placementFlags(): SettleFlags | null {
+    return settleFlags(this.editor.snapshot().hover?.placement ?? null);
+  }
+
+  private async settle(x: number, z: number): Promise<void> {
+    for (let frames = 0; ; frames++) {
+      const unsettled = unsettledFlags(this.placementFlags());
+      if (unsettled.length === 0) return;
+      if (frames >= SETTLE_FRAME_LIMIT) {
+        throw new Error(
+          `the hover aimed at (${x}, ${z}) still has ${unsettled.join(" and ")} false after ${SETTLE_FRAME_LIMIT} frames`,
+        );
+      }
+      await this.frame();
+    }
+  }
+
+  async hoverAt(
     x: number,
     z: number,
-  ): {
+  ): Promise<{
     readonly hover: PlacementHover | null;
     readonly text: string | null;
     readonly cursor: Pose | null;
-  } {
+    readonly firstFrame: SettleFlags | null;
+  }> {
     this.backend.aim(x, z);
     this.editor.pointerMove(0, 0);
+    const firstFrame = this.placementFlags();
+    await this.settle(x, z);
     const { hover, ghostRot } = this.editor.snapshot();
     return {
       hover: hover?.placement ?? null,
       text: hover?.refusal ?? null,
       cursor: hover ? { x: hover.x, z: hover.z, yPlates: hover.yPlates, rot: ghostRot } : null,
+      firstFrame,
     };
   }
 
-  step(x: number, z: number, commit: boolean): Step {
-    const { hover, text, cursor } = this.hoverAt(x, z);
+  clickBeforeSettle(
+    x: number,
+    z: number,
+  ): { readonly atClick: SettleFlags | null; readonly committed: Pose | null } {
+    this.backend.aim(x, z);
+    this.editor.pointerMove(0, 0);
+    const atClick = this.placementFlags();
+    const before = this.editor.snapshot().placements;
+    this.editor.click(0, 0, NO_TIME);
+    const committed = this.editor.snapshot().placements > before ? this.lastPlacement() : null;
+    if (committed) this.undoLast();
+    return { atClick, committed };
+  }
+
+  async step(x: number, z: number, commit: boolean): Promise<Step> {
+    const { hover, text, cursor, firstFrame } = await this.hoverAt(x, z);
     const before = this.editor.snapshot();
     const aim: Pose = { x, z, yPlates: 0, rot: before.ghostRot };
     if (!commit)
@@ -225,6 +278,7 @@ export class EditorPath {
         aim,
         cursor,
         hover,
+        firstFrame,
         hoverText: text,
         committed: null,
         refused: false,
@@ -238,6 +292,7 @@ export class EditorPath {
       aim,
       cursor,
       hover,
+      firstFrame,
       hoverText: text,
       committed,
       refused,
@@ -471,21 +526,23 @@ export function sameDistance(reported: number, expected: number): boolean {
 }
 
 function settledIn(hover: PlacementHover, mode: PlacementMode): boolean {
-  return hover.mode === mode && hover.settled;
+  return hover.mode === mode && hover.settled && hover.turnSettled;
 }
 
 function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
-  const provisional = steps.filter(({ step }) => step.hover !== null && !step.hover.settled);
+  const late = steps.filter(({ step }) => unsettledFlags(step.firstFrame).length > 0);
+  const lateFor = (flag: string): number =>
+    late.filter(({ step }) => unsettledFlags(step.firstFrame).includes(flag)).length;
   return {
     label:
-      "Every hover is settled on the first frame after the pointer moves, so no step needs a sliced assist search",
-    passed: provisional.length === 0,
+      "Every hover is settled, turn fields included, on the first frame after the pointer moves, so no step needs a sliced assist search",
+    passed: late.length === 0,
     detail:
-      provisional.length === 0
-        ? `${steps.length} hovers, each settled on the first frame`
-        : `${provisional.length} of ${steps.length} still provisional after the first frame: ${provisional
+      late.length === 0
+        ? `${steps.length} hovers, settled and turnSettled on the first frame`
+        : `${late.length} of ${steps.length} needed later frames (settled false at ${lateFor("settled")}, turnSettled false at ${lateFor("turnSettled")}): ${late
             .slice(0, LISTED_FAILURES)
-            .map(({ label }) => label)
+            .map(({ label, step }) => `${label} (${unsettledFlags(step.firstFrame).join(", ")})`)
             .join("; ")}`,
   };
 }
@@ -582,7 +639,7 @@ class StepLog {
     await this.path.hold(this.heldItem, turns);
     this.path.setMode(mode);
     const cursor = cursorAt(this.seam, at);
-    const step = this.path.step(cursor.x, cursor.z, commit);
+    const step = await this.path.step(cursor.x, cursor.z, commit);
     if (step.committed) this.path.undoLast();
     const turned = turns === 0 ? "" : `, turned ${turns} quarter turns`;
     this.steps.push({
@@ -590,6 +647,16 @@ class StepLog {
       step,
     });
     return step;
+  }
+
+  async clickBeforeSettle(
+    mode: PlacementMode,
+    at: SweepOffset,
+  ): Promise<{ readonly atClick: SettleFlags | null; readonly committed: Pose | null }> {
+    await this.path.hold(this.heldItem);
+    this.path.setMode(mode);
+    const cursor = cursorAt(this.seam, at);
+    return this.path.clickBeforeSettle(cursor.x, cursor.z);
   }
 }
 
@@ -805,6 +872,8 @@ export async function pinnedPairChecks(
   }
   const assistShort = await log.at("assist", ONE_STUD_SHORT, true);
   const assistIn = await log.at("assist", ONE_STUD_IN, true);
+  const raced = await log.clickBeforeSettle("assist", ONE_STUD_SHORT);
+  const racedFlags = unsettledFlags(raced.atClick);
   const preciseFlush = await log.at("precise", AT_FLUSH, true);
   const preciseShort = await log.at("precise", ONE_STUD_SHORT, true);
   const preciseIn = await log.at("precise", ONE_STUD_IN, true);
@@ -863,6 +932,12 @@ export async function pinnedPairChecks(
         snapsFlush(assistIn, poses, pins) &&
         committedFlush(assistIn),
       detail: `expected ${describePose(poses.flush)} with ${pins} pin/hole joints; one stud short: ${outcome(assistShort)}; one stud in: ${outcome(assistIn)}`,
+    },
+    {
+      label:
+        "A click before the assist search settles commits the settled pose: from one stud short, clicked straight after the pointer move, it commits flush, where the settled hover snaps",
+      passed: snapsFlush(assistShort, poses, pins) && samePose(raced.committed, poses.flush),
+      detail: `${racedFlags.length > 0 ? `clicked while ${racedFlags.join(" and ")} was false` : "the search settled within its first slice, so this click didn't race it"}; committed ${raced.committed ? describePose(raced.committed) : "nothing"}; the settled hover: ${outcome(assistShort)}`,
     },
     reach,
     {

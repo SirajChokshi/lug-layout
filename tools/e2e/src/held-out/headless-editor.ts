@@ -260,6 +260,21 @@ class InProcessImportPool implements IImportWorkerPool {
 export interface HeadlessEditor {
   readonly editor: IEditor;
   readonly backend: AimedBackend;
+  readonly frame: () => Promise<void>;
+}
+
+const scheduledFrames: FrameRequestCallback[] = [];
+
+function scheduleFrame(callback: FrameRequestCallback): number {
+  scheduledFrames.push(callback);
+  return scheduledFrames.length;
+}
+
+async function runScheduledFrames(): Promise<void> {
+  const due = scheduledFrames.splice(0);
+  const startMs = performance.now();
+  for (const callback of due) callback(startMs);
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export async function startHeadlessEditor(
@@ -267,9 +282,7 @@ export async function startHeadlessEditor(
   bundle: Bundle,
   fetchUrl: FetchFunction,
 ): Promise<HeadlessEditor> {
-  if (typeof globalThis.requestAnimationFrame !== "function") {
-    globalThis.requestAnimationFrame = () => 0;
-  }
+  globalThis.requestAnimationFrame = scheduleFrame;
   const backend = new AimedBackend();
   const container = new Container();
   container.load(
@@ -290,5 +303,5 @@ export async function startHeadlessEditor(
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend };
+  return { editor, backend, frame: runScheduledFrames };
 }
