@@ -12,6 +12,8 @@ export default defineConfig({
         "bench/large-layout.bench.ts",
         "bench/layout-memory.bench.ts",
         "bench/needed-meshes.bench.ts",
+        "bench/editor-frame-loop.bench.ts",
+        "bench/plan-sync.bench.ts",
       ],
     },
   },

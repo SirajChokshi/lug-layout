@@ -127,17 +127,57 @@ function studSlotsOf(studs: StudSource, colorAlphaSlot: Uint8Array): Uint8Array 
   return slots;
 }
 
-function drawOrder(keys: RunKeys, slots: Uint8Array, classes: Uint8Array): Uint32Array {
+function pageOrder(keys: RunKeys, slots: Uint8Array, classes: Uint8Array): Uint32Array {
   const order = new Uint32Array(keys.count);
   for (let i = 0; i < keys.count; i++) order[i] = i;
   const { shape } = keys;
-  return order.toSorted(
+  order.sort(
     (a, b) =>
       (shape[a] ?? 0) - (shape[b] ?? 0) ||
       (slots[a] ?? 0) - (slots[b] ?? 0) ||
       (classes[a] ?? 0) - (classes[b] ?? 0) ||
       a - b,
   );
+  return orderGroupsByFirstIndex(order, keys, slots);
+}
+
+function sameGroup(keys: RunKeys, slots: Uint8Array, a: number, b: number): boolean {
+  return keys.shape[a] === keys.shape[b] && slots[a] === slots[b];
+}
+
+function orderGroupsByFirstIndex(
+  order: Uint32Array,
+  keys: RunKeys,
+  slots: Uint8Array,
+): Uint32Array {
+  let groupCount = 0;
+  for (let n = 0; n < order.length; n++) {
+    if (n === 0 || !sameGroup(keys, slots, order[n] ?? 0, order[n - 1] ?? 0)) groupCount++;
+  }
+  const groupStart = new Uint32Array(groupCount + 1);
+  const firstIndex = new Uint32Array(groupCount);
+  let group = -1;
+  for (let n = 0; n < order.length; n++) {
+    const i = order[n] ?? 0;
+    if (n === 0 || !sameGroup(keys, slots, i, order[n - 1] ?? 0)) {
+      group++;
+      groupStart[group] = n;
+      firstIndex[group] = i;
+    } else if (i < (firstIndex[group] ?? 0)) {
+      firstIndex[group] = i;
+    }
+  }
+  groupStart[groupCount] = order.length;
+  const groupsInFirstIndexOrder = new Uint32Array(groupCount);
+  for (let g = 0; g < groupCount; g++) groupsInFirstIndexOrder[g] = g;
+  groupsInFirstIndexOrder.sort((a, b) => (firstIndex[a] ?? 0) - (firstIndex[b] ?? 0));
+  const ordered = new Uint32Array(order.length);
+  let to = 0;
+  for (const g of groupsInFirstIndexOrder) {
+    for (let n = groupStart[g] ?? 0; n < (groupStart[g + 1] ?? 0); n++)
+      ordered[to++] = order[n] ?? 0;
+  }
+  return ordered;
 }
 
 function sameRun(
@@ -227,10 +267,10 @@ function build(
 ): InstancePage {
   const partSlots = partSlotsOf(parts, colorAlphaSlot);
   const partClasses = partClassesOf(parts);
-  const partOrder = drawOrder(parts, partSlots, partClasses);
+  const partOrder = pageOrder(parts, partSlots, partClasses);
   const studSlots = studSlotsOf(studs, colorAlphaSlot);
   const studClasses = new Uint8Array(studs.count);
-  const studOrder = drawOrder(studs, studSlots, studClasses);
+  const studOrder = pageOrder(studs, studSlots, studClasses);
   const page: InstancePage = {
     originX,
     originZ,
@@ -295,11 +335,58 @@ export function pageOf(
   );
 }
 
+const ALPHA_SLOT_LIMIT = 256;
+const UNMAPPED_SLOT = -1;
+
+function colorIndexAt(page: InstancePage, instance: number): number {
+  return instance < page.partCount
+    ? (page.colorIndex[instance] ?? 0)
+    : studColorIndexOf(page.studBasisAndColorIndex[instance - page.partCount] ?? 0);
+}
+
+function mapsSlotsOneToOne(
+  page: InstancePage,
+  runs: InstanceRuns,
+  colorAlphaSlot: Uint8Array,
+  newSlotOf: Int16Array,
+  oldSlotOf: Int16Array,
+): boolean {
+  for (let run = 0; run < runs.shape.length; run++) {
+    const oldSlot = runs.alphaSlot[run] ?? 0;
+    for (let i = runs.start[run] ?? 0; i < (runs.end[run] ?? 0); i++) {
+      const newSlot = colorAlphaSlot[colorIndexAt(page, i)] ?? 0;
+      const mapped = newSlotOf[oldSlot] ?? UNMAPPED_SLOT;
+      if (mapped === UNMAPPED_SLOT) {
+        if ((oldSlotOf[newSlot] ?? UNMAPPED_SLOT) !== UNMAPPED_SLOT) return false;
+        newSlotOf[oldSlot] = newSlot;
+        oldSlotOf[newSlot] = oldSlot;
+      } else if (mapped !== newSlot) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+export function preservesAlphaSlotSharing(page: InstancePage, colorAlphaSlot: Uint8Array): boolean {
+  const newSlotOf = new Int16Array(ALPHA_SLOT_LIMIT).fill(UNMAPPED_SLOT);
+  const oldSlotOf = new Int16Array(ALPHA_SLOT_LIMIT).fill(UNMAPPED_SLOT);
+  return (
+    mapsSlotsOneToOne(page, page.partRuns, colorAlphaSlot, newSlotOf, oldSlotOf) &&
+    mapsSlotsOneToOne(page, page.studRuns, colorAlphaSlot, newSlotOf, oldSlotOf)
+  );
+}
+
 export function regroupedPage(
   page: InstancePage,
   linearColors: Float32Array,
   colorAlphaSlot: Uint8Array,
 ): InstancePage {
+  if (!preservesAlphaSlotSharing(page, colorAlphaSlot)) {
+    throw new Error(
+      "a page can only be regrouped when the same colours still share each alpha slot",
+    );
+  }
   const parts = page.partCount;
   return build(
     page.originX,
