@@ -1805,6 +1805,7 @@ it("assist moves a held set that would cut one stud into a placed set to a mated
 }, 120_000);
 
 const SLOW_CLOCK_STEP_MS = 1;
+const FRAMES_FOR_AN_ABANDONED_SEARCH = 200;
 
 function slowClock() {
   let now = performance.now();
@@ -1925,10 +1926,12 @@ it("slices assist around the frame's render: a slow render shrinks the slice, ne
   });
   expect({
     lightSpansFrames: light.frameMs.length > 2,
+    heavySlicesShrink: heavy.frameMs.length > light.frameMs.length,
     heavyFramesWithin16Ms: heavy.frameMs.every((ms) => ms <= 16),
     overBudgetAtMostTwiceTheFrames: overBudget.frameMs.length <= 2 * light.frameMs.length + 2,
   }).toEqual({
     lightSpansFrames: true,
+    heavySlicesShrink: true,
     heavyFramesWithin16Ms: true,
     overBudgetAtMostTwiceTheFrames: true,
   });
@@ -1997,7 +2000,7 @@ it("commits the settled assist pose for a click made before the search settles, 
   }).toEqual({ atOnceMoved: true, queuedOnTheModule: true });
 }, 240_000);
 
-it("drops an unsettled assist search when the pointer moves to another stud, the held set turns or the mode toggles, and never shows its result", async () => {
+it("drops an unsettled assist search when the pointer moves to another stud, the held set turns, the mode toggles or the pointer leaves, and never shows its result", async () => {
   const outcome = async (
     trigger: (scene: Awaited<ReturnType<typeof setOneStudIntoSet>>) => void,
   ) => {
@@ -2032,6 +2035,24 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
   });
   const turned = await outcome(({ editor }) => editor.rotate(0));
   const toggled = await outcome(({ editor }) => editor.setPlacementModeOverride(true));
+  const leaving = await setOneStudIntoSet();
+  const leaveClock = slowClock();
+  let left: { startedUnsettled: boolean; hover: unknown; ghostMoved: boolean };
+  try {
+    leaving.editor.pointerMove(0, 0);
+    const startedUnsettled = leaving.editor.snapshot().hover?.placement?.settled === false;
+    await leaving.frame();
+    leaving.editor.pointerLeave();
+    const ghostAtLeave = [...leaving.backend.ghost];
+    for (let frame = 0; frame < FRAMES_FOR_AN_ABANDONED_SEARCH; frame++) await leaving.frame();
+    left = {
+      startedUnsettled,
+      hover: leaving.editor.snapshot().hover,
+      ghostMoved: leaving.backend.ghost.some((value, index) => value !== ghostAtLeave[index]),
+    };
+  } finally {
+    leaveClock.mockRestore();
+  }
   whole.backend.aim(awayX, 320);
   whole.editor.pointerMove(0, 0);
   const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
@@ -2053,6 +2074,7 @@ it("drops an unsettled assist search when the pointer moves to another stud, the
       .slice(toggled.published.findIndex((hover) => hover?.mode === "precise"))
       .every((hover) => hover?.mode === "precise" && hover.settled),
   }).toEqual({ moved: awayHover, turnedRot: 1, toggled: true });
+  expect(left).toEqual({ startedUnsettled: true, hover: null, ghostMoved: false });
 }, 240_000);
 
 it("restarts an unsettled assist search when an import's studs land under it, and settles on the hover it had before they landed", async () => {

@@ -1884,12 +1884,22 @@ export class Editor implements IEditor, IEditedWorld {
   private advanceAssist(deadlineMs: number): boolean {
     if (this.assistTicket === SETTLED_AT_ONCE) return true;
     const step = this.search.advance(this.assistTicket, deadlineMs);
-    if (step === "running") return false;
-    this.assistTicket = SETTLED_AT_ONCE;
-    if (step === "settled") return true;
-    this.dropAssist();
-    this.hoverCell.forget();
-    return false;
+    switch (step) {
+      case "running":
+        return false;
+      case "settled":
+        this.assistTicket = SETTLED_AT_ONCE;
+        return true;
+      case "stale":
+        this.assistTicket = SETTLED_AT_ONCE;
+        this.dropAssist();
+        this.hoverCell.forget();
+        return false;
+      default: {
+        const unhandled: never = step;
+        throw new Error(`unhandled search step ${String(unhandled)}`);
+      }
+    }
   }
 
   private settleAssist(placeable: Placeable, connected: Connected): void {
@@ -2162,6 +2172,8 @@ export class Editor implements IEditor, IEditedWorld {
   pointerLeave(): void {
     this.hovering = false;
     this.queueClick(null);
+    this.dropAssist();
+    this.hoverCell.forget();
     this.hoverPlacement = null;
     this.update({ hover: null });
   }
