@@ -15,6 +15,7 @@ use super::{
 
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
+const VERIFIED_PATCH: &str = "verified";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 const SUBFILE_LINE: &str = "1";
 const SUBFILE_POSITION: std::ops::Range<usize> = 2..5;
@@ -34,6 +35,25 @@ struct Gathered {
     issues: Vec<Issue>,
     children: Vec<String>,
     curated: bool,
+}
+
+pub fn patch_path(part: &str) -> String {
+    if part.contains('/') {
+        format!("{part}.dat")
+    } else {
+        format!("{PART_FOLDER}{part}.dat")
+    }
+}
+
+pub fn verified_patch_paths(manifest: &serde_json::Value) -> HashSet<String> {
+    manifest["patches"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["status"] == VERIFIED_PATCH)
+        .filter_map(|entry| entry["part"].as_str())
+        .map(patch_path)
+        .collect()
 }
 
 pub struct ShadowPatches<'a, S: Library + ?Sized> {
