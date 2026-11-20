@@ -12,7 +12,7 @@ export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   {
     id: "trackSeam",
     text: "Track across a table seam",
-    owner: "track outline rules (follow-up to #593)",
+    owner: "#596 (track outline rules)",
   },
   {
     id: "seamJoins",
