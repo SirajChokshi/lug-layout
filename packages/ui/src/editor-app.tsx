@@ -27,6 +27,7 @@ import {
   PlacementToolbar,
   RoadJoins,
 } from "./editor-panels.tsx";
+import { ScaleBar, SceneLabels } from "./layout-overlay.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
@@ -160,9 +161,11 @@ export function EditorApp({
         paletteDrag={paletteDrag}
         options={options}
       />
+      <SceneLabels editor={editor} snapshot={snapshot} />
       <ToolHud snapshot={snapshot} play={playSnapshot} />
       <EditorHud snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
+      <ScaleBar camera={camera} />
       <PlanPanel camera={camera} plans={plans} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />

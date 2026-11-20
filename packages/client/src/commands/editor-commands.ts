@@ -1,5 +1,6 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import { GRID_STEPS_STUDS } from "../edit/layout-guides.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
@@ -7,6 +8,7 @@ export type EditorActionId =
   | "select-tool"
   | "draw-track"
   | "draw-road"
+  | "measure"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
@@ -30,6 +32,7 @@ export type EditorActionId =
   | "zoom-in"
   | "zoom-out"
   | "toggle-joins"
+  | "toggle-grid"
   | "toggle-road-snap"
   | "cycle-tier"
   | "measure-frames";
@@ -88,6 +91,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "g" }],
     keywords: "street lay plates",
+  },
+  {
+    id: "measure",
+    title: "Measure: drag a ruler in studs and cm",
+    group: "Tools",
+    keys: [{ key: "u" }],
+    keywords: "ruler distance length dimension tape size",
   },
   {
     id: "rotate",
@@ -238,6 +248,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle edges open mismatch",
   },
   {
+    id: "toggle-grid",
+    title: `Show the ground and its stud grid (${GRID_STEPS_STUDS.join(", ")} studs)`,
+    group: "View",
+    keys: [{ key: "#" }],
+    keywords: "grid lattice studs lines guides ground",
+  },
+  {
     id: "toggle-road-snap",
     title: "Snap road pieces to matching edges",
     group: "Edit",
@@ -338,6 +355,8 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
+  if (id === "measure") return snapshot.mode === "measure";
+  if (id === "toggle-grid") return snapshot.gridShown && !snapshot.planCoversGround;
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
   return false;
@@ -362,6 +381,7 @@ const CAMERA_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
   "zoom-in",
   "zoom-out",
   "toggle-joins",
+  "toggle-grid",
 ]);
 
 export function runsDuringPlay(id: CommandId): boolean {
@@ -415,6 +435,8 @@ export function commandEnabled(
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
+      return snapshot.selection !== null && !snapshot.readOnly;
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;
     case "focus":
@@ -429,6 +451,8 @@ export function commandEnabled(
       return !snapshot.readOnly && snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "draw-road":
       return snapshot.roadKit !== null && !snapshot.readOnly;
+    case "toggle-grid":
+      return !snapshot.planCoversGround;
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":
@@ -442,6 +466,7 @@ export function commandEnabled(
     case "tilt-up":
     case "zoom-in":
     case "zoom-out":
+    case "measure":
     case "toggle-joins":
     case "toggle-road-snap":
     case "cycle-tier":
@@ -552,8 +577,14 @@ export function runEditorAction(
     case "zoom-out":
       camera.zoomStep(-1);
       return;
+    case "measure":
+      editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
+      return;
+    case "toggle-grid":
+      editor.setGridShown(!editor.snapshot().gridShown);
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);

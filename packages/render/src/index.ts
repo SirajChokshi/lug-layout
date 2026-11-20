@@ -9,6 +9,9 @@ export type {
   FrameStats,
   GeometrySet,
   GraphicsApi,
+  GroundGrid,
+  GuideKind,
+  GuideSegment,
   ISceneBackend,
   IThumbnailRenderer,
   LdrawColor,
@@ -34,6 +37,10 @@ export {
   INSTANCE_MATRIX_FLOATS,
   LOOK_FEATURES,
   RAY_FLOATS,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
 } from "./scene-backend.ts";
 export { SCENE_BACKEND, THUMBNAIL_RENDERER } from "./tokens.ts";
 export { renderModule } from "./render.module.ts";

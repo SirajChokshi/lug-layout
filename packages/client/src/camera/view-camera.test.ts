@@ -85,6 +85,21 @@ it("the 2D plan looks straight down at true scale with +x to the right and +z do
   expect((right[0] - centre[0]) / (centre[1] - top[1])).toBeCloseTo(WIDTH_PX / HEIGHT_PX, 6);
 });
 
+it("gives the 2D plan one scale that maps the ground to screen pixels at every zoom, and the 3D view none", () => {
+  const camera = settledCamera("plan");
+  for (const logScale of [0, -1.2, 2.5]) {
+    camera.zoomAt(0.3, -0.2, logScale);
+    const pixelsPerLdu = camera.planPixelsPerLdu();
+    const [, top] = ground(camera, 0, 1);
+    const [, bottom] = ground(camera, 0, -1);
+    const [left] = ground(camera, -1, 0);
+    const [right] = ground(camera, 1, 0);
+    expect((bottom - top) * (pixelsPerLdu ?? Number.NaN)).toBeCloseTo(HEIGHT_PX, 6);
+    expect((right - left) * (pixelsPerLdu ?? Number.NaN)).toBeCloseTo(WIDTH_PX, 6);
+  }
+  expect(settledCamera("orbit").planPixelsPerLdu()).toBeNull();
+});
+
 it("leaving the 2D plan returns to the 3D angle it was entered from", () => {
   const camera = settledCamera("orbit");
   camera.orbit(140, -60);

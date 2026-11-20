@@ -25,7 +25,7 @@ import {
   type WorldBox,
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
-import { BOX_FLOATS } from "./local-box.ts";
+import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import {
   FOOTPRINT_ANTI_STUD,
   FOOTPRINT_FLAT,
@@ -274,6 +274,23 @@ class LatticePose {
     out[to + 5] = Math.max(az, bz);
   }
 
+  boxOf(box: LocalBox, yLdu: number): WorldBox {
+    const out = new Float64Array(BOX_FLOATS);
+    this.worldBoxOf(
+      box.min[0],
+      box.min[1],
+      box.min[2],
+      box.max[0],
+      box.max[1],
+      box.max[2],
+      yLdu,
+      out,
+      0,
+    );
+    const [minX = 0, minY = 0, minZ = 0, maxX = 0, maxY = 0, maxZ = 0] = out;
+    return { minX, minY, minZ, maxX, maxY, maxZ };
+  }
+
   worldCellX(localCellX: number, localCellZ: number): number {
     const lx = localCellX * STUD_LDU + HALF_STUD_LDU;
     const lz = localCellZ * STUD_LDU + HALF_STUD_LDU;
@@ -307,6 +324,10 @@ const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
 const CULLING_BORDER_CELLS = 1;
 const CULLING_WINDOW_CELLS = CHUNK_STUDS + 2 * CULLING_BORDER_CELLS;
 const localRange = new Int32Array(4);
+
+export function posedBox(box: LocalBox, x: number, z: number, yLdu: number, rot: number): WorldBox {
+  return new LatticePose(x, z, rot).boxOf(box, yLdu);
+}
 
 function closedAround(
   cellX: number,
@@ -716,29 +737,7 @@ class PlacedEntry implements PlacedModel {
   }
 
   private worldBox(): WorldBox {
-    const { min, max } = this.placeable.box;
-    let minX = Number.POSITIVE_INFINITY;
-    let maxX = Number.NEGATIVE_INFINITY;
-    let minZ = Number.POSITIVE_INFINITY;
-    let maxZ = Number.NEGATIVE_INFINITY;
-    for (const lx of [min[0], max[0]]) {
-      for (const lz of [min[2], max[2]]) {
-        const x = this.x + this.cos * lx + this.sin * lz;
-        const z = this.z - this.sin * lx + this.cos * lz;
-        minX = Math.min(minX, x);
-        maxX = Math.max(maxX, x);
-        minZ = Math.min(minZ, z);
-        maxZ = Math.max(maxZ, z);
-      }
-    }
-    return {
-      minX,
-      minY: this.yLdu + min[1],
-      minZ,
-      maxX,
-      maxY: this.yLdu + max[1],
-      maxZ,
-    };
+    return this.pose.boxOf(this.placeable.box, this.yLdu);
   }
 
   writeParts(

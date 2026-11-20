@@ -36,6 +36,9 @@ class IssueBoxBackend implements ISceneBackend {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.issueBoxes = boxes;
   }
+  setGroundGrid(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}

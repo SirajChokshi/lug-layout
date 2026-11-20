@@ -1,6 +1,7 @@
 import {
   commandActive,
   commandEnabled,
+  commandSpec,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
@@ -179,6 +180,34 @@ export function PlacementToolbar({
       >
         Draw road ({shortcutText("draw-road")})
       </button>
+      <button
+        type="button"
+        data-action="measure"
+        aria-pressed={commandActive("measure", snapshot)}
+        disabled={!commandEnabled("measure", snapshot, play)}
+        onClick={(event) => onEditorAction("measure", event.timeStamp)}
+      >
+        Measure ({shortcutText("measure")})
+      </button>
+      <button
+        type="button"
+        data-action="toggle-grid"
+        aria-pressed={commandActive("toggle-grid", snapshot)}
+        disabled={!commandEnabled("toggle-grid", snapshot, play)}
+        title={
+          snapshot.planCoversGround
+            ? "A drawn plan shows its own floor and tables in place of the ground"
+            : commandSpec("toggle-grid").title
+        }
+        onClick={(event) => onEditorAction("toggle-grid", event.timeStamp)}
+      >
+        Grid ({shortcutText("toggle-grid")})
+      </button>
+      {snapshot.rulers > 0 && (
+        <button type="button" data-action="clear-rulers" onClick={() => editor.clearRulers()}>
+          Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+        </button>
+      )}
       <button
         type="button"
         disabled={!commandEnabled("rotate", snapshot, play)}

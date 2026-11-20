@@ -42,6 +42,9 @@ import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
   type BackendInfo,
   type BufferMemory,
   type ChunkInstances,
@@ -51,6 +54,8 @@ import {
   type FarModelPlacement,
   type GeometrySet,
   type FrameStats,
+  type GroundGrid,
+  type GuideSegment,
   type ISceneBackend,
   type LdrawColor,
   type LookSettings,
@@ -122,6 +127,8 @@ import {
 import { StudBasisTable } from "./stud-basis-table.ts";
 import { isInstanced, StudMesh, studGeometry } from "./stud-mesh.ts";
 import { skyEnvironment } from "./sky-environment.ts";
+import { GroundGridLayer } from "./ground-grid.ts";
+import { GuideLines } from "./guide-lines.ts";
 
 const REBASE_DISTANCE_CHUNKS = 8;
 const SETTLED_EYE_MS = 250;
@@ -202,6 +209,10 @@ const OBSTACLE_OPACITY = 0.45;
 const ISSUE_COLOR = 0xe0115f;
 const FLOOR_THICKNESS_LDU = 10;
 const GRID_LIFT_LDU = 0.5;
+const PERSPECTIVE_GROUND_REACH = 8;
+const ORTHOGRAPHIC_GROUND_REACH = 2.5;
+const GROUND_FAR_SHARE = 0.9;
+const NDC_DEPTH_LIMIT = 1;
 
 interface Anchored {
   readonly object: Group | LineSegments;
@@ -731,6 +742,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     depthTest: false,
   });
   private readonly rayPoint = new Vector3();
+  private readonly projected = new Vector3();
+  private readonly groundGrid = new GroundGridLayer(SKY_COLOR);
+  private readonly guides = new GuideLines();
   private detailedLevel: LevelGeometries = emptyLevel();
   private farLevel: LevelGeometries = emptyLevel();
   private paletteCounts: PaletteCounts | undefined;
@@ -822,6 +836,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
+    this.scene.add(this.groundGrid.mesh, this.guides.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -1464,6 +1479,55 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
+  setGroundGrid(grid: GroundGrid | null): void {
+    this.changed = true;
+    this.groundGrid.set(grid);
+    this.followGround();
+  }
+
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    this.changed = true;
+    this.guides.set(segments);
+    this.guides.place(this.renderOriginX, this.renderOriginZ);
+  }
+
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
+    const point = this.projected
+      .set(x - this.renderOriginX, y, z - this.renderOriginZ)
+      .project(this.camera);
+    out[offset + PROJECTED_NDC_X] = point.x;
+    out[offset + PROJECTED_NDC_Y] = point.y;
+    out[offset + PROJECTED_IN_VIEW] =
+      point.z > -NDC_DEPTH_LIMIT && point.z < NDC_DEPTH_LIMIT ? 1 : 0;
+  }
+
+  private followGround(): void {
+    this.groundGrid.follow(
+      this.atX,
+      this.atZ,
+      this.renderOriginX,
+      this.renderOriginZ,
+      this.groundRadius(),
+    );
+  }
+
+  private groundRadius(): number {
+    if (this.camera === this.orthographic) {
+      return (
+        Math.hypot(this.orthoHalfHeight * this.aspect, this.orthoHalfHeight) *
+        ORTHOGRAPHIC_GROUND_REACH
+      );
+    }
+    const distance = Math.max(
+      Math.hypot(this.eyeX - this.atX, this.eyeY - this.atY, this.eyeZ - this.atZ),
+      CAMERA_NEAR_LDU,
+    );
+    return Math.min(
+      distance * PERSPECTIVE_GROUND_REACH,
+      CAMERA_FAR_LDU * GROUND_FAR_SHARE - distance,
+    );
+  }
+
   private planGroup(overlay: PlanOverlay): Anchored {
     const { room } = overlay;
     const x = room.minX;
@@ -1957,7 +2021,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
-    if (viewChanged) this.applyTiers();
+    if (viewChanged) {
+      this.applyTiers();
+      this.followGround();
+    }
   }
 
   private aim(
@@ -2057,6 +2124,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.positionTrackEnds();
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
+    this.guides.place(this.renderOriginX, this.renderOriginZ);
+    this.followGround();
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
     this.rebases.push({
@@ -2160,6 +2229,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.pipeline?.resize(bufferWidth, bufferHeight, this.focalLengthPx);
     if (this.shadowNode?.camera) this.shadowNode.updateFrustums();
     this.applyTiers();
+    this.followGround();
   }
 
   setFarModel(id: number, placement: FarModelPlacement | null): void {

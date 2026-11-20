@@ -66,11 +66,17 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
+import {
+  COMMANDS,
+  commandActive,
+  commandEnabled,
+  startPlay,
+  type CommandId,
+} from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import { EDITOR, MODEL_IMPORTER, PLAN_SERVICE, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
@@ -286,6 +292,9 @@ class HeadlessBackend implements ISceneBackend {
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGroundGrid(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
   aim(x: number, z: number): void {
@@ -1308,6 +1317,135 @@ it.each([
   120_000,
 );
 
+it("measures in studs and cm: a user's model reads its size held and selected, a drag lays a ruler, a click lays none, and Delete or Escape drops a ruler mid-drag before lifting a laid one", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    ["baseplate-row"],
+    new BundleDirectoryFetcher(),
+    ["baseplate-row"],
+  );
+  const held = "omr:baseplate-row";
+  await loadCatalogItem(catalog, held);
+  const labels = () => editor.snapshot().labels.map((label) => `${label.kind}: ${label.text}`);
+  placer(editor, backend)(held, 0, 0);
+  const whileHeld = labels();
+  const ghost = editor.snapshot().labels.find((label) => label.kind === "ghost");
+  editor.chooseItem(null);
+  backend.aim(ghost?.x ?? Number.NaN, ghost?.z ?? Number.NaN);
+  editor.click(0, 0, 0);
+  const whileSelected = labels();
+  editor.setMeasuring(true);
+  const ruler = (from: readonly [number, number], to: readonly [number, number]): void => {
+    backend.aim(...from);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const startDraft = (to: readonly [number, number]): void => {
+    backend.aim(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+  };
+  startDraft([200, 0]);
+  const firstDraftDeletable = commandEnabled("delete", editor.snapshot());
+  editor.deleteSelection(0);
+  const firstDraftDeleted = labels();
+  ruler([0, 0], [60, 80]);
+  ruler([100, 100], [100, 100]);
+  ruler([-320, -200], [320, -200]);
+  const measured = labels();
+  startDraft([200, 0]);
+  const drafting = labels();
+  editor.deleteSelection(0);
+  const deletedMidDrag = labels();
+  editor.deleteSelection(0);
+  const afterDelete = { rulers: editor.snapshot().rulers, labels: labels() };
+  startDraft([0, 200]);
+  editor.chooseItem(null);
+  const escapedMidDrag = { mode: editor.snapshot().mode, labels: labels() };
+  editor.chooseItem(held);
+
+  expect({
+    whileHeld,
+    whileSelected,
+    firstDraftDeletable,
+    firstDraftDeleted,
+    measured,
+    drafting,
+    deletedMidDrag,
+    afterDelete,
+    escapedMidDrag,
+    after: { mode: editor.snapshot().mode, rulers: editor.snapshot().rulers },
+  }).toEqual({
+    whileHeld: ["ghost: 32 × 64 studs · 25.6 × 51.2 cm"],
+    whileSelected: ["selection: 32 × 64 studs · 25.6 × 51.2 cm"],
+    firstDraftDeletable: true,
+    firstDraftDeleted: [],
+    measured: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    drafting: [
+      "ruler: 5 studs · 4 cm (3 × 4)",
+      "ruler: 32 studs · 25.6 cm",
+      "draft: 10 studs · 8 cm",
+    ],
+    deletedMidDrag: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    afterDelete: { rulers: 1, labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    escapedMidDrag: { mode: "select", labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    after: { mode: "place", rulers: 1 },
+  });
+}, 120_000);
+
+it("hands the ground to a drawn plan: the grid toggle reads off and can't be pressed while the plan shows its own floor, and every other command stays as it was", async () => {
+  const { editor, container } = await startEditor([]);
+  const plans = container.get(PLAN_SERVICE);
+  const toggle = () => ({
+    enabled: commandEnabled("toggle-grid", editor.snapshot()),
+    active: commandActive("toggle-grid", editor.snapshot()),
+  });
+  const others = () =>
+    COMMANDS.filter(
+      (spec) => spec.id !== "toggle-grid" && commandEnabled(spec.id, editor.snapshot()),
+    ).map((spec) => spec.id);
+  const before = toggle();
+  const othersBefore = others();
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 3000,
+    originChunkX: 0,
+    originChunkZ: 0,
+  });
+  const withPlan = toggle();
+  const othersWithPlan = others();
+  plans.removePlan(planId);
+
+  expect(othersBefore).toContain("select-tool");
+  expect({ before, withPlan, othersWithPlan, after: toggle() }).toEqual({
+    before: { enabled: true, active: true },
+    withPlan: { enabled: false, active: false },
+    othersWithPlan: othersBefore,
+    after: { enabled: true, active: true },
+  });
+}, 120_000);
+
+it("clears the rulers when another world opens", async () => {
+  const { editor, backend } = await startStreamingEditor({ models: [], tier: null });
+  editor.setMeasuring(true);
+  backend.aim(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(640, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const laid = editor.snapshot().rulers;
+  expect(await editor.newWorld("Second")).toBe(true);
+
+  expect({ laid, rulers: editor.snapshot().rulers, labels: editor.snapshot().labels }).toEqual({
+    laid: 1,
+    rulers: 0,
+    labels: [],
+  });
+}, 120_000);
+
 function placedHeights(backend: HeadlessBackend, partId: string) {
   const heights = new Set<number>();
   let instances = 0;
@@ -1654,6 +1792,15 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setIssueBoxes(...args: Parameters<ISceneBackend["setIssueBoxes"]>): void {
     this.three.setIssueBoxes(...args);
+  }
+  setGroundGrid(...args: Parameters<ISceneBackend["setGroundGrid"]>): void {
+    this.three.setGroundGrid(...args);
+  }
+  setGuides(...args: Parameters<ISceneBackend["setGuides"]>): void {
+    this.three.setGuides(...args);
+  }
+  projectToNdc(...args: Parameters<ISceneBackend["projectToNdc"]>): void {
+    this.three.projectToNdc(...args);
   }
   setVehicle(...args: Parameters<ISceneBackend["setVehicle"]>): void {
     this.three.setVehicle(...args);

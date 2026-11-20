@@ -778,6 +778,76 @@ footer {
   padding: 3px 4px;
 }
 
+.scene-labels {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-label-text {
+  fill: #fff;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-label[data-kind="ruler"] .scene-label-pill {
+  fill: rgb(31 98 209 / 0.92);
+}
+
+.scene-label[data-kind="draft"] .scene-label-pill {
+  fill: rgb(224 116 0 / 0.95);
+}
+
+.scene-label[data-kind="ghost"] .scene-label-pill {
+  fill: rgb(22 34 44 / 0.86);
+}
+
+.scene-label[data-kind="selection"] .scene-label-pill {
+  fill: rgb(204 112 0 / 0.92);
+}
+
+.scale-bar {
+  position: fixed;
+  top: calc(var(--panel-edge) + var(--view-bar-height) + var(--panel-gap));
+  left: var(--centre-left);
+  right: var(--centre-right);
+  box-sizing: border-box;
+  width: fit-content;
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px 6px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.85);
+  color: #16222c;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.12);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.scale-bar[hidden] {
+  display: none;
+}
+
+.editor[data-layout="compact"] .scale-bar {
+  top: var(--panel-edge);
+}
+
+.scale-bar-rule {
+  display: block;
+  height: 6px;
+  border: 2px solid currentColor;
+  border-top: 0;
+  box-sizing: border-box;
+}
+
 .toolbar-hint {
   grid-column: 1 / -1;
   margin: 0;

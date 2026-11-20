@@ -37,6 +37,7 @@ describe("shortcut map", () => {
     ["Ctrl+Z", press("z", { ctrlKey: true }), "undo"],
     ["Cmd+Z", press("z", { metaKey: true }), "undo"],
     ["? typed with Shift", press("?", { shiftKey: true }), "show-shortcuts"],
+    ["# typed with Shift", press("#", { shiftKey: true }), "toggle-grid"],
     ["+ typed with Shift", press("+", { shiftKey: true }), "zoom-in"],
     ["R with Caps Lock", press("R"), "rotate"],
     ["Shift+R", press("R", { shiftKey: true }), "rotate-back"],
@@ -134,6 +135,7 @@ describe("play commands", () => {
     expect(COMMANDS.map((spec) => spec.id).filter((id) => !runsDuringPlay(id))).toEqual([
       "draw-track",
       "draw-road",
+      "measure",
       "rotate",
       "rotate-back",
       "flip-switch",

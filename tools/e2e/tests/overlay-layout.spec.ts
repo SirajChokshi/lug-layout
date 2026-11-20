@@ -85,7 +85,7 @@ function measureOverlays(stepPx: number): OverlayBox[] {
   if (!root) throw new Error("the editor is not mounted");
   const panels = [...root.children]
     .filter((element): element is HTMLElement => element instanceof HTMLElement)
-    .filter((element) => !element.matches("canvas.scene, .overlay"))
+    .filter((element) => !element.matches("canvas.scene, svg.scene-labels, .overlay"))
     .filter((element) => getComputedStyle(element).position === "fixed")
     .map((element) => ({
       element,

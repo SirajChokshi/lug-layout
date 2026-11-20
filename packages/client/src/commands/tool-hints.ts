@@ -1,4 +1,5 @@
 import type { EditorSnapshot } from "../edit/editor.ts";
+import { cmText, studsText } from "../edit/layout-guides.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -74,6 +75,15 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   }
 }
 
+function measureDetail(snapshot: EditorSnapshot): string {
+  const { hover } = snapshot;
+  const cursor = hover
+    ? `cursor at ${studsText(hover.x)}, ${studsText(hover.z)} studs · ${cmText(hover.x)}, ${cmText(hover.z)} cm`
+    : "in studs and cm";
+  if (snapshot.rulers === 0) return cursor;
+  return `${snapshot.rulers} ${snapshot.rulers === 1 ? "ruler" : "rulers"}, ${cursor}`;
+}
+
 function view(snapshot: EditorSnapshot): ToolHintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
@@ -132,6 +142,17 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         ],
       };
     }
+    case "measure":
+      return {
+        tone: "select",
+        title: "Measuring",
+        detail: measureDetail(snapshot),
+        hints: [
+          gesture("Drag", "lay a ruler"),
+          key("delete", "remove the last"),
+          key("measure", "done"),
+        ],
+      };
     case "select": {
       const { selection } = snapshot;
       if (selection) {

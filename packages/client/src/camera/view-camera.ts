@@ -136,6 +136,10 @@ export class ViewCamera {
     return this.pose.distance * this.tanHalfFov;
   }
 
+  planPixelsPerLdu(): number | null {
+    return this.orthographic ? this.heightPx / (2 * this.halfHeight) : null;
+  }
+
   orbit(dxPx: number, dyPx: number): void {
     if (this.mode === "plan") return;
     this.settle();
