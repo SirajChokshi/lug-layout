@@ -7,7 +7,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
-import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import { extractLibrary, httpReader, pinnedArchive } from "../library/ldraw-library.ts";
+import { bundleBaseUrl, liveBundleLibraryBakeIndexes } from "../pointer/live-bundles.ts";
 import {
   runPointerCommand,
   runPublicationCommand,
@@ -27,6 +28,7 @@ const palettePath = join(toolRoot, "palette.json");
 const primitivesPath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const binary = join(repoRoot, "target", "release", "library-bake");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 interface PaletteOptions {
   readonly studPrimitives: ReadonlyArray<string>;
@@ -143,6 +145,15 @@ const commands = {
       : `the index and its ${LIBRARY_BAKE_BUCKETS} buckets`,
 };
 
+const libraryBakePointerRetainingLiveBundles = {
+  ...libraryBakePointer,
+  retained: async () =>
+    liveBundleLibraryBakeIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
   case "upload":
@@ -155,7 +166,11 @@ switch (process.argv[2]) {
   case "verify-pointer":
   case "prune":
     await runPointerCommand(
-      { ...commands, pointer: libraryBakePointer, manifestOf: (pin) => pin.index },
+      {
+        ...commands,
+        pointer: libraryBakePointerRetainingLiveBundles,
+        manifestOf: (pin) => pin.index,
+      },
       process.argv.slice(2),
     );
     break;
