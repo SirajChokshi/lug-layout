@@ -15,6 +15,7 @@ import {
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
+  type RollingDiagnosticsRows,
 } from "@brr/import";
 import {
   SCENE_BACKEND,
@@ -33,6 +34,7 @@ import {
   worldManifest,
   type ImportedFile,
   type WorldArchive,
+  type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
   type WorldShardV1,
@@ -103,6 +105,10 @@ export class AimedBackend implements ISceneBackend {
   }
   setGhostVerdict(): void {}
   setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
+  setGround(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -222,6 +228,13 @@ class MemoryWorldRepository implements IWorldRepository {
     };
   }
 
+  async readWorldFiles(): Promise<Decoded<WorldFiles>> {
+    return {
+      ok: false,
+      issues: [{ path: "world files", message: "aren't read by the held-out harness" }],
+    };
+  }
+
   async putImportedFile(file: ImportedFile): Promise<void> {
     this.files.set(file.sha256, file);
   }
@@ -247,6 +260,7 @@ class InProcessImportPool implements IImportWorkerPool {
       this.bundle.records,
       () => performance.now(),
       NO_BAKE_HELPERS,
+      null,
     );
     const { input } = request;
     switch (input.kind) {
@@ -259,6 +273,10 @@ class InProcessImportPool implements IImportWorkerPool {
         throw new Error(`unhandled import input ${String(unhandled)}`);
       }
     }
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
