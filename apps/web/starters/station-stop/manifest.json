@@ -1,0 +1,24 @@
+{
+  "bundleVersion": "f8839ec176d5893d",
+  "credits": "CREDITS.txt",
+  "disclaimer": "LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or endorse this site.",
+  "format": "brr.world",
+  "name": "Station stop",
+  "placements": 17,
+  "schemaVersion": 1,
+  "shards": [
+    { "placements": 2, "superChunk": [-1, -1], "track": 5 },
+    { "placements": 4, "superChunk": [-1, 0], "track": 6 },
+    { "placements": 4, "superChunk": [0, -1], "track": 6 },
+    { "placements": 7, "superChunk": [0, 0], "track": 7 }
+  ],
+  "track": 24,
+  "view": {
+    "distance": 6571.179583019379,
+    "pitch": 0.75,
+    "targetX": -120.82136162849754,
+    "targetY": 169.53070861877364,
+    "targetZ": 108.50237954294514,
+    "yaw": 1.5707963267948966
+  }
+}
