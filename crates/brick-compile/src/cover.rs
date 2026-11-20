@@ -323,6 +323,10 @@ impl CoverShard {
         let slot = (candidate / CANDIDATES_PER_DEAL) % self.of;
         (self.from..self.to).contains(&slot)
     }
+
+    pub fn takes_none(&self) -> bool {
+        self.from == self.to
+    }
 }
 
 pub struct CoverInstance<'a> {
@@ -794,26 +798,10 @@ fn column_floor_y(underside_y: f64, stud_layer_y: f64, table_depth: f64) -> f64 
     }
 }
 
-pub fn model_cover(
+fn cover_candidates(
     instances: &[CoverInstance],
-    solids: &[PartSolid],
-    opacity: &Opacity,
-    lattice: Option<([u32; 2], f64)>,
-    stud: StudShape,
-    shard: CoverShard,
-    table_depth: f64,
-) -> Result<ModelCover, ModelTooLarge> {
-    let boxes: Vec<[Vec3; 2]> = instances
-        .iter()
-        .map(|instance| world_box(instance, &solids[instance.part]))
-        .collect();
-    let mut aabb = Bounds::EMPTY;
-    for [min, max] in &boxes {
-        aabb = aabb.grow(*min).grow(*max);
-    }
-    let model = ModelSolids::new(instances, &boxes, solids, opacity);
-    let mut coverers = Coverers::new(&model, stud);
-
+    coverers: &mut Coverers,
+) -> (Vec<bool>, Vec<(usize, BelowStud)>) {
     let mut visible = Vec::new();
     let mut candidates = Vec::new();
     for (owner, instance) in instances.iter().enumerate() {
@@ -834,6 +822,77 @@ pub fn model_cover(
             visible.push(true);
         }
     }
+    (visible, candidates)
+}
+
+#[derive(Clone, Copy)]
+pub struct CoverModel<'a, 'b> {
+    pub instances: &'b [CoverInstance<'a>],
+    pub solids: &'b [PartSolid],
+    pub opacity: &'b Opacity,
+    pub stud: StudShape,
+}
+
+#[derive(Default)]
+pub struct ProbeCache {
+    enclosed: FxHashMap<ProbeKey, Option<CoverKind>>,
+}
+
+pub fn model_cover(
+    instances: &[CoverInstance],
+    solids: &[PartSolid],
+    opacity: &Opacity,
+    lattice: Option<([u32; 2], f64)>,
+    stud: StudShape,
+    shard: CoverShard,
+    table_depth: f64,
+) -> Result<ModelCover, ModelTooLarge> {
+    let model = CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    };
+    model_cover_with(
+        &model,
+        lattice,
+        shard,
+        table_depth,
+        &mut ProbeCache::default(),
+    )
+}
+
+pub fn model_cover_with(
+    model: &CoverModel,
+    lattice: Option<([u32; 2], f64)>,
+    shard: CoverShard,
+    table_depth: f64,
+    probes: &mut ProbeCache,
+) -> Result<ModelCover, ModelTooLarge> {
+    let CoverModel {
+        instances,
+        solids,
+        opacity,
+        stud,
+    } = *model;
+    let boxes: Vec<[Vec3; 2]> = instances
+        .iter()
+        .map(|instance| world_box(instance, &solids[instance.part]))
+        .collect();
+    let mut aabb = Bounds::EMPTY;
+    for [min, max] in &boxes {
+        aabb = aabb.grow(*min).grow(*max);
+    }
+    let model = ModelSolids::new(instances, &boxes, solids, opacity);
+    let mut coverers = Coverers::new(&model, stud);
+    coverers.enclosed = std::mem::take(&mut probes.enclosed);
+
+    let (mut visible, candidates) = if shard.takes_none() {
+        let studs = instances.iter().map(|instance| instance.studs.len()).sum();
+        (vec![true; studs], Vec::new())
+    } else {
+        cover_candidates(instances, &mut coverers)
+    };
     let (indices, candidates): (Vec<usize>, Vec<BelowStud>) = candidates
         .into_iter()
         .enumerate()
@@ -866,12 +925,13 @@ pub fn model_cover(
                 phase,
             )
         })
-        .transpose()
-        .map_err(|cells| ModelTooLarge {
-            cells,
-            x: axis_span(&boxes, 0),
-            z: axis_span(&boxes, 2),
-        })?;
+        .transpose();
+    probes.enclosed = std::mem::take(&mut coverers.enclosed);
+    let cells = cells.map_err(|cells| ModelTooLarge {
+        cells,
+        x: axis_span(&boxes, 0),
+        z: axis_span(&boxes, 2),
+    })?;
     Ok(ModelCover {
         visible,
         open_below,

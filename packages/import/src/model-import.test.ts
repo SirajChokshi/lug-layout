@@ -300,6 +300,7 @@ function comparable(result: ImportResult): unknown {
       bakeRounds: null,
       fetched: null,
       records: null,
+      timings: null,
     },
   };
 }
