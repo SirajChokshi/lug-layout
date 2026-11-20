@@ -573,6 +573,28 @@ function platesWithin(reachLdu: number): number {
   return Math.floor(reachLdu / PLATE_LDU);
 }
 
+function farthestLatticeReachLdu(limitLdu: number): number {
+  const limitSquared = limitLdu * limitLdu;
+  const studs = Math.floor(limitLdu / STUD_LDU);
+  const plates = platesWithin(limitLdu);
+  let farthestSquared = 0;
+  for (let across = 0; across <= studs; across++) {
+    for (let along = 0; along <= across; along++) {
+      const planSquared = (across * across + along * along) * STUD_LDU * STUD_LDU;
+      for (let up = 0; up <= plates; up++) {
+        const squared = planSquared + up * up * PLATE_LDU * PLATE_LDU;
+        if (squared <= limitSquared && squared > farthestSquared) farthestSquared = squared;
+      }
+    }
+  }
+  return rootNotBelow(farthestSquared);
+}
+
+function rootNotBelow(squared: number): number {
+  const root = Math.sqrt(squared);
+  return root * root >= squared ? root : root * (1 + Number.EPSILON);
+}
+
 function magnetOffset(cursor: CursorPick, pose: LatticePose): MagnetOffset {
   const dxLdu = pose.x - cursor.x;
   const dzLdu = pose.z - cursor.z;
@@ -1915,7 +1937,9 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private assistReachLdu(): number {
-    return Math.min(Math.max(this.toleranceLdu(), ASSIST_FLOOR_LDU), ASSIST_BASIN_LDU);
+    return farthestLatticeReachLdu(
+      Math.min(Math.max(this.toleranceLdu(), ASSIST_FLOOR_LDU), ASSIST_BASIN_LDU),
+    );
   }
 
   private toleranceLdu(): number {

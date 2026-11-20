@@ -29,6 +29,7 @@ import type {
   CatalogPart,
 } from "@brr/schema/bundle";
 import {
+  CAMERA_FOV_DEGREES,
   SCENE_BACKEND,
   INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
@@ -45,7 +46,7 @@ import {
   type RebaseEvent,
 } from "@brr/render";
 import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
-import { PLATE_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import type { Decoded } from "@brr/schema/decode";
@@ -93,6 +94,7 @@ import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 import { typedArraysConstructedDuring } from "../connect/typed-arrays.test-support.ts";
 import { mateCounts } from "./placement-hover-view.ts";
 import type { PlacementHover } from "./placement-hover.ts";
+import { ViewCamera } from "../camera/view-camera.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -323,7 +325,12 @@ class HeadlessBackend implements ISceneBackend {
     this.aimZ = z;
     this.aimSlope = slope;
   }
-  rayThrough(ndcX: number, _ndcY: number, out: Float64Array): void {
+  camera: ViewCamera | null = null;
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    if (this.camera) {
+      this.camera.rayThrough(ndcX, ndcY, out);
+      return;
+    }
     const back = this.aimSlope * RAY_HEIGHT_LDU;
     const x = this.aimX + ndcX * this.viewHalfWidthLdu;
     out.set([x, RAY_HEIGHT_LDU, this.aimZ + back, 0, -1, -this.aimSlope]);
@@ -2048,7 +2055,7 @@ it("constructs no typed array once warm while hovers slice, settle and publish, 
   expect({ constructed, refused: refused > 0 }).toEqual({ constructed: 0, refused: true });
 }, 240_000);
 
-it("publishes the assist radius as 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
+it("publishes the assist radius as the farthest lattice pose within 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
   const { editor, backend } = await startEditor([]);
   await chosen(editor, BASEPLATE);
   const viewWidthPx = 640;
@@ -2060,12 +2067,75 @@ it("publishes the assist radius as 32 px at the cursor, never under one stud nor
     return editor.snapshot().hover?.placement?.assistNeighbourhood;
   };
 
-  expect([radius(100), radius(44), radius(5)]).toEqual([
-    { ldu: 60, cells: 3, plates: 7 },
-    { ldu: 44, cells: 3, plates: 5 },
-    { ldu: 20, cells: 1, plates: 2 },
-  ]);
+  const [capped, within, floored] = [radius(100), radius(44), radius(5)];
+
+  expect({ capped, floored, withinCells: within?.cells, withinPlates: within?.plates }).toEqual({
+    capped: { ldu: 60, cells: 3, plates: 7 },
+    floored: { ldu: 20, cells: 1, plates: 2 },
+    withinCells: 3,
+    withinPlates: 5,
+  });
+  expect(within?.ldu).toBeCloseTo(Math.hypot(2 * STUD_LDU, 2 * PLATE_LDU), 12);
 }, 120_000);
+
+const ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG = -1.2;
+const SUB_CELL_OFFSETS_PX: ReadonlyArray<readonly [number, number]> = [
+  [0, 2],
+  [0, -2],
+  [2, 0],
+  [-2, 0],
+  [2, 2],
+  [-2, -2],
+];
+const NDC_PER_PX_X = 2 / 640;
+const NDC_PER_PX_Y = 2 / 480;
+
+function orbitCameraAt(x: number, z: number, zoomLog: number): ViewCamera {
+  const camera = new ViewCamera(CAMERA_FOV_DEGREES);
+  camera.resize(640, 480);
+  camera.step(0);
+  camera.setMode("orbit");
+  camera.step(1);
+  camera.step(5_000);
+  camera.zoomAtSafeCentre(zoomLog);
+  camera.step(10_000);
+  camera.jumpTo(x, z);
+  camera.step(15_000);
+  return camera;
+}
+
+it("keeps the hover and never restarts its search while the pointer moves within one stud cell at a fixed zoom", async () => {
+  const scene = await setOneStudIntoSet();
+  const { editor, backend, frame } = scene;
+  backend.camera = orbitCameraAt(scene.oneStudIn, 320, ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG);
+  editor.pointerMove(0, 0);
+  await framesToSettle(editor, frame);
+  const start = editor.snapshot().hover;
+  const settled = start?.placement ?? null;
+  const published = publishedHovers(editor);
+  const cells = new Set<string>([`${start?.x},${start?.z}`]);
+  const clock = slowClock();
+  try {
+    for (const [rightPx, upPx] of SUB_CELL_OFFSETS_PX) {
+      editor.pointerMove(rightPx * NDC_PER_PX_X, upPx * NDC_PER_PX_Y);
+      const hover = editor.snapshot().hover;
+      cells.add(`${hover?.x},${hover?.z}`);
+      await frame();
+    }
+  } finally {
+    clock.mockRestore();
+  }
+  const reach = settled?.assistNeighbourhood.ldu ?? 0;
+
+  expect({ cells: cells.size, insideTheClamp: reach > STUD_LDU && reach < 3 * STUD_LDU }).toEqual({
+    cells: 1,
+    insideTheClamp: true,
+  });
+  expect({
+    published: published.length > 0,
+    allTheSettledHover: published.every((hover) => hover === settled),
+  }).toEqual({ published: true, allTheSettledHover: true });
+}, 240_000);
 
 it("counts Technic, side-stud and track votes only where those finders propose a pose, over real modulars, a module and a set with track", async () => {
   const fireBrigade = "omr:10190-1";
