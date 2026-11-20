@@ -92,7 +92,9 @@ test("CA-licensed custom parts from an MPD and a Studio file are drawn and badge
   await writeFile(mpd, await customBricksMpd());
   await writeFile(io, await studioArchive());
   const editor = await EditorPage.open(page);
-  await editor.serveLdrawLibrary();
+  await editor.serveLdrawLibrary({
+    expectMissing: ["stud-brick.dat", "own-stud-brick.dat", "unlicensed.dat", "studiobrick.dat"],
+  });
 
   const fromMpd = await editor.importModel(mpd);
   expect(fromMpd.status, fromMpd.text).toBe("placeable");
