@@ -1423,7 +1423,7 @@ fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
 
 #[test]
 fn an_inferred_face_a_verified_face_covers_exactly_is_dropped_and_reported() {
-    let mut plate = custom_plate(4, 1, &[]);
+    let mut plate = custom_plate(5, 1, &[]);
     plate += "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/unverified.dat\n";
     let library = with_parts(
         pinned("ldraw"),
@@ -1436,15 +1436,16 @@ fn an_inferred_face_a_verified_face_covers_exactly_is_dropped_and_reported() {
         pinned("ldcad-shadow"),
         &[(
             "parts/custom.dat",
-            "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=-30 10 0]\n\
-             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 8] [pos=-10 10 0]\n\
-             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 3] [pos=30 7 0]\n"
+            "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=-40 10 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 8] [pos=-20 10 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 3] [pos=20 7 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 6] [pos=40 10 0]\n"
                 .to_string(),
         )],
     );
     let patches = memory(&[(
         "parts/s/unverified.dat",
-        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=10 10 0]\n",
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=0 10 0]\n",
     )]);
     let verified = HashSet::new();
     let table =
@@ -1472,17 +1473,19 @@ fn an_inferred_face_a_verified_face_covers_exactly_is_dropped_and_reported() {
     assert_eq!(
         receptors(&records.connectors.faces),
         vec![
-            (Source::Inferred, [10.0, -8.0, 0.0]),
-            (Source::Inferred, [30.0, -8.0, 0.0]),
+            (Source::Inferred, [0.0, -8.0, 0.0]),
+            (Source::Inferred, [20.0, -8.0, 0.0]),
+            (Source::Inferred, [40.0, -8.0, 0.0]),
         ]
     );
     assert_eq!(
         receptors(&records.connectivity.faces),
         vec![
-            (Source::Shadow, [-30.0, -10.0, 0.0]),
-            (Source::Shadow, [-10.0, -10.0, 0.0]),
-            (Source::Patch, [10.0, -10.0, 0.0]),
-            (Source::Shadow, [30.0, -7.0, 0.0]),
+            (Source::Shadow, [-40.0, -10.0, 0.0]),
+            (Source::Shadow, [-20.0, -10.0, 0.0]),
+            (Source::Patch, [0.0, -10.0, 0.0]),
+            (Source::Shadow, [20.0, -7.0, 0.0]),
+            (Source::Shadow, [40.0, -10.0, 0.0]),
         ]
     );
     let mut covered: Vec<([f64; 3], [f64; 3], CoveredFloor)> = extraction
@@ -1502,13 +1505,13 @@ fn an_inferred_face_a_verified_face_covers_exactly_is_dropped_and_reported() {
         covered,
         vec![
             (
-                [-30.0, -8.0, 0.0],
-                [-30.0, -10.0, 0.0],
+                [-40.0, -8.0, 0.0],
+                [-40.0, -10.0, 0.0],
                 CoveredFloor::SameFloor
             ),
             (
-                [-10.0, -8.0, 0.0],
-                [-10.0, -10.0, 0.0],
+                [-20.0, -8.0, 0.0],
+                [-20.0, -10.0, 0.0],
                 CoveredFloor::CoverOpenThere
             ),
         ]

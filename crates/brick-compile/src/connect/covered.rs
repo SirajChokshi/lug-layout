@@ -1,11 +1,14 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::mem;
 
 use crate::identify::identifies;
 
-use super::records::{exact_slot, free_faces_of_partly_held, tier, ExactSlot};
+use super::records::{
+    exact_slot, free_faces_of_partly_held, same_receptor, standing, tier, ExactSlot,
+};
 use super::{
     mating_faces, Connector, Extraction, FaceSection, Gender, Issue, MatingFace, Source, Status,
-    CAP_FAR,
+    WithheldFace, CAP_FAR,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,7 +21,46 @@ pub enum CoveredFloor {
 const SHADOW_TIER: u8 = 1;
 const PRIMITIVE_TIER: u8 = 2;
 
-pub(super) fn verified_covers(extraction: &Extraction) -> Vec<MatingFace> {
+pub(super) fn drop_covered_inferences(extraction: &mut Extraction) {
+    let covers = verified_covers(extraction);
+    let mut renumbered: HashMap<usize, usize> = HashMap::new();
+    let mut kept: Vec<Connector> = Vec::new();
+    let mut withheld: Vec<WithheldFace> = Vec::new();
+    for (index, connector) in mem::take(&mut extraction.connectors)
+        .into_iter()
+        .enumerate()
+    {
+        let coverage = covered_inference(&covers, &connector);
+        if coverage.whole() {
+            extraction
+                .issues
+                .extend(coverage.covered.into_iter().map(|(_, issue)| issue));
+            continue;
+        }
+        renumbered.insert(index, kept.len());
+        for (face, issue) in coverage.covered {
+            withheld.push(WithheldFace {
+                connector: kept.len(),
+                face,
+            });
+            extraction.issues.push(issue);
+        }
+        kept.push(connector);
+    }
+    let earlier = mem::take(&mut extraction.withheld);
+    extraction.withheld = earlier
+        .into_iter()
+        .filter_map(|face| {
+            renumbered
+                .get(&face.connector)
+                .map(|&connector| WithheldFace { connector, ..face })
+        })
+        .chain(withheld)
+        .collect();
+    extraction.connectors = kept;
+}
+
+fn verified_covers(extraction: &Extraction) -> Vec<MatingFace> {
     let may_be_withheld: HashSet<(usize, usize)> = free_faces_of_partly_held(extraction)
         .into_iter()
         .map(|free| (free.connector, free.face))
@@ -40,10 +82,25 @@ pub(super) fn verified_covers(extraction: &Extraction) -> Vec<MatingFace> {
         .filter(|(_, _, face)| tier(face.source) == SHADOW_TIER)
         .filter_map(|(_, _, face)| exact_slot(face))
         .collect();
+    let published_status = |face: &MatingFace| -> Status {
+        let Some(slot) = exact_slot(face) else {
+            return face.status;
+        };
+        faces
+            .iter()
+            .map(|(_, _, other)| other)
+            .filter(|other| {
+                exact_slot(other) == Some(slot)
+                    && tier(other.source) == tier(face.source)
+                    && same_receptor(face, other)
+            })
+            .min_by_key(|other| standing(other))
+            .map_or(face.status, |best| best.status)
+    };
     faces
-        .into_iter()
+        .iter()
         .filter(|(index, face, mating)| {
-            mating.status == Status::Verified
+            published_status(mating) == Status::Verified
                 && match tier(mating.source) {
                     SHADOW_TIER => true,
                     PRIMITIVE_TIER => {
@@ -53,22 +110,22 @@ pub(super) fn verified_covers(extraction: &Extraction) -> Vec<MatingFace> {
                     _ => false,
                 }
         })
-        .map(|(_, _, mating)| mating)
+        .map(|(_, _, mating)| mating.clone())
         .collect()
 }
 
-pub(super) struct Coverage {
-    pub faces: usize,
-    pub covered: Vec<(usize, Issue)>,
+struct Coverage {
+    faces: usize,
+    covered: Vec<(usize, Issue)>,
 }
 
 impl Coverage {
-    pub fn whole(&self) -> bool {
+    fn whole(&self) -> bool {
         self.faces > 0 && self.covered.len() == self.faces
     }
 }
 
-pub(super) fn covered_inference(covers: &[MatingFace], candidate: &Connector) -> Coverage {
+fn covered_inference(covers: &[MatingFace], candidate: &Connector) -> Coverage {
     let faces = match candidate.source {
         Source::Inferred => mating_faces(candidate).unwrap_or_default(),
         _ => Vec::new(),
@@ -77,18 +134,22 @@ pub(super) fn covered_inference(covers: &[MatingFace], candidate: &Connector) ->
         .iter()
         .enumerate()
         .filter_map(|(index, face)| {
-            covers.iter().find_map(|cover| {
-                cover_offset(cover, face).map(|offset| {
+            covers
+                .iter()
+                .filter_map(|cover| {
+                    cover_offset(cover, face).map(|offset| (cover, floor(cover, face, offset)))
+                })
+                .min_by_key(|(_, floor)| *floor == CoveredFloor::CoverOpenThere)
+                .map(|(cover, floor)| {
                     (
                         index,
                         Issue::CoveredInference {
                             inferred: face.clone(),
                             cover: cover.clone(),
-                            floor: floor(cover, face, offset),
+                            floor,
                         },
                     )
                 })
-            })
         })
         .collect();
     Coverage {

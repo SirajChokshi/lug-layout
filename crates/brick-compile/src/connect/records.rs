@@ -129,7 +129,7 @@ pub(super) fn tier(source: Source) -> u8 {
     }
 }
 
-fn standing(face: &MatingFace) -> (u8, bool, u8) {
+pub(super) fn standing(face: &MatingFace) -> (u8, bool, u8) {
     (
         tier(face.source),
         face.source != Source::Patch,
@@ -137,7 +137,7 @@ fn standing(face: &MatingFace) -> (u8, bool, u8) {
     )
 }
 
-fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
+pub(super) fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
     a.gender == b.gender
         && a.sections == b.sections
         && a.caps == b.caps

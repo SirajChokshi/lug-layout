@@ -639,7 +639,6 @@ fn merge(
     extraction: &mut Extraction,
     candidates: Vec<Connector>,
     keys: fn(&Connector) -> Vec<SlotKey>,
-    covers: &[MatingFace],
 ) {
     let mut occupied: HashMap<SlotKey, Occupant> = HashMap::new();
     for (index, connector) in extraction.connectors.iter().enumerate() {
@@ -674,24 +673,7 @@ fn merge(
             }
             Some(Occupant::Cleared) => {}
             None => {
-                let coverage = covered::covered_inference(covers, &candidate);
-                if coverage.whole() {
-                    for key in candidate_keys {
-                        occupied.insert(key, Occupant::Cleared);
-                    }
-                    extraction
-                        .issues
-                        .extend(coverage.covered.into_iter().map(|(_, issue)| issue));
-                    continue;
-                }
                 let index = extraction.connectors.len();
-                for (face, issue) in coverage.covered {
-                    extraction.withheld.push(WithheldFace {
-                        connector: index,
-                        face,
-                    });
-                    extraction.issues.push(issue);
-                }
                 for key in candidate_keys {
                     occupied.insert(key, Occupant::Tier(index));
                 }
@@ -738,18 +720,12 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
         let mut extraction = self.shadow.snaps(path);
         let (primitive, issues) = self.primitives.connectors(path);
         extraction.issues.extend(issues);
-        merge(&mut extraction, primitive, anchor_keys, &[]);
+        merge(&mut extraction, primitive, anchor_keys);
         let candidates = self.primitives.where_open(path);
         let opened = self.inferred.open(path, candidates);
         extraction.issues.extend(opened.issues);
         extraction.off_lattice.extend(opened.off_lattice);
-        let covers = covered::verified_covers(&extraction);
-        merge(
-            &mut extraction,
-            opened.connectors,
-            anchor_and_face_keys,
-            &covers,
-        );
+        merge(&mut extraction, opened.connectors, anchor_and_face_keys);
         let inferred = self.inferred.infer(path);
         let held: HashSet<Slot> = extraction
             .connectors
@@ -793,13 +769,8 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 _ => true,
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
-        let covers = covered::verified_covers(&extraction);
-        merge(
-            &mut extraction,
-            inferred.connectors,
-            anchor_and_face_keys,
-            &covers,
-        );
+        merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        covered::drop_covered_inferences(&mut extraction);
         for free in records::free_faces_of_partly_held(&extraction) {
             let face = WithheldFace {
                 connector: free.connector,
