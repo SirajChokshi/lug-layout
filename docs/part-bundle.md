@@ -62,6 +62,16 @@ Models that only tests load are listed in `tools/asset-pipeline/fixture-models.j
 - **LDraw library:** while `public_base_url` in `infra/cloudflare/ldraw-library.json` is `null`, builds read the LDraw library from GitHub raw. Once it's committed, `vercel-build.sh` exports it as `VITE_LDRAW_LIBRARY_BASE_URL`; the build doesn't check that the library is published (`docs/ldraw-library.md`).
 - **Ignored builds:** `ignoreCommand` skips deploys whose changes are only Markdown, tests, benchmarks, `.cursor`, `.github`, `infra`, `apps/catalog-api` or `docs/research`. Any git error, such as no previous deployment, builds.
 
+## Browser cache
+
+The app keeps what it reads from the bucket through `ASSET_FETCHER`, and the library-bake records its imports read, in IndexedDB, in one database, `brr-assets` (`IndexedDbAssetCache` in `@brr/storage`), so they survive HTTP-cache eviction and load without a network:
+- **Bundle files.** The main thread's `ASSET_FETCHER` is `CachingAssetFetcher` (`@brr/client`), around catalog's `HttpAssetFetcher` (`NETWORK_ASSET_FETCHER`). Content-addressed paths (`isContentAddressedPath`) come from IndexedDB first, then from the network, and are written back after a successful download. Their bytes are checked against the SHA-256 prefix in their name both ways: a downloaded body that doesn't match is returned, as before, but never stored, and a cached entry that doesn't match reads as a miss. Every other path (`current/latest.json`, and the local `manifest.json`) goes to the network first. It falls back to its last good copy only when the request gets no HTTP response at all. An HTTP error status (`AssetResponseError`) still fails as before, so the loader falls back to its configured manifest. An online page load therefore always follows the newest pointer the bucket serves, and an offline reload opens the manifest the pointer last named. A failed response is never stored.
+- **Library-bake records.** The import worker's `LibraryBakeStore` keeps the records, buckets, GLBs and index it reads in the same cache (*At import* below), keyed by their path under `library-bake/` (`records/…`, `buckets/…`, `standard/…`). A record's GLB has the same `standard/<part>.<digest>.glb` name as the bundle's standard GLB whenever their bytes agree, so a part both threads load is stored once. The worker loads `assetCacheModule`, which binds only the cache, so the world repositories stay out of its chunk (`@brr/storage` declares `"sideEffects": false`).
+- **One budget.** All of it shares 256 MiB (`ASSET_CACHE_BUDGET`). Each write records the entry's size and a use stamp from a logical clock, and updates the running total and the clock in a `ledger` record, all in one IndexedDB transaction. When the total passes the budget, the same transaction deletes the entries with the oldest stamps until it fits. IndexedDB runs overlapping write transactions one at a time, so the main thread, the import worker and other tabs keep one consistent total. They share one least-recently-used order too, except that reads are stamped in batches, up to 2 s after the read or with that instance's next write. Until then another thread can evict something just read, which costs one more download. An entry larger than the budget is never stored.
+- **Failures read as misses.** Without IndexedDB, or when it refuses to open or a write fails (for example over quota), reads go to the network and nothing is thrown.
+- **Persistence.** The first save that changes a world's content asks once per session for `navigator.storage.persist()`, so the browser keeps worlds and cached assets under storage pressure. Creating a world, or a save that only moves the camera, never asks.
+- **Not cached here.** Palette thumbnails are `<img>` URLs (`thumbnailUrls`), so only the HTTP cache keeps them, and offline the palette shows them missing. Loading the app shell offline still needs a service worker.
+
 ## Setup
 
 1. Apply `infra/cloudflare`. It creates the bucket, public on its r2.dev domain.
@@ -146,7 +156,7 @@ The import worker reads records from a base URL:
 - its LDraw source, stud primitives, unofficial allowlist and Technic primitive table against the import's;
 - every bucket, record and GLB against its content address.
 
-It keeps verified files in the worker's IndexedDB (`brr-library-bake`).
+It keeps verified files in the asset cache it shares with the main thread (`brr-assets`, *Browser cache* above), and verifies every cached file again when it reads it.
 
 **What comes from records.** For every official reference the index lists:
 - **GLB:** the standard GLB, and its header, come from the GLB's `extras` instead of the compile op. That's at the standard LOD only.

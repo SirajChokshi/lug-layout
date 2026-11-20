@@ -1,3 +1,4 @@
+export { AssetResponseError } from "./asset-response-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
@@ -55,5 +56,6 @@ export {
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
   CATALOG_API_BASE_URL,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";

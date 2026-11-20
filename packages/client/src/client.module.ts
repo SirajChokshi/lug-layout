@@ -1,4 +1,5 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
@@ -20,6 +21,7 @@ import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
+import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
@@ -85,6 +87,7 @@ import {
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
+  bind(ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();

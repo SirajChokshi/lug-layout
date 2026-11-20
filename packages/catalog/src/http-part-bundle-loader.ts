@@ -1,3 +1,4 @@
+import { AssetResponseError } from "./asset-response-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
@@ -122,7 +123,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
   private async get(path: string): Promise<Response> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
+    if (!response.ok) throw new AssetResponseError(url, response.status);
     return response;
   }
 

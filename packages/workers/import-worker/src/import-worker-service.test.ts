@@ -1,6 +1,8 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   catalogModule,
   type PartConnectors,
@@ -25,7 +27,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { IImportWorkerService } from "./import-worker-service.ts";
-import { importWorkerModule } from "./import-worker.module.ts";
+import { importWorkerModules } from "./import-worker.module.ts";
 import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -50,7 +52,7 @@ const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () =
 
 function importWorker(): IImportWorkerService {
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
   return container.get(IMPORT_WORKER_SERVICE);
 }
 
@@ -155,6 +157,7 @@ afterAll(async () => {
 async function bundleLoader() {
   const container = new Container();
   await container.load(catalogModule);
+  container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   return container.get(PART_BUNDLE_LOADER);
@@ -412,7 +415,7 @@ it("imports with the compiler and LDraw library the request names and the worker
   const requested: string[] = [];
   let clockReads = 0;
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
   container.rebind(IMPORT_FETCH).toConstantValue(servedFrom(manifest, requested));
   container.rebind(IMPORT_CLOCK).toConstantValue(() => {
     clockReads++;

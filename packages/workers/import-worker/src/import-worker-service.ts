@@ -5,7 +5,6 @@ import {
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
-  type IByteCache,
   type ImportResult,
   type ImportWorkerRequest,
   type IPartRecords,
@@ -15,6 +14,7 @@ import {
   type ModelImportEngine,
   type PartConnectorSource,
 } from "@brr/import";
+import { ASSET_CACHE, type IAssetCache } from "@brr/storage";
 import { inject, injectable } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
 import type { ICompilerLoader } from "./compiler-loader.ts";
@@ -24,7 +24,6 @@ import {
   IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
-  RECORD_CACHE,
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
@@ -52,7 +51,7 @@ export class ImportWorkerService implements IImportWorkerService {
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
     @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
-    @inject(RECORD_CACHE) private readonly recordCache: IByteCache,
+    @inject(ASSET_CACHE) private readonly assetCache: IAssetCache,
   ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
@@ -80,7 +79,7 @@ export class ImportWorkerService implements IImportWorkerService {
     const key = `${source.url} ${source.pin.sha256}`;
     let store = this.recordStores.get(key);
     if (store === undefined) {
-      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.recordCache);
+      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.assetCache);
       this.recordStores.set(key, store);
     }
     return store;
