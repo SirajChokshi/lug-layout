@@ -8,6 +8,7 @@ import {
   splitMultiPart,
   subfileReferences,
 } from "./ldraw/parse.ts";
+import { fetchWithRetry, NETWORK } from "./fetch-retry.ts";
 import type {
   CatalogLocation,
   CatalogSource,
@@ -49,6 +50,7 @@ const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
 const LOW_RESOLUTION_DIRECTORY = "p/8/";
 const CONNECTIVITY_LICENSE = "LICENSE.md";
 const RESTORE_CONCURRENCY = 16;
+const NOT_FOUND = 404;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -65,10 +67,10 @@ function downloadUrl(source: CatalogLocation, path: string): string {
 
 async function download(source: CatalogLocation, path: string): Promise<Uint8Array | undefined> {
   const url = downloadUrl(source, path);
-  const response = await fetch(url);
-  if (response.status === 404) return undefined;
-  if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const { status, bytes } = await fetchWithRetry(url, NETWORK);
+  if (status === NOT_FOUND) return undefined;
+  if (bytes === null) throw new Error(`GET ${url} failed with ${status}`);
+  return bytes;
 }
 
 async function resolveReference(
