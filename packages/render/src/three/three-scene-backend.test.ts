@@ -4,13 +4,17 @@ import {
   type PartMesh,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
+import { CHUNK_LDU } from "@brr/math";
 import { Mesh, type Object3D } from "three/webgpu";
-import { expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChunkInstances,
   ChunkTier,
+  FarModelPlacement,
   NeededMeshListener,
   PartPalette,
+  PlanOverlay,
+  WorldBox,
 } from "../scene-backend.ts";
 import { edgeIdOf } from "./edge-ids.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
@@ -19,6 +23,8 @@ const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
 const TILTED = [1, 0, 0, 0, 0, 0, -1, 0, 0, 1, 0, 0];
 const CLOSE_EYE_LDU = 20;
 const DISTANT_EYE_LDU = 10_000_000;
+const VIEW_EYE_HEIGHT_LDU = 2_000;
+const WELL_PAST_SETTLE_MS = 1_000;
 const RED = 4;
 const NO_STUDS = {
   count: 0,
@@ -375,4 +381,148 @@ it("keeps edge ids when colours are appended, and refuses colours that change wh
     "setColors may only append colours",
   );
   expect(drawnMeshes(backend).map((mesh) => mesh.id)).toEqual(meshes);
+});
+
+const WEST_CHUNK_KEY = 35184367894528;
+const MIDDLE_CHUNK_KEY = 35184376283136;
+const EAST_CHUNK_KEY = 35184384671744;
+
+function chunkKeysInSceneOrder(backend: ThreeSceneBackend): number[] {
+  const scene: Object3D = backend["scene"];
+  const chunks: Map<number, { readonly group: Object3D }> = backend["chunks"];
+  const keyOfGroup = new Map(Array.from(chunks, ([key, record]) => [record.group, key]));
+  const keys: number[] = [];
+  scene.traverse((object) => {
+    const key = keyOfGroup.get(object);
+    if (key !== undefined) keys.push(key);
+  });
+  return keys;
+}
+
+it("keeps chunk groups in chunk-key order whatever order they were built and rebuilt in", () => {
+  const rebuiltOnArrival = edgeBackend();
+  rebuiltOnArrival.forceTier("mid");
+  rebuiltOnArrival.setChunk(MIDDLE_CHUNK_KEY, partsAndStudAt(0, 0));
+  rebuiltOnArrival.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+  rebuiltOnArrival.setChunk(WEST_CHUNK_KEY, partsAndStudAt(-CHUNK, 0));
+  rebuiltOnArrival.setChunk(EAST_CHUNK_KEY, partsAndStudAt(CHUNK, 0));
+  const rebuiltOnTierChange = edgeBackend();
+  rebuiltOnTierChange.forceTier("near");
+  rebuiltOnTierChange.setChunk(EAST_CHUNK_KEY, partsAndStudAt(CHUNK, 0));
+  rebuiltOnTierChange.setChunk(WEST_CHUNK_KEY, partsAndStudAt(-CHUNK, 0));
+  rebuiltOnTierChange.setChunk(MIDDLE_CHUNK_KEY, partsAndStudAt(0, 0));
+  rebuiltOnTierChange.setPartMeshes([{ index: 0, level: "far", part: part("a", 40) }]);
+  rebuiltOnTierChange.forceTier("mid");
+
+  expect([
+    chunkKeysInSceneOrder(rebuiltOnArrival),
+    chunkKeysInSceneOrder(rebuiltOnTierChange),
+  ]).toEqual([
+    [WEST_CHUNK_KEY, MIDDLE_CHUNK_KEY, EAST_CHUNK_KEY],
+    [WEST_CHUNK_KEY, MIDDLE_CHUNK_KEY, EAST_CHUNK_KEY],
+  ]);
+});
+
+function worldBox(minX: number, minZ: number, size: number): WorldBox {
+  return { minX, minY: 0, minZ, maxX: minX + size, maxY: 24, maxZ: minZ + size };
+}
+
+function room(minX: number): PlanOverlay {
+  return {
+    room: worldBox(minX, 0, 1280),
+    tables: [worldBox(minX, 0, 640)],
+    obstacles: [],
+    gridStepLdu: 20,
+    active: true,
+  };
+}
+
+const FAR_MODEL: FarModelPlacement = {
+  modelIndex: 0,
+  originX: 0,
+  originZ: 0,
+  matrix: Float32Array.from(IDENTITY),
+  chunkKeys: [MIDDLE_CHUNK_KEY],
+};
+
+function containerContents(backend: ThreeSceneBackend): Array<Array<number | string>> {
+  const scene: Object3D = backend["scene"];
+  const chunks: Map<number, { readonly group: Object3D }> = backend["chunks"];
+  const farModels: Map<number, { readonly group: Object3D }> = backend["farModelNodes"];
+  const vehicles: Map<number, { readonly group: Object3D }> = backend["vehicles"];
+  const ghost: Object3D | undefined = backend["ghost"];
+  const labels = new Map<Object3D, number | string>();
+  for (const [key, record] of chunks) labels.set(record.group, key);
+  for (const [id, node] of farModels) labels.set(node.group, `far model ${id}`);
+  for (const [id, record] of vehicles) labels.set(record.group, `vehicle ${id}`);
+  if (ghost) labels.set(ghost, "ghost");
+  return scene.children.map((container) =>
+    container.children.map((child) => labels.get(child) ?? `at x ${child.position.x}`),
+  );
+}
+
+it("keeps every holder under its own container, and the scene's direct children unchanged, through repeated updates", () => {
+  const backend = edgeBackend();
+  const model = partsAndStudAt(0, 0);
+  backend.setChunk(MIDDLE_CHUNK_KEY, model);
+  backend.setFarModel(7, FAR_MODEL);
+  backend.setFarModel(7, FAR_MODEL);
+  backend.setFarModel(9, FAR_MODEL);
+  backend.setVehicle(3, model);
+  backend.setVehicle(0, model);
+  backend.setVehicle(0, model);
+  backend.setGhost(model);
+  backend.setGhost(model);
+  backend.setPlanOverlays([room(0), room(1280)]);
+  backend.setPlanOverlays([room(1280), room(0)]);
+  backend.setIssueBoxes([worldBox(0, 0, 20), worldBox(100, 0, 20), worldBox(200, 0, 20)]);
+  backend.setIssueBoxes([worldBox(200, 0, 20), worldBox(0, 0, 20)]);
+  const beforePalette = containerContents(backend);
+  backend.setPalette(palette([part("a", 20)]));
+
+  expect([beforePalette, containerContents(backend)]).toEqual([
+    [
+      [MIDDLE_CHUNK_KEY],
+      ["far model 7", "far model 9"],
+      ["vehicle 0", "vehicle 3"],
+      ["ghost"],
+      ["at x 1280", "at x 0"],
+      ["at x 210", "at x 10"],
+    ],
+    [[], [], [], [], ["at x 1280", "at x 0"], ["at x 210", "at x 10"]],
+  ]);
+});
+
+describe("the render origin", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("rebases to the eye's chunk once the eye has been still for the settle time, without another setView", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const backend = new ThreeSceneBackend();
+    backend.resize(640, 480);
+    const z = CHUNK_LDU / 2;
+    const firstX = CHUNK_LDU / 2;
+    const nextChunkX = CHUNK_LDU + CHUNK_LDU / 2;
+    const rebasedChunks = (): ReadonlyArray<readonly [number, number]> =>
+      backend.rebaseLog().map(({ chunkX, chunkZ }) => [chunkX, chunkZ] as const);
+
+    backend.setView(firstX, VIEW_EYE_HEIGHT_LDU, z, firstX, 0, z + 1);
+    backend.setView(nextChunkX, VIEW_EYE_HEIGHT_LDU, z, nextChunkX, 0, z + 1);
+    const whileMoving = rebasedChunks();
+    vi.advanceTimersByTime(WELL_PAST_SETTLE_MS);
+    const ray = new Float64Array(6);
+    backend.rayThrough(0, 0, ray);
+
+    expect({ whileMoving, settled: rebasedChunks(), eyeX: ray[0], eyeZ: ray[2] }).toEqual({
+      whileMoving: [[0, 0]],
+      settled: [
+        [0, 0],
+        [1, 0],
+      ],
+      eyeX: nextChunkX,
+      eyeZ: z,
+    });
+  });
 });

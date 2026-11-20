@@ -49,7 +49,8 @@ export interface Placeable {
   readonly partTransforms: PartInstances;
   readonly studs: StudInstances;
   readonly studLattice: StudLattice;
-  readonly bakedCoveredStuds: number;
+  readonly studsPending: boolean;
+  readonly bakedCoveredStuds: number | null;
   readonly cells: PlaceableCells;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
@@ -61,6 +62,10 @@ export interface Placeable {
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+export type PlacementModel = Omit<PartModel, "studCover"> & {
+  readonly studCover: ModelStudCover | null;
+};
+
 export const FOOTPRINT_NONE = 0;
 export const FOOTPRINT_ANTI_STUD = 1;
 export const FOOTPRINT_FLAT = 2;
@@ -163,6 +168,15 @@ function studLattice(
     );
   }
   return { onLattice, cellX, cellZ, baseLdu };
+}
+
+function noStudsOffered(count: number): StudLattice {
+  return {
+    onLattice: new Uint8Array(count),
+    cellX: new Int32Array(count),
+    cellZ: new Int32Array(count),
+    baseLdu: new Int32Array(count),
+  };
 }
 
 function wholeCells(ldu: number, what: string): number {
@@ -344,7 +358,7 @@ export function modelPlaceable(
   id: string,
   name: string,
   label: string,
-  model: PartModel,
+  model: PlacementModel,
   credit: ModelCredit,
   parts: ReadonlyArray<PartShapeAsset>,
   colors: ColorTable,
@@ -369,7 +383,8 @@ export function modelPlaceable(
   };
   const box = shiftedBox(lattice.aabbMin, lattice.aabbMax, shift);
   const partBoxes = instanceBoxes(local, parts);
-  const studs = withStuds(local, parts, colors, model.studCover).studs;
+  const cover = model.studCover ?? undefined;
+  const studs = withStuds(local, parts, colors, cover).studs;
   const partTransforms: PartInstances = {
     count: model.instanceCount,
     partIndex: model.partIndex,
@@ -386,8 +401,12 @@ export function modelPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice: studLattice(partTransforms, parts, model.studCover, studs.count),
-    bakedCoveredStuds: model.studCover.covered,
+    studLattice:
+      cover === undefined
+        ? noStudsOffered(studs.count)
+        : studLattice(partTransforms, parts, cover, studs.count),
+    studsPending: cover === undefined,
+    bakedCoveredStuds: cover?.covered ?? null,
     cells: modelCells(cells, shift, name),
     box,
     partBoxes,
@@ -457,6 +476,7 @@ export function partPlaceable(
     partTransforms,
     studs,
     studLattice: studLattice(partTransforms, parts, undefined, studs.count),
+    studsPending: false,
     bakedCoveredStuds: 0,
     cells: partCells(part, shift),
     box,

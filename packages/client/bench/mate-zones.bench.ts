@@ -1,3 +1,4 @@
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import {
@@ -19,8 +20,6 @@ import {
   SparseConnectorFinder,
   TrackEndFinder,
   modelTechnic,
-  placeTechnicInto,
-  technicScratch,
   type LatticePose,
   type OverlapHit,
 } from "@brr/domain";
@@ -66,10 +65,15 @@ function table(
     Uint8Array.from(rows, ([, gender]) => gender),
     new Uint8Array(rows.length).fill(SOURCE_SHADOW),
     new Uint8Array(rows.length).fill(STATUS_VERIFIED),
-    Float32Array.from(rows.flatMap(([, , x, y, z]) => [x, y, z])),
+    Int32Array.from(
+      rows.flatMap(([, , x, y, z]) => [x, y, z]),
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
+    ),
     Int8Array.from(rows, ([, , , , , axis]) => axis),
-    new Float32Array(rows.length * 3),
+    new Float64Array(rows.length * 3),
     new Uint16Array(rows.length),
+    new Float64Array(rows.length * 3),
+    [],
   );
 }
 
@@ -118,9 +122,7 @@ for (let p = 0; p < PINS; p++) {
     matrices: Float64Array.from(translated(p * PITCH, 0)),
   };
   const boxes = partBoxes([p * PITCH, 0, 0, p * PITCH + 2 * STUD, BRICK, STUD]);
-  const local = modelTechnic([bored], instances, boxes.boxes);
-  const technic = technicScratch(local);
-  placeTechnicInto(local, origin, technic);
+  const technic = modelTechnic([bored], instances, boxes.boxes);
   solver.insert(ModelConnectors.fromParts([blockTable], instances, mating), origin, p);
   placed.set(p, { boxes, technic, pose: origin });
 }
