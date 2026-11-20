@@ -56,7 +56,10 @@ pub struct LibraryFile {
     deny_unknown_fields
 )]
 pub enum Operation {
-    ReadModel,
+    ReadModel {
+        #[serde(default)]
+        omr_authoring_identification: bool,
+    },
     ReadStudio,
     Compile {
         lod: LodName,
@@ -82,6 +85,8 @@ pub enum Operation {
         shard: Option<Shard>,
         #[serde(default)]
         keep_parts: bool,
+        #[serde(default)]
+        omr_authoring_identification: bool,
     },
 }
 

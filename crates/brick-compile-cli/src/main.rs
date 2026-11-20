@@ -3,7 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::authored::AUTHORED_RULE_VERSION;
+use brick_compile::bake::{drawn_lattice, FarVoxels, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
 use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
 use brick_compile::connect::{
@@ -14,7 +15,9 @@ use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
-use brick_compile::model::{bake_model, submodel_index, ModelInstance};
+use brick_compile::model::{
+    bake_model_with, submodel_index, AuthoredColumns, BakeOptions, ModelInstance, RationalText,
+};
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
@@ -110,6 +113,32 @@ fn parse_args() -> Result<Args, String> {
         cover_cache: values.get("--cover-cache").map(PathBuf::from),
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
+    })
+}
+
+fn rational_json(value: &Option<RationalText>) -> Value {
+    value.as_ref().map_or(
+        Value::Null,
+        |value| json!({ "numerator": value.numerator, "denominator": value.denominator }),
+    )
+}
+
+fn authored_identification_json(columns: &AuthoredColumns) -> Value {
+    json!({
+        "ruleVersion": AUTHORED_RULE_VERSION,
+        "rows": {
+            "line": columns.line,
+            "lineKind": columns.line_kind,
+            "axis": columns.axis,
+            "printed": columns.printed,
+            "grid": columns.grid,
+            "identified": columns.identified.iter().map(rational_json).collect::<Vec<_>>(),
+            "residual": columns.residual.iter().map(rational_json).collect::<Vec<_>>(),
+        },
+        "excludedRotated": {
+            "line": columns.excluded_line,
+            "lineKind": columns.excluded_line_kind,
+        },
     })
 }
 
@@ -328,8 +357,12 @@ fn far_mesh(
     model_ldraw: &Value,
     credits: &mut BTreeMap<String, Value>,
 ) -> Result<Option<Value>, String> {
-    let Some(grid) = baker.voxels(drawn).map_err(|e| e.to_string())? else {
-        return Ok(None);
+    let grid = match baker.voxels(drawn).map_err(|e| e.to_string())? {
+        FarVoxels::Grid(grid) => grid,
+        FarVoxels::Omitted(reason) => {
+            println!("{name}: no far mesh: {reason}");
+            return Ok(None);
+        }
     };
     let mut sources: BTreeMap<String, Value> = BTreeMap::new();
     for instance in drawn {
@@ -633,15 +666,20 @@ fn run(args: &Args) -> Result<(), String> {
         let file = entry["file"]
             .as_str()
             .ok_or("model file must be a string")?;
-        let root = match entry["origin"].as_str() {
-            Some("omr") => &args.omr,
-            Some("generated") => &args.fixtures,
+        let (root, options) = match entry["origin"].as_str() {
+            Some("omr") => (
+                &args.omr,
+                BakeOptions {
+                    omr_authoring_identification: true,
+                },
+            ),
+            Some("generated") => (&args.fixtures, BakeOptions::default()),
             other => return Err(format!("{file}: unknown model origin {other:?}")),
         };
         let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
         let text = String::from_utf8_lossy(&source);
-        let baked = bake_model(&text).map_err(|e| format!("{file}: {e}"))?;
+        let baked = bake_model_with(&text, options).map_err(|e| format!("{file}: {e}"))?;
         let acknowledged = acknowledged_not_drawn(&entry, file)?;
         let mut not_drawn: Vec<Value> = Vec::new();
         let mut used: HashSet<String> = HashSet::new();
@@ -693,16 +731,28 @@ fn run(args: &Args) -> Result<(), String> {
                 "{file}: palette notDrawn lists {stale}, which the model does not drop"
             ));
         }
+        let is_drawn = |instance: &ModelInstance| {
+            instance
+                .inline
+                .as_ref()
+                .is_none_or(|inline| !acknowledged.contains_key(inline))
+        };
         let drawn: Vec<ModelInstance> = baked
             .instances
             .iter()
-            .filter(|instance| {
-                instance
-                    .inline
-                    .as_ref()
-                    .is_none_or(|inline| !acknowledged.contains_key(inline))
-            })
+            .filter(|instance| is_drawn(instance))
             .cloned()
+            .collect();
+        let mut next_drawn = 0;
+        let drawn_index: Vec<Option<usize>> = baked
+            .instances
+            .iter()
+            .map(|instance| {
+                is_drawn(instance).then(|| {
+                    next_drawn += 1;
+                    next_drawn - 1
+                })
+            })
             .collect();
         let vehicles: Vec<Value> = baker
             .vehicles(&drawn, &signatures, &rails)
@@ -831,6 +881,10 @@ fn run(args: &Args) -> Result<(), String> {
         });
         if !not_drawn.is_empty() {
             model["notDrawn"] = json!(not_drawn);
+        }
+        if let Some(authored) = &baked.authored_identification {
+            model["authoredIdentification"] =
+                authored_identification_json(&authored.columns(|line| drawn_index[line]));
         }
         fs::write(
             args.out.join(&model_file),
