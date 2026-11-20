@@ -61,6 +61,7 @@ export interface ITrainPlay {
   subscribe(listener: () => void): () => void;
   snapshot(): PlaySnapshot;
   start(): Promise<void>;
+  refusal(): string | null;
   stop(): void;
   drive(signedSpeedLduPerS: number): void;
   chooseDriven(train: number): void;
@@ -68,6 +69,15 @@ export interface ITrainPlay {
   rerail(): void;
   follow(camera: FollowCamera | null): void;
   click(ndcX: number, ndcY: number): boolean;
+}
+
+export const NO_TRACK_LAID = "Lay some track first, then set a train on it.";
+export const NO_TRAIN_PLACED =
+  "No train stands on the rails. Hold a train over laid track to set it on them.";
+
+export function playRefusal(yard: Pick<IRailYard, "rails" | "trains">): string | null {
+  if (!yard.rails()) return NO_TRACK_LAID;
+  return yard.trains().length === 0 ? NO_TRAIN_PLACED : null;
 }
 
 const MAX_SPEED_LDU_PER_S = 400;
@@ -162,17 +172,15 @@ export class TrainPlay implements ITrainPlay {
     }
   }
 
+  refusal(): string | null {
+    return playRefusal(this.yard);
+  }
+
   private async load(): Promise<void> {
     const rails = this.yard.rails();
     const placed = this.yard.trains();
-    if (placed.length === 0) {
-      throw new Error(
-        rails
-          ? "No train stands on the rails. Hold a train over laid track to set it on them."
-          : "Lay some track first, then set a train on it.",
-      );
-    }
-    if (!rails) throw new Error("Lay some track first, then set a train on it.");
+    if (!rails) throw new Error(NO_TRACK_LAID);
+    if (placed.length === 0) throw new Error(NO_TRAIN_PLACED);
     await this.runningGear.setModels(
       [...new Set(placed.map((train) => train.model))].map((model) => model.gear),
     );

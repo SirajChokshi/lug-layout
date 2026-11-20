@@ -175,6 +175,7 @@ export {
   PLAN_SERVICE,
   HOTBAR,
   SCALE_BAR,
+  STARTER_WORLDS,
 } from "./tokens.ts";
 export type {
   ITrainPlay,
@@ -183,6 +184,12 @@ export type {
   PlaySwitchView,
   PlayTrainView,
 } from "./play/train-play.ts";
+export type {
+  IStarterWorlds,
+  StarterShelfStatus,
+  StarterWorldView,
+  WelcomeView,
+} from "./starters/starter-worlds.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
   RollingDiagnosticsPanel,

@@ -60,6 +60,7 @@ export function PlayPanel({
   }, [camera, play]);
   const running = snapshot.status === "running";
   const onRails = trains.filter((train) => train.onRails).length;
+  const refusal = running ? null : play.refusal();
   const busy = snapshot.status === "loading";
   const derailed = snapshot.derailSpeedLduPerS > 0;
   const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;
@@ -111,11 +112,16 @@ export function PlayPanel({
             type="button"
             className="play-primary"
             data-action="play"
-            disabled={!ready || busy || checkingStuds}
+            disabled={!ready || busy || checkingStuds || refusal !== null}
             onClick={() => startPlay(editor, play)}
           >
             {playButtonText(busy, checkingStuds, onRails)}
           </button>
+          {refusal !== null && (
+            <p className="toolbar-hint" data-play-refusal="">
+              {refusal}
+            </p>
+          )}
           {snapshot.error && <p className="play-error">{snapshot.error}</p>}
           <p className="toolbar-hint">
             Every train starts where it stands on the rails. Open ends are live: run off one and the

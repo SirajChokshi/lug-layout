@@ -13,6 +13,7 @@ import {
   type IPlanService,
   type IRunningGear,
   type IScaleBar,
+  type IStarterWorlds,
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
@@ -36,7 +37,9 @@ import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
+import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
+import { WelcomeCard } from "./welcome-card.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
 interface EditorAppProps {
@@ -50,6 +53,7 @@ interface EditorAppProps {
   readonly panels: IPanelLayout;
   readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
+  readonly starters: IStarterWorlds;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
@@ -120,14 +124,20 @@ export function EditorApp({
   panels,
   hotbar,
   runningGear,
+  starters,
   options,
   disclaimer,
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   const playSnapshot = usePlaySnapshot(play);
+  const welcome = useWelcome(starters);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
+  const closeTopOverlay = useCallback(() => {
+    if (overlay !== null) setOverlay(null);
+    else starters.dismiss();
+  }, [overlay, starters]);
   const toggleOverlay = useCallback(
     (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
     [],
@@ -140,8 +150,8 @@ export function EditorApp({
     play,
     onShellCommand: toggleOverlay,
     hotbar,
-    overlayOpen: overlay !== null,
-    closeOverlay,
+    overlayOpen: overlay !== null || welcome.open,
+    closeOverlay: closeTopOverlay,
   });
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
@@ -182,7 +192,7 @@ export function EditorApp({
       </LibraryColumn>
       <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
-        <WorldMenu editor={editor} snapshot={snapshot} />
+        <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
         <PlacementToolbar
           editor={editor}
           snapshot={snapshot}
@@ -216,6 +226,7 @@ export function EditorApp({
       {showState && <PlanState plans={plans} />}
       {showState && <CameraState camera={camera} />}
       <EditorFooter disclaimer={disclaimer} />
+      {welcome.open && <WelcomeCard starters={starters} view={welcome} />}
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (
         <CommandPalette
