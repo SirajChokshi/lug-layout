@@ -1,7 +1,8 @@
 import { inject, injectable } from "inversify";
 import { searchPalette, type PaletteResult } from "../commands/command-search.ts";
 import type { CommandId } from "../commands/editor-commands.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import { CATALOG_SEARCH, EDITOR, LIBRARY_PART_SEARCH, PALETTE_MEMORY } from "../tokens.ts";
 import type { CatalogSearchStatus, ICatalogSearch } from "./catalog-search.ts";
