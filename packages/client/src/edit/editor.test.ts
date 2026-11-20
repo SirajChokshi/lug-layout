@@ -4062,6 +4062,67 @@ describe("selection groups", () => {
     });
   }, 120_000);
 
+  it("moves a group rigidly at its exact poses, held up by any member's mate outside it, never lifted onto a model it doesn't mate nor dropped onto the table", async () => {
+    const { editor, backend, catalog } = await startEditor(
+      [CABOOSE.slice("omr:".length)],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    await loadCatalogItem(catalog, CABOOSE);
+    editor.setPlacementMode("precise");
+    const place = placer(editor, backend);
+    for (const [x, z] of [
+      [0, 0],
+      [200, 0],
+      [0, 400],
+      [0, 0],
+      [200, 0],
+    ] as const) {
+      await place(HELD_BRICK, x, z);
+    }
+    await place(CABOOSE, 0, 1200);
+    const caboose = (editor.snapshot().catalog.find((item) => item.id === CABOOSE)?.label ?? "")
+      .replaceAll("(", "\\(")
+      .replaceAll(")", "\\)");
+    const laid = posesOf(editor);
+    selectAt(editor, backend, 0, 0);
+    toggleAt(editor, backend, [200, 0]);
+
+    editor.moveSelectionBy(0, 400, 0);
+    const oneMemberMates = editOutcome(editor);
+    editor.moveSelectionBy(0, 800, 0);
+    const overTheCaboose = editOutcome(editor);
+    editor.moveSelectionBy(1_600, 0, 0);
+    const overNothing = editOutcome(editor);
+
+    expect(laid.filter((pose) => pose.endsWith(" y3"))).toEqual([
+      `${HELD_BRICK} 0,0 y3`,
+      `${HELD_BRICK} 200,0 y3`,
+    ]);
+    expect({ oneMemberMates, overTheCaboose, overNothing }).toEqual({
+      oneMemberMates: {
+        poses: laid
+          .map((pose) => pose.replace(" 0,0 y3", " 0,400 y3").replace(" 200,0 y3", " 200,400 y3"))
+          .toSorted(),
+        refusal: null,
+        undoDepth: laid.length + 1,
+      },
+      overTheCaboose: {
+        poses: oneMemberMates.poses,
+        refusal: expect.stringMatching(
+          new RegExp(`^Can't move them there\\. .*${OVERLAP} .* in ${caboose}`, "u"),
+        ),
+        undoDepth: laid.length + 1,
+      },
+      overNothing: {
+        poses: oneMemberMates.poses,
+        refusal: expect.stringMatching(/^Can't move them there\. .*has nothing to rest on here/u),
+        undoDepth: laid.length + 1,
+      },
+    });
+  }, 120_000);
+
   it("copies a group with a user's model and pastes it on the cursor in one undo step, refusing a drop where it would overlap", async () => {
     const { editor, backend } = await rowBesideBaseplate();
     const place = placer(editor, backend);
@@ -4424,7 +4485,7 @@ describe("selection groups with laid track", () => {
     expect(editor.snapshot().track?.pieces).toBe(2);
   }, 120_000);
 
-  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't rest them at two heights", async () => {
+  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't drag them into the module beside them", async () => {
     const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
@@ -4483,7 +4544,7 @@ describe("selection groups with laid track", () => {
     expect(pair.selected).toEqual([SET, STRAIGHT_PIECE].toSorted());
     expect(ontoModule).toMatchObject({
       kind: "move",
-      refusal: expect.stringMatching(/ is joined to .*different heights/u),
+      refusal: expect.stringContaining(OVERLAP),
     });
     expect({ ...left, refusal: null }).toEqual({ ...together, refusal: null });
   }, 120_000);

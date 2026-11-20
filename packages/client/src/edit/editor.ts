@@ -184,8 +184,6 @@ import {
   nearestStud,
   pieceTranslated,
   pieceTurnedAbout,
-  restStacks,
-  stacksOf,
   translated,
   turnedAbout,
   unionBox,
@@ -946,7 +944,6 @@ interface ModelMember {
   readonly model: PlacedModel | null;
   readonly placeable: Placeable;
   readonly pose: PlacementPose;
-  readonly stack: number;
 }
 
 interface PieceMember {
@@ -4530,18 +4527,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private modelMembers(chosen: ReadonlyArray<PlacedModel>): ReadonlyArray<ModelMember> {
-    const carriers = chosen.map((model) => this.carriersOf(model));
-    const ids = chosen.map((model) => this.searchIds.get(model));
-    const stacks = stacksOf(chosen.length, (rider, base) => {
-      const id = ids[base];
-      return id !== undefined && (carriers[rider]?.includes(id) ?? false);
-    });
-    return chosen.map((model, index) => ({
-      model,
-      placeable: model.placeable,
-      pose: poseOf(model),
-      stack: stacks[index] ?? index,
-    }));
+    return chosen.map((model) => ({ model, placeable: model.placeable, pose: poseOf(model) }));
   }
 
   private pieceMembers(indices: ReadonlyArray<number>): ReadonlyArray<PieceMember> {
@@ -4587,23 +4573,12 @@ export class Editor implements IEditor, IEditedWorld {
       offset === NO_OFFSET
         ? targets.piecePoses
         : targets.piecePoses.map((pose) => pieceTranslated(pose, offset.dx, offset.dz));
+    const placed: GroupTargets = { modelPoses: shifted, piecePoses };
     return this.search.withdrawn(this.searchIdsOf(exempt), () => {
-      const unread = this.unreadConnectors(models);
-      const placed: GroupTargets = {
-        modelPoses: unread
-          ? shifted
-          : restStacks(
-              shifted,
-              models.map((member) => member.stack),
-              this.restingHeights(models, shifted),
-            ),
-        piecePoses,
-      };
       const refusal =
         block ??
-        unread ??
+        this.unreadConnectors(models) ??
         this.brokenJoin(edit, placed) ??
-        this.levelRefusal(edit, placed) ??
         this.modelRefusal(models, placed.modelPoses, exempt, roads, edit.trackSkip) ??
         this.pieceRefusal(edit, placed.piecePoses);
       return { ...placed, refusal };
@@ -4629,18 +4604,6 @@ export class Editor implements IEditor, IEditedWorld {
       );
     }
     return null;
-  }
-
-  private restingHeights(
-    models: ReadonlyArray<ModelMember>,
-    poses: ReadonlyArray<PlacementPose>,
-  ): ReadonlyArray<number> {
-    return poses.map((pose, index) => {
-      const placeable = models[index]?.placeable;
-      if (!placeable) throw new Error(`the group has no model ${index}`);
-      const top = this.search.topUnderLdu(this.connectedOf(placeable).volumes, pose);
-      return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.ceil(top / PLATE_LDU));
-    });
   }
 
   private roadSnapOffset(
@@ -4680,13 +4643,12 @@ export class Editor implements IEditor, IEditedWorld {
     roads: RoadContext,
     skip: TrackSkip,
   ): RefusedClick | null {
-    const supported = new Set<number>();
-    const lowest = new Map<number, number>();
+    let supported = false;
+    let lowest = -1;
     for (let index = 0; index < poses.length; index++) {
       const pose = poses[index];
-      const member = members[index];
-      if (!pose || !member) continue;
-      const { placeable, stack } = member;
+      const placeable = members[index]?.placeable;
+      if (!pose || !placeable) continue;
       const { x, z, yPlates, rot } = pose;
       const connected = this.connectedOf(placeable);
       const choice = this.groupChoice;
@@ -4694,9 +4656,8 @@ export class Editor implements IEditor, IEditedWorld {
       this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
       const hit = choice.accepted ? null : this.refusalHit(connected, pose, null, choice.overlap);
       if (hit) return refusedAt(placeable.id, pose, refusalText(placeable.label, hit));
-      if (choice.accepted) supported.add(stack);
-      const low = lowest.get(stack);
-      if (low === undefined || yPlates < (poses[low]?.yPlates ?? yPlates)) lowest.set(stack, index);
+      if (choice.accepted) supported = true;
+      if (lowest < 0 || yPlates < (poses[lowest]?.yPlates ?? yPlates)) lowest = index;
       const track = this.trackPlacementRefusal(placeable, pose, exempt, skip);
       if (track !== null) return refusedAt(placeable.id, pose, track);
       const surface = placeable.road;
@@ -4706,13 +4667,10 @@ export class Editor implements IEditor, IEditedWorld {
         return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
       }
     }
-    for (const [stack, index] of lowest) {
-      const pose = poses[index];
-      const placeable = members[index]?.placeable;
-      if (supported.has(stack) || !pose || !placeable) continue;
-      return refusedAt(placeable.id, pose, refusalText(placeable.label, null));
-    }
-    return null;
+    const base = members[lowest]?.placeable;
+    const basePose = poses[lowest];
+    if (supported || !base || !basePose) return null;
+    return refusedAt(base.id, basePose, refusalText(base.label, null));
   }
 
   private pieceRefusal(edit: GroupEdit, poses: ReadonlyArray<Pose16>): RefusedClick | null {
@@ -4818,22 +4776,6 @@ export class Editor implements IEditor, IEditedWorld {
       const sameHeight = end.yPlates === partner.yPlates;
       if (sameHeight && posesJoin16(end.pose, partner.pose)) continue;
       return { ...join.at, reason: joinBreakReason(join, sameHeight, edit.action) };
-    }
-    return null;
-  }
-
-  private levelRefusal(edit: GroupEdit, placed: GroupTargets): RefusedClick | null {
-    if (edit.pieces.length === 0) return null;
-    for (let index = 0; index < edit.models.length; index++) {
-      const member = edit.models[index];
-      const pose = placed.modelPoses[index];
-      if (!member || !pose || pose.yPlates === member.pose.yPlates) continue;
-      const { label, id } = member.placeable;
-      return refusedAt(
-        id,
-        pose,
-        `${label} would come to rest at a different height from the track moving with it. Move them separately.`,
-      );
     }
     return null;
   }

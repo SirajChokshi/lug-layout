@@ -130,7 +130,6 @@ export interface IPlacementSearch {
     tableYPlates: number,
     out: PlacementChoice,
   ): void;
-  topUnderLdu(volumes: CellVolumes, pose: LatticePose): number;
   revision(): number;
   nameOverlap(
     model: ModelConnectors,
@@ -962,31 +961,6 @@ export class PlacementSearch implements IPlacementSearch {
     out.walked = 0;
     this.atCursor(model, volumes, boxes, technic, pose, tableYPlates, out);
     this.zones.clear();
-  }
-
-  topUnderLdu(volumes: CellVolumes, pose: LatticePose): number {
-    const placed = this.scratch.place(volumes, pose);
-    let top = 0;
-    for (let c = 0; c < placed.count; c++) {
-      const x = placed.cellX[c] ?? 0;
-      const z = placed.cellZ[c] ?? 0;
-      if ((placed.topLdu[c] ?? 0) <= (placed.bottomLdu[c] ?? 0)) continue;
-      this.seenOwners = 0;
-      while (
-        this.volumes.firstOverlap(
-          x,
-          z,
-          Number.NEGATIVE_INFINITY,
-          Number.POSITIVE_INFINITY,
-          this.unseen,
-          this.hit,
-        )
-      ) {
-        this.see(this.hit.owner);
-        top = Math.max(top, this.hit.topLdu);
-      }
-    }
-    return top;
   }
 
   private chooseAt(out: PlacementChoice, pose: LatticePose, votes: number): void {

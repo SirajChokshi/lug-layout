@@ -20,8 +20,6 @@ import {
   pieceTranslated,
   pieceTurnedAbout,
   relativePose,
-  restStacks,
-  stacksOf,
   translated,
   turnedAbout,
 } from "./group-transform.ts";
@@ -131,20 +129,6 @@ describe("a pose relative to another", () => {
         }
       }
     }
-  });
-});
-
-describe("stacks in a group", () => {
-  it("joins riders to the stack under them, and rests each stack as one on the highest support any member finds", () => {
-    const rests = new Set(["1>0", "2>1"]);
-    const stacks = stacksOf(4, (rider, base) => rests.has(`${rider}>${base}`));
-    const poses = [pose(0, 0, 0, 0), pose(0, 0, 0, 3), pose(0, 0, 0, 6), pose(640, 0, 0, 2)];
-
-    const rested = restStacks(poses, stacks, [1, 0, 9, 0]).map((at) => at.yPlates);
-
-    expect(new Set([stacks[0], stacks[1], stacks[2]]).size).toBe(1);
-    expect(stacks[3]).not.toBe(stacks[0]);
-    expect(rested).toEqual([3, 6, 9, 0]);
   });
 });
 
