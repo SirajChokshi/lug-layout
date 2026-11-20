@@ -167,6 +167,11 @@ export {
   type UncheckedPlanRule,
 } from "./plan/plan-verdict.ts";
 export type {
+  IPlanSheetService,
+  IPlanSheetSource,
+  PlanSheetShapes,
+} from "./plan/plan-sheet-service.ts";
+export type {
   IssueSeverity,
   LduRect,
   MmRect,
@@ -199,6 +204,7 @@ export {
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
