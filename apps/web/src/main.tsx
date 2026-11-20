@@ -4,6 +4,7 @@ import {
   EDITOR,
   EDITOR_CAMERA,
   IMPORT_SCENE,
+  LIBRARY_PART_PLACER,
   mainThreadModules,
   MODEL_SCENE,
   PALETTE_DRAG,
@@ -135,6 +136,7 @@ function root(): ReactNode {
         palettePrefetch={container.get(PALETTE_PREFETCH)}
         paletteMemory={container.get(PALETTE_MEMORY)}
         paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
+        libraryPlacer={container.get(LIBRARY_PART_PLACER)}
         runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,

@@ -495,6 +495,40 @@ footer {
   letter-spacing: 0.04em;
 }
 
+.palette-library {
+  margin: 8px 0 0;
+  border-top: 1px solid #e1e6ec;
+  padding-top: 6px;
+}
+
+.palette-library-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.palette-result-main[aria-busy="true"] {
+  cursor: progress;
+}
+
+.palette-more-colors {
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #c8d0da;
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.library-refused {
+  margin: 0;
+  color: #8a1c1c;
+}
+
 .catalog-skipped {
   margin: 10px 0 0;
   font-size: 12px;
@@ -1855,6 +1889,14 @@ footer a {
 .palette-row > :not(.palette-thumb),
 .palette-result > :not(.palette-thumb, .palette-star) {
   grid-column: 2;
+}
+
+.palette .library-part {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.palette .library-part > * {
+  grid-column: 1;
 }
 
 .palette-item-row .catalog-item {

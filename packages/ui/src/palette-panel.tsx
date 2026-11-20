@@ -17,6 +17,7 @@ import {
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
+  type ILibraryPartPlacer,
   type IPaletteDrag,
   type IPaletteMemory,
   type IPalettePrefetch,
@@ -29,6 +30,7 @@ import {
   type PaletteSection,
   type PaletteTab,
 } from "@brr/client";
+import { LibraryPartResults } from "./library-part-results.tsx";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 import { usePaletteSearchSnapshot } from "./use-palette-search.ts";
@@ -625,14 +627,17 @@ export const PalettePanel = memo(function PalettePanel({
   search,
   memory,
   thumbnails,
+  libraryPlacer,
   ...props
 }: PaletteProps & {
   readonly search: IPaletteSearch;
   readonly memory: IPaletteMemory;
   readonly thumbnails: IPaletteThumbnails;
+  readonly libraryPlacer: ILibraryPartPlacer;
 }) {
   const { editor, snapshot } = props;
-  const { query, tab, color, sections, hits, counts, status } = usePaletteSearchSnapshot(search);
+  const { query, tab, color, sections, hits, counts, status, library } =
+    usePaletteSearchSnapshot(search);
   const [highlight, setHighlight] = useState(0);
   const remembered = usePaletteMemory(memory);
   const favorites = useMemo<Favorites>(
@@ -750,12 +755,20 @@ export const PalettePanel = memo(function PalettePanel({
               />
             ))
           )}
+          {searching && library !== null && (
+            <LibraryPartResults
+              library={library}
+              placer={libraryPlacer}
+              preferredColor={color}
+              readOnly={snapshot.readOnly}
+            />
+          )}
           {searching && status === "offline" && (
             <p className="palette-hint" data-search-offline>
               Search offline: showing palette matches only.
             </p>
           )}
-          {searching && hits.length === 0 && (
+          {searching && hits.length === 0 && (library?.hits.length ?? 0) === 0 && (
             <p className="palette-hint" data-no-results>
               Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
               number like 3811, a size like 16x16, or a colour like tan.

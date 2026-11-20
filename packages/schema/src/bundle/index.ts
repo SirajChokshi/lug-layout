@@ -745,6 +745,7 @@ export const BundleIndex = v.object({
   partTable: FileRef,
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),
+  libraryParts: v.optional(FileRef),
 });
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
@@ -824,6 +825,45 @@ export const CrosswalkFile = v.object({
   bricklinkColors: v.record(IntegerString, v.array(Integer)),
 });
 export type CrosswalkFile = v.InferOutput<typeof CrosswalkFile>;
+
+export const LIBRARY_PARTS_FORMAT = 1;
+
+export const LibraryPartColumns = v.strictObject({
+  id: v.array(v.string()),
+  title: v.array(v.string()),
+  category: v.array(Count),
+  keywords: v.array(v.array(v.string())),
+  rebrickable: v.array(v.string()),
+  colorCount: v.array(v.pipe(Count, v.minValue(1))),
+  colors: v.array(Integer),
+});
+export type LibraryPartColumns = v.InferOutput<typeof LibraryPartColumns>;
+
+export const LibraryPartsFile = v.pipe(
+  v.strictObject({
+    format: v.literal(LIBRARY_PARTS_FORMAT),
+    sources: v.record(v.string(), CrosswalkSourcePin),
+    categories: v.array(v.string()),
+    parts: LibraryPartColumns,
+  }),
+  v.check(({ categories, parts }) => {
+    const count = parts.id.length;
+    const perPart = [
+      parts.title,
+      parts.category,
+      parts.keywords,
+      parts.rebrickable,
+      parts.colorCount,
+    ];
+    const colors = parts.colorCount.reduce((sum, colorCount) => sum + colorCount, 0);
+    return (
+      perPart.every((column) => column.length === count) &&
+      parts.colors.length === colors &&
+      parts.category.every((category) => category < categories.length)
+    );
+  }, "library part columns are inconsistent"),
+);
+export type LibraryPartsFile = v.InferOutput<typeof LibraryPartsFile>;
 
 export const VehicleGuideKind = v.picklist(["bogiePivot", "fixedAxle"]);
 export type VehicleGuideKind = v.InferOutput<typeof VehicleGuideKind>;

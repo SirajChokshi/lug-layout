@@ -6,6 +6,7 @@ import {
   type IBomService,
   type IEditor,
   type IEditorCamera,
+  type ILibraryPartPlacer,
   type IPaletteDrag,
   type IPaletteMemory,
   type IPalettePrefetch,
@@ -54,6 +55,7 @@ interface EditorAppProps {
   readonly palettePrefetch: IPalettePrefetch;
   readonly paletteMemory: IPaletteMemory;
   readonly paletteThumbnails: IPaletteThumbnails;
+  readonly libraryPlacer: ILibraryPartPlacer;
   readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -105,6 +107,7 @@ export function EditorApp({
   palettePrefetch,
   paletteMemory,
   paletteThumbnails,
+  libraryPlacer,
   runningGear,
   options,
   disclaimer,
@@ -189,6 +192,7 @@ export function EditorApp({
           prefetch={palettePrefetch}
           memory={paletteMemory}
           thumbnails={paletteThumbnails}
+          libraryPlacer={libraryPlacer}
         />
         <TrackPanel snapshot={snapshot} />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
