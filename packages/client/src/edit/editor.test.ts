@@ -2717,6 +2717,9 @@ it("keeps the plan equal to today's recompute when the checked studs land, with 
     issues: {
       bomMapping: [expect.anything(), expect.anything()],
       fit: [expect.objectContaining({ placements: [copyFar?.key] })],
+      trackOffTable: [
+        expect.objectContaining({ placements: [copyFar?.key], entirelyOffTables: true }),
+      ],
       trackOpenEnd: Array.from({ length: 8 }, () => expect.anything()),
     },
     sandbox: 1,
