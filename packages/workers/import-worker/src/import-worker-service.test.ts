@@ -1,6 +1,8 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   catalogModule,
   type PartConnectors,
@@ -12,6 +14,9 @@ import {
   CONNECTOR_SOURCE,
   ConnectorIndexFile,
   ConnectorRecordFile,
+  contentAddressedFile,
+  LIBRARY_CONNECTORS_FORMAT,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   SectionVocabularyFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -30,7 +35,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { IImportWorkerService } from "./import-worker-service.ts";
-import { importWorkerModule } from "./import-worker.module.ts";
+import { importWorkerModules } from "./import-worker.module.ts";
 import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -42,6 +47,7 @@ const vocabularyFile = new URL(
   import.meta.url,
 );
 const MIRROR_PREFIX = "/mirror/";
+const LIBRARY_PREFIX = "/library/";
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
@@ -62,7 +68,7 @@ const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () =
 
 function importWorker(): IImportWorkerService {
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
   return container.get(IMPORT_WORKER_SERVICE);
 }
 
@@ -137,6 +143,9 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
 }
 
 function served(path: string): URL {
+  if (path.startsWith(LIBRARY_PREFIX)) {
+    return new URL(path.slice(LIBRARY_PREFIX.length), new URL(`${LOD}/`, bundleRoot));
+  }
   if (!path.startsWith(MIRROR_PREFIX)) return new URL(path.slice(1), bundleRoot);
   return new URL(path.slice(mirrorRoot.length), pinnedLibrary);
 }
@@ -167,6 +176,7 @@ afterAll(async () => {
 async function bundleLoader() {
   const container = new Container();
   await container.load(catalogModule);
+  container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   return container.get(PART_BUNDLE_LOADER);
@@ -242,6 +252,94 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.connectors[technic]).toEqual(fromCatalog);
   expect(imported.connectors[unbundled]).toBeNull();
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
+});
+
+it("gives a part the bundle's connector packages don't list the record a pinned library publication lists for it, fetched beside the bundle's, and still reports a part neither lists", async () => {
+  const loader = await bundleLoader();
+  const context = await loader.importContext(LOD);
+  const { repo, commit, root } = context.source;
+  mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
+  const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
+  const manifest = decodedOrThrow(decode(BundleIndex, await published("manifest.json")), LOD);
+  const connectivity = decodedOrThrow(
+    decode(ConnectorIndexFile, await published(manifest.connectivity.file)),
+    manifest.connectivity.file,
+  );
+  const libraryIndex = {
+    format: LIBRARY_CONNECTORS_FORMAT,
+    ldraw: context.source,
+    shadow: { ...connectivity.source, kind: "github-archive" },
+    sectionVocabulary: context.sectionVocabulary.sha256,
+    connectivity: { file: manifest.connectivity.file },
+    connectors: { file: manifest.connectors.file },
+  };
+  const libraryText = JSON.stringify(libraryIndex);
+  const pin = {
+    file: LIBRARY_CONNECTORS_INDEX_FILE,
+    sha256: createHash("sha256").update(libraryText).digest("hex"),
+  };
+  tampered.set(`${LIBRARY_PREFIX}${contentAddressedFile(pin.file, pin.sha256)}`, libraryIndex);
+  for (const path of [context.connectorIndexes.connectivity, context.connectorIndexes.connectors]) {
+    const packageIndex = decodedOrThrow(
+      decode(ConnectorIndexFile, JSON.parse(await readFile(new URL(path, bundleRoot), "utf8"))),
+      path,
+    );
+    const { [TECHNIC_PART]: _withdrawn, ...parts } = packageIndex.parts;
+    tampered.set(`/${path}`, { ...packageIndex, parts });
+  }
+  try {
+    const request = (withLibrary: boolean): ImportWorkerRequest => ({
+      kind: "import",
+      ticket: 1,
+      compilerUrl: new URL(context.compilerPath, base).href,
+      bundleBaseUrl: base,
+      connectorIndexes: context.connectorIndexes,
+      connectorVocabulary: context.sectionVocabulary.sha256,
+      ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
+      ...(withLibrary
+        ? { libraryConnectors: { url: new URL(LIBRARY_PREFIX, base).href, pin } }
+        : {}),
+      input: {
+        kind: "ldraw",
+        job: {
+          fileName: "pair.ldr",
+          text: [
+            "1 4 0 0 0 1 0 0 0 1 0 0 0 1 52031.dat",
+            "1 4 0 -80 0 1 0 0 0 1 0 0 0 1 3023b.dat",
+          ].join("\n"),
+          lod: LOD,
+          source: context.source,
+          studPrimitives: context.studPrimitiveNames,
+          unofficialAllowlist: context.unofficialAllowlist,
+          primitives: context.primitives,
+          sectionVocabulary: context.sectionVocabulary.vocabulary,
+          cavityProbe: context.cavityProbe,
+          bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
+          ldconfigCodes: context.ldconfigCodes,
+          translucentColors: context.translucentCodes,
+          tableDepthLdu: context.tableDepthLdu,
+          vehicles: context.vehicles,
+        },
+      },
+    });
+
+    const withoutLibrary = await importWorker().run(request(false));
+    const withLibrary = await importWorker().run(request(true));
+
+    const technic = withLibrary.partIds.indexOf(TECHNIC_PART);
+    const unbundled = withLibrary.partIds.indexOf(UNBUNDLED_PART);
+    expect(withoutLibrary.connectors).toEqual([null, null]);
+    expect(withoutLibrary.report.withoutConnectorRecords.toSorted()).toEqual(
+      [TECHNIC_PART, UNBUNDLED_PART].toSorted(),
+    );
+    expect(fromCatalog).not.toBeNull();
+    expect(withLibrary.connectors[technic]).toEqual(fromCatalog);
+    expect(withLibrary.connectors[unbundled]).toBeNull();
+    expect(withLibrary.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
+    expect(withLibrary.report.refusedConnectorRecords).toEqual([]);
+  } finally {
+    tampered.clear();
+  }
 });
 
 async function pinnedFile(path: string): Promise<string | null> {
@@ -500,7 +598,7 @@ it("imports with the compiler and LDraw library the request names and the worker
   const requested: string[] = [];
   let clockReads = 0;
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
   container.rebind(IMPORT_FETCH).toConstantValue(servedFrom(manifest, requested));
   container.rebind(IMPORT_CLOCK).toConstantValue(() => {
     clockReads++;

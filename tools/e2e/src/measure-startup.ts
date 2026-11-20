@@ -6,7 +6,7 @@ import { homedir, tmpdir } from "node:os";
 import { extname, join, normalize, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { gzipSync } from "node:zlib";
-import { chromium, type BrowserContext, type CDPSession } from "playwright-core";
+import { chromium, type BrowserContext, type CDPSession, type Page } from "playwright-core";
 
 const DEFAULT_CHROME = "/usr/local/bin/google-chrome";
 const NSS_NICKNAME = "brr-measure-startup";
@@ -50,11 +50,20 @@ interface RequestTally {
   encodedBytes: number;
   decodedBytes: number;
   fromCache: number;
+  failed: number;
+}
+
+type Visit = "cold" | "warm" | "http cache cleared" | "bundle offline";
+
+interface StoredAssets {
+  readonly assets: number;
+  readonly bytes: number;
+  readonly indexedDbUsageBytes: number;
 }
 
 interface RunResult {
   readonly profile: string;
-  readonly cache: "cold" | "warm";
+  readonly cache: Visit;
   readonly status: string;
   readonly readyMs: number;
   readonly settledMs: number;
@@ -62,7 +71,14 @@ interface RunResult {
   readonly bundle: RequestTally;
   readonly app: RequestTally;
   readonly byKind: Readonly<Record<string, RequestTally>>;
+  readonly stored: StoredAssets;
 }
+
+const ASSET_DATABASE = "brr-assets";
+const ASSET_ENTRIES = "entries";
+const STORE_POLL_MS = 500;
+const STORE_STABLE_POLLS = 4;
+const STORE_SETTLE_TIMEOUT_MS = 120_000;
 
 const { values } = parseArgs({
   options: {
@@ -77,6 +93,8 @@ const { values } = parseArgs({
     chrome: { type: "string" },
     serve: { type: "boolean", default: false },
     "settle-ms": { type: "string", default: "3000" },
+    "clear-http-cache": { type: "boolean", default: false },
+    "bundle-offline": { type: "boolean", default: false },
   },
 });
 
@@ -240,7 +258,7 @@ function serveApp(root: string, port: number): Promise<() => void> {
 }
 
 function emptyTally(): RequestTally {
-  return { requests: 0, encodedBytes: 0, decodedBytes: 0, fromCache: 0 };
+  return { requests: 0, encodedBytes: 0, decodedBytes: 0, fromCache: 0, failed: 0 };
 }
 
 function kindOf(url: string): string {
@@ -265,16 +283,80 @@ async function throttle(cdp: CDPSession, profile: NetworkProfile | null): Promis
 
 const settleMs = Number(values["settle-ms"]);
 
+function readStoredAssets(page: Page): Promise<StoredAssets> {
+  return page.evaluate(
+    async ({ database, entries }) => {
+      const estimate: StorageEstimate & { usageDetails?: { indexedDB?: number } } =
+        await navigator.storage.estimate();
+      const indexedDbUsageBytes = estimate.usageDetails?.indexedDB ?? 0;
+      const known = await indexedDB.databases();
+      if (!known.some((info) => info.name === database)) {
+        return { assets: 0, bytes: 0, indexedDbUsageBytes };
+      }
+      const db = await new Promise<IDBDatabase>((opened, failed) => {
+        const request = indexedDB.open(database);
+        request.addEventListener("success", () => opened(request.result));
+        request.addEventListener("error", () => failed(request.error));
+      });
+      try {
+        if (!db.objectStoreNames.contains(entries)) {
+          return { assets: 0, bytes: 0, indexedDbUsageBytes };
+        }
+        const rows = await new Promise<ReadonlyArray<{ bytes?: unknown }>>((read, failed) => {
+          const request = db.transaction(entries).objectStore(entries).getAll();
+          request.addEventListener("success", () => read(request.result));
+          request.addEventListener("error", () => failed(request.error));
+        });
+        const bytes = rows.reduce(
+          (sum, row) => sum + (typeof row.bytes === "number" ? row.bytes : 0),
+          0,
+        );
+        return { assets: rows.length, bytes, indexedDbUsageBytes };
+      } finally {
+        db.close();
+      }
+    },
+    { database: ASSET_DATABASE, entries: ASSET_ENTRIES },
+  );
+}
+
+async function settledStoredAssets(page: Page): Promise<StoredAssets> {
+  const deadline = Date.now() + STORE_SETTLE_TIMEOUT_MS;
+  let last = await readStoredAssets(page);
+  let stablePolls = 0;
+  while (stablePolls < STORE_STABLE_POLLS && Date.now() < deadline) {
+    await page.waitForTimeout(STORE_POLL_MS);
+    const next = await readStoredAssets(page);
+    stablePolls = next.assets === last.assets && next.bytes === last.bytes ? stablePolls + 1 : 0;
+    last = next;
+  }
+  return last;
+}
+
+async function failRequestsTo(cdp: CDPSession, origin: string): Promise<void> {
+  cdp.on("Fetch.requestPaused", (event) => {
+    void cdp.send("Fetch.failRequest", {
+      requestId: event.requestId,
+      errorReason: "InternetDisconnected",
+    });
+  });
+  await cdp.send("Fetch.enable", { patterns: [{ urlPattern: `${origin}*` }] });
+}
+
 async function run(
   context: BrowserContext,
   appUrl: string,
   bundleOrigin: string,
   profileName: string,
-  cache: "cold" | "warm",
+  cache: Visit,
 ): Promise<RunResult> {
   const page = context.pages()[0] ?? (await context.newPage());
   const cdp = await context.newCDPSession(page);
   await cdp.send("Network.enable");
+  if (cache === "http cache cleared" || cache === "bundle offline") {
+    await cdp.send("Network.clearBrowserCache");
+  }
+  if (cache === "bundle offline") await failRequestsTo(cdp, bundleOrigin);
   await throttle(cdp, PROFILES[profileName] ?? null);
   const urls = new Map<string, string>();
   const bundle = emptyTally();
@@ -292,7 +374,11 @@ async function run(
     urls.set(event.requestId, event.request.url);
     if (event.request.url.startsWith(bundleOrigin)) inFlight += 1;
   });
-  cdp.on("Network.loadingFailed", (event) => finish(event.requestId));
+  cdp.on("Network.loadingFailed", (event) => {
+    finish(event.requestId);
+    const url = urls.get(event.requestId);
+    if (url !== undefined) (url.startsWith(bundleOrigin) ? bundle : app).failed += 1;
+  });
   const cached = new Set<string>();
   cdp.on("Network.requestServedFromCache", (event) => cached.add(event.requestId));
   cdp.on("Network.responseReceived", (event) => {
@@ -341,6 +427,7 @@ async function run(
     await new Promise((done) => setTimeout(done, SETTLE_POLL_MS));
     if (inFlight > 0) quietSince = performance.now();
   }
+  const stored = await settledStoredAssets(page);
   await page.close();
   return {
     profile: profileName,
@@ -352,6 +439,7 @@ async function run(
     bundle,
     app,
     byKind,
+    stored,
   };
 }
 
@@ -366,11 +454,11 @@ function megabytes(bytes: number): string {
 function report(results: ReadonlyArray<RunResult>): string {
   const rows = results.map(
     (r) =>
-      `| ${r.profile} | ${r.cache} | ${r.status} | ${seconds(r.readyMs)} | ${r.beforeReady.requests} | ${megabytes(r.beforeReady.encodedBytes)} | ${seconds(r.settledMs)} | ${r.bundle.requests} | ${r.bundle.fromCache} | ${megabytes(r.bundle.encodedBytes)} | ${megabytes(r.bundle.decodedBytes)} | ${r.app.requests} | ${megabytes(r.app.encodedBytes)} |`,
+      `| ${r.profile} | ${r.cache} | ${r.status} | ${seconds(r.readyMs)} | ${r.beforeReady.requests} | ${megabytes(r.beforeReady.encodedBytes)} | ${seconds(r.settledMs)} | ${r.bundle.requests} | ${r.bundle.fromCache} | ${r.bundle.failed} | ${megabytes(r.bundle.encodedBytes)} | ${megabytes(r.bundle.decodedBytes)} | ${r.app.requests} | ${megabytes(r.app.encodedBytes)} | ${r.stored.assets} | ${megabytes(r.stored.bytes)} | ${megabytes(r.stored.indexedDbUsageBytes)} |`,
   );
   return [
-    "| network | cache | status | ready (s) | bundle requests before ready | bundle MB before ready | bundle settled (s) | bundle requests | from cache | bundle MB transferred | bundle MB decoded | app requests | app MB transferred |",
-    "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+    "| network | cache | status | ready (s) | bundle requests before ready | bundle MB before ready | bundle settled (s) | bundle requests | from cache | failed | bundle MB transferred | bundle MB decoded | app requests | app MB transferred | cached assets | cached MB | IndexedDB MB on disk |",
+    "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
     ...rows,
   ].join("\n");
 }
@@ -417,6 +505,12 @@ async function main(): Promise<void> {
       const appUrl = `http://127.0.0.1:${appPort}/${values.query ?? ""}`;
       results.push(await run(context, appUrl, bundleOrigin, profile, "cold"));
       results.push(await run(context, appUrl, bundleOrigin, profile, "warm"));
+      if (values["clear-http-cache"]) {
+        results.push(await run(context, appUrl, bundleOrigin, profile, "http cache cleared"));
+      }
+      if (values["bundle-offline"]) {
+        results.push(await run(context, appUrl, bundleOrigin, profile, "bundle offline"));
+      }
       await context.close();
     }
   } finally {

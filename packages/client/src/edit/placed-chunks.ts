@@ -34,6 +34,7 @@ import {
 } from "./placeable.ts";
 
 export interface PlacedModel {
+  readonly id: number;
   readonly placement: PlacementRef;
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
@@ -918,13 +919,16 @@ export class PlacedChunks {
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
+    const vacated = new Set<number>();
     const removed: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
       entry.addRebuildKeys(touched, this.hasAntiStudCovers);
+      for (const key of entry.chunks.keysWithColumns()) vacated.add(key);
       removed.push(entry);
     }
+    this.restamp(vacated, NO_ENTRIES);
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
@@ -944,6 +948,7 @@ export class PlacedChunks {
     const added: PlacedModel[] = [];
     for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
       const detached = this.detach(entry.handle);
+      this.restamp(detached.chunks.keysWithColumns(), NO_ENTRIES);
       detached.addRebuildKeys(touched, this.hasAntiStudCovers);
       removed.push(detached);
       const replaced = this.insert(detached.placement, detached.handle, next);
@@ -1086,6 +1091,7 @@ export class PlacedChunks {
   }
 
   clear(): void {
+    for (const entry of this.entries) this.backend.setFarModel(entry.id, null);
     for (const key of new Set([...this.byChunk.keys(), ...this.chunkStuds.keys()])) {
       this.backend.deleteChunk(key);
     }
@@ -1136,7 +1142,6 @@ export class PlacedChunks {
     }
     const slabbed = this.slabbed.indexOf(entry);
     if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
-    this.restamp(entry.chunks.keysWithColumns(), NO_ENTRIES);
     return entry;
   }
 

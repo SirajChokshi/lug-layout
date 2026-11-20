@@ -147,9 +147,12 @@ export interface ImportedSubmodels extends SubmodelInstances {
   readonly ofPart: Int32Array;
 }
 
+export type CompiledSource = "library-bake" | "import";
+
 export interface CompiledGlb {
   readonly partId: string;
   readonly glb: Uint8Array;
+  readonly source: CompiledSource;
 }
 
 export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
@@ -158,6 +161,7 @@ export type PlacementBake = Omit<ModelBake, "studCover">;
 
 export interface PlacedImport extends Omit<ImportResult, "bake" | "report" | "studio"> {
   readonly sections: ReadonlyArray<LdrawHeader>;
+  readonly refusedConnectorRecords: ReadonlyArray<RefusedConnectorRecord>;
   readonly bake: PlacementBake;
 }
 
@@ -198,6 +202,16 @@ export interface RefusedConnectorRecord {
 }
 
 const MAX_COMPILE_ROUNDS = 64;
+
+function refusedRecords(
+  partIds: ReadonlyArray<string>,
+  loads: ReadonlyArray<ConnectorLoad>,
+): ReadonlyArray<RefusedConnectorRecord> {
+  return partIds.flatMap((partId, index) => {
+    const load = loads[index];
+    return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
+  });
+}
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
 const RECORDED_LOD: CompileLod = "standard";
 const PRIMARY_SLICES = 1;
@@ -277,6 +291,7 @@ interface Outcomes {
   readonly inline: Map<string, Exclude<InlineOutcome, { status: "need" }>>;
   readonly rounds: number;
   readonly weldEpsilonLdu: number;
+  readonly fromLibraryBake: ReadonlySet<string>;
 }
 
 interface ImportLibrary extends LibraryFiles {
@@ -376,6 +391,7 @@ export class ModelImportEngine {
         ...shape,
         sections: report.sections,
         connectors: loads.map((load) => (load.kind === "loaded" ? load.connectors : null)),
+        refusedConnectorRecords: refusedRecords(shape.partIds, loads),
         bake: placementBake(placement),
       });
     };
@@ -393,10 +409,7 @@ export class ModelImportEngine {
         withoutConnectorRecords: assembled.result.partIds.filter(
           (_, index) => loads[index]?.kind === "unlisted",
         ),
-        refusedConnectorRecords: assembled.result.partIds.flatMap((partId, index) => {
-          const load = loads[index];
-          return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
-        }),
+        refusedConnectorRecords: refusedRecords(assembled.result.partIds, loads),
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,
@@ -650,8 +663,10 @@ export class ModelImportEngine {
     const recorded = await spent.during("recordFetchMs", () =>
       this.fromRecords(job, outside, pinned),
     );
+    const fromLibraryBake = new Set<string>();
     for (const outcome of recorded) {
       parts.set(outcome.reference, outcome);
+      fromLibraryBake.add(outcome.reference);
     }
     let pendingParts = outside.filter((reference) => !parts.has(reference));
     let pendingChecks = [...inlineParts];
@@ -699,7 +714,7 @@ export class ModelImportEngine {
       }
       await this.fetchNeeded(library, needed, spent);
     }
-    return { parts, inline, rounds, weldEpsilonLdu };
+    return { parts, inline, rounds, weldEpsilonLdu, fromLibraryBake };
   }
 }
 
@@ -913,7 +928,11 @@ function assemble(
     const outcome = outcomes.parts.get(resolved.official);
     if (outcome?.status !== "compiled") continue;
     compiledIds.add(resolved.partId);
-    compiled.push({ partId: resolved.partId, glb: outcome.glb });
+    compiled.push({
+      partId: resolved.partId,
+      glb: outcome.glb,
+      source: outcomes.fromLibraryBake.has(resolved.official) ? "library-bake" : "import",
+    });
   }
   return {
     drawn: drawnMask,
