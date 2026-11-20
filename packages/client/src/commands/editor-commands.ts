@@ -683,7 +683,7 @@ function studStep({ x, z }: GroundDirection): { readonly dx: number; readonly dz
 function nudge(editor: IEditor, camera: IEditorCamera, id: NudgeId, eventTimeMs: number): void {
   const [rightPx, downPx] = NUDGE_SCREEN[id];
   const { dx, dz } = studStep(camera.groundDirection(rightPx, downPx));
-  editor.nudgeSelection(dx, dz, eventTimeMs);
+  editor.moveSelectionBy(dx, dz, eventTimeMs);
 }
 
 export function runEditorAction(
