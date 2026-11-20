@@ -1,5 +1,6 @@
 import {
   ConnectorIndexFile,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   LibraryConnectorsIndex,
   type ConnectorPackage,
   type LibraryConnectorsPin,
@@ -12,7 +13,6 @@ import type { ObjectReader } from "../library/ldraw-library.ts";
 import { contentAddressedName } from "../publish.ts";
 import { sha256Hex, type ObjectStore } from "../r2.ts";
 import { isContentAddressed, type UploadResult } from "../remote-bundle.ts";
-import { LIBRARY_CONNECTORS_INDEX } from "./assemble.ts";
 
 export const LIBRARY_CONNECTORS_PREFIX = "library-connectors";
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -54,13 +54,13 @@ export async function libraryConnectorFiles(
   root: string,
   pin: LibraryConnectorsPin,
 ): Promise<{ readonly index: Uint8Array; readonly files: ReadonlyArray<string> }> {
-  const index = await readFile(join(root, LIBRARY_CONNECTORS_INDEX));
+  const index = await readFile(join(root, LIBRARY_CONNECTORS_INDEX_FILE));
   if (sha256Hex(index) !== pin.index.sha256) {
     throw new Error(
-      `${join(root, LIBRARY_CONNECTORS_INDEX)} is not the pinned index ${pin.index.sha256}; run library-connectors --check`,
+      `${join(root, LIBRARY_CONNECTORS_INDEX_FILE)} is not the pinned index ${pin.index.sha256}; run library-connectors --check`,
     );
   }
-  const top = decodeJson(LibraryConnectorsIndex, index, LIBRARY_CONNECTORS_INDEX);
+  const top = decodeJson(LibraryConnectorsIndex, index, LIBRARY_CONNECTORS_INDEX_FILE);
   const files: string[] = [];
   for (const pkg of PACKAGES) {
     const { file } = top[pkg];

@@ -2,6 +2,7 @@ import {
   CONNECTIVITY_LICENSE,
   ConnectorRecordFile,
   LIBRARY_CONNECTORS_FORMAT,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   LibraryConnectorsIndex,
   type BundleSource,
   type ConnectorIndexFile,
@@ -19,7 +20,6 @@ import { connectorPackageIssues } from "../connector-license.ts";
 import { contentAddressedName } from "../publish.ts";
 import { isCaLicense } from "../verify/license-audit.ts";
 
-export const LIBRARY_CONNECTORS_INDEX = "library-connectors.json";
 export const LIBRARY_CONNECTORS_PIN = "tools/asset-pipeline/library-connectors.json";
 const SHADOW_AUTHORS = "Roland Melkert and the LDCad Shadow Library contributors";
 const PATCH_ATTRIBUTION =
@@ -157,12 +157,16 @@ export async function assembleLibraryConnectors(
       },
       connectors: { file: await writeAddressed(out, INDEX_FILES.connectors, indexes.connectors) },
     }),
-    LIBRARY_CONNECTORS_INDEX,
+    LIBRARY_CONNECTORS_INDEX_FILE,
   );
   const text = `${JSON.stringify(index, null, 2)}\n`;
-  await writeFile(join(out, LIBRARY_CONNECTORS_INDEX), text);
+  await writeFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), text);
+  await writeFile(
+    join(out, contentAddressedName(LIBRARY_CONNECTORS_INDEX_FILE, sha256(text))),
+    text,
+  );
   return {
-    index: { file: LIBRARY_CONNECTORS_INDEX, sha256: sha256(text) },
+    index: { file: LIBRARY_CONNECTORS_INDEX_FILE, sha256: sha256(text) },
     parts: parts.length,
     refused,
     records: {

@@ -1,13 +1,15 @@
 import {
   CONNECTIVITY_LICENSE,
   CONNECTOR_SOURCE,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   type LibraryConnectorsPin,
 } from "@brr/schema/bundle";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { assembleLibraryConnectors, LIBRARY_CONNECTORS_INDEX } from "./assemble.ts";
+import { contentAddressedName } from "../publish.ts";
+import { assembleLibraryConnectors } from "./assemble.ts";
 import {
   libraryConnectorsIndexKey,
   LIBRARY_CONNECTORS_PREFIX,
@@ -105,7 +107,14 @@ it("publishes CA parts' records under their content addresses, stamps the connec
     records: { connectivity: 1, connectors: 1 },
     partsWithPieces: 1,
   });
-  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX), "utf8"));
+  const indexText = await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8");
+  expect(
+    await readFile(
+      join(out, contentAddressedName(LIBRARY_CONNECTORS_INDEX_FILE, pin.index.sha256)),
+      "utf8",
+    ),
+  ).toBe(indexText);
+  const index = JSON.parse(indexText);
   expect(index).toMatchObject({ format: 1, ldraw, shadow, sectionVocabulary: VOCABULARY });
   for (const [pkg, stamped] of [
     ["connectivity", undefined],
@@ -137,7 +146,7 @@ class MemoryStore implements ObjectStore {
 }
 
 async function addressedFiles(out: string): Promise<string[]> {
-  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX), "utf8"));
+  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8"));
   const files: string[] = [];
   for (const pkg of ["connectivity", "connectors"]) {
     const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
