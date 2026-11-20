@@ -1,4 +1,5 @@
 import {
+  STUD_LDU,
   commandActive,
   commandEnabled,
   type EditorActionId,
@@ -265,6 +266,31 @@ function GoTo({ editor }: { readonly editor: IEditor }) {
 export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { selection } = snapshot;
   if (!selection) return null;
+  if (selection.kind === "train") {
+    return (
+      <section className="inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        <dl>
+          <div>
+            <dt>Train</dt>
+            <dd>{itemLabel(snapshot, selection.item)}</dd>
+          </div>
+          <div>
+            <dt>Stands</dt>
+            <dd>on the rails</dd>
+          </div>
+          <div>
+            <dt>Vehicles</dt>
+            <dd>{selection.vehicles}</dd>
+          </div>
+          <div>
+            <dt>Length (studs)</dt>
+            <dd>{Math.round(selection.lengthLdu / STUD_LDU)}</dd>
+          </div>
+        </dl>
+      </section>
+    );
+  }
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>

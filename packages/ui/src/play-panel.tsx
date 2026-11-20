@@ -11,6 +11,7 @@ import {
 import { useEffect } from "react";
 import { shortcutText } from "./keys.tsx";
 import { RunningGearPanel } from "./running-gear-panel.tsx";
+import { useEditorSnapshot } from "./use-editor.ts";
 import { usePlaySnapshot } from "./use-play.ts";
 
 function followWith(camera: IEditorCamera, play: ITrainPlay, on: boolean): void {
@@ -38,12 +39,13 @@ interface PlayPanelProps {
 
 export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
+  const { trains } = useEditorSnapshot(editor);
   useEffect(() => {
     followWith(camera, play, true);
     return () => play.follow(null);
   }, [camera, play]);
   const running = snapshot.status === "running";
-  const trains = running ? undefined : editor.playSetup()?.models;
+  const onRails = trains.filter((train) => train.onRails).length;
   const busy = snapshot.status === "loading";
   const derailed = snapshot.derailSpeedLduPerS > 0;
   const moving = snapshot.targetLduPerS !== 0 || snapshot.speedLduPerS !== 0;
@@ -61,27 +63,25 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
       data-train-z={snapshot.trainZLdu.toFixed(1)}
       data-switches={snapshot.switches.map((s) => (s.diverging ? "d" : "s")).join("")}
       data-tick={snapshot.tick}
+      data-trains={running ? snapshot.trains.length : onRails}
+      data-driven={snapshot.driven}
     >
       <h2>Play</h2>
       {!running && (
         <div className="play-start">
-          {trains?.length ? (
-            <label>
-              Train
-              <select
-                value={snapshot.trainModel ?? ""}
-                disabled={busy}
-                onChange={(event) => play.chooseTrain(event.target.value)}
-              >
-                {trains.map((train) => (
-                  <option key={train.name} value={train.name}>
-                    {train.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {trains.length > 0 ? (
+            <ul className="play-trains" aria-label="Trains on the rails">
+              {trains.map((train, index) => (
+                <li key={index} data-on-rails={train.onRails}>
+                  {train.label}
+                  {!train.onRails && <span className="play-error"> — its track is gone</span>}
+                </li>
+              ))}
+            </ul>
           ) : (
-            <p className="toolbar-hint">Place a train on the layout to run it.</p>
+            <p className="toolbar-hint">
+              Hold a train over laid track: it sets itself on the rails there. R turns it round.
+            </p>
           )}
           <button
             type="button"
@@ -90,17 +90,34 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
             disabled={!ready || busy}
             onClick={() => startPlay(editor, play)}
           >
-            {busy ? "Putting the train on the track…" : `Run a train (${shortcutText("play")})`}
+            {busy
+              ? "Starting the trains…"
+              : `Run ${onRails > 1 ? `${onRails} trains` : "the train"} (${shortcutText("play")})`}
           </button>
           {snapshot.error && <p className="play-error">{snapshot.error}</p>}
           <p className="toolbar-hint">
-            Puts the train on the longest run of laid track. Open ends are live: run off one and the
+            Every train starts where it stands on the rails. Open ends are live: run off one and the
             train derails.
           </p>
         </div>
       )}
       {running && (
         <div className="play-controls">
+          {snapshot.trains.length > 1 && (
+            <label className="play-driven">
+              <span>Drive</span>
+              <select
+                value={snapshot.driven}
+                onChange={(event) => play.chooseDriven(Number(event.target.value))}
+              >
+                {snapshot.trains.map((train) => (
+                  <option key={train.index} value={train.index}>
+                    {train.index + 1}. {train.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <p className="play-motion" aria-live="polite">
             {motionText(snapshot)}
           </p>

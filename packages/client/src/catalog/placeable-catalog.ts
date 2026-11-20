@@ -435,7 +435,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       null,
     );
     if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
+      const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -513,6 +514,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       colors,
       null,
     );
+    if (model.vehicles.length > 0) {
+      const identity = { name: file.name, label: file.name, sha256: file.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, set, palette, colors));
+    }
     this.installMerged(palette, before);
     this.bakes.set(placeable, model);
     this.placeablesByRefId.push(placeable);

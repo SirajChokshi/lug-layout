@@ -44,6 +44,8 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
+import { RailYard } from "./trains/rail-yard.ts";
+import { VehicleIds } from "./trains/vehicle-ids.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
@@ -77,6 +79,8 @@ import {
   SIM_WORKER_PORT,
   TRACK_SCENE,
   TRAIN_PLAY,
+  RAIL_YARD,
+  VEHICLE_IDS,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -102,6 +106,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
+  bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())
     .inSingletonScope();

@@ -128,6 +128,19 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     }
     case "select": {
       const { selection } = snapshot;
+      if (selection?.kind === "train") {
+        return {
+          tone: snapshot.selectionRefusal === null ? "select" : "warn",
+          title: itemName(snapshot, selection.item),
+          detail: snapshot.selectionRefusal ?? "on the rails",
+          hints: [
+            key("delete", "delete"),
+            key("duplicate", "place more"),
+            key("focus", "frame"),
+            key("select-tool", "deselect"),
+          ],
+        };
+      }
       if (selection) {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",

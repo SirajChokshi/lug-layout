@@ -69,6 +69,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -78,6 +80,7 @@ export type {
   RoadSnapView,
   PlaceableCoverView,
   SelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
@@ -171,8 +174,13 @@ export {
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
 export {
