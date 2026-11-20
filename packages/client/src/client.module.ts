@@ -56,6 +56,8 @@ import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
 import { RailYard } from "./trains/rail-yard.ts";
 import { VehicleIds } from "./trains/vehicle-ids.ts";
+import { FetchedStarterFiles } from "./starters/starter-files.ts";
+import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
@@ -105,6 +107,9 @@ import {
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
+  STARTER_FILE_URLS,
+  STARTER_FILES,
+  STARTER_WORLDS,
   WORLD_SESSION,
 } from "./tokens.ts";
 
@@ -183,6 +188,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE).to(Palette).inSingletonScope();
   bind(PANEL_LAYOUT_STORE).to(LocalStoragePanelLayoutStore).inSingletonScope();
   bind(PANEL_LAYOUT).to(PanelLayoutService).inSingletonScope();
+  bind(STARTER_FILES).to(FetchedStarterFiles).inSingletonScope();
+  bind(STARTER_WORLDS).to(StarterWorlds).inSingletonScope();
 });
 
 export interface MainThreadConfig {
@@ -195,6 +202,7 @@ export interface MainThreadConfig {
   readonly libraryConnectorsBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
+  readonly starterFileUrls?: ReadonlyMap<string, string>;
   readonly disclaimer: string;
 }
 
@@ -224,6 +232,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
       })
       .inSingletonScope();
     bind(TRADEMARK_DISCLAIMER).toConstantValue(config.disclaimer);
+    bind(STARTER_FILE_URLS).toConstantValue(config.starterFileUrls ?? new Map());
   });
   return [configModule, catalogModule, renderModule, storageModule, clientModule];
 }

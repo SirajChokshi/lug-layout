@@ -2,6 +2,7 @@ import { CHUNK_LDU, STUD_LDU, ZETA16_ORDER, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { decode } from "../decode/index.ts";
 import {
+  CREDITS_FILE,
   SUPER_CHUNK_CHUNKS,
   WorldManifestV1,
   WorldShardV1,
@@ -9,6 +10,7 @@ import {
   encodeTrackPosition,
   importRef,
   readWorldArchive,
+  readWorldFiles,
   referencedImports,
   shardEntry,
   superChunkOfTrack,
@@ -339,6 +341,22 @@ describe("world schema v1", () => {
 
   it("writes the same bytes whatever order the placements arrive in", () => {
     expect(archiveFiles(backwards(placements), track)).toEqual(archiveFiles(placements, track));
+  });
+
+  it("reads a world from its files alone, while an archive must also carry its credits", () => {
+    const archive = archiveFiles(placements, track);
+    const world = new Map([...archive].filter(([name]) => name !== CREDITS_FILE));
+    const { manifest: archived, shards } = reread(archive);
+
+    expect(readWorldFiles(world)).toEqual({ ok: true, value: { manifest: archived, shards } });
+    expect(readWorldArchive(world)).toEqual({
+      ok: false,
+      issues: [{ path: CREDITS_FILE, message: "is missing" }],
+    });
+    expect(readWorldFiles(archive)).toEqual({
+      ok: false,
+      issues: [{ path: CREDITS_FILE, message: "is not part of a world" }],
+    });
   });
 
   it("refuses an archive whose track indices skip or repeat", () => {
