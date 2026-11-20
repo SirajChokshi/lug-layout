@@ -831,7 +831,12 @@ export class TrackDrawing implements ExtensionSite {
       if (!band) return null;
       const placement = layout.pose(p);
       const frame = layout.frame(p);
-      const placed = framedOutline(outline, placement, frame);
+      const placed = framedOutlineInto(
+        outline,
+        placement,
+        frame,
+        this.framedScratchFor(outline.length),
+      );
       outlineBox(placed, box, 0);
       const { studlessTops } = band.field.support;
       const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
