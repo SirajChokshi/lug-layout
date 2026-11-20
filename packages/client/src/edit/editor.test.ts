@@ -1330,6 +1330,26 @@ it("resolves clicks queued while the held item's tables load, over an import who
   expect(queued.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
 }, 120_000);
 
+it("keeps the stud mates of a module loaded after an import that brought no record for the parts they share", async () => {
+  const { editor, backend, importer, catalog } = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+  );
+  await importChecking(editor);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  await placer(editor, backend)(PLAIN_MODULE, 2_000, 320);
+  await chosen(editor, SET);
+  backend.aim(2_000, 320);
+  editor.pointerMove(0, 0);
+  const hover = hoverOutcome(editor.snapshot().hover?.placement);
+  importer.release();
+
+  expect(hover).toMatchObject({ accepted: true, restsOn: [PLAIN_MODULE] });
+  expect(hover.mates).toBeGreaterThan(0);
+}, 120_000);
+
 function hoverOutcome(placement: PlacementHover | null | undefined) {
   return {
     pose: placement?.pose,
