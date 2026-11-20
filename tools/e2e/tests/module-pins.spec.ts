@@ -16,7 +16,14 @@ import {
 } from "../src/held-out/editor-pairs.ts";
 import { blockPools, modulePair, type ModulePair } from "../src/held-out/generator.ts";
 import { poolCandidates } from "../src/held-out/pool-candidates.ts";
-import { EditorPage, pinnedLdrawFetch, STUD, type HoverState } from "./editor-page.ts";
+import {
+  byPosition,
+  EditorPage,
+  pinnedLdrawFetch,
+  STUD,
+  type HoverState,
+  type Pose,
+} from "./editor-page.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 const BUNDLE_ROOT = join(REPO_ROOT, "tools/asset-pipeline/dist/bundle");
@@ -30,6 +37,9 @@ const ZOOM_STEP_IN = -150;
 const ZOOM_STEP_OUT = 150;
 const ZOOM_STEPS = 24;
 const HOLD_KEY = "Alt";
+const BASEPLATE = "ldraw:3811@2";
+const MODULAR_ROW = ["omr:10190-1", "omr:10218-1", "omr:10185-1"] as const;
+const HELD_MODULAR = "omr:10190-1";
 
 type Vec3 = readonly [number, number, number];
 
@@ -462,4 +472,67 @@ test("the assist neighbourhood follows the zoom, reaching exactly its floor up c
       }
     }
   }
+});
+
+test("a held modular jumped onto a row of modulars and clicked before assist settles commits the pose the search settles on", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  await editor.zoom(500);
+  const { wide } = await editor.itemStuds(BASEPLATE);
+  const side = wide * STUD;
+  const away = await editor.screenOf({ x: 0, z: side });
+  const onRow = await editor.screenOf({ x: 0, z: 0 });
+  await page.keyboard.press(TOGGLE_KEY);
+  await expect.poll(async () => (await editor.placementModes()).mode).toBe("precise");
+  const row: ReadonlyArray<Pose> = MODULAR_ROW.map((item, index) => ({
+    item,
+    x: (index - 1) * side,
+    z: 0,
+    yPlates: 0,
+    rot: 0,
+  }));
+  for (const pose of row) await editor.placeAt(pose.item, { x: pose.x, z: pose.z });
+  expect(await editor.poses(), "the row of modulars stands one baseplate apart").toEqual(
+    row.toSorted(byPosition),
+  );
+  await page.keyboard.press(TOGGLE_KEY);
+  await expect.poll(async () => (await editor.placementModes()).mode).toBe("assist");
+
+  const holdAway = async (): Promise<void> => {
+    await editor.escape();
+    await editor.choose(HELD_MODULAR);
+    await page.mouse.move(away.sx, away.sy);
+    await editor.hoverIn("assist");
+  };
+  const added = async (): Promise<ReadonlyArray<Pose>> =>
+    (await editor.poses()).filter(
+      (pose) => !row.some((placed) => JSON.stringify(placed) === JSON.stringify(pose)),
+    );
+
+  await holdAway();
+  await page.mouse.move(onRow.sx, onRow.sy);
+  const atClick = await editor.hoverPlacement();
+  await page.mouse.click(onRow.sx, onRow.sy);
+  const committed = await added();
+  if (committed.length > 0) await editor.undo();
+  expect(await added(), "undo leaves only the row").toEqual([]);
+
+  await holdAway();
+  await page.mouse.move(onRow.sx, onRow.sy);
+  const settled = (await editor.hoverIn("assist")).placement;
+  if (!settled) throw new Error("no settled placement hover over the row");
+  const raced = atClick !== null && !atClick.settled;
+  const provisionalDiffers =
+    atClick !== null && JSON.stringify(atClick.pose) !== JSON.stringify(settled.pose);
+  test.info().annotations.push({
+    type: "click before settle",
+    description: raced
+      ? `clicked while settled was false, at the provisional pose ${JSON.stringify(atClick?.pose)}${provisionalDiffers ? ", which differs from" : ", the same as"} the settled pose ${JSON.stringify(settled.pose)}`
+      : "the search had settled before the click, so this run didn't race it",
+  });
+  expect(
+    committed,
+    `the click commits the settled ${settled.accepted ? `pose ${JSON.stringify(settled.pose)}` : "refusal"}, never a provisional pose (at the click: ${JSON.stringify(atClick)})`,
+  ).toEqual(settled.accepted ? [{ item: HELD_MODULAR, ...settled.pose }] : []);
 });

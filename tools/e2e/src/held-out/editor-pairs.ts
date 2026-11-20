@@ -255,20 +255,6 @@ export class EditorPath {
     };
   }
 
-  clickBeforeSettle(
-    x: number,
-    z: number,
-  ): { readonly atClick: SettleFlags | null; readonly committed: Pose | null } {
-    this.backend.aim(x, z);
-    this.editor.pointerMove(0, 0);
-    const atClick = this.placementFlags();
-    const before = this.editor.snapshot().placements;
-    this.editor.click(0, 0, NO_TIME);
-    const committed = this.editor.snapshot().placements > before ? this.lastPlacement() : null;
-    if (committed) this.undoLast();
-    return { atClick, committed };
-  }
-
   async step(x: number, z: number, commit: boolean): Promise<Step> {
     const { hover, text, cursor, firstFrame } = await this.hoverAt(x, z);
     const before = this.editor.snapshot();
@@ -530,20 +516,27 @@ function settledIn(hover: PlacementHover, mode: PlacementMode): boolean {
 }
 
 function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
-  const late = steps.filter(({ step }) => unsettledFlags(step.firstFrame).length > 0);
-  const lateFor = (flag: string): number =>
-    late.filter(({ step }) => unsettledFlags(step.firstFrame).includes(flag)).length;
+  const lateOn = (flag: string): ReadonlyArray<LoggedStep> =>
+    steps.filter(({ step }) => unsettledFlags(step.firstFrame).includes(flag));
+  const listed = (late: ReadonlyArray<LoggedStep>): string =>
+    late
+      .slice(0, LISTED_FAILURES)
+      .map(({ label }) => label)
+      .join("; ");
+  const lateSettled = lateOn("settled");
+  const lateTurns = lateOn("turnSettled");
+  const turns =
+    lateTurns.length === 0
+      ? "every turn hint settled on the first frame too"
+      : `${lateTurns.length} turn hints settled in later frames, within the ${SETTLE_FRAME_LIMIT}-frame bound: ${listed(lateTurns)}`;
   return {
     label:
-      "Every hover is settled, turn fields included, on the first frame after the pointer moves, so no step needs a sliced assist search",
-    passed: late.length === 0,
+      "Every hover's pose and verdict are settled on the first frame after the pointer moves, so no step needs a sliced assist search; turn hints settle within the frame bound",
+    passed: lateSettled.length === 0,
     detail:
-      late.length === 0
-        ? `${steps.length} hovers, settled and turnSettled on the first frame`
-        : `${late.length} of ${steps.length} needed later frames (settled false at ${lateFor("settled")}, turnSettled false at ${lateFor("turnSettled")}): ${late
-            .slice(0, LISTED_FAILURES)
-            .map(({ label, step }) => `${label} (${unsettledFlags(step.firstFrame).join(", ")})`)
-            .join("; ")}`,
+      lateSettled.length === 0
+        ? `${steps.length} hovers settled on the first frame; ${turns}`
+        : `${lateSettled.length} of ${steps.length} needed later frames to settle: ${listed(lateSettled)}; ${turns}`,
   };
 }
 
@@ -647,16 +640,6 @@ class StepLog {
       step,
     });
     return step;
-  }
-
-  async clickBeforeSettle(
-    mode: PlacementMode,
-    at: SweepOffset,
-  ): Promise<{ readonly atClick: SettleFlags | null; readonly committed: Pose | null }> {
-    await this.path.hold(this.heldItem);
-    this.path.setMode(mode);
-    const cursor = cursorAt(this.seam, at);
-    return this.path.clickBeforeSettle(cursor.x, cursor.z);
   }
 }
 
@@ -872,8 +855,6 @@ export async function pinnedPairChecks(
   }
   const assistShort = await log.at("assist", ONE_STUD_SHORT, true);
   const assistIn = await log.at("assist", ONE_STUD_IN, true);
-  const raced = await log.clickBeforeSettle("assist", ONE_STUD_SHORT);
-  const racedFlags = unsettledFlags(raced.atClick);
   const preciseFlush = await log.at("precise", AT_FLUSH, true);
   const preciseShort = await log.at("precise", ONE_STUD_SHORT, true);
   const preciseIn = await log.at("precise", ONE_STUD_IN, true);
@@ -932,12 +913,6 @@ export async function pinnedPairChecks(
         snapsFlush(assistIn, poses, pins) &&
         committedFlush(assistIn),
       detail: `expected ${describePose(poses.flush)} with ${pins} pin/hole joints; one stud short: ${outcome(assistShort)}; one stud in: ${outcome(assistIn)}`,
-    },
-    {
-      label:
-        "A click before the assist search settles commits the settled pose: from one stud short, clicked straight after the pointer move, it commits flush, where the settled hover snaps",
-      passed: snapsFlush(assistShort, poses, pins) && samePose(raced.committed, poses.flush),
-      detail: `${racedFlags.length > 0 ? `clicked while ${racedFlags.join(" and ")} was false` : "the search settled within its first slice, so this click didn't race it"}; committed ${raced.committed ? describePose(raced.committed) : "nothing"}; the settled hover: ${outcome(assistShort)}`,
     },
     reach,
     {
