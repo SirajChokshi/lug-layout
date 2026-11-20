@@ -1,4 +1,10 @@
-import { DirtyShards, worldPlacements, type AppliedEdit, type World } from "@brr/domain";
+import {
+  DirtyShards,
+  worldPlacements,
+  type AppliedEdit,
+  type TrackPieceAt,
+  type World,
+} from "@brr/domain";
 import { CAMERA_FOV_DEGREES } from "@brr/render";
 import { decode, issueText, type Issue } from "@brr/schema/decode";
 import {
@@ -99,7 +105,7 @@ export interface IWorldSession extends IWorldFiles {
   subscribe(listener: () => void): () => void;
   start(edited: IEditedWorld, bundleVersion: string): Promise<void>;
   placementsEdited(edit: AppliedEdit): void;
-  trackEdited(): void;
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput): Promise<string | null>;
 }
@@ -225,7 +231,8 @@ export class WorldSession implements IWorldSession {
     this.scheduleSave();
   }
 
-  trackEdited(): void {
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void {
+    this.dirty.touchTrackPieces(lifted);
     this.dirty.touchTrack(this.editedWorld().contents().track);
     this.scheduleSave();
   }
