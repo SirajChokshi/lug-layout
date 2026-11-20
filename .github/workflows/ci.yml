@@ -50,9 +50,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm --filter @brr/asset-pipeline build
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
@@ -112,9 +113,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-v2-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - run: pnpm lint
       - run: pnpm lint:boundaries
@@ -165,9 +167,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-v2-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
@@ -232,9 +235,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-v2-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - run: pnpm --filter @brr/import test:bundle-models
@@ -284,9 +288,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-v2-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - name: Drive the editor against the library bake just built
         run: pnpm turbo run e2e:library-bake
