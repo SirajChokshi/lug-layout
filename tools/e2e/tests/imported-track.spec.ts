@@ -1,6 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { EditorPage, STUD, nearestLattice, routeMiddle, shiftedPosition } from "./editor-page.ts";
+import {
+  EditorPage,
+  STUD,
+  nearestLattice,
+  routeMiddle,
+  shiftedPosition,
+  type PlanRow,
+} from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
 const GEOMETRY = new URL("../../../docs/verified-facts/geometry.json", import.meta.url);
@@ -22,6 +29,14 @@ const DRAWN_RUN_LDU = 640;
 const HALF_TURN_CURVES = 8;
 const PLAIN_MODULE = "generated:mils-plain";
 const RAISED_OFFSET_LDU = 1600;
+const WEST = 8;
+const TABLE_GRID_LDU = 8 * STUD;
+const LOOP_SPAN_LDU = 2 * 40 * STUD + TABLE_GRID_LDU;
+const DRAWN_PAST_TABLE_LDU = 64 * STUD;
+const PLASTIC_OVAL_OFFSET_LDU = 640;
+const PLASTIC_FILES: ReadonlySet<string> = new Set(["53401.dat", "53400.dat"]);
+const KINKED_RUN_FREE_ENDS = 2;
+const PLASTIC_OVAL_STRAIGHT_RUNS = 2;
 
 interface Reference {
   readonly color: string;
@@ -493,4 +508,164 @@ test("an imported model whose own 9V run is joined to drawn track won't nudge of
   await editor.dragFrom({ x: movedModel.x, z: movedModel.z }, { x: raised.x, z: raised.z + dz });
   await expect(page.locator(".tool-hud")).toContainText("different height");
   expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
+});
+
+function gridDown(ldu: number): number {
+  return Math.floor(ldu / TABLE_GRID_LDU) * TABLE_GRID_LDU;
+}
+
+function gridUp(ldu: number): number {
+  return Math.ceil(ldu / TABLE_GRID_LDU) * TABLE_GRID_LDU;
+}
+
+function ruled(rows: ReadonlyArray<PlanRow>, rule: string): ReadonlyArray<string> {
+  return rows.filter((row) => row.rule === rule).map((row) => row.message);
+}
+
+async function planShot(page: Page, name: string): Promise<void> {
+  await page.locator(".plan-panel").screenshot({ path: test.info().outputPath(`${name}.png`) });
+}
+
+test("a plan lists an imported 9V run's open ends, clears them when the loop closes from the keyboard while the curves past the table edge stay listed, and undo and redo bring the open ends back and clear them again", async ({
+  page,
+}) => {
+  const { file, pieces } = await nineVoltRun(
+    await undersideBelowOriginLdu(STRAIGHT_FILE.replace(".dat", "")),
+  );
+  const editor = await importAndPlace(page, file);
+  const ends = await editor.trackEnds();
+  const east = ends.find((end) => end.heading === EAST);
+  const west = ends.find((end) => end.heading === WEST);
+  const [model] = await editor.footprints();
+  if (!east || !west || !model) throw new Error(`the run has no ends: ${JSON.stringify(ends)}`);
+  await editor.drawTable(
+    {
+      x: gridDown(Math.min(model.box.minX, west.xLdu - LOOP_SPAN_LDU / 2)),
+      z: gridDown(Math.min(model.box.minZ, west.zLdu - LOOP_SPAN_LDU)),
+    },
+    {
+      x: gridUp(model.box.maxX),
+      z: gridUp(Math.max(model.box.maxZ, east.zLdu + LOOP_SPAN_LDU)),
+    },
+  );
+  const placed = await editor.planRows();
+  await planShot(page, "plan-open-ends-of-an-imported-run");
+  await editor.press("t");
+  await editor.hoverAt(await editor.screenOf(nearestLattice(east)));
+  const keys = [
+    ...Array<string>(HALF_TURN_CURVES).fill("a"),
+    ...Array<string>(pieces).fill("w"),
+    ...Array<string>(HALF_TURN_CURVES / 2).fill("a"),
+  ];
+  for (const key of keys) await editor.press(key);
+  const open = await editor.planRows();
+  await editor.press("Enter");
+  const closed = await editor.planRows();
+  await editor.waitForFarTierAndMeshesSettled();
+  await planShot(page, "plan-loop-closed");
+  await page.screenshot({ path: test.info().outputPath("loop-closed.png") });
+  await editor.undo();
+  const undone = await editor.planRows();
+  await planShot(page, "plan-loop-undone");
+  await editor.redo();
+  const redone = await editor.planRows();
+
+  const onTheRun = expect.stringMatching(
+    /^Open track end at \(-?\d+ mm, -?\d+ mm\) on nine-volt-run\.ldr at -?\d+, -?\d+: nothing joins it\.$/u,
+  );
+  expect(placed.filter((row) => row.rule === "trackOpenEnd")).toEqual([
+    { rule: "trackOpenEnd", severity: "error", message: onTheRun },
+    { rule: "trackOpenEnd", severity: "error", message: onTheRun },
+  ]);
+  expect(ruled(open, "trackOpenEnd")).toEqual([
+    expect.stringMatching(/ on Train Track 9V Curved #\d+: nothing joins it\.$/u),
+    onTheRun,
+  ]);
+  expect(ruled(closed, "trackOpenEnd")).toEqual([]);
+  expect(ruled(closed, "fit").length).toBeGreaterThan(0);
+  for (const message of ruled(closed, "fit")) {
+    expect(message).toMatch(/^Train Track 9V Curved #\d+ overhangs the tables/u);
+  }
+  expect(ruled(undone, "trackOpenEnd")).toEqual(ruled(open, "trackOpenEnd"));
+  expect(redone).toEqual(closed);
+});
+
+async function kinkedRunBesidePlasticOval(): Promise<string> {
+  const { text } = await layout(
+    "kinked-run-and-plastic-oval",
+    [
+      { scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] },
+      { scene: "plastic-oval", turns: 0, offset: [PLASTIC_OVAL_OFFSET_LDU, 0] },
+    ],
+    (references) => {
+      const run = references.filter(
+        ({ file, position: [x, , z] }) =>
+          file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+      );
+      const eastmost = run.reduce((a, b) => (b.position[0] > a.position[0] ? b : a));
+      const joint = [eastmost.position[0] - RUN_HALF_SPAN_LDU, eastmost.position[2]] as const;
+      const turn = Math.PI / 2;
+      const kink = turnedAboutY(eastmost, turn, [
+        joint[0] - (Math.cos(turn) * joint[0] + Math.sin(turn) * joint[1]),
+        joint[1] - (-Math.sin(turn) * joint[0] + Math.cos(turn) * joint[1]),
+      ]);
+      const plastic = references.filter(({ file }) => PLASTIC_FILES.has(file));
+      references.splice(
+        0,
+        references.length,
+        ...run.map((reference) => (reference === eastmost ? kink : reference)),
+        ...plastic,
+      );
+    },
+  );
+  const file = test.info().outputPath("kinked-run-and-plastic-oval.ldr");
+  await writeFile(file, text);
+  return file;
+}
+
+test("a plan lists the kink in a user's 9V run as ends that don't join, warns that its plastic curves have unverified poses, and lists drawn track past the table edge", async ({
+  page,
+}) => {
+  const editor = await importAndPlace(page, await kinkedRunBesidePlasticOval());
+  const ends = await editor.trackEnds();
+  const xs = ends.map((end) => end.xLdu);
+  const westmost = ends.find((end) => end.heading === WEST && end.xLdu === Math.min(...xs));
+  const [model] = await editor.footprints();
+  if (!westmost || !model) throw new Error(`the run has no west end: ${JSON.stringify(ends)}`);
+  await editor.drawTable(
+    { x: gridDown(model.box.minX), z: gridDown(model.box.minZ) },
+    { x: gridUp(model.box.maxX), z: gridUp(model.box.maxZ) },
+  );
+  const placed = await editor.planRows();
+  await editor.press("t");
+  const from = nearestLattice(westmost);
+  await editor.dragTrack(from, { x: from.x - DRAWN_PAST_TABLE_LDU, z: from.z });
+  const drawn = await editor.planRows();
+  await planShot(page, "plan-kink-unverified-and-off-the-table");
+  await page.screenshot({ path: test.info().outputPath("kink-plastic-oval-and-drawn-run.png") });
+
+  expect(ruled(placed, "trackOpenEnd")).toHaveLength(
+    KINKED_RUN_FREE_ENDS + 2 * PLASTIC_OVAL_STRAIGHT_RUNS,
+  );
+  expect(ruled(placed, "trackJoin")).toEqual([
+    expect.stringMatching(
+      /^Two track ends of kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ meet at \(-?\d+ mm, -?\d+ mm\) but don't join: their headings are 90° off a straight join\.$/u,
+    ),
+  ]);
+  expect(placed.filter((row) => row.severity === "warning")).toEqual([
+    {
+      rule: "trackUnverified",
+      severity: "warning",
+      message: expect.stringMatching(
+        /^kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ holds 16 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified, so the plan can't check their ends/u,
+      ),
+    },
+  ]);
+  expect(ruled(placed, "fit")).toEqual([]);
+  expect(ruled(drawn, "fit").length).toBeGreaterThan(0);
+  for (const message of ruled(drawn, "fit")) {
+    expect(message).toMatch(/^Train Track 9V Straight #\d+ overhangs the tables/u);
+  }
+  expect(ruled(drawn, "trackJoin")).toEqual(ruled(placed, "trackJoin"));
+  expect(ruled(drawn, "trackUnverified")).toEqual(ruled(placed, "trackUnverified"));
 });

@@ -2,6 +2,7 @@ import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE } from "./plan-rules.ts";
 import { BOX_READ } from "./plan-rows.ts";
 import type { PlanShape } from "./plan-shape.ts";
+import { TrackIssueRows } from "./track-issue-rows.ts";
 
 export const WRITE_ADD = 0;
 export const WRITE_UPDATE = 1;
@@ -51,11 +52,20 @@ export class PlanDelta {
   readonly labelBase: string[] = [];
   readonly original: unknown[] = [];
   readonly caught: unknown[] = [];
+  trackIssuesWritten = false;
+  readonly trackIssues = new TrackIssueRows();
 
   reset(): void {
     this.cleared = false;
     this.removalCount = 0;
     this.writeCount = 0;
+    this.trackIssuesWritten = false;
+  }
+
+  writeTrackIssues(): TrackIssueRows {
+    this.trackIssues.clear();
+    this.trackIssuesWritten = true;
+    return this.trackIssues;
   }
 
   clearAll(): void {

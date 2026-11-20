@@ -33,7 +33,7 @@ import {
   type Zeta16,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
-import type { TrackCatalog } from "@brr/schema/bundle";
+import type { PoseStatus, TrackCatalog } from "@brr/schema/bundle";
 
 const HALF_STEP_RADIANS = ZETA16_STEP_RADIANS / 2;
 const QUARTER_TURN_STEPS = ZETA16_ORDER / 4;
@@ -73,11 +73,18 @@ export interface UncertifiedPiece {
   readonly reason: UncertifiedReason;
 }
 
+export interface TrackPartCount {
+  readonly catalogIndex: number;
+  readonly count: number;
+}
+
 export interface ModelTrackEnds {
   readonly pieces: ReadonlyArray<HeldTrackPiece>;
   readonly openEnds: ReadonlyArray<TrackEnd>;
   readonly runs: ReadonlyArray<TrackRun>;
   readonly uncertified: ReadonlyArray<UncertifiedPiece>;
+  readonly unverified: ReadonlyArray<TrackPartCount>;
+  readonly unidentified: ReadonlyArray<TrackPartCount>;
 }
 
 interface Placements {
@@ -155,6 +162,38 @@ function piecesByPart(catalog: TrackCatalog): Map<string, PieceOfPart | null> {
     byPart.set(piece.part, byPart.has(piece.part) ? null : pieceOfPart(catalogIndex, piece));
   });
   return byPart;
+}
+
+function firstPieceOfPart(catalog: TrackCatalog, status: PoseStatus): Map<string, number> {
+  const byPart = new Map<string, number>();
+  catalog.pieces.forEach((piece, catalogIndex) => {
+    if (piece.status === status && !byPart.has(piece.part)) byPart.set(piece.part, catalogIndex);
+  });
+  return byPart;
+}
+
+function countedByPart(
+  partIds: ReadonlyArray<string>,
+  byPart: ReadonlyMap<string, number>,
+): ReadonlyArray<TrackPartCount> {
+  const counts = new Map<number, number>();
+  for (const partId of partIds) {
+    const catalogIndex = byPart.get(partId);
+    if (catalogIndex !== undefined) counts.set(catalogIndex, (counts.get(catalogIndex) ?? 0) + 1);
+  }
+  return [...counts].map(([catalogIndex, count]) => ({ catalogIndex, count }));
+}
+
+function instancePartIds(
+  instances: TrackInstances,
+  parts: ReadonlyArray<PartShapeAsset>,
+): ReadonlyArray<string> {
+  const ids: string[] = [];
+  for (let i = 0; i < instances.count; i++) {
+    const part = parts[instances.partIndex[i] ?? -1];
+    if (part) ids.push(part.id);
+  }
+  return ids;
 }
 
 function liesFlat(m: Float64Array, o: number): boolean {
@@ -647,7 +686,20 @@ export function modelTrackEnds(
       instance: candidates[i]?.instance ?? NO_INSTANCE,
     })),
   }));
-  return { pieces, openEnds, runs: trackRuns, uncertified };
+  return {
+    pieces,
+    openEnds,
+    runs: trackRuns,
+    uncertified,
+    unverified: countedByPart(
+      instancePartIds(instances, parts),
+      firstPieceOfPart(catalog, "unverified"),
+    ),
+    unidentified: countedByPart(
+      uncertified.map((piece) => piece.partId),
+      firstPieceOfPart(catalog, "certified"),
+    ),
+  };
 }
 
 export function heldPieces(
