@@ -15,7 +15,7 @@ import {
   type PlanPlacement,
   type PlanRegionContext,
 } from "./plan-rules.ts";
-import { BOX_PLAN_UNREADABLE, NO_ROW, PlanRows, RowList } from "./plan-rows.ts";
+import { BOX_PLAN_UNREADABLE, MODEL_SEGMENT, NO_ROW, PlanRows, RowList } from "./plan-rows.ts";
 
 function grownUint32(array: Uint32Array<ArrayBuffer>, length: number): Uint32Array<ArrayBuffer> {
   const grown = new Uint32Array(length);
@@ -72,6 +72,7 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
     key: rows.keyOf(row),
     ref: rows.refOf(row),
     label: rows.labelOf(row),
+    unsupported: rows.unsupported[row] === 1,
     box: {
       minX: rows.box[at + BOX_MIN_X] ?? Number.NaN,
       minZ: rows.box[at + BOX_MIN_Z] ?? Number.NaN,
@@ -95,6 +96,8 @@ export class PlanEvaluation {
   private regionsIn = new Uint32Array(0);
   private flagged = new Uint32Array(0);
   private readonly flaggedRows = new RowList(0);
+  private readonly unsupportedRows = new Set<number>();
+  private readonly unsupportedSources = new Map<number, ReadonlySet<number>>();
   private before = new Uint32Array(4);
   private readonly scratch = new CoverageScratch();
 
@@ -173,6 +176,50 @@ export class PlanEvaluation {
     this.version++;
   }
 
+  setUnsupported(segment: number, sources: ReadonlySet<number>): void {
+    this.unsupportedSources.set(segment, new Set(sources));
+    const rows = this.rows;
+    const wanted = new Set<number>();
+    for (const source of sources) {
+      const row = rows.find(segment, source);
+      if (row !== NO_ROW) wanted.add(row);
+    }
+    let reflagged = false;
+    for (const row of this.unsupportedRows) {
+      if (rows.segment[row] !== segment || wanted.has(row)) continue;
+      this.reflag(row, 0);
+      reflagged = true;
+    }
+    for (const row of wanted) {
+      if (rows.unsupported[row] === 1) continue;
+      this.reflag(row, 1);
+      reflagged = true;
+    }
+    if (reflagged && segment === MODEL_SEGMENT) this.relinkAll();
+    this.version++;
+  }
+
+  private relinkAll(): void {
+    const rows = this.rows;
+    for (const state of this.regions) state.flagged.clear();
+    this.flaggedRows.clear();
+    for (let row = rows.first(); row !== NO_ROW; row = rows.after(row)) {
+      for (const state of this.regions) {
+        if ((state.issues[row] ?? 0) > 0) state.flagged.link(rows, row);
+      }
+      if ((this.flagged[row] ?? 0) > 0) this.flaggedRows.link(rows, row);
+    }
+    this.flaggedMembershipChanged = true;
+  }
+
+  private reflag(row: number, unsupported: number): void {
+    if (unsupported === 1) this.unsupportedRows.add(row);
+    else this.unsupportedRows.delete(row);
+    this.rewrite(row, () => {
+      this.rows.unsupported[row] = unsupported;
+    });
+  }
+
   addRegion(region: PlanRegion): void {
     const state = new RegionState(regionContext(region), this.capacity);
     this.regions.push(state);
@@ -227,6 +274,7 @@ export class PlanEvaluation {
 
   private clearRows(): void {
     this.rows.clear();
+    this.unsupportedRows.clear();
     for (let r = 0; r < this.regions.length; r++) {
       const state = this.state(r);
       state.insideCount = 0;
@@ -260,9 +308,15 @@ export class PlanEvaluation {
   }
 
   private addRow(delta: PlanDelta, entry: number): void {
-    const row = this.rows.add(delta.writeSegment[entry] ?? 0, delta.writeSource[entry] ?? 0);
+    const segment = delta.writeSegment[entry] ?? 0;
+    const source = delta.writeSource[entry] ?? 0;
+    const row = this.rows.add(segment, source);
     this.fit();
     this.copyRow(delta, entry, row);
+    if (this.unsupportedSources.get(segment)?.has(source) === true) {
+      this.rows.unsupported[row] = 1;
+      this.unsupportedRows.add(row);
+    }
     this.regionsIn[row] = 0;
     this.flagged[row] = 0;
     for (let r = 0; r < this.regions.length; r++) {
@@ -302,12 +356,17 @@ export class PlanEvaluation {
       this.flaggedMembershipChanged = true;
     }
     this.withdraw(row);
+    this.unsupportedRows.delete(row);
     this.rows.remove(row);
   }
 
   private updateRow(delta: PlanDelta, entry: number): void {
     const row = this.rows.find(delta.writeSegment[entry] ?? 0, delta.writeSource[entry] ?? 0);
     if (row === NO_ROW) throw new Error("plan delta updates a row that isn't there");
+    this.rewrite(row, () => this.copyRow(delta, entry, row));
+  }
+
+  private rewrite(row: number, change: () => void): void {
     const wasUnreadable = this.rows.boxState[row] === BOX_PLAN_UNREADABLE;
     for (let r = 0; r < this.regions.length; r++) {
       this.before[r] = this.regions[r]?.issues[row] ?? 0;
@@ -315,7 +374,7 @@ export class PlanEvaluation {
     const flaggedBefore = this.flagged[row] ?? 0;
     if (wasUnreadable) this.planUnreadableCount--;
     else this.withdraw(row);
-    this.copyRow(delta, entry, row);
+    change();
     const isUnreadable = this.rows.boxState[row] === BOX_PLAN_UNREADABLE;
     if (isUnreadable) this.planUnreadableCount++;
     else this.contribute(row);
@@ -351,7 +410,7 @@ export class PlanEvaluation {
       state.inside[row] = 1;
       state.insideCount++;
       regionsIn++;
-      const count = placementIssueCount(state.ctx, box, at, this.scratch);
+      const count = this.issueCountOf(state, row);
       if (count === 0) continue;
       state.issues[row] = count;
       state.rowIssueCount += count;
@@ -361,6 +420,12 @@ export class PlanEvaluation {
     this.regionsIn[row] = regionsIn;
     this.flagged[row] = flagged;
     if (regionsIn === 0) this.sandboxCount++;
+  }
+
+  private issueCountOf(state: RegionState, row: number): number {
+    const rows = this.rows;
+    const unsupported = rows.unsupported[row] === 1;
+    return placementIssueCount(state.ctx, rows.box, row * BOX_STRIDE, this.scratch, unsupported);
   }
 
   private withdraw(row: number): void {
@@ -394,7 +459,7 @@ export class PlanEvaluation {
       const regionsIn = this.regionsIn[row] ?? 0;
       if (regionsIn === 0) this.sandboxCount--;
       this.regionsIn[row] = regionsIn + 1;
-      const count = placementIssueCount(state.ctx, box, at, this.scratch);
+      const count = this.issueCountOf(state, row);
       if (count === 0) continue;
       state.issues[row] = count;
       state.rowIssueCount += count;

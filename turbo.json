@@ -39,6 +39,8 @@
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
         "$TURBO_ROOT$/docs/verified-facts/geometry.json",
         "$TURBO_ROOT$/docs/verified-facts/track-catalog.json",
+        "$TURBO_ROOT$/docs/verified-facts/level-crossing.json",
+        "$TURBO_ROOT$/docs/verified-facts/plan-outlines.json",
         "$TURBO_ROOT$/packages/schema/src/bundle/**",
         "!$TURBO_ROOT$/packages/schema/src/bundle/**/*.test.ts",
         "$TURBO_ROOT$/packages/schema/src/decode/**",
@@ -47,7 +49,8 @@
         "!$TURBO_ROOT$/packages/math/src/**/*.test.ts",
         "$TURBO_ROOT$/packages/catalog/src/glb.ts",
         "$TURBO_ROOT$/packages/catalog/src/part-bundle.ts",
-        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
+        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts",
+        "$TURBO_ROOT$/packages/domain/src/track/piece-outline.ts"
       ],
       "outputs": ["dist/**", "fixture-bundle/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
