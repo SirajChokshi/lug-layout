@@ -2,6 +2,7 @@ use std::thread;
 
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
+use crate::trig::{cos, sin};
 
 const HEMISPHERE_RAYS: usize = 1024;
 const HORIZON_RAYS: usize = 64;
@@ -36,11 +37,11 @@ fn upward_directions() -> Vec<Vec3> {
         let y = (i as f64 + 0.5) / HEMISPHERE_RAYS as f64;
         let radius = (1.0 - y * y).sqrt();
         let angle = GOLDEN_ANGLE * i as f64;
-        [radius * angle.cos(), y, radius * angle.sin()]
+        [radius * cos(angle), y, radius * sin(angle)]
     });
     let horizon = (0..HORIZON_RAYS).map(|i| {
         let angle = std::f64::consts::TAU * i as f64 / HORIZON_RAYS as f64;
-        [angle.cos(), 0.0, angle.sin()]
+        [cos(angle), 0.0, sin(angle)]
     });
     hemisphere.chain(horizon).collect()
 }

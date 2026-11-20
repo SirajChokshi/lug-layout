@@ -2,6 +2,7 @@ mod common;
 
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
 use brick_compile::bake::{drawn_lattice, BakeError, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::cover::{tree_order, CoverShard, PartSolid};
@@ -194,7 +195,7 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
         let bytes = BakeRecord::of(&compiled, bounds).encode().expect("encode");
         shelf.insert(
             reference.clone(),
-            BakeRecord::decode(&bytes).expect("decode"),
+            Arc::new(BakeRecord::decode(&bytes).expect("decode")),
         );
     }
     let drawn: Vec<_> = bake_model(&source)
