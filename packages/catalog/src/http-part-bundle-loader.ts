@@ -12,6 +12,7 @@ import {
   CreditTableFile,
   CrosswalkFile,
   ModelFile,
+  ModelPartListFile,
   PartShape,
   PartTableFile,
   RollingDiagnosticsFile,
@@ -155,6 +156,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<RollingDiagnosticsFile | null>
   >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
+  private readonly connectorLoads = new Map<string, Promise<ConnectorLoad>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
     Promise<PinnedSectionVocabularyFile | null>
@@ -269,6 +271,18 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       model: partModel(file),
       parts: file.shapes.map((shape) => shapeRecord(shape, names)),
     };
+  }
+
+  async loadModelPartList(lod: BundleLod, name: string): Promise<ReadonlyArray<string> | null> {
+    const index = await this.loadIndex(lod);
+    const partList = index.models.find((model) => model.name === name)?.partList;
+    if (partList === undefined) return null;
+    const path = `${lod}/${partList.file}`;
+    const list = decodedOrThrow(
+      decode(ModelPartListFile, JSON.parse(await this.fetcher.text(path))),
+      path,
+    );
+    return list.parts;
   }
 
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
@@ -449,8 +463,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return (await this.records(lod)).load(partId);
   }
 
-  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
-    return (await this.records(lod)).read(partId);
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.cached(this.connectorLoads, `${lod}/${partId}`, async () =>
+      (await this.records(lod)).read(partId),
+    );
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {

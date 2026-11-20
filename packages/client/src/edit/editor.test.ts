@@ -234,6 +234,13 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return { ...record, entry: importedByUser(record.entry) };
   }
 
+  loadModelPartList(lod: BundleLod, name: string): Promise<ReadonlyArray<string> | null> {
+    if (!this.userLoader || !this.userModels.includes(name)) {
+      return this.loader.loadModelPartList(lod, name);
+    }
+    return this.userLoader.loadModelPartList(lod, name);
+  }
+
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
     return this.loader.loadPartMesh(lod, file, priority);
   }
@@ -5711,6 +5718,76 @@ class HeldText implements IAssetFetcher {
     this.release();
   }
 }
+
+const PLAIN_BRICK_IN_SET = "ldraw:3710";
+
+async function readStandardJson(file: string) {
+  return JSON.parse(await readFile(new URL(`standard/${file}`, bundleRoot), "utf8"));
+}
+
+async function recordPathsOfSet(manifest: BundleManifest, name: string): Promise<Set<string>> {
+  const partList = manifest.models.find((model) => model.name === name)?.partList;
+  if (!partList) throw new Error(`${name} has no part list`);
+  const { parts }: { parts: ReadonlyArray<string> } = await readStandardJson(partList.file);
+  const indexes = await Promise.all([
+    readStandardJson(manifest.connectivity.file),
+    readStandardJson(manifest.connectors.file),
+  ]);
+  const paths = new Set<string>();
+  for (const part of parts) {
+    for (const index of indexes) {
+      const record = index.parts[part] ?? null;
+      if (record !== null) paths.add(`standard/${record.file}`);
+    }
+  }
+  return paths;
+}
+
+it("fetches a picked set's connector records while its model record loads, and reads each of them once", async () => {
+  const held = new HeldText(new BundleDirectoryFetcher(), (path) =>
+    path.includes(`/model-${PLACEABLE_SET}.`),
+  );
+  const fetcher = new InFlightFetcher(held);
+  const { editor, manifest } = await startEditor([PLACEABLE_SET], fetcher);
+  const expected = await recordPathsOfSet(manifest, PLACEABLE_SET);
+  const fetched = () => fetcher.paths.filter((path) => expected.has(path));
+
+  editor.chooseItem(`omr:${PLACEABLE_SET}`);
+  await vi.waitFor(() => expect(held.held).toBe(1));
+  await vi.waitFor(() => expect(new Set(fetched()).size).toBe(expected.size), { timeout: 10_000 });
+  held.open();
+  await settledChoice(editor);
+
+  expect(expected.size).toBeGreaterThan(0);
+  expect({ reads: fetched().length, held: editor.snapshot().activeItem }).toEqual({
+    reads: expected.size,
+    held: `omr:${PLACEABLE_SET}`,
+  });
+}, 120_000);
+
+it("reads a set's connector record again on the next pick after a read of it failed", async () => {
+  let failing: string | null = null;
+  let failed = false;
+  const fetcher = new InFlightFetcher(new BundleDirectoryFetcher(), (path) => {
+    if (failed || path !== failing) return false;
+    failed = true;
+    return true;
+  });
+  const { editor, manifest } = await startEditor([PLACEABLE_SET], fetcher);
+  const connectivity = await readStandardJson(manifest.connectivity.file);
+  failing = `standard/${connectivity.parts[PLAIN_BRICK_IN_SET].file}`;
+
+  await chosen(editor, `omr:${PLACEABLE_SET}`);
+  const afterFailure = editor.snapshot();
+  await chosen(editor, `omr:${PLACEABLE_SET}`);
+
+  expect({
+    failedOnce: failed,
+    firstPick: afterFailure.catalogError !== null && afterFailure.activeItem === null,
+    secondPick: editor.snapshot().activeItem,
+    gaps: editor.snapshot().connectorGaps,
+  }).toEqual({ failedOnce: true, firstPick: true, secondPick: `omr:${PLACEABLE_SET}`, gaps: [] });
+}, 120_000);
 
 function heldConnectivity(): HeldText {
   return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-3811."));

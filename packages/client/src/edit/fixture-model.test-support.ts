@@ -122,6 +122,10 @@ export class WithFixtureModels implements IPartBundleLoader {
     return this.from(name).loadModelRecord(lod, name);
   }
 
+  loadModelPartList(lod: BundleLod, name: string): Promise<ReadonlyArray<string> | null> {
+    return this.from(name).loadModelPartList(lod, name);
+  }
+
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
     return this.shipped.loadPartMesh(lod, file, priority);
   }

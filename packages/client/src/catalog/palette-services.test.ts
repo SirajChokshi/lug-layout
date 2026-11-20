@@ -330,7 +330,7 @@ describe("palette colour and favourites", () => {
 });
 
 describe("palette prefetch", () => {
-  it("fetches a set's record when the pointer rests on it or it takes focus, and not when the pointer passes over it", async () => {
+  it("fetches a set's record when the pointer rests on it or it takes focus, and not when the pointer passes over it, and never its part list", async () => {
     const { container, fetcher, manifest } = await startEditor();
     const prefetch = container.get(PALETTE_PREFETCH);
     const record = (name: string): string =>
@@ -348,6 +348,7 @@ describe("palette prefetch", () => {
     prefetch.focus("omr:4554-1");
     await vi.waitFor(() => expect(fetcher.paths).toContain(focused));
     expect(fetcher.paths).not.toContain(passed);
+    expect(fetcher.paths.filter((path) => path.includes("-parts."))).toEqual([]);
   }, 120_000);
 });
 

@@ -146,6 +146,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   refs(): ReadonlyArray<string>;
   resolveRef(ref: string, color: number): PlacementTarget | null;
   load(refId: number): Promise<Placeable>;
+  prefetchConnectorRecords(refId: number): void;
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
@@ -504,6 +505,19 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       () => this.loads.delete(refId),
     );
     return loading;
+  }
+
+  prefetchConnectorRecords(refId: number): void {
+    const model = this.slots[refId]?.model;
+    if (model === undefined || model === null) return;
+    void this.loader.loadModelPartList(this.lod, model).then(
+      (partIds) => {
+        for (const partId of partIds ?? []) {
+          void this.loader.readPartConnectors(this.lod, partId).catch(() => null);
+        }
+      },
+      () => null,
+    );
   }
 
   private modelPlaceableFrom(record: ModelRecord): Placeable {

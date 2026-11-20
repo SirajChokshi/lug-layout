@@ -95,6 +95,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadModelRecord(lod, name);
   }
 
+  loadModelPartList(lod: BundleLod, name: string): Promise<ReadonlyArray<string> | null> {
+    return this.loader.loadModelPartList(lod, name);
+  }
+
   loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
     return this.loader.loadPartMesh(lod, file, priority);
   }

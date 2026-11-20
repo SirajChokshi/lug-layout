@@ -1960,6 +1960,7 @@ export class Editor implements IEditor, IEditedWorld {
       const target = this.catalog.resolveRef(ref, color);
       if (target) refIds.add(target.refId);
     }
+    for (const refId of refIds) this.catalog.prefetchConnectorRecords(refId);
     const placeables = await Promise.all([...refIds].map((refId) => this.catalog.load(refId)));
     await Promise.all(placeables.map((placeable) => this.connectorTables.load(placeable)));
   }
@@ -2570,6 +2571,7 @@ export class Editor implements IEditor, IEditedWorld {
       ghostRot: this.placeRot,
       connectorGaps: [],
     });
+    this.catalog.prefetchConnectorRecords(refId);
     void this.catalog
       .load(refId)
       .then((placeable) => this.connectorTables.load(placeable))
