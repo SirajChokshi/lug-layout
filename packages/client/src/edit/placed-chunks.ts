@@ -1036,6 +1036,10 @@ export class PlacedChunks {
     }
   }
 
+  contains(model: PlacedModel): boolean {
+    return this.entryOf(model) !== null;
+  }
+
   carried(model: PlacedModel): boolean {
     const rider = this.entryOf(model);
     if (!rider) return false;

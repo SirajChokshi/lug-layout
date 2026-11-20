@@ -1,7 +1,10 @@
 export const RECT_STRIDE = 4;
 export const PIECES_PER_CUT = 4;
 
-export function growTo(buffer: Float64Array<ArrayBuffer>, floats: number): Float64Array<ArrayBuffer> {
+export function growTo(
+  buffer: Float64Array<ArrayBuffer>,
+  floats: number,
+): Float64Array<ArrayBuffer> {
   if (buffer.length >= floats) return buffer;
   return new Float64Array(Math.max(floats, buffer.length * 2));
 }

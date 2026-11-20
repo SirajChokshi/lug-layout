@@ -1,4 +1,5 @@
 import {
+  AXIS_NEG_Y,
   CandidatePoses,
   FootprintGrid,
   MateReport,
@@ -19,6 +20,7 @@ import {
 import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
+import { TRACK_FAMILY } from "./finders.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
@@ -87,6 +89,9 @@ export interface IPlacementSearch {
     out: PlacementChoice,
   ): void;
   strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null;
+  has(placement: number): boolean;
+  restingMates(placement: number): number;
+  overlapOf(placement: number): number;
 }
 
 interface Placed extends PlacedParts {
@@ -314,6 +319,44 @@ export class PlacementSearch implements IPlacementSearch {
       this.solver.insert(placed.model, placed.pose, placement);
     }
     return stranded;
+  }
+
+  has(placement: number): boolean {
+    return this.placed.has(placement);
+  }
+
+  restingMates(placement: number): number {
+    const { model, pose } = this.placedAt(placement);
+    const report = this.report;
+    this.solver.evaluate(model, pose, report);
+    let resting = 0;
+    for (let k = 0; k < report.count; k++) {
+      if (report.family[k] === TRACK_FAMILY) continue;
+      if (model.axis[report.connector[k] ?? 0] === AXIS_NEG_Y) resting++;
+    }
+    return resting;
+  }
+
+  overlapOf(placement: number): number {
+    const placed = this.placedAt(placement);
+    this.moving = placement;
+    const world = this.scratch.place(placed.volumes, placed.pose);
+    this.zones.clear();
+    let blocked = firstOverlap(world, this.volumes, this.exempt, this.hit);
+    if (blocked && this.collectZones(placed.model, placed.boxes, placed.technic, placed.pose) > 0) {
+      blocked =
+        firstOverlap(world, this.volumes, this.exempt, this.hit) ||
+        this.zones.firstOverlap(this.hit);
+    }
+    this.moving = NO_PLACEMENT;
+    this.zones.clear();
+    return blocked ? this.hit.owner : NO_PLACEMENT;
+  }
+
+  private placedAt(placement: number): Placed {
+    const placed = this.placed.get(placement);
+    if (!placed) throw new RangeError(`placement ${placement} is not placed`);
+    return placed;
   }
 
   private candidatePose(index: number): Pose {

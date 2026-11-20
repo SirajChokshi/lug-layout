@@ -1,5 +1,8 @@
 export {
   NO_STUD,
+  PLACEMENT_CELL_INTS,
+  PLACEMENT_JOINED,
+  PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
   type RoadCellStatus,

@@ -422,9 +422,9 @@ export class PlanService implements IPlanService {
   setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
     const evaluation = this.evaluation;
     evaluation.resetChanges();
-    evaluation.setUnsupported(TRACK_SEGMENT, track);
-    evaluation.setUnsupported(MODEL_SEGMENT, models);
-    this.afterChange(false);
+    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track);
+    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models);
+    if (trackChanged || modelsChanged) this.afterChange(false);
   }
 
   private newId(prefix: string): string {

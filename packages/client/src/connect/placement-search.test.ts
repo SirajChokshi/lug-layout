@@ -463,6 +463,17 @@ describe("PlacementSearch", () => {
     const choice = choose(f, plate, window(2 * STUD_LDU, 2 * STUD_LDU, 0), PLATE);
     expect([choice.accepted, choice.votes]).toEqual([true, 4]);
   });
+
+  it("counts as holding a placed model only the mates on its downward connectors", () => {
+    const f = fixture();
+    const plate = world(f);
+    const floating = 31;
+    place(f, PLATE, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 0, rot: 0 });
+    place(f, floating, plate, { x: 2 * STUD_LDU, z: 2 * STUD_LDU, yPlates: 5, rot: 0 });
+    expect(
+      [BASEPLATE, BRICK, PLATE, floating].map((placement) => f.search.restingMates(placement)),
+    ).toEqual([0, 1, 4, 0]);
+  });
 });
 
 describe("PlacementSearch mate zones", () => {
@@ -477,6 +488,27 @@ describe("PlacementSearch mate zones", () => {
       seated: [true, 1, -1],
       onePlateUp: [false, 0, BORED],
       matedOverHalfItsLength: [false, 1, BORED],
+    });
+  });
+
+  it("judges a placed pair's overlap as search judges the pose, from either side, with each one's own volume exempt", () => {
+    const f = fixture();
+    place(f, BORED, boredBlock(f));
+    const pinned = 21;
+    const placedAt = (pinLength: number, yPlates: number) => {
+      place(f, pinned, pinnedBlock(f, pinLength), { x: 0, z: 0, yPlates, rot: 0 });
+      const both = [f.search.overlapOf(pinned), f.search.overlapOf(BORED)];
+      f.search.remove(pinned);
+      return both;
+    };
+    expect({
+      seated: placedAt(STUD_LDU, 0),
+      onePlateUp: placedAt(STUD_LDU, 1),
+      matedOverHalfItsLength: placedAt(HALF, 0),
+    }).toEqual({
+      seated: [-1, -1],
+      onePlateUp: [BORED, pinned],
+      matedOverHalfItsLength: [BORED, pinned],
     });
   });
 

@@ -37,21 +37,17 @@ function meetsSlab(cells: PlaceableCells, slab: Float32Array, i: number, j: numb
 function footingCells(source: ShapeSource): Uint8Array {
   const { cells, slabBoxes } = source;
   const chosen = new Uint8Array(cells.width * cells.depth);
-  if (slabBoxes.length > 0) {
-    for (let j = 0; j < cells.depth; j++) {
-      for (let i = 0; i < cells.width; i++) {
-        const cell = j * cells.width + i;
-        if (occupied(cells, cell) && meetsSlab(cells, slabBoxes, i, j)) chosen[cell] = 1;
-      }
-    }
-    return chosen;
-  }
   let lowest = Number.POSITIVE_INFINITY;
   for (let cell = 0; cell < chosen.length; cell++) {
     if (occupied(cells, cell)) lowest = Math.min(lowest, cells.columnBottom[cell] ?? 0);
   }
-  for (let cell = 0; cell < chosen.length; cell++) {
-    if (occupied(cells, cell) && cells.columnBottom[cell] === lowest) chosen[cell] = 1;
+  for (let j = 0; j < cells.depth; j++) {
+    for (let i = 0; i < cells.width; i++) {
+      const cell = j * cells.width + i;
+      if (!occupied(cells, cell)) continue;
+      if (cells.columnBottom[cell] === lowest || meetsSlab(cells, slabBoxes, i, j))
+        chosen[cell] = 1;
+    }
   }
   return chosen;
 }
@@ -88,7 +84,11 @@ function coverRects(cells: PlaceableCells, chosen: Uint8Array): number[] {
   return rects;
 }
 
-function turnedRects(cells: PlaceableCells, rects: ReadonlyArray<number>, rot: Rot90): Float64Array {
+function turnedRects(
+  cells: PlaceableCells,
+  rects: ReadonlyArray<number>,
+  rot: Rot90,
+): Float64Array {
   const cos = rot90Cos(rot);
   const sin = rot90Sin(rot);
   const out = new Float64Array(rects.length);

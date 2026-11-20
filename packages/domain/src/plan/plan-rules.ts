@@ -23,8 +23,6 @@ import {
   FACT_OVERLAP_SEGMENT,
   FACT_ROAD_MISMATCHED,
   FACT_STRIDE,
-  FACT_UNMAPPED_BRICKLINK,
-  FACT_UNMAPPED_REBRICKABLE,
   type PlacementFacts,
 } from "./plan-facts.ts";
 import { ReachScratch, reachContext, reachFails, type ReachContext } from "./plan-reach.ts";
@@ -507,7 +505,12 @@ function boxRect(
   return out;
 }
 
-function crossesSeam(seams: Float64Array, seam: number, rects: Float64Array, count: number): boolean {
+function crossesSeam(
+  seams: Float64Array,
+  seam: number,
+  rects: Float64Array,
+  count: number,
+): boolean {
   const alongX = seams[seam + EDGE_AXIS] === ALONG_X;
   const line = seams[seam + EDGE_LINE] ?? Number.NaN;
   const from = seams[seam + EDGE_FROM] ?? Number.NaN;
@@ -632,7 +635,7 @@ export function placementIssues(
       issue(
         "unsupported",
         [key],
-        `${label} rests on a top with no studs, and no stud is under any of its anti-studs.`,
+        `${label} isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.`,
       ),
     );
   }
@@ -676,7 +679,11 @@ export function placementIssues(
     const { box } = placement;
     scratch.occupancy =
       shape === null
-        ? boxRect(Float64Array.of(box.minX, 0, box.minZ, box.maxX, 0, box.maxZ), 0, scratch.occupancy)
+        ? boxRect(
+            Float64Array.of(box.minX, 0, box.minZ, box.maxX, 0, box.maxZ),
+            0,
+            scratch.occupancy,
+          )
         : placedShapeRects(shape.occupancy, anchor, scratch.occupancy);
     const rects = shape === null ? 1 : shape.occupancy.length / RECT_FLOATS;
     if (rowReachFails(ctx, reach, scratch.occupancy, rects, scratch)) {

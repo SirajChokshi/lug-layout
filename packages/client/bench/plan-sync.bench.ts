@@ -1,12 +1,19 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   CoverageScratch,
+  emptyFacts,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  MODEL_SEGMENT,
+  NO_OVERLAP_PARTNER,
   PlanDelta,
   regionContext,
   TRACK_SEGMENT,
   uncoveredPieces,
   UNDECIDED,
   type PlanRegion,
+  type PlanShape,
 } from "@brr/domain";
 import { CHUNK_LDU, chunkKey, pose16, zeta16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
@@ -21,6 +28,7 @@ import { mainThreadModules } from "../src/client.module.ts";
 import { TrackDrawing } from "../src/edit/track-drawing.ts";
 import {
   writeFullRebuild,
+  writeModelUpdates,
   writeTrackLay,
   writeTrackThrow,
   writeViewUpdate,
@@ -42,6 +50,10 @@ const BRICK_HEIGHT = 24;
 const ROAD_LDU = 640;
 const ROAD_STROKES: ReadonlyArray<number> = [8, 64];
 const ROOM_MM = 2100;
+const COVERING_REACH_MM = 1100;
+const DEFAULT_REACH_MM = 700;
+const FALLBACK_REACH_MM = 100;
+const JOINED_ROAD_CELLS = 8;
 const FLAG_ROOM_DEPTH_MM = 4300;
 const FLAG_SHIFT_LDU = 5400;
 const TABLE_HEIGHT_MM = 750;
@@ -67,6 +79,15 @@ const COUNTED_SPACES: ReadonlySet<string> = new Set([
 const BRICK = { id: "ldraw:3001", label: "Brick 2 x 4" };
 const ROAD = { id: "ldraw:44336", label: "Road plate" };
 const NONE: ReadonlyArray<PlanModelSource> = [];
+
+function rectShape(halfX: number, halfZ: number): PlanShape {
+  const rect = Float64Array.of(-halfX, -halfZ, halfX, halfZ);
+  return { footing: rect, occupancy: rect };
+}
+
+const BRICK_SHAPE = rectShape(BRICK_PITCH_X / 2, BRICK_PITCH_Z / 2);
+const TURNED_BRICK_SHAPE = rectShape(BRICK_PITCH_Z / 2, BRICK_PITCH_X / 2);
+const ROAD_SHAPE = rectShape(ROAD_LDU / 2, ROAD_LDU / 2);
 
 interface BenchModel extends PlanModelSource {
   id: number;
@@ -211,6 +232,8 @@ function brick(i: number, id: number, shiftZ: number): BenchModel {
       z,
     },
     placeable: BRICK,
+    shape: BRICK_SHAPE,
+    facts: emptyFacts(),
     box: {
       minX: x - BRICK_PITCH_X / 2,
       minY: y,
@@ -227,6 +250,8 @@ function turned(model: BenchModel, id: number): BenchModel {
   return {
     ...model,
     id,
+    shape: TURNED_BRICK_SHAPE,
+    facts: emptyFacts(),
     box: {
       ...model.box,
       minX: x - BRICK_PITCH_Z / 2,
@@ -249,6 +274,8 @@ function road(k: number, id: number): BenchModel {
       z,
     },
     placeable: ROAD,
+    shape: ROAD_SHAPE,
+    facts: emptyFacts(),
     box: {
       minX: x - ROAD_LDU / 2,
       minY: 0,
@@ -296,11 +323,18 @@ function build(
   if (region === null) return { plans, planId: null, delta, models };
   const planId = plans.createPlan(region);
   plans.addTable(planId, fullTable);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   return { plans, planId, delta, models };
 }
 
 function applyView(built: Built, view: PlanViewUpdate): void {
   writeViewUpdate(built.delta, view);
+  built.plans.apply(built.delta);
+}
+
+function applyUpdate(built: Built, models: ReadonlyArray<PlanModelSource>): void {
+  built.delta.reset();
+  writeModelUpdates(built.delta, models, models.length);
   built.plans.apply(built.delta);
 }
 
@@ -319,6 +353,8 @@ function viewScenarios(built: Built, ids: Ids): Scenario[] {
   const toAfter: PlanModelSource[] = [after];
   const rotateView = { removed: fromBefore, added: toAfter };
   const rotateBackView = { removed: toAfter, added: fromBefore };
+  const factTarget = built.models[Math.floor(built.models.length / 3)] ?? placedLast;
+  const factUpdate: PlanModelSource[] = [factTarget];
   return [
     {
       name: "place",
@@ -351,6 +387,22 @@ function viewScenarios(built: Built, ids: Ids): Scenario[] {
       inverse: () => {
         before.id = ids.fresh();
         applyView(built, rotateBackView);
+      },
+    },
+    {
+      name: "fact update (a mid-list model row rewritten, facts unchanged)",
+      edit: () => applyUpdate(built, factUpdate),
+      inverse: () => applyUpdate(built, factUpdate),
+    },
+    {
+      name: `fact update (a mid-list model row's joined road cells, 0 ↔ ${JOINED_ROAD_CELLS})`,
+      edit: () => {
+        factTarget.facts[FACT_ROAD_JOINED] = JOINED_ROAD_CELLS;
+        applyUpdate(built, factUpdate);
+      },
+      inverse: () => {
+        factTarget.facts[FACT_ROAD_JOINED] = 0;
+        applyUpdate(built, factUpdate);
       },
     },
     {
@@ -665,6 +717,27 @@ async function flaggedCosts(ids: Ids, lines: string[]): Promise<void> {
       `| ${flagged.toLocaleString("en-US")} | rotating that flagged row, null backend | ${summary(await measure(COST_WINDOWS, rotate, rotateBack))} |`,
     );
     unclick();
+    const target = built.models[Math.floor(ROWS / 2)] ?? extra;
+    const partner = built.models[ROWS - 1] ?? extra;
+    const updated: PlanModelSource[] = [target];
+    const flagByUpdate = (): void => {
+      target.facts[FACT_OVERLAP_SEGMENT] = MODEL_SEGMENT;
+      target.facts[FACT_OVERLAP_SOURCE] = partner.id;
+      applyUpdate(built, updated);
+    };
+    const clearByUpdate = (): void => {
+      target.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      target.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+      applyUpdate(built, updated);
+    };
+    flagByUpdate();
+    if (built.plans.issueCount(planId) !== flagged + 1) {
+      throw new Error(`a flagging update left ${built.plans.issueCount(planId)} issues`);
+    }
+    clearByUpdate();
+    lines.push(
+      `| ${flagged.toLocaleString("en-US")} | a fact update that newly flags a mid-list row (an overlap partner), null backend | ${summary(await measure(COST_WINDOWS, flagByUpdate, clearByUpdate))} |`,
+    );
     const boxes: WorldBox[] = [];
     for (let i = 0; i <= flagged; i++) boxes.push({ ...(built.models[i]?.box ?? extra.box) });
     lines.push(
@@ -729,13 +802,14 @@ function fallbackRegion(tables: number): PlanRegion {
       obstacles: [],
     },
     maxOverhangMm: 1,
+    maxReachMm: FALLBACK_REACH_MM,
   };
 }
 
 async function fallbackCosts(ids: Ids, lines: string[]): Promise<void> {
   lines.push(
     "",
-    `### One fallback decision through PlanService.apply: a one-row add whose table edges sit next to 2^53, overhang 1 mm, so no grown edge certifies`,
+    `### One fallback decision through PlanService.apply: a one-row add whose table edges sit next to 2^53, overhang 1 mm and reach ${FALLBACK_REACH_MM} mm, so no grown edge or reach strip certifies`,
     "",
     `| Tables | Fallbacks per add | ${COST_HEADER.slice(2)}`,
     "|---|---|---|---|---|---|---|",
@@ -752,12 +826,17 @@ async function fallbackCosts(ids: Ids, lines: string[]): Promise<void> {
       originChunkZ: 0,
     });
     for (const table of region.footprint.tables) plans.addTable(planId, table);
-    plans.updatePlan(planId, { maxOverhangMm: region.maxOverhangMm });
+    plans.updatePlan(planId, {
+      maxOverhangMm: region.maxOverhangMm,
+      maxReachMm: region.maxReachMm,
+    });
     const origin = FALLBACK_CHUNK_X * CHUNK_LDU;
     const model: BenchModel = {
       id: ids.fresh(),
       handle: { chunkKey: 0, slot: 0, x: origin + 15, z: 15 },
       placeable: BRICK,
+      shape: null,
+      facts: emptyFacts(),
       box: { minX: origin + 10, minY: 0, minZ: 10, maxX: origin + 20, maxY: 24, maxZ: 20 },
     };
     const box = Float64Array.of(
@@ -845,6 +924,7 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
   const removeSpareTable = (): void => plans.removeTable(planId, spareTable);
   const addSparePlan = (): void => {
     sparePlan = plans.createPlan(tableRegion(ROOM_MM));
+    plans.updatePlan(sparePlan, { maxReachMm: COVERING_REACH_MM });
   };
   const removeSparePlan = (): void => {
     plans.removePlan(sparePlan);
@@ -886,6 +966,11 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
         plans.activatePlan(planId);
       },
       cleanup: removeSparePlan,
+    },
+    {
+      name: `reach limit, ${COVERING_REACH_MM} → ${DEFAULT_REACH_MM} mm (at ${DEFAULT_REACH_MM} mm the rows in the table's middle band take the end-disk test)`,
+      run: () => plans.updatePlan(planId, { maxReachMm: DEFAULT_REACH_MM }),
+      after: () => plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM }),
     },
     {
       name: "name only",
@@ -977,6 +1062,7 @@ async function memoryPerRow(ids: Ids, lines: string[]): Promise<void> {
   plans.apply(delta);
   const planId = plans.createPlan(tableRegion(ROOM_MM));
   plans.addTable(planId, fullTable);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   const withPlans = await footprint();
   lines.push(
     "",

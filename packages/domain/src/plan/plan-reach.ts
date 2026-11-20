@@ -1,6 +1,13 @@
 import { ExactFrame, exactOverlap, exactUncovered, type ExactRect } from "./exact-rect.ts";
 import type { LduRect } from "./plan-region.ts";
-import { ALONG_X, EDGE_AXIS, EDGE_FLOATS, EDGE_FROM, EDGE_LINE, EDGE_TO } from "./plan-table-edges.ts";
+import {
+  ALONG_X,
+  EDGE_AXIS,
+  EDGE_FLOATS,
+  EDGE_FROM,
+  EDGE_LINE,
+  EDGE_TO,
+} from "./plan-table-edges.ts";
 import { PIECES_PER_CUT, RECT_STRIDE, growTo, subtractCut } from "./rect-cut.ts";
 
 const CERTIFIED_MAGNITUDE = 2 ** 1021;
@@ -138,8 +145,7 @@ function circumcentresCovered(rect: ExactRect, disks: Disks): boolean {
         let ux = sa * (bz - cz) + sb * (cz - az) + sc * (az - bz);
         let uz = sa * (cx - bx) + sb * (ax - cx) + sc * (bx - ax);
         if (d < 0n) [ux, uz, d] = [-ux, -uz, -d];
-        const inside =
-          inRange(rect.minX, rect.maxX, ux, d) && inRange(rect.minZ, rect.maxZ, uz, d);
+        const inside = inRange(rect.minX, rect.maxX, ux, d) && inRange(rect.minZ, rect.maxZ, uz, d);
         if (inside && !covered(disks, ux, uz, d)) return false;
       }
     }

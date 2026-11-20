@@ -3,14 +3,18 @@ import {
   checkPlan,
   emptyFacts,
   FACT_FLAGS,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
   FACT_ROAD_JOINED,
   FACT_ROAD_MISMATCHED,
   FACT_UNMAPPED_BRICKLINK,
   FACT_UNMAPPED_REBRICKABLE,
   FLAG_UNMEASURED,
   LABEL_NUMBERED,
+  MODEL_SEGMENT,
   mmRectFromWorld,
   mmRectInWorld,
+  NO_OVERLAP_PARTNER,
   NO_ROW,
   PlanDelta,
   regionAround,
@@ -34,6 +38,7 @@ import { overviewOf } from "../camera/overview.ts";
 import { GUIDE_GRID_LDU } from "../edit/table-tool.ts";
 import {
   writeFullRebuild,
+  writeModelUpdates,
   writeTrackLay,
   writeTrackThrow,
   writeViewUpdate,
@@ -233,10 +238,10 @@ interface DomainExtras {
   readonly facts: PlacementFacts | undefined;
 }
 
-function todaysFacts(facts: Int32Array): PlacementFacts {
+function todaysFacts(facts: Int32Array, overlapWith: string | null): PlacementFacts {
   return {
     unmeasured: ((facts[FACT_FLAGS] ?? 0) & FLAG_UNMEASURED) !== 0,
-    overlapWith: null,
+    overlapWith,
     roadJoinedCells: facts[FACT_ROAD_JOINED] ?? 0,
     roadMismatchedCells: facts[FACT_ROAD_MISMATCHED] ?? 0,
     unmappedRebrickable: facts[FACT_UNMAPPED_REBRICKABLE] ?? 0,
@@ -523,9 +528,23 @@ class TodaysPlanService {
         unsupported: this.unsupportedModels.has(model.id),
         shape: model.shape,
         anchor: { x: model.handle.x, z: model.handle.z },
-        facts: todaysFacts(model.facts),
+        facts: todaysFacts(model.facts, this.partnerLabel(placements, model.facts)),
       };
     });
+  }
+
+  private partnerLabel(placements: ReadonlyArray<PlacedForPlan>, facts: Int32Array): string | null {
+    const segment = facts[FACT_OVERLAP_SEGMENT] ?? NO_OVERLAP_PARTNER;
+    if (segment < 0) return null;
+    const source = facts[FACT_OVERLAP_SOURCE] ?? NO_OVERLAP_PARTNER;
+    const models = this.models;
+    const partner =
+      segment === MODEL_SEGMENT
+        ? models.find((model) => model.id === source)?.todays
+        : source >= 0
+          ? placements[models.length + source]
+          : undefined;
+    return partner?.label ?? "another placement";
   }
 
   setTableTopY(y: number): void {
@@ -782,6 +801,14 @@ export class Pair {
     if (this.next() < 0.1) facts[FACT_ROAD_MISMATCHED] = 1 + this.int(4);
     if (this.next() < 0.1) facts[FACT_UNMAPPED_REBRICKABLE] = 1 + this.int(5);
     if (this.next() < 0.1) facts[FACT_UNMAPPED_BRICKLINK] = 1 + this.int(5);
+    const partner = this.next();
+    if (partner < 0.08 && this.models.length > 0) {
+      facts[FACT_OVERLAP_SEGMENT] = MODEL_SEGMENT;
+      facts[FACT_OVERLAP_SOURCE] = this.pick(this.models).id;
+    } else if (partner < 0.12 && this.track.pieces.length > 0) {
+      facts[FACT_OVERLAP_SEGMENT] = TRACK_SEGMENT;
+      facts[FACT_OVERLAP_SOURCE] = this.int(this.track.pieces.length);
+    }
     return facts;
   }
 
@@ -798,6 +825,33 @@ export class Pair {
 
   view(removed: ReadonlyArray<TestModel>, added: ReadonlyArray<TestModel>): void {
     writeViewUpdate(this.delta, { removed, added });
+    const gone = new Set(removed.map((model) => model.id));
+    const partnersGone = this.models.filter(
+      (model) =>
+        !added.includes(model) &&
+        model.facts[FACT_OVERLAP_SEGMENT] === MODEL_SEGMENT &&
+        gone.has(model.facts[FACT_OVERLAP_SOURCE] ?? NO_OVERLAP_PARTNER),
+    );
+    for (const model of partnersGone) {
+      model.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      model.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+    }
+    writeModelUpdates(this.delta, partnersGone, partnersGone.length);
+    this.sut.apply(this.delta);
+    this.syncToday();
+  }
+
+  factUpdate(): void {
+    if (this.models.length === 0) return this.place();
+    const updated: TestModel[] = [];
+    for (let k = 1 + this.int(3); k > 0; k--) {
+      const model = this.pick(this.models);
+      if (updated.includes(model)) continue;
+      model.facts.set(this.randomFacts());
+      updated.push(model);
+    }
+    this.delta.reset();
+    writeModelUpdates(this.delta, updated, updated.length);
     this.sut.apply(this.delta);
     this.syncToday();
   }
@@ -889,6 +943,10 @@ export class Pair {
       .filter(() => this.next() < 0.8)
       .toSorted(() => this.next() - 0.5)
       .map((model) => this.renumbered(model));
+    for (const model of this.models) {
+      model.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      model.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+    }
     this.track.pieces.length = Math.min(this.track.pieces.length, this.int(MAX_PIECES));
     writeFullRebuild(this.delta, this.models, this.track);
     this.sut.apply(this.delta);
@@ -1042,7 +1100,8 @@ export class Pair {
       return this.both((s) => s.setTableTopY(y));
     }
     if (roll < 0.91) return this.place(this.unreadableModel(this.pick(BOX_FIELDS)));
-    if (roll < 0.95) return this.unsupportedEdit();
+    if (roll < 0.93) return this.unsupportedEdit();
+    if (roll < 0.97) return this.factUpdate();
     const unreadable = this.models.findIndex((m) => this.throwing.has(m.box));
     if (unreadable >= 0) return this.remove(unreadable);
     return this.place();

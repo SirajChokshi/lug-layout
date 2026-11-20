@@ -1,0 +1,50 @@
+import type { IPlanService } from "./plan-service.ts";
+
+export interface UncheckedPlanRule {
+  readonly id: string;
+  readonly text: string;
+  readonly owner: string;
+}
+
+export const NOT_YET_ASSIGNED = "not yet assigned";
+
+export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
+  { id: "trackEnds", text: "Open and unjoined track ends", owner: "#47" },
+  { id: "unverifiedCurve", text: "The unverified 53400 curve warning", owner: "#47" },
+  { id: "trackSeam", text: "Track across a table seam", owner: "#47" },
+  {
+    id: "seamJoins",
+    text: "Whether placements meeting at a seam join or leave a gap",
+    owner: "E6 (#511)",
+  },
+  {
+    id: "modelTrackOverlap",
+    text: "Models overlapping laid track: refused while editing, not checked in a loaded world",
+    owner: NOT_YET_ASSIGNED,
+  },
+  {
+    id: "roadSurfaces",
+    text: "Road joins for models that aren't palette road plates",
+    owner: "#150",
+  },
+  { id: "clearance", text: "Clearance envelopes along the track", owner: "M6" },
+  { id: "realElements", text: "Real-element badges L1 and L2", owner: NOT_YET_ASSIGNED },
+  {
+    id: "mixedTrack",
+    text: "Mixed 9V and plastic track in one powered loop",
+    owner: NOT_YET_ASSIGNED,
+  },
+  {
+    id: "aisles",
+    text: "Aisles: reach counts every free table edge as somewhere to stand",
+    owner: NOT_YET_ASSIGNED,
+  },
+];
+
+export function buildableAsPlanned(plans: IPlanService, planId: string): boolean {
+  return (
+    UNCHECKED_PLAN_RULES.length === 0 &&
+    plans.issueCount(planId) === 0 &&
+    plans.unmeasuredCount(planId) === 0
+  );
+}

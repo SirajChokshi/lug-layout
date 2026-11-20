@@ -49,7 +49,9 @@ function along(rect: LduRect, axis: number): Interval {
 
 function coversOutward(other: LduRect, edge: TableEdge): boolean {
   const [low, high] = across(other, edge.axis);
-  return edge.outward < 0 ? low < edge.line && high >= edge.line : high > edge.line && low <= edge.line;
+  return edge.outward < 0
+    ? low < edge.line && high >= edge.line
+    : high > edge.line && low <= edge.line;
 }
 
 function meetsLine(obstacle: LduRect, edge: TableEdge): boolean {

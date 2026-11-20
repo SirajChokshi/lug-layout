@@ -33,6 +33,13 @@ import {
 import { BOX_PLAN_UNREADABLE, NO_ROW, PlanRows, RowList } from "./plan-rows.ts";
 
 const BOM_SUMS = 2;
+const NO_SOURCES: ReadonlySet<number> = new Set();
+
+function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const member of b) if (!a.has(member)) return false;
+  return true;
+}
 
 function grownUint32(array: Uint32Array<ArrayBuffer>, length: number): Uint32Array<ArrayBuffer> {
   const grown = new Uint32Array(length);
@@ -117,7 +124,8 @@ function factsOf(rows: PlanRows, row: number): PlacementFacts {
   const partner = segment < 0 ? NO_ROW : rows.find(segment, facts[at + FACT_OVERLAP_SOURCE] ?? -1);
   return {
     unmeasured: ((facts[at + FACT_FLAGS] ?? 0) & FLAG_UNMEASURED) !== 0,
-    overlapWith: segment < 0 ? null : partner === NO_ROW ? "another placement" : rows.labelOf(partner),
+    overlapWith:
+      segment < 0 ? null : partner === NO_ROW ? "another placement" : rows.labelOf(partner),
     roadJoinedCells: facts[at + FACT_ROAD_JOINED] ?? 0,
     roadMismatchedCells: facts[at + FACT_ROAD_MISMATCHED] ?? 0,
     unmappedRebrickable: facts[at + FACT_UNMAPPED_REBRICKABLE] ?? 0,
@@ -276,7 +284,8 @@ export class PlanEvaluation {
     }
   }
 
-  setUnsupported(segment: number, sources: ReadonlySet<number>): void {
+  setUnsupported(segment: number, sources: ReadonlySet<number>): boolean {
+    if (sameMembers(this.unsupportedSources.get(segment) ?? NO_SOURCES, sources)) return false;
     this.unsupportedSources.set(segment, new Set(sources));
     const rows = this.rows;
     const wanted = new Set<number>();
@@ -293,6 +302,7 @@ export class PlanEvaluation {
       this.reflag(row, 1);
     }
     this.version++;
+    return true;
   }
 
   private reflag(row: number, unsupported: number): void {
