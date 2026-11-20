@@ -33,3 +33,6 @@ export const IMPORT_WORKER_HOST: ServiceIdentifier<ImportWorkerHost> =
 export const RECORD_CACHE: ServiceIdentifier<IByteCache> = Symbol.for(
   "brr.importWorker.RecordCache",
 );
+export const CONNECTOR_RECORD_CACHE: ServiceIdentifier<IByteCache> = Symbol.for(
+  "brr.importWorker.ConnectorRecordCache",
+);

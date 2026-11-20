@@ -34,9 +34,23 @@ interface PlayPanelProps {
   readonly play: ITrainPlay;
   readonly runningGear: IRunningGear;
   readonly ready: boolean;
+  readonly checkingStuds: boolean;
 }
 
-export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPanelProps) {
+function playButtonText(busy: boolean, checkingStuds: boolean): string {
+  if (busy) return "Putting the train on the track…";
+  if (checkingStuds) return "Checking studs";
+  return `Run a train (${shortcutText("play")})`;
+}
+
+export function PlayPanel({
+  editor,
+  camera,
+  play,
+  runningGear,
+  ready,
+  checkingStuds,
+}: PlayPanelProps) {
   const snapshot = usePlaySnapshot(play);
   useEffect(() => {
     followWith(camera, play, true);
@@ -87,10 +101,10 @@ export function PlayPanel({ editor, camera, play, runningGear, ready }: PlayPane
             type="button"
             className="play-primary"
             data-action="play"
-            disabled={!ready || busy}
+            disabled={!ready || busy || checkingStuds}
             onClick={() => startPlay(editor, play)}
           >
-            {busy ? "Putting the train on the track…" : `Run a train (${shortcutText("play")})`}
+            {playButtonText(busy, checkingStuds)}
           </button>
           {snapshot.error && <p className="play-error">{snapshot.error}</p>}
           <p className="toolbar-hint">

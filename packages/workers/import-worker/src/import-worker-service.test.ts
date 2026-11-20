@@ -12,6 +12,9 @@ import {
   CONNECTOR_SOURCE,
   ConnectorIndexFile,
   ConnectorRecordFile,
+  contentAddressedFile,
+  LIBRARY_CONNECTORS_FORMAT,
+  LIBRARY_CONNECTORS_INDEX_FILE,
   SectionVocabularyFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -19,10 +22,15 @@ import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
 import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
 import { Container } from "inversify";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { IImportWorkerService } from "./import-worker-service.ts";
 import { importWorkerModule } from "./import-worker.module.ts";
@@ -30,11 +38,14 @@ import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const pinnedLibrary = new URL("../../../../.cache/ldraw/", import.meta.url);
+const pipelineRoot = new URL("../../../../tools/asset-pipeline/", import.meta.url);
+const nativeExtractor = new URL("../../../../target/release/library-connectors", import.meta.url);
 const vocabularyFile = new URL(
   "../../../../tools/asset-pipeline/section-vocabulary.json",
   import.meta.url,
 );
 const MIRROR_PREFIX = "/mirror/";
+const LIBRARY_PREFIX = "/library/";
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
@@ -44,7 +55,12 @@ const INFERRED_ONLY_PART = "ldraw:1751";
 const INFERRED_ONLY_FILE = "parts/1751.dat";
 const INFERRED_ONLY_FACES = 25;
 const OUTSIDE_PINNED_LIBRARY = "brr-renamed-1751.dat";
+const ROTATED_REFERENCE = "26047.dat";
+const ROTATED_PART = "brr-rotated-26047.dat";
+const ROTATION_DEGREES = 37;
+const LDRAW_DECIMALS = 1e6;
 const COMPILE_ROUNDS = 16;
+const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
@@ -125,6 +141,9 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
 }
 
 function served(path: string): URL {
+  if (path.startsWith(LIBRARY_PREFIX)) {
+    return new URL(path.slice(LIBRARY_PREFIX.length), new URL(`${LOD}/`, bundleRoot));
+  }
   if (!path.startsWith(MIRROR_PREFIX)) return new URL(path.slice(1), bundleRoot);
   return new URL(path.slice(mirrorRoot.length), pinnedLibrary);
 }
@@ -183,6 +202,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
   const imported = await importWorker().run({
     kind: "import",
+    ticket: 1,
     compilerUrl: new URL(context.compilerPath, base).href,
     bundleBaseUrl: base,
     connectorIndexes: context.connectorIndexes,
@@ -231,18 +251,106 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
 });
 
+it("gives a part the bundle's connector packages don't list the record a pinned library publication lists for it, fetched beside the bundle's, and still reports a part neither lists", async () => {
+  const loader = await bundleLoader();
+  const context = await loader.importContext(LOD);
+  const { repo, commit, root } = context.source;
+  mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
+  const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
+  const manifest = decodedOrThrow(decode(BundleIndex, await published("manifest.json")), LOD);
+  const connectivity = decodedOrThrow(
+    decode(ConnectorIndexFile, await published(manifest.connectivity.file)),
+    manifest.connectivity.file,
+  );
+  const libraryIndex = {
+    format: LIBRARY_CONNECTORS_FORMAT,
+    ldraw: context.source,
+    shadow: { ...connectivity.source, kind: "github-archive" },
+    sectionVocabulary: context.sectionVocabulary.sha256,
+    connectivity: { file: manifest.connectivity.file },
+    connectors: { file: manifest.connectors.file },
+  };
+  const libraryText = JSON.stringify(libraryIndex);
+  const pin = {
+    file: LIBRARY_CONNECTORS_INDEX_FILE,
+    sha256: createHash("sha256").update(libraryText).digest("hex"),
+  };
+  tampered.set(`${LIBRARY_PREFIX}${contentAddressedFile(pin.file, pin.sha256)}`, libraryIndex);
+  for (const path of [context.connectorIndexes.connectivity, context.connectorIndexes.connectors]) {
+    const packageIndex = decodedOrThrow(
+      decode(ConnectorIndexFile, JSON.parse(await readFile(new URL(path, bundleRoot), "utf8"))),
+      path,
+    );
+    const { [TECHNIC_PART]: _withdrawn, ...parts } = packageIndex.parts;
+    tampered.set(`/${path}`, { ...packageIndex, parts });
+  }
+  try {
+    const request = (withLibrary: boolean): ImportWorkerRequest => ({
+      kind: "import",
+      ticket: 1,
+      compilerUrl: new URL(context.compilerPath, base).href,
+      bundleBaseUrl: base,
+      connectorIndexes: context.connectorIndexes,
+      connectorVocabulary: context.sectionVocabulary.sha256,
+      ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
+      ...(withLibrary
+        ? { libraryConnectors: { url: new URL(LIBRARY_PREFIX, base).href, pin } }
+        : {}),
+      input: {
+        kind: "ldraw",
+        job: {
+          fileName: "pair.ldr",
+          text: [
+            "1 4 0 0 0 1 0 0 0 1 0 0 0 1 52031.dat",
+            "1 4 0 -80 0 1 0 0 0 1 0 0 0 1 3023b.dat",
+          ].join("\n"),
+          lod: LOD,
+          source: context.source,
+          studPrimitives: context.studPrimitiveNames,
+          unofficialAllowlist: context.unofficialAllowlist,
+          primitives: context.primitives,
+          sectionVocabulary: context.sectionVocabulary.vocabulary,
+          cavityProbe: context.cavityProbe,
+          bundlePartIds: context.partIds.filter((partId) => partId !== TECHNIC_PART),
+          ldconfigCodes: context.ldconfigCodes,
+          translucentColors: context.translucentCodes,
+          tableDepthLdu: context.tableDepthLdu,
+          vehicles: context.vehicles,
+        },
+      },
+    });
+
+    const withoutLibrary = await importWorker().run(request(false));
+    const withLibrary = await importWorker().run(request(true));
+
+    const technic = withLibrary.partIds.indexOf(TECHNIC_PART);
+    const unbundled = withLibrary.partIds.indexOf(UNBUNDLED_PART);
+    expect(withoutLibrary.connectors).toEqual([null, null]);
+    expect(withoutLibrary.report.withoutConnectorRecords.toSorted()).toEqual(
+      [TECHNIC_PART, UNBUNDLED_PART].toSorted(),
+    );
+    expect(fromCatalog).not.toBeNull();
+    expect(withLibrary.connectors[technic]).toEqual(fromCatalog);
+    expect(withLibrary.connectors[unbundled]).toBeNull();
+    expect(withLibrary.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
+    expect(withLibrary.report.refusedConnectorRecords).toEqual([]);
+  } finally {
+    tampered.clear();
+  }
+});
+
 async function pinnedFile(path: string): Promise<string | null> {
   return readFile(new URL(path, pinnedLibrary), "utf8").catch(() => null);
 }
 
-it("infers tier 4 at import for a part outside the pinned library with the bundle's section vocabulary, face for face what the bundle bake published for the same geometry", async () => {
+async function inferredAtImport(
+  part: string,
+  files: Map<string, string>,
+): Promise<PartOutcome | undefined> {
   const context = await (await bundleLoader()).importContext(LOD);
   const compiler = new BrickCompiler(
     await WebAssembly.compile(await readFile(new URL(context.compilerPath, bundleRoot))),
   );
-  const geometry = await pinnedFile(INFERRED_ONLY_FILE);
-  if (geometry === null) throw new Error(`${INFERRED_ONLY_FILE} is not in the pinned library`);
-  const files = new Map([[`parts/${OUTSIDE_PINNED_LIBRARY}`, geometry]]);
   const absent = new Set<string>();
   const request: CompileRequest = {
     lod: LOD,
@@ -252,15 +360,15 @@ it("infers tier 4 at import for a part outside the pinned library with the bundl
       primitives: context.primitives,
       sectionVocabulary: context.sectionVocabulary.vocabulary,
       cavityProbe: context.cavityProbe,
-      infer: [OUTSIDE_PINNED_LIBRARY],
+      infer: [part],
     },
-    parts: [OUTSIDE_PINNED_LIBRARY],
+    parts: [part],
     model: "",
     inlineChecks: [],
   };
   let outcome: PartOutcome | undefined;
   for (let round = 0; round < COMPILE_ROUNDS; round++) {
-    [outcome] = compiler.compile(request, { key: "pinned", files, absent }).parts;
+    [outcome] = compiler.compile(request, { key: part, files, absent }).parts;
     if (outcome?.status !== "need") break;
     for (const path of outcome.paths) {
       const text = await pinnedFile(path);
@@ -268,6 +376,17 @@ it("infers tier 4 at import for a part outside the pinned library with the bundl
       else files.set(path, text);
     }
   }
+  return outcome;
+}
+
+it("infers tier 4 at import for a part outside the pinned library with the bundle's section vocabulary, face for face what the bundle bake published for the same geometry", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const geometry = await pinnedFile(INFERRED_ONLY_FILE);
+  if (geometry === null) throw new Error(`${INFERRED_ONLY_FILE} is not in the pinned library`);
+  const outcome = await inferredAtImport(
+    OUTSIDE_PINNED_LIBRARY,
+    new Map([[`parts/${OUTSIDE_PINNED_LIBRARY}`, geometry]]),
+  );
 
   const records = await publishedRecords(INFERRED_ONLY_PART);
   expect(records).toHaveLength(1);
@@ -303,6 +422,7 @@ it("refuses, and reports, a bundle part whose connector record was inferred with
     mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
     const imported = await importWorker().run({
       kind: "import",
+      ticket: 1,
       compilerUrl: new URL(context.compilerPath, base).href,
       bundleBaseUrl: base,
       connectorIndexes: context.connectorIndexes,
@@ -339,6 +459,69 @@ it("refuses, and reports, a bundle part whose connector record was inferred with
     ]);
   } finally {
     tampered.clear();
+  }
+});
+
+function ldrawDecimal(value: number): number {
+  return Math.round(value * LDRAW_DECIMALS) / LDRAW_DECIMALS;
+}
+
+function rotatedAboutY(reference: string, degrees: number, name: string): string {
+  const radians = (degrees * Math.PI) / 180;
+  const [cos, sin] = [ldrawDecimal(Math.cos(radians)), ldrawDecimal(Math.sin(radians))];
+  return [
+    `0 ${reference} turned ${degrees} degrees about y`,
+    `0 Name: ${name}`,
+    "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+    "0 BFC CERTIFY CCW",
+    `1 16 0 0 0 ${cos} 0 ${sin} 0 1 0 ${-sin} 0 ${cos} ${reference}`,
+    "",
+  ].join("\n");
+}
+
+it("infers at import, face for face, what the native extractor infers for a part whose arc seams fall off the lattice", async () => {
+  const files = new Map([
+    [`parts/${ROTATED_PART}`, rotatedAboutY(ROTATED_REFERENCE, ROTATION_DEGREES, ROTATED_PART)],
+  ]);
+  const outcome = await inferredAtImport(ROTATED_PART, files);
+  const root = await mkdtemp(join(tmpdir(), "brr-arc-seams-"));
+  try {
+    for (const [path, text] of files) {
+      await mkdir(dirname(join(root, "ldraw", path)), { recursive: true });
+      await writeFile(join(root, "ldraw", path), text);
+    }
+    await mkdir(join(root, "shadow"));
+    const pipeline = (file: string): string => fileURLToPath(new URL(file, pipelineRoot));
+    await runFile(fileURLToPath(nativeExtractor), [
+      "--ldraw",
+      join(root, "ldraw"),
+      "--shadow",
+      join(root, "shadow"),
+      "--patches",
+      pipeline("shadow-patches"),
+      "--primitives",
+      pipeline("primitive-connectors.json"),
+      "--inferred",
+      pipeline("inferred-connectors.json"),
+      "--vocabulary",
+      pipeline("section-vocabulary.json"),
+      "--out",
+      join(root, "out"),
+      "--shard",
+      "0/1",
+    ]);
+    const nativeFile = join(root, "out", "connectors", ROTATED_PART.replace(/\.dat$/u, ".json"));
+    const native = decodedOrThrow(
+      decode(ConnectorRecordFile, JSON.parse(await readFile(nativeFile, "utf8"))),
+      nativeFile,
+    );
+    expect(native.faces.source.every((source) => source === CONNECTOR_SOURCE.inferred)).toBe(true);
+    expect(outcome?.status === "compiled" ? outcome.connectors : outcome).toEqual({
+      ...native,
+      part: ROTATED_PART,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -421,6 +604,7 @@ it("imports with the compiler and LDraw library the request names and the worker
   const service = container.get(IMPORT_WORKER_SERVICE);
   const request = (text: string): ImportWorkerRequest => ({
     kind: "import",
+    ticket: 1,
     compilerUrl: COMPILER_URL,
     bundleBaseUrl: BUNDLE_URL,
     connectorIndexes: {
