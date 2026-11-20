@@ -613,6 +613,41 @@ export type RollingDiagnosticsFile = v.InferOutput<typeof RollingDiagnosticsFile
 export const RollingDiagnosticsRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type RollingDiagnosticsRef = v.InferOutput<typeof RollingDiagnosticsRef>;
 
+export const TOP_SURFACE_STEPS_PER_LDU = 16;
+
+const TopSurfaceRow = v.pipe(
+  v.string(),
+  v.regex(/^[.fpu]+$/u),
+  v.description(
+    "one row of cells, in order along +x, one character per cell: f flat, p pocket, u undecided, . open",
+  ),
+);
+
+export const PartTopSurface = v.pipe(
+  v.object({
+    stepsPerLdu: v.literal(TOP_SURFACE_STEPS_PER_LDU),
+    top: v.pipe(Integer, v.description("the part's top height, in sixteenths of an LDU")),
+    origin: v.pipe(
+      v.tuple([Integer, Integer]),
+      v.description("the cell grid's minimum x and z corner, in sixteenths of an LDU"),
+    ),
+    size: v.pipe(
+      v.tuple([v.pipe(Integer, v.minValue(1)), v.pipe(Integer, v.minValue(1))]),
+      v.description("the grid's columns along x, then its rows along z, in 20 LDU cells"),
+    ),
+    cells: v.pipe(v.array(TopSurfaceRow), v.description("the grid's rows, in order along +z")),
+  }),
+  v.check(
+    ({ size: [columns, rows], cells }) =>
+      cells.length === rows && cells.every((row) => row.length === columns),
+    "the cell rows don't match the grid size",
+  ),
+  v.description(
+    "what the part's top presents on each cell of its 20 LDU grid, read exactly from the LDraw decimals of its own Standard-LOD triangles. The grid covers the part's plan, which must be whole studs, and the top is the part's highest point, which must be on a sixteenth; otherwise the part has no top surface. f: faces lying wholly at the top height cover the cell's whole square (studs standing on it don't matter). p: an upright stud centred on the cell stands below the top, and every side of its group of such cells is the part's edge or an f cell. u: a face without exact geometry, or coplanar faces that overlap, leaves the coverage undecided. .: none of these",
+  ),
+);
+export type PartTopSurface = v.InferOutput<typeof PartTopSurface>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -628,6 +663,7 @@ export const PartShape = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  topSurface: v.optional(PartTopSurface),
   outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
@@ -1525,6 +1561,7 @@ export const PartExtras = v.object({
   bounds: Bounds,
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  topSurface: v.optional(PartTopSurface),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 

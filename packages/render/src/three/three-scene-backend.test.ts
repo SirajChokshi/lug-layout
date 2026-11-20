@@ -57,6 +57,7 @@ function part(id: string, size: number): PartAsset {
     studMatrices: new Float32Array(0),
     technic: null,
     rolling: null,
+    topSurface: null,
     outline: null,
   };
 }
