@@ -69,6 +69,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -79,6 +81,7 @@ export type {
   PlaceableCoverView,
   QueuedPlacement,
   SelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
@@ -172,8 +175,13 @@ export {
   HOTBAR,
   SCALE_BAR,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
   RollingDiagnosticsPanel,
