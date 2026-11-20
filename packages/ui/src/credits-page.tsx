@@ -156,6 +156,7 @@ function Credits({ credits, view }: { readonly credits: ICredits; readonly view:
             <th>Submodels</th>
             <th>Part instances</th>
             <th>Inline part copies replaced by the official part</th>
+            <th>Modified from OMR</th>
           </tr>
         </thead>
         <tbody>
@@ -169,6 +170,16 @@ function Credits({ credits, view }: { readonly credits: ICredits; readonly view:
               <td>{integer.format(set.sections)}</td>
               <td>{integer.format(set.instances)}</td>
               <td>{integer.format(set.inlinePartsResolved)}</td>
+              <td>
+                {set.errata.map((erratum) => (
+                  <details key={erratum.line}>
+                    <summary>
+                      Line {erratum.line}: <code>{erratum.from}</code> → <code>{erratum.to}</code>
+                    </summary>
+                    {erratum.summary}
+                  </details>
+                ))}
+              </td>
             </tr>
           ))}
         </tbody>

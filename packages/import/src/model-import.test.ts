@@ -33,7 +33,7 @@ import {
   SnapMating,
   SnapShapes,
 } from "@brr/domain";
-import type { ModelFile, NotDrawnSection } from "@brr/schema/bundle";
+import type { ModelErratum, ModelFile, NotDrawnSection } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { CustomSource } from "./custom-parts.ts";
@@ -118,6 +118,7 @@ interface Manifest {
     readonly name: string;
     readonly file: string;
     readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+    readonly errata?: ReadonlyArray<ModelErratum>;
   }>;
   readonly connectors: { readonly file: string };
   readonly connectivity: { readonly file: string };
@@ -142,6 +143,17 @@ interface BundledModel {
       readonly columnTop: ReadonlyArray<number>;
     } | null;
   };
+}
+
+function withBakedErrata(pinned: string, errata: ReadonlyArray<ModelErratum>): string {
+  const lines = pinned.split(/(?<=\n)/u);
+  for (const { line, from, to } of errata) {
+    const original = lines[line - 1] ?? "";
+    const content = original.replace(/\r?\n$/u, "");
+    expect(content, `the pinned line ${line} the bake corrected`).toBe(from);
+    lines[line - 1] = `${to}${original.slice(content.length)}`;
+  }
+  return lines.join("");
 }
 
 async function bundleManifest(): Promise<Manifest> {
@@ -847,7 +859,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       const result = await importWith(
         pinnedMirror,
         model.file,
-        await readFile(new URL(model.file, root), "utf8"),
+        withBakedErrata(await readFile(new URL(model.file, root), "utf8"), entry?.errata ?? []),
         { compiler },
       );
       const record = JSON.parse(

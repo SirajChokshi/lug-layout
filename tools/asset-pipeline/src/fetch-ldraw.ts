@@ -12,6 +12,8 @@ import type {
   CatalogLocation,
   CatalogSource,
   CatalogSourceUse,
+  OmrErrata,
+  OmrErratum,
   Palette,
   PaletteModel,
 } from "@brr/schema/bundle";
@@ -453,6 +455,63 @@ export async function verifyModels(
   return problems;
 }
 
+function evidenceLines(erratum: OmrErratum): ReadonlyArray<{ line: number; text: string }> {
+  switch (erratum.evidence.kind) {
+    case "mirror-twin":
+      return [erratum.evidence.twin];
+    case "wall-course":
+      return erratum.evidence.course;
+    default: {
+      const unknown: never = erratum.evidence;
+      throw new Error(`unknown erratum evidence ${String(unknown)}`);
+    }
+  }
+}
+
+export async function verifyOmrErrata(
+  errata: OmrErrata,
+  models: ReadonlyArray<PaletteModel>,
+  roots: ModelRoots,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const erratum of errata.errata) {
+    const at = `${erratum.model} line ${erratum.line}`;
+    const model = models.find((m) => m.name === erratum.model && m.origin === "omr");
+    if (!model) {
+      problems.push(`erratum for ${at}: no OMR model ${erratum.model} in the palette`);
+      continue;
+    }
+    if (model.file !== erratum.file || model.sha256 !== erratum.sha256) {
+      problems.push(
+        `erratum for ${at} pins ${erratum.file} ${erratum.sha256}, but the palette pins ${model.file} ${model.sha256}; re-check it against the new file`,
+      );
+      continue;
+    }
+    const bytes = await readFile(modelPath(model, roots)).catch(() => undefined);
+    if (!bytes) {
+      problems.push(`erratum for ${at}: ${model.file} is missing`);
+      continue;
+    }
+    if (sha256(bytes) !== erratum.sha256) {
+      problems.push(`erratum for ${at}: ${model.file} no longer hashes to ${erratum.sha256}`);
+      continue;
+    }
+    const lines = new TextDecoder("latin1").decode(bytes).split("\n");
+    for (const { line, text } of [
+      { line: erratum.line, text: erratum.from },
+      ...evidenceLines(erratum),
+    ]) {
+      const found = lines[line - 1]?.replace(/\r$/u, "");
+      if (found !== text) {
+        problems.push(
+          `erratum for ${at}: line ${line} reads ${JSON.stringify(found)}, not ${JSON.stringify(text)}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 function distinct(values: ReadonlyArray<string>): string {
   return [...new Set(values.filter((value) => value !== ""))].toSorted().join("; ");
 }
@@ -460,6 +519,7 @@ function distinct(values: ReadonlyArray<string>): string {
 export async function renderModelAttribution(
   models: ReadonlyArray<PaletteModel>,
   roots: ModelRoots,
+  errata: OmrErrata,
 ): Promise<string> {
   const rows: string[] = [];
   for (const model of models) {
@@ -471,11 +531,21 @@ export async function renderModelAttribution(
   return [
     "## Models",
     "",
-    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
+    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are files from the LDraw Official Model Repository, restored unmodified into `.cache/omr` by `restore-ldraw` and baked with the line errata listed under *Modified from OMR*; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
     "",
     "| Model | Sections | Authors | Licenses | Source |",
     "|---|---|---|---|---|",
     ...rows,
+    "",
+    "### Modified from OMR",
+    "",
+    "The bake applies these line errata from `tools/asset-pipeline/omr-errata.json` to the OMR files above. Each is pinned to the file's SHA-256 and proved from the model's own geometry; `verify-ldraw` and the bake fail if a pin or a line no longer matches.",
+    "",
+    "| Model | Line | From | To | Evidence |",
+    "|---|---|---|---|---|",
+    ...errata.errata.map(
+      (e) => `| ${e.model} | ${e.line} | \`${e.from}\` | \`${e.to}\` | ${e.evidence.summary} |`,
+    ),
     "",
   ].join("\n");
 }
