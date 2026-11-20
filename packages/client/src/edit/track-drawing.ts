@@ -1581,10 +1581,18 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
-    const issues: Issue[] = [];
     if (this.layout.count > 0) {
-      issues.push({ path: "track", message: "can only be restored into an empty drawing" });
+      return {
+        ok: false,
+        issues: [{ path: "track", message: "can only be restored into an empty drawing" }],
+      };
     }
+    const lay = this.laidPieces(records);
+    return lay.ok ? { ok: true, value: this.applyTrack({ lift: [], lay: lay.value }) } : lay;
+  }
+
+  laidPieces(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<TrackPieceAt>> {
+    const issues: Issue[] = [];
     records.forEach((record, position) => {
       if (record.index !== position) {
         issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
@@ -1603,7 +1611,7 @@ export class TrackDrawing implements ExtensionSite {
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
       return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates }];
     });
-    return { ok: true, value: this.applyTrack({ lift: [], lay }) };
+    return { ok: true, value: lay };
   }
 
   chunkKeys(): ReadonlyArray<number> {

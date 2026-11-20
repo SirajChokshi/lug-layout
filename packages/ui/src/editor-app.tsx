@@ -256,6 +256,8 @@ export function EditorApp({
           fillGridStuds={snapshot.fillGridStuds}
           plans={plans}
           sheets={sheets}
+          ready={snapshot.status === "ready"}
+          readOnly={snapshot.readOnly}
         />
         {snapshot.status === "ready" && (
           <BomPanel
