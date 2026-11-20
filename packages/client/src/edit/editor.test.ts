@@ -18,6 +18,7 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
   type PackageAttribution,
+  type ConnectorLoad,
   type PartConnectors,
 } from "@brr/catalog";
 import type {
@@ -26,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
@@ -45,6 +47,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
+import { STUD_LDU } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -68,13 +71,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult, PlacementListener } from "@brr/import";
+import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import {
+  BOM_SERVICE,
+  CONNECTOR_TABLES,
+  EDITOR,
+  MODEL_IMPORTER,
+  PLACEMENT_SEARCH,
+  TRAIN_PLAY,
+  PLACEABLE_CATALOG,
+} from "../tokens.ts";
+import type { BomScope } from "../bom/bom-service.ts";
+import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
+import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -218,6 +232,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadPartConnectors(lod, partId);
   }
 
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.loader.readPartConnectors(lod, partId);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.loader.loadConnectivityAttribution(lod);
   }
@@ -241,6 +259,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.loader.loadBricklinkParts(lod);
   }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
+  }
 }
 
 interface AimedBackend {
@@ -259,13 +281,29 @@ class HeadlessBackend implements ISceneBackend {
   }
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
+  readonly farModels = new Map<number, FarModelPlacement>();
+  private readonly detailedMeshes: PartMesh[] = [];
   setPalette(palette: PartPalette): void {
     this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+    this.detailedMeshes.splice(
+      0,
+      this.detailedMeshes.length,
+      ...palette.detailed.parts.map((part) => part.mesh),
+    );
   }
   addParts(parts: ReadonlyArray<PartAsset>): void {
     this.partIds.push(...parts.map((part) => part.id));
+    this.detailedMeshes.push(...parts.map((part) => part.mesh));
   }
-  setPartMeshes(): void {}
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    for (const { index, level, part } of updates) {
+      if (level === "detailed") this.detailedMeshes[index] = part.mesh;
+    }
+  }
+  trianglesOf(partId: string): number {
+    const mesh = this.detailedMeshes[this.partIds.indexOf(partId)];
+    return mesh?.groups.reduce((sum, group) => sum + group.indices.length / 3, 0) ?? 0;
+  }
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
@@ -282,6 +320,7 @@ class HeadlessBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
@@ -309,7 +348,10 @@ class HeadlessBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   forceTier(): void {}
-  setFarModel(_id: number, _placement: FarModelPlacement | null): void {}
+  setFarModel(id: number, placement: FarModelPlacement | null): void {
+    if (placement) this.farModels.set(id, placement);
+    else this.farModels.delete(id);
+  }
 }
 
 afterEach(() => {
@@ -432,24 +474,22 @@ it("starts from the index and part shapes, fetching no model record and no part 
   expect(fetcher.maxInFlight).toBeLessThanOrEqual(16);
 }, 300_000);
 
-it("loads a set's record only once it is picked, refuses clicks until then, and fetches its meshes once placed", async () => {
+it("loads a set's record only once it is picked, places a click made while it loads once it has loaded, and fetches its meshes once placed", async () => {
   const fetcher = new InFlightFetcher(new BundleDirectoryFetcher());
-  const { editor, backend, manifest, catalog } = await startEditor([PLACEABLE_SET], fetcher);
+  const { editor, backend, manifest } = await startEditor([PLACEABLE_SET], fetcher);
   const set = `omr:${PLACEABLE_SET}`;
   const record = `standard/${manifest.models.find((model) => model.name === PLACEABLE_SET)?.file}`;
-  const place = placer(editor, backend);
+  const placeNow = placerNow(editor, backend);
 
   expect(fetcher.paths).not.toContain(record);
-  const whileLoading = place(set, 640, 640);
-  expect(whileLoading).toEqual({
-    placements: 0,
-    refusedClicks: 1,
-    reason: expect.stringContaining("is still loading"),
-  });
-  await loadCatalogItem(catalog, set);
+  const whileLoading = { ...placeNow(set, 640, 640), ...queuedOf(editor) };
+  await settledChoice(editor);
   expect(fetcher.paths).toContain(record);
 
-  expect(place(set, 640, 640)).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect({ whileLoading, loaded: editor.snapshot() }).toMatchObject({
+    whileLoading: { placements: 0, refusedClicks: 0, queuedPlacement: { item: set } },
+    loaded: { placements: 1, refusedClicks: 0, queuedPlacement: null },
+  });
   await vi.waitFor(() => {
     const { detailedPartMeshes } = editor.snapshot().meshes;
     expect(detailedPartMeshes.wanted).toBeGreaterThan(0);
@@ -510,12 +550,12 @@ it("offers exactly the placed models with running gear as trains under their pal
 
   const nothingPlaced = { trains: trains(), play: await openPlay() };
   for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
-  place(set, 0, 0);
+  await place(set, 0, 0);
   const setPlaced = trains();
-  place(myOwnTrain, 1600, 0);
+  await place(myOwnTrain, 1600, 0);
   const myOwnTrainPlaced = trains();
-  place(locomotive, 0, 1600);
-  place(myOwnTrain, 1600, 1600);
+  await place(locomotive, 0, 1600);
+  await place(myOwnTrain, 1600, 1600);
   const allPlaced = trains();
   const locomotiveLabel = editor.playSetup()?.models[0]?.label;
   play.chooseTrain("10133-1");
@@ -554,8 +594,8 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
   for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
     await loadCatalogItem(catalog, item);
   }
-  place(`omr:${PLACEABLE_SET}`, 0, 0);
-  place("omr:10205-1", 1600, 0);
+  await place(`omr:${PLACEABLE_SET}`, 0, 0);
+  await place("omr:10205-1", 1600, 0);
   const setTrack = editor.snapshot().track?.modelPieces ?? 0;
 
   startPlay(editor, play);
@@ -568,6 +608,60 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
   expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
   expect(started).toMatchObject({ status: "loading", error: null });
 }, 120_000);
+
+const TRACK_STRAIGHT = "ldraw:74746";
+const STRAIGHTS_IN_RUN = 4;
+
+it.each([
+  { scope: "world", regionStraights: null, straights: STRAIGHTS_IN_RUN, brick: 1 },
+  { scope: "region", regionStraights: 2, straights: 2, brick: 0 },
+] as const)(
+  "counts each drawn track piece once in the $scope parts list, beside a user's model, by its part origin",
+  async ({ regionStraights, straights, brick }) => {
+    const userModel = "brick-2x4";
+    const { editor, backend, container, catalog, manifest } = await startEditor(
+      [],
+      new BundleDirectoryFetcher(),
+      [userModel],
+    );
+    const straight = manifest.catalogParts.find((part) => part.id === TRACK_STRAIGHT);
+    const straightLdu = (straight?.trackEnds?.[1]?.xStuds ?? 0) * STUD_LDU;
+    await loadCatalogItem(catalog, `omr:${userModel}`);
+    expect((await placer(editor, backend)(`omr:${userModel}`, 1600, 1600)).placements).toBe(1);
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(STRAIGHTS_IN_RUN * straightLdu, 0);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+    const scope: BomScope =
+      regionStraights === null
+        ? { kind: "world" }
+        : {
+            kind: "region",
+            region: {
+              minX: 0,
+              minZ: -straightLdu,
+              maxX: regionStraights * straightLdu,
+              maxZ: straightLdu,
+            },
+          };
+
+    const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, scope);
+
+    expect(editor.snapshot().track?.pieces).toBe(STRAIGHTS_IN_RUN);
+    expect({ placements: bom.placements, parts: bom.parts, ldraw: bom.ldraw }).toEqual({
+      placements: straights + brick,
+      parts: straights + brick,
+      ldraw: [
+        ...(brick > 0 ? [{ part: "ldraw:3001", ldrawColor: 16, quantity: brick }] : []),
+        { part: TRACK_STRAIGHT, ldrawColor: straight?.displayColor?.ldraw, quantity: straights },
+      ],
+    });
+  },
+  120_000,
+);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();
@@ -667,7 +761,7 @@ class MemoryRepository implements IWorldRepository {
   }
 }
 
-function placer(editor: IEditor, backend: AimedBackend) {
+function placerNow(editor: IEditor, backend: AimedBackend) {
   return (item: string, x: number, z: number) => {
     editor.chooseItem(item);
     backend.aim(x, z);
@@ -678,13 +772,25 @@ function placer(editor: IEditor, backend: AimedBackend) {
   };
 }
 
+function queuedOf(editor: IEditor) {
+  return { queuedPlacement: editor.snapshot().queuedPlacement };
+}
+
+function placer(editor: IEditor, backend: AimedBackend) {
+  const now = placerNow(editor, backend);
+  return async (item: string, x: number, z: number) => {
+    await chosen(editor, item);
+    return now(item, x, z);
+  };
+}
+
 it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
   const { editor, backend } = await startEditor([]);
-  editor.chooseItem("ldraw:44336p04@72");
+  await chosen(editor, "ldraw:44336p04@72");
   backend.aim(320, 320);
   editor.pointerMove(0, 0);
   editor.click(0, 0, 0);
-  editor.chooseItem("ldraw:44342p02@72");
+  await chosen(editor, "ldraw:44342p02@72");
   backend.aim(320, 960);
   editor.pointerMove(0, 0);
   const shown = () => {
@@ -734,8 +840,8 @@ it("refuses to turn a baseplate while a set rests on it, turns the set itself, a
   const place = placer(editor, backend);
   const set = `omr:${PLACEABLE_SET}`;
   await loadCatalogItem(catalog, set);
-  place(BASEPLATE, 0, 0);
-  place(set, 0, 0);
+  await place(BASEPLATE, 0, 0);
+  await place(set, 0, 0);
   const corner = 300;
 
   expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
@@ -765,8 +871,8 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   const { editor, backend } = await startEditor([]);
   const place = placer(editor, backend);
   const straight = "ldraw:44336p04@72";
-  place(straight, 320, 320);
-  place(straight, 320, 960);
+  await place(straight, 320, 320);
+  await place(straight, 320, 960);
   expect(editor.snapshot().roads.mismatchedCells).toBe(0);
 
   expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
@@ -911,7 +1017,7 @@ it("offers none of the editing commands on a selection in a world another tab ho
     return editor.snapshot();
   };
 
-  editor.chooseItem(BASEPLATE);
+  await chosen(editor, BASEPLATE);
   editor.click(0, 0, 0);
   expect(editsOffered(selectBaseplate())).toEqual({ selected: true, offered: READ_ONLY_REFUSED });
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
@@ -928,41 +1034,49 @@ it("offers none of the editing commands on a selection in a world another tab ho
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 
+function importReport(
+  fileName: string,
+  instanceCount: number,
+  bakeIssue: string | null,
+): ImportResult["report"] {
+  return {
+    fileName,
+    mirror: { repo: "", commit: "", root: "" },
+    lod: "standard",
+    sections: [],
+    instanceCount,
+    drawnInstanceCount: instanceCount,
+    parts: [],
+    inlineParts: [],
+    looseGeometry: [],
+    unknownColors: [],
+    directColors: [],
+    compileRounds: 0,
+    withoutConnectorRecords: [],
+    refusedConnectorRecords: [],
+    bakeRounds: 1,
+    bakeIssue,
+    bakeHelpersFailed: 0,
+    fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+    records: null,
+    timings: {
+      readMs: 0,
+      resolveMs: 0,
+      bakeMs: 0,
+      totalMs: 0,
+      placementMs: 0,
+      recordFetchMs: 0,
+      compileMs: 0,
+      ldrawFetchMs: 0,
+      bakePhases: null,
+      coverPhases: null,
+    },
+  };
+}
+
 function refusedBake(fileName: string): ImportResult {
   return {
-    report: {
-      fileName,
-      mirror: { repo: "", commit: "", root: "" },
-      lod: "standard",
-      sections: [],
-      instanceCount: 0,
-      drawnInstanceCount: 0,
-      parts: [],
-      inlineParts: [],
-      looseGeometry: [],
-      unknownColors: [],
-      directColors: [],
-      compileRounds: 0,
-      withoutConnectorRecords: [],
-      refusedConnectorRecords: [],
-      bakeRounds: 1,
-      bakeIssue: NO_LATTICE_REASON,
-      bakeHelpersFailed: 0,
-      fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
-      records: null,
-      timings: {
-        readMs: 0,
-        resolveMs: 0,
-        bakeMs: 0,
-        totalMs: 0,
-        placementMs: 0,
-        recordFetchMs: 0,
-        compileMs: 0,
-        ldrawFetchMs: 0,
-        bakePhases: null,
-        coverPhases: null,
-      },
-    },
+    report: importReport(fileName, 0, NO_LATTICE_REASON),
     partIds: [],
     instanceCount: 0,
     partIndex: new Uint32Array(),
@@ -989,6 +1103,10 @@ class RefusingModelImporter implements IModelImporter {
   async importStudio(fileName: string): Promise<ImportResult> {
     return refusedBake(fileName);
   }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
+  }
 }
 
 it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
@@ -1008,7 +1126,7 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  editor.chooseItem(BASEPLATE);
+  await chosen(editor, BASEPLATE);
 
   const imported = await editor.importModelFile({
     name: "no-studs.ldr",
@@ -1082,7 +1200,12 @@ class GatedModelImporter implements IModelImporter {
     if (!result?.bake) throw new Error("the gated importer was given no baked result");
     const { bake, report, studio: _studio, ...shape } = result;
     const { studCover: _studCover, ...placement } = bake;
-    onPlaced?.({ ...shape, sections: report.sections, bake: placement });
+    onPlaced?.({
+      ...shape,
+      sections: report.sections,
+      refusedConnectorRecords: report.refusedConnectorRecords,
+      bake: placement,
+    });
     await this.opened;
     return result;
   }
@@ -1094,6 +1217,10 @@ class GatedModelImporter implements IModelImporter {
     onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
     return this.importText(fileName, "", lod, onPlaced);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
@@ -1114,7 +1241,7 @@ it("places an import while its studs are checked, offers none of them to the sta
   });
   const item = editor.snapshot().modelImport?.item ?? "";
   const place = placer(editor, backend);
-  const copies = [place(item, 0, 0), place(item, 2_000, 0)];
+  const copies = [await place(item, 0, 0), await place(item, 2_000, 0)];
   const coverOf = () => editor.dump().covers.find((cover) => cover.id === item);
   const readiness = () => {
     const { modelImport, studChecks, studs, placements } = editor.snapshot();
@@ -1166,14 +1293,236 @@ it("places an import while its studs are checked, offers none of them to the sta
   expect(posesOf(editor)).toEqual(posesPending);
 }, 120_000);
 
-it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
+async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const importer = new GatedModelImporter();
+  const started = await startEditor([], fetcher, [], importer);
+  const { container, editor } = started;
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  importer.serve(importedRecord("checking.mpd", record));
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const importedPlaceable = () => {
+    const item = editor.snapshot().modelImport?.item ?? null;
+    const refId = item === null ? null : catalog.itemRefId(item);
+    return refId === null ? null : (catalog.placeables()[refId] ?? null);
+  };
+  return { ...started, importer, importedPlaceable, tables: container.get(CONNECTOR_TABLES) };
+}
+
+async function importChecking(editor: IEditor): Promise<string> {
+  await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  return editor.snapshot().modelImport?.item ?? "";
+}
+
+it("has an import's connector tables before it is announced placeable, and keeps the same tables, never unloaded, through the studs-landed swap", async () => {
+  const { editor, importer, importedPlaceable, tables } = await checkingImport();
+  const seen: Array<boolean> = [];
+  editor.subscribe(() => {
+    const placeable = importedPlaceable();
+    if (placeable) seen.push(tables.loaded(placeable) !== null);
+  });
+
+  await importChecking(editor);
+  const pending = importedPlaceable();
+  const announced = pending === null ? null : tables.loaded(pending);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const checked = importedPlaceable();
+
+  expect({
+    status: editor.snapshot().modelImport?.status,
+    swapped: checked !== null && checked !== pending && checked.id === pending?.id,
+    announced: announced !== null,
+    sameTables: checked !== null && tables.loaded(checked) === announced,
+    everUnloaded: seen.includes(false),
+  }).toEqual({
+    status: "placeable",
+    swapped: true,
+    announced: true,
+    sameTables: true,
+    everUnloaded: false,
+  });
+}, 120_000);
+
+it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
+  const outcome = async (queued: boolean) => {
+    const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>
+      path.includes("/connectivity-44336p01."),
+    );
+    const baseplateGate = new HeldText(roadPlateGate, (path) =>
+      path.includes("/connectivity-3811."),
+    );
+    const { editor, backend } = await checkingImport(baseplateGate);
+    const item = await importChecking(editor);
+    await placer(editor, backend)(item, 0, 0);
+    const clicks: Array<[string, HeldText]> = [
+      [BASEPLATE, baseplateGate],
+      [ROAD_PLATE, roadPlateGate],
+    ];
+    for (const [held, gate] of clicks) {
+      if (queued) {
+        placerNow(editor, backend)(held, 0, 0);
+        gate.open();
+        await settledChoice(editor);
+      } else {
+        gate.open();
+        await placer(editor, backend)(held, 0, 0);
+      }
+    }
+    const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
+      editor.snapshot();
+    return {
+      placements,
+      refusedClicks,
+      reason: lastRefusal?.reason ?? null,
+      studChecks,
+      queuedPlacement,
+      poses: posesOf(editor),
+    };
+  };
+
+  const [queued, direct] = [await outcome(true), await outcome(false)];
+
+  expect(queued).toEqual(direct);
+  expect(queued).toMatchObject({
+    placements: 2,
+    refusedClicks: 1,
+    studChecks: 1,
+    queuedPlacement: null,
+  });
+  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+}, 120_000);
+
+it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend, importer } = await checkingImport(gate);
+  const item = await importChecking(editor);
+  await placer(editor, backend)(item, 0, 0);
+
+  placerNow(editor, backend)(BASEPLATE, 2_560, 0);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const afterLanding = editor.snapshot().queuedPlacement;
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ afterLanding, placed: posesOf(editor) }).toEqual({
+    afterLanding: { item: BASEPLATE, x: 2_560, z: 0, rot: 0 },
+    placed: expect.arrayContaining([`${BASEPLATE} 2560,0 y0`]),
+  });
+  expect(editor.snapshot().placements).toBe(2);
+}, 120_000);
+
+class BakedRecordImporter implements IModelImporter {
+  constructor(private readonly record: ModelRecord) {}
+
+  private imported(fileName: string): ImportResult {
+    const { model, parts } = this.record;
+    return {
+      report: importReport(fileName, model.instanceCount, null),
+      partIds: parts.map((part) => part.id),
+      instanceCount: model.instanceCount,
+      partIndex: Uint32Array.from(model.partIndex),
+      ldrawColor: model.ldrawColor,
+      matrices: model.matrices,
+      partTransforms: model.partTransforms,
+      submodels: model.submodels,
+      compiled: [],
+      connectors: [],
+      bake: {
+        lattice: model.lattice,
+        latticeIssue: null,
+        studCover: model.studCover,
+        cells: model.cells,
+        vehicles: model.vehicles,
+        vehicleIssue: null,
+      },
+    };
+  }
+
+  async importText(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
+  }
+}
+
+it("draws nothing in place of a part whose mesh fails to load and names it, and counts a part an import brings with its mesh as loaded", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const baseplatePart = BASEPLATE.split("@")[0] ?? "";
+  const baseplateMesh = (await partMeshPaths("standard")).get(baseplatePart);
+  const userModel = "brick-2x4";
+  const record = await fixtureBundleLoader().loadModelRecord("standard", userModel);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container
+    .rebind(ASSET_FETCHER)
+    .toConstantValue(
+      new InFlightFetcher(new BundleDirectoryFetcher(), (path) => path === baseplateMesh),
+    );
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+  container.rebind(MODEL_IMPORTER).toConstantValue(new BakedRecordImporter(record));
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const imported = await editor.importModelFile({
+    name: `${userModel}.ldr`,
+    bytes: new TextEncoder().encode(`0 ${userModel}\n`),
+  });
+  const brick = editor.snapshot().modelImport?.item;
+  if (!imported || !brick) throw new Error(`${userModel} was not imported`);
+  const place = placer(editor, backend);
+
+  expect((await place(BASEPLATE, 0, 0)).placements).toBe(1);
+  expect((await place(brick, 1600, 1600)).placements).toBe(2);
+  await vi.waitFor(() => expect(meshesSettled(editor.snapshot().meshes)).toBe(true));
+
+  const { detailedPartMeshes, undrawnParts } = editor.snapshot().meshes;
+  expect({
+    detailedPartMeshes,
+    undrawnParts,
+    baseplateTriangles: backend.trianglesOf(baseplatePart),
+    brickDrawn: record.parts.map((part) => backend.trianglesOf(part.id) > 0),
+  }).toEqual({
+    detailedPartMeshes: {
+      wanted: 1 + record.parts.length,
+      loaded: record.parts.length,
+      failed: 1,
+      absent: 0,
+    },
+    undrawnParts: [{ part: baseplatePart, reason: "failed" }],
+    baseplateTriangles: 0,
+    brickDrawn: record.parts.map(() => true),
+  });
+}, 120_000);
+
+it("shows only the world that is open: no studs or far models after New World, the placed ones again on reopening", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container
+    .rebind(PART_BUNDLE_LOADER)
+    .toConstantValue(new ModelSubsetLoader(realLoader, [PLACEABLE_SET]));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const editor = container.get(EDITOR);
@@ -1183,20 +1532,29 @@ it("shows the stud totals of whichever world is open: none after New World, the 
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  expect((await farTierSettled(editor)).farTier).toBe("ready");
+  const set = `omr:${PLACEABLE_SET}`;
+  await loadCatalogItem(container.get(PLACEABLE_CATALOG), set);
+  const shown = () => ({
+    studs: editor.snapshot().studs,
+    farModels: [...backend.farModels.values()],
+  });
 
-  editor.chooseItem(BASEPLATE);
-  editor.click(0, 0, 0);
-  const placed = editor.snapshot().studs;
-  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await place(set, 1280, 0);
+  await vi.waitFor(() => expect(backend.farModels.size).toBe(1));
+  const placed = shown();
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(2));
   const first = editor.snapshot().world?.id;
   if (!first) throw new Error("no current world");
   expect(await editor.newWorld("Second")).toBe(true);
-  const fresh = editor.snapshot().studs;
+  const fresh = shown();
   expect(await editor.openWorld(first)).toBe(true);
 
-  expect(placed?.drawn).toBeGreaterThan(0);
-  expect({ fresh, reopened: editor.snapshot().studs }).toEqual({
-    fresh: { drawn: 0, culledInsideModels: 0, culledUnderFootprints: 0 },
+  expect(placed.studs?.drawn).toBeGreaterThan(0);
+  expect({ fresh, reopened: shown() }).toEqual({
+    fresh: { studs: { drawn: 0, culledInsideModels: 0, culledUnderFootprints: 0 }, farModels: [] },
     reopened: placed,
   });
 }, 120_000);
@@ -1253,12 +1611,12 @@ it.each([
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    place(BASEPLATE, 0, 0);
-    editor.chooseItem(held);
+    await place(BASEPLATE, 0, 0);
+    await chosen(editor, held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
     const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
-    const outcome = place(held, at[0], at[1]);
+    const outcome = await place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
   },
@@ -1295,9 +1653,9 @@ it.each([
     const held = `omr:${model}`;
     await loadCatalogItem(catalog, held);
     const place = placer(editor, backend);
-    place(BASEPLATE, 0, 0);
-    const across = place(held, 0, 0);
-    const beside = place(held, besideX, 0);
+    await place(BASEPLATE, 0, 0);
+    const across = await place(held, 0, 0);
+    const beside = await place(held, besideX, 0);
 
     expect({ across, placements: beside.placements, poses: posesOf(editor) }).toEqual({
       across: OVERLAP_REFUSED.outcome,
@@ -1351,8 +1709,8 @@ it.each([
     const loose = editor.snapshot().catalog.find((item) => item.group === part)?.id;
     if (!loose) throw new Error(`${part} is not in the catalog`);
     const place = placer(editor, backend);
-    place(loose, -1280, 0);
-    place(held, 1280, 0);
+    await place(loose, -1280, 0);
+    await place(held, 1280, 0);
 
     expect({ placements: editor.snapshot().placements, ...placedHeights(backend, part) }).toEqual({
       placements: 2,
@@ -1369,11 +1727,11 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   const narrow = "ldraw:3857@2";
   const item = editor.snapshot().catalog.find((entry) => entry.id === narrow);
   if (!item) throw new Error(`${narrow} is not in the catalog`);
-  editor.chooseItem(narrow);
+  await chosen(editor, narrow);
   if (item.studsWide > item.studsDeep) editor.rotate(0);
   const halfWidth = (Math.min(item.studsWide, item.studsDeep) * 20) / 2;
-  place(BASEPLATE, 0, 0);
-  const flush = place(narrow, 320 + halfWidth, 0);
+  await place(BASEPLATE, 0, 0);
+  const flush = await place(narrow, 320 + halfWidth, 0);
   expect(selectAt(editor, backend, 320 + halfWidth, 0)?.item).toBe(narrow);
   const before = posesOf(editor);
   editor.rotate(0);
@@ -1390,8 +1748,8 @@ it("refuses to delete a MILS module while a set rests on it, names the set, and 
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
-  place(PLAIN_MODULE, 320, 320);
-  place(SET, 320, 320);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(SET, 320, 320);
   const raised = posesOf(editor);
   expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
   editor.deleteSelection(0);
@@ -1441,7 +1799,7 @@ it.each([
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    for (const [item, x, z] of lay) place(item, x, z);
+    for (const [item, x, z] of lay) await place(item, x, z);
     const setPose = () => posesOf(editor).find((pose) => pose.startsWith(SET));
     const before = setPose();
     selectAt(editor, backend, remove[0], remove[1]);
@@ -1649,6 +2007,9 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   setTrackEnds(...args: Parameters<ISceneBackend["setTrackEnds"]>): void {
     this.three.setTrackEnds(...args);
   }
+  setGround(...args: Parameters<ISceneBackend["setGround"]>): void {
+    this.three.setGround(...args);
+  }
   setPlanOverlays(...args: Parameters<ISceneBackend["setPlanOverlays"]>): void {
     this.three.setPlanOverlays(...args);
   }
@@ -1805,7 +2166,7 @@ async function storedWorld(models: ReadonlyArray<string>, item: string) {
   const built = editor.snapshot().world?.id;
   if (!empty || !built) throw new Error("the fixture editor has no world");
   await loadCatalogItem(catalog, item);
-  expect(placer(editor, backend)(item, 640, 640).placements).toBe(1);
+  expect((await placer(editor, backend)(item, 640, 640)).placements).toBe(1);
   await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1), STREAM_WAIT);
   return { repository, empty, built };
 }
@@ -1865,7 +2226,7 @@ async function placeWithOneHeldMeshGated() {
   const set = `omr:${STREAMED_SET}`;
   await loadCatalogItem(catalog, set);
   gate.close((path) => meshPaths.has(path));
-  expect(placer(editor, backend)(set, 640, 640).placements).toBe(1);
+  expect((await placer(editor, backend)(set, 640, 640)).placements).toBe(1);
   editor.chooseItem(null);
   const heldMeshes = backend.heldMeshPaths(detailedPaths, farPaths);
   const [lastMesh, lastPath] = [...heldMeshes].at(-1) ?? ["", ""];
@@ -1900,7 +2261,7 @@ describe("part mesh streaming", () => {
       fetcher: gate,
     });
     await loadCatalogItem(catalog, SET);
-    expect(placer(editor, backend)(SET, 640, 640).placements).toBe(1);
+    expect((await placer(editor, backend)(SET, 640, 640)).placements).toBe(1);
 
     await vi.waitFor(() => {
       const { detailedPartMeshes } = meshesOf(editor);
@@ -1941,9 +2302,9 @@ describe("part mesh streaming", () => {
     });
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
-    expect(place(BASEPLATE, 320, 320).placements).toBe(1);
-    expect(place(ROAD_PLATE, 960, 320).placements).toBe(2);
-    expect(place(SET, 320, 1600).placements).toBe(3);
+    expect((await place(BASEPLATE, 320, 320)).placements).toBe(1);
+    expect((await place(ROAD_PLATE, 960, 320)).placements).toBe(2);
+    expect((await place(SET, 320, 1600)).placements).toBe(3);
 
     await vi.waitFor(() => expect(meshesSettled(meshesOf(editor))).toBe(true), STREAM_WAIT);
     const { detailedPartMeshes, farPartMeshes, farModelMeshes } = meshesOf(editor);
@@ -1974,11 +2335,11 @@ describe("part mesh streaming", () => {
       holder: "two ghosts shown and cleared at the mid tier, one of them placed",
       tier: "mid" as const,
       setUp: async (editor: IEditor, backend: AimedBackend) => {
-        editor.chooseItem(SET);
+        await chosen(editor, SET);
         backend.aim(640, 640);
         editor.pointerMove(0, 0);
         editor.chooseItem(null);
-        expect(placer(editor, backend)(`omr:${STREAMED_SET}`, 640, 640).placements).toBe(1);
+        expect((await placer(editor, backend)(`omr:${STREAMED_SET}`, 640, 640)).placements).toBe(1);
         editor.chooseItem(null);
       },
     },
@@ -2109,14 +2470,14 @@ it("loads and applies a placed set's far model once, however often the set is pl
     counts: editor.snapshot().meshes.farModelMeshes,
   });
 
-  expect(place(SET, 0, 0).placements).toBe(1);
+  expect((await place(SET, 0, 0)).placements).toBe(1);
   loader.farFiles.open();
   expect((await farTierSettled(editor)).farTier).toBe("ready");
-  expect(place(SET, 2560, 0).placements).toBe(2);
+  expect((await place(SET, 2560, 0)).placements).toBe(2);
   loader.farModelMesh.open();
   await vi.waitFor(() => expect(backend.farModelUses).toHaveLength(2));
   const settled = farModels();
-  expect(place(SET, 5120, 0).placements).toBe(3);
+  expect((await place(SET, 5120, 0)).placements).toBe(3);
 
   expect({ settled, placedAgain: farModels() }).toEqual({
     settled: {
@@ -2157,7 +2518,7 @@ describe("frame loop in the editor's snapshot", () => {
     const { editor, backend, frame } = await startEditor([]);
     await frame();
     const queuedMs = 4;
-    editor.chooseItem(BASEPLATE);
+    await chosen(editor, BASEPLATE);
     backend.aim(0, 0);
     editor.pointerMove(0, 0);
 
@@ -2179,3 +2540,267 @@ describe("frame loop in the editor's snapshot", () => {
     });
   }, 120_000);
 });
+
+it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a chunk edge, so its tiles share column chunks", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)(BASEPLATE, 0, 320);
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  const stroke = () => {
+    backend.aim(0, 320);
+    editor.dragStart(0, 0);
+    for (const x of [640, 1280]) {
+      backend.aim(x, 320);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+  };
+  const xs = () => Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+  editor.chooseItem(kit.id);
+  stroke();
+  const laid = xs();
+  editor.undo(0);
+  const undone = xs();
+  editor.redo(0);
+  const redone = xs();
+  editor.setRoadErase(true);
+  stroke();
+  const erased = xs();
+  expect({ laid, undone, redone, erased }).toEqual({
+    laid: [0, 640, 1280],
+    undone: [0],
+    redone: [0, 640, 1280],
+    erased: [0],
+  });
+}, 120_000);
+
+class WithoutConnectorRecordsFor implements IAssetFetcher {
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly partId: string,
+  ) {}
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    const text = await this.files.text(path);
+    if (!/\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u.test(path)) return text;
+    const index = JSON.parse(text) as { parts: Record<string, unknown> };
+    const { [this.partId]: _withdrawn, ...parts } = index.parts;
+    return JSON.stringify({ ...index, parts });
+  }
+}
+
+class HeldText implements IAssetFetcher {
+  private release: () => void = () => undefined;
+  private readonly released = new Promise<void>((resolve) => {
+    this.release = resolve;
+  });
+  held = 0;
+
+  constructor(
+    private readonly files: IAssetFetcher,
+    private readonly holds: (path: string) => boolean,
+  ) {}
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.files.bytes(path);
+  }
+
+  async text(path: string): Promise<string> {
+    if (this.holds(path)) {
+      this.held++;
+      await this.released;
+    }
+    return this.files.text(path);
+  }
+
+  open(): void {
+    this.release();
+  }
+}
+
+function heldConnectivity(): HeldText {
+  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-3811."));
+}
+
+it("places nothing while an item's connector tables load, and places a click made meanwhile once they load", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend } = await startEditor([], gate);
+
+  const whileLoading = { ...placerNow(editor, backend)(BASEPLATE, 640, 640), ...queuedOf(editor) };
+  backend.aim(646, 634);
+  editor.pointerMove(0, 0);
+  await vi.waitFor(() => expect(gate.held).toBe(1));
+  const { pendingItem, placements } = editor.snapshot();
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ whileLoading, whileHeld: { pendingItem, placements }, placed: posesOf(editor) }).toEqual(
+    {
+      whileLoading: {
+        placements: 0,
+        refusedClicks: 0,
+        reason: null,
+        queuedPlacement: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+      },
+      whileHeld: { pendingItem: BASEPLATE, placements: 0 },
+      placed: [expect.stringMatching(/ 640,640 y0$/u)],
+    },
+  );
+}, 120_000);
+
+it("lets go of a click made while an item loads once the pointer leaves that stud", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend } = await startEditor([], gate);
+
+  placerNow(editor, backend)(BASEPLATE, 640, 640);
+  const queued = editor.snapshot().queuedPlacement;
+  backend.aim(1280, 640);
+  editor.pointerMove(0, 0);
+  const afterMove = editor.snapshot().queuedPlacement;
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ queued: queued !== null, afterMove, placements: editor.snapshot().placements }).toEqual({
+    queued: true,
+    afterMove: null,
+    placements: 0,
+  });
+}, 120_000);
+
+it("lists the held item's parts that have no connector record, and why, and still places it", async () => {
+  const { editor, backend } = await startEditor(
+    [],
+    new WithoutConnectorRecordsFor(new BundleDirectoryFetcher(), "ldraw:3811"),
+  );
+
+  await chosen(editor, BASEPLATE);
+  const gaps = editor.snapshot().connectorGaps;
+  const placed = await placer(editor, backend)(BASEPLATE, 0, 0);
+
+  expect({ gaps, placements: placed.placements }).toEqual({
+    gaps: [
+      {
+        partIndex: expect.any(Number),
+        partId: "ldraw:3811",
+        reason: "the bundle's connector packages don't list it",
+      },
+    ],
+    placements: 1,
+  });
+}, 120_000);
+
+const REFUSED_PART = "ldraw:3023";
+const REFUSED_REASON = "the library's connector records can't be read: 503";
+
+async function bundleSetAfterAnImport(withImport: boolean) {
+  const importer = new GatedModelImporter();
+  const { editor, container, catalog } = await startEditor(
+    [PLACEABLE_SET],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const tables = container.get(CONNECTOR_TABLES);
+  let imported: PlaceableConnectorTables | null = null;
+  if (withImport) {
+    const record = await container
+      .get(PART_BUNDLE_LOADER)
+      .loadModelRecord("standard", PLACEABLE_SET);
+    const brought = importedRecord("brings-nulls.mpd", record);
+    importer.serve({
+      ...brought,
+      report: {
+        ...brought.report,
+        refusedConnectorRecords: [{ partId: REFUSED_PART, reason: REFUSED_REASON }],
+      },
+    });
+    const item = await importChecking(editor);
+    const refId = catalog.itemRefId(item);
+    const placeable = refId === null ? null : catalog.placeables()[refId];
+    if (!placeable) throw new Error("the import was not announced placeable");
+    imported = await tables.load(placeable);
+  }
+  const set = await loadCatalogItem(catalog, `omr:${PLACEABLE_SET}`);
+  const loaded = await tables.load(set);
+  const mates = container
+    .get(PLACEMENT_SEARCH)
+    .model(loaded.tables, set.partTransforms, []).internalMates;
+  return { imported, set: { withoutRecords: loaded.withoutRecords, mates } };
+}
+
+it("keeps a bundle set's parts and mates when it loads after an import that brought no record for those parts", async () => {
+  const alone = await bundleSetAfterAnImport(false);
+  const afterImport = await bundleSetAfterAnImport(true);
+
+  expect(alone.set.mates).toBeGreaterThan(0);
+  expect(afterImport.set).toEqual(alone.set);
+  expect(afterImport.set.withoutRecords).toEqual([]);
+}, 120_000);
+
+it("lists an import's own parts without records, with the import's reasons, while a bundle set loaded after it has them", async () => {
+  const { imported, set } = await bundleSetAfterAnImport(true);
+  const refused = imported?.withoutRecords.find((part) => part.partId === REFUSED_PART);
+  const reasons = new Set(imported?.withoutRecords.map((part) => part.reason));
+
+  expect({ refused: refused?.reason, reasons, setGaps: set.withoutRecords }).toEqual({
+    refused: REFUSED_REASON,
+    reasons: new Set([REFUSED_REASON, "the import found no connector record for it"]),
+    setGaps: [],
+  });
+}, 120_000);
+
+class ImporterBringing implements IModelImporter {
+  constructor(
+    private readonly partIds: ReadonlyArray<string>,
+    private readonly connectors: ReadonlyArray<PartConnectors | null>,
+  ) {}
+
+  async importText(fileName: string): Promise<ImportResult> {
+    return {
+      ...refusedBake(fileName),
+      partIds: [...this.partIds],
+      connectors: [...this.connectors],
+    };
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return this.importText(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
+  }
+}
+
+it("gives a part the bundle's packages don't list the record an import brought for it", async () => {
+  const hidden = new WithoutConnectorRecordsFor(new BundleDirectoryFetcher(), "ldraw:3811");
+  const shipped = new BundleDirectoryFetcher();
+  const { container: reader } = await startEditor([], shipped);
+  const record = await reader.get(PART_BUNDLE_LOADER).loadPartConnectors("standard", "ldraw:3811");
+  const { editor, container } = await startEditor(
+    [],
+    hidden,
+    [],
+    new ImporterBringing(["ldraw:3811"], [record]),
+  );
+
+  await editor.importModelFile({
+    name: "brings-3811.ldr",
+    bytes: new TextEncoder().encode("0 x\n"),
+  });
+  await chosen(editor, BASEPLATE);
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const refId = catalog.itemRefId(BASEPLATE);
+  const baseplate = refId === null ? null : catalog.placeables()[refId];
+  const tables = baseplate ? container.get(CONNECTOR_TABLES).loaded(baseplate) : null;
+
+  expect(record).not.toBeNull();
+  expect({
+    gaps: editor.snapshot().connectorGaps,
+    tabled: tables?.tables.filter((table) => table !== null).length,
+  }).toEqual({ gaps: [], tabled: 1 });
+}, 120_000);

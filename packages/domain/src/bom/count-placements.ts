@@ -13,6 +13,10 @@ export interface PlacementRegion {
   readonly maxZ: number;
 }
 
+export function regionHolds(region: PlacementRegion, x: number, z: number): boolean {
+  return x >= region.minX && x < region.maxX && z >= region.minZ && z < region.maxZ;
+}
+
 function chunkMeetsRegion(chunk: ChunkView, region: PlacementRegion): boolean {
   return (
     chunk.originX < region.maxX &&
@@ -33,10 +37,8 @@ export function countPlacements(
     if (region !== null && !chunkMeetsRegion(chunk, region)) continue;
     for (let slot = 0; slot < chunk.count; slot++) {
       if (((chunk.flags[slot] ?? 0) & SLOT_LIVE) === 0) continue;
-      if (region !== null) {
-        const x = chunk.x[slot] ?? 0;
-        const z = chunk.z[slot] ?? 0;
-        if (x < region.minX || x >= region.maxX || z < region.minZ || z >= region.maxZ) continue;
+      if (region !== null && !regionHolds(region, chunk.x[slot] ?? 0, chunk.z[slot] ?? 0)) {
+        continue;
       }
       contents.addTo(counter, chunk.refId[slot] ?? 0, chunk.colorId[slot] ?? 0);
       placements++;

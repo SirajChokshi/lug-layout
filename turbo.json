@@ -29,6 +29,7 @@
         "shadow-patches/**",
         "ldraw.lock.json",
         "library-bake.json",
+        "library-connectors.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/Cargo.lock",
@@ -63,6 +64,11 @@
       "dependsOn": ["^build", "@brr/asset-pipeline#build"]
     },
     "@brr/e2e#e2e": {
+      "dependsOn": ["@brr/web#build"],
+      "cache": false,
+      "passThroughEnv": ["CI", "CHROME"]
+    },
+    "@brr/e2e#e2e:library-bake": {
       "dependsOn": ["@brr/web#build"],
       "cache": false,
       "passThroughEnv": ["CI", "CHROME"]
