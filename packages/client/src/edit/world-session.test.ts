@@ -215,6 +215,10 @@ class FailingSaveRepository implements IWorldRepository {
   async readArchive(): Promise<Decoded<WorldArchive>> {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
+
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
+  }
 }
 
 class ViewRecordingRepository extends FailingSaveRepository {

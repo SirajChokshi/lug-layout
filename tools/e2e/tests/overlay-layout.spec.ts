@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { startEmpty } from "./editor-page.ts";
 
 const VIEWPORTS = [
   { width: 1024, height: 768 },
@@ -44,6 +45,7 @@ async function openEditor(page: Page): Promise<void> {
     const shown = await editor.locator(".error").allTextContents();
     throw new Error(`the editor couldn't start: ${[...shown, ...pageErrors].join(" | ")}`);
   }
+  await startEmpty(page);
 }
 
 async function enterMode(page: Page, mode: Mode): Promise<void> {

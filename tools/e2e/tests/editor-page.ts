@@ -153,6 +153,13 @@ export function byPosition(a: Pose, b: Pose): number {
   return a.x - b.x || a.z - b.z || a.yPlates - b.yPlates;
 }
 
+export async function startEmpty(page: Page): Promise<void> {
+  const welcome = page.locator(".welcome");
+  if ((await welcome.count()) === 0) return;
+  await welcome.locator('[data-action="start-empty"]').click();
+  await expect(welcome).toHaveCount(0);
+}
+
 export class EditorPage {
   readonly root: Locator;
   private readonly canvas: Locator;
@@ -178,6 +185,7 @@ export class EditorPage {
     expect(await editor.root.getAttribute("data-status"), [...shown, ...errors].join("\n")).toBe(
       "ready",
     );
+    await startEmpty(page);
     return editor;
   }
 
