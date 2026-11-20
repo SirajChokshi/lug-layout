@@ -333,6 +333,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                     color,
                     matrix,
                     reference,
+                    ..
                 } => {
                     let child_color = resolve_color(*color, frame.color);
                     let child_matrix = frame.matrix.then(matrix);
