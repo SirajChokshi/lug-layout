@@ -183,6 +183,19 @@ function writeRectOutline(out: Float64Array, rects: Float64Array, at: number): v
   out.set([minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
 }
 
+export interface SupportBand {
+  readonly obstacles: TrackObstacles;
+  readonly pending: boolean;
+}
+
+export type SupportBandAt = (yPlates: number) => SupportBand;
+
+interface JudgedBand {
+  readonly field: DragField;
+  readonly seats: ReadonlySet<number>;
+  readonly onTable: boolean;
+}
+
 export interface SupportPart {
   readonly catalogIndex: number;
   readonly partIndex: number;
@@ -800,34 +813,58 @@ export class TrackDrawing implements ExtensionSite {
     this.extension.endsChanged();
   }
 
-  unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
+  unsupportedPieces(bandAt: SupportBandAt): ReadonlyArray<UnsupportedPiece> | null {
     const support = this.support;
     if (!support || this.seatsPending) return null;
-    const field = this.cachedField();
+    const bands = new Map<number, JudgedBand>([
+      [GROUND_PLATES, { field: this.cachedField(), seats: this.obstacles.seats, onTable: true }],
+    ]);
     const box = this.collisionBox;
     const layout = this.combined;
-    const { studlessTops } = field.support;
-    const { seats } = this.obstacles;
     const found: UnsupportedPiece[] = [];
     for (let p = 0; p < layout.count; p++) {
-      if (layout.yPlates(p) !== GROUND_PLATES || layout.frame(p).id !== WORLD_TRACK_FRAME.id) {
-        continue;
-      }
       const catalogIndex = layout.piece(p);
       const outline = this.outlines.get(catalogIndex);
       const piece = this.pieces[catalogIndex];
       if (!outline || !piece) continue;
+      const band = this.judgedBand(bands, layout.yPlates(p), bandAt);
+      if (!band) return null;
       const placement = layout.pose(p);
-      const placed = placedOutline(outline, placement);
+      const frame = layout.frame(p);
+      const placed = framedOutline(outline, placement, frame);
       outlineBox(placed, box, 0);
+      const { studlessTops } = band.field.support;
       const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
-      if (top === NO_OBSTACLE) continue;
-      if (support.supported(catalogIndex, piece.partFrame, placement, seats, studlessTops)) {
+      if (top === NO_OBSTACLE && band.onTable) continue;
+      const { seats, onTable } = band;
+      const { partFrame } = piece;
+      if (
+        support.supported(catalogIndex, partFrame, placement, seats, studlessTops, frame, onTable)
+      ) {
         continue;
       }
-      found.push({ piece: p, block: field.describe(studlessTopBlocker(top)) });
+      const block = top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top));
+      found.push({ piece: p, block });
     }
     return found;
+  }
+
+  private judgedBand(
+    bands: Map<number, JudgedBand>,
+    yPlates: number,
+    bandAt: SupportBandAt,
+  ): JudgedBand | null {
+    const known = bands.get(yPlates);
+    if (known) return known;
+    const { obstacles, pending } = bandAt(yPlates);
+    if (pending) return null;
+    const band = {
+      field: new DragField([], obstacles, this.supportedMove),
+      seats: obstacles.seats,
+      onTable: false,
+    };
+    bands.set(yPlates, band);
+    return band;
   }
 
   supportParts(): ReadonlyArray<SupportPart> {

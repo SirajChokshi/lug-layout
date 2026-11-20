@@ -166,6 +166,7 @@ import {
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
+  type SupportBand,
   type UnsupportedPiece,
 } from "./track-drawing.ts";
 import type { ExtensionTurn, TrackExtendView } from "./track-extension.ts";
@@ -1405,6 +1406,8 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackWithheld: JoinWithheld | null = null;
   private lastTrackUnsupported: TrackUnsupportedView | null = null;
   private trackSupport: TrackSupport | null = null;
+  private trackSupportLoading = false;
+  private trackSupportError: string | null = null;
   private layoutVersion = 0;
   private obstaclesVersion = -1;
   private crossingRamps: CrossingRamps | null = null;
@@ -1803,6 +1806,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private loadTrackSupport(track: TrackDrawing): void {
+    if (this.trackSupportLoading) return;
+    this.trackSupportLoading = true;
     const kit = track.supportParts();
     const tables: Pick<Placeable, "id" | "partTransforms"> = {
       id: TRACK_SUPPORT_TABLES,
@@ -1821,7 +1826,12 @@ export class Editor implements IEditor, IEditedWorld {
           const part = parts[partIndex];
           if (table && part) antiStuds.set(catalogIndex, antiStudsOf(table, part.boundsMin[1]));
         }
+        this.trackSupportLoading = false;
         this.trackSupport = new TrackSupport(antiStuds);
+        if (this.trackSupportError !== null && this.state.catalogError === this.trackSupportError) {
+          this.update({ catalogError: null });
+        }
+        this.trackSupportError = null;
         const drawing = this.track;
         drawing?.setSupport(this.trackSupport);
         this.layoutChanged();
@@ -1832,7 +1842,9 @@ export class Editor implements IEditor, IEditedWorld {
         }
       },
       (error: unknown) => {
-        this.update({ catalogError: `track connector records can't be read: ${errorText(error)}` });
+        this.trackSupportLoading = false;
+        this.trackSupportError = `track connector records can't be read: ${errorText(error)}`;
+        this.update({ catalogError: this.trackSupportError });
       },
     );
   }
@@ -1895,8 +1907,9 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private measureTrackSupport(track: TrackDrawing): void {
+    if (!this.trackSupport) this.loadTrackSupport(track);
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureTrackObstacles(track);
-    const unsupported = track.unsupportedPieces();
+    const unsupported = track.unsupportedPieces((yPlates) => this.supportBand(track, yPlates));
     this.unsupportedTrack = unsupported;
     if (!unsupported) {
       this.unsupportedLaid = NO_IDS;
@@ -1922,6 +1935,17 @@ export class Editor implements IEditor, IEditedWorld {
       this.facts.unsupported,
       this.unsupportedCarriers,
     );
+  }
+
+  private supportBand(track: TrackDrawing, yPlates: number): SupportBand {
+    const lift = yPlates * PLATE_LDU;
+    const [bottom, top] = track.verticalRange();
+    const band = [bottom + lift, top + lift] as const;
+    const models = this.placed.models();
+    return {
+      obstacles: trackObstacles(models, band, (model) => this.trackPartsOf(model.placeable)),
+      pending: seatsPending(models, band),
+    };
   }
 
   private unsupportedSince(firstPiece: number): TrackUnsupportedView | null {
