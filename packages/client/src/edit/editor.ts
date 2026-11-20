@@ -484,7 +484,7 @@ const HELD_TURN = 0;
 const NEXT_TURN = 1;
 const EVERY_TURN = 4;
 const RESTS_ON_TABLE_Y_PLATES = 0;
-const ASSIST_SLICE_MS = 8;
+const ASSIST_SLICE_MS = 6;
 const ASSIST_IDLE = 0;
 const ASSIST_HELD = 1;
 const ASSIST_TURN = 2;
@@ -1724,6 +1724,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeGhost(): void {
+    const startedMs = performance.now();
     const placeable = this.active;
     if (!placeable || !this.hovering) {
       this.dropAssist();
@@ -1754,7 +1755,7 @@ export class Editor implements IEditor, IEditedWorld {
     );
     this.hoverCell.keep(placeable, this.pick, mode, this.search);
     this.sliceSinceFrame = true;
-    if (!this.continueAssist(performance.now() + ASSIST_SLICE_MS, false)) {
+    if (!this.continueAssist(startedMs + ASSIST_SLICE_MS, false)) {
       this.publishHover(placeable, connected, mode, false, false, false);
     }
   }
