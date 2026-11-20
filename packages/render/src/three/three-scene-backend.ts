@@ -53,6 +53,8 @@ import {
   type ChunkTier,
   type FarModelPlacement,
   type GeometrySet,
+  type GhostTone,
+  type GhostVerdict,
   type FrameStats,
   type GroundSettings,
   type GuideSegment,
@@ -124,6 +126,8 @@ import {
   LOOKUP_TEXELS_PER_ROW,
   OPAQUE_ALPHA,
   PlasticMaterials,
+  UNTINTED,
+  type MaterialTint,
   type StudLookups,
 } from "./plastic-materials.ts";
 import { StudBasisTable } from "./stud-basis-table.ts";
@@ -181,6 +185,14 @@ const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   far: TIER_FAR,
 };
 const GHOST_OPACITY = 0.55;
+const GHOST_TINTS: Readonly<Record<GhostTone, MaterialTint>> = {
+  fits: { color: 0xd0ffda, emissive: 0x188a36 },
+  mates: { color: 0xb8ffc6, emissive: 0x26b84e },
+  refused: { color: 0xff7070, emissive: 0xb8141e },
+};
+const GHOST_HIT_COLOR = 0xffc400;
+const GHOST_HIT_OPACITY = 0.9;
+const GHOST_PRECISE_COLOR = 0x00b8ff;
 const SELECTION_COLOR = 0xff8c00;
 const SELECTION_RENDER_ORDER = 1;
 const ISSUE_RENDER_ORDER = 2;
@@ -213,7 +225,7 @@ const GRID_LIFT_LDU = 0.5;
 const NDC_DEPTH_LIMIT = 1;
 
 interface Anchored {
-  readonly object: Group | LineSegments;
+  readonly object: Group | LineSegments | Mesh;
   readonly x: number;
   readonly z: number;
 }
@@ -263,7 +275,7 @@ function boxMesh(
   return mesh;
 }
 
-function disposeTree(root: Group | LineSegments): void {
+function disposeTree(root: Anchored["object"]): void {
   root.traverse((child) => {
     if (child instanceof Mesh || child instanceof LineSegments) {
       child.geometry.dispose();
@@ -367,6 +379,31 @@ function shareIdentityOnParent(mesh: InstancedMesh | StudMesh, parent: Object3D)
   mesh.up = SHARED_UP;
   mesh.children = NO_CHILDREN;
   mesh.animations = NO_ANIMATIONS;
+}
+
+function pageBox(page: InstancePage, partBounds: Float32Array, out: Float64Array): Float64Array {
+  out.fill(0);
+  const m = page.matrices;
+  for (let i = 0; i < page.partCount; i++) {
+    const s = i * MATRIX4_FLOATS;
+    const o = (page.shape[i] ?? 0) * BOUNDS_FLOATS;
+    for (let row = 0; row < 3; row++) {
+      let centre = m[s + TRANSLATION_X + row] ?? 0;
+      let half = 0;
+      for (let axis = 0; axis < 3; axis++) {
+        const low = partBounds[o + axis] ?? 0;
+        const high = partBounds[o + 3 + axis] ?? 0;
+        const scale = m[s + axis * 4 + row] ?? 0;
+        centre += scale * ((low + high) / 2);
+        half += Math.abs(scale) * ((high - low) / 2);
+      }
+      const low = centre - half;
+      const high = centre + half;
+      if (i === 0 || low < (out[row] ?? 0)) out[row] = low;
+      if (i === 0 || high > (out[row + 3] ?? 0)) out[row + 3] = high;
+    }
+  }
+  return out;
 }
 
 function disposeInstancedChildren(layer: Group): void {
@@ -700,6 +737,23 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     color: SELECTION_COLOR,
     depthTest: false,
   });
+  private readonly ghostHit = new Mesh(
+    new BoxGeometry(1, 1, 1),
+    new MeshBasicNodeMaterial({
+      color: GHOST_HIT_COLOR,
+      depthTest: false,
+      transparent: true,
+      opacity: GHOST_HIT_OPACITY,
+    }),
+  );
+  private ghostHitAnchor: Anchored = { object: this.ghostHit, x: 0, z: 0 };
+  private ghostHitShown = false;
+  private readonly ghostOutline = new LineSegments(
+    new EdgesGeometry(new BoxGeometry(1, 1, 1)),
+    new LineBasicNodeMaterial({ color: GHOST_PRECISE_COLOR, depthTest: false }),
+  );
+  private readonly ghostBox = new Float64Array(BOUNDS_FLOATS);
+  private ghostPrecise = false;
   private readonly markerBox = new BoxGeometry(1, 1, 1);
   private readonly markerMaterials: Readonly<Record<MarkerKind, MeshBasicNodeMaterial>> = {
     joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
@@ -793,11 +847,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.look = config.look;
     this.materials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
     this.shellMaterials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
+    const ghostTint = this.ghostMaterials.tint;
     this.ghostMaterials = new PlasticMaterials(
       config.look.plastic,
       GHOST_OPACITY,
       this.studLookups,
     );
+    this.ghostMaterials.tint = ghostTint;
     this.scene.background = new Color(SKY_COLOR);
     this.light(renderer, config.look);
     if (config.look.gtao || config.look.outlines || config.look.bevel || config.look.oit) {
@@ -810,6 +866,10 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         config.pixelRatio,
       );
     }
+    this.ghostHit.visible = false;
+    this.ghostHit.matrixAutoUpdate = false;
+    this.ghostHit.renderOrder = 3;
+    this.scene.add(this.ghostHit);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
@@ -1320,6 +1380,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.ghostPose = null;
     this.ghostPage = page;
     this.ghostNeeds = null;
+    this.showGhostHit();
     if (!page) {
       if (held) this.release(held, TIER_NEAR);
       return;
@@ -1329,6 +1390,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ghost.visible = false;
     const ghostMeshes = this.addNearInstances(ghost, page, this.ghostMaterials);
     writeNearEdgeIds(ghost, ghostMeshes, GHOST_EDGE_SLOT);
+    this.outlineGhost(ghost, page);
     this.ghost = ghost;
     this.ghostGroup.add(ghost);
     if (samePage && held) {
@@ -1359,6 +1421,50 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ghost.updateMatrix();
     ghost.updateMatrixWorld(true);
     ghost.visible = true;
+    this.showGhostHit();
+  }
+
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.changed = true;
+    const tint = verdict?.tone ? GHOST_TINTS[verdict.tone] : UNTINTED;
+    if (tint !== this.ghostMaterials.tint) this.ghostMaterials.tint = tint;
+    this.ghostPrecise = verdict?.precise ?? false;
+    this.ghostOutline.visible = this.ghostPrecise;
+    const box = verdict?.hit ?? null;
+    this.ghostHitShown = box !== null;
+    if (box) {
+      this.ghostHit.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
+      this.ghostHit.position.y = (box.minY + box.maxY) / 2;
+      this.ghostHitAnchor = {
+        object: this.ghostHit,
+        x: (box.minX + box.maxX) / 2,
+        z: (box.minZ + box.maxZ) / 2,
+      };
+      this.positionAnchored(this.ghostHitAnchor);
+    }
+    this.showGhostHit();
+  }
+
+  private outlineGhost(ghost: Group, page: InstancePage): void {
+    const box = pageBox(page, this.partBounds, this.ghostBox);
+    const x0 = box[0] ?? 0;
+    const y0 = box[1] ?? 0;
+    const z0 = box[2] ?? 0;
+    const x1 = box[3] ?? 0;
+    const y1 = box[4] ?? 0;
+    const z1 = box[5] ?? 0;
+    const outline = this.ghostOutline;
+    outline.matrixAutoUpdate = false;
+    outline.renderOrder = 2;
+    outline.visible = this.ghostPrecise;
+    outline.scale.set(x1 - x0, y1 - y0, z1 - z0);
+    outline.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    outline.updateMatrix();
+    ghost.add(outline);
+  }
+
+  private showGhostHit(): void {
+    this.ghostHit.visible = this.ghostHitShown && this.ghostPose !== null;
   }
 
   setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
@@ -2097,6 +2203,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       ghost.updateMatrixWorld(true);
     }
     for (const anchored of this.selectionObjects) this.positionAnchored(anchored);
+    this.positionAnchored(this.ghostHitAnchor);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
     this.positionMarkers();
     this.positionTrackEnds();
