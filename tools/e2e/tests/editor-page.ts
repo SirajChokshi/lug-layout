@@ -19,6 +19,7 @@ const QUARTER_TURNS = 4;
 const SETTLED_STATUS = /^(?:ready|error)$/u;
 const STUDS_META = /(\d+)×(\d+)/u;
 const MODEL_IMPORT_TIMEOUT_MS = 180_000;
+const HOVER_SETTLE_TIMEOUT_MS = 5_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
@@ -573,6 +574,13 @@ export class EditorPage {
         message: `the hover is evaluated in ${mode} mode`,
       })
       .toBe(mode);
+    const aimed = await this.hoverState();
+    await expect
+      .poll(async () => (await this.hoverPlacement())?.settled ?? null, {
+        message: `the ${mode} hover at cell (${aimed?.x}, ${aimed?.z}) settles within ${HOVER_SETTLE_TIMEOUT_MS} ms`,
+        timeout: HOVER_SETTLE_TIMEOUT_MS,
+      })
+      .toBe(true);
     const hover = await this.hoverState();
     if (!hover?.placement) throw new Error(`no placement hover in ${mode} mode`);
     return hover;
