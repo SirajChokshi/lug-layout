@@ -1080,6 +1080,38 @@ fn unanchored_boundaries(second_facet_height: &str) -> Vec<f64> {
         .collect()
 }
 
+fn female_lengths_at(part: &str, origin: [f64; 3]) -> Vec<f64> {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow");
+    let mut inferred = InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+        .expect("the pinned stud measures");
+    faces_of(&inferred.infer(part).connectors)
+        .into_iter()
+        .filter(|f| f.gender == Gender::Female && f.origin == origin)
+        .flat_map(|f| f.sections.into_iter().map(|s| s.length))
+        .collect()
+}
+
+#[test]
+fn a_back_face_meeting_the_floor_only_on_the_probe_rim_keeps_the_female() {
+    assert_eq!(
+        female_lengths_at("parts/30274.dat", [-10.0, -4.0, 20.0]),
+        vec![22.0]
+    );
+    assert_eq!(
+        female_lengths_at("parts/30274.dat", [10.0, -4.0, 20.0]),
+        vec![22.0]
+    );
+}
+
+#[test]
+fn a_sloped_floor_is_read_where_the_probe_rim_meets_it() {
+    assert_eq!(
+        female_lengths_at("parts/3684a.dat", [0.0, -72.0, 10.0]),
+        vec![40.0]
+    );
+}
+
 #[test]
 fn a_piece_within_the_guard_of_a_slab_plane_without_exact_provenance_is_reported() {
     let reported = unanchored_boundaries("0.0301");

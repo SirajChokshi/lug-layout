@@ -34,6 +34,7 @@ import {
 } from "./placeable.ts";
 
 export interface PlacedModel {
+  readonly id: number;
   readonly placement: PlacementRef;
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
