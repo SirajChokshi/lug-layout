@@ -59,10 +59,12 @@ jobs:
       - run: pnpm format:check
       - run: pnpm check:infra
       - run: pnpm check:rust
+      - run: pnpm test:wasm
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
       - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check
       - run: pnpm turbo run typecheck build
+      - run: cargo build --release -p brick-compile-cli --bin library-connectors
       - run: pnpm turbo run test --concurrency=1
       - uses: actions/cache/save@v4
         if: ${{ !cancelled() && steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}

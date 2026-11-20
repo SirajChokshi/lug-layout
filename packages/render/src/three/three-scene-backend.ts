@@ -9,25 +9,32 @@ import {
   FloatType,
   DirectionalLight,
   EdgesGeometry,
+  Euler,
   Group,
   HemisphereLight,
   InstancedBufferAttribute,
   InstancedMesh,
   LineBasicNodeMaterial,
   LineSegments,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
   NearestFilter,
   NoColorSpace,
+  Object3D,
   OrthographicCamera,
   PerspectiveCamera,
+  Quaternion,
   RGBAFormat,
   Scene,
   SRGBColorSpace,
   Vector3,
   WebGPURenderer,
+  type AnimationClip,
   type BufferGeometry,
+  type Material,
   MeshStandardNodeMaterial,
+  type Sphere,
   type TextureNode,
 } from "three/webgpu";
 import { texture } from "three/tsl";
@@ -74,11 +81,12 @@ import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import {
   MATRIX4_FLOATS,
   groupRunEnd,
-  linearColorsOf,
   isNotUpright,
   isVoxelized,
+  linearColorsOf,
   matricesOf,
   pageOf,
+  preservesAlphaSlotSharing,
   regroupedPage,
   studBasisAndColorIndexOf,
   studTranslationsOf,
@@ -88,6 +96,17 @@ import {
   type InstancePage,
 } from "./instance-page.ts";
 import { LookPipeline } from "./look-pipeline.ts";
+import { KeyOrderedChildren, opaqueSort, transparentSort } from "./tie-order.ts";
+import { GHOST_EDGE_SLOT, chunkEdgeSlot, vehicleEdgeSlot, writeEdgeId } from "./edge-ids.ts";
+import {
+  MESH_KIND_BODY,
+  MESH_KIND_STUD,
+  meshPageOf,
+  shownStateOf,
+  type LevelGeometryCounts,
+  type MeshPage,
+  type ShownState,
+} from "./mesh-page.ts";
 import {
   fixedColorGeometries,
   inheritBodyGeometry,
@@ -101,7 +120,7 @@ import {
   type StudLookups,
 } from "./plastic-materials.ts";
 import { StudBasisTable } from "./stud-basis-table.ts";
-import { isInstanced, StudMesh } from "./stud-mesh.ts";
+import { isInstanced, StudMesh, studGeometry } from "./stud-mesh.ts";
 import { skyEnvironment } from "./sky-environment.ts";
 
 const REBASE_DISTANCE_CHUNKS = 8;
@@ -138,6 +157,17 @@ const TIER_MID = 1;
 const TIER_FAR = 2;
 const TIER_UNSET = 255;
 const TIER_COUNT = 3;
+const TIER_NAMES: ReadonlyArray<ChunkTier> = ["near", "mid", "far"];
+const SPHERE_DOUBLES = 4;
+const MESH_SPHERE_DOUBLES = 2 * SPHERE_DOUBLES;
+const SHARED_IDENTITY = frozen(matrixWithFrozenElements());
+const SHARED_POSITION = frozen(new Vector3());
+const SHARED_ROTATION = frozen(new Euler());
+const SHARED_QUATERNION = frozen(new Quaternion());
+const SHARED_SCALE = frozen(new Vector3(1, 1, 1));
+const SHARED_UP = frozen(Object3D.DEFAULT_UP.clone());
+const NO_CHILDREN = frozen<Object3D[]>([]);
+const NO_ANIMATIONS = frozen<AnimationClip[]>([]);
 const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
   near: TIER_NEAR,
   mid: TIER_MID,
@@ -303,6 +333,54 @@ function assertSameParts(detailed: GeometrySet, other: GeometrySet): void {
   }
 }
 
+function pageNeeds(page: InstancePage, tiered: boolean): ChunkNeeds {
+  const needs = new ChunkNeedsBuilder(TIER_COUNT);
+  const runs = page.partRuns;
+  const count = runs.shape.length;
+  let first = 0;
+  while (first < count) {
+    const p = runs.shape[first] ?? 0;
+    const next = groupRunEnd(runs, first);
+    needs.need(TIER_NEAR, "detailed", p);
+    if (tiered) {
+      for (let run = first; run < next; run++) {
+        const c = runs.instanceClass[run] ?? 0;
+        const level: PaletteLevel = isNotUpright(c) ? "detailed" : "far";
+        needs.need(TIER_MID, level, p);
+        if (!isVoxelized(c)) needs.need(TIER_FAR, level, p);
+      }
+    }
+    first = next;
+  }
+  return needs.build();
+}
+
+function frozen<T extends object>(value: T): T {
+  Object.freeze(value);
+  return value;
+}
+
+function matrixWithFrozenElements(): Matrix4 {
+  const matrix = new Matrix4();
+  frozen(matrix.elements);
+  return matrix;
+}
+
+function shareIdentityOnParent(mesh: InstancedMesh | StudMesh, parent: Object3D): void {
+  mesh.matrix = SHARED_IDENTITY;
+  mesh.matrixWorld = parent.matrixWorld;
+  mesh.matrixWorldAutoUpdate = false;
+  Object.defineProperties(mesh, {
+    position: { configurable: true, enumerable: true, value: SHARED_POSITION },
+    rotation: { configurable: true, enumerable: true, value: SHARED_ROTATION },
+    quaternion: { configurable: true, enumerable: true, value: SHARED_QUATERNION },
+    scale: { configurable: true, enumerable: true, value: SHARED_SCALE },
+  });
+  mesh.up = SHARED_UP;
+  mesh.children = NO_CHILDREN;
+  mesh.animations = NO_ANIMATIONS;
+}
+
 function disposeInstancedChildren(layer: Group): void {
   for (const child of layer.children) {
     if (isInstanced(child)) child.dispose();
@@ -343,15 +421,112 @@ function lookupLength(texels: number): number {
   return width * Math.ceil(used / width) * LOOKUP_TEXEL_FLOATS;
 }
 
-interface TierLayers {
-  readonly shellBodies: Group;
-  readonly midShells: Group;
-  readonly coarseStuds: Group;
-}
-
 interface InstanceAttributes {
   readonly matrices: InstancedBufferAttribute;
   readonly colors: InstancedBufferAttribute;
+}
+
+interface PaletteCounts {
+  readonly detailed: LevelGeometryCounts;
+  readonly far: LevelGeometryCounts;
+}
+
+function levelCountsOf(level: LevelGeometries): LevelGeometryCounts {
+  const parts = level.parts.length;
+  const present = new Uint8Array(parts);
+  const bodyCount = new Uint8Array(parts);
+  const fixedCount = new Uint16Array(parts);
+  level.parts.forEach((part, p) => {
+    if (!part) return;
+    present[p] = 1;
+    bodyCount[p] = part.body ? 1 : 0;
+    fixedCount[p] = part.fixed.length;
+  });
+  return {
+    parts: { present, bodyCount, fixedCount },
+    studs: new Uint8Array(level.studs.length).fill(1),
+  };
+}
+
+type DrawnState = Exclude<ShownState, "hidden">;
+
+class SwapColumns {
+  readonly nearGeometry: Array<BufferGeometry | null>;
+  readonly nearMaterial: Array<Material | null>;
+  readonly shellGeometry: Array<BufferGeometry | null>;
+  readonly shellMaterial: Array<Material | null>;
+  readonly nearCount: Uint32Array;
+  readonly shellCount: Uint32Array;
+  readonly shellAtFar: Uint8Array;
+  readonly boundingSpheres: Float64Array;
+
+  constructor(
+    meshes: MeshPage,
+    private readonly shadows: boolean,
+  ) {
+    const rows = meshes.kind.length;
+    this.nearGeometry = Array.from({ length: rows }, (): BufferGeometry | null => null);
+    this.nearMaterial = Array.from({ length: rows }, (): Material | null => null);
+    this.shellGeometry = Array.from({ length: rows }, (): BufferGeometry | null => null);
+    this.shellMaterial = Array.from({ length: rows }, (): Material | null => null);
+    this.nearCount = meshes.nearCount;
+    this.shellCount = meshes.shellCount;
+    this.shellAtFar = meshes.shellAtFar;
+    this.boundingSpheres = new Float64Array(rows * MESH_SPHERE_DOUBLES);
+  }
+
+  capture(
+    row: number,
+    state: DrawnState,
+    geometry: BufferGeometry,
+    material: Material,
+    sphere: Sphere | null,
+  ): void {
+    if (!sphere) throw new Error(`mesh row ${row} has no bounding sphere`);
+    const o = row * MESH_SPHERE_DOUBLES + (state === "near" ? 0 : SPHERE_DOUBLES);
+    const spheres = this.boundingSpheres;
+    spheres[o] = sphere.center.x;
+    spheres[o + 1] = sphere.center.y;
+    spheres[o + 2] = sphere.center.z;
+    spheres[o + 3] = sphere.radius;
+    if (state === "near") {
+      this.nearGeometry[row] = geometry;
+      this.nearMaterial[row] = material;
+    } else {
+      this.shellGeometry[row] = geometry;
+      this.shellMaterial[row] = material;
+    }
+  }
+
+  show(row: number, mesh: Mesh, sphere: Sphere | null, tier: ChunkTier): void {
+    const nearCount = this.nearCount[row] ?? 0;
+    const shellCount = this.shellCount[row] ?? 0;
+    const state = shownStateOf(nearCount > 0, shellCount > 0, this.shellAtFar[row] === 1, tier);
+    mesh.visible = state !== "hidden";
+    if (state === "hidden") return;
+    const near = state === "near";
+    const geometry = near ? this.nearGeometry[row] : this.shellGeometry[row];
+    const material = near ? this.nearMaterial[row] : this.shellMaterial[row];
+    if (!geometry || !material) throw new Error(`mesh row ${row} has no ${state} state`);
+    const count = near ? nearCount : shellCount;
+    const countsDiffer = nearCount !== shellCount;
+    if (
+      mesh.geometry === geometry &&
+      mesh.material === material &&
+      (!countsDiffer || mesh.count === count)
+    ) {
+      return;
+    }
+    mesh.geometry = geometry;
+    mesh.material = material;
+    if (countsDiffer) mesh.count = count;
+    mesh.receiveShadow = this.shadows && !material.transparent;
+    if (!sphere) return;
+    const o = row * MESH_SPHERE_DOUBLES + (near ? 0 : SPHERE_DOUBLES);
+    const spheres = this.boundingSpheres;
+    sphere.center.set(spheres[o] ?? 0, spheres[o + 1] ?? 0, spheres[o + 2] ?? 0);
+    sphere.radius = spheres[o + 3] ?? 0;
+  }
 }
 
 class ChunkRecord {
@@ -365,11 +540,10 @@ class ChunkRecord {
   constructor(
     readonly page: InstancePage,
     readonly group: Group,
-    readonly detailed: Group,
-    readonly shellBodies: Group,
-    readonly midShells: Group,
-    readonly coarseStuds: Group,
-    readonly shadowCasters: Group,
+    readonly meshCount: number,
+    private readonly edgeSlot: number,
+    private readonly swaps: SwapColumns | undefined,
+    readonly shadowCasters: Group | undefined,
     readonly needs: ChunkNeeds,
     readonly tiered: boolean,
     readonly minX: number,
@@ -378,18 +552,29 @@ class ChunkRecord {
     readonly maxZ: number,
   ) {}
 
-  applyTier(tier: number): boolean {
-    if (tier === this.tier) return false;
+  applyTier(tier: number): void {
+    if (tier === this.tier) return;
     this.tier = tier;
-    this.detailed.visible = tier === TIER_NEAR;
-    this.shellBodies.visible = tier !== TIER_NEAR;
-    this.midShells.visible = tier === TIER_MID;
-    this.coarseStuds.visible = tier === TIER_MID;
-    return true;
+    const swaps = this.swaps;
+    const name = TIER_NAMES[tier];
+    if (!swaps || name === undefined) return;
+    const children = this.group.children;
+    let ordinal = 0;
+    for (let row = 0; row < this.meshCount; row++) {
+      const mesh = children[row];
+      if (!mesh || !isInstanced(mesh)) continue;
+      swaps.show(row, mesh, mesh.boundingSphere, name);
+      if (mesh.visible) writeEdgeId(mesh, ordinal++, this.edgeSlot);
+    }
   }
 
-  layers(): ReadonlyArray<Group> {
-    return [this.detailed, this.shellBodies, this.midShells, this.coarseStuds, this.shadowCasters];
+  dispose(): void {
+    const children = this.group.children;
+    for (let row = 0; row < this.meshCount; row++) {
+      const mesh = children[row];
+      if (mesh && isInstanced(mesh)) mesh.dispose();
+    }
+    if (this.shadowCasters) disposeInstancedChildren(this.shadowCasters);
   }
 }
 
@@ -430,10 +615,49 @@ const THUMBNAIL_VIEW = new Vector3(0.9, 0.85, 1.15).normalize();
 const THUMBNAIL_MARGIN = 1.04;
 const THUMBNAIL_DEPTH_SLACK = 2;
 
+interface AlphaSlots {
+  readonly alphaSlots: number[];
+  readonly colorAlphaSlot: Uint8Array<ArrayBuffer>;
+}
+
+function alphaSlotsOf(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): AlphaSlots {
+  const colorCount = colorsSrgb.length / COLOR_CHANNELS;
+  const alphaSlots = [OPAQUE_ALPHA];
+  const colorAlphaSlot = new Uint8Array(colorCount);
+  for (let c = 0; c < colorCount; c++) {
+    const alpha = colorsAlpha[c] ?? OPAQUE_ALPHA;
+    let slot = alphaSlots.indexOf(alpha);
+    if (slot < 0) slot = alphaSlots.push(alpha) - 1;
+    colorAlphaSlot[c] = slot;
+  }
+  return { alphaSlots, colorAlphaSlot };
+}
+
+function addContainerGroup(parent: Object3D): Group {
+  const group = new Group();
+  group.matrixAutoUpdate = false;
+  parent.add(group);
+  return group;
+}
+
+function writeNearEdgeIds(holder: Group, meshes: MeshPage, edgeSlot: number): void {
+  let ordinal = 0;
+  for (let row = 0; row < meshes.kind.length; row++) {
+    const mesh = holder.children[row];
+    if (mesh && (meshes.nearCount[row] ?? 0) > 0) writeEdgeId(mesh, ordinal++, edgeSlot);
+  }
+}
+
 @injectable()
 export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private renderer: WebGPURenderer | undefined;
   private readonly scene = new Scene();
+  private readonly chunkHolders = new KeyOrderedChildren(this.scene);
+  private readonly farModelHolders = new KeyOrderedChildren(this.scene);
+  private readonly vehicleHolders = new KeyOrderedChildren(this.scene);
+  private readonly ghostGroup = addContainerGroup(this.scene);
+  private readonly planOverlayGroup = addContainerGroup(this.scene);
+  private readonly issueBoxGroup = addContainerGroup(this.scene);
   private readonly perspective = new PerspectiveCamera(
     CAMERA_FOV_DEGREES,
     1,
@@ -447,6 +671,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private studBases = new StudBasisTable();
   private uploadedStudBases = 0;
   private materials = new PlasticMaterials(false, 1, this.studLookups);
+  private shellMaterials = new PlasticMaterials(false, 1, this.studLookups);
   private thumbnailStage: Promise<ThumbnailStage> | undefined;
   private ghostMaterials = new PlasticMaterials(false, GHOST_OPACITY, this.studLookups);
   private look: LookSettings = {
@@ -508,6 +733,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly rayPoint = new Vector3();
   private detailedLevel: LevelGeometries = emptyLevel();
   private farLevel: LevelGeometries = emptyLevel();
+  private paletteCounts: PaletteCounts | undefined;
   private farModelGeometries: Array<ReadonlyArray<FixedColorGeometry> | undefined> = [];
   private readonly farModelPlacements = new Map<number, FarModelPlacement>();
   private ldrawColorTable: ReadonlyMap<number, LdrawColor> = new Map();
@@ -548,6 +774,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly rebases: RebaseEvent[] = [];
   private rebaseCount = 0;
   private eyeMovedAt = 0;
+  private settledEyeTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly scratchColor = new Color();
   private readonly readbackPixel = new Uint8Array(4);
   private failure: string | undefined;
@@ -565,8 +792,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     renderer.setPixelRatio(config.pixelRatio);
     renderer.setSize(config.canvas.clientWidth, config.canvas.clientHeight, false);
     this.renderer = renderer;
+    renderer.setOpaqueSort(opaqueSort);
+    renderer.setTransparentSort(transparentSort);
     this.look = config.look;
     this.materials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
+    this.shellMaterials = new PlasticMaterials(config.look.plastic, 1, this.studLookups);
     this.ghostMaterials = new PlasticMaterials(
       config.look.plastic,
       GHOST_OPACITY,
@@ -736,7 +966,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.clearChunks();
     this.studBases = new StudBasisTable();
     this.uploadedStudBases = 0;
-    for (const node of this.farModelList) this.scene.remove(node.group);
+    this.farModelHolders.clear();
     this.farModelNodes.clear();
     this.farModelPlacements.clear();
     this.farModelList = [];
@@ -750,6 +980,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.ldrawColorTable = palette.ldrawColors;
     this.detailedLevel = this.level(palette.detailed);
     this.farLevel = palette.far ? this.level(palette.far) : emptyLevel();
+    this.paletteCounts = undefined;
     this.farModelGeometries = (palette.farModels ?? []).map((mesh) =>
       fixedColorGeometries(mesh, this.linearColor, this.alphaOf),
     );
@@ -762,8 +993,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private installColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
     const colorCount = colorsSrgb.length / COLOR_CHANNELS;
     this.linearColors = new Float32Array(colorCount * COLOR_CHANNELS);
-    this.alphaSlots = [OPAQUE_ALPHA];
-    this.colorAlphaSlot = new Uint8Array(colorCount);
+    const slots = alphaSlotsOf(colorsSrgb, colorsAlpha);
+    this.alphaSlots = slots.alphaSlots;
+    this.colorAlphaSlot = slots.colorAlphaSlot;
     const lookup = new Float32Array(lookupLength(colorCount));
     for (let c = 0; c < colorCount; c++) {
       const o = c * COLOR_CHANNELS;
@@ -776,10 +1008,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.linearColors[o] = this.scratchColor.r;
       this.linearColors[o + 1] = this.scratchColor.g;
       this.linearColors[o + 2] = this.scratchColor.b;
-      const alpha = colorsAlpha[c] ?? OPAQUE_ALPHA;
-      let slot = this.alphaSlots.indexOf(alpha);
-      if (slot < 0) slot = this.alphaSlots.push(alpha) - 1;
-      this.colorAlphaSlot[c] = slot;
       lookup.set(this.linearColors.subarray(o, o + COLOR_CHANNELS), c * LOOKUP_TEXEL_FLOATS);
       lookup[c * LOOKUP_TEXEL_FLOATS + COLOR_CHANNELS] = 1;
     }
@@ -787,12 +1015,24 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setColors(colorsSrgb: Uint8Array, colorsAlpha: Uint8Array): void {
+    const { colorAlphaSlot } = alphaSlotsOf(colorsSrgb, colorsAlpha);
+    if (!this.everyPage((page) => preservesAlphaSlotSharing(page, colorAlphaSlot))) {
+      throw new Error(
+        "setColors may only append colours: an existing colour would change which colours share its alpha slot",
+      );
+    }
     this.changed = true;
     this.installColors(colorsSrgb, colorsAlpha);
     this.rebuildPages(
       () => true,
       (page) => regroupedPage(page, this.linearColors, this.colorAlphaSlot),
     );
+  }
+
+  private everyPage(test: (page: InstancePage) => boolean): boolean {
+    for (const record of this.chunks.values()) if (!test(record.page)) return false;
+    for (const record of this.vehicles.values()) if (!test(record.body.page)) return false;
+    return this.ghostPage === null || test(this.ghostPage);
   }
 
   private rebuildPages(
@@ -816,6 +1056,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       this.detailedLevel.parts.push(this.partGeometries(part));
       this.setPartBounds(index, part);
     }
+    this.paletteCounts = undefined;
   }
 
   setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
@@ -829,6 +1070,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const geometries = level === "far" ? this.farLevel : this.detailedLevel;
       disposePart(geometries.parts[index]);
       geometries.parts[index] = this.partGeometries(part);
+      this.paletteCounts = undefined;
       if (level === "detailed") {
         this.setPartBounds(index, part);
         detailedChanged.add(index);
@@ -865,6 +1107,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     for (const stud of this.farLevel.studs) stud.dispose();
     this.farLevel.studs = studPrimitives.map((primitive) => primitiveGeometry(primitive.mesh));
+    this.paletteCounts = undefined;
     this.tiered = true;
     this.rebuildPages(() => true);
   }
@@ -880,6 +1123,14 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     for (const [id, placement] of Array.from(this.farModelPlacements)) {
       if (placement.modelIndex === modelIndex) this.setFarModel(id, placement);
     }
+  }
+
+  private levelCounts(): PaletteCounts {
+    this.paletteCounts ??= {
+      detailed: levelCountsOf(this.detailedLevel),
+      far: levelCountsOf(this.farLevel),
+    };
+    return this.paletteCounts;
   }
 
   private pageFor(instances: ChunkInstances): InstancePage {
@@ -908,9 +1159,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const samePage =
       replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeChunk(key);
+    const needs = samePage ? replaced.needs : pageNeeds(page, this.tiered);
     const record = this.buildChunk(
       page,
-      samePage ? replaced.needs : new ChunkNeedsBuilder(TIER_COUNT),
+      this.tiered ? this.levelCounts().far : undefined,
+      needs,
+      chunkEdgeSlot(page.originX, page.originZ),
     );
     record.key = key;
     record.studPitchPx = this.studPitchPx(record, this.orthoStudPitchPx());
@@ -920,7 +1174,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.placeGroup(record.group, page.originX, page.originZ);
     this.chunks.set(key, record);
     this.chunkList.push(record);
-    this.scene.add(record.group);
+    this.chunkHolders.add(record.group, key);
     this.sceneMinX = Math.min(this.sceneMinX, record.minX);
     this.sceneMaxX = Math.max(this.sceneMaxX, record.maxX);
     this.sceneMinZ = Math.min(this.sceneMinZ, record.minZ);
@@ -938,10 +1192,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const samePage =
       replaced !== undefined && replaced.page === page && replaced.tiered === this.tiered;
     this.removeVehicle(vehicle);
-    const body = this.buildChunk(
-      page,
-      samePage ? replaced.needs : new ChunkNeedsBuilder(TIER_COUNT),
-    );
+    const needs = samePage ? replaced.needs : pageNeeds(page, false);
+    const body = this.buildChunk(page, undefined, needs, vehicleEdgeSlot(vehicle));
     body.applyTier(TIER_NEAR);
     this.inheritHolds(body, replaced);
     this.syncNeeds(body);
@@ -949,7 +1201,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     group.add(body.group);
     const record = new VehicleRecord(group, body);
     this.vehicles.set(vehicle, record);
-    this.scene.add(group);
+    this.vehicleHolders.add(group, vehicle);
     this.placeVehicle(record);
   }
 
@@ -1005,10 +1257,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private removeVehicle(vehicle: number): void {
     const existing = this.vehicles.get(vehicle);
     if (!existing) return;
-    this.scene.remove(existing.group);
-    disposeInstancedChildren(existing.body.detailed);
-    disposeInstancedChildren(existing.body.shellBodies);
-    disposeInstancedChildren(existing.body.coarseStuds);
+    this.vehicleHolders.remove(existing.group);
+    existing.body.dispose();
     this.vehicles.delete(vehicle);
   }
 
@@ -1054,8 +1304,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private removeChunk(key: number): void {
     const existing = this.chunks.get(key);
     if (!existing) return;
-    this.scene.remove(existing.group);
-    for (const layer of existing.layers()) disposeInstancedChildren(layer);
+    this.chunkHolders.remove(existing.group);
+    existing.dispose();
     this.chunks.delete(key);
     this.chunkList = this.chunkList.filter((record) => record !== existing);
   }
@@ -1068,7 +1318,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private showGhost(page: InstancePage | null): void {
     this.changed = true;
     if (this.ghost) {
-      this.scene.remove(this.ghost);
+      this.ghostGroup.clear();
       disposeInstancedChildren(this.ghost);
       this.ghost = undefined;
     }
@@ -1084,15 +1334,15 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const ghost = new Group();
     ghost.matrixAutoUpdate = false;
     ghost.visible = false;
-    const builder = samePage && held ? null : new ChunkNeedsBuilder(TIER_COUNT);
-    this.addInstances(ghost, undefined, undefined, page, this.ghostMaterials, builder);
+    const ghostMeshes = this.addNearInstances(ghost, page, this.ghostMaterials);
+    writeNearEdgeIds(ghost, ghostMeshes, GHOST_EDGE_SLOT);
     this.ghost = ghost;
-    this.scene.add(ghost);
-    if (!builder) {
+    this.ghostGroup.add(ghost);
+    if (samePage && held) {
       this.ghostNeeds = held;
       return;
     }
-    const needs = builder.build();
+    const needs = pageNeeds(page, false);
     this.neededMeshListener?.hold(needs.detailedAt(TIER_NEAR), needs.farAt(TIER_NEAR));
     if (held) this.release(held, TIER_NEAR);
     this.ghostNeeds = needs;
@@ -1205,14 +1455,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.changed = true;
-    for (const anchored of this.planObjects) {
-      this.scene.remove(anchored.object);
-      disposeTree(anchored.object);
-    }
+    this.planOverlayGroup.clear();
+    for (const anchored of this.planObjects) disposeTree(anchored.object);
     this.planObjects = overlays.map((overlay) => this.planGroup(overlay));
     for (const anchored of this.planObjects) {
       this.positionAnchored(anchored);
-      this.scene.add(anchored.object);
+      this.planOverlayGroup.add(anchored.object);
     }
   }
 
@@ -1286,7 +1534,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.changed = true;
-    for (const anchored of this.issueObjects) this.scene.remove(anchored.object);
+    this.issueBoxGroup.clear();
     this.issueObjects = boxes.map((box) => {
       const lines = new LineSegments(this.issueEdges, this.issueMaterial);
       lines.matrixAutoUpdate = false;
@@ -1297,7 +1545,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     });
     for (const anchored of this.issueObjects) {
       this.positionAnchored(anchored);
-      this.scene.add(anchored.object);
+      this.issueBoxGroup.add(anchored.object);
     }
   }
 
@@ -1342,25 +1590,30 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
   }
 
-  private buildChunk(page: InstancePage, needs: ChunkNeeds | ChunkNeedsBuilder): ChunkRecord {
+  private buildChunk(
+    page: InstancePage,
+    far: LevelGeometryCounts | undefined,
+    needs: ChunkNeeds,
+    edgeSlot: number,
+  ): ChunkRecord {
     const group = new Group();
     group.matrixAutoUpdate = false;
     group.updateMatrix();
-    const detailed = new Group();
-    const shellBodies = new Group();
-    const midShells = new Group();
-    const coarseStuds = new Group();
+    const meshes = meshPageOf(page, this.levelCounts().detailed, far);
+    const swaps = far ? new SwapColumns(meshes, this.look.shadows) : undefined;
     const shadowCasters = this.look.shadows ? new Group() : undefined;
-    group.add(detailed, shellBodies, midShells, coarseStuds);
-    if (shadowCasters) group.add(shadowCasters);
     this.addInstances(
-      detailed,
-      { shellBodies, midShells, coarseStuds },
-      shadowCasters,
+      group,
       page,
+      meshes,
       this.materials,
-      needs instanceof ChunkNeedsBuilder ? needs : null,
+      this.shellMaterials,
+      swaps,
+      shadowCasters,
     );
+    const meshCount = group.children.length;
+    if (!swaps) writeNearEdgeIds(group, meshes, edgeSlot);
+    if (shadowCasters) group.add(shadowCasters);
     let minX = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let minZ = Number.POSITIVE_INFINITY;
@@ -1377,12 +1630,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const record = new ChunkRecord(
       page,
       group,
-      detailed,
-      shellBodies,
-      midShells,
-      coarseStuds,
-      shadowCasters ?? new Group(),
-      needs instanceof ChunkNeedsBuilder ? needs.build() : needs,
+      meshCount,
+      edgeSlot,
+      swaps,
+      shadowCasters,
+      needs,
       this.tiered,
       minX,
       maxX,
@@ -1399,84 +1651,212 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     };
   }
 
-  private addInstances(
-    detailed: Group,
-    tiers: TierLayers | undefined,
-    shadowCasters: Group | undefined,
+  private addNearInstances(
+    holder: Group,
     page: InstancePage,
     materials: PlasticMaterials,
-    needs: ChunkNeedsBuilder | null,
-  ): void {
-    const runs = page.partRuns;
-    const count = runs.shape.length;
-    let first = 0;
-    while (first < count) {
-      const p = runs.shape[first] ?? 0;
-      const slot = runs.alphaSlot[first] ?? 0;
-      const next = groupRunEnd(runs, first);
-      const alpha = this.alphaSlots[slot] ?? OPAQUE_ALPHA;
-      const start = runs.start[first] ?? 0;
-      const end = runs.end[next - 1] ?? 0;
-      const attributes = this.pageAttributes(page, start, end);
-      const geometries = this.detailedLevel.parts[p];
-      this.addPartMeshes(detailed, geometries, alpha, end - start, attributes, materials);
-      needs?.need(TIER_NEAR, "detailed", p);
-      if (shadowCasters && !this.tiered && alpha === OPAQUE_ALPHA) {
-        this.addShadowCasters(shadowCasters, geometries, end - start, attributes);
-      }
-      if (tiers && this.tiered) {
-        for (let run = first; run < next; run++) {
-          const c = runs.instanceClass[run] ?? 0;
-          const runStart = runs.start[run] ?? 0;
-          const runEnd = runs.end[run] ?? 0;
-          const runAttributes =
-            next - first === 1 ? attributes : this.pageAttributes(page, runStart, runEnd);
-          const levelName: PaletteLevel = isNotUpright(c) ? "detailed" : "far";
-          const level = levelName === "detailed" ? this.detailedLevel : this.farLevel;
-          const layer = isVoxelized(c) ? tiers.midShells : tiers.shellBodies;
-          const shell = level.parts[p] ?? geometries;
-          this.addPartMeshes(layer, shell, alpha, runEnd - runStart, runAttributes, materials);
-          needs?.need(TIER_MID, levelName, p);
-          if (layer === tiers.shellBodies) needs?.need(TIER_FAR, levelName, p);
-        }
-      }
-      first = next;
-    }
-    if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, page);
-    this.addStudMeshes(page, detailed, tiers?.coarseStuds, materials);
+  ): MeshPage {
+    const meshes = meshPageOf(page, this.levelCounts().detailed, undefined);
+    this.addInstances(holder, page, meshes, materials, materials, undefined, undefined);
+    return meshes;
   }
 
-  private addPartMeshes(
-    layer: Group,
-    geometries: PartGeometries | undefined,
-    alpha: number,
+  private addInstances(
+    holder: Group,
+    page: InstancePage,
+    meshes: MeshPage,
+    materials: PlasticMaterials,
+    shellMaterials: PlasticMaterials,
+    swaps: SwapColumns | undefined,
+    shadowCasters: Group | undefined,
+  ): void {
+    let views: InstanceAttributes | undefined;
+    let viewsStart = -1;
+    let viewsEnd = -1;
+    for (let row = 0; row < meshes.kind.length; row++) {
+      const start = meshes.start[row] ?? 0;
+      const end = start + Math.max(meshes.nearCount[row] ?? 0, meshes.shellCount[row] ?? 0);
+      if (meshes.kind[row] === MESH_KIND_STUD) {
+        const studMesh = this.studRow(
+          page,
+          meshes,
+          row,
+          start,
+          end,
+          materials,
+          shellMaterials,
+          swaps,
+        );
+        shareIdentityOnParent(studMesh, holder);
+        holder.add(studMesh);
+        continue;
+      }
+      if (!views || start !== viewsStart || end !== viewsEnd) {
+        views = this.pageAttributes(page, start, end);
+        viewsStart = start;
+        viewsEnd = end;
+      }
+      const partMesh = this.partRow(meshes, row, views, materials, shellMaterials, swaps);
+      shareIdentityOnParent(partMesh, holder);
+      holder.add(partMesh);
+      if (shadowCasters && !this.tiered) this.addShadowCaster(shadowCasters, meshes, row, views);
+    }
+    if (shadowCasters && this.tiered) this.addBoundsProxies(shadowCasters, page);
+  }
+
+  private partGeometry(level: LevelGeometries, meshes: MeshPage, row: number): BufferGeometry {
+    const part = level.parts[meshes.shape[row] ?? 0];
+    const geometry =
+      meshes.kind[row] === MESH_KIND_BODY
+        ? part?.body
+        : part?.fixed[meshes.geometryIndex[row] ?? 0]?.geometry;
+    if (!geometry) throw new Error(`mesh row ${row} names a geometry its level does not have`);
+    return geometry;
+  }
+
+  private partMaterial(
+    level: LevelGeometries,
+    meshes: MeshPage,
+    row: number,
+    materials: PlasticMaterials,
+  ): MeshStandardNodeMaterial {
+    if (meshes.kind[row] === MESH_KIND_BODY) {
+      return materials.instanceColored(this.alphaSlots[meshes.alphaSlot[row] ?? 0] ?? OPAQUE_ALPHA);
+    }
+    const fixed = level.parts[meshes.shape[row] ?? 0]?.fixed[meshes.geometryIndex[row] ?? 0];
+    return materials.vertexColored(fixed?.alpha ?? OPAQUE_ALPHA);
+  }
+
+  private shellLevel(meshes: MeshPage, row: number): LevelGeometries {
+    return meshes.shellFromDetailed[row] === 1 ? this.detailedLevel : this.farLevel;
+  }
+
+  private partRow(
+    meshes: MeshPage,
+    row: number,
+    views: InstanceAttributes,
+    materials: PlasticMaterials,
+    shellMaterials: PlasticMaterials,
+    swaps: SwapColumns | undefined,
+  ): InstancedMesh {
+    const nearCount = meshes.nearCount[row] ?? 0;
+    const shellCount = meshes.shellCount[row] ?? 0;
+    const firstLevel = nearCount > 0 ? this.detailedLevel : this.shellLevel(meshes, row);
+    const mesh = this.instancedMesh(
+      this.partGeometry(firstLevel, meshes, row),
+      this.partMaterial(firstLevel, meshes, row, materials),
+      Math.max(nearCount, shellCount),
+      views.matrices,
+      meshes.kind[row] === MESH_KIND_BODY ? views.colors : undefined,
+    );
+    if (!swaps) return mesh;
+    if (nearCount > 0) {
+      this.capturePartState(
+        mesh,
+        swaps,
+        meshes,
+        row,
+        "near",
+        this.detailedLevel,
+        nearCount,
+        materials,
+      );
+    }
+    if (shellCount > 0) {
+      const level = this.shellLevel(meshes, row);
+      this.capturePartState(mesh, swaps, meshes, row, "shell", level, shellCount, shellMaterials);
+    }
+    return mesh;
+  }
+
+  private capturePartState(
+    mesh: InstancedMesh,
+    swaps: SwapColumns,
+    meshes: MeshPage,
+    row: number,
+    state: DrawnState,
+    level: LevelGeometries,
     count: number,
-    attributes: InstanceAttributes,
     materials: PlasticMaterials,
   ): void {
-    if (!geometries) return;
-    if (geometries.body) {
-      layer.add(
-        this.instancedMesh(
-          geometries.body,
-          materials.instanceColored(alpha),
-          count,
-          attributes.matrices,
-          attributes.colors,
-        ),
-      );
-    }
-    for (const fixed of geometries.fixed) {
-      layer.add(
-        this.instancedMesh(
-          fixed.geometry,
-          materials.vertexColored(fixed.alpha),
-          count,
-          attributes.matrices,
-          undefined,
-        ),
-      );
-    }
+    const geometry = this.partGeometry(level, meshes, row);
+    mesh.geometry = geometry;
+    mesh.count = count;
+    mesh.computeBoundingSphere();
+    swaps.capture(
+      row,
+      state,
+      geometry,
+      this.partMaterial(level, meshes, row, materials),
+      mesh.boundingSphere,
+    );
+  }
+
+  private addShadowCaster(
+    layer: Group,
+    meshes: MeshPage,
+    row: number,
+    views: InstanceAttributes,
+  ): void {
+    if ((this.alphaSlots[meshes.alphaSlot[row] ?? 0] ?? OPAQUE_ALPHA) !== OPAQUE_ALPHA) return;
+    const part = this.detailedLevel.parts[meshes.shape[row] ?? 0];
+    const body = meshes.kind[row] === MESH_KIND_BODY;
+    const fixed = body ? undefined : part?.fixed[meshes.geometryIndex[row] ?? 0];
+    if (!body && fixed?.alpha !== OPAQUE_ALPHA) return;
+    const mesh = this.instancedMesh(
+      this.partGeometry(this.detailedLevel, meshes, row),
+      body
+        ? this.materials.instanceColored(OPAQUE_ALPHA)
+        : this.materials.vertexColored(OPAQUE_ALPHA),
+      meshes.nearCount[row] ?? 0,
+      views.matrices,
+      undefined,
+    );
+    mesh.layers.set(SHADOW_LAYER);
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    shareIdentityOnParent(mesh, layer);
+    layer.add(mesh);
+  }
+
+  private studRow(
+    page: InstancePage,
+    meshes: MeshPage,
+    row: number,
+    start: number,
+    end: number,
+    materials: PlasticMaterials,
+    shellMaterials: PlasticMaterials,
+    swaps: SwapColumns | undefined,
+  ): StudMesh {
+    const primitive = meshes.shape[row] ?? 0;
+    const detailedPrimitive = this.detailedLevel.studs[primitive];
+    if (!detailedPrimitive)
+      throw new Error(`mesh row ${row} names a stud primitive that is missing`);
+    const alpha = this.alphaSlots[meshes.alphaSlot[row] ?? 0] ?? OPAQUE_ALPHA;
+    const material = materials.basisInstanced(alpha);
+    const translations = new InstancedBufferAttribute(
+      studTranslationsOf(page, start, end),
+      TRANSLATION_FLOATS,
+    );
+    const basisAndColorIndex = new InstancedBufferAttribute(
+      studBasisAndColorIndexOf(page, start, end),
+      1,
+    );
+    const near = studGeometry(detailedPrimitive, translations, basisAndColorIndex);
+    const mesh = new StudMesh(near, material, translations, basisAndColorIndex, this.studBases);
+    mesh.matrixAutoUpdate = false;
+    mesh.receiveShadow = this.look.shadows && !material.transparent;
+    mesh.computeBoundingSphere();
+    if (!swaps) return mesh;
+    swaps.capture(row, "near", near, material, mesh.boundingSphere);
+    const coarsePrimitive = this.farLevel.studs[primitive];
+    if ((meshes.shellCount[row] ?? 0) === 0 || !coarsePrimitive) return mesh;
+    const shell = studGeometry(coarsePrimitive, translations, basisAndColorIndex);
+    mesh.geometry = shell;
+    mesh.computeBoundingSphere();
+    swaps.capture(row, "shell", shell, shellMaterials.basisInstanced(alpha), mesh.boundingSphere);
+    return mesh;
   }
 
   private addBoundsProxies(layer: Group, page: InstancePage): void {
@@ -1521,79 +1901,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     mesh.layers.set(SHADOW_LAYER);
     mesh.castShadow = true;
     mesh.receiveShadow = false;
+    shareIdentityOnParent(mesh, layer);
     layer.add(mesh);
-  }
-
-  private addShadowCasters(
-    layer: Group,
-    geometries: PartGeometries | undefined,
-    count: number,
-    attributes: InstanceAttributes,
-  ): void {
-    if (!geometries) return;
-    const caster = (geometry: BufferGeometry, material: MeshStandardNodeMaterial): void => {
-      const mesh = this.instancedMesh(geometry, material, count, attributes.matrices, undefined);
-      mesh.layers.set(SHADOW_LAYER);
-      mesh.castShadow = true;
-      mesh.receiveShadow = false;
-      layer.add(mesh);
-    };
-    if (geometries.body) caster(geometries.body, this.materials.instanceColored(OPAQUE_ALPHA));
-    for (const fixed of geometries.fixed) {
-      if (fixed.alpha === OPAQUE_ALPHA) {
-        caster(fixed.geometry, this.materials.vertexColored(OPAQUE_ALPHA));
-      }
-    }
-  }
-
-  private addStudMeshes(
-    page: InstancePage,
-    detailed: Group,
-    coarse: Group | undefined,
-    materials: PlasticMaterials,
-  ): void {
-    const studs = page.studRuns;
-    for (let run = 0; run < studs.shape.length; run++) {
-      const k = studs.shape[run] ?? 0;
-      const detailedGeometry = this.detailedLevel.studs[k];
-      if (!detailedGeometry) continue;
-      const alpha = this.alphaSlots[studs.alphaSlot[run] ?? 0] ?? OPAQUE_ALPHA;
-      const material = materials.basisInstanced(alpha);
-      const start = studs.start[run] ?? 0;
-      const end = studs.end[run] ?? 0;
-      const translations = new InstancedBufferAttribute(
-        studTranslationsOf(page, start, end),
-        TRANSLATION_FLOATS,
-      );
-      const basisAndColorIndex = new InstancedBufferAttribute(
-        studBasisAndColorIndexOf(page, start, end),
-        1,
-      );
-      detailed.add(this.studMesh(detailedGeometry, material, translations, basisAndColorIndex));
-      const coarseGeometry = this.farLevel.studs[k];
-      if (coarse && coarseGeometry) {
-        coarse.add(this.studMesh(coarseGeometry, material, translations, basisAndColorIndex));
-      }
-    }
-  }
-
-  private studMesh(
-    primitive: BufferGeometry,
-    material: MeshStandardNodeMaterial,
-    translations: InstancedBufferAttribute,
-    basisAndColorIndex: InstancedBufferAttribute,
-  ): StudMesh {
-    const mesh = new StudMesh(
-      primitive,
-      material,
-      translations,
-      basisAndColorIndex,
-      this.studBases,
-    );
-    mesh.matrixAutoUpdate = false;
-    mesh.receiveShadow = this.look.shadows && !material.transparent;
-    mesh.computeBoundingSphere();
-    return mesh;
   }
 
   private instancedMesh(
@@ -1648,7 +1957,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
-    this.fitShadowRange();
     if (viewChanged) this.applyTiers();
   }
 
@@ -1702,8 +2010,13 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const far =
       Math.abs(chunkX - originChunkX) > REBASE_DISTANCE_CHUNKS ||
       Math.abs(chunkZ - originChunkZ) > REBASE_DISTANCE_CHUNKS;
-    const settled = performance.now() - this.eyeMovedAt >= SETTLED_EYE_MS;
-    if (this.rebaseCount > 0 && !far && (atEye || !settled)) return;
+    if (this.rebaseCount > 0 && !far) {
+      if (atEye) return;
+      if (performance.now() - this.eyeMovedAt < SETTLED_EYE_MS) {
+        this.scheduleSettledEye();
+        return;
+      }
+    }
     const started = performance.now();
     this.renderOriginX = chunkX * CHUNK_LDU;
     this.renderOriginZ = chunkZ * CHUNK_LDU;
@@ -1755,6 +2068,29 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     });
   }
 
+  private scheduleSettledEye(): void {
+    if (this.settledEyeTimer !== null) return;
+    this.settledEyeTimer = setTimeout(
+      this.followSettledEye,
+      this.eyeMovedAt + SETTLED_EYE_MS - performance.now(),
+    );
+  }
+
+  private readonly followSettledEye = (): void => {
+    this.settledEyeTimer = null;
+    const remainingMs = this.eyeMovedAt + SETTLED_EYE_MS - performance.now();
+    if (remainingMs > 0) {
+      this.settledEyeTimer = setTimeout(this.followSettledEye, remainingMs);
+      return;
+    }
+    const rebases = this.rebaseCount;
+    this.followEye();
+    if (this.rebaseCount === rebases) return;
+    this.aim(this.perspective, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
+    this.aim(this.orthographic, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
+    this.changed = true;
+  };
+
   rebaseLog(): ReadonlyArray<RebaseEvent> {
     return this.rebases;
   }
@@ -1764,7 +2100,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     stage.renderer.setSize(sizePx, sizePx, false);
     const group = new Group();
     const page = this.pageFor(model);
-    this.addInstances(group, undefined, undefined, page, this.materials, null);
+    this.addNearInstances(group, page, this.materials);
     group.position.set(
       -(box.minX + box.maxX) / 2,
       -(box.minY + box.maxY) / 2,
@@ -1830,7 +2166,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.changed = true;
     const existing = this.farModelNodes.get(id);
     if (existing) {
-      this.scene.remove(existing.group);
+      this.farModelHolders.remove(existing.group);
       this.farModelNodes.delete(id);
       this.farModelList = this.farModelList.filter((node) => node !== existing);
     }
@@ -1862,7 +2198,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ]);
     this.farModelNodes.set(id, node);
     this.farModelList.push(node);
-    this.scene.add(group);
+    this.farModelHolders.add(group, id);
   }
 
   private showFarModels(): void {
@@ -1890,11 +2226,15 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       const record = this.chunkList[i];
       if (!record) continue;
       record.studPitchPx = this.studPitchPx(record, orthoStudPitchPx);
-      if (record.applyTier(this.tierOf(record.studPitchPx))) {
-        this.changed = true;
-        if (record.needsRebuild) this.rebuildKeys.push(record.key);
-        else this.syncNeeds(record);
+      const tier = this.tierOf(record.studPitchPx);
+      if (tier === record.tier) continue;
+      this.changed = true;
+      if (record.needsRebuild) {
+        this.rebuildKeys.push(record.key);
+        continue;
       }
+      record.applyTier(tier);
+      this.syncNeeds(record);
     }
     for (let i = 0; i < this.rebuildKeys.length; i++) {
       const key = this.rebuildKeys[i] ?? 0;
@@ -1957,6 +2297,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     const renderer = this.renderer;
     if (!renderer) throw new Error("ThreeSceneBackend.renderFrame called before init");
     this.throwIfFailed();
+    this.fitShadowRange();
     this.readTierStats(out);
     this.showFarModels();
     renderer.info.reset();

@@ -20,6 +20,7 @@ use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
 use crate::record::{BakeRecord, RecordError};
+use crate::trig::sincos;
 
 pub const PLATE_LDU: f64 = 8.0;
 pub const EMPTY_COLUMN: i32 = -1;
@@ -222,9 +223,9 @@ fn below_azimuth(k: usize) -> f64 {
 fn enclosure_directions() -> Vec<Vec3> {
     let mut directions = vec![UP];
     for elevation in ENCLOSURE_ELEVATIONS_DEGREES {
-        let (rise, run) = elevation.to_radians().sin_cos();
+        let (rise, run) = sincos(elevation.to_radians());
         for k in 0..AZIMUTH_RAYS {
-            let (sin, cos) = azimuth(k).sin_cos();
+            let (sin, cos) = sincos(azimuth(k));
             directions.push([run * cos, rise, run * sin]);
         }
     }
@@ -269,7 +270,7 @@ impl StudFrame {
     }
 
     fn radial(&self, k: usize) -> Vec3 {
-        let (sin, cos) = below_azimuth(k).sin_cos();
+        let (sin, cos) = sincos(below_azimuth(k));
         [0, 1, 2].map(|axis| self.across[axis] * cos + self.along[axis] * sin)
     }
 
@@ -288,7 +289,7 @@ impl StudFrame {
     fn radials(&self) -> Vec<Vec3> {
         let mut radials: Vec<Vec3> = (0..BELOW_AZIMUTH_RAYS).map(|k| self.radial(k)).collect();
         for k in 0..BELOW_AZIMUTH_RAYS {
-            let (sin, cos) = below_azimuth(k).sin_cos();
+            let (sin, cos) = sincos(below_azimuth(k));
             let lattice = [cos, 0.0, sin];
             let rise = dot(lattice, self.up);
             let flat = [0, 1, 2].map(|axis| lattice[axis] - self.up[axis] * rise);
@@ -1398,7 +1399,7 @@ mod tests {
                 m: [0.0, 0.0, 1.0, x, 0.0, 1.0, 0.0, y, -1.0, 0.0, 0.0, z],
             },
             2 => {
-                let (sin, cos) = (draws.unit() * 0.6).sin_cos();
+                let (sin, cos) = sincos(draws.unit() * 0.6);
                 Affine {
                     m: [1.0, 0.0, 0.0, x, 0.0, cos, -sin, y, 0.0, sin, cos, z],
                 }
@@ -1776,7 +1777,7 @@ mod tests {
             true,
             -8.0,
         )];
-        let (sin, cos) = 30.0_f64.to_radians().sin_cos();
+        let (sin, cos) = sincos(30.0_f64.to_radians());
         let tilted = Affine {
             m: [
                 1.0, 0.0, 0.0, 100.0, 0.0, cos, -sin, -10.0, 0.0, sin, cos, 0.0,
@@ -1800,9 +1801,8 @@ mod tests {
                     STUD.radius * BELOW_START_OUTSIDE,
                 );
                 (1..=BELOW_ELEVATION_STEPS).all(|step| {
-                    let (rise, run) = (-BELOW_ELEVATION_STEP_DEGREES * step as f64)
-                        .to_radians()
-                        .sin_cos();
+                    let (rise, run) =
+                        sincos((-BELOW_ELEVATION_STEP_DEGREES * step as f64).to_radians());
                     let direction = [0, 1, 2].map(|axis| radial[axis] * run + stud.up[axis] * rise);
                     let segment = Segment::new(origin, direction, BELOW_REACH_LDU);
                     (0..model.placed.len())

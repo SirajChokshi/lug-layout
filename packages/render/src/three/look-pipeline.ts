@@ -44,10 +44,8 @@ import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
 import { oitPass } from "three/addons/tsl/display/OITPassNode.js";
 import type { LookSettings } from "../scene-backend.ts";
-import { isInstanced } from "./stud-mesh.ts";
+import { NOT_A_PART, edgeIdOf, unpackEdgeId } from "./edge-ids.ts";
 
-const NOT_A_PART = 0;
-const ID_MODULUS = 2048;
 const STUD_PITCH_LDU = 20;
 const AO_RADIUS_LDU = 28;
 const AO_THICKNESS_LDU = 16;
@@ -131,14 +129,14 @@ export class LookPipeline {
     let overlay: Node<"bool"> | undefined;
     const needsGBuffer = look.gtao || look.outlines || look.bevel;
     if (needsGBuffer) {
-      const partId = uniform(0).onObjectUpdate(({ object }) =>
-        object !== null && isInstanced(object) ? (object.id % ID_MODULUS) + 1 : NOT_A_PART,
+      const edgeId = uniform(0).onObjectUpdate(({ object }) =>
+        object === null ? NOT_A_PART : edgeIdOf(object),
       );
       scenePass.setMRT(
         mrt({
           output,
           normal: vec4(packNormalToRGB(normalView), 1),
-          id: vec4(partId, instanceIndex.toFloat().mod(ID_MODULUS), 0, 1),
+          id: unpackEdgeId(edgeId, instanceIndex.toFloat()),
         }),
       );
       const normalTexture = scenePass.getTexture("normal");

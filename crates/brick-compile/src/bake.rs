@@ -8,7 +8,7 @@ use crate::cover::{
     ModelTooLarge, Opacity, PartSolid, ProbeCache, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
-use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice};
+use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice, StudPose};
 use crate::mesh::Mesh;
 use crate::model::ModelInstance;
 use crate::record::{BakeRecord, RecordError};
@@ -130,7 +130,7 @@ impl From<CompileError> for BakeError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatticeShape {
-    pub studs: Vec<Vec3>,
+    pub studs: Vec<StudPose>,
     pub bounds: [Vec3; 2],
 }
 
@@ -143,7 +143,7 @@ impl LatticeShape {
         LatticeShape {
             studs: studs
                 .iter()
-                .map(|stud| [stud.matrix.m[3], stud.matrix.m[7], stud.matrix.m[11]])
+                .map(|stud| StudPose::of(&stud.matrix))
                 .collect(),
             bounds: mesh
                 .bounds()

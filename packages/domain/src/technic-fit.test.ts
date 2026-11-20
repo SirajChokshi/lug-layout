@@ -2,11 +2,13 @@ import type { PartTechnic } from "@brr/schema/bundle";
 import { describe, expect, it } from "vitest";
 import type { LatticePose } from "./connect/candidate-poses.ts";
 import {
+  PosedTechnicBuffer,
   TECHNIC_WAIVER_INTS,
   modelTechnic,
   placeTechnicInto,
   technicItemsOverlap,
   technicScratch,
+  type PosedTechnic,
   type TechnicSet,
 } from "./technic-fit.ts";
 
@@ -60,7 +62,7 @@ function box(technic: PartTechnic): number[] {
   return [x - reach, y - reach, from, x + reach, y + reach, to];
 }
 
-function single(technic: PartTechnic): TechnicSet {
+function single(technic: PartTechnic): PosedTechnic {
   return modelTechnic(
     [technic],
     { count: 1, partIndex: [0], matrices: Float64Array.from(IDENTITY) },
@@ -76,11 +78,11 @@ function waiver(
   return Int32Array.of(Z, line[0], line[1], fromZ, toZ);
 }
 
-function overlaps(a: TechnicSet, b: TechnicSet, waivers: Int32Array = NO_WAIVERS): boolean {
+function overlaps(a: PosedTechnic, b: PosedTechnic, waivers: Int32Array = NO_WAIVERS): boolean {
   return technicItemsOverlap(a, 0, b, 0, waivers, waivers.length / TECHNIC_WAIVER_INTS);
 }
 
-function placed(local: TechnicSet, pose: LatticePose): TechnicSet {
+function placed(local: TechnicSet, pose: LatticePose): PosedTechnic {
   const out = technicScratch(local);
   placeTechnicInto(local, pose, out);
   return out;
@@ -207,5 +209,62 @@ describe("modelTechnic", () => {
       throughSidewaysBlock: false,
       acrossUprightBlock: true,
     });
+  });
+});
+
+describe("PosedTechnicBuffer", () => {
+  it("poses one item of a model exactly as posing the whole model does, at every quarter turn", () => {
+    const blocks = modelTechnic(
+      [bored(), rod(-40, 80, BORE)],
+      {
+        count: 3,
+        partIndex: [0, 0, 1],
+        matrices: Float64Array.from([
+          ...IDENTITY,
+          0,
+          0,
+          1,
+          40,
+          0,
+          1,
+          0,
+          0,
+          -1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          20,
+        ]),
+      },
+      [...BLOCK_BOX, 30, 0, -20, 50, 24, 20, -6, 8, -20, 6, 20, 60],
+    );
+    const probes = [single(rod(-40, 80, BORE)), single(rod(-40, 80, BORE + 8)), single(bored())];
+    const buffer = new PosedTechnicBuffer();
+    const answers = (posedItem: (item: number, pose: LatticePose) => PosedTechnic) =>
+      [0, 1, 2, 3].map((rot) => {
+        const pose = { x: 40, z: -20, yPlates: 3, rot };
+        return [0, 1, 2].map((item) => {
+          const posed = posedItem(item, pose);
+          const itemBox = Array.from(posed.box.subarray(item * 6, item * 6 + 6));
+          const hits = probes.map((probe) =>
+            technicItemsOverlap(placed(probe, pose), 0, posed, item, NO_WAIVERS, 0),
+          );
+          return { itemBox, hits };
+        });
+      });
+    expect(answers((item, pose) => buffer.placeItem(blocks, item, pose))).toEqual(
+      answers((_, pose) => placed(blocks, pose)),
+    );
   });
 });

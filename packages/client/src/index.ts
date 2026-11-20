@@ -47,6 +47,13 @@ export type {
   StartedCatalog,
 } from "./catalog/placeable-catalog.ts";
 export type {
+  EditorStats,
+  FrameLoopView,
+  FrameMeasurement,
+  FrameTimes,
+  IEditorFrameLoop,
+} from "./edit/editor-frame-loop.ts";
+export type {
   CatalogPartView,
   EditAction,
   EditorCredits,
@@ -54,11 +61,9 @@ export type {
   EditorMode,
   EditorOptions,
   EditorSnapshot,
-  EditorStats,
   EditorStatus,
   HistoryView,
   HoverView,
-  FrameMeasurement,
   IEditor,
   LatencySample,
   ModelBakeView,

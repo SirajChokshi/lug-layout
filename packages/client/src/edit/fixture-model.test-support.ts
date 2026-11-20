@@ -1,10 +1,25 @@
 import {
   ASSET_FETCHER,
   PART_BUNDLE_LOADER,
+  type BricklinkPartCandidates,
+  type CatalogCrosswalk,
+  type CompiledPartGlb,
+  type FetchPriority,
   type IAssetFetcher,
+  type ImportContext,
   type IPartBundleLoader,
+  type ModelBundle,
+  type ModelRecord,
+  type PackageAttribution,
+  type PartBundle,
+  type PartConnectors,
+  type PartFilter,
+  type PartMesh,
   type PartModel,
+  type PartShapeRecord,
+  type StudPrimitiveAsset,
 } from "@brr/catalog";
+import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { mainThreadModules } from "../client.module.ts";
@@ -66,4 +81,101 @@ export async function fixtureModel(name: string): Promise<Placeable> {
     new ColorTable(bundle),
     null,
   );
+}
+
+export class WithFixtureModels implements IPartBundleLoader {
+  constructor(
+    private readonly shipped: IPartBundleLoader,
+    private readonly names: ReadonlyArray<string>,
+    private readonly fixtures: IPartBundleLoader = fixtureBundleLoader(),
+  ) {}
+
+  loadManifestFile(): Promise<string> {
+    return this.shipped.loadManifestFile();
+  }
+
+  async loadIndex(lod: BundleLod): Promise<BundleIndex> {
+    const [index, fixtures] = await Promise.all([
+      this.shipped.loadIndex(lod),
+      this.fixtures.loadIndex(lod),
+    ]);
+    const added = fixtures.models.filter((entry) => this.names.includes(entry.name));
+    return { ...index, models: [...index.models, ...added] };
+  }
+
+  loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
+    return this.shipped.loadStudPrimitives(lod);
+  }
+
+  loadPartShape(lod: BundleLod, part: CatalogPart): Promise<PartShapeRecord> {
+    return this.shipped.loadPartShape(lod, part);
+  }
+
+  loadModelRecord(lod: BundleLod, name: string): Promise<ModelRecord> {
+    return this.from(name).loadModelRecord(lod, name);
+  }
+
+  loadPartMesh(lod: BundleLod, file: string, priority: FetchPriority): Promise<PartMesh> {
+    return this.shipped.loadPartMesh(lod, file, priority);
+  }
+
+  setPartMeshPriority(lod: BundleLod, file: string, priority: FetchPriority): void {
+    this.shipped.setPartMeshPriority(lod, file, priority);
+  }
+
+  loadFarModelMesh(name: string, priority: FetchPriority): Promise<PartMesh | null> {
+    return this.from(name).loadFarModelMesh(name, priority);
+  }
+
+  loadPartFiles(lod: BundleLod): Promise<ReadonlyMap<string, string>> {
+    return this.shipped.loadPartFiles(lod);
+  }
+
+  loadManifest(lod: BundleLod): Promise<BundleManifest> {
+    return this.shipped.loadManifest(lod);
+  }
+
+  load(lod: BundleLod, include: PartFilter): Promise<PartBundle> {
+    return this.shipped.load(lod, include);
+  }
+
+  loadModel(lod: BundleLod, name: string): Promise<ModelBundle> {
+    return this.from(name).loadModel(lod, name);
+  }
+
+  loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
+    return this.shipped.loadPartConnectors(lod, partId);
+  }
+
+  loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
+    return this.shipped.loadConnectivityAttribution(lod);
+  }
+
+  loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null> {
+    return this.shipped.loadSectionVocabularyAttribution(lod);
+  }
+
+  importContext(lod: BundleLod): Promise<ImportContext> {
+    return this.shipped.importContext(lod);
+  }
+
+  loadPartSet(
+    lod: BundleLod,
+    partIds: ReadonlyArray<string>,
+    compiled: ReadonlyArray<CompiledPartGlb>,
+  ): Promise<PartBundle> {
+    return this.shipped.loadPartSet(lod, partIds, compiled);
+  }
+
+  loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
+    return this.shipped.loadCrosswalk(lod);
+  }
+
+  loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
+    return this.shipped.loadBricklinkParts(lod);
+  }
+
+  private from(name: string): IPartBundleLoader {
+    return this.names.includes(name) ? this.fixtures : this.shipped;
+  }
 }
