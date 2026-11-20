@@ -7,6 +7,7 @@ import {
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
+  OWNED_PARTS,
   PALETTE,
   PANEL_LAYOUT,
   RUNNING_GEAR,
@@ -148,6 +149,7 @@ function root(): ReactNode {
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
+        ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}
         palette={container.get(PALETTE)}
         panels={container.get(PANEL_LAYOUT)}
@@ -166,7 +168,13 @@ function root(): ReactNode {
     );
   }
   const { scene, importScene, bomSource } = viewerScene(params);
-  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
+  const bom = bomSource
+    ? {
+        service: container.get(BOM_SERVICE),
+        ownedParts: container.get(OWNED_PARTS),
+        source: bomSource,
+      }
+    : null;
   return <App scene={scene} params={params} importScene={importScene ?? null} bom={bom} />;
 }
 

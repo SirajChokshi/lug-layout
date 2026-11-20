@@ -289,6 +289,7 @@ export {
 } from "./bom/count-placements.ts";
 export {
   INHERITED_COLOR,
+  catalogOf,
   resolveLines,
   toCatalog,
   type CatalogBom,
@@ -308,6 +309,17 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  type OwnBuyLine,
+  type OwnedPart,
+  type OwnedParts,
+  type OwnedPartsRead,
+  type OwnVsBuy,
+  type RejectedRow,
+  type UnknownOwnedPart,
+} from "./bom/owned-parts.ts";
 export {
   AXIS_FREE,
   AXIS_NEG_X,
