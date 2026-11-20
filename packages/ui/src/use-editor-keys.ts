@@ -92,16 +92,17 @@ export function useEditorKeys(
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [editor, camera, play, onShellCommand, overlayOpen, closeOverlay]);
-  useAltHold(editor);
+  useAltHold(editor, play);
 }
 
 const ALT = "Alt";
 const ALT_GRAPH = "AltGraph";
 
-function useAltHold(editor: IEditor): void {
+function useAltHold(editor: IEditor, play: ITrainPlay): void {
   useEffect(() => {
     let altDown = false;
-    const hold = (held: boolean): void => holdPlacementModeOverride(editor, held);
+    const toggles = (): boolean => play.snapshot().status !== "running";
+    const hold = (held: boolean): void => holdPlacementModeOverride(editor, held && toggles());
     const placing = (): boolean => editor.snapshot().mode === "place";
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== ALT || event.ctrlKey || isTyping(event.target)) return;
@@ -136,5 +137,5 @@ function useAltHold(editor: IEditor): void {
       window.removeEventListener("blur", release);
       release();
     };
-  }, [editor]);
+  }, [editor, play]);
 }

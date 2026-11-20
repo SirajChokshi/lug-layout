@@ -1658,6 +1658,7 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
     hint: toolHints(editor.snapshot()).tone,
   });
   const dropped = shown();
+  const droppedSaid = toolHints(editor.snapshot()).speech?.verdict;
   backend.aim(5, 5);
   editor.pointerMove(0, 0);
   const sameCell = shown();
@@ -1677,6 +1678,7 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
 
   expect({
     dropped,
+    droppedSaid,
     sameCell,
     clickedAgain,
     moved,
@@ -1686,6 +1688,7 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
     heldPrecise,
   }).toEqual({
     dropped: { accepted: false, ghost: null, hint: "place" },
+    droppedSaid: expect.stringMatching(/^Placed .*3811/u),
     sameCell: { accepted: false, ghost: null, hint: "place" },
     clickedAgain: { accepted: false, ghost: "refused", hint: "warn" },
     moved: { accepted: false, ghost: "refused", hint: "warn" },

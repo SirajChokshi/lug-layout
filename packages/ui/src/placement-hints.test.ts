@@ -115,6 +115,7 @@ function hintScene() {
     return found;
   };
   const shown = () => ({
+    region: `${hud().getAttribute("role")} ${hud().getAttribute("aria-live")}`,
     tone: hud().getAttribute("data-tone"),
     detail: hud().querySelector(".tool-detail")?.textContent ?? null,
     chip: chip()?.hidden === false ? (chip()?.textContent ?? null) : null,
@@ -147,8 +148,16 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
   wait(STEADY_SPEECH_MS);
 
   expect({ atOnce, afterBeat, settled, steady: shown() }).toEqual({
-    atOnce: { tone: "place", detail: "Magnetic · 0°", chip: null, busy: "true", said: "" },
+    atOnce: {
+      region: "status off",
+      tone: "place",
+      detail: "Magnetic · 0°",
+      chip: null,
+      busy: "true",
+      said: "",
+    },
     afterBeat: {
+      region: "status off",
       tone: "place",
       detail: `Magnetic · 0° · ${FINDING_A_FIT}`,
       chip: FINDING_A_FIT,
@@ -156,6 +165,7 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       said: "",
     },
     settled: {
+      region: "status off",
       tone: "warn",
       detail:
         "Magnetic · 0° · Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
@@ -164,6 +174,7 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       said: "",
     },
     steady: {
+      region: "status off",
       tone: "warn",
       detail:
         "Magnetic · 0° · Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",

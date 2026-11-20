@@ -128,6 +128,11 @@ function verdictSpeech(feedback: PlacementFeedback, heading: string): string | n
   return `${heading}. ${said || "Fits here"}`;
 }
 
+function unhoveredSpeech(snapshot: EditorSnapshot, title: string, heading: string): string {
+  if (snapshot.ghostSettled) return `Placed ${itemName(snapshot, snapshot.activeItem)}`;
+  return `${title}. ${heading}`;
+}
+
 function unturned(placementLine: PlacementLine): boolean {
   return placementLine.kind !== "turn";
 }
@@ -171,7 +176,7 @@ function placeView(snapshot: EditorSnapshot): HintView {
     speech: {
       verdict: feedback
         ? verdictSpeech(feedback, `${MODE_NAMES[mode]}, ${degrees}`)
-        : `${title}. ${MODE_NAMES[mode]}, ${degrees}`,
+        : unhoveredSpeech(snapshot, title, `${MODE_NAMES[mode]}, ${degrees}`),
       turn: turn ? lineText(turn) : null,
     },
   };

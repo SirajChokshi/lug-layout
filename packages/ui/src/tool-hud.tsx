@@ -95,13 +95,12 @@ export function ToolHud({ snapshot, play }: ToolHudProps) {
   const view = toolHints(snapshot, play);
   const cued = useLateCue(view.waiting === null ? null : pendingSearch(snapshot));
   const detail = shownDetail(view, cued);
-  const live = view.speech === null;
   return (
     <div
       className="tool-hud"
       data-tone={view.tone}
-      role={live ? "status" : undefined}
-      aria-live={live ? "polite" : undefined}
+      role="status"
+      aria-live={view.speech === null ? "polite" : "off"}
     >
       <span className="tool-title">
         {view.title}

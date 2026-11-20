@@ -1,4 +1,4 @@
-import { badgeText, placementFeedback, type EditorSnapshot } from "@brr/client";
+import { badgeText, placementFeedback, type EditorSnapshot, type PlacementLine } from "@brr/client";
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import { pendingSearch, useLateCue } from "./late-cue.ts";
 
@@ -47,6 +47,12 @@ function useBesidePointer(chip: RefObject<HTMLDivElement | null>, content: strin
   }, [chip, content]);
 }
 
+function chipContent(precise: boolean, lines: ReadonlyArray<PlacementLine>): string {
+  if (lines.length === 0) return "";
+  const shown = lines.map((line) => [line.text, ...line.badges.map(badgeText)].join(" "));
+  return [String(precise), ...shown].join("\n");
+}
+
 export function PlacementChip({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const chip = useRef<HTMLDivElement>(null);
   const feedback = placementFeedback(snapshot);
@@ -54,7 +60,7 @@ export function PlacementChip({ snapshot }: { readonly snapshot: EditorSnapshot 
   const cueShown = useLateCue(pending ? pendingSearch(snapshot) : null);
   const lines = pending && !cueShown ? [] : (feedback?.lines ?? []);
   const precise = feedback?.mode === "precise";
-  useBesidePointer(chip, lines.map((line) => line.text).join("\n"));
+  useBesidePointer(chip, chipContent(precise, lines));
   return (
     <div
       ref={chip}
