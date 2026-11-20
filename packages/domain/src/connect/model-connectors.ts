@@ -593,7 +593,6 @@ export class ModelConnectors {
     mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
     const shapes = mating.shapes;
     const stretch = new Float64Array(STRETCH_FLOATS);
-    const cover = new ExactCover();
     const pieces = new OpenEndPieces();
     let whole = 0;
     let offLattice = 0;
@@ -613,11 +612,10 @@ export class ModelConnectors {
         const found = freeStretch(shapes, frames, search, k, stretch);
         if (found === FREE_STRETCH_OFF_LATTICE) offLattice++;
         else if (found === FREE_STRETCH) {
-          offLattice += exposeUncovered(
+          exposeUnlessCovered(
             shapes,
             frames,
             search.matedInside,
-            cover,
             pieces,
             k,
             first,
@@ -721,143 +719,74 @@ class OpenEndPieces {
   }
 }
 
-class ExactCover {
-  private covered = new Float64Array(INITIAL_PIECES * STRETCH_FLOATS);
-  private coveredCount = 0;
-  private remainder = new Float64Array(INITIAL_PIECES * STRETCH_FLOATS);
-
-  clear(): void {
-    this.coveredCount = 0;
-  }
-
-  add(from: number, to: number): void {
-    if ((this.coveredCount + 1) * STRETCH_FLOATS > this.covered.length) {
-      this.covered = doubled(this.covered, (length) => new Float64Array(length));
-    }
-    let at = this.coveredCount++;
-    while (at > 0 && (this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_FROM] ?? 0) > from) {
-      this.covered[at * STRETCH_FLOATS + STRETCH_FROM] =
-        this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
-      this.covered[at * STRETCH_FLOATS + STRETCH_TO] =
-        this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_TO] ?? 0;
-      at--;
-    }
-    this.covered[at * STRETCH_FLOATS + STRETCH_FROM] = from;
-    this.covered[at * STRETCH_FLOATS + STRETCH_TO] = to;
-  }
-
-  remainders(from: number, to: number): number {
-    let count = 0;
-    let cursor = from;
-    for (let c = 0; c < this.coveredCount; c++) {
-      const start = this.covered[c * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
-      if (start > cursor) count = this.keep(count, cursor, start);
-      cursor = Math.max(cursor, this.covered[c * STRETCH_FLOATS + STRETCH_TO] ?? 0);
-    }
-    if (to > cursor) count = this.keep(count, cursor, to);
-    return count;
-  }
-
-  remainderFrom(r: number): number {
-    return this.remainder[r * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
-  }
-
-  remainderTo(r: number): number {
-    return this.remainder[r * STRETCH_FLOATS + STRETCH_TO] ?? 0;
-  }
-
-  private keep(count: number, from: number, to: number): number {
-    if ((count + 1) * STRETCH_FLOATS > this.remainder.length) {
-      this.remainder = doubled(this.remainder, (length) => new Float64Array(length));
-    }
-    this.remainder[count * STRETCH_FLOATS + STRETCH_FROM] = from;
-    this.remainder[count * STRETCH_FLOATS + STRETCH_TO] = to;
-    return count + 1;
-  }
-}
-
-function coverExactly(
+function coversWhole(
   shapes: SnapShapes,
   frames: Frames,
-  cover: ExactCover,
   k: number,
   from: number,
   to: number,
   other: number,
   otherFrom: number,
   otherTo: number,
-): void {
+): boolean {
   const axis = frames.axis[k] ?? 0;
-  if (frames.gender[other] !== frames.gender[k] || frames.axis[other] !== axis) return;
+  if (frames.gender[other] !== frames.gender[k] || frames.axis[other] !== axis) return false;
   const dimension = axisDimension(axis);
   const own = k * VECTOR_FLOATS;
   const theirs = other * VECTOR_FLOATS;
   for (let side = 1; side < VECTOR_FLOATS; side++) {
     const across = (dimension + side) % VECTOR_FLOATS;
-    if (frames.origin[theirs + across] !== frames.origin[own + across]) return;
+    if (frames.origin[theirs + across] !== frames.origin[own + across]) return false;
   }
   const shift =
     ((frames.origin[theirs + dimension] ?? 0) - (frames.origin[own + dimension] ?? 0)) *
     extentSign(frames.gender[k] ?? 0, axis);
-  const start = Math.max(from, otherFrom + shift);
-  const end = Math.min(to, otherTo + shift);
-  if (!(end > start)) return;
-  const compatible = shapes.sameSectionsOver(
+  if (from - shift < otherFrom || to - shift > otherTo) return false;
+  return shapes.sameSectionsOver(
     frames.shape[k] ?? 0,
-    start / SIXTEENTHS_PER_LDU,
+    from / SIXTEENTHS_PER_LDU,
     frames.shape[other] ?? 0,
-    (start - shift) / SIXTEENTHS_PER_LDU,
-    (end - start) / SIXTEENTHS_PER_LDU,
+    (from - shift) / SIXTEENTHS_PER_LDU,
+    (to - from) / SIXTEENTHS_PER_LDU,
   );
-  if (compatible) cover.add(start, end);
 }
 
-function exposeUncovered(
+function exposeUnlessCovered(
   shapes: SnapShapes,
   frames: Frames,
   matedInside: Uint8Array,
-  cover: ExactCover,
   pieces: OpenEndPieces,
   k: number,
   first: number,
   end: number,
   firstPiece: number,
   stretch: Float64Array,
-): number {
+): void {
   const from = stretch[STRETCH_FROM] ?? 0;
   const to = stretch[STRETCH_TO] ?? 0;
-  cover.clear();
   for (let j = first; j < end; j++) {
     if (j === k || matedInside[j] === 1 || frames.axis[j] === AXIS_FREE) continue;
     const length = shapes.length(frames.shape[j] ?? 0) * SIXTEENTHS_PER_LDU;
-    coverExactly(shapes, frames, cover, k, from, to, j, 0, length);
+    if (coversWhole(shapes, frames, k, from, to, j, 0, length)) return;
   }
   for (let p = firstPiece; p < pieces.count; p++) {
     const other = pieces.connector[p] ?? 0;
-    coverExactly(shapes, frames, cover, k, from, to, other, pieces.from[p] ?? 0, pieces.to[p] ?? 0);
-  }
-  const male = frames.gender[k] === GENDER_MALE;
-  const shape = frames.shape[k] ?? 0;
-  const count = cover.remainders(from, to);
-  let offLattice = 0;
-  for (let r = 0; r < count; r++) {
-    const start = cover.remainderFrom(r);
-    const stop = cover.remainderTo(r);
-    const offGrid =
-      (start !== from && !Number.isInteger(start)) || (stop !== to && !Number.isInteger(stop));
-    if (offGrid) {
-      offLattice++;
-      continue;
+    if (coversWhole(shapes, frames, k, from, to, other, pieces.from[p] ?? 0, pieces.to[p] ?? 0)) {
+      return;
     }
-    const closes = male ? CAP_ROOT | (stop < to ? CAP_FAR : 0) : CAP_FAR;
-    pieces.append(
-      k,
-      shapes.clipped(shape, start / SIXTEENTHS_PER_LDU, stop / SIXTEENTHS_PER_LDU, closes),
-      start,
-      stop,
-    );
   }
-  return offLattice;
+  const closes = frames.gender[k] === GENDER_MALE ? CAP_ROOT : CAP_FAR;
+  pieces.append(
+    k,
+    shapes.clipped(
+      frames.shape[k] ?? 0,
+      from / SIXTEENTHS_PER_LDU,
+      to / SIXTEENTHS_PER_LDU,
+      closes,
+    ),
+    from,
+    to,
+  );
 }
 
 function expose(

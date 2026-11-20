@@ -545,6 +545,17 @@ function oneFace(shapeId: number, gender: number, axis: number): ConnectorTable 
   return table([{ shape: shapeId, gender, origin: [0, 0, 0], axis }]);
 }
 
+function outwardAlongZ(besideShape: number, alongLdu = 0, status = STATUS_VERIFIED): Spec {
+  return {
+    shape: besideShape,
+    gender: GENDER_MALE,
+    source: status === STATUS_VERIFIED ? SOURCE_SHADOW : SOURCE_INFERRED,
+    status,
+    origin: [0, 0, alongLdu],
+    axis: AXIS_POS_Z,
+  };
+}
+
 function onTheZAxis(zLdu: number): number[] {
   return [0, 0, zLdu].map(toSixteenths);
 }
@@ -659,7 +670,7 @@ describe("ModelConnectors", () => {
     });
   });
 
-  it("exposes a free stretch only where no exposed face of the same part instance, gender and axis line covers it exactly, closing an uncovered remainder at its new cut or reporting it off the sixteenth grid", () => {
+  it("exposes a free stretch unless an exposed face of the same part instance, gender and axis line covers its whole interval exactly, and a face covering only part of it removes nothing", () => {
     const slidingPin = shape(0, true, [
       [SECTION_FLARE_JOINS_NEXT, 6.25, 2],
       [SECTION_ROUND, 6, 16],
@@ -677,25 +688,17 @@ describe("ModelConnectors", () => {
       [SECTION_ROUND, 6, 16],
       [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
     ]);
-    const collar = (lengthLdu: number) =>
-      shape(CAP_ROOT, false, [
-        [SECTION_ROUND, 8, 2],
-        [SECTION_ROUND, 6, lengthLdu - 2],
-      ]);
+    const inferredShaft = shape(CAP_ROOT, false, [[SECTION_ROUND, 6, 9.5]]);
     const innerBar = shape(CAP_ROOT, false, [[SECTION_ROUND, 4, STUD_LDU]]);
     const z = 5 * STUD_LDU;
-    const placed = (besideTheSlidingPin: number) => {
+    const collarLdu = 2;
+    const placed = (beside: Spec) => {
       const connectors = model(
         [
           table([
             { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, -STUD_LDU], axis: AXIS_POS_Z },
             { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, STUD_LDU], axis: AXIS_NEG_Z },
-            {
-              shape: besideTheSlidingPin,
-              gender: GENDER_MALE,
-              origin: [0, 0, 0],
-              axis: AXIS_POS_Z,
-            },
+            beside,
           ]),
           facesFromBothEnds(bore, GENDER_FEMALE, -STUD_LDU, 0, AXIS_NEG_Z),
         ],
@@ -706,8 +709,8 @@ describe("ModelConnectors", () => {
       );
       return { exposed: exposedStretches(connectors), offLattice: connectors.offLattice };
     };
-    const asExposed = (exposedShape: number) => ({
-      origin: onTheZAxis(z),
+    const asExposed = (exposedShape: number, alongLdu = 0) => ({
+      origin: onTheZAxis(z + alongLdu),
       axis: AXIS_POS_Z,
       caps: shapes.caps(exposedShape),
       slides: shapes.slides(exposedShape),
@@ -717,50 +720,30 @@ describe("ModelConnectors", () => {
         shapes.span(shapes.firstSection(exposedShape) + s),
       ]),
     });
+    const wholeFreeTip = {
+      origin: onTheZAxis(z),
+      axis: AXIS_POS_Z,
+      caps: CAP_ROOT,
+      slides: true,
+      sections: [
+        [SECTION_ROUND, 8, 2],
+        [SECTION_ROUND, 6, 16],
+        [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+      ],
+    };
     expect({
-      halfPinCoversTheWholeTip: placed(halfPin),
-      collarCoversItsFirstHalf: placed(collar(STUD_LDU / 2)),
-      collarEndsOffTheSixteenthGrid: placed(collar(STUD_LDU / 2 + 0.03)),
-      nestedBarDoesNotCover: placed(innerBar),
+      halfPinCoversTheWholeTip: placed(outwardAlongZ(halfPin)),
+      inferredShaftCoversPartOfTheTip: placed(
+        outwardAlongZ(inferredShaft, collarLdu, STATUS_UNVERIFIED),
+      ),
+      nestedBarDoesNotCover: placed(outwardAlongZ(innerBar)),
     }).toEqual({
       halfPinCoversTheWholeTip: { exposed: [asExposed(halfPin)], offLattice: 0 },
-      collarCoversItsFirstHalf: {
-        exposed: [
-          {
-            origin: onTheZAxis(z + STUD_LDU / 2),
-            axis: AXIS_POS_Z,
-            caps: CAP_ROOT,
-            slides: true,
-            sections: [
-              [SECTION_ROUND, 6, 8],
-              [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
-            ],
-          },
-          asExposed(collar(STUD_LDU / 2)),
-        ],
+      inferredShaftCoversPartOfTheTip: {
+        exposed: [wholeFreeTip, asExposed(inferredShaft, collarLdu)],
         offLattice: 0,
       },
-      collarEndsOffTheSixteenthGrid: {
-        exposed: [asExposed(collar(STUD_LDU / 2 + 0.03))],
-        offLattice: 1,
-      },
-      nestedBarDoesNotCover: {
-        exposed: [
-          {
-            origin: onTheZAxis(z),
-            axis: AXIS_POS_Z,
-            caps: CAP_ROOT,
-            slides: true,
-            sections: [
-              [SECTION_ROUND, 8, 2],
-              [SECTION_ROUND, 6, 16],
-              [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
-            ],
-          },
-          asExposed(innerBar),
-        ],
-        offLattice: 0,
-      },
+      nestedBarDoesNotCover: { exposed: [wholeFreeTip, asExposed(innerBar)], offLattice: 0 },
     });
   });
 
