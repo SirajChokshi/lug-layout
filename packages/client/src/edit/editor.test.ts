@@ -1094,6 +1094,26 @@ it("lays each piece added to an open end, and the join that closes the loop, as 
   expect(editor.snapshot().mode).toBe("select");
 }, 120_000);
 
+it("keeps the end pointed at while a choice is picked off the canvas, and lays the choice picked", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const dropped = editor.dropTrackEnd();
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.pointerLeave();
+  const offered = editor.snapshot().track?.extend?.choices ?? [];
+  const right = offered.findIndex((choice) => choice.kind === "right");
+  editor.selectTrackChoice(right);
+  const picked = editor.snapshot().track?.extend?.index;
+  editor.extendTrack(null, 0);
+
+  expect(dropped).toBe(true);
+  expect(picked).toBe(right);
+  expect(editor.dump().laidTrack.at(-1)?.ref).toBe(NINE_VOLT_CURVE);
+  expect(editor.snapshot().track?.extend?.continuing).toBe(true);
+}, 120_000);
+
 it("throws a switch clicked in the track tool", async () => {
   const { editor, backend } = await startEditor([]);
   editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);

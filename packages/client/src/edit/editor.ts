@@ -1094,6 +1094,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.readOnly) extension.drop();
     const hovered = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
     extension.focusOn(this.state.readOnly ? null : hovered);
+    this.paintTrackPreview(track);
+  }
+
+  private paintTrackPreview(track: TrackDrawing): void {
+    const { extension } = track;
     if (extension.version === this.previewVersion) return;
     this.previewVersion = extension.version;
     this.showTrackGhost(track);
@@ -1262,7 +1267,7 @@ export class Editor implements IEditor, IEditedWorld {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return;
-    this.refreshTrackPreview();
+    if (track.dragView()) return;
     if (turn !== null && !track.extension.choose(turn)) return;
     const plan = track.extensionPlan();
     if (!plan) return;
@@ -1279,15 +1284,14 @@ export class Editor implements IEditor, IEditedWorld {
 
   cycleTrackChoice(step: 1 | -1): void {
     const track = this.track;
-    if (this.state.mode !== "track" || !track || this.held) return;
-    this.refreshTrackPreview();
-    if (track.extension.cycle(step)) this.refreshTrackPreview();
+    if (this.state.mode !== "track" || !track || this.held || track.dragView()) return;
+    if (track.extension.cycle(step)) this.paintTrackPreview(track);
   }
 
   selectTrackChoice(index: number): void {
     const track = this.track;
-    if (this.state.mode !== "track" || !track || this.held) return;
-    if (track.extension.select(index)) this.refreshTrackPreview();
+    if (this.state.mode !== "track" || !track || this.held || track.dragView()) return;
+    if (track.extension.select(index)) this.paintTrackPreview(track);
   }
 
   dropTrackEnd(): boolean {

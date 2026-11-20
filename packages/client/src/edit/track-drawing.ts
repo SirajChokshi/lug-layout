@@ -553,7 +553,7 @@ export class TrackDrawing implements ExtensionSite {
     }
     this.obstacleRects = rects;
     this.clearance = null;
-    this.drag?.closures.clear();
+    this.drag = null;
     this.extension.endsChanged();
   }
 
