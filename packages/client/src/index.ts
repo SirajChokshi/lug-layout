@@ -150,14 +150,22 @@ export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
+  DEFAULT_MAX_REACH_MM,
   DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
   type PlanPatch,
   type PlanPlacementsView,
+  type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export {
+  NOT_YET_ASSIGNED,
+  UNCHECKED_PLAN_RULES,
+  buildableAsPlanned,
+  type UncheckedPlanRule,
+} from "./plan/plan-verdict.ts";
 export type {
   IssueSeverity,
   LduRect,
