@@ -28,7 +28,7 @@ import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
-import { fixtureModel } from "./fixture-model.test-support.ts";
+import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
 import { partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
 import {
@@ -37,7 +37,7 @@ import {
   type TrackEndView,
   type TrackFootprint,
 } from "./track-drawing.ts";
-import { trackObstacleRects } from "./track-obstacles.ts";
+import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const MM_PER_LDU = 1 / lduFromMm(1);
@@ -654,7 +654,7 @@ it("routes a closure around a road plate in its way with no extra loop", async (
     { kind: "straight", count: 4 },
   ]);
   const plate = plateRect(bundle.parts, "ldraw:69958", -40, 40);
-  layout.setObstacles(Float64Array.from(plate));
+  layout.setObstacles(Float64Array.from(plate), false);
   const top = endAt(layout, 0, 80);
   const bottom = endAt(layout, 0, 0);
   const fewest = unobstructedFewest(layout, top, bottom);
@@ -676,7 +676,7 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
-  layout.setObstacles(Float64Array.from(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)));
+  layout.setObstacles(Float64Array.from(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)), false);
   const before = layout.pieceCount;
 
   const { view, target, ghost, commit } = closeFrom(
@@ -838,7 +838,7 @@ it("closes straights flush along a road plate's edge", async () => {
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, centreOffset),
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, -centreOffset),
   ];
-  layout.setObstacles(Float64Array.from(plates.flat()));
+  layout.setObstacles(Float64Array.from(plates.flat()), false);
 
   closesWithFewest(layout, endAt(layout, straightStuds, 0), endAt(layout, gapEnd, 0));
   expect(crossings(layout, bundle.parts, plates)).toEqual([]);
@@ -899,7 +899,7 @@ it(
       }
       if (!rect) throw new Error(`no clear plate position at step ${step}`);
       const layout = base();
-      layout.setObstacles(Float64Array.from(rect));
+      layout.setObstacles(Float64Array.from(rect), false);
       closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
       expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
     }
@@ -910,6 +910,7 @@ it(
 const GROUND_BASEPLATE = "ldraw:3811";
 const DUAL_ROAD_BASEPLATE = "ldraw:30225b";
 const ROAD_CONTAINER_MODEL = "road-baseplates";
+const BASEPLATE_ROW_MODEL = "baseplate-row";
 const NORTH = 12;
 const SOUTH = 4;
 
@@ -959,10 +960,15 @@ async function loosePart(id: string): Promise<Placeable> {
   );
 }
 
-async function trackOver(ground: ReadonlyArray<PlacedModel>): Promise<TrackDrawing> {
+async function trackOver(
+  ground: ReadonlyArray<PlacedModel>,
+  pendingSeats: (range: readonly [number, number]) => boolean = (range) =>
+    seatsPending(ground, range),
+): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  layout.setObstacles(trackObstacleRects(ground, layout.verticalRange()));
+  const range = layout.verticalRange();
+  layout.setObstacles(trackObstacleRects(ground, range), pendingSeats(range));
   return layout;
 }
 
@@ -1000,6 +1006,46 @@ it("seats a closure on the studs of a road plate's sidewalk and the baseplate be
   expect(closureVerdict(roadway, [roadCentre, -reach, NORTH], [roadCentre, reach, SOUTH])).toBe(
     "blocked",
   );
+});
+
+async function acrossTheRow(
+  item: Placeable,
+  pendingSeats?: (range: readonly [number, number]) => boolean,
+) {
+  const ground = placeGround([{ placeable: item, x: 0, z: 0 }]);
+  const [placed] = ground;
+  if (!placed) throw new Error("nothing was placed");
+  const layout = await trackOver(ground, pendingSeats);
+  const plateSide = placed.box.maxX - placed.box.minX;
+  const x = studsOf((placed.box.minX + placed.box.maxX) / 2);
+  const fullPlateZ = studsOf(placed.box.maxZ - plateSide / 2);
+  const reach = studsOf(plateSide);
+  const straights: Run = [{ kind: "straight", count: 2 }];
+  layRun(layout, studPose(x - reach, fullPlateZ, HALF_TURN_CURVES), straights);
+  layRun(layout, studPose(x + reach, fullPlateZ, 0), straights);
+  const { view, commit } = closeFrom(
+    layout,
+    endAt(layout, x - reach, fullPlateZ),
+    endAt(layout, x + reach, fullPlateZ),
+  );
+  return {
+    closure: view?.closure ?? null,
+    refusal: commit.refusal,
+    laid: commit.laid,
+  };
+}
+
+it("never seats a join on a model's pending studs: it waits and lays nothing, pending studs are no seats at all, and the same join seats once the checked studs land", async () => {
+  const { pending, checked } = await fixtureModelChecks(BASEPLATE_ROW_MODEL);
+  const seated = await acrossTheRow(checked);
+  expect(seated.closure).toBe("exact");
+  expect(seated.laid).toBeGreaterThan(0);
+  expect(await acrossTheRow(pending)).toEqual({ closure: "pending", refusal: "pending", laid: 0 });
+  expect(await acrossTheRow(pending, () => false)).toEqual({
+    closure: "blocked",
+    refusal: "blocked",
+    laid: 0,
+  });
 });
 
 it("judges a road plate inside a model by the same geometry as one placed alone", async () => {

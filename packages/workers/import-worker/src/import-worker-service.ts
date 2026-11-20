@@ -1,5 +1,6 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
+  IGNORE_PLACEMENT,
   importStudioFile,
   LibraryBakeStore,
   type BrickCompiler,
@@ -7,6 +8,7 @@ import {
   type IBakeHelper,
   type IByteCache,
   type ImportResult,
+  type PlacementListener,
   type ImportWorkerRequest,
   type IPartRecords,
   type LdrawMirror,
@@ -28,7 +30,7 @@ import {
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
-  run(request: ImportWorkerRequest): Promise<ImportResult>;
+  run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -86,7 +88,10 @@ export class ImportWorkerService implements IImportWorkerService {
     return store;
   }
 
-  async run(request: ImportWorkerRequest): Promise<ImportResult> {
+  async run(
+    request: ImportWorkerRequest,
+    onPlaced: PlacementListener = IGNORE_PLACEMENT,
+  ): Promise<ImportResult> {
     const compiler = await this.compilers.load(request.compilerUrl);
     const helpers = this.bakeHelpers.helpers(request.compilerUrl);
     const connectors = this.connectorRecords(request);
@@ -96,9 +101,9 @@ export class ImportWorkerService implements IImportWorkerService {
     const engine = this.createEngine(compiler, mirror, connectors, records, helpers);
     switch (input.kind) {
       case "ldraw":
-        return engine.importText(input.job);
+        return engine.importText(input.job, onPlaced);
       case "studio":
-        return importStudioFile(engine, compiler, mirror, input);
+        return importStudioFile(engine, compiler, mirror, input, onPlaced);
       default: {
         const unhandled: never = input;
         throw new Error(`unhandled import input ${JSON.stringify(unhandled)}`);

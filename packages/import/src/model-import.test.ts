@@ -28,7 +28,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { IPartRecords, RecordOptions, RecordStats } from "./library-bake-store.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
-import { ModelImportEngine, type IBakeHelper, type ImportResult } from "./model-import.ts";
+import {
+  ModelImportEngine,
+  type IBakeHelper,
+  type ImportResult,
+  type PlacedImport,
+  type PlacementListener,
+} from "./model-import.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
@@ -309,6 +315,7 @@ async function importOutsideTheBundle(
   fileName: string,
   text: string,
   records: IPartRecords | null,
+  onPlaced?: PlacementListener,
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const engine = new ModelImportEngine(
@@ -319,25 +326,60 @@ async function importOutsideTheBundle(
     () => 0,
     await reactorHelpers(2),
   );
-  return engine.importText({
-    fileName,
-    text,
-    lod: "standard",
-    source: manifest.source,
-    studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
-    unofficialAllowlist: [],
-    primitives: manifest.compiler.primitives ?? null,
-    sectionVocabulary: await bundleVocabulary(manifest),
-    cavityProbe: manifest.compiler.cavityProbe,
-    bundlePartIds: [],
-    ldconfigCodes: manifest.colors.map((color) => color.code),
-    translucentColors: manifest.colors
-      .filter((color) => color.alpha < OPAQUE_ALPHA)
-      .map((color) => color.code),
-    tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-    vehicles: manifest.compiler.vehicles ?? null,
-  });
+  return engine.importText(
+    {
+      fileName,
+      text,
+      lod: "standard",
+      source: manifest.source,
+      studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+      unofficialAllowlist: [],
+      primitives: manifest.compiler.primitives ?? null,
+      sectionVocabulary: await bundleVocabulary(manifest),
+      cavityProbe: manifest.compiler.cavityProbe,
+      bundlePartIds: [],
+      ldconfigCodes: manifest.colors.map((color) => color.code),
+      translucentColors: manifest.colors
+        .filter((color) => color.alpha < OPAQUE_ALPHA)
+        .map((color) => color.code),
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+      vehicles: manifest.compiler.vehicles ?? null,
+    },
+    onPlaced,
+  );
 }
+
+it(
+  "announces placement once, before the result, with every field the result has but the stud cover, and listening changes nothing in the result",
+  async () => {
+    const text = [
+      "0 two stacked bricks beside a plate",
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 2 80 0 0 1 0 0 0 1 0 0 0 1 3023.dat",
+      "",
+    ].join("\n");
+    const announced: Array<{ readonly placed: PlacedImport; readonly afterResult: boolean }> = [];
+    let resolved = false;
+    const listened = await importOutsideTheBundle("stacked.ldr", text, null, (placed) =>
+      announced.push({ placed, afterResult: resolved }),
+    ).then((result) => {
+      resolved = true;
+      return result;
+    });
+    const quiet = await importOutsideTheBundle("stacked.ldr", text, null);
+    const { bake, report, studio: _studio, ...shape } = listened;
+    if (!bake) throw new Error("the stacked bricks did not bake");
+    const { studCover, ...placement } = bake;
+
+    expect(studCover.covered).toBeGreaterThan(0);
+    expect(comparable(listened)).toEqual(comparable(quiet));
+    expect(announced).toEqual([
+      { placed: { ...shape, sections: report.sections, bake: placement }, afterResult: false },
+    ]);
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 it(
   "a train whose pinned parts bake and draw from records imports exactly as when they compile",

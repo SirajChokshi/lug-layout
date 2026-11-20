@@ -195,6 +195,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
   const fromCatalog = await loader.loadPartConnectors(LOD, TECHNIC_PART);
   const imported = await importWorker().run({
     kind: "import",
+    ticket: 1,
     compilerUrl: new URL(context.compilerPath, base).href,
     bundleBaseUrl: base,
     connectorIndexes: context.connectorIndexes,
@@ -326,6 +327,7 @@ it("refuses, and reports, a bundle part whose connector record was inferred with
     mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
     const imported = await importWorker().run({
       kind: "import",
+      ticket: 1,
       compilerUrl: new URL(context.compilerPath, base).href,
       bundleBaseUrl: base,
       connectorIndexes: context.connectorIndexes,
@@ -507,6 +509,7 @@ it("imports with the compiler and LDraw library the request names and the worker
   const service = container.get(IMPORT_WORKER_SERVICE);
   const request = (text: string): ImportWorkerRequest => ({
     kind: "import",
+    ticket: 1,
     compilerUrl: COMPILER_URL,
     bundleBaseUrl: BUNDLE_URL,
     connectorIndexes: {
