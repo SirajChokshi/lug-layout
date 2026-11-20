@@ -224,6 +224,7 @@ test("a generated holed module snaps flush onto a pinned one in assist mode and 
   const [subject = "", partner = ""] = items;
   const placed = await placedAtOrigin(editor, subject);
   const seam = await seamBeside(editor, placed, partner, pair.partnerOffset, pair.alongEdge);
+  await editor.goTo(seam.flush);
   const short = seam.cursorAt(0, -1);
   const hit = (hover: HoverState): boolean =>
     realHit(hover, subject, pair.subject.assembly, pair.partner.assembly, placed, seam);
@@ -438,6 +439,7 @@ test("the assist neighbourhood follows the zoom, reaching exactly its floor up c
   const [subject = "", partner = ""] = items;
   const placed = await placedAtOrigin(editor, subject);
   const seam = await seamBeside(editor, placed, partner, pair.partnerOffset, pair.alongEdge);
+  await editor.goTo(seam.flush);
   const views = [
     {
       view: "close",
@@ -490,6 +492,9 @@ async function placeRowPrecisely(
   editor: EditorPage,
   row: ReadonlyArray<Pose>,
 ): Promise<void> {
+  const [first] = row;
+  if (!first) throw new Error("a row needs at least one modular");
+  await editor.choose(first.item);
   if ((await editor.placementModes()).mode !== "precise") await page.keyboard.press(TOGGLE_KEY);
   await expect.poll(async () => (await editor.placementModes()).mode).toBe("precise");
   for (const pose of row) await editor.placeAt(pose.item, { x: pose.x, z: pose.z });
