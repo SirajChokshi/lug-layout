@@ -243,6 +243,10 @@ export class PlacedOutline {
     return this.doubledRings;
   }
 
+  lduRings(): ReadonlyArray<OutlineRing> {
+    return this.rings.map((ring) => ring.map((v): OutlinePoint => [v.x, v.z]));
+  }
+
   static ofTrackPiece(pieceRings: ReadonlyArray<OutlineRing>, pose: Pose16): PlacedOutline {
     const origin = scaled(pose.position, BigInt(STUD_LDU) * ONE);
     return new PlacedOutline(

@@ -93,6 +93,7 @@ import {
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   RAIL_YARD,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
@@ -6823,4 +6824,96 @@ it("fills a user's track container across a road plate's roadway as track the pl
   });
   expect(acrossTrack?.refused).toBeGreaterThan(0);
   expect(acrossTrack?.placed).toBeGreaterThan(0);
+}, 120_000);
+
+const MY_COTTAGE = [
+  "0 Custom cottage built from official parts",
+  "0 Name: my-cottage.ldr",
+  "0 Author: lug-layout tests, after the experience audit's custom cottage",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3867.dat",
+  "1 15 -40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 15 60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 4 -40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 -40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "",
+].join("\n");
+
+function sheetTexts(svg: string): string[] {
+  return [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map((match) =>
+    (match[1] ?? "").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"),
+  );
+}
+
+function sheetPaths(svg: string, kind: string): string[] {
+  return [...svg.matchAll(/<path class="([^"]*)" d="([^"]*)"\/>/gu)]
+    .filter((match) => (match[1] ?? "").split(" ")[0] === kind)
+    .map((match) => match[2] ?? "");
+}
+
+it("prints a plan of tables drawn on the canvas, a road plate with track laid across it and a user's own cottage: tables dimensioned in studs and cm, every placement numbered in plan order, track by its outline, and a key that totals the parts list", async () => {
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) =>
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER))),
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -640, minZ: -640, maxX: 640, maxZ: 640 });
+  plans.drawTable({ minX: 640, minZ: -640, maxX: 1280, maxZ: 640 });
+  const place = placer(editor, backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  await editor.importModelFile({
+    name: "my-cottage.ldr",
+    bytes: new TextEncoder().encode(MY_COTTAGE),
+  });
+  const cottage = editor.snapshot().modelImport?.item ?? "";
+  await place(cottage, 960, 320);
+  editor.chooseItem(null);
+  await supportChecked(editor);
+
+  const svg = container.get(PLAN_SHEET_SERVICE).printable(editor, planId);
+  const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "plan", planId });
+  const texts = sheetTexts(svg);
+  const key = texts.slice(texts.indexOf("Key: numbers on the plan") + 4);
+  const rows = Array.from({ length: 5 }, (_, i) => key.slice(i * 3, i * 3 + 3));
+
+  expect(texts).toEqual(
+    expect.arrayContaining([
+      "64 studs · 51.2 cm",
+      "32 studs · 25.6 cm",
+      "room 96 studs · 76.8 cm",
+      "Parts list: 15 parts in 5 part and colour lines, from 5 placements",
+      expect.stringMatching(/^Not buildable as planned yet: /u),
+    ]),
+  );
+  expect(rows).toEqual([
+    ["1", "1", expect.stringMatching(/^44336p04 .* at 0, 0$/u)],
+    ["2", "11", expect.stringMatching(/^my-cottage\.ldr.* at 960, 320$/u)],
+    ["3", "1", expect.stringMatching(/^Train Track 9V Straight #1/u)],
+    ["4", "1", expect.stringMatching(/^Train Track 9V Straight #2/u)],
+    ["5", "1", expect.stringMatching(/^Train Track 9V Straight #3/u)],
+  ]);
+  expect(key.slice(15, 17)).toEqual(["15", "Total: 5 placements"]);
+  expect({ parts: bom.parts, placements: bom.placements, lines: bom.ldraw.length }).toEqual({
+    parts: 15,
+    placements: 5,
+    lines: 5,
+  });
+
+  expect(sheetPaths(svg, "model")).toHaveLength(2);
+  expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
+  expect(svg).toContain('class="roadway"');
+  expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 }, 120_000);
