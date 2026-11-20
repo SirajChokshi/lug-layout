@@ -49,7 +49,10 @@ const RECORDS = new Map<string, PartConnectorRecord>([
 function recordSource(asked: string[] = []) {
   return {
     parts: () => PART_IDS.map((id) => ({ id })),
-    partConnectorRecord: async (partIndex: number): Promise<PartConnectorRecord> => {
+    partConnectorRecord: async (
+      _placeableId: string,
+      partIndex: number,
+    ): Promise<PartConnectorRecord> => {
       const id = PART_IDS[partIndex] ?? "";
       asked.push(id);
       return RECORDS.get(id) ?? { kind: "missing", reason: `no record for ${id}` };
@@ -90,7 +93,7 @@ it("gives each part index a placeable uses its record's table, a zero-face table
   ]);
 });
 
-it("serves a placeable replaced by one with the same id from the same result at once, reads each part's record once, and asks again for a part that had none", async () => {
+it("serves a placeable replaced by one with the same id from the same result at once, and builds one table per record however many placeables share it", async () => {
   const asked: string[] = [];
   const tables = new ConnectorTables(recordSource(asked), new SnapShapes());
   const pending = placeable("import:abc", [0, 2]);
@@ -98,10 +101,11 @@ it("serves a placeable replaced by one with the same id from the same result at 
 
   const first = await tables.load(pending);
   const swapped = tables.loaded(checked);
-  await tables.load(placeable("omr:other", [0, 2]));
+  const other = await tables.load(placeable("omr:other", [0, 2]));
 
   expect(swapped).toBe(first);
-  expect(asked).toEqual([WITH_FACES, WITHOUT_RECORD, WITHOUT_RECORD]);
+  expect(asked).toEqual([WITH_FACES, WITHOUT_RECORD, WITH_FACES, WITHOUT_RECORD]);
+  expect(other.tables[0]).toBe(first.tables[0]);
 });
 
 it("rejects, and keeps nothing, when a part's record can't be read, so the next load reads it again", async () => {
@@ -110,9 +114,9 @@ it("rejects, and keeps nothing, when a part's record can't be read, so the next 
   const tables = new ConnectorTables(
     {
       parts: source.parts,
-      partConnectorRecord: async (partIndex) => {
+      partConnectorRecord: async (placeableId, partIndex) => {
         if (unreachable) throw new Error("GET connectivity-3023b.json failed with 503");
-        return source.partConnectorRecord(partIndex);
+        return source.partConnectorRecord(placeableId, partIndex);
       },
     },
     new SnapShapes(),

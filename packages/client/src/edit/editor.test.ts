@@ -69,15 +69,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult } from "@brr/import";
+import type { ImportResult, PlacementListener } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import { EDITOR, MODEL_IMPORTER, TRAIN_PLAY, PLACEABLE_CATALOG } from "../tokens.ts";
+import {
+  CONNECTOR_TABLES,
+  EDITOR,
+  MODEL_IMPORTER,
+  PLACEMENT_SEARCH,
+  TRAIN_PLAY,
+  PLACEABLE_CATALOG,
+} from "../tokens.ts";
+import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
-import { partConnectors } from "@brr/catalog/connector-records";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
@@ -328,6 +335,7 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
   userModels: ReadonlyArray<string> = [],
+  importer: IModelImporter | null = null,
 ) {
   const backend = new HeadlessBackend();
   let scheduled: FrameRequestCallback | null = null;
@@ -358,6 +366,7 @@ async function startEditor(
       );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  if (importer !== null) container.rebind(MODEL_IMPORTER).toConstantValue(importer);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -965,7 +974,18 @@ function refusedBake(fileName: string): ImportResult {
       bakeHelpersFailed: 0,
       fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
       records: null,
-      timings: { readMs: 0, resolveMs: 0, bakeMs: 0, totalMs: 0 },
+      timings: {
+        readMs: 0,
+        resolveMs: 0,
+        bakeMs: 0,
+        totalMs: 0,
+        placementMs: 0,
+        recordFetchMs: 0,
+        compileMs: 0,
+        ldrawFetchMs: 0,
+        bakePhases: null,
+        coverPhases: null,
+      },
     },
     partIds: [],
     instanceCount: 0,
@@ -1033,6 +1053,268 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
     reason: NO_LATTICE_REASON,
     listed: false,
   });
+}, 120_000);
+
+function importedRecord(fileName: string, record: ModelRecord): ImportResult {
+  const { model, parts } = record;
+  const refused = refusedBake(fileName);
+  const partIds = parts.map((part) => part.id);
+  return {
+    ...refused,
+    report: { ...refused.report, sections: model.sections, bakeIssue: null },
+    partIds,
+    instanceCount: model.instanceCount,
+    partIndex: Uint32Array.from(model.partIndex),
+    ldrawColor: model.ldrawColor,
+    matrices: model.matrices,
+    partTransforms: model.partTransforms,
+    submodels: model.submodels,
+    connectors: partIds.map(() => null),
+    bake: {
+      lattice: model.lattice,
+      latticeIssue: null,
+      studCover: model.studCover,
+      cells: model.cells,
+      vehicles: model.vehicles,
+      vehicleIssue: null,
+    },
+  };
+}
+
+class GatedModelImporter implements IModelImporter {
+  private result: ImportResult | null = null;
+  private open: () => void = () => undefined;
+  private readonly opened = new Promise<void>((resolve) => {
+    this.open = resolve;
+  });
+
+  serve(result: ImportResult): void {
+    this.result = result;
+  }
+
+  release(): void {
+    this.open();
+  }
+
+  async importText(
+    _fileName: string,
+    _text: string,
+    _lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    const { result } = this;
+    if (!result?.bake) throw new Error("the gated importer was given no baked result");
+    const { bake, report, studio: _studio, ...shape } = result;
+    const { studCover: _studCover, ...placement } = bake;
+    onPlaced?.({
+      ...shape,
+      sections: report.sections,
+      refusedConnectorRecords: report.refusedConnectorRecords,
+      bake: placement,
+    });
+    await this.opened;
+    return result;
+  }
+
+  importStudio(
+    fileName: string,
+    _bytes: Uint8Array,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    return this.importText(fileName, "", lod, onPlaced);
+  }
+}
+
+it("places an import while its studs are checked, offers none of them to the stats or Play meanwhile, and gives every placed copy exactly the checked studs when they land", async () => {
+  const importer = new GatedModelImporter();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  const { covered } = record.model.studCover;
+  importer.serve(importedRecord("checking.mpd", record));
+  const imported = await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  const item = editor.snapshot().modelImport?.item ?? "";
+  const place = placer(editor, backend);
+  const copies = [await place(item, 0, 0), await place(item, 2_000, 0)];
+  const coverOf = () => editor.dump().covers.find((cover) => cover.id === item);
+  const readiness = () => {
+    const { modelImport, studChecks, studs, placements } = editor.snapshot();
+    const cover = coverOf();
+    return {
+      status: modelImport?.status,
+      reported: modelImport?.report !== null,
+      studChecks,
+      placements,
+      culledInsideModels: studs?.culledInsideModels,
+      pending: cover?.studsPending,
+      culledAtBake: cover?.studsCulledAtBake,
+      play: editor.playSetup() === null ? "waits" : "runs",
+    };
+  };
+  const pending = readiness();
+  const drawnPending = editor.snapshot().studs?.drawn ?? 0;
+  const posesPending = posesOf(editor);
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+
+  expect(covered).toBeGreaterThan(0);
+  expect({ imported, copies: copies.map((copy) => copy.refusedClicks) }).toEqual({
+    imported: true,
+    copies: [0, 0],
+  });
+  expect(pending).toEqual({
+    status: "checking",
+    reported: false,
+    studChecks: 1,
+    placements: 2,
+    culledInsideModels: null,
+    pending: true,
+    culledAtBake: null,
+    play: "waits",
+  });
+  expect(readiness()).toEqual({
+    status: "placeable",
+    reported: true,
+    studChecks: 0,
+    placements: 2,
+    culledInsideModels: 2 * covered,
+    pending: false,
+    culledAtBake: covered,
+    play: "runs",
+  });
+  expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
+  expect(posesOf(editor)).toEqual(posesPending);
+}, 120_000);
+
+async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const importer = new GatedModelImporter();
+  const started = await startEditor([], fetcher, [], importer);
+  const { container, editor } = started;
+  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
+  importer.serve(importedRecord("checking.mpd", record));
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const importedPlaceable = () => {
+    const item = editor.snapshot().modelImport?.item ?? null;
+    const refId = item === null ? null : catalog.itemRefId(item);
+    return refId === null ? null : (catalog.placeables()[refId] ?? null);
+  };
+  return { ...started, importer, importedPlaceable, tables: container.get(CONNECTOR_TABLES) };
+}
+
+async function importChecking(editor: IEditor): Promise<string> {
+  await editor.importModelFile({
+    name: "checking.mpd",
+    bytes: new TextEncoder().encode("0 checked while placed\n"),
+  });
+  return editor.snapshot().modelImport?.item ?? "";
+}
+
+it("has an import's connector tables before it is announced placeable, and keeps the same tables, never unloaded, through the studs-landed swap", async () => {
+  const { editor, importer, importedPlaceable, tables } = await checkingImport();
+  const seen: Array<boolean> = [];
+  editor.subscribe(() => {
+    const placeable = importedPlaceable();
+    if (placeable) seen.push(tables.loaded(placeable) !== null);
+  });
+
+  await importChecking(editor);
+  const pending = importedPlaceable();
+  const announced = pending === null ? null : tables.loaded(pending);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const checked = importedPlaceable();
+
+  expect({
+    status: editor.snapshot().modelImport?.status,
+    swapped: checked !== null && checked !== pending && checked.id === pending?.id,
+    announced: announced !== null,
+    sameTables: checked !== null && tables.loaded(checked) === announced,
+    everUnloaded: seen.includes(false),
+  }).toEqual({
+    status: "placeable",
+    swapped: true,
+    announced: true,
+    sameTables: true,
+    everUnloaded: false,
+  });
+}, 120_000);
+
+it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
+  const outcome = async (queued: boolean) => {
+    const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>
+      path.includes("/connectivity-44336p01."),
+    );
+    const baseplateGate = new HeldText(roadPlateGate, (path) =>
+      path.includes("/connectivity-3811."),
+    );
+    const { editor, backend } = await checkingImport(baseplateGate);
+    const item = await importChecking(editor);
+    await placer(editor, backend)(item, 0, 0);
+    const clicks: Array<[string, HeldText]> = [
+      [BASEPLATE, baseplateGate],
+      [ROAD_PLATE, roadPlateGate],
+    ];
+    for (const [held, gate] of clicks) {
+      if (queued) {
+        placerNow(editor, backend)(held, 0, 0);
+        gate.open();
+        await settledChoice(editor);
+      } else {
+        gate.open();
+        await placer(editor, backend)(held, 0, 0);
+      }
+    }
+    const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
+      editor.snapshot();
+    return {
+      placements,
+      refusedClicks,
+      reason: lastRefusal?.reason ?? null,
+      studChecks,
+      queuedPlacement,
+      poses: posesOf(editor),
+    };
+  };
+
+  const [queued, direct] = [await outcome(true), await outcome(false)];
+
+  expect(queued).toEqual(direct);
+  expect(queued).toMatchObject({
+    placements: 2,
+    refusedClicks: 1,
+    studChecks: 1,
+    queuedPlacement: null,
+  });
+  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+}, 120_000);
+
+it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
+  const gate = heldConnectivity();
+  const { editor, backend, importer } = await checkingImport(gate);
+  const item = await importChecking(editor);
+  await placer(editor, backend)(item, 0, 0);
+
+  placerNow(editor, backend)(BASEPLATE, 2_560, 0);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const afterLanding = editor.snapshot().queuedPlacement;
+  gate.open();
+  await settledChoice(editor);
+
+  expect({ afterLanding, placed: posesOf(editor) }).toEqual({
+    afterLanding: { item: BASEPLATE, x: 2_560, z: 0, rot: 0 },
+    placed: expect.arrayContaining([`${BASEPLATE} 2560,0 y0`]),
+  });
+  expect(editor.snapshot().placements).toBe(2);
 }, 120_000);
 
 it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
@@ -2049,6 +2331,39 @@ describe("frame loop in the editor's snapshot", () => {
   }, 120_000);
 });
 
+it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a chunk edge, so its tiles share column chunks", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)(BASEPLATE, 0, 320);
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  const stroke = () => {
+    backend.aim(0, 320);
+    editor.dragStart(0, 0);
+    for (const x of [640, 1280]) {
+      backend.aim(x, 320);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+  };
+  const xs = () => Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+  editor.chooseItem(kit.id);
+  stroke();
+  const laid = xs();
+  editor.undo(0);
+  const undone = xs();
+  editor.redo(0);
+  const redone = xs();
+  editor.setRoadErase(true);
+  stroke();
+  const erased = xs();
+  expect({ laid, undone, redone, erased }).toEqual({
+    laid: [0, 640, 1280],
+    undone: [0],
+    redone: [0, 640, 1280],
+    erased: [0],
+  });
+}, 120_000);
+
 class WithoutConnectorRecordsFor implements IAssetFetcher {
   constructor(
     private readonly files: IAssetFetcher,
@@ -2168,7 +2483,67 @@ it("lists the held item's parts that have no connector record, and why, and stil
   });
 }, 120_000);
 
-class ImporterWithRecords implements IModelImporter {
+const REFUSED_PART = "ldraw:3023";
+const REFUSED_REASON = "the library's connector records can't be read: 503";
+
+async function bundleSetAfterAnImport(withImport: boolean) {
+  const importer = new GatedModelImporter();
+  const { editor, container, catalog } = await startEditor(
+    [PLACEABLE_SET],
+    new BundleDirectoryFetcher(),
+    [],
+    importer,
+  );
+  const tables = container.get(CONNECTOR_TABLES);
+  let imported: PlaceableConnectorTables | null = null;
+  if (withImport) {
+    const record = await container
+      .get(PART_BUNDLE_LOADER)
+      .loadModelRecord("standard", PLACEABLE_SET);
+    const brought = importedRecord("brings-nulls.mpd", record);
+    importer.serve({
+      ...brought,
+      report: {
+        ...brought.report,
+        refusedConnectorRecords: [{ partId: REFUSED_PART, reason: REFUSED_REASON }],
+      },
+    });
+    const item = await importChecking(editor);
+    const refId = catalog.itemRefId(item);
+    const placeable = refId === null ? null : catalog.placeables()[refId];
+    if (!placeable) throw new Error("the import was not announced placeable");
+    imported = await tables.load(placeable);
+  }
+  const set = await loadCatalogItem(catalog, `omr:${PLACEABLE_SET}`);
+  const loaded = await tables.load(set);
+  const mates = container
+    .get(PLACEMENT_SEARCH)
+    .model(loaded.tables, set.partTransforms, []).internalMates;
+  return { imported, set: { withoutRecords: loaded.withoutRecords, mates } };
+}
+
+it("keeps a bundle set's parts and mates when it loads after an import that brought no record for those parts", async () => {
+  const alone = await bundleSetAfterAnImport(false);
+  const afterImport = await bundleSetAfterAnImport(true);
+
+  expect(alone.set.mates).toBeGreaterThan(0);
+  expect(afterImport.set).toEqual(alone.set);
+  expect(afterImport.set.withoutRecords).toEqual([]);
+}, 120_000);
+
+it("lists an import's own parts without records, with the import's reasons, while a bundle set loaded after it has them", async () => {
+  const { imported, set } = await bundleSetAfterAnImport(true);
+  const refused = imported?.withoutRecords.find((part) => part.partId === REFUSED_PART);
+  const reasons = new Set(imported?.withoutRecords.map((part) => part.reason));
+
+  expect({ refused: refused?.reason, reasons, setGaps: set.withoutRecords }).toEqual({
+    refused: REFUSED_REASON,
+    reasons: new Set([REFUSED_REASON, "the import found no connector record for it"]),
+    setGaps: [],
+  });
+}, 120_000);
+
+class ImporterBringing implements IModelImporter {
   constructor(
     private readonly partIds: ReadonlyArray<string>,
     private readonly connectors: ReadonlyArray<PartConnectors | null>,
@@ -2187,43 +2562,31 @@ class ImporterWithRecords implements IModelImporter {
   }
 }
 
-it("takes a part's connector record from an import that brought one before the bundle's packages, and the bundle's for every other part", async () => {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
-  const brought = partConnectors([]);
-  const container = new Container();
-  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
-  const loader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(loader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
-  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
-  container
-    .rebind(MODEL_IMPORTER)
-    .toConstantValue(new ImporterWithRecords(["ldraw:3811"], [brought]));
-  const editor = container.get(EDITOR);
-  const catalog = container.get(PLACEABLE_CATALOG);
-  const canvas = {
-    clientWidth: 640,
-    clientHeight: 480,
-    dataset: {},
-  } as unknown as HTMLCanvasElement;
-  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  const parts = catalog.parts();
-  const baseplate = parts.findIndex((part) => part.id === "ldraw:3811");
-  const other = parts.findIndex((part) => part.id !== "ldraw:3811");
-  const otherId = parts[other]?.id ?? "";
+it("gives a part the bundle's packages don't list the record an import brought for it", async () => {
+  const hidden = new WithoutConnectorRecordsFor(new BundleDirectoryFetcher(), "ldraw:3811");
+  const shipped = new BundleDirectoryFetcher();
+  const { container: reader } = await startEditor([], shipped);
+  const record = await reader.get(PART_BUNDLE_LOADER).loadPartConnectors("standard", "ldraw:3811");
+  const { editor, container } = await startEditor(
+    [],
+    hidden,
+    [],
+    new ImporterBringing(["ldraw:3811"], [record]),
+  );
 
   await editor.importModelFile({
     name: "brings-3811.ldr",
     bytes: new TextEncoder().encode("0 x\n"),
   });
+  await chosen(editor, BASEPLATE);
+  const catalog = container.get(PLACEABLE_CATALOG);
+  const refId = catalog.itemRefId(BASEPLATE);
+  const baseplate = refId === null ? null : catalog.placeables()[refId];
+  const tables = baseplate ? container.get(CONNECTOR_TABLES).loaded(baseplate) : null;
 
-  expect(await catalog.partConnectorRecord(baseplate)).toEqual({
-    kind: "record",
-    connectors: brought,
-  });
-  expect(await catalog.partConnectorRecord(other)).toEqual({
-    kind: "record",
-    connectors: await loader.loadPartConnectors("standard", otherId),
-  });
+  expect(record).not.toBeNull();
+  expect({
+    gaps: editor.snapshot().connectorGaps,
+    tabled: tables?.tables.filter((table) => table !== null).length,
+  }).toEqual({ gaps: [], tabled: 1 });
 }, 120_000);

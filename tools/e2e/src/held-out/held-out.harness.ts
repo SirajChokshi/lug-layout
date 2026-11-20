@@ -153,6 +153,8 @@ it(
         importFinished: outcome.kind !== "unfinished",
         bakedFromRecords:
           outcome.kind === "imported" ? (outcome.result.report.records?.bakedFromRecords ?? 0) : 0,
+        timings: outcome.kind === "imported" ? outcome.result.report.timings : null,
+        compilerStartMs: outcome.kind === "imported" ? outcome.compilerStartMs : null,
       });
       details.push({ input: label, set, checks, importSeconds: seconds });
       process.stdout.write(`${set}: ${checked.length} inputs checked\n`);
@@ -232,6 +234,7 @@ it(
         elapsedSeconds: Math.round((performance.now() - started) / MS_PER_SECOND),
         importLimitSeconds,
         recordsIndex: bundle.recordsIndex,
+        threadStartsMs: imports.threadStartsMs(),
       },
       checked,
     ).concat("\n", acceptanceMarkdown(acceptance), "\n", trainsMarkdown(trains, seed));

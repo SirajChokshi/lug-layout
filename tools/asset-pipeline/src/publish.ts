@@ -25,6 +25,7 @@ import {
   sectionVocabularyIssues,
   sectionVocabularyValues,
 } from "./connector-license.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
@@ -32,7 +33,6 @@ export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
 const LEAKED_PATHS_SHOWN = 3;
-export const CONTENT_HASH_HEX_DIGITS = 16;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;

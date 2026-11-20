@@ -34,6 +34,7 @@ L0 math
 | tools/asset-pipeline | math, schema, domain, catalog, valibot, brick-compile CLI. Nothing imports it. |
 | apps/catalog-api | schema and valibot only (`@brr/config`, wrangler and `@cloudflare/workers-types` as dev tooling). Nothing imports it. |
 | tools/oxlint-plugin | `@oxlint/plugins` only. Loaded by `.oxlintrc.json`, never imported by code. |
+| tools/wasi-test-runner | Node built-ins only (`@brr/config` as dev tooling). Run by `pnpm test:wasm`, never imported by code. |
 
 - **Pure packages** (`math`, `schema`, `domain`, `sim`) use no DOM, `window`, three.js, IndexedDB, `Worker`, `fetch` or Inversify. They must run unchanged in Node.
 - Import other packages only through their `package.json` `exports` (`@brr/domain`), never `@brr/domain/src/...` or relative paths across packages.

@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, SQRT_2};
 
 use crate::affine::Vec3;
+use crate::identify::identifies;
+use crate::trig::{atan2, planar_length};
 
 use super::inferred::by_key;
 use super::profile::{collides, Placed, Point, Profile};
@@ -89,7 +91,7 @@ fn within(section: &[Vec<Point>], low: Point, high: Point) -> Vec<&Vec<Point>> {
 fn segment_distance(from: Point, along: Point) -> f64 {
     let squared = along[0] * along[0] + along[1] * along[1];
     let t = (-(from[0] * along[0] + from[1] * along[1]) / squared).clamp(0.0, 1.0);
-    (from[0] + t * along[0]).hypot(from[1] + t * along[1])
+    planar_length(from[0] + t * along[0], from[1] + t * along[1])
 }
 
 fn offset(forward: f64, back: f64) -> f64 {
@@ -146,7 +148,7 @@ impl AxleProbe {
                     radius: inner,
                     ..probe
                 };
-                let floor = solid.floor_beyond(&disc, inner - IDENTIFY_LDU, IDENTIFY_LDU);
+                let floor = solid.floor_beyond(&disc, inner, IDENTIFY_LDU);
                 let clear = floor.map(|floor| floor.depth.min(far));
                 let outcome = match clear {
                     Some(clear) if clear > 2.0 * IDENTIFY_LDU => {
@@ -207,17 +209,17 @@ impl AxleProbe {
             for k in 0..polygon.len() {
                 let (p, q) = (polygon[k], polygon[(k + 1) % polygon.len()]);
                 let d = [q[0] - p[0], q[1] - p[1]];
-                let span = d[0].hypot(d[1]);
+                let span = planar_length(d[0], d[1]);
                 if span <= IDENTIFY_LDU || segment_distance(p, d) > reach {
                     continue;
                 }
                 let distance = (p[0] * d[1] - p[1] * d[0]).abs() / span;
                 let mut direction = None;
                 for [side, along] in &self.sides {
-                    if (distance - side).abs() > IDENTIFY_LDU {
+                    if !identifies(distance - side) {
                         continue;
                     }
-                    let direction = *direction.get_or_insert_with(|| d[1].atan2(d[0]));
+                    let direction = *direction.get_or_insert_with(|| atan2(d[1], d[0]));
                     let mut angle = (direction - along).rem_euclid(FRAC_PI_2);
                     if FRAC_PI_2 - angle <= within {
                         angle = 0.0;
@@ -236,7 +238,7 @@ impl AxleProbe {
         let mut travel = [0.0; 8];
         let reach = self.contact_reach();
         for (k, step) in STEPS.iter().enumerate() {
-            let span = step[0].hypot(step[1]);
+            let span = planar_length(step[0], step[1]);
             let path = within(
                 section,
                 [step[0].min(0.0) - reach, step[1].min(0.0) - reach],
@@ -269,7 +271,7 @@ impl AxleProbe {
         ]
         .into_iter()
         .fold(0.0, f64::max);
-        if worst > IDENTIFY_LDU {
+        if !identifies(worst) {
             return Err(AxleMiss::OffCentre { offset: worst });
         }
         Ok(())

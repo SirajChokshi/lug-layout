@@ -31,7 +31,10 @@ export class MergedParts {
     return this.assets.length - 1;
   }
 
-  remap(model: PartModel, modelParts: ReadonlyArray<PartAsset>): PartModel {
+  remap<M extends Pick<PartModel, "instanceCount" | "partIndex">>(
+    model: M,
+    modelParts: ReadonlyArray<PartAsset>,
+  ): M {
     const global = modelParts.map((part) => this.add(part));
     const partIndex = new Uint16Array(model.instanceCount);
     for (let i = 0; i < model.instanceCount; i++) {

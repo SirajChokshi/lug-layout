@@ -115,6 +115,7 @@ interface EditState {
     readonly placements: PlacementColumns;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
+    readonly studChecks: number;
   };
 }
 
@@ -271,11 +272,34 @@ export class EditorPage {
     this.samples.length = 0;
   }
 
+  private async viewAtRest(): Promise<void> {
+    await expect
+      .poll(
+        () =>
+          this.page.evaluate(
+            () =>
+              new Promise<boolean>((resolve) => {
+                const dump = document.getElementById("camera-state");
+                const before = dump?.textContent ?? "";
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() =>
+                    requestAnimationFrame(() =>
+                      resolve(before !== "" && dump?.textContent === before),
+                    ),
+                  ),
+                );
+              }),
+          ),
+        { message: "the camera's view holds still across consecutive frames" },
+      )
+      .toBe(true);
+  }
+
   async zoom(wheelDelta: number): Promise<void> {
     const centre = await this.canvasCentre();
     await this.page.mouse.move(centre.sx, centre.sy);
     await this.page.mouse.wheel(0, wheelDelta);
-    await this.settle();
+    await this.viewAtRest();
     this.forgetView();
   }
 
@@ -460,10 +484,17 @@ export class EditorPage {
   }
 
   private async editState(): Promise<EditState> {
-    const text = await this.page.locator("#edit-state").textContent();
-    if (!text) throw new Error("the editor state dump is empty; open the editor with state=1");
-    const parsed: EditState = JSON.parse(text);
-    return parsed;
+    const dump = this.page.locator("#edit-state");
+    const read = async (): Promise<EditState> => {
+      const text = await dump.textContent();
+      if (!text) throw new Error("the editor state dump is empty; open the editor with state=1");
+      const parsed: EditState = JSON.parse(text);
+      return parsed;
+    };
+    await expect
+      .poll(async () => (await read()).world.studChecks, { timeout: MODEL_IMPORT_TIMEOUT_MS })
+      .toBe(0);
+    return read();
   }
 
   async serveLdrawLibrary(): Promise<void> {
@@ -484,7 +515,7 @@ export class EditorPage {
     await this.page.locator("input.model-file-import").setInputFiles(file);
     const name = basename(file);
     const status = this.page.locator(
-      `.model-import[data-file="${name}"]:not([data-status="importing"])`,
+      `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
     await expect(status).toHaveCount(1, { timeout: MODEL_IMPORT_TIMEOUT_MS });
     return {

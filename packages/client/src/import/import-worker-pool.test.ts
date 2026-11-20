@@ -1,4 +1,10 @@
-import type { ImportResult, ImportWorkerRequest, ImportWorkerResponse } from "@brr/import";
+import type {
+  ImportResult,
+  ImportWorkerPlaced,
+  ImportWorkerRequest,
+  ImportWorkerResponse,
+  PlacedImport,
+} from "@brr/import";
 import { IMPORT_PROTOCOL, type BakeHelperHandoff, type RpcEnvelope } from "@brr/rpc";
 import { Container } from "inversify";
 import { afterEach, expect, it, vi } from "vitest";
@@ -39,6 +45,17 @@ class FakeWorker extends EventTarget {
       body,
     };
     this.dispatchEvent(new MessageEvent("message", { data: reply }));
+  }
+
+  notify(body: ImportWorkerPlaced): void {
+    const notice: RpcEnvelope<ImportWorkerPlaced> = {
+      protocol: IMPORT_PROTOCOL.name,
+      version: IMPORT_PROTOCOL.version,
+      id: 2_000,
+      replyTo: 0,
+      body,
+    };
+    this.dispatchEvent(new MessageEvent("message", { data: notice }));
   }
 
   crash(message: string): void {
@@ -145,4 +162,35 @@ it("rejects the import in flight when the primary crashes, and runs the next one
   expect(crashedPool).not.toContain(primary());
   primary().answer(primary().imports()[0] as Sent, imported(0));
   await expect(nextImport).resolves.toMatchObject({ report: { bakeHelpersFailed: 0 } });
+});
+
+function placement(name: string): PlacedImport {
+  return { partIds: [name] } as unknown as PlacedImport;
+}
+
+it("hands each import only the placement its own worker request announced, before its result, and none after it", async () => {
+  const { pool, primary } = poolOfFakes();
+  const heard: Array<readonly [string, PlacedImport]> = [];
+  const first = pool.run(run, [], (placed) => heard.push(["first", placed]));
+  const second = pool.run(run, [], (placed) => heard.push(["second", placed]));
+  await vi.waitFor(() => expect(primary().imports()).toHaveLength(1));
+  const [firstRequest] = primary().imports();
+  if (firstRequest?.body.kind !== "import") throw new Error("no first import request");
+  const firstTicket = firstRequest.body.ticket;
+  primary().notify({ kind: "placed", ticket: firstTicket + 1, placed: placement("stale") });
+  primary().notify({ kind: "placed", ticket: firstTicket, placed: placement("a") });
+  primary().answer(firstRequest, imported(0));
+  await first;
+  primary().notify({ kind: "placed", ticket: firstTicket, placed: placement("late") });
+  await vi.waitFor(() => expect(primary().imports()).toHaveLength(2));
+  const secondRequest = primary().imports()[1];
+  if (secondRequest?.body.kind !== "import") throw new Error("no second import request");
+  primary().notify({ kind: "placed", ticket: secondRequest.body.ticket, placed: placement("b") });
+  primary().answer(secondRequest, imported(0));
+  await second;
+
+  expect(heard.map(([name, placed]) => [name, placed.partIds[0]])).toEqual([
+    ["first", "a"],
+    ["second", "b"],
+  ]);
 });
