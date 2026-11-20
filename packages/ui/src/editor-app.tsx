@@ -12,6 +12,7 @@ import {
   type IPalette,
   type IPanelLayout,
   type IPlanService,
+  type IPlanSheetService,
   type IRunningGear,
   type IScaleBar,
   type IStarterWorlds,
@@ -59,6 +60,7 @@ interface EditorAppProps {
   readonly camera: IEditorCamera;
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
   readonly palette: IPalette;
@@ -140,6 +142,7 @@ export function EditorApp({
   camera,
   scaleBar,
   plans,
+  sheets,
   bomService,
   play,
   palette,
@@ -252,6 +255,7 @@ export function EditorApp({
           held={heldItem(snapshot)}
           fillGridStuds={snapshot.fillGridStuds}
           plans={plans}
+          sheets={sheets}
         />
         {snapshot.status === "ready" && (
           <BomPanel
