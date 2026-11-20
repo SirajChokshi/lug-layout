@@ -227,9 +227,9 @@ await settle();
 const buffersBefore = process.memoryUsage().arrayBuffers;
 fresh.cleanFit(probe, fit);
 const memoBytes = process.memoryUsage().arrayBuffers - buffersBefore;
-const reportMs = timed(REPORTS, () => network.report());
+const reportMs = timed(REPORTS, () => fresh.report());
 const buildMs = timed(BUILDS, () => new RoadNetwork(placements));
-const report = network.report();
+const report = fresh.report();
 const cells = placements.reduce((sum, p) => sum + p.surface.columns * p.surface.rows, 0);
 
 process.stdout.write(

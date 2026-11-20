@@ -3213,7 +3213,7 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       state: roadFitRefused(fit) || covered > 0 ? "refused" : "free",
       ...fit,
-      overlappingCells: Math.max(fit.overlappingCells, covered),
+      overlappingCells: covered,
     };
   }
 
