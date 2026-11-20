@@ -8,6 +8,7 @@ import type {
   PlacementHover,
   PlacementMode,
 } from "@brr/client";
+import { distinctJoints } from "@brr/client/placement-hover";
 import { collisions, translated, type Assembly, type AssemblyPart } from "./assembly.ts";
 import type { ModulePair } from "./generator.ts";
 import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
@@ -23,7 +24,8 @@ import {
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
 const MODEL_IDENTITY_KEYS = new Set(["item", "label"]);
-const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates"]);
+const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates", "turnJoints"]);
+const EVALUATION_SCOPED_KEYS = new Set(["jointIds"]);
 const LISTED_FAILURES = 4;
 const DISTANCE_RELATIVE_SLACK = 1e-12;
 const ASSIST_TOLERANCE_PX = 32;
@@ -119,7 +121,15 @@ function isTechnicPin(kind: ConnectorKindView): boolean {
   );
 }
 
-function pinHoleMates(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<HoverMateCount> {
+interface PinHoleMateCount {
+  readonly kind: ConnectorKindView;
+  readonly partnerKinds: ReadonlyArray<ConnectorKindView>;
+  readonly jointIds: Iterable<number>;
+}
+
+function pinHoleMates<Mate extends PinHoleMateCount>(
+  mates: ReadonlyArray<Mate>,
+): ReadonlyArray<Mate> {
   return mates.filter(
     (mate) =>
       mate.partnerKinds.length > 0 &&
@@ -128,8 +138,8 @@ function pinHoleMates(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<Hover
   );
 }
 
-export function pinHoleJoints(mates: ReadonlyArray<HoverMateCount>): number {
-  return pinHoleMates(mates).reduce((sum, mate) => sum + mate.joints, 0);
+export function pinHoleJoints(mates: ReadonlyArray<PinHoleMateCount>): number {
+  return distinctJoints(pinHoleMates(mates));
 }
 
 function describeMates(mates: ReadonlyArray<HoverMateCount>): string {
@@ -632,9 +642,9 @@ function atCursor(step: Step, mode: PlacementMode): boolean {
   );
 }
 
-export function placementVerdict(hover: PlacementHover | null): string {
+export function placementVerdict(hover: Pick<PlacementHover, "pose" | "accepted"> | null): string {
   return JSON.stringify(hover, (key, field: unknown) =>
-    MODE_DEPENDENT_KEYS.has(key) ? undefined : field,
+    MODE_DEPENDENT_KEYS.has(key) || EVALUATION_SCOPED_KEYS.has(key) ? undefined : field,
   );
 }
 
@@ -706,7 +716,7 @@ interface Snapped {
 }
 
 function jointsOf(step: Step): number {
-  return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.joints, 0);
+  return step.hover?.joints ?? 0;
 }
 
 function connectorsOf(step: Step): number {
@@ -1101,7 +1111,7 @@ export async function turnedAwayCheck(
 
 function withoutModelIdentity(value: unknown): string {
   return JSON.stringify(value, (key, field: unknown) =>
-    MODEL_IDENTITY_KEYS.has(key) ? undefined : field,
+    MODEL_IDENTITY_KEYS.has(key) || EVALUATION_SCOPED_KEYS.has(key) ? undefined : field,
   );
 }
 
