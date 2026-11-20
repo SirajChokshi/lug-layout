@@ -164,6 +164,8 @@ export {
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_POOL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
@@ -295,6 +297,18 @@ export type {
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
+export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
+export type {
+  ILibraryPartSearch,
+  LibrarySearchStatus,
+  LibrarySearchView,
+} from "./catalog/library-part-search.ts";
+export type {
+  ILibraryPartPlacer,
+  LibraryPlacementRefusal,
+  LibraryPlacementTarget,
+  LibraryPlacementView,
+} from "./catalog/library-part-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 export type { IPalette } from "./catalog/palette.ts";
 export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

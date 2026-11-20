@@ -24,6 +24,8 @@ import { EditorCamera } from "./camera/editor-camera.ts";
 import { ScaleBar } from "./camera/scale-bar.ts";
 import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
+import { LibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import { LibraryPartSearch } from "./catalog/library-part-search.ts";
 import { Palette } from "./catalog/palette.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
@@ -76,6 +78,8 @@ import {
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
   LIBRARY_CONNECTORS_BASE_URL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -171,6 +175,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
+  bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
+  bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
   bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();
