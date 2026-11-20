@@ -34,6 +34,7 @@ import {
 } from "./placeable.ts";
 
 export interface PlacedModel {
+  readonly id: number;
   readonly placement: PlacementRef;
   readonly handle: PlacementHandle;
   readonly placeable: Placeable;
@@ -818,7 +819,7 @@ export interface ViewUpdate {
 
 export interface StudTotals {
   readonly drawn: number;
-  readonly culledInsideModels: number;
+  readonly culledInsideModels: number | null;
   readonly culledUnderFootprints: number;
 }
 
@@ -918,19 +919,41 @@ export class PlacedChunks {
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
+    const vacated = new Set<number>();
     const removed: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
       entry.addRebuildKeys(touched, this.hasAntiStudCovers);
+      for (const key of entry.chunks.keysWithColumns()) vacated.add(key);
       removed.push(entry);
     }
+    this.restamp(vacated, NO_ENTRIES);
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
       const entry = this.insert(change.placement, change.added, placeableOf(change.to.refId));
       entry.addRebuildKeys(touched, this.hasAntiStudCovers);
       added.push(entry);
+    }
+    return { added, removed, report: this.rebuild(touched) };
+  }
+
+  replacePlaceable(previous: Placeable, next: Placeable): ViewUpdate {
+    const farModel = this.farModels.get(previous);
+    if (farModel !== undefined) this.farModels.set(next, farModel);
+    this.farModels.delete(previous);
+    const touched = new Set<number>();
+    const removed: PlacedModel[] = [];
+    const added: PlacedModel[] = [];
+    for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
+      const detached = this.detach(entry.handle);
+      this.restamp(detached.chunks.keysWithColumns(), NO_ENTRIES);
+      detached.addRebuildKeys(touched, this.hasAntiStudCovers);
+      removed.push(detached);
+      const replaced = this.insert(detached.placement, detached.handle, next);
+      replaced.addRebuildKeys(touched, this.hasAntiStudCovers);
+      added.push(replaced);
     }
     return { added, removed, report: this.rebuild(touched) };
   }
@@ -1015,8 +1038,12 @@ export class PlacedChunks {
       drawn += studs.drawn;
       culledUnderFootprints += studs.culled;
     }
-    let culledInsideModels = 0;
-    for (const entry of this.entries) culledInsideModels += entry.placeable.bakedCoveredStuds;
+    let culledInsideModels: number | null = 0;
+    for (const entry of this.entries) {
+      const covered = entry.placeable.bakedCoveredStuds;
+      culledInsideModels =
+        covered === null || culledInsideModels === null ? null : culledInsideModels + covered;
+    }
     return { drawn, culledInsideModels, culledUnderFootprints };
   }
 
@@ -1114,7 +1141,6 @@ export class PlacedChunks {
     }
     const slabbed = this.slabbed.indexOf(entry);
     if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
-    this.restamp(entry.chunks.keysWithColumns(), NO_ENTRIES);
     return entry;
   }
 
