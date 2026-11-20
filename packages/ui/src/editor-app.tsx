@@ -14,6 +14,7 @@ import {
   type IPlanService,
   type IRunningGear,
   type ITrainPlay,
+  type SelectionView,
   type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useState } from "react";
@@ -42,6 +43,12 @@ import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
+
+function selectionLabel(selection: SelectionView | null): string | null {
+  if (!selection) return null;
+  const { members, primary } = selection;
+  return members.length === 1 ? primary.item : `${members.length} models`;
+}
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -140,7 +147,9 @@ export function EditorApp({
       data-far-tier={snapshot.farTier}
       data-meshes={meshesSettled(snapshot.meshes) ? "settled" : "loading"}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
-      data-selection={snapshot.selection?.item ?? ""}
+      data-selection={snapshot.selection?.primary.item ?? ""}
+      data-selection-count={snapshot.selection?.members.length ?? 0}
+      data-gesture={snapshot.gesture?.kind ?? ""}
       data-ghost-rot={snapshot.ghostRot}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
@@ -200,7 +209,7 @@ export function EditorApp({
             service={bomService}
             source={editor}
             region={null}
-            selectionLabel={snapshot.selection?.item ?? null}
+            selectionLabel={selectionLabel(snapshot.selection)}
           />
         )}
       </div>

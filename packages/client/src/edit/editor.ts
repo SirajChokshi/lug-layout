@@ -21,6 +21,8 @@ import {
   type HistoryStep,
   type PlacementHandle,
   type PlacementContents,
+  type PlacementPose,
+  type PlacementRequest,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -45,7 +47,6 @@ import {
   type GraphicsApi,
   type LookSettings,
   type ISceneBackend,
-  type WorldBox,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, StudioReport } from "@brr/import";
@@ -95,7 +96,9 @@ import {
   type TrackRouteView,
 } from "./track-drawing.ts";
 import {
+  NO_MODELS,
   PlacedChunks,
+  worldBoxAt,
   type PlacedModel,
   type RebuildReport,
   type StudTotals,
@@ -103,8 +106,22 @@ import {
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
 import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
-import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import { ANY_TURN, HELD_TURN, cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
+import {
+  QUAD_FLOATS,
+  footprintInside,
+  latticeCentre,
+  nearestStud,
+  restStacks,
+  stacksOf,
+  translated,
+  turnedAbout,
+  unionBox,
+  type LatticePoint,
+} from "./group-transform.ts";
+import { groupGhost } from "./group-ghost.ts";
+import { Selection, type SelectionView } from "./selection.ts";
 import {
   ROAD_KIT_PREFIX,
   RoadDrawing,
@@ -128,6 +145,7 @@ import type {
 } from "./world-session.ts";
 
 export type { TurnDirection } from "./turn.ts";
+export type { SelectedModelView, SelectionView } from "./selection.ts";
 export type EditorStatus = "loading" | "ready" | "error";
 export type EditAction = EditKind | "track";
 export type EditorMode = "place" | "select" | "track" | "road";
@@ -158,16 +176,17 @@ export interface LatencySample {
   readonly rebuiltStuds: number;
 }
 
-export interface SelectionView {
-  readonly item: string;
-  readonly x: number;
-  readonly z: number;
-  readonly yPlates: number;
-  readonly rot: number;
-  readonly chunkKey: number;
-  readonly slot: number;
-  readonly box: WorldBox;
-}
+export type SelectDragKind = "box" | "move";
+
+export type GestureView =
+  | { readonly kind: "box"; readonly inside: number }
+  | {
+      readonly kind: "move" | "paste";
+      readonly count: number;
+      readonly dx: number;
+      readonly dz: number;
+      readonly refusal: string | null;
+    };
 
 export interface HistoryView {
   readonly undo: EditAction | null;
@@ -312,6 +331,8 @@ export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
   readonly hover: HoverView | null;
   readonly selection: SelectionView | null;
   readonly selectionRefusal: string | null;
+  readonly gesture: GestureView | null;
+  readonly clipboard: number;
   readonly placements: number;
   readonly history: HistoryView;
   readonly lastLatency: LatencySample | null;
@@ -395,6 +416,14 @@ export interface IEditor extends IBomSource, IWorldFiles {
   pointerMove(ndcX: number, ndcY: number): void;
   pointerLeave(): void;
   click(ndcX: number, ndcY: number, eventTimeMs: number): void;
+  toggleSelected(ndcX: number, ndcY: number): void;
+  selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null;
+  selectDragMove(ndcX: number, ndcY: number): void;
+  selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
+  cancelGesture(): void;
+  nudgeSelection(dx: number, dz: number, eventTimeMs: number): void;
+  copySelection(): void;
+  pasteClipboard(): void;
   dragStart(ndcX: number, ndcY: number): boolean;
   dragMove(ndcX: number, ndcY: number): void;
   dragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
@@ -509,6 +538,113 @@ interface HeldPiece {
   readonly snap: PieceSnap | null;
 }
 
+interface PlacementVerdict {
+  readonly yPlates: number;
+  readonly refusal: string | null;
+}
+
+interface RoadContext {
+  readonly network: RoadNetwork;
+  readonly extents: ReadonlyArray<CellExtent>;
+}
+
+interface GroupMember {
+  readonly model: PlacedModel | null;
+  readonly placeable: Placeable;
+  readonly pose: PlacementPose;
+  readonly stack: number;
+}
+
+interface GroupPlacement {
+  readonly poses: ReadonlyArray<PlacementPose>;
+  readonly refusal: RefusedClick | null;
+}
+
+type GroupAction = "turn" | "move" | "delete";
+
+interface BoxDrag {
+  readonly kind: "box";
+  readonly startNdcX: number;
+  readonly startNdcY: number;
+  readonly additive: boolean;
+}
+
+interface SupportBlock {
+  readonly base: PlacedModel;
+  readonly reason: string;
+}
+
+interface GroupEdit {
+  readonly members: ReadonlyArray<GroupMember>;
+  readonly exempt: ReadonlySet<PlacedModel>;
+  readonly roads: RoadContext;
+  readonly support: SupportBlock | null;
+}
+
+interface HeldGroup extends GroupEdit {
+  readonly kind: "move" | "paste";
+  readonly lead: number;
+  readonly grabX: number;
+  readonly grabZ: number;
+  readonly placement: GroupPlacement | null;
+}
+
+interface Copied {
+  readonly members: ReadonlyArray<GroupMember>;
+  readonly pivot: LatticePoint;
+}
+
+const ACTION_VERBS: Readonly<Record<GroupAction, string>> = {
+  turn: "turning",
+  move: "moving",
+  delete: "deleting",
+};
+
+const NO_OFFSET = { dx: 0, dz: 0 } as const;
+const MOVE_REFUSED = "Can't move it there.";
+const PASTE_REFUSED = "Can't paste here.";
+const DELETE_REFUSED = "Can't delete.";
+const GROUP_TURN_REFUSED = "Can't turn the group.";
+
+function poseOf(model: PlacedModel): PlacementPose {
+  const { handle } = model;
+  return {
+    refId: handle.refId,
+    colorId: handle.colorId,
+    x: handle.x,
+    z: handle.z,
+    yPlates: handle.yPlates,
+    rot: handle.rot,
+  };
+}
+
+function refusedAt(
+  item: string,
+  at: { readonly x: number; readonly z: number; readonly rot: number },
+  reason: string,
+  fit: RoadCellCounts = NO_ROAD_CELLS,
+): RefusedClick {
+  return {
+    item,
+    x: at.x,
+    z: at.z,
+    rot: at.rot,
+    mismatchedCells: fit.mismatchedCells,
+    overlappingCells: fit.overlappingCells,
+    reason,
+  };
+}
+
+function remedy(action: GroupAction, other: string): string {
+  return action === "delete"
+    ? `Delete ${other} first, or select it too.`
+    : `Select ${other} too to take it along.`;
+}
+
+function samePose(a: PlacementPose, b: PlacementPose): boolean {
+  return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates && a.rot === b.rot;
+}
+
 const EDITOR_WORLD_NAME = "editor-world";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
@@ -569,6 +705,8 @@ export class Editor implements IEditor, IEditedWorld {
     hover: null,
     selection: null,
     selectionRefusal: null,
+    gesture: null,
+    clipboard: 0,
     placements: 0,
     history: { undo: null, redo: null, undoDepth: 0, redoDepth: 0 },
     lastLatency: null,
@@ -615,7 +753,11 @@ export class Editor implements IEditor, IEditedWorld {
   private placed: PlacedChunks;
   private active: Placeable | null = null;
   private activeRefId = -1;
-  private selected: PlacedModel | null = null;
+  private readonly selection = new Selection();
+  private gesture: BoxDrag | HeldGroup | null = null;
+  private copied: Copied | null = null;
+  private readonly boxQuad = new Float64Array(QUAD_FLOATS);
+  private readonly groundScratch = new Float64Array(2);
   private ghostRot = 0;
   private placeRot = 0;
   private turnDirection: TurnDirection = 1;
@@ -667,7 +809,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   private sessionChanged(): void {
     this.update(this.session.view());
-    if (this.state.readOnly && (this.active || this.held || this.state.mode === "road")) {
+    if (
+      this.state.readOnly &&
+      (this.active || this.held || this.gesture || this.state.mode === "road")
+    ) {
       this.chooseItem(null);
     }
   }
@@ -873,12 +1018,16 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.modelTrack.get(pending);
     if (track) this.modelTrack.set(checked, track);
     const view = this.placed.replacePlaceable(pending, checked);
+    const gesture = this.gesture;
+    if (gesture?.kind === "move" && view.removed.some((model) => gesture.exempt.has(model))) {
+      this.cancelGesture();
+    }
     view.removed.forEach((model, index) => {
       this.unsearchable(model);
       const replaced = view.added[index];
       if (!replaced) return;
       this.searchable(replaced);
-      if (this.selected === model) this.selected = replaced;
+      this.selection.swap(model, replaced);
     });
     this.refreshRoads();
     this.syncModelTrack();
@@ -1283,7 +1432,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.active = null;
     this.backend.setGhost(null);
-    this.select(null);
+    this.select([]);
     if (this.roadDrawing) this.roadDrawing.erasing = false;
     this.update({
       roadErase: false,
@@ -1306,6 +1455,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   chooseItem(id: string | null): void {
     if (id !== null && this.state.readOnly) return;
+    this.cancelGesture();
     if (this.state.mode === "road" && id !== this.state.activeItem) this.leaveRoadMode();
     if (id?.startsWith(ROAD_KIT_PREFIX) && this.roadDrawing?.choose(id)) {
       this.enterRoadMode(id);
@@ -1321,7 +1471,7 @@ export class Editor implements IEditor, IEditedWorld {
           ? null
           : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null };
       this.backend.setGhost(null);
-      this.select(null);
+      this.select([]);
       this.requestTrackMeshes(track);
       this.update({ mode: "track", activeItem: id, pendingItem: null, track: this.trackView() });
       this.showHeldPiece();
@@ -1344,7 +1494,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.update({ mode: "select", activeItem: null, pendingItem: null });
     }
     if (id === null && !this.active) {
-      this.select(null);
+      this.select([]);
       return;
     }
     const placeable = refId === null ? null : (this.catalog.placeables()[refId] ?? null);
@@ -1355,7 +1505,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.active = placeable;
     this.activeRefId = placeable && refId !== null ? refId : -1;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
-    if (placeable) this.select(null);
+    if (placeable) this.select([]);
     const snap = this.snapGhost();
     this.placeGhost();
     this.update({
@@ -1370,7 +1520,7 @@ export class Editor implements IEditor, IEditedWorld {
   private choosePending(id: string, refId: number): void {
     this.active = null;
     this.backend.setGhost(null);
-    this.select(null);
+    this.select([]);
     this.update({
       mode: "place",
       activeItem: id,
@@ -1515,36 +1665,48 @@ export class Editor implements IEditor, IEditedWorld {
     this.showHeldPiece();
   }
 
-  private groundHit(ndcX: number, ndcY: number): boolean {
+  private groundPoint(ndcX: number, ndcY: number, out: Float64Array, at: number): boolean {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     const originY = this.ray[1] ?? 0;
     const directionY = this.ray[4] ?? 0;
     if (directionY >= 0) return false;
     const t = -originY / directionY;
-    this.hitX = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
-    this.hitZ = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
+    out[at] = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
+    out[at + 1] = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
+    return true;
+  }
+
+  private groundHit(ndcX: number, ndcY: number): boolean {
+    if (!this.groundPoint(ndcX, ndcY, this.groundScratch, 0)) return false;
+    this.hitX = this.groundScratch[0] ?? 0;
+    this.hitZ = this.groundScratch[1] ?? 0;
     this.hoverX = snapToLattice(this.hitX);
     this.hoverZ = snapToLattice(this.hitZ);
     return true;
   }
 
+  private placementAt(
+    placeable: Placeable,
+    x: number,
+    z: number,
+    rot: number,
+    exempt: ReadonlySet<PlacedModel>,
+  ): PlacementVerdict {
+    const [yPlates = 0] = this.placed.restingHeights([{ placeable, x, z, rot }], exempt);
+    return { yPlates, refusal: this.placementRefusal(placeable, x, z, rot, yPlates, exempt) };
+  }
+
   private placeGhost(): void {
     if (!this.active || !this.hovering) return;
-    this.hoverYPlates = this.placed.restingHeight(
+    const verdict = this.placementAt(
       this.active,
       this.hoverX,
       this.hoverZ,
       this.placeRot,
-      null,
+      NO_MODELS,
     );
-    this.hoverRefusal = this.placementRefusal(
-      this.active,
-      this.hoverX,
-      this.hoverZ,
-      this.placeRot,
-      this.hoverYPlates,
-      null,
-    );
+    this.hoverYPlates = verdict.yPlates;
+    this.hoverRefusal = verdict.refusal;
     this.backend.placeGhost(
       this.hoverX,
       this.hoverYPlates * PLATE_LDU + GHOST_LIFT_LDU,
@@ -1576,6 +1738,7 @@ export class Editor implements IEditor, IEditedWorld {
       0,
       this.hoverX,
       this.hoverZ,
+      ANY_TURN,
     );
     if (snap) {
       this.hoverX = snap.x;
@@ -1613,6 +1776,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.targetTrackEnd(this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null);
     }
     this.placeGhost();
+    if (this.gesture?.kind === "paste" && this.hovering) this.aimHeld(this.gesture);
     this.update({
       hover: this.hoverView(),
       snap,
@@ -1637,12 +1801,10 @@ export class Editor implements IEditor, IEditedWorld {
     const pendingItem = this.state.pendingItem;
     if (pendingItem !== null) {
       if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      const at = { x: snapToLattice(this.hitX), z: snapToLattice(this.hitZ), rot: this.placeRot };
       this.refuse(
-        pendingItem,
-        snapToLattice(this.hitX),
-        snapToLattice(this.hitZ),
-        this.placeRot,
-        `${this.labelOf(pendingItem)} is still loading`,
+        refusedAt(pendingItem, at, `${this.labelOf(pendingItem)} is still loading`),
+        null,
       );
       return;
     }
@@ -1651,29 +1813,52 @@ export class Editor implements IEditor, IEditedWorld {
       this.hovering = true;
       const snap = this.snapGhost();
       this.placeGhost();
+      const at = { x: this.hoverX, z: this.hoverZ, rot: this.placeRot };
       if (snap?.state === "refused") {
-        this.update({
-          snap,
-          refusedClicks: this.state.refusedClicks + 1,
-          lastRefusal: {
-            item: this.active.id,
-            x: this.hoverX,
-            z: this.hoverZ,
-            rot: this.placeRot,
-            mismatchedCells: snap.mismatchedCells,
-            overlappingCells: snap.overlappingCells,
-            reason: ROAD_REFUSAL,
-          },
-        });
+        this.update({ snap });
+        this.refuse(refusedAt(this.active.id, at, ROAD_REFUSAL, snap), null);
         return;
       }
       if (this.hoverRefusal !== null) {
-        this.refuse(this.active.id, this.hoverX, this.hoverZ, this.placeRot, this.hoverRefusal);
+        this.refuse(refusedAt(this.active.id, at, this.hoverRefusal), null);
         return;
       }
       this.placeAt(this.active, this.hoverX, this.hoverZ, this.placeRot, eventTimeMs);
       return;
     }
+    const gesture = this.gesture;
+    if (gesture?.kind === "paste") {
+      if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return;
+      this.hovering = true;
+      const placement = this.aimHeld(gesture);
+      if (placement.refusal) {
+        this.refuse(placement.refusal, `${PASTE_REFUSED} ${placement.refusal.reason}`);
+        return;
+      }
+      this.endGesture();
+      this.commitGroup("place", gesture.members, placement, eventTimeMs, PASTE_REFUSED, null);
+      return;
+    }
+    const best = this.modelAt(ndcX, ndcY);
+    if (
+      !best &&
+      this.groundHit(ndcX, ndcY) &&
+      this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)
+    ) {
+      return;
+    }
+    this.select(best ? [best] : []);
+  }
+
+  toggleSelected(ndcX: number, ndcY: number): void {
+    if (this.state.mode !== "select" || this.gesture) return;
+    const model = this.modelAt(ndcX, ndcY);
+    if (!model) return;
+    this.selection.toggle(model);
+    this.showSelection();
+  }
+
+  private modelAt(ndcX: number, ndcY: number): PlacedModel | null {
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     let best: PlacedModel | null = null;
     let bestT = Number.POSITIVE_INFINITY;
@@ -1684,35 +1869,14 @@ export class Editor implements IEditor, IEditedWorld {
         best = model;
       }
     }
-    if (
-      !best &&
-      this.groundHit(ndcX, ndcY) &&
-      this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)
-    ) {
-      return;
-    }
-    this.select(best);
+    return best;
   }
 
-  private refuse(
-    item: string,
-    x: number,
-    z: number,
-    rot: number,
-    reason: string,
-    fit: RoadCellCounts = NO_ROAD_CELLS,
-  ): void {
+  private refuse(refusal: RefusedClick, selectionRefusal: string | null): void {
     this.update({
       refusedClicks: this.state.refusedClicks + 1,
-      lastRefusal: {
-        item,
-        x,
-        z,
-        rot,
-        mismatchedCells: fit.mismatchedCells,
-        overlappingCells: fit.overlappingCells,
-        reason,
-      },
+      lastRefusal: refusal,
+      selectionRefusal,
     });
   }
 
@@ -1722,9 +1886,9 @@ export class Editor implements IEditor, IEditedWorld {
     z: number,
     rot: number,
     yPlates: number,
-    ignore: PlacedModel | null,
+    exempt: ReadonlySet<PlacedModel>,
   ): string | null {
-    const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, ignore);
+    const overlap = this.placed.slabClash(placeable, x, z, rot, yPlates, exempt);
     if (!overlap) return null;
     return `${placeable.label} would overlap ${overlap.placeable.label} at the same height. Two baseplates can't share the same space.`;
   }
@@ -1746,7 +1910,7 @@ export class Editor implements IEditor, IEditedWorld {
         colorId: placeable.worldColor,
         x,
         z,
-        yPlates: this.placed.restingHeight(placeable, x, z, rot, null),
+        yPlates: this.placementAt(placeable, x, z, rot, NO_MODELS).yPlates,
         rot,
       }),
       eventTimeMs,
@@ -1796,6 +1960,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
+    if (this.selection.dropRemoved()) this.showSelection();
     this.update({
       selectionRefusal: null,
       placements: this.world.size,
@@ -1951,36 +2116,29 @@ export class Editor implements IEditor, IEditedWorld {
         uncounted: uncounted(),
       };
     }
-    const selected = this.selected;
-    if (!selected?.handle.live) throw new Error("nothing is selected");
-    contents.addTo(counter, selected.handle.refId, selected.handle.colorId);
+    const selected = this.selection.members.filter((model) => model.handle.live);
+    const [only, second] = selected;
+    if (!only) throw new Error("nothing is selected");
+    for (const model of selected) contents.addTo(counter, model.handle.refId, model.handle.colorId);
     return {
-      name: `selection-${selected.placeable.id.replace(FILE_NAME_UNSAFE, "_")}`,
+      name: second
+        ? `selection-${selected.length}-models`
+        : `selection-${only.placeable.id.replace(FILE_NAME_UNSAFE, "_")}`,
       lod: "standard",
-      placements: 1,
+      placements: selected.length,
       counter,
       uncounted: uncounted(),
     };
   }
 
-  private select(model: PlacedModel | null): void {
-    this.selected = model;
-    this.backend.setSelectionBox(model ? model.box : null);
-    this.update({
-      selectionRefusal: null,
-      selection: model
-        ? {
-            item: model.placeable.id,
-            x: model.handle.x,
-            z: model.handle.z,
-            yPlates: model.handle.yPlates,
-            rot: model.handle.rot,
-            chunkKey: model.handle.chunkKey,
-            slot: model.handle.slot,
-            box: model.box,
-          }
-        : null,
-    });
+  private select(chosen: ReadonlyArray<PlacedModel>, pivot: LatticePoint | null = null): void {
+    this.selection.replace(chosen, pivot);
+    this.showSelection();
+  }
+
+  private showSelection(): void {
+    this.backend.setSelectionBoxes(this.selection.boxes());
+    this.update({ selection: this.selection.view(), selectionRefusal: null });
   }
 
   rotate(eventTimeMs: number, direction: TurnDirection = 1): void {
@@ -2021,87 +2179,431 @@ export class Editor implements IEditor, IEditedWorld {
       });
       return;
     }
-    const model = this.selected;
-    if (!model || this.state.readOnly) return;
-    this.turnSelection(model, quarterTurned(model.handle.rot, direction), eventTimeMs);
+    const gesture = this.gesture;
+    if (gesture && gesture.kind !== "box") {
+      this.turnHeld(gesture, direction);
+      return;
+    }
+    const pivot = this.selection.turnPivot();
+    if (!pivot || this.state.readOnly) return;
+    this.turnSelection(pivot, direction, eventTimeMs);
   }
 
-  private turnSelection(model: PlacedModel, rot: number, eventTimeMs: number): void {
-    const pose = model.handle;
-    const label = model.placeable.label;
-    const refuseTurn = (reason: string, fit: RoadCellCounts = NO_ROAD_CELLS): void => {
-      this.refuse(model.placeable.id, pose.x, pose.z, rot, reason, fit);
-      this.update({
-        selectionRefusal: `Can't turn to ${rot * DEGREES_PER_QUARTER_TURN}°. ${reason}`,
-      });
-    };
-    const rider = this.placed.riderOn(model);
-    if (rider) {
-      const riding = rider.placeable.label;
-      refuseTurn(
-        `${label}: ${riding} rests on it, so turning it would leave ${riding} floating or cut into it.`,
-      );
-      return;
-    }
-    const yPlates = this.placed.restingHeight(model.placeable, pose.x, pose.z, rot, model);
-    const refusal = this.placementRefusal(model.placeable, pose.x, pose.z, rot, yPlates, model);
-    if (refusal !== null) {
-      refuseTurn(refusal);
-      return;
-    }
-    const road = this.turnedRoadFit(model, rot, yPlates);
-    if (road && (road.mismatchedCells > 0 || road.overlappingCells > 0)) {
-      refuseTurn(`${label}: ${ROAD_REFUSAL}.`, road);
-      return;
-    }
-    const edit = this.history.commit("rotate", [
-      {
-        placement: model.placement,
-        to: { refId: pose.refId, colorId: pose.colorId, x: pose.x, z: pose.z, yPlates, rot },
-      },
-    ]);
-    this.select(this.show(edit, eventTimeMs).added[0] ?? null);
-  }
-
-  private turnedRoadFit(model: PlacedModel, rot: number, yPlates: number): RoadCellCounts | null {
-    const surface = model.placeable.road;
-    if (!surface || !this.state.snapRoads) return null;
-    const others = this.roadPlacements().filter(({ id }) => this.roadModels[id] !== model);
-    return new RoadNetwork(others).fit({
-      id: -1,
-      x: model.handle.x,
-      z: model.handle.z,
-      yLdu: yPlates * PLATE_LDU,
-      rot,
-      surface,
-    });
+  private turnSelection(pivot: LatticePoint, direction: TurnDirection, eventTimeMs: number): void {
+    const edit = this.groupEdit(this.selection.members, "turn");
+    const placement = this.placeGroup(
+      edit,
+      edit.members.map((member) => turnedAbout(member.pose, pivot, direction)),
+      false,
+    );
+    const [only, second] = edit.members;
+    const refused =
+      only && !second
+        ? `Can't turn to ${quarterTurned(only.pose.rot, direction) * DEGREES_PER_QUARTER_TURN}°.`
+        : GROUP_TURN_REFUSED;
+    this.commitGroup("rotate", edit.members, placement, eventTimeMs, refused, pivot);
   }
 
   deleteSelection(eventTimeMs: number): void {
-    const model = this.selected;
-    if (!model || this.state.readOnly) return;
-    const rider = this.placed.strandedRider(model);
+    const chosen = this.selection.members;
+    if (chosen.length === 0 || this.state.readOnly || this.gesture) return;
+    const support = this.supportBlocking(chosen, "delete");
+    if (support) {
+      const { base, reason } = support;
+      this.refuse(refusedAt(base.placeable.id, base.handle, reason), `${DELETE_REFUSED} ${reason}`);
+      return;
+    }
+    this.show(
+      this.history.commit(
+        "remove",
+        chosen.map((model) => ({ placement: model.placement, to: null })),
+      ),
+      eventTimeMs,
+    );
+    this.select([]);
+  }
+
+  nudgeSelection(dx: number, dz: number, eventTimeMs: number): void {
+    const chosen = this.selection.members;
+    if (chosen.length === 0 || this.state.readOnly || this.gesture) return;
+    const edit = this.groupEdit(chosen, "move");
+    const placement = this.placeGroup(
+      edit,
+      edit.members.map((member) => translated(member.pose, dx, dz)),
+      false,
+    );
+    this.commitGroup("move", edit.members, placement, eventTimeMs, MOVE_REFUSED, null);
+  }
+
+  copySelection(): void {
+    const chosen = this.selection.members;
+    if (chosen.length === 0) return;
+    this.copied = {
+      members: this.membersOf(chosen).map((member) => ({ ...member, model: null })),
+      pivot: latticeCentre(unionBox(this.selection.boxes())),
+    };
+    this.update({ clipboard: chosen.length });
+  }
+
+  pasteClipboard(): void {
+    const copied = this.copied;
+    if (!copied || this.state.readOnly || this.state.mode !== "select" || this.gesture) return;
+    this.holdGroup({
+      kind: "paste",
+      members: copied.members,
+      exempt: NO_MODELS,
+      roads: this.roadsWithout(NO_MODELS),
+      support: null,
+      lead: 0,
+      grabX: copied.pivot.x,
+      grabZ: copied.pivot.z,
+      placement: null,
+    });
+  }
+
+  selectDragStart(ndcX: number, ndcY: number, additive: boolean): SelectDragKind | null {
+    if (this.state.mode !== "select" || this.state.pendingItem !== null || this.gesture)
+      return null;
+    const grabbed = this.modelAt(ndcX, ndcY);
+    if (
+      grabbed &&
+      this.selection.has(grabbed) &&
+      !this.state.readOnly &&
+      this.groundHit(ndcX, ndcY)
+    ) {
+      const chosen = this.selection.members;
+      this.holdGroup({
+        ...this.groupEdit(chosen, "move"),
+        kind: "move",
+        lead: chosen.indexOf(grabbed),
+        grabX: this.hitX,
+        grabZ: this.hitZ,
+        placement: null,
+      });
+      return "move";
+    }
+    this.gesture = { kind: "box", startNdcX: ndcX, startNdcY: ndcY, additive };
+    this.update({ gesture: { kind: "box", inside: 0 }, selectionRefusal: null });
+    return "box";
+  }
+
+  selectDragMove(ndcX: number, ndcY: number): void {
+    const gesture = this.gesture;
+    if (!gesture) return;
+    if (gesture.kind === "box") {
+      const inside = this.modelsInBox(gesture, ndcX, ndcY);
+      this.backend.setSelectionBoxes(this.boxSelection(gesture, inside).map((model) => model.box));
+      this.update({ gesture: { kind: "box", inside: inside.length } });
+      return;
+    }
+    if (gesture.kind === "move" && this.groundHit(ndcX, ndcY)) this.aimHeld(gesture);
+  }
+
+  selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const gesture = this.gesture;
+    if (!gesture || gesture.kind === "paste") return;
+    if (gesture.kind === "box") {
+      const inside = this.modelsInBox(gesture, ndcX, ndcY);
+      this.endGesture();
+      this.select(this.boxSelection(gesture, inside));
+      return;
+    }
+    const placement = this.groundHit(ndcX, ndcY) ? this.aimHeld(gesture) : gesture.placement;
+    this.endGesture();
+    if (!placement || this.state.readOnly || !this.moves(gesture.members, placement)) return;
+    this.commitGroup("move", gesture.members, placement, eventTimeMs, MOVE_REFUSED, null);
+  }
+
+  cancelGesture(): void {
+    if (this.gesture) this.endGesture();
+  }
+
+  private endGesture(): void {
+    const held = this.gesture?.kind !== "box";
+    this.gesture = null;
+    if (held) this.backend.setGhost(null);
+    this.backend.setSelectionBoxes(this.selection.boxes());
+    this.update({ gesture: null });
+  }
+
+  private holdGroup(held: HeldGroup): void {
+    this.gesture = held;
+    this.backend.setGhost(groupGhost(held.members, held.lead));
+    this.update({ gesture: this.heldGroupView(held, null), selectionRefusal: null });
+    if (this.hovering) this.aimHeld(held);
+  }
+
+  private turnHeld(held: HeldGroup, direction: TurnDirection): void {
+    const pivot = { x: nearestStud(held.grabX), z: nearestStud(held.grabZ) };
+    this.holdGroup({
+      ...held,
+      members: held.members.map((member) => ({
+        ...member,
+        pose: turnedAbout(member.pose, pivot, direction),
+      })),
+      grabX: pivot.x,
+      grabZ: pivot.z,
+      placement: null,
+    });
+  }
+
+  private aimHeld(held: HeldGroup): GroupPlacement {
+    const dx = snapToLattice(this.hitX - held.grabX);
+    const dz = snapToLattice(this.hitZ - held.grabZ);
+    const placement = this.placeGroup(
+      held,
+      held.members.map((member) => translated(member.pose, dx, dz)),
+      this.state.snapRoads,
+    );
+    this.gesture = { ...held, placement };
+    const lead = placement.poses[held.lead];
+    if (lead) {
+      this.backend.placeGhost(lead.x, lead.yPlates * PLATE_LDU + GHOST_LIFT_LDU, lead.z, lead.rot);
+    }
+    this.backend.setSelectionBoxes(
+      placement.poses.map((pose) =>
+        worldBoxAt(this.placeableAt(pose.refId), pose.x, pose.z, pose.yPlates, pose.rot),
+      ),
+    );
+    this.update({ gesture: this.heldGroupView(held, placement) });
+    return placement;
+  }
+
+  private heldGroupView(held: HeldGroup, placement: GroupPlacement | null): GestureView {
+    const source = held.members[held.lead];
+    const target = placement?.poses[held.lead];
+    const from = source?.model ? source.model.handle : null;
+    return {
+      kind: held.kind,
+      count: held.members.length,
+      dx: target && from ? target.x - from.x : 0,
+      dz: target && from ? target.z - from.z : 0,
+      refusal: placement?.refusal?.reason ?? null,
+    };
+  }
+
+  private moves(members: ReadonlyArray<GroupMember>, placement: GroupPlacement): boolean {
+    return placement.poses.some((pose, index) => {
+      const model = members[index]?.model;
+      return model !== null && model !== undefined && !samePose(pose, poseOf(model));
+    });
+  }
+
+  private modelsInBox(drag: BoxDrag, ndcX: number, ndcY: number): ReadonlyArray<PlacedModel> {
+    const quad = this.boxQuad;
+    const corners = [
+      drag.startNdcX,
+      drag.startNdcY,
+      ndcX,
+      drag.startNdcY,
+      ndcX,
+      ndcY,
+      drag.startNdcX,
+      ndcY,
+    ];
+    for (let corner = 0; corner < corners.length; corner += 2) {
+      if (!this.groundPoint(corners[corner] ?? 0, corners[corner + 1] ?? 0, quad, corner)) {
+        return [];
+      }
+    }
+    return this.placed.models().filter((model) => footprintInside(quad, model.box));
+  }
+
+  private boxSelection(
+    drag: BoxDrag,
+    inside: ReadonlyArray<PlacedModel>,
+  ): ReadonlyArray<PlacedModel> {
+    return drag.additive ? [...this.selection.members, ...inside] : inside;
+  }
+
+  private groupEdit(chosen: ReadonlyArray<PlacedModel>, action: GroupAction): GroupEdit {
+    const exempt = new Set(chosen);
+    return {
+      members: this.membersOf(chosen),
+      exempt,
+      roads: this.roadsWithout(exempt),
+      support: this.supportBlocking(chosen, action),
+    };
+  }
+
+  private membersOf(chosen: ReadonlyArray<PlacedModel>): ReadonlyArray<GroupMember> {
+    const stacks = stacksOf(chosen.length, (rider, base) => {
+      const riding = chosen[rider];
+      const carrier = chosen[base];
+      return riding !== undefined && carrier !== undefined && this.placed.restsOn(riding, carrier);
+    });
+    return chosen.map((model, index) => ({
+      model,
+      placeable: model.placeable,
+      pose: poseOf(model),
+      stack: stacks[index] ?? index,
+    }));
+  }
+
+  private roadsWithout(exempt: ReadonlySet<PlacedModel>): RoadContext {
+    if (exempt.size === 0) return { network: this.roadNetwork, extents: this.roadExtents };
+    const placements = this.roadPlacements().filter(({ id }) => {
+      const model = this.roadModels[id];
+      return model !== undefined && !exempt.has(model);
+    });
+    return { network: new RoadNetwork(placements), extents: placements.map(cellExtent) };
+  }
+
+  private placeGroup(
+    edit: GroupEdit,
+    targets: ReadonlyArray<PlacementPose>,
+    snap: boolean,
+  ): GroupPlacement {
+    const { members, exempt, roads, support } = edit;
+    const offset = snap ? this.roadSnapOffset(members, targets, roads) : NO_OFFSET;
+    const shifted = targets.map((pose) => translated(pose, offset.dx, offset.dz));
+    const heights = this.placed.restingHeights(
+      shifted.map((pose, index) => {
+        const placeable = members[index]?.placeable;
+        if (!placeable) throw new Error(`the group has no member ${index}`);
+        return { placeable, x: pose.x, z: pose.z, rot: pose.rot };
+      }),
+      exempt,
+    );
+    const poses = restStacks(
+      shifted,
+      members.map((member) => member.stack),
+      heights,
+    );
+    const supportRefusal = support
+      ? refusedAt(
+          support.base.placeable.id,
+          poses[members.findIndex((member) => member.model === support.base)] ??
+            support.base.handle,
+          support.reason,
+        )
+      : null;
+    return { poses, refusal: supportRefusal ?? this.memberRefusal(members, poses, exempt, roads) };
+  }
+
+  private roadSnapOffset(
+    members: ReadonlyArray<GroupMember>,
+    targets: ReadonlyArray<PlacementPose>,
+    roads: RoadContext,
+  ): { readonly dx: number; readonly dz: number } {
+    let best: { readonly dx: number; readonly dz: number; readonly distance: number } | null = null;
+    for (let index = 0; index < members.length; index++) {
+      const surface = members[index]?.placeable.road;
+      const pose = targets[index];
+      if (!surface || !pose) continue;
+      const snapped = snapToRoadEdge(
+        roads.network,
+        roads.extents,
+        surface,
+        pose.rot,
+        1,
+        pose.yPlates * PLATE_LDU,
+        pose.x,
+        pose.z,
+        HELD_TURN,
+      );
+      if (!snapped) continue;
+      const dx = snapped.x - pose.x;
+      const dz = snapped.z - pose.z;
+      const distance = Math.hypot(dx, dz);
+      if (!best || distance < best.distance) best = { dx, dz, distance };
+    }
+    return best ?? NO_OFFSET;
+  }
+
+  private memberRefusal(
+    members: ReadonlyArray<GroupMember>,
+    poses: ReadonlyArray<PlacementPose>,
+    exempt: ReadonlySet<PlacedModel>,
+    roads: RoadContext,
+  ): RefusedClick | null {
+    for (let index = 0; index < poses.length; index++) {
+      const pose = poses[index];
+      const placeable = members[index]?.placeable;
+      if (!pose || !placeable) continue;
+      const { x, z, yPlates, rot } = pose;
+      const overlap = this.placementRefusal(placeable, x, z, rot, yPlates, exempt);
+      if (overlap !== null) return refusedAt(placeable.id, pose, overlap);
+      const surface = placeable.road;
+      if (!surface || !this.state.snapRoads) continue;
+      const fit = roads.network.fit({ id: -1, x, z, yLdu: yPlates * PLATE_LDU, rot, surface });
+      if (fit.mismatchedCells > 0 || fit.overlappingCells > 0) {
+        return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
+      }
+    }
+    return null;
+  }
+
+  private supportBlocking(
+    chosen: ReadonlyArray<PlacedModel>,
+    action: GroupAction,
+  ): SupportBlock | null {
+    const carried = new Set(chosen);
+    const [only, second] = chosen;
+    if (!only) return null;
+    const verb = ACTION_VERBS[action];
+    const rider =
+      action === "turn" ? this.riderOnAny(chosen, carried) : this.droppingRider(chosen, carried);
     if (rider) {
-      const label = model.placeable.label;
-      const riding = rider.placeable.label;
-      const reason = `${label}: ${riding} rests on it, so deleting it would leave ${riding} floating. Delete ${riding} first.`;
-      const { x, z, rot } = model.handle;
-      this.refuse(model.placeable.id, x, z, rot, reason);
-      this.update({ selectionRefusal: `Can't delete. ${reason}` });
+      const riding = rider.rider.placeable.label;
+      const ending = action === "turn" ? "floating or cut into it" : "floating";
+      return {
+        base: rider.base,
+        reason: `${rider.base.placeable.label}: ${riding} rests on it, so ${verb} it would leave ${riding} ${ending}. ${remedy(action, riding)}`,
+      };
+    }
+    if (action === "turn") return null;
+    const stranded = this.strandedBy(carried);
+    if (!stranded) return null;
+    const left = stranded.placeable.label;
+    return {
+      base: only,
+      reason: second
+        ? `${left} connects only through the selected models, so ${verb} them would leave ${left} unconnected. ${remedy(action, left)}`
+        : `${only.placeable.label}: ${left} connects only through it, so ${verb} it would leave ${left} unconnected. ${remedy(action, left)}`,
+    };
+  }
+
+  private riderOnAny(
+    chosen: ReadonlyArray<PlacedModel>,
+    carried: ReadonlySet<PlacedModel>,
+  ): { readonly base: PlacedModel; readonly rider: PlacedModel } | null {
+    for (const base of chosen) {
+      const rider = this.placed.riderOn(base, carried);
+      if (rider) return { base, rider };
+    }
+    return null;
+  }
+
+  private droppingRider(
+    chosen: ReadonlyArray<PlacedModel>,
+    carried: ReadonlySet<PlacedModel>,
+  ): { readonly base: PlacedModel; readonly rider: PlacedModel } | null {
+    const rider = this.placed.strandedRider(carried);
+    const [first] = chosen;
+    if (!rider || !first) return null;
+    return { base: chosen.find((model) => this.placed.restsOn(rider, model)) ?? first, rider };
+  }
+
+  private commitGroup(
+    kind: EditKind,
+    members: ReadonlyArray<GroupMember>,
+    placement: GroupPlacement,
+    eventTimeMs: number,
+    refused: string,
+    pivot: LatticePoint | null,
+  ): void {
+    if (placement.refusal) {
+      this.showSelection();
+      this.refuse(placement.refusal, `${refused} ${placement.refusal.reason}`);
       return;
     }
-    const stranded = this.strandedBy(model);
-    if (stranded) {
-      const label = model.placeable.label;
-      const left = stranded.placeable.label;
-      const reason = `${label}: ${left} connects only through it, so deleting it would leave ${left} unconnected. Delete ${left} first.`;
-      const { x, z, rot } = model.handle;
-      this.refuse(model.placeable.id, x, z, rot, reason);
-      this.update({ selectionRefusal: `Can't delete. ${reason}` });
-      return;
-    }
-    this.show(this.history.remove(model.placement), eventTimeMs);
-    this.select(null);
+    const requests: PlacementRequest[] = members.map((member, index) => {
+      const to = placement.poses[index];
+      if (!to) throw new Error(`the placement has no pose for member ${index}`);
+      return { placement: member.model?.placement ?? null, to };
+    });
+    this.select(this.show(this.history.commit(kind, requests), eventTimeMs).added, pivot);
   }
 
   undo(eventTimeMs: number): void {
@@ -2116,11 +2618,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   private replay(edit: AppliedEdit | null, eventTimeMs: number): void {
     if (!edit) return;
-    const selected = this.selected;
-    const restored = this.show(edit, eventTimeMs).added.at(-1);
+    this.cancelGesture();
+    const restored = this.show(edit, eventTimeMs).added;
     if (this.active) return;
-    if (restored) this.select(restored);
-    else if (selected && !selected.handle.live) this.select(null);
+    if (restored.length > 0) this.select(restored);
   }
 
   goTo(x: number, z: number): void {
@@ -2183,11 +2684,15 @@ export class Editor implements IEditor, IEditedWorld {
     this.searchModels.delete(id);
   }
 
-  private strandedBy(model: PlacedModel): PlacedModel | null {
-    const id = this.searchIds.get(model);
-    if (id === undefined) return null;
+  private strandedBy(removed: ReadonlySet<PlacedModel>): PlacedModel | null {
+    const ids = new Set<number>();
+    for (const model of removed) {
+      const id = this.searchIds.get(model);
+      if (id !== undefined) ids.add(id);
+    }
+    if (ids.size === 0) return null;
     const stranded = this.search.strandedByRemoval(
-      id,
+      ids,
       (other) => (this.searchModels.get(other)?.handle.yPlates ?? 0) <= 0,
     );
     return stranded === null ? null : (this.searchModels.get(stranded) ?? null);
@@ -2290,7 +2795,8 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private replaceWorld({ world, handles, track }: RestoredWorld): void {
-    this.select(null);
+    this.cancelGesture();
+    this.select([]);
     this.placed.clear();
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;

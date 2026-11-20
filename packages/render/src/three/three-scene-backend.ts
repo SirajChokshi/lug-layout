@@ -175,6 +175,8 @@ const TIER_BY_NAME: Readonly<Record<ChunkTier, number>> = {
 };
 const GHOST_OPACITY = 0.55;
 const SELECTION_COLOR = 0xff8c00;
+const SELECTION_RENDER_ORDER = 1;
+const ISSUE_RENDER_ORDER = 2;
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MARKER_COLORS: Readonly<Record<MarkerKind, number>> = {
   joined: 0x1fbf4a,
@@ -658,6 +660,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly ghostGroup = addContainerGroup(this.scene);
   private readonly planOverlayGroup = addContainerGroup(this.scene);
   private readonly issueBoxGroup = addContainerGroup(this.scene);
+  private readonly selectionGroup = addContainerGroup(this.scene);
   private readonly perspective = new PerspectiveCamera(
     CAMERA_FOV_DEGREES,
     1,
@@ -700,12 +703,12 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private ghost: Group | undefined;
   private ghostX = 0;
   private ghostZ = 0;
-  private readonly selection = new LineSegments(
-    new EdgesGeometry(new BoxGeometry(1, 1, 1)),
-    new LineBasicNodeMaterial({ color: SELECTION_COLOR, depthTest: false }),
-  );
-  private selectionCentreX = 0;
-  private selectionCentreZ = 0;
+  private selectionObjects: Anchored[] = [];
+  private readonly selectionEdges = new EdgesGeometry(new BoxGeometry(1, 1, 1));
+  private readonly selectionMaterial = new LineBasicNodeMaterial({
+    color: SELECTION_COLOR,
+    depthTest: false,
+  });
   private readonly markerBox = new BoxGeometry(1, 1, 1);
   private readonly markerMaterials: Readonly<Record<MarkerKind, MeshBasicNodeMaterial>> = {
     joined: new MeshBasicNodeMaterial({ color: MARKER_COLORS.joined }),
@@ -814,10 +817,6 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         config.pixelRatio,
       );
     }
-    this.selection.visible = false;
-    this.selection.matrixAutoUpdate = false;
-    this.selection.renderOrder = 1;
-    this.scene.add(this.selection);
     this.markerGroup.matrixAutoUpdate = false;
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
@@ -1368,23 +1367,16 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     ghost.visible = true;
   }
 
-  setSelectionBox(box: WorldBox | null): void {
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.changed = true;
-    if (!box) {
-      this.selection.visible = false;
-      return;
-    }
-    this.selectionCentreX = (box.minX + box.maxX) / 2;
-    this.selectionCentreZ = (box.minZ + box.maxZ) / 2;
-    this.selection.position.set(
-      this.selectionCentreX - this.renderOriginX,
-      (box.minY + box.maxY) / 2,
-      this.selectionCentreZ - this.renderOriginZ,
+    this.selectionObjects = this.outlineBoxes(
+      this.selectionGroup,
+      this.selectionObjects,
+      boxes,
+      this.selectionEdges,
+      this.selectionMaterial,
+      SELECTION_RENDER_ORDER,
     );
-    this.selection.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
-    this.selection.updateMatrix();
-    this.selection.updateMatrixWorld(true);
-    this.selection.visible = true;
   }
 
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
@@ -1534,19 +1526,46 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
 
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.changed = true;
-    this.issueBoxGroup.clear();
-    this.issueObjects = boxes.map((box) => {
-      const lines = new LineSegments(this.issueEdges, this.issueMaterial);
-      lines.matrixAutoUpdate = false;
-      lines.renderOrder = 2;
+    this.issueObjects = this.outlineBoxes(
+      this.issueBoxGroup,
+      this.issueObjects,
+      boxes,
+      this.issueEdges,
+      this.issueMaterial,
+      ISSUE_RENDER_ORDER,
+    );
+  }
+
+  private outlineBoxes(
+    group: Group,
+    shown: ReadonlyArray<Anchored>,
+    boxes: ReadonlyArray<WorldBox>,
+    edges: EdgesGeometry,
+    material: LineBasicNodeMaterial,
+    renderOrder: number,
+  ): Anchored[] {
+    for (let i = boxes.length; i < shown.length; i++) {
+      const extra = shown[i];
+      if (extra) group.remove(extra.object);
+    }
+    return boxes.map((box, i) => {
+      const reused = shown[i]?.object;
+      const lines = reused ?? new LineSegments(edges, material);
+      if (!reused) {
+        lines.matrixAutoUpdate = false;
+        lines.renderOrder = renderOrder;
+        group.add(lines);
+      }
       lines.scale.set(box.maxX - box.minX, box.maxY - box.minY, box.maxZ - box.minZ);
       lines.position.y = (box.minY + box.maxY) / 2;
-      return { object: lines, x: (box.minX + box.maxX) / 2, z: (box.minZ + box.maxZ) / 2 };
-    });
-    for (const anchored of this.issueObjects) {
+      const anchored = {
+        object: lines,
+        x: (box.minX + box.maxX) / 2,
+        z: (box.minZ + box.maxZ) / 2,
+      };
       this.positionAnchored(anchored);
-      this.issueBoxGroup.add(anchored.object);
-    }
+      return anchored;
+    });
   }
 
   private positionAnchored(anchored: Anchored): void {
@@ -2045,13 +2064,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       ghost.updateMatrix();
       ghost.updateMatrixWorld(true);
     }
-    this.selection.position.set(
-      this.selectionCentreX - this.renderOriginX,
-      this.selection.position.y,
-      this.selectionCentreZ - this.renderOriginZ,
-    );
-    this.selection.updateMatrix();
-    this.selection.updateMatrixWorld(true);
+    for (const anchored of this.selectionObjects) this.positionAnchored(anchored);
     for (const record of this.vehicles.values()) this.placeVehicle(record);
     this.positionMarkers();
     this.positionTrackEnds();

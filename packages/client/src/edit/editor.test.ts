@@ -80,6 +80,8 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const PLACEABLE_SET = "7936-1";
 const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
+const NDC_SPAN_LDU = 4_000;
+const STUD = 20;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -276,9 +278,19 @@ class HeadlessBackend implements ISceneBackend {
     this.chunks.delete(key);
   }
   setNeededMeshListener(): void {}
-  setGhost(): void {}
-  placeGhost(): void {}
-  setSelectionBox(): void {}
+  ghostInstances = 0;
+  ghost: { readonly x: number; readonly z: number; readonly rot: number } | null = null;
+  setGhost(model: ChunkInstances | null): void {
+    this.ghostInstances = model?.count ?? 0;
+    this.ghost = null;
+  }
+  placeGhost(x: number, _yLdu: number, z: number, rot: number): void {
+    this.ghost = { x, z, rot };
+  }
+  selectionBoxes = 0;
+  setSelectionBoxes(boxes: ReadonlyArray<unknown>): void {
+    this.selectionBoxes = boxes.length;
+  }
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -292,8 +304,15 @@ class HeadlessBackend implements ISceneBackend {
     this.aimX = x;
     this.aimZ = z;
   }
-  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    out.set([
+      this.aimX + ndcX * NDC_SPAN_LDU,
+      RAY_HEIGHT_LDU,
+      this.aimZ - ndcY * NDC_SPAN_LDU,
+      0,
+      -1,
+      0,
+    ]);
   }
   setView(): void {}
   resize(): void {}
@@ -722,8 +741,8 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
   editor.rotate(0, direction);
   const { selection, selectionRefusal, lastRefusal } = editor.snapshot();
   return {
-    rot: selection?.rot ?? null,
-    yPlates: selection?.yPlates ?? null,
+    rot: selection?.primary.rot ?? null,
+    yPlates: selection?.primary.yPlates ?? null,
     refusal: selectionRefusal,
     roadCells: lastRefusal ? lastRefusal.mismatchedCells + lastRefusal.overlappingCells : null,
   };
@@ -738,13 +757,13 @@ it("refuses to turn a baseplate while a set rests on it, turns the set itself, a
   place(set, 0, 0);
   const corner = 300;
 
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
+  expect(selectAt(editor, backend, corner, corner)?.primary.item).toBe(BASEPLATE);
   const baseplateUnderSet = turnOutcome(editor, 1);
   const baseplateUnderSetBack = turnOutcome(editor, -1);
-  expect(selectAt(editor, backend, 0, 0)?.item).toBe(set);
+  expect(selectAt(editor, backend, 0, 0)?.primary.item).toBe(set);
   const setOnBaseplate = turnOutcome(editor, -1);
   editor.deleteSelection(0);
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
+  expect(selectAt(editor, backend, corner, corner)?.primary.item).toBe(BASEPLATE);
   const bareBaseplate = turnOutcome(editor, -1);
 
   const refused = {
@@ -769,7 +788,7 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   place(straight, 320, 960);
   expect(editor.snapshot().roads.mismatchedCells).toBe(0);
 
-  expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
+  expect(selectAt(editor, backend, 320, 960)?.primary.item).toBe(straight);
   const turned = turnOutcome(editor, 1);
   const turnedBack = turnOutcome(editor, -1);
   const mismatchedWhileRefused = editor.snapshot().roads.mismatchedCells;
@@ -1374,7 +1393,7 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   const halfWidth = (Math.min(item.studsWide, item.studsDeep) * 20) / 2;
   place(BASEPLATE, 0, 0);
   const flush = place(narrow, 320 + halfWidth, 0);
-  expect(selectAt(editor, backend, 320 + halfWidth, 0)?.item).toBe(narrow);
+  expect(selectAt(editor, backend, 320 + halfWidth, 0)?.primary.item).toBe(narrow);
   const before = posesOf(editor);
   editor.rotate(0);
 
@@ -1393,16 +1412,16 @@ it("refuses to delete a MILS module while a set rests on it, names the set, and 
   place(PLAIN_MODULE, 320, 320);
   place(SET, 320, 320);
   const raised = posesOf(editor);
-  expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
+  expect(selectAt(editor, backend, 20, 20)?.primary.item).toBe(PLAIN_MODULE);
   editor.deleteSelection(0);
   const refused = {
     poses: posesOf(editor),
     refusal: editor.snapshot().selectionRefusal,
     tone: toolHints(editor.snapshot()).tone,
   };
-  expect(selectAt(editor, backend, 320, 320)?.item).toBe(SET);
+  expect(selectAt(editor, backend, 320, 320)?.primary.item).toBe(SET);
   editor.deleteSelection(0);
-  expect(selectAt(editor, backend, 20, 20)?.item).toBe(PLAIN_MODULE);
+  expect(selectAt(editor, backend, 20, 20)?.primary.item).toBe(PLAIN_MODULE);
   editor.deleteSelection(0);
 
   expect(raised.some((pose) => pose.startsWith(SET) && !pose.endsWith(" y0"))).toBe(true);
@@ -1454,6 +1473,380 @@ it.each([
   },
   120_000,
 );
+
+const USER_ROW = "baseplate-row";
+const HELD_ROW = `omr:${USER_ROW}`;
+const USER_BRICK = "brick-2x4";
+const HELD_BRICK = `omr:${USER_BRICK}`;
+
+type Ground = readonly [number, number];
+
+function ndcOf([x, z]: Ground): Ground {
+  return [x / NDC_SPAN_LDU, -z / NDC_SPAN_LDU];
+}
+
+function dragGroup(editor: IEditor, backend: HeadlessBackend, from: Ground, to: Ground) {
+  backend.aim(...from);
+  const kind = editor.selectDragStart(0, 0, false);
+  backend.aim(...to);
+  editor.pointerMove(0, 0);
+  editor.selectDragMove(0, 0);
+  const shown = { gesture: editor.snapshot().gesture, ghost: backend.ghost };
+  editor.selectDragEnd(0, 0, 0);
+  return { kind, ...shown };
+}
+
+function boxSelect(
+  editor: IEditor,
+  backend: HeadlessBackend,
+  corner: Ground,
+  opposite: Ground,
+  additive = false,
+) {
+  editor.chooseItem(null);
+  backend.aim(0, 0);
+  const kind = editor.selectDragStart(...ndcOf(corner), additive);
+  editor.selectDragMove(...ndcOf(opposite));
+  const inside = editor.snapshot().gesture;
+  editor.selectDragEnd(...ndcOf(opposite), 0);
+  return { kind, inside, selected: selectedItems(editor), outlined: backend.selectionBoxes };
+}
+
+function toggleAt(editor: IEditor, backend: HeadlessBackend, at: Ground) {
+  backend.aim(...at);
+  editor.toggleSelected(0, 0);
+  return selectedItems(editor);
+}
+
+function selectedItems(editor: IEditor): ReadonlyArray<string> {
+  return (editor.snapshot().selection?.members ?? []).map((member) => member.item).toSorted();
+}
+
+function editOutcome(editor: IEditor) {
+  const { selectionRefusal, history } = editor.snapshot();
+  return { poses: posesOf(editor), refusal: selectionRefusal, undoDepth: history.undoDepth };
+}
+
+async function rowBesideBaseplate() {
+  const started = await startEditor([USER_ROW], new BundleDirectoryFetcher(), [USER_ROW]);
+  await loadCatalogItem(started.catalog, HELD_ROW);
+  return started;
+}
+
+describe("selection groups", () => {
+  it("drags a user's model through placement: it lands flush beside a 3811, is refused one stud in, shows each pose as it goes, and Esc leaves it where it was", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    place(HELD_ROW, 1280, 0);
+    expect(selectAt(editor, backend, 1280, 0)?.primary.item).toBe(HELD_ROW);
+    const before = editOutcome(editor);
+
+    const flush = dragGroup(editor, backend, [1280, 0], [640, 0]);
+    const landed = { ...editOutcome(editor), undo: editor.snapshot().history.undo };
+    const oneIn = dragGroup(editor, backend, [640, 0], [620, 0]);
+    const refused = editOutcome(editor);
+    backend.aim(640, 0);
+    editor.selectDragStart(0, 0, false);
+    backend.aim(1600, 0);
+    editor.selectDragMove(0, 0);
+    editor.cancelGesture();
+    editor.selectDragEnd(0, 0, 0);
+    const cancelled = { ...editOutcome(editor), gesture: editor.snapshot().gesture };
+    editor.undo(0);
+
+    expect({ flush, landed, oneIn, refused, cancelled, undone: posesOf(editor) }).toEqual({
+      flush: {
+        kind: "move",
+        gesture: { kind: "move", count: 1, dx: -640, dz: 0, refusal: null },
+        ghost: { x: 640, z: 0, rot: 0 },
+      },
+      landed: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 640,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+        undo: "move",
+      },
+      oneIn: {
+        kind: "move",
+        gesture: expect.objectContaining({ dx: -20, refusal: expect.stringContaining(OVERLAP) }),
+        ghost: { x: 620, z: 0, rot: 0 },
+      },
+      refused: {
+        poses: landed.poses,
+        refusal: expect.stringMatching(new RegExp(`^Can't move it there\\. .*${OVERLAP}`, "u")),
+        undoDepth: before.undoDepth + 1,
+      },
+      cancelled: {
+        poses: landed.poses,
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+        gesture: null,
+      },
+      undone: before.poses,
+    });
+  }, 120_000);
+
+  it("nudges the selection one stud per press through placement, each its own undo step, and leaves the arrows to the camera with nothing selected", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    place(HELD_ROW, 680, 0);
+    expect(selectAt(editor, backend, 680, 0)?.primary.item).toBe(HELD_ROW);
+    const nudgeOffered = commandEnabled("nudge-left", editor.snapshot());
+    const before = editOutcome(editor);
+
+    editor.nudgeSelection(-20, 0, 0);
+    const oneStud = editOutcome(editor);
+    editor.nudgeSelection(-20, 0, 0);
+    const flush = editOutcome(editor);
+    editor.nudgeSelection(-20, 0, 0);
+    const oneIn = editOutcome(editor);
+    editor.undo(0);
+    const undoneOnce = posesOf(editor);
+    editor.chooseItem(null);
+
+    expect({ nudgeOffered, oneStud, flush, oneIn, undoneOnce }).toEqual({
+      nudgeOffered: true,
+      oneStud: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 660,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+      },
+      flush: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 640,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 2,
+      },
+      oneIn: {
+        poses: flush.poses,
+        refusal: expect.stringContaining(OVERLAP),
+        undoDepth: before.undoDepth + 2,
+      },
+      undoneOnce: oneStud.poses,
+    });
+    expect([
+      commandEnabled("nudge-left", editor.snapshot()),
+      commandEnabled("pan-left", editor.snapshot()),
+    ]).toEqual([false, true]);
+  }, 120_000);
+
+  it("box-selects whole models, Shift toggles one, and a group drag carries a set riding a selected module but won't leave it behind", async () => {
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    const place = placer(editor, backend);
+    place(PLAIN_MODULE, 320, 320);
+    place(SET, 320, 320);
+    place(BASEPLATE, -1280, 320);
+    const raised = posesOf(editor);
+    const setHeight = raised.find((pose) => pose.startsWith(SET))?.split(" y")[1];
+
+    const boxed = boxSelect(editor, backend, [-700, -700], [1340, 1340]);
+    const setOut = toggleAt(editor, backend, [320, 320]);
+    const alone = dragGroup(editor, backend, [20, 20], [20, 1300]);
+    const leftBehind = editOutcome(editor);
+    const setBackIn = toggleAt(editor, backend, [320, 320]);
+    dragGroup(editor, backend, [20, 20], [20, 1300]);
+    const carried = editOutcome(editor);
+    editor.undo(0);
+
+    expect({
+      boxed,
+      setOut,
+      alone,
+      leftBehind,
+      setBackIn,
+      carried,
+      undone: posesOf(editor),
+    }).toEqual({
+      boxed: {
+        kind: "box",
+        inside: { kind: "box", inside: 2 },
+        selected: [PLAIN_MODULE, SET],
+        outlined: 2,
+      },
+      setOut: [PLAIN_MODULE],
+      alone: expect.objectContaining({
+        kind: "move",
+        gesture: expect.objectContaining({ refusal: expect.stringContaining("rests on it") }),
+      }),
+      leftBehind: {
+        poses: raised,
+        refusal: expect.stringMatching(/^Can't move it there\. .*rests on it/u),
+        undoDepth: 3,
+      },
+      setBackIn: [PLAIN_MODULE, SET],
+      carried: {
+        poses: [
+          `${BASEPLATE} -1280,320 y0`,
+          `${PLAIN_MODULE} 320,1600 y0`,
+          `${SET} 320,1600 y${setHeight}`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 4,
+      },
+      undone: raised,
+    });
+    expect(setHeight).not.toBe("0");
+  }, 120_000);
+
+  it("won't delete or move a group out from under a user's brick stacked on it, until the brick is selected too, then deletes all of it in one undo step", async () => {
+    const { editor, backend, catalog } = await startEditor(
+      [USER_BRICK],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    const place = placer(editor, backend);
+    place(HELD_BRICK, 0, 0);
+    place(HELD_BRICK, 0, 0);
+    place(HELD_BRICK, 400, 0);
+    const laid = posesOf(editor);
+    const stacked = laid.filter((pose) => pose.endsWith(" y0")).length;
+
+    const boxed = boxSelect(editor, backend, [-300, -300], [700, 300]).selected.length;
+    const underneath = toggleAt(editor, backend, [0, 0]).length;
+    editor.deleteSelection(0);
+    const deleteRefused = { ...editOutcome(editor), tone: toolHints(editor.snapshot()).tone };
+    const moveRefused = dragGroup(editor, backend, [400, 0], [400, 400]).gesture;
+    const withRider = toggleAt(editor, backend, [0, 0]).length;
+    editor.deleteSelection(0);
+    const deleted = editOutcome(editor);
+    editor.undo(0);
+
+    expect({ stacked, boxed, underneath, deleteRefused, moveRefused, withRider, deleted }).toEqual({
+      stacked: 2,
+      boxed: 3,
+      underneath: 2,
+      deleteRefused: {
+        poses: laid,
+        refusal: expect.stringMatching(/^Can't delete\. .*rests on it.*select it too\.$/u),
+        undoDepth: 3,
+        tone: "warn",
+      },
+      moveRefused: expect.objectContaining({
+        kind: "move",
+        refusal: expect.stringContaining("rests on it"),
+      }),
+      withRider: 3,
+      deleted: { poses: [], refusal: null, undoDepth: 4 },
+    });
+    expect({ undone: posesOf(editor), reselected: selectedItems(editor).length }).toEqual({
+      undone: laid,
+      reselected: 3,
+    });
+  }, 120_000);
+
+  it("turns a group of user's bricks about its lattice centre and back exactly, each turn one undo step, and won't turn one out from under a brick stacked on it", async () => {
+    const { editor, backend, catalog } = await startEditor(
+      [USER_BRICK],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    const place = placer(editor, backend);
+    place(HELD_BRICK, 0, 0);
+    place(HELD_BRICK, 100, 0);
+    const laid = { poses: posesOf(editor), turns: turnsOf(editor) };
+
+    boxSelect(editor, backend, [-300, -300], [400, 300]);
+    editor.rotate(0, 1);
+    const turned = { ...editOutcome(editor), turns: turnsOf(editor) };
+    editor.rotate(0, -1);
+    const back = { ...editOutcome(editor), turns: turnsOf(editor) };
+    editor.undo(0);
+    editor.undo(0);
+    const undone = posesOf(editor);
+    place(HELD_BRICK, 100, 0);
+    boxSelect(editor, backend, [-300, -300], [400, 300]);
+    toggleAt(editor, backend, [100, 0]);
+    editor.rotate(0, 1);
+    const underRider = editOutcome(editor);
+
+    expect(turned.poses).not.toEqual(laid.poses);
+    expect({ turned, back, undone, underRider }).toEqual({
+      turned: { poses: turned.poses, refusal: null, undoDepth: 3, turns: [1, 1] },
+      back: { poses: laid.poses, refusal: null, undoDepth: 4, turns: laid.turns },
+      undone: laid.poses,
+      underRider: {
+        poses: [...laid.poses, `${HELD_BRICK} 100,0 y3`].toSorted(),
+        refusal: expect.stringMatching(/^Can't turn the group\. .*rests on it/u),
+        undoDepth: 3,
+      },
+    });
+  }, 120_000);
+
+  it("copies a group with a user's model and pastes it on the cursor in one undo step, refusing a drop where it would overlap", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    place(BASEPLATE, 0, 0);
+    place(HELD_ROW, 640, 0);
+    const laid = posesOf(editor);
+    boxSelect(editor, backend, [-400, -1800], [1000, 1800]);
+    const box = editor.snapshot().selection?.box;
+    if (!box) throw new Error("the box selected nothing");
+    const pivot: Ground = [
+      nearestStud((box.minX + box.maxX) / 2),
+      nearestStud((box.minZ + box.maxZ) / 2),
+    ];
+    const depth = nearestStud(box.maxZ - box.minZ);
+    editor.copySelection();
+    const copied = editor.snapshot().clipboard;
+
+    editor.pasteClipboard();
+    const ghostParts = backend.ghostInstances;
+    backend.aim(pivot[0] + 20, pivot[1]);
+    editor.pointerMove(0, 0);
+    const overlapping = editor.snapshot().gesture;
+    editor.click(0, 0, 0);
+    const refusedDrop = { ...editOutcome(editor), gesture: editor.snapshot().gesture?.kind };
+    backend.aim(pivot[0], pivot[1] + depth);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const dropped = { ...editOutcome(editor), selected: selectedItems(editor) };
+    editor.undo(0);
+
+    expect(ghostParts).toBeGreaterThan(0);
+    expect({ copied, overlapping, refusedDrop, dropped, undone: posesOf(editor) }).toEqual({
+      copied: 2,
+      overlapping: expect.objectContaining({
+        kind: "paste",
+        count: 2,
+        refusal: expect.stringContaining(OVERLAP),
+      }),
+      refusedDrop: {
+        poses: laid,
+        refusal: expect.stringContaining("Can't paste here."),
+        undoDepth: 2,
+        gesture: "paste",
+      },
+      dropped: {
+        poses: [...laid, ...shiftedPoses(laid, depth)].toSorted(),
+        refusal: null,
+        undoDepth: 3,
+        selected: [BASEPLATE, HELD_ROW].toSorted(),
+      },
+      undone: laid,
+    });
+  }, 120_000);
+});
+
+function nearestStud(ldu: number): number {
+  return Math.round(ldu / STUD) * STUD;
+}
+
+function shiftedPoses(poses: ReadonlyArray<string>, dz: number): ReadonlyArray<string> {
+  return poses.map((pose) => {
+    const [ref = "", at = "", height = ""] = pose.split(" ");
+    const [x = "", z = ""] = at.split(",");
+    return `${ref} ${x},${Number(z) + dz} ${height}`;
+  });
+}
+
+function turnsOf(editor: IEditor): ReadonlyArray<number> {
+  return editor.dump().placements.rot.toSorted();
+}
 
 const STREAMED_SET = "10185-1";
 const ROAD_PLATE = "ldraw:44336p01@2";
@@ -1640,8 +2033,8 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   placeGhost(...args: Parameters<ISceneBackend["placeGhost"]>): void {
     this.three.placeGhost(...args);
   }
-  setSelectionBox(...args: Parameters<ISceneBackend["setSelectionBox"]>): void {
-    this.three.setSelectionBox(...args);
+  setSelectionBoxes(...args: Parameters<ISceneBackend["setSelectionBoxes"]>): void {
+    this.three.setSelectionBoxes(...args);
   }
   setMarkers(...args: Parameters<ISceneBackend["setMarkers"]>): void {
     this.three.setMarkers(...args);

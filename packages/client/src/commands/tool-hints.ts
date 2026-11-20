@@ -1,4 +1,5 @@
-import type { EditorSnapshot } from "../edit/editor.ts";
+import { STUD_LDU } from "@brr/math";
+import type { EditorSnapshot, GestureView } from "../edit/editor.ts";
 import type { TrackDragView } from "../edit/track-drawing.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -29,6 +30,44 @@ function gesture(name: string, text: string): ToolHint {
 function itemName(snapshot: EditorSnapshot, id: string | null): string {
   const label = snapshot.catalog.find((item) => item.id === id)?.label ?? id ?? "";
   return label.replaceAll("_", " ");
+}
+
+function models(count: number): string {
+  return `${count} ${count === 1 ? "model" : "models"}`;
+}
+
+function gestureView(drag: GestureView): ToolHintView {
+  switch (drag.kind) {
+    case "box":
+      return {
+        tone: "select",
+        title: "Box select",
+        detail: `${models(drag.inside)} inside`,
+        hints: [gesture("Release", "select them"), key("cancel", "cancel")],
+      };
+    case "move":
+      return {
+        tone: drag.refusal === null ? "select" : "warn",
+        title: `Moving ${models(drag.count)}`,
+        detail: drag.refusal ?? `by ${drag.dx / STUD_LDU}, ${drag.dz / STUD_LDU} studs`,
+        hints: [
+          gesture("Release", drag.refusal === null ? "drop" : "leave it"),
+          key("rotate", "rotate"),
+          key("cancel", "cancel"),
+        ],
+      };
+    case "paste":
+      return {
+        tone: drag.refusal === null ? "place" : "warn",
+        title: `Pasting ${models(drag.count)}`,
+        detail: drag.refusal,
+        hints: [gesture("Click", "drop"), key("rotate", "rotate"), key("cancel", "cancel")],
+      };
+    default: {
+      const unhandled: never = drag;
+      throw new Error(`unhandled gesture ${String(unhandled)}`);
+    }
+  }
 }
 
 function pieces(count: number): string {
@@ -134,14 +173,36 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     }
     case "select": {
       const { selection } = snapshot;
+      if (snapshot.gesture) return gestureView(snapshot.gesture);
+      if (selection && selection.members.length > 1) {
+        return {
+          tone: snapshot.selectionRefusal === null ? "select" : "warn",
+          title: `${models(selection.members.length)} selected`,
+          detail: snapshot.selectionRefusal,
+          hints: [
+            gesture("Drag one", "move them all"),
+            key("nudge-forward", "nudge"),
+            key("rotate", "rotate"),
+            key("copy", "copy"),
+            key("delete", "delete"),
+            key("focus", "frame"),
+            key("select-tool", "deselect"),
+          ],
+        };
+      }
       if (selection) {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
-          title: itemName(snapshot, selection.item),
-          detail: snapshot.selectionRefusal ?? `${selection.rot * DEGREES_PER_QUARTER_TURN}°`,
+          title: itemName(snapshot, selection.primary.item),
+          detail:
+            snapshot.selectionRefusal ?? `${selection.primary.rot * DEGREES_PER_QUARTER_TURN}°`,
           hints: [
+            gesture("Drag", "move"),
+            gesture("Shift-click", "add more"),
+            key("nudge-forward", "nudge"),
             key("rotate", "rotate"),
             key("delete", "delete"),
+            key("copy", "copy"),
             key("duplicate", "place more"),
             key("focus", "frame"),
             key("select-tool", "deselect"),
@@ -154,6 +215,8 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         detail: null,
         hints: [
           gesture("Click", "select a model"),
+          gesture("Drag", "box-select"),
+          key("paste", "paste"),
           key("open-palette", "find a part"),
           key("draw-track", "draw track"),
           key("draw-road", "draw road"),

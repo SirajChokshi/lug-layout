@@ -171,7 +171,7 @@ export interface ISceneBackend {
   setNeededMeshListener(listener: NeededMeshListener | null): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
-  setSelectionBox(box: WorldBox | null): void;
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;

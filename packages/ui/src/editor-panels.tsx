@@ -227,8 +227,8 @@ export function PlacementToolbar({
       <GoTo editor={editor} />
       <p className="toolbar-hint">
         Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
-        wheel zooms at the cursor. Arrows pan, Shift-arrows orbit, double-click frames the
-        selection.
+        wheel zooms at the cursor. Arrows move the selection a stud, or pan with nothing selected;
+        Shift-arrows orbit, double-click frames the selection.
       </p>
     </div>
   );
@@ -265,41 +265,52 @@ function GoTo({ editor }: { readonly editor: IEditor }) {
 export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   const { selection } = snapshot;
   if (!selection) return null;
+  const { primary, members, box } = selection;
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       <dl>
-        <div>
-          <dt>Model</dt>
-          <dd>{itemLabel(snapshot, selection.item)}</dd>
-        </div>
-        <div>
-          <dt>x, z (LDU)</dt>
-          <dd>
-            {selection.x}, {selection.z}
-          </dd>
-        </div>
-        <div>
-          <dt>Height (plates)</dt>
-          <dd>{selection.yPlates}</dd>
-        </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
+        {members.length > 1 ? (
+          <div>
+            <dt>Selected</dt>
+            <dd>{members.length} models</dd>
+          </div>
+        ) : (
+          <>
+            <div>
+              <dt>Model</dt>
+              <dd>{itemLabel(snapshot, primary.item)}</dd>
+            </div>
+            <div>
+              <dt>x, z (LDU)</dt>
+              <dd>
+                {primary.x}, {primary.z}
+              </dd>
+            </div>
+            <div>
+              <dt>Height (plates)</dt>
+              <dd>{primary.yPlates}</dd>
+            </div>
+            <div>
+              <dt>Rotation</dt>
+              <dd>{degrees(primary.rot)}</dd>
+            </div>
+          </>
+        )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>
-            {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
-            {ldu(selection.box.maxZ)}
+            {ldu(box.minX)}…{ldu(box.maxX)}, {ldu(box.minZ)}…{ldu(box.maxZ)}
           </dd>
         </div>
-        <div>
-          <dt>Chunk key, slot</dt>
-          <dd>
-            {selection.chunkKey}, {selection.slot}
-          </dd>
-        </div>
+        {members.length === 1 && (
+          <div>
+            <dt>Chunk key, slot</dt>
+            <dd>
+              {primary.chunkKey}, {primary.slot}
+            </dd>
+          </div>
+        )}
       </dl>
     </section>
   );

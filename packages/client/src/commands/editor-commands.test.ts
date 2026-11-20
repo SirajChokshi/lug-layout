@@ -3,6 +3,7 @@ import type { PlaySnapshot } from "../play/train-play.ts";
 import {
   COMMANDS,
   commandForKey,
+  commandsForKey,
   playCommandEnabled,
   runsDuringPlay,
   type CommandId,
@@ -14,8 +15,13 @@ function press(key: string, held: Partial<Omit<KeyInput, "key">> = {}): KeyInput
   return { key, ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, ...held };
 }
 
+const anyEnabled = (): boolean => true;
+const noneEnabled = (): boolean => false;
+const panOnly = (id: CommandId): boolean => id === "pan-left";
+
 describe("shortcut map", () => {
-  it("gives every chord to exactly one command", () => {
+  it("shares a chord only between a command that acts on a selection or a drag and the one it falls back to", () => {
+    const shared = new Map<string, ReadonlyArray<CommandId>>();
     for (const spec of COMMANDS) {
       for (const chord of spec.keys) {
         const input = press(chord.key, {
@@ -23,12 +29,27 @@ describe("shortcut map", () => {
           shiftKey: chord.shift ?? false,
           altKey: chord.alt ?? false,
         });
-        expect([chordText(chord, "other"), commandForKey(input, false)]).toEqual([
-          chordText(chord, "other"),
-          spec.id,
-        ]);
+        const bound = commandsForKey(input, false);
+        expect(bound).toContain(spec.id);
+        if (bound.length > 1) shared.set(chordText(chord, "other"), bound);
       }
     }
+
+    expect(Object.fromEntries(shared)).toEqual({
+      Esc: ["cancel", "select-tool"],
+      "←": ["nudge-left", "pan-left"],
+      "→": ["nudge-right", "pan-right"],
+      "↑": ["nudge-forward", "pan-forward"],
+      "↓": ["nudge-back", "pan-back"],
+    });
+  });
+
+  it("routes a shared chord to the first command that would act, and to the first bound when none would", () => {
+    expect([
+      commandForKey(press("ArrowLeft"), false, anyEnabled),
+      commandForKey(press("ArrowLeft"), false, panOnly),
+      commandForKey(press("ArrowLeft"), false, noneEnabled),
+    ]).toEqual(["nudge-left", "pan-left", "nudge-left"]);
   });
 
   it.each<[string, KeyInput, CommandId | null]>([
@@ -41,24 +62,27 @@ describe("shortcut map", () => {
     ["R with Caps Lock", press("R"), "rotate"],
     ["Shift+R", press("R", { shiftKey: true }), "rotate-back"],
     ["Ctrl+R stays the browser's reload", press("r", { ctrlKey: true }), null],
+    ["Ctrl+C", press("c", { ctrlKey: true }), "copy"],
+    ["C alone", press("c"), "centre"],
+    ["Cmd+V", press("v", { metaKey: true }), "paste"],
     ["Alt+T", press("t", { altKey: true }), null],
-    ["Arrow", press("ArrowLeft"), "pan-left"],
+    ["Arrow", press("ArrowLeft"), "nudge-left"],
     ["Shift+Arrow", press("ArrowLeft", { shiftKey: true }), "orbit-left"],
     ["P", press("p"), "toggle-plan-view"],
   ])("maps %s", (_, input, expected) => {
-    expect(commandForKey(input, false)).toBe(expected);
+    expect(commandForKey(input, false, anyEnabled)).toBe(expected);
   });
 
   it("leaves keys alone while the user types in a field", () => {
-    expect(commandForKey(press("r"), true)).toBeNull();
-    expect(commandForKey(press("Backspace"), true)).toBeNull();
-    expect(commandForKey(press("z", { ctrlKey: true }), true)).toBeNull();
-    expect(commandForKey(press("/"), true)).toBeNull();
+    expect(commandForKey(press("r"), true, anyEnabled)).toBeNull();
+    expect(commandForKey(press("Backspace"), true, anyEnabled)).toBeNull();
+    expect(commandForKey(press("z", { ctrlKey: true }), true, anyEnabled)).toBeNull();
+    expect(commandForKey(press("/"), true, anyEnabled)).toBeNull();
   });
 
   it("still opens and closes the palette with Cmd+K or Ctrl+K from a field", () => {
-    expect(commandForKey(press("k", { metaKey: true }), true)).toBe("open-palette");
-    expect(commandForKey(press("k", { ctrlKey: true }), true)).toBe("open-palette");
+    expect(commandForKey(press("k", { metaKey: true }), true, anyEnabled)).toBe("open-palette");
+    expect(commandForKey(press("k", { ctrlKey: true }), true, anyEnabled)).toBe("open-palette");
   });
 
   it.each([
@@ -132,6 +156,7 @@ describe("play commands", () => {
 
   it("leaves only camera, play and shell commands live while a train runs", () => {
     expect(COMMANDS.map((spec) => spec.id).filter((id) => !runsDuringPlay(id))).toEqual([
+      "cancel",
       "draw-track",
       "draw-road",
       "rotate",
@@ -140,8 +165,14 @@ describe("play commands", () => {
       "next-connector",
       "delete",
       "duplicate",
+      "copy",
+      "paste",
       "undo",
       "redo",
+      "nudge-left",
+      "nudge-right",
+      "nudge-forward",
+      "nudge-back",
       "toggle-road-snap",
     ]);
   });
