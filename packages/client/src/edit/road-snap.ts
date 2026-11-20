@@ -93,10 +93,37 @@ function within(extent: CellExtent, ghost: CellExtent, x: number, z: number): bo
   );
 }
 
-function coveredSpan(from: number, span: number, min: number, max: number): number {
-  const first = Math.max(0, Math.floor((min - from) / STUD_LDU));
-  const last = Math.min(span / STUD_LDU - 1, Math.ceil((max - from) / STUD_LDU) - 1);
-  return Math.max(0, last - first + 1);
+function overlaps(
+  extent: CellExtent,
+  minX: number,
+  maxX: number,
+  minZ: number,
+  maxZ: number,
+): boolean {
+  return minX < extent.maxX && maxX > extent.minX && minZ < extent.maxZ && maxZ > extent.minZ;
+}
+
+function overlapsAny(
+  extents: ReadonlyArray<CellExtent>,
+  minX: number,
+  maxX: number,
+  minZ: number,
+  maxZ: number,
+): boolean {
+  for (let e = 0; e < extents.length; e++) {
+    const extent = extents[e];
+    if (extent && overlaps(extent, minX, maxX, minZ, maxZ)) return true;
+  }
+  return false;
+}
+
+export function coversRoad(
+  extents: ReadonlyArray<CellExtent>,
+  ghost: CellExtent,
+  x: number,
+  z: number,
+): boolean {
+  return overlapsAny(extents, x + ghost.minX, x + ghost.maxX, z + ghost.minZ, z + ghost.maxZ);
 }
 
 export function coveredCells(
@@ -105,13 +132,21 @@ export function coveredCells(
   x: number,
   z: number,
 ): number {
+  const minX = x + ghost.minX;
+  const minZ = z + ghost.minZ;
+  const covering = extents.filter((extent) =>
+    overlaps(extent, minX, x + ghost.maxX, minZ, z + ghost.maxZ),
+  );
+  if (covering.length === 0) return 0;
+  const columns = (ghost.maxX - ghost.minX) / STUD_LDU;
+  const rows = (ghost.maxZ - ghost.minZ) / STUD_LDU;
   let cells = 0;
-  for (let e = 0; e < extents.length; e++) {
-    const extent = extents[e];
-    if (!extent) continue;
-    cells +=
-      coveredSpan(x + ghost.minX, ghost.maxX - ghost.minX, extent.minX, extent.maxX) *
-      coveredSpan(z + ghost.minZ, ghost.maxZ - ghost.minZ, extent.minZ, extent.maxZ);
+  for (let row = 0; row < rows; row++) {
+    const cellZ = minZ + row * STUD_LDU;
+    for (let column = 0; column < columns; column++) {
+      const cellX = minX + column * STUD_LDU;
+      if (overlapsAny(covering, cellX, cellX + STUD_LDU, cellZ, cellZ + STUD_LDU)) cells++;
+    }
   }
   return cells;
 }
@@ -178,7 +213,7 @@ export function snapToRoadEdge(
         const fit =
           network.cleanFit(probe, probeFit) ??
           (cornerFlush(extent, ghost, x, z) ? network.cleanContact(probe, probeFit) : null);
-        if (!fit || coveredCells(nearby, ghost, x, z) > 0) continue;
+        if (!fit || coversRoad(nearby, ghost, x, z)) continue;
         const candidate: Ranked = {
           snap: {
             x,

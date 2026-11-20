@@ -1410,6 +1410,40 @@ it("reads a road plate held over a placed road plate of another thickness as ref
   expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
 
+it("refuses a road plate on another road plate's footprint alike by click, fill and move, whatever their tops", async () => {
+  const baseplate = "ldraw:44336p04@72";
+  const plate = "ldraw:69958@72";
+  const withBaseplate = async () => {
+    const started = await startEditor([]);
+    await placer(started.editor, started.backend)(baseplate, 320, 320);
+    return started;
+  };
+
+  const clicking = await withBaseplate();
+  const clicked = await placer(clicking.editor, clicking.backend)(plate, 320, 320);
+
+  const filling = await withBaseplate();
+  await chosen(filling.editor, plate);
+  filling.editor.cycleFillGrid();
+  filling.editor.cycleFillGrid();
+  dragFill(filling.editor, filling.backend, [160, 160], [480, 480]);
+
+  const moving = await withBaseplate();
+  await placer(moving.editor, moving.backend)(plate, 1600, 320);
+  expect(selectAt(moving.editor, moving.backend, 1600, 320)?.item).toBe(plate);
+  moving.editor.moveSelectionTo(16, 16, 0);
+
+  expect({
+    clicked: clicked.placements,
+    filled: filling.editor.snapshot().placements,
+    moved: placedXs(moving.editor),
+  }).toEqual({ clicked: 1, filled: 1, moved: [320, 1600] });
+}, 120_000);
+
+function placedXs(editor: IEditor): ReadonlyArray<number> {
+  return Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+}
+
 it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
   const { editor, backend } = await startEditor([]);
   await chosen(editor, "ldraw:44336p04@72");

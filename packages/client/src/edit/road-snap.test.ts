@@ -213,14 +213,26 @@ describe("road-edge snap", () => {
     }
   });
 
-  it("counts the held piece's exact cells inside other road pieces' footprints, at any whole-LDU offset", () => {
+  it("counts the held piece's exact cells inside other road pieces' footprints once each, on every side and at any whole-LDU offset", () => {
     const ghost = cellExtent({ ...straight, x: 0, z: 0 });
-    const at = (x: number) => [cellExtent({ ...straight, id: 1, x, z: 0 })];
-    expect(coveredCells(at(PLATE_SPAN / 2), ghost, 0, 0)).toBe(16 * 32);
-    expect(coveredCells(at(PLATE_SPAN), ghost, 0, 0)).toBe(0);
-    expect(coveredCells(at(PLATE_SPAN - 7), ghost, 0, 0)).toBe(32);
-    expect(coveredCells(at(PLATE_SPAN + 7), ghost, 0, 0)).toBe(0);
-    expect(coveredCells(at(PLATE_SPAN), ghost, 7, 0)).toBe(32);
+    const piece = (x: number, z: number) => cellExtent({ ...straight, id: 1, x, z });
+    const half = PLATE_SPAN / 2;
+    expect(coveredCells([piece(half, 0)], ghost, 0, 0)).toBe(16 * 32);
+    expect(coveredCells([piece(PLATE_SPAN, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(PLATE_SPAN - 7, 0)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(PLATE_SPAN + 7, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(PLATE_SPAN, 0)], ghost, 7, 0)).toBe(32);
+    expect(coveredCells([piece(-(PLATE_SPAN - 7), 0)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(-PLATE_SPAN, 0)], ghost, -7, 0)).toBe(32);
+    expect(coveredCells([piece(-PLATE_SPAN, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(0, PLATE_SPAN - 7)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(0, -(PLATE_SPAN - 7))], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(PLATE_SPAN, PLATE_SPAN)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(-2 * PLATE_SPAN, -2 * PLATE_SPAN)], ghost, 0, 0)).toBe(0);
+    expect(
+      coveredCells([piece(half, 0), piece(-2 * PLATE_SPAN, 2 * PLATE_SPAN)], ghost, 0, 0),
+    ).toBe(16 * 32);
+    expect(coveredCells([piece(7 - half, 0), piece(7 + half, 0)], ghost, 0, 0)).toBe(32 * 32);
   });
 
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {

@@ -206,6 +206,7 @@ import {
   HELD_TURN,
   cellExtent,
   coveredCells,
+  coversRoad,
   snapToRoadEdge,
   type CellExtent,
 } from "./road-snap.ts";
@@ -752,6 +753,16 @@ interface RoadCellCounts {
   readonly overlappingCells: number;
 }
 const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
+
+function onRoadFootprint(
+  extents: ReadonlyArray<CellExtent>,
+  surface: RoadSurface,
+  x: number,
+  z: number,
+  rot: number,
+): boolean {
+  return coversRoad(extents, cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface }), x, z);
+}
 
 function roadFitRefused(fit: RoadCellCounts): boolean {
   return fit.mismatchedCells > 0 || fit.overlappingCells > 0;
@@ -2878,7 +2889,8 @@ export class Editor implements IEditor, IEditedWorld {
     check.road = road;
     check.roadRefused =
       roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
-      (laid !== null && roadFitRefused(laid.fit(road, this.roadFit)));
+      (laid !== null && roadFitRefused(laid.fit(road, this.roadFit))) ||
+      onRoadFootprint(this.roadExtents, surface, x, z, rot);
     return check;
   }
 
@@ -2966,7 +2978,10 @@ export class Editor implements IEditor, IEditedWorld {
     const surface = this.state.snapRoads ? placeable.road : null;
     if (!surface) return null;
     const road = this.probeRoad(surface, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot);
-    return roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ? ROAD_REFUSAL : null;
+    return roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
+      onRoadFootprint(this.roadExtents, surface, pose.x, pose.z, pose.rot)
+      ? ROAD_REFUSAL
+      : null;
   }
 
   private assistReachLdu(): number {
@@ -4952,7 +4967,11 @@ export class Editor implements IEditor, IEditedWorld {
         { id: -1, x, z, yLdu: yPlates * PLATE_LDU, rot, surface },
         this.roadFit,
       );
-      if (fit.mismatchedCells > 0 || fit.overlappingCells > 0) {
+      if (
+        fit.mismatchedCells > 0 ||
+        fit.overlappingCells > 0 ||
+        onRoadFootprint(roads.extents, surface, x, z, rot)
+      ) {
         return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
       }
     }
