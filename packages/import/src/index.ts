@@ -56,6 +56,7 @@ export {
   type PartConnectorSource,
   type PartResolution,
   type RecordReport,
+  type RefusedConnectorRecord,
 } from "./model-import.ts";
 export {
   LibraryBakeStore,
