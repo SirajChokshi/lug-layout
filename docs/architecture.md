@@ -416,6 +416,8 @@ Extra plan rules:
 5. **Real elements.** Every placed model has badge L1. Models claiming to be sets have badge L2, either exact or "buildable from".
 6. All layout rules from §7.2 pass with zero errors.
 
+The plan lists §7.2's track rule as rows read from the same exact join graph the track tool uses. Each open end is an error, and so is each point where track ends meet without joining: one row per point, and those ends aren't also listed as open. Laid track and a model's own identified track count alike. An end belongs to its laid piece, or to the model that carries it, and a row counts in every region whose room one of its pieces or models overlaps. Track the plan can't check gets a warning naming the model, the part and the count: parts whose catalog connector poses are still unverified (§11), and parts the model places where no exact track pose fits. Their ends aren't checked and nothing joins to them, so an identified end beside one is listed as open. A warning keeps the plan from reading "Buildable as planned", as an error does, because that track went unchecked. Track past a table edge is caught by rule 1 on each laid piece's footprint box, as the message says. That box is the piece's extent along x and z at its heading, so a piece at a diagonal heading can be reported over the edge when only its box is. Each edit sends the plan one delta, and an edit that changes laid track, or the track that models carry, includes the whole set of these rows. A region's list changes only when its own rows do.
+
 **Plan outputs:**
 - a BOM for the region and for each module, in two views: "whole sets vs loose parts" and "own vs buy" (using an imported Rebrickable collection or CSV);
 - Wanted List XML for the shortfall;

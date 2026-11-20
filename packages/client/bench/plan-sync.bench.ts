@@ -14,8 +14,11 @@ import {
   UNDECIDED,
   type PlanRegion,
   type PlanShape,
+  type TrackChange,
+  type TrackPieceAt,
 } from "@brr/domain";
-import { CHUNK_LDU, chunkKey, pose16, zeta16 } from "@brr/math";
+import { CHUNK_LDU, addZeta16, chunkKey, pose16, zeta16 } from "@brr/math";
+import type { TrackCatalog } from "@brr/schema/bundle";
 import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -29,6 +32,7 @@ import { TrackDrawing } from "../src/edit/track-drawing.ts";
 import {
   writeFullRebuild,
   writeModelUpdates,
+  writeTrackChange,
   writeTrackLay,
   writeTrackThrow,
   writeViewUpdate,
@@ -37,6 +41,7 @@ import {
 } from "../src/plan/plan-producer.ts";
 import { PlanService, type NewPlan, type TableInput } from "../src/plan/plan-service.ts";
 import { RecordingBackend } from "../src/plan/plan-sync.test-support.ts";
+import { buildTrackPlan } from "../src/scene/track-plan.ts";
 import { ColorTable } from "../src/scene/viewer-scene.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -65,8 +70,20 @@ const CYCLES = 200;
 const COST_WINDOWS = 11;
 const REGION_EDITS = 21;
 const SETTLE_MS = 50;
-const SWITCH_ID = "ldraw:75541-f1";
-const TRACK_PIECES = 6;
+const PASSING_LOOP =
+  "ldraw:75541-f1, ldraw:74746*2, ldraw:75542-f1.1, ldraw:74747*8, ldraw:74746*6, ldraw:74747*8, /, ldraw:74747, ldraw:74747";
+const PASSING_LOOP_STUDS = { x: 60n, z: 20n } as const;
+const CIRCLE = "ldraw:74747*16";
+const CIRCLE_STUDS = { x: 140n, z: 150n } as const;
+const OPEN_STRAIGHT = "ldraw:74746";
+const OPEN_STRAIGHT_COUNTS: ReadonlyArray<number> = [1, 100, 1000];
+const OPEN_STRAIGHTS_PER_ROW = 32;
+const OPEN_STRAIGHT_PITCH = { x: 24n, z: 12n } as const;
+const OUTSIDE_STUDS = { x: -120n, z: 20n } as const;
+const KEPT_OPEN_STRAIGHTS = 8;
+const KEPT_L_CORNER_STUDS = { x: 60n, z: 100n } as const;
+const KEPT_L_HEADINGS: ReadonlyArray<number> = [0, 12];
+const KEPT_L_ROWS = 3;
 const TWO_53 = 2 ** 53;
 const FALLBACK_CHUNK_X = (TWO_53 - 512) / CHUNK_LDU;
 const FALLBACK_TABLES: ReadonlyArray<number> = [1, 2, 4];
@@ -554,7 +571,12 @@ async function probe(
   };
 }
 
-async function loadTrack(): Promise<TrackDrawing> {
+interface LoadedTrack {
+  readonly drawing: TrackDrawing;
+  readonly catalog: TrackCatalog;
+}
+
+async function loadTrack(): Promise<LoadedTrack> {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
@@ -562,7 +584,32 @@ async function loadTrack(): Promise<TrackDrawing> {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  return new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  return {
+    drawing: new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)),
+    catalog: bundle.trackCatalog,
+  };
+}
+
+function planLaid(
+  { drawing, catalog }: LoadedTrack,
+  plan: string,
+  at: { readonly x: bigint; readonly z: bigint },
+): TrackChange {
+  const { layout } = buildTrackPlan(plan, catalog);
+  const shift = zeta16([at.x, 0n, 0n, 0n, at.z, 0n, 0n, 0n]);
+  const first = drawing.pieceCount;
+  return {
+    lift: [],
+    lay: Array.from({ length: layout.count }, (_, p) => {
+      const pose = layout.pose(p);
+      return {
+        index: first + p,
+        piece: layout.piece(p),
+        pose: pose16(addZeta16(pose.position, shift), pose.heading),
+        yPlates: 0,
+      };
+    }),
+  };
 }
 
 async function threeBackend(): Promise<ISceneBackend> {
@@ -574,25 +621,31 @@ async function threeBackend(): Promise<ISceneBackend> {
 interface TrackDeltas {
   readonly lay: PlanDelta;
   readonly unlay: PlanDelta;
+  readonly openLay: PlanDelta;
+  readonly openUnlay: PlanDelta;
   readonly throwOver: PlanDelta;
   readonly throwBack: PlanDelta;
 }
 
-function layTrack(drawing: TrackDrawing): TrackDeltas {
-  const part = drawing.pieceParts().find((p) => p.piece.id === SWITCH_ID);
-  if (!part) throw new Error(`${SWITCH_ID} is not in the bundle`);
-  let laid = 0;
-  for (let k = 0; k < TRACK_PIECES; k++) {
-    const x = BigInt(40 + 30 * (k % 3));
-    const z = BigInt(40 + 60 * Math.floor(k / 3));
-    const change = drawing.pieceChange(
-      part.catalogIndex,
-      pose16(zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n]), 0),
-    );
-    drawing.applyTrack(change);
-    laid = change.lay.length;
-  }
-  if (laid < 1) throw new Error("the last switch did not lay");
+function layTrack(track: LoadedTrack): TrackDeltas {
+  const { drawing } = track;
+  drawing.applyTrack(planLaid(track, PASSING_LOOP, PASSING_LOOP_STUDS));
+  const straight = track.catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+  const outside = drawing.pieceChange(
+    straight,
+    pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+  );
+  drawing.applyTrack(outside);
+  const openLay = new PlanDelta();
+  writeTrackLay(openLay, drawing, outside.lay.length);
+  const lift: TrackChange = { lift: outside.lay, lay: [] };
+  drawing.applyTrack(lift);
+  const openUnlay = new PlanDelta();
+  writeTrackChange(openUnlay, drawing, lift);
+  const circle = planLaid(track, CIRCLE, CIRCLE_STUDS);
+  drawing.applyTrack(circle);
+  const laid = circle.lay.length;
+  if (drawing.openEnds().length !== 0) throw new Error("the bench's track has open ends");
   const lay = new PlanDelta();
   writeTrackLay(lay, drawing, laid);
   const unlay = new PlanDelta();
@@ -610,7 +663,65 @@ function layTrack(drawing: TrackDrawing): TrackDeltas {
   drawing.applyTrack(back.change);
   const throwBack = new PlanDelta();
   writeTrackThrow(throwBack, drawing, lever.placement);
-  return { lay, unlay, throwOver, throwBack };
+  return { lay, unlay, openLay, openUnlay, throwOver, throwBack };
+}
+
+interface ProbeVariant {
+  readonly variant: string;
+  readonly built: Built;
+  readonly reads: PanelReads;
+  readonly scenarios: ReadonlyArray<Scenario>;
+  readonly endRows: number;
+  readonly endIssues: number | null;
+}
+
+async function keptRowsVariant(): Promise<ProbeVariant> {
+  const loaded = await loadTrack();
+  const { drawing: kept, catalog } = loaded;
+  const straight = catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+  kept.applyTrack({
+    lift: [],
+    lay: Array.from({ length: KEPT_OPEN_STRAIGHTS }, (_, slot) => openStraight(straight, slot)),
+  });
+  for (const heading of KEPT_L_HEADINGS) {
+    kept.applyTrack(
+      kept.pieceChange(
+        straight,
+        pose16(
+          zeta16([KEPT_L_CORNER_STUDS.x, 0n, 0n, 0n, KEPT_L_CORNER_STUDS.z, 0n, 0n, 0n]),
+          heading,
+        ),
+      ),
+    );
+  }
+  const built = build([], kept, tableRegion(ROOM_MM));
+  const outside = kept.pieceChange(
+    straight,
+    pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+  );
+  kept.applyTrack(outside);
+  const lay = new PlanDelta();
+  writeTrackLay(lay, kept, outside.lay.length);
+  const lift: TrackChange = { lift: outside.lay, lay: [] };
+  kept.applyTrack(lift);
+  const unlay = new PlanDelta();
+  writeTrackChange(unlay, kept, lift);
+  const reads = new PanelReads(built.plans, built.planId);
+  built.plans.subscribe(reads.read);
+  return {
+    variant: `one region keeping the rows of its ${KEPT_OPEN_STRAIGHTS} open straights and an L of two straights meeting without joining`,
+    built,
+    reads,
+    scenarios: [
+      {
+        name: "track lay of a straight with both ends open outside the region, the apply part",
+        edit: () => built.plans.apply(lay),
+        inverse: () => built.plans.apply(unlay),
+      },
+    ],
+    endRows: KEPT_OPEN_STRAIGHTS + KEPT_L_HEADINGS.length,
+    endIssues: 2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS,
+  };
 }
 
 function trackScenarios(built: Built, deltas: TrackDeltas): Scenario[] {
@@ -622,9 +733,14 @@ function trackScenarios(built: Built, deltas: TrackDeltas): Scenario[] {
       inverse: () => built.plans.apply(deltas.throwBack),
     },
     {
-      name: "track lay, the apply part",
+      name: "track lay of a closed R40 circle, the apply part",
       edit: () => built.plans.apply(deltas.lay),
       inverse: () => built.plans.apply(deltas.unlay),
+    },
+    {
+      name: "track lay of a straight with both ends open outside every region, the apply part",
+      edit: () => built.plans.apply(deltas.openLay),
+      inverse: () => built.plans.apply(deltas.openUnlay),
     },
   ];
 }
@@ -888,6 +1004,101 @@ async function footprintCosts(drawing: TrackDrawing, lines: string[]): Promise<v
   );
 }
 
+function openStraight(straight: number, slot: number): TrackPieceAt {
+  const x = BigInt(slot % OPEN_STRAIGHTS_PER_ROW) * OPEN_STRAIGHT_PITCH.x;
+  const z = BigInt(Math.floor(slot / OPEN_STRAIGHTS_PER_ROW)) * OPEN_STRAIGHT_PITCH.z;
+  return {
+    index: slot,
+    piece: straight,
+    pose: pose16(zeta16([x + 4n, 0n, 0n, 0n, z + 8n, 0n, 0n, 0n]), 0),
+    yPlates: 0,
+  };
+}
+
+async function trackIssueCosts(lines: string[]): Promise<void> {
+  lines.push(
+    "",
+    "### Track issue rows, per track edit, against separate straights with both ends open",
+    "",
+    "| Open straights | Open ends in the region | writeIssues µs, p50 | writeIssues bytes, median of GC-free windows | lay one more and read issues(), p50 / p95 / worst ms | its bytes | GC-free windows |",
+    "|---|---|---|---|---|---|---|",
+  );
+  for (const count of OPEN_STRAIGHT_COUNTS) {
+    const loaded = await loadTrack();
+    const { drawing: open } = loaded;
+    const straight = loaded.catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+    open.applyTrack({
+      lift: [],
+      lay: Array.from({ length: count }, (_, slot) => openStraight(straight, slot)),
+    });
+    const plans = new PlanService(new RecordingBackend());
+    const rowsOfStraights = Math.ceil((count + 1) / OPEN_STRAIGHTS_PER_ROW) + 1;
+    const studMm = 8;
+    const widthMm = Number(OPEN_STRAIGHT_PITCH.x) * (OPEN_STRAIGHTS_PER_ROW + 1) * studMm;
+    const depthMm = Number(OPEN_STRAIGHT_PITCH.z) * rowsOfStraights * studMm;
+    const planId = plans.createPlan({
+      name: "Open track",
+      roomWidthMm: widthMm,
+      roomDepthMm: depthMm,
+      originChunkX: 0,
+      originChunkZ: 0,
+    });
+    plans.updatePlan(planId, { maxReachMm: depthMm });
+    plans.addTable(planId, {
+      name: "Table",
+      rect: { x: 0, z: 0, width: widthMm, depth: depthMm },
+      heightMm: TABLE_HEIGHT_MM,
+    });
+    const full = new PlanDelta();
+    writeFullRebuild(full, [], open);
+    plans.apply(full);
+    const writes = 20;
+    const scratch = new PlanDelta();
+    const write = (): void => {
+      for (let k = 0; k < writes; k++) {
+        scratch.reset();
+        open.writeIssues(scratch);
+      }
+    };
+    write();
+    const written = await measure(COST_WINDOWS, write);
+    const writtenClean = written.filter((w) => w.gcs === 0).map((w) => w.bytes / writes);
+    const extra: TrackChange = { lift: [], lay: [openStraight(straight, count)] };
+    open.applyTrack(extra);
+    const layDelta = new PlanDelta();
+    writeTrackLay(layDelta, open, 1);
+    const lift: TrackChange = { lift: extra.lay, lay: [] };
+    open.applyTrack(lift);
+    const unlayDelta = new PlanDelta();
+    writeTrackChange(unlayDelta, open, lift);
+    const layAndRead = (): void => {
+      plans.apply(layDelta);
+      plans.issues(planId);
+    };
+    const unlay = (): void => {
+      plans.apply(unlayDelta);
+      plans.issues(planId);
+    };
+    layAndRead();
+    unlay();
+    const laid = await measure(COST_WINDOWS, layAndRead, unlay);
+    const laidTimes = laid.map((w) => w.ms);
+    const laidClean = laid.filter((w) => w.gcs === 0).map((w) => w.bytes);
+    const ends = plans.issueCount(planId);
+    if (ends !== 2 * count) throw new Error(`${count} open straights gave ${ends} rows`);
+    lines.push(
+      `| ${count} | ${ends} | ${(
+        percentile(
+          written.map((w) => w.ms / writes),
+          0.5,
+        ) * 1000
+      ).toFixed(
+        1,
+      )} | ${writtenClean.length > 0 ? Math.round(percentile(writtenClean, 0.5)).toLocaleString("en-US") : "n/a"} | ${percentile(laidTimes, 0.5).toFixed(3)} / ${percentile(laidTimes, 0.95).toFixed(3)} / ${Math.max(...laidTimes).toFixed(3)} | ${laidClean.length > 0 ? Math.round(percentile(laidClean, 0.5)).toLocaleString("en-US") : "n/a"} | ${laidClean.length} of ${laid.length} |`,
+    );
+  }
+}
+
 function productionReads(plans: PlanService): void {
   const active = plans.activePlanId();
   plans.version();
@@ -1114,8 +1325,9 @@ function probeTable(rows: ReadonlyArray<ProbeRow>): string[] {
 
 const mode = process.argv[2] ?? "all";
 const ids = new Ids();
-const drawing = await loadTrack();
-const trackDeltas = layTrack(drawing);
+const track = await loadTrack();
+const { drawing } = track;
+const trackDeltas = layTrack(track);
 const lines: string[] = [
   `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}, mode ${mode}`,
   `bytes summed over ${[...COUNTED_SPACES].join(", ")}; times include any GC in the window, bytes come only from GC-free windows`,
@@ -1123,7 +1335,7 @@ const lines: string[] = [
 let failed = false;
 if (mode === "all" || mode === "probe") {
   const rows: ProbeRow[] = [];
-  const variants = [false, true].map((withRegion) => {
+  const variants: ProbeVariant[] = [false, true].map((withRegion) => {
     const built = build(bricks(ROWS, 0, ids), drawing, withRegion ? tableRegion(ROOM_MM) : null);
     const reads = new PanelReads(built.plans, built.planId);
     built.plans.subscribe(reads.read);
@@ -1132,8 +1344,11 @@ if (mode === "all" || mode === "probe") {
       built,
       reads,
       scenarios: [...viewScenarios(built, ids), ...trackScenarios(built, trackDeltas)],
+      endRows: ROWS + drawing.pieceCount - trackDeltas.unlay.removalCount,
+      endIssues: withRegion ? 0 : null,
     };
   });
+  variants.push(await keptRowsVariant());
   const shortRows: ShortRow[] = [];
   for (const { variant, reads, scenarios } of variants) {
     for (const scenario of scenarios) shortRows.push(await shortProbe(variant, scenario, reads));
@@ -1143,14 +1358,13 @@ if (mode === "all" || mode === "probe") {
       for (const scenario of scenarios) warm(scenario, JIT_WARMUP_CYCLES);
     }
   }
-  for (const { variant, built, reads, scenarios } of variants) {
+  const endIssues = new Map<string, number | null>();
+  for (const { variant, built, reads, scenarios, endRows, endIssues: issues } of variants) {
     for (const scenario of scenarios) rows.push(await probe(variant, built, scenario, reads));
-    if (
-      built.plans.placementCount() !==
-      ROWS + drawing.pieceCount - trackDeltas.unlay.removalCount
-    ) {
+    if (built.plans.placementCount() !== endRows) {
       throw new Error(`the probe ended with ${built.plans.placementCount()} rows`);
     }
+    endIssues.set(variant, issues);
   }
   lines.push(
     "",
@@ -1161,15 +1375,15 @@ if (mode === "all" || mode === "probe") {
   for (const row of shortRows) if (row.mismatches !== 0) failed = true;
   lines.push(
     "",
-    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${TRACK_PIECES} track pieces`,
+    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it`,
     "",
-    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of both variants runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
+    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of every variant runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
     "",
     ...probeTable(rows),
   );
   for (const row of rows) {
-    const regionDirty =
-      row.variant !== "no regions" && (row.endSandbox !== 0 || row.endIssues !== 0);
+    const expected = endIssues.get(row.variant) ?? null;
+    const regionDirty = expected !== null && (row.endSandbox !== 0 || row.endIssues !== expected);
     if (row.beyond !== 0 || row.gcs !== 0 || row.mismatches !== 0 || regionDirty) failed = true;
   }
 }
@@ -1178,6 +1392,7 @@ if (mode === "all" || mode === "costs") {
   await readerCosts(ids, lines);
   await fallbackCosts(ids, lines);
   await footprintCosts(drawing, lines);
+  await trackIssueCosts(lines);
   await regionEditCosts(ids, lines);
   await memoryPerRow(ids, lines);
 }
