@@ -8,6 +8,7 @@ export type EditorActionId =
   | "select-tool"
   | "draw-track"
   | "draw-road"
+  | "measure"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
@@ -100,6 +101,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "g" }],
     keywords: "street lay plates",
+  },
+  {
+    id: "measure",
+    title: "Measure: drag a ruler in studs and cm",
+    group: "Tools",
+    keys: [{ key: "u" }],
+    keywords: "ruler distance length dimension tape size",
   },
   {
     id: "rotate",
@@ -365,6 +373,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
+  if (id === "measure") return snapshot.mode === "measure";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
@@ -444,6 +453,8 @@ export function commandEnabled(
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
+      return snapshot.selection !== null && !snapshot.readOnly;
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;
     case "pick-slot":
@@ -473,6 +484,7 @@ export function commandEnabled(
     case "tilt-up":
     case "zoom-in":
     case "zoom-out":
+    case "measure":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
@@ -583,6 +595,9 @@ export function runEditorAction(
       return;
     case "zoom-out":
       camera.zoomStep(-1);
+      return;
+    case "measure":
+      editor.setMeasuring(editor.snapshot().mode !== "measure");
       return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);

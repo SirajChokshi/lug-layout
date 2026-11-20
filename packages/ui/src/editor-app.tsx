@@ -26,6 +26,7 @@ import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
 import { PlanScaleBar } from "./plan-scale-bar.tsx";
+import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -153,6 +154,7 @@ export function EditorApp({
         paletteDrag={palette.drag}
         options={options}
       />
+      <SceneLabels editor={editor} snapshot={snapshot} />
       <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <LibraryColumn panels={panels}>

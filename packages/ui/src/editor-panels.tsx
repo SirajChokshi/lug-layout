@@ -224,6 +224,20 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
+        data-action="measure"
+        aria-pressed={commandActive("measure", snapshot)}
+        disabled={!commandEnabled("measure", snapshot, play)}
+        onClick={(event) => onEditorAction("measure", event.timeStamp)}
+      >
+        Measure ({shortcutText("measure")})
+      </button>
+      {snapshot.rulers > 0 && (
+        <button type="button" data-action="clear-rulers" onClick={() => editor.clearRulers()}>
+          Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+        </button>
+      )}
+      <button
+        type="button"
         disabled={!commandEnabled("rotate", snapshot, play)}
         title={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
         onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}

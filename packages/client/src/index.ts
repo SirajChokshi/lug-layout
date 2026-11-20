@@ -9,7 +9,14 @@ export type {
   RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
-export { DEFAULT_LOOK_FEATURES, LOOK_FEATURES } from "@brr/render";
+export {
+  DEFAULT_LOOK_FEATURES,
+  LOOK_FEATURES,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
+} from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type {
   FarModelSummary,
@@ -252,6 +259,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {
