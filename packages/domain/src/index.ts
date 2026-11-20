@@ -213,6 +213,13 @@ export {
 } from "./plan/plan-facts.ts";
 export { disksCover } from "./plan/plan-reach.ts";
 export {
+  TRACK_OPEN_END,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
+  TrackIssueRows,
+} from "./plan/track-issue-rows.ts";
+export {
   drawingKit,
   MAX_TURN_CURVES,
   type DrawingKit,
