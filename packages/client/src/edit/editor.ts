@@ -1471,6 +1471,7 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackUnsupported: TrackUnsupportedView | null = null;
   private trackSupport: TrackSupport | null = null;
   private trackPiering = false;
+  private trackSupportLoad: Promise<void> | null = null;
   private lowTrack: ReadonlyArray<LowClearance> | null = null;
   private lastTrackLow: TrackLowClearanceView | null = null;
   private trackSupportLoading = false;
@@ -1892,7 +1893,7 @@ export class Editor implements IEditor, IEditedWorld {
         matrices: new Float64Array(0),
       },
     };
-    this.connectorTables.load(tables).then(
+    this.trackSupportLoad = this.connectorTables.load(tables).then(
       (loaded) => {
         const parts = this.catalog.parts();
         const antiStuds = new Map<number, Int32Array>();
@@ -2079,14 +2080,22 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.track?.tallestTrain) this.measureTallestTrain();
   }
 
-  private piersFor(
+  private async loadedSupport(track: TrackDrawing): Promise<TrackSupport | null> {
+    if (!this.trackSupport) this.loadTrackSupport(track);
+    await this.trackSupportLoad;
+    return this.trackSupport;
+  }
+
+  private async piersFor(
     track: TrackDrawing,
     raised: ReadonlyArray<RaisedPiece>,
     change: TrackChange,
   ): Promise<ReadonlyArray<PlacementPose>> {
-    const support = this.trackSupport;
-    if (!support) return Promise.resolve([]);
-    const pieces = raised.map((piece): PierPiece => {
+    const support = await this.loadedSupport(track);
+    if (!support) return [];
+    const unseated = raised.filter((piece) => !track.seated(piece));
+    if (unseated.length === 0) return [];
+    const pieces = unseated.map((piece): PierPiece => {
       const { partFrame } = track.pieceByIndex(piece.catalogIndex).piece;
       const box = track.pieceBox(piece.catalogIndex, piece.placement);
       return {
@@ -2119,8 +2128,9 @@ export class Editor implements IEditor, IEditedWorld {
   ): void {
     const track = this.track;
     if (!track) return;
-    const raised = track.levelRaisedPieces(change).filter((piece) => !track.seated(piece));
-    if (raised.length === 0) {
+    const raised = track.levelRaisedPieces(change);
+    const allSeated = this.trackSupport !== null && raised.every((piece) => track.seated(piece));
+    if (raised.length === 0 || allSeated) {
       const edit = this.history.commit("lay-track", [], change);
       if (sample) this.show(edit, eventTimeMs, sample);
       else this.show(edit, eventTimeMs);
@@ -6103,6 +6113,7 @@ export class Editor implements IEditor, IEditedWorld {
     for (const model of this.placed.models()) this.searchable(model);
     this.facts.noteWorld(this.placed.models());
     if (track && this.state.mode === "track") this.setTrackObstacles(track);
+    this.layoutChanged();
     this.update({
       placements: world.size,
       history: this.historyView(),

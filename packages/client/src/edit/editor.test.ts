@@ -7988,7 +7988,9 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
   await editor.newWorld("Second");
   const fresh = editor.dump().laidTrack.length;
   const reopened = await editor.openWorld(first);
-  await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).not.toBeNull());
+  await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).toBe(laid.unsupported), {
+    timeout: 30_000,
+  });
 
   expect(laid.state.laidTrack.some((piece) => (piece.rise ?? 0) !== 0)).toBe(true);
   expect(placedImports(editor)).toHaveLength(2);
