@@ -241,6 +241,7 @@ export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./command
 export {
   toolHints,
   trackBlockText,
+  unjoinedText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -280,6 +281,13 @@ export type {
   TrackRouteView,
 } from "./edit/track-drawing.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";
+export type {
+  ExtensionKind,
+  ExtensionTurn,
+  TrackChoiceView,
+  TrackExtendView,
+  UnjoinedEndView,
+} from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {
