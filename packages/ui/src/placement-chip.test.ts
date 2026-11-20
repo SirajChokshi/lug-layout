@@ -113,7 +113,7 @@ it("holds the live hint and shows a searching cue only after a beat while an ass
   });
 });
 
-it("adds a late turn hint to the chip only, leaving the live hint's text alone", () => {
+function turnScene() {
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -124,52 +124,84 @@ it("adds a late turn hint to the chip only, leaving the live hint's text alone",
   );
   const editor = container.get(EDITOR);
   const play = container.get(TRAIN_PLAY).snapshot();
-  const backwards = (turnSettled: boolean): EditorSnapshot => ({
+  const hovering = (x: number, turnSettled: boolean, turnBlocksSnap: boolean): EditorSnapshot => ({
     ...editor.snapshot(),
     status: "ready",
     mode: "place",
     hover: {
-      x: 0,
+      x,
       z: 0,
       yPlates: 0,
       refusal: null,
       placement: {
         ...REFUSED,
+        pose: { x, z: 0, yPlates: 0, rot: 0 },
         accepted: true,
         hit: null,
         settled: true,
         turnSettled,
-        turnBlocksSnap: turnSettled,
+        turnBlocksSnap,
         turnMates: [],
       },
     },
   });
-  const view = (turnSettled: boolean) =>
-    createElement(
-      Fragment,
-      null,
-      createElement(ToolHud, { snapshot: backwards(turnSettled), play }),
-      createElement(PlacementChip, { snapshot: backwards(turnSettled) }),
-    );
-  const { container: root, rerender } = render(view(false));
-  const said = () => ({
-    hint: screen.getByRole("status").textContent,
-    chip:
-      root.querySelector<HTMLElement>(".placement-chip")?.hidden === false
-        ? root.querySelector(".placement-chip")?.textContent
-        : null,
-  });
-  const before = said();
-  rerender(view(true));
-  const after = said();
+  const view = (x: number, turnSettled: boolean, turnBlocksSnap: boolean) =>
+    createElement(ToolHud, { snapshot: hovering(x, turnSettled, turnBlocksSnap), play });
+  return { view };
+}
 
-  expect({
-    hintUnchanged: after.hint === before.hint,
-    before: before.chip,
-    after: after.chip,
-  }).toEqual({
-    hintUnchanged: true,
-    before: null,
-    after: "Turn it to snap here",
+function liveUpdates(region: Element): () => number {
+  let updates = 0;
+  const observer = new MutationObserver((records) => {
+    updates += records.length;
   });
+  observer.observe(region, { childList: true, subtree: true, characterData: true });
+  return () => {
+    const seen = updates + observer.takeRecords().length;
+    updates = 0;
+    return seen;
+  };
+}
+
+const TURN_LINE = "Turn it to snap here";
+
+it.each([
+  {
+    name: "announces a late turn hint for the same hover once, and never again while it holds",
+    steps: [
+      { x: 0, turnSettled: true, turnBlocksSnap: true },
+      { x: 0, turnSettled: true, turnBlocksSnap: true },
+    ],
+    expected: [
+      { said: true, updated: true },
+      { said: true, updated: false },
+    ],
+  },
+  {
+    name: "never surfaces a moved-from hover's pending turn hint, and announces the new hover's own once",
+    steps: [
+      { x: 20, turnSettled: false, turnBlocksSnap: false },
+      { x: 20, turnSettled: true, turnBlocksSnap: true },
+    ],
+    expected: [
+      { said: false, updated: false },
+      { said: true, updated: true },
+    ],
+  },
+  {
+    name: "says nothing when the turn probe settles without a snapping turn",
+    steps: [{ x: 0, turnSettled: true, turnBlocksSnap: false }],
+    expected: [{ said: false, updated: false }],
+  },
+])("$name", ({ steps, expected }) => {
+  const { view } = turnScene();
+  const { rerender } = render(view(0, false, false));
+  const region = screen.getByRole("status");
+  const updates = liveUpdates(region);
+  const seen = steps.map(({ x, turnSettled, turnBlocksSnap }) => {
+    rerender(view(x, turnSettled, turnBlocksSnap));
+    return { said: region.textContent?.includes(TURN_LINE) ?? false, updated: updates() > 0 };
+  });
+
+  expect(seen).toEqual(expected);
 });

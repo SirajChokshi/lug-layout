@@ -117,9 +117,9 @@ function view(snapshot: EditorSnapshot): HintView {
       if (held?.tables === "loading") return loadingView(snapshot, held);
       const feedback = placementFeedback(snapshot);
       const refused = feedback?.tone === "refused";
-      const said =
-        feedback?.lines.filter((placementLine) => placementLine.kind !== "turn").map(lineText) ??
-        [];
+      const said = feedback?.lines.map(lineText) ?? [];
+      const turning =
+        feedback?.lines.some((placementLine) => placementLine.kind === "turn") ?? false;
       const mode =
         feedback?.mode ??
         effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
@@ -134,7 +134,7 @@ function view(snapshot: EditorSnapshot): HintView {
         ].join(" · "),
         hints: [
           gesture("Click", refused ? "refused here" : "place"),
-          key("rotate", "rotate"),
+          key("rotate", turning ? "turn to snap" : "rotate"),
           key("toggle-placement-mode", other),
           holdAlt(`${other} while held`),
           key("open-palette", "another part"),
