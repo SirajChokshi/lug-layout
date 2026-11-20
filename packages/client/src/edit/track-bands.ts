@@ -1,4 +1,3 @@
-import type { TrackSpan } from "@brr/domain";
 import { PLATE_LDU } from "@brr/math";
 import { DragField, type SupportedPiece } from "./track-drag.ts";
 import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
@@ -10,10 +9,16 @@ export interface SupportBand {
 
 export type SupportBandAt = (lowPlates: number, highPlates: number) => SupportBand;
 
+export interface HeightSpan {
+  readonly bottomLdu: number;
+  readonly topLdu: number;
+}
+
 export interface BandPieces {
   count(): number;
   outline(placement: number): Float64Array | null;
-  span(placement: number): TrackSpan;
+  bottomLdu(placement: number): number;
+  topLdu(placement: number): number;
 }
 
 export interface LayingBand {
@@ -56,13 +61,9 @@ export class TrackBands {
     this.solidBands.clear();
   }
 
-  span(lowPlates: number, highPlates: number): TrackSpan {
+  span(lowPlates: number, highPlates: number): HeightSpan {
     const [bottom, top] = this.range;
-    return {
-      bottomLdu: bottom + lowPlates * PLATE_LDU,
-      topLdu: top + highPlates * PLATE_LDU,
-      railTopLdu: top + highPlates * PLATE_LDU,
-    };
+    return { bottomLdu: bottom + lowPlates * PLATE_LDU, topLdu: top + highPlates * PLATE_LDU };
   }
 
   laying(lowPlates: number, highPlates: number): LayingBand {
@@ -91,8 +92,8 @@ export class TrackBands {
     const band = this.span(lowPlates, highPlates);
     const outlines: Array<Float64Array | null> = [];
     for (let p = 0, count = this.pieces.count(); p < count; p++) {
-      const { bottomLdu, topLdu } = this.pieces.span(p);
-      const shares = bottomLdu < band.topLdu && band.bottomLdu < topLdu;
+      const shares =
+        this.pieces.bottomLdu(p) < band.topLdu && band.bottomLdu < this.pieces.topLdu(p);
       outlines.push(shares ? this.pieces.outline(p) : null);
     }
     return outlines;

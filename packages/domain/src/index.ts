@@ -108,17 +108,8 @@ export {
   type PathSampler,
   type VehicleGeometry,
 } from "./rail/running-gear.ts";
-export {
-  overUnder,
-  pierCourses,
-  rampRises,
-  reachablePlates,
-  runHeights,
-  type OverUnder,
-  type PierCourses,
-  type RunHeights,
-  type TrackSpan,
-} from "./track/elevation.ts";
+export { pierCourses, type PierCourses } from "./track/pier-courses.ts";
+export { rampRises, reachablePlates, runHeights, type RunHeights } from "./track/ramp-heights.ts";
 export {
   INT8_MAX,
   TrackLayout,

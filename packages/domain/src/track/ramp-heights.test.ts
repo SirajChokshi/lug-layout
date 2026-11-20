@@ -2,14 +2,7 @@ import { readFileSync } from "node:fs";
 import { conjugateZeta16, pose16, POSE16_IDENTITY, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { drawingKit, type DrawingKit } from "./drawing-kit.ts";
-import {
-  overUnder,
-  pierCourses,
-  rampRises,
-  reachablePlates,
-  runHeights,
-  type TrackSpan,
-} from "./elevation.ts";
+import { rampRises, reachablePlates, runHeights } from "./ramp-heights.ts";
 import { NO_END, TrackGraph } from "./track-graph.ts";
 import { INT8_MAX, TrackLayout } from "./track-layout.ts";
 import { layMoves, type TrackMove, type TrackPieceDef } from "./track-pose.ts";
@@ -133,41 +126,5 @@ describe("runHeights", () => {
       expect(last && layout.endYPlates(moves.length - 1, last.to)).toBe(heights.endPlates);
       expect(heights.endPlates).toBe(start + rises.reduce((sum, rise) => sum + rise, 0));
     }
-  });
-});
-
-describe("pierCourses", () => {
-  it("stacks the most tall courses that still leave a whole number of short ones", () => {
-    for (let height = 1; height <= 60; height++) {
-      const courses = pierCourses(height, 3, 1);
-      expect(courses && courses.tall * 3 + courses.short).toBe(height);
-      expect(courses?.short).toBeLessThan(3);
-    }
-    expect(pierCourses(5, 3, 2)).toEqual({ tall: 1, short: 1 });
-    expect(pierCourses(1, 3, 2)).toBeNull();
-    expect(pierCourses(0, 3, 1)).toBeNull();
-  });
-});
-
-function trackAt(plates: number): TrackSpan {
-  return { bottomLdu: plates * 8, topLdu: plates * 8 + 24, railTopLdu: plates * 8 + 24 };
-}
-
-describe("overUnder", () => {
-  const ground = trackAt(0);
-
-  it("refuses spans that share height, whichever is named first", () => {
-    expect(overUnder(ground, trackAt(2), 100)).toEqual({ kind: "intersects" });
-    expect(overUnder(trackAt(2), ground, 100)).toEqual({ kind: "intersects" });
-  });
-
-  it("measures the gap from the lower rail top to the upper underside against the gauge", () => {
-    expect(overUnder(ground, trackAt(15), 96)).toEqual({
-      kind: "clear",
-      upperIsA: false,
-      gapLdu: 96,
-    });
-    expect(overUnder(trackAt(15), ground, 97)).toEqual({ kind: "low", upperIsA: true, gapLdu: 96 });
-    expect(overUnder(trackAt(3), ground, 1)).toEqual({ kind: "low", upperIsA: true, gapLdu: 0 });
   });
 });

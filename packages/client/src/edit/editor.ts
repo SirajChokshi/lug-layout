@@ -10,7 +10,6 @@ import {
 import { NO_MESHES, type MeshProgress } from "./mesh-progress.ts";
 import {
   BomCounter,
-  ConnectorTable,
   WORLD_TRACK_FRAME,
   countPlacements,
   EditHistory,
@@ -52,6 +51,7 @@ import {
   roadwayCells,
   PartTally,
   type PartSink,
+  outlinesOverlap,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -110,6 +110,8 @@ import {
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   RAIL_YARD,
+  TALLEST_TRAIN,
+  TRACK_PIERS,
   SNAP_SHAPES,
   WORLD_SESSION,
 } from "../tokens.ts";
@@ -174,17 +176,8 @@ import {
   RAMP_RATES,
 } from "./track-drawing.ts";
 import type { SupportBand } from "./track-bands.ts";
-import {
-  PIER_COLOR,
-  PIER_SHORT_PART,
-  PIER_TALL_PART,
-  pierCourse,
-  pierFile,
-  pierSites,
-  pierTopLdu,
-  type PierKit,
-} from "./track-piers.ts";
-import { VehicleHeights, trainGauge, type TrainGauge } from "./train-gauge.ts";
+import type { ITrackPiers, PierPiece } from "./track-piers.ts";
+import type { ITallestTrain, TallestTrain } from "../trains/tallest-train.ts";
 import type { ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 import { BOX_FLOATS } from "./local-box.ts";
@@ -262,7 +255,7 @@ import {
 } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
-import type { IRailYard, RailAim } from "../trains/rail-yard.ts";
+import type { IRailYard, RailAim, VehicleFootprint } from "../trains/rail-yard.ts";
 import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
@@ -505,7 +498,7 @@ export interface TrackHeightView {
   readonly rampPlates: number;
   readonly rampRates: ReadonlyArray<number>;
   readonly gradePercent: number;
-  readonly gauge: TrainGauge | null;
+  readonly tallestTrain: TallestTrain | null;
 }
 
 export interface CrossingRampView {
@@ -706,7 +699,7 @@ export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void;
   cycleTrackChoice(step: 1 | -1): void;
   raiseTrack(plates: number): void;
-  setTrackRampRate(plates: number): void;
+  setTrackRampPlates(plates: number): void;
   selectTrackChoice(index: number): void;
   dropTrackEnd(): boolean;
   deleteSelection(eventTimeMs: number): void;
@@ -1232,8 +1225,19 @@ function sameHover(a: HoverView | null, b: HoverView | null): boolean {
   return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates;
 }
 
-function planOverlap(a: WorldBox, b: WorldBox): boolean {
-  return a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
+  if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
+  const rect = Float64Array.of(
+    box.minX,
+    box.minZ,
+    box.maxX,
+    box.minZ,
+    box.maxX,
+    box.maxZ,
+    box.minX,
+    box.maxZ,
+  );
+  return outlinesOverlap(vehicle.outline, 0, 0, rect, 0, 0);
 }
 
 function labelsNeedUpdate(previous: EditorSnapshot, next: EditorSnapshot): boolean {
@@ -1464,9 +1468,6 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackWithheld: JoinWithheld | null = null;
   private lastTrackUnsupported: TrackUnsupportedView | null = null;
   private trackSupport: TrackSupport | null = null;
-  private trainGaugeLoad: Promise<void> | null = null;
-  private gauge: TrainGauge | null = null;
-  private pierKit: Promise<PierKit | null> | null = null;
   private trackPiering = false;
   private lowTrack: ReadonlyArray<LowClearance> | null = null;
   private lastTrackLow: TrackLowClearanceView | null = null;
@@ -1504,6 +1505,8 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(CONNECTOR_TABLES) private readonly connectorTables: IConnectorTables,
     @inject(TABLE_GROUND) private readonly ground: ITableGround,
     @inject(RAIL_YARD) private readonly railYard: IRailYard,
+    @inject(TALLEST_TRAIN) private readonly tallestTrains: ITallestTrain,
+    @inject(TRACK_PIERS) private readonly piers: ITrackPiers,
   ) {
     this.placed = new PlacedChunks(backend, (placeable, handle) =>
       this.carriedTrackAt(placeable, handle),
@@ -2009,7 +2012,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private reportClearance(track: TrackDrawing): void {
-    if (track.raisedCount() > 0 || track.drawingHeight > 0) this.ensureTrainGauge();
+    if (track.raisedCount() > 0 || track.drawingPlates > 0) this.measureTallestTrain();
     const low = track.lowClearances();
     this.lowTrack = low;
     if (!low) return;
@@ -2025,7 +2028,7 @@ export class Editor implements IEditor, IEditedWorld {
       const known = carrier ? carriers.get(carrier.id) : undefined;
       if (carrier && (!known || known.needPlates < needPlates)) carriers.set(carrier.id, heights);
     }
-    this.plans.setLowClearance(laid, carriers, track.trainGauge?.model ?? "");
+    this.plans.setLowClearance(laid, carriers, track.tallestTrain?.model ?? "");
   }
 
   private lowClearanceSince(firstPiece: number): TrackLowClearanceView | null {
@@ -2038,109 +2041,72 @@ export class Editor implements IEditor, IEditedWorld {
       null,
     );
     if (!worst) return null;
-    const { needPlates, hasPlates, gauge } = worst;
-    return { pieces: laid.length, needPlates, hasPlates, train: gauge.model };
+    const { needPlates, hasPlates, train } = worst;
+    return { pieces: laid.length, needPlates, hasPlates, train: train.model };
   }
 
-  private ensureTrainGauge(): void {
-    if (this.trainGaugeLoad) return;
-    this.trainGaugeLoad = this.measureTrainGauge().catch((error: unknown) => {
-      this.trainGaugeLoad = null;
-      this.update({ catalogError: `trains can't be measured for clearance: ${errorText(error)}` });
-    });
-  }
-
-  private async measureTrainGauge(): Promise<void> {
-    const trains = await this.catalog.rollingStock();
+  private measureTallestTrain(): void {
     const track = this.track;
     if (!track) return;
-    const heights = new VehicleHeights(this.catalog.parts(), this.catalog.studPrimitives());
-    this.gauge = trainGauge(trains, heights, track.playTrack().railPart);
-    track.setGauge(this.gauge);
+    this.tallestTrains.measure(track.playTrack().railPart).then(
+      () => this.applyTallestTrain(),
+      (error: unknown) => {
+        this.update({
+          catalogError: `trains can't be measured for clearance: ${errorText(error)}`,
+        });
+      },
+    );
+  }
+
+  private applyTallestTrain(): void {
+    const track = this.track;
+    const tallest = this.tallestTrains.current();
+    if (!track || track.tallestTrain === tallest) return;
+    track.setTallestTrain(tallest);
     this.layoutChanged();
-    if (track.dragView()) this.resolveDrag(track);
-    else this.repaintTrackPreview();
+    this.repaintTrackPreview();
     this.update({ track: this.trackView() });
   }
 
   private remeasureTrains(placeable: Placeable | undefined | null): void {
-    if (!placeable || !this.trainGaugeLoad || !this.catalog.playModel(placeable)) return;
-    this.trainGaugeLoad = null;
-    this.ensureTrainGauge();
+    if (!placeable || !this.catalog.playModel(placeable)) return;
+    this.tallestTrains.invalidate();
+    if (this.track?.tallestTrain) this.measureTallestTrain();
   }
 
-  private ensurePierKit(): Promise<PierKit | null> {
-    this.pierKit ??= this.measurePierKit().catch((error: unknown) => {
-      this.pierKit = null;
-      throw error;
-    });
-    return this.pierKit;
-  }
-
-  private async measurePierKit(): Promise<PierKit | null> {
-    const [tall, short] = await Promise.all(
-      [PIER_TALL_PART, PIER_SHORT_PART].map(async (part) => {
-        const loaded = await this.loader.readPartConnectors(EDITOR_LOD, part);
-        if (loaded.kind !== "loaded") return null;
-        return pierCourse(part, ConnectorTable.fromColumns(loaded.connectors, this.shapes, part));
-      }),
-    );
-    return tall && short ? { tall, short, color: PIER_COLOR } : null;
-  }
-
-  private async pierRef(kit: PierKit, heightPlates: number): Promise<number | null> {
-    const file = pierFile(kit, heightPlates);
-    if (!file) return null;
-    const bytes = new TextEncoder().encode(file.text);
-    const item = await this.session.addModelFile({ name: file.name, bytes });
-    if (item === null) return null;
-    await this.studsLanding.get(item);
-    return this.catalog.itemRefId(item);
-  }
-
-  private async piersFor(
+  private piersFor(
     track: TrackDrawing,
     raised: ReadonlyArray<RaisedPiece>,
     change: TrackChange,
   ): Promise<ReadonlyArray<PlacementPose>> {
-    const kit = await this.ensurePierKit();
     const support = this.trackSupport;
-    if (!kit || !support) return [];
-    const refs = new Map<number, number | null>();
-    for (const piece of raised) {
-      const bottom = track.bandBottomLdu(piece.yPlates);
-      if (bottom <= 0 || bottom % PLATE_LDU !== 0 || refs.has(bottom)) continue;
-      refs.set(bottom, await this.pierRef(kit, bottom / PLATE_LDU));
-    }
-    const chosen: PlacementPose[] = [];
-    const taken: WorldBox[] = [];
-    for (const piece of raised) {
-      const bottom = track.bandBottomLdu(piece.yPlates);
-      const refId = refs.get(bottom) ?? null;
-      const pier = refId === null ? null : this.catalog.placeables()[refId];
-      if (refId === null || !pier || pierTopLdu(pier) !== bottom) continue;
+    if (!support) return Promise.resolve([]);
+    const pieces = raised.map((piece): PierPiece => {
       const { partFrame } = track.pieceByIndex(piece.catalogIndex).piece;
-      const antiStuds = support.antiStudCells(piece.catalogIndex, partFrame, piece.placement);
       const box = track.pieceBox(piece.catalogIndex, piece.placement);
-      const centreX = (box.minX + box.maxX) / 2;
-      const centreZ = (box.minZ + box.maxZ) / 2;
-      for (const site of pierSites(pier, antiStuds, centreX, centreZ)) {
-        const pose = { refId, colorId: 0, x: site.x, z: site.z, yPlates: 0, rot: site.rot };
-        const posed = posedBox(pier.box, site.x, site.z, 0, site.rot);
-        if (taken.some((other) => planOverlap(other, posed))) continue;
-        if (track.changeMeets(change, piece.index, posed)) continue;
+      return {
+        index: piece.index,
+        bottomLdu: track.bandBottomLdu(piece.yPlates),
+        antiStuds: support.antiStudCells(piece.catalogIndex, partFrame, piece.placement),
+        centreX: (box.minX + box.maxX) / 2,
+        centreZ: (box.minZ + box.maxZ) / 2,
+      };
+    });
+    const trains = this.railYard.standingFootprints();
+    return this.piers.piersFor({
+      pieces,
+      studsChecked: (item) => this.studsLanding.get(item) ?? Promise.resolve(),
+      fits: (pier, pose, posed, piece) => {
+        if (track.changeOverlaps(change, piece.index, posed)) return false;
+        if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
         const member = { model: null, placeable: pier, pose, component: 0 };
         const roads = this.roadsWithout(NO_MODELS);
-        if (this.modelRefusal([member], [pose], NO_MODELS, roads, NO_TRACK_SKIP) !== null) continue;
-        chosen.push(pose);
-        taken.push(posed);
-        break;
-      }
-    }
-    return chosen;
+        return this.modelRefusal([member], [pose], NO_MODELS, roads, NO_TRACK_SKIP) === null;
+      },
+    });
   }
 
-  private layTrack(
+  private commitTrack(
     change: TrackChange,
     eventTimeMs: number,
     sample: EditSample | undefined,
@@ -2148,7 +2114,7 @@ export class Editor implements IEditor, IEditedWorld {
   ): void {
     const track = this.track;
     if (!track) return;
-    const raised = track.raisedPieces(change).filter((piece) => !track.heldUp(piece));
+    const raised = track.levelRaisedPieces(change).filter((piece) => !track.seated(piece));
     if (raised.length === 0) {
       const edit = this.history.commit("lay-track", [], change);
       if (sample) this.show(edit, eventTimeMs, sample);
@@ -2402,12 +2368,12 @@ export class Editor implements IEditor, IEditedWorld {
       lowClearance: this.lowTrack?.length ?? null,
       lastLowClearance: this.lastTrackLow,
       height: {
-        drawingPlates: track.drawingHeight,
-        drawingLdu: track.drawingHeight * PLATE_LDU,
-        rampPlates: track.rampRate,
+        drawingPlates: track.drawingPlates,
+        drawingLdu: track.drawingPlates * PLATE_LDU,
+        rampPlates: track.rampPlates,
         rampRates: RAMP_RATES,
         gradePercent: track.gradePercent(),
-        gauge: track.trainGauge,
+        tallestTrain: track.tallestTrain,
       },
       solve:
         samples.length === 0
@@ -2647,7 +2613,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.lastTrackCommit = `refused-${outcome.refusal}`;
     } else if (outcome.change.lay.length > 0) {
       const sample = { item: TRACK_ITEM_ID, rot: 0, x: this.hoverX, z: this.hoverZ };
-      this.layTrack(outcome.change, eventTimeMs, sample, () => {
+      this.commitTrack(outcome.change, eventTimeMs, sample, () => {
         this.lastTrackCommit =
           outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
         track.extension.continueFrom(outcome.end);
@@ -2677,7 +2643,7 @@ export class Editor implements IEditor, IEditedWorld {
   extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return;
-    if (track.dragView()) return;
+    if (track.dragView() || this.trackPiering) return;
     if (turn !== null && !track.extension.choose(turn)) return;
     const plan = track.extensionPlan();
     if (!plan) return;
@@ -2692,7 +2658,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.lastTrackBlock = null;
     const firstLaid = track.pieceCount;
-    this.layTrack(plan.change, eventTimeMs, undefined, () => {
+    this.commitTrack(plan.change, eventTimeMs, undefined, () => {
       this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
       this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
       this.lastTrackLow = this.lowClearanceSince(firstLaid);
@@ -2704,20 +2670,20 @@ export class Editor implements IEditor, IEditedWorld {
   raiseTrack(plates: number): void {
     const track = this.track;
     if (this.state.mode !== "track" || !track || this.state.readOnly) return;
-    const height = Math.max(0, track.drawingHeight + plates);
-    if (height === track.drawingHeight) return;
-    track.setDrawingHeight(height);
-    if (height > 0) this.ensureTrainGauge();
+    const height = Math.max(0, track.drawingPlates + plates);
+    if (height === track.drawingPlates) return;
+    track.setDrawingPlates(height);
+    if (height > 0) this.measureTallestTrain();
     if (this.hovering) this.groundHit(this.pointerNdcX, this.pointerNdcY);
     if (track.dragView()) this.resolveDrag(track);
     else this.refreshTrackPreview();
     this.update({ track: this.trackView(), hover: this.hoverView() });
   }
 
-  setTrackRampRate(plates: number): void {
+  setTrackRampPlates(plates: number): void {
     const track = this.track;
     if (!track || this.state.readOnly) return;
-    track.setRampRate(plates);
+    track.setRampPlates(plates);
     if (track.dragView()) this.resolveDrag(track);
     else this.repaintTrackPreview();
     this.update({ track: this.trackView() });
@@ -2960,7 +2926,7 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.track;
     const held = this.held;
     const snap = held?.snap;
-    if (!track || !held || !snap) return;
+    if (!track || !held || !snap || this.trackPiering) return;
     this.setTrackObstacles(track);
     const block = track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastTrackWithheld = null;
@@ -2982,7 +2948,7 @@ export class Editor implements IEditor, IEditedWorld {
     const firstLaid = track.pieceCount;
     const change = track.pieceChange(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastTrackBlock = null;
-    this.layTrack(change, eventTimeMs, undefined, () => {
+    this.commitTrack(change, eventTimeMs, undefined, () => {
       this.lastTrackCommit = track.joinedPairs() > joins ? "joined" : "laid";
       this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
       this.lastTrackLow = this.lowClearanceSince(firstLaid);
@@ -3104,7 +3070,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.pointerNdcX = ndcX;
     this.pointerNdcY = ndcY;
     const drawing = this.drawingTrack();
-    const planeY = drawing ? drawing.bandBottomLdu(drawing.drawingHeight) : 0;
+    const planeY = drawing ? drawing.bandBottomLdu(drawing.drawingPlates) : 0;
     if (!this.groundPoint(ndcX, ndcY, this.groundScratch, 0, planeY)) return false;
     this.hitX = this.groundScratch[0] ?? 0;
     this.hitZ = this.groundScratch[1] ?? 0;
@@ -3334,11 +3300,11 @@ export class Editor implements IEditor, IEditedWorld {
   private aimTrain(train: PlayModel, ray: Float64Array, reversed: boolean): RailAim {
     const aim = this.railYard.aim(train, ray, reversed);
     const track = this.track;
-    if (aim.kind !== "seat" || !track) return aim;
+    if (aim.kind !== "seat" || !track || track.raisedCount() === 0) return aim;
     const meets = this.railYard
       .seatFootprints(aim.seat, train)
       .some(({ outline, railTopLdu, topLdu }) =>
-        track.raisedTrackMeets(outline, railTopLdu, topLdu),
+        track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
       );
     if (!meets) return aim;
     const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;
@@ -3451,7 +3417,7 @@ export class Editor implements IEditor, IEditedWorld {
     return {
       x: this.hoverX,
       z: this.hoverZ,
-      yPlates: this.drawingTrack()?.drawingHeight ?? this.assist.yPlates,
+      yPlates: this.drawingTrack()?.drawingPlates ?? this.assist.yPlates,
       refusal: onRails ? this.railRefusal : this.assist.refusal,
       onRails,
       placement: this.assist.placement,
@@ -6096,6 +6062,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private replaceWorld({ world, handles, track }: RestoredWorld): void {
+    this.trackPiering = false;
     this.cancelGesture();
     this.select([]);
     this.cancelFill();
@@ -6106,7 +6073,7 @@ export class Editor implements IEditor, IEditedWorld {
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;
     if (track && this.trackSupport) track.setSupport(this.trackSupport);
-    track?.setGauge(this.gauge);
+    track?.setTallestTrain(this.tallestTrains.current());
     for (const key of track?.chunkKeys() ?? []) {
       const chunk = track?.chunkInstances(key);
       if (chunk) this.backend.setChunk(key, chunk);

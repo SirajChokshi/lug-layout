@@ -63,14 +63,12 @@ import {
   type TrackPieceSpec,
   WORLD_TRACK_FRAME,
   boxesOverlap,
-  overUnder,
   outlinesOverlap,
   rampRises,
   runMoves,
   reachablePlates,
   runHeights,
   type RunHeights,
-  type TrackSpan,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -109,11 +107,11 @@ import {
   type TrackBlockView,
   type TrackDragView,
 } from "./track-drag.ts";
-import { OBSTACLE_RECT_FLOATS } from "./track-obstacles.ts";
+import { OBSTACLE_RECT_FLOATS, cellKey } from "./track-obstacles.ts";
 import type { TrackSupport } from "./track-support.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
-import type { LabelView } from "./size-labels.ts";
-import { heightText, type TrainGauge } from "./train-gauge.ts";
+import { heightText, type LabelView } from "./size-labels.ts";
+import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 import {
   TrackExtension,
@@ -143,6 +141,7 @@ const RAMP_CONNECTORS = 2;
 const INT16_MAX = 2 ** 15 - 1;
 const DEFAULT_RAMP_PLATES = 1;
 const PERCENT = 100;
+const NO_PIECE = -1;
 export const RAMP_RATES: ReadonlyArray<number> = [1, 2];
 const GHOST_SCRATCH_PIECES = 64;
 const REFUSED_PIECE_LDRAW_COLOR = 4;
@@ -287,7 +286,7 @@ export interface LowClearance {
   readonly piece: number;
   readonly needPlates: number;
   readonly hasPlates: number;
-  readonly gauge: TrainGauge;
+  readonly train: TallestTrain;
 }
 
 interface OverUnderCrossing {
@@ -607,13 +606,19 @@ export class TrackDrawing implements ExtensionSite {
   private framed: Array<Float64Array | null> = [];
   private pieceBands: ReadonlyArray<readonly [number, number]> = [];
   private readonly pieceRanges = new Map<number, readonly [number, number]>();
-  private drawingPlates = GROUND_PLATES;
-  private rampPlates = DEFAULT_RAMP_PLATES;
+  private heightPlates = GROUND_PLATES;
+  private risePerPiece = DEFAULT_RAMP_PLATES;
   private dragPlates = GROUND_PLATES;
   private dragRunCache: DragRunCache | null = null;
   private labelCache: ReadonlyArray<LabelView> | null = null;
   private crossingCache: ReadonlyArray<OverUnderCrossing> | null = null;
-  private gauge: TrainGauge | null = null;
+  private spanBottom = new Float64Array(0);
+  private spanTop = new Float64Array(0);
+  private spanRailTop = new Float64Array(0);
+  private raisedAt = new Int32Array(0);
+  private readonly railTopLdu: number;
+  private readonly pieceBoxScratch = new Float64Array(OUTLINE_BOX_FLOATS);
+  private tallest: TallestTrain | null = null;
   private readonly crossingShapes = new Map<number, CrossingShape>();
   private readonly planEdges = new Map<number, OutlineEdges>();
   private readonly supportPartList: SupportPart[] = [];
@@ -687,65 +692,70 @@ export class TrackDrawing implements ExtensionSite {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
+    const { kit: straight, part: straightPart } = this.kitStraight();
+    this.railTopLdu = straight.yLdu + straightPart.boundsMax[1];
     this.kitOutlines = new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline);
     this.router = new StrokeRouter(this.kitOutlines);
     this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
     const pieces: BandPieces = {
       count: () => this.combined.count,
       outline: (p) => this.framed[p] ?? null,
-      span: (p) => this.pieceSpan(p),
+      bottomLdu: (p) => this.spanBottom[p] ?? 0,
+      topLdu: (p) => this.spanTop[p] ?? 0,
     };
     this.bands = new TrackBands(pieces, this.verticalRange(), this.supportedOn);
     this.extension = new TrackExtension(this);
   }
 
-  private pieceSpan(placement: number): TrackSpan {
+  private measureSpan(placement: number): void {
     const layout = this.combined;
     const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
     const yPlates = layout.yPlates(placement);
     const end = yPlates + layout.rise(placement);
     const low = Math.min(yPlates, end) * PLATE_LDU;
     const high = Math.max(yPlates, end) * PLATE_LDU;
-    return { bottomLdu: bottom + low, topLdu: top + high, railTopLdu: top + high };
+    this.spanBottom[placement] = bottom + low;
+    this.spanTop[placement] = top + high;
+    this.spanRailTop[placement] = this.railTopLdu + high;
   }
 
-  get drawingHeight(): number {
-    return this.drawingPlates;
+  get drawingPlates(): number {
+    return this.heightPlates;
   }
 
-  get rampRate(): number {
-    return this.rampPlates;
+  get rampPlates(): number {
+    return this.risePerPiece;
   }
 
-  get trainGauge(): TrainGauge | null {
-    return this.gauge;
+  get tallestTrain(): TallestTrain | null {
+    return this.tallest;
   }
 
-  setDrawingHeight(plates: number): void {
+  setDrawingPlates(plates: number): void {
     if (!Number.isInteger(plates) || plates < GROUND_PLATES || plates > INT16_MAX) {
       throw new RangeError(`track can't be drawn ${plates} plates up`);
     }
-    if (plates === this.drawingPlates) return;
-    this.drawingPlates = plates;
+    if (plates === this.heightPlates) return;
+    this.heightPlates = plates;
     if (this.drag && this.drag.fromEnd === null) this.reseatDrag(plates);
     this.extension.endsChanged();
   }
 
-  setRampRate(plates: number): void {
+  setRampPlates(plates: number): void {
     if (!RAMP_RATES.includes(plates))
       throw new RangeError(`a ramp can't rise ${plates} plates a piece`);
-    if (plates === this.rampPlates) return;
-    this.rampPlates = plates;
+    if (plates === this.risePerPiece) return;
+    this.risePerPiece = plates;
     this.extension.endsChanged();
   }
 
   gradePercent(): number {
     const runLdu = Number(this.kit.straightStuds) * STUD_LDU;
-    return (this.rampPlates * PLATE_LDU * PERCENT) / runLdu;
+    return (this.risePerPiece * PLATE_LDU * PERCENT) / runLdu;
   }
 
-  setGauge(gauge: TrainGauge | null): void {
-    this.gauge = gauge;
+  setTallestTrain(train: TallestTrain | null): void {
+    this.tallest = train;
     this.labelCache = null;
   }
 
@@ -767,16 +777,21 @@ export class TrackDrawing implements ExtensionSite {
     return [...this.byDef.values()];
   }
 
-  playTrack(): PlayTrack {
+  private kitStraight(): { readonly kit: KitPart; readonly part: PartShapeAsset } {
     const straight = this.kitParts().find((k) => k.piece.kind === "straight");
     const part = straight ? this.parts[straight.partIndex] : undefined;
     if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
+    return { kit: straight, part };
+  }
+
+  playTrack(): PlayTrack {
+    const { kit: straight } = this.kitStraight();
     const box = straight.footprints;
     return {
       layout: this.combined,
       pieces: this.pieces,
       railPart: straight.piece.part,
-      railTopY: straight.yLdu + part.boundsMax[1],
+      railTopY: this.railTopLdu,
       halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
@@ -955,7 +970,7 @@ export class TrackDrawing implements ExtensionSite {
       placement: (end) => this.endOwners[end],
     };
     const from = this.endNear(hitX, hitZ, null);
-    this.dragPlates = from === null ? this.drawingPlates : this.endHeight(from);
+    this.dragPlates = from === null ? this.heightPlates : this.endHeight(from);
     const band = this.bands.laying(this.dragPlates, this.dragPlates);
     this.drag = new TrackDrag(
       this.kit,
@@ -1417,10 +1432,10 @@ export class TrackDrawing implements ExtensionSite {
     moves: ReadonlyArray<TrackMove>,
     goalPlates: number | null,
   ): RunHeightsResult {
-    const toward = goalPlates ?? this.drawingPlates;
-    const reached = reachablePlates(startPlates, toward, moves.length, this.rampPlates);
+    const toward = goalPlates ?? this.heightPlates;
+    const reached = reachablePlates(startPlates, toward, moves.length, this.risePerPiece);
     const straights = moves.map((move) => move.turn === 0);
-    const rises = rampRises(startPlates, reached, straights, this.rampPlates);
+    const rises = rampRises(startPlates, reached, straights, this.risePerPiece);
     if (!rises) throw new Error(`a run of ${moves.length} pieces can't reach ${reached} plates`);
     const heights = runHeights(moves, startPlates, rises);
     return {
@@ -1460,8 +1475,8 @@ export class TrackDrawing implements ExtensionSite {
       drag,
       drag.revision,
       this.dragPlates,
-      this.drawingPlates,
-      this.rampPlates,
+      this.heightPlates,
+      this.risePerPiece,
       this.bands.version,
     ] as const;
     const cached = this.dragRunCache;
@@ -1709,7 +1724,7 @@ export class TrackDrawing implements ExtensionSite {
     const end = this.endNear(hitX, hitZ, null);
     const target = end === null ? undefined : this.ends[end];
     const placement = target ? attachPose16(local, target) : freePlacement(part.def, held, free);
-    const yPlates = end === null ? this.drawingPlates : this.endHeight(end);
+    const yPlates = end === null ? this.heightPlates : this.endHeight(end);
     let joins = 0;
     const misses: number[] = [];
     for (const own of connectors) {
@@ -1921,6 +1936,10 @@ export class TrackDrawing implements ExtensionSite {
     const layout = this.combined;
     const framed: Array<Float64Array | null> = [];
     const bands = new Map<string, readonly [number, number]>();
+    const raised: number[] = [];
+    this.spanBottom = new Float64Array(layout.count);
+    this.spanTop = new Float64Array(layout.count);
+    this.spanRailTop = new Float64Array(layout.count);
     for (let p = 0; p < layout.count; p++) {
       const outline = this.outlines.get(layout.piece(p));
       framed.push(outline ? framedOutline(outline, layout.pose(p), layout.frame(p)) : null);
@@ -1928,7 +1947,10 @@ export class TrackDrawing implements ExtensionSite {
       const end = yPlates + layout.rise(p);
       const band = [Math.min(yPlates, end), Math.max(yPlates, end)] as const;
       bands.set(`${band[0]}:${band[1]}`, band);
+      if (band[1] !== GROUND_PLATES) raised.push(p);
+      this.measureSpan(p);
     }
+    this.raisedAt = Int32Array.from(raised);
     this.framed = framed;
     this.pieceBands = [...bands.values()];
     this.labelCache = null;
@@ -1937,7 +1959,7 @@ export class TrackDrawing implements ExtensionSite {
     this.skipped.clear();
   }
 
-  raisedPieces(change: TrackChange): ReadonlyArray<RaisedPiece> {
+  levelRaisedPieces(change: TrackChange): ReadonlyArray<RaisedPiece> {
     return change.lay.flatMap((at) =>
       at.yPlates > GROUND_PLATES && at.rise === 0
         ? [{ index: at.index, catalogIndex: at.piece, placement: at.pose, yPlates: at.yPlates }]
@@ -1946,14 +1968,10 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   raisedCount(): number {
-    let raised = 0;
-    for (let p = 0; p < this.combined.count; p++) {
-      if (this.combined.yPlates(p) !== GROUND_PLATES || this.combined.rise(p) !== 0) raised++;
-    }
-    return raised;
+    return this.raisedAt.length;
   }
 
-  heldUp(piece: RaisedPiece): boolean {
+  seated(piece: RaisedPiece): boolean {
     const support = this.support;
     if (!support) return false;
     const band = this.bands.laying(piece.yPlates, piece.yPlates);
@@ -1972,7 +1990,7 @@ export class TrackDrawing implements ExtensionSite {
     );
   }
 
-  changeMeets(change: TrackChange, except: number, box: WorldBox): boolean {
+  changeOverlaps(change: TrackChange, except: number, box: WorldBox): boolean {
     const rect = this.rectOutline;
     rect.set([box.minX, box.minZ, box.maxX, box.minZ, box.maxX, box.maxZ, box.minX, box.maxZ]);
     for (const at of change.lay) {
@@ -2046,16 +2064,15 @@ export class TrackDrawing implements ExtensionSite {
     ];
   }
 
-  raisedTrackMeets(outline: Float64Array, bottomLdu: number, topLdu: number): boolean {
+  raisedTrackOverlaps(outline: Float64Array, bottomLdu: number, topLdu: number): boolean {
+    if (this.raisedAt.length === 0) return false;
     const box = this.collisionBox;
     outlineBox(outline, box, 0);
-    const pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
-    const layout = this.combined;
-    for (let p = 0; p < layout.count; p++) {
+    const pieceBox = this.pieceBoxScratch;
+    for (const p of this.raisedAt) {
       const framed = this.framed[p];
-      if (!framed || (layout.yPlates(p) === GROUND_PLATES && layout.rise(p) === 0)) continue;
-      const span = this.pieceSpan(p);
-      if (span.bottomLdu >= topLdu || bottomLdu >= span.topLdu) continue;
+      if (!framed) continue;
+      if ((this.spanBottom[p] ?? 0) >= topLdu || bottomLdu >= (this.spanTop[p] ?? 0)) continue;
       outlineBox(framed, pieceBox, 0);
       if (!boxesOverlap(box, 0, 0, 0, pieceBox, 0)) continue;
       if (outlinesOverlap(outline, 0, 0, framed, 0, 0)) return true;
@@ -2064,24 +2081,20 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   lowClearances(): ReadonlyArray<LowClearance> | null {
-    const gauge = this.gauge;
-    if (!gauge) return null;
+    const train = this.tallest;
+    if (!train) return null;
+    const [bottom] = this.verticalRange();
     const worst = new Map<number, LowClearance>();
     for (const crossing of this.crossings()) {
-      if (crossing.gapLdu >= gauge.heightLdu) continue;
-      const hasPlates = this.pieceHeightPlates(crossing.upper);
-      const shortPlates = Math.ceil((gauge.heightLdu - crossing.gapLdu) / PLATE_LDU);
+      if (crossing.gapLdu >= train.heightLdu) continue;
+      const hasPlates = ((this.spanBottom[crossing.upper] ?? 0) - bottom) / PLATE_LDU;
+      const shortPlates = Math.ceil((train.heightLdu - crossing.gapLdu) / PLATE_LDU);
       const needPlates = hasPlates + shortPlates;
       const known = worst.get(crossing.upper);
       if (known && known.needPlates >= needPlates) continue;
-      worst.set(crossing.upper, { piece: crossing.upper, needPlates, hasPlates, gauge });
+      worst.set(crossing.upper, { piece: crossing.upper, needPlates, hasPlates, train });
     }
     return [...worst.values()];
-  }
-
-  private pieceHeightPlates(placement: number): number {
-    const [bottom] = this.verticalRange();
-    return (this.pieceSpan(placement).bottomLdu - bottom) / PLATE_LDU;
   }
 
   private crossings(): ReadonlyArray<OverUnderCrossing> {
@@ -2090,47 +2103,90 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private overUnderCrossings(): ReadonlyArray<OverUnderCrossing> {
-    const layout = this.combined;
+    if (this.raisedAt.length === 0) return [];
+    const count = this.combined.count;
+    const boxes = new Float64Array(count * OUTLINE_BOX_FLOATS);
+    const cells = new Map<number, number[]>();
+    for (let p = 0; p < count; p++) {
+      const outline = this.framed[p];
+      if (!outline) continue;
+      outlineBox(outline, boxes, p * OUTLINE_BOX_FLOATS);
+      this.forCellsOf(boxes, p, (cell) => {
+        const listed = cells.get(cell);
+        if (listed) listed.push(p);
+        else cells.set(cell, [p]);
+      });
+    }
+    const seen = new Int32Array(count).fill(NO_PIECE);
     const crossings: OverUnderCrossing[] = [];
-    const box = new Float64Array(OUTLINE_BOX_FLOATS);
-    const lowerBox = new Float64Array(OUTLINE_BOX_FLOATS);
-    for (let upper = 0; upper < layout.count; upper++) {
+    for (const upper of this.raisedAt) {
       const outline = this.framed[upper];
-      if (!outline || layout.yPlates(upper) === GROUND_PLATES) continue;
-      outlineBox(outline, box, 0);
-      for (let lower = 0; lower < layout.count; lower++) {
-        const under = this.framed[lower];
-        if (!under || lower === upper) continue;
-        const verdict = overUnder(this.pieceSpan(upper), this.pieceSpan(lower), 0);
-        if (verdict.kind === "intersects" || !verdict.upperIsA) continue;
-        outlineBox(under, lowerBox, 0);
-        if (!boxesOverlap(box, 0, 0, 0, lowerBox, 0)) continue;
-        if (!outlinesOverlap(outline, 0, 0, under, 0, 0)) continue;
-        crossings.push({
-          upper,
-          gapLdu: verdict.gapLdu,
-          x:
-            (Math.max(box[0] ?? 0, lowerBox[0] ?? 0) + Math.min(box[2] ?? 0, lowerBox[2] ?? 0)) / 2,
-          z:
-            (Math.max(box[1] ?? 0, lowerBox[1] ?? 0) + Math.min(box[3] ?? 0, lowerBox[3] ?? 0)) / 2,
-          lower,
-        });
-      }
+      if (!outline) continue;
+      const underside = this.spanBottom[upper] ?? 0;
+      this.forCellsOf(boxes, upper, (cell) => {
+        for (const lower of cells.get(cell) ?? []) {
+          if (lower === upper || seen[lower] === upper) continue;
+          seen[lower] = upper;
+          if (underside < (this.spanTop[lower] ?? 0)) continue;
+          const under = this.framed[lower];
+          if (
+            !under ||
+            !boxesOverlap(
+              boxes,
+              upper * OUTLINE_BOX_FLOATS,
+              0,
+              0,
+              boxes,
+              lower * OUTLINE_BOX_FLOATS,
+            )
+          )
+            continue;
+          if (!outlinesOverlap(outline, 0, 0, under, 0, 0)) continue;
+          crossings.push(this.crossingOf(boxes, upper, lower));
+        }
+      });
     }
     return crossings;
   }
 
+  private forCellsOf(boxes: Float64Array, placement: number, visit: (cell: number) => void): void {
+    const at = placement * OUTLINE_BOX_FLOATS;
+    const minX = Math.floor((boxes[at] ?? 0) / CHUNK_LDU);
+    const minZ = Math.floor((boxes[at + 1] ?? 0) / CHUNK_LDU);
+    const maxX = Math.floor((boxes[at + 2] ?? 0) / CHUNK_LDU);
+    const maxZ = Math.floor((boxes[at + 3] ?? 0) / CHUNK_LDU);
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) visit(cellKey(x, z));
+    }
+  }
+
+  private crossingOf(boxes: Float64Array, upper: number, lower: number): OverUnderCrossing {
+    const u = upper * OUTLINE_BOX_FLOATS;
+    const l = lower * OUTLINE_BOX_FLOATS;
+    const middle = (axis: number): number =>
+      (Math.max(boxes[u + axis] ?? 0, boxes[l + axis] ?? 0) +
+        Math.min(boxes[u + axis + 2] ?? 0, boxes[l + axis + 2] ?? 0)) /
+      2;
+    return {
+      upper,
+      lower,
+      gapLdu: (this.spanBottom[upper] ?? 0) - (this.spanRailTop[lower] ?? 0),
+      x: middle(0),
+      z: middle(1),
+    };
+  }
+
   private clearanceLabels(): ReadonlyArray<LabelView> {
-    const gauge = this.gauge;
+    const train = this.tallest;
     return this.crossings().map((crossing) => {
       const clear = `${heightText(crossing.gapLdu)} clear`;
-      const low = gauge !== null && crossing.gapLdu < gauge.heightLdu;
+      const low = train !== null && crossing.gapLdu < train.heightLdu;
       return {
         id: `clearance:${crossing.upper}:${crossing.lower}`,
         kind: "height",
-        text: low ? `${clear}: too low for ${gauge.model}` : clear,
+        text: low ? `${clear}: too low for ${train.model}` : clear,
         x: crossing.x,
-        y: this.pieceSpan(crossing.upper).bottomLdu,
+        y: this.spanBottom[crossing.upper] ?? 0,
         z: crossing.z,
       };
     });

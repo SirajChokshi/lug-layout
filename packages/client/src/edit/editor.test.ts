@@ -7760,10 +7760,10 @@ it("lays a bridge over laid track wherever its own height clears, reports one lo
   dragTrack(editor, backend, [-8 * STUD, -40 * STUD], [-8 * STUD, 40 * STUD]);
   const ground = editor.dump().laidTrack.length;
   editor.raiseTrack(BRIDGE_PLATES - 1);
-  await vi.waitFor(() => expect(editor.snapshot().track?.height.gauge).not.toBeNull(), {
+  await vi.waitFor(() => expect(editor.snapshot().track?.height.tallestTrain).not.toBeNull(), {
     timeout: 60_000,
   });
-  const gauge = editor.snapshot().track?.height.gauge;
+  const tallest = editor.snapshot().track?.height.tallestTrain;
   await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
   const low = clearanceOutcome(editor, ground);
   const hint = toolHints(editor.snapshot());
@@ -7791,8 +7791,8 @@ it("lays a bridge over laid track wherever its own height clears, reports one lo
   const caboose = editor.snapshot().catalog.find((item) => item.id === CABOOSE)?.label ?? CABOOSE;
   const tooLow = `too low for the tallest train: ${TALLEST_TRAIN} needs ${BRIDGE_PLATES} plates, this bridge has ${BRIDGE_PLATES - 1}`;
 
-  expect(gauge?.model).toBe(TALLEST_TRAIN);
-  expect(gauge?.heightLdu).toBeCloseTo(282.92, 2);
+  expect(tallest?.model).toBe(TALLEST_TRAIN);
+  expect(tallest?.heightLdu).toBeCloseTo(282.92, 2);
   expect(low).toEqual({
     commit: "laid",
     block: null,
@@ -7959,16 +7959,16 @@ it("measures the tallest train from every train in the catalog, and again when a
   const { editor } = await raisedEditor([TALLEST_TRAIN]);
   editor.chooseItem(TRACK_ITEM_ID);
   editor.raiseTrack(1);
-  const gauge = () => editor.snapshot().track?.height.gauge ?? null;
-  await vi.waitFor(() => expect(gauge()).not.toBeNull(), { timeout: 60_000 });
-  const bundled = gauge();
+  const tallest = () => editor.snapshot().track?.height.tallestTrain ?? null;
+  await vi.waitFor(() => expect(tallest()).not.toBeNull(), { timeout: 60_000 });
+  const bundled = tallest();
   const imported = await editor.importModelFile({
     name: "my-tall-caboose.mpd",
     bytes: await myTallCaboose(),
   });
-  await vi.waitFor(() => expect(gauge()?.model).toBe("my-tall-caboose.mpd"), { timeout: 60_000 });
+  await vi.waitFor(() => expect(tallest()?.model).toBe("my-tall-caboose.mpd"), { timeout: 60_000 });
 
   expect(imported).toBe(true);
   expect(bundled?.model).toBe(TALLEST_TRAIN);
-  expect(gauge()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
+  expect(tallest()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
 }, 180_000);

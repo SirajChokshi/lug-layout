@@ -65,7 +65,7 @@ import {
 } from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import type { SupportBandAt } from "./track-bands.ts";
-import { heightText } from "./train-gauge.ts";
+import { heightText } from "./size-labels.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -2042,20 +2042,20 @@ it("refuses track across laid track only where their heights meet, and reports e
   const low = layout.pieceBlock(straight, across, clearPlates - 1);
   const bridge = layAt(layout, across, clearPlates - 1);
   const unmeasured = layout.lowClearances();
-  layout.setGauge(MY_TRAIN);
+  layout.setTallestTrain(MY_TRAIN);
   const reported = layout.lowClearances();
   const below = await bareDrawing();
-  below.setGauge(MY_TRAIN);
+  below.setTallestTrain(MY_TRAIN);
   layAt(below, across, clearPlates - 1);
   layAt(below, along, 0);
   const clear = await bareDrawing();
-  clear.setGauge(MY_TRAIN);
+  clear.setTallestTrain(MY_TRAIN);
   layAt(clear, along, 0);
   layAt(clear, across, clearPlates);
   const finding = {
     needPlates: clearPlates,
     hasPlates: clearPlates - 1,
-    gauge: MY_TRAIN,
+    train: MY_TRAIN,
   };
 
   expect(touching).toEqual({ kind: "track" });

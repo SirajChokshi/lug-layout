@@ -134,7 +134,7 @@ function gestureView(drag: GestureView): HintView {
 const LAYOUT_CHANGED =
   "the layout changed while the run's piers were being built, so draw it again";
 
-const TOO_STEEP =
+export const TOO_STEEP =
   "the run can't climb to that end's height: it has too few pieces at the ramp's rise per piece, a grade no source verifies";
 
 function pieces(count: number): string {

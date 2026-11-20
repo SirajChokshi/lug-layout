@@ -9,7 +9,6 @@ import {
   type PartModel,
   type PartShapeAsset,
   type PartShapeRecord,
-  type StudPrimitiveAsset,
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
 import type {
@@ -50,7 +49,7 @@ import {
 } from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
-import { rollingStockOf, type RollingStock } from "../edit/train-gauge.ts";
+import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
@@ -154,8 +153,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   addImported(file: ImportedFile): Promise<ImportOutcome>;
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
-  rollingStock(): Promise<ReadonlyArray<RollingStock>>;
-  studPrimitives(): ReadonlyArray<StudPrimitiveAsset>;
+  rollingStock(): Promise<ReadonlyArray<PlayModel>>;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
@@ -332,7 +330,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
-  private studPrimitiveAssets: ReadonlyArray<StudPrimitiveAsset> = [];
+  private studBoxes: ReadonlyArray<Float64Array> = [];
   private trainRefIds: ReadonlyArray<number> = [];
   private placeablesByRefId: Array<Placeable | null> = [];
   private readonly loads = new Map<number, Promise<Placeable>>();
@@ -367,7 +365,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     ]);
     const palette = new MergedParts(shapes.map(undrawnPart));
     this.palette = palette;
-    this.studPrimitiveAssets = studPrimitives;
+    this.studBoxes = studPrimitiveBoxes(studPrimitives);
     this.meshes = new PartMeshStream(this.loader, this.backend, palette, index.lod, (progress) => {
       this.progress = { ...progress, farModelMeshes: this.progress.farModelMeshes };
       this.notify();
@@ -540,7 +538,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     );
     if (model.vehicles.length > 0) {
       const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
-      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
+      this.playModels.set(
+        placeable,
+        playModel(identity, model, { parts }, palette, colors, this.studBoxes),
+      );
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -671,7 +672,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
     if (model.vehicles.length > 0) {
       const identity = { name: file.name, label: file.name, sha256: file.sha256 };
-      this.playModels.set(placeable, playModel(identity, model, set, palette, this.colors()));
+      this.playModels.set(
+        placeable,
+        playModel(identity, model, set, palette, this.colors(), this.studBoxes),
+      );
     }
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
@@ -768,13 +772,9 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     return this.playModels.get(placeable) ?? null;
   }
 
-  async rollingStock(): Promise<ReadonlyArray<RollingStock>> {
+  async rollingStock(): Promise<ReadonlyArray<PlayModel>> {
     await Promise.all(this.trainRefIds.map((refId) => this.load(refId)));
-    return [...this.playModels.values()].map(rollingStockOf);
-  }
-
-  studPrimitives(): ReadonlyArray<StudPrimitiveAsset> {
-    return this.studPrimitiveAssets;
+    return [...this.playModels.values()];
   }
 
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {

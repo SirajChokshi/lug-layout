@@ -1,19 +1,28 @@
+import { PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
+import type { BundleLod } from "@brr/schema/bundle";
 import {
   AXIS_NEG_Y,
   AXIS_POS_Y,
+  ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
   pierCourses,
-  type ConnectorTable,
+  type PlacementPose,
+  type SnapShapes,
 } from "@brr/domain";
+import type { WorldBox } from "@brr/render";
+import { inject, injectable } from "inversify";
+import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
+import { PLACEABLE_CATALOG, SNAP_SHAPES, WORLD_SESSION } from "../tokens.ts";
+import type { IWorldSession } from "./world-session.ts";
 import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
 import type { Placeable } from "./placeable.ts";
 import { posedBox, posedCell } from "./placed-chunks.ts";
 import { cellKey } from "./track-obstacles.ts";
 
-export const PIER_TALL_PART = "ldraw:3001";
-export const PIER_SHORT_PART = "ldraw:3020";
-export const PIER_COLOR = 71;
+const PIER_TALL_PART = "ldraw:3001";
+const PIER_SHORT_PART = "ldraw:3020";
+const PIER_COLOR = 71;
 
 const ORIGIN_INTS = 3;
 const Y = 1;
@@ -170,4 +179,108 @@ export function pierSites(
     }
   }
   return [...sites.values()].toSorted(ranked).map(({ x, z, rot, mates }) => ({ x, z, rot, mates }));
+}
+
+const PIER_PARTS_LOD: BundleLod = "standard";
+const PIER_COLOR_ID = 0;
+const ON_THE_TABLE = 0;
+
+export interface PierPiece {
+  readonly index: number;
+  readonly bottomLdu: number;
+  readonly antiStuds: Int32Array;
+  readonly centreX: number;
+  readonly centreZ: number;
+}
+
+export interface PierRequest {
+  readonly pieces: ReadonlyArray<PierPiece>;
+  readonly fits: (
+    pier: Placeable,
+    pose: PlacementPose,
+    posed: WorldBox,
+    piece: PierPiece,
+  ) => boolean;
+  readonly studsChecked: (item: string) => Promise<void>;
+}
+
+export interface ITrackPiers {
+  piersFor(request: PierRequest): Promise<ReadonlyArray<PlacementPose>>;
+}
+
+function planOverlap(a: WorldBox, b: WorldBox): boolean {
+  return a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+}
+
+@injectable()
+export class TrackPiers implements ITrackPiers {
+  private kit: Promise<PierKit | null> | null = null;
+
+  constructor(
+    @inject(WORLD_SESSION) private readonly session: IWorldSession,
+    @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
+    @inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader,
+    @inject(SNAP_SHAPES) private readonly shapes: SnapShapes,
+  ) {}
+
+  async piersFor(request: PierRequest): Promise<ReadonlyArray<PlacementPose>> {
+    const kit = await this.pierKit();
+    if (!kit) return [];
+    const refs = new Map<number, number | null>();
+    for (const { bottomLdu } of request.pieces) {
+      if (bottomLdu <= 0 || bottomLdu % PLATE_LDU !== 0 || refs.has(bottomLdu)) continue;
+      refs.set(bottomLdu, await this.pierRef(kit, bottomLdu / PLATE_LDU, request.studsChecked));
+    }
+    const chosen: PlacementPose[] = [];
+    const taken: WorldBox[] = [];
+    for (const piece of request.pieces) {
+      const refId = refs.get(piece.bottomLdu) ?? null;
+      const pier = refId === null ? null : this.catalog.placeables()[refId];
+      if (refId === null || !pier || pierTopLdu(pier) !== piece.bottomLdu) continue;
+      for (const site of pierSites(pier, piece.antiStuds, piece.centreX, piece.centreZ)) {
+        const { x, z, rot } = site;
+        const pose = { refId, colorId: PIER_COLOR_ID, x, z, yPlates: ON_THE_TABLE, rot };
+        const posed = posedBox(pier.box, x, z, ON_THE_TABLE, rot);
+        if (taken.some((other) => planOverlap(other, posed))) continue;
+        if (!request.fits(pier, pose, posed, piece)) continue;
+        chosen.push(pose);
+        taken.push(posed);
+        break;
+      }
+    }
+    return chosen;
+  }
+
+  private pierKit(): Promise<PierKit | null> {
+    this.kit ??= this.measureKit().catch((error: unknown) => {
+      this.kit = null;
+      throw error;
+    });
+    return this.kit;
+  }
+
+  private async measureKit(): Promise<PierKit | null> {
+    const [tall, short] = await Promise.all(
+      [PIER_TALL_PART, PIER_SHORT_PART].map(async (part) => {
+        const loaded = await this.loader.readPartConnectors(PIER_PARTS_LOD, part);
+        if (loaded.kind !== "loaded") return null;
+        return pierCourse(part, ConnectorTable.fromColumns(loaded.connectors, this.shapes, part));
+      }),
+    );
+    return tall && short ? { tall, short, color: PIER_COLOR } : null;
+  }
+
+  private async pierRef(
+    kit: PierKit,
+    heightPlates: number,
+    studsChecked: (item: string) => Promise<void>,
+  ): Promise<number | null> {
+    const file = pierFile(kit, heightPlates);
+    if (!file) return null;
+    const bytes = new TextEncoder().encode(file.text);
+    const item = await this.session.addModelFile({ name: file.name, bytes });
+    if (item === null) return null;
+    await studsChecked(item);
+    return this.catalog.itemRefId(item);
+  }
 }

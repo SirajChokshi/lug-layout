@@ -1,4 +1,5 @@
 import {
+  TOO_STEEP,
   heightText,
   lowClearanceText,
   trackBlockText,
@@ -21,8 +22,6 @@ const LISTED_GAPS = 8;
 
 const studs = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const tenths = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-const TOO_STEEP =
-  "the run can't climb to that end's height: it has too few pieces at the ramp's rise per piece";
 
 function offsetText(gap: TrackGapView): string {
   if (gap.gapStuds === 0) return "on the same spot";
@@ -368,10 +367,10 @@ function ExtendStrip({ editor, extend }: ExtendStripProps) {
 }
 
 function clearanceText(height: TrackHeightView): string {
-  const { gauge } = height;
-  if (!gauge)
+  const train = height.tallestTrain;
+  if (!train)
     return "Bridges over track are checked once the bundled and imported trains are measured.";
-  return `Track over other track should leave ${heightText(gauge.heightLdu)} above the lower rails, the height of the tallest train, ${gauge.model}. A lower bridge is laid and reported.`;
+  return `Track over other track should leave ${heightText(train.heightLdu)} above the lower rails, the height of the tallest train, ${train.model}. A lower bridge is laid and reported.`;
 }
 
 export function TrackHeightPanel({
@@ -390,7 +389,7 @@ export function TrackHeightPanel({
       aria-label="Track height"
       data-drawing-plates={drawingPlates}
       data-ramp-plates={rampPlates}
-      data-gauge-ldu={height.gauge?.heightLdu ?? ""}
+      data-tallest-train-ldu={height.tallestTrain?.heightLdu ?? ""}
       data-placing-piers={snapshot.track?.placingPiers ? "true" : "false"}
     >
       <h2>Track height</h2>
@@ -419,7 +418,8 @@ export function TrackHeightPanel({
             key={rate}
             type="button"
             aria-pressed={rate === rampPlates}
-            onClick={() => editor.setTrackRampRate(rate)}
+            disabled={snapshot.readOnly}
+            onClick={() => editor.setTrackRampPlates(rate)}
           >
             {`${rate} ${rate === 1 ? "plate" : "plates"} a piece`}
           </button>

@@ -21,7 +21,6 @@ import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import type { PlayModel } from "../play/play-models.ts";
-import { VehicleHeights, rollingStockOf } from "../edit/train-gauge.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
@@ -431,12 +430,10 @@ export class RailYard implements IRailYard {
   }
 
   private vehicleTops(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>): Float64Array {
-    const heights = new VehicleHeights(this.catalog.parts(), this.catalog.studPrimitives());
-    const stock = rollingStockOf(model);
-    return Float64Array.from(vehicles, ({ vehicle }) => {
-      const shape = model.model.vehicles[vehicle];
-      return shape ? heights.top(stock, shape) : Number.NEGATIVE_INFINITY;
-    });
+    return Float64Array.from(
+      vehicles,
+      ({ vehicle }) => model.vehicleTops[vehicle] ?? Number.NEGATIVE_INFINITY,
+    );
   }
 
   private preparedTops(model: PlayModel): Float64Array {
