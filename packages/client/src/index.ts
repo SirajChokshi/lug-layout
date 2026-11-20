@@ -170,6 +170,7 @@ export {
   PLAN_SERVICE,
   PALETTE_MEMORY,
   PALETTE_THUMBNAILS,
+  HOTBAR,
 } from "./tokens.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
@@ -183,6 +184,7 @@ export {
   commandEnabled,
   commandForKey,
   commandSpec,
+  isHotbarCommand,
   isPlayCommand,
   isShellCommand,
   playCommandEnabled,
@@ -199,6 +201,8 @@ export {
   type PointerGesture,
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
+export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
+export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export {
   toolHints,
   type ToolHint,
