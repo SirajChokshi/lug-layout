@@ -61,7 +61,55 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 
+export const SLICE_CLOCK_STEP_MS = 0.025;
+export const EDITOR_FIRST_SLICE_MS = 6;
+export const FIRST_SLICE_READ_BUDGET = Math.ceil(EDITOR_FIRST_SLICE_MS / SLICE_CLOCK_STEP_MS);
+
+export class SliceClock {
+  private readonly realNow = performance.now.bind(performance);
+  private installed = false;
+  private reads = 0;
+  private fakeMs = 0;
+  private publishRead: number | null = null;
+
+  realMs(): number {
+    return this.realNow();
+  }
+
+  readsToFirstPublish(): number | null {
+    return this.publishRead;
+  }
+
+  published(): void {
+    if (this.installed && this.publishRead === null) this.publishRead = this.reads;
+  }
+
+  async during<T>(work: () => Promise<T>): Promise<T> {
+    this.reads = 0;
+    this.publishRead = null;
+    this.fakeMs = this.realNow();
+    Object.defineProperty(performance, "now", {
+      configurable: true,
+      writable: true,
+      value: (): number => {
+        this.reads++;
+        this.fakeMs += SLICE_CLOCK_STEP_MS;
+        return this.fakeMs;
+      },
+    });
+    this.installed = true;
+    try {
+      return await work();
+    } finally {
+      this.installed = false;
+      Reflect.deleteProperty(performance, "now");
+    }
+  }
+}
+
 export class AimedBackend implements ISceneBackend {
+  constructor(private readonly clock: SliceClock) {}
+
   private aimX = 0;
   private aimZ = 0;
   private viewHalfWidthLdu = VIEW_HALF_WIDTH_LDU;
@@ -95,7 +143,9 @@ export class AimedBackend implements ISceneBackend {
   deleteChunk(): void {}
   setNeededMeshListener(): void {}
   setGhost(): void {}
-  placeGhost(): void {}
+  placeGhost(): void {
+    this.clock.published();
+  }
   setGhostVerdict(): void {}
   setSelectionBox(): void {}
   setPlanOverlays(): void {}
@@ -261,6 +311,7 @@ export interface HeadlessEditor {
   readonly editor: IEditor;
   readonly backend: AimedBackend;
   readonly frame: () => Promise<void>;
+  readonly clock: SliceClock;
 }
 
 const scheduledFrames: FrameRequestCallback[] = [];
@@ -283,7 +334,8 @@ export async function startHeadlessEditor(
   fetchUrl: FetchFunction,
 ): Promise<HeadlessEditor> {
   globalThis.requestAnimationFrame = scheduleFrame;
-  const backend = new AimedBackend();
+  const clock = new SliceClock();
+  const backend = new AimedBackend(clock);
   const container = new Container();
   container.load(
     ...mainThreadModules({
@@ -303,5 +355,5 @@ export async function startHeadlessEditor(
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, backend, frame: runScheduledFrames };
+  return { editor, backend, frame: runScheduledFrames, clock };
 }

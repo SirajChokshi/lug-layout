@@ -12,7 +12,13 @@ import { collisions, translated, type Assembly, type AssemblyPart } from "./asse
 import type { ModulePair } from "./generator.ts";
 import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
 import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
-import type { AimedBackend } from "./headless-editor.ts";
+import {
+  EDITOR_FIRST_SLICE_MS,
+  FIRST_SLICE_READ_BUDGET,
+  SLICE_CLOCK_STEP_MS,
+  type AimedBackend,
+  type SliceClock,
+} from "./headless-editor.ts";
 
 const QUARTER_TURNS_AWAY = 2;
 const QUARTER_TURNS = 4;
@@ -56,6 +62,8 @@ interface Step {
   readonly cursor: Pose | null;
   readonly hover: PlacementHover | null;
   readonly firstFrame: SettleFlags | null;
+  readonly settleReads: number | null;
+  readonly handlerMs: number;
   readonly hoverText: string | null;
   readonly committed: Pose | null;
   readonly refused: boolean;
@@ -161,6 +169,7 @@ export class EditorPath {
     private readonly editor: IEditor,
     private readonly backend: AimedBackend,
     private readonly frame: () => Promise<void>,
+    private readonly clock: SliceClock,
   ) {}
 
   async importModel(model: ModelInput): Promise<string> {
@@ -241,22 +250,31 @@ export class EditorPath {
     readonly text: string | null;
     readonly cursor: Pose | null;
     readonly firstFrame: SettleFlags | null;
+    readonly settleReads: number | null;
+    readonly handlerMs: number;
   }> {
-    this.backend.aim(x, z);
-    this.editor.pointerMove(0, 0);
-    const firstFrame = this.placementFlags();
-    await this.settle(x, z);
-    const { hover, ghostRot } = this.editor.snapshot();
-    return {
-      hover: hover?.placement ?? null,
-      text: hover?.refusal ?? null,
-      cursor: hover ? { x: hover.x, z: hover.z, yPlates: hover.yPlates, rot: ghostRot } : null,
-      firstFrame,
-    };
+    return this.clock.during(async () => {
+      this.backend.aim(x, z);
+      const handlerStartMs = this.clock.realMs();
+      this.editor.pointerMove(0, 0);
+      const handlerMs = this.clock.realMs() - handlerStartMs;
+      const firstFrame = this.placementFlags();
+      const settleReads = firstFrame?.settled ? this.clock.readsToFirstPublish() : null;
+      await this.settle(x, z);
+      const { hover, ghostRot } = this.editor.snapshot();
+      return {
+        hover: hover?.placement ?? null,
+        text: hover?.refusal ?? null,
+        cursor: hover ? { x: hover.x, z: hover.z, yPlates: hover.yPlates, rot: ghostRot } : null,
+        firstFrame,
+        settleReads,
+        handlerMs,
+      };
+    });
   }
 
   async step(x: number, z: number, commit: boolean): Promise<Step> {
-    const { hover, text, cursor, firstFrame } = await this.hoverAt(x, z);
+    const { hover, text, cursor, firstFrame, settleReads, handlerMs } = await this.hoverAt(x, z);
     const before = this.editor.snapshot();
     const aim: Pose = { x, z, yPlates: 0, rot: before.ghostRot };
     if (!commit)
@@ -265,6 +283,8 @@ export class EditorPath {
         cursor,
         hover,
         firstFrame,
+        settleReads,
+        handlerMs,
         hoverText: text,
         committed: null,
         refused: false,
@@ -279,6 +299,8 @@ export class EditorPath {
       cursor,
       hover,
       firstFrame,
+      settleReads,
+      handlerMs,
       hoverText: text,
       committed,
       refused,
@@ -525,6 +547,17 @@ function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
       .join("; ");
   const lateSettled = lateOn("settled");
   const lateTurns = lateOn("turnSettled");
+  const settleReads = steps.flatMap(({ step }) =>
+    step.settleReads === null ? [] : [step.settleReads],
+  );
+  const reads = `fake clock at ${SLICE_CLOCK_STEP_MS} ms a read, so the ${EDITOR_FIRST_SLICE_MS} ms first slice allows ${FIRST_SLICE_READ_BUDGET} reads; the pose settled within ${Math.max(0, ...settleReads)} reads at most`;
+  const handlerMs = steps.map(({ step }) => step.handlerMs).toSorted((a, b) => a - b);
+  const quantile = (fraction: number): string =>
+    (
+      handlerMs[Math.min(handlerMs.length - 1, Math.ceil(fraction * handlerMs.length) - 1)] ?? 0
+    ).toFixed(1);
+  const overSlice = handlerMs.filter((ms) => ms > EDITOR_FIRST_SLICE_MS).length;
+  const wallClock = `wall clock, as a metric only: pointer handlers took ${quantile(0.5)} ms median, ${quantile(0.95)} ms p95, ${quantile(1)} ms max, ${overSlice} of ${handlerMs.length} over ${EDITOR_FIRST_SLICE_MS} ms`;
   const turns =
     lateTurns.length === 0
       ? "every turn hint settled on the first frame too"
@@ -535,8 +568,8 @@ function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
     passed: lateSettled.length === 0,
     detail:
       lateSettled.length === 0
-        ? `${steps.length} hovers settled on the first frame; ${turns}`
-        : `${lateSettled.length} of ${steps.length} needed later frames to settle: ${listed(lateSettled)}; ${turns}`,
+        ? `${steps.length} hovers settled on the first frame; ${turns}; ${reads}; ${wallClock}`
+        : `${lateSettled.length} of ${steps.length} needed later frames to settle: ${listed(lateSettled)}; ${turns}; ${reads}; ${wallClock}`,
   };
 }
 

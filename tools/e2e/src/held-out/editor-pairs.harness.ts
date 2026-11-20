@@ -124,8 +124,12 @@ async function checkCornerModule(
 ): Promise<PairOutcome> {
   const started = performance.now();
   const corner = cornerJoinedModule(pools, seed, template.edges);
-  const { editor, backend, frame } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
-  const path = new EditorPath(editor, backend, frame);
+  const { editor, backend, frame, clock } = await startHeadlessEditor(
+    BUNDLE_ROOT,
+    bundle,
+    fetchUrl,
+  );
+  const path = new EditorPath(editor, backend, frame, clock);
   const templateItem = editor
     .snapshot()
     .catalog.find((item) => item.id.endsWith(`:${template.name}`))?.id;
@@ -170,8 +174,12 @@ async function checkPair(
   pair: ModulePair,
 ): Promise<PairOutcome> {
   const started = performance.now();
-  const { editor, backend, frame } = await startHeadlessEditor(BUNDLE_ROOT, bundle, fetchUrl);
-  const path = new EditorPath(editor, backend, frame);
+  const { editor, backend, frame, clock } = await startHeadlessEditor(
+    BUNDLE_ROOT,
+    bundle,
+    fetchUrl,
+  );
+  const path = new EditorPath(editor, backend, frame, clock);
   const subject = await path.importModel({
     name: pair.subject.names.file,
     text: pair.subject.text,
