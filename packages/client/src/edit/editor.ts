@@ -1753,7 +1753,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.showTrackEnds([]);
     if (hit && stayed && (unmoved || outcome.refusal === null)) {
       this.hovering = true;
-      this.trackClick(ndcX, ndcY, eventTimeMs);
+      this.trackClick(eventTimeMs);
       return;
     }
     if (outcome.refusal) {
@@ -1774,18 +1774,12 @@ export class Editor implements IEditor, IEditedWorld {
     this.repaintTrackPreview();
   }
 
-  private trackClick(ndcX: number, ndcY: number, eventTimeMs: number): void {
+  private trackClick(eventTimeMs: number): void {
     const track = this.track;
     if (!track) return;
     this.repaintTrackPreview();
     if (track.onExtension(this.hitX, this.hitZ)) {
       this.extendTrack(null, eventTimeMs);
-      return;
-    }
-    this.backend.rayThrough(ndcX, ndcY, this.ray);
-    const laid = track.pieceOnRay(this.ray);
-    if (laid) {
-      this.clickTrack(laid.placement, ndcX, ndcY, eventTimeMs);
       return;
     }
     if (this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) return;
