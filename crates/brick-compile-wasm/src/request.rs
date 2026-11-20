@@ -84,6 +84,8 @@ pub enum Operation {
         vehicles: Option<VehicleInputs>,
         shard: Option<Shard>,
         #[serde(default)]
+        keep_parts: bool,
+        #[serde(default)]
         omr_authoring_identification: bool,
     },
 }

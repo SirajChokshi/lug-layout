@@ -564,6 +564,9 @@ export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 export const LibraryBakeIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
 
+export const LibraryConnectorsIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type LibraryConnectorsIndexRef = v.InferOutput<typeof LibraryConnectorsIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -572,6 +575,7 @@ export const BundleCompiler = v.object({
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
   libraryBake: v.optional(LibraryBakeIndexRef),
+  libraryConnectors: v.optional(LibraryConnectorsIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -999,6 +1003,7 @@ export const CompilerRequest = v.variant("op", [
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
+    keepParts: v.exactOptional(v.boolean()),
     omrAuthoringIdentification: v.exactOptional(v.boolean()),
   }),
 ]);
@@ -1132,10 +1137,22 @@ export const CompilerVehicle = v.object({
 });
 export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 
+const Duration = v.pipe(Finite, v.minValue(0));
+
+export const CompilerBakePhases = v.object({
+  decodeMs: Duration,
+  compileMs: Duration,
+  latticeMs: Duration,
+  coverMs: Duration,
+  vehiclesMs: Duration,
+});
+export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
   recordedParts: Count,
+  resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1148,6 +1165,7 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
@@ -1427,6 +1445,7 @@ export const SectionVocabularyFile = v.strictObject({
 export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
 
 export const LIBRARY_CONNECTORS_FORMAT = 1;
+export const LIBRARY_CONNECTORS_INDEX_FILE = "library-connectors.json";
 
 export const LibraryConnectorsIndex = v.strictObject({
   format: v.literal(LIBRARY_CONNECTORS_FORMAT),
@@ -1439,7 +1458,7 @@ export const LibraryConnectorsIndex = v.strictObject({
 export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex>;
 
 export const LibraryConnectorsPin = v.strictObject({
-  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  index: LibraryConnectorsIndexRef,
   parts: Count,
   refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),

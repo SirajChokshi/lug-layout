@@ -78,8 +78,8 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit";
+export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
+export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
 const OBSTACLE_RECT_FLOATS = 4;
 
 export interface TrackDragView {
@@ -317,6 +317,7 @@ export class TrackDrawing {
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
   private obstacleRects: Float64Array = new Float64Array(0);
+  private seatsPending = false;
   private gapList: ReadonlyArray<EndGap> = [];
   private footprints: ReadonlyArray<TrackFootprint> | null = null;
   private drag: Drag | null = null;
@@ -514,11 +515,17 @@ export class TrackDrawing {
     };
   }
 
-  setObstacles(rects: Float64Array): void {
+  setObstacles(rects: Float64Array, seatsPending: boolean): void {
     if (rects.length % OBSTACLE_RECT_FLOATS !== 0) {
       throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
     }
     this.obstacleRects = rects;
+    this.seatsPending = seatsPending;
+    const drag = this.drag;
+    if (drag) {
+      drag.clearance = null;
+      drag.closures.clear();
+    }
   }
 
   verticalRange(): readonly [number, number] {
@@ -614,6 +621,13 @@ export class TrackDrawing {
     const goal = target === null ? undefined : this.ends[target];
     drag.target = target;
     drag.goal = goal ?? null;
+    if (target !== null && goal && this.seatsPending) {
+      drag.closure = "pending";
+      drag.moves = [];
+      drag.missStuds = 0;
+      this.recordSolve(began);
+      return;
+    }
     if (target !== null && goal) {
       const result = this.closure(drag, start, target, goal);
       drag.closure = result.kind;
@@ -708,7 +722,8 @@ export class TrackDrawing {
     if (
       drag?.closure === "impossible" ||
       drag?.closure === "blocked" ||
-      drag?.closure === "limit"
+      drag?.closure === "limit" ||
+      drag?.closure === "pending"
     ) {
       return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
     }

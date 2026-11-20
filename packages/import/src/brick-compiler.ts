@@ -9,6 +9,7 @@ import {
   CompilerModelRead,
   StudioRead,
   type CompilerBaked,
+  type CompilerBakePhases,
   type CompilerBlobs,
   type CompilerConnectorInputs,
   type CompilerEnvelope,
@@ -110,12 +111,17 @@ export interface BakeRequest {
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
   readonly shard?: BakeShard;
+  readonly keepParts?: boolean;
   readonly omrAuthoringIdentification?: boolean;
 }
+
+export type BakePhases = CompilerBakePhases;
 
 export interface BakedModel {
   readonly status: "baked";
   readonly recordedParts: number;
+  readonly resumedParts: number;
+  readonly phases: BakePhases;
   readonly lattice: PartModelLattice | null;
   readonly latticeIssue: string | null;
   readonly studCover: ModelStudCover;
@@ -215,6 +221,8 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
   return {
     status: "baked",
     recordedParts: header.recordedParts,
+    resumedParts: header.resumedParts,
+    phases: header.phases,
     lattice:
       lattice === null
         ? null
