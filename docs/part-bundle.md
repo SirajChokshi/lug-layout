@@ -213,6 +213,26 @@ The same commands run by hand: `pnpm --filter @brr/asset-pipeline library-bake p
 
 `src/library-bake/**` isn't a bundle input, so changes there don't change the bundle key.
 
+## Library connector records at import
+**Where the import finds them.** `bundle` copies the pinned index in `tools/asset-pipeline/library-connectors.json` into each manifest's `compiler.libraryConnectors`, in the same shape as `compiler.libraryBake`. The pin is a bundle input: the records have to match the compiler, primitive table and section vocabulary that ship beside them.
+
+The import worker reads them from a base URL:
+- **`VITE_LIBRARY_CONNECTORS_BASE_URL`**, when it's set;
+- otherwise **`library-connectors/` under `VITE_BUNDLE_BASE_URL`** when the bundle is remote. That's the part bundle bucket, which `library-connectors.yml` publishes them to, so Vercel builds need no setting of their own;
+- otherwise **`library-connectors/` beside the app** whenever the bundle is served locally. `tools/asset-pipeline/dist` is the dev server's public directory, and `library-connectors` also writes the top index under its content-addressed name, as R2 holds it.
+
+A manifest without the pin reads only the bundle's connector packages. A base URL that doesn't serve the records shows as an unreadable index, part by part.
+
+**`LibraryConnectorStore`** (`@brr/import`) verifies everything it reads, through the same `VerifiedFiles` layer as `LibraryBakeStore`:
+- the top index against the pinned SHA-256;
+- both package indexes and every record against their content addresses, on download and again on every cache hit.
+
+It reads the package indexes and records with `ConnectorRecords`, the loader the bundle's own packages use. At import it refuses every part, saying why, when the index was computed from another LDraw source than the import's, or with another section vocabulary than the bundle's; the pin, as a bundle input, ties the records to the compiler and primitive table that ship beside them. It keeps verified files in the worker's IndexedDB (`brr-library-connectors`, apart from `brr-library-bake`). A failed download isn't remembered: the next lookup tries again.
+
+**Which record a part gets.** The bundle's, whenever the bundle's packages list the part or refuse its record; otherwise the pinned library's. Parts neither lists get none: MPD-embedded and Studio custom parts, and primitives used as parts, such as `stud.dat`. The import report lists them under *Without connector records*, and lists every part whose record was refused or couldn't be read under *Connector records refused or unreadable*, with the reason.
+
+**Held-out.** The held-out workflow runs `library-connectors --check`, and its harness reads `dist/library-connectors` from disk.
+
 ## Local development
 
 Nothing changes locally. `pnpm --filter @brr/asset-pipeline build` writes `tools/asset-pipeline/dist/bundle`, and `vite` serves it at `/bundle/`. To use the published bundle instead:
