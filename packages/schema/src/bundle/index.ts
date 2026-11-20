@@ -224,6 +224,29 @@ function cellCount([width, depth]: readonly [number, number]): number {
   return width * depth;
 }
 
+function footingListedInOrder(
+  instance: ReadonlyArray<number>,
+  cell: ReadonlyArray<number>,
+): boolean {
+  if (instance.length !== cell.length) return false;
+  for (let k = 1; k < instance.length; k++) {
+    const previous = instance[k - 1] ?? 0;
+    const current = instance[k] ?? 0;
+    if (current < previous || (current === previous && (cell[k] ?? 0) <= (cell[k - 1] ?? 0))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const InstanceFooting = v.pipe(
+  v.object({ instance: v.array(Count), cell: v.array(Count) }),
+  v.check(
+    ({ instance, cell }) => footingListedInOrder(instance, cell),
+    "the footing pairs are not listed once each by instance and then by cell",
+  ),
+);
+
 export const ModelFileCells = v.pipe(
   v.object({
     origin: v.tuple([Finite, Finite]),
@@ -233,6 +256,7 @@ export const ModelFileCells = v.pipe(
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
     columnTop: v.array(ColumnPlates),
+    footing: InstanceFooting,
   }),
   v.check(
     ({ size, footprint, flat }) => [...footprint, ...flat].every((cell) => cell < cellCount(size)),
@@ -242,6 +266,10 @@ export const ModelFileCells = v.pipe(
     ({ size, columnBottom, columnTop }) =>
       columnBottom.length === cellCount(size) && columnTop.length === cellCount(size),
     "the column arrays do not cover the cell grid",
+  ),
+  v.check(
+    ({ size, footing }) => footing.cell.every((cell) => cell < cellCount(size)),
+    "a footing cell lies outside the cell grid",
   ),
 );
 export type ModelFileCells = v.InferOutput<typeof ModelFileCells>;
@@ -1439,6 +1467,11 @@ export const ModelFile = v.pipe(
         vehicleInstances(vehicle).every((index) => index < instances.part.length),
       ),
     "a vehicle names an instance the model does not have",
+  ),
+  v.check(
+    ({ cover, instances }) =>
+      (cover.cells?.footing.instance ?? []).every((index) => index < instances.part.length),
+    "a footing cell names an instance the model does not have",
   ),
 );
 export type ModelFile = v.InferOutput<typeof ModelFile>;

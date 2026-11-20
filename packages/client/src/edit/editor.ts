@@ -582,11 +582,18 @@ export interface RoadPlacementDump {
 export interface ModelBakeView {
   readonly id: string;
   readonly lattice: PartModelLattice;
-  readonly cells: Omit<ModelCells, "footprint" | "flat" | "columnBottom" | "columnTop"> & {
+  readonly cells: Omit<
+    ModelCells,
+    "footprint" | "flat" | "columnBottom" | "columnTop" | "footing"
+  > & {
     readonly footprint: ReadonlyArray<number>;
     readonly flat: ReadonlyArray<number>;
     readonly columnBottom: ReadonlyArray<number>;
     readonly columnTop: ReadonlyArray<number>;
+    readonly footing: {
+      readonly instance: ReadonlyArray<number>;
+      readonly cell: ReadonlyArray<number>;
+    };
   };
 }
 
@@ -5909,6 +5916,10 @@ export class Editor implements IEditor, IEditedWorld {
                   flat: [...cells.flat],
                   columnBottom: [...cells.columnBottom],
                   columnTop: [...cells.columnTop],
+                  footing: {
+                    instance: [...cells.footing.instance],
+                    cell: [...cells.footing.cell],
+                  },
                 },
               },
             ]
