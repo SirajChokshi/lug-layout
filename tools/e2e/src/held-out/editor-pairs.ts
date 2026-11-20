@@ -816,9 +816,24 @@ function describeMated(mated: ReadonlyArray<MatedPose>): string {
     .join(", ");
 }
 
+function farthestLatticeDistance(limitLdu: number): number {
+  let farthest = 0;
+  for (let across = 0; across * STUD_LDU <= limitLdu; across++) {
+    for (let along = 0; along <= across; along++) {
+      for (let up = 0; up * PLATE_LDU <= limitLdu; up++) {
+        const distance = Math.hypot(across * STUD_LDU, along * STUD_LDU, up * PLATE_LDU);
+        if (distance <= limitLdu && distance > farthest) farthest = distance;
+      }
+    }
+  }
+  return farthest;
+}
+
 function expectedNeighbourhood(viewHalfWidthLdu: number): AssistNeighbourhood {
   const tolerance = (NDC_SPAN * ASSIST_TOLERANCE_PX * viewHalfWidthLdu) / CANVAS_WIDTH;
-  const ldu = Math.min(Math.max(tolerance, ASSIST_FLOOR_LDU), ASSIST_CAP_LDU);
+  const ldu = farthestLatticeDistance(
+    Math.min(Math.max(tolerance, ASSIST_FLOOR_LDU), ASSIST_CAP_LDU),
+  );
   return { ldu, cells: Math.ceil(ldu / STUD_LDU), plates: Math.floor(ldu / PLATE_LDU) };
 }
 
@@ -844,7 +859,7 @@ async function reachAcrossScales(path: EditorPath, log: StepLog): Promise<Editor
   }
   path.viewHalfWidth(VIEW_HALF_WIDTH_LDU);
   return {
-    label: `The reported neighbourhood is ${ASSIST_TOLERANCE_PX} px at the cursor in LDU, clamped to the ${ASSIST_FLOOR_LDU} LDU floor and the ${ASSIST_CAP_LDU} LDU cap, at three camera scales`,
+    label: `The reported neighbourhood is the farthest lattice distance within ${ASSIST_TOLERANCE_PX} px at the cursor in LDU, clamped to the ${ASSIST_FLOOR_LDU} LDU floor and the ${ASSIST_CAP_LDU} LDU cap, at three camera scales, with the cells it spans from the cursor rounded up and the plates within it rounded down`,
     passed,
     detail: scales.join("; "),
   };
