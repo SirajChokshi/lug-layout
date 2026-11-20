@@ -183,6 +183,7 @@ export type {
 export {
   RUNNING_GEAR,
   BOM_SERVICE,
+  OWNED_PARTS,
   CATALOG_SEARCH,
   CREDITS,
   EDITOR,
@@ -375,8 +376,17 @@ export type {
   BomScope,
   IBomService,
   IBomSource,
+  OwnVsBuyReport,
 } from "./bom/bom-service.ts";
-export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export type { IOwnedParts, OwnedPartsView, TextFile } from "./bom/owned-parts-service.ts";
+export type {
+  CatalogBom,
+  CatalogLine,
+  OwnedParts,
+  PlacementRegion,
+  UnknownOwnedPart,
+  UnmappedLine,
+} from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
 export type {

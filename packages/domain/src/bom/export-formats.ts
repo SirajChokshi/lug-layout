@@ -1,11 +1,5 @@
 import { isCustomPartId } from "@brr/schema/bundle";
-import type { BomLine } from "./bom-counter.ts";
-import {
-  resolveLines,
-  type CatalogLine,
-  type Crosswalk,
-  type PartCrosswalkEntry,
-} from "./catalog-ids.ts";
+import type { CatalogLine, Crosswalk, PartCrosswalkEntry, ResolvedLine } from "./catalog-ids.ts";
 
 const CSV_SPECIAL = /[",\r\n]/u;
 const BRICKLINK_PART_ITEM_TYPE = "P";
@@ -83,7 +77,7 @@ function lineNote(partId: string, part: PartCrosswalkEntry | undefined): string 
 }
 
 export function plainBomCsv(
-  lines: ReadonlyArray<BomLine>,
+  resolved: ReadonlyArray<ResolvedLine>,
   crosswalk: Crosswalk,
   uncounted: ReadonlyArray<UncountedItem>,
   disclaimer: string,
@@ -100,7 +94,7 @@ export function plainBomCsv(
       "Expanded from",
       "Note",
     ],
-    ...resolveLines(lines, crosswalk).map((line) => {
+    ...resolved.map((line) => {
       const part = crosswalk.parts.get(line.part);
       const color = crosswalk.colors.get(line.ldrawColor);
       return [

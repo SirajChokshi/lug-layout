@@ -94,10 +94,18 @@ export function toCatalog(
   crosswalk: Crosswalk,
   system: CatalogSystem,
 ): CatalogBom {
+  return catalogOf(resolveLines(lines, crosswalk), crosswalk, system);
+}
+
+export function catalogOf(
+  resolved: ReadonlyArray<ResolvedLine>,
+  crosswalk: Crosswalk,
+  system: CatalogSystem,
+): CatalogBom {
   const merged = new Map<string, CatalogLine>();
   const unmapped: UnmappedLine[] = [];
   const custom: ResolvedLine[] = [];
-  for (const line of resolveLines(lines, crosswalk)) {
+  for (const line of resolved) {
     if (isCustomPartId(line.part)) {
       custom.push(line);
       continue;
