@@ -9,6 +9,7 @@ import {
   rollingDiagnosticsFit,
   SectionVocabularyFile,
   ShadowLibraryPin,
+  isCustomPartId,
   type CompilerVehicles,
   type LibraryBakePart,
   type UnreadBandDiagnostic,
@@ -843,11 +844,17 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       const record = JSON.parse(
         await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
       ) as ModelFile;
+      const shipped = Array.from(
+        result.partIndex,
+        (part) => !isCustomPartId(result.partIds[part] ?? ""),
+      );
       const imported = {
         parent: Array.from(result.submodels.parent),
         matrices: Array.from(result.submodels.matrices),
-        ofPart: Array.from(result.submodels.ofPart),
-        partTransforms: Array.from(result.partTransforms),
+        ofPart: Array.from(result.submodels.ofPart).filter((_, instance) => shipped[instance]),
+        partTransforms: Array.from(result.partTransforms).filter(
+          (_, at) => shipped[Math.floor(at / MATRIX_FLOATS)],
+        ),
       };
       return { imported, record };
     }
