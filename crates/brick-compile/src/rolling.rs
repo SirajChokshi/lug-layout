@@ -1540,8 +1540,9 @@ impl ReadBand {
     }
 
     fn surface(&self) -> Option<RollingSurface> {
-        let from = sixteenths_of(self.lo)?;
-        let to = sixteenths_of(self.hi)?;
+        let cylinder = self.radii[0] == self.radii[1];
+        let from = end_sixteenths(self.lo, cylinder, f64::ceil)?;
+        let to = end_sixteenths(self.hi, cylinder, f64::floor)?;
         (from < to).then_some(RollingSurface {
             axis: self.axis,
             at: self.at,
@@ -1550,6 +1551,10 @@ impl ReadBand {
             radii: self.radii,
         })
     }
+}
+
+fn end_sixteenths(end: f64, cylinder: bool, inward: fn(f64) -> f64) -> Option<i32> {
+    sixteenths_of(end).or_else(|| cylinder.then(|| inward(end * 16.0) as i32))
 }
 
 fn merged(mut bands: Vec<ReadBand>) -> Vec<ReadBand> {

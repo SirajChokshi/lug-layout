@@ -62,6 +62,7 @@ import {
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
+  LIBRARY_CONNECTORS_BASE_URL,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -156,6 +157,7 @@ export interface MainThreadConfig {
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
   readonly libraryBakeBaseUrl?: string;
+  readonly libraryConnectorsBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly disclaimer: string;
@@ -176,6 +178,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     );
     bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
     bind(LIBRARY_BAKE_BASE_URL).toConstantValue(config.libraryBakeBaseUrl ?? null);
+    bind(LIBRARY_CONNECTORS_BASE_URL).toConstantValue(config.libraryConnectorsBaseUrl ?? null);
     if (config.catalogApiBaseUrl !== undefined) {
       bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
     }
