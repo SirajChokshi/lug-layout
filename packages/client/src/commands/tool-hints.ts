@@ -137,8 +137,8 @@ function extendTitle(choice: TrackChoiceView): string {
 }
 
 function extendDetail(choice: TrackChoiceView, extend: TrackExtendView): string | null {
-  if (choice.blocked) return CROSSING_TEXT;
   if (extend.unjoined) return unjoinedText(extend.unjoined);
+  if (choice.blocked) return CROSSING_TEXT;
   return choice.joinsEnd ? "joins the open end exactly" : null;
 }
 
@@ -148,7 +148,12 @@ function extendView(extend: TrackExtendView, refusal: string | null): ToolHintVi
   const warn = refusal !== null || (choice?.blocked ?? false);
   return {
     tone: warn ? "warn" : "track",
-    title: refusal !== null ? "Nothing laid" : choice ? extendTitle(choice) : "Next piece",
+    title:
+      refusal !== null
+        ? "Nothing laid"
+        : choice
+          ? `${extendTitle(choice)}${choice.blocked ? " (blocked)" : ""}`
+          : "Next piece",
     detail: refusal ?? (choice ? extendDetail(choice, extend) : null),
     hints: [
       gesture("Click", "lay it"),

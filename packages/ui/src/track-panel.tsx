@@ -106,6 +106,10 @@ function choiceLabel(choice: TrackChoiceView): string {
   }
 }
 
+function sentence(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
 function choiceDetail(choice: TrackChoiceView): string {
   const run = `${choice.straights} straight, ${choice.curves} curve`;
   if (choice.blocked) return `${run}; would cross track, a plate or a model`;
@@ -145,10 +149,8 @@ function ExtendStrip({ editor, extend }: ExtendStripProps) {
           </li>
         ))}
       </ol>
-      <p>
-        {current ? choiceDetail(current) : ""}
-        {extend.unjoined ? `. ${unjoinedText(extend.unjoined)}.` : ""}
-      </p>
+      {current && <p>{sentence(choiceDetail(current))}</p>}
+      {extend.unjoined && <p>{sentence(unjoinedText(extend.unjoined))}</p>}
     </div>
   );
 }
