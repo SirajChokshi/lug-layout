@@ -277,13 +277,28 @@ class HeadlessBackend implements ISceneBackend {
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
   readonly farModels = new Map<number, FarModelPlacement>();
+  private readonly detailedMeshes: PartMesh[] = [];
   setPalette(palette: PartPalette): void {
     this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+    this.detailedMeshes.splice(
+      0,
+      this.detailedMeshes.length,
+      ...palette.detailed.parts.map((part) => part.mesh),
+    );
   }
   addParts(parts: ReadonlyArray<PartAsset>): void {
     this.partIds.push(...parts.map((part) => part.id));
+    this.detailedMeshes.push(...parts.map((part) => part.mesh));
   }
-  setPartMeshes(): void {}
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    for (const { index, level, part } of updates) {
+      if (level === "detailed") this.detailedMeshes[index] = part.mesh;
+    }
+  }
+  trianglesOf(partId: string): number {
+    const mesh = this.detailedMeshes[this.partIds.indexOf(partId)];
+    return mesh?.groups.reduce((sum, group) => sum + group.indices.length / 3, 0) ?? 0;
+  }
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
@@ -1013,41 +1028,49 @@ it("offers none of the editing commands on a selection in a world another tab ho
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 
+function importReport(
+  fileName: string,
+  instanceCount: number,
+  bakeIssue: string | null,
+): ImportResult["report"] {
+  return {
+    fileName,
+    mirror: { repo: "", commit: "", root: "" },
+    lod: "standard",
+    sections: [],
+    instanceCount,
+    drawnInstanceCount: instanceCount,
+    parts: [],
+    inlineParts: [],
+    looseGeometry: [],
+    unknownColors: [],
+    directColors: [],
+    compileRounds: 0,
+    withoutConnectorRecords: [],
+    refusedConnectorRecords: [],
+    bakeRounds: 1,
+    bakeIssue,
+    bakeHelpersFailed: 0,
+    fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+    records: null,
+    timings: {
+      readMs: 0,
+      resolveMs: 0,
+      bakeMs: 0,
+      totalMs: 0,
+      placementMs: 0,
+      recordFetchMs: 0,
+      compileMs: 0,
+      ldrawFetchMs: 0,
+      bakePhases: null,
+      coverPhases: null,
+    },
+  };
+}
+
 function refusedBake(fileName: string): ImportResult {
   return {
-    report: {
-      fileName,
-      mirror: { repo: "", commit: "", root: "" },
-      lod: "standard",
-      sections: [],
-      instanceCount: 0,
-      drawnInstanceCount: 0,
-      parts: [],
-      inlineParts: [],
-      looseGeometry: [],
-      unknownColors: [],
-      directColors: [],
-      compileRounds: 0,
-      withoutConnectorRecords: [],
-      refusedConnectorRecords: [],
-      bakeRounds: 1,
-      bakeIssue: NO_LATTICE_REASON,
-      bakeHelpersFailed: 0,
-      fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
-      records: null,
-      timings: {
-        readMs: 0,
-        resolveMs: 0,
-        bakeMs: 0,
-        totalMs: 0,
-        placementMs: 0,
-        recordFetchMs: 0,
-        compileMs: 0,
-        ldrawFetchMs: 0,
-        bakePhases: null,
-        coverPhases: null,
-      },
-    },
+    report: importReport(fileName, 0, NO_LATTICE_REASON),
     partIds: [],
     instanceCount: 0,
     partIndex: new Uint32Array(),
@@ -1376,6 +1399,99 @@ it("keeps a click queued while the held item's tables load through another impor
     placed: expect.arrayContaining([`${BASEPLATE} 2560,0 y0`]),
   });
   expect(editor.snapshot().placements).toBe(2);
+}, 120_000);
+
+class BakedRecordImporter implements IModelImporter {
+  constructor(private readonly record: ModelRecord) {}
+
+  private imported(fileName: string): ImportResult {
+    const { model, parts } = this.record;
+    return {
+      report: importReport(fileName, model.instanceCount, null),
+      partIds: parts.map((part) => part.id),
+      instanceCount: model.instanceCount,
+      partIndex: Uint32Array.from(model.partIndex),
+      ldrawColor: model.ldrawColor,
+      matrices: model.matrices,
+      partTransforms: model.partTransforms,
+      submodels: model.submodels,
+      compiled: [],
+      connectors: [],
+      bake: {
+        lattice: model.lattice,
+        latticeIssue: null,
+        studCover: model.studCover,
+        cells: model.cells,
+        vehicles: model.vehicles,
+        vehicleIssue: null,
+      },
+    };
+  }
+
+  async importText(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+}
+
+it("draws nothing in place of a part whose mesh fails to load and names it, and counts a part an import brings with its mesh as loaded", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const baseplatePart = BASEPLATE.split("@")[0] ?? "";
+  const baseplateMesh = (await partMeshPaths("standard")).get(baseplatePart);
+  const userModel = "brick-2x4";
+  const record = await fixtureBundleLoader().loadModelRecord("standard", userModel);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container
+    .rebind(ASSET_FETCHER)
+    .toConstantValue(
+      new InFlightFetcher(new BundleDirectoryFetcher(), (path) => path === baseplateMesh),
+    );
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+  container.rebind(MODEL_IMPORTER).toConstantValue(new BakedRecordImporter(record));
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const imported = await editor.importModelFile({
+    name: `${userModel}.ldr`,
+    bytes: new TextEncoder().encode(`0 ${userModel}\n`),
+  });
+  const brick = editor.snapshot().modelImport?.item;
+  if (!imported || !brick) throw new Error(`${userModel} was not imported`);
+  const place = placer(editor, backend);
+
+  expect((await place(BASEPLATE, 0, 0)).placements).toBe(1);
+  expect((await place(brick, 1600, 1600)).placements).toBe(2);
+  await vi.waitFor(() => expect(meshesSettled(editor.snapshot().meshes)).toBe(true));
+
+  const { detailedPartMeshes, undrawnParts } = editor.snapshot().meshes;
+  expect({
+    detailedPartMeshes,
+    undrawnParts,
+    baseplateTriangles: backend.trianglesOf(baseplatePart),
+    brickDrawn: record.parts.map((part) => backend.trianglesOf(part.id) > 0),
+  }).toEqual({
+    detailedPartMeshes: {
+      wanted: 1 + record.parts.length,
+      loaded: record.parts.length,
+      failed: 1,
+      absent: 0,
+    },
+    undrawnParts: [{ part: baseplatePart, reason: "failed" }],
+    baseplateTriangles: 0,
+    brickDrawn: record.parts.map(() => true),
+  });
 }, 120_000);
 
 it("shows only the world that is open: no studs or far models after New World, the placed ones again on reopening", async () => {

@@ -603,7 +603,12 @@ export class Editor implements IEditor, IEditedWorld {
     farTier: "loading",
     farTierError: null,
     pendingItem: null,
-    meshes: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES, farModelMeshes: NO_MESHES },
+    meshes: {
+      detailedPartMeshes: NO_MESHES,
+      farPartMeshes: NO_MESHES,
+      farModelMeshes: NO_MESHES,
+      undrawnParts: [],
+    },
     measuring: false,
     measurement: null,
     credits: null,
