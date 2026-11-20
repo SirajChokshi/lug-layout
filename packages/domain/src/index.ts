@@ -190,6 +190,7 @@ export {
   type PlanIssue,
   type PlanPlacement,
   type CarriedTrack,
+  type PlateClearance,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
@@ -207,7 +208,7 @@ export {
   TRACK_SEGMENT,
 } from "./plan/plan-rows.ts";
 export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
-export { PlanEvaluation } from "./plan/plan-evaluation.ts";
+export { PlanEvaluation, type PlateHeights } from "./plan/plan-evaluation.ts";
 export { RECT_FLOATS, type PlanShape } from "./plan/plan-shape.ts";
 export {
   FACT_CUSTOM_PARTS,

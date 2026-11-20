@@ -7636,6 +7636,7 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
 const PIER_PLATES = 5;
 const TALLEST_TRAIN = "10014-1";
 const BRIDGE_PLATES = 39;
+const BESIDE_BRIDGE_LDU = 6 * STUD;
 const PIER_SIDE_SLOPE = 10;
 const PIER_SIDE_INSET_LDU = 30;
 const PIER_BRICK = "ldraw:3001";
@@ -7740,8 +7741,21 @@ it("lays raised runs on generated brick piers of real parts, each piece held onl
   expect(layoutState(editor)).toEqual(before);
 }, 180_000);
 
-it("passes track over laid track only where the tallest train measured from the bundle fits under it: a plate lower stops the run before the crossing and names the train", async () => {
-  const { editor, backend } = await raisedEditor([TALLEST_TRAIN]);
+function clearanceOutcome(editor: IEditor, ground: number) {
+  const track = editor.snapshot().track;
+  return {
+    commit: track?.lastCommit,
+    block: track?.lastBlock,
+    raised: editor.dump().laidTrack.length - ground,
+    lowClearance: track?.lowClearance,
+    lastLow: track?.lastLowClearance,
+  };
+}
+
+it("lays a bridge over laid track wherever its own height clears, reports one lower than the tallest train as a finding the plan lists, and refuses it only where a train standing below would be hit", async () => {
+  const { editor, backend, catalog, container } = await raisedEditor([TALLEST_TRAIN]);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -960, minZ: -960, maxX: 960, maxZ: 960 });
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-8 * STUD, -40 * STUD], [-8 * STUD, 40 * STUD]);
   const ground = editor.dump().laidTrack.length;
@@ -7751,33 +7765,61 @@ it("passes track over laid track only where the tallest train measured from the 
   });
   const gauge = editor.snapshot().track?.height.gauge;
   await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
-  const low = {
-    commit: editor.snapshot().track?.lastCommit,
-    block: editor.snapshot().track?.lastBlock,
-    raised: editor.dump().laidTrack.length - ground,
-  };
+  const low = clearanceOutcome(editor, ground);
+  const hint = toolHints(editor.snapshot());
+  const issues = plans
+    .issues(planId)
+    .filter((issue) => issue.rule === "clearance")
+    .map((issue) => issue.message);
+  const labels = editor
+    .snapshot()
+    .labels.filter((label) => label.kind === "height" && label.text.includes("clear"))
+    .map((label) => label.text);
+  await loadCatalogItem(catalog, CABOOSE);
+  const place = placer(editor, backend);
+  const underLowBridge = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
+  editor.chooseItem(null);
+  editor.undo(0);
+  const seated = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
+  editor.chooseItem(TRACK_ITEM_ID);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const throughTrain = clearanceOutcome(editor, ground);
   editor.undo(0);
   editor.raiseTrack(1);
   await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
-  const clear = {
-    commit: editor.snapshot().track?.lastCommit,
-    block: editor.snapshot().track?.lastBlock,
-    raised: editor.dump().laidTrack.length - ground,
-    unsupported: editor.snapshot().track?.unsupported,
-  };
-  const clearance = editor
-    .snapshot()
-    .labels.filter((label) => label.kind === "height" && label.text.endsWith("clear"));
+  const overTrain = clearanceOutcome(editor, ground);
+  const caboose = editor.snapshot().catalog.find((item) => item.id === CABOOSE)?.label ?? CABOOSE;
+  const tooLow = `too low for the tallest train: ${TALLEST_TRAIN} needs ${BRIDGE_PLATES} plates, this bridge has ${BRIDGE_PLATES - 1}`;
 
   expect(gauge?.model).toBe(TALLEST_TRAIN);
   expect(gauge?.heightLdu).toBeCloseTo(282.92, 2);
   expect(low).toEqual({
     commit: "laid",
-    block: { kind: "clearance", gapLdu: 280, above: true, gauge },
+    block: null,
+    raised: 3,
+    lowClearance: 1,
+    lastLow: {
+      pieces: 1,
+      needPlates: BRIDGE_PLATES,
+      hasPlates: BRIDGE_PLATES - 1,
+      train: TALLEST_TRAIN,
+    },
+  });
+  expect(hint).toMatchObject({ tone: "warn", title: "Laid too low", detail: tooLow });
+  expect(issues).toEqual([expect.stringContaining(tooLow)]);
+  expect(labels).toEqual([`35 plates (112 mm) clear: too low for ${TALLEST_TRAIN}`]);
+  expect(underLowBridge).toMatchObject({
+    refusedClicks: 1,
+    reason: expect.stringContaining("would run into raised track"),
+  });
+  expect(seated).toMatchObject({ refusedClicks: 1 });
+  expect(trainsOf(editor)).toEqual([[CABOOSE, true]]);
+  expect(throughTrain).toMatchObject({
+    commit: "laid",
+    block: { kind: "model", label: caboose, unseated: false },
     raised: 1,
   });
-  expect(clear).toEqual({ commit: "laid", block: null, raised: 3, unsupported: 0 });
-  expect(clearance.map((label) => label.text)).toEqual(["36 plates (115.2 mm) clear"]);
+  expect(overTrain).toMatchObject({ commit: "laid", block: null, raised: 3, lowClearance: 0 });
 }, 180_000);
 
 const MY_PIER = `0 My viaduct pier
@@ -7900,4 +7942,33 @@ it("waits for a generated pier's studs to be checked before laying the raised ru
   ]);
   expect(placedImports(editor)).toHaveLength(2);
   expect(editor.snapshot().track?.unsupported).toBe(0);
+}, 180_000);
+
+const ROOF_BRICK = "1 4 40 -311 10 1 0 0 0 1 0 0 0 1 3005.dat";
+const BRICK_LDU = 24;
+
+async function myTallCaboose(): Promise<Uint8Array> {
+  const official = await pinnedOmrModel("10014-1.mpd");
+  const lines = official.replaceAll("10014 - ", "my tall caboose - ").split("\n");
+  const car = lines.findIndex((line) => line.startsWith("0 FILE my tall caboose - train car"));
+  lines.splice(car + 1, 0, ROOF_BRICK);
+  return new TextEncoder().encode(lines.join("\n"));
+}
+
+it("measures the tallest train from every train in the catalog, and again when a user imports a taller one, which it then names", async () => {
+  const { editor } = await raisedEditor([TALLEST_TRAIN]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(1);
+  const gauge = () => editor.snapshot().track?.height.gauge ?? null;
+  await vi.waitFor(() => expect(gauge()).not.toBeNull(), { timeout: 60_000 });
+  const bundled = gauge();
+  const imported = await editor.importModelFile({
+    name: "my-tall-caboose.mpd",
+    bytes: await myTallCaboose(),
+  });
+  await vi.waitFor(() => expect(gauge()?.model).toBe("my-tall-caboose.mpd"), { timeout: 60_000 });
+
+  expect(imported).toBe(true);
+  expect(bundled?.model).toBe(TALLEST_TRAIN);
+  expect(gauge()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
 }, 180_000);

@@ -1,5 +1,6 @@
 import {
   heightText,
+  lowClearanceText,
   trackBlockText,
   unjoinedText,
   type CrossingView,
@@ -158,6 +159,14 @@ function unsupportedText(track: TrackView): string {
   return `${integer.format(track.unsupported)} with no anti-stud exactly on a stud${where}${ramp}`;
 }
 
+function lowBridgesText(track: TrackView): string {
+  if (track.lowClearance === null) return "not checked until a train is measured";
+  if (track.lowClearance === 0) return "none";
+  const last = track.lastLowClearance;
+  const lastLaid = last ? ` (last laid: ${lowClearanceText(last)})` : "";
+  return `${integer.format(track.lowClearance)} too low for the tallest train${lastLaid}`;
+}
+
 function crossingText(crossing: CrossingView, index: number): string {
   const where = `Level crossing ${index + 1}: ${integer.format(crossing.tracks)} ${crossing.tracks === 1 ? "piece" : "pieces"} over ${integer.format(crossing.roadwayCells)} roadway studs`;
   if (crossing.ramps.length === 0) {
@@ -220,6 +229,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
     ["Near-miss gaps", integer.format(track.gaps.length)],
     ["Switches", switchText(track)],
     ["Unsupported pieces", unsupportedText(track)],
+    ["Low bridges", lowBridgesText(track)],
     ["Level crossings", integer.format(track.crossings.length)],
     ["Last release", commitText(track)],
   ];
@@ -251,6 +261,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-held-misses={track.held?.misses ?? 0}
       data-withheld={track.lastWithheld ?? ""}
       data-unsupported={track.unsupported ?? ""}
+      data-low-clearance={track.lowClearance ?? ""}
       data-last-unsupported={track.lastUnsupported?.pieces ?? 0}
       data-crossings={track.crossings.length}
       data-crossing-ramps={track.crossings.reduce(
@@ -358,8 +369,9 @@ function ExtendStrip({ editor, extend }: ExtendStripProps) {
 
 function clearanceText(height: TrackHeightView): string {
   const { gauge } = height;
-  if (!gauge) return "Bridges over track wait until the bundled and imported trains are measured.";
-  return `Track over other track must leave ${heightText(gauge.heightLdu)} above the lower rails: the tallest train, ${gauge.model}, stands that high.`;
+  if (!gauge)
+    return "Bridges over track are checked once the bundled and imported trains are measured.";
+  return `Track over other track should leave ${heightText(gauge.heightLdu)} above the lower rails, the height of the tallest train, ${gauge.model}. A lower bridge is laid and reported.`;
 }
 
 export function TrackHeightPanel({

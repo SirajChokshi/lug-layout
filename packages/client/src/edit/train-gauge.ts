@@ -21,6 +21,16 @@ export interface RollingStock {
   readonly vehicles: ReadonlyArray<PartVehicle>;
 }
 
+export function rollingStockOf({
+  name,
+  model,
+}: {
+  readonly name: string;
+  readonly model: Omit<RollingStock, "name">;
+}): RollingStock {
+  return { name, partIndex: model.partIndex, matrices: model.matrices, vehicles: model.vehicles };
+}
+
 function tenths(value: number): string {
   const rounded = Math.round(value * TENTHS) / TENTHS;
   return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
@@ -100,34 +110,43 @@ class PartBoxes {
   }
 }
 
-function vehicleTop(stock: RollingStock, vehicle: PartVehicle, boxes: PartBoxes): number {
-  const box = emptyBox();
-  const grown = new Float64Array(BOX_FLOATS);
-  const add = (instance: number): void => {
-    grown.set(emptyBox());
-    const local = boxes.of(stock.partIndex[instance] ?? 0);
-    growByCorners(grown, local, stock.matrices, instance * INSTANCE_MATRIX_FLOATS);
-    grow(box, grown[0] ?? 0, grown[1] ?? 0, grown[2] ?? 0);
-    grow(box, grown[3] ?? 0, grown[4] ?? 0, grown[5] ?? 0);
-  };
-  vehicle.body.forEach(add);
-  for (const bogie of vehicle.bogies) bogie.instances.forEach(add);
-  return box[4] ?? -Infinity;
+export class VehicleHeights {
+  private readonly boxes: PartBoxes;
+
+  constructor(
+    parts: ReadonlyArray<PartShapeAsset>,
+    studPrimitives: ReadonlyArray<StudPrimitiveAsset>,
+  ) {
+    this.boxes = new PartBoxes(parts, studPrimitives);
+  }
+
+  top(stock: RollingStock, vehicle: PartVehicle): number {
+    const box = emptyBox();
+    const grown = new Float64Array(BOX_FLOATS);
+    const add = (instance: number): void => {
+      grown.set(emptyBox());
+      const local = this.boxes.of(stock.partIndex[instance] ?? 0);
+      growByCorners(grown, local, stock.matrices, instance * INSTANCE_MATRIX_FLOATS);
+      grow(box, grown[0] ?? 0, grown[1] ?? 0, grown[2] ?? 0);
+      grow(box, grown[3] ?? 0, grown[4] ?? 0, grown[5] ?? 0);
+    };
+    vehicle.body.forEach(add);
+    for (const bogie of vehicle.bogies) bogie.instances.forEach(add);
+    return box[4] ?? -Infinity;
+  }
 }
 
 export function trainGauge(
   stock: ReadonlyArray<RollingStock>,
-  parts: ReadonlyArray<PartShapeAsset>,
-  studPrimitives: ReadonlyArray<StudPrimitiveAsset>,
+  heights: VehicleHeights,
   railPart: string,
 ): TrainGauge | null {
-  const boxes = new PartBoxes(parts, studPrimitives);
   let tallest: TrainGauge | null = null;
   for (const train of stock) {
     for (const vehicle of train.vehicles) {
       const contact = vehicle.railContacts.find((c) => c.railPart === railPart);
       if (!contact) continue;
-      const top = vehicleTop(train, vehicle, boxes);
+      const top = heights.top(train, vehicle);
       if (!Number.isFinite(top)) continue;
       const heightLdu = top - contact.railTopY;
       if (!tallest || heightLdu > tallest.heightLdu) tallest = { heightLdu, model: train.name };

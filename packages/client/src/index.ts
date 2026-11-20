@@ -100,6 +100,7 @@ export type {
   TrackPieceView,
   TrackSolveStats,
   TrackHeightView,
+  TrackLowClearanceView,
   TrackUnsupportedView,
   TrackView,
   CrossingView,
@@ -300,6 +301,7 @@ export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./command
 export { trackBlockText } from "./edit/track-drag.ts";
 export { heightText, type TrainGauge } from "./edit/train-gauge.ts";
 export {
+  lowClearanceText,
   tallyText,
   toolHints,
   unjoinedText,

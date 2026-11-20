@@ -65,6 +65,7 @@ import {
 } from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import type { SupportBandAt } from "./track-bands.ts";
+import { heightText } from "./train-gauge.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -799,6 +800,8 @@ function plateObstacles(...rects: ReadonlyArray<Rect>): TrackObstacles {
     rects: Float64Array.from(rects.flat()),
     owners: new Int32Array(rects.length),
     unseated: new Uint8Array(rects.length),
+    outlines: [],
+    outlineOwners: new Int32Array(0),
     labels: ["Road plate"],
     seats: new Set(),
   };
@@ -2026,42 +2029,44 @@ function layAt(layout: TrackDrawing, pose: Pose16, yPlates: number, rise = 0): n
   return index;
 }
 
-it("crosses laid track only with the measured train's height between the lower rails and the upper underside, from above or below, and never while no train is measured", async () => {
+it("refuses track across laid track only where their heights meet, and reports each crossing lower than the measured train with the plates it needs, from whichever end of the stack it was laid", async () => {
   const layout = await bareDrawing();
   const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
   const halfLength = Number(layout.kit.straightStuds) / 2;
-  layAt(layout, studPose(-halfLength, 0, 0), 0);
+  const along = studPose(-halfLength, 0, 0);
   const across = studPose(0, -halfLength, ACROSS);
+  layAt(layout, along, 0);
   const [, railTop] = layout.verticalRange();
   const clearPlates = Math.ceil((railTop + MY_TRAIN.heightLdu) / PLATE_LDU);
-  const unmeasured = layout.pieceBlock(straight, across, clearPlates);
-  layout.setGauge(MY_TRAIN);
+  const touching = layout.pieceBlock(straight, across, 1);
   const low = layout.pieceBlock(straight, across, clearPlates - 1);
-  const clear = layout.pieceBlock(straight, across, clearPlates);
+  const bridge = layAt(layout, across, clearPlates - 1);
+  const unmeasured = layout.lowClearances();
+  layout.setGauge(MY_TRAIN);
+  const reported = layout.lowClearances();
   const below = await bareDrawing();
   below.setGauge(MY_TRAIN);
   layAt(below, across, clearPlates - 1);
-  const under = below.pieceBlock(straight, studPose(-halfLength, 0, 0), 0);
+  layAt(below, along, 0);
+  const clear = await bareDrawing();
+  clear.setGauge(MY_TRAIN);
+  layAt(clear, along, 0);
+  layAt(clear, across, clearPlates);
+  const finding = {
+    needPlates: clearPlates,
+    hasPlates: clearPlates - 1,
+    gauge: MY_TRAIN,
+  };
 
-  expect(unmeasured).toEqual({
-    kind: "clearance",
-    gapLdu: clearPlates * PLATE_LDU - railTop,
-    above: true,
-    gauge: null,
-  });
-  expect(low).toEqual({
-    kind: "clearance",
-    gapLdu: (clearPlates - 1) * PLATE_LDU - railTop,
-    above: true,
-    gauge: MY_TRAIN,
-  });
-  expect(clear).toBeNull();
-  expect(under).toEqual({
-    kind: "clearance",
-    gapLdu: (clearPlates - 1) * PLATE_LDU - railTop,
-    above: false,
-    gauge: MY_TRAIN,
-  });
+  expect(touching).toEqual({ kind: "track" });
+  expect(low).toBeNull();
+  expect(unmeasured).toBeNull();
+  expect(reported).toEqual([{ piece: bridge, ...finding }]);
+  expect(below.lowClearances()).toEqual([{ piece: 0, ...finding }]);
+  expect(clear.lowClearances()).toEqual([]);
+  expect(layout.heightLabels().map((label) => label.text)).toContain(
+    `${heightText((clearPlates - 1) * PLATE_LDU - railTop)} clear: too low for ${MY_TRAIN.model}`,
+  );
 });
 
 it("refuses a model that reaches into raised track's own band and passes one that stops at its underside", async () => {

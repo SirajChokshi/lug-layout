@@ -283,6 +283,21 @@ interface DragRun extends PreviewRun {
   readonly blocked: TrackBlockView | null;
 }
 
+export interface LowClearance {
+  readonly piece: number;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+  readonly gauge: TrainGauge;
+}
+
+interface OverUnderCrossing {
+  readonly upper: number;
+  readonly lower: number;
+  readonly gapLdu: number;
+  readonly x: number;
+  readonly z: number;
+}
+
 interface DragRunCache {
   readonly key: ReadonlyArray<unknown>;
   readonly run: DragRun | null;
@@ -597,6 +612,8 @@ export class TrackDrawing implements ExtensionSite {
   private dragPlates = GROUND_PLATES;
   private dragRunCache: DragRunCache | null = null;
   private labelCache: ReadonlyArray<LabelView> | null = null;
+  private crossingCache: ReadonlyArray<OverUnderCrossing> | null = null;
+  private gauge: TrainGauge | null = null;
   private readonly crossingShapes = new Map<number, CrossingShape>();
   private readonly planEdges = new Map<number, OutlineEdges>();
   private readonly supportPartList: SupportPart[] = [];
@@ -701,7 +718,7 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   get trainGauge(): TrainGauge | null {
-    return this.bands.trainGauge;
+    return this.gauge;
   }
 
   setDrawingHeight(plates: number): void {
@@ -728,10 +745,8 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   setGauge(gauge: TrainGauge | null): void {
-    this.bands.setGauge(gauge);
+    this.gauge = gauge;
     this.labelCache = null;
-    this.reseatDrag(this.dragPlates);
-    this.extension.endsChanged();
   }
 
   private reseatDrag(plates: number): void {
@@ -1917,6 +1932,7 @@ export class TrackDrawing implements ExtensionSite {
     this.framed = framed;
     this.pieceBands = [...bands.values()];
     this.labelCache = null;
+    this.crossingCache = null;
     this.bands.changed();
     this.skipped.clear();
   }
@@ -2030,10 +2046,52 @@ export class TrackDrawing implements ExtensionSite {
     ];
   }
 
-  private clearanceLabels(): ReadonlyArray<LabelView> {
+  raisedTrackMeets(outline: Float64Array, bottomLdu: number, topLdu: number): boolean {
+    const box = this.collisionBox;
+    outlineBox(outline, box, 0);
+    const pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
     const layout = this.combined;
-    const labels: LabelView[] = [];
-    const gaugeLdu = this.bands.trainGauge?.heightLdu ?? Number.POSITIVE_INFINITY;
+    for (let p = 0; p < layout.count; p++) {
+      const framed = this.framed[p];
+      if (!framed || (layout.yPlates(p) === GROUND_PLATES && layout.rise(p) === 0)) continue;
+      const span = this.pieceSpan(p);
+      if (span.bottomLdu >= topLdu || bottomLdu >= span.topLdu) continue;
+      outlineBox(framed, pieceBox, 0);
+      if (!boxesOverlap(box, 0, 0, 0, pieceBox, 0)) continue;
+      if (outlinesOverlap(outline, 0, 0, framed, 0, 0)) return true;
+    }
+    return false;
+  }
+
+  lowClearances(): ReadonlyArray<LowClearance> | null {
+    const gauge = this.gauge;
+    if (!gauge) return null;
+    const worst = new Map<number, LowClearance>();
+    for (const crossing of this.crossings()) {
+      if (crossing.gapLdu >= gauge.heightLdu) continue;
+      const hasPlates = this.pieceHeightPlates(crossing.upper);
+      const shortPlates = Math.ceil((gauge.heightLdu - crossing.gapLdu) / PLATE_LDU);
+      const needPlates = hasPlates + shortPlates;
+      const known = worst.get(crossing.upper);
+      if (known && known.needPlates >= needPlates) continue;
+      worst.set(crossing.upper, { piece: crossing.upper, needPlates, hasPlates, gauge });
+    }
+    return [...worst.values()];
+  }
+
+  private pieceHeightPlates(placement: number): number {
+    const [bottom] = this.verticalRange();
+    return (this.pieceSpan(placement).bottomLdu - bottom) / PLATE_LDU;
+  }
+
+  private crossings(): ReadonlyArray<OverUnderCrossing> {
+    this.crossingCache ??= this.overUnderCrossings();
+    return this.crossingCache;
+  }
+
+  private overUnderCrossings(): ReadonlyArray<OverUnderCrossing> {
+    const layout = this.combined;
+    const crossings: OverUnderCrossing[] = [];
     const box = new Float64Array(OUTLINE_BOX_FLOATS);
     const lowerBox = new Float64Array(OUTLINE_BOX_FLOATS);
     for (let upper = 0; upper < layout.count; upper++) {
@@ -2043,26 +2101,39 @@ export class TrackDrawing implements ExtensionSite {
       for (let lower = 0; lower < layout.count; lower++) {
         const under = this.framed[lower];
         if (!under || lower === upper) continue;
-        const verdict = overUnder(this.pieceSpan(upper), this.pieceSpan(lower), gaugeLdu);
+        const verdict = overUnder(this.pieceSpan(upper), this.pieceSpan(lower), 0);
         if (verdict.kind === "intersects" || !verdict.upperIsA) continue;
         outlineBox(under, lowerBox, 0);
         if (!boxesOverlap(box, 0, 0, 0, lowerBox, 0)) continue;
         if (!outlinesOverlap(outline, 0, 0, under, 0, 0)) continue;
-        const x =
-          (Math.max(box[0] ?? 0, lowerBox[0] ?? 0) + Math.min(box[2] ?? 0, lowerBox[2] ?? 0)) / 2;
-        const z =
-          (Math.max(box[1] ?? 0, lowerBox[1] ?? 0) + Math.min(box[3] ?? 0, lowerBox[3] ?? 0)) / 2;
-        labels.push({
-          id: `clearance:${upper}:${lower}`,
-          kind: "height",
-          text: `${heightText(verdict.gapLdu)} clear`,
-          x,
-          y: this.pieceSpan(upper).bottomLdu,
-          z,
+        crossings.push({
+          upper,
+          gapLdu: verdict.gapLdu,
+          x:
+            (Math.max(box[0] ?? 0, lowerBox[0] ?? 0) + Math.min(box[2] ?? 0, lowerBox[2] ?? 0)) / 2,
+          z:
+            (Math.max(box[1] ?? 0, lowerBox[1] ?? 0) + Math.min(box[3] ?? 0, lowerBox[3] ?? 0)) / 2,
+          lower,
         });
       }
     }
-    return labels;
+    return crossings;
+  }
+
+  private clearanceLabels(): ReadonlyArray<LabelView> {
+    const gauge = this.gauge;
+    return this.crossings().map((crossing) => {
+      const clear = `${heightText(crossing.gapLdu)} clear`;
+      const low = gauge !== null && crossing.gapLdu < gauge.heightLdu;
+      return {
+        id: `clearance:${crossing.upper}:${crossing.lower}`,
+        kind: "height",
+        text: low ? `${clear}: too low for ${gauge.model}` : clear,
+        x: crossing.x,
+        y: this.pieceSpan(crossing.upper).bottomLdu,
+        z: crossing.z,
+      };
+    });
   }
 
   footprintAt(piece: number): TrackFootprint {

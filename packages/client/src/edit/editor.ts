@@ -39,6 +39,7 @@ import {
   type PlacementPose,
   type PlacementRegion,
   type PlacementRequest,
+  type PlateHeights,
   type RoadEdgeSegment,
   type RoadJoinReport,
   type RoadPlacement,
@@ -169,6 +170,7 @@ import {
   type TrackRouteView,
   type UnsupportedPiece,
   type RaisedPiece,
+  type LowClearance,
   RAMP_RATES,
 } from "./track-drawing.ts";
 import type { SupportBand } from "./track-bands.ts";
@@ -182,7 +184,7 @@ import {
   pierTopLdu,
   type PierKit,
 } from "./track-piers.ts";
-import { trainGauge, type TrainGauge } from "./train-gauge.ts";
+import { VehicleHeights, trainGauge, type TrainGauge } from "./train-gauge.ts";
 import type { ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 import { BOX_FLOATS } from "./local-box.ts";
@@ -212,6 +214,7 @@ import {
   seatsPending,
   solidRectsIn,
   trackObstacles,
+  withOutlines,
 } from "./track-obstacles.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
 import { ANY_TURN, HELD_TURN, cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
@@ -478,6 +481,8 @@ export interface TrackView {
   readonly crossings: ReadonlyArray<CrossingView>;
   readonly solve: TrackSolveStats | null;
   readonly placingPiers: boolean;
+  readonly lowClearance: number | null;
+  readonly lastLowClearance: TrackLowClearanceView | null;
   readonly height: TrackHeightView;
 }
 
@@ -485,6 +490,13 @@ export interface TrackUnsupportedView {
   readonly pieces: number;
   readonly block: TrackBlockView | null;
   readonly tilted: number;
+}
+
+export interface TrackLowClearanceView {
+  readonly pieces: number;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+  readonly train: string;
 }
 
 export interface TrackHeightView {
@@ -1456,6 +1468,8 @@ export class Editor implements IEditor, IEditedWorld {
   private gauge: TrainGauge | null = null;
   private pierKit: Promise<PierKit | null> | null = null;
   private trackPiering = false;
+  private lowTrack: ReadonlyArray<LowClearance> | null = null;
+  private lastTrackLow: TrackLowClearanceView | null = null;
   private trackSupportLoading = false;
   private trackSupportError: string | null = null;
   private layoutVersion = 0;
@@ -1907,6 +1921,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private layoutChanged(): void {
     this.reportSupport();
+    if (this.track) this.reportClearance(this.track);
     this.syncCrossings();
   }
 
@@ -1964,7 +1979,6 @@ export class Editor implements IEditor, IEditedWorld {
 
   private measureTrackSupport(track: TrackDrawing): void {
     if (!this.trackSupport) this.loadTrackSupport(track);
-    if (track.raisedCount() > 0 || track.drawingHeight > 0) this.ensureTrainGauge();
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureTrackObstacles(track);
     const unsupported = track.unsupportedPieces();
     this.unsupportedTrack = unsupported;
@@ -1994,6 +2008,40 @@ export class Editor implements IEditor, IEditedWorld {
     );
   }
 
+  private reportClearance(track: TrackDrawing): void {
+    if (track.raisedCount() > 0 || track.drawingHeight > 0) this.ensureTrainGauge();
+    const low = track.lowClearances();
+    this.lowTrack = low;
+    if (!low) return;
+    const laid = new Map<number, PlateHeights>();
+    const carriers = new Map<number, PlateHeights>();
+    for (const { piece, needPlates, hasPlates } of low) {
+      const heights = { needPlates, hasPlates };
+      if (piece < track.pieceCount) {
+        laid.set(piece, heights);
+        continue;
+      }
+      const carrier = this.carrierOf(piece);
+      const known = carrier ? carriers.get(carrier.id) : undefined;
+      if (carrier && (!known || known.needPlates < needPlates)) carriers.set(carrier.id, heights);
+    }
+    this.plans.setLowClearance(laid, carriers, track.trainGauge?.model ?? "");
+  }
+
+  private lowClearanceSince(firstPiece: number): TrackLowClearanceView | null {
+    const pieceCount = this.track?.pieceCount ?? 0;
+    const laid = (this.lowTrack ?? []).filter(
+      ({ piece }) => piece >= firstPiece && piece < pieceCount,
+    );
+    const worst = laid.reduce<LowClearance | null>(
+      (most, low) => (most === null || low.needPlates > most.needPlates ? low : most),
+      null,
+    );
+    if (!worst) return null;
+    const { needPlates, hasPlates, gauge } = worst;
+    return { pieces: laid.length, needPlates, hasPlates, train: gauge.model };
+  }
+
   private ensureTrainGauge(): void {
     if (this.trainGaugeLoad) return;
     this.trainGaugeLoad = this.measureTrainGauge().catch((error: unknown) => {
@@ -2003,11 +2051,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private async measureTrainGauge(): Promise<void> {
-    const { trains, studPrimitives } = await this.catalog.rollingStock();
+    const trains = await this.catalog.rollingStock();
     const track = this.track;
     if (!track) return;
-    const railPart = track.playTrack().railPart;
-    this.gauge = trainGauge(trains, this.catalog.parts(), studPrimitives, railPart);
+    const heights = new VehicleHeights(this.catalog.parts(), this.catalog.studPrimitives());
+    this.gauge = trainGauge(trains, heights, track.playTrack().railPart);
     track.setGauge(this.gauge);
     this.layoutChanged();
     if (track.dragView()) this.resolveDrag(track);
@@ -2146,10 +2194,11 @@ export class Editor implements IEditor, IEditedWorld {
     const [bottom, top] = track.verticalRange();
     const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
     const models = this.placed.models();
-    return {
-      obstacles: trackObstacles(models, band, (model) => this.trackPartsOf(model.placeable)),
-      pending: seatsPending(models, band),
-    };
+    const placed = trackObstacles(models, band, (model) => this.trackPartsOf(model.placeable));
+    const trains = this.railYard
+      .standingFootprints()
+      .filter((vehicle) => vehicle.railTopLdu < band[1] && band[0] < vehicle.topLdu);
+    return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, band) };
   }
 
   private unsupportedSince(firstPiece: number): TrackUnsupportedView | null {
@@ -2350,6 +2399,8 @@ export class Editor implements IEditor, IEditedWorld {
       unsupported: this.unsupportedTrack?.length ?? null,
       crossings: this.crossings.map((crossing) => this.crossingView(crossing)),
       placingPiers: this.trackPiering,
+      lowClearance: this.lowTrack?.length ?? null,
+      lastLowClearance: this.lastTrackLow,
       height: {
         drawingPlates: track.drawingHeight,
         drawingLdu: track.drawingHeight * PLATE_LDU,
@@ -2497,6 +2548,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.lastTrackBlock = null;
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     this.backend.setGhost(null);
     this.showTrackEnds([]);
     this.update({ track: this.trackView() });
@@ -2600,6 +2652,7 @@ export class Editor implements IEditor, IEditedWorld {
           outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
         track.extension.continueFrom(outcome.end);
         this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+        this.lastTrackLow = this.lowClearanceSince(firstLaid);
       });
     }
     this.lastTrackBlock = outcome.blocked;
@@ -2630,6 +2683,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!plan) return;
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     if (plan.run.choice.blocked !== null) {
       this.lastTrackCommit = null;
       this.lastTrackBlock = plan.run.choice.blocked;
@@ -2641,6 +2695,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.layTrack(plan.change, eventTimeMs, undefined, () => {
       this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
       this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+      this.lastTrackLow = this.lowClearanceSince(firstLaid);
       track.extension.laid(plan.run, plan.end);
     });
     this.repaintTrackPreview();
@@ -2910,6 +2965,7 @@ export class Editor implements IEditor, IEditedWorld {
     const block = track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastTrackWithheld = null;
     this.lastTrackUnsupported = null;
+    this.lastTrackLow = null;
     if (block) {
       const label = track.pieceByIndex(held.catalogIndex).piece.title;
       this.lastTrackCommit = null;
@@ -2929,6 +2985,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.layTrack(change, eventTimeMs, undefined, () => {
       this.lastTrackCommit = track.joinedPairs() > joins ? "joined" : "laid";
       this.lastTrackUnsupported = this.unsupportedSince(firstLaid);
+      this.lastTrackLow = this.lowClearanceSince(firstLaid);
     });
     this.held = { ...held, snap: null };
     this.showHeldPiece();
@@ -3066,7 +3123,7 @@ export class Editor implements IEditor, IEditedWorld {
   ): PlacementCheck {
     const check = this.check;
     const train = this.activeTrain;
-    check.aim = train ? this.railYard.aim(train, aimRay, rot % 2 === 1) : null;
+    check.aim = train ? this.aimTrain(train, aimRay, rot % 2 === 1) : null;
     check.yPlates = RESTS_ON_TABLE_Y_PLATES;
     check.waitingOn = NOT_WAITING;
     check.refusal = null;
@@ -3274,9 +3331,23 @@ export class Editor implements IEditor, IEditedWorld {
     );
   }
 
+  private aimTrain(train: PlayModel, ray: Float64Array, reversed: boolean): RailAim {
+    const aim = this.railYard.aim(train, ray, reversed);
+    const track = this.track;
+    if (aim.kind !== "seat" || !track) return aim;
+    const meets = this.railYard
+      .seatFootprints(aim.seat, train)
+      .some(({ outline, railTopLdu, topLdu }) =>
+        track.raisedTrackMeets(outline, railTopLdu, topLdu),
+      );
+    if (!meets) return aim;
+    const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;
+    return { kind: "refused", reason, seat: aim.seat };
+  }
+
   private placeOnRails(placeable: Placeable): boolean {
     const train = this.activeTrain;
-    const aim = train ? this.railYard.aim(train, this.ray, this.placeRot % 2 === 1) : null;
+    const aim = train ? this.aimTrain(train, this.ray, this.placeRot % 2 === 1) : null;
     this.trainAim = aim;
     if (!aim || aim.kind === "off") {
       if (this.ghostOnRails) {

@@ -5,6 +5,7 @@ import type {
   FillResult,
   GestureView,
   SelectionTally,
+  TrackLowClearanceView,
   TrackUnsupportedView,
   TrackView,
 } from "../edit/editor.ts";
@@ -170,6 +171,10 @@ function unsupportedText({ pieces: count, block, tilted }: TrackUnsupportedView)
   const where = block?.kind === "model" ? ` on ${block.label}` : "";
   const level = `${pieces(flat)} ${rest}${where} where it has no studs, so ${flat === 1 ? "it isn't" : "they aren't"} supported`;
   return tilted === 0 ? level : `${level}; ${ramps}`;
+}
+
+export function lowClearanceText({ train, needPlates, hasPlates }: TrackLowClearanceView): string {
+  return `too low for the tallest train: ${train} needs ${needPlates} plates, this bridge has ${hasPlates}`;
 }
 
 function dragView(drag: TrackDragView): Omit<HintView, "hints"> {
@@ -392,6 +397,13 @@ function laidView(track: TrackView, block: TrackBlockView | null): Omit<HintView
     };
   }
   if (unsupported) return { tone: "warn", title: "Laid unsupported", detail: unsupported };
+  if (track.lastLowClearance) {
+    return {
+      tone: "warn",
+      title: "Laid too low",
+      detail: lowClearanceText(track.lastLowClearance),
+    };
+  }
   if (block === null || track.lastCommit === "joined") return null;
   return {
     tone: "warn",

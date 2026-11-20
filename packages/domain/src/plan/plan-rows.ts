@@ -39,6 +39,12 @@ function grownInt32(
   return grown;
 }
 
+function grownInt16(array: Int16Array<ArrayBuffer>, length: number): Int16Array<ArrayBuffer> {
+  const grown = new Int16Array(length);
+  grown.set(array);
+  return grown;
+}
+
 function grownUint8(array: Uint8Array<ArrayBuffer>, length: number): Uint8Array<ArrayBuffer> {
   const grown = new Uint8Array(length);
   grown.set(array);
@@ -248,6 +254,9 @@ export class PlanRows {
   source = new Int32Array(INITIAL_ROWS);
   boxState = new Uint8Array(INITIAL_ROWS);
   unsupported = new Uint8Array(INITIAL_ROWS);
+  clearanceNeed = new Int16Array(INITIAL_ROWS);
+  clearanceHas = new Int16Array(INITIAL_ROWS);
+  clearanceTrain = "";
   shape = new Int32Array(INITIAL_ROWS).fill(NO_PLAN_SHAPE);
   facts = new Int32Array(INITIAL_ROWS * FACT_STRIDE);
   readonly outline: Array<TrackOutline | null> = Array.from({ length: INITIAL_ROWS }, () => null);
@@ -266,6 +275,8 @@ export class PlanRows {
     this.segment[row] = segment;
     this.source[row] = source;
     this.unsupported[row] = 0;
+    this.clearanceNeed[row] = 0;
+    this.clearanceHas[row] = 0;
     this.shape[row] = NO_PLAN_SHAPE;
     this.outline[row] = null;
     this.carried[row] = null;
@@ -359,6 +370,8 @@ export class PlanRows {
     this.source = grownInt32(this.source, capacity);
     this.boxState = grownUint8(this.boxState, capacity);
     this.unsupported = grownUint8(this.unsupported, capacity);
+    this.clearanceNeed = grownInt16(this.clearanceNeed, capacity);
+    this.clearanceHas = grownInt16(this.clearanceHas, capacity);
     this.shape = grownInt32(this.shape, capacity, NO_PLAN_SHAPE);
     this.facts = grownInt32(this.facts, capacity * FACT_STRIDE);
     for (let row = this.outline.length; row < capacity; row++) this.outline.push(null);
