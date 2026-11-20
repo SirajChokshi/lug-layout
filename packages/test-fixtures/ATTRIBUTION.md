@@ -2046,4 +2046,4 @@ Committed LDraw test inputs, one row per section. Sections modified from LDraw l
 | `packages/import/test-data/critic-gap.mpd` | `mycustom2.dat` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |
 | `packages/import/test-data/critic-gap.mpd` | `9999-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: subpart recoloured 4, side quads recoloured 14 |
 | `packages/import/test-data/critic-gap.mpd` | `9998-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: side quads listed from a different starting vertex |
-| `packages/import/test-data/custom-pile.ldr` | `` | Brick Railroad tests | (no !LICENSE line) |  |
+| `packages/import/test-data/custom-pile.ldr` | `` | Brick Railroad tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |

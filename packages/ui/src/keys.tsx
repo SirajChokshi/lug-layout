@@ -2,6 +2,7 @@ import {
   chordKeys,
   chordText,
   commandSpec,
+  isHotbarCommand,
   keyPlatform,
   type CommandId,
   type KeyChord,
@@ -21,6 +22,17 @@ export function Chord({ chord }: { readonly chord: KeyChord }) {
 
 export function CommandKeys({ id }: { readonly id: CommandId }) {
   const { keys } = commandSpec(id);
+  const first = keys[0];
+  const last = keys.at(-1);
+  if (isHotbarCommand(id) && first && last) {
+    return (
+      <span className="command-keys">
+        <Chord chord={first} />
+        <span className="chord-or">to</span>
+        <Chord chord={last} />
+      </span>
+    );
+  }
   return (
     <span className="command-keys">
       {keys.map((chord, index) => (

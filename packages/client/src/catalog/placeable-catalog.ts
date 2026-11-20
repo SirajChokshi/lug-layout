@@ -1,7 +1,7 @@
 import {
   BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
-  withPlaceholderMesh,
+  undrawnPart,
   type IPartBundleLoader,
   type ModelRecord,
   type PartAsset,
@@ -311,6 +311,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     detailedPartMeshes: NO_MESHES,
     farPartMeshes: NO_MESHES,
     farModelMeshes: NO_MESHES,
+    undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
   private placeablesByRefId: Array<Placeable | null> = [];
@@ -342,7 +343,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       this.loader.loadStudPrimitives(index.lod),
       Promise.all(index.catalogParts.map((part) => this.loader.loadPartShape(index.lod, part))),
     ]);
-    const palette = new MergedParts(shapes.map(withPlaceholderMesh));
+    const palette = new MergedParts(shapes.map(undrawnPart));
     this.palette = palette;
     this.meshes = new PartMeshStream(this.loader, this.backend, palette, index.lod, (progress) => {
       this.progress = { ...progress, farModelMeshes: this.progress.farModelMeshes };
@@ -498,7 +499,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const colors = this.colors();
     const { entry, model } = record;
     const before = palette.parts.length;
-    const parts = record.parts.map(withPlaceholderMesh);
+    const parts = record.parts.map(undrawnPart);
     const merged = palette.remap(model, parts);
     for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
     const placeable = modelPlaceable(
@@ -608,6 +609,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       source: `${IMPORTED_SOURCE} ${file.name}`,
       sections: model.sections,
     };
+    for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);

@@ -1,6 +1,7 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
+import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
 export type EditorActionId =
@@ -38,7 +39,7 @@ export type ShellCommandId = "show-shortcuts" | "open-palette";
 
 export type PlayCommandId = "play" | "throttle-up" | "throttle-down" | "stop-train" | "rerail";
 
-export type CommandId = EditorActionId | ShellCommandId | PlayCommandId;
+export type CommandId = EditorActionId | ShellCommandId | PlayCommandId | "pick-slot";
 
 export type CommandGroup = "Tools" | "Edit" | "View" | "Play" | "Help";
 
@@ -51,6 +52,10 @@ export interface CommandSpec {
   readonly whileTyping?: boolean;
   readonly repeats?: boolean;
 }
+
+export type CommandMatch =
+  | { readonly id: Exclude<CommandId, "pick-slot"> }
+  | { readonly id: "pick-slot"; readonly slot: number };
 
 export interface PointerGesture {
   readonly gesture: string;
@@ -74,6 +79,12 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "Escape" }],
     keywords: "cancel stop escape deselect pointer",
+  },
+  {
+    id: "pick-slot",
+    title: "Pick up the part in a hotbar slot",
+    group: "Tools",
+    keys: KEY_FOR_SLOT,
   },
   {
     id: "draw-track",
@@ -311,11 +322,15 @@ export function commandSpec(id: CommandId): CommandSpec {
   return spec;
 }
 
-export function commandForKey(input: KeyInput, typing: boolean): CommandId | null {
+export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | null {
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
-    const typed = spec.keys.filter((chord) => !typing || chord.mod);
-    if (typed.some((chord) => chordMatches(chord, input))) return spec.id;
+    const keyIndex = spec.keys.findIndex(
+      (chord) => (!typing || chord.mod === true) && chordMatches(chord, input),
+    );
+    if (keyIndex < 0) continue;
+    const { id } = spec;
+    return isHotbarCommand(id) ? { id, slot: keyIndex } : { id };
   }
   return null;
 }
@@ -332,6 +347,10 @@ export function isPlayCommand(id: CommandId): id is PlayCommandId {
     id === "stop-train" ||
     id === "rerail"
   );
+}
+
+export function isHotbarCommand(id: CommandId): id is "pick-slot" {
+  return id === "pick-slot";
 }
 
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {
@@ -417,6 +436,8 @@ export function commandEnabled(
     case "delete":
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;
+    case "pick-slot":
+      return !snapshot.readOnly;
     case "focus":
       return snapshot.selection !== null;
     case "undo":
