@@ -381,13 +381,48 @@ function withLibraryParts(colors: ReadonlyArray<number>) {
   };
 }
 
+function withBrick(bundle: CompiledBundle): void {
+  const part = {
+    id: BRICK,
+    path: "parts/3001.dat",
+    role: "detail",
+    file: "3001.glb",
+    title: "Brick 2 x 4",
+    ldrawCategory: "Brick",
+    keywords: [],
+    author: "James Jessiman",
+    license: null,
+    bounds: origin,
+    colors: [16],
+    studs: 0,
+    triangles: 0,
+    vertices: 0,
+  };
+  const shape = { id: part.id, title: part.title, role: part.role, file: part.file };
+  bundle.parts.push(part);
+  bundle.files.set(part.file, glb(studGltf()));
+  bundle.model.parts.push(part.id);
+  bundle.model.shapes.push({ ...shape, bounds: origin, studs: [] });
+}
+
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 10 } });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 11 } });
+  });
+
+  it("publishes each model's part list as its own content-addressed file, which the model's entry references with its SHA-256", async () => {
+    const { directory } = await publish(withBrick);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const { file, sha256 } = manifest.models[0].partList;
+    const bytes = await readFile(join(directory, file));
+
+    expect(file).toBe(`model-scene-parts.${sha256.slice(0, 16)}.json`);
+    expect(createHash("sha256").update(bytes).digest("hex")).toBe(sha256);
+    expect(JSON.parse(bytes.toString("utf8"))).toEqual({ parts: [BRICK] });
   });
 
   it("points each connector index at the content-addressed record of its part", async () => {
@@ -455,29 +490,7 @@ describe("publishBundle", () => {
   });
 
   it("points every record at the content-addressed GLB of its parts", async () => {
-    const { directory } = await publish((bundle) => {
-      const part = {
-        id: "ldraw:3001",
-        path: "parts/3001.dat",
-        role: "detail",
-        file: "3001.glb",
-        title: "Brick 2 x 4",
-        ldrawCategory: "Brick",
-        keywords: [],
-        author: "James Jessiman",
-        license: null,
-        bounds: origin,
-        colors: [16],
-        studs: 0,
-        triangles: 0,
-        vertices: 0,
-      };
-      const shape = { id: part.id, title: part.title, role: part.role, file: part.file };
-      bundle.parts.push(part);
-      bundle.files.set(part.file, glb(studGltf()));
-      bundle.model.parts.push(part.id);
-      bundle.model.shapes.push({ ...shape, bounds: origin, studs: [] });
-    });
+    const { directory } = await publish(withBrick);
     const names = await readdir(directory);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const model = JSON.parse(await readFile(join(directory, manifest.models[0].file), "utf8"));
@@ -561,7 +574,7 @@ describe("publishBundle", () => {
 
   it("publishes the section vocabulary byte for byte as its own content-addressed asset, which the manifest references with its SHA-256", async () => {
     const { directory, published } = await publish(withCompiler);
-    expect(published.files).toBe(12);
+    expect(published.files).toBe(13);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const { file, sha256 } = manifest.compiler.sectionVocabulary;
     expect(file).toMatch(/^section-vocabulary\.[0-9a-f]{16}\.json$/u);
@@ -715,7 +728,7 @@ describe("publishBundle", () => {
 
   it("publishes each thumbnail in thumb/ under its content address", async () => {
     const { directory, published } = await publish(withThumbnail(png(THUMBNAIL_PX)));
-    expect(published.files).toBe(11);
+    expect(published.files).toBe(12);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const [thumbnail] = manifest.thumbnails;
     expect(thumbnail.item).toBe("ldraw:3811@2");
@@ -725,7 +738,7 @@ describe("publishBundle", () => {
 
   it("publishes the library part index under its content address", async () => {
     const { directory, published } = await publish(withLibraryParts([4, 1]));
-    expect(published.files).toBe(11);
+    expect(published.files).toBe(12);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     expect(manifest.libraryParts.file).toMatch(/^library-parts\.[0-9a-f]{16}\.json$/u);
     const index = JSON.parse(await readFile(join(directory, manifest.libraryParts.file), "utf8"));

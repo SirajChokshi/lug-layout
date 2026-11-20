@@ -298,6 +298,12 @@ export const BundleFarMesh = v.object({
 });
 export type BundleFarMesh = v.InferOutput<typeof BundleFarMesh>;
 
+export const ModelPartListRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type ModelPartListRef = v.InferOutput<typeof ModelPartListRef>;
+
+export const ModelPartListFile = v.strictObject({ parts: v.array(v.string()) });
+export type ModelPartListFile = v.InferOutput<typeof ModelPartListFile>;
+
 export const BundleModelEntry = v.object({
   name: v.string(),
   file: v.string(),
@@ -316,6 +322,7 @@ export const BundleModelEntry = v.object({
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
+  partList: v.optional(ModelPartListRef),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
 

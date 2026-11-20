@@ -12,6 +12,8 @@ import {
   ShadowLibraryPin,
   LibraryPartsFile,
   ModelFile,
+  type ModelPartListFile,
+  type ModelPartListRef,
   PartShape,
   PartTableFile,
   RollingDiagnosticsFile,
@@ -179,6 +181,27 @@ export async function attachLibraryParts(directory: string, libraryParts: unknow
   );
 }
 
+function modelPartListFile(modelFile: string): string {
+  const extension = extname(modelFile);
+  return `${modelFile.slice(0, -extension.length)}-parts${extension}`;
+}
+
+function withModelPartLists(
+  compiled: unknown,
+  partLists: ReadonlyMap<string, ModelPartListRef>,
+): unknown {
+  if (!isRecord(compiled) || !Array.isArray(compiled["models"])) return compiled;
+  const models: unknown[] = compiled["models"];
+  return {
+    ...compiled,
+    models: models.map((entry) => {
+      if (!isRecord(entry) || typeof entry["file"] !== "string") return entry;
+      const partList = partLists.get(entry["file"]);
+      return partList === undefined ? entry : { ...entry, partList };
+    }),
+  };
+}
+
 function addressedFiles(raw: unknown, renamed: ReadonlyMap<string, string>): unknown {
   return JSON.parse(
     JSON.stringify(raw, (key, value: unknown) =>
@@ -297,10 +320,21 @@ export async function publishBundle(
     const raw: unknown = JSON.parse(await readFile(join(directory, file), "utf8"));
     return { raw, value: decodeDeclared(schema, raw, file) };
   };
-  const publishJson = async (schema: v.GenericSchema, file: string): Promise<void> => {
-    const { raw } = await readJson(schema, file);
+  const publishJson = async <const TSchema extends v.GenericSchema>(
+    schema: TSchema,
+    file: string,
+  ): Promise<v.InferOutput<TSchema>> => {
+    const { raw, value } = await readJson(schema, file);
     await writeFile(join(directory, file), JSON.stringify(addressedFiles(raw, renamed)));
     await publish(file);
+    return value;
+  };
+  const partLists = new Map<string, ModelPartListRef>();
+  const publishPartList = async (modelFile: string, parts: ReadonlyArray<string>) => {
+    const file = modelPartListFile(modelFile);
+    const list: ModelPartListFile = { parts: [...parts] };
+    await writeFile(join(directory, file), JSON.stringify(list));
+    partLists.set(modelFile, { file, sha256: sha256(await publish(file)) });
   };
   const { value: partTable } = await readJson(PartTableFile, manifest.partTable.file);
   for (const { file } of manifest.studPrimitives) {
@@ -340,7 +374,10 @@ export async function publishBundle(
     }
   }
   await publishJson(PartTableFile, manifest.partTable.file);
-  for (const { file } of manifest.models) await publishJson(ModelFile, file);
+  for (const { file } of manifest.models) {
+    const model = await publishJson(ModelFile, file);
+    await publishPartList(file, model.parts);
+  }
   for (const { farMesh } of manifest.models) {
     if (farMesh) {
       decodeDeclared(
@@ -416,7 +453,7 @@ export async function publishBundle(
   if (unreferenced.length > 0) {
     throw new Error(`${directory} has files the manifest does not reference: ${unreferenced}`);
   }
-  const addressed = addressedFiles(compiled, renamed);
+  const addressed = addressedFiles(withModelPartLists(compiled, partLists), renamed);
   if (!isRecord(addressed)) throw new Error(`${manifestPath} is not a bundle index`);
   const body = { ...addressed, inputs };
   const bundleVersion = sha256(JSON.stringify(body)).slice(0, CONTENT_HASH_HEX_DIGITS);
