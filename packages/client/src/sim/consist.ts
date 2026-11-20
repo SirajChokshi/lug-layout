@@ -6,8 +6,8 @@ import type {
   CouplerMount,
   GuideGeometry,
   VehicleGeometry,
-  VehicleSpec,
-} from "@brr/sim";
+} from "@brr/domain";
+import type { VehicleSpec } from "@brr/sim";
 
 export interface RigidBodyInstances {
   readonly instances: Uint32Array;

@@ -7,13 +7,17 @@ import {
   WorldShardV1,
   canonicalJson,
   encodeTrackPosition,
+  importRef,
   readWorldArchive,
+  referencedImports,
+  shardEntry,
   superChunkOfTrack,
   worldShard,
   worldArchiveFiles,
   worldManifest,
   worldShards,
   worldTrack,
+  type ConsistRecordV1,
   type PlacementRecordV1,
   type TrackRecordV1,
   type WorldHeader,
@@ -45,6 +49,19 @@ const manifest = {
   credits: "CREDITS.txt",
   disclaimer: "disclaimer",
 };
+
+const consist = {
+  ref: "omr:10133-1",
+  color: 0,
+  track: { ref: "ldraw:74746", heading: 3, position: ["2", ...ZEROS.slice(1)], yPlates: 0 },
+  route: 0,
+  reversed: true,
+  offsetLdu: 120,
+};
+
+function withConsist(patch: Record<string, unknown>) {
+  return { ...manifest, consists: [{ ...consist, ...patch }] };
+}
 
 function withPlacement(patch: Record<string, unknown>) {
   return { ...shard, placements: [{ ...shard.placements[0], ...patch }] };
@@ -78,12 +95,17 @@ function backwards<T>(rows: ReadonlyArray<T>): ReadonlyArray<T> {
 }
 
 describe("world schema v1", () => {
-  it("accepts a valid shard and manifest unchanged", () => {
+  it("accepts a valid shard and manifest unchanged, with or without consists on the rails", () => {
     const decodedShard = decode(WorldShardV1, shard);
     const decodedManifest = decode(WorldManifestV1, manifest);
+    const withTrain = withConsist({});
+    const decodedWithTrain = decode(WorldManifestV1, withTrain);
     expect(decodedShard.ok && canonicalJson(decodedShard.value)).toBe(canonicalJson(shard));
     expect(decodedManifest.ok && canonicalJson(decodedManifest.value)).toBe(
       canonicalJson(manifest),
+    );
+    expect(decodedWithTrain.ok && canonicalJson(decodedWithTrain.value)).toBe(
+      canonicalJson(withTrain),
     );
   });
 
@@ -145,6 +167,15 @@ describe("world schema v1", () => {
     ],
     ["no disclaimer", { ...manifest, disclaimer: "" }, "$.disclaimer"],
     ["a track count that disagrees with its shards", { ...manifest, track: 3 }, "$.track"],
+    ["an empty consist list", { ...manifest, consists: [] }, "$.consists"],
+    ["a consist between whole LDU", withConsist({ offsetLdu: 12.5 }), "$.consists.0.offsetLdu"],
+    ["a consist ref without a namespace", withConsist({ ref: "10133-1" }), "$.consists.0.ref"],
+    [
+      "a consist on a track heading past 15",
+      withConsist({ track: { ...consist.track, heading: 16 } }),
+      "$.consists.0.track.heading",
+    ],
+    ["a consist with an unknown key", withConsist({ facing: 1 }), "$.consists.0.facing"],
   ])("rejects a manifest with %s at its path", (_name, value, path) => {
     const decoded = decode(WorldManifestV1, value);
     expect(decoded.ok ? [] : decoded.issues.map((issue) => issue.path)).toContain(path);
@@ -242,6 +273,27 @@ describe("world schema v1", () => {
     );
     expect(resaved).toEqual(saved);
     expect(worldTrack(loaded.shards)).toEqual(track);
+  });
+
+  it("keeps the consists on the rails through an archive, and counts their imported files as used", () => {
+    const sha256 = "a".repeat(64);
+    const consists: ReadonlyArray<ConsistRecordV1> = [
+      { ...consist, ref: importRef(sha256) },
+      { ...consist, reversed: false, offsetLdu: 0 },
+    ];
+    const shards = worldShards(placements, track);
+    const files = worldArchiveFiles({
+      manifest: worldManifest({ ...header, consists }, shards.map(shardEntry)),
+      shards,
+      credits: "credits",
+    });
+    const loaded = reread(new Map(files.map((file) => [file.name, file.text])));
+
+    expect(loaded.manifest.consists).toEqual(consists);
+    expect(referencedImports(loaded.shards, loaded.manifest.consists ?? [])).toEqual(
+      new Set([sha256]),
+    );
+    expect(referencedImports(loaded.shards, [])).toEqual(new Set());
   });
 
   it("writes the same bytes whatever order the placements arrive in", () => {
