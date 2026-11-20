@@ -146,7 +146,7 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
   return { heading, position, yPlates, instance };
 }
 
-function doubled<A extends Uint8Array | Uint32Array | Int32Array>(
+function doubled<A extends Uint8Array | Uint16Array | Uint32Array | Int32Array | Float64Array>(
   array: A,
   allocate: (length: number) => A,
 ): A {
@@ -591,39 +591,54 @@ export class ModelConnectors {
       );
     }
     mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
-    const freeStretch = new Int32Array(total).fill(NO_FREE_STRETCH);
-    let occupied = 0;
+    const shapes = mating.shapes;
+    const stretch = new Float64Array(STRETCH_FLOATS);
+    const cover = new ExactCover();
+    const pieces = new OpenEndPieces();
+    let whole = 0;
     let offLattice = 0;
-    for (let k = 0; k < total; k++) {
-      if (search.matedInside[k] === 1) {
-        freeStretch[k] = openEndStretch(mating.shapes, frames, search, k);
-        if (freeStretch[k] === NO_FREE_STRETCH) occupied++;
-        else if (freeStretch[k] === FREE_STRETCH_OFF_LATTICE) offLattice++;
-      } else if (frames.axis[k] === AXIS_FREE) offLattice++;
+    for (let i = 0; i < instances.count; i++) {
+      const part = parts[instances.partIndex[i] ?? -1];
+      if (!part) continue;
+      const first = firstConnector[i] ?? 0;
+      const end = first + part.count;
+      const firstPiece = pieces.count;
+      for (let k = first; k < end; k++) {
+        if (search.matedInside[k] !== 1) {
+          if (frames.axis[k] === AXIS_FREE) offLattice++;
+          else whole++;
+          continue;
+        }
+        if (frames.axis[k] === AXIS_FREE) continue;
+        const found = freeStretch(shapes, frames, search, k, stretch);
+        if (found === FREE_STRETCH_OFF_LATTICE) offLattice++;
+        else if (found === FREE_STRETCH) {
+          offLattice += exposeUncovered(
+            shapes,
+            frames,
+            search.matedInside,
+            cover,
+            pieces,
+            k,
+            first,
+            end,
+            firstPiece,
+            stretch,
+          );
+        }
+      }
     }
-    const exposed = allocateFrames(total - occupied - offLattice);
+    const exposed = allocateFrames(whole + pieces.count);
     let n = 0;
+    let piece = 0;
     for (let k = 0; k < total; k++) {
-      const stretch = freeStretch[k] ?? NO_FREE_STRETCH;
-      const matedInside = search.matedInside[k] === 1;
-      if (frames.axis[k] === AXIS_FREE || (matedInside && stretch < 0)) continue;
-      exposed.shape[n] = matedInside ? stretch : (frames.shape[k] ?? 0);
-      exposed.gender[n] = frames.gender[k] ?? 0;
-      exposed.source[n] = frames.source[k] ?? 0;
-      exposed.status[n] = frames.status[k] ?? 0;
-      exposed.axis[n] = frames.axis[k] ?? 0;
-      exposed.instance[n] = frames.instance[k] ?? 0;
-      exposed.connector[n] = frames.connector[k] ?? 0;
-      for (let v = 0; v < VECTOR_FLOATS; v++) {
-        exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
+      if (search.matedInside[k] !== 1) {
+        if (frames.axis[k] !== AXIS_FREE) expose(exposed, n++, frames, k, frames.shape[k] ?? 0, 0);
+        continue;
       }
-      if (matedInside && frames.gender[k] === GENDER_MALE) {
-        const axis = frames.axis[k] ?? 0;
-        const at = n * VECTOR_FLOATS + axisDimension(axis);
-        exposed.origin[at] =
-          (exposed.origin[at] ?? 0) + axisSign(axis) * (search.maleEngagedTo[k] ?? 0);
+      for (; piece < pieces.count && pieces.connector[piece] === k; piece++) {
+        expose(exposed, n++, frames, k, pieces.shape[piece] ?? 0, pieces.from[piece] ?? 0);
       }
-      n++;
     }
     const track = exactTrackEnds(trackEnds);
     return new ModelConnectors(
@@ -648,14 +663,20 @@ export class ModelConnectors {
   }
 }
 
+const FREE_STRETCH = 0;
 const NO_FREE_STRETCH = -1;
 const FREE_STRETCH_OFF_LATTICE = -2;
+const STRETCH_FROM = 0;
+const STRETCH_TO = 1;
+const STRETCH_FLOATS = 2;
+const INITIAL_PIECES = 16;
 
-function openEndStretch(
+function freeStretch(
   shapes: SnapShapes,
   frames: Frames,
   search: InternalMates,
   k: number,
+  out: Float64Array,
 ): number {
   const shape = frames.shape[k] ?? 0;
   const length = shapes.length(shape) * SIXTEENTHS_PER_LDU;
@@ -663,14 +684,201 @@ function openEndStretch(
     const engagedTo = search.maleEngagedTo[k] ?? NO_ENGAGED_TIP;
     if ((shapes.caps(shape) & CAP_FAR) !== 0 || engagedTo >= length) return NO_FREE_STRETCH;
     if (!Number.isInteger(engagedTo)) return FREE_STRETCH_OFF_LATTICE;
-    return shapes.clipped(
-      shape,
-      engagedTo / SIXTEENTHS_PER_LDU,
-      length / SIXTEENTHS_PER_LDU,
-      CAP_ROOT,
-    );
+    out[STRETCH_FROM] = engagedTo;
+    out[STRETCH_TO] = length;
+    return FREE_STRETCH;
   }
   const engagedFrom = search.femaleEngagedFrom[k] ?? NO_ENGAGED_ENTRANCE;
   if (engagedFrom <= 0 || engagedFrom >= length) return NO_FREE_STRETCH;
-  return shapes.clipped(shape, 0, engagedFrom / SIXTEENTHS_PER_LDU, CAP_FAR);
+  out[STRETCH_FROM] = 0;
+  out[STRETCH_TO] = engagedFrom;
+  return FREE_STRETCH;
+}
+
+function extentSign(gender: number, axis: number): number {
+  return gender === GENDER_MALE ? axisSign(axis) : -axisSign(axis);
+}
+
+class OpenEndPieces {
+  connector = new Uint32Array(INITIAL_PIECES);
+  shape = new Uint16Array(INITIAL_PIECES);
+  from = new Float64Array(INITIAL_PIECES);
+  to = new Float64Array(INITIAL_PIECES);
+  count = 0;
+
+  append(connector: number, shape: number, from: number, to: number): void {
+    if (this.count === this.connector.length) {
+      this.connector = doubled(this.connector, (length) => new Uint32Array(length));
+      this.shape = doubled(this.shape, (length) => new Uint16Array(length));
+      this.from = doubled(this.from, (length) => new Float64Array(length));
+      this.to = doubled(this.to, (length) => new Float64Array(length));
+    }
+    const p = this.count++;
+    this.connector[p] = connector;
+    this.shape[p] = shape;
+    this.from[p] = from;
+    this.to[p] = to;
+  }
+}
+
+class ExactCover {
+  private covered = new Float64Array(INITIAL_PIECES * STRETCH_FLOATS);
+  private coveredCount = 0;
+  private remainder = new Float64Array(INITIAL_PIECES * STRETCH_FLOATS);
+
+  clear(): void {
+    this.coveredCount = 0;
+  }
+
+  add(from: number, to: number): void {
+    if ((this.coveredCount + 1) * STRETCH_FLOATS > this.covered.length) {
+      this.covered = doubled(this.covered, (length) => new Float64Array(length));
+    }
+    let at = this.coveredCount++;
+    while (at > 0 && (this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_FROM] ?? 0) > from) {
+      this.covered[at * STRETCH_FLOATS + STRETCH_FROM] =
+        this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
+      this.covered[at * STRETCH_FLOATS + STRETCH_TO] =
+        this.covered[(at - 1) * STRETCH_FLOATS + STRETCH_TO] ?? 0;
+      at--;
+    }
+    this.covered[at * STRETCH_FLOATS + STRETCH_FROM] = from;
+    this.covered[at * STRETCH_FLOATS + STRETCH_TO] = to;
+  }
+
+  remainders(from: number, to: number): number {
+    let count = 0;
+    let cursor = from;
+    for (let c = 0; c < this.coveredCount; c++) {
+      const start = this.covered[c * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
+      if (start > cursor) count = this.keep(count, cursor, start);
+      cursor = Math.max(cursor, this.covered[c * STRETCH_FLOATS + STRETCH_TO] ?? 0);
+    }
+    if (to > cursor) count = this.keep(count, cursor, to);
+    return count;
+  }
+
+  remainderFrom(r: number): number {
+    return this.remainder[r * STRETCH_FLOATS + STRETCH_FROM] ?? 0;
+  }
+
+  remainderTo(r: number): number {
+    return this.remainder[r * STRETCH_FLOATS + STRETCH_TO] ?? 0;
+  }
+
+  private keep(count: number, from: number, to: number): number {
+    if ((count + 1) * STRETCH_FLOATS > this.remainder.length) {
+      this.remainder = doubled(this.remainder, (length) => new Float64Array(length));
+    }
+    this.remainder[count * STRETCH_FLOATS + STRETCH_FROM] = from;
+    this.remainder[count * STRETCH_FLOATS + STRETCH_TO] = to;
+    return count + 1;
+  }
+}
+
+function coverExactly(
+  shapes: SnapShapes,
+  frames: Frames,
+  cover: ExactCover,
+  k: number,
+  from: number,
+  to: number,
+  other: number,
+  otherFrom: number,
+  otherTo: number,
+): void {
+  const axis = frames.axis[k] ?? 0;
+  if (frames.gender[other] !== frames.gender[k] || frames.axis[other] !== axis) return;
+  const dimension = axisDimension(axis);
+  const own = k * VECTOR_FLOATS;
+  const theirs = other * VECTOR_FLOATS;
+  for (let side = 1; side < VECTOR_FLOATS; side++) {
+    const across = (dimension + side) % VECTOR_FLOATS;
+    if (frames.origin[theirs + across] !== frames.origin[own + across]) return;
+  }
+  const shift =
+    ((frames.origin[theirs + dimension] ?? 0) - (frames.origin[own + dimension] ?? 0)) *
+    extentSign(frames.gender[k] ?? 0, axis);
+  const start = Math.max(from, otherFrom + shift);
+  const end = Math.min(to, otherTo + shift);
+  if (!(end > start)) return;
+  const compatible = shapes.sameSectionsOver(
+    frames.shape[k] ?? 0,
+    start / SIXTEENTHS_PER_LDU,
+    frames.shape[other] ?? 0,
+    (start - shift) / SIXTEENTHS_PER_LDU,
+    (end - start) / SIXTEENTHS_PER_LDU,
+  );
+  if (compatible) cover.add(start, end);
+}
+
+function exposeUncovered(
+  shapes: SnapShapes,
+  frames: Frames,
+  matedInside: Uint8Array,
+  cover: ExactCover,
+  pieces: OpenEndPieces,
+  k: number,
+  first: number,
+  end: number,
+  firstPiece: number,
+  stretch: Float64Array,
+): number {
+  const from = stretch[STRETCH_FROM] ?? 0;
+  const to = stretch[STRETCH_TO] ?? 0;
+  cover.clear();
+  for (let j = first; j < end; j++) {
+    if (j === k || matedInside[j] === 1 || frames.axis[j] === AXIS_FREE) continue;
+    const length = shapes.length(frames.shape[j] ?? 0) * SIXTEENTHS_PER_LDU;
+    coverExactly(shapes, frames, cover, k, from, to, j, 0, length);
+  }
+  for (let p = firstPiece; p < pieces.count; p++) {
+    const other = pieces.connector[p] ?? 0;
+    coverExactly(shapes, frames, cover, k, from, to, other, pieces.from[p] ?? 0, pieces.to[p] ?? 0);
+  }
+  const male = frames.gender[k] === GENDER_MALE;
+  const shape = frames.shape[k] ?? 0;
+  const count = cover.remainders(from, to);
+  let offLattice = 0;
+  for (let r = 0; r < count; r++) {
+    const start = cover.remainderFrom(r);
+    const stop = cover.remainderTo(r);
+    const offGrid =
+      (start !== from && !Number.isInteger(start)) || (stop !== to && !Number.isInteger(stop));
+    if (offGrid) {
+      offLattice++;
+      continue;
+    }
+    const closes = male ? CAP_ROOT | (stop < to ? CAP_FAR : 0) : CAP_FAR;
+    pieces.append(
+      k,
+      shapes.clipped(shape, start / SIXTEENTHS_PER_LDU, stop / SIXTEENTHS_PER_LDU, closes),
+      start,
+      stop,
+    );
+  }
+  return offLattice;
+}
+
+function expose(
+  exposed: Frames,
+  n: number,
+  frames: Frames,
+  k: number,
+  shape: number,
+  from: number,
+): void {
+  exposed.shape[n] = shape;
+  exposed.gender[n] = frames.gender[k] ?? 0;
+  exposed.source[n] = frames.source[k] ?? 0;
+  exposed.status[n] = frames.status[k] ?? 0;
+  exposed.axis[n] = frames.axis[k] ?? 0;
+  exposed.instance[n] = frames.instance[k] ?? 0;
+  exposed.connector[n] = frames.connector[k] ?? 0;
+  for (let v = 0; v < VECTOR_FLOATS; v++) {
+    exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
+  }
+  const axis = frames.axis[k] ?? 0;
+  const at = n * VECTOR_FLOATS + axisDimension(axis);
+  exposed.origin[at] = (exposed.origin[at] ?? 0) + extentSign(frames.gender[k] ?? 0, axis) * from;
 }

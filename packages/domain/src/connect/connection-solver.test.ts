@@ -545,6 +545,10 @@ function oneFace(shapeId: number, gender: number, axis: number): ConnectorTable 
   return table([{ shape: shapeId, gender, origin: [0, 0, 0], axis }]);
 }
 
+function onTheZAxis(zLdu: number): number[] {
+  return [0, 0, zLdu].map(toSixteenths);
+}
+
 function exposedStretches(connectors: ModelConnectors) {
   return Array.from({ length: connectors.count }, (_, n) => {
     const exposedShape = connectors.shape[n] ?? 0;
@@ -649,6 +653,111 @@ describe("ModelConnectors", () => {
             slides: false,
             sections: [[SECTION_ROUND, 4, 14]],
           },
+        ],
+        offLattice: 0,
+      },
+    });
+  });
+
+  it("exposes a free stretch only where no exposed face of the same part instance, gender and axis line covers it exactly, closing an uncovered remainder at its new cut or reporting it off the sixteenth grid", () => {
+    const slidingPin = shape(0, true, [
+      [SECTION_FLARE_JOINS_NEXT, 6.25, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 4],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+    ]);
+    const bore = shape(0, true, [
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 2],
+    ]);
+    const halfPin = shape(CAP_ROOT, false, [
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+    ]);
+    const collar = (lengthLdu: number) =>
+      shape(CAP_ROOT, false, [
+        [SECTION_ROUND, 8, 2],
+        [SECTION_ROUND, 6, lengthLdu - 2],
+      ]);
+    const innerBar = shape(CAP_ROOT, false, [[SECTION_ROUND, 4, STUD_LDU]]);
+    const z = 5 * STUD_LDU;
+    const placed = (besideTheSlidingPin: number) => {
+      const connectors = model(
+        [
+          table([
+            { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, -STUD_LDU], axis: AXIS_POS_Z },
+            { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, STUD_LDU], axis: AXIS_NEG_Z },
+            {
+              shape: besideTheSlidingPin,
+              gender: GENDER_MALE,
+              origin: [0, 0, 0],
+              axis: AXIS_POS_Z,
+            },
+          ]),
+          facesFromBothEnds(bore, GENDER_FEMALE, -STUD_LDU, 0, AXIS_NEG_Z),
+        ],
+        [
+          [0, translation(0, 0, z)],
+          [1, translation(0, 0, z)],
+        ],
+      );
+      return { exposed: exposedStretches(connectors), offLattice: connectors.offLattice };
+    };
+    const asExposed = (exposedShape: number) => ({
+      origin: onTheZAxis(z),
+      axis: AXIS_POS_Z,
+      caps: shapes.caps(exposedShape),
+      slides: shapes.slides(exposedShape),
+      sections: Array.from({ length: shapes.sectionCount(exposedShape) }, (_, s) => [
+        shapes.internedCode(shapes.firstSection(exposedShape) + s),
+        shapes.internedSize(shapes.firstSection(exposedShape) + s),
+        shapes.span(shapes.firstSection(exposedShape) + s),
+      ]),
+    });
+    expect({
+      halfPinCoversTheWholeTip: placed(halfPin),
+      collarCoversItsFirstHalf: placed(collar(STUD_LDU / 2)),
+      collarEndsOffTheSixteenthGrid: placed(collar(STUD_LDU / 2 + 0.03)),
+      nestedBarDoesNotCover: placed(innerBar),
+    }).toEqual({
+      halfPinCoversTheWholeTip: { exposed: [asExposed(halfPin)], offLattice: 0 },
+      collarCoversItsFirstHalf: {
+        exposed: [
+          {
+            origin: onTheZAxis(z + STUD_LDU / 2),
+            axis: AXIS_POS_Z,
+            caps: CAP_ROOT,
+            slides: true,
+            sections: [
+              [SECTION_ROUND, 6, 8],
+              [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+            ],
+          },
+          asExposed(collar(STUD_LDU / 2)),
+        ],
+        offLattice: 0,
+      },
+      collarEndsOffTheSixteenthGrid: {
+        exposed: [asExposed(collar(STUD_LDU / 2 + 0.03))],
+        offLattice: 1,
+      },
+      nestedBarDoesNotCover: {
+        exposed: [
+          {
+            origin: onTheZAxis(z),
+            axis: AXIS_POS_Z,
+            caps: CAP_ROOT,
+            slides: true,
+            sections: [
+              [SECTION_ROUND, 8, 2],
+              [SECTION_ROUND, 6, 16],
+              [SECTION_FLARE_JOINS_PREVIOUS, 6.25, 2],
+            ],
+          },
+          asExposed(innerBar),
         ],
         offLattice: 0,
       },
@@ -1981,6 +2090,100 @@ function freePins(): ConnectorTable {
 }
 
 describe("ConnectionSolver mate joints", () => {
+  it("joins a pinned module once per pin, whether each pin's free end is its own unverified half-pin over an included sliding male or the sliding male's free tip alone", () => {
+    const halfPin = shape(CAP_ROOT, false, [
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, FLARE, 2],
+    ]);
+    const slidingPin = shape(0, true, [
+      [SECTION_FLARE_JOINS_NEXT, FLARE, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 4],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_FLARE_JOINS_PREVIOUS, FLARE, 2],
+    ]);
+    const barHole = shape(0, false, [[SECTION_ROUND, 4, 2 * STUD_LDU]]);
+    const bore = shape(0, true, [
+      [SECTION_ROUND, 8, 2],
+      [SECTION_ROUND, 6, 16],
+      [SECTION_ROUND, 8, 2],
+    ]);
+    const slidingFaces: Spec[] = [
+      { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, -STUD_LDU], axis: AXIS_POS_Z },
+      { shape: slidingPin, gender: GENDER_MALE, origin: [0, 0, STUD_LDU], axis: AXIS_NEG_Z },
+      { shape: barHole, gender: GENDER_FEMALE, origin: [0, 0, -STUD_LDU], axis: AXIS_NEG_Z },
+      { shape: barHole, gender: GENDER_FEMALE, origin: [0, 0, STUD_LDU], axis: AXIS_POS_Z },
+    ];
+    const halvesOverAnIncludedSlidingPin = table([
+      {
+        shape: halfPin,
+        gender: GENDER_MALE,
+        status: STATUS_UNVERIFIED,
+        origin: [0, 0, 0],
+        axis: AXIS_NEG_Z,
+      },
+      {
+        shape: halfPin,
+        gender: GENDER_MALE,
+        status: STATUS_UNVERIFIED,
+        origin: [0, 0, 0],
+        axis: AXIS_POS_Z,
+      },
+      ...slidingFaces,
+    ]);
+    const boredBrick = (fromZ: number) =>
+      table(
+        BORE_LINES_X.flatMap((x): Spec[] => [
+          { shape: bore, gender: GENDER_FEMALE, origin: [x, HOLE_HEIGHT, fromZ], axis: AXIS_NEG_Z },
+          {
+            shape: bore,
+            gender: GENDER_FEMALE,
+            origin: [x, HOLE_HEIGHT, fromZ + STUD_LDU],
+            axis: AXIS_POS_Z,
+          },
+        ]),
+      );
+    const joined = (pin: ConnectorTable) => {
+      const solver = allFamilies();
+      solver.insert(single(boredBrick(0)), pose(0, 0, 0), 5);
+      const pinned = model(
+        [boredBrick(-STUD_LDU), pin],
+        [
+          [0, translation(0, 0, 0)],
+          ...BORE_LINES_X.map((x) => [1, translation(x, HOLE_HEIGHT, 0)] as const),
+        ],
+      );
+      const report = evaluated(solver, pinned, pose(0, 0, 0));
+      const matedBy = Array.from({ length: report.count }, (_, k) => [
+        report.status[k],
+        shapes.slides(report.shape[k] ?? 0),
+      ]);
+      return { mates: report.count, joints: report.jointCount, matedBy };
+    };
+    expect({
+      halvesOverAnIncludedSlidingPin: joined(halvesOverAnIncludedSlidingPin),
+      slidingPinAlone: joined(table(slidingFaces)),
+    }).toEqual({
+      halvesOverAnIncludedSlidingPin: {
+        mates: 2,
+        joints: 2,
+        matedBy: [
+          [STATUS_UNVERIFIED, false],
+          [STATUS_UNVERIFIED, false],
+        ],
+      },
+      slidingPinAlone: {
+        mates: 2,
+        joints: 2,
+        matedBy: [
+          [STATUS_VERIFIED, true],
+          [STATUS_VERIFIED, true],
+        ],
+      },
+    });
+  });
+
   it("counts a free male through a through bore as one joint, though each end's face pairs with the opening it faces, and keeps another line between the same parts its own joint", () => {
     const solver = allFamilies();
     solver.insert(single(throughBores()), pose(0, 0, 0), 5);
