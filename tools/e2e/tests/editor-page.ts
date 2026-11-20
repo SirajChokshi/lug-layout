@@ -327,7 +327,7 @@ export class EditorPage {
     const point = await this.screenOf(target);
     await this.page.mouse.move(point.sx, point.sy);
     await this.page.mouse.wheel(0, wheelDelta);
-    await this.settle();
+    await this.viewAtRest();
     this.forgetView();
   }
 
