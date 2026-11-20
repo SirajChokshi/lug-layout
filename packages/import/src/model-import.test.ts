@@ -33,7 +33,7 @@ import {
   SnapMating,
   SnapShapes,
 } from "@brr/domain";
-import type { ModelFile } from "@brr/schema/bundle";
+import type { ModelFile, NotDrawnSection } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { CustomSource } from "./custom-parts.ts";
@@ -63,6 +63,8 @@ const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
+const DRAWN_CUSTOM_INSTANCES: Readonly<Record<string, number>> = { "10218-1": 2 };
+const CA_LICENSE_TEXT = /CC BY [24]\.0|CCAL version 2\.0/u;
 const OPAQUE_ALPHA = 255;
 const paletteFile = new URL("../../../tools/asset-pipeline/palette.json", import.meta.url);
 const shadowLibraryDist = new URL(
@@ -109,7 +111,11 @@ interface Manifest {
     readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
-  readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
+  readonly models: ReadonlyArray<{
+    readonly name: string;
+    readonly file: string;
+    readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+  }>;
   readonly connectors: { readonly file: string };
   readonly connectivity: { readonly file: string };
 }
@@ -848,6 +854,11 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         result.partIndex,
         (part) => !isCustomPartId(result.partIds[part] ?? ""),
       );
+      const added = Array.from(result.partIndex).flatMap((part, instance) =>
+        shipped[instance]
+          ? []
+          : [{ partId: result.partIds[part] ?? "", color: result.ldrawColor[instance] ?? 0 }],
+      );
       const imported = {
         parent: Array.from(result.submodels.parent),
         matrices: Array.from(result.submodels.matrices),
@@ -856,14 +867,49 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
           (_, at) => shipped[Math.floor(at / MATRIX_FLOATS)],
         ),
       };
-      return { imported, record };
+      return { imported, record, added, custom: drawnCustomParts(result), entry };
+    }
+
+    function expectOnlyLicensedCustomPartsAdded(
+      name: string,
+      { added, custom, entry }: Awaited<ReturnType<typeof importedAndRecorded>>,
+    ): void {
+      const notDrawn = new Map(
+        (entry?.notDrawn ?? []).flatMap((section) =>
+          section.kind === "customPart" ? [[section.section.toLowerCase(), section] as const] : [],
+        ),
+      );
+
+      expect(added).toHaveLength(DRAWN_CUSTOM_INSTANCES[name] ?? 0);
+      expect(new Set(added.map(({ partId }) => partId))).toEqual(
+        new Set(custom.map(({ partId }) => partId)),
+      );
+      for (const part of custom) {
+        const bundled = notDrawn.get(part.reference);
+        expect(part.partId).toMatch(customIdPattern(part.reference));
+        expect(["mpd", "inlineDiffers"]).toContain(part.origin);
+        expect(part.header.license).toMatch(CA_LICENSE_TEXT);
+        expect(bundled?.kind === "customPart" ? bundled.instances : null).toBe(part.instances);
+        expect(
+          added
+            .filter(({ partId }) => partId === part.partId)
+            .map(({ color }) => color)
+            .toSorted(),
+        ).toEqual(
+          (bundled?.kind === "customPart" ? (bundled.colors ?? []) : [])
+            .flatMap(({ color, instances }) => Array.from({ length: instances }, () => color))
+            .toSorted(),
+        );
+      }
     }
 
     it.each(paletteModels.filter((model) => model.origin !== "omr"))(
       "$name imports with the sub-model tree and part transforms its bake recorded",
       async (model) => {
-        const { imported, record } = await importedAndRecorded(model);
+        const imports = await importedAndRecorded(model);
+        const { imported, record } = imports;
 
+        expectOnlyLicensedCustomPartsAdded(model.name, imports);
         expect(record.authoredIdentification).toBeUndefined();
         expect(imported).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
       },
@@ -873,10 +919,12 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
     it.each(paletteModels.filter((model) => model.origin === "omr"))(
       "$name imports with its bake's sub-model tree and rotations, and positions within the OMR identification's reach of its identified record",
       async (model) => {
-        const { imported, record } = await importedAndRecorded(model);
+        const imports = await importedAndRecorded(model);
+        const { imported, record } = imports;
         const depth = (submodel: number): number =>
           submodel === MODEL_ROOT ? 0 : 1 + depth(record.submodels.parent[submodel] ?? MODEL_ROOT);
 
+        expectOnlyLicensedCustomPartsAdded(model.name, imports);
         expect(record.authoredIdentification).toBeDefined();
         expect({ parent: imported.parent, ofPart: imported.ofPart }).toEqual({
           parent: record.submodels.parent,
