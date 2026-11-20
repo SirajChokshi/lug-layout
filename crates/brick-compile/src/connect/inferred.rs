@@ -286,7 +286,7 @@ struct StudProbe {
 }
 
 enum Probed {
-    Blind(f64),
+    Blind { depth: f64, piece_depth: f64 },
     Through,
     Loose(f64),
     Sliding,
@@ -1253,16 +1253,19 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         {
             return Probed::Rejected;
         }
-        if !solid.confined(probe, range, &LATTICE_STEPS) {
+        let Some(travel) = solid.confined_travel(probe, range, &LATTICE_STEPS) else {
             return Probed::Sliding;
-        }
-        if let Some(offset) = off_centre(&solid.travel(probe, range, &LATTICE_STEPS)) {
+        };
+        if let Some(offset) = off_centre(&travel) {
             return Probed::OffCentre(offset);
         }
         if floor.depth.is_infinite() {
             Probed::Through
         } else {
-            Probed::Blind(floor.depth)
+            Probed::Blind {
+                depth: floor.depth,
+                piece_depth: floor.piece_depth,
+            }
         }
     }
 
@@ -1365,7 +1368,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
         inference: &mut Inference,
     ) -> HashSet<(usize, i8, i64, i64, i64)> {
         let mut through: Vec<(Probe, Option<ExactPoint>)> = Vec::new();
-        let mut blind: Vec<(Probe, f64, Option<ExactPoint>)> = Vec::new();
+        let mut blind: Vec<(Probe, f64, f64, Option<ExactPoint>)> = Vec::new();
         let mut slabs: HashMap<(usize, i8, i64, Option<String>), Slab> = HashMap::new();
         let exact_reach = sixteenths(self.probe.reach).map(|_| Exact::from_f64(self.probe.reach));
         let range = (IDENTIFY_LDU, self.probe.reach - IDENTIFY_LDU);
@@ -1437,13 +1440,16 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 Probed::Through => {
                     through.push((*probe, exact_entrance(probe, exact_center, exact_at)))
                 }
-                Probed::Blind(depth) => {
-                    blind.push((*probe, depth, exact_entrance(probe, exact_center, exact_at)))
-                }
+                Probed::Blind { depth, piece_depth } => blind.push((
+                    *probe,
+                    depth,
+                    piece_depth,
+                    exact_entrance(probe, exact_center, exact_at),
+                )),
             }
         }
         let mut mouths = HashSet::new();
-        for (probe, depth, exact_anchor) in blind {
+        for (probe, depth, piece_depth, exact_anchor) in blind {
             let opens_further_out = columns[&column_of(&probe)].iter().any(|&other| {
                 let outer = &candidates[other];
                 let separation = depth_along(&probe) - depth_along(outer);
@@ -1475,7 +1481,7 @@ impl<'a, L: Library + ?Sized> InferredFeatures<'a, L> {
                 .vocabulary
                 .length(SectionShape::Round, depth)
                 .unwrap_or(self.probe.reach);
-            let pieces = solid.contributors(&probe, range, Some(depth));
+            let pieces = solid.contributors(&probe, range, Some(piece_depth));
             self.keep(
                 cylinder(
                     Gender::Female,
