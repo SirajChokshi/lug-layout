@@ -179,29 +179,31 @@ export function ToolHud({ snapshot, play, hotbar }: ToolHudProps) {
   const detail = shownDetail(view, cued);
   const title = detail === null ? view.title : `${view.title} · ${detail}`;
   return (
-    <div className="tool-hud" data-tone={view.tone}>
-      {slots.length > 0 && <HotbarSlots snapshot={snapshot} hotbar={hotbar} slots={slots} />}
-      <div
-        className="tool-status"
-        role="status"
-        aria-live={view.speech === null ? "polite" : "off"}
-      >
-        <span className="tool-title" title={title}>
-          {view.title}
-          {detail !== null && <span className="tool-detail">{detail}</span>}
-        </span>
-        {view.hints.length > 0 && (
-          <ul className="tool-hints">
-            {view.hints.map((hint) => (
-              <li key={hintKey(hint)} data-hint={hintKey(hint)}>
-                <HintInput hint={hint} />
-                <span>{hint.text}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+    <>
+      <div className="tool-hud" data-tone={view.tone}>
+        {slots.length > 0 && <HotbarSlots snapshot={snapshot} hotbar={hotbar} slots={slots} />}
+        <div
+          className="tool-status"
+          role="status"
+          aria-live={view.speech === null ? "polite" : "off"}
+        >
+          <span className="tool-title" title={title}>
+            {view.title}
+            {detail !== null && <span className="tool-detail">{detail}</span>}
+          </span>
+          {view.hints.length > 0 && (
+            <ul className="tool-hints">
+              {view.hints.map((hint) => (
+                <li key={hintKey(hint)} data-hint={hintKey(hint)}>
+                  <HintInput hint={hint} />
+                  <span>{hint.text}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
       <PlacementSpeech speech={view.speech} busy={view.busy} />
-    </div>
+    </>
   );
 }
