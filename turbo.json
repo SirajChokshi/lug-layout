@@ -22,6 +22,7 @@
         "!src/publication/**",
         "!src/library-connectors/**",
         "!src/input-key-cli.ts",
+        "!src/shadow-library/**",
         "palette.json",
         "fixture-models.json",
         "primitive-connectors.json",

@@ -274,6 +274,7 @@ class CompiledRecords implements IPartRecords {
         sectionVocabulary: this.sectionVocabulary,
         cavityProbe: this.cavityProbe,
         infer: [],
+        shadowPatchManifest: null,
       },
       parts: partIds.map((id) => `${id.slice(PART_ID_PREFIX.length)}${PART_EXTENSION}`),
       model: "",
