@@ -1,15 +1,14 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import { RECT_FLOATS, type PlanShape } from "@brr/domain";
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin, type Rot90 } from "@brr/math";
-import { BOX_FLOATS } from "./local-box.ts";
 import type { PlaceableCells } from "./placeable.ts";
 
 const QUARTER_TURNS = 4;
 const NO_CELL = -1;
+const REST_PLANE = 0;
 
 export interface ShapeSource {
   readonly cells: PlaceableCells;
-  readonly slabBoxes: Float32Array;
 }
 
 const cache = new WeakMap<ShapeSource, Array<PlanShape | null | undefined>>();
@@ -18,42 +17,15 @@ function occupied(cells: PlaceableCells, cell: number): boolean {
   return (cells.columnTop[cell] ?? EMPTY_COLUMN) !== EMPTY_COLUMN;
 }
 
-function meetsSlab(cells: PlaceableCells, slab: Float32Array, i: number, j: number): boolean {
-  const minX = (cells.cellX0 + i) * STUD_LDU;
-  const minZ = (cells.cellZ0 + j) * STUD_LDU;
-  for (let b = 0; b < slab.length; b += BOX_FLOATS) {
-    if (
-      (slab[b] ?? 0) < minX + STUD_LDU &&
-      minX < (slab[b + 3] ?? 0) &&
-      (slab[b + 2] ?? 0) < minZ + STUD_LDU &&
-      minZ < (slab[b + 5] ?? 0)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function footingCells(source: ShapeSource): Uint8Array {
-  const { cells, slabBoxes } = source;
+function footingCells(cells: PlaceableCells): Uint8Array {
   const chosen = new Uint8Array(cells.width * cells.depth);
   let lowest = Number.POSITIVE_INFINITY;
-  let slabLevel = Number.POSITIVE_INFINITY;
-  for (let j = 0; j < cells.depth; j++) {
-    for (let i = 0; i < cells.width; i++) {
-      const cell = j * cells.width + i;
-      if (!occupied(cells, cell)) continue;
-      const bottom = cells.columnBottom[cell] ?? 0;
-      lowest = Math.min(lowest, bottom);
-      if (!meetsSlab(cells, slabBoxes, i, j)) continue;
-      chosen[cell] = 1;
-      slabLevel = Math.min(slabLevel, bottom);
-    }
-  }
   for (let cell = 0; cell < chosen.length; cell++) {
-    if (!occupied(cells, cell)) continue;
-    const bottom = cells.columnBottom[cell];
-    if (bottom === lowest || bottom === slabLevel) chosen[cell] = 1;
+    if (occupied(cells, cell)) lowest = Math.min(lowest, cells.columnBottom[cell] ?? 0);
+  }
+  const standing = Math.max(lowest, REST_PLANE);
+  for (let cell = 0; cell < chosen.length; cell++) {
+    if (occupied(cells, cell) && (cells.columnBottom[cell] ?? 0) <= standing) chosen[cell] = 1;
   }
   return chosen;
 }
@@ -120,7 +92,7 @@ function buildShape(source: ShapeSource, rot: Rot90): PlanShape | null {
   const occupancy = coverRects(cells, occupancyCells(cells));
   if (occupancy.length === 0) return null;
   return {
-    footing: turnedRects(cells, coverRects(cells, footingCells(source)), rot),
+    footing: turnedRects(cells, coverRects(cells, footingCells(cells)), rot),
     occupancy: turnedRects(cells, occupancy, rot),
   };
 }

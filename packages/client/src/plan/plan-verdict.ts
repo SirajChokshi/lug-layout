@@ -11,7 +11,7 @@ export const NOT_YET_ASSIGNED = "not yet assigned";
 export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   { id: "trackEnds", text: "Open and unjoined track ends", owner: "#47" },
   { id: "unverifiedCurve", text: "The unverified 53400 curve warning", owner: "#47" },
-  { id: "trackSeam", text: "Track across a table seam", owner: "#47" },
+  { id: "trackSeam", text: "Track across a table seam", owner: NOT_YET_ASSIGNED },
   {
     id: "seamJoins",
     text: "Whether placements meeting at a seam join or leave a gap",
@@ -20,6 +20,16 @@ export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   {
     id: "modelTrackOverlap",
     text: "Models overlapping laid track: refused while editing, not checked in a loaded world, where support is judged as if that track weren't there",
+    owner: NOT_YET_ASSIGNED,
+  },
+  {
+    id: "supportChains",
+    text: "Support through chains: models held only by each other's side connections, off the table, count as held",
+    owner: NOT_YET_ASSIGNED,
+  },
+  {
+    id: "trackSupportLoading",
+    text: "Laid track's support while its support parts or stud seats are still loading: counted as held until they load",
     owner: NOT_YET_ASSIGNED,
   },
   {

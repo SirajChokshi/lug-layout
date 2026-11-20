@@ -9,7 +9,6 @@ const _ = EMPTY_COLUMN;
 function source(
   width: number,
   rows: ReadonlyArray<ReadonlyArray<readonly [number, number]>>,
-  slab: ReadonlyArray<number> = [],
 ): ShapeSource {
   const flat = rows.flat();
   const cells: PlaceableCells = {
@@ -24,7 +23,7 @@ function source(
     flatCells: 0,
     heightPlates: 3,
   };
-  return { cells, slabBoxes: Float32Array.from(slab) };
+  return { cells };
 }
 
 function studs(rects: Float64Array | undefined): number[] {
@@ -52,44 +51,31 @@ describe("planShapeOf", () => {
     });
   });
 
-  it("keeps the slab, its level and the lowest layer in the footing, whether a protrusion hangs lower, the slab box meets only part of it, or both", () => {
-    const hanging = source(
-      2,
+  it("keeps every occupied cell at or below the rest plane, however deep, leaves out cells that start above it, and falls back to the lowest layer", () => {
+    const deep = source(3, [
       [
-        [
-          [0, 1],
-          [-2, 1],
-        ],
+        [0, 1],
+        [-1, 1],
+        [-2, 1],
       ],
-      [-STUD_LDU, -4, 0, STUD_LDU, 0, STUD_LDU],
-    );
-    const overshoot = source(
-      2,
+    ]);
+    const overhang = source(3, [
       [
-        [
-          [0, 3],
-          [0, 3],
-        ],
+        [0, 3],
+        [0, 3],
+        [2, 3],
       ],
-      [-STUD_LDU, -0.125, 0, 0, 0, STUD_LDU],
-    );
-    const both = source(
-      3,
+    ]);
+    const raised = source(2, [
       [
-        [
-          [0, 1],
-          [0, 1],
-          [-2, 1],
-        ],
+        [3, 5],
+        [5, 6],
       ],
-      [-STUD_LDU, -0.125, 0, 0, 0, STUD_LDU],
-    );
-    expect(
-      [hanging, overshoot, both].map((shape) => studs(planShapeOf(shape, 0)?.footing)),
-    ).toEqual([
-      [-1, 0, 1, 1],
-      [-1, 0, 1, 1],
+    ]);
+    expect([deep, overhang, raised].map((shape) => studs(planShapeOf(shape, 0)?.footing))).toEqual([
       [-1, 0, 2, 1],
+      [-1, 0, 1, 1],
+      [-1, 0, 0, 1],
     ]);
   });
 
