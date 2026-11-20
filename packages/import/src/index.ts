@@ -2,6 +2,7 @@ export {
   BrickCompiler,
   type BakedModel,
   type BakeOutcome,
+  type BakePhases,
   type BakeRequest,
   type CompileLod,
   type CompileOutput,
