@@ -298,8 +298,22 @@ kbd {
 }
 
 .tool-detail {
+  min-width: 0;
   color: var(--tone);
   font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.tool-speech {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .tool-hints {
@@ -430,4 +444,167 @@ kbd {
     SFMono-Regular,
     Menlo,
     monospace;
+}
+
+.placement-chip {
+  --tone: #1a7f37;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 340px;
+  padding: 6px 10px;
+  border-left: 4px solid var(--tone);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.95);
+  color: #1b2a34;
+  box-shadow: 0 3px 12px rgb(0 0 0 / 0.2);
+  font-size: 12px;
+  line-height: 1.35;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.placement-chip[hidden] {
+  display: none;
+}
+
+.placement-chip[data-tone="mates"] {
+  --tone: #2da44e;
+}
+
+.placement-chip[data-tone="refused"] {
+  --tone: #cf222e;
+}
+
+.placement-chip-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: baseline;
+  margin: 0;
+}
+
+.placement-chip-line[data-line="refusal"] {
+  color: #a40e26;
+  font-weight: 600;
+}
+
+.placement-chip-line[data-line="joints"] {
+  font-weight: 600;
+}
+
+.placement-chip-line[data-line="turn"] {
+  color: #6e5300;
+}
+
+.placement-chip-badge {
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #fff4d6;
+  color: #7a4d00;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.placement-chip-badge[data-badge="inferred"] {
+  background: #ede6ff;
+  color: #5a32a3;
+}
+
+.editor[data-ghost="refused"] .scene {
+  cursor: not-allowed;
+}
+
+.placement-chip[data-mode="precise"] {
+  outline: 2px solid #00b8ff;
+  outline-offset: 1px;
+}
+
+.placement-chip-mode {
+  margin: 0;
+  color: #00658c;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.toolbar .placement-mode {
+  display: flex;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px 8px;
+}
+
+.toolbar .placement-mode[aria-checked="true"],
+.toolbar .placement-mode[data-effective-mode="precise"] {
+  border-color: #00b8ff;
+  background: #effaff;
+}
+
+.placement-mode-state {
+  margin-left: 6px;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e8f0ec;
+  color: #1a7f37;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.placement-mode[aria-checked="true"] .placement-mode-state,
+.placement-mode[data-effective-mode="precise"] .placement-mode-state {
+  background: #dff4ff;
+  color: #00658c;
+  box-shadow: inset 0 0 0 1px #00b8ff;
+}
+
+.placement-mode[data-held] .placement-mode-state {
+  font-style: italic;
+}
+
+.placement-chip[data-tone="pending"],
+.placement-chip[data-tone="waiting"] {
+  --tone: #8a96a3;
+}
+
+.placement-chip-line[data-line="waiting"] {
+  color: #5b6b7a;
+  font-style: italic;
+}
+
+.placement-chip-line[data-line="queued"] {
+  color: #0a3069;
+  font-weight: 600;
+}
+
+.placement-chip-line[data-line="pending"] {
+  color: #5b6b7a;
+  font-style: italic;
+}
+
+.placement-chip-line[data-line="pending"] > span:first-child {
+  animation: placement-chip-searching 1.2s ease-in-out infinite;
+}
+
+@keyframes placement-chip-searching {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .placement-chip-line[data-line="pending"] > span:first-child {
+    animation: none;
+  }
 }
