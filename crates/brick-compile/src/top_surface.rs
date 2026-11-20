@@ -1,13 +1,16 @@
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 
-use num_bigint::{BigInt, BigUint};
+use num_bigint::BigInt;
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::exact::{Exact, ExactVec3};
 use crate::flatten::{StudReference, Triangle};
-use crate::identify::{sixteenths, IDENTIFY_LDU, SIXTEENTHS_PER_LDU};
+use crate::identify::{
+    identifies, sixteenths, IDENTIFY_LDU, IDENTIFY_TEN_THOUSANDTHS, SIXTEENTHS_PER_LDU,
+    TEN_THOUSANDTHS_PER_LDU,
+};
 use crate::lattice::STUD_LDU;
 
 const CELL: i64 = STUD_LDU as i64 * SIXTEENTHS_PER_LDU as i64;
@@ -51,11 +54,12 @@ impl TopSurface {
         studs: &[StudReference],
     ) -> Option<TopSurface> {
         let grid = Grid::of(triangles)?;
-        let top = highest(triangles, exact)?;
+        let corners: Vec<Option<ExactCorners>> = (0..triangles.len()).map(exact).collect();
+        let top = highest(triangles, &corners)?;
         if sixteenths(top.to_f64()) != Some(grid.top) {
             return None;
         }
-        let level = Level::at(triangles, exact, &top);
+        let level = Level::at(triangles, &corners, &top);
         let mut cells: Vec<TopCell> = (0..grid.count())
             .map(|cell| match level.coverage(&grid.square(cell)) {
                 Coverage::Full => TopCell::Flat,
@@ -189,6 +193,30 @@ impl Grid {
         self.cell_centred_at(sixteenths(m[3])?, sixteenths(m[11])?)
     }
 
+    fn walled_end(
+        &self,
+        cell: usize,
+        step: [i64; 2],
+        recessed: &[bool],
+        cells: &[TopCell],
+    ) -> bool {
+        let mut at = cell;
+        loop {
+            match self.neighbour(at, step) {
+                None => return false,
+                Some(next) if recessed[next] => at = next,
+                Some(next) => return cells[next] == TopCell::Flat,
+            }
+        }
+    }
+
+    fn walled_across(&self, cell: usize, recessed: &[bool], cells: &[TopCell]) -> bool {
+        [[1, 0], [0, 1]].into_iter().any(|[dx, dz]| {
+            self.walled_end(cell, [dx, dz], recessed, cells)
+                && self.walled_end(cell, [-dx, -dz], recessed, cells)
+        })
+    }
+
     fn pockets(&self, recessed: &[bool], cells: &[TopCell]) -> Vec<Vec<usize>> {
         let mut seen = vec![false; recessed.len()];
         let mut pockets = Vec::new();
@@ -202,6 +230,7 @@ impl Grid {
             let mut pending = VecDeque::from([start]);
             while let Some(cell) = pending.pop_front() {
                 members.push(cell);
+                enclosed &= self.walled_across(cell, recessed, cells);
                 for side in SIDES {
                     match self.neighbour(cell, side) {
                         None => {}
@@ -236,46 +265,41 @@ struct Square {
 }
 
 impl Square {
-    fn doubled_area(&self) -> Fraction {
-        let per_ldu = i64::from(SIXTEENTHS_PER_LDU);
-        Fraction::new(
-            BigInt::from(2 * (self.high[0] - self.low[0]) * (self.high[1] - self.low[1])),
-            BigInt::from(per_ldu * per_ldu),
-        )
+    fn region(&self) -> Region {
+        let corner = |x: i64, z: i64| Point {
+            x: BigInt::from(x),
+            z: BigInt::from(z),
+            w: BigInt::from(SIXTEENTHS_PER_LDU),
+        };
+        let corners = [
+            corner(self.low[0], self.low[1]),
+            corner(self.high[0], self.low[1]),
+            corner(self.high[0], self.high[1]),
+            corner(self.low[0], self.high[1]),
+        ];
+        Region {
+            polygon: (0..corners.len())
+                .map(|i| {
+                    let next = &corners[(i + 1) % corners.len()];
+                    (corners[i].clone(), Line::through(&corners[i], next))
+                })
+                .collect(),
+            bounds: [self.low[0], self.low[1], self.high[0], self.high[1]],
+        }
     }
 
-    fn meets(&self, reach: &[f64; 4]) -> bool {
+    fn meets(&self, bounds: &[i64; 4]) -> bool {
+        bounds[0] < self.high[0]
+            && bounds[2] > self.low[0]
+            && bounds[1] < self.high[1]
+            && bounds[3] > self.low[1]
+    }
+
+    fn may_meet(&self, reach: &[f64; 4]) -> bool {
         let per_ldu = f64::from(SIXTEENTHS_PER_LDU);
         let low = self.low.map(|v| v as f64 / per_ldu);
         let high = self.high.map(|v| v as f64 / per_ldu);
         reach[0] < high[0] && reach[2] > low[0] && reach[1] < high[1] && reach[3] > low[1]
-    }
-
-    fn half_planes(&self) -> [Line; 4] {
-        let per_ldu = BigInt::from(SIXTEENTHS_PER_LDU);
-        let zero = || BigInt::from(0);
-        [
-            Line {
-                a: per_ldu.clone(),
-                b: zero(),
-                d: BigInt::from(-self.low[0]),
-            },
-            Line {
-                a: -per_ldu.clone(),
-                b: zero(),
-                d: BigInt::from(self.high[0]),
-            },
-            Line {
-                a: zero(),
-                b: per_ldu.clone(),
-                d: BigInt::from(-self.low[1]),
-            },
-            Line {
-                a: zero(),
-                b: -per_ldu,
-                d: BigInt::from(self.high[1]),
-            },
-        ]
     }
 }
 
@@ -295,68 +319,156 @@ fn reach(points: &[Vec3; 3]) -> [f64; 4] {
     ]
 }
 
-fn highest(triangles: &[Triangle], exact: &dyn Fn(usize) -> Option<ExactCorners>) -> Option<Exact> {
-    let float_top = triangles
+fn highest(triangles: &[Triangle], corners: &[Option<ExactCorners>]) -> Option<Exact> {
+    let top = corners
         .iter()
-        .flat_map(|triangle| triangle.points.iter().map(|p| p[1]))
-        .fold(f64::NEG_INFINITY, f64::max);
-    let mut highest: Option<Exact> = None;
-    for (index, triangle) in triangles.iter().enumerate() {
-        if triangle
-            .points
-            .iter()
-            .all(|p| p[1] < float_top - IDENTIFY_LDU)
-        {
-            continue;
-        }
-        let Some(corners) = exact(index) else {
-            continue;
-        };
-        for corner in corners {
-            let y = corner[1].clone();
-            if highest
-                .as_ref()
-                .is_none_or(|h| y.compare(h) == Ordering::Greater)
-            {
-                highest = Some(y);
-            }
+        .flatten()
+        .flat_map(|corners| corners.iter().map(|corner| &corner[1]))
+        .max_by(|a, b| a.compare(b))?
+        .clone();
+    let float_top = top.to_f64();
+    let unread_above = triangles
+        .iter()
+        .zip(corners)
+        .filter(|(_, corners)| corners.is_none())
+        .any(|(triangle, _)| {
+            triangle
+                .points
+                .iter()
+                .any(|p| p[1] > float_top && !identifies(p[1] - float_top))
+        });
+    (!unread_above).then_some(top)
+}
+
+fn sixteenths_rounded(value: &Exact, toward_ceiling: bool) -> Option<i64> {
+    let (units, places) = value.units_and_places();
+    sixteenths_of(&units, &BigInt::from(10).pow(places), toward_ceiling)
+}
+
+fn sixteenths_of(numerator: &BigInt, denominator: &BigInt, toward_ceiling: bool) -> Option<i64> {
+    let numerator = numerator * BigInt::from(SIXTEENTHS_PER_LDU);
+    let quotient = &numerator / denominator;
+    let remainder = &numerator % denominator;
+    let adjusted = match (remainder.sign(), toward_ceiling) {
+        (num_bigint::Sign::Plus, true) => quotient + 1,
+        (num_bigint::Sign::Minus, false) => quotient - 1,
+        _ => quotient,
+    };
+    i64::try_from(&adjusted).ok()
+}
+
+fn plan_bounds(corners: &ExactCorners) -> Option<[i64; 4]> {
+    let mut bounds = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+    for corner in corners {
+        for (slot, axis) in [(0, 0), (1, 2)] {
+            bounds[slot] = bounds[slot].min(sixteenths_rounded(&corner[axis], false)? - 1);
+            bounds[slot + 2] = bounds[slot + 2].max(sixteenths_rounded(&corner[axis], true)? + 1);
         }
     }
-    highest
+    Some(bounds)
+}
+
+fn bounds_meet(a: &[i64; 4], b: &[i64; 4]) -> bool {
+    a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
 
 struct Face {
-    corners: [Point; 3],
-    reach: [f64; 4],
+    bounds: [i64; 4],
+    extent: f64,
+    edges: [Line; 3],
+    grown: Vec<Line>,
 }
 
 impl Face {
-    fn counter_clockwise(corners: [Point; 3], reach: [f64; 4]) -> Option<Face> {
-        let [p, q, r] = corners;
+    fn new(corners: &ExactCorners, bounds: [i64; 4], extent: f64) -> Option<Face> {
+        let [p, q, r] = corners.clone().map(Point::plan);
         let corners = match Line::through(&p, &q).value(&r).sign() {
             num_bigint::Sign::NoSign => return None,
             num_bigint::Sign::Plus => [p, q, r],
             num_bigint::Sign::Minus => [p, r, q],
         };
-        Some(Face { corners, reach })
+        let [p, q, r] = &corners;
+        Some(Face {
+            bounds,
+            extent,
+            edges: [
+                Line::through(p, q),
+                Line::through(q, r),
+                Line::through(r, p),
+            ],
+            grown: grown_by_identification(&corners),
+        })
     }
+}
 
-    fn clipped_to(&self, square: &Square) -> Option<Piece> {
-        let [p, q, r] = &self.corners;
-        let mut polygon = vec![
-            (p.clone(), Line::through(p, q)),
-            (q.clone(), Line::through(q, r)),
-            (r.clone(), Line::through(r, p)),
-        ];
-        for half_plane in square.half_planes() {
-            polygon = clip(&polygon, &half_plane);
-            if polygon.len() < 3 {
-                return None;
+fn grown_by_identification(corners: &[Point; 3]) -> Vec<Line> {
+    let scale = BigInt::from(TEN_THOUSANDTHS_PER_LDU);
+    let residual = BigInt::from(IDENTIFY_TEN_THOUSANDTHS);
+    let [p, q, r] = corners;
+    let mut lines: Vec<Line> = [(p, q), (q, r), (r, p)]
+        .into_iter()
+        .map(|(from, to)| {
+            let edge = Line::through(from, to);
+            let reach = edge.a.magnitude() + edge.b.magnitude();
+            Line {
+                a: &scale * &edge.a,
+                b: &scale * &edge.b,
+                d: &scale * &edge.d + &residual * BigInt::from(reach),
             }
+        })
+        .collect();
+    let extreme = |along: fn(&Point) -> &BigInt, lowest: bool| {
+        corners
+            .iter()
+            .reduce(|best, corner| {
+                let order = (along(corner) * &best.w).cmp(&(along(best) * &corner.w));
+                let better = if lowest {
+                    order == Ordering::Less
+                } else {
+                    order == Ordering::Greater
+                };
+                if better {
+                    corner
+                } else {
+                    best
+                }
+            })
+            .unwrap_or(p)
+    };
+    for (along, x_axis) in [
+        (Point::x_of as fn(&Point) -> &BigInt, true),
+        (Point::z_of, false),
+    ] {
+        for lowest in [true, false] {
+            let corner = extreme(along, lowest);
+            let side = if lowest {
+                BigInt::from(1)
+            } else {
+                BigInt::from(-1)
+            };
+            let normal = &side * &scale * &corner.w;
+            let offset = -(&side * &scale * along(corner)) + &residual * &corner.w;
+            lines.push(if x_axis {
+                Line {
+                    a: normal,
+                    b: BigInt::from(0),
+                    d: offset,
+                }
+            } else {
+                Line {
+                    a: BigInt::from(0),
+                    b: normal,
+                    d: offset,
+                }
+            });
         }
-        let piece = Piece { polygon };
-        (piece.doubled_area().sign() == Ordering::Greater).then_some(piece)
     }
+    lines
+}
+
+fn plan_extent(points: &[Vec3; 3]) -> f64 {
+    let [p, q, r] = points;
+    ((q[0] - p[0]) * (r[2] - p[2]) - (q[2] - p[2]) * (r[0] - p[0])).abs()
 }
 
 struct Level {
@@ -365,53 +477,68 @@ struct Level {
 }
 
 impl Level {
-    fn at(
-        triangles: &[Triangle],
-        exact: &dyn Fn(usize) -> Option<ExactCorners>,
-        height: &Exact,
-    ) -> Level {
+    fn at(triangles: &[Triangle], corners: &[Option<ExactCorners>], height: &Exact) -> Level {
         let float_height = height.to_f64();
         let mut faces = Vec::new();
         let mut unresolved = Vec::new();
-        for (index, triangle) in triangles.iter().enumerate() {
-            let near = triangle
-                .points
-                .iter()
-                .all(|p| (p[1] - float_height).abs() <= IDENTIFY_LDU);
-            if !near {
-                continue;
+        for (triangle, corners) in triangles.iter().zip(corners) {
+            match corners {
+                Some(corners) => {
+                    if corners.iter().all(|corner| corner[1] == *height) {
+                        match plan_bounds(corners) {
+                            Some(bounds) => faces.extend(Face::new(
+                                corners,
+                                bounds,
+                                plan_extent(&triangle.points),
+                            )),
+                            None => unresolved.push(reach(&triangle.points)),
+                        }
+                    }
+                }
+                None => {
+                    if triangle
+                        .points
+                        .iter()
+                        .all(|p| identifies(p[1] - float_height))
+                    {
+                        unresolved.push(reach(&triangle.points));
+                    }
+                }
             }
-            let reach = reach(&triangle.points);
-            let Some(corners) = exact(index) else {
-                unresolved.push(reach);
-                continue;
-            };
-            if corners.iter().any(|corner| corner[1] != *height) {
-                continue;
-            }
-            faces.extend(Face::counter_clockwise(corners.map(Point::plan), reach));
         }
         Level { faces, unresolved }
     }
 
     fn coverage(&self, square: &Square) -> Coverage {
-        let pieces: Vec<Piece> = self
+        let mut faces: Vec<&Face> = self
             .faces
             .iter()
-            .filter(|face| square.meets(&face.reach))
-            .filter_map(|face| face.clipped_to(square))
+            .filter(|face| square.meets(&face.bounds))
             .collect();
-        let covered = pieces.iter().fold(Fraction::zero(), |sum, piece| {
-            sum.add(&piece.doubled_area())
-        });
-        match covered.compare(&square.doubled_area()) {
-            Ordering::Greater => Coverage::Undecided,
-            Ordering::Equal if any_overlap(&pieces) => Coverage::Undecided,
-            Ordering::Equal => Coverage::Full,
-            Ordering::Less if self.unresolved.iter().any(|r| square.meets(r)) => {
-                Coverage::Undecided
+        faces.sort_by(|a, b| b.extent.total_cmp(&a.extent));
+        let mut uncovered = vec![square.region()];
+        let passes: [fn(&Face) -> &[Line]; 2] = [|face| &face.edges, |face| &face.grown];
+        for lines_of in passes {
+            for face in &faces {
+                uncovered = uncovered
+                    .into_iter()
+                    .flat_map(|region| {
+                        if bounds_meet(&region.bounds, &face.bounds) {
+                            region.without(lines_of(face))
+                        } else {
+                            vec![region]
+                        }
+                    })
+                    .collect();
+                if uncovered.is_empty() {
+                    return Coverage::Full;
+                }
             }
-            Ordering::Less => Coverage::Partial,
+        }
+        if self.unresolved.iter().any(|reach| square.may_meet(reach)) {
+            Coverage::Undecided
+        } else {
+            Coverage::Partial
         }
     }
 }
@@ -424,6 +551,14 @@ struct Point {
 }
 
 impl Point {
+    fn x_of(&self) -> &BigInt {
+        &self.x
+    }
+
+    fn z_of(&self) -> &BigInt {
+        &self.z
+    }
+
     fn plan(corner: ExactVec3) -> Point {
         let [x, _, z] = corner;
         let (x_units, x_places) = x.units_and_places();
@@ -456,6 +591,14 @@ impl Line {
 
     fn value(&self, point: &Point) -> BigInt {
         &self.a * &point.x + &self.b * &point.z + &self.d * &point.w
+    }
+
+    fn reversed(&self) -> Line {
+        Line {
+            a: -&self.a,
+            b: -&self.b,
+            d: -&self.d,
+        }
     }
 
     fn keeps(&self, point: &Point) -> bool {
@@ -497,86 +640,57 @@ fn clip(polygon: &[(Point, Line)], half_plane: &Line) -> Vec<(Point, Line)> {
     out
 }
 
-struct Piece {
+struct Region {
     polygon: Vec<(Point, Line)>,
+    bounds: [i64; 4],
 }
 
-impl Piece {
-    fn doubled_area(&self) -> Fraction {
-        let mut area = Fraction::zero();
-        for (i, (p, _)) in self.polygon.iter().enumerate() {
-            let (q, _) = &self.polygon[(i + 1) % self.polygon.len()];
-            area = area.add(&Fraction::new(&p.x * &q.z - &q.x * &p.z, &p.w * &q.w));
+impl Region {
+    fn of(polygon: Vec<(Point, Line)>) -> Option<Region> {
+        if !has_area(&polygon) {
+            return None;
         }
-        area
-    }
-
-    fn separates(&self, other: &Piece) -> bool {
-        self.polygon.iter().any(|(_, line)| {
-            other
-                .polygon
-                .iter()
-                .all(|(point, _)| line.value(point).sign() != num_bigint::Sign::Plus)
-        })
-    }
-}
-
-fn any_overlap(pieces: &[Piece]) -> bool {
-    pieces.iter().enumerate().any(|(i, piece)| {
-        pieces[i + 1..]
-            .iter()
-            .any(|other| !piece.separates(other) && !other.separates(piece))
-    })
-}
-
-#[derive(Clone, Debug)]
-struct Fraction {
-    numerator: BigInt,
-    denominator: BigInt,
-}
-
-fn greatest_common_divisor(a: &BigInt, b: &BigInt) -> BigUint {
-    let mut x = a.magnitude().clone();
-    let mut y = b.magnitude().clone();
-    let zero = BigUint::from(0u32);
-    while y != zero {
-        let remainder = &x % &y;
-        x = y;
-        y = remainder;
-    }
-    x
-}
-
-impl Fraction {
-    fn zero() -> Fraction {
-        Fraction {
-            numerator: BigInt::from(0),
-            denominator: BigInt::from(1),
+        let mut bounds = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+        for (point, _) in &polygon {
+            for (slot, coordinate) in [(0, &point.x), (1, &point.z)] {
+                bounds[slot] = bounds[slot].min(sixteenths_of(coordinate, &point.w, false)?);
+                bounds[slot + 2] = bounds[slot + 2].max(sixteenths_of(coordinate, &point.w, true)?);
+            }
         }
+        Some(Region { polygon, bounds })
     }
 
-    fn new(numerator: BigInt, denominator: BigInt) -> Fraction {
-        let divisor = BigInt::from(greatest_common_divisor(&numerator, &denominator));
-        Fraction {
-            numerator: numerator / &divisor,
-            denominator: denominator / divisor,
+    fn without(self, lines: &[Line]) -> Vec<Region> {
+        let mut inside = self.polygon;
+        let mut outside = Vec::new();
+        for line in lines {
+            outside.extend(Region::of(clip(&inside, &line.reversed())));
+            inside = clip(&inside, line);
+            if !has_area(&inside) {
+                break;
+            }
         }
+        outside
     }
+}
 
-    fn add(&self, other: &Fraction) -> Fraction {
-        Fraction::new(
-            &self.numerator * &other.denominator + &other.numerator * &self.denominator,
-            &self.denominator * &other.denominator,
-        )
+fn has_area(polygon: &[(Point, Line)]) -> bool {
+    if polygon.len() < 3 {
+        return false;
     }
-
-    fn sign(&self) -> Ordering {
-        self.numerator.cmp(&BigInt::from(0))
+    let mut doubled = BigInt::from(0);
+    for (i, (p, _)) in polygon.iter().enumerate() {
+        let j = (i + 1) % polygon.len();
+        let q = &polygon[j].0;
+        let mut term = &p.x * &q.z - &q.x * &p.z;
+        for (k, (other, _)) in polygon.iter().enumerate() {
+            if k != i && k != j {
+                term *= &other.w;
+            }
+        }
+        doubled += term;
     }
-
-    fn compare(&self, other: &Fraction) -> Ordering {
-        (&self.numerator * &other.denominator).cmp(&(&other.numerator * &self.denominator))
-    }
+    doubled.sign() == num_bigint::Sign::Plus
 }
 
 #[cfg(test)]
@@ -685,7 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn coplanar_top_faces_that_overlap_leave_the_cell_undecided() {
+    fn coplanar_top_faces_that_overlap_still_cover_the_cell() {
         let mut part = quad(0.0, [-10.0, -10.0, 10.0, 10.0]).to_vec();
         part.push(triangle([
             [-10.0, 0.0, -10.0],
@@ -693,7 +807,36 @@ mod tests {
             [-10.0, 0.0, 10.0],
         ]));
         part.push(base(-8.0, [-10.0, -10.0, 10.0, 10.0]));
-        assert_eq!(rows(&part, &[]), ["u"]);
+        assert_eq!(rows(&part, &[]), ["f"]);
+    }
+
+    #[test]
+    fn coplanar_top_faces_that_overlap_and_leave_a_gap_leave_the_cell_open() {
+        let part = [
+            triangle([[-10.0, 0.0, -10.0], [10.0, 0.0, -10.0], [-10.0, 0.0, 10.0]]),
+            triangle([[-10.0, 0.0, -10.0], [10.0, 0.0, -10.0], [0.0, 0.0, 10.0]]),
+            triangle([[10.0, 0.0, -10.0], [9.0, 0.0, 10.0], [-9.0, 0.0, 10.0]]),
+            base(-8.0, [-10.0, -10.0, 10.0, 10.0]),
+        ];
+        assert_eq!(rows(&part, &[]), ["."]);
+    }
+
+    fn split_with_a_gap(gap: f64) -> Vec<Triangle> {
+        let mut part = quad(0.0, [-10.0, -10.0, -gap, 10.0]).to_vec();
+        part.extend(quad(0.0, [0.0, -10.0, 10.0, 10.0]));
+        part.push(base(-8.0, [-10.0, -10.0, 10.0, 10.0]));
+        part
+    }
+
+    #[test]
+    fn top_faces_that_miss_each_other_within_the_identification_residual_cover_the_cell() {
+        assert_eq!(rows(&split_with_a_gap(0.0003), &[]), ["f"]);
+        assert_eq!(rows(&split_with_a_gap(0.0009), &[]), ["f"]);
+    }
+
+    #[test]
+    fn a_gap_wider_than_the_identification_residual_leaves_the_cell_open() {
+        assert_eq!(rows(&split_with_a_gap(0.0011), &[]), ["."]);
     }
 
     #[test]
@@ -718,13 +861,32 @@ mod tests {
         assert_eq!(rows(&part, &studs), ["fff", "fpf", "fff"]);
     }
 
+    fn edge_strip(floor: [f64; 4]) -> Vec<Triangle> {
+        let mut part = quad(16.0, [-30.0, -20.0, -10.0, 0.0]).to_vec();
+        part.extend(quad(16.0, [10.0, -20.0, 30.0, 0.0]));
+        part.extend(quad(16.0, [-30.0, 0.0, 30.0, 20.0]));
+        part.extend(quad(8.0, floor));
+        part.push(base(0.0, [-30.0, -20.0, 30.0, 20.0]));
+        part
+    }
+
     #[test]
-    fn a_recess_open_at_the_part_edge_is_still_a_pocket() {
-        let mut part = quad(16.0, [-20.0, -10.0, 0.0, 10.0]).to_vec();
-        part.extend(quad(8.0, [0.0, -10.0, 20.0, 10.0]));
-        part.push(base(0.0, [-20.0, -10.0, 20.0, 10.0]));
-        let studs = [upright_stud(10.0, 8.0, 0.0)];
-        assert_eq!(rows(&part, &studs), ["fp"]);
+    fn a_recess_open_at_the_part_edge_between_flat_cells_is_a_pocket() {
+        let part = edge_strip([-10.0, -20.0, 10.0, 0.0]);
+        let studs = [upright_stud(0.0, 8.0, -10.0)];
+        assert_eq!(rows(&part, &studs), ["fpf", "fff"]);
+    }
+
+    #[test]
+    fn a_lower_step_across_the_part_is_a_terrace_not_a_pocket() {
+        let mut part = quad(16.0, [-20.0, 0.0, 20.0, 20.0]).to_vec();
+        part.extend(quad(8.0, [-20.0, -20.0, 20.0, 0.0]));
+        part.push(base(0.0, [-20.0, -20.0, 20.0, 20.0]));
+        let studs = [
+            upright_stud(-10.0, 8.0, -10.0),
+            upright_stud(10.0, 8.0, -10.0),
+        ];
+        assert_eq!(rows(&part, &studs), ["..", "ff"]);
     }
 
     #[test]
@@ -756,11 +918,9 @@ mod tests {
 
     #[test]
     fn a_recess_floor_with_a_hole_in_it_still_holds_a_pocket() {
-        let mut part = quad(16.0, [-20.0, -10.0, 0.0, 10.0]).to_vec();
-        part.extend(quad(8.0, [0.0, -10.0, 20.0, 0.0]));
-        part.push(base(0.0, [-20.0, -10.0, 20.0, 10.0]));
-        let studs = [upright_stud(10.0, 8.0, 0.0)];
-        assert_eq!(rows(&part, &studs), ["fp"]);
+        let part = edge_strip([-10.0, -20.0, 10.0, -10.0]);
+        let studs = [upright_stud(0.0, 8.0, -10.0)];
+        assert_eq!(rows(&part, &studs), ["fpf", "fff"]);
     }
 
     #[test]

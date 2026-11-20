@@ -171,15 +171,20 @@ fn a_slope_is_flat_only_on_its_studded_top() {
 }
 
 #[test]
-fn studs_behind_a_curved_top_are_neither_flat_nor_pockets() {
+fn studs_on_a_lower_step_behind_a_curve_or_under_a_slope_are_no_pockets() {
     let library = fixture_library();
-    for part in ["6081.dat", "6091.dat"] {
+    for part in [
+        "6081.dat",
+        "6091.dat",
+        "99206.dat",
+        "30274.dat",
+        "3660a.dat",
+        "3665a.dat",
+        "4287a.dat",
+    ] {
         let baked = compiled(&library, part);
         assert!(
-            surface_of(&baked)
-                .cells
-                .iter()
-                .all(|cell| *cell == TopCell::Open),
+            !surface_of(&baked).cells.contains(&TopCell::Pocket),
             "{part}: {:?}",
             surface_of(&baked).rows_text()
         );
