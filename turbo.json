@@ -73,7 +73,7 @@
     "@brr/e2e#e2e": {
       "dependsOn": ["@brr/web#build"],
       "cache": false,
-      "passThroughEnv": ["CI", "CHROME"]
+      "passThroughEnv": ["CI", "CHROME", "HELD_OUT_SEED"]
     },
     "@brr/e2e#e2e:library-bake": {
       "dependsOn": ["@brr/web#build"],
