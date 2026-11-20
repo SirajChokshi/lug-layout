@@ -48,6 +48,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Bundle } from "./bundle.ts";
 import { CANVAS_HEIGHT, CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
+import { SliceClock } from "./slice-clock.ts";
 
 const RAY_HEIGHT_LDU = 10_000;
 const UNFETCHED_BUNDLE_URL = "https://bundle.invalid/";
@@ -60,52 +61,6 @@ const NO_LOOK: LookSettings = {
   shadows: false,
   oit: false,
 };
-
-export const SLICE_CLOCK_STEP_MS = 0.025;
-export const EDITOR_FIRST_SLICE_MS = 6;
-export const FIRST_SLICE_READ_BUDGET = Math.ceil(EDITOR_FIRST_SLICE_MS / SLICE_CLOCK_STEP_MS);
-
-export class SliceClock {
-  private readonly realNow = performance.now.bind(performance);
-  private installed = false;
-  private reads = 0;
-  private fakeMs = 0;
-  private publishRead: number | null = null;
-
-  realMs(): number {
-    return this.realNow();
-  }
-
-  readsToFirstPublish(): number | null {
-    return this.publishRead;
-  }
-
-  published(): void {
-    if (this.installed && this.publishRead === null) this.publishRead = this.reads;
-  }
-
-  async during<T>(work: () => Promise<T>): Promise<T> {
-    this.reads = 0;
-    this.publishRead = null;
-    this.fakeMs = this.realNow();
-    Object.defineProperty(performance, "now", {
-      configurable: true,
-      writable: true,
-      value: (): number => {
-        this.reads++;
-        this.fakeMs += SLICE_CLOCK_STEP_MS;
-        return this.fakeMs;
-      },
-    });
-    this.installed = true;
-    try {
-      return await work();
-    } finally {
-      this.installed = false;
-      Reflect.deleteProperty(performance, "now");
-    }
-  }
-}
 
 export class AimedBackend implements ISceneBackend {
   constructor(private readonly clock: SliceClock) {}
