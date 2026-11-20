@@ -1,7 +1,9 @@
 import {
   STUD_LDU,
+  ZETA16_ORDER,
   commandActive,
   commandEnabled,
+  tallyText,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
@@ -23,6 +25,7 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
+const FULL_TURN_DEGREES = 360;
 
 function connectorGapsText(snapshot: EditorSnapshot): string {
   if (snapshot.mode !== "place") return "–";
@@ -285,8 +288,8 @@ export function PlacementToolbar({
       <GoTo editor={editor} />
       <p className="toolbar-hint">
         Right-drag orbits (pans in the 2D plan). Middle, Space or Shift-drag pans. Pinch or the
-        wheel zooms at the cursor. Arrows pan, Shift-arrows orbit, double-click frames the
-        selection.
+        wheel zooms at the cursor. Arrows nudge selected models and track pieces one stud, otherwise
+        pan; Shift-arrows orbit, double-click frames the selection.
       </p>
     </div>
   );
@@ -390,14 +393,15 @@ export function Inspector({
 }) {
   const { selection } = snapshot;
   if (!selection) return null;
-  if (selection.kind === "train") {
+  const { primary, members, box } = selection;
+  if (primary.kind === "train") {
     return (
       <section className="inspector" aria-label="Inspector">
         <h2>Inspector</h2>
         <dl>
           <div>
             <dt>Train</dt>
-            <dd>{itemLabel(snapshot, selection.item)}</dd>
+            <dd>{itemLabel(snapshot, primary.item)}</dd>
           </div>
           <div>
             <dt>Stands</dt>
@@ -405,14 +409,14 @@ export function Inspector({
           </div>
           <div>
             <dt>Vehicles</dt>
-            <dd>{selection.vehicles}</dd>
+            <dd>{primary.vehicles}</dd>
           </div>
           <div>
             <dt>Length (studs)</dt>
-            <dd>{Math.round(selection.lengthLdu / STUD_LDU)}</dd>
+            <dd>{Math.round(primary.lengthLdu / STUD_LDU)}</dd>
           </div>
         </dl>
-        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+        <RollingDiagnostics key={primary.item} editor={editor} item={primary.item} />
       </section>
     );
   }
@@ -420,42 +424,55 @@ export function Inspector({
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       <dl>
-        <div>
-          <dt>{selection.kind === "track" ? "Track piece" : "Model"}</dt>
-          <dd>{itemLabel(snapshot, selection.item)}</dd>
-        </div>
-        <div>
-          <dt>x, z (LDU)</dt>
-          <dd>
-            {selection.x}, {selection.z}
-          </dd>
-        </div>
-        <div>
-          <dt>Height (plates)</dt>
-          <dd>{selection.yPlates}</dd>
-        </div>
-        {selection.kind === "model" && (
+        {members.length > 1 ? (
           <div>
-            <dt>Rotation</dt>
-            <dd>{degrees(selection.rot)}</dd>
+            <dt>Selected</dt>
+            <dd>{tallyText(selection.tally)}</dd>
           </div>
+        ) : (
+          <>
+            <div>
+              <dt>{primary.kind === "track" ? "Track piece" : "Model"}</dt>
+              <dd>{itemLabel(snapshot, primary.item)}</dd>
+            </div>
+            {primary.kind === "model" ? (
+              <div>
+                <dt>x, z (LDU)</dt>
+                <dd>
+                  {primary.x}, {primary.z}
+                </dd>
+              </div>
+            ) : (
+              <div>
+                <dt>Centre x, z (LDU)</dt>
+                <dd>
+                  {ldu(primary.centreX)}, {ldu(primary.centreZ)}
+                </dd>
+              </div>
+            )}
+            <div>
+              <dt>Height (plates)</dt>
+              <dd>{primary.yPlates}</dd>
+            </div>
+            <div>
+              <dt>{primary.kind === "model" ? "Rotation" : "Heading"}</dt>
+              <dd>
+                {primary.kind === "model"
+                  ? degrees(primary.rot)
+                  : `${(primary.heading * FULL_TURN_DEGREES) / ZETA16_ORDER}°`}
+              </dd>
+            </div>
+          </>
         )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>
-            {ldu(selection.box.minX)}…{ldu(selection.box.maxX)}, {ldu(selection.box.minZ)}…
-            {ldu(selection.box.maxZ)}
-          </dd>
-        </div>
-        <div>
-          <dt>Chunk key, slot</dt>
-          <dd>
-            {selection.chunkKey}, {selection.slot}
+            {ldu(box.minX)}…{ldu(box.maxX)}, {ldu(box.minZ)}…{ldu(box.maxZ)}
           </dd>
         </div>
       </dl>
-      {selection.kind === "model" && (
-        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      {members.length === 1 && primary.kind === "model" && (
+        <RollingDiagnostics key={primary.item} editor={editor} item={primary.item} />
       )}
     </section>
   );

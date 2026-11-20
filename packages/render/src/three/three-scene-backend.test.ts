@@ -478,6 +478,8 @@ it("keeps every holder under its own container, and the scene's direct children 
   backend.setPlanOverlays([room(1280), room(0)]);
   backend.setIssueBoxes([worldBox(0, 0, 20), worldBox(100, 0, 20), worldBox(200, 0, 20)]);
   backend.setIssueBoxes([worldBox(200, 0, 20), worldBox(0, 0, 20)]);
+  backend.setSelectionBoxes([worldBox(300, 0, 20)]);
+  backend.setSelectionBoxes([worldBox(400, 0, 20), worldBox(500, 0, 20)]);
   const beforePalette = containerContents(backend);
   backend.setPalette(palette([part("a", 20)]));
 
@@ -490,8 +492,18 @@ it("keeps every holder under its own container, and the scene's direct children 
       ["at x 1280", "at x 0"],
       ["at x 210", "at x 10"],
       ["ground"],
+      ["at x 410", "at x 510"],
     ],
-    [[], [], [], [], ["at x 1280", "at x 0"], ["at x 210", "at x 10"], ["ground"]],
+    [
+      [],
+      [],
+      [],
+      [],
+      ["at x 1280", "at x 0"],
+      ["at x 210", "at x 10"],
+      ["ground"],
+      ["at x 410", "at x 510"],
+    ],
   ]);
 });
 
