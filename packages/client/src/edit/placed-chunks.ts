@@ -965,6 +965,10 @@ export class PlacedChunks {
     return { added, removed, report: this.rebuild(touched) };
   }
 
+  restingHeightAt(placeable: Placeable, x: number, z: number, rot: number): number {
+    return restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
+  }
+
   restingHeights(
     probes: ReadonlyArray<RestProbe>,
     exempt: ReadonlySet<PlacedModel>,
