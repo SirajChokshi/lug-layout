@@ -1743,6 +1743,7 @@ export class Editor implements IEditor, IEditedWorld {
       draggable: false,
       toggleable: true,
       listedUnder: null,
+      customParts: 0,
     };
   }
 
@@ -1772,6 +1773,7 @@ export class Editor implements IEditor, IEditedWorld {
         draggable: false,
         toggleable: true,
         listedUnder: TRACK_ITEM_ID,
+        customParts: 0,
       };
     });
   }

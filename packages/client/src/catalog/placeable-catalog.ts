@@ -22,12 +22,13 @@ import type {
 } from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
-  NotDrawnSection,
+import {
+  isCustomPartId,
+  type BundleColor,
+  type BundleIndex,
+  type BundleLod,
+  type BundleModelEntry,
+  type NotDrawnSection,
 } from "@brr/schema/bundle";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
@@ -76,6 +77,7 @@ export interface CatalogItemView {
   readonly draggable: boolean;
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
+  readonly customParts: number;
 }
 
 export interface SkippedCatalogModel {
@@ -254,6 +256,7 @@ function catalogItem(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -299,6 +302,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       draggable: true,
       toggleable: false,
       listedUnder: null,
+      customParts: 0,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -657,7 +661,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
-    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const plain = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const slot = {
+      ...plain,
+      view: { ...plain.view, customParts: parts.partIds.filter(isCustomPartId).length },
+    };
     this.slots.push(slot);
     return { placeable, model: remapped, credit, slot };
   }
