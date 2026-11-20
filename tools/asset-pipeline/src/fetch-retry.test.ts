@@ -90,14 +90,19 @@ describe("fetchWithRetry", () => {
     });
   });
 
-  it("retries a reset connection, and waits as long as Retry-After asks", async () => {
-    const scripted = network([reset(), { status: 429, retryAfter: "3" }, 200]);
+  it("retries a reset connection, waits as long as a longer Retry-After asks, and never less than the backoff", async () => {
+    const scripted = network([
+      reset(),
+      { status: 429, retryAfter: "3" },
+      { status: 503, retryAfter: "0" },
+      200,
+    ]);
 
     const fetched = await fetchWithRetry(URL, scripted.fetching);
 
     expect({ status: fetched.status, sleeps: scripted.sleeps }).toEqual({
       status: 200,
-      sleeps: [1000, 3000],
+      sleeps: [1000, 3000, 4000],
     });
   });
 
