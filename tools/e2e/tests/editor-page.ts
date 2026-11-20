@@ -733,11 +733,21 @@ export class EditorPage {
       .toBe(mode);
     const aimed = await this.hoverState();
     await expect
-      .poll(async () => (await this.hoverPlacement())?.settled ?? null, {
-        message: `the ${mode} hover at cell (${aimed?.x}, ${aimed?.z}) settles within ${HOVER_SETTLE_TIMEOUT_MS} ms`,
-        timeout: HOVER_SETTLE_TIMEOUT_MS,
-      })
-      .toBe(true);
+      .poll(
+        async () => {
+          const placement = await this.hoverPlacement();
+          if (!placement) return "no placement hover";
+          return [
+            ...(placement.settled ? [] : ["settled"]),
+            ...(placement.turnSettled ? [] : ["turnSettled"]),
+          ].join(" and ");
+        },
+        {
+          message: `the ${mode} hover at cell (${aimed?.x}, ${aimed?.z}) settles within ${HOVER_SETTLE_TIMEOUT_MS} ms; received names the flags still false`,
+          timeout: HOVER_SETTLE_TIMEOUT_MS,
+        },
+      )
+      .toBe("");
     const hover = await this.hoverState();
     if (!hover?.placement) throw new Error(`no placement hover in ${mode} mode`);
     return hover;
