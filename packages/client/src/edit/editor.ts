@@ -46,6 +46,9 @@ import {
   type LatticePose,
   type OverlapHit,
   type SnapShapes,
+  roadwayCells,
+  PartTally,
+  type PartSink,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -94,6 +97,7 @@ import {
   type BomScope,
   type IBomSource,
 } from "../bom/bom-service.ts";
+import type { IPlanSheetSource, PlanSheetShapes } from "../plan/plan-sheet-service.ts";
 import { dumpPlacements, type PlacementDump } from "../scene/placements.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
 import {
@@ -620,7 +624,7 @@ export interface EditorOptions {
   readonly tier: ChunkTier | null;
 }
 
-export interface IEditor extends IBomSource, IWorldFiles {
+export interface IEditor extends IBomSource, IPlanSheetSource, IWorldFiles {
   start(canvas: HTMLCanvasElement, options: EditorOptions): Promise<void>;
   subscribe(listener: () => void): () => void;
   snapshot(): EditorSnapshot;
@@ -1065,6 +1069,18 @@ const NO_TRACK_PARTS: ReadonlySet<number> = new Set();
 const NO_IDS: ReadonlySet<number> = new Set();
 const TRACK_SUPPORT_TABLES = "track-drawing-kit";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
+
+function roadPlacement(id: number, model: PlacedModel, surface: RoadSurface): RoadPlacement {
+  const { handle } = model;
+  return {
+    id,
+    x: handle.x,
+    z: handle.z,
+    yLdu: handle.yPlates * PLATE_LDU,
+    rot: handle.rot,
+    surface,
+  };
+}
 
 interface EditSample {
   readonly item: string;
@@ -3594,14 +3610,7 @@ export class Editor implements IEditor, IEditedWorld {
       const model = this.roadModels[id];
       const surface = model?.placeable.road;
       if (!model || !surface) continue;
-      placements.push({
-        id,
-        x: model.handle.x,
-        z: model.handle.z,
-        yLdu: model.handle.yPlates * PLATE_LDU,
-        rot: model.handle.rot,
-        surface,
-      });
+      placements.push(roadPlacement(id, model, surface));
     }
     return placements;
   }
@@ -3973,10 +3982,57 @@ export class Editor implements IEditor, IEditedWorld {
     this.update({ hover: this.hoverView() });
   }
 
+  planSheetShapes(): PlanSheetShapes {
+    const models = new Map(this.placed.models().map((model) => [model.id, model]));
+    const track = this.track;
+    const ramps = this.crossingRamps?.outlines(this.crossings) ?? [];
+    const modelOf = (id: number): PlacedModel => {
+      const model = models.get(id);
+      if (!model) throw new Error(`no placed model has id ${id}`);
+      return model;
+    };
+    const trackOf = (): TrackDrawing => {
+      if (!track) throw new Error("no track has been laid");
+      return track;
+    };
+    return {
+      partsOf: (segment, source) => {
+        const tally = new PartTally();
+        switch (segment) {
+          case "model":
+            this.addPlaceableParts(tally, modelOf(source).placeable);
+            break;
+          case "track":
+            trackOf().countPiece(tally, source);
+            break;
+          default: {
+            const unhandled: never = segment;
+            throw new Error(`unhandled plan segment ${String(unhandled)}`);
+          }
+        }
+        return tally.total;
+      },
+      roadwayOf: (id) => {
+        const model = modelOf(id);
+        const surface = model.placeable.road;
+        return surface ? roadwayCells(roadPlacement(id, model, surface)) : [];
+      },
+      trackOutlineOf: (piece) => trackOf().laidOutline(piece).lduRings(),
+      crossingRamps: ramps.map((outline) => outline.lduRings()),
+    };
+  }
+
+  private addPlaceableParts(target: PartSink, placeable: Placeable): void {
+    const colors = this.catalog.colors();
+    const { parts } = placeable;
+    for (let i = 0; i < parts.count; i++) {
+      target.add(parts.partIndex[i] ?? 0, colors.codeAt(parts.colorIndex[i] ?? 0), 1);
+    }
+  }
+
   bomInput(scope: BomScope): BomInput {
     const ldrawCodes = this.bundleColorCodes;
     if (!ldrawCodes) throw new Error("the editor has not loaded");
-    const colors = this.catalog.colors();
     const placeables = this.catalog.placeables();
     const counter = new BomCounter(
       this.catalog.parts().map((part) => part.id),
@@ -3988,10 +4044,7 @@ export class Editor implements IEditor, IEditedWorld {
         const placeable = placeables[refId];
         if (!placeable) throw new Error(`world holds unknown placeable ${refId}`);
         placedCounts.set(refId, (placedCounts.get(refId) ?? 0) + 1);
-        const { parts } = placeable;
-        for (let i = 0; i < parts.count; i++) {
-          target.add(parts.partIndex[i] ?? 0, colors.codeAt(parts.colorIndex[i] ?? 0), 1);
-        }
+        this.addPlaceableParts(target, placeable);
       },
     };
     const uncounted = (): BomInput["uncounted"] =>
