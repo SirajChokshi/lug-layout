@@ -16,6 +16,7 @@ import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import type { IHotbar } from "./commands/hotbar.ts";
 import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
@@ -98,6 +99,7 @@ export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symb
 export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
   "brr.client.PaletteMemory",
 );
+export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
 );

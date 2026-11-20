@@ -27,6 +27,7 @@ import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import { HotbarService } from "./commands/hotbar.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
 import { ConnectorTables } from "./connect/connector-tables.ts";
@@ -69,6 +70,7 @@ import {
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE_DRAG,
+  HOTBAR,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
   PALETTE_PREFETCH,
@@ -147,6 +149,7 @@ const clientModule = new ContainerModule(({ bind }) => {
     .inSingletonScope();
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
+  bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
