@@ -98,6 +98,7 @@ The browser import worker and the OMR ingest share the same code.
 ### 3.4 Attribution and licenses in shipped assets
 - Part GLBs carry `extras.ldraw = {name, authors, license}`.
 - The credits page covers LDraw, the OMR authors of each model, Rebrickable and LDCad.
+- **OMR errata.** An OMR file with a provable typo is baked with a line erratum from `tools/asset-pipeline/omr-errata.json`. Each entry names the model, the file's pinned SHA-256, the line, its exact text before and after, and its evidence: the line's mirror twin or the wall course it belongs to, quoted from the same file. The pinned file stays unmodified in `.cache/omr`; only the bundle bake applies the erratum. `verify-ldraw` (which every bundle build runs first) fails when a pin, the line or an evidence line no longer reads as recorded, or when an erratum names no palette OMR model, and the bake refuses a re-pinned erratum or a line that reads otherwise. The manifest lists each model's errata, and the credits page and the credits download show them as "Modified from OMR". Errata come only from the model's own symmetry or structure; sub-LDU drift with no single intended value is left alone. Imported files are never patched: they connect as their own bricks are placed.
 - The connectivity package carries its own CC BY-SA 4.0 notice and an attribution to Roland Melkert.
 - The trademark disclaimer appears in the footer, the about page and every export.
 
