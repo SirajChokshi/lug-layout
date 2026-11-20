@@ -13,6 +13,7 @@ export const BUNDLE_DATA_FILES = {
   sectionVocabulary: `${PIPELINE_DIRECTORY}/section-vocabulary.json`,
   lock: `${PIPELINE_DIRECTORY}/ldraw.lock.json`,
   libraryBakePin: `${PIPELINE_DIRECTORY}/library-bake.json`,
+  libraryConnectorsPin: `${PIPELINE_DIRECTORY}/library-connectors.json`,
   geometry: `${VERIFIED_FACTS_DIRECTORY}/geometry.json`,
   trackCatalog: `${VERIFIED_FACTS_DIRECTORY}/${TRACK_CATALOG_FILE}`,
 } as const;

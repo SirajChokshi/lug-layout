@@ -3,11 +3,13 @@
 use std::collections::BTreeMap;
 
 use brick_compile::affine::Vec3;
+use brick_compile::authored::AUTHORED_RULE_VERSION;
 use brick_compile::cover::{CellsCause, ModelCover};
 use brick_compile::flatten::FlattenError;
 use brick_compile::inline::InlineComparison;
 use brick_compile::lattice::{Malformation, MalformedGeometry, ModelLattice};
 use brick_compile::ldraw::Header;
+use brick_compile::model::{AuthoredColumns, RationalText};
 use brick_compile::studio::{StudioArchive, StudioError};
 use brick_compile::vehicle::{Coupler, GuideKind, Vehicle};
 use brick_compile::CompileError;
@@ -28,6 +30,80 @@ pub struct BakePhases {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthoredIdentification {
+    rule_version: u32,
+    rows: AuthoredRows,
+    excluded_rotated: AuthoredLines,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthoredRows {
+    line: Vec<usize>,
+    line_kind: Vec<&'static str>,
+    axis: Vec<u8>,
+    printed: Vec<String>,
+    grid: Vec<&'static str>,
+    identified: Vec<Option<ExactRational>>,
+    residual: Vec<Option<ExactRational>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AuthoredLines {
+    line: Vec<usize>,
+    line_kind: Vec<&'static str>,
+}
+
+#[derive(Serialize)]
+struct ExactRational {
+    numerator: String,
+    denominator: String,
+}
+
+impl From<RationalText> for ExactRational {
+    fn from(
+        RationalText {
+            numerator,
+            denominator,
+        }: RationalText,
+    ) -> Self {
+        ExactRational {
+            numerator,
+            denominator,
+        }
+    }
+}
+
+impl From<AuthoredColumns> for AuthoredIdentification {
+    fn from(columns: AuthoredColumns) -> Self {
+        let rationals = |values: Vec<Option<RationalText>>| {
+            values
+                .into_iter()
+                .map(|v| v.map(ExactRational::from))
+                .collect()
+        };
+        AuthoredIdentification {
+            rule_version: AUTHORED_RULE_VERSION,
+            rows: AuthoredRows {
+                line: columns.line,
+                line_kind: columns.line_kind,
+                axis: columns.axis,
+                printed: columns.printed,
+                grid: columns.grid,
+                identified: rationals(columns.identified),
+                residual: rationals(columns.residual),
+            },
+            excluded_rotated: AuthoredLines {
+                line: columns.excluded_line,
+                line_kind: columns.excluded_line_kind,
+            },
+        }
+    }
+}
+
+#[derive(Serialize)]
 #[serde(tag = "status", rename_all_fields = "camelCase")]
 pub enum Reply {
     #[serde(rename = "read")]
@@ -37,6 +113,8 @@ pub enum Reply {
         inline_parts: Vec<InlinePair>,
         loose_geometry: Vec<LooseGeometry>,
         instances: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        authored_identification: Option<AuthoredIdentification>,
         blobs: Blobs,
     },
     #[serde(rename = "read")]

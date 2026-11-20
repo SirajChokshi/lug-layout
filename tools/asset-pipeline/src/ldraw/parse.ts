@@ -84,6 +84,23 @@ export function subfileReferences(file: LdrawFile): string[] {
   return references;
 }
 
+const SNAP_INCLUDE = "SNAP_INCL";
+const INCLUDE_REFERENCE_KEY = "ref";
+const BRACKETED_PARAMETER = /\[([^\]=]*)=([^\]]*)\]/gu;
+
+export function snapIncludeReferences(file: LdrawFile): string[] {
+  const references: string[] = [];
+  for (const line of file.lines) {
+    if (line.kind !== "meta" || line.tokens[0] !== LDCAD_META || line.tokens[1] !== SNAP_INCLUDE)
+      continue;
+    for (const [, key, value] of line.tokens.slice(2).join(" ").matchAll(BRACKETED_PARAMETER)) {
+      if (key?.trim().toLowerCase() === INCLUDE_REFERENCE_KEY && value !== undefined)
+        references.push(normalizeReference(value));
+    }
+  }
+  return references;
+}
+
 export interface MultiPartSection {
   readonly name: string;
   readonly source: string;

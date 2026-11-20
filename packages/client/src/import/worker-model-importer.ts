@@ -2,7 +2,12 @@ import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@br
 import type { BundleLod } from "@brr/schema/bundle";
 import type { ImportInput, ImportJob, ImportResult, PlacementListener } from "@brr/import";
 import { inject, injectable } from "inversify";
-import { IMPORT_WORKER_POOL, LDRAW_LIBRARY_BASE_URL, LIBRARY_BAKE_BASE_URL } from "../tokens.ts";
+import {
+  IMPORT_WORKER_POOL,
+  LDRAW_LIBRARY_BASE_URL,
+  LIBRARY_BAKE_BASE_URL,
+  LIBRARY_CONNECTORS_BASE_URL,
+} from "../tokens.ts";
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
 
 export interface IModelImporter {
@@ -28,6 +33,7 @@ export class WorkerModelImporter implements IModelImporter {
     @inject(BUNDLE_BASE_URL) private readonly bundleBaseUrl: string,
     @inject(LDRAW_LIBRARY_BASE_URL) private readonly ldrawLibraryBaseUrl: string | null,
     @inject(LIBRARY_BAKE_BASE_URL) private readonly libraryBakeBaseUrl: string | null,
+    @inject(LIBRARY_CONNECTORS_BASE_URL) private readonly libraryConnectorsBaseUrl: string | null,
   ) {}
 
   async importText(
@@ -91,6 +97,14 @@ export class WorkerModelImporter implements IModelImporter {
         ...(this.libraryBakeBaseUrl === null || context.libraryBake === null
           ? {}
           : { libraryBake: { url: this.libraryBakeBaseUrl, pin: context.libraryBake } }),
+        ...(this.libraryConnectorsBaseUrl === null || context.libraryConnectors === null
+          ? {}
+          : {
+              libraryConnectors: {
+                url: this.libraryConnectorsBaseUrl,
+                pin: context.libraryConnectors,
+              },
+            }),
         input,
       },
       transfer,
