@@ -47,13 +47,11 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Bundle } from "./bundle.ts";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
 
 const RAY_HEIGHT_LDU = 10_000;
 const UNFETCHED_BUNDLE_URL = "https://bundle.invalid/";
 const NO_BAKE_HELPERS: ReadonlyArray<IBakeHelper> = [];
-export const CANVAS_WIDTH = 640;
-const CANVAS_HEIGHT = 480;
-export const VIEW_HALF_WIDTH_LDU = 1_000;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
