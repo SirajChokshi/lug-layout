@@ -72,7 +72,6 @@ import {
   type DragTargetView,
   type TrackBlockView,
   type TrackDragView,
-  type TrackPieceOutline,
   type TrackRefusal,
 } from "./track-drag.ts";
 import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
@@ -313,6 +312,15 @@ function partBox(placed: Placed): WorldBox {
     maxY: placed.part.yLdu + maxY,
     maxZ: z + (boxes[o + 3] ?? 0),
   };
+}
+
+function framedOutline(outline: Float64Array, placement: Pose16, frame: TrackFrame): Float64Array {
+  const placed = placedOutline(outline, placement);
+  for (let i = 0; i < placed.length; i += 2) {
+    placed[i] = (placed[i] ?? 0) + frame.xLdu;
+    placed[i + 1] = (placed[i + 1] ?? 0) + frame.zLdu;
+  }
+  return placed;
 }
 
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
@@ -586,16 +594,17 @@ export class TrackDrawing {
 
   private dragField(): DragField {
     const [, top] = this.verticalRange();
-    const pieces: Array<TrackPieceOutline | null> = [];
-    for (let p = 0; p < this.layout.count; p++) {
-      if (this.layout.yPlates(p) * PLATE_LDU >= top) {
-        pieces.push(null);
+    const layout = this.combined;
+    const outlines: Array<Float64Array | null> = [];
+    for (let p = 0; p < layout.count; p++) {
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (!part || layout.yPlates(p) * PLATE_LDU >= top) {
+        outlines.push(null);
         continue;
       }
-      const placed = this.placedAt(p);
-      pieces.push({ outline: placed.part.outline, placement: placed.placement });
+      outlines.push(framedOutline(part.outline, layout.pose(p), layout.frame(p)));
     }
-    return new DragField(pieces, this.obstacles);
+    return new DragField(outlines, this.obstacles);
   }
 
   moveDrag(hitX: number, hitZ: number): void {

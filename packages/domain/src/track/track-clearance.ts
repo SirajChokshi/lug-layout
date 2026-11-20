@@ -197,6 +197,39 @@ export function boxesOverlap(
 export const NO_OBSTACLE = -1;
 export const RUN_CROSSING = -2;
 
+function signedArea(polygon: ArrayLike<number>): number {
+  const count = polygon.length / OUTLINE_POINT_FLOATS;
+  let twice = 0;
+  for (let i = 0; i < count; i++) {
+    const j = (i + 1) % count;
+    twice +=
+      (polygon[2 * i] ?? 0) * (polygon[2 * j + 1] ?? 0) -
+      (polygon[2 * j] ?? 0) * (polygon[2 * i + 1] ?? 0);
+  }
+  return twice / 2;
+}
+
+function overlapsOutside(piece: Float64Array, other: Float64Array, joined: Float64Array): boolean {
+  const count = joined.length / OUTLINE_POINT_FLOATS;
+  const outward = signedArea(joined) < 0 ? -1 : 1;
+  const points = Array.from(piece);
+  for (let i = 0; i < count; i++) {
+    const j = (i + 1) % count;
+    const ax = joined[2 * i] ?? 0;
+    const az = joined[2 * i + 1] ?? 0;
+    const ex = (joined[2 * j] ?? 0) - ax;
+    const ez = (joined[2 * j + 1] ?? 0) - az;
+    const length = Math.hypot(ex, ez);
+    if (length === 0) continue;
+    const nx = (outward * ez) / length;
+    const nz = (-outward * ex) / length;
+    const beyond = clipped(points, -nx, -nz, -(nx * ax + nz * az + REPRESENTATION_LDU));
+    if (beyond.length < MIN_POLYGON_FLOATS) continue;
+    if (outlinesOverlap(Float64Array.from(beyond), 0, 0, other, 0, 0)) return true;
+  }
+  return false;
+}
+
 export class TrackClearance {
   private readonly outlines: Float64Array[] = [];
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
@@ -243,11 +276,6 @@ export class TrackClearance {
     return id;
   }
 
-  addPiece(outline: Float64Array, placement: Pose16): number {
-    const at = poseLdu(placement);
-    return this.add(rotateOutline(outline, placement.heading, at.x, at.z));
-  }
-
   addRect(minX: number, minZ: number, maxX: number, maxZ: number): number {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
   }
@@ -277,11 +305,29 @@ export class TrackClearance {
         this.visit[id] = generation;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
-        if (other && outlinesOverlap(outline, x, z, other, 0, 0)) found = id;
+        if (!other || !outlinesOverlap(outline, x, z, other, 0, 0)) continue;
+        if (!this.insideJoined(outline, x, z, other, exceptA, exceptB)) found = id;
       }
       return found === 0;
     });
     return found;
+  }
+
+  private insideJoined(
+    outline: Float64Array,
+    x: number,
+    z: number,
+    other: Float64Array,
+    exceptA: number,
+    exceptB: number,
+  ): boolean {
+    const joined = [exceptA, exceptB].flatMap((id) => {
+      const shape = id < 0 ? undefined : this.outlines[id];
+      return shape ? [shape] : [];
+    });
+    if (joined.length === 0) return false;
+    const piece = translated(outline, { xLdu: x, zLdu: z });
+    return joined.some((shape) => !overlapsOutside(piece, other, shape));
   }
 
   private forCells(

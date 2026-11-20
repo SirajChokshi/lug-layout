@@ -45,6 +45,7 @@ import {
 import { seatsPending, trackObstacles, type TrackObstacles } from "./track-obstacles.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const NO_TRACK_PARTS = (): ReadonlySet<number> => new Set();
 const MM_PER_LDU = 1 / lduFromMm(1);
 const SHRINK_MM = 2;
 const RENDER_FLOAT_LDU = 1e-3;
@@ -1161,7 +1162,7 @@ async function trackOver(
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const range = layout.verticalRange();
-  layout.setObstacles(trackObstacles(ground, range), pendingSeats(range));
+  layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), pendingSeats(range));
   return layout;
 }
 
@@ -1455,7 +1456,7 @@ it("stops a stroke before the first piece that would cross track, a custom build
     const layout = new TrackDrawing(bundle, bundle.parts, colors);
     const ground = await crossing.ground();
     const range = layout.verticalRange();
-    layout.setObstacles(trackObstacles(ground, range), seatsPending(ground, range));
+    layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), seatsPending(ground, range));
     crossing.track(layout);
     const before = layout.pieceCount;
     const { view, ghost, commit } = drawStroke(layout, crossing.stroke(layout));

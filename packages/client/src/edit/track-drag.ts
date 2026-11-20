@@ -71,11 +71,6 @@ export interface DragRoute {
   readonly blocked: TrackBlockView | null;
 }
 
-export interface TrackPieceOutline {
-  readonly outline: Float64Array;
-  readonly placement: Pose16;
-}
-
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
@@ -87,12 +82,12 @@ export class DragField {
   private readonly rectBase: number;
 
   constructor(
-    pieces: ReadonlyArray<TrackPieceOutline | null>,
+    outlines: ReadonlyArray<Float64Array | null>,
     private readonly obstacles: TrackObstacles,
   ) {
-    this.pieceIds = new Int32Array(pieces.length).fill(NO_OBSTACLE);
-    pieces.forEach((piece, placement) => {
-      if (piece) this.pieceIds[placement] = this.clearance.addPiece(piece.outline, piece.placement);
+    this.pieceIds = new Int32Array(outlines.length).fill(NO_OBSTACLE);
+    outlines.forEach((outline, placement) => {
+      if (outline) this.pieceIds[placement] = this.clearance.add(outline);
     });
     this.rectBase = this.clearance.count;
     const { rects } = obstacles;

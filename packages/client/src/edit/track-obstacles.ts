@@ -116,13 +116,16 @@ export function seatsPending(
 export function trackObstacles(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],
+  trackParts: (model: PlacedModel) => ReadonlySet<number>,
 ): TrackObstacles {
   const [bottom, top] = trackRange;
   const seats = seatsAt(models, bottom);
   const list = new ObstacleList();
   models.forEach((model, owner) => {
     const boxes = model.worldPartBoxes();
+    const track = trackParts(model);
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      if (track.has(b / BOX_FLOATS)) continue;
       const minX = boxes[b] ?? 0;
       const minY = boxes[b + 1] ?? 0;
       const minZ = boxes[b + 2] ?? 0;

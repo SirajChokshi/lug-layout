@@ -591,6 +591,7 @@ interface HeldPiece {
 }
 
 const EDITOR_WORLD_NAME = "editor-world";
+const NO_TRACK_PARTS: ReadonlySet<number> = new Set();
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
 interface EditSample {
@@ -1044,7 +1045,17 @@ export class Editor implements IEditor, IEditedWorld {
   private setTrackObstacles(drawing: TrackDrawing): void {
     const models = this.placed.models();
     const range = drawing.verticalRange();
-    drawing.setObstacles(trackObstacles(models, range), seatsPending(models, range));
+    drawing.setObstacles(
+      trackObstacles(models, range, (model) => this.trackPartsOf(model.placeable)),
+      seatsPending(models, range),
+    );
+  }
+
+  private trackPartsOf(placeable: Placeable): ReadonlySet<number> {
+    const track = this.trackOf(placeable);
+    if (!track) return NO_TRACK_PARTS;
+    const pieces = [...track.pieces, ...track.runs.flatMap((run) => run.pieces)];
+    return new Set(pieces.map((piece) => piece.instance));
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
