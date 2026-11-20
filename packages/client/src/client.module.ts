@@ -30,6 +30,7 @@ import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { HotbarService } from "./commands/hotbar.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
+import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
@@ -51,6 +52,7 @@ import {
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
   PLACEMENT_SEARCH,
+  CONNECTOR_TABLES,
   SNAP_MATING,
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
@@ -63,6 +65,7 @@ import {
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
+  LIBRARY_CONNECTORS_BASE_URL,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -132,6 +135,7 @@ const clientModule = new ContainerModule(({ bind }) => {
     )
     .inSingletonScope();
   bind(PLACEMENT_SEARCH).to(PlacementSearch).inSingletonScope();
+  bind(CONNECTOR_TABLES).to(ConnectorTables).inSingletonScope();
   bind(CATALOG_SEARCH)
     .toDynamicValue(
       (context) =>
@@ -159,6 +163,7 @@ export interface MainThreadConfig {
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
   readonly libraryBakeBaseUrl?: string;
+  readonly libraryConnectorsBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly disclaimer: string;
@@ -179,6 +184,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     );
     bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
     bind(LIBRARY_BAKE_BASE_URL).toConstantValue(config.libraryBakeBaseUrl ?? null);
+    bind(LIBRARY_CONNECTORS_BASE_URL).toConstantValue(config.libraryConnectorsBaseUrl ?? null);
     if (config.catalogApiBaseUrl !== undefined) {
       bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
     }

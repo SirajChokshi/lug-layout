@@ -395,7 +395,7 @@ export const RollingSurface = v.pipe(
   }),
   v.check(({ from, to }) => from < to, "a rolling surface runs from below `to`"),
   v.description(
-    "an outward round band of the part's own triangles, identified to the sixteenth grid; the bands on one axis line together give its whole outward profile, and neighbours share their end sixteenths",
+    "an outward round band of the part's own triangles, with its ends in sixteenths: an end that identifies to the grid is published there, and a cylinder's end that doesn't is published at the nearest sixteenth inside the band, so a band never extends past its triangles; neighbours on one axis line share the end sixteenths that identify",
   ),
 );
 export type RollingSurface = v.InferOutput<typeof RollingSurface>;
@@ -564,6 +564,9 @@ export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 export const LibraryBakeIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
 
+export const LibraryConnectorsIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type LibraryConnectorsIndexRef = v.InferOutput<typeof LibraryConnectorsIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -572,6 +575,7 @@ export const BundleCompiler = v.object({
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
   libraryBake: v.optional(LibraryBakeIndexRef),
+  libraryConnectors: v.optional(LibraryConnectorsIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -900,8 +904,78 @@ export const BakeShard = v.pipe(
 );
 export type BakeShard = v.InferOutput<typeof BakeShard>;
 
+export const AUTHORED_LINE_KINDS = ["instance", "placement"] as const;
+export const AUTHORED_GRIDS = [
+  "whole",
+  "half",
+  "quarter",
+  "eighth",
+  "sixteenth",
+  "unidentified",
+] as const;
+const AUTHORED_AXES = [0, 1, 2] as const;
+const AuthoredLineKind = v.picklist(AUTHORED_LINE_KINDS);
+
+export const AuthoredLines = v.pipe(
+  v.object({ line: v.array(Count), lineKind: v.array(AuthoredLineKind) }),
+  v.check(
+    ({ line, lineKind }) => line.length === lineKind.length,
+    "authored line columns must have equal lengths",
+  ),
+);
+export type AuthoredLines = v.InferOutput<typeof AuthoredLines>;
+
+export const AuthoredRows = v.pipe(
+  v.object({
+    line: v.array(Count),
+    lineKind: v.array(AuthoredLineKind),
+    axis: v.array(v.picklist(AUTHORED_AXES)),
+    printed: v.array(v.string()),
+    grid: v.array(v.picklist(AUTHORED_GRIDS)),
+    identified: v.array(v.nullable(ExactRationalText)),
+    residual: v.array(v.nullable(ExactRationalText)),
+  }),
+  v.check(
+    (rows) =>
+      [rows.lineKind, rows.axis, rows.printed, rows.grid, rows.identified, rows.residual].every(
+        (column) => column.length === rows.line.length,
+      ),
+    "authored row columns must have equal lengths",
+  ),
+  v.check(
+    ({ grid, identified, residual }) =>
+      grid.every(
+        (name, row) =>
+          (name === "unidentified") === (identified[row] === null) &&
+          (identified[row] === null) === (residual[row] === null),
+      ),
+    "an authored row has an identified value and residual exactly when its grid isn't unidentified",
+  ),
+);
+export type AuthoredRows = v.InferOutput<typeof AuthoredRows>;
+
+export const AuthoredIdentification = v.object({
+  ruleVersion: v.pipe(Integer, v.minValue(1)),
+  rows: AuthoredRows,
+  excludedRotated: AuthoredLines,
+});
+export type AuthoredIdentification = v.InferOutput<typeof AuthoredIdentification>;
+
+export function authoredLinesFit(
+  lines: AuthoredLines,
+  instanceCount: number,
+  placementCount: number,
+): boolean {
+  return lines.line.every((line, row) =>
+    lines.lineKind[row] === "instance" ? line < instanceCount : line < placementCount,
+  );
+}
+
 export const CompilerRequest = v.variant("op", [
-  v.strictObject({ op: v.literal("readModel") }),
+  v.strictObject({
+    op: v.literal("readModel"),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
+  }),
   v.strictObject({ op: v.literal("readStudio") }),
   v.strictObject({
     op: v.literal("compile"),
@@ -929,6 +1003,8 @@ export const CompilerRequest = v.variant("op", [
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
+    keepParts: v.exactOptional(v.boolean()),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -967,6 +1043,7 @@ export const CompilerModelRead = v.object({
     v.object({ section: v.string(), triangles: Count, quads: Count, occurrences: Count }),
   ),
   instances: Count,
+  authoredIdentification: v.optional(AuthoredIdentification),
   blobs: CompilerBlobs,
 });
 export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
@@ -1060,10 +1137,22 @@ export const CompilerVehicle = v.object({
 });
 export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 
+const Duration = v.pipe(Finite, v.minValue(0));
+
+export const CompilerBakePhases = v.object({
+  decodeMs: Duration,
+  compileMs: Duration,
+  latticeMs: Duration,
+  coverMs: Duration,
+  vehiclesMs: Duration,
+});
+export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
   recordedParts: Count,
+  resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1076,6 +1165,7 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
@@ -1160,6 +1250,7 @@ export const ModelFile = v.pipe(
     }),
     partTransforms: v.array(Finite),
     submodels: SubmodelTree,
+    authoredIdentification: v.optional(AuthoredIdentification),
   }),
   v.check(
     ({ parts, instances, partTransforms }) =>
@@ -1172,6 +1263,14 @@ export const ModelFile = v.pipe(
   v.check(
     ({ instances, submodels }) => submodelTreeFits(submodels, instances.part.length),
     "model sub-model tree is inconsistent",
+  ),
+  v.check(
+    ({ instances, submodels, authoredIdentification }) =>
+      authoredIdentification === undefined ||
+      [authoredIdentification.rows, authoredIdentification.excludedRotated].every((lines) =>
+        authoredLinesFit(lines, instances.part.length, submodels.parent.length),
+      ),
+    "authored identification names an instance or placement the model doesn't have",
   ),
   v.check(
     ({ parts, shapes }) =>
@@ -1346,6 +1445,7 @@ export const SectionVocabularyFile = v.strictObject({
 export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
 
 export const LIBRARY_CONNECTORS_FORMAT = 1;
+export const LIBRARY_CONNECTORS_INDEX_FILE = "library-connectors.json";
 
 export const LibraryConnectorsIndex = v.strictObject({
   format: v.literal(LIBRARY_CONNECTORS_FORMAT),
@@ -1358,7 +1458,7 @@ export const LibraryConnectorsIndex = v.strictObject({
 export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex>;
 
 export const LibraryConnectorsPin = v.strictObject({
-  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  index: LibraryConnectorsIndexRef,
   parts: Count,
   refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
