@@ -14,26 +14,12 @@ import {
   type PointerAdapter,
   type ReferencedFile,
 } from "../publication/pinned-publication.ts";
-import { CONTENT_HASH_HEX_DIGITS } from "../publish.ts";
+import { referencedDigest, referencedNames } from "../publication/referenced-names.ts";
 import { isContentAddressed } from "../remote-bundle.ts";
 
-const REFERENCED_FILE = new RegExp(
-  String.raw`^(?:[^\s"/]+/)*[^\s"/]+\.([0-9a-f]{${CONTENT_HASH_HEX_DIGITS}})\.[a-z0-9]+$`,
-  "u",
-);
 const JSON_EXTENSION = ".json";
 
 const BundleFallback = v.strictObject({ manifest_file: BundleManifestFile });
-
-function collectNames(value: unknown, names: Set<string>): void {
-  if (typeof value === "string") {
-    if (REFERENCED_FILE.test(value)) names.add(value);
-  } else if (Array.isArray(value)) {
-    for (const item of value) collectNames(item, names);
-  } else if (typeof value === "object" && value !== null) {
-    for (const item of Object.values(value)) collectNames(item, names);
-  }
-}
 
 function namesIn(key: string, bytes: Uint8Array): Set<string> {
   let json: unknown;
@@ -42,15 +28,7 @@ function namesIn(key: string, bytes: Uint8Array): Set<string> {
   } catch {
     throw new Error(`${key} is not JSON`);
   }
-  const names = new Set<string>();
-  collectNames(json, names);
-  return names;
-}
-
-function digestOf(name: string): string {
-  const digest = REFERENCED_FILE.exec(name)?.[1];
-  if (digest === undefined) throw new Error(`${name} is not content-addressed`);
-  return digest;
+  return referencedNames(json);
 }
 
 async function lodReferences(
@@ -74,7 +52,7 @@ async function lodReferences(
         seen.add(name);
         const key = `${lod}/${name}`;
         if (!name.endsWith(JSON_EXTENSION)) {
-          files.push({ key, sha256Prefix: digestOf(name) });
+          files.push({ key, sha256Prefix: referencedDigest(name) });
           continue;
         }
         indexes.push(key);

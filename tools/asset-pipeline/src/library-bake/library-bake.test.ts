@@ -2,6 +2,7 @@ import {
   LIBRARY_BAKE_BUCKETS,
   LibraryBakeBucket,
   LibraryBakeIndex,
+  LibraryBakePart,
   libraryBakeBucket,
   type LibraryBakePin,
 } from "@brr/schema/bundle";
@@ -410,4 +411,16 @@ it("the library-bake prune keeps the index a live bundle manifest names beyond i
   const before = [...store.objects.keys()].toSorted();
   await expect(pruneUnreferenced(adapter, store, false)).rejects.toThrow("is not stored");
   expect([...store.objects.keys()].toSorted()).toEqual(before);
+});
+
+it("the library-bake index's fields, its buckets' and its parts' are exactly these, so a field naming a file the content-addressed listing can't reach can't land unseen", () => {
+  expect({
+    index: Object.keys(LibraryBakeIndex.entries),
+    bucket: Object.keys(LibraryBakeBucket.entries),
+    part: Object.keys(LibraryBakePart.entries),
+  }).toEqual({
+    index: ["format", "source", "options", "licenses", "buckets", "failed"],
+    bucket: ["bucket", "parts"],
+    part: ["record", "glb"],
+  });
 });

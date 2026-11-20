@@ -8,6 +8,7 @@ import {
   type PointerAdapter,
   type Publication,
 } from "../publication/pinned-publication.ts";
+import { referencedNames } from "../publication/referenced-names.ts";
 import { LIBRARY_BAKE_INDEX } from "./assemble.ts";
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -19,12 +20,15 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 function listed(file: string, bytes: Uint8Array): IndexListing {
   if (file === LIBRARY_BAKE_INDEX) {
     const index = decodeJsonFile(LibraryBakeIndex, bytes, file);
-    return { indexes: index.buckets.map((bucket) => ({ file: bucket })), leaves: [] };
+    const buckets = new Set(index.buckets);
+    return {
+      indexes: index.buckets.map((bucket) => ({ file: bucket })),
+      leaves: [...referencedNames(index)].filter((name) => !buckets.has(name)),
+    };
   }
-  const bucket = decodeJsonFile(LibraryBakeBucket, bytes, file);
   return {
     indexes: [],
-    leaves: Object.values(bucket.parts).flatMap((part) => [part.record, part.glb]),
+    leaves: [...referencedNames(decodeJsonFile(LibraryBakeBucket, bytes, file))],
   };
 }
 

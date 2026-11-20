@@ -1,4 +1,4 @@
-import { BundleCompiler, BundleLod } from "@brr/schema/bundle";
+import { BundleCompiler, BundleIndex, BundleLod, BundleModelEntry } from "@brr/schema/bundle";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,14 +65,64 @@ it("reads the library-bake index every LOD manifest of the current, previous and
   );
 });
 
-it("BundleCompiler's fields are exactly these, so a new field that names a published index can't land until that publication's prune retains what the live bundle manifests name and it publishes in part-bundle.yml's concurrency group", () => {
-  expect(Object.keys(BundleCompiler.entries)).toEqual([
-    "file",
-    "unofficialAllowlist",
-    "vehicles",
-    "primitives",
-    "sectionVocabulary",
-    "cavityProbe",
-    "libraryBake",
-  ]);
+it("the bundle manifest's fields, its model entries' and its compiler's are exactly these, so a field naming a file the bundle walk can't reach, another publication's index or a name that isn't content-addressed, can't land until that publication's prune retains what the live bundle manifests name", () => {
+  expect({
+    manifest: Object.keys(BundleIndex.entries),
+    model: Object.keys(BundleModelEntry.entries),
+    compiler: Object.keys(BundleCompiler.entries),
+  }).toEqual({
+    manifest: [
+      "bundleVersion",
+      "unit",
+      "upAxis",
+      "lod",
+      "source",
+      "studPrimitives",
+      "colors",
+      "models",
+      "catalogParts",
+      "modified",
+      "disclaimer",
+      "inputs",
+      "trackCatalog",
+      "trackShapes",
+      "tablePlane",
+      "compiler",
+      "connectors",
+      "connectivity",
+      "crosswalk",
+      "partTable",
+      "creditTable",
+      "thumbnails",
+    ],
+    model: [
+      "name",
+      "file",
+      "origin",
+      "set",
+      "role",
+      "source",
+      "authors",
+      "licenses",
+      "sections",
+      "inlinePartsResolvedToOfficial",
+      "instances",
+      "lattice",
+      "vehicles",
+      "sha256",
+      "cover",
+      "notDrawn",
+      "farMesh",
+    ],
+    compiler: [
+      "file",
+      "unofficialAllowlist",
+      "vehicles",
+      "primitives",
+      "sectionVocabulary",
+      "cavityProbe",
+      "libraryBake",
+      "libraryConnectors",
+    ],
+  });
 });
