@@ -110,6 +110,27 @@ export function poseLdu(pose: Pose16): { readonly x: number; readonly z: number 
   return { x: studs.x * STUD_LDU, z: studs.z * STUD_LDU };
 }
 
+export function placedOutline(outline: Float64Array, placement: Pose16): Float64Array {
+  const at = poseLdu(placement);
+  return rotateOutline(outline, placement.heading, at.x, at.z);
+}
+
+export function outlineContains(outline: Float64Array, x: number, z: number): boolean {
+  const count = outline.length / OUTLINE_POINT_FLOATS;
+  let sign = 0;
+  for (let i = 0; i < count; i++) {
+    const j = (i + 1) % count;
+    const ax = outline[2 * i] ?? 0;
+    const az = outline[2 * i + 1] ?? 0;
+    const cross =
+      ((outline[2 * j] ?? 0) - ax) * (z - az) - ((outline[2 * j + 1] ?? 0) - az) * (x - ax);
+    if (cross === 0) continue;
+    if (sign === 0) sign = Math.sign(cross);
+    else if (Math.sign(cross) !== sign) return false;
+  }
+  return count >= MIN_POLYGON_FLOATS / OUTLINE_POINT_FLOATS;
+}
+
 function separatedByEdgesOf(
   a: Float64Array,
   ax: number,

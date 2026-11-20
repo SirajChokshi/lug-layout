@@ -761,6 +761,27 @@ it("keeps the trains on the rails in the one undo history and in the saved world
   expect(backend.vehicles.size).toBeGreaterThan(0);
 }, 120_000);
 
+it("selects a train rather than the track it stands on, and refuses to delete a track piece a train stands on", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const laid = editor.snapshot().track?.pieces;
+  const train = selectAt(editor, backend, 0, 0);
+  let refusal: string | null = null;
+  for (let x = -600; x <= 600 && refusal === null; x += STUD_LDU) {
+    if (selectAt(editor, backend, x, 0)?.kind !== "track") continue;
+    editor.deleteSelection(0);
+    refusal = editor.snapshot().selectionRefusal;
+    if (refusal === null) editor.undo(0);
+  }
+
+  expect(train?.kind).toBe("train");
+  expect(refusal).toContain("stands on this track piece");
+  expect(editor.snapshot().track?.pieces).toBe(laid);
+  expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
+}, 120_000);
+
 it("sets a train on the track inside a placed set, and refuses to delete or turn the set while the train stands on that track", async () => {
   const { editor, backend, catalog } = await startEditor([PLACEABLE_SET, MY_OWN_TRAIN.slice(4)]);
   const set = `omr:${PLACEABLE_SET}`;
@@ -1262,6 +1283,48 @@ function layoutState(editor: IEditor) {
 const STUD = 20;
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
+
+const NINE_VOLT_STRAIGHT = "ldraw:74746";
+
+it("selects a laid track piece by clicking it and deletes it as one step that undo restores and re-selects", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  const laid = layoutState(editor);
+
+  const picked = selectAt(editor, backend, 0, 0);
+  const cleared = selectAt(editor, backend, 0, 40 * STUD);
+  selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = layoutState(editor);
+  const afterDelete = editor.snapshot();
+  editor.undo(0);
+  const restored = layoutState(editor);
+  const reselected = editor.snapshot().selection;
+  editor.redo(0);
+
+  expect(picked).toMatchObject({
+    kind: "track",
+    item: `${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`,
+  });
+  expect(cleared).toBeNull();
+  expect({
+    pieces: deleted.laidTrack.length,
+    openEnds: deleted.openEnds,
+    joins: deleted.joins,
+    selection: afterDelete.selection,
+    undo: afterDelete.history.undoLabel,
+  }).toEqual({
+    pieces: laid.laidTrack.length - 1,
+    openEnds: (laid.openEnds ?? 0) + 2,
+    joins: (laid.joins ?? 0) - 2,
+    selection: null,
+    undo: "delete",
+  });
+  expect(restored).toEqual(laid);
+  expect(reselected).toEqual(picked);
+  expect(layoutState(editor)).toEqual(deleted);
+});
 
 it("undoes and redoes model and track edits in the order they happened, each track gesture one step named by what it laid", async () => {
   const { editor, backend } = await startEditor([]);

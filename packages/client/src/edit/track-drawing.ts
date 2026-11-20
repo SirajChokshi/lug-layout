@@ -30,6 +30,8 @@ import {
   TrackLayout,
   footprintOutline,
   regionHolds,
+  outlineContains,
+  placedOutline,
   type BomCounter,
   type ClosureResult,
   type ClosureSite,
@@ -40,6 +42,7 @@ import {
   type TrackEnd,
   type TrackFrame,
   type TrackMove,
+  type TrackPieceAt,
   type TrackPieceDef,
   type TrackPieceSpec,
   WORLD_TRACK_FRAME,
@@ -151,6 +154,27 @@ export interface SwitchThrow {
   readonly change: TrackChange;
   readonly lever: Lever;
 }
+
+export interface TrackPieceHit {
+  readonly placement: number;
+  readonly distance: number;
+}
+
+export interface LaidPieceView {
+  readonly piece: string;
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly yPlates: number;
+  readonly chunkKey: number;
+  readonly box: WorldBox;
+}
+
+const RAY_ORIGIN_X = 0;
+const RAY_ORIGIN_Y = 1;
+const RAY_ORIGIN_Z = 2;
+const RAY_DIRECTION_X = 3;
+const RAY_DIRECTION_Y = 4;
+const RAY_DIRECTION_Z = 5;
 
 export interface SwitchLeverView {
   readonly placement: number;
@@ -433,10 +457,15 @@ export class TrackDrawing {
         const origin = partCentre(placed);
         if (!regionHolds(region, origin.x, origin.z)) continue;
       }
-      counter.add(placed.part.partIndex, this.colors.codeAt(placed.part.color), 1);
+      this.countPiece(counter, p);
       counted++;
     }
     return counted;
+  }
+
+  countPiece(counter: BomCounter, placement: number): void {
+    const { part } = this.placedAt(placement);
+    counter.add(part.partIndex, this.colors.codeAt(part.color), 1);
   }
 
   coincidentEndIssues(): number {
@@ -910,13 +939,53 @@ export class TrackDrawing {
     if (thrown === null) return null;
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
-    const lifted = {
+    const lifted = this.laidPiece(placement);
+    return { change: { lift: [lifted], lay: [{ ...lifted, piece: thrown }] }, lever };
+  }
+
+  removal(placement: number): TrackChange {
+    return { lift: [this.laidPiece(placement)], lay: [] };
+  }
+
+  private laidPiece(placement: number): TrackPieceAt {
+    const placed = this.placedAt(placement);
+    return {
       index: placement,
       piece: placed.part.catalogIndex,
       pose: placed.placement,
       yPlates: this.layout.yPlates(placement),
     };
-    return { change: { lift: [lifted], lay: [{ ...lifted, piece: thrown }] }, lever };
+  }
+
+  pieceOnRay(ray: Float64Array): TrackPieceHit | null {
+    const dy = ray[RAY_DIRECTION_Y] ?? 0;
+    if (dy === 0) return null;
+    let best: TrackPieceHit | null = null;
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const top = partBox(placed).maxY + this.layout.yPlates(p) * PLATE_LDU;
+      const distance = (top - (ray[RAY_ORIGIN_Y] ?? 0)) / dy;
+      if (distance < 0 || (best && distance >= best.distance)) continue;
+      const x = (ray[RAY_ORIGIN_X] ?? 0) + distance * (ray[RAY_DIRECTION_X] ?? 0);
+      const z = (ray[RAY_ORIGIN_Z] ?? 0) + distance * (ray[RAY_DIRECTION_Z] ?? 0);
+      if (outlineContains(placedOutline(placed.part.outline, placed.placement), x, z)) {
+        best = { placement: p, distance };
+      }
+    }
+    return best;
+  }
+
+  laidPieceView(placement: number): LaidPieceView {
+    const placed = this.placedAt(placement);
+    const centre = partCentre(placed);
+    return {
+      piece: placed.part.piece.id,
+      xLdu: centre.x,
+      zLdu: centre.z,
+      yPlates: this.layout.yPlates(placement),
+      chunkKey: this.chunkOfPlaced(placed),
+      box: partBox(placed),
+    };
   }
 
   switchLevers(): ReadonlyArray<SwitchLeverView> {
