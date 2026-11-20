@@ -41,6 +41,7 @@ import {
   type Placeable,
   type PlacementModel,
 } from "../edit/placeable.ts";
+import type { CustomPartCredit } from "../credits/credits-view.ts";
 import {
   diagnosedPart,
   type DiagnosedPart,
@@ -50,6 +51,7 @@ import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
+import { customPartCredits } from "./custom-part-credits.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
 import { thumbnailUrls } from "./thumbnail-urls.ts";
 
@@ -151,6 +153,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
+  customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
 }
@@ -329,6 +332,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly loads = new Map<number, Promise<Placeable>>();
   private readonly modelNames = new Map<Placeable, string>();
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
+  private readonly customPartsById = new Map<string, ReadonlyArray<CustomPartCredit>>();
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly compiledSources = new Map<string, CompiledSource>();
@@ -634,6 +638,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const placed = { ...result, sections: result.report.sections, bake };
     const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
     const added = await this.addPlaceable(file, model, result);
+    this.customPartsById.set(added.placeable.id, customPartCredits(result.report));
     return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
   }
 
@@ -686,6 +691,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     result: ImportResult,
   ): CheckedStuds {
     const reports = { report: result.report, studio: result.studio ?? null };
+    this.customPartsById.set(pending.id, customPartCredits(result.report));
     const { bake } = result;
     if (!bake) {
       return { ...reports, kind: "failed", failure: result.report.bakeIssue ?? NO_LATTICE_REASON };
@@ -754,6 +760,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {
     return this.notDrawnSections.get(placeable) ?? [];
+  }
+
+  customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null {
+    return this.customPartsById.get(placeable.id) ?? null;
   }
 
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null {

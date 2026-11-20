@@ -277,6 +277,7 @@ export { cellChunkKey } from "./cell-chunk-key.ts";
 export {
   DirtyShards,
   addShards,
+  shardPoses,
   worldPlacements,
   type PlacementTarget,
   type ShardChange,
