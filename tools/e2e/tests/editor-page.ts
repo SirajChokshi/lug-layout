@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fitGroundMap, type GroundMap, type GroundSample } from "./ground-map.ts";
 
@@ -21,6 +21,7 @@ const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
+const LIBRARY_FOLDERS = ["p/8/", "p/48/", "parts/", "p/"] as const;
 const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
 
 export interface ScreenPoint {
@@ -190,6 +191,29 @@ export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz:
     const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
     return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
   });
+}
+
+export interface LibraryServing {
+  readonly expectMissing?: ReadonlyArray<string>;
+}
+
+function libraryReference(path: string): string {
+  const folder = LIBRARY_FOLDERS.find((candidate) => path.startsWith(candidate));
+  return folder === undefined ? path : path.slice(folder.length);
+}
+
+async function pinned(path: string): Promise<boolean> {
+  return access(new URL(path, PINNED_LDRAW)).then(
+    () => true,
+    () => false,
+  );
+}
+
+async function unpinnedReference(path: string): Promise<string | null> {
+  const reference = libraryReference(path);
+  const places = [reference, ...LIBRARY_FOLDERS.map((folder) => `${folder}${reference}`)];
+  const held = await Promise.all(places.map(pinned));
+  return held.includes(true) ? null : reference;
 }
 
 export class EditorPage {
@@ -624,17 +648,28 @@ export class EditorPage {
     return read();
   }
 
-  async serveLdrawLibrary(): Promise<void> {
+  async serveLdrawLibrary({ expectMissing = [] }: LibraryServing = {}): Promise<void> {
+    const expected = new Set(expectMissing);
+    const reported = new Set<string>();
     await this.page.context().route(GITHUB_RAW, async (route) => {
-      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(route.request().url()).pathname))
-        ?.groups?.["path"];
+      const url = route.request().url();
+      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(url).pathname))?.groups?.["path"];
       const text =
         path === undefined
           ? undefined
           : await readFile(new URL(path, PINNED_LDRAW), "utf8").catch(() => undefined);
-      await (text === undefined
-        ? route.fulfill({ status: HTTP_NOT_FOUND })
-        : route.fulfill({ status: 200, body: text }));
+      if (text !== undefined) {
+        await route.fulfill({ status: 200, body: text });
+        return;
+      }
+      const missing = path === undefined ? url : await unpinnedReference(path);
+      if (missing !== null && !expected.has(missing) && !reported.has(missing)) {
+        reported.add(missing);
+        expect
+          .soft(false, `the editor asked for ${path ?? url}, which .cache/ldraw doesn't hold`)
+          .toBe(true);
+      }
+      await route.fulfill({ status: HTTP_NOT_FOUND });
     });
   }
 
