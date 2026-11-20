@@ -169,6 +169,7 @@ jobs:
             .cache/catalog
           key: ldraw-inputs-v2-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
