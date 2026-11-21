@@ -126,6 +126,7 @@ pub enum Reply {
         unconverted_lines: Vec<usize>,
         bricklink_ids: BTreeMap<String, String>,
         custom_parts: Vec<String>,
+        custom_files: Vec<CustomFileReply>,
     },
     #[serde(rename = "rejected")]
     StudioRejected { kind: &'static str, message: String },
@@ -162,6 +163,12 @@ pub enum Reply {
 }
 
 #[derive(Serialize)]
+pub struct InferredRecords {
+    pub connectivity: Option<serde_json::Value>,
+    pub connectors: Option<serde_json::Value>,
+}
+
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Section {
     name: String,
@@ -181,6 +188,12 @@ impl From<&Header> for Section {
             ldraw_org: header.ldraw_org.clone(),
         }
     }
+}
+
+#[derive(Serialize)]
+pub struct CustomFileReply {
+    name: String,
+    text: String,
 }
 
 #[derive(Serialize)]
@@ -255,10 +268,6 @@ impl From<&CompileError> for Failure {
                 ..failure("unresolved")
             },
             CompileError::Flatten(FlattenError::TooDeep { .. }) => failure("tooDeep"),
-            CompileError::License { path, .. } => Failure {
-                path: Some(path.clone()),
-                ..failure("license")
-            },
             CompileError::NoStudRing => failure("noStudRing"),
             CompileError::TooLarge { path, cells, .. } => Failure {
                 path: Some(path.clone()),
@@ -295,7 +304,7 @@ pub enum PartOutcome {
         file: String,
         header: Section,
         files: usize,
-        connectors: Option<serde_json::Value>,
+        connectors: Option<InferredRecords>,
     },
     Need {
         reference: String,
@@ -373,7 +382,7 @@ impl From<&ModelLattice> for Lattice {
         Lattice {
             phase: lattice.phase,
             phase_layer_y: lattice.phase_layer_y,
-            phase_layer_studs: lattice.phase_layer_studs,
+            phase_layer_studs: lattice.phase_layer_votes,
             phase_layer_agreeing: lattice.phase_layer_agreeing,
             aabb: Aabb {
                 min: lattice.aabb_min,
@@ -520,6 +529,14 @@ impl From<StudioArchive> for Reply {
             unconverted_lines: archive.unconverted_lines,
             bricklink_ids: archive.bricklink_ids,
             custom_parts: archive.custom_parts,
+            custom_files: archive
+                .custom_files
+                .into_iter()
+                .map(|file| CustomFileReply {
+                    name: file.name,
+                    text: file.text,
+                })
+                .collect(),
         }
     }
 }

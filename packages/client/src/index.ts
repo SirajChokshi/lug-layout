@@ -61,7 +61,6 @@ export type {
   IEditorFrameLoop,
 } from "./edit/editor-frame-loop.ts";
 export type {
-  CatalogPartView,
   EditAction,
   EditorCredits,
   EditorDump,
@@ -69,6 +68,8 @@ export type {
   EditorOptions,
   EditorSnapshot,
   EditorStatus,
+  FillResult,
+  GestureView,
   HistoryView,
   HoverView,
   IEditor,
@@ -80,23 +81,34 @@ export type {
   RailTrainView,
   RoadIssueView,
   RoadJoinView,
-  RoadStrokeResult,
   RoadPlacementDump,
   RefusedClick,
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
   QueuedPlacement,
+  SelectDragKind,
+  SelectionItemView,
+  SelectionTally,
   SelectionView,
   TrackSelectionView,
   TrainSelectionView,
+} from "./edit/editor.ts";
+export type {
+  CatalogPartView,
+  CrossingRampView,
+  CrossingView,
   TrackBomLine,
   TrackCommitResult,
+  TrackHeightView,
   TrackPieceView,
   TrackSolveStats,
   TrackView,
-} from "./edit/editor.ts";
+} from "./edit/track-edit-session.ts";
+export type { TrackLowClearanceView, TrackUnsupportedView } from "./edit/track-world.ts";
+export type { RoadStrokeResult } from "./edit/road-edit-session.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
+export type { FillView } from "./edit/fill-tool.ts";
 export type {
   ExportedWorld,
   ModelFileInput,
@@ -137,18 +149,31 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export { MM_PER_STUD, STUD_LDU } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_MAX_REACH_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
   type PlanPatch,
   type PlanPlacementsView,
+  type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export {
+  NOT_YET_ASSIGNED,
+  UNCHECKED_PLAN_RULES,
+  buildableAsPlanned,
+  type UncheckedPlanRule,
+} from "./plan/plan-verdict.ts";
+export type {
+  IPlanSheetService,
+  IPlanSheetSource,
+  PlanSheetShapes,
+} from "./plan/plan-sheet-service.ts";
 export type {
   IssueSeverity,
   LduRect,
@@ -166,6 +191,7 @@ export type {
 export {
   RUNNING_GEAR,
   BOM_SERVICE,
+  OWNED_PARTS,
   CATALOG_SEARCH,
   CREDITS,
   EDITOR,
@@ -182,6 +208,7 @@ export {
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
@@ -199,12 +226,46 @@ export type {
   StarterWorldView,
   WelcomeView,
 } from "./starters/starter-worlds.ts";
-export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export { TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,
   RollingDiagnosticsRowView,
 } from "./inspect/rolling-diagnostics.ts";
+export type {
+  AssistNeighbourhood,
+  ConnectorGender,
+  ConnectorKindView,
+  ConnectorSectionView,
+  HoverMateCount,
+  HoverRefusalHit,
+  HoverWait,
+  MagnetOffset,
+  PlacedModelView,
+  PlacementHover,
+  PlacementMode,
+  SectionProfile,
+} from "./edit/placement-hover.ts";
+export { distinctJoints } from "./edit/placement-hover.ts";
+export {
+  effectivePlacementMode,
+  holdPlacementModeOverride,
+  otherPlacementMode,
+  placementModeSwitchEnabled,
+  togglePlacementMode,
+  type PlacementModeView,
+} from "./edit/placement-mode.ts";
+export {
+  badgeText,
+  placementFeedback,
+  showsLate,
+  type BadgeCount,
+  type ConnectorBadge,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementLineKind,
+  type PlacementTone,
+} from "./edit/placement-feedback.ts";
 export {
   meshesSettled,
   type MeshCounts,
@@ -238,16 +299,26 @@ export {
 } from "./commands/editor-commands.ts";
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
+export { trackBlockText } from "./edit/track-drag.ts";
+export type { TallestTrain } from "./trains/tallest-train.ts";
 export {
+  TOO_STEEP,
+  lowClearanceText,
+  tallyText,
   toolHints,
-  trackBlockText,
   unjoinedText,
   type ToolHint,
   type ToolHintView,
+  type ToolSpeech,
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
+export type {
+  CommandPaletteSnapshot,
+  ICommandPaletteSearch,
+} from "./commands/command-palette-search.ts";
 export {
+  altKeyName,
   chordKeys,
   chordText,
   keyPlatform,
@@ -280,6 +351,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export { MM_PER_CM, cmText, heightText, studsText } from "./edit/size-labels.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,
@@ -320,8 +392,17 @@ export type {
   BomScope,
   IBomService,
   IBomSource,
+  OwnVsBuyReport,
 } from "./bom/bom-service.ts";
-export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export type { IOwnedParts, OwnedPartsView, TextFile } from "./bom/owned-parts-service.ts";
+export type {
+  CatalogBom,
+  CatalogLine,
+  OwnedParts,
+  PlacementRegion,
+  UnknownOwnedPart,
+  UnmappedLine,
+} from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
 export type {

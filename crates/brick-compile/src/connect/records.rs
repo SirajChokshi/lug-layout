@@ -2,12 +2,16 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+use crate::lattice::AxisPose;
+
 use super::{
     joined_pieces, mating_faces, Extraction, Gender, MatingFace, Source, Status, Unreadable,
     WithheldFace,
 };
 
 const FREE_AXIS: i64 = -1;
+
+pub const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TierRecord {
@@ -59,9 +63,9 @@ pub struct PublishedFace {
     pub pieces: Vec<u16>,
 }
 
-type ExactSlot = (u8, [i32; 3], u8);
+pub(super) type ExactSlot = (u8, [i32; 3], u8);
 
-fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
+pub(super) fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
     Some((gender_code(face.gender), face.sixteenths?, face.direction?))
 }
 
@@ -119,7 +123,7 @@ pub(super) fn free_faces_of_partly_held(extraction: &Extraction) -> Vec<FreeFace
     free
 }
 
-fn tier(source: Source) -> u8 {
+pub(super) fn tier(source: Source) -> u8 {
     match source {
         Source::Shadow | Source::Patch => 1,
         Source::Primitive => 2,
@@ -127,7 +131,7 @@ fn tier(source: Source) -> u8 {
     }
 }
 
-fn standing(face: &MatingFace) -> (u8, bool, u8) {
+pub(super) fn standing(face: &MatingFace) -> (u8, bool, u8) {
     (
         tier(face.source),
         face.source != Source::Patch,
@@ -135,7 +139,7 @@ fn standing(face: &MatingFace) -> (u8, bool, u8) {
     )
 }
 
-fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
+pub(super) fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
     a.gender == b.gender
         && a.sections == b.sections
         && a.caps == b.caps
@@ -223,6 +227,16 @@ pub fn published_faces(extraction: &Extraction) -> Vec<PublishedFace> {
                 }
                 published
             })
+        })
+        .collect()
+}
+
+pub fn lattice_receptors(extraction: &Extraction) -> Vec<AxisPose> {
+    published_faces(extraction)
+        .iter()
+        .filter(|published| published.face.gender == Gender::Female)
+        .filter_map(|published| {
+            AxisPose::of_face(published.face.sixteenths?, published.face.direction?)
         })
         .collect()
 }

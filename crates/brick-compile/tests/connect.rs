@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
+use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::connect::{
-    mating_faces, Caps, Connector, ConnectorExtractor, EntranceClosure, FaceSection, Gender, Grid,
-    IncludeRefusal, InferredFeatures, Issue, MatingFace, MetaError, Openness, PartRecords,
-    PrimitiveConnectors, PrimitiveTable, Section, SectionShape, SectionVocabulary, ShadowPatches,
-    ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable, Withholding, CAP_FAR, CAP_ROOT,
-    FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER,
-    ROUND, SQUARE,
+    mating_faces, Caps, Connector, ConnectorExtractor, CoveredFloor, EntranceClosure, FaceSection,
+    Gender, Grid, IncludeRefusal, InferredFeatures, Issue, MatingFace, MetaError, Openness,
+    PartRecords, PrimitiveConnectors, PrimitiveTable, Section, SectionShape, SectionVocabulary,
+    ShadowPatches, ShadowSnaps, Shape, Source, Status, Uninferred, Unreadable, Withholding,
+    CAP_FAR, CAP_ROOT, FEMALE_FINGER, FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT,
+    FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
 };
 use brick_compile::ends::{cylinder_ends, read_end, End, Reading};
 use brick_compile::flatten::{Flattener, Lod, Triangle};
@@ -644,6 +645,63 @@ fn ring_radii(library: &MemoryLibrary, reference: &str) -> (f64, f64) {
         radii.iter().copied().fold(f64::INFINITY, f64::min),
         radii.iter().copied().fold(0.0, f64::max),
     )
+}
+
+fn table_stud_files() -> HashSet<String> {
+    let table: Value =
+        serde_json::from_slice(&fs::read(table_path()).expect("table file")).expect("table json");
+    stud_primitives_from_table(&table)
+        .expect("the table names stud primitives")
+        .into_iter()
+        .map(|name| format!("p/{name}"))
+        .collect()
+}
+
+fn male_studs(connectors: Vec<Connector>) -> Vec<(Vec<Section>, [f64; 12])> {
+    connectors
+        .into_iter()
+        .filter_map(|connector| match connector.shape {
+            Shape::Cylinder {
+                gender: Gender::Male,
+                sections,
+                ..
+            } => Some((sections, connector.placement.m)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn every_pinned_primitive_the_shadow_library_makes_a_table_stud_is_a_table_stud() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow-bundle");
+    let studs = table_stud_files();
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let stud_snaps: Vec<_> = studs
+        .iter()
+        .flat_map(|file| male_studs(snaps.snaps(file).connectors))
+        .collect();
+    assert!(!stud_snaps.is_empty());
+    let mut primitives: Vec<&String> = library
+        .0
+        .keys()
+        .filter(|path| path.starts_with("p/") && path.matches('/').count() == 1)
+        .collect();
+    primitives.sort();
+    let uncurated: Vec<&String> = primitives
+        .into_iter()
+        .filter(|path| !studs.contains(*path))
+        .filter(
+            |path| match male_studs(snaps.snaps(path).connectors).as_slice() {
+                [only] => stud_snaps.contains(only),
+                _ => false,
+            },
+        )
+        .collect();
+    assert!(
+        uncurated.is_empty(),
+        "the shadow library gives {uncurated:?} a table stud's snap, but the primitive table doesn't draw them as studs"
+    );
 }
 
 #[test]
@@ -1361,6 +1419,103 @@ fn inferred_connectors_fill_only_empty_slots_and_never_a_slot_a_clear_wiped() {
             ..
         }
     )));
+}
+
+#[test]
+fn an_inferred_face_a_verified_face_covers_exactly_is_dropped_and_reported() {
+    let mut plate = custom_plate(5, 1, &[]);
+    plate += "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s/unverified.dat\n";
+    let library = with_parts(
+        pinned("ldraw"),
+        &[
+            ("parts/custom.dat", plate),
+            ("parts/s/unverified.dat", "0 Unverified\n".to_string()),
+        ],
+    );
+    let shadow = with_parts(
+        pinned("ldcad-shadow"),
+        &[(
+            "parts/custom.dat",
+            "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=-40 10 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 8] [pos=-20 10 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 3] [pos=20 7 0]\n\
+             0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=S 6 6] [pos=40 10 0]\n"
+                .to_string(),
+        )],
+    );
+    let patches = memory(&[(
+        "parts/s/unverified.dat",
+        "0 !LDCAD SNAP_CYL [gender=F] [caps=one] [secs=R 6 6] [pos=0 10 0]\n",
+    )]);
+    let verified = HashSet::new();
+    let table =
+        PrimitiveTable::from_json(&json!({ "primitives": [] })).expect("an empty table parses");
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
+            files: &patches,
+            verified: &verified,
+        }),
+        PrimitiveConnectors::new(&library, table),
+        InferredFeatures::new(&library, shadow_vocabulary(&shadow), "p/stud.dat")
+            .expect("the pinned stud measures"),
+    );
+    let extraction = extractor.extract("parts/custom.dat");
+    let records = PartRecords::of(&extraction);
+    let receptors = |faces: &[MatingFace]| -> Vec<(Source, [f64; 3])> {
+        let mut found: Vec<(Source, [f64; 3])> = faces
+            .iter()
+            .filter(|f| f.gender == Gender::Female)
+            .map(|f| (f.source, f.origin))
+            .collect();
+        found.sort_by(|a, b| a.1.partial_cmp(&b.1).expect("finite"));
+        found
+    };
+    assert_eq!(
+        receptors(&records.connectors.faces),
+        vec![
+            (Source::Inferred, [0.0, -8.0, 0.0]),
+            (Source::Inferred, [20.0, -8.0, 0.0]),
+            (Source::Inferred, [40.0, -8.0, 0.0]),
+        ]
+    );
+    assert_eq!(
+        receptors(&records.connectivity.faces),
+        vec![
+            (Source::Shadow, [-40.0, -10.0, 0.0]),
+            (Source::Shadow, [-20.0, -10.0, 0.0]),
+            (Source::Patch, [0.0, -10.0, 0.0]),
+            (Source::Shadow, [20.0, -7.0, 0.0]),
+            (Source::Shadow, [40.0, -10.0, 0.0]),
+        ]
+    );
+    let mut covered: Vec<([f64; 3], [f64; 3], CoveredFloor)> = extraction
+        .issues
+        .iter()
+        .filter_map(|issue| match issue {
+            Issue::CoveredInference {
+                inferred,
+                cover,
+                floor,
+            } => Some((inferred.origin, cover.origin, *floor)),
+            _ => None,
+        })
+        .collect();
+    covered.sort_by(|a, b| a.0.partial_cmp(&b.0).expect("finite"));
+    assert_eq!(
+        covered,
+        vec![
+            (
+                [-40.0, -8.0, 0.0],
+                [-40.0, -10.0, 0.0],
+                CoveredFloor::SameFloor
+            ),
+            (
+                [-20.0, -8.0, 0.0],
+                [-20.0, -10.0, 0.0],
+                CoveredFloor::CoverOpenThere
+            ),
+        ]
+    );
 }
 
 #[test]

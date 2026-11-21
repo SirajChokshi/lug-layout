@@ -56,6 +56,21 @@ export function rotateZeta16(value: Zeta16, steps: number): Zeta16 {
   });
 }
 
+export function multiplyZeta16(a: Zeta16, b: Zeta16): Zeta16 {
+  const product = Array.from({ length: ZETA16_COEFFICIENT_COUNT }, () => 0n);
+  for (let i = 0; i < ZETA16_COEFFICIENT_COUNT; i++) {
+    for (let j = 0; j < ZETA16_COEFFICIENT_COUNT; j++) {
+      const term = coefficientAt(a, i) * coefficientAt(b, j);
+      const power = i + j;
+      if (power < ZETA16_COEFFICIENT_COUNT) product[power] = (product[power] ?? 0n) + term;
+      else
+        product[power - ZETA16_COEFFICIENT_COUNT] =
+          (product[power - ZETA16_COEFFICIENT_COUNT] ?? 0n) - term;
+    }
+  }
+  return zeta16(product);
+}
+
 export function conjugateZeta16(value: Zeta16): Zeta16 {
   return fromPowers((power) =>
     power === 0 ? coefficientAt(value, 0) : -coefficientAt(value, ZETA16_COEFFICIENT_COUNT - power),

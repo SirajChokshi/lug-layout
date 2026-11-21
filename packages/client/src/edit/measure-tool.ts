@@ -23,7 +23,7 @@ export function rulerText(ruler: Ruler): string {
   return `${lengthText(rulerLength(ruler))} (${studsText(dx)} × ${studsText(dz)})`;
 }
 
-function rulerGuides(ruler: Ruler, y: number, kind: GuideKind, out: GuideSegment[]): void {
+export function rulerGuides(ruler: Ruler, y: number, kind: GuideKind, out: GuideSegment[]): void {
   const { ax, az, bx, bz } = ruler;
   const length = rulerLength(ruler);
   if (length === 0) return;

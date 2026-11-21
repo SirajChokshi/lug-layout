@@ -22,12 +22,13 @@ import type {
 } from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
-  NotDrawnSection,
+import {
+  isCustomPartId,
+  type BundleColor,
+  type BundleIndex,
+  type BundleLod,
+  type BundleModelEntry,
+  type NotDrawnSection,
 } from "@brr/schema/bundle";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
@@ -40,6 +41,7 @@ import {
   type Placeable,
   type PlacementModel,
 } from "../edit/placeable.ts";
+import type { CustomPartCredit } from "../credits/credits-view.ts";
 import {
   diagnosedPart,
   type DiagnosedPart,
@@ -47,8 +49,10 @@ import {
 } from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
+import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
+import { customPartCredits } from "./custom-part-credits.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
 import { thumbnailUrls } from "./thumbnail-urls.ts";
 
@@ -76,6 +80,7 @@ export interface CatalogItemView {
   readonly draggable: boolean;
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
+  readonly customParts: number;
 }
 
 export interface SkippedCatalogModel {
@@ -148,7 +153,9 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   addImported(file: ImportedFile): Promise<ImportOutcome>;
   rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
+  rollingStock(): Promise<ReadonlyArray<PlayModel>>;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
+  customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
 }
@@ -254,6 +261,7 @@ function catalogItem(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -299,6 +307,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       draggable: true,
       toggleable: false,
       listedUnder: null,
+      customParts: 0,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -321,10 +330,13 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
+  private studBoxes: ReadonlyArray<Float64Array> = [];
+  private trainRefIds: ReadonlyArray<number> = [];
   private placeablesByRefId: Array<Placeable | null> = [];
   private readonly loads = new Map<number, Promise<Placeable>>();
   private readonly modelNames = new Map<Placeable, string>();
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
+  private readonly customPartsById = new Map<string, ReadonlyArray<CustomPartCredit>>();
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly compiledSources = new Map<string, CompiledSource>();
@@ -353,6 +365,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     ]);
     const palette = new MergedParts(shapes.map(undrawnPart));
     this.palette = palette;
+    this.studBoxes = studPrimitiveBoxes(studPrimitives);
     this.meshes = new PartMeshStream(this.loader, this.backend, palette, index.lod, (progress) => {
       this.progress = { ...progress, farModelMeshes: this.progress.farModelMeshes };
       this.notify();
@@ -367,6 +380,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       ldrawColors: ldrawColors(colorSource),
     });
     this.installedColors = colors.size;
+    void this.loader.prefetchPartConnectors(index.lod).catch(() => undefined);
     return {
       items: this.slots.map((slot) => slot.view),
       skipped: skipped.map(({ name, reason }) => ({ name, reason })),
@@ -417,6 +431,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         : [],
     );
     const skipped: SkippedModel[] = [];
+    const trains: number[] = [];
     for (const entry of index.models) {
       if (entry.lattice === null) {
         skipped.push({
@@ -426,9 +441,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
         });
         continue;
       }
+      if (entry.vehicles > 0) trains.push(slots.length);
       placeables.push(null);
       slots.push(lazySlot(entry, thumbnails));
     }
+    this.trainRefIds = trains;
     this.slots = slots;
     this.placeablesByRefId = placeables;
     return skipped;
@@ -522,7 +539,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     );
     if (model.vehicles.length > 0) {
       const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
-      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
+      this.playModels.set(
+        placeable,
+        playModel(identity, model, { parts }, palette, colors, this.studBoxes),
+      );
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -630,6 +650,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const placed = { ...result, sections: result.report.sections, bake };
     const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
     const added = await this.addPlaceable(file, model, result);
+    this.customPartsById.set(added.placeable.id, customPartCredits(result.report));
     return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
   }
 
@@ -652,12 +673,19 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
     if (model.vehicles.length > 0) {
       const identity = { name: file.name, label: file.name, sha256: file.sha256 };
-      this.playModels.set(placeable, playModel(identity, model, set, palette, this.colors()));
+      this.playModels.set(
+        placeable,
+        playModel(identity, model, set, palette, this.colors(), this.studBoxes),
+      );
     }
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
-    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const plain = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const slot = {
+      ...plain,
+      view: { ...plain.view, customParts: parts.partIds.filter(isCustomPartId).length },
+    };
     this.slots.push(slot);
     return { placeable, model: remapped, credit, slot };
   }
@@ -678,6 +706,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     result: ImportResult,
   ): CheckedStuds {
     const reports = { report: result.report, studio: result.studio ?? null };
+    this.customPartsById.set(pending.id, customPartCredits(result.report));
     const { bake } = result;
     if (!bake) {
       return { ...reports, kind: "failed", failure: result.report.bakeIssue ?? NO_LATTICE_REASON };
@@ -744,8 +773,17 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     return this.playModels.get(placeable) ?? null;
   }
 
+  async rollingStock(): Promise<ReadonlyArray<PlayModel>> {
+    await Promise.all(this.trainRefIds.map((refId) => this.load(refId)));
+    return [...this.playModels.values()];
+  }
+
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection> {
     return this.notDrawnSections.get(placeable) ?? [];
+  }
+
+  customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null {
+    return this.customPartsById.get(placeable.id) ?? null;
   }
 
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null {
