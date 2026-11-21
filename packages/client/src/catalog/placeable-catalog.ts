@@ -380,6 +380,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       ldrawColors: ldrawColors(colorSource),
     });
     this.installedColors = colors.size;
+    void this.loader.prefetchPartConnectors(index.lod).catch(() => undefined);
     return {
       items: this.slots.map((slot) => slot.view),
       skipped: skipped.map(({ name, reason }) => ({ name, reason })),
