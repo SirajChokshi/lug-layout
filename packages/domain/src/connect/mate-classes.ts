@@ -4,6 +4,7 @@ import type { SnapMating } from "./mating.ts";
 const GENDERS = 2;
 const RANGE_INTS = 2;
 const NO_RANGES = new Int32Array(0);
+const NO_CLASS_SHAPE = -1;
 
 export class MateClasses {
   private readonly shape: number[] = [];
@@ -21,6 +22,14 @@ export class MateClasses {
 
   get count(): number {
     return this.shape.length;
+  }
+
+  shapeOf(mateClass: number): number {
+    return this.shape[mateClass] ?? NO_CLASS_SHAPE;
+  }
+
+  genderOf(mateClass: number): number {
+    return this.gender[mateClass] ?? GENDER_MALE;
   }
 
   classOf(shape: number, gender: number): number {

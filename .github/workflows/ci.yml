@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "siraj/queue-tail-*"]
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -44,15 +44,7 @@ jobs:
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+        uses: ./.github/actions/ldraw-inputs
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm --filter @brr/asset-pipeline build
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
@@ -106,16 +98,7 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm lint
       - run: pnpm lint:boundaries
       - run: pnpm lint:rust
@@ -126,6 +109,7 @@ jobs:
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
       - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run typecheck build
       - run: cargo build --release -p brick-compile-cli --bin library-connectors
       - run: pnpm turbo run test --concurrency=1
@@ -158,16 +142,8 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -193,12 +169,19 @@ jobs:
           toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - id: catalog-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-connector-inputs-
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+      - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/catalog
+          key: ${{ steps.catalog-cache.outputs.cache-primary-key }}
 
   import-bundle-models:
     needs: bundle
@@ -224,16 +207,7 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - run: pnpm --filter @brr/import test:bundle-models
 
@@ -254,12 +228,19 @@ jobs:
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
       - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+      - id: catalog-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-bake-inputs-
       - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/catalog
+          key: ${{ steps.catalog-cache.outputs.cache-primary-key }}
       - name: Build the shipped WASM compiler
         run: cargo build --release --target wasm32-wasip1 -p brick-compile-wasm
       - name: Compile every pinned part in the shipped WASM compiler and compare bytes
@@ -282,9 +263,10 @@ jobs:
             .cache/ldraw
             .cache/ldraw-audit
             .cache/ldcad-shadow
+            .cache/ldcad-shadow-bundle
             .cache/omr
             .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+          key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
       - run: pnpm --filter @brr/asset-pipeline restore-ldraw
       - name: Drive the editor against the library bake just built
         run: pnpm turbo run e2e:library-bake
