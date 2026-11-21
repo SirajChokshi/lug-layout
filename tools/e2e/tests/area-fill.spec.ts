@@ -89,7 +89,9 @@ test("drags a fill of baseplates across a seated one, skips the refused tile, an
 
   expect(preview).toContain("2 to place, 1 refused and skipped");
   expect(filled).toContain("skipped 1 refused");
-  expect(filled).toContain("would hit Baseplate 32 x 32 in 3811 Baseplate 32 x 32, Green");
+  expect(filled).toContain(
+    "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32, Green",
+  );
   expect(placed).toEqual([320, 960, 1600]);
   expect(undone).toBe(1);
   expect((await editor.poses()).length).toBe(3);

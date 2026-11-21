@@ -7,7 +7,8 @@
     "./colors": "./src/colors.ts",
     "./connector-license": "./src/connector-license.ts",
     "./connector-records": "./src/connector-records.ts",
-    "./glb": "./src/glb.ts"
+    "./glb": "./src/glb.ts",
+    "./model-part-cells": "./src/model-part-cells.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",

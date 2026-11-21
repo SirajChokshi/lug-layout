@@ -728,6 +728,9 @@ fn put_cover(body: &mut Body, cover: &ModelCover) -> Result<(), String> {
         body.blob("columnTop", &plates(&cells.column_top)?);
         body.blob("footingInstance", &u32_indices(&cells.footing.instance)?);
         body.blob("footingCell", &u32_indices(&cells.footing.cell)?);
+        body.blob("partCell", &cells.part_cells.cell);
+        body.blob("partInstance", &cells.part_cells.instance);
+        body.blob("partBoxes", &cells.part_cells.boxes);
     }
     body.blob("visibleBits", &cover.visible_bits());
     Ok(())

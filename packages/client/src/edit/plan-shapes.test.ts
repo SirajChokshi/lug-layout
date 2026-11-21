@@ -26,6 +26,12 @@ function source(
       instance: Uint32Array.from(footing, ([instance]) => instance),
       cell: Uint32Array.from(footing, ([, i, j]) => j * width + i),
     },
+    parts: {
+      start: new Int32Array(tops.length + 1),
+      instance: new Uint32Array(0),
+      cellBox: new Int16Array(0),
+      heightBox: new Int32Array(0),
+    },
     footprintCells: tops.filter((top) => top !== _).length,
     flatCells: 0,
     heightPlates: 3,

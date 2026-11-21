@@ -1,12 +1,12 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
-import type { CellVolumes } from "@brr/domain";
+import type { CellParts, CellVolumes } from "@brr/domain";
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 import type { PlaceableCells } from "../edit/placeable.ts";
 
 type ColumnCells = Pick<
   PlaceableCells,
-  "cellX0" | "cellZ0" | "width" | "depth" | "columnBottom" | "columnTop"
+  "cellX0" | "cellZ0" | "width" | "depth" | "columnBottom" | "columnTop" | "parts"
 >;
 
 export interface PlaceableColumns {
@@ -37,6 +37,9 @@ export class FrozenVolumes implements CellVolumes {
   readonly #cellZ: Int32Array;
   readonly #bottomLdu: Int32Array;
   readonly #topLdu: Int32Array;
+  readonly #partsAt: Int32Array;
+  readonly turn = 0;
+  readonly sixteenthsUp = 0;
 
   private constructor(
     readonly count: number,
@@ -44,11 +47,14 @@ export class FrozenVolumes implements CellVolumes {
     cellZ: Int32Array,
     bottomLdu: Int32Array,
     topLdu: Int32Array,
+    partsAt: Int32Array,
+    readonly parts: CellParts,
   ) {
     this.#cellX = cellX;
     this.#cellZ = cellZ;
     this.#bottomLdu = bottomLdu;
     this.#topLdu = topLdu;
+    this.#partsAt = partsAt;
   }
 
   get cellX(): ArrayLike<number> {
@@ -67,6 +73,10 @@ export class FrozenVolumes implements CellVolumes {
     return this.#topLdu;
   }
 
+  get partsAt(): ArrayLike<number> {
+    return this.#partsAt;
+  }
+
   static ofPlaceable(placeable: PlaceableColumns): FrozenVolumes {
     const { cells, slabBoxes } = placeable;
     const slab = slabBottoms(cells, slabBoxes);
@@ -78,6 +88,7 @@ export class FrozenVolumes implements CellVolumes {
     const cellZ = new Int32Array(count);
     const bottomLdu = new Int32Array(count);
     const topLdu = new Int32Array(count);
+    const partsAt = new Int32Array(count);
     let n = 0;
     for (let j = 0; j < cells.depth; j++) {
       for (let i = 0; i < cells.width; i++) {
@@ -89,9 +100,10 @@ export class FrozenVolumes implements CellVolumes {
         cellZ[n] = cells.cellZ0 + j;
         bottomLdu[n] = bottom === 0 ? Math.floor(slab[c] ?? 0) : bottom;
         topLdu[n] = top * PLATE_LDU;
+        partsAt[n] = c;
         n++;
       }
     }
-    return new FrozenVolumes(count, cellX, cellZ, bottomLdu, topLdu);
+    return new FrozenVolumes(count, cellX, cellZ, bottomLdu, topLdu, partsAt, cells.parts);
   }
 }

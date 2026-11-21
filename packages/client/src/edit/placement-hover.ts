@@ -40,15 +40,14 @@ export interface HoverWait {
 
 export interface HoverRefusalHit {
   readonly placed: PlacedModelView;
-  readonly part: string | null;
-  readonly partLabel: string | null;
+  readonly part: string;
+  readonly partLabel: string;
   readonly cellX: number;
   readonly cellZ: number;
   readonly placedBottomLdu: number;
   readonly placedTopLdu: number;
   readonly heldBottomLdu: number;
   readonly heldTopLdu: number;
-  readonly byColumnOnly: boolean;
 }
 
 export type PlacementMode = "assist" | "precise";

@@ -1,5 +1,6 @@
 mod below;
 mod instance_tree;
+mod part_cells;
 mod ray;
 mod reservation;
 mod stud_field;
@@ -11,6 +12,10 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use self::below::{certifiable_faces, coordinates_bounded, BelowCertifier, BelowStud};
 use self::instance_tree::InstanceTree;
+use self::part_cells::{part_cells, PartCellGrid};
+pub use self::part_cells::{
+    PartCells, BOX_BOTTOM, BOX_TOP, BOX_X0, BOX_X1, BOX_Z0, BOX_Z1, PART_BOX_INTS,
+};
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::reservation::{axis_span, cell_span, CellColumns};
 pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
@@ -350,6 +355,7 @@ pub struct ModelCells {
     pub column_bottom: Vec<i32>,
     pub column_top: Vec<i32>,
     pub footing: InstanceFooting,
+    pub part_cells: PartCells,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -1207,6 +1213,16 @@ fn model_cells(
         })
         .unwrap_or_default();
 
+    let part_cells = part_cells(
+        instances,
+        solids,
+        &PartCellGrid {
+            origin,
+            width,
+            depth,
+            bottom_y,
+        },
+    );
     Ok(ModelCells {
         origin,
         width,
@@ -1217,6 +1233,7 @@ fn model_cells(
         column_bottom: bottom,
         column_top: top,
         footing,
+        part_cells,
     })
 }
 
@@ -1833,6 +1850,186 @@ mod tests {
             walls_inside_known_heights > 20,
             "{walls_inside_known_heights} tessellated pieces have walls strictly inside their columns' heights"
         );
+    }
+
+    struct ClippedExtent {
+        low: Vec3,
+        high: Vec3,
+        cut_low: [bool; 3],
+        cut_high: [bool; 3],
+    }
+
+    fn clipped_extent(
+        solid: &PartSolid,
+        matrix: &Affine,
+        cells: &ModelCells,
+        cell: usize,
+    ) -> Option<ClippedExtent> {
+        let edge_x = cells.origin[0] + STUD_LDU * (cell % cells.width) as f64;
+        let edge_z = cells.origin[1] + STUD_LDU * (cell / cells.width) as f64;
+        let clip_low = [
+            edge_x + WELD_EPSILON_LDU,
+            f64::NEG_INFINITY,
+            edge_z + WELD_EPSILON_LDU,
+        ];
+        let clip_high = [
+            edge_x + STUD_LDU - WELD_EPSILON_LDU,
+            f64::INFINITY,
+            edge_z + STUD_LDU - WELD_EPSILON_LDU,
+        ];
+        let mut low = [f64::INFINITY; 3];
+        let mut high = [f64::NEG_INFINITY; 3];
+        let mut cut_low = [false; 3];
+        let mut cut_high = [false; 3];
+        for points in &solid.triangles {
+            let triangle = points.map(|p| matrix.apply(p));
+            let inside = clip_to_box(&triangle, clip_low, clip_high);
+            if polygon_area(&inside) <= 0.0 {
+                continue;
+            }
+            for axis in 0..3 {
+                cut_low[axis] |= triangle.iter().any(|p| p[axis] < clip_low[axis]);
+                cut_high[axis] |= triangle.iter().any(|p| p[axis] > clip_high[axis]);
+            }
+            for point in &inside.0[..inside.1] {
+                for axis in 0..3 {
+                    low[axis] = low[axis].min(point[axis]);
+                    high[axis] = high[axis].max(point[axis]);
+                }
+            }
+        }
+        if low[0] > high[0] {
+            return None;
+        }
+        let local = |v: Vec3| [v[0] - edge_x, v[1] - cells.bottom_y, v[2] - edge_z];
+        Some(ClippedExtent {
+            low: local(low),
+            high: local(high),
+            cut_low,
+            cut_high,
+        })
+    }
+
+    #[test]
+    fn every_part_cell_box_bounds_its_part_in_its_cell_pulled_in_by_the_weld_only_at_its_own_faces()
+    {
+        let solids = [
+            solid([-20.0, 0.0, -20.0], [20.0, 24.0, 20.0], true, false, 4.0),
+            solid([-20.0, 0.0, -40.0], [20.0, 8.0, 40.0], true, true, 4.0),
+            solid([-10.0, 0.0, -10.0], [10.0, 24.0, 10.0], false, true, 12.0),
+            tessellated([-40.0, 0.0, -40.0], [40.0, 8.0, 40.0], 4),
+        ];
+        let sixteenth = 1.0 / f64::from(crate::identify::SIXTEENTHS_PER_LDU);
+        let float_slack = 1e-9;
+        let axes = [
+            (BOX_X0, BOX_X1, 0),
+            (BOX_Z0, BOX_Z1, 2),
+            (BOX_BOTTOM, BOX_TOP, 1),
+        ];
+        let mut draws = Draws(11);
+        let mut checked = 0;
+        for _ in 0..COLUMN_SCENES {
+            let parts: Vec<(usize, u32, Affine)> = (0..PIECES_PER_COLUMN_SCENE)
+                .map(|_| {
+                    let part = draws.below(solids.len() as u64) as usize;
+                    (part, OPAQUE, placed_piece(&mut draws))
+                })
+                .collect();
+            let cells = cover_of(&solids, &parts, &[], Some(([0, 0], 0.0)))
+                .cells
+                .expect("a phase gives cells");
+            let boxes = &cells.part_cells;
+            let keys: Vec<(u32, u32)> = boxes
+                .cell
+                .iter()
+                .copied()
+                .zip(boxes.instance.iter().copied())
+                .collect();
+            assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
+            let mut found = 0;
+            for (instance, (part, _, matrix)) in parts.iter().enumerate() {
+                for cell in 0..cells.width * cells.depth {
+                    let entry = keys.binary_search(&(cell as u32, instance as u32));
+                    let Some(extent) = clipped_extent(&solids[*part], matrix, &cells, cell) else {
+                        assert!(
+                            entry.is_err(),
+                            "instance {instance} has a box in empty cell {cell}"
+                        );
+                        continue;
+                    };
+                    let thick = axes.iter().all(|&(_, _, axis)| {
+                        let pulled = |cut: bool| if cut { 0.0 } else { WELD_EPSILON_LDU };
+                        extent.high[axis] - extent.low[axis]
+                            > pulled(extent.cut_low[axis])
+                                + pulled(extent.cut_high[axis])
+                                + 2.0 * sixteenth
+                    });
+                    let Ok(k) = entry else {
+                        assert!(!thick, "instance {instance} lost its box in cell {cell}");
+                        continue;
+                    };
+                    found += 1;
+                    let part_box = &boxes.boxes[k * PART_BOX_INTS..(k + 1) * PART_BOX_INTS];
+                    for &(low_at, high_at, axis) in &axes {
+                        let low = f64::from(part_box[low_at]) * sixteenth;
+                        let high = f64::from(part_box[high_at]) * sixteenth;
+                        let low_holds = if extent.cut_low[axis] {
+                            low == 0.0
+                        } else {
+                            let pulled = extent.low[axis] + WELD_EPSILON_LDU;
+                            low <= pulled + float_slack && low > pulled - sixteenth - float_slack
+                        };
+                        let high_holds = if extent.cut_high[axis] {
+                            high == STUD_LDU
+                        } else {
+                            let pulled = extent.high[axis] - WELD_EPSILON_LDU;
+                            high >= pulled - float_slack && high < pulled + sixteenth + float_slack
+                        };
+                        assert!(
+                            low_holds && high_holds,
+                            "instance {instance} cell {cell} axis {axis}: box {low}..{high} against the mesh {}..{}",
+                            extent.low[axis],
+                            extent.high[axis],
+                        );
+                    }
+                    checked += 1;
+                }
+            }
+            assert_eq!(found, boxes.len());
+        }
+        assert!(checked > 1000, "{checked} boxes checked");
+    }
+
+    #[test]
+    fn a_part_reaching_no_further_than_the_weld_into_a_cell_or_thinner_than_the_weld_in_it_has_no_box_there(
+    ) {
+        let has_box_in_next_cell = |min: Vec3, max: Vec3| {
+            let solids = [solid(min, max, true, true, max[1])];
+            let parts = [(0, OPAQUE, Affine::IDENTITY)];
+            let cells = cover_of(&solids, &parts, &[], Some((PHASE, 0.0)))
+                .cells
+                .expect("a phase gives cells");
+            let column = ((STUD_LDU + 1.0 - cells.origin[0]) / STUD_LDU).floor() as usize;
+            let row = ((HALF_STUD_LDU - cells.origin[1]) / STUD_LDU).floor() as usize;
+            assert!(column < cells.width && row < cells.depth);
+            cells
+                .part_cells
+                .cell
+                .contains(&((row * cells.width + column) as u32))
+        };
+        let reaching =
+            |into: f64| has_box_in_next_cell([0.0, 0.0, 0.0], [STUD_LDU + into, 24.0, STUD_LDU]);
+        let slab = |thick: f64| {
+            has_box_in_next_cell(
+                [STUD_LDU + 8.0, 0.0, 0.0],
+                [STUD_LDU + 8.0 + thick, 24.0, STUD_LDU],
+            )
+        };
+        assert_eq!(
+            [reaching(0.03), reaching(0.08), reaching(0.2)],
+            [false, true, true]
+        );
+        assert_eq!([slab(0.03), slab(0.2)], [false, true]);
     }
 
     #[test]
