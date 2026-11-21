@@ -173,6 +173,7 @@ describe("play commands", () => {
       "draw-road",
       "measure",
       "draw-tables",
+      "cycle-fill-grid",
       "rotate",
       "rotate-back",
       "flip-switch",

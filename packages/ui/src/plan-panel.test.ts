@@ -31,6 +31,8 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       camera: container.get(EDITOR_CAMERA),
       editor: container.get(EDITOR),
       drawing: false,
+      held: null,
+      fillGridStuds: 8,
       plans,
     }),
   );

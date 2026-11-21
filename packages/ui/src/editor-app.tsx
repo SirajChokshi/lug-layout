@@ -234,6 +234,8 @@ export function EditorApp({
           camera={camera}
           editor={editor}
           drawing={snapshot.mode === "table"}
+          held={heldItem(snapshot)}
+          fillGridStuds={snapshot.fillGridStuds}
           plans={plans}
         />
         {snapshot.status === "ready" && (
