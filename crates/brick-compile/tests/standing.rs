@@ -5,9 +5,11 @@ use std::path::Path;
 use brick_compile::bake::{LatticeShape, ModelBaker};
 use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::connect::{
-    lattice_receptors, verified_patch_paths, ConnectorExtractor, InferredFeatures,
-    PrimitiveConnectors, PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps,
+    lattice_receptors, verified_patch_paths, ConnectorExtractor, FaceSection, InferredFeatures,
+    PrimitiveConnectors, PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, SnapShape,
+    CAP_FAR, ROUND,
 };
+use brick_compile::lattice::LatticeReceptor;
 use brick_compile::model::bake_model;
 use brick_compile::Library;
 
@@ -97,6 +99,14 @@ impl Bench {
     }
 
     fn lattice(&self, text: &str) -> Option<([u32; 2], f64)> {
+        self.lattice_with(text, |receptors| receptors)
+    }
+
+    fn lattice_with(
+        &self,
+        text: &str,
+        receptors_of: impl Fn(Vec<LatticeReceptor>) -> Vec<LatticeReceptor>,
+    ) -> Option<([u32; 2], f64)> {
         let mut extractor = ConnectorExtractor::new(
             ShadowSnaps::new(&self.library, &self.shadow).patched(ShadowPatches {
                 files: &self.patches,
@@ -127,7 +137,7 @@ impl Bench {
                     .unwrap_or_else(|e| panic!("{} compiles: {e}", instance.part))
                     .path
                     .clone();
-                let receptors = lattice_receptors(&extractor.extract(&path));
+                let receptors = receptors_of(lattice_receptors(&extractor.extract(&path)));
                 baker
                     .lattice_shape(&instance.part)
                     .expect("shape")
@@ -234,4 +244,60 @@ fn a_jumper_framed_by_its_receptors_keeps_its_stud_layer_as_its_height_and_a_til
     let bench = Bench::new();
     assert_eq!(bench.lattice(&one("3794b.dat")), Some(([10, 0], 0.0)));
     assert_eq!(bench.lattice(&one("3069b.dat")), Some(([10, 0], -8.0)));
+}
+
+const JUMPER_BENCH_BESIDE_A_CURVED_WEDGE: &str =
+    "0 Custom bench of two jumpers under a tile, beside a 4 x 4 curved wedge
+1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat
+1 1 90 -8 0 1 0 0 0 1 0 0 0 1 45677.dat
+";
+
+const JUMPER_BENCH_BESIDE_A_NOTCHED_CORNER: &str =
+    "0 Custom bench of two jumpers under a tile, beside a corner round brick with a stud notch
+1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat
+1 1 100 -16 0 1 0 0 0 1 0 0 0 1 3063b.dat
+";
+
+#[test]
+fn a_receptor_that_takes_the_stud_seats_it_by_its_connector_data_where_the_drawn_cavity_is_tighter_than_the_stud(
+) {
+    let bench = Bench::new();
+    let phase = |text: &str| bench.lattice(text).map(|(phase, _)| phase);
+
+    assert_eq!(bench.lattice(&one("91501.dat")), Some(([0, 0], -24.0)));
+    assert_eq!(phase(JUMPER_BENCH_BESIDE_A_CURVED_WEDGE), Some([0, 0]));
+    assert_eq!(phase(&one("27925.dat")), None);
+    assert_eq!(phase(JUMPER_BENCH_BESIDE_A_NOTCHED_CORNER), Some([10, 0]));
+}
+
+#[test]
+fn receptors_too_narrow_for_the_stud_neither_frame_a_part_nor_seat_it() {
+    let bench = Bench::new();
+    let bar_holder = SnapShape::new(
+        CAP_FAR,
+        false,
+        None,
+        &[FaceSection {
+            code: ROUND,
+            size: 4.0,
+            length: 4.0,
+        }],
+    )
+    .expect("a bar holder reads");
+    let narrowed = |receptors: Vec<LatticeReceptor>| {
+        receptors
+            .into_iter()
+            .map(|receptor| LatticeReceptor {
+                shape: bar_holder.clone(),
+                ..receptor
+            })
+            .collect()
+    };
+
+    assert_eq!(bench.lattice(&one("3069b.dat")), Some(([10, 0], -8.0)));
+    assert_eq!(bench.lattice_with(&one("3069b.dat"), narrowed), None);
 }
