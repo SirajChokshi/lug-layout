@@ -1,5 +1,6 @@
 import type {
   ConnectorIndexPaths,
+  ConnectorLoad,
   PackageAttribution,
   PartConnectors,
 } from "./connector-records.ts";
@@ -12,6 +13,7 @@ import {
   type BundleSource,
   type CompilerVehicles,
   type LibraryBakeIndexRef,
+  type LibraryConnectorsIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
@@ -20,6 +22,7 @@ import {
   type PartTechnic,
   type ProducedColors,
   type PrimitiveConnectorTable,
+  type RollingDiagnosticsFile,
   type SectionVocabulary,
   type TrackEnd,
   type Vec3,
@@ -191,6 +194,7 @@ export interface ImportContext {
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
   readonly libraryBake: LibraryBakeIndexRef | null;
+  readonly libraryConnectors: LibraryConnectorsIndexRef | null;
 }
 
 export interface CompiledPartGlb {
@@ -237,6 +241,7 @@ export interface IPartBundleLoader {
   loadModel(lod: BundleLod, name: string): Promise<ModelBundle>;
   importContext(lod: BundleLod): Promise<ImportContext>;
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad>;
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
   loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(
@@ -246,6 +251,7 @@ export interface IPartBundleLoader {
   ): Promise<PartBundle>;
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
 }
 
 export interface IAssetFetcher {

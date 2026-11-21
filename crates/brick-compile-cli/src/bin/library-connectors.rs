@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::connect::{
-    is_connectivity, mating_faces, record_json, source_code, ConnectorExtractor, Extraction,
+    is_connectivity, published_faces, record_json, source_code, ConnectorExtractor, Extraction,
     InferredFeatures, PartRecords, PrimitiveConnectors, PrimitiveTable, ShadowPatches, ShadowSnaps,
     TierRecord,
 };
@@ -108,23 +108,17 @@ fn write_record(
 fn faces_of_several_pieces(extraction: &Extraction) -> Vec<Value> {
     let mut next = [0usize; 2];
     let mut found = Vec::new();
-    for connector in &extraction.connectors {
-        let package = usize::from(!is_connectivity(connector.source));
-        let Ok(faces) = mating_faces(connector) else {
-            continue;
-        };
-        for _ in faces {
-            if connector.pieces.len() > 1 {
-                let name = PACKAGES[package];
-                found.push(json!({
-                    "package": name,
-                    "face": next[package],
-                    "source": source_code(connector.source),
-                    "pieces": connector.pieces,
-                }));
-            }
-            next[package] += 1;
+    for published in published_faces(extraction) {
+        let package = usize::from(!is_connectivity(published.face.source));
+        if published.pieces.len() > 1 {
+            found.push(json!({
+                "package": PACKAGES[package],
+                "face": next[package],
+                "source": source_code(published.face.source),
+                "pieces": published.pieces,
+            }));
         }
+        next[package] += 1;
     }
     found
 }

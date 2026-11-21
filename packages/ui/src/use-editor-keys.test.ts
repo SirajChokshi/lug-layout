@@ -1,8 +1,10 @@
 import {
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   mainThreadModules,
-  PALETTE_DRAG,
+  PALETTE,
+  PANEL_LAYOUT,
   TRAIN_PLAY,
   type EditorOptions,
 } from "@brr/client";
@@ -13,7 +15,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ShellCommandId } from "@brr/client";
 import { EditorCanvas } from "./editor-canvas.tsx";
-import { RoadJoins } from "./editor-panels.tsx";
+import { EditorHud } from "./editor-panels.tsx";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { controlTakesKey, useEditorKeys } from "./use-editor-keys.ts";
 
@@ -39,7 +41,9 @@ function services() {
     editor: container.get(EDITOR),
     camera: container.get(EDITOR_CAMERA),
     play: container.get(TRAIN_PLAY),
-    paletteDrag: container.get(PALETTE_DRAG),
+    hotbar: container.get(HOTBAR),
+    paletteDrag: container.get(PALETTE).drag,
+    panels: container.get(PANEL_LAYOUT),
   };
 }
 
@@ -64,16 +68,17 @@ function element(html: string): Element {
   return first;
 }
 
-function RoadJoinsWithKeys({
+function StatsWithKeys({
   onShellCommand = () => {},
 }: {
   readonly onShellCommand?: (id: ShellCommandId) => void;
 }) {
-  const { editor, camera, play, paletteDrag } = services();
+  const { editor, camera, play, hotbar, paletteDrag, panels } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
     useEditorKeys(editor, camera, {
       play,
+      hotbar,
       onShellCommand,
       overlayOpen: false,
       closeOverlay: () => {},
@@ -82,16 +87,18 @@ function RoadJoinsWithKeys({
       "div",
       null,
       createElement(EditorCanvas, { editor, camera, play, paletteDrag, options: CANVAS_OPTIONS }),
-      createElement(RoadJoins, { editor, snapshot }),
+      createElement(EditorHud, { editor, snapshot, panels }),
     );
   }
   return createElement(Panel);
 }
 
 describe("editor keys and focused controls", () => {
-  it("lets Space toggle the Road joins checkboxes while the editor canvas and keys are mounted", async () => {
+  it("lets Space toggle the Road joins checkboxes in the stats drawer while the editor canvas and keys are mounted", async () => {
     const user = userEvent.setup();
-    render(createElement(RoadJoinsWithKeys));
+    render(createElement(StatsWithKeys));
+    await user.click(screen.getByText("Stats"));
+    await user.click(screen.getByText("Road joins"));
     for (const name of [/show join markers/iu, /snap road pieces/iu]) {
       const box = screen.getByRole<HTMLInputElement>("checkbox", { name });
       const before = box.checked;
@@ -103,7 +110,7 @@ describe("editor keys and focused controls", () => {
 
   it("opens a dialog once for a held ? or Ctrl+K, however many times the key repeats", () => {
     const opened: ShellCommandId[] = [];
-    render(createElement(RoadJoinsWithKeys, { onShellCommand: (id) => opened.push(id) }));
+    render(createElement(StatsWithKeys, { onShellCommand: (id) => opened.push(id) }));
     hold("?", { shiftKey: true }, 5);
     hold("k", { ctrlKey: true }, 4);
     expect(opened).toEqual(["show-shortcuts", "open-palette"]);

@@ -1,7 +1,9 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
+import type { UnreadBandDiagnostic } from "@brr/schema/bundle";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
+import type { LibraryConnectorsIndexRef } from "@brr/schema/bundle";
 import type { PinnedRecords } from "./library-bake-store.ts";
-import type { ImportResult, ImportJob, ModelBake } from "./model-import.ts";
+import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
 
 export interface LdrawTextInput {
   readonly kind: "ldraw";
@@ -22,20 +24,42 @@ export interface LibraryBakeSource {
   readonly pin: PinnedRecords;
 }
 
+export interface LibraryConnectorsSource {
+  readonly url: string;
+  readonly pin: LibraryConnectorsIndexRef;
+}
+
 export interface ImportWorkerRequest {
   readonly kind: "import";
+  readonly ticket: number;
   readonly compilerUrl: string;
   readonly bundleBaseUrl: string;
   readonly connectorIndexes: ConnectorIndexPaths;
   readonly connectorVocabulary: string;
   readonly ldrawLibraryUrl?: string;
   readonly libraryBake?: LibraryBakeSource;
+  readonly libraryConnectors?: LibraryConnectorsSource;
   readonly input: ImportInput;
 }
 
+export interface RollingDiagnosticsRequest {
+  readonly kind: "rollingDiagnostics";
+  readonly libraryBake: LibraryBakeSource;
+  readonly partIds: ReadonlyArray<string>;
+}
+
+export type RollingDiagnosticsRows = Readonly<Record<string, ReadonlyArray<UnreadBandDiagnostic>>>;
+
 export type ImportWorkerResponse =
   | { readonly kind: "imported"; readonly model: ImportResult }
+  | { readonly kind: "rollingDiagnostics"; readonly rows: RollingDiagnosticsRows }
   | { readonly kind: "failed"; readonly message: string };
+
+export interface ImportWorkerPlaced {
+  readonly kind: "placed";
+  readonly ticket: number;
+  readonly placed: PlacedImport;
+}
 
 export function bakeTransferables(bake: ModelBake): Transferable[] {
   return [

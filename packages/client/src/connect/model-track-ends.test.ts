@@ -73,7 +73,9 @@ let bundle: PartBundle;
 function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): TrackDrawing {
   const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   for (const [partId, placement] of chain(start, partIds)) {
-    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement);
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement),
+    );
   }
   return drawing;
 }
@@ -81,7 +83,11 @@ function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): Tr
 function asModel(drawing: TrackDrawing): TrackInstances {
   const partIndex: number[] = [];
   const matrices: number[] = [];
-  for (const key of new Set(drawing.planFootprints().map((f) => f.key.chunkKey))) {
+  const keys = Array.from(
+    { length: drawing.pieceCount },
+    (_, p) => drawing.footprintAt(p).key.chunkKey,
+  );
+  for (const key of new Set(keys)) {
     const chunk = drawing.chunkInstances(key);
     if (!chunk) continue;
     for (let i = 0; i < chunk.count; i++) {
@@ -429,7 +435,9 @@ describe("modelTrackEnds", () => {
     );
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
-    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd));
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd)),
+    );
     expect(drawing.joinedPairs()).toBe(internalJoins);
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });

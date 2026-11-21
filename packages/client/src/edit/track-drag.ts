@@ -25,8 +25,8 @@ import {
 } from "@brr/math";
 import { OBSTACLE_RECT_FLOATS, type TrackObstacles } from "./track-obstacles.ts";
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit";
+export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
+export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
 
 export type TrackBlockView =
   | { readonly kind: "track" }
@@ -52,7 +52,7 @@ export interface DragTargetView {
 export interface DragEnds {
   near(xLdu: number, zLdu: number, except: number | null): number | null;
   pose(end: number): Pose16;
-  owner(end: number): number;
+  placement(end: number): number | undefined;
 }
 
 export interface DragPress {
@@ -71,11 +71,6 @@ export interface DragRoute {
   readonly blocked: TrackBlockView | null;
 }
 
-export interface TrackPieceOutline {
-  readonly outline: Float64Array;
-  readonly placement: Pose16;
-}
-
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
@@ -87,12 +82,12 @@ export class DragField {
   private readonly rectBase: number;
 
   constructor(
-    pieces: ReadonlyArray<TrackPieceOutline | null>,
+    outlines: ReadonlyArray<Float64Array | null>,
     private readonly obstacles: TrackObstacles,
   ) {
-    this.pieceIds = new Int32Array(pieces.length).fill(NO_OBSTACLE);
-    pieces.forEach((piece, placement) => {
-      if (piece) this.pieceIds[placement] = this.clearance.addPiece(piece.outline, piece.placement);
+    this.pieceIds = new Int32Array(outlines.length).fill(NO_OBSTACLE);
+    outlines.forEach((outline, placement) => {
+      if (outline) this.pieceIds[placement] = this.clearance.add(outline);
     });
     this.rectBase = this.clearance.count;
     const { rects } = obstacles;
@@ -126,9 +121,11 @@ export class DragField {
 
 export class TrackDrag {
   private readonly stroke: StrokePath;
-  private readonly site: StrokeSite;
   private readonly wholeClosures = new Map<string, ClosureResult>();
   private readonly at = new Float64Array(2);
+  private field: DragField;
+  private site: StrokeSite;
+  private seatsPending: boolean;
   private start: Pose16 | null;
   private moves: ReadonlyArray<TrackMove> = [];
   private blockedMove: TrackMove | null = null;
@@ -141,18 +138,34 @@ export class TrackDrag {
   constructor(
     private readonly kit: DrawingKit,
     private readonly router: StrokeRouter,
-    private readonly field: DragField,
     private readonly ends: DragEnds,
     private readonly now: () => number,
     private readonly press: DragPress,
     readonly fromEnd: number | null,
+    field: DragField,
+    seatsPending: boolean,
   ) {
     this.stroke = new StrokePath(press.hitX, press.hitZ, STROKE_SPACING_LDU);
     this.start = fromEnd === null ? null : ends.pose(fromEnd);
-    this.site = {
-      clearance: field.clearance,
-      startOwner: fromEnd === null ? NO_OBSTACLE : ends.owner(fromEnd),
-    };
+    this.field = field;
+    this.seatsPending = seatsPending;
+    this.site = this.siteOf(field);
+  }
+
+  reseat(field: DragField, seatsPending: boolean): void {
+    this.field = field;
+    this.seatsPending = seatsPending;
+    this.site = this.siteOf(field);
+    this.wholeClosures.clear();
+  }
+
+  private siteOf(field: DragField): StrokeSite {
+    const start = this.fromEnd === null ? undefined : this.ends.placement(this.fromEnd);
+    return { clearance: field.clearance, startOwner: field.pieceOwner(start) };
+  }
+
+  private owner(end: number): number {
+    return this.field.pieceOwner(this.ends.placement(end));
   }
 
   extend(hitX: number, hitZ: number): void {
@@ -162,9 +175,17 @@ export class TrackDrag {
     if (!start) return;
     const target = this.ends.near(hitX, hitZ, this.fromEnd);
     const goal: StrokeGoal | null =
-      target === null ? null : { pose: this.ends.pose(target), owner: this.ends.owner(target) };
+      target === null ? null : { pose: this.ends.pose(target), owner: this.owner(target) };
     this.target = target;
     this.goal = goal?.pose ?? null;
+    if (goal && this.seatsPending) {
+      this.closure = "pending";
+      this.moves = [];
+      this.blockedMove = null;
+      this.blocker = NO_OBSTACLE;
+      this.missStuds = 0;
+      return;
+    }
     const followed = this.router.follow(start, this.stroke, this.site, goal);
     if (goal) {
       const join = this.router.join(start, this.stroke, followed, goal, this.site, (site) =>

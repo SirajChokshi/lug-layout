@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONTENT_HASH_HEX_DIGITS } from "./publish.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 
 const PIPELINE_DIRECTORY = "tools/asset-pipeline";
 const PIPELINE_BUILD_TASK = "@brr/asset-pipeline#build";

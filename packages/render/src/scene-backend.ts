@@ -140,6 +140,11 @@ export interface TrackEndMarker {
 export const RAY_FLOATS = 6;
 export const CAMERA_FOV_DEGREES = 40;
 
+export interface GroundSettings {
+  readonly topYLdu: number;
+  readonly grid: boolean;
+}
+
 export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
@@ -174,6 +179,7 @@ export interface ISceneBackend {
   setSelectionBox(box: WorldBox | null): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;
+  setGround(ground: GroundSettings | null): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;

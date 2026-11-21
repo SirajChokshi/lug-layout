@@ -34,15 +34,75 @@ export {
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
+  NO_TRACK_CHANGE,
   type AppliedChange,
+  type AppliedConsistChange,
   type AppliedEdit,
+  type ConsistRef,
   type EditKind,
+  type EditSummary,
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
+  type TrackChange,
+  type TrackPieceAt,
 } from "./edit-history.ts";
+export {
+  ConsistHandle,
+  ConsistLayout,
+  consistPoseProblem,
+  sameCarrier,
+  type CarriedPieceRef,
+  type CarrierPose,
+  type ConsistAnchor,
+  type ConsistPose,
+  type LaidPieceRef,
+  type TrackPieceRef,
+} from "./rail/consist-layout.ts";
+export {
+  RAIL_SPOT_FLOATS,
+  RailNetwork,
+  RailRun,
+  SPOT_DISTANCE,
+  SPOT_EDGE,
+  SPOT_OFFSET,
+} from "./rail/rail-network.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
+export {
+  pointOnSegment,
+  placeSegments,
+  reversedSegments,
+  segmentsEnd,
+  wrapAngle,
+  type PlacedSegment,
+  type PlanPose,
+  type SimPathSegment,
+} from "./rail/route-geometry.ts";
+export {
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  trackPoint,
+  type BuiltSimTrack,
+  type SimRoute,
+  type SimTrack,
+  type SimTrackInput,
+} from "./rail/sim-track.ts";
+export { simTrackFromGraph, type TrackGraphTopology } from "./rail/graph-track.ts";
+export {
+  GEOMETRY_FIELDS,
+  PIVOT_POINT_FLOATS,
+  RunningGearPoser,
+  VEHICLE_POSE_FLOATS,
+  packGeometry,
+  packSpecOnlyGeometry,
+  type CouplerGeometry,
+  type CouplerMount,
+  type GuideGeometry,
+  type PathSampler,
+  type VehicleGeometry,
+} from "./rail/running-gear.ts";
 export {
   TrackLayout,
   type TrackEndRef,
@@ -83,18 +143,49 @@ export {
   type StudRect,
 } from "./plan/plan-region.ts";
 export {
+  BOX_MAX_X,
+  BOX_MAX_Y,
+  BOX_MAX_Z,
+  BOX_MIN_X,
+  BOX_MIN_Y,
+  BOX_MIN_Z,
+  BOX_STRIDE,
   checkPlan,
+  CoverageScratch,
+  coverageContext,
   placementInRegion,
+  placementInside,
+  placementIssueCount,
+  placementIssues,
+  regionContext,
   regionOf,
   uncheckedPlan,
+  uncoveredPieces,
+  UNDECIDED,
+  type CoverageContext,
   type IssueSeverity,
   type PlacementKey,
   type PlanCheck,
   type PlanIssue,
   type PlanPlacement,
+  type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
 } from "./plan/plan-rules.ts";
+export {
+  BOX_PLAN_UNREADABLE,
+  BOX_READ,
+  BOX_Y_UNREADABLE,
+  LABEL_AT,
+  LABEL_NUMBERED,
+  MODEL_SEGMENT,
+  NO_ROW,
+  PlanRows,
+  RowList,
+  TRACK_SEGMENT,
+} from "./plan/plan-rows.ts";
+export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
+export { PlanEvaluation } from "./plan/plan-evaluation.ts";
 export {
   drawingKit,
   MAX_TURN_CURVES,
@@ -135,6 +226,8 @@ export {
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  outlineContains,
+  placedOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";
@@ -156,6 +249,7 @@ export {
 export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
 export {
   countPlacements,
+  regionHolds,
   type PlacementContents,
   type PlacementRegion,
 } from "./bom/count-placements.ts";
@@ -189,6 +283,7 @@ export {
   AXIS_POS_Y,
   AXIS_POS_Z,
   ConnectorTable,
+  connectorOriginLdu,
   GENDER_FEMALE,
   GENDER_MALE,
   SOURCE_INFERRED,
@@ -201,6 +296,7 @@ export {
   STATUS_UNVERIFIED,
   STATUS_VERIFIED,
 } from "./connect/connector-table.ts";
+export type { ConnectorColumns } from "./connect/connector-columns.ts";
 export {
   CAP_FAR,
   CAP_ROOT,
