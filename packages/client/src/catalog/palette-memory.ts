@@ -109,7 +109,8 @@ export class PaletteMemoryService implements IPaletteMemory {
   private notice(sample: LatencySample | null): void {
     if (sample === null || sample === this.lastSeen) return;
     this.lastSeen = sample;
-    if (sample.step !== "do" || (sample.action !== "place" && sample.action !== "track")) return;
+    if (sample.step !== "do" || (sample.action !== "place" && sample.action !== "lay-track"))
+      return;
     this.set(withRecent(this.memory, sample.item));
   }
 

@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  attachRollingDiagnostics,
   attachSectionVocabulary,
   MANIFEST_FILE,
   publishBundle,
+  ROLLING_DIAGNOSTICS_FILE,
   SECTION_VOCABULARY_FILE,
 } from "./publish.ts";
 import { CA_LICENSE_LINES } from "./verify/license-audit.ts";
@@ -229,6 +231,7 @@ interface CompiledBundle {
   readonly connectorIndex: ReturnType<typeof connectorIndex>;
   readonly connectorRecord: ReturnType<typeof connectorRecord>;
   readonly files: Map<string, Buffer>;
+  readonly diagnostics: { stepsPerLdu: number; parts: Record<string, unknown[]> };
   vocabulary: ReturnType<typeof sectionVocabulary> | null;
   readonly afterAttach: Array<(directory: string) => Promise<void>>;
 }
@@ -254,6 +257,7 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     connectorIndex: connectorIndex("connectors", [PART_LICENSE], []),
     connectorRecord: connectorRecord(PART_LICENSE, CONNECTOR_SOURCE.primitive),
     files: new Map<string, Buffer>(),
+    diagnostics: { stepsPerLdu: 16, parts: {} },
     vocabulary: null,
     afterAttach: [],
   };
@@ -273,6 +277,7 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
   await writeFile(join(directory, "crosswalk.json"), JSON.stringify(bundle.crosswalk));
   await writeFile(join(directory, "parts.json"), JSON.stringify({ parts: bundle.parts }));
   await writeFile(join(directory, "credits.json"), JSON.stringify({ credits: [] }));
+  await writeFile(join(directory, ROLLING_DIAGNOSTICS_FILE), JSON.stringify(bundle.diagnostics));
   for (const [name, bytes] of bundle.files) {
     await mkdir(dirname(join(directory, name)), { recursive: true });
     await writeFile(join(directory, name), bytes);
@@ -284,6 +289,7 @@ async function publish(edit: (bundle: CompiledBundle) => void) {
     await writeFile(vocabularyPath, `${JSON.stringify(bundle.vocabulary, null, 2)}\n`);
     await attachSectionVocabulary(directory, vocabularyPath);
   }
+  await attachRollingDiagnostics(directory);
   for (const tamper of bundle.afterAttach) await tamper(directory);
   return { directory, published: await publishBundle(directory, inputs) };
 }
@@ -315,6 +321,46 @@ function withThumbnail(bytes: Buffer) {
   };
 }
 
+const WHEEL = "ldraw:3941";
+const WHEEL_RAW = {
+  from: { numerator: "-31", denominator: "2" },
+  to: { numerator: "-13", denominator: "1" },
+};
+const WHEEL_ROWS = [
+  { reason: "arcs", axis: 1, at: [0, 0], from: -248, to: -208, raw: WHEEL_RAW },
+  { reason: "unoriented", raw: WHEEL_RAW },
+];
+
+function withRollingWheel() {
+  return (bundle: CompiledBundle) => {
+    const part = {
+      id: WHEEL,
+      path: "parts/3941.dat",
+      role: "detail",
+      file: "3941.glb",
+      title: "Brick 2 x 2 Round",
+      ldrawCategory: "Brick",
+      keywords: [],
+      author: "James Jessiman",
+      license: null,
+      bounds: origin,
+      colors: [16],
+      studs: 0,
+      triangles: 0,
+      vertices: 0,
+    };
+    const gltf = studGltf();
+    const rolling = {
+      stepsPerLdu: 16,
+      surfaces: [],
+      unread: [{ reason: "arcs", axis: 1 }, { reason: "unoriented" }],
+    };
+    bundle.parts.push(part);
+    bundle.files.set(part.file, glb({ ...gltf, extras: { ...gltf.extras, rolling } }));
+    bundle.diagnostics.parts[WHEEL] = WHEEL_ROWS;
+  };
+}
+
 const LIBRARY_PARTS = "library-parts.json";
 
 function withLibraryParts(colors: ReadonlyArray<number>) {
@@ -340,7 +386,7 @@ afterEach(async () => {
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 9 } });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 10 } });
   });
 
   it("points each connector index at the content-addressed record of its part", async () => {
@@ -441,9 +487,80 @@ describe("publishBundle", () => {
     expect(table.parts[0].file).toBe(addressed);
   });
 
+  it("publishes every served unread band's whole row in a content-addressed rolling diagnostics file the manifest names with its SHA-256", async () => {
+    const { directory } = await publish(withRollingWheel());
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const bytes = await readFile(join(directory, manifest.rollingDiagnostics.file));
+    expect(manifest.rollingDiagnostics.file).toMatch(/^rolling-diagnostics\.[0-9a-f]{16}\.json$/u);
+    expect(manifest.rollingDiagnostics.sha256).toBe(
+      createHash("sha256").update(bytes).digest("hex"),
+    );
+    expect(JSON.parse(bytes.toString("utf8")).parts[WHEEL]).toEqual(WHEEL_ROWS);
+  });
+
+  it.each([
+    [
+      "rows in another order than the served bands",
+      "ldraw:3941's 2 rows don't match its 2 served unread bands index by index",
+      (bundle: CompiledBundle) => {
+        bundle.diagnostics.parts[WHEEL] = WHEEL_ROWS.toReversed();
+      },
+    ],
+    [
+      "a row fewer than the served bands",
+      "ldraw:3941's 1 rows don't match its 2 served unread bands index by index",
+      (bundle: CompiledBundle) => {
+        bundle.diagnostics.parts[WHEEL] = WHEEL_ROWS.slice(1);
+      },
+    ],
+    [
+      "served bands with no rows",
+      "ldraw:3941 serves 2 unread bands but has no rows",
+      (bundle: CompiledBundle) => {
+        delete bundle.diagnostics.parts[WHEEL];
+      },
+    ],
+    [
+      "rows for a part the bundle doesn't have",
+      "ldraw:3002 has rows but the bundle has no such part",
+      (bundle: CompiledBundle) => {
+        bundle.diagnostics.parts["ldraw:3002"] = WHEEL_ROWS;
+      },
+    ],
+    [
+      "a diagnostics file that differs from the SHA-256 the manifest names",
+      "but the manifest references",
+      (bundle: CompiledBundle) => {
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, ROLLING_DIAGNOSTICS_FILE), (value) => {
+            value["parts"] = {};
+          }),
+        );
+      },
+    ],
+    [
+      "a manifest that names no rolling diagnostics",
+      "names no rolling diagnostics",
+      (bundle: CompiledBundle) => {
+        bundle.afterAttach.push((directory) =>
+          editJson(join(directory, MANIFEST_FILE), (manifest) => {
+            delete manifest["rollingDiagnostics"];
+          }),
+        );
+      },
+    ],
+  ])("refuses %s", async (_case, message, edit) => {
+    await expect(
+      publish((bundle) => {
+        withRollingWheel()(bundle);
+        edit(bundle);
+      }),
+    ).rejects.toThrow(message);
+  });
+
   it("publishes the section vocabulary byte for byte as its own content-addressed asset, which the manifest references with its SHA-256", async () => {
     const { directory, published } = await publish(withCompiler);
-    expect(published.files).toBe(11);
+    expect(published.files).toBe(12);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const { file, sha256 } = manifest.compiler.sectionVocabulary;
     expect(file).toMatch(/^section-vocabulary\.[0-9a-f]{16}\.json$/u);
@@ -597,7 +714,7 @@ describe("publishBundle", () => {
 
   it("publishes each thumbnail in thumb/ under its content address", async () => {
     const { directory, published } = await publish(withThumbnail(png(THUMBNAIL_PX)));
-    expect(published.files).toBe(10);
+    expect(published.files).toBe(11);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const [thumbnail] = manifest.thumbnails;
     expect(thumbnail.item).toBe("ldraw:3811@2");
@@ -607,7 +724,7 @@ describe("publishBundle", () => {
 
   it("publishes the library part index under its content address", async () => {
     const { directory, published } = await publish(withLibraryParts([4, 1]));
-    expect(published.files).toBe(10);
+    expect(published.files).toBe(11);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     expect(manifest.libraryParts.file).toMatch(/^library-parts\.[0-9a-f]{16}\.json$/u);
     const index = JSON.parse(await readFile(join(directory, manifest.libraryParts.file), "utf8"));

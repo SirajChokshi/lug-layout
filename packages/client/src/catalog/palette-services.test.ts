@@ -19,6 +19,7 @@ import type { MeshCounts } from "../edit/mesh-progress.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
   EDITOR,
+  HOTBAR,
   LIBRARY_PART_PLACER,
   MODEL_IMPORTER,
   PALETTE_DRAG,
@@ -30,8 +31,9 @@ import {
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
+import { chosen } from "../edit/editor-choice.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
-import type { ImportResult } from "@brr/import";
+import type { ImportResult, RollingDiagnosticsRows } from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -103,6 +105,7 @@ class HeadlessBackend implements ISceneBackend {
   setSelectionBox(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
   aim(x: number, z: number): void {
@@ -198,6 +201,10 @@ class UnreachableWorkerImporter implements IModelImporter {
 
   async importStudio(name: string): Promise<ImportResult> {
     this.files.push({ name, text: "" });
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
     throw new Error(WORKER_UNREACHABLE);
   }
 }
@@ -400,28 +407,55 @@ describe("palette item labels", () => {
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
     expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
-    expect(pieces.map((item) => item.shortLabel)).toEqual(pieces.map(() => "Track"));
+    expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);
   }, 120_000);
 });
 
 describe("palette drag", () => {
-  it("places the dragged item where it is dropped, gives back the item picked before, and ignores a drop with no drag", async () => {
+  it("places the dragged item where it is dropped, even before it has loaded, gives back the item picked before, and ignores a drop with no drag", async () => {
     const { container, editor, backend } = await startEditor();
     const drag = container.get(PALETTE_DRAG);
-    editor.chooseItem(CROSSROADS);
+    await chosen(editor, CROSSROADS);
 
     backend.aim(0, 0);
     drag.start(GREEN_BASEPLATE);
-    expect(editor.snapshot().activeItem).toBe(GREEN_BASEPLATE);
+    const pending = editor.snapshot().pendingItem;
     drag.drop(0, 0, 0);
     drag.end();
-    expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
-    expect(editor.snapshot().activeItem).toBe(CROSSROADS);
+    const beforeLoad = placedItems(editor);
+    await vi.waitFor(() => expect(editor.snapshot().activeItem).toBe(CROSSROADS));
+    expect({ pending, beforeLoad, placed: placedItems(editor) }).toEqual({
+      pending: GREEN_BASEPLATE,
+      beforeLoad: [],
+      placed: [GREEN_BASEPLATE],
+    });
 
     backend.aim(2560, 2560);
     drag.drop(0, 0, 0);
     expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
+  }, 120_000);
+});
+
+describe("hotbar", () => {
+  it("gives each part the editor picks its own slot, keeps it through a deselect, and picks it again by slot", async () => {
+    const { container, editor } = await startEditor();
+    const hotbar = container.get(HOTBAR);
+    const slots = (): ReadonlyArray<string> => hotbar.snapshot().slots.map((slot) => slot.item);
+
+    editor.chooseItem(GREEN_BASEPLATE);
+    editor.chooseItem(SET);
+    editor.chooseItem(TRACK_ITEM_ID);
+    editor.chooseItem(null);
+    editor.chooseItem(GREEN_BASEPLATE);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+
+    hotbar.pick(1);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    hotbar.pick(5);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
   }, 120_000);
 });
 

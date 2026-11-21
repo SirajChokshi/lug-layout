@@ -38,6 +38,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
     readOnly: false,
     mode: "place",
     selection: {
+      kind: "model",
       item: "ldraw:3811",
       x: 0,
       z: 0,
@@ -47,7 +48,14 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
       slot: 0,
       box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
     },
-    history: { undo: "place", redo: "place", undoDepth: 1, redoDepth: 1 },
+    history: {
+      undo: "place",
+      redo: "place",
+      undoLabel: "place",
+      redoLabel: "place",
+      undoDepth: 1,
+      redoDepth: 1,
+    },
     catalog: [
       {
         id: TRACK_ITEM_ID,

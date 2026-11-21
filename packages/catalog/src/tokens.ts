@@ -10,6 +10,9 @@ export const BUNDLE_MANIFEST_FILE: ServiceIdentifier<string> = Symbol.for(
 export const ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
   "brr.catalog.AssetFetcher",
 );
+export const NETWORK_ASSET_FETCHER: ServiceIdentifier<IAssetFetcher> = Symbol.for(
+  "brr.catalog.NetworkAssetFetcher",
+);
 export const PART_BUNDLE_LOADER: ServiceIdentifier<IPartBundleLoader> = Symbol.for(
   "brr.catalog.PartBundleLoader",
 );

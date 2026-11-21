@@ -69,6 +69,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -77,13 +79,17 @@ export type {
   RoadSnapState,
   RoadSnapView,
   PlaceableCoverView,
+  QueuedPlacement,
   SelectionView,
+  TrackSelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
   TrackSolveStats,
   TrackView,
 } from "./edit/editor.ts";
+export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type {
   ExportedWorld,
   ModelFileInput,
@@ -125,15 +131,15 @@ export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
 export { MM_PER_STUD, STUD_LDU } from "@brr/math";
+export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
   PLAN_GRID_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
-  type PlacedForPlan,
   type PlanPatch,
-  type PlanSnapshot,
+  type PlanPlacementsView,
   type TableInput,
 } from "./plan/plan-service.ts";
 export type {
@@ -163,20 +169,34 @@ export {
   LIBRARY_PART_SEARCH,
   MODEL_IMPORTER,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
+  PALETTE,
+  PANEL_LAYOUT,
   SIM_CLIENT,
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
-  PALETTE_MEMORY,
-  PALETTE_THUMBNAILS,
+  HOTBAR,
+  SCALE_BAR,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
-export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
+export type {
+  RollingDiagnosticsPanel,
+  RollingDiagnosticsPartView,
+  RollingDiagnosticsRowView,
+} from "./inspect/rolling-diagnostics.ts";
+export {
+  meshesSettled,
+  type MeshCounts,
+  type MeshProgress,
+  type UndrawnPart,
+} from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,
   COMMANDS,
@@ -185,6 +205,7 @@ export {
   commandEnabled,
   commandForKey,
   commandSpec,
+  isHotbarCommand,
   isPlayCommand,
   isShellCommand,
   playCommandEnabled,
@@ -201,8 +222,11 @@ export {
   type PointerGesture,
   type ShellCommandId,
 } from "./commands/editor-commands.ts";
+export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
+export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export {
   toolHints,
+  trackBlockText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -217,7 +241,8 @@ export {
   type KeyPlatform,
 } from "./commands/key-chord.ts";
 export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
-export { overviewOf, type OverviewItem, type OverviewView } from "./camera/overview.ts";
+export type { IScaleBar, ScaleBarView } from "./camera/scale-bar.ts";
+export { overviewOf, type OverviewView } from "./camera/overview.ts";
 export {
   PANEL_GAP_PX,
   safeInsets,
@@ -233,6 +258,7 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  TrackBlockView,
   TrackDragView,
   SwitchLeverView,
   TrackEndView,
@@ -287,3 +313,5 @@ export type {
   LibraryPlacementView,
 } from "./catalog/library-part-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+export type { IPalette } from "./catalog/palette.ts";
+export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

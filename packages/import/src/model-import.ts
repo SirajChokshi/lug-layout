@@ -147,12 +147,27 @@ export interface ImportedSubmodels extends SubmodelInstances {
   readonly ofPart: Int32Array;
 }
 
+export type CompiledSource = "library-bake" | "import";
+
 export interface CompiledGlb {
   readonly partId: string;
   readonly glb: Uint8Array;
+  readonly source: CompiledSource;
 }
 
 export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
+
+export type PlacementBake = Omit<ModelBake, "studCover">;
+
+export interface PlacedImport extends Omit<ImportResult, "bake" | "report" | "studio"> {
+  readonly sections: ReadonlyArray<LdrawHeader>;
+  readonly refusedConnectorRecords: ReadonlyArray<RefusedConnectorRecord>;
+  readonly bake: PlacementBake;
+}
+
+export type PlacementListener = (placed: PlacedImport) => void;
+
+export const IGNORE_PLACEMENT: PlacementListener = () => undefined;
 
 export interface IBakeHelper {
   bake(
@@ -187,6 +202,16 @@ export interface RefusedConnectorRecord {
 }
 
 const MAX_COMPILE_ROUNDS = 64;
+
+function refusedRecords(
+  partIds: ReadonlyArray<string>,
+  loads: ReadonlyArray<ConnectorLoad>,
+): ReadonlyArray<RefusedConnectorRecord> {
+  return partIds.flatMap((partId, index) => {
+    const load = loads[index];
+    return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
+  });
+}
 const ONLY_PINNED_PARTS_ARE_COMPILED: ReadonlyArray<string> = [];
 const RECORDED_LOD: CompileLod = "standard";
 const PRIMARY_SLICES = 1;
@@ -247,6 +272,16 @@ function joinedShards(primary: BakedModel, others: ReadonlyArray<BakedModel>): M
   };
 }
 
+function placementBake(baked: BakedModel): PlacementBake {
+  return {
+    lattice: baked.lattice,
+    latticeIssue: baked.latticeIssue,
+    cells: baked.cells,
+    vehicles: baked.vehicles,
+    vehicleIssue: baked.vehicleIssue,
+  };
+}
+
 export function bundlePartId(reference: string): string {
   return `ldraw:${reference.replace(/(\.dat)+$/u, "").replaceAll("/", "-")}`;
 }
@@ -256,6 +291,7 @@ interface Outcomes {
   readonly inline: Map<string, Exclude<InlineOutcome, { status: "need" }>>;
   readonly rounds: number;
   readonly weldEpsilonLdu: number;
+  readonly fromLibraryBake: ReadonlySet<string>;
 }
 
 interface ImportLibrary extends LibraryFiles {
@@ -305,7 +341,10 @@ export class ModelImportEngine {
     private readonly helpers: ReadonlyArray<IBakeHelper>,
   ) {}
 
-  async importText(job: ImportJob): Promise<ImportResult> {
+  async importText(
+    job: ImportJob,
+    onPlaced: PlacementListener = IGNORE_PLACEMENT,
+  ): Promise<ImportResult> {
     const started = this.now();
     const spent = new TimeSpent(this.now);
     const read = this.compiler.readModel(job.text);
@@ -344,11 +383,19 @@ export class ModelImportEngine {
     const loading = Promise.all(
       assembled.result.partIds.map((partId) => this.connectors.read(partId)),
     );
-    const loaded = loading.then(
-      () => undefined,
-      () => undefined,
-    );
-    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent, loaded);
+    const announce = async (placement: BakedModel): Promise<void> => {
+      const loads = await loading.catch(() => null);
+      if (loads === null) return;
+      const { report, ...shape } = assembled.result;
+      onPlaced({
+        ...shape,
+        sections: report.sections,
+        connectors: loads.map((load) => (load.kind === "loaded" ? load.connectors : null)),
+        refusedConnectorRecords: refusedRecords(shape.partIds, loads),
+        bake: placementBake(placement),
+      });
+    };
+    const baked = await this.bakeDrawn(job, library, assembled.drawn, recordFiles, spent, announce);
     const loads = await loading;
     const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
     const bakedAt = this.now();
@@ -362,10 +409,7 @@ export class ModelImportEngine {
         withoutConnectorRecords: assembled.result.partIds.filter(
           (_, index) => loads[index]?.kind === "unlisted",
         ),
-        refusedConnectorRecords: assembled.result.partIds.flatMap((partId, index) => {
-          const load = loads[index];
-          return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
-        }),
+        refusedConnectorRecords: refusedRecords(assembled.result.partIds, loads),
         bakeRounds: baked.rounds,
         bakeIssue: baked.issue,
         bakeHelpersFailed: baked.helpersFailed,
@@ -469,7 +513,7 @@ export class ModelImportEngine {
     drawn: Uint8Array,
     records: RecordFiles | null,
     spent: TimeSpent,
-    connectorsLoaded: Promise<void>,
+    announce: (placement: BakedModel) => Promise<void>,
   ): Promise<BakeRounds> {
     if (!drawn.includes(1)) {
       return {
@@ -518,7 +562,7 @@ export class ModelImportEngine {
       );
       const primaryStarted = this.now();
       const placement = this.compiler.bake(placementRequest, library, records);
-      if (placement.status === "baked") await connectorsLoaded;
+      if (placement.status === "baked") await announce(placement);
       const placedAt = this.now();
       const primaryCover =
         placement.status === "baked"
@@ -619,8 +663,10 @@ export class ModelImportEngine {
     const recorded = await spent.during("recordFetchMs", () =>
       this.fromRecords(job, outside, pinned),
     );
+    const fromLibraryBake = new Set<string>();
     for (const outcome of recorded) {
       parts.set(outcome.reference, outcome);
+      fromLibraryBake.add(outcome.reference);
     }
     let pendingParts = outside.filter((reference) => !parts.has(reference));
     let pendingChecks = [...inlineParts];
@@ -668,7 +714,7 @@ export class ModelImportEngine {
       }
       await this.fetchNeeded(library, needed, spent);
     }
-    return { parts, inline, rounds, weldEpsilonLdu };
+    return { parts, inline, rounds, weldEpsilonLdu, fromLibraryBake };
   }
 }
 
@@ -882,7 +928,11 @@ function assemble(
     const outcome = outcomes.parts.get(resolved.official);
     if (outcome?.status !== "compiled") continue;
     compiledIds.add(resolved.partId);
-    compiled.push({ partId: resolved.partId, glb: outcome.glb });
+    compiled.push({
+      partId: resolved.partId,
+      glb: outcome.glb,
+      source: outcomes.fromLibraryBake.has(resolved.official) ? "library-bake" : "import",
+    });
   }
   return {
     drawn: drawnMask,

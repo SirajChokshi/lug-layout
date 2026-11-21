@@ -51,6 +51,7 @@ import {
   type FarModelPlacement,
   type GeometrySet,
   type FrameStats,
+  type GroundSettings,
   type ISceneBackend,
   type LdrawColor,
   type LookSettings,
@@ -78,6 +79,7 @@ import {
 import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { type ChunkNeeds, ChunkNeedsBuilder } from "./chunk-needs.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
+import { GroundPlane } from "./ground-plane.ts";
 import {
   MATRIX4_FLOATS,
   groupRunEnd,
@@ -658,6 +660,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private readonly ghostGroup = addContainerGroup(this.scene);
   private readonly planOverlayGroup = addContainerGroup(this.scene);
   private readonly issueBoxGroup = addContainerGroup(this.scene);
+  private readonly ground = new GroundPlane(
+    addContainerGroup(this.scene),
+    SKY_COLOR,
+    CAMERA_FAR_LDU,
+  );
   private readonly perspective = new PerspectiveCamera(
     CAMERA_FOV_DEGREES,
     1,
@@ -1453,6 +1460,31 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.trackEndGroup.updateMatrixWorld(true);
   }
 
+  setGround(ground: GroundSettings | null): void {
+    this.changed = true;
+    this.ground.configure(ground);
+    this.aimGround();
+  }
+
+  private aimGround(): void {
+    const centreX = this.atX - this.renderOriginX;
+    const centreZ = this.atZ - this.renderOriginZ;
+    if (this.camera === this.orthographic) {
+      this.ground.followOrthographic(
+        centreX,
+        centreZ,
+        this.orthoHalfHeight * this.aspect,
+        this.orthoHalfHeight,
+      );
+      return;
+    }
+    this.ground.followPerspective(
+      centreX,
+      centreZ,
+      Math.hypot(this.eyeX - this.atX, this.eyeY - this.atY, this.eyeZ - this.atZ),
+    );
+  }
+
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.changed = true;
     this.planOverlayGroup.clear();
@@ -1957,6 +1989,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     this.aim(this.perspective, eyeX, eyeY, eyeZ, atX, atY, atZ);
     this.aim(this.orthographic, eyeX, eyeY, eyeZ, atX, atY, atZ);
+    this.aimGround();
     if (viewChanged) this.applyTiers();
   }
 
@@ -2088,6 +2121,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     if (this.rebaseCount === rebases) return;
     this.aim(this.perspective, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
     this.aim(this.orthographic, this.eyeX, this.eyeY, this.eyeZ, this.atX, this.atY, this.atZ);
+    this.aimGround();
     this.changed = true;
   };
 
@@ -2154,6 +2188,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.perspective.aspect = this.aspect;
     this.perspective.updateProjectionMatrix();
     this.fitOrthographic();
+    this.aimGround();
     const bufferWidth = this.renderer?.domElement.width ?? width;
     const bufferHeight = this.renderer?.domElement.height ?? height;
     this.focalLengthPx = bufferHeight / (2 * Math.tan((CAMERA_FOV_DEGREES * Math.PI) / 360));

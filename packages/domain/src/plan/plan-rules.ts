@@ -217,6 +217,15 @@ function offTableIssue(
   );
 }
 
+function fitsExactly(box: LduRect, surfaces: ReadonlyArray<LduRect>, reachLdu: number): boolean {
+  const frame = frameFor(box, surfaces, reachLdu);
+  return exactCoveredWithin(
+    frame.rect(box),
+    surfaces.map((t) => frame.rect(t)),
+    frame.of(reachLdu),
+  );
+}
+
 export function placementInRegion(region: PlanRegion, box: LduRect): boolean {
   return rectsOverlap(roomRect(region), box);
 }
@@ -231,51 +240,328 @@ function tableTops(region: PlanRegion): TableTop[] {
   }));
 }
 
-export function checkPlan(region: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
+export const UNDECIDED = -1;
+export const BOX_STRIDE = 6;
+export const BOX_MIN_X = 0;
+export const BOX_MIN_Y = 1;
+export const BOX_MIN_Z = 2;
+export const BOX_MAX_X = 3;
+export const BOX_MAX_Y = 4;
+export const BOX_MAX_Z = 5;
+
+const RECT_STRIDE = 4;
+const PIECES_PER_CUT = 4;
+const CERTIFIED_MAGNITUDE = 2 ** 1021;
+const INITIAL_PIECE_FLOATS = 64;
+
+export interface CoverageContext {
+  readonly surfaceEdges: Float64Array;
+  readonly surfaces: ReadonlyArray<LduRect>;
+  readonly surfacesFinite: boolean;
+  readonly reachLdu: number;
+}
+
+export interface PlanRegionContext {
+  readonly region: PlanRegion;
+  readonly room: LduRect;
+  readonly tables: ReadonlyArray<TableTop>;
+  readonly obstacles: ReadonlyArray<LduRect>;
+  readonly obstacleEdges: Float64Array;
+  readonly footprintIssues: ReadonlyArray<PlanIssue>;
+  readonly coverage: CoverageContext;
+}
+
+export class CoverageScratch {
+  grown = new Float64Array(INITIAL_PIECE_FLOATS);
+  pieces = new Float64Array(INITIAL_PIECE_FLOATS);
+  spare = new Float64Array(INITIAL_PIECE_FLOATS);
+}
+
+function rectEdges(rects: ReadonlyArray<LduRect>): Float64Array {
+  return Float64Array.from(rects.flatMap((r) => [r.minX, r.minZ, r.maxX, r.maxZ]));
+}
+
+export function coverageContext(
+  surfaces: ReadonlyArray<LduRect>,
+  reachLdu: number,
+): CoverageContext {
+  return {
+    surfaceEdges: rectEdges(surfaces),
+    surfaces,
+    surfacesFinite: surfaces.every(isFiniteRect),
+    reachLdu,
+  };
+}
+
+export function regionContext(region: PlanRegion): PlanRegionContext {
   const room = roomRect(region);
   const tables = tableTops(region);
   const obstacles = region.footprint.obstacles.map((o) => mmRectInWorld(region, o.rect));
-  const surfaces = tables.map((table) => table.surface);
-  const issues = footprintIssues(region, room);
+  return {
+    region,
+    room,
+    tables,
+    obstacles,
+    obstacleEdges: rectEdges(obstacles),
+    footprintIssues: footprintIssues(region, room),
+    coverage: coverageContext(
+      tables.map((table) => table.surface),
+      lduFromMm(region.maxOverhangMm),
+    ),
+  };
+}
+
+const INWARD = -1;
+const OUTWARD = 1;
+
+function certifiedEdge(
+  edges: Float64Array,
+  grown: Float64Array,
+  at: number,
+  coverage: CoverageContext,
+  direction: number,
+): boolean {
+  const t = edges[at] ?? Number.NaN;
+  const q = direction * coverage.reachLdu;
+  const s = t + q;
+  if (!(Math.abs(t) <= CERTIFIED_MAGNITUDE) || !(Math.abs(q) <= CERTIFIED_MAGNITUDE)) return false;
+  if (!Number.isFinite(s)) return false;
+  const bb = s - t;
+  if (t - (s - bb) + (q - bb) !== 0) return false;
+  grown[at] = s;
+  return true;
+}
+
+function growTo(buffer: Float64Array<ArrayBuffer>, floats: number): Float64Array<ArrayBuffer> {
+  if (buffer.length >= floats) return buffer;
+  return new Float64Array(Math.max(floats, buffer.length * 2));
+}
+
+function certifyGrownEdges(coverage: CoverageContext, scratch: CoverageScratch): boolean {
+  const edges = coverage.surfaceEdges;
+  scratch.grown = growTo(scratch.grown, edges.length);
+  const grown = scratch.grown;
+  for (let i = 0; i < edges.length; i += RECT_STRIDE) {
+    if (
+      !certifiedEdge(edges, grown, i, coverage, INWARD) ||
+      !certifiedEdge(edges, grown, i + 1, coverage, INWARD) ||
+      !certifiedEdge(edges, grown, i + 2, coverage, OUTWARD) ||
+      !certifiedEdge(edges, grown, i + 3, coverage, OUTWARD)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function subtractCut(
+  from: Float64Array,
+  fromCount: number,
+  into: Float64Array,
+  cuts: Float64Array,
+  cut: number,
+): number {
+  const cMinX = cuts[cut] ?? Number.NaN;
+  const cMinZ = cuts[cut + 1] ?? Number.NaN;
+  const cMaxX = cuts[cut + 2] ?? Number.NaN;
+  const cMaxZ = cuts[cut + 3] ?? Number.NaN;
+  let at = 0;
+  for (let p = 0; p < fromCount; p++) {
+    const piece = p * RECT_STRIDE;
+    const pMinX = from[piece] ?? Number.NaN;
+    const pMinZ = from[piece + 1] ?? Number.NaN;
+    const pMaxX = from[piece + 2] ?? Number.NaN;
+    const pMaxZ = from[piece + 3] ?? Number.NaN;
+    if (!(pMinX < cMaxX && cMinX < pMaxX && pMinZ < cMaxZ && cMinZ < pMaxZ)) {
+      into[at] = pMinX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = pMaxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+      continue;
+    }
+    if (pMinX < cMinX) {
+      into[at] = pMinX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = cMinX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
+    if (cMaxX < pMaxX) {
+      into[at] = cMaxX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = pMaxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
+    const minX = pMinX > cMinX ? pMinX : cMinX;
+    const maxX = pMaxX < cMaxX ? pMaxX : cMaxX;
+    if (pMinZ < cMinZ) {
+      into[at] = minX;
+      into[at + 1] = pMinZ;
+      into[at + 2] = maxX;
+      into[at + 3] = cMinZ;
+      at += RECT_STRIDE;
+    }
+    if (cMaxZ < pMaxZ) {
+      into[at] = minX;
+      into[at + 1] = cMaxZ;
+      into[at + 2] = maxX;
+      into[at + 3] = pMaxZ;
+      at += RECT_STRIDE;
+    }
+  }
+  return at / RECT_STRIDE;
+}
+
+export function uncoveredPieces(
+  coverage: CoverageContext,
+  box: Float64Array,
+  offset: number,
+  scratch: CoverageScratch,
+): number {
+  if (!certifyGrownEdges(coverage, scratch)) return UNDECIDED;
+  const grown = scratch.grown;
+  const cuts = coverage.surfaceEdges.length;
+  let current = growTo(scratch.pieces, RECT_STRIDE);
+  let next = scratch.spare;
+  current[0] = box[offset + BOX_MIN_X] ?? Number.NaN;
+  current[1] = box[offset + BOX_MIN_Z] ?? Number.NaN;
+  current[2] = box[offset + BOX_MAX_X] ?? Number.NaN;
+  current[3] = box[offset + BOX_MAX_Z] ?? Number.NaN;
+  let count = 1;
+  for (let i = 0; i < cuts && count > 0; i += RECT_STRIDE) {
+    next = growTo(next, count * PIECES_PER_CUT * RECT_STRIDE);
+    count = subtractCut(current, count, next, grown, i);
+    const swap = current;
+    current = next;
+    next = swap;
+  }
+  scratch.pieces = current;
+  scratch.spare = next;
+  return count;
+}
+
+export function placementInside(
+  ctx: PlanRegionContext,
+  box: Float64Array,
+  offset: number,
+): boolean {
+  const room = ctx.room;
+  const minX = box[offset + BOX_MIN_X] ?? Number.NaN;
+  const minZ = box[offset + BOX_MIN_Z] ?? Number.NaN;
+  const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
+  const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
+  return room.minX < maxX && minX < room.maxX && room.minZ < maxZ && minZ < room.maxZ;
+}
+
+function fitIssueCount(
+  coverage: CoverageContext,
+  box: Float64Array,
+  offset: number,
+  scratch: CoverageScratch,
+): number {
+  const minX = box[offset + BOX_MIN_X] ?? Number.NaN;
+  const minZ = box[offset + BOX_MIN_Z] ?? Number.NaN;
+  const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
+  const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
+  if (coverage.surfaces.length === 0) return 1;
+  const finite =
+    Number.isFinite(minX) &&
+    Number.isFinite(minZ) &&
+    Number.isFinite(maxX) &&
+    Number.isFinite(maxZ) &&
+    coverage.surfacesFinite;
+  if (!finite) return 1;
+  const pieces = uncoveredPieces(coverage, box, offset, scratch);
+  if (pieces !== UNDECIDED) return pieces === 0 ? 0 : 1;
+  return fitsExactly({ minX, minZ, maxX, maxZ }, coverage.surfaces, coverage.reachLdu) ? 0 : 1;
+}
+
+export function placementIssueCount(
+  ctx: PlanRegionContext,
+  box: Float64Array,
+  offset: number,
+  scratch: CoverageScratch,
+): number {
+  if (!placementInside(ctx, box, offset)) return 0;
+  const room = ctx.room;
+  const minX = box[offset + BOX_MIN_X] ?? Number.NaN;
+  const minZ = box[offset + BOX_MIN_Z] ?? Number.NaN;
+  const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
+  const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
+  let count = 0;
+  if (!(minX >= room.minX && maxX <= room.maxX && minZ >= room.minZ && maxZ <= room.maxZ)) count++;
+  const obstacles = ctx.obstacleEdges;
+  for (let i = 0; i < obstacles.length; i += RECT_STRIDE) {
+    const oMinX = obstacles[i] ?? Number.NaN;
+    const oMinZ = obstacles[i + 1] ?? Number.NaN;
+    const oMaxX = obstacles[i + 2] ?? Number.NaN;
+    const oMaxZ = obstacles[i + 3] ?? Number.NaN;
+    if (oMinX < maxX && minX < oMaxX && oMinZ < maxZ && minZ < oMaxZ) count++;
+  }
+  return count + fitIssueCount(ctx.coverage, box, offset, scratch);
+}
+
+export function placementIssues(
+  ctx: PlanRegionContext,
+  placement: PlanPlacement,
+  out: PlanIssue[],
+): void {
+  const { region, room, obstacles, coverage } = ctx;
+  if (!rectsOverlap(room, placement.box)) return;
+  if (!rectContains(room, placement.box)) {
+    out.push(
+      issue(
+        "crossesRegion",
+        [placement.key],
+        `${placement.label} crosses the edge of plan "${region.name}".`,
+      ),
+    );
+  }
+  region.footprint.obstacles.forEach((obstacle, i) => {
+    const rect = obstacles[i];
+    if (rect && rectsOverlap(rect, placement.box)) {
+      out.push(
+        issue(
+          "fit",
+          [placement.key],
+          `${placement.label} stands over obstacle "${obstacle.name}".`,
+        ),
+      );
+    }
+  });
+  if (coverage.surfaces.length === 0) {
+    out.push(issue("fit", [placement.key], `${placement.label} is in a plan with no tables.`));
+    return;
+  }
+  if (!isFiniteRect(placement.box) || !coverage.surfacesFinite) {
+    out.push(
+      issue("fit", [placement.key], `${placement.label} has no finite footprint to measure.`),
+    );
+    return;
+  }
+  const offTable = offTableIssue(placement, coverage.surfaces, region.maxOverhangMm);
+  if (offTable) out.push(offTable);
+}
+
+export function checkPlan(region: PlanRegion, placements: ReadonlyArray<PlanPlacement>): PlanCheck {
+  const ctx = regionContext(region);
+  const issues = [...ctx.footprintIssues];
   const inside: PlacementKey[] = [];
   for (const placement of placements) {
     if (!placementInRegion(region, placement.box)) continue;
     inside.push(placement.key);
-    if (!rectContains(room, placement.box)) {
-      issues.push(
-        issue(
-          "crossesRegion",
-          [placement.key],
-          `${placement.label} crosses the edge of plan "${region.name}".`,
-        ),
-      );
-    }
-    region.footprint.obstacles.forEach((obstacle, i) => {
-      const rect = obstacles[i];
-      if (rect && rectsOverlap(rect, placement.box)) {
-        issues.push(
-          issue(
-            "fit",
-            [placement.key],
-            `${placement.label} stands over obstacle "${obstacle.name}".`,
-          ),
-        );
-      }
-    });
-    if (surfaces.length === 0) {
-      issues.push(issue("fit", [placement.key], `${placement.label} is in a plan with no tables.`));
-      continue;
-    }
-    if (!isFiniteRect(placement.box) || !surfaces.every(isFiniteRect)) {
-      issues.push(
-        issue("fit", [placement.key], `${placement.label} has no finite footprint to measure.`),
-      );
-      continue;
-    }
-    const offTable = offTableIssue(placement, surfaces, region.maxOverhangMm);
-    if (offTable) issues.push(offTable);
+    placementIssues(ctx, placement, issues);
   }
-  return { regionId: region.id, room, tables, obstacles, inside, issues };
+  return {
+    regionId: region.id,
+    room: ctx.room,
+    tables: ctx.tables,
+    obstacles: ctx.obstacles,
+    inside,
+    issues,
+  };
 }
 
 export function uncheckedPlan(

@@ -1,5 +1,6 @@
 import {
   FOOTPRINT_FLOATS,
+  NO_ROW,
   overviewOf,
   type CatalogItemView,
   type EditorSnapshot,
@@ -8,10 +9,10 @@ import {
   type IPlanService,
   type LduRect,
   type OverviewView,
+  type PlanPlacementsView,
   type TrackRouteView,
 } from "@brr/client";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { usePlanSnapshot } from "./plan-panel.tsx";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 const OPEN_BY_DEFAULT_MIN_VIEWPORT_PX = 860;
 const MAP_PADDING_PX = 10;
@@ -84,20 +85,32 @@ function fitTransform(
   return true;
 }
 
+function fillBox(
+  context: CanvasRenderingContext2D,
+  map: MapTransform,
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  stroke: string | null,
+): void {
+  const x = (minX - map.originX) * map.scale;
+  const y = (minZ - map.originZ) * map.scale;
+  const w = Math.max((maxX - minX) * map.scale, 1);
+  const h = Math.max((maxZ - minZ) * map.scale, 1);
+  context.fillRect(x, y, w, h);
+  if (stroke === null) return;
+  context.strokeStyle = stroke;
+  context.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+}
+
 function fillRect(
   context: CanvasRenderingContext2D,
   map: MapTransform,
   rect: LduRect,
   stroke: string | null,
 ): void {
-  const x = (rect.minX - map.originX) * map.scale;
-  const y = (rect.minZ - map.originZ) * map.scale;
-  const w = Math.max((rect.maxX - rect.minX) * map.scale, 1);
-  const h = Math.max((rect.maxZ - rect.minZ) * map.scale, 1);
-  context.fillRect(x, y, w, h);
-  if (stroke === null) return;
-  context.strokeStyle = stroke;
-  context.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  fillBox(context, map, rect.minX, rect.minZ, rect.maxX, rect.maxZ, stroke);
 }
 
 function traceRoute(context: CanvasRenderingContext2D, map: MapTransform, route: TrackRouteView) {
@@ -124,6 +137,7 @@ function drawContent(
   context: CanvasRenderingContext2D,
   map: MapTransform,
   overview: OverviewView,
+  placements: PlanPlacementsView,
   routes: ReadonlyArray<TrackRouteView>,
   catalog: ReadonlyMap<string, CatalogItemView>,
 ): void {
@@ -139,15 +153,19 @@ function drawContent(
   context.fillStyle = OBSTACLE_FILL;
   for (const obstacle of overview.obstacles) fillRect(context, map, obstacle, null);
   for (const kind of BOX_DRAW_ORDER) {
-    for (const item of overview.items) {
-      const entry = catalog.get(item.ref);
+    for (let row = placements.first(); row !== NO_ROW; row = placements.next(row)) {
+      const entry = catalog.get(placements.refOf(row));
       if (itemKind(entry) !== kind) continue;
+      const minX = placements.minX(row);
+      const minZ = placements.minZ(row);
+      const maxX = placements.maxX(row);
+      const maxZ = placements.maxZ(row);
       if (kind === "model") {
         context.fillStyle = MODEL_FILL;
-        fillRect(context, map, item.rect, MODEL_STROKE);
+        fillBox(context, map, minX, minZ, maxX, maxZ, MODEL_STROKE);
       } else {
         context.fillStyle = entry?.color?.rgb ?? TRACK_STROKE;
-        fillRect(context, map, item.rect, null);
+        fillBox(context, map, minX, minZ, maxX, maxZ, null);
       }
     }
   }
@@ -193,6 +211,32 @@ function gestureScale(event: Event): number | null {
   return "scale" in event && typeof event.scale === "number" ? event.scale : null;
 }
 
+interface PlanMap {
+  readonly version: number;
+  readonly overview: OverviewView;
+  readonly placed: number;
+  readonly routes: ReadonlyArray<TrackRouteView>;
+}
+
+function usePlanMap(editor: IEditor, plans: IPlanService): PlanMap {
+  const cached = useRef<PlanMap | null>(null);
+  return useSyncExternalStore(
+    (listener) => plans.subscribe(listener),
+    () => {
+      const version = plans.version();
+      if (cached.current?.version !== version) {
+        cached.current = {
+          version,
+          overview: overviewOf(plans),
+          placed: plans.placementCount(),
+          routes: editor.trackRoutes(),
+        };
+      }
+      return cached.current;
+    },
+  );
+}
+
 interface MinimapProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
@@ -203,11 +247,8 @@ interface MinimapProps {
 export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [open, setOpen] = useState(() => window.innerHeight >= OPEN_BY_DEFAULT_MIN_VIEWPORT_PX);
-  const planSnapshot = usePlanSnapshot(plans);
-  const { overview, routes } = useMemo(
-    () => ({ overview: overviewOf(planSnapshot), routes: editor.trackRoutes() }),
-    [editor, planSnapshot],
-  );
+  const { overview, placed, routes } = usePlanMap(editor, plans);
+
   const catalog = useMemo(
     () => new Map(snapshot.catalog.map((item) => [item.id, item])),
     [snapshot.catalog],
@@ -255,7 +296,7 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
         footprint[FOOTPRINT_FLOATS - 1] ?? 0,
       );
       if (!relayout && !moved) return;
-      if (relayout) drawContent(layerContext, map, overview, routes, catalog);
+      if (relayout) drawContent(layerContext, map, overview, plans.placements(), routes, catalog);
       context.clearRect(0, 0, map.widthPx, map.heightPx);
       context.drawImage(layer, 0, 0, map.widthPx, map.heightPx);
       drawView(context, map, footprint);
@@ -321,7 +362,7 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
       canvas.removeEventListener("gesturestart", onGestureStart);
       canvas.removeEventListener("gesturechange", onGestureChange);
     };
-  }, [camera, overview, routes, catalog]);
+  }, [camera, plans, overview, routes, catalog]);
 
   return (
     <details
@@ -332,7 +373,7 @@ export function Minimap({ editor, camera, plans, snapshot }: MinimapProps) {
     >
       <summary>
         <h2>Minimap</h2>
-        <span className="minimap-legend">{overview.items.length} placed · north up</span>
+        <span className="minimap-legend">{placed} placed · north up</span>
       </summary>
       <canvas
         ref={canvasRef}

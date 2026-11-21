@@ -17,11 +17,10 @@ import {
   type CatalogItemView,
   type EditorSnapshot,
   type IEditor,
-  type ILibraryPartPlacer,
+  type IPalette,
   type IPaletteDrag,
   type IPaletteMemory,
   type IPalettePrefetch,
-  type IPaletteSearch,
   type IPaletteThumbnails,
   type PaletteColorChoice,
   type PaletteColors,
@@ -30,6 +29,7 @@ import {
   type PaletteSection,
   type PaletteTab,
 } from "@brr/client";
+import { FirstChord } from "./keys.tsx";
 import { LibraryPartResults } from "./library-part-results.tsx";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
@@ -60,8 +60,14 @@ interface PaletteProps {
   readonly prefetch: IPalettePrefetch;
 }
 
-function samePaletteInputs<P extends PaletteProps>(before: P, after: P): boolean {
-  return (Object.keys(after) as Array<keyof P>).every((key) =>
+interface PalettePanelProps {
+  readonly editor: IEditor;
+  readonly snapshot: PaletteSnapshot;
+  readonly palette: IPalette;
+}
+
+function samePaletteInputs(before: PalettePanelProps, after: PalettePanelProps): boolean {
+  return (Object.keys(after) as Array<keyof PalettePanelProps>).every((key) =>
     key === "snapshot"
       ? PALETTE_FIELDS.every((field) => before.snapshot[field] === after.snapshot[field])
       : before[key] === after[key],
@@ -220,6 +226,7 @@ function Swatches({
           data-item={item.id}
           data-current-color={item.color !== null && item.color.code === current}
           aria-pressed={snapshot.activeItem === item.id}
+          aria-busy={snapshot.pendingItem === item.id}
           aria-label={item.label}
           title={swatchTitle(item)}
           style={{ background: item.color?.rgb ?? "transparent" }}
@@ -376,12 +383,12 @@ function TrackSection({
           disabled={snapshot.readOnly}
           onClick={() => choosePaletteItem(editor, snapshot, tool)}
         >
-          {drawing ? "Drawing track: press Esc or T to stop" : "Draw track (T)"}
+          {drawing ? "Drawing track" : "Draw track"} <FirstChord id="draw-track" />
         </button>
       )}
       <p className="palette-hint">
-        Drag on the ground to lay a run of real pieces. Start on an open end to continue a line, and
-        release on another open end to join it exactly.
+        Drag on the ground to lay a run. Start or release on an open end (amber arrow) to join it
+        exactly; red arrows mark ends that nearly meet but don't join.
       </p>
       <ul className="palette-pieces" aria-label="Single track pieces">
         {pieces.map((item) => (
@@ -402,10 +409,20 @@ function TrackSection({
         ))}
       </ul>
       <p className="palette-hint">
-        Pick a piece, then click to lay it. Near an open end it attaches exactly. Q swings it onto
-        its next end, R turns it a quarter turn on the studs of open ground, X swaps a switch
-        between left and right. Click a laid switch to throw it.
+        Or pick one piece and click to lay it: near an open end it attaches exactly. Click a laid
+        switch to throw it.
       </p>
+      <ul className="palette-keys" aria-label="Keys while holding a piece">
+        <li>
+          <FirstChord id="next-connector" /> next end
+        </li>
+        <li>
+          <FirstChord id="rotate" /> quarter turn
+        </li>
+        <li>
+          <FirstChord id="flip-switch" /> swap a switch
+        </li>
+      </ul>
       {snapshot.trackNotDrawable.length > 0 && (
         <p className="palette-note" data-not-drawable={snapshot.trackNotDrawable.length}>
           In the bundle but not drawable yet:{" "}
@@ -623,22 +640,37 @@ function RecentStrip({
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg
+      className="palette-search-icon"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      aria-hidden="true"
+    >
+      <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10.4 10.4 L14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export const PalettePanel = memo(function PalettePanel({
-  search,
-  memory,
-  thumbnails,
-  libraryPlacer,
-  ...props
-}: PaletteProps & {
-  readonly search: IPaletteSearch;
-  readonly memory: IPaletteMemory;
-  readonly thumbnails: IPaletteThumbnails;
-  readonly libraryPlacer: ILibraryPartPlacer;
-}) {
-  const { editor, snapshot } = props;
+  editor,
+  snapshot,
+  palette,
+}: PalettePanelProps) {
+  const { search, memory, thumbnails, libraryPlacer } = palette;
+  const props: PaletteProps = {
+    editor,
+    snapshot,
+    drag: palette.drag,
+    prefetch: palette.prefetch,
+  };
   const { query, tab, color, sections, hits, counts, status, library } =
     usePaletteSearchSnapshot(search);
   const [highlight, setHighlight] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
   const remembered = usePaletteMemory(memory);
   const favorites = useMemo<Favorites>(
     () => ({
@@ -650,6 +682,15 @@ export const PalettePanel = memo(function PalettePanel({
   const searching = query.trim() !== "";
   const listing = searching || tab === "favorites";
   const shownHighlight = Math.min(highlight, Math.max(hits.length - 1, 0));
+
+  const showFromTop = (): void => {
+    setHighlight(0);
+    listRef.current?.scrollTo({ top: 0 });
+  };
+  const setQuery = (next: string): void => {
+    search.setQuery(next);
+    showFromTop();
+  };
 
   const onSearchKey = (event: KeyboardEvent<HTMLInputElement>): void => {
     switch (event.key) {
@@ -668,8 +709,7 @@ export const PalettePanel = memo(function PalettePanel({
       }
       case "Escape":
         if (query === "") event.currentTarget.blur();
-        search.setQuery("");
-        setHighlight(0);
+        setQuery("");
         break;
       default:
         return;
@@ -680,24 +720,35 @@ export const PalettePanel = memo(function PalettePanel({
   return (
     <FavoritesContext value={favorites}>
       <ThumbnailsContext value={snapshot.status === "ready" ? thumbnails : null}>
-        <nav className="catalog palette" aria-label="Palette">
+        <nav className="palette" aria-label="Parts and sets">
           <div className="palette-head">
-            <h2>Palette</h2>
-            <input
-              type="search"
-              className="palette-search"
-              placeholder="Search: 3811, tan 16x16, crossroads, -sand"
-              title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
-              aria-label="Search the palette"
-              aria-controls="palette-results"
-              value={query}
-              onChange={(event) => {
-                search.setQuery(event.target.value);
-                setHighlight(0);
-              }}
-              onKeyDown={onSearchKey}
-            />
-            <div className="palette-tabs" role="tablist" aria-label="Palette categories">
+            <h2>Library</h2>
+            <div className="palette-search-field">
+              <SearchIcon />
+              <input
+                type="search"
+                className="palette-search"
+                placeholder="Search: 3811, tan 16x16, crossroads"
+                title='Words must all match. "Quote a phrase", -word excludes, #3811 matches numbers only.'
+                aria-label="Search parts and sets"
+                aria-controls="palette-results"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={onSearchKey}
+              />
+              {query !== "" && (
+                <button
+                  type="button"
+                  className="palette-search-clear"
+                  aria-label="Clear the search"
+                  title="Clear the search (Esc)"
+                  onClick={() => setQuery("")}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <div className="palette-tabs" role="tablist" aria-label="Categories">
               {TABS.map((option) => (
                 <button
                   key={option}
@@ -709,7 +760,7 @@ export const PalettePanel = memo(function PalettePanel({
                   aria-label={option === "favorites" ? "Favourites" : undefined}
                   onClick={() => {
                     search.setTab(option);
-                    setHighlight(0);
+                    showFromTop();
                   }}
                 >
                   {tabLabel(option)}
@@ -717,76 +768,78 @@ export const PalettePanel = memo(function PalettePanel({
                 </button>
               ))}
             </div>
-          </div>
-          <RecentStrip
-            {...props}
-            recents={remembered.recents}
-            onForget={() => memory.forgetRecents()}
-          />
-          <p className="palette-hint palette-how">
-            Click a part and then the ground to place copies, or drag it straight onto the layout.
-          </p>
-          {listing ? (
-            <ul
-              id="palette-results"
-              className="palette-results"
-              role="listbox"
-              aria-label={searching ? "Search results" : "Favourites"}
-              data-results={hits.length}
-            >
-              {hits.map((row, i) => (
-                <ResultRow
-                  key={row.entry.key}
-                  {...props}
-                  row={row}
-                  color={color}
-                  highlighted={searching && i === shownHighlight}
-                />
-              ))}
-            </ul>
-          ) : (
-            sections.map((section) => (
-              <CategorySection
-                key={section.category}
-                {...props}
-                section={section}
-                color={color}
-                onChooseColor={(code) => search.chooseColor(code)}
-              />
-            ))
-          )}
-          {searching && library !== null && (
-            <LibraryPartResults
-              library={library}
-              placer={libraryPlacer}
-              preferredColor={color}
-              readOnly={snapshot.readOnly}
+            <RecentStrip
+              {...props}
+              recents={remembered.recents}
+              onForget={() => memory.forgetRecents()}
             />
-          )}
-          {searching && status === "offline" && (
-            <p className="palette-hint" data-search-offline>
-              Search offline: showing palette matches only.
+          </div>
+          <div className="palette-list" ref={listRef}>
+            <p className="palette-hint palette-how">
+              Click a part, then the ground to place copies, or drag it straight onto the layout.
             </p>
-          )}
-          {searching && hits.length === 0 && (library?.hits.length ?? 0) === 0 && (
-            <p className="palette-hint" data-no-results>
-              Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
-              number like 3811, a size like 16x16, or a colour like tan.
-            </p>
-          )}
-          {!searching && tab === "favorites" && hits.length === 0 && (
-            <p className="palette-hint" data-no-favorites>
-              No favourites yet. Star a part with ☆ to keep it here.
-            </p>
-          )}
-          {snapshot.catalogSkipped.length > 0 && (
-            <p
-              className="catalog-skipped"
-              data-catalog-skipped={snapshot.catalogSkipped.map((model) => model.name).join(",")}
-            >
-              Not placeable: {skippedText(snapshot)}
-            </p>
-          )}
+            {listing ? (
+              <ul
+                id="palette-results"
+                className="palette-results"
+                role="listbox"
+                aria-label={searching ? "Search results" : "Favourites"}
+                data-results={hits.length}
+              >
+                {hits.map((row, i) => (
+                  <ResultRow
+                    key={row.entry.key}
+                    {...props}
+                    row={row}
+                    color={color}
+                    highlighted={searching && i === shownHighlight}
+                  />
+                ))}
+              </ul>
+            ) : (
+              sections.map((section) => (
+                <CategorySection
+                  key={section.category}
+                  {...props}
+                  section={section}
+                  color={color}
+                  onChooseColor={(code) => search.chooseColor(code)}
+                />
+              ))
+            )}
+            {searching && library !== null && (
+              <LibraryPartResults
+                library={library}
+                placer={libraryPlacer}
+                preferredColor={color}
+                readOnly={snapshot.readOnly}
+              />
+            )}
+            {searching && status === "offline" && (
+              <p className="palette-hint" data-search-offline>
+                Search offline: showing palette matches only.
+              </p>
+            )}
+            {searching && hits.length === 0 && (library?.hits.length ?? 0) === 0 && (
+              <p className="palette-empty" data-no-results>
+                Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
+                number like 3811, a size like 16x16, or a colour like tan.
+              </p>
+            )}
+            {!searching && tab === "favorites" && hits.length === 0 && (
+              <p className="palette-empty" data-no-favorites>
+                No favourites yet. Star a part with ☆ to keep it here.
+              </p>
+            )}
+            {snapshot.catalogSkipped.length > 0 && (
+              <p
+                className="catalog-skipped"
+                data-catalog-skipped={snapshot.catalogSkipped.map((model) => model.name).join(",")}
+              >
+                Not placeable: {skippedText(snapshot)}
+              </p>
+            )}
+          </div>
         </nav>
       </ThumbnailsContext>
     </FavoritesContext>
