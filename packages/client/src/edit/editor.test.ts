@@ -27,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  LibraryPartsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -301,6 +302,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
     return this.loader.loadRollingDiagnostics(lod);
+  }
+
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.loader.loadLibraryParts(lod);
   }
 }
 

@@ -24,7 +24,7 @@ export interface RetryingFetch {
   readonly log: (line: string) => void;
 }
 
-export const DOWNLOAD_RETRY: RetryPolicy = { attempts: 5, baseDelayMs: 1000, maxDelayMs: 30_000 };
+export const DOWNLOAD_RETRY: RetryPolicy = { attempts: 6, baseDelayMs: 1000, maxDelayMs: 30_000 };
 
 const SYSTEM_CLOCK: RetryClock = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -39,6 +39,7 @@ export const NETWORK: RetryingFetch = {
   log: (line) => process.stderr.write(`${line}\n`),
 };
 
+const REQUEST_TIMEOUT = 408;
 const TOO_MANY_REQUESTS = 429;
 const FIRST_SERVER_ERROR = 500;
 const JITTER = 0.25;
@@ -65,7 +66,7 @@ type Attempt =
   | { readonly kind: "retry"; readonly reason: string; readonly retryAfterMs: number | null };
 
 function transientStatus(status: number): boolean {
-  return status === TOO_MANY_REQUESTS || status >= FIRST_SERVER_ERROR;
+  return status === REQUEST_TIMEOUT || status === TOO_MANY_REQUESTS || status >= FIRST_SERVER_ERROR;
 }
 
 function errorCode(error: unknown): string | null {
