@@ -1,3 +1,5 @@
+import type { HoverMateCount, PlacementHover, PlacementMode } from "@brr/client";
+import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
@@ -17,9 +19,23 @@ const QUARTER_TURNS = 4;
 const SETTLED_STATUS = /^(?:ready|error)$/u;
 const STUDS_META = /(\d+)×(\d+)/u;
 const MODEL_IMPORT_TIMEOUT_MS = 180_000;
+const HOVER_SETTLE_TIMEOUT_MS = 5_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
+
+function pinnedLdrawPath(url: string): string | undefined {
+  return LDRAW_PATH.exec(decodeURIComponent(new URL(url).pathname))?.groups?.["path"];
+}
+
+export function pinnedLdrawFetch(): FetchFunction {
+  return async (url) => {
+    const path = pinnedLdrawPath(url);
+    const bytes =
+      path === undefined ? null : await readFile(new URL(path, PINNED_LDRAW)).catch(() => null);
+    return bytes === null ? new Response(null, { status: HTTP_NOT_FOUND }) : new Response(bytes);
+  };
+}
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
 const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
 
@@ -144,8 +160,29 @@ export interface LevelCrossing {
   readonly ramps: ReadonlyArray<CrossingRamp>;
 }
 
+export interface DumpedMateCount extends Omit<HoverMateCount, "jointIds"> {
+  readonly jointIds: ReadonlyArray<number>;
+}
+
+export interface DumpedPlacementHover extends Omit<PlacementHover, "mates" | "turnMates"> {
+  readonly mates: ReadonlyArray<DumpedMateCount>;
+  readonly turnMates: ReadonlyArray<DumpedMateCount>;
+}
+
+export interface HoverState {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly placement: DumpedPlacementHover | null;
+}
+
 interface EditState {
+  readonly placementMode: PlacementMode;
+  readonly placementModeOverride: boolean;
+  readonly hover: HoverState | null;
   readonly world: {
+    readonly covers: ReadonlyArray<{ readonly id: string }>;
+    readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
     readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
@@ -355,6 +392,14 @@ export class EditorPage {
     await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
     await this.page.getByRole("button", { name: "Go to x, z" }).click();
     await this.settle();
+    this.forgetView();
+  }
+
+  async zoomAt(target: LatticePoint, wheelDelta: number): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.mouse.move(point.sx, point.sy);
+    await this.page.mouse.wheel(0, wheelDelta);
+    await this.viewAtRest();
     this.forgetView();
   }
 
@@ -626,8 +671,7 @@ export class EditorPage {
 
   async serveLdrawLibrary(): Promise<void> {
     await this.page.context().route(GITHUB_RAW, async (route) => {
-      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(route.request().url()).pathname))
-        ?.groups?.["path"];
+      const path = pinnedLdrawPath(route.request().url());
       const text =
         path === undefined
           ? undefined
@@ -680,6 +724,75 @@ export class EditorPage {
 
   async refs(): Promise<ReadonlyArray<string>> {
     return (await this.editState()).world.refs;
+  }
+
+  async hoverPlacement(): Promise<DumpedPlacementHover | null> {
+    return (await this.editState()).hover?.placement ?? null;
+  }
+
+  async hoverState(): Promise<HoverState | null> {
+    return (await this.editState()).hover;
+  }
+
+  async hoverIn(mode: PlacementMode): Promise<HoverState> {
+    await expect
+      .poll(async () => (await this.hoverPlacement())?.mode ?? null, {
+        message: `the hover is evaluated in ${mode} mode`,
+      })
+      .toBe(mode);
+    const aimed = await this.hoverState();
+    await expect
+      .poll(
+        async () => {
+          const placement = await this.hoverPlacement();
+          if (!placement) return "no placement hover";
+          return [
+            ...(placement.settled ? [] : ["settled"]),
+            ...(placement.turnSettled ? [] : ["turnSettled"]),
+          ].join(" and ");
+        },
+        {
+          message: `the ${mode} hover at cell (${aimed?.x}, ${aimed?.z}) settles within ${HOVER_SETTLE_TIMEOUT_MS} ms; received names the flags still false`,
+          timeout: HOVER_SETTLE_TIMEOUT_MS,
+        },
+      )
+      .toBe("");
+    const hover = await this.hoverState();
+    if (!hover?.placement) throw new Error(`no placement hover in ${mode} mode`);
+    return hover;
+  }
+
+  placementSwitch(): Locator {
+    return this.page.getByRole("switch", { name: "Precise placement" });
+  }
+
+  async placementModes(): Promise<{
+    readonly mode: PlacementMode;
+    readonly override: boolean;
+  }> {
+    const state = await this.editState();
+    return { mode: state.placementMode, override: state.placementModeOverride };
+  }
+
+  async hoverPlacementAt(item: string, target: LatticePoint): Promise<ScreenPoint> {
+    await this.escape();
+    const point = await this.screenOf(target);
+    await this.choose(item);
+    await this.page.mouse.move(point.sx, point.sy);
+    await expect
+      .poll(() => this.hoverPlacement(), { message: `${item} has a placement hover` })
+      .not.toBeNull();
+    return point;
+  }
+
+  async frameShift(item: string): Promise<readonly [number, number, number]> {
+    const { world } = await this.editState();
+    const index = world.covers.findIndex(
+      (cover) => item === cover.id || item.startsWith(`${cover.id}@`),
+    );
+    const shift = world.frameShifts[index];
+    if (index < 0 || !shift) throw new Error(`${item} has no loaded placeable`);
+    return shift;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {
