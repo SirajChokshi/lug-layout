@@ -1,4 +1,10 @@
-import { EDITOR, EDITOR_CAMERA, mainThreadModules, PLAN_SERVICE } from "@brr/client";
+import {
+  EDITOR,
+  EDITOR_CAMERA,
+  mainThreadModules,
+  PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
+} from "@brr/client";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
 import { createElement } from "react";
@@ -34,6 +40,7 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       held: null,
       fillGridStuds: 8,
       plans,
+      sheets: container.get(PLAN_SHEET_SERVICE),
     }),
   );
   const table = () => plans.plans()[0]?.footprint.tables[0];

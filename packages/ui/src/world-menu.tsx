@@ -7,11 +7,11 @@ import type {
 } from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { downloadBlob } from "./download.ts";
 import { ImportReportDetails } from "./import-report.tsx";
 import { MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 
 interface WorldMenuProps {
   readonly editor: IEditor;
@@ -54,15 +54,6 @@ function saveGlance(save: WorldFileView["save"]): string {
       throw new Error(`unhandled ${String(unhandled)}`);
     }
   }
-}
-
-function downloadFile(fileName: string, bytes: Uint8Array): void {
-  const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/zip" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
 }
 
 function WorldRow({
@@ -188,7 +179,11 @@ export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
   };
 
   const onExport = (): void => {
-    void editor.exportWorld().then(({ fileName, bytes }) => downloadFile(fileName, bytes));
+    void editor
+      .exportWorld()
+      .then(({ fileName, bytes }) =>
+        downloadBlob(fileName, new Blob([bytes.slice()], { type: "application/zip" })),
+      );
   };
 
   const onImportModel = (event: ChangeEvent<HTMLInputElement>): void => {
