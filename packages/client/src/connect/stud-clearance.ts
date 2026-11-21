@@ -240,6 +240,7 @@ export class StudClearance implements IStudClearance {
   }
 
   private placedStudsPushIn(volumes: CellVolumes, pose: LatticePose, out: OverlapHit): boolean {
+    if (this.rows.size === 0) return false;
     const world = this.cells.place(volumes, pose);
     for (let c = 0; c < world.count; c++) {
       const bottom = world.bottomLdu[c] ?? 0;
