@@ -1,6 +1,7 @@
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
+import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { RoadFit } from "../src/road-fit.ts";
 import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "../src/road-joins.ts";
@@ -33,11 +34,19 @@ function surfaceOf(
   const road = new Uint8Array(rows * columns);
   for (let index = 0; index < rows * columns; index++) {
     const [t, s, r] = cell(index);
-    top[index] = t;
-    stud[index] = s;
+    top[index] = t * SIXTEENTHS_PER_LDU;
+    stud[index] = s === NO_STUD ? NO_STUD : s * SIXTEENTHS_PER_LDU;
     road[index] = r;
   }
-  return { minX: (-columns * STUD) / 2, minZ: (-rows * STUD) / 2, columns, rows, top, stud, road };
+  return {
+    minX: (-columns * STUD) / 2,
+    minZ: (-rows * STUD) / 2,
+    columns,
+    rows,
+    topSixteenths: top,
+    studSixteenths: stud,
+    road,
+  };
 }
 
 function studMapSurface(map: ReadonlyArray<string>, studTop: number, top: number): RoadSurface {

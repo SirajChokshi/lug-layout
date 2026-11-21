@@ -5,10 +5,10 @@ import { inject, injectable } from "inversify";
 import { colorOf, type IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { IConnectorTables } from "../connect/connector-tables.ts";
 import { CONNECTOR_TABLES, PLACEABLE_CATALOG } from "../tokens.ts";
-import type { PlacedModel } from "./placed-chunks.ts";
 import {
   ROAD_KIT_PREFIX,
   RoadDrawing,
+  type RoadNeighbourhood,
   type RoadKitView,
   type RoadPreview,
   type RoadStrokeView,
@@ -18,8 +18,6 @@ export interface RoadStrokeResult {
   readonly result: "laid" | "refused";
   readonly stroke: RoadStrokeView;
 }
-
-type RoadNeighbours = readonly [ReadonlyArray<PlacedModel>, ReadonlyArray<PlacedModel>];
 
 export interface RoadEditView {
   readonly roadKits: ReadonlyArray<RoadKitView>;
@@ -35,37 +33,15 @@ export interface IRoadEditSession {
 
   pick(id: string, preferredRot: number): boolean;
   drop(): void;
-  hover(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadEditView | null;
-  beginStroke(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): void;
-  moveStroke(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadEditView | null;
+  hover(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): RoadEditView | null;
+  beginStroke(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): void;
+  moveStroke(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): RoadEditView | null;
   extendStroke(hitX: number, hitZ: number): void;
-  endStroke(
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): ReadonlyArray<PlacementRequest> | null;
+  endStroke(neighbours: RoadNeighbourhood): ReadonlyArray<PlacementRequest> | null;
   cancelStroke(): void;
-  turn(rot: number, roads: ReadonlyArray<PlacedModel>, others: ReadonlyArray<PlacedModel>): void;
-  setErase(
-    erase: boolean,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): void;
-  replanStroke(neighbours: () => RoadNeighbours): RoadEditView | null;
+  turn(rot: number, neighbours: RoadNeighbourhood): void;
+  setErase(erase: boolean, neighbours: RoadNeighbourhood): void;
+  replanStroke(neighbours: RoadNeighbourhood): RoadEditView | null;
   setJoinMarkers(joins: ReadonlyArray<EdgeMarker>): void;
 }
 
@@ -90,7 +66,7 @@ export class RoadEditSession implements IRoadEditSession {
 
   start(colors: ReadonlyArray<BundleColor>): void {
     const drawing = new RoadDrawing(
-      this.catalog.placeables().filter((placeable) => placeable !== null),
+      () => this.catalog.placeables(),
       (placeable) =>
         `${colorOf(colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
     );
@@ -132,49 +108,31 @@ export class RoadEditSession implements IRoadEditSession {
     this.erase = false;
   }
 
-  hover(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadEditView | null {
+  hover(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): RoadEditView | null {
     const drawing = this.drawing;
     if (!drawing) return null;
-    return this.showPreview(drawing.hover(hitX, hitZ, roads, others));
+    return this.showPreview(drawing.hover(hitX, hitZ, neighbours));
   }
 
-  beginStroke(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): void {
+  beginStroke(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): void {
     const drawing = this.drawing;
-    if (drawing) this.showPreview(drawing.begin(hitX, hitZ, roads, others));
+    if (drawing) this.showPreview(drawing.begin(hitX, hitZ, neighbours));
   }
 
-  moveStroke(
-    hitX: number,
-    hitZ: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadEditView | null {
+  moveStroke(hitX: number, hitZ: number, neighbours: RoadNeighbourhood): RoadEditView | null {
     const drawing = this.drawing;
     if (!drawing) return null;
-    return this.showPreview(drawing.move(hitX, hitZ, roads, others));
+    return this.showPreview(drawing.move(hitX, hitZ, neighbours));
   }
 
   extendStroke(hitX: number, hitZ: number): void {
     this.drawing?.extend(hitX, hitZ);
   }
 
-  endStroke(
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): ReadonlyArray<PlacementRequest> | null {
+  endStroke(neighbours: RoadNeighbourhood): ReadonlyArray<PlacementRequest> | null {
     const drawing = this.drawing;
     if (!drawing) return null;
-    const stroke = drawing.end(roads, others);
+    const stroke = drawing.end(neighbours);
     this.clearPreview();
     if (!stroke) return null;
     if (stroke.requests.length === 0) {
@@ -193,31 +151,27 @@ export class RoadEditSession implements IRoadEditSession {
     this.clearPreview();
   }
 
-  turn(rot: number, roads: ReadonlyArray<PlacedModel>, others: ReadonlyArray<PlacedModel>): void {
+  turn(rot: number, neighbours: RoadNeighbourhood): void {
     const drawing = this.drawing;
     if (!drawing) return;
     drawing.preferredRot = rot;
-    this.showPreview(drawing.rerun(roads, others));
+    this.showPreview(drawing.rerun(neighbours));
   }
 
-  setErase(
-    erase: boolean,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): void {
+  setErase(erase: boolean, neighbours: RoadNeighbourhood): void {
     const drawing = this.drawing;
     if (!drawing) return;
     drawing.erasing = erase;
     this.erase = erase;
     this.lastStroke = null;
-    this.showPreview(drawing.rerun(roads, others));
+    this.showPreview(drawing.rerun(neighbours));
   }
 
-  replanStroke(neighbours: () => RoadNeighbours): RoadEditView | null {
+  replanStroke(neighbours: RoadNeighbourhood): RoadEditView | null {
     const drawing = this.drawing;
     if (!drawing) return null;
     drawing.worldChanged();
-    return drawing.isDragging() ? this.showPreview(drawing.rerun(...neighbours())) : null;
+    return drawing.isDragging() ? this.showPreview(drawing.rerun(neighbours)) : null;
   }
 
   setJoinMarkers(joins: ReadonlyArray<EdgeMarker>): void {

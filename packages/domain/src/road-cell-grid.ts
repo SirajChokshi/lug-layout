@@ -216,7 +216,7 @@ export class RoadCellGrid implements BlockSource {
     rect: RoadCellRect,
     offsetX: number,
     offsetZ: number,
-    yLdu: number,
+    ySixteenths: number,
     phase: number,
     stopAtFirst: boolean,
   ): number {
@@ -239,7 +239,7 @@ export class RoadCellGrid implements BlockSource {
           for (let x = fromX; x <= toX; x++) {
             let r = block.first(rowSlot | (x & BLOCK_MASK));
             if (r === NO_RECORD || rect.present[rowCell + x] === 0) continue;
-            const top = (rect.top[rowCell + x] ?? 0) + yLdu;
+            const top = (rect.top[rowCell + x] ?? 0) + ySixteenths;
             while (r !== NO_RECORD && (block.top[r] !== top || block.phase[r] !== phase)) {
               r = block.next[r] ?? NO_RECORD;
             }
@@ -253,7 +253,12 @@ export class RoadCellGrid implements BlockSource {
     return occupied;
   }
 
-  reachesLevels(rect: RoadCellRect, offsetX: number, offsetZ: number, yLdu: number): boolean {
+  reachesLevels(
+    rect: RoadCellRect,
+    offsetX: number,
+    offsetZ: number,
+    ySixteenths: number,
+  ): boolean {
     const maxX = offsetX + rect.width;
     const maxZ = offsetZ + rect.depth;
     for (let blockZ = (offsetZ - 1) >> BLOCK_SHIFT; blockZ <= maxZ >> BLOCK_SHIFT; blockZ++) {
@@ -261,7 +266,7 @@ export class RoadCellGrid implements BlockSource {
         const block = this.blockAt(blockX, blockZ);
         if (!block) continue;
         for (let l = 0; l < rect.levels.length; l++) {
-          if (block.holdsLevel((rect.levels[l] ?? 0) + yLdu)) return true;
+          if (block.holdsLevel((rect.levels[l] ?? 0) + ySixteenths)) return true;
         }
       }
     }
