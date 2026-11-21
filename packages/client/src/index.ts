@@ -61,7 +61,6 @@ export type {
   IEditorFrameLoop,
 } from "./edit/editor-frame-loop.ts";
 export type {
-  CatalogPartView,
   EditAction,
   EditorCredits,
   EditorDump,
@@ -82,7 +81,6 @@ export type {
   RailTrainView,
   RoadIssueView,
   RoadJoinView,
-  RoadStrokeResult,
   RoadPlacementDump,
   RefusedClick,
   RoadSnapState,
@@ -95,15 +93,19 @@ export type {
   SelectionView,
   TrackSelectionView,
   TrainSelectionView,
+} from "./edit/editor.ts";
+export type {
+  CatalogPartView,
+  CrossingRampView,
+  CrossingView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
   TrackSolveStats,
-  TrackUnsupportedView,
   TrackView,
-  CrossingView,
-  CrossingRampView,
-} from "./edit/editor.ts";
+} from "./edit/track-edit-session.ts";
+export type { TrackUnsupportedView } from "./edit/track-world.ts";
+export type { RoadStrokeResult } from "./edit/road-edit-session.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type { FillView } from "./edit/fill-tool.ts";
 export type {
@@ -223,7 +225,7 @@ export type {
   StarterWorldView,
   WelcomeView,
 } from "./starters/starter-worlds.ts";
-export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export { TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,
