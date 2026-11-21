@@ -37,7 +37,28 @@ const SAMPLING_BYTES = 64;
 const COVERAGE_MOVES = 20;
 const PER_TILE_CHECK = "checkPlacement";
 const GATED_CHECKS: ReadonlyArray<string> = ["restingYPlatesAt", "roadOverlap", "modelTrackBlock"];
-const SOLVER = "check";
+const ROAD_AND_TRACK_FRAMES: ReadonlyArray<string> = [
+  ...GATED_CHECKS,
+  "reusedRoadProbe",
+  "over",
+  "raiseToTopOver",
+  "partBoxGridOf",
+  "roadOverlapCells",
+  "overlappingRoadCells",
+  "reachablePlacements",
+  "near",
+  "find",
+  "roadUnder",
+  "roadAtTop",
+  "extentsOverlap",
+  "cellExtentInto",
+  "solidRectsAt",
+  "carriedParts",
+  "modelTrack",
+  "latticeFrame",
+  "heldPieces",
+  "heldRuns",
+];
 const REFUSAL_TEXT: ReadonlyArray<string> = ["refusalText", "refusalHit"];
 const TRACK_DRAWING = "modelBlocker";
 const RECESSED_ITEM = "ldraw:69958@72";
@@ -448,15 +469,21 @@ interface Coverage {
   }>;
 }
 
-type Charge = "outside" | "gated" | "solver" | "refusal" | "track";
+type Charge = "outside" | "tile" | "gated" | "other" | "refusal" | "track";
 
-function charges(node: ProfileNode, charge: Charge, out: Map<number, Charge>): void {
-  const name = node.callFrame.functionName;
-  let here = charge;
-  if (charge === "outside" && name === PER_TILE_CHECK) here = "gated";
-  else if (charge === "gated" && name === SOLVER) here = "solver";
-  else if (charge === "gated" && REFUSAL_TEXT.includes(name)) here = "refusal";
-  else if (charge === "gated" && name === TRACK_DRAWING) here = "track";
+function chargeOf(parent: Charge, name: string): Charge {
+  if (parent === "outside") return name === PER_TILE_CHECK ? "tile" : "outside";
+  if (parent === "tile" || parent === "gated") {
+    if (name === TRACK_DRAWING) return "track";
+    if (REFUSAL_TEXT.includes(name)) return "refusal";
+    if (parent === "gated" || ROAD_AND_TRACK_FRAMES.includes(name)) return "gated";
+    return "other";
+  }
+  return parent;
+}
+
+function charges(node: ProfileNode, parent: Charge, out: Map<number, Charge>): void {
+  const here = chargeOf(parent, node.callFrame.functionName);
   out.set(node.id, here);
   for (const child of node.children) charges(child, here, out);
 }
@@ -464,7 +491,7 @@ function charges(node: ProfileNode, charge: Charge, out: Map<number, Charge>): v
 interface Gate {
   readonly name: string;
   readonly gated: number;
-  readonly solver: number;
+  readonly other: number;
   readonly refusal: number;
   readonly track: number;
   readonly wholeMove: number;
@@ -495,7 +522,14 @@ async function sampledWindow(name: string, flip: (i: number) => void): Promise<G
   };
   const charged = new Map<number, Charge>();
   charges(profile.head, "outside", charged);
-  const bytes: Record<Charge, number> = { outside: 0, gated: 0, solver: 0, refusal: 0, track: 0 };
+  const bytes: Record<Charge, number> = {
+    outside: 0,
+    tile: 0,
+    gated: 0,
+    other: 0,
+    refusal: 0,
+    track: 0,
+  };
   for (const sample of profile.samples) {
     bytes[charged.get(sample.nodeId) ?? "outside"] += sample.size;
   }
@@ -503,8 +537,8 @@ async function sampledWindow(name: string, flip: (i: number) => void): Promise<G
   for (const charge of Object.values(bytes)) whole += charge;
   return {
     name,
-    gated: bytes.gated / GATE_MOVES,
-    solver: bytes.solver / GATE_MOVES,
+    gated: (bytes.tile + bytes.gated) / GATE_MOVES,
+    other: bytes.other / GATE_MOVES,
     refusal: bytes.refusal / GATE_MOVES,
     track: bytes.track / GATE_MOVES,
     wholeMove: whole / GATE_MOVES,
@@ -561,7 +595,7 @@ async function gatedFill(
   }
   if (cleanest.gated > 0) {
     throw new Error(
-      `${name}: the per-tile checks outside the solver, refusal text and track drawing allocate ${cleanest.gated} bytes per move; the gate is 0`,
+      `${name}: the per-tile check and its road and track functions allocate ${cleanest.gated} bytes per move; the gate is 0`,
     );
   }
   gates.push(cleanest);
@@ -614,13 +648,13 @@ process.stdout.write(
         `| ${r.name} | ${r.calls} | ${r.medianUs.toFixed(0)} | ${r.p95Us.toFixed(0)} | ${r.meanUs.toFixed(0)} | ${Number.isNaN(r.bytesPerCall) ? "NaN" : Math.round(r.bytesPerCall)} | ${r.gcs} | ${r.note} |`,
     ),
     "",
-    `Allocation gate: heap sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves, the cleanest of ${GATE_WINDOWS} windows. Gated at 0: everything allocated under ${PER_TILE_CHECK}, inlined helpers included, except the placement solver (${SOLVER}), refusal text (${REFUSAL_TEXT.join(", ")}) and the track drawing's ${TRACK_DRAWING}, reported beside it. Each row fails if precise coverage over ${COVERAGE_MOVES} further moves shows ${[PER_TILE_CHECK, ...GATED_CHECKS].join(", ")} or its own named functions never called.`,
+    `Allocation gate: heap sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves, the cleanest of ${GATE_WINDOWS} windows. Gated at 0: bytes charged to ${PER_TILE_CHECK} itself, where V8 charges inlined helpers, and to the road and track functions under it with their callees (${ROAD_AND_TRACK_FRAMES.join(", ")}). Reported beside it: every other frame under ${PER_TILE_CHECK} (the placement solver and other base code), refusal text (${REFUSAL_TEXT.join(", ")}) and the track drawing's ${TRACK_DRAWING}. Each row fails if precise coverage over ${COVERAGE_MOVES} further moves shows ${[PER_TILE_CHECK, ...GATED_CHECKS].join(", ")} or its own named functions never called.`,
     "",
-    "| Row | Gated (0) | Placement solver | Refusal text | Track drawing | Whole move |",
+    "| Row | Gated (0) | Solver and other base code | Refusal text | Track drawing | Whole move |",
     "|---|---:|---:|---:|---:|---:|",
     ...gates.map(
       (g) =>
-        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.solver)} | ${Math.round(g.refusal)} | ${Math.round(g.track)} | ${Math.round(g.wholeMove)} |`,
+        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.other)} | ${Math.round(g.refusal)} | ${Math.round(g.track)} | ${Math.round(g.wholeMove)} |`,
     ),
     "",
   ].join("\n"),
