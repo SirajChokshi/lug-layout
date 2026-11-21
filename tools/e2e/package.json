@@ -19,6 +19,7 @@
     "@brr/import": "workspace:*",
     "@brr/math": "workspace:*",
     "@brr/schema": "workspace:*",
+    "@brr/storage": "workspace:*",
     "valibot": "1.5.0"
   },
   "devDependencies": {

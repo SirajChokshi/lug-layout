@@ -9,7 +9,14 @@ export type {
   RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
-export { DEFAULT_LOOK_FEATURES, LOOK_FEATURES } from "@brr/render";
+export {
+  DEFAULT_LOOK_FEATURES,
+  LOOK_FEATURES,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
+} from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type {
   FarModelSummary,
@@ -62,6 +69,8 @@ export type {
   EditorOptions,
   EditorSnapshot,
   EditorStatus,
+  FillResult,
+  GestureView,
   HistoryView,
   HoverView,
   IEditor,
@@ -69,6 +78,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -78,14 +89,23 @@ export type {
   RoadSnapView,
   PlaceableCoverView,
   QueuedPlacement,
+  SelectDragKind,
+  SelectionItemView,
+  SelectionTally,
   SelectionView,
+  TrackSelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
   TrackSolveStats,
+  TrackUnsupportedView,
   TrackView,
+  CrossingView,
+  CrossingRampView,
 } from "./edit/editor.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
+export type { FillView } from "./edit/fill-tool.ts";
 export type {
   ExportedWorld,
   ModelFileInput,
@@ -126,11 +146,11 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export { MM_PER_STUD, STUD_LDU } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
@@ -161,6 +181,8 @@ export {
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_POOL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
@@ -171,15 +193,61 @@ export {
   PLAN_SERVICE,
   HOTBAR,
   SCALE_BAR,
+  STARTER_WORLDS,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
+export type {
+  IStarterWorlds,
+  StarterShelfStatus,
+  StarterWorldView,
+  WelcomeView,
+} from "./starters/starter-worlds.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,
   RollingDiagnosticsRowView,
 } from "./inspect/rolling-diagnostics.ts";
+export type {
+  AssistNeighbourhood,
+  ConnectorGender,
+  ConnectorKindView,
+  ConnectorSectionView,
+  HoverMateCount,
+  HoverRefusalHit,
+  HoverWait,
+  MagnetOffset,
+  PlacedModelView,
+  PlacementHover,
+  PlacementMode,
+  SectionProfile,
+} from "./edit/placement-hover.ts";
+export { distinctJoints } from "./edit/placement-hover.ts";
+export {
+  effectivePlacementMode,
+  holdPlacementModeOverride,
+  otherPlacementMode,
+  placementModeSwitchEnabled,
+  togglePlacementMode,
+  type PlacementModeView,
+} from "./edit/placement-mode.ts";
+export {
+  badgeText,
+  placementFeedback,
+  showsLate,
+  type BadgeCount,
+  type ConnectorBadge,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementLineKind,
+  type PlacementTone,
+} from "./edit/placement-feedback.ts";
 export {
   meshesSettled,
   type MeshCounts,
@@ -213,14 +281,19 @@ export {
 } from "./commands/editor-commands.ts";
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
+export { trackBlockText } from "./edit/track-drag.ts";
 export {
+  tallyText,
   toolHints,
+  unjoinedText,
   type ToolHint,
   type ToolHintView,
+  type ToolSpeech,
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
 export {
+  altKeyName,
   chordKeys,
   chordText,
   keyPlatform,
@@ -246,12 +319,22 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  TrackBlockView,
   TrackDragView,
   SwitchLeverView,
   TrackEndView,
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export { MM_PER_CM, cmText, studsText } from "./edit/size-labels.ts";
+export type { LabelKind, LabelView } from "./edit/size-labels.ts";
+export type {
+  ExtensionKind,
+  ExtensionTurn,
+  TrackChoiceView,
+  TrackExtendView,
+  UnjoinedEndView,
+} from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {
@@ -287,6 +370,18 @@ export type {
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
+export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
+export type {
+  ILibraryPartSearch,
+  LibrarySearchStatus,
+  LibrarySearchView,
+} from "./catalog/library-part-search.ts";
+export type {
+  ILibraryPartPlacer,
+  LibraryPlacementRefusal,
+  LibraryPlacementTarget,
+  LibraryPlacementView,
+} from "./catalog/library-part-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 export type { IPalette } from "./catalog/palette.ts";
 export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";
