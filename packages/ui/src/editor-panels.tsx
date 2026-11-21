@@ -4,16 +4,19 @@ import {
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
+  type IPanelLayout,
   type LatencySample,
   type MeshCounts,
   type MeshProgress,
   type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
+  type UndrawnPart,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
 import { useState, type FormEvent } from "react";
+import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -30,16 +33,48 @@ function countText(count: number, label: string): string {
   return count > 0 ? `, ${integer.format(count)} ${label}` : "";
 }
 
-function meshCountsText(counts: MeshCounts, meshes: string, standIn: string): string {
-  const note = counts.loaded < counts.wanted ? ` (${standIn} stand in)` : "";
+function meshCountsText(counts: MeshCounts, meshes: string, unloaded: string): string {
+  const note = counts.loaded < counts.wanted ? ` (${unloaded})` : "";
   return `${integer.format(counts.loaded)} of ${integer.format(counts.wanted)} ${meshes}loaded${countText(counts.failed, "failed")}${countText(counts.absent, "absent")}${note}`;
 }
 
 function partMeshesText(meshes: MeshProgress): string {
   return [
-    meshCountsText(meshes.detailedPartMeshes, "detailed-level meshes ", "placeholders"),
-    meshCountsText(meshes.farPartMeshes, "far-level meshes ", "detailed-level meshes"),
+    meshCountsText(
+      meshes.detailedPartMeshes,
+      "detailed-level meshes ",
+      "parts without one aren't drawn",
+    ),
+    meshCountsText(
+      meshes.farPartMeshes,
+      "far-level meshes ",
+      "detailed-level meshes are drawn instead",
+    ),
   ].join(", ");
+}
+
+function undrawnReasonText(reason: UndrawnPart["reason"]): string {
+  switch (reason) {
+    case "absent":
+      return "the bundle has no mesh for it";
+    case "failed":
+      return "its mesh failed to load";
+    default: {
+      const unhandled: never = reason;
+      throw new Error(`unhandled undrawn reason ${String(unhandled)}`);
+    }
+  }
+}
+
+function undrawnPartsText(parts: ReadonlyArray<UndrawnPart>): string {
+  if (parts.length === 0) return "none";
+  return parts
+    .map(({ part, reason }) => `${part.replace(/^[a-z]+:/u, "")} (${undrawnReasonText(reason)})`)
+    .join(", ");
+}
+
+function undrawnGlance(count: number): string {
+  return `${integer.format(count)} ${count === 1 ? "part" : "parts"} not drawn`;
 }
 
 function ldu(value: number): string {
@@ -70,12 +105,12 @@ function issueText(issue: RoadIssueView): string {
   return `${issue.item.replace(/^[a-z]+:/u, "")} ${issue.side} edge at ${axis} = ${issue.line}, ${along} ${issue.from}…${issue.to}, top ${issue.topLdu} LDU`;
 }
 
-export function RoadJoins({ editor, snapshot }: PanelProps) {
+function RoadJoins({ editor, snapshot }: PanelProps) {
   const { roads } = snapshot;
   return (
-    <details className="road-joins" aria-label="Road joins">
+    <details className="stats-section road-joins" aria-label="Road joins">
       <summary>
-        <h2>Road joins</h2>
+        <h3>Road joins</h3>
         <span className="road-joins-summary">
           {roads.joinedCells} joined · {roads.openCells} open · {roads.mismatchedCells} mismatched
         </span>
@@ -344,27 +379,12 @@ function rebuildText(sample: LatencySample | null): string {
   return `${sample.rebuiltChunks} chunks, ${integer.format(sample.rebuiltInstances)} parts, ${integer.format(sample.rebuiltStuds)} studs`;
 }
 
-const STATS_OPEN_KEY = "brr.stats-open";
-
-function statsOpenAtStart(): boolean {
-  if (isCompactLayout()) return false;
-  try {
-    return window.localStorage.getItem(STATS_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function rememberStatsOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(STATS_OPEN_KEY, String(open));
-  } catch {
-    return;
-  }
-}
-
-export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
-  const [open, setOpen] = useState(statsOpenAtStart);
+export function EditorHud({
+  editor,
+  snapshot,
+  panels,
+}: PanelProps & { readonly panels: IPanelLayout }) {
+  const [open, setOpen] = useState(() => !isCompactLayout() && panels.snapshot().stats);
   const { backend, stats } = snapshot;
   const glance = [
     ...(stats ? [`${stats.fps.toFixed(0)} fps`] : []),
@@ -417,9 +437,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
     ],
     ["Part meshes", partMeshesText(snapshot.meshes)],
+    ["Parts not drawn", undrawnPartsText(snapshot.meshes.undrawnParts)],
     [
       "Far model meshes",
-      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes"),
+      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes are drawn instead"),
     ],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
@@ -463,16 +484,21 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   }
   return (
     <details
-      className="hud editor-hud"
+      className="editor-hud"
       open={open || snapshot.error !== null}
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
-        rememberStatsOpen(event.currentTarget.open);
+        panels.setOpen("stats", event.currentTarget.open);
       }}
     >
-      <summary title={open ? "Fold the stats away" : "Show the editor's stats"}>
-        <h1>Brick Railroad</h1>
+      <summary title={open ? "Fold the stats away" : "Show the editor's stats and readouts"}>
+        <h2>Stats</h2>
         <span className="hud-glance">{glance}</span>
+        {snapshot.meshes.undrawnParts.length > 0 && (
+          <span className="hud-glance hud-glance-warning">
+            {undrawnGlance(snapshot.meshes.undrawnParts.length)}
+          </span>
+        )}
       </summary>
       {snapshot.status === "loading" && <p>Loading the bundle and the 10 sets…</p>}
       {snapshot.error !== null && <p className="error">{snapshot.error}</p>}
@@ -484,6 +510,8 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           </div>
         ))}
       </dl>
+      <TrackPanel snapshot={snapshot} />
+      <RoadJoins editor={editor} snapshot={snapshot} />
     </details>
   );
 }

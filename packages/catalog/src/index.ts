@@ -16,7 +16,7 @@ export {
   EMPTY_COLUMN,
   INHERIT_COLOR,
 } from "./part-bundle.ts";
-export { placeholderMesh, withPlaceholderMesh } from "./placeholder.ts";
+export { undrawnPart } from "./undrawn-part.ts";
 export type {
   BricklinkPartCandidates,
   CatalogColorIds,

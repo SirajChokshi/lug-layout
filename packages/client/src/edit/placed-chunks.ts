@@ -1091,6 +1091,7 @@ export class PlacedChunks {
   }
 
   clear(): void {
+    for (const entry of this.entries) this.backend.setFarModel(entry.id, null);
     for (const key of new Set([...this.byChunk.keys(), ...this.chunkStuds.keys()])) {
       this.backend.deleteChunk(key);
     }

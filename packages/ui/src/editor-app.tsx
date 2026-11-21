@@ -7,11 +7,9 @@ import {
   type IBomService,
   type IEditor,
   type IEditorCamera,
-  type IPaletteDrag,
-  type IPaletteMemory,
-  type IPalettePrefetch,
-  type IPaletteSearch,
-  type IPaletteThumbnails,
+  type IHotbar,
+  type IPalette,
+  type IPanelLayout,
   type IPlanService,
   type IRunningGear,
   type ITrainPlay,
@@ -21,13 +19,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
-import {
-  EditorFooter,
-  EditorHud,
-  Inspector,
-  PlacementToolbar,
-  RoadJoins,
-} from "./editor-panels.tsx";
+import { EditorFooter, EditorHud, Inspector, PlacementToolbar } from "./editor-panels.tsx";
+import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
@@ -36,7 +29,6 @@ import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
-import { TrackPanel } from "./track-panel.tsx";
 import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
@@ -51,11 +43,9 @@ interface EditorAppProps {
   readonly plans: IPlanService;
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
-  readonly paletteSearch: IPaletteSearch;
-  readonly paletteDrag: IPaletteDrag;
-  readonly palettePrefetch: IPalettePrefetch;
-  readonly paletteMemory: IPaletteMemory;
-  readonly paletteThumbnails: IPaletteThumbnails;
+  readonly palette: IPalette;
+  readonly panels: IPanelLayout;
+  readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -121,11 +111,9 @@ export function EditorApp({
   plans,
   bomService,
   play,
-  paletteSearch,
-  paletteDrag,
-  palettePrefetch,
-  paletteMemory,
-  paletteThumbnails,
+  palette,
+  panels,
+  hotbar,
   runningGear,
   options,
   disclaimer,
@@ -146,6 +134,7 @@ export function EditorApp({
   useEditorKeys(editor, camera, {
     play,
     onShellCommand: toggleOverlay,
+    hotbar,
     overlayOpen: overlay !== null,
     closeOverlay,
   });
@@ -178,13 +167,14 @@ export function EditorApp({
         editor={editor}
         camera={camera}
         play={play}
-        paletteDrag={paletteDrag}
+        paletteDrag={palette.drag}
         options={options}
       />
-      <ToolHud snapshot={snapshot} play={playSnapshot} />
-      <EditorHud snapshot={snapshot} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
-      <PlanPanel camera={camera} plans={plans} />
+      <LibraryColumn panels={panels}>
+        <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
+      </LibraryColumn>
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar
@@ -194,6 +184,8 @@ export function EditorApp({
           onEditorAction={runAction}
           onShellCommand={toggleOverlay}
         />
+        <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <Inspector snapshot={snapshot} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}
@@ -203,19 +195,7 @@ export function EditorApp({
           ready={snapshot.status === "ready"}
           checkingStuds={snapshot.studChecks > 0}
         />
-        <PalettePanel
-          editor={editor}
-          snapshot={snapshot}
-          search={paletteSearch}
-          drag={paletteDrag}
-          prefetch={palettePrefetch}
-          memory={paletteMemory}
-          thumbnails={paletteThumbnails}
-        />
-        <TrackPanel snapshot={snapshot} />
-        <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
-        <RoadJoins editor={editor} snapshot={snapshot} />
+        <PlanPanel camera={camera} plans={plans} />
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
@@ -224,6 +204,7 @@ export function EditorApp({
             selectionLabel={snapshot.selection?.item ?? null}
           />
         )}
+        <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
@@ -235,7 +216,7 @@ export function EditorApp({
           editor={editor}
           camera={camera}
           play={play}
-          search={paletteSearch}
+          search={palette.search}
           snapshot={snapshot}
           onClose={closeOverlay}
           onShellCommand={toggleOverlay}

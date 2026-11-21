@@ -3,14 +3,12 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_MEMORY,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
-  PALETTE_THUMBNAILS,
+  PALETTE,
+  PANEL_LAYOUT,
   RUNNING_GEAR,
   TRACK_SCENE,
   TRAIN_PLAY,
@@ -139,11 +137,9 @@ function root(): ReactNode {
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         play={container.get(TRAIN_PLAY)}
-        paletteSearch={container.get(PALETTE_SEARCH)}
-        paletteDrag={container.get(PALETTE_DRAG)}
-        palettePrefetch={container.get(PALETTE_PREFETCH)}
-        paletteMemory={container.get(PALETTE_MEMORY)}
-        paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
+        palette={container.get(PALETTE)}
+        panels={container.get(PANEL_LAYOUT)}
+        hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,
