@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, loadEnv, type Connect, type Plugin } from "vite";
 
 const appRoot = fileURLToPath(new URL(".", import.meta.url));
+const startersRoot = fileURLToPath(new URL("./starters/", import.meta.url));
 const assetBundleRoot = fileURLToPath(new URL("../../tools/asset-pipeline/dist", import.meta.url));
 const libraryBakeRoot = fileURLToPath(new URL("../../.cache/library-bake", import.meta.url));
 const LIBRARY_BAKE_PATH = /^\/library-bake\/(?<file>(?:[\w.-]+\/)?[\w.-]+)$/u;
@@ -105,6 +106,9 @@ export default defineConfig(({ mode }) => {
       ? [react(), bundleCacheHeaders]
       : [react(), bundleCacheHeaders, libraryBakeFiles],
     publicDir: remote ? false : assetBundleRoot,
-    build: { target: "es2022" },
+    build: {
+      target: "es2022",
+      assetsInlineLimit: (file: string) => (file.startsWith(startersRoot) ? false : undefined),
+    },
   };
 });
