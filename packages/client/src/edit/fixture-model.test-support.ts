@@ -25,6 +25,7 @@ import type {
   BundleLod,
   BundleManifest,
   CatalogPart,
+  LibraryPartsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import { Container } from "inversify";
@@ -188,6 +189,10 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
     return this.shipped.loadRollingDiagnostics(lod);
+  }
+
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.shipped.loadLibraryParts(lod);
   }
 
   private from(name: string): IPartBundleLoader {

@@ -69,6 +69,10 @@ interface EditorAppProps {
   readonly showState: boolean;
 }
 
+function setsAsArrays(_key: string, value: unknown): unknown {
+  return value instanceof Set ? [...value] : value;
+}
+
 function EditorState({ editor }: { readonly editor: IEditor }) {
   const snapshot = useEditorSnapshot(editor);
   const held = heldItem(snapshot);
@@ -81,14 +85,20 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
       data-held-item={held?.item}
       data-held-tables={held?.tables}
     >
-      {JSON.stringify({
-        held,
-        latencies: snapshot.latencies,
-        stats: snapshot.stats,
-        measurement: snapshot.measurement,
-        world: editor.dump(),
-        routes: editor.trackRoutes(),
-      })}
+      {JSON.stringify(
+        {
+          held,
+          hover: snapshot.hover,
+          placementMode: snapshot.placementMode,
+          placementModeOverride: snapshot.placementModeOverride,
+          latencies: snapshot.latencies,
+          stats: snapshot.stats,
+          measurement: snapshot.measurement,
+          world: editor.dump(),
+          routes: editor.trackRoutes(),
+        },
+        setsAsArrays,
+      )}
     </pre>
   );
 }
