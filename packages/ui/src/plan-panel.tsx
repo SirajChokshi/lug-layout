@@ -11,6 +11,7 @@ import {
   type IEditor,
   type IEditorCamera,
   type IPlanService,
+  type IPlanSheetService,
   type MmRect,
   type PlanRegion,
   type PlanRuleId,
@@ -18,6 +19,7 @@ import {
   type TableTop,
 } from "@brr/client";
 import { useState } from "react";
+import { downloadBlob } from "./download.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
@@ -561,6 +563,15 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
   );
 }
 
+const FILE_NAME_UNSAFE = /[^A-Za-z0-9-]+/gu;
+
+function savePlanSheet(svg: string, planName: string): void {
+  downloadBlob(
+    `${planName.trim().replaceAll(FILE_NAME_UNSAFE, "-")}.plan.svg`,
+    new Blob([svg], { type: "image/svg+xml" }),
+  );
+}
+
 function ActivePlan({
   camera,
   editor,
@@ -568,6 +579,7 @@ function ActivePlan({
   held,
   fillGridStuds,
   plans,
+  sheets,
   plan,
 }: {
   readonly camera: IEditorCamera;
@@ -576,6 +588,7 @@ function ActivePlan({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly plan: PlanRegion;
 }) {
   return (
@@ -614,6 +627,14 @@ function ActivePlan({
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
         </button>
+        <button
+          type="button"
+          data-action="printable-plan"
+          title="Download a true-scale top view (SVG) to print at 100%"
+          onClick={() => savePlanSheet(sheets.printable(editor, plan.id), plan.name)}
+        >
+          Printable plan (SVG)
+        </button>
         <button type="button" onClick={() => plans.removePlan(plan.id)}>
           Delete plan
         </button>
@@ -640,6 +661,7 @@ export function PlanPanel({
   held,
   fillGridStuds,
   plans,
+  sheets,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -647,6 +669,7 @@ export function PlanPanel({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
 }) {
   usePlanVersion(plans);
   const regions = plans.plans();
@@ -691,6 +714,7 @@ export function PlanPanel({
           held={held}
           fillGridStuds={fillGridStuds}
           plans={plans}
+          sheets={sheets}
           plan={active}
         />
       ) : (

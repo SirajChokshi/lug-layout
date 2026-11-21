@@ -2,6 +2,7 @@ import type { PartShapeAsset } from "@brr/catalog";
 import {
   NO_OBSTACLE,
   OUTLINE_BOX_FLOATS,
+  PlacedOutline,
   convexHull,
   levelCrossings,
   outlineBox,
@@ -190,6 +191,20 @@ export class CrossingRamps {
     return best;
   }
 
+  outlines(crossings: ReadonlyArray<SuggestedCrossing>): ReadonlyArray<PlacedOutline> {
+    return crossings.flatMap((crossing) =>
+      crossing.ramps.map((ramp) =>
+        PlacedOutline.onLattice(this.assetOf(ramp.part).part.outline, ramp.x, ramp.z, ramp.rot),
+      ),
+    );
+  }
+
+  private assetOf(part: string): RampAsset {
+    const asset = this.ramps.find((candidate) => candidate.part.facts.part === part);
+    if (!asset) throw new Error(`ramp part ${part} is not in the bundle`);
+    return asset;
+  }
+
   instances(crossings: ReadonlyArray<SuggestedCrossing>): ReadonlyMap<number, ChunkInstances> {
     const byChunk = new Map<number, SeatedRamp[]>();
     for (const ramp of crossings.flatMap((crossing) => crossing.ramps)) {
@@ -212,8 +227,7 @@ export class CrossingRamps {
     const colorIndex = new Uint16Array(count);
     const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
     ramps.forEach((ramp, i) => {
-      const asset = this.ramps.find((candidate) => candidate.part.facts.part === ramp.part);
-      if (!asset) throw new Error(`ramp part ${ramp.part} is not in the bundle`);
+      const asset = this.assetOf(ramp.part);
       partIndex[i] = asset.index;
       colorIndex[i] = asset.color;
       const cos = rot90Cos(ramp.rot);
