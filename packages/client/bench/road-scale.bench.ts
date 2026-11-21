@@ -61,6 +61,13 @@ const ROAD_AND_TRACK_FRAMES: ReadonlyArray<string> = [
 ];
 const REFUSAL_TEXT: ReadonlyArray<string> = ["refusalText", "refusalHit"];
 const TRACK_DRAWING = "modelBlocker";
+const TRACK_DRAWING_CALLBACKS: ReadonlyArray<string> = [
+  "solidRectsIn",
+  "solidRectsAt",
+  "carriedParts",
+];
+const HELD_TRACK: ReadonlyArray<string> = ["latticeFrame", "heldPieces", "heldRuns"];
+const CARRIED_TRACK_ITEM = "generated:mils-rail-straight";
 const RECESSED_ITEM = "ldraw:69958@72";
 const TRACK_PIECES_LDU = 4 * 320;
 const WARMUP = 40;
@@ -473,6 +480,7 @@ type Charge = "outside" | "tile" | "gated" | "other" | "refusal" | "track";
 
 function chargeOf(parent: Charge, name: string): Charge {
   if (parent === "outside") return name === PER_TILE_CHECK ? "tile" : "outside";
+  if (parent === "track") return TRACK_DRAWING_CALLBACKS.includes(name) ? "gated" : "track";
   if (parent === "tile" || parent === "gated") {
     if (name === TRACK_DRAWING) return "track";
     if (REFUSAL_TEXT.includes(name)) return "refusal";
@@ -490,6 +498,7 @@ function charges(node: ProfileNode, parent: Charge, out: Map<number, Charge>): v
 
 interface Gate {
   readonly name: string;
+  readonly atZero: boolean;
   readonly gated: number;
   readonly other: number;
   readonly refusal: number;
@@ -505,7 +514,11 @@ for (const frame of [PER_TILE_CHECK, ...GATED_CHECKS]) {
   }
 }
 
-async function sampledWindow(name: string, flip: (i: number) => void): Promise<Gate> {
+async function sampledWindow(
+  name: string,
+  atZero: boolean,
+  flip: (i: number) => void,
+): Promise<Gate> {
   const session = new Session();
   session.connect();
   await session.post("HeapProfiler.enable");
@@ -537,6 +550,7 @@ async function sampledWindow(name: string, flip: (i: number) => void): Promise<G
   for (const charge of Object.values(bytes)) whole += charge;
   return {
     name,
+    atZero,
     gated: (bytes.tile + bytes.gated) / GATE_MOVES,
     other: bytes.other / GATE_MOVES,
     refusal: bytes.refusal / GATE_MOVES,
@@ -563,14 +577,25 @@ async function calledIn(flip: (i: number) => void): Promise<ReadonlySet<string>>
   return called;
 }
 
-async function gatedFill(
-  name: string,
-  item: string,
-  side: number,
-  pressX: number,
-  pressZ: number,
-  mustRun: ReadonlyArray<string>,
-): Promise<void> {
+interface SampledFill {
+  readonly name: string;
+  readonly item: string;
+  readonly side: number;
+  readonly pressX: number;
+  readonly pressZ: number;
+  readonly mustRun: ReadonlyArray<string>;
+  readonly atZero: boolean;
+}
+
+async function sampledFill({
+  name,
+  item,
+  side,
+  pressX,
+  pressZ,
+  mustRun,
+  atZero,
+}: SampledFill): Promise<void> {
   await hold(item);
   const reach = grid * STUD_LDU * side - STUD_LDU;
   move(pressX, pressZ);
@@ -583,7 +608,7 @@ async function gatedFill(
   for (let i = 0; i < GATE_WARMUP; i++) flip(i);
   let cleanest: Gate | null = null;
   for (let window = 0; window < GATE_WINDOWS; window++) {
-    const sampled = await sampledWindow(name, flip);
+    const sampled = await sampledWindow(name, atZero, flip);
     if (!cleanest || sampled.gated < cleanest.gated) cleanest = sampled;
   }
   const ran = await calledIn(flip);
@@ -593,7 +618,7 @@ async function gatedFill(
   if (missing.length > 0) {
     throw new Error(`${name}: ${missing.join(", ")} never ran, so the gate wouldn't watch them`);
   }
-  if (cleanest.gated > 0) {
+  if (atZero && cleanest.gated > 0) {
     throw new Error(
       `${name}: the per-tile check and its road and track functions allocate ${cleanest.gated} bytes per move; the gate is 0`,
     );
@@ -601,22 +626,24 @@ async function gatedFill(
   gates.push(cleanest);
 }
 
-await gatedFill(
-  "fill move: 8 x 8 road plates on empty ground",
-  ITEM,
-  8,
-  minX - TILE / 2 - 9 * TILE,
-  minZ - TILE / 2 + half * TILE,
-  [],
-);
-await gatedFill(
-  "fill move: 4 x 4 69958 plates onto the road field, road at another top",
-  RECESSED_ITEM,
-  4,
-  fieldCorner.x,
-  fieldCorner.z,
-  ["roadUnder"],
-);
+const emptyGround = { pressX: minX - TILE / 2 - 9 * TILE, pressZ: minZ - TILE / 2 + half * TILE };
+await sampledFill({
+  name: "fill move: 8 x 8 road plates on empty ground",
+  item: ITEM,
+  side: 8,
+  ...emptyGround,
+  mustRun: [],
+  atZero: true,
+});
+await sampledFill({
+  name: "fill move: 4 x 4 69958 plates onto the road field, road at another top",
+  item: RECESSED_ITEM,
+  side: 4,
+  pressX: fieldCorner.x,
+  pressZ: fieldCorner.z,
+  mustRun: ["roadUnder"],
+  atZero: true,
+});
 editor.chooseItem(TRACK_ITEM_ID);
 const trackZ = minZ - 12 * TILE;
 backend.aim(minX, trackZ);
@@ -627,14 +654,22 @@ editor.pointerMove(0, 0);
 editor.dragMove(0, 0);
 editor.dragEnd(0, 0, 0);
 if ((editor.snapshot().track?.pieces ?? 0) === 0) throw new Error("no track was laid");
-await gatedFill(
-  "fill move: 8 x 8 road plates on empty ground, with track laid",
-  ITEM,
-  8,
-  minX - TILE / 2 - 9 * TILE,
-  minZ - TILE / 2 + half * TILE,
-  [TRACK_DRAWING],
-);
+await sampledFill({
+  name: "fill move: 8 x 8 road plates on empty ground, with track laid",
+  item: ITEM,
+  side: 8,
+  ...emptyGround,
+  mustRun: [TRACK_DRAWING, "solidRectsIn"],
+  atZero: true,
+});
+await sampledFill({
+  name: "fill move: 4 x 4 MILS rail straights, which carry track, on empty ground, with track laid",
+  item: CARRIED_TRACK_ITEM,
+  side: 4,
+  ...emptyGround,
+  mustRun: [TRACK_DRAWING, ...HELD_TRACK],
+  atZero: false,
+});
 
 observer.disconnect();
 process.stdout.write(
@@ -648,13 +683,13 @@ process.stdout.write(
         `| ${r.name} | ${r.calls} | ${r.medianUs.toFixed(0)} | ${r.p95Us.toFixed(0)} | ${r.meanUs.toFixed(0)} | ${Number.isNaN(r.bytesPerCall) ? "NaN" : Math.round(r.bytesPerCall)} | ${r.gcs} | ${r.note} |`,
     ),
     "",
-    `Allocation gate: heap sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves, the cleanest of ${GATE_WINDOWS} windows. Gated at 0: bytes charged to ${PER_TILE_CHECK} itself, where V8 charges inlined helpers, and to the road and track functions under it with their callees (${ROAD_AND_TRACK_FRAMES.join(", ")}). Reported beside it: every other frame under ${PER_TILE_CHECK} (the placement solver and other base code), refusal text (${REFUSAL_TEXT.join(", ")}) and the track drawing's ${TRACK_DRAWING}. Each row fails if precise coverage over ${COVERAGE_MOVES} further moves shows ${[PER_TILE_CHECK, ...GATED_CHECKS].join(", ")} or its own named functions never called.`,
+    `Allocation gate: heap sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves, the cleanest of ${GATE_WINDOWS} windows. Gated at 0: bytes charged to ${PER_TILE_CHECK} itself, where V8 charges inlined helpers, and to the road and track functions under it with their callees (${ROAD_AND_TRACK_FRAMES.join(", ")}), including the editor callbacks the track drawing calls back into (${TRACK_DRAWING_CALLBACKS.join(", ")}). Reported beside it: every other frame under ${PER_TILE_CHECK} (the placement solver and other base code), refusal text (${REFUSAL_TEXT.join(", ")}) and the rest of the track drawing's ${TRACK_DRAWING}. Placeables that carry track build their held track per tile (${HELD_TRACK.join(", ")}), so their row is reported, not gated; every other row is gated at 0, so held track built for a placeable that carries none fails it. Each row fails if precise coverage over ${COVERAGE_MOVES} further moves shows ${[PER_TILE_CHECK, ...GATED_CHECKS].join(", ")} or its own named functions never called.`,
     "",
-    "| Row | Gated (0) | Solver and other base code | Refusal text | Track drawing | Whole move |",
+    "| Row | Gated | Solver and other base code | Refusal text | Track drawing | Whole move |",
     "|---|---:|---:|---:|---:|---:|",
     ...gates.map(
       (g) =>
-        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.other)} | ${Math.round(g.refusal)} | ${Math.round(g.track)} | ${Math.round(g.wholeMove)} |`,
+        `| ${g.name} | ${Math.round(g.gated)}${g.atZero ? " (gate 0)" : " (reported)"} | ${Math.round(g.other)} | ${Math.round(g.refusal)} | ${Math.round(g.track)} | ${Math.round(g.wholeMove)} |`,
     ),
     "",
   ].join("\n"),
