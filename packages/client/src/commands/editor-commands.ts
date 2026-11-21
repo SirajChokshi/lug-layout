@@ -1,6 +1,7 @@
 import { BRICK_LDU, PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
 import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placement-mode.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
