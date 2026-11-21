@@ -16,7 +16,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import type { TrackPartFrame } from "@brr/schema/bundle";
-import { cellKey } from "./track-obstacles.ts";
+import { cellKey, type StudSeats } from "./track-obstacles.ts";
 
 const SIXTEENTHS_PER_LDU = 16;
 const STUD_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
@@ -104,6 +104,7 @@ function placedPartPose(frame: TrackPartFrame, placement: Pose16): PartPose {
 }
 
 const NO_CELLS = new Int32Array(0);
+const NO_POINTS = new Float64Array(0);
 
 export class TrackSupport {
   constructor(private readonly antiStuds: ReadonlyMap<number, Int32Array>) {}
@@ -123,11 +124,30 @@ export class TrackSupport {
     return Int32Array.from(cells);
   }
 
+  antiStudPoints(
+    catalogIndex: number,
+    frame: TrackPartFrame,
+    placement: Pose16,
+    runFrame: PlacementFrame,
+  ): Float64Array {
+    const origins = this.antiStuds.get(catalogIndex);
+    if (!origins) return NO_POINTS;
+    const part = framedPartPose(frame, placement, runFrame);
+    const points = new Float64Array(origins.length);
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      points[i] = (part.x + part.cos * ox - part.sin * oz) / SIXTEENTHS_PER_LDU;
+      points[i + 1] = (part.z + part.sin * ox + part.cos * oz) / SIXTEENTHS_PER_LDU;
+    }
+    return points;
+  }
+
   supported(
     catalogIndex: number,
     frame: TrackPartFrame,
     placement: Pose16,
-    seats: ReadonlySet<number>,
+    seats: StudSeats,
     studlessTops: TrackClearance,
     runFrame: PlacementFrame = WORLD_TRACK_FRAME,
     onTable = true,
@@ -156,7 +176,7 @@ function studCell(sixteenths: number): number {
   return (sixteenths - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
 }
 
-function onStud(x: number, z: number, seats: ReadonlySet<number>): boolean {
+function onStud(x: number, z: number, seats: StudSeats): boolean {
   const cellX = studCell(x);
   const cellZ = studCell(z);
   return Number.isInteger(cellX) && Number.isInteger(cellZ) && seats.has(cellKey(cellX, cellZ));
@@ -165,7 +185,7 @@ function onStud(x: number, z: number, seats: ReadonlySet<number>): boolean {
 function overBareGround(
   xLdu: number,
   zLdu: number,
-  seats: ReadonlySet<number>,
+  seats: StudSeats,
   studlessTops: TrackClearance,
 ): boolean {
   if (studlessTops.covers(xLdu, zLdu)) return false;
