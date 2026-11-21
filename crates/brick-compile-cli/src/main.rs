@@ -11,7 +11,7 @@ use brick_compile::compile::{
 };
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
+    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord, CONNECTIVITY_LICENSE,
 };
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
@@ -34,7 +34,6 @@ const CONNECTOR_INDEX_FILE: &str = "connector-index.json";
 const CONNECTIVITY_INDEX_FILE: &str = "connectivity-index.json";
 const ROLLING_DIAGNOSTICS_FILE: &str = "rolling-diagnostics.json";
 const PATCH_MANIFEST: &str = "manifest.json";
-const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 const SHADOW_AUTHORS: &str = "Roland Melkert and the LDCad Shadow Library contributors";
 const PATCH_ATTRIBUTION: &str =
     "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
