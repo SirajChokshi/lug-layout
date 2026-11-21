@@ -399,6 +399,24 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
+  it("refuses a tile over a road plate of another thickness and names the plate", async () => {
+    await chosen(editor, "ldraw:69958@72");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [-1, 0],
+      [2, 0],
+    ]);
+    const snapshot = editor.snapshot();
+    expect(snapshot.placements).toBe(1);
+    expect(snapshot.lastRoadStroke?.result).toBe("refused");
+    expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
+      expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("69958") }),
+    );
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
   it("starts the road tool at the turn a snapped hold showed, and keeps the HUD and laid tiles in step", async () => {
     editor.chooseItem(null);
     expect(toolHints(editor.snapshot()).hints).toContainEqual(

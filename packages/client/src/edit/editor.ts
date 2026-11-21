@@ -13,6 +13,7 @@ import {
   EditHistory,
   NO_ROW,
   PlanDelta,
+  RoadFit,
   RoadNetwork,
   World,
   addShards,
@@ -190,7 +191,15 @@ import {
 } from "./cursor-pick.ts";
 import { PlanFacts } from "./plan-facts.ts";
 import { OBSTACLE_RECT_FLOATS, seatsPending } from "./track-obstacles.ts";
-import { ANY_TURN, HELD_TURN, cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
+import {
+  ANY_TURN,
+  HELD_TURN,
+  cellExtent,
+  coveredCells,
+  coversRoad,
+  snapToRoadEdge,
+  type CellExtent,
+} from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   QUAD_FLOATS,
@@ -339,6 +348,7 @@ export type RoadSnapState = "snapped" | "free" | "refused";
 
 export interface RoadSnapView {
   readonly state: RoadSnapState;
+  readonly metCells: number;
   readonly joinedCells: number;
   readonly joinedRoadCells: number;
   readonly mismatchedCells: number;
@@ -631,6 +641,16 @@ interface RoadCellCounts {
   readonly overlappingCells: number;
 }
 const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
+
+function onRoadFootprint(
+  extents: ReadonlyArray<CellExtent>,
+  surface: RoadSurface,
+  x: number,
+  z: number,
+  rot: number,
+): boolean {
+  return coversRoad(extents, cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface }), x, z);
+}
 
 function roadFitRefused(fit: RoadCellCounts): boolean {
   return fit.mismatchedCells > 0 || fit.overlappingCells > 0;
@@ -1289,6 +1309,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
+  private readonly roadFit = new RoadFit();
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private readonly planDelta = new PlanDelta();
   private measure: MeasureTool | null = null;
@@ -2407,8 +2428,9 @@ export class Editor implements IEditor, IEditedWorld {
     const road = this.probeRoad(surface, x, z, check.yPlates * PLATE_LDU, rot);
     check.road = road;
     check.roadRefused =
-      roadFitRefused(this.roadNetwork.fit(road)) ||
-      (laid !== null && roadFitRefused(laid.fit(road)));
+      roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
+      (laid !== null && roadFitRefused(laid.fit(road, this.roadFit))) ||
+      onRoadFootprint(this.roadExtents, surface, x, z, rot);
     return check;
   }
 
@@ -2496,7 +2518,10 @@ export class Editor implements IEditor, IEditedWorld {
     const surface = this.state.snapRoads ? placeable.road : null;
     if (!surface) return null;
     const road = this.probeRoad(surface, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot);
-    return roadFitRefused(this.roadNetwork.fit(road)) ? ROAD_REFUSAL : null;
+    return roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
+      onRoadFootprint(this.roadExtents, surface, pose.x, pose.z, pose.rot)
+      ? ROAD_REFUSAL
+      : null;
   }
 
   private assistReachLdu(): number {
@@ -2726,21 +2751,24 @@ export class Editor implements IEditor, IEditedWorld {
       this.placeRot = snap.rot;
       return {
         state: "snapped",
+        metCells: snap.metCells,
         joinedCells: snap.joinedCells,
         joinedRoadCells: snap.joinedRoadCells,
         mismatchedCells: 0,
         overlappingCells: 0,
       };
     }
-    const fit = this.roadNetwork.fit({
-      id: -1,
-      x: this.hoverX,
-      z: this.hoverZ,
-      yLdu: 0,
-      rot: this.placeRot,
-      surface,
-    });
-    return { state: roadFitRefused(fit) ? "refused" : "free", ...fit };
+    const fit = this.roadNetwork.fit(
+      { id: -1, x: this.hoverX, z: this.hoverZ, yLdu: 0, rot: this.placeRot, surface },
+      this.roadFit,
+    );
+    const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot: this.placeRot, surface });
+    const covered = coveredCells(this.roadExtents, ghost, this.hoverX, this.hoverZ);
+    return {
+      state: roadFitRefused(fit) || covered > 0 ? "refused" : "free",
+      ...fit,
+      overlappingCells: covered,
+    };
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
@@ -4481,8 +4509,15 @@ export class Editor implements IEditor, IEditedWorld {
       if (track !== null) return refusedAt(placeable.id, pose, track);
       const surface = placeable.road;
       if (!surface || !this.state.snapRoads) continue;
-      const fit = roads.network.fit({ id: -1, x, z, yLdu: yPlates * PLATE_LDU, rot, surface });
-      if (fit.mismatchedCells > 0 || fit.overlappingCells > 0) {
+      const fit = roads.network.fit(
+        { id: -1, x, z, yLdu: yPlates * PLATE_LDU, rot, surface },
+        this.roadFit,
+      );
+      if (
+        fit.mismatchedCells > 0 ||
+        fit.overlappingCells > 0 ||
+        onRoadFootprint(roads.extents, surface, x, z, rot)
+      ) {
         return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
       }
     }
