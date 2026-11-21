@@ -18,7 +18,8 @@ import {
   MatePairs,
   type MatePass,
 } from "./mate-pairs.ts";
-import type { SnapMating } from "./mating.ts";
+import { SPAN_FLOATS, SPAN_FROM, SPAN_TO, type SnapMating } from "./mating.ts";
+import { CAP_FAR, CAP_ROOT, type SnapShapes } from "./snap-shapes.ts";
 import {
   ALL_COORDINATES,
   IdentifiedPoint,
@@ -145,7 +146,7 @@ function exactTrackEnds(ends: ReadonlyArray<TrackEnd>): TrackEnds {
   return { heading, position, yPlates, instance };
 }
 
-function doubled<A extends Uint8Array | Uint32Array | Int32Array>(
+function doubled<A extends Uint8Array | Uint16Array | Uint32Array | Int32Array | Float64Array>(
   array: A,
   allocate: (length: number) => A,
 ): A {
@@ -257,8 +258,14 @@ class MateRecorder {
   }
 }
 
+const NO_ENGAGED_TIP = 0;
+const NO_ENGAGED_ENTRANCE = Number.POSITIVE_INFINITY;
+
 class InternalMates {
-  readonly consumed: Uint8Array;
+  readonly matedInside: Uint8Array;
+  readonly maleEngagedTo: Float64Array;
+  readonly femaleEngagedFrom: Float64Array;
+  private readonly span = new Float64Array(SPAN_FLOATS);
   readonly records = new MateRecorder();
   private readonly reach: number;
   private readonly keys: Int32Array;
@@ -276,7 +283,9 @@ class InternalMates {
     private readonly mating: SnapMating,
     private readonly submodelFrames: SubmodelFrames,
   ) {
-    this.consumed = new Uint8Array(capacity);
+    this.matedInside = new Uint8Array(capacity);
+    this.maleEngagedTo = new Float64Array(capacity).fill(NO_ENGAGED_TIP);
+    this.femaleEngagedFrom = new Float64Array(capacity).fill(NO_ENGAGED_ENTRANCE);
     this.reach = Math.ceil(mating.shapes.longest * SIXTEENTHS_PER_LDU);
     this.keys = new Int32Array(capacity * LINE_KEYS);
     this.order = new Uint32Array(capacity);
@@ -341,9 +350,19 @@ class InternalMates {
     if (!this.admits(maleConnector, femaleConnector)) return;
     const offset = (this.along(female) - this.along(male)) * axisSign(axis);
     const maleShape = frames.shape[maleConnector] ?? 0;
-    if (!this.mating.engages(maleShape, frames.shape[femaleConnector] ?? 0, offset)) return;
-    this.consumed[maleConnector] = 1;
-    this.consumed[femaleConnector] = 1;
+    const femaleShape = frames.shape[femaleConnector] ?? 0;
+    if (!this.mating.engages(maleShape, femaleShape, offset)) return;
+    this.mating.engagedSpan(maleShape, femaleShape, offset, this.span);
+    this.maleEngagedTo[maleConnector] = Math.max(
+      this.maleEngagedTo[maleConnector] ?? NO_ENGAGED_TIP,
+      this.span[SPAN_TO] ?? 0,
+    );
+    this.femaleEngagedFrom[femaleConnector] = Math.min(
+      this.femaleEngagedFrom[femaleConnector] ?? NO_ENGAGED_ENTRANCE,
+      (this.span[SPAN_FROM] ?? 0) - offset,
+    );
+    this.matedInside[maleConnector] = 1;
+    this.matedInside[femaleConnector] = 1;
     this.records.append(maleConnector, femaleConnector, this.pass, offset);
   }
 
@@ -572,27 +591,52 @@ export class ModelConnectors {
       );
     }
     mateInPartFrames(parts, instances, firstConnector, frames.axis, search);
-    let occupied = 0;
+    const shapes = mating.shapes;
+    const stretch = new Float64Array(STRETCH_FLOATS);
+    const pieces = new OpenEndPieces();
+    let whole = 0;
     let offLattice = 0;
-    for (let k = 0; k < total; k++) {
-      if (search.consumed[k] === 1) occupied++;
-      else if (frames.axis[k] === AXIS_FREE) offLattice++;
-    }
-    const exposed = allocateFrames(total - occupied - offLattice);
-    let n = 0;
-    for (let k = 0; k < total; k++) {
-      if (search.consumed[k] === 1 || frames.axis[k] === AXIS_FREE) continue;
-      exposed.shape[n] = frames.shape[k] ?? 0;
-      exposed.gender[n] = frames.gender[k] ?? 0;
-      exposed.source[n] = frames.source[k] ?? 0;
-      exposed.status[n] = frames.status[k] ?? 0;
-      exposed.axis[n] = frames.axis[k] ?? 0;
-      exposed.instance[n] = frames.instance[k] ?? 0;
-      exposed.connector[n] = frames.connector[k] ?? 0;
-      for (let v = 0; v < VECTOR_FLOATS; v++) {
-        exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
+    for (let i = 0; i < instances.count; i++) {
+      const part = parts[instances.partIndex[i] ?? -1];
+      if (!part) continue;
+      const first = firstConnector[i] ?? 0;
+      const end = first + part.count;
+      const firstPiece = pieces.count;
+      for (let k = first; k < end; k++) {
+        if (search.matedInside[k] !== 1) {
+          if (frames.axis[k] === AXIS_FREE) offLattice++;
+          else whole++;
+          continue;
+        }
+        if (frames.axis[k] === AXIS_FREE) continue;
+        const found = freeStretch(shapes, frames, search, k, stretch);
+        if (found === FREE_STRETCH_OFF_LATTICE) offLattice++;
+        else if (found === FREE_STRETCH) {
+          exposeUnlessCovered(
+            shapes,
+            frames,
+            search.matedInside,
+            pieces,
+            k,
+            first,
+            end,
+            firstPiece,
+            stretch,
+          );
+        }
       }
-      n++;
+    }
+    const exposed = allocateFrames(whole + pieces.count);
+    let n = 0;
+    let piece = 0;
+    for (let k = 0; k < total; k++) {
+      if (search.matedInside[k] !== 1) {
+        if (frames.axis[k] !== AXIS_FREE) expose(exposed, n++, frames, k, frames.shape[k] ?? 0, 0);
+        continue;
+      }
+      for (; piece < pieces.count && pieces.connector[piece] === k; piece++) {
+        expose(exposed, n++, frames, k, pieces.shape[piece] ?? 0, pieces.from[piece] ?? 0);
+      }
     }
     const track = exactTrackEnds(trackEnds);
     return new ModelConnectors(
@@ -615,4 +659,155 @@ export class ModelConnectors {
       track.instance,
     );
   }
+}
+
+const FREE_STRETCH = 0;
+const NO_FREE_STRETCH = -1;
+const FREE_STRETCH_OFF_LATTICE = -2;
+const STRETCH_FROM = 0;
+const STRETCH_TO = 1;
+const STRETCH_FLOATS = 2;
+const INITIAL_PIECES = 16;
+
+function freeStretch(
+  shapes: SnapShapes,
+  frames: Frames,
+  search: InternalMates,
+  k: number,
+  out: Float64Array,
+): number {
+  const shape = frames.shape[k] ?? 0;
+  const length = shapes.length(shape) * SIXTEENTHS_PER_LDU;
+  if (frames.gender[k] === GENDER_MALE) {
+    const engagedTo = search.maleEngagedTo[k] ?? NO_ENGAGED_TIP;
+    if ((shapes.caps(shape) & CAP_FAR) !== 0 || engagedTo >= length) return NO_FREE_STRETCH;
+    if (!Number.isInteger(engagedTo)) return FREE_STRETCH_OFF_LATTICE;
+    out[STRETCH_FROM] = engagedTo;
+    out[STRETCH_TO] = length;
+    return FREE_STRETCH;
+  }
+  const engagedFrom = search.femaleEngagedFrom[k] ?? NO_ENGAGED_ENTRANCE;
+  if (engagedFrom <= 0 || engagedFrom >= length) return NO_FREE_STRETCH;
+  out[STRETCH_FROM] = 0;
+  out[STRETCH_TO] = engagedFrom;
+  return FREE_STRETCH;
+}
+
+function extentSign(gender: number, axis: number): number {
+  return gender === GENDER_MALE ? axisSign(axis) : -axisSign(axis);
+}
+
+class OpenEndPieces {
+  connector = new Uint32Array(INITIAL_PIECES);
+  shape = new Uint16Array(INITIAL_PIECES);
+  from = new Float64Array(INITIAL_PIECES);
+  to = new Float64Array(INITIAL_PIECES);
+  count = 0;
+
+  append(connector: number, shape: number, from: number, to: number): void {
+    if (this.count === this.connector.length) {
+      this.connector = doubled(this.connector, (length) => new Uint32Array(length));
+      this.shape = doubled(this.shape, (length) => new Uint16Array(length));
+      this.from = doubled(this.from, (length) => new Float64Array(length));
+      this.to = doubled(this.to, (length) => new Float64Array(length));
+    }
+    const p = this.count++;
+    this.connector[p] = connector;
+    this.shape[p] = shape;
+    this.from[p] = from;
+    this.to[p] = to;
+  }
+}
+
+function coversWhole(
+  shapes: SnapShapes,
+  frames: Frames,
+  k: number,
+  from: number,
+  to: number,
+  other: number,
+  otherFrom: number,
+  otherTo: number,
+): boolean {
+  const axis = frames.axis[k] ?? 0;
+  if (frames.gender[other] !== frames.gender[k] || frames.axis[other] !== axis) return false;
+  const dimension = axisDimension(axis);
+  const own = k * VECTOR_FLOATS;
+  const theirs = other * VECTOR_FLOATS;
+  for (let side = 1; side < VECTOR_FLOATS; side++) {
+    const across = (dimension + side) % VECTOR_FLOATS;
+    if (frames.origin[theirs + across] !== frames.origin[own + across]) return false;
+  }
+  const shift =
+    ((frames.origin[theirs + dimension] ?? 0) - (frames.origin[own + dimension] ?? 0)) *
+    extentSign(frames.gender[k] ?? 0, axis);
+  if (from - shift < otherFrom || to - shift > otherTo) return false;
+  return shapes.sameSectionsOver(
+    frames.shape[k] ?? 0,
+    from / SIXTEENTHS_PER_LDU,
+    frames.shape[other] ?? 0,
+    (from - shift) / SIXTEENTHS_PER_LDU,
+    (to - from) / SIXTEENTHS_PER_LDU,
+  );
+}
+
+function exposeUnlessCovered(
+  shapes: SnapShapes,
+  frames: Frames,
+  matedInside: Uint8Array,
+  pieces: OpenEndPieces,
+  k: number,
+  first: number,
+  end: number,
+  firstPiece: number,
+  stretch: Float64Array,
+): void {
+  const from = stretch[STRETCH_FROM] ?? 0;
+  const to = stretch[STRETCH_TO] ?? 0;
+  for (let j = first; j < end; j++) {
+    if (j === k || matedInside[j] === 1 || frames.axis[j] === AXIS_FREE) continue;
+    const length = shapes.length(frames.shape[j] ?? 0) * SIXTEENTHS_PER_LDU;
+    if (coversWhole(shapes, frames, k, from, to, j, 0, length)) return;
+  }
+  for (let p = firstPiece; p < pieces.count; p++) {
+    const other = pieces.connector[p] ?? 0;
+    if (coversWhole(shapes, frames, k, from, to, other, pieces.from[p] ?? 0, pieces.to[p] ?? 0)) {
+      return;
+    }
+  }
+  const closes = frames.gender[k] === GENDER_MALE ? CAP_ROOT : CAP_FAR;
+  pieces.append(
+    k,
+    shapes.clipped(
+      frames.shape[k] ?? 0,
+      from / SIXTEENTHS_PER_LDU,
+      to / SIXTEENTHS_PER_LDU,
+      closes,
+    ),
+    from,
+    to,
+  );
+}
+
+function expose(
+  exposed: Frames,
+  n: number,
+  frames: Frames,
+  k: number,
+  shape: number,
+  from: number,
+): void {
+  exposed.shape[n] = shape;
+  exposed.gender[n] = frames.gender[k] ?? 0;
+  exposed.source[n] = frames.source[k] ?? 0;
+  exposed.status[n] = frames.status[k] ?? 0;
+  exposed.axis[n] = frames.axis[k] ?? 0;
+  exposed.instance[n] = frames.instance[k] ?? 0;
+  exposed.connector[n] = frames.connector[k] ?? 0;
+  for (let v = 0; v < VECTOR_FLOATS; v++) {
+    exposed.origin[n * VECTOR_FLOATS + v] = frames.origin[k * VECTOR_FLOATS + v] ?? 0;
+  }
+  const axis = frames.axis[k] ?? 0;
+  const at = n * VECTOR_FLOATS + axisDimension(axis);
+  exposed.origin[at] = (exposed.origin[at] ?? 0) + extentSign(frames.gender[k] ?? 0, axis) * from;
 }
