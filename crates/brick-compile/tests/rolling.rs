@@ -2,7 +2,7 @@ mod common;
 
 use std::f64::consts::TAU;
 
-use brick_compile::compile::rolling_mode_from_studs;
+use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table, stud_roundness};
 use brick_compile::rolling::RollingSurface;
 use brick_compile::trig::{cos, sin};
 use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
@@ -579,6 +579,23 @@ fn exact(text: &Value) -> f64 {
     );
     assert!(denominator == 1.0 || numerator % 2 != 0, "reduced: {text}");
     numerator as f64 / denominator
+}
+
+#[test]
+fn the_table_studs_measure_the_roundness_a_full_stud_does() {
+    let library = fixture_library();
+    let table: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/primitive-connectors.json"),
+        )
+        .expect("the primitive table is readable"),
+    )
+    .expect("the primitive table is JSON");
+    let studs = stud_primitives_from_table(&table).expect("the table names stud primitives");
+    let full = stud_roundness(&library, &["stud.dat".to_string()]);
+    assert!(full.is_some());
+    assert_eq!(stud_roundness(&library, &studs), full);
 }
 
 #[test]

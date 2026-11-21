@@ -77,6 +77,7 @@ describe("road joins (layout rule 7)", () => {
       expect(report.joinedCells).toBe(16);
       expect(report.mismatchedCells).toBe(0);
       expect(report.openCells).toBe(2 * 3 * 16);
+      expect(Array.from(report.placementCells)).toEqual([16, 0, 0, 0]);
     }
   });
 
@@ -90,6 +91,7 @@ describe("road joins (layout rule 7)", () => {
     const report = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 320, 0, 0, 8)]).report();
     expect(report.joinedCells).toBe(0);
     expect(report.mismatchedCells).toBe(16);
+    expect(Array.from(report.placementCells)).toEqual([0, 16, 0, 16]);
   });
 
   it("joins 6-stud road baseplate ends but rejects a 6-stud end against an 8-stud dual end", () => {
@@ -118,5 +120,45 @@ describe("road joins (layout rule 7)", () => {
     expect(single.cleanFit(at(1, plate, 0, 320))).toEqual(abutted);
     expect(single.cleanFit(at(1, plate, 0, 320, 0, 8))).toBeNull();
     expect(single.cleanFit(at(1, plate, 0, 640))).toBeNull();
+  });
+
+  it("joins, overlaps and fits against pieces added one at a time after construction", () => {
+    const network = new RoadNetwork([]);
+    network.add(at(0, plate, 0, 0));
+    network.add(at(1, plate, 320, 0));
+    const abutted = network.report();
+    network.add(at(2, plate, 960, 0));
+
+    expect(abutted).toMatchObject({ placements: 2, joinedCells: 16, mismatchedCells: 0 });
+    expect(network.fit(at(3, plate, 640, 0))).toEqual({
+      joinedCells: 32,
+      joinedRoadCells: 32,
+      mismatchedCells: 0,
+      overlappingCells: 0,
+    });
+    expect(network.fit(at(3, plate, 320, 320, 0, 8)).mismatchedCells).toBe(16);
+    network.add(at(3, plate, 1120, 0));
+    expect(network.report().overlaps).toEqual([[2, 3]]);
+  });
+
+  it("forgets every piece on clear, and joins pieces added afterwards as if it were new", () => {
+    const network = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 160, 0)]);
+    network.clear();
+    const cleared = { report: network.report(), fit: network.fit(at(2, plate, 0, 0)) };
+    network.add(at(3, plate, 320, 0));
+
+    expect(cleared.report).toMatchObject({ placements: 0, joinedCells: 0, overlaps: [] });
+    expect(cleared.fit).toEqual({
+      joinedCells: 0,
+      joinedRoadCells: 0,
+      mismatchedCells: 0,
+      overlappingCells: 0,
+    });
+    expect(network.fit(at(4, plate, 0, 0))).toEqual({
+      joinedCells: 16,
+      joinedRoadCells: 16,
+      mismatchedCells: 0,
+      overlappingCells: 0,
+    });
   });
 });
