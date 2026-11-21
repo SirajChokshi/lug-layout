@@ -27,6 +27,7 @@ function archive(lines: ReadonlyArray<string>): StudioArchive {
     unconvertedLines: [],
     bricklinkIds: { "92338c01.dat": "92338", "7674.dat": "7674" },
     customParts: ["legleftredbrown.dat"],
+    customFiles: [],
   };
 }
 

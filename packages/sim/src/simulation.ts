@@ -1,16 +1,18 @@
-import { NO_EDGE, runningGearSpanProblem } from "@brr/domain";
+import {
+  GEOMETRY_FIELDS,
+  NO_EDGE,
+  packGeometry,
+  packSpecOnlyGeometry,
+  runningGearSpanProblem,
+  trackPoint,
+  type PathSampler,
+  type RunningGearPoser,
+  type SimTrack,
+  type VehicleGeometry,
+} from "@brr/domain";
 import type { Autopilot } from "./blocks/autopilot.ts";
 import type { BlockKeeper } from "./blocks/block-keeper.ts";
 import { NO_BLOCK } from "./blocks/block-map.ts";
-import {
-  GEOMETRY_FIELDS,
-  packGeometry,
-  packSpecOnlyGeometry,
-  type PathSampler,
-  type RunningGearPoser,
-  type VehicleGeometry,
-} from "./running-gear.ts";
-import { trackPoint, type SimTrack } from "./sim-track.ts";
 
 export const SIM_TICK_HZ = 60;
 export const SIM_TICK_SECONDS = 1 / SIM_TICK_HZ;
