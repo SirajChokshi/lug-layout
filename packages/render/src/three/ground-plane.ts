@@ -16,18 +16,19 @@ import {
   fwidth,
   max,
   mix,
+  normalWorld,
   positionWorld,
   saturate,
   smoothstep,
+  step,
   uniform,
   vec2,
   vec3,
 } from "three/tsl";
-import type { GroundSettings } from "../scene-backend.ts";
+import { GUIDE_GRID_STUDS, type GroundSettings } from "../scene-backend.ts";
 
-const GUIDE_LINES_PER_CHUNK = 4;
-const GUIDE_STUDS = CHUNK_STUDS / GUIDE_LINES_PER_CHUNK;
 const GROUND_COLOR = 0xbfbab0;
+const UPWARD_NORMAL_Y = 0.5;
 const GROUND_RENDER_ORDER = -1;
 const LINE_SOFTNESS_PX = 0.5;
 const VANISHED_SPACING_PX = 4;
@@ -49,7 +50,7 @@ interface GridLevel {
 
 const GRID_LEVELS: ReadonlyArray<GridLevel> = [
   { stepLdu: STUD_LDU, color: 0x857d71, opacity: 0.38, halfWidthPx: 0.5 },
-  { stepLdu: GUIDE_STUDS * STUD_LDU, color: 0x655d51, opacity: 0.6, halfWidthPx: 0.6 },
+  { stepLdu: GUIDE_GRID_STUDS * STUD_LDU, color: 0x655d51, opacity: 0.6, halfWidthPx: 0.6 },
   { stepLdu: CHUNK_STUDS * STUD_LDU, color: 0x463f35, opacity: 0.72, halfWidthPx: 0.85 },
 ];
 
@@ -89,7 +90,7 @@ export class GroundPlane {
       fog: false,
     });
     material.colorNode = mix(
-      this.griddedGround(),
+      this.gridded(GROUND_COLOR),
       linearRgb(horizonColor),
       smoothstep(this.fogStart, this.fogEnd, positionWorld.distance(cameraPosition)),
     );
@@ -101,15 +102,19 @@ export class GroundPlane {
     parent.add(this.mesh);
   }
 
-  private griddedGround(): Node<"vec3"> {
+  private gridded(baseSrgb: number): Node<"vec3"> {
     const lduPerPx = max(fwidth(positionWorld.xz), vec2(LEAST_LDU_PER_PX, LEAST_LDU_PER_PX));
     const pxPerLdu = float(1).div(lduPerPx);
-    let color = linearRgb(GROUND_COLOR);
+    let color = linearRgb(baseSrgb);
     for (const level of GRID_LEVELS) {
       const alpha = lineCoverage(level, pxPerLdu).mul(level.opacity).mul(this.gridShown);
       color = mix(color, linearRgb(level.color), alpha);
     }
     return color;
+  }
+
+  griddedTop(baseSrgb: number): Node<"vec3"> {
+    return mix(linearRgb(baseSrgb), this.gridded(baseSrgb), step(UPWARD_NORMAL_Y, normalWorld.y));
   }
 
   configure(settings: GroundSettings | null): void {

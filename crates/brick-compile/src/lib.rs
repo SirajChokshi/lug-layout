@@ -18,7 +18,6 @@ pub mod identify;
 pub mod inline;
 pub mod lattice;
 pub mod ldraw;
-pub mod license;
 pub mod mesh;
 pub mod model;
 pub mod occlusion;

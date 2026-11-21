@@ -157,6 +157,7 @@ export class PartReader {
             sectionVocabulary: this.bundle.job.sectionVocabulary,
             cavityProbe: this.bundle.job.cavityProbe,
             infer: [],
+            shadowPatchManifest: null,
           },
           parts: references,
           model: "",

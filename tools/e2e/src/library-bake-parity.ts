@@ -79,7 +79,12 @@ async function compareShard(job: ShardJob): Promise<ShardResult> {
       lod: "standard" as const,
       studPrimitives: job.options.studPrimitives,
       unofficialAllowlist: job.options.unofficialAllowlist,
-      connectors: { primitives: job.options.primitives, ...job.inference, infer: [] },
+      connectors: {
+        primitives: job.options.primitives,
+        ...job.inference,
+        infer: [],
+        shadowPatchManifest: null,
+      },
       parts: batch.map(({ id }) => reference(id)),
       model: "",
       inlineChecks: [],

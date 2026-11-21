@@ -23,7 +23,7 @@ const LDU_PER_TENTH_MM_NUMERATOR = 4n;
 const MM2_PER_LDU2_NUMERATOR = 4n;
 const MM2_PER_LDU2_DENOMINATOR = 25n;
 
-function dyadic(value: number): Dyadic {
+export function dyadic(value: number): Dyadic {
   if (value === 0) return { mantissa: 0n, exponent: 0 };
   const view = new DataView(new ArrayBuffer(FLOAT64_BYTES));
   view.setFloat64(0, value);
@@ -55,7 +55,7 @@ function ceilDiv(numerator: bigint, denominator: bigint): bigint {
 }
 
 export class ExactFrame {
-  private readonly shift: number;
+  readonly shift: number;
 
   constructor(values: ReadonlyArray<number>) {
     const lowest = values.reduce((low, value) => Math.min(low, dyadic(value).exponent), 0);

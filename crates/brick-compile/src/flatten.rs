@@ -6,7 +6,6 @@ use crate::affine::{Affine, Vec3};
 use crate::exact::{Decimal, ExactAffine, ExactVec3};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, ExactNumbers, LdrawFile, Line, Winding};
-use crate::license::{self, LicenseVerdict};
 use crate::pieces::{PieceMap, NO_PIECE};
 
 pub const INHERIT_COLOR: u32 = 16;
@@ -46,7 +45,6 @@ pub struct StudReference {
 pub struct VisitedFile {
     pub path: String,
     pub header: ldraw::Header,
-    pub license: LicenseVerdict,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -205,7 +203,6 @@ impl<'a, L: Library> Flattener<'a, L> {
         out.files.push(VisitedFile {
             path: path.to_string(),
             header: file.header.clone(),
-            license: license::classify(file.header.license.as_deref()),
         });
         Some(file)
     }
