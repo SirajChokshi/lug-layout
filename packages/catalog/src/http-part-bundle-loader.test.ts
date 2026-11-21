@@ -7,6 +7,7 @@ import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
+  FETCH_POOL_POLICY,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";
@@ -71,6 +72,8 @@ function settled(load: Promise<unknown>): Promise<unknown> {
   return load.catch(() => undefined);
 }
 const POOL_SLOTS = 16;
+const RESERVED_STRUCTURAL_SLOTS = 1;
+const MESH_SLOTS = POOL_SLOTS - RESERVED_STRUCTURAL_SLOTS;
 const FALLBACK = "manifest.3cd92e805bfe8274.json";
 
 it.each([
@@ -109,13 +112,17 @@ it.each([
 it("moves a waiting part mesh load to the end of the queue of its new priority", async () => {
   const container = new Container();
   await container.load(catalogModule);
+  container.rebind(FETCH_POOL_POLICY).toConstantValue({
+    slots: POOL_SLOTS,
+    reservedStructuralSlots: RESERVED_STRUCTURAL_SLOTS,
+  });
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   const fetcher = new GatedFetcher();
   container.bind(ASSET_FETCHER).toConstantValue(fetcher);
   const loader = container.get(PART_BUNDLE_LOADER);
   const load = (file: string, priority: "high" | "low"): Promise<unknown> =>
     loader.loadPartMesh("far", file, priority).catch(() => undefined);
-  const inFlight = Array.from({ length: POOL_SLOTS }, (_, i) => `busy-${i}.glb`);
+  const inFlight = Array.from({ length: MESH_SLOTS }, (_, i) => `busy-${i}.glb`);
   const loads = inFlight.map((file) => load(file, "high"));
   loads.push(
     load("high-a.glb", "high"),
@@ -129,9 +136,9 @@ it("moves a waiting part mesh load to the end of the queue of its new priority",
   loader.setPartMeshPriority("far", "low-b.glb", "high");
   loader.setPartMeshPriority("far", "high-a.glb", "low");
   for (const file of inFlight) fetcher.open(`far/${file}`);
-  await vi.waitFor(() => expect(fetcher.started).toHaveLength(POOL_SLOTS + 5));
+  await vi.waitFor(() => expect(fetcher.started).toHaveLength(MESH_SLOTS + 5));
 
-  expect(fetcher.started.slice(POOL_SLOTS)).toEqual([
+  expect(fetcher.started.slice(MESH_SLOTS)).toEqual([
     "far/high-b.glb",
     "far/low-b.glb",
     "far/low-a.glb",
@@ -145,6 +152,9 @@ it("moves a waiting part mesh load to the end of the queue of its new priority",
 it("starts a waiting JSON load before the part mesh loads waiting ahead of it", async () => {
   const container = new Container();
   await container.load(catalogModule);
+  container
+    .rebind(FETCH_POOL_POLICY)
+    .toConstantValue({ slots: POOL_SLOTS, reservedStructuralSlots: 0 });
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   const fetcher = new GatedFetcher();
   container.bind(ASSET_FETCHER).toConstantValue(fetcher);
