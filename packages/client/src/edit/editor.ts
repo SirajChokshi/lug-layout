@@ -162,6 +162,7 @@ import {
   type PieceSnap,
   type SwitchLeverView,
   type TrackBlockView,
+  type TrackCarrier,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -235,10 +236,10 @@ import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
+  appendTrackChange,
+  appendViewUpdate,
   writeFullRebuild,
   writeModelUpdates,
-  writeTrackChange,
-  writeViewUpdate,
 } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
@@ -1768,10 +1769,14 @@ export class Editor implements IEditor, IEditedWorld {
     });
     if (swapped && !this.gesture) this.showSelection();
     this.refreshRoads();
-    this.syncModelTrack();
+    const carriedTrackChanged = this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
-    this.applyModelView(view);
+    const delta = this.planDelta;
+    delta.reset();
+    this.appendModelView(delta, view);
+    if (carriedTrackChanged) this.track?.writeIssues(delta);
+    this.plans.apply(delta);
     this.layoutVersion++;
     const drawing = this.track;
     if (drawing && this.state.mode === "track") this.ensureTrackObstacles(drawing);
@@ -3487,13 +3492,12 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
-  private applyModelView(view: ViewUpdate): void {
+  private appendModelView(delta: PlanDelta, view: ViewUpdate): void {
     this.facts.noteRemoved(view.removed);
     this.facts.noteAdded(view.added);
     const updated = this.facts.flush(this.factUpdates);
-    writeViewUpdate(this.planDelta, view);
-    writeModelUpdates(this.planDelta, this.factUpdates, updated);
-    this.plans.apply(this.planDelta);
+    appendViewUpdate(delta, view);
+    writeModelUpdates(delta, this.factUpdates, updated);
   }
 
   private queueFactFlush(): void {
@@ -3552,21 +3556,26 @@ export class Editor implements IEditor, IEditedWorld {
         },
       });
     }
+    let carriedTrackChanged = false;
     if (!planOnly) {
       this.refreshRoads();
-      this.syncModelTrack();
+      carriedTrackChanged = this.syncModelTrack();
       if (trackChanged) this.railsChanged();
       this.refreshTrains();
       this.placeGhost();
       if (!GROUP_EDITS.has(edit.kind)) this.followSelection(edit.track);
     }
-    if (worldChanged) this.applyModelView(view);
-    if (trackChanged && this.track) {
-      writeTrackChange(this.planDelta, this.track, edit.track);
-      this.plans.apply(this.planDelta);
+    const drawing = this.track;
+    const trackRows = trackChanged && drawing !== null;
+    if (worldChanged || trackRows) {
+      const delta = this.planDelta;
+      delta.reset();
+      if (worldChanged) this.appendModelView(delta, view);
+      if (trackRows) appendTrackChange(delta, drawing, edit.track);
+      else if (carriedTrackChanged) drawing?.writeIssues(delta);
+      this.plans.apply(delta);
     }
     if (view.added.length + view.removed.length > 0) this.layoutVersion++;
-    const drawing = this.track;
     if (!planOnly) {
       if (drawing && this.state.mode === "track") this.ensureTrackObstacles(drawing);
       this.layoutChanged();
@@ -5576,38 +5585,50 @@ export class Editor implements IEditor, IEditedWorld {
     return { pieces, runFrame, offField, unanchored };
   }
 
-  private syncModelTrack(): void {
+  private syncModelTrack(): boolean {
     const drawing = this.track;
-    if (!drawing) return;
+    if (!drawing) return false;
     const carrying = this.placed.models().filter((model) => {
       const track = this.trackOf(model.placeable);
-      return (track?.pieces.length ?? 0) + (track?.runs.length ?? 0) > 0;
+      if (!track) return false;
+      const { pieces, runs, unverified, unidentified } = track;
+      return pieces.length + runs.length + unverified.length + unidentified.length > 0;
     });
     const unchanged =
       carrying.length === this.heldTrackModels.length &&
       carrying.every((model, i) => model === this.heldTrackModels[i]);
-    if (unchanged) return;
+    if (unchanged) return false;
     this.heldTrackModels = carrying;
     this.heldRanges.clear();
     const held: FramedTrackPiece[] = [];
+    const carriers: TrackCarrier[] = [];
     let nextRunFrame = WORLD_TRACK_FRAME.id + 1;
     for (const model of carrying) {
       const track = this.trackOf(model.placeable);
+      if (!track) continue;
       const { x, z, yPlates, rot } = model.handle;
       const frame = latticeFrame(x, z, rot);
-      if (!track || !frame) continue;
       const first = held.length;
-      held.push(
-        ...heldPieces(track, frame, yPlates),
-        ...heldRuns(track, frame, yPlates, nextRunFrame),
-      );
-      this.heldRanges.set(model, [first, held.length]);
-      nextRunFrame += track.runs.length;
+      if (frame) {
+        held.push(
+          ...heldPieces(track, frame, yPlates),
+          ...heldRuns(track, frame, yPlates, nextRunFrame),
+        );
+        nextRunFrame += track.runs.length;
+      }
+      if (held.length > first) this.heldRanges.set(model, [first, held.length]);
+      carriers.push({
+        model,
+        held: held.length - first,
+        unverified: track.unverified,
+        unidentified: track.unidentified,
+      });
     }
-    drawing.syncHeld(held);
+    drawing.syncHeld(held, carriers);
     this.showTrackEnds([]);
     this.railsChanged();
     this.update({ track: this.trackView() });
+    return true;
   }
 
   private trainOnTrackOf(model: PlacedModel): string | null {

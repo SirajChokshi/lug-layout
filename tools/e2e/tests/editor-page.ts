@@ -224,10 +224,17 @@ export interface PlanRegion {
   };
 }
 
+export interface PlanRow {
+  readonly rule: string;
+  readonly severity: string;
+  readonly message: string;
+}
+
 interface PlanState {
   readonly plans: ReadonlyArray<PlanRegion>;
   readonly placements: ReadonlyArray<PlanFootprint>;
   readonly tableTopY: number;
+  readonly checks: ReadonlyArray<{ readonly issues: ReadonlyArray<PlanRow> }>;
 }
 
 function column(values: ReadonlyArray<number>, index: number): number {
@@ -887,6 +894,22 @@ export class EditorPage {
 
   async plans(): Promise<ReadonlyArray<PlanRegion>> {
     return (await this.planState()).plans;
+  }
+
+  async planRows(): Promise<ReadonlyArray<PlanRow>> {
+    const [check] = (await this.planState()).checks;
+    return (check?.issues ?? []).map(({ rule, severity, message }) => ({
+      rule,
+      severity,
+      message,
+    }));
+  }
+
+  async drawTable(from: LatticePoint, to: LatticePoint): Promise<void> {
+    await this.escape();
+    await this.press("b");
+    await this.dragFrom(from, to);
+    await this.press("b");
   }
 
   async counter(

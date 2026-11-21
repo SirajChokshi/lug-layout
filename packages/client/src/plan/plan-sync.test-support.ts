@@ -693,6 +693,10 @@ class TestTrack implements PlanTrackSource {
     });
   }
 
+  writeIssues(delta: PlanDelta): void {
+    delta.writeTrackIssues();
+  }
+
   todays(): PlacedForPlan[] {
     return this.pieces.map((p, i) => ({
       key: { chunkKey: p.chunkKey, slot: i },
