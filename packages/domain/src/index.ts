@@ -204,24 +204,30 @@ export {
   type TrackMove,
   type TrackPieceDef,
 } from "./track/track-pose.ts";
-export {
-  runMoves,
-  solveDrag,
-  type DragPlan,
-  type TrackRun,
-  type TrackSegment,
-} from "./track/track-solver.ts";
+export { runMoves, type TrackRun, type TrackSegment } from "./track/track-solver.ts";
 export {
   solveClosure,
   UNLIMITED_BUDGET,
   type ClosureResult,
-  type ClosureSite,
   type SearchBudget,
 } from "./track/closure.ts";
+export type { ClosureSite } from "./track/clear-closure.ts";
+export { KitOutlines } from "./track/kit-outlines.ts";
+export { StrokePath } from "./track/stroke-path.ts";
+export {
+  StrokeRouter,
+  type FollowedRun,
+  type StrokeGoal,
+  type StrokeJoin,
+  type StrokeSite,
+} from "./track/stroke-router.ts";
 export {
   NO_OBSTACLE,
+  RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  outlineContains,
+  placedOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";

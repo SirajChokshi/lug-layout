@@ -1,9 +1,10 @@
-import type {
-  EditorSnapshot,
-  TrackDragView,
-  TrackGapView,
-  TrackPieceView,
-  TrackView,
+import {
+  trackBlockText,
+  type EditorSnapshot,
+  type TrackDragView,
+  type TrackGapView,
+  type TrackPieceView,
+  type TrackView,
 } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -37,12 +38,15 @@ function closureText(drag: TrackDragView): string {
     case "impossible":
       return "no exact join exists with any run of 9V straights and R40 curves: release lays nothing";
     case "blocked":
-      return "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
+      return drag.blocked
+        ? `every exact join found would ${trackBlockText(drag.blocked)}: release lays nothing`
+        : "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
     case "limit":
       return "the search hit its time limit before finding an exact join: release lays nothing";
     case "pending":
       return "a model under this join is still checking its studs: release lays nothing yet";
     case null:
+      if (drag.blocked) return `stops short: the next piece would ${trackBlockText(drag.blocked)}`;
       return drag.pieces === 0
         ? "drag away from the start"
         : `ends ${drag.missStuds.toFixed(1)} studs from the cursor`;
@@ -92,11 +96,15 @@ function commitText(track: TrackView): string {
     case "joined":
       return "laid and joined exactly";
     case "laid":
-      return "laid with an open end";
+      return track.lastBlock
+        ? `laid, stopped short: the next piece would ${trackBlockText(track.lastBlock)}`
+        : "laid with an open end";
     case "refused-impossible":
       return "refused: no exact join exists";
     case "refused-blocked":
-      return "refused: every exact join would cross track, a plate, a model or itself";
+      return track.lastBlock
+        ? `refused: every exact join would ${trackBlockText(track.lastBlock)}`
+        : "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
     case "refused-pending":
