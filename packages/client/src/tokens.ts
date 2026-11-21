@@ -32,6 +32,7 @@ import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-wor
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IOwnedParts } from "./bom/owned-parts-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -106,6 +107,9 @@ export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.cli
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
+  "brr.client.PlanSheetService",
+);
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );
