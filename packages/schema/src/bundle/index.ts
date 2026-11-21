@@ -715,6 +715,15 @@ export const ConnectorIndexFile = v.object({
 });
 export type ConnectorIndexFile = v.InferOutput<typeof ConnectorIndexFile>;
 
+export const ConnectorPackFile = v.object({
+  package: ConnectorPackage,
+  files: v.record(v.string(), v.unknown()),
+});
+export type ConnectorPackFile = v.InferOutput<typeof ConnectorPackFile>;
+
+export const ConnectorPacks = v.object({ connectivity: FileRef, connectors: FileRef });
+export type ConnectorPacks = v.InferOutput<typeof ConnectorPacks>;
+
 export const TablePlane = v.object({
   part: v.string(),
   depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
@@ -746,6 +755,7 @@ export const BundleIndex = v.object({
   connectors: FileRef,
   connectivity: FileRef,
   crosswalk: FileRef,
+  connectorPacks: v.optional(ConnectorPacks),
   partTable: FileRef,
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),

@@ -21,7 +21,7 @@ const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
-const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
+const BUNDLE_MODEL_RECORD = /\/standard\/model-[^/]+\.json$/u;
 
 export interface ScreenPoint {
   readonly sx: number;
@@ -333,10 +333,10 @@ export class EditorPage {
     return (await this.page.locator(".tool-hud").textContent()) ?? "";
   }
 
-  async holdConnectorRecords(): Promise<() => void> {
+  async holdModelRecords(): Promise<() => void> {
     const { promise: released, resolve: release } = Promise.withResolvers<void>();
     await this.page.route(
-      (url) => BUNDLE_CONNECTOR_RECORD.test(url.pathname),
+      (url) => BUNDLE_MODEL_RECORD.test(url.pathname),
       async (route) => {
         await released;
         await route.continue();

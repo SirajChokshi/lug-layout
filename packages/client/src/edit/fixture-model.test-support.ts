@@ -152,6 +152,10 @@ export class WithFixtureModels implements IPartBundleLoader {
     return this.shipped.readPartConnectors(lod, partId);
   }
 
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.shipped.prefetchPartConnectors(lod);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.shipped.loadConnectivityAttribution(lod);
   }
