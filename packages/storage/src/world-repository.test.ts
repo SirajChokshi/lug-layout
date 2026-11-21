@@ -6,7 +6,12 @@ import {
   type ImportedFile,
   type WorldArchive,
 } from "@brr/schema/world";
+import { IDBFactory } from "fake-indexeddb";
+import { Container } from "inversify";
 import { expect, it } from "vitest";
+import type { PersistentStorage } from "./persistent-storage.ts";
+import { storageModule } from "./storage.module.ts";
+import { INDEXED_DB, PERSISTENT_STORAGE, WORLD_REPOSITORY } from "./tokens.ts";
 import { contentSha256, IndexedDbWorldRepository } from "./world-repository.ts";
 
 const utf8 = new TextEncoder();
@@ -58,7 +63,7 @@ function archivePlacing(
 }
 
 it("carries each placed model file under its content hash, and refuses one that is altered, missing or unplaced", async () => {
-  const repository = new IndexedDbWorldRepository(NO_DATABASE);
+  const repository = new IndexedDbWorldRepository(NO_DATABASE, null);
   const road = await modelFile("custom road.ldr", "0 Road\n1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat\n");
   const modular = await modelFile(
     "modular.mpd",
@@ -92,4 +97,29 @@ it("carries each placed model file under its content hash, and refuses one that 
   expect(unplaced.ok ? [] : unplaced.issues.map((issue) => issue.message)).toEqual([
     "is not used by any placement",
   ]);
+});
+
+class RecordingStorage implements PersistentStorage {
+  persistRequests = 0;
+
+  async persist(): Promise<boolean> {
+    this.persistRequests++;
+    return true;
+  }
+}
+
+it("asks for persistent storage once, on the first save that changes a world's content", async () => {
+  const storage = new RecordingStorage();
+  const container = new Container();
+  container.load(storageModule);
+  container.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  container.rebind(PERSISTENT_STORAGE).toConstantValue(storage);
+  const worlds = container.get(WORLD_REPOSITORY);
+  const shards = worldShards([{ ref: "ldraw:3811", color: 2, x: 0, z: 0, yPlates: 0, rot: 0 }], []);
+  const { id } = await worlds.create(HEADER, []);
+  await worlds.save(id, { header: HEADER, put: [], drop: [] });
+  expect(storage.persistRequests).toBe(0);
+  await worlds.save(id, { header: HEADER, put: shards, drop: [] });
+  await worlds.save(id, { header: HEADER, put: [], drop: shards.map((shard) => shard.superChunk) });
+  expect(storage.persistRequests).toBe(1);
 });

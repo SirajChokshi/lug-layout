@@ -213,6 +213,24 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               </button>
             ))}
           </div>
+          {bom.rebrickable.custom.length > 0 && (
+            <details data-kind="customParts" open>
+              <summary>
+                Custom parts, not buyable ({integer.format(bom.rebrickable.custom.length)} lines)
+              </summary>
+              <ul>
+                {bom.rebrickable.custom.map((line) => (
+                  <li key={`${line.part}-${line.ldrawColor}`} data-part={line.part}>
+                    <span className="part-badge" data-badge="custom">
+                      custom
+                    </span>{" "}
+                    {line.quantity}× {line.part} colour {line.ldrawColor}: from an imported file,
+                    left out of the Rebrickable and BrickLink lists
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {bom.rebrickable.unmapped.length > 0 && (
             <details>
               <summary>

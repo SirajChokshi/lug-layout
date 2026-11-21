@@ -20,7 +20,7 @@ import {
   type StudRect,
 } from "./plan-region.ts";
 
-export type PlanRuleId = "footprint" | "fit" | "crossesRegion" | "unchecked";
+export type PlanRuleId = "footprint" | "fit" | "crossesRegion" | "unsupported" | "unchecked";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
@@ -33,6 +33,7 @@ export interface PlanPlacement {
   readonly ref: string;
   readonly label: string;
   readonly box: LduRect;
+  readonly unsupported?: boolean;
 }
 
 export interface PlanIssue {
@@ -483,6 +484,7 @@ export function placementIssueCount(
   box: Float64Array,
   offset: number,
   scratch: CoverageScratch,
+  unsupported = false,
 ): number {
   if (!placementInside(ctx, box, offset)) return 0;
   const room = ctx.room;
@@ -490,7 +492,7 @@ export function placementIssueCount(
   const minZ = box[offset + BOX_MIN_Z] ?? Number.NaN;
   const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
   const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
-  let count = 0;
+  let count = unsupported ? 1 : 0;
   if (!(minX >= room.minX && maxX <= room.maxX && minZ >= room.minZ && maxZ <= room.maxZ)) count++;
   const obstacles = ctx.obstacleEdges;
   for (let i = 0; i < obstacles.length; i += RECT_STRIDE) {
@@ -510,6 +512,15 @@ export function placementIssues(
 ): void {
   const { region, room, obstacles, coverage } = ctx;
   if (!rectsOverlap(room, placement.box)) return;
+  if (placement.unsupported) {
+    out.push(
+      issue(
+        "unsupported",
+        [placement.key],
+        `${placement.label} rests on a top with no studs, and no stud is under any of its anti-studs.`,
+      ),
+    );
+  }
   if (!rectContains(room, placement.box)) {
     out.push(
       issue(
