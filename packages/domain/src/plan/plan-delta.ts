@@ -1,5 +1,10 @@
+import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE } from "./plan-rules.ts";
 import { BOX_READ } from "./plan-rows.ts";
+import type { PlanShape } from "./plan-shape.ts";
+import { TrackIssueRows } from "./track-issue-rows.ts";
+import type { TrackOutline } from "./track-outline.ts";
+import type { CarriedTrack } from "./plan-rules.ts";
 
 export const WRITE_ADD = 0;
 export const WRITE_UPDATE = 1;
@@ -43,15 +48,28 @@ export class PlanDelta {
   labelB = new Float64Array(INITIAL_ENTRIES);
   box = new Float64Array(INITIAL_ENTRIES * BOX_STRIDE);
   boxState = new Uint8Array(INITIAL_ENTRIES);
+  facts = new Int32Array(INITIAL_ENTRIES * FACT_STRIDE);
+  readonly shape: Array<PlanShape | null> = [];
+  readonly outline: Array<TrackOutline | null> = [];
+  readonly carried: Array<CarriedTrack | null> = [];
   readonly ref: string[] = [];
   readonly labelBase: string[] = [];
   readonly original: unknown[] = [];
   readonly caught: unknown[] = [];
+  trackIssuesWritten = false;
+  readonly trackIssues = new TrackIssueRows();
 
   reset(): void {
     this.cleared = false;
     this.removalCount = 0;
     this.writeCount = 0;
+    this.trackIssuesWritten = false;
+  }
+
+  writeTrackIssues(): TrackIssueRows {
+    this.trackIssues.clear();
+    this.trackIssuesWritten = true;
+    return this.trackIssues;
   }
 
   clearAll(): void {
@@ -85,6 +103,10 @@ export class PlanDelta {
     this.labelKind[at] = labelKind;
     this.labelBase[at] = labelBase;
     this.boxState[at] = BOX_READ;
+    this.shape[at] = null;
+    this.outline[at] = null;
+    this.carried[at] = null;
+    clearFacts(this.facts, at * FACT_STRIDE);
     this.original[at] = undefined;
     this.caught[at] = undefined;
     return at;
@@ -107,5 +129,6 @@ export class PlanDelta {
     this.labelB = roomFloat64(this.labelB, entries);
     this.box = roomFloat64(this.box, entries * BOX_STRIDE);
     this.boxState = roomUint8(this.boxState, entries);
+    this.facts = roomInt32(this.facts, entries * FACT_STRIDE);
   }
 }

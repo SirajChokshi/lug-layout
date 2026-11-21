@@ -148,6 +148,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.readPartConnectors(lod, partId);
   }
 
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.loader.prefetchPartConnectors(lod);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.loader.loadConnectivityAttribution(lod);
   }
@@ -186,7 +190,8 @@ class TopDownBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -195,6 +200,8 @@ class TopDownBackend implements ISceneBackend {
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     out.set([ndcX * WORLD_PER_NDC, EYE_HEIGHT, ndcY * WORLD_PER_NDC, 0, -1, 0]);
   }
@@ -308,6 +315,7 @@ describe("draw road", () => {
       expect(roads.overlaps).toBe(0);
       expect(roads.joinedCells).toBeGreaterThan(0);
       expect(history.undo).toBe("road");
+      expect(history.undoLabel).toBe("road stroke (6 plates)");
       editor.undo(0);
       expect(editor.snapshot().placements).toBe(0);
       editor.chooseItem(null);
@@ -390,6 +398,24 @@ describe("draw road", () => {
     expect(snapshot.lastRoadStroke?.result).toBe("refused");
     expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
       expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("4186") }),
+    );
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
+  it("refuses a tile over a road plate of another thickness and names the plate", async () => {
+    await chosen(editor, "ldraw:69958@72");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [-1, 0],
+      [2, 0],
+    ]);
+    const snapshot = editor.snapshot();
+    expect(snapshot.placements).toBe(1);
+    expect(snapshot.lastRoadStroke?.result).toBe("refused");
+    expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
+      expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("69958") }),
     );
     editor.undo(0);
     editor.chooseItem(null);
