@@ -19,6 +19,7 @@ import {
 import {
   addZeta16,
   lduFromMm,
+  PLATE_LDU,
   pose16,
   STUD_LDU,
   zeta16,
@@ -47,6 +48,7 @@ import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
 import {
   TrackDrawing,
   type ClosureState,
+  type SupportBandAt,
   type TrackBlockView,
   type TrackDragView,
   type TrackEndView,
@@ -1276,6 +1278,7 @@ interface GroundItem {
   readonly placeable: Placeable;
   readonly x: number;
   readonly z: number;
+  readonly yPlates?: number;
 }
 
 function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedModel> {
@@ -1293,7 +1296,7 @@ function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedMode
       colorId: item.placeable.worldColor,
       x: item.x,
       z: item.z,
-      yPlates: 0,
+      yPlates: item.yPlates ?? 0,
       rot: 0,
     });
     placed.apply(edit, refOf);
@@ -1760,8 +1763,20 @@ async function roadPlateGround() {
   return { ground, plate, surface: road.road };
 }
 
-function unsupportedOf(layout: TrackDrawing) {
-  return (layout.unsupportedPieces() ?? []).map(({ piece, block }) => ({
+function bandsOver(ground: ReadonlyArray<PlacedModel>, layout: TrackDrawing): SupportBandAt {
+  return (yPlates) => {
+    const [bottom, top] = layout.verticalRange();
+    const lift = yPlates * PLATE_LDU;
+    const band = [bottom + lift, top + lift] as const;
+    return {
+      obstacles: trackObstacles(ground, band, NO_TRACK_PARTS),
+      pending: seatsPending(ground, band),
+    };
+  };
+}
+
+function unsupportedOf(layout: TrackDrawing, ground: ReadonlyArray<PlacedModel>) {
+  return (layout.unsupportedPieces(bandsOver(ground, layout)) ?? []).map(({ piece, block }) => ({
     piece,
     on: block?.kind === "model" ? block.label : null,
   }));
@@ -1784,7 +1799,60 @@ it("counts a piece unsupported only when no anti-stud has a stud under it: half 
     studPose(studsOf((plate.box.minX + plate.box.maxX) / 2), centreZ + halfLength, NORTH),
   );
 
-  expect(unsupportedOf(layout)).toEqual([{ piece: 1, on: plate.placeable.label }]);
+  expect(unsupportedOf(layout, ground)).toEqual([{ piece: 1, on: plate.placeable.label }]);
+});
+
+it("judges raised track by the band at its own height, with no table under it: a carried straight half on a raised road plate's roadway and half over air is unsupported, and so is one wholly over air", async () => {
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const raisedPlates = 3;
+  const ground = placeGround([{ placeable: road, x: 0, z: 0, yPlates: raisedPlates }]);
+  const [plate] = ground;
+  if (!plate) throw new Error("the road plate wasn't placed");
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const roadwayX = studsOf((plate.box.minX + plate.box.maxX) / 2);
+  const plateEdgeZ = studsOf(plate.box.maxZ);
+  layout.syncHeld(
+    [plateEdgeZ - halfLength, plateEdgeZ + 4 * halfLength].map((z, instance) => ({
+      catalogIndex: straight,
+      placement: studPose(roadwayX, z, SOUTH),
+      yPlates: raisedPlates,
+      instance,
+      frame: WORLD_TRACK_FRAME,
+    })),
+    [carrierAtOrigin(2)],
+  );
+
+  expect(unsupportedOf(layout, ground)).toEqual([
+    { piece: 0, on: plate.placeable.label },
+    { piece: 1, on: null },
+  ]);
+});
+
+it("judges track carried in a run frame at its framed pose: the frame's offset puts one straight across the roadway, which is unsupported, and moves the other off the plate onto bare ground", async () => {
+  const { ground, plate } = await roadPlateGround();
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const centreZ = studsOf((plate.box.minZ + plate.box.maxZ) / 2);
+  const acrossRoadway = studsOf((plate.box.minX + plate.box.maxX) / 2) - halfLength;
+  const shiftStuds = studsOf(plate.box.maxX - plate.box.minX) + 4 * halfLength;
+  const runFrame = { id: WORLD_TRACK_FRAME.id + 1, xLdu: -shiftStuds * STUD_LDU + 0.3, zLdu: 0 };
+  layout.syncHeld(
+    [acrossRoadway + shiftStuds, acrossRoadway].map((x, instance) => ({
+      catalogIndex: straight,
+      placement: studPose(x, centreZ, 0),
+      yPlates: 0,
+      instance,
+      frame: runFrame,
+    })),
+    [carrierAtOrigin(2)],
+  );
+
+  expect(unsupportedOf(layout, ground)).toEqual([{ piece: 0, on: plate.placeable.label }]);
 });
 
 it("finds a level crossing only over a road surface's roadway: track on a studless plaza is reported unsupported, but is no crossing and gets no ramp", async () => {
@@ -1830,7 +1898,7 @@ it("finds a level crossing only over a road surface's roadway: track on a studle
   }));
   const found = levelCrossings([road], tracks, []);
 
-  expect(unsupportedOf(layout)).toEqual([
+  expect(unsupportedOf(layout, ground)).toEqual([
     { piece: 0, on: plate.placeable.label },
     { piece: 1, on: TILED_PLAZA },
   ]);
@@ -1864,7 +1932,8 @@ it("lays the stroke and withholds only the join when no supported closure reache
       withheld: commit.withheld,
       joined: commit.joined,
       laidSome: commit.laid > 0,
-      unsupportedLaid: unsupportedOf(layout).filter(({ piece }) => piece >= before).length > 0,
+      unsupportedLaid:
+        unsupportedOf(layout, ground).filter(({ piece }) => piece >= before).length > 0,
     };
   };
 
@@ -1919,7 +1988,9 @@ it("reports unsupported track inside a plan as a plan issue, so the plan isn't V
   const delta = new PlanDelta();
   writeFullRebuild(delta, ground, layout);
   plans.apply(delta);
-  const unsupported = (layout.unsupportedPieces() ?? []).map(({ piece }) => piece);
+  const unsupported = (layout.unsupportedPieces(bandsOver(ground, layout)) ?? []).map(
+    ({ piece }) => piece,
+  );
   plans.setUnsupported(new Set(unsupported), new Set(), new Set());
   const flagged = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
   plans.setUnsupported(new Set(), new Set(), new Set());
