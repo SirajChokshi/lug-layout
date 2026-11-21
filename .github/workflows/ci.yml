@@ -196,6 +196,7 @@ jobs:
         with:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-connector-inputs-
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
@@ -246,6 +247,7 @@ jobs:
         with:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-bake-inputs-
       - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
