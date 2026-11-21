@@ -141,11 +141,11 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
@@ -285,6 +285,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export { MM_PER_CM, cmText, studsText } from "./edit/size-labels.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,

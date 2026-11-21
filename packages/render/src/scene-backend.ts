@@ -1,6 +1,10 @@
 import type { PartAsset, PartMesh, StudPrimitiveAsset } from "@brr/catalog";
+import { CHUNK_STUDS } from "@brr/math";
 
 export type GraphicsApi = "webgpu" | "webgl2";
+
+const GUIDE_LINES_PER_CHUNK = 4;
+export const GUIDE_GRID_STUDS = CHUNK_STUDS / GUIDE_LINES_PER_CHUNK;
 
 export const LOOK_FEATURES = ["plastic", "gtao", "outlines", "bevel", "shadows", "oit"] as const;
 
@@ -166,7 +170,6 @@ export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
   readonly obstacles: ReadonlyArray<WorldBox>;
-  readonly gridStepLdu: number;
   readonly active: boolean;
 }
 
