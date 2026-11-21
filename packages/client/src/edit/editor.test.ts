@@ -27,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
@@ -70,7 +71,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult, PlacementListener } from "@brr/import";
+import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
   BOM_SERVICE,
@@ -258,6 +259,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.loader.loadBricklinkParts(lod);
   }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
+  }
 }
 
 interface AimedBackend {
@@ -315,6 +320,7 @@ class HeadlessBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
@@ -1097,6 +1103,10 @@ class RefusingModelImporter implements IModelImporter {
   async importStudio(fileName: string): Promise<ImportResult> {
     return refusedBake(fileName);
   }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
+  }
 }
 
 it("resolves a model file the bake refuses as not imported and keeps the chosen item, so a drop places nothing", async () => {
@@ -1207,6 +1217,10 @@ class GatedModelImporter implements IModelImporter {
     onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
     return this.importText(fileName, "", lod, onPlaced);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
@@ -1434,6 +1448,10 @@ class BakedRecordImporter implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return this.imported(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
@@ -1988,6 +2006,9 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setTrackEnds(...args: Parameters<ISceneBackend["setTrackEnds"]>): void {
     this.three.setTrackEnds(...args);
+  }
+  setGround(...args: Parameters<ISceneBackend["setGround"]>): void {
+    this.three.setGround(...args);
   }
   setPlanOverlays(...args: Parameters<ISceneBackend["setPlanOverlays"]>): void {
     this.three.setPlanOverlays(...args);
@@ -2748,6 +2769,10 @@ class ImporterBringing implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return this.importText(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 

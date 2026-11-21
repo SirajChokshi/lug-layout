@@ -12,6 +12,7 @@ import {
   type IPanelLayout,
   type IPlanService,
   type IRunningGear,
+  type IScaleBar,
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
@@ -24,6 +25,7 @@ import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
+import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -40,6 +42,7 @@ import { WorldMenu } from "./world-menu.tsx";
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly bomService: IBomService;
   readonly play: ITrainPlay;
@@ -108,6 +111,7 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 export function EditorApp({
   editor,
   camera,
+  scaleBar,
   plans,
   bomService,
   play,
@@ -175,6 +179,7 @@ export function EditorApp({
       <LibraryColumn panels={panels}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
       </LibraryColumn>
+      <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
         <WorldMenu editor={editor} snapshot={snapshot} />
         <PlacementToolbar
@@ -185,7 +190,7 @@ export function EditorApp({
           onShellCommand={toggleOverlay}
         />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
+        <Inspector editor={editor} snapshot={snapshot} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

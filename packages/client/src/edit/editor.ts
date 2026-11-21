@@ -115,7 +115,8 @@ import {
   type RoadPreview,
   type RoadStrokeView,
 } from "./road-drawing.ts";
-import { EDITOR_CAMERA, PLAN_SERVICE } from "../tokens.ts";
+import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
+import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
   writeFullRebuild,
@@ -135,6 +136,10 @@ import type {
   WorldContents,
   WorldSessionView,
 } from "./world-session.ts";
+import {
+  rollingDiagnosticsPanel,
+  type RollingDiagnosticsPanel,
+} from "../inspect/rolling-diagnostics.ts";
 
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
@@ -320,7 +325,7 @@ export interface ModelImportView {
   readonly studio: StudioReport | null;
 }
 
-export interface EditorSnapshot extends WorldSessionView, FrameLoopView {
+export interface EditorSnapshot extends WorldSessionView, FrameLoopView, GroundView {
   readonly status: EditorStatus;
   readonly error: string | null;
   readonly loadMs: number | null;
@@ -429,6 +434,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   undo(eventTimeMs: number): void;
   redo(eventTimeMs: number): void;
   setShowJoins(show: boolean): void;
+  setShowGrid(show: boolean): void;
   setSnapRoads(snap: boolean): void;
   goTo(x: number, z: number): void;
   importModelFile(file: ModelFileInput): Promise<boolean>;
@@ -437,6 +443,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
+  rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null>;
   dump(): EditorDump;
 }
 
@@ -614,6 +621,7 @@ export class Editor implements IEditor, IEditedWorld {
     credits: null,
     roads: EMPTY_ROADS,
     showJoins: true,
+    showGrid: true,
     snapRoads: true,
     snap: null,
     refusedClicks: 0,
@@ -690,11 +698,13 @@ export class Editor implements IEditor, IEditedWorld {
     @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
     @inject(PLACEMENT_SEARCH) private readonly search: IPlacementSearch,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: IConnectorTables,
+    @inject(TABLE_GROUND) private readonly ground: ITableGround,
   ) {
     this.placed = new PlacedChunks(backend);
-    this.state = { ...this.state, ...session.view(), ...frames.view() };
+    this.state = { ...this.state, ...session.view(), ...frames.view(), ...ground.view() };
     session.subscribe(() => this.sessionChanged());
     frames.subscribe(() => this.update(this.frames.view()));
+    ground.subscribe(() => this.update(this.ground.view()));
     catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
   }
 
@@ -731,6 +741,7 @@ export class Editor implements IEditor, IEditedWorld {
       });
       this.frames.forceTier(options.tier);
       const index = await this.loader.loadIndex(EDITOR_LOD);
+      this.ground.lay(index.tablePlane);
       const catalog = await this.catalog.start(index);
       this.catalogItems = catalog.items;
       this.bundleColorCodes = index.colors.map((color) => color.code);
@@ -1976,6 +1987,10 @@ export class Editor implements IEditor, IEditedWorld {
     this.backend.setMarkers([...joins, ...this.roadPreviewMarkers]);
   }
 
+  setShowGrid(show: boolean): void {
+    this.ground.setShowGrid(show);
+  }
+
   setShowJoins(show: boolean): void {
     this.update({ showJoins: show });
     this.showMarkers();
@@ -2467,6 +2482,11 @@ export class Editor implements IEditor, IEditedWorld {
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };
+  }
+
+  async rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null> {
+    const view = await this.catalog.rollingDiagnostics(item);
+    return view === null ? null : rollingDiagnosticsPanel(view);
   }
 
   dump(): EditorDump {

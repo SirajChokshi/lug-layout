@@ -350,6 +350,13 @@ impl CompiledPart {
         extras
     }
 
+    pub fn rolling_diagnostics(&self) -> Vec<Value> {
+        self.rolling
+            .as_ref()
+            .map(PartRolling::diagnostics)
+            .unwrap_or_default()
+    }
+
     pub fn to_glb(&self) -> Vec<u8> {
         glb::write(&self.path, &self.mesh, self.extras())
     }
