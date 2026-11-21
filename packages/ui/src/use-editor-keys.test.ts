@@ -1,6 +1,7 @@
 import {
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   mainThreadModules,
   PALETTE_DRAG,
   TRAIN_PLAY,
@@ -39,6 +40,7 @@ function services() {
     editor: container.get(EDITOR),
     camera: container.get(EDITOR_CAMERA),
     play: container.get(TRAIN_PLAY),
+    hotbar: container.get(HOTBAR),
     paletteDrag: container.get(PALETTE_DRAG),
   };
 }
@@ -69,11 +71,12 @@ function RoadJoinsWithKeys({
 }: {
   readonly onShellCommand?: (id: ShellCommandId) => void;
 }) {
-  const { editor, camera, play, paletteDrag } = services();
+  const { editor, camera, play, hotbar, paletteDrag } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
     useEditorKeys(editor, camera, {
       play,
+      hotbar,
       onShellCommand,
       overlayOpen: false,
       closeOverlay: () => {},
