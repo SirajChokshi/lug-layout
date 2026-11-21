@@ -1,4 +1,10 @@
-import { transferablesOf, type ImportWorkerRequest, type ImportWorkerResponse } from "@brr/import";
+import {
+  transferablesOf,
+  type ImportWorkerPlaced,
+  type ImportWorkerRequest,
+  type ImportWorkerResponse,
+  type RollingDiagnosticsRequest,
+} from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff, type RpcPort } from "@brr/rpc";
 import { inject, injectable } from "inversify";
 import { serveBakes } from "./bake-helper-host.ts";
@@ -19,8 +25,8 @@ function messageOf(error: unknown): string {
 @injectable()
 export class ImportWorkerHost {
   private readonly endpoint: RpcEndpoint<
-    ImportWorkerResponse,
-    ImportWorkerRequest | BakeHelperHandoff
+    ImportWorkerResponse | ImportWorkerPlaced,
+    ImportWorkerRequest | RollingDiagnosticsRequest | BakeHelperHandoff
   >;
 
   constructor(
@@ -36,8 +42,20 @@ export class ImportWorkerHost {
     this.endpoint.listen((message, id) => {
       switch (message.kind) {
         case "import":
-          this.service.run(message).then(
-            (model) => this.endpoint.reply(id, { kind: "imported", model }, transferablesOf(model)),
+          this.service
+            .run(message, (placed) =>
+              this.endpoint.post({ kind: "placed", ticket: message.ticket, placed }),
+            )
+            .then(
+              (model) =>
+                this.endpoint.reply(id, { kind: "imported", model }, transferablesOf(model)),
+              (error: unknown) =>
+                this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
+            );
+          return;
+        case "rollingDiagnostics":
+          this.service.rollingDiagnostics(message).then(
+            (rows) => this.endpoint.reply(id, { kind: "rollingDiagnostics", rows }),
             (error: unknown) =>
               this.endpoint.reply(id, { kind: "failed", message: messageOf(error) }),
           );

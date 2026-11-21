@@ -6,9 +6,11 @@ on:
     paths:
       - tools/asset-pipeline/library-connectors.json
       - tools/asset-pipeline/src/library-connectors/**
+      - tools/asset-pipeline/src/publication/**
       - infra/cloudflare/part-bundles.json
       - .github/workflows/library-connectors.yml
       - "!tools/asset-pipeline/src/library-connectors/*.test.ts"
+      - "!tools/asset-pipeline/src/publication/*.test.ts"
   workflow_dispatch:
 
 permissions:

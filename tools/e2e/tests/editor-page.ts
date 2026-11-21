@@ -21,6 +21,7 @@ const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
+const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
 
 export interface ScreenPoint {
   readonly sx: number;
@@ -119,6 +120,7 @@ interface EditState {
     readonly placements: PlacementColumns;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
+    readonly studChecks: number;
   };
   readonly routes: ReadonlyArray<TrackRoute>;
 }
@@ -145,12 +147,14 @@ export function byPosition(a: Pose, b: Pose): number {
 export class EditorPage {
   readonly root: Locator;
   private readonly canvas: Locator;
+  private readonly stateDump: Locator;
   private readonly samples: GroundSample[] = [];
   private map: GroundMap | null = null;
 
   private constructor(readonly page: Page) {
     this.root = page.locator(".editor");
     this.canvas = page.locator("canvas.scene");
+    this.stateDump = page.locator("#edit-state");
   }
 
   static async open(page: Page, query = ""): Promise<EditorPage> {
@@ -274,6 +278,29 @@ export class EditorPage {
     this.samples.length = 0;
   }
 
+  private async viewAtRest(): Promise<void> {
+    await expect
+      .poll(
+        () =>
+          this.page.evaluate(
+            () =>
+              new Promise<boolean>((resolve) => {
+                const dump = document.getElementById("camera-state");
+                const before = dump?.textContent ?? "";
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() =>
+                    requestAnimationFrame(() =>
+                      resolve(before !== "" && dump?.textContent === before),
+                    ),
+                  ),
+                );
+              }),
+          ),
+        { message: "the camera's view holds still across consecutive frames" },
+      )
+      .toBe(true);
+  }
+
   async goTo(target: LatticePoint): Promise<void> {
     await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
     await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
@@ -286,7 +313,7 @@ export class EditorPage {
     const centre = await this.canvasCentre();
     await this.page.mouse.move(centre.sx, centre.sy);
     await this.page.mouse.wheel(0, wheelDelta);
-    await this.settle();
+    await this.viewAtRest();
     this.forgetView();
   }
 
@@ -301,12 +328,35 @@ export class EditorPage {
     );
   }
 
+  async pick(item: string): Promise<void> {
+    const button = this.page.locator(`.palette [data-item="${item}"]`);
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+  }
+
   async choose(item: string): Promise<void> {
-    await this.page.locator(`.palette [data-item="${item}"]`).click();
-    await expect(this.page.locator(`.palette [data-item="${item}"]`)).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    await this.pick(item);
+    await expect(this.stateDump).not.toHaveAttribute("data-held-tables", "loading");
+  }
+
+  async heldTables(): Promise<string | null> {
+    return this.stateDump.getAttribute("data-held-tables");
+  }
+
+  async toolHud(): Promise<string> {
+    return (await this.page.locator(".tool-hud").textContent()) ?? "";
+  }
+
+  async holdConnectorRecords(): Promise<() => void> {
+    const { promise: released, resolve: release } = Promise.withResolvers<void>();
+    await this.page.route(
+      (url) => BUNDLE_CONNECTOR_RECORD.test(url.pathname),
+      async (route) => {
+        await released;
+        await route.continue();
+      },
     );
+    return release;
   }
 
   async escape(): Promise<void> {
@@ -448,10 +498,17 @@ export class EditorPage {
   }
 
   private async editState(): Promise<EditState> {
-    const text = await this.page.locator("#edit-state").textContent();
-    if (!text) throw new Error("the editor state dump is empty; open the editor with state=1");
-    const parsed: EditState = JSON.parse(text);
-    return parsed;
+    const dump = this.page.locator("#edit-state");
+    const read = async (): Promise<EditState> => {
+      const text = await dump.textContent();
+      if (!text) throw new Error("the editor state dump is empty; open the editor with state=1");
+      const parsed: EditState = JSON.parse(text);
+      return parsed;
+    };
+    await expect
+      .poll(async () => (await read()).world.studChecks, { timeout: MODEL_IMPORT_TIMEOUT_MS })
+      .toBe(0);
+    return read();
   }
 
   async serveLdrawLibrary(): Promise<void> {
@@ -472,7 +529,7 @@ export class EditorPage {
     await this.page.locator("input.model-file-import").setInputFiles(file);
     const name = basename(file);
     const status = this.page.locator(
-      `.model-import[data-file="${name}"]:not([data-status="importing"])`,
+      `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
     await expect(status).toHaveCount(1, { timeout: MODEL_IMPORT_TIMEOUT_MS });
     return {

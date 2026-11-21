@@ -5,6 +5,7 @@ import {
   ModelImportEngine,
   type FetchFunction,
   type ImportResult,
+  type RollingDiagnosticsRows,
 } from "@brr/import";
 import type { BundleLod } from "@brr/schema/bundle";
 import { readFile } from "node:fs/promises";
@@ -67,5 +68,9 @@ export class InThreadModelImporter implements IModelImporter {
 
   importStudio(fileName: string): Promise<ImportResult> {
     return Promise.reject(new Error(`${fileName}: Studio files are not imported in this test`));
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }

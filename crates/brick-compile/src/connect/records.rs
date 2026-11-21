@@ -1,6 +1,11 @@
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 
-use super::{mating_faces, Extraction, Gender, MatingFace, Source, Status, Unreadable};
+use super::{
+    joined_pieces, mating_faces, Extraction, Gender, MatingFace, Source, Status, Unreadable,
+    WithheldFace,
+};
 
 const FREE_AXIS: i64 = -1;
 
@@ -26,18 +31,200 @@ impl PartRecords {
     pub fn of(extraction: &Extraction) -> PartRecords {
         let mut records = PartRecords::default();
         for connector in &extraction.connectors {
-            let tier = if is_connectivity(connector.source) {
-                &mut records.connectivity
-            } else {
-                &mut records.connectors
-            };
-            match mating_faces(connector) {
-                Ok(faces) => tier.faces.extend(faces),
-                Err(reason) => tier.unreadable.push(reason),
+            if let Err(reason) = mating_faces(connector) {
+                records.tier(connector.source).unreadable.push(reason);
             }
+        }
+        for published in published_faces(extraction) {
+            records
+                .tier(published.face.source)
+                .faces
+                .push(published.face);
         }
         records
     }
+
+    fn tier(&mut self, source: Source) -> &mut TierRecord {
+        if is_connectivity(source) {
+            &mut self.connectivity
+        } else {
+            &mut self.connectors
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PublishedFace {
+    pub face: MatingFace,
+    pub pieces: Vec<u16>,
+}
+
+type ExactSlot = (u8, [i32; 3], u8);
+
+fn exact_slot(face: &MatingFace) -> Option<ExactSlot> {
+    Some((gender_code(face.gender), face.sixteenths?, face.direction?))
+}
+
+pub(super) struct FreeFace {
+    pub connector: usize,
+    pub face: usize,
+    pub mating: MatingFace,
+    pub holders: Vec<MatingFace>,
+}
+
+pub(super) fn free_faces_of_partly_held(extraction: &Extraction) -> Vec<FreeFace> {
+    let faces: Vec<(usize, Vec<MatingFace>)> = extraction
+        .connectors
+        .iter()
+        .enumerate()
+        .filter_map(|(index, connector)| mating_faces(connector).ok().map(|f| (index, f)))
+        .collect();
+    let mut at_slot: HashMap<ExactSlot, Vec<&MatingFace>> = HashMap::new();
+    for (_, found) in &faces {
+        for face in found {
+            if let Some(slot) = exact_slot(face) {
+                at_slot.entry(slot).or_default().push(face);
+            }
+        }
+    }
+    let mut free = Vec::new();
+    for (connector, found) in &faces {
+        let own = tier(extraction.connectors[*connector].source);
+        let holders_at = |face: &MatingFace| -> Vec<MatingFace> {
+            exact_slot(face)
+                .and_then(|slot| at_slot.get(&slot))
+                .map(|held| {
+                    held.iter()
+                        .filter(|holder| tier(holder.source) < own)
+                        .map(|holder| (*holder).clone())
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+        let holders: Vec<MatingFace> = found.iter().flat_map(holders_at).collect();
+        if holders.is_empty() {
+            continue;
+        }
+        for (index, face) in found.iter().enumerate() {
+            if face.gender == Gender::Female && holders_at(face).is_empty() {
+                free.push(FreeFace {
+                    connector: *connector,
+                    face: index,
+                    mating: face.clone(),
+                    holders: holders.clone(),
+                });
+            }
+        }
+    }
+    free
+}
+
+fn tier(source: Source) -> u8 {
+    match source {
+        Source::Shadow | Source::Patch => 1,
+        Source::Primitive => 2,
+        Source::Inferred => 4,
+    }
+}
+
+fn standing(face: &MatingFace) -> (u8, bool, u8) {
+    (
+        tier(face.source),
+        face.source != Source::Patch,
+        status_code(face.status),
+    )
+}
+
+fn same_receptor(a: &MatingFace, b: &MatingFace) -> bool {
+    a.gender == b.gender
+        && a.sections == b.sections
+        && a.caps == b.caps
+        && a.slide == b.slide
+        && a.group == b.group
+}
+
+pub fn published_faces(extraction: &Extraction) -> Vec<PublishedFace> {
+    let mut faces: Vec<PublishedFace> = Vec::new();
+    for (index, connector) in extraction.connectors.iter().enumerate() {
+        if let Ok(found) = mating_faces(connector) {
+            faces.extend(
+                found
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(face, _)| {
+                        !extraction.withheld.contains(&WithheldFace {
+                            connector: index,
+                            face: *face,
+                        })
+                    })
+                    .map(|(_, face)| PublishedFace {
+                        face,
+                        pieces: connector.pieces.clone(),
+                    }),
+            );
+        }
+    }
+    let mut at_slot: HashMap<ExactSlot, Vec<usize>> = HashMap::new();
+    for (index, published) in faces.iter().enumerate() {
+        if let Some(slot) = exact_slot(&published.face) {
+            at_slot.entry(slot).or_default().push(index);
+        }
+    }
+    let mut kept = vec![true; faces.len()];
+    for indices in at_slot.values() {
+        let Some(top) = indices.iter().map(|&i| tier(faces[i].face.source)).min() else {
+            continue;
+        };
+        let holder = indices
+            .iter()
+            .copied()
+            .find(|&i| tier(faces[i].face.source) == top)
+            .expect("the top tier holds the slot");
+        let lower: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|&i| tier(faces[i].face.source) > top)
+            .collect();
+        for lower in lower {
+            kept[lower] = false;
+            if faces[lower].face.source != Source::Inferred {
+                faces[holder].pieces = joined_pieces(&faces[holder].pieces, &faces[lower].pieces);
+            }
+        }
+        let held: Vec<usize> = indices
+            .iter()
+            .copied()
+            .filter(|&i| tier(faces[i].face.source) == top)
+            .collect();
+        for (n, &first) in held.iter().enumerate() {
+            if !kept[first] {
+                continue;
+            }
+            for &second in &held[n + 1..] {
+                if !kept[second] || !same_receptor(&faces[first].face, &faces[second].face) {
+                    continue;
+                }
+                kept[second] = false;
+                faces[first].pieces = joined_pieces(&faces[first].pieces, &faces[second].pieces);
+                if standing(&faces[second].face) < standing(&faces[first].face) {
+                    faces[first].face.source = faces[second].face.source;
+                    faces[first].face.status = faces[second].face.status;
+                }
+            }
+        }
+    }
+    faces
+        .into_iter()
+        .zip(kept)
+        .filter_map(|(mut published, kept)| {
+            kept.then(|| {
+                if let Some(&lowest) = published.pieces.first() {
+                    published.face.piece = lowest;
+                }
+                published
+            })
+        })
+        .collect()
 }
 
 fn unreadable_name(reason: Unreadable) -> &'static str {

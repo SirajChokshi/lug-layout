@@ -23,7 +23,7 @@ describe("shortcut map", () => {
           shiftKey: chord.shift ?? false,
           altKey: chord.alt ?? false,
         });
-        expect([chordText(chord, "other"), commandForKey(input, false)]).toEqual([
+        expect([chordText(chord, "other"), commandForKey(input, false)?.id]).toEqual([
           chordText(chord, "other"),
           spec.id,
         ]);
@@ -45,20 +45,28 @@ describe("shortcut map", () => {
     ["Arrow", press("ArrowLeft"), "pan-left"],
     ["Shift+Arrow", press("ArrowLeft", { shiftKey: true }), "orbit-left"],
     ["P", press("p"), "toggle-plan-view"],
+    ["a digit", press("7"), "pick-slot"],
   ])("maps %s", (_, input, expected) => {
-    expect(commandForKey(input, false)).toBe(expected);
+    expect(commandForKey(input, false)?.id ?? null).toBe(expected);
+  });
+
+  it("tells the hotbar which slot a digit picks, and carries no slot for any other command", () => {
+    expect(commandForKey(press("1"), false)).toEqual({ id: "pick-slot", slot: 0 });
+    expect(commandForKey(press("9"), false)).toEqual({ id: "pick-slot", slot: 8 });
+    expect(commandForKey(press("z", { ctrlKey: true }), false)).toEqual({ id: "undo" });
   });
 
   it("leaves keys alone while the user types in a field", () => {
     expect(commandForKey(press("r"), true)).toBeNull();
+    expect(commandForKey(press("3"), true)).toBeNull();
     expect(commandForKey(press("Backspace"), true)).toBeNull();
     expect(commandForKey(press("z", { ctrlKey: true }), true)).toBeNull();
     expect(commandForKey(press("/"), true)).toBeNull();
   });
 
   it("still opens and closes the palette with Cmd+K or Ctrl+K from a field", () => {
-    expect(commandForKey(press("k", { metaKey: true }), true)).toBe("open-palette");
-    expect(commandForKey(press("k", { ctrlKey: true }), true)).toBe("open-palette");
+    expect(commandForKey(press("k", { metaKey: true }), true)?.id).toBe("open-palette");
+    expect(commandForKey(press("k", { ctrlKey: true }), true)?.id).toBe("open-palette");
   });
 
   it.each([
@@ -133,6 +141,7 @@ describe("play commands", () => {
 
   it("leaves only camera, play and shell commands live while a train runs", () => {
     expect(COMMANDS.map((spec) => spec.id).filter((id) => !runsDuringPlay(id))).toEqual([
+      "pick-slot",
       "draw-track",
       "draw-road",
       "rotate",

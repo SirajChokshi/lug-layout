@@ -4,10 +4,12 @@ import { instanceBoxes } from "../running-gear/instance-boxes.ts";
 import type { GearModelSource } from "../running-gear/running-gear-editor.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 
+export type RollingStockModel = Omit<PartModel, "studCover">;
+
 export interface PlayModel {
   readonly name: string;
   readonly label: string;
-  readonly model: PartModel;
+  readonly model: RollingStockModel;
   readonly colorIndex: Uint16Array;
   readonly gear: GearModelSource;
 }
@@ -20,7 +22,7 @@ export interface RollingStockIdentity {
 
 export function playModel(
   identity: RollingStockIdentity,
-  model: PartModel,
+  model: RollingStockModel,
   modelBundle: { readonly parts: ReadonlyArray<PartAsset> },
   palette: MergedParts,
   colors: ColorTable,

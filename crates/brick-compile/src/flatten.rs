@@ -3,8 +3,9 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::affine::{Affine, Vec3};
+use crate::exact::{Decimal, ExactAffine, ExactVec3};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
-use crate::ldraw::{self, LdrawFile, Line, Winding};
+use crate::ldraw::{self, ExactNumbers, LdrawFile, Line, Winding};
 use crate::license::{self, LicenseVerdict};
 use crate::pieces::{PieceMap, NO_PIECE};
 
@@ -62,9 +63,28 @@ pub struct PieceSpan {
     pub triangles: Range<usize>,
 }
 
+#[derive(Clone, Debug)]
+pub struct ExactTriangle {
+    frame: Rc<ExactAffine>,
+    points: [[Decimal; 3]; 3],
+}
+
+impl ExactTriangle {
+    pub fn points(&self) -> [ExactVec3; 3] {
+        std::array::from_fn(|k| self.frame.apply(&self.points[k]))
+    }
+}
+
+impl PartialEq for ExactTriangle {
+    fn eq(&self, other: &Self) -> bool {
+        self.points == other.points && Rc::ptr_eq(&self.frame, &other.frame)
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Flattened {
     pub triangles: Vec<Triangle>,
+    pub exact: Vec<Option<ExactTriangle>>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
     pub files: Vec<VisitedFile>,
@@ -113,6 +133,7 @@ pub struct Flattener<'a, L: Library> {
     stud_primitives: &'a [String],
     records_span: Option<&'a dyn Fn(&str) -> bool>,
     pieces: Option<&'a PieceMap>,
+    exact: bool,
     parsed: HashMap<String, Rc<LdrawFile>>,
     first_unresolved: Option<FlattenError>,
     root: String,
@@ -126,6 +147,14 @@ struct Frame {
     culling: bool,
     depth: usize,
     trail: Vec<u32>,
+    exact: Exactness,
+}
+
+#[derive(Clone)]
+enum Exactness {
+    Off,
+    Unavailable,
+    Matrix(Rc<ExactAffine>),
 }
 
 impl<'a, L: Library> Flattener<'a, L> {
@@ -136,6 +165,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             stud_primitives,
             records_span: None,
             pieces: None,
+            exact: false,
             parsed: HashMap::new(),
             first_unresolved: None,
             root: String::new(),
@@ -150,6 +180,12 @@ impl<'a, L: Library> Flattener<'a, L> {
 
     pub fn numbering_pieces(mut self, pieces: &'a PieceMap) -> Self {
         self.pieces = Some(pieces);
+        self
+    }
+
+    pub fn exact_geometry(mut self) -> Self {
+        self.exact = true;
+        self.parsed.clear();
         self
     }
 
@@ -178,7 +214,11 @@ impl<'a, L: Library> Flattener<'a, L> {
         if let Some(file) = self.parsed.get(path) {
             return Some(Rc::clone(file));
         }
-        let file = self.library.parsed(path)?;
+        let file = if self.exact {
+            Rc::new(ldraw::parse_exact(self.library.source(path)?))
+        } else {
+            self.library.parsed(path)?
+        };
         self.parsed.insert(path.to_string(), Rc::clone(&file));
         Some(file)
     }
@@ -221,6 +261,11 @@ impl<'a, L: Library> Flattener<'a, L> {
             culling: true,
             depth: 0,
             trail: Vec::new(),
+            exact: if self.exact {
+                Exactness::Matrix(Rc::new(ExactAffine::identity()))
+            } else {
+                Exactness::Off
+            },
         };
         let file = self
             .load(path, &mut out)
@@ -274,7 +319,8 @@ impl<'a, L: Library> Flattener<'a, L> {
         let mut winding = Winding::Ccw;
         let mut invert_next = false;
         let mut ordinal: u32 = 0;
-        for line in &file.lines {
+        for (index, line) in file.lines.iter().enumerate() {
+            let exact = file.exact.get(index).unwrap_or(&ExactNumbers::Unavailable);
             match line {
                 Line::Certify(w) => {
                     certified = true;
@@ -320,6 +366,15 @@ impl<'a, L: Library> Flattener<'a, L> {
                         culling: frame.culling && certified,
                         depth: frame.depth + 1,
                         trail: child_trail,
+                        exact: match (&frame.exact, exact) {
+                            (Exactness::Off, _) => Exactness::Off,
+                            (Exactness::Matrix(parent), ExactNumbers::Matrix(numbers)) => {
+                                Exactness::Matrix(Rc::new(
+                                    parent.then(&ExactAffine::from_ldraw(numbers)),
+                                ))
+                            }
+                            _ => Exactness::Unavailable,
+                        },
                     };
                     let first = out.triangles.len();
                     self.walk(&child_path, &child, &child_frame, out)?;
@@ -350,7 +405,8 @@ impl<'a, L: Library> Flattener<'a, L> {
                     let placed = points.map(|point| frame.matrix.apply(point));
                     self.check_line(path, points.as_flattened(), placed.as_flattened());
                     let culling = frame.culling && certified;
-                    emit(out, frame, *color, culling, winding, *points);
+                    let local = exact_points(exact, [0, 1, 2]);
+                    emit(out, frame, *color, culling, winding, *points, local);
                 }
                 Line::Quad { color, points } => {
                     let placed = points.map(|point| frame.matrix.apply(point));
@@ -363,6 +419,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                         culling,
                         winding,
                         [points[0], points[1], points[2]],
+                        exact_points(exact, [0, 1, 2]),
                     );
                     emit(
                         out,
@@ -371,6 +428,7 @@ impl<'a, L: Library> Flattener<'a, L> {
                         culling,
                         winding,
                         [points[0], points[2], points[3]],
+                        exact_points(exact, [0, 2, 3]),
                     );
                 }
             }
@@ -387,6 +445,14 @@ fn resolve_color(color: u32, inherited: u32) -> u32 {
     }
 }
 
+fn exact_points(exact: &ExactNumbers, corners: [usize; 3]) -> Option<[[Decimal; 3]; 3]> {
+    let ExactNumbers::Points(points) = exact else {
+        return None;
+    };
+    let [a, b, c] = corners.map(|k| points.get(k).cloned());
+    Some([a?, b?, c?])
+}
+
 fn emit(
     out: &mut Flattened,
     frame: &Frame,
@@ -394,6 +460,7 @@ fn emit(
     culling: bool,
     winding: Winding,
     points: [Vec3; 3],
+    local: Option<[[Decimal; 3]; 3]>,
 ) {
     let transformed = [
         frame.matrix.apply(points[0]),
@@ -411,4 +478,17 @@ fn emit(
         points: ordered,
         double_sided: !culling,
     });
+    match &frame.exact {
+        Exactness::Off => {}
+        Exactness::Unavailable => out.exact.push(None),
+        Exactness::Matrix(matrix) => out.exact.push(local.map(|local| ExactTriangle {
+            frame: Rc::clone(matrix),
+            points: if clockwise {
+                let [a, b, c] = local;
+                [a, c, b]
+            } else {
+                local
+            },
+        })),
+    }
 }

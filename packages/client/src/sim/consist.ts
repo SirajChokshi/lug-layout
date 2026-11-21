@@ -120,7 +120,7 @@ export function vehicleSpec(vehicle: PartVehicle, reversed: boolean): VehicleSpe
 }
 
 function localMatrices(
-  model: PartModel,
+  model: Omit<PartModel, "studCover">,
   instances: Uint32Array,
   vehicle: PartVehicle,
   sign: number,
@@ -155,7 +155,7 @@ function railTopFor(vehicle: PartVehicle, railPart: string): number {
 }
 
 export function consistVehicles(
-  model: PartModel,
+  model: Omit<PartModel, "studCover">,
   name: string,
   reversed: boolean,
   railPart: string,

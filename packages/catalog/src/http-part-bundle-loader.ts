@@ -1,6 +1,7 @@
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
+  type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
 } from "./connector-records.ts";
@@ -12,6 +13,7 @@ import {
   ModelFile,
   PartShape,
   PartTableFile,
+  RollingDiagnosticsFile,
   SectionVocabularyFile,
   type BundleCredit,
   type BundleLod,
@@ -147,6 +149,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+  private readonly rollingDiagnosticsFiles = new Map<
+    BundleLod,
+    Promise<RollingDiagnosticsFile | null>
+  >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
@@ -417,6 +423,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
+      libraryConnectors: manifest.compiler.libraryConnectors ?? null,
     };
   }
 
@@ -438,6 +445,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
 
   async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return (await this.records(lod)).load(partId);
+  }
+
+  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return (await this.records(lod)).read(partId);
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -500,6 +511,22 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     this.crosswalks.set(lod, loading);
     loading.catch(() => this.crosswalks.delete(lod));
     return loading;
+  }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.cached(this.rollingDiagnosticsFiles, lod, async () => {
+      const { rollingDiagnostics } = await this.loadIndex(lod);
+      if (rollingDiagnostics === undefined) return null;
+      const path = `${lod}/${rollingDiagnostics.file}`;
+      const bytes = await this.bytes(path, "structural");
+      if ((await sha256Hex(bytes)) !== rollingDiagnostics.sha256) {
+        throw new Error(`${path} differs from the SHA-256 the manifest names`);
+      }
+      return decodedOrThrow(
+        decode(RollingDiagnosticsFile, JSON.parse(new TextDecoder().decode(bytes))),
+        path,
+      );
+    });
   }
 
   async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {

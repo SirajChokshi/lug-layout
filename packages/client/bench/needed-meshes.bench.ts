@@ -1,9 +1,4 @@
-import {
-  ASSET_FETCHER,
-  PART_BUNDLE_LOADER,
-  withPlaceholderMesh,
-  type IAssetFetcher,
-} from "@brr/catalog";
+import { ASSET_FETCHER, PART_BUNDLE_LOADER, undrawnPart, type IAssetFetcher } from "@brr/catalog";
 import {
   INSTANCE_MATRIX_FLOATS,
   SCENE_BACKEND,
@@ -197,9 +192,9 @@ const loader = container.get(PART_BUNDLE_LOADER);
 const backend: ISceneBackend = container.get(SCENE_BACKEND);
 const index = await loader.loadIndex(LOD);
 const shapes = await Promise.all(index.catalogParts.map((part) => loader.loadPartShape(LOD, part)));
-const palette = new MergedParts(shapes.map(withPlaceholderMesh));
+const palette = new MergedParts(shapes.map(undrawnPart));
 const streamed: { progress: PartMeshProgress } = {
-  progress: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES },
+  progress: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES, undrawnParts: [] },
 };
 const stream = new PartMeshStream(loader, backend, palette, LOD, (latest) => {
   streamed.progress = latest;
