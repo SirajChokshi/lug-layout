@@ -1249,6 +1249,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly factUpdates: PlacedModel[] = [];
   private factsQueued = false;
   private mappingRequested = false;
+  private trackSupportError: string | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
@@ -1608,8 +1609,14 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private loadTrackSupport(): void {
-    this.trackWorld.loadSupport().then(
+    const loading = this.trackWorld.loadSupport();
+    if (!loading) return;
+    loading.then(
       () => {
+        if (this.trackSupportError !== null && this.state.catalogError === this.trackSupportError) {
+          this.update({ catalogError: null });
+        }
+        this.trackSupportError = null;
         this.layoutChanged();
         if (this.tracks.dragging()) this.update(this.tracks.moveDrag(this.hitX, this.hitZ));
         else {
@@ -1618,12 +1625,16 @@ export class Editor implements IEditor, IEditedWorld {
         }
       },
       (error: unknown) => {
-        this.update({ catalogError: `track connector records can't be read: ${errorText(error)}` });
+        this.trackSupportError = `track connector records can't be read: ${errorText(error)}`;
+        this.update({ catalogError: this.trackSupportError });
       },
     );
   }
 
   private layoutChanged(): void {
+    if (this.trackWorld.drawing() !== null && !this.trackWorld.supported()) {
+      this.loadTrackSupport();
+    }
     this.trackWorld.measureSupport();
     this.pushUnsupported();
     this.trackWorld.refreshCrossings();

@@ -7,6 +7,7 @@ import {
   type RoadPlacement,
   type TrackChange,
 } from "@brr/domain";
+import { PLATE_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import type { BundleIndex, TrackCatalog } from "@brr/schema/bundle";
 import type { Issue } from "@brr/schema/decode";
@@ -36,6 +37,7 @@ import type {
 import {
   TrackDrawing,
   type PlayTrack,
+  type SupportBand,
   type TrackBlockView,
   type TrackCarrier,
   type TrackEndView,
@@ -78,7 +80,8 @@ export type RoadPlacements = () => ReadonlyArray<RoadPlacement>;
 
 export interface ITrackWorld extends PlanTrackSource {
   start(bundle: TrackBundle, placed: PlacedModels, roads: RoadPlacements): void;
-  loadSupport(): Promise<void>;
+  loadSupport(): Promise<void> | null;
+  supported(): boolean;
   drawing(): TrackDrawing | null;
   pieceCatalog(): TrackCatalog["pieces"];
   requestPieceMeshes(): void;
@@ -131,6 +134,7 @@ export class TrackWorld implements ITrackWorld {
   private layoutVersion = 0;
   private obstaclesVersion = -1;
   private trackSupport: TrackSupport | null = null;
+  private supportLoading = false;
   private unsupportedTrack: ReadonlyArray<UnsupportedPiece> | null = null;
   private unsupportedLaid: ReadonlySet<number> = NO_IDS;
   private unsupportedCarriers: ReadonlySet<number> = NO_IDS;
@@ -159,9 +163,10 @@ export class TrackWorld implements ITrackWorld {
     );
   }
 
-  async loadSupport(): Promise<void> {
+  loadSupport(): Promise<void> | null {
     const track = this.track;
-    if (!track) return;
+    if (!track || this.supportLoading) return null;
+    this.supportLoading = true;
     const kit = track.supportParts();
     const tables: Pick<Placeable, "id" | "partTransforms"> = {
       id: TRACK_SUPPORT_TABLES,
@@ -171,16 +176,28 @@ export class TrackWorld implements ITrackWorld {
         matrices: new Float64Array(0),
       },
     };
-    const loaded = await this.connectorTables.load(tables);
-    const parts = this.catalog.parts();
-    const antiStuds = new Map<number, Int32Array>();
-    for (const { catalogIndex, partIndex } of kit) {
-      const table = loaded.tables[partIndex];
-      const part = parts[partIndex];
-      if (table && part) antiStuds.set(catalogIndex, antiStudsOf(table, part.boundsMin[1]));
-    }
-    this.trackSupport = new TrackSupport(antiStuds);
-    this.track?.setSupport(this.trackSupport);
+    return this.connectorTables.load(tables).then(
+      (loaded) => {
+        const parts = this.catalog.parts();
+        const antiStuds = new Map<number, Int32Array>();
+        for (const { catalogIndex, partIndex } of kit) {
+          const table = loaded.tables[partIndex];
+          const part = parts[partIndex];
+          if (table && part) antiStuds.set(catalogIndex, antiStudsOf(table, part.boundsMin[1]));
+        }
+        this.supportLoading = false;
+        this.trackSupport = new TrackSupport(antiStuds);
+        this.track?.setSupport(this.trackSupport);
+      },
+      (error: unknown) => {
+        this.supportLoading = false;
+        throw error;
+      },
+    );
+  }
+
+  supported(): boolean {
+    return this.trackSupport !== null;
   }
 
   drawing(): TrackDrawing | null {
@@ -364,7 +381,7 @@ export class TrackWorld implements ITrackWorld {
     const track = this.track;
     if (!track) return;
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureObstacles();
-    const unsupported = track.unsupportedPieces();
+    const unsupported = track.unsupportedPieces((yPlates) => this.supportBand(track, yPlates));
     this.unsupportedTrack = unsupported;
     if (!unsupported) {
       this.unsupportedLaid = NO_IDS;
@@ -475,6 +492,17 @@ export class TrackWorld implements ITrackWorld {
 
   private newDrawing(bundle: TrackBundle): TrackDrawing {
     return new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors());
+  }
+
+  private supportBand(track: TrackDrawing, yPlates: number): SupportBand {
+    const lift = yPlates * PLATE_LDU;
+    const [bottom, top] = track.verticalRange();
+    const band = [bottom + lift, top + lift] as const;
+    const models = this.placed.models();
+    return {
+      obstacles: trackObstacles(models, band, (model) => this.carriedParts(model.placeable)),
+      pending: seatsPending(models, band),
+    };
   }
 
   private rampClearance(
