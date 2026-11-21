@@ -116,7 +116,8 @@ import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/do
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
+import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { TrackRouteView } from "./track-drawing.ts";
@@ -1080,9 +1081,12 @@ it("keeps the trains on the rails in the one undo history and in the saved world
   editor.undo(0);
   await vi.waitFor(() => expect(repository.storedConsists()).toBe(1));
   const first = editor.snapshot().world?.id ?? "";
+  const drawnBeforeSaving = drawnChunks(backend);
   await editor.newWorld("Second");
   const fresh = trainsOf(editor);
   await editor.openWorld(first);
+  expect(drawnBeforeSaving).not.toBe("");
+  expect(drawnChunks(backend)).toBe(drawnBeforeSaving);
 
   expect(selected?.kind).toBe("train");
   expect({ deleted, undoLabel, undone, redone, fresh }).toEqual({
@@ -1733,6 +1737,19 @@ it("offers none of the world's editing commands in a world another tab holds, bu
   });
 }, 120_000);
 
+function drawnChunks(backend: HeadlessBackend): string {
+  return [...backend.chunks]
+    .toSorted(([a], [b]) => a - b)
+    .map(([key, chunk]) => {
+      const parts = [...chunk.partIndex.subarray(0, chunk.count)].map((i) => backend.partIds[i]);
+      const poses = [...chunk.matrices.subarray(0, chunk.count * INSTANCE_MATRIX_FLOATS)].map(
+        (value) => value.toFixed(3),
+      );
+      return `${key}:${parts.join(",")}:${poses.join(",")}`;
+    })
+    .join("|");
+}
+
 function dragTrack(
   editor: IEditor,
   backend: AimedBackend,
@@ -1842,10 +1859,13 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   record();
   const lever = editor.snapshot().track?.switches[0];
   if (!lever) throw new Error("the laid switch has no lever");
+  const drawnBeforeThrow = drawnChunks(backend);
   selectAt(editor, backend, lever.xLdu, lever.zLdu);
+  const drawnAfterThrow = drawnChunks(backend);
   record();
   await place(BASEPLATE, 64 * STUD, 0);
   record();
+  let drawnAfterUndoingThrow = "";
 
   expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
   expect(labels).toEqual([
@@ -1875,8 +1895,11 @@ it("undoes and redoes model and track edits in the order they happened, each tra
 
   for (let step = states.length - 1; step > 0; step--) {
     editor.undo(0);
+    if (labels[step - 1] === "throw switch") drawnAfterUndoingThrow = drawnChunks(backend);
     expect(layoutState(editor), `after undoing edit ${step}`).toEqual(states[step - 1]);
   }
+  expect(drawnAfterThrow).not.toBe(drawnBeforeThrow);
+  expect(drawnAfterUndoingThrow).toBe(drawnBeforeThrow);
   expect(editor.snapshot().history.undo).toBeNull();
   for (let step = 1; step < states.length; step++) {
     expect(editor.snapshot().history.redoLabel).toBe(labels[step - 1]);
@@ -1941,6 +1964,10 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
     originChunkZ: -2,
   });
   const plansAt = [plans.materialize()];
+  const drawnBeforeTrack = drawnChunks(backend);
+  let drawnFirstLay = "";
+  let drawnFirstLayUndone = "";
+  let drawnFirstLayRedone = "";
   const gestures: Array<() => void> = [
     () => {
       editor.chooseItem(TRACK_ITEM_ID);
@@ -1970,13 +1997,15 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       selectAt(editor, backend, lever.xLdu, lever.zLdu);
     },
   ];
-  const committed = gestures.map((gesture) => {
+  const committed = gestures.map((gesture, i) => {
     const seen = step(gesture);
+    if (i === 0) drawnFirstLay = drawnChunks(backend);
     plansAt.push(plans.materialize());
     return seen;
   });
   const undone = gestures.map((_, i) => {
     const seen = step(() => editor.undo(0));
+    if (i === gestures.length - 1) drawnFirstLayUndone = drawnChunks(backend);
     expect(plans.materialize(), `plan after undoing step ${gestures.length - i}`).toEqual(
       plansAt[gestures.length - i - 1],
     );
@@ -1984,6 +2013,7 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
   });
   const redone = gestures.map((_, i) => {
     const seen = step(() => editor.redo(0));
+    if (i === 0) drawnFirstLayRedone = drawnChunks(backend);
     expect(plans.materialize(), `plan after redoing step ${i + 1}`).toEqual(plansAt[i + 1]);
     return seen;
   });
@@ -2007,6 +2037,11 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       .map((removed) => ({ ...trackRows([], removed), lifted: [removed], railsSet: 1 })),
   ]);
   expect(redone).toEqual(committed);
+  expect(drawnFirstLay).not.toBe(drawnBeforeTrack);
+  expect({ undone: drawnFirstLayUndone, redone: drawnFirstLayRedone }).toEqual({
+    undone: drawnBeforeTrack,
+    redone: drawnFirstLay,
+  });
   expect(plansAt.at(-1)?.placements).toHaveLength(15);
   expect(
     plansAt.map(
@@ -7691,6 +7726,45 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
+}, 120_000);
+
+const SEAT_LEVEL_MODULE = "mils-plain";
+
+it("re-plans a track drag in flight against the new obstacles when a seat-level import's studs land, and shows it before the pointer moves again", async () => {
+  const importer = new GatedModelImporter();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
+  );
+  const record = await container
+    .get(PART_BUNDLE_LOADER)
+    .loadModelRecord("standard", SEAT_LEVEL_MODULE);
+  importer.serve(importedRecord("module.mpd", record));
+  await editor.importModelFile({
+    name: "module.mpd",
+    bytes: new TextEncoder().encode("0 a plain module, its studs still being checked\n"),
+  });
+  await placer(editor, backend)(editor.snapshot().modelImport?.item ?? "", -12_800, -12_800);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [320, 320], [2_240, 320]);
+  const [west, east] = editor.dump().trackEnds.toSorted((a, b) => a.xLdu - b.xLdu);
+  if (!west || !east) throw new Error("the run left no open ends");
+  backend.aim(east.xLdu, east.zLdu);
+  editor.dragStart(0, 0);
+  backend.aim(west.xLdu, west.zLdu);
+  editor.dragMove(0, 0);
+  const whilePending = editor.snapshot().track?.drag?.closure;
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const landed = editor.snapshot().track?.drag?.closure;
+  editor.dragMove(0, 0);
+
+  expect(whilePending).toBe("pending");
+  expect(landed).not.toBe("pending");
+  expect(landed).toBe(editor.snapshot().track?.drag?.closure);
 }, 120_000);
 
 const PIER_PLATES = 5;
