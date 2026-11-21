@@ -204,6 +204,7 @@ export function App({ scene, params, importScene, bom }: AppProps) {
             source={bom.source}
             region={params.region}
             selectionLabel={null}
+            plans={null}
           />
         )}
         {result && !error && (
