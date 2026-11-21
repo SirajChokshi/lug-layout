@@ -287,16 +287,17 @@ kbd {
 }
 
 .tool-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px 8px;
+  align-items: baseline;
   max-width: 100%;
-  overflow: hidden;
   font-weight: 600;
   text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .tool-detail {
-  margin-left: 8px;
   color: var(--tone);
   font-weight: 500;
 }

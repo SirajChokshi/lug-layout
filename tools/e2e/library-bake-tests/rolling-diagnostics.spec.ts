@@ -23,7 +23,7 @@ function printedRoundBrickModel(): string {
   ].join("\n");
 }
 
-test("an import that takes parts from the library bake fetches no rolling diagnostics until the inspector asks, then only its bake bucket's file", async ({
+test("an import that takes parts from the library bake fetches no rolling diagnostics until the selection panel asks, then only its bake bucket's file", async ({
   page,
 }) => {
   const requested: string[] = [];
@@ -46,9 +46,9 @@ test("an import that takes parts from the library bake fetches no rolling diagno
   expect(await editor.select(BAKED_AIM)).toBe(imported.item);
   expect(diagnosticsRequests(), "an import that takes parts from the bake").toEqual([]);
 
-  const inspector = page.getByRole("region", { name: "Inspector" });
-  await inspector.getByRole("button", { name: "Show unread rolling bands" }).click();
-  const bands = inspector.getByLabel("Unread rolling bands");
+  const panel = page.getByRole("region", { name: "Selection" });
+  await panel.getByRole("button", { name: "Show unread rolling bands" }).click();
+  const bands = panel.getByLabel("Unread rolling bands");
   await expect(bands).toBeVisible();
   const asked = diagnosticsRequests();
   expect(asked.filter((path) => BAKE_DIAGNOSTICS.test(path)).length).toBeGreaterThan(0);
@@ -58,5 +58,5 @@ test("an import that takes parts from the library bake fetches no rolling diagno
   const brick = bands.locator(".rolling-diagnostics-part", { hasText: PRINTED_ROUND_BRICK });
   await expect(brick.locator("li")).toHaveCount(PRINTED_ROUND_BRICK_ROWS);
   await expect(brick.locator("li", { hasText: /^arcs:/u })).toHaveCount(PRINTED_ROUND_BRICK_ARCS);
-  await inspector.screenshot({ path: test.info().outputPath("inspector-library-bake.png") });
+  await panel.screenshot({ path: test.info().outputPath("selection-panel-library-bake.png") });
 });

@@ -7,13 +7,22 @@ import {
 import {
   EditHistory,
   PlanDelta,
+  WORLD_TRACK_FRAME,
   World,
   layMoves,
   runMoves,
   solveClosure,
   type TrackSegment,
 } from "@brr/domain";
-import { lduFromMm, pose16, STUD_LDU, zeta16, zeta16ToStuds, type Pose16 } from "@brr/math";
+import {
+  addZeta16,
+  lduFromMm,
+  pose16,
+  STUD_LDU,
+  zeta16,
+  zeta16ToStuds,
+  type Pose16,
+} from "@brr/math";
 import type { TrackShape } from "@brr/schema/bundle";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -40,9 +49,11 @@ import {
   type TrackDragView,
   type TrackEndView,
   type TrackFootprint,
+  type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
 import { seatsPending, trackObstacles, type TrackObstacles } from "./track-obstacles.ts";
+import type { ExtensionTurn } from "./track-extension.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_TRACK_PARTS = (): ReadonlySet<number> => new Set();
@@ -78,7 +89,7 @@ class PlanOnlyBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -888,9 +899,145 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   expect(layout.pieceCount).toBe(before);
 });
 
+function focusEnd(layout: TrackDrawing, end: TrackEndView): void {
+  layout.extension.focusOn(layout.endNear(end.xLdu, end.zLdu, null));
+}
+
+function focusAt(layout: TrackDrawing, pose: Pose16): void {
+  const { x, z } = zeta16ToStuds(pose.position);
+  layout.extension.focusOn(layout.endNear(x * STUD_LDU, z * STUD_LDU, null));
+}
+
+function extend(layout: TrackDrawing, turn: ExtensionTurn | null): boolean {
+  if (turn !== null && !layout.extension.choose(turn)) throw new Error(`no ${turn} to lay`);
+  const plan = layout.extensionPlan();
+  if (!plan) throw new Error("no open end to extend");
+  layout.applyTrack(plan.change);
+  layout.extension.laid(plan.run, plan.end);
+  layout.extension.focusOn(null);
+  return plan.goal !== null && layout.joinsAt(plan.goal);
+}
+
+it("extends an open end one previewed piece at a time and closes the loop through the join it suggests", async () => {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const sides = 4;
+  layRun(layout, studPose(0, 0, 0), [{ kind: "straight", count: sides }]);
+  focusEnd(layout, endAt(layout, sides * 16, 0));
+  const turns: ReadonlyArray<ExtensionTurn> = [
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES).fill("left"),
+    ...Array<ExtensionTurn>(sides).fill("straight"),
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES / 2).fill("left"),
+  ];
+
+  const afterEach = turns.map((turn) => {
+    extend(layout, turn);
+    return [layout.pieceCount, layout.joinedPairs(), layout.openEnds().length];
+  });
+  const suggested = layout.extension.view();
+  const laid = layout.openEnds().filter((end) => end.xLdu !== 0 || end.zLdu !== 0);
+
+  expect(afterEach).toEqual(turns.map((_, i) => [sides + i + 1, sides + i, 2]));
+  expect(laid.map((end) => Math.sign(end.zLdu))).toEqual([-1]);
+  expect(suggested?.continuing).toBe(true);
+  expect(suggested?.choices[suggested.index]).toEqual({
+    kind: "join",
+    straights: 0,
+    curves: HALF_TURN_CURVES / 2,
+    joinsEnd: true,
+    blocked: null,
+  });
+  expect(extend(layout, null)).toBe(true);
+  expect(layout.openEnds()).toHaveLength(0);
+  expect(layout.joinedPairs()).toBe(layout.pieceCount);
+  expect(layout.extension.view()).toBeNull();
+});
+
+function singlesAt(layout: TrackDrawing, xStuds: number, zStuds: number) {
+  focusEnd(layout, endAt(layout, xStuds, zStuds));
+  const view = layout.extension.view();
+  if (!view) throw new Error("the open end offers nothing");
+  return view.choices
+    .filter((choice) => choice.kind !== "join")
+    .map((choice) => [choice.kind, choice.blocked?.kind ?? null]);
+}
+
+it("offers each single piece that would run into an obstacle as blocked, and none of them as a lay", async () => {
+  const bundle = await trackAndRoadBundle();
+  const clear = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const walled = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  for (const layout of [clear, walled]) {
+    layRun(layout, studPose(56, 0, 0), [{ kind: "straight", count: 2 }]);
+  }
+  walled.setObstacles(plateObstacles(plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0)), false);
+  expect(singlesAt(clear, 88, 0)).toEqual([
+    ["straight", null],
+    ["left", null],
+    ["right", null],
+  ]);
+  expect(singlesAt(walled, 88, 0)).toEqual([
+    ["straight", "model"],
+    ["left", "model"],
+    ["right", "model"],
+  ]);
+  expect(walled.extensionPlan()?.run.choice.blocked).toMatchObject({ kind: "model" });
+});
+
+it.each<
+  [
+    string,
+    ReadonlyArray<readonly [number, number]>,
+    (parts: ReadonlyArray<PartAsset>) => Rect | null,
+    TrackRefusal,
+    number,
+  ]
+>([
+  [
+    "one stud off a facing end",
+    [
+      [0, 0],
+      [51, 2],
+    ],
+    () => null,
+    "impossible",
+    Math.hypot(3, 2),
+  ],
+  [
+    "a road plate in the way",
+    [
+      [0, 0],
+      [128, 0],
+    ],
+    (parts) => plateRect(parts, ROAD_BASEPLATE_32, 112, 0),
+    "blocked",
+    80,
+  ],
+])(
+  "names why the open end ahead can't be joined when it is %s, and suggests a single piece instead",
+  async (_, starts, obstacle, refusal, studs) => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    for (const [x, z] of starts)
+      layRun(layout, studPose(x, z, 0), [{ kind: "straight", count: 3 }]);
+    const rect = obstacle(bundle.parts);
+    if (rect) layout.setObstacles(plateObstacles(rect), false);
+    focusEnd(layout, endAt(layout, 48, 0));
+
+    const view = layout.extension.view();
+
+    expect(view?.unjoined?.refusal).toBe(refusal);
+    expect(view?.unjoined?.studs).toBeCloseTo(studs, 6);
+    expect(view?.choices[view.index]?.kind).toBe("straight");
+    expect(view?.choices.some((choice) => choice.kind === "join" && choice.curves === 0)).toBe(
+      false,
+    );
+  },
+);
+
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
 const NINE_VOLT_STRAIGHT = "ldraw:74746";
+const PLASTIC_STRAIGHT = "ldraw:53401";
 const SWITCH_ENTRY = 0;
 const CURVE_REVERSED = 1;
 const LADDER_RUNGS = 3;
@@ -1486,4 +1633,73 @@ it("stops a stroke before the first piece that would cross track, a custom build
       crossings: [],
     })),
   );
+});
+
+function eastEnd(layout: TrackDrawing): Pose16 {
+  const east = layout.endPoses().find((end) => end.heading === 0);
+  if (!east) throw new Error("the carried straight has no end facing east");
+  return east;
+}
+
+function shifted(pose: Pose16, x: bigint, z: bigint, heading: number): Pose16 {
+  return pose16(addZeta16(pose.position, zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n])), heading);
+}
+
+it("closes onto the open end of track a model carries, and runs no join through carried track of any system", async () => {
+  const bundle = await trackAndRoadBundle();
+  const carrying = (id: string) => {
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    layout.syncHeld([
+      {
+        catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
+        placement: studPose(0, 0, 0),
+        yPlates: 0,
+        instance: 0,
+        frame: WORLD_TRACK_FRAME,
+      },
+    ]);
+    return layout;
+  };
+  const joining = carrying(NINE_VOLT_STRAIGHT);
+  const gap = layMoves(eastEnd(joining), [joining.kit.straight, joining.kit.straight]).end;
+  layRun(joining, gap, [{ kind: "straight", count: 3 }]);
+  focusAt(joining, gap);
+  const offered = joining.extension.view();
+  const closed = extend(joining, null);
+
+  const throughCarried = [NINE_VOLT_STRAIGHT, PLASTIC_STRAIGHT].map((carried) => {
+    const across = carrying(carried);
+    const east = eastEnd(across);
+    const below = shifted(east, -8n, -40n, NORTH);
+    layRun(across, below, [{ kind: "straight", count: 2 }]);
+    layRun(across, shifted(east, -8n, 40n, SOUTH), [{ kind: "straight", count: 2 }]);
+    focusAt(across, below);
+    const choices = across.extension.view()?.choices ?? [];
+    return {
+      carried,
+      offered: choices.length > 0,
+      joinsThrough: choices.some(
+        (choice) =>
+          choice.kind === "join" &&
+          choice.straights === 5 &&
+          choice.curves === 0 &&
+          choice.blocked === null,
+      ),
+    };
+  });
+
+  expect(offered?.choices[offered.index]).toEqual({
+    kind: "join",
+    straights: 2,
+    curves: 0,
+    joinsEnd: true,
+    blocked: null,
+  });
+  expect(closed).toBe(true);
+  expect(joining.openEnds()).toHaveLength(2);
+  expect(joining.joinedPairs()).toBe(joining.pieceCount);
+  expect(throughCarried).toEqual([
+    { carried: NINE_VOLT_STRAIGHT, offered: true, joinsThrough: false },
+    { carried: PLASTIC_STRAIGHT, offered: true, joinsThrough: false },
+  ]);
 });

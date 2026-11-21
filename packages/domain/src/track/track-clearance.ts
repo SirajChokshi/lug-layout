@@ -235,6 +235,8 @@ export class TrackClearance {
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
   private readonly cells = new Map<number, number[]>();
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly joinedPair = [NO_OBSTACLE, NO_OBSTACLE];
   private visit = new Uint32Array(64);
   private generation = 0;
 
@@ -280,6 +282,12 @@ export class TrackClearance {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
   }
 
+  pieceBlocker(outline: Float64Array, placement: Pose16, exceptA: number, exceptB: number): number {
+    const placed = placedOutline(outline, placement);
+    outlineBox(placed, this.pieceBox, 0);
+    return this.blocker(placed, this.pieceBox, 0, 0, 0, exceptA, exceptB);
+  }
+
   blocker(
     outline: Float64Array,
     box: Float64Array,
@@ -289,24 +297,56 @@ export class TrackClearance {
     exceptA: number,
     exceptB: number,
   ): number {
+    const pair = this.joinedPair;
+    pair[0] = exceptA;
+    pair[1] = exceptB;
+    return this.firstOverlap(outline, box, boxAt, x, z, pair);
+  }
+
+  blockerExcept(
+    outline: Float64Array,
+    box: Float64Array,
+    x: number,
+    z: number,
+    except: ReadonlyArray<number>,
+  ): number {
+    return this.firstOverlap(outline, box, 0, x, z, except);
+  }
+
+  private nextGeneration(): number {
     this.generation++;
     if (this.generation === 0xffffffff) {
       this.visit.fill(0);
       this.generation = 1;
     }
-    const generation = this.generation;
+    return this.generation;
+  }
+
+  private firstOverlap(
+    outline: Float64Array,
+    box: Float64Array,
+    boxAt: number,
+    x: number,
+    z: number,
+    joined: ReadonlyArray<number>,
+  ): number {
+    const generation = this.nextGeneration();
+    for (let i = 0; i < joined.length; i++) {
+      const id = joined[i] ?? NO_OBSTACLE;
+      if (id >= 0 && id < this.outlines.length) this.visit[id] = generation;
+    }
     let found = NO_OBSTACLE;
     this.forCells(box, boxAt, x, z, (key) => {
       const members = this.cells.get(key);
       if (!members) return false;
       for (const id of members) {
         if (found !== NO_OBSTACLE && id >= found) break;
-        if (id === exceptA || id === exceptB || this.visit[id] === generation) continue;
+        if (this.visit[id] === generation) continue;
         this.visit[id] = generation;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
         if (!other || !outlinesOverlap(outline, x, z, other, 0, 0)) continue;
-        if (!this.insideJoined(outline, x, z, other, exceptA, exceptB)) found = id;
+        if (!this.insideJoined(outline, x, z, other, joined)) found = id;
       }
       return found === 0;
     });
@@ -318,10 +358,9 @@ export class TrackClearance {
     x: number,
     z: number,
     other: Float64Array,
-    exceptA: number,
-    exceptB: number,
+    joinedIds: ReadonlyArray<number>,
   ): boolean {
-    const joined = [exceptA, exceptB].flatMap((id) => {
+    const joined = joinedIds.flatMap((id) => {
       const shape = id < 0 ? undefined : this.outlines[id];
       return shape ? [shape] : [];
     });

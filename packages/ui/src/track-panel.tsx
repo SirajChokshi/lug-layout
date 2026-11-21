@@ -1,7 +1,11 @@
 import {
   trackBlockText,
+  unjoinedText,
   type EditorSnapshot,
+  type IEditor,
+  type TrackChoiceView,
   type TrackDragView,
+  type TrackExtendView,
   type TrackGapView,
   type TrackPieceView,
   type TrackView,
@@ -192,6 +196,94 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+function choiceLabel(choice: TrackChoiceView): string {
+  switch (choice.kind) {
+    case "straight":
+      return "Straight";
+    case "left":
+      return "Curve left";
+    case "right":
+      return "Curve right";
+    case "join":
+      return `Join: ${choice.straights + choice.curves} pieces`;
+    default: {
+      const unhandled: never = choice.kind;
+      throw new Error(`unhandled choice ${String(unhandled)}`);
+    }
+  }
+}
+
+function sentence(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+function choiceDetail(choice: TrackChoiceView): string {
+  const run = `${choice.straights} straight, ${choice.curves} curve`;
+  if (choice.blocked) return `${run}; it would ${trackBlockText(choice.blocked)}`;
+  return choice.joinsEnd ? `${run}; joins an open end exactly` : run;
+}
+
+interface ExtendStripProps {
+  readonly editor: IEditor;
+  readonly extend: TrackExtendView;
+}
+
+function ExtendStrip({ editor, extend }: ExtendStripProps) {
+  const current = extend.choices[extend.index];
+  return (
+    <div
+      className="track-extend"
+      data-choice={current?.kind ?? ""}
+      data-choice-index={extend.index}
+      data-choice-pieces={current ? current.straights + current.curves : 0}
+      data-choice-joins={current?.joinsEnd ? "true" : "false"}
+      data-choice-blocked={current?.blocked ? "true" : "false"}
+      data-unjoined={extend.unjoined?.refusal ?? ""}
+    >
+      <p>{extend.continuing ? "From the last end laid" : "On the open end pointed at"}</p>
+      <ol aria-label="Choices for the next piece">
+        {extend.choices.map((choice, index) => (
+          <li key={`${choice.kind}-${index}`}>
+            <button
+              type="button"
+              aria-pressed={index === extend.index}
+              className={choice.blocked ? "blocked" : choice.joinsEnd ? "joins" : undefined}
+              title={choiceDetail(choice)}
+              onClick={() => editor.selectTrackChoice(index)}
+            >
+              {choiceLabel(choice)}
+            </button>
+          </li>
+        ))}
+      </ol>
+      {current && <p>{sentence(choiceDetail(current))}</p>}
+      {extend.unjoined && <p>{sentence(unjoinedText(extend.unjoined))}</p>}
+    </div>
+  );
+}
+
+export function TrackExtendPanel({
+  editor,
+  snapshot,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}) {
+  const extend = snapshot.track?.extend ?? null;
+  if (snapshot.mode !== "track" || !extend) return null;
+  return (
+    <section className="inspector track-extend-panel" aria-label="Next piece">
+      <h2>Next piece</h2>
+      <ExtendStrip editor={editor} extend={extend} />
+      <p className="toolbar-hint">
+        Click the preview or press Enter to lay it, and keep going from its far end. W, A and D lay
+        a straight, a left curve or a right curve. Pick another choice here, or step through them
+        with , and . (exact joins to nearby ends are among them).
+      </p>
     </section>
   );
 }
