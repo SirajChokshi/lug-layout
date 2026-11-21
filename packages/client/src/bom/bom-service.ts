@@ -2,21 +2,29 @@ import { PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod, NotDrawnSection } from "@brr/schema/bundle";
 import {
   brickLinkWantedListXml,
+  catalogOf,
+  ownVsBuy,
   plainBomCsv,
   rebrickableCsv,
-  toCatalog,
+  resolveLines,
   type BomCounter,
   type BomLine,
   type CatalogBom,
+  type Crosswalk,
+  type OwnBuyLine,
+  type OwnedParts,
   type PlacementRegion,
+  type ResolvedLine,
   type UncountedItem,
+  type UnknownOwnedPart,
 } from "@brr/domain";
 import { inject, injectable } from "inversify";
 
 export type BomScope =
   | { readonly kind: "world" }
   | { readonly kind: "region"; readonly region: PlacementRegion }
-  | { readonly kind: "selection" };
+  | { readonly kind: "selection" }
+  | { readonly kind: "plan"; readonly planId: string };
 
 export function sceneRegion(scope: BomScope): PlacementRegion | null {
   switch (scope.kind) {
@@ -26,6 +34,8 @@ export function sceneRegion(scope: BomScope): PlacementRegion | null {
       return scope.region;
     case "selection":
       throw new Error("this scene has no selection; choose World or Region");
+    case "plan":
+      throw new Error("this scene has no plans; choose World or Region");
     default: {
       const unhandled: never = scope;
       throw new Error(`unhandled scope ${String(unhandled)}`);
@@ -91,6 +101,7 @@ export interface BomFiles {
 export interface BillOfMaterials {
   readonly name: string;
   readonly scope: BomScope;
+  readonly lod: BundleLod;
   readonly placements: number;
   readonly parts: number;
   readonly ldraw: ReadonlyArray<BomLine>;
@@ -100,37 +111,83 @@ export interface BillOfMaterials {
   readonly files: BomFiles;
 }
 
+export interface OwnVsBuyReport {
+  readonly lines: ReadonlyArray<OwnBuyLine>;
+  readonly own: number;
+  readonly buy: number;
+  readonly unmatched: number;
+  readonly custom: number;
+  readonly unknown: ReadonlyArray<UnknownOwnedPart>;
+  readonly shortfall: BomFiles;
+}
+
 export interface IBomService {
   billOfMaterials(source: IBomSource, scope: BomScope): Promise<BillOfMaterials>;
+  ownVsBuy(bom: BillOfMaterials, owned: OwnedParts): Promise<OwnVsBuyReport>;
+}
+
+const NOTHING_UNCOUNTED: ReadonlyArray<UncountedItem> = [];
+
+function catalogViews(
+  resolved: ReadonlyArray<ResolvedLine>,
+  uncounted: ReadonlyArray<UncountedItem>,
+  crosswalk: Crosswalk,
+  disclaimer: string,
+): Pick<BillOfMaterials, "rebrickable" | "bricklink" | "files"> {
+  const rebrickable = catalogOf(resolved, crosswalk, "rebrickable");
+  const bricklink = catalogOf(resolved, crosswalk, "bricklink");
+  return {
+    rebrickable,
+    bricklink,
+    files: {
+      rebrickableCsv: rebrickableCsv(rebrickable.lines),
+      brickLinkXml: brickLinkWantedListXml(bricklink.lines, disclaimer),
+      plainCsv: plainBomCsv(resolved, crosswalk, uncounted, disclaimer),
+    },
+  };
 }
 
 @injectable()
 export class BomService implements IBomService {
   constructor(@inject(PART_BUNDLE_LOADER) private readonly loader: IPartBundleLoader) {}
 
+  private async crosswalkOf(
+    lod: BundleLod,
+  ): Promise<{ readonly crosswalk: Crosswalk; readonly disclaimer: string }> {
+    const [crosswalk, { disclaimer }] = await Promise.all([
+      this.loader.loadCrosswalk(lod),
+      this.loader.loadManifest(lod),
+    ]);
+    return { crosswalk, disclaimer };
+  }
+
   async billOfMaterials(source: IBomSource, scope: BomScope): Promise<BillOfMaterials> {
     const input = source.bomInput(scope);
-    const [crosswalk, { disclaimer }] = await Promise.all([
-      this.loader.loadCrosswalk(input.lod),
-      this.loader.loadManifest(input.lod),
-    ]);
+    const { crosswalk, disclaimer } = await this.crosswalkOf(input.lod);
     const ldraw = input.counter.lines();
-    const rebrickable = toCatalog(ldraw, crosswalk, "rebrickable");
-    const bricklink = toCatalog(ldraw, crosswalk, "bricklink");
     return {
       name: input.name,
       scope,
+      lod: input.lod,
       placements: input.placements,
       parts: input.counter.total(),
       ldraw,
       uncounted: input.uncounted,
-      rebrickable,
-      bricklink,
-      files: {
-        rebrickableCsv: rebrickableCsv(rebrickable.lines),
-        brickLinkXml: brickLinkWantedListXml(bricklink.lines, disclaimer),
-        plainCsv: plainBomCsv(ldraw, crosswalk, input.uncounted, disclaimer),
-      },
+      ...catalogViews(resolveLines(ldraw, crosswalk), input.uncounted, crosswalk, disclaimer),
+    };
+  }
+
+  async ownVsBuy(bom: BillOfMaterials, owned: OwnedParts): Promise<OwnVsBuyReport> {
+    const { crosswalk, disclaimer } = await this.crosswalkOf(bom.lod);
+    const compared = ownVsBuy(resolveLines(bom.ldraw, crosswalk), crosswalk, owned);
+    return {
+      lines: compared.lines,
+      own: compared.own,
+      buy: compared.buy,
+      unmatched: compared.unmatched,
+      custom: compared.custom,
+      unknown: compared.unknown,
+      shortfall: catalogViews(compared.shortfall, NOTHING_UNCOUNTED, crosswalk, disclaimer).files,
     };
   }
 }

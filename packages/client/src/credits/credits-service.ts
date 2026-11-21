@@ -18,7 +18,8 @@ export interface ICredits {
 }
 
 const CONNECTIVITY_PACKAGE = "Connectivity package";
-const CONNECTIVITY_USE = "tier 1 connectors, where parts snap together, from LDCad shadow files";
+const CONNECTIVITY_USE =
+  "tier 1 connectors, where parts snap together, from LDCad shadow files and their patches, precomputed for library parts and fetched file by file from the same pinned set when a custom part from your own imported file has its connectors read";
 const SECTION_VOCABULARY = "Section vocabulary";
 const SECTION_VOCABULARY_USE =
   "the connector section sizes and lengths that connectors inferred from part geometry are identified against";
