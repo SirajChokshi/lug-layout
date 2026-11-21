@@ -1,3 +1,4 @@
+use crate::trig::{atan2, planar_length, sincos};
 use std::collections::HashMap;
 
 pub type Point = [f64; 2];
@@ -42,7 +43,7 @@ fn area(points: &[Point]) -> f64 {
 }
 
 fn length(v: Point) -> f64 {
-    v[0].hypot(v[1])
+    planar_length(v[0], v[1])
 }
 
 fn point_segment(p: Point, a: Point, b: Point) -> f64 {
@@ -223,7 +224,7 @@ fn merged(a: &[Point], b: &[Point], step: f64) -> Option<Vec<Point>> {
 }
 
 fn rotated(p: Point, center: Point, angle: f64) -> Point {
-    let (s, c) = angle.sin_cos();
+    let (s, c) = sincos(angle);
     [
         center[0] + c * p[0] - s * p[1],
         center[1] + s * p[0] + c * p[1],
@@ -359,7 +360,7 @@ impl Profile {
             let d = sub(b, a);
             let span = length(d);
             let distance = (a[0] * d[1] - a[1] * d[0]).abs() / span;
-            let direction = d[1].atan2(d[0]).rem_euclid(quarter);
+            let direction = atan2(d[1], d[0]).rem_euclid(quarter);
             if !out
                 .iter()
                 .any(|s| (s[0] - distance).abs() <= within && (s[1] - direction).abs() <= within)

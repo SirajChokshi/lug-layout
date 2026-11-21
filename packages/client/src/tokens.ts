@@ -17,6 +17,8 @@ import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import type { IHotbar } from "./commands/hotbar.ts";
+import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
@@ -65,6 +67,9 @@ export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Sym
 export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LibraryBakeBaseUrl",
 );
+export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryConnectorsBaseUrl",
+);
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
 );
@@ -96,6 +101,7 @@ export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symb
 export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
   "brr.client.PaletteMemory",
 );
+export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
 );
@@ -105,6 +111,9 @@ export const PANEL_LAYOUT_STORE: ServiceIdentifier<IPanelLayoutStore> = Symbol.f
 );
 export const PANEL_LAYOUT: ServiceIdentifier<IPanelLayout> = Symbol.for("brr.client.PanelLayout");
 export const SNAP_SHAPES: ServiceIdentifier<SnapShapes> = Symbol.for("brr.client.SnapShapes");
+export const CONNECTOR_TABLES: ServiceIdentifier<IConnectorTables> = Symbol.for(
+  "brr.client.ConnectorTables",
+);
 export const SNAP_MATING: ServiceIdentifier<SnapMating> = Symbol.for("brr.client.SnapMating");
 export const LATTICE_STUD_FINDER: ServiceIdentifier<LatticeStudFinder> = Symbol.for(
   "brr.client.LatticeStudFinder",

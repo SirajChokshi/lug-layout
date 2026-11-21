@@ -11,6 +11,7 @@ import {
   type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
+  type UndrawnPart,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
@@ -21,20 +22,59 @@ import { isCompactLayout } from "./use-compact-layout.ts";
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
+function connectorGapsText(snapshot: EditorSnapshot): string {
+  if (snapshot.mode !== "place") return "–";
+  const gaps = snapshot.connectorGaps;
+  if (gaps.length === 0) return "every part has one";
+  return `${gaps.length} parts have none: ${gaps.map((gap) => `${gap.partId} (${gap.reason})`).join("; ")}`;
+}
+
 function countText(count: number, label: string): string {
   return count > 0 ? `, ${integer.format(count)} ${label}` : "";
 }
 
-function meshCountsText(counts: MeshCounts, meshes: string, standIn: string): string {
-  const note = counts.loaded < counts.wanted ? ` (${standIn} stand in)` : "";
+function meshCountsText(counts: MeshCounts, meshes: string, unloaded: string): string {
+  const note = counts.loaded < counts.wanted ? ` (${unloaded})` : "";
   return `${integer.format(counts.loaded)} of ${integer.format(counts.wanted)} ${meshes}loaded${countText(counts.failed, "failed")}${countText(counts.absent, "absent")}${note}`;
 }
 
 function partMeshesText(meshes: MeshProgress): string {
   return [
-    meshCountsText(meshes.detailedPartMeshes, "detailed-level meshes ", "placeholders"),
-    meshCountsText(meshes.farPartMeshes, "far-level meshes ", "detailed-level meshes"),
+    meshCountsText(
+      meshes.detailedPartMeshes,
+      "detailed-level meshes ",
+      "parts without one aren't drawn",
+    ),
+    meshCountsText(
+      meshes.farPartMeshes,
+      "far-level meshes ",
+      "detailed-level meshes are drawn instead",
+    ),
   ].join(", ");
+}
+
+function undrawnReasonText(reason: UndrawnPart["reason"]): string {
+  switch (reason) {
+    case "absent":
+      return "the bundle has no mesh for it";
+    case "failed":
+      return "its mesh failed to load";
+    default: {
+      const unhandled: never = reason;
+      throw new Error(`unhandled undrawn reason ${String(unhandled)}`);
+    }
+  }
+}
+
+function undrawnPartsText(parts: ReadonlyArray<UndrawnPart>): string {
+  if (parts.length === 0) return "none";
+  return parts
+    .map(({ part, reason }) => `${part.replace(/^[a-z]+:/u, "")} (${undrawnReasonText(reason)})`)
+    .join(", ");
+}
+
+function undrawnGlance(count: number): string {
+  return `${integer.format(count)} ${count === 1 ? "part" : "parts"} not drawn`;
 }
 
 function ldu(value: number): string {
@@ -374,6 +414,7 @@ export function EditorHud({
         ? "select"
         : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
+    ["Connector records", connectorGapsText(snapshot)],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],
     [
@@ -389,15 +430,17 @@ export function EditorHud({
       snapshot.hover?.refusal && snapshot.mode === "place" ? snapshot.hover.refusal : "–",
     ],
     ["Last refusal", snapshot.lastRefusal?.reason ?? "none"],
+    ["Stud check", snapshot.studChecks > 0 ? `Checking (${snapshot.studChecks})` : "done"],
     ["Placements", integer.format(snapshot.placements)],
     [
       "History (undo, redo)",
       `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
     ],
     ["Part meshes", partMeshesText(snapshot.meshes)],
+    ["Parts not drawn", undrawnPartsText(snapshot.meshes.undrawnParts)],
     [
       "Far model meshes",
-      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes"),
+      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes are drawn instead"),
     ],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
@@ -405,7 +448,12 @@ export function EditorHud({
   if (snapshot.studs) {
     rows.push(
       ["Studs drawn", integer.format(snapshot.studs.drawn)],
-      ["Studs culled inside models", integer.format(snapshot.studs.culledInsideModels)],
+      [
+        "Studs culled inside models",
+        snapshot.studs.culledInsideModels === null
+          ? "Checking"
+          : integer.format(snapshot.studs.culledInsideModels),
+      ],
       ["Studs culled under footprints", integer.format(snapshot.studs.culledUnderFootprints)],
     );
   }
@@ -446,6 +494,11 @@ export function EditorHud({
       <summary title={open ? "Fold the stats away" : "Show the editor's stats and readouts"}>
         <h2>Stats</h2>
         <span className="hud-glance">{glance}</span>
+        {snapshot.meshes.undrawnParts.length > 0 && (
+          <span className="hud-glance hud-glance-warning">
+            {undrawnGlance(snapshot.meshes.undrawnParts.length)}
+          </span>
+        )}
       </summary>
       {snapshot.status === "loading" && <p>Loading the bundle and the 10 sets…</p>}
       {snapshot.error !== null && <p className="error">{snapshot.error}</p>}

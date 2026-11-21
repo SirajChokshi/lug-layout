@@ -1,14 +1,16 @@
 #![forbid(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::bake::{drawn_lattice, KeptParts, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
 use brick_compile::inline::compare_inline_part;
 use brick_compile::mesh::WELD_EPSILON_LDU;
-use brick_compile::model::{bake_model, submodel_index, ModelInstance};
+use brick_compile::model::{bake_model_with, submodel_index, BakeOptions, ModelInstance};
 use brick_compile::record::BakeRecord;
 use brick_compile::studio::read_io;
 use brick_compile::vehicle::{part_bounds, Vehicle};
@@ -17,13 +19,18 @@ use brick_compile::{
 };
 
 const BAKE_RECORD_LOD: &str = "bake records exist only at the standard LOD";
+const MS_PER_SECOND: f64 = 1000.0;
+
+fn ms(elapsed: Duration) -> f64 {
+    elapsed.as_secs_f64() * MS_PER_SECOND
+}
 static NO_RECORDS: std::sync::LazyLock<RecordShelf> = std::sync::LazyLock::new(RecordShelf::new);
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
 use crate::reply::{
-    BogieHeader, Cover, Failure, InlineOutcome, InlinePair, Lattice, LooseGeometry, PartOutcome,
-    Reply, Section, VehicleHeader,
+    AuthoredIdentification, BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair,
+    Lattice, LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
@@ -34,6 +41,31 @@ pub struct Session {
     records: RecordShelf,
     records_key: String,
     records_offered: bool,
+    decoded_since_bake: Duration,
+    kept: Option<KeptBake>,
+}
+
+struct KeptBake {
+    library: String,
+    offered: Vec<String>,
+    parts: KeptParts,
+}
+
+impl KeptBake {
+    fn resumable(
+        self,
+        library: &str,
+        offered: &[String],
+        inputs: &BakeInputs,
+    ) -> Option<KeptParts> {
+        let serves = self.parts.serves(
+            inputs.stud_primitives,
+            inputs.unofficial_allowlist,
+            &inputs.translucent,
+            inputs.table_depth,
+        );
+        (self.library == library && self.offered == offered && serves).then_some(self.parts)
+    }
 }
 
 struct BakeInputs<'a> {
@@ -60,7 +92,15 @@ impl Session {
         self.extend_library(&request)?;
         self.shelve_records(&request)?;
         match &request.envelope.request {
-            Operation::ReadModel => read_model(&request.text("source")?, body),
+            Operation::ReadModel {
+                omr_authoring_identification,
+            } => read_model(
+                &request.text("source")?,
+                BakeOptions {
+                    omr_authoring_identification: *omr_authoring_identification,
+                },
+                body,
+            ),
             Operation::ReadStudio => Ok(match read_io(request.segment("io")?) {
                 Ok(archive) => Reply::from(archive),
                 Err(error) => Reply::from(error),
@@ -109,7 +149,11 @@ impl Session {
                 stud_primitives,
                 vehicles,
             } => {
-                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let drawn = drawn_instances(
+                    &request.text("source")?,
+                    request.segment("drawn")?,
+                    BakeOptions::default(),
+                )?;
                 let closure = BakeClosure {
                     stud_primitives,
                     records: self.offered(),
@@ -129,8 +173,16 @@ impl Session {
                 table_depth_ldu,
                 vehicles,
                 shard,
+                keep_parts,
+                omr_authoring_identification,
             } => {
-                let drawn = drawn_instances(&request.text("source")?, request.segment("drawn")?)?;
+                let drawn = drawn_instances(
+                    &request.text("source")?,
+                    request.segment("drawn")?,
+                    BakeOptions {
+                        omr_authoring_identification: *omr_authoring_identification,
+                    },
+                )?;
                 let inputs = BakeInputs {
                     stud_primitives,
                     unofficial_allowlist,
@@ -140,9 +192,37 @@ impl Session {
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
                     visibility_only: shard.is_some_and(|shard| shard.visibility_only),
                 };
-                Ok(bake(&self.library, self.offered(), &drawn, &inputs, body))
+                let decoded = std::mem::take(&mut self.decoded_since_bake);
+                let offered = self.offered_references();
+                let kept = self
+                    .kept
+                    .take()
+                    .and_then(|kept| kept.resumable(self.library.key(), &offered, &inputs));
+                let (reply, parts) = bake(
+                    &self.library,
+                    self.offered(),
+                    &drawn,
+                    &inputs,
+                    decoded,
+                    kept,
+                    body,
+                );
+                if *keep_parts {
+                    self.kept = parts.map(|parts| KeptBake {
+                        library: self.library.key().to_string(),
+                        offered,
+                        parts,
+                    });
+                }
+                Ok(reply)
             }
         }
+    }
+
+    fn offered_references(&self) -> Vec<String> {
+        let mut references: Vec<String> = self.offered().keys().cloned().collect();
+        references.sort_unstable();
+        references
     }
 
     fn offered(&self) -> &RecordShelf {
@@ -163,11 +243,14 @@ impl Session {
             self.records.clear();
             self.records_key.clone_from(&records.key);
         }
+        let decoding = Instant::now();
         for file in &records.files {
             let record = BakeRecord::decode(request.range(file.bytes)?)
                 .map_err(|e| format!("bake record for {}: {e}", file.reference))?;
-            self.records.insert(file.reference.clone(), record);
+            self.records
+                .insert(file.reference.clone(), Arc::new(record));
         }
+        self.decoded_since_bake += decoding.elapsed();
         let offered: HashSet<&str> = records.references.iter().map(String::as_str).collect();
         self.records
             .retain(|reference, _| offered.contains(reference.as_str()));
@@ -201,8 +284,8 @@ fn wire_index(index: i64) -> Result<i32, String> {
     i32::try_from(index).map_err(|_| format!("sub-model index {index} does not fit an Int32"))
 }
 
-fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
-    let model = bake_model(source).map_err(|e| e.to_string())?;
+fn read_model(source: &str, options: BakeOptions, body: &mut Body) -> Result<Reply, String> {
+    let model = bake_model_with(source, options).map_err(|e| e.to_string())?;
     let mut part_ids: Vec<String> = Vec::new();
     let mut part_index: HashMap<&str, u32> = HashMap::new();
     let count = model.instances.len();
@@ -255,6 +338,10 @@ fn read_model(source: &str, body: &mut Body) -> Result<Reply, String> {
             })
             .collect(),
         instances: count,
+        authored_identification: model
+            .authored_identification
+            .as_ref()
+            .map(|authored| AuthoredIdentification::from(authored.columns(Some))),
         blobs: body.take_blobs(),
     })
 }
@@ -368,8 +455,12 @@ fn compile(
     })
 }
 
-fn drawn_instances(source: &str, mask: &[u8]) -> Result<Vec<ModelInstance>, String> {
-    let model = bake_model(source).map_err(|e| e.to_string())?;
+fn drawn_instances(
+    source: &str,
+    mask: &[u8],
+    options: BakeOptions,
+) -> Result<Vec<ModelInstance>, String> {
+    let model = bake_model_with(source, options).map_err(|e| e.to_string())?;
     if mask.len() != model.instances.len() {
         return Err(format!(
             "bake got a drawn mask for {} instances, but the model has {}",
@@ -434,8 +525,10 @@ fn bake(
     records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
+    decoded: Duration,
+    kept: Option<KeptParts>,
     body: &mut Body,
-) -> Reply {
+) -> (Reply, Option<KeptParts>) {
     let closure = BakeClosure {
         stud_primitives: inputs.stud_primitives,
         records,
@@ -443,14 +536,17 @@ fn bake(
     };
     let requested = missing_bake_files(library, drawn, &closure);
     if !requested.is_empty() {
-        return Reply::Need { paths: requested };
+        return (Reply::Need { paths: requested }, None);
     }
-    let baked = bake_drawn(library, records, drawn, inputs, body);
+    let baked = bake_drawn(library, records, drawn, inputs, decoded, kept, body);
     let requested = library.take_requested();
     if !requested.is_empty() {
-        return Reply::Need { paths: requested };
+        return (Reply::Need { paths: requested }, None);
     }
-    baked.unwrap_or_else(|message| Reply::BakeFailed { message })
+    match baked {
+        Ok((reply, parts)) => (reply, Some(parts)),
+        Err(message) => (Reply::BakeFailed { message }, None),
+    }
 }
 
 fn bake_drawn(
@@ -458,23 +554,40 @@ fn bake_drawn(
     records: &RecordShelf,
     drawn: &[ModelInstance],
     inputs: &BakeInputs,
+    decoded: Duration,
+    kept: Option<KeptParts>,
     body: &mut Body,
-) -> Result<Reply, String> {
-    let mut baker = ModelBaker::new(
-        library,
-        inputs.stud_primitives.to_vec(),
-        inputs.unofficial_allowlist.to_vec(),
-        inputs.translucent.clone(),
-        inputs.table_depth,
-    )
-    .map_err(|e| e.to_string())?
-    .with_records(records);
+) -> Result<(Reply, KeptParts), String> {
+    let mut phases = BakePhases {
+        decode_ms: ms(decoded),
+        ..BakePhases::default()
+    };
+    let resumed_parts = kept.as_ref().map_or(0, KeptParts::part_count);
+    let baker = match kept {
+        Some(parts) => ModelBaker::resume(library, parts),
+        None => ModelBaker::new(
+            library,
+            inputs.stud_primitives.to_vec(),
+            inputs.unofficial_allowlist.to_vec(),
+            inputs.translucent.clone(),
+            inputs.table_depth,
+        )
+        .map_err(|e| e.to_string())?,
+    };
+    let mut baker = baker.with_records(records);
     let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();
     for instance in drawn {
         if !shapes.contains_key(instance.part.as_str()) {
+            let resolving = Instant::now();
             let shape = baker
                 .lattice_shape(&instance.part)
                 .map_err(|e| format!("{}: {e}", instance.part))?;
+            let resolved = ms(resolving.elapsed());
+            if records.contains_key(&instance.part) {
+                phases.decode_ms += resolved;
+            } else {
+                phases.compile_ms += resolved;
+            }
             shapes.insert(&instance.part, shape);
         }
     }
@@ -483,29 +596,39 @@ fn bake_drawn(
         .map(|instance| &shapes[instance.part.as_str()])
         .collect();
     if inputs.visibility_only {
+        let covering = Instant::now();
         let cover = baker
             .cover(drawn, None, inputs.shard)
             .map_err(|e| e.to_string())?;
+        phases.cover_ms = ms(covering.elapsed());
         put_cover(body, &cover)?;
-        return Ok(Reply::Baked {
+        let reply = Reply::Baked {
             instances: drawn.len(),
             recorded_parts: baker.recorded_parts(),
+            resumed_parts,
             lattice: None,
             lattice_issue: None,
             cover: Cover::from(&cover),
             vehicles: None,
             vehicle_issue: None,
+            phases,
             blobs: body.take_blobs(),
-        });
+        };
+        return Ok((reply, baker.keep()));
     }
+    let latticing = Instant::now();
     let (lattice, lattice_issue) = match drawn_lattice(drawn, &drawn_shapes) {
         Ok(lattice) => (lattice, None),
         Err(error) => (None, Some(error.to_string())),
     };
+    phases.lattice_ms = ms(latticing.elapsed());
+    let covering = Instant::now();
     let cover = baker
         .cover(drawn, lattice.as_ref(), inputs.shard)
         .map_err(|e| e.to_string())?;
+    phases.cover_ms = ms(covering.elapsed());
     put_cover(body, &cover)?;
+    let detecting = Instant::now();
     let (vehicles, vehicle_issue) = match inputs.vehicles {
         None => (None, None),
         Some(vehicles) => match baker.vehicles(drawn, &vehicles.signatures(), &vehicles.rails()?) {
@@ -513,16 +636,20 @@ fn bake_drawn(
             Err(error) => (None, Some(error.to_string())),
         },
     };
-    Ok(Reply::Baked {
+    phases.vehicles_ms = ms(detecting.elapsed());
+    let reply = Reply::Baked {
         instances: drawn.len(),
         recorded_parts: baker.recorded_parts(),
+        resumed_parts,
         lattice: lattice.as_ref().map(Lattice::from),
         lattice_issue,
         cover: Cover::from(&cover),
         vehicles,
         vehicle_issue,
+        phases,
         blobs: body.take_blobs(),
-    })
+    };
+    Ok((reply, baker.keep()))
 }
 
 fn index_range(indices: &[usize], out: &mut Vec<u32>) -> Result<Range, String> {

@@ -1,4 +1,5 @@
 import {
+  heldItem,
   meshesSettled,
   runEditorAction,
   type EditorActionId,
@@ -6,6 +7,7 @@ import {
   type IBomService,
   type IEditor,
   type IEditorCamera,
+  type IHotbar,
   type IPalette,
   type IPanelLayout,
   type IPlanService,
@@ -13,7 +15,7 @@ import {
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
@@ -21,7 +23,7 @@ import { EditorFooter, EditorHud, Inspector, PlacementToolbar } from "./editor-p
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
-import { PlanPanel, usePlanSnapshot } from "./plan-panel.tsx";
+import { PlanPanel } from "./plan-panel.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
@@ -31,6 +33,7 @@ import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
+import { usePlanVersion } from "./use-plan-version.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WorldMenu } from "./world-menu.tsx";
 
@@ -42,6 +45,7 @@ interface EditorAppProps {
   readonly play: ITrainPlay;
   readonly palette: IPalette;
   readonly panels: IPanelLayout;
+  readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
   readonly options: EditorOptions;
   readonly disclaimer: string;
@@ -50,14 +54,18 @@ interface EditorAppProps {
 
 function EditorState({ editor }: { readonly editor: IEditor }) {
   const snapshot = useEditorSnapshot(editor);
+  const held = heldItem(snapshot);
   return (
     <pre
       id="edit-state"
       data-placements={snapshot.placements}
       data-samples={snapshot.latencies.length}
       data-measuring={snapshot.measuring ? "1" : "0"}
+      data-held-item={held?.item}
+      data-held-tables={held?.tables}
     >
       {JSON.stringify({
+        held,
         latencies: snapshot.latencies,
         stats: snapshot.stats,
         measurement: snapshot.measurement,
@@ -67,17 +75,32 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
   );
 }
 
+function CameraState({ camera }: { readonly camera: IEditorCamera }) {
+  const dump = useRef<HTMLPreElement>(null);
+  useEffect(() => {
+    const element = dump.current;
+    if (!element) return;
+    const view = camera.savedView();
+    element.textContent = JSON.stringify(view);
+    let frame = 0;
+    const publish = (): void => {
+      if (!camera.matchesView(view)) {
+        camera.copyView(view);
+        element.textContent = JSON.stringify(view);
+      }
+      frame = requestAnimationFrame(publish);
+    };
+    frame = requestAnimationFrame(publish);
+    return () => cancelAnimationFrame(frame);
+  }, [camera]);
+  return <pre id="camera-state" ref={dump} />;
+}
+
 function PlanState({ plans }: { readonly plans: IPlanService }) {
-  const snapshot = usePlanSnapshot(plans);
+  usePlanVersion(plans);
   return (
-    <pre id="plan-state" data-plans={snapshot.plans.length}>
-      {JSON.stringify({
-        plans: snapshot.plans,
-        checks: snapshot.checks,
-        placements: snapshot.placements,
-        sandboxPlacements: snapshot.sandboxPlacements,
-        tableTopY: snapshot.tableTopY,
-      })}
+    <pre id="plan-state" data-plans={plans.plans().length}>
+      {JSON.stringify(plans.materialize())}
     </pre>
   );
 }
@@ -90,6 +113,7 @@ export function EditorApp({
   play,
   palette,
   panels,
+  hotbar,
   runningGear,
   options,
   disclaimer,
@@ -110,6 +134,7 @@ export function EditorApp({
   useEditorKeys(editor, camera, {
     play,
     onShellCommand: toggleOverlay,
+    hotbar,
     overlayOpen: overlay !== null,
     closeOverlay,
   });
@@ -145,7 +170,7 @@ export function EditorApp({
         paletteDrag={palette.drag}
         options={options}
       />
-      <ToolHud snapshot={snapshot} play={playSnapshot} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
       <LibraryColumn panels={panels}>
         <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
@@ -168,6 +193,7 @@ export function EditorApp({
           play={play}
           runningGear={runningGear}
           ready={snapshot.status === "ready"}
+          checkingStuds={snapshot.studChecks > 0}
         />
         <PlanPanel camera={camera} plans={plans} />
         {snapshot.status === "ready" && (
@@ -182,6 +208,7 @@ export function EditorApp({
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
+      {showState && <CameraState camera={camera} />}
       <EditorFooter disclaimer={disclaimer} />
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (

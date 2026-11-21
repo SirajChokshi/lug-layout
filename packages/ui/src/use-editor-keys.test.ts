@@ -1,6 +1,7 @@
 import {
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   mainThreadModules,
   PALETTE,
   PANEL_LAYOUT,
@@ -40,6 +41,7 @@ function services() {
     editor: container.get(EDITOR),
     camera: container.get(EDITOR_CAMERA),
     play: container.get(TRAIN_PLAY),
+    hotbar: container.get(HOTBAR),
     paletteDrag: container.get(PALETTE).drag,
     panels: container.get(PANEL_LAYOUT),
   };
@@ -71,11 +73,12 @@ function StatsWithKeys({
 }: {
   readonly onShellCommand?: (id: ShellCommandId) => void;
 }) {
-  const { editor, camera, play, paletteDrag, panels } = services();
+  const { editor, camera, play, hotbar, paletteDrag, panels } = services();
   function Panel() {
     const snapshot = useEditorSnapshot(editor);
     useEditorKeys(editor, camera, {
       play,
+      hotbar,
       onShellCommand,
       overlayOpen: false,
       closeOverlay: () => {},

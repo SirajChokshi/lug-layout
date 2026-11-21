@@ -186,6 +186,11 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 
+.hud-glance-warning {
+  background: #fff4d6;
+  color: #6b4a00;
+}
+
 .side-panel {
   position: fixed;
   top: var(--panel-edge);
@@ -393,7 +398,8 @@ footer {
 }
 
 #edit-state,
-#plan-state {
+#plan-state,
+#camera-state {
   display: none;
 }
 
@@ -795,7 +801,7 @@ footer a {
   color: #445;
 }
 
-.module-report dl div {
+.module-report dl > div {
   display: flex;
   justify-content: space-between;
   gap: 12px;
@@ -807,8 +813,22 @@ footer a {
 }
 
 .module-report dd {
+  min-width: 0;
   margin: 0;
   text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] {
+  display: block;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] dd {
+  text-align: left;
+}
+
+.module-report dl > div[data-kind$="ConnectorRecords"] dd > div {
+  margin-bottom: 3px;
 }
 
 .not-drawn {

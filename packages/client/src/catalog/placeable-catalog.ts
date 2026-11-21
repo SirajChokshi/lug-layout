@@ -1,16 +1,24 @@
 import {
   BUNDLE_BASE_URL,
   PART_BUNDLE_LOADER,
-  withPlaceholderMesh,
+  undrawnPart,
   type IPartBundleLoader,
   type ModelRecord,
   type PartAsset,
+  type PartConnectors,
   type PartModel,
   type PartShapeAsset,
   type PartShapeRecord,
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
-import type { ImportReport, ImportResult, StudioReport } from "@brr/import";
+import type {
+  ImportReport,
+  ImportResult,
+  PlacedImport,
+  PlacementListener,
+  RefusedConnectorRecord,
+  StudioReport,
+} from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import type {
@@ -25,7 +33,12 @@ import { inject, injectable } from "inversify";
 import { MergedParts } from "../edit/merged-parts.ts";
 import { NO_MESHES, type MeshCounts, type MeshProgress } from "../edit/mesh-progress.ts";
 import { PartMeshStream } from "../edit/part-mesh-stream.ts";
-import { modelPlaceable, partPlaceable, type Placeable } from "../edit/placeable.ts";
+import {
+  modelPlaceable,
+  partPlaceable,
+  type Placeable,
+  type PlacementModel,
+} from "../edit/placeable.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
@@ -80,9 +93,33 @@ interface ImportReports {
   readonly studio: StudioReport | null;
 }
 
+export type CheckedStuds =
+  | (ImportReports & { readonly kind: "checked"; readonly placeable: Placeable })
+  | {
+      readonly kind: "failed";
+      readonly failure: string;
+      readonly report: ImportReport | null;
+      readonly studio: StudioReport | null;
+    };
+
 export type ImportOutcome =
-  | (ImportReports & { readonly item: CatalogItemView; readonly credit: ModelCredit })
-  | (ImportReports & { readonly item: null; readonly refusal: string });
+  | (ImportReports & {
+      readonly kind: "placeable";
+      readonly item: CatalogItemView;
+      readonly credit: ModelCredit;
+    })
+  | {
+      readonly kind: "checking";
+      readonly item: CatalogItemView;
+      readonly credit: ModelCredit;
+      readonly pending: Placeable;
+      readonly checked: Promise<CheckedStuds>;
+    }
+  | (ImportReports & { readonly kind: "refused"; readonly refusal: string });
+
+export type PartConnectorRecord =
+  | { readonly kind: "record"; readonly connectors: PartConnectors }
+  | { readonly kind: "missing"; readonly reason: string };
 
 export interface ICatalogAssets {
   meshProgress(): MeshProgress;
@@ -106,6 +143,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
+  partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
 }
 
 interface CatalogSlot {
@@ -125,6 +163,43 @@ const FAR_LOD: BundleLod = "far";
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 const STUDIO_FILE = /\.io$/iu;
 const IMPORTED_SOURCE = "imported file";
+const NOT_IN_BUNDLE_RECORDS = "the bundle's connector packages don't list it";
+const NOT_IN_IMPORT_RECORDS = "the import found no connector record for it";
+
+interface AddedPlaceable {
+  readonly placeable: Placeable;
+  readonly model: PlacementModel;
+  readonly credit: ModelCredit;
+  readonly slot: CatalogSlot;
+}
+
+type PlacedSource = Pick<
+  PlacedImport,
+  | "sections"
+  | "bake"
+  | "instanceCount"
+  | "partIndex"
+  | "ldrawColor"
+  | "matrices"
+  | "partTransforms"
+  | "submodels"
+>;
+
+function placedModel(placed: PlacedSource): PlacementModel {
+  return {
+    sections: placed.sections,
+    lattice: placed.bake.lattice,
+    studCover: null,
+    cells: placed.bake.cells,
+    instanceCount: placed.instanceCount,
+    partIndex: Uint16Array.from(placed.partIndex),
+    ldrawColor: placed.ldrawColor,
+    matrices: placed.matrices,
+    partTransforms: placed.partTransforms,
+    submodels: placed.submodels,
+    vehicles: placed.bake.vehicles,
+  };
+}
 
 export function colorOf(colors: ReadonlyArray<BundleColor>, code: number): BundleColor {
   const color = colors.find((c) => c.code === code);
@@ -236,6 +311,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     detailedPartMeshes: NO_MESHES,
     farPartMeshes: NO_MESHES,
     farModelMeshes: NO_MESHES,
+    undrawnParts: [],
   };
   private slots: CatalogSlot[] = [];
   private placeablesByRefId: Array<Placeable | null> = [];
@@ -245,6 +321,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
   private readonly farModelIndex = new Map<string, number>();
+  private readonly importRecords = new Map<string, ReadonlyMap<string, PartConnectorRecord>>();
+  private readonly broughtRecords = new Map<string, PartConnectors>();
   private farReady = false;
 
   constructor(
@@ -265,7 +343,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       this.loader.loadStudPrimitives(index.lod),
       Promise.all(index.catalogParts.map((part) => this.loader.loadPartShape(index.lod, part))),
     ]);
-    const palette = new MergedParts(shapes.map(withPlaceholderMesh));
+    const palette = new MergedParts(shapes.map(undrawnPart));
     this.palette = palette;
     this.meshes = new PartMeshStream(this.loader, this.backend, palette, index.lod, (progress) => {
       this.progress = { ...progress, farModelMeshes: this.progress.farModelMeshes };
@@ -421,7 +499,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     const colors = this.colors();
     const { entry, model } = record;
     const before = palette.parts.length;
-    const parts = record.parts.map(withPlaceholderMesh);
+    const parts = record.parts.map(undrawnPart);
     const merged = palette.remap(model, parts);
     for (const part of record.parts) this.meshes?.register(palette.indexOf(part.id), part.meshFile);
     const placeable = modelPlaceable(
@@ -466,59 +544,152 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
   }
 
-  private importedResult(file: ImportedFile): Promise<ImportResult> {
+  private importedResult(file: ImportedFile, onPlaced: PlacementListener): Promise<ImportResult> {
     if (STUDIO_FILE.test(file.name)) {
-      return this.importer.importStudio(file.name, file.bytes.slice(), this.lod);
+      return this.importer.importStudio(file.name, file.bytes.slice(), this.lod, onPlaced);
     }
-    return this.importer.importText(file.name, new TextDecoder().decode(file.bytes), this.lod);
+    const text = new TextDecoder().decode(file.bytes);
+    return this.importer.importText(file.name, text, this.lod, onPlaced);
   }
 
   async addImported(file: ImportedFile): Promise<ImportOutcome> {
-    const result = await this.importedResult(file);
+    let announce: PlacementListener | null = null;
+    const placement = new Promise<PlacedImport>((resolve) => {
+      announce = resolve;
+    });
+    const imported = this.importedResult(file, (placed) => announce?.(placed));
+    const first = await Promise.race([placement, imported.then(() => null)]);
+    if (first === null || first.bake.lattice === null || first.bake.cells === null) {
+      return this.completeImport(file, await imported);
+    }
+    this.keepImportedRecords(file, first, first.refusedConnectorRecords);
+    const added = await this.addPlaceable(file, placedModel(first), first);
+    return {
+      kind: "checking",
+      item: added.slot.view,
+      credit: added.credit,
+      pending: added.placeable,
+      checked: imported.then(
+        (result) => this.checkStuds(added.placeable, added.model, result),
+        (error: unknown) => ({
+          kind: "failed",
+          failure: error instanceof Error ? error.message : String(error),
+          report: null,
+          studio: null,
+        }),
+      ),
+    };
+  }
+
+  private async completeImport(file: ImportedFile, result: ImportResult): Promise<ImportOutcome> {
+    this.keepImportedRecords(file, result, result.report.refusedConnectorRecords);
     const reports = { report: result.report, studio: result.studio ?? null };
     const { bake } = result;
     if (!bake || bake.lattice === null || bake.cells === null) {
       const refusal = result.report.bakeIssue ?? bake?.latticeIssue ?? NO_LATTICE_REASON;
-      return { ...reports, item: null, refusal };
+      return { ...reports, kind: "refused", refusal };
     }
-    const set = await this.loader.loadPartSet(this.lod, result.partIds, result.compiled);
+    const placed = { ...result, sections: result.report.sections, bake };
+    const model: PartModel = { ...placedModel(placed), studCover: bake.studCover };
+    const added = await this.addPlaceable(file, model, result);
+    return { ...reports, kind: "placeable", item: added.slot.view, credit: added.credit };
+  }
+
+  private async addPlaceable(
+    file: ImportedFile,
+    model: PlacementModel,
+    parts: Pick<ImportResult, "partIds" | "compiled">,
+  ): Promise<AddedPlaceable> {
+    const set = await this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled);
     const palette = this.requirePalette();
-    const colors = this.colors();
     const before = palette.parts.length;
-    const model: PartModel = {
-      sections: result.report.sections,
-      lattice: bake.lattice,
-      studCover: bake.studCover,
-      cells: bake.cells,
-      instanceCount: result.instanceCount,
-      partIndex: Uint16Array.from(result.partIndex),
-      ldrawColor: result.ldrawColor,
-      matrices: result.matrices,
-      partTransforms: result.partTransforms,
-      submodels: result.submodels,
-      vehicles: bake.vehicles,
-    };
+    const remapped = palette.remap(model, set.parts);
     const credit = {
       name: file.name,
       source: `${IMPORTED_SOURCE} ${file.name}`,
-      sections: result.report.sections,
+      sections: model.sections,
     };
-    const placeable = modelPlaceable(
-      importRef(file.sha256),
-      file.name,
-      file.name,
-      palette.remap(model, set.parts),
-      credit,
-      palette.parts,
-      colors,
-      null,
-    );
+    for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
+    const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
     this.installMerged(palette, before);
-    this.bakes.set(placeable, model);
+    this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
     const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
     this.slots.push(slot);
-    return { ...reports, item: slot.view, credit };
+    return { placeable, model: remapped, credit, slot };
+  }
+
+  private importedPlaceable(
+    id: string,
+    name: string,
+    model: PlacementModel,
+    credit: ModelCredit,
+  ): Placeable {
+    const palette = this.requirePalette();
+    return modelPlaceable(id, name, name, model, credit, palette.parts, this.colors(), null);
+  }
+
+  private checkStuds(
+    pending: Placeable,
+    model: PlacementModel,
+    result: ImportResult,
+  ): CheckedStuds {
+    const reports = { report: result.report, studio: result.studio ?? null };
+    const { bake } = result;
+    if (!bake) {
+      return { ...reports, kind: "failed", failure: result.report.bakeIssue ?? NO_LATTICE_REASON };
+    }
+    const refId = this.placeablesByRefId.indexOf(pending);
+    const { credit } = pending;
+    if (refId < 0 || credit === null) {
+      throw new Error(`${pending.label} left the catalog before its studs were checked`);
+    }
+    const covered = { ...model, studCover: bake.studCover };
+    const checked = this.importedPlaceable(pending.id, pending.label, covered, credit);
+    this.placeablesByRefId[refId] = checked;
+    this.bakes.delete(pending);
+    this.bakes.set(checked, model);
+    return { ...reports, kind: "checked", placeable: checked };
+  }
+
+  private keepImportedRecords(
+    file: ImportedFile,
+    imported: Pick<ImportResult, "partIds" | "connectors">,
+    refusedRecords: ReadonlyArray<RefusedConnectorRecord>,
+  ): void {
+    const refused = new Map(refusedRecords.map(({ partId, reason }) => [partId, reason]));
+    const own = new Map<string, PartConnectorRecord>();
+    imported.partIds.forEach((partId, index) => {
+      const connectors = imported.connectors[index] ?? null;
+      if (connectors === null) {
+        own.set(partId, { kind: "missing", reason: refused.get(partId) ?? NOT_IN_IMPORT_RECORDS });
+        return;
+      }
+      own.set(partId, { kind: "record", connectors });
+      if (!this.broughtRecords.has(partId)) this.broughtRecords.set(partId, connectors);
+    });
+    this.importRecords.set(importRef(file.sha256), own);
+  }
+
+  async partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord> {
+    const part = this.parts()[partIndex];
+    if (!part) throw new Error(`no catalog part has index ${partIndex}`);
+    const own = this.importRecords.get(placeableId)?.get(part.id);
+    if (own) return own;
+    const loaded = await this.loader.readPartConnectors(this.lod, part.id);
+    if (loaded.kind === "loaded") return { kind: "record", connectors: loaded.connectors };
+    const brought = this.broughtRecords.get(part.id);
+    if (brought) return { kind: "record", connectors: brought };
+    switch (loaded.kind) {
+      case "unlisted":
+        return { kind: "missing", reason: NOT_IN_BUNDLE_RECORDS };
+      case "refused":
+        return { kind: "missing", reason: loaded.reason };
+      default: {
+        const unhandled: never = loaded;
+        throw new Error(`unhandled connector load ${String(unhandled)}`);
+      }
+    }
   }
 
   playModel(placeable: Placeable): PlayModel | null {
