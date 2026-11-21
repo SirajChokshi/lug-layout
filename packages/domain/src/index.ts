@@ -214,6 +214,13 @@ export {
 } from "./plan/plan-facts.ts";
 export { disksCover } from "./plan/plan-reach.ts";
 export {
+  TRACK_OPEN_END,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
+  TrackIssueRows,
+} from "./plan/track-issue-rows.ts";
+export {
   drawingKit,
   MAX_TURN_CURVES,
   type DrawingKit,
@@ -440,6 +447,7 @@ export {
   type OutlinePoint,
   type OutlineRing,
 } from "./plan/placed-outline.ts";
+export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
   levelCrossings,
   type CrossingTrack,

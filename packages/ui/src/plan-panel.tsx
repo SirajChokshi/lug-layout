@@ -13,6 +13,7 @@ import {
   type IPlanService,
   type IPlanSheetService,
   type MmRect,
+  type PlanIssue,
   type PlanRegion,
   type PlanRuleId,
   type PlanTable,
@@ -289,9 +290,35 @@ function RectFields({
   );
 }
 
+interface IssueTally {
+  readonly errors: number;
+  readonly warnings: number;
+}
+
+function tallyOf(issues: ReadonlyArray<PlanIssue>): IssueTally {
+  let warnings = 0;
+  for (const issue of issues) if (issue.severity === "warning") warnings++;
+  return { errors: issues.length - warnings, warnings };
+}
+
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function tallyText({ errors, warnings }: IssueTally): string {
+  if (warnings === 0) return errors === 0 ? "ok" : counted(errors, "error", "errors");
+  const warned = counted(warnings, "warning", "warnings");
+  return errors === 0 ? warned : `${counted(errors, "error", "errors")}, ${warned}`;
+}
+
+function tallyClass({ errors, warnings }: IssueTally): string {
+  if (errors > 0) return "plan-errors";
+  return warnings > 0 ? "plan-warnings" : "plan-ok";
+}
+
 function planGlance(active: PlanRegion | null, plans: IPlanService): string {
   if (!active) return "No plan yet";
-  return `${active.name} · ${verdictText(plans, active.id, plans.issueCount(active.id))}`;
+  return `${active.name} · ${verdictText(plans, active.id, tallyOf(plans.issues(active.id)))}`;
 }
 
 function NewPlanForm({
@@ -484,6 +511,12 @@ const PLAN_CHECKS = {
   overlap: "Placements don't overlap",
   roadJoin: "Roads continue into their neighbours",
   bomMapping: "Every part has a Rebrickable and BrickLink id",
+  trackOpenEnd: "Every track end joins another",
+  trackJoin: "Track ends that meet join exactly",
+  trackUnverified: "Every track part's connector poses are verified",
+  trackUnidentified: "Every model's track sits on exact track poses",
+  trackOffTable: "Laid track stands on the tables, by its outline",
+  trackSeam: "No laid track piece's body spans a table seam; a joint may sit on one",
 } satisfies Record<CheckedRule, string>;
 
 function isCheckedRule(rule: string): rule is CheckedRule {
@@ -492,39 +525,53 @@ function isCheckedRule(rule: string): rule is CheckedRule {
 
 const CHECKED_RULES: ReadonlyArray<CheckedRule> = Object.keys(PLAN_CHECKS).filter(isCheckedRule);
 
-function errorsText(count: number): string {
-  return `${count} ${count === 1 ? "error" : "errors"}`;
+const NO_ISSUES: IssueTally = { errors: 0, warnings: 0 };
+
+function talliesByRule(issues: ReadonlyArray<PlanIssue>): ReadonlyMap<PlanRuleId, IssueTally> {
+  const byRule = new Map<PlanRuleId, IssueTally>();
+  for (const issue of issues) {
+    const { errors, warnings } = byRule.get(issue.rule) ?? NO_ISSUES;
+    const warning = issue.severity === "warning" ? 1 : 0;
+    byRule.set(issue.rule, { errors: errors + 1 - warning, warnings: warnings + warning });
+  }
+  return byRule;
 }
 
-function verdictText(plans: IPlanService, planId: string, errors: number): string {
+function verdictText(plans: IPlanService, planId: string, tally: IssueTally): string {
   if (buildableAsPlanned(plans, planId)) return "Buildable as planned";
-  return errors === 0 ? "No errors in the checks so far" : errorsText(errors);
+  if (tally.errors + tally.warnings === 0) return "No errors in the checks so far";
+  return tallyText(tally);
 }
 
 function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly planId: string }) {
   const issues = plans.issues(planId);
-  const errors = plans.issueCount(planId);
+  const tally = tallyOf(issues);
   const unmeasured = plans.unmeasuredCount(planId);
   const customParts = plans.customParts(planId);
-  const byRule = new Map<PlanRuleId, number>();
-  for (const issue of issues) byRule.set(issue.rule, (byRule.get(issue.rule) ?? 0) + 1);
+  const byRule = talliesByRule(issues);
   return (
     <section className="plan-section" aria-label="Plan issues">
       <h3>
         Plan rules:{" "}
-        <span className={errors === 0 ? "plan-ok" : "plan-errors"} data-plan-errors={errors}>
-          {verdictText(plans, planId, errors)}
+        <span
+          className={tallyClass(tally)}
+          data-plan-errors={tally.errors}
+          data-plan-warnings={tally.warnings}
+        >
+          {verdictText(plans, planId, tally)}
         </span>
       </h3>
       <ul className="plan-checks">
         {CHECKED_RULES.map((rule) => {
-          const count = byRule.get(rule) ?? 0;
+          const counts = byRule.get(rule) ?? NO_ISSUES;
           return (
-            <li key={rule} data-check={rule} data-check-errors={count}>
-              <span className={count === 0 ? "plan-ok" : "plan-errors"}>
-                {count === 0 ? "ok" : errorsText(count)}
-              </span>{" "}
-              {PLAN_CHECKS[rule]}
+            <li
+              key={rule}
+              data-check={rule}
+              data-check-errors={counts.errors}
+              data-check-warnings={counts.warnings}
+            >
+              <span className={tallyClass(counts)}>{tallyText(counts)}</span> {PLAN_CHECKS[rule]}
             </li>
           );
         })}
@@ -544,7 +591,7 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
       )}
       <ul className="plan-issues">
         {issues.map((issue, i) => (
-          <li key={i} data-rule={issue.rule}>
+          <li key={i} data-rule={issue.rule} data-severity={issue.severity}>
             {issue.message}
           </li>
         ))}

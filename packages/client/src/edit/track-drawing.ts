@@ -10,9 +10,15 @@ import {
   BOX_MIN_Y,
   BOX_MIN_Z,
   BOX_STRIDE,
+  LABEL_AT,
   LABEL_NUMBERED,
+  TRACK_OPEN_END,
   TRACK_SEGMENT,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
   type PlanDelta,
+  type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
   KitOutlines,
@@ -37,6 +43,8 @@ import {
   solveClosure,
   studlessTopBlocker,
   PlacedOutline,
+  OutlineEdges,
+  TrackOutline,
   type TrackClearance,
   type MoveFrame,
   type OutlineRing,
@@ -57,6 +65,7 @@ import {
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  HALF_TURN_16,
   PLATE_LDU,
   STUD_LDU,
   ZETA16_ORDER,
@@ -77,7 +86,7 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
+import type { FramedTrackPiece, TrackPartCount } from "../connect/model-track-ends.ts";
 import {
   CLOSURE_BUDGET_MS,
   DragField,
@@ -220,6 +229,24 @@ export interface TrackFootprint {
   readonly ref: string;
   readonly label: string;
   readonly box: WorldBox;
+}
+
+export interface TrackOwner {
+  readonly handle: {
+    readonly chunkKey: number;
+    readonly slot: number;
+    readonly x: number;
+    readonly z: number;
+  };
+  readonly placeable: { readonly label: string };
+  readonly box: WorldBox;
+}
+
+export interface TrackCarrier {
+  readonly model: TrackOwner;
+  readonly held: number;
+  readonly unverified: ReadonlyArray<TrackPartCount>;
+  readonly unidentified: ReadonlyArray<TrackPartCount>;
 }
 
 export interface PlayTrack {
@@ -457,10 +484,15 @@ export class TrackDrawing implements ExtensionSite {
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
   private held: ReadonlyArray<FramedTrackPiece> = [];
+  private carriers: ReadonlyArray<TrackCarrier> = [];
+  private heldCarrier = new Int32Array(0);
   private combined: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
   private pieceBoxes = new Float64Array(0);
+  private pieceKeys = new Float64Array(0);
+  private failedEnds = new Uint8Array(0);
+  private readonly ownerBox = new Float64Array(PIECE_BOX_FLOATS);
   private readonly headingOutlines = new Map<number, HeadingOutline>();
   private readonly joinedOwners: number[] = [];
   private readonly scratchBox = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
@@ -473,6 +505,7 @@ export class TrackDrawing implements ExtensionSite {
   private field: DragField | null = null;
   private skipped: SkippedIds | null = null;
   private readonly crossingShapes = new Map<number, CrossingShape>();
+  private readonly planEdges = new Map<number, OutlineEdges>();
   private readonly supportPartList: SupportPart[] = [];
   private readonly crossingOutlines = new Map<number, PlacedOutline>();
   private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
@@ -509,6 +542,7 @@ export class TrackDrawing implements ExtensionSite {
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
       this.supportPartList.push({ catalogIndex, partIndex });
+      this.planEdges.set(catalogIndex, new OutlineEdges(shape.outline));
       this.crossingShapes.set(catalogIndex, {
         planOutline: shape.outline,
         bedLdu: shape.minY - part.boundsMin[1],
@@ -672,8 +706,19 @@ export class TrackDrawing implements ExtensionSite {
     return routes;
   }
 
-  syncHeld(held: ReadonlyArray<FramedTrackPiece>): void {
+  syncHeld(held: ReadonlyArray<FramedTrackPiece>, carriers: ReadonlyArray<TrackCarrier>): void {
+    const heldCarrier = new Int32Array(held.length);
+    let next = 0;
+    carriers.forEach((carrier, c) => {
+      heldCarrier.fill(c, next, next + carrier.held);
+      next += carrier.held;
+    });
+    if (next !== held.length) {
+      throw new Error(`the carriers hold ${next} track pieces, not the ${held.length} given`);
+    }
     this.held = held;
+    this.carriers = carriers;
+    this.heldCarrier = heldCarrier;
     this.recomputeEnds();
   }
 
@@ -1289,6 +1334,7 @@ export class TrackDrawing implements ExtensionSite {
   private indexChunks(): void {
     this.chunkMembers.clear();
     this.pieceBoxes = new Float64Array(this.layout.count * PIECE_BOX_FLOATS);
+    this.pieceKeys = new Float64Array(this.layout.count);
     for (let p = 0; p < this.layout.count; p++) {
       const placed = this.placedAt(p);
       const box = partBox(placed);
@@ -1300,6 +1346,7 @@ export class TrackDrawing implements ExtensionSite {
       this.pieceBoxes[at + 4] = box.maxY;
       this.pieceBoxes[at + 5] = box.maxZ;
       const key = this.chunkOfPlaced(placed);
+      this.pieceKeys[p] = key;
       const members = this.chunkMembers.get(key);
       if (members) members.push(p);
       else this.chunkMembers.set(key, [p]);
@@ -1555,6 +1602,7 @@ export class TrackDrawing implements ExtensionSite {
     delta.chunkKey[entry] = footprint.key.chunkKey;
     delta.labelA[entry] = piece + 1;
     delta.labelB[entry] = 0;
+    delta.outline[entry] = this.planOutline(piece);
     const { box } = footprint;
     const at = entry * BOX_STRIDE;
     delta.box[at + BOX_MIN_X] = box.minX;
@@ -1563,6 +1611,148 @@ export class TrackDrawing implements ExtensionSite {
     delta.box[at + BOX_MAX_X] = box.maxX;
     delta.box[at + BOX_MAX_Y] = box.maxY;
     delta.box[at + BOX_MAX_Z] = box.maxZ;
+  }
+
+  private planOutline(piece: number): TrackOutline {
+    const catalogIndex = this.layout.piece(piece);
+    const edges = this.planEdges.get(catalogIndex);
+    const connectors = this.pieces[catalogIndex]?.connectors;
+    if (!edges || !connectors) throw new Error(`laid track piece ${piece} has no plan outline`);
+    return new TrackOutline(
+      edges,
+      this.layout.pose(piece),
+      connectors.map((connector) => connector.pose),
+    );
+  }
+
+  writeIssues(delta: PlanDelta): void {
+    const rows = delta.writeTrackIssues();
+    const graph = this.graph;
+    const failed = this.markFailedEnds();
+    for (let k = 0; k < graph.openEnds.length; k++) {
+      const end = graph.openEnds[k] ?? 0;
+      if (failed[end] === 1) continue;
+      const issue = rows.add(TRACK_OPEN_END, "", "");
+      rows.x[issue] = graph.endXLdu[end] ?? 0;
+      rows.z[issue] = graph.endZLdu[end] ?? 0;
+      this.addEndOwner(rows, issue, graph.endPlacement[end] ?? 0);
+    }
+    const groups = graph.issues;
+    for (let g = 0; g < groups.length; g++) {
+      const ends = groups[g]?.ends ?? [];
+      const first = ends[0] ?? 0;
+      const issue = rows.add(TRACK_UNJOINED_ENDS, "", "");
+      rows.x[issue] = graph.endXLdu[first] ?? 0;
+      rows.z[issue] = graph.endZLdu[first] ?? 0;
+      rows.quantity[issue] = ends.length;
+      const second = ends[1];
+      if (ends.length === 2 && second !== undefined) {
+        const off = normalizeHeading16(
+          (graph.endHeading[first] ?? 0) - (graph.endHeading[second] ?? 0) - HALF_TURN_16,
+        );
+        rows.headingOffset[issue] = Math.min(off, ZETA16_ORDER - off);
+      }
+      for (let e = 0; e < ends.length; e++) {
+        this.addEndOwner(rows, issue, graph.endPlacement[ends[e] ?? 0] ?? 0);
+      }
+    }
+    const carriers = this.carriers;
+    for (let c = 0; c < carriers.length; c++) {
+      const carrier = carriers[c];
+      if (!carrier) continue;
+      this.addPartRows(rows, TRACK_UNVERIFIED, carrier.unverified, carrier.model);
+      this.addPartRows(rows, TRACK_UNIDENTIFIED, carrier.unidentified, carrier.model);
+    }
+  }
+
+  private addPartRows(
+    rows: TrackIssueRows,
+    kind: number,
+    parts: ReadonlyArray<TrackPartCount>,
+    model: TrackOwner,
+  ): void {
+    for (let k = 0; k < parts.length; k++) {
+      const counted = parts[k];
+      const piece = counted ? this.pieces[counted.catalogIndex] : undefined;
+      if (!counted || !piece) throw new RangeError(`track part ${k} is not in the catalog`);
+      const issue = rows.add(kind, piece.part, piece.title);
+      rows.quantity[issue] = counted.count;
+      this.addModelOwner(rows, issue, model);
+    }
+  }
+
+  private markFailedEnds(): Uint8Array {
+    const graph = this.graph;
+    if (this.failedEnds.length < graph.endCount) this.failedEnds = new Uint8Array(graph.endCount);
+    const failed = this.failedEnds;
+    failed.fill(0, 0, graph.endCount);
+    const groups = graph.issues;
+    for (let g = 0; g < groups.length; g++) {
+      const ends = groups[g]?.ends ?? [];
+      for (let e = 0; e < ends.length; e++) failed[ends[e] ?? 0] = 1;
+    }
+    return failed;
+  }
+
+  private addEndOwner(rows: TrackIssueRows, issue: number, placement: number): void {
+    const laid = this.layout.count;
+    if (placement >= laid) {
+      const carrier = this.carriers[this.heldCarrier[placement - laid] ?? -1];
+      if (!carrier) throw new RangeError(`held track piece ${placement - laid} has no carrier`);
+      this.addModelOwner(rows, issue, carrier.model);
+      return;
+    }
+    if (this.ownsLaidPiece(rows, issue, placement)) return;
+    const owner = rows.addOwner(
+      issue,
+      LABEL_NUMBERED,
+      this.pieceByIndex(this.layout.piece(placement)).piece.title,
+      placement,
+    );
+    rows.ownerChunkKey[owner] = this.pieceKeys[placement] ?? 0;
+    rows.ownerLabelA[owner] = placement + 1;
+    rows.ownerLabelB[owner] = 0;
+    rows.setOwnerBox(owner, this.pieceBoxes, placement * PIECE_BOX_FLOATS);
+  }
+
+  private addModelOwner(rows: TrackIssueRows, issue: number, model: TrackOwner): void {
+    const { handle, placeable, box } = model;
+    if (this.ownsModel(rows, issue, handle)) return;
+    const owner = rows.addOwner(issue, LABEL_AT, placeable.label, handle.slot);
+    rows.ownerChunkKey[owner] = handle.chunkKey;
+    rows.ownerLabelA[owner] = handle.x;
+    rows.ownerLabelB[owner] = handle.z;
+    const scratch = this.ownerBox;
+    scratch[0] = box.minX;
+    scratch[1] = box.minY;
+    scratch[2] = box.minZ;
+    scratch[3] = box.maxX;
+    scratch[4] = box.maxY;
+    scratch[5] = box.maxZ;
+    rows.setOwnerBox(owner, scratch, 0);
+  }
+
+  private ownsLaidPiece(rows: TrackIssueRows, issue: number, placement: number): boolean {
+    const last = rows.ownerStart[issue + 1] ?? 0;
+    for (let owner = rows.ownerStart[issue] ?? 0; owner < last; owner++) {
+      if (
+        rows.ownerSlot[owner] === placement &&
+        rows.ownerChunkKey[owner] === this.pieceKeys[placement]
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private ownsModel(rows: TrackIssueRows, issue: number, handle: TrackOwner["handle"]): boolean {
+    const last = rows.ownerStart[issue + 1] ?? 0;
+    for (let owner = rows.ownerStart[issue] ?? 0; owner < last; owner++) {
+      if (rows.ownerSlot[owner] === handle.slot && rows.ownerChunkKey[owner] === handle.chunkKey) {
+        return true;
+      }
+    }
+    return false;
   }
 
   records(): TrackRecordV1[] {
