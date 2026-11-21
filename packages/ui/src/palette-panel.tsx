@@ -30,6 +30,7 @@ import {
   type PaletteTab,
 } from "@brr/client";
 import { FirstChord } from "./keys.tsx";
+import { LibraryPartResults } from "./library-part-results.tsx";
 import { paletteDragProps } from "./palette-drag.ts";
 import { RoadKitList } from "./road-draw-panel.tsx";
 import { usePaletteSearchSnapshot } from "./use-palette-search.ts";
@@ -322,8 +323,23 @@ function ColorPicker({
 }
 
 function itemMeta(item: CatalogItemView): string {
-  const parts = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
+  const counted = `${integer.format(item.parts)} ${item.parts === 1 ? "part" : "parts"}`;
+  const parts =
+    item.customParts > 0 ? `${counted} (${integer.format(item.customParts)} custom)` : counted;
   return item.studsWide > 0 ? `${parts} · ${item.studsWide}×${item.studsDeep} studs` : parts;
+}
+
+function CustomBadge({ item }: { readonly item: CatalogItemView }) {
+  if (item.customParts === 0) return null;
+  return (
+    <span
+      className="part-badge"
+      data-badge="custom"
+      title={`${item.customParts} custom ${item.customParts === 1 ? "part" : "parts"} from the file: drawn on this device only, connectors read at import and flagged unverified, never counted as buyable`}
+    >
+      custom
+    </span>
+  );
 }
 
 function ItemButton({
@@ -347,7 +363,9 @@ function ItemButton({
         {...prefetchProps(prefetch, item.id)}
         {...paletteDragProps(drag, item)}
       >
-        <span className="catalog-name">{item.label}</span>
+        <span className="catalog-name">
+          {item.label} <CustomBadge item={item} />
+        </span>
         <span className="catalog-meta">
           {snapshot.pendingItem === item.id ? "loading…" : itemMeta(item)}
         </span>
@@ -659,14 +677,15 @@ export const PalettePanel = memo(function PalettePanel({
   snapshot,
   palette,
 }: PalettePanelProps) {
-  const { search, memory, thumbnails } = palette;
+  const { search, memory, thumbnails, libraryPlacer } = palette;
   const props: PaletteProps = {
     editor,
     snapshot,
     drag: palette.drag,
     prefetch: palette.prefetch,
   };
-  const { query, tab, color, sections, hits, counts, status } = usePaletteSearchSnapshot(search);
+  const { query, tab, color, sections, hits, counts, status, library } =
+    usePaletteSearchSnapshot(search);
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const remembered = usePaletteMemory(memory);
@@ -805,12 +824,20 @@ export const PalettePanel = memo(function PalettePanel({
                 />
               ))
             )}
+            {searching && library !== null && (
+              <LibraryPartResults
+                library={library}
+                placer={libraryPlacer}
+                preferredColor={color}
+                readOnly={snapshot.readOnly}
+              />
+            )}
             {searching && status === "offline" && (
               <p className="palette-hint" data-search-offline>
                 Search offline: showing palette matches only.
               </p>
             )}
-            {searching && hits.length === 0 && (
+            {searching && hits.length === 0 && (library?.hits.length ?? 0) === 0 && (
               <p className="palette-empty" data-no-results>
                 Nothing matches “{query}”{tab === "all" ? "" : ` in ${tabName(tab)}`}. Try a part
                 number like 3811, a size like 16x16, or a colour like tan.
