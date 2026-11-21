@@ -4,6 +4,7 @@ import { BOX_READ } from "./plan-rows.ts";
 import type { PlanShape } from "./plan-shape.ts";
 import { TrackIssueRows } from "./track-issue-rows.ts";
 import type { TrackOutline } from "./track-outline.ts";
+import type { CarriedTrack } from "./plan-rules.ts";
 
 export const WRITE_ADD = 0;
 export const WRITE_UPDATE = 1;
@@ -50,6 +51,7 @@ export class PlanDelta {
   facts = new Int32Array(INITIAL_ENTRIES * FACT_STRIDE);
   readonly shape: Array<PlanShape | null> = [];
   readonly outline: Array<TrackOutline | null> = [];
+  readonly carried: Array<CarriedTrack | null> = [];
   readonly ref: string[] = [];
   readonly labelBase: string[] = [];
   readonly original: unknown[] = [];
@@ -103,6 +105,7 @@ export class PlanDelta {
     this.boxState[at] = BOX_READ;
     this.shape[at] = null;
     this.outline[at] = null;
+    this.carried[at] = null;
     clearFacts(this.facts, at * FACT_STRIDE);
     this.original[at] = undefined;
     this.caught[at] = undefined;

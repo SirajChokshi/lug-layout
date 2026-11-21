@@ -806,6 +806,7 @@ export class Pair {
       placeable: { id: `ref-${this.int(5)}`, label: `Item ${this.int(5)}` },
       box,
       shape: this.next() < 0.5 ? this.pick(TEST_SHAPES) : null,
+      carried: null,
       facts: this.randomFacts(),
     };
     return { ...source, todays: todaysEntry(source) };
@@ -927,6 +928,7 @@ export class Pair {
       placeable: { ...model.placeable },
       box: this.throwing.has(model.box) ? model.box : { ...model.box },
       shape: model.shape,
+      carried: model.carried,
       facts: model.facts.slice(),
     };
     return { ...source, todays: todaysEntry(source) };

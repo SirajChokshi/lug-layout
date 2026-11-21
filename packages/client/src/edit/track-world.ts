@@ -1,6 +1,7 @@
 import {
   TrackClearance,
   WORLD_TRACK_FRAME,
+  type PlacementHandle,
   type PlanDelta,
   type PlacedOutline,
   type RoadPlacement,
@@ -26,7 +27,12 @@ import { CONNECTOR_TABLES, PLACEABLE_CATALOG } from "../tokens.ts";
 import type { RailCarrier } from "../trains/rail-track.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
 import type { Placeable } from "./placeable.ts";
-import type { PlacedChunks, PlacedModel, RebuildReport } from "./placed-chunks.ts";
+import type {
+  CarriedTrackParts,
+  PlacedChunks,
+  PlacedModel,
+  RebuildReport,
+} from "./placed-chunks.ts";
 import {
   TrackDrawing,
   type PlayTrack,
@@ -80,6 +86,7 @@ export interface ITrackWorld extends PlanTrackSource {
   syncModelTrack(): boolean;
   modelTrack(placeable: Placeable): ModelTrackEnds | null;
   carriedParts(placeable: Placeable): ReadonlySet<number>;
+  carriedTrackAt(placeable: Placeable, handle: PlacementHandle): CarriedTrackParts | null;
   carriedModels(): ReadonlyArray<PlacedModel>;
   carriedRange(model: PlacedModel): readonly [number, number] | null;
   carrierOf(piece: number): PlacedModel | null;
@@ -118,6 +125,7 @@ export class TrackWorld implements ITrackWorld {
   private track: TrackDrawing | null = null;
   private pendingRestored: TrackDrawing | null = null;
   private readonly modelTracks = new Map<Placeable, ModelTrackEnds>();
+  private readonly exactTrackParts = new Map<Placeable, ReadonlySet<number>>();
   private heldTrackModels: ReadonlyArray<PlacedModel> = [];
   private readonly heldRanges = new Map<PlacedModel, readonly [number, number]>();
   private layoutVersion = 0;
@@ -266,6 +274,24 @@ export class TrackWorld implements ITrackWorld {
     if (!track) return NO_TRACK_PARTS;
     const pieces = [...track.pieces, ...track.runs.flatMap((run) => run.pieces)];
     return new Set(pieces.map((piece) => piece.instance));
+  }
+
+  carriedTrackAt(placeable: Placeable, handle: PlacementHandle): CarriedTrackParts | null {
+    const drawing = this.track;
+    const carried = this.modelTrack(placeable);
+    const frame = latticeFrame(handle.x, handle.z, handle.rot);
+    if (!drawing || !carried || !frame || carried.pieces.length === 0) return null;
+    let instances = this.exactTrackParts.get(placeable);
+    if (!instances) {
+      instances = new Set(carried.pieces.map((piece) => piece.instance));
+      this.exactTrackParts.set(placeable, instances);
+    }
+    return {
+      instances,
+      outlines: heldPieces(carried, frame, 0).map((piece) =>
+        drawing.outlineAt(piece.catalogIndex, piece.placement),
+      ),
+    };
   }
 
   carriedModels(): ReadonlyArray<PlacedModel> {
