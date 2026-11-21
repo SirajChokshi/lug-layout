@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
-import { EditorFooter, EditorHud, Inspector, PlacementToolbar } from "./editor-panels.tsx";
+import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
 import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
@@ -215,7 +215,12 @@ export function EditorApp({
         />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
         <TrackExtendPanel editor={editor} snapshot={snapshot} />
-        <Inspector editor={editor} snapshot={snapshot} />
+        <SelectionPanel
+          editor={editor}
+          snapshot={snapshot}
+          play={playSnapshot}
+          onEditorAction={runAction}
+        />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}
