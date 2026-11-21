@@ -1,4 +1,5 @@
 import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/decode";
+import { planArchiveFiles, readPlanFiles, type PlanArchive } from "@brr/schema/plan";
 import {
   IMPORT_DIRECTORY,
   WorldHeader,
@@ -17,6 +18,7 @@ import {
   shardName,
   worldArchiveFiles,
   worldManifest,
+  type ConsistRecordV1,
   type ImportedFile,
   type ShardEntryV1,
   type SuperChunk,
@@ -67,6 +69,8 @@ export interface IWorldRepository {
   packArchive(archive: WorldArchive): Uint8Array;
   readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>>;
   readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>>;
+  packPlanArchive(archive: PlanArchive): Uint8Array;
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>>;
   putImportedFile(file: ImportedFile): Promise<void>;
   importedFile(sha256: string): Promise<ImportedFile | undefined>;
 }
@@ -114,6 +118,14 @@ function indexEntries(values: ReadonlyArray<unknown>): WorldIndexEntry[] {
     const entry = decode(WorldIndexEntry, value);
     return entry.ok ? [entry.value] : [];
   });
+}
+
+interface ArchiveTexts {
+  readonly manifest: {
+    readonly shards: ReadonlyArray<ShardEntryV1>;
+    readonly consists?: ReadonlyArray<ConsistRecordV1>;
+  };
+  readonly shards: ReadonlyArray<WorldShardV1>;
 }
 
 function changesContent(change: WorldChange): boolean {
@@ -333,7 +345,24 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     return this.readFiles(files, readWorldFiles);
   }
 
-  private async readFiles<T extends Omit<WorldFiles, "imports">>(
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    const imports = [...archive.imports];
+    imports.sort((a, b) => (a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0));
+    return writeStoredZip([
+      ...planArchiveFiles(archive).map((file) => ({
+        name: file.name,
+        bytes: utf8.encode(file.text),
+      })),
+      ...imports.map((file) => ({ name: importPath(file), bytes: file.bytes })),
+    ]);
+  }
+
+  async readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    const zip = await readZip(bytes);
+    return zip.ok ? this.readFiles(zip.value, readPlanFiles) : zip;
+  }
+
+  private async readFiles<T extends ArchiveTexts>(
     files: ReadonlyMap<string, Uint8Array>,
     readTexts: (texts: ReadonlyMap<string, string>) => Decoded<T>,
   ): Promise<Decoded<T & { readonly imports: ReadonlyArray<ImportedFile> }>> {
