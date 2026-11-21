@@ -12,20 +12,20 @@
     "root": ""
   },
   "bundleClosure": {
-    "files": 1969,
+    "files": 1979,
     "licenses": {
-      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 135,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 1834
+      "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 136,
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 1843
     },
     "withoutLicense": [],
     "nonCaLicense": [],
     "unofficial": []
   },
   "auditClosure": {
-    "files": 478,
+    "files": 479,
     "licenses": {
       "Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt": 3,
-      "Licensed under CC BY 4.0 : see CAreadme.txt": 475
+      "Licensed under CC BY 4.0 : see CAreadme.txt": 476
     },
     "withoutLicense": [],
     "nonCaLicense": [],
@@ -46,7 +46,7 @@
   "ldcadShadow": {
     "licenseFileFirstLine": "Attribution-ShareAlike 4.0 International",
     "patchFileLicenses": {
-      "CC BY-SA 4.0, see LICENSE.md": 75
+      "CC BY-SA 4.0, see LICENSE.md": 76
     }
   },
   "parts": [

@@ -1,0 +1,1 @@
+export const CONTENT_HASH_HEX_DIGITS = 16;

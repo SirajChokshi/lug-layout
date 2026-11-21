@@ -1,3 +1,4 @@
+import type { BakePhases, ImportTimings } from "@brr/import";
 import { CHECKS, type CheckId, type Finding, type InputChecks } from "./checks.ts";
 import type { ConnectorFamily, PartConnectors } from "./part-connectors.ts";
 
@@ -17,6 +18,8 @@ export interface CheckedInput {
   readonly importSeconds: number;
   readonly importFinished: boolean;
   readonly bakedFromRecords: number;
+  readonly timings: ImportTimings | null;
+  readonly compilerStartMs: number | null;
 }
 
 export interface PartCoverage {
@@ -53,6 +56,7 @@ export interface RunContext {
   readonly elapsedSeconds: number;
   readonly importLimitSeconds: number;
   readonly recordsIndex: string | null;
+  readonly threadStartsMs: ReadonlyArray<number>;
 }
 
 const EXAMPLE_PARTS = 8;
@@ -234,6 +238,137 @@ function importTimeTable(
   ];
 }
 
+const MS_PER_SECOND = 1000;
+
+interface TimedInput {
+  readonly set: InputSet;
+  readonly drawn: number;
+  readonly timings: ImportTimings;
+  readonly compilerStartMs: number;
+}
+
+function timedInputs(inputs: ReadonlyArray<CheckedInput>): TimedInput[] {
+  return inputs.flatMap((input) =>
+    input.timings === null || input.compilerStartMs === null
+      ? []
+      : [
+          {
+            set: input.set,
+            drawn: input.checks.drawnInstances,
+            timings: input.timings,
+            compilerStartMs: input.compilerStartMs,
+          },
+        ],
+  );
+}
+
+function median(values: ReadonlyArray<number>): number {
+  const sorted = values.toSorted((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  if (sorted.length === 0) return 0;
+  return sorted.length % 2 === 1
+    ? (sorted[middle] ?? 0)
+    : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+function milliseconds(value: number): string {
+  return value >= MS_PER_SECOND ? seconds(value / MS_PER_SECOND) : `${Math.round(value)} ms`;
+}
+
+function perBudgetOf(
+  members: ReadonlyArray<TimedInput>,
+  ms: (input: TimedInput) => number,
+): string {
+  const drawing = members.filter((input) => input.drawn > 0);
+  const drawn = drawing.reduce((sum, input) => sum + input.drawn, 0);
+  if (drawn === 0) return "n/a";
+  const spent = drawing.reduce((sum, input) => sum + ms(input), 0);
+  return seconds((spent * BUDGET_INSTANCES) / drawn / MS_PER_SECOND);
+}
+
+function readinessRow(label: string, members: ReadonlyArray<TimedInput>): string {
+  const placement = (input: TimedInput): number => input.timings.placementMs;
+  const full = (input: TimedInput): number => input.timings.totalMs;
+  return `| ${label} | ${members.length} | ${perBudgetOf(members, placement)} | ${perBudgetOf(members, full)} | ${milliseconds(median(members.map(placement)))} | ${milliseconds(median(members.map(full)))} | ${milliseconds(Math.max(...members.map(placement)))} | ${milliseconds(Math.max(...members.map(full)))} |`;
+}
+
+function readinessTable(timed: ReadonlyArray<TimedInput>): string[] {
+  if (timed.length === 0) return [];
+  const rows = INPUT_SETS.flatMap((set) => {
+    const members = timed.filter((input) => input.set === set);
+    return members.length === 0 ? [] : [readinessRow(set, members)];
+  });
+  const budget = BUDGET_INSTANCES.toLocaleString("en-US");
+  return [
+    "#### Placement open and full ready",
+    "",
+    "On the import engine's own clock, from reading the file until the result is ready, without the thread hand-off. Placement open is when everything a placement reads is ready: the lattice, cells, vehicles and connectors. Full ready is when the stud cover is too.",
+    "",
+    `| Inputs | Files | Placement open per ${budget} drawn | Full ready per ${budget} drawn | Median placement open | Median full ready | Slowest placement open | Slowest full ready |`,
+    "|---|---|---|---|---|---|---|---|",
+    ...rows,
+    readinessRow("**all**", timed),
+    "",
+  ];
+}
+
+type PhaseName = keyof BakePhases;
+
+function bakeMs(input: TimedInput, phase: PhaseName): number {
+  const { bakePhases, coverPhases } = input.timings;
+  return (bakePhases?.[phase] ?? 0) + (coverPhases?.[phase] ?? 0);
+}
+
+const PHASES: ReadonlyArray<readonly [string, (input: TimedInput) => number]> = [
+  ["Compiler start, per import", (input) => input.compilerStartMs],
+  ["Read the file", (input) => input.timings.readMs],
+  ["Record fetch", (input) => input.timings.recordFetchMs],
+  ["Record decode", (input) => bakeMs(input, "decodeMs")],
+  ["Compile", (input) => input.timings.compileMs + bakeMs(input, "compileMs")],
+  ["LDraw fetch", (input) => input.timings.ldrawFetchMs],
+  ["Lattice", (input) => bakeMs(input, "latticeMs")],
+  ["Cells, before placement opens", (input) => input.timings.bakePhases?.coverMs ?? 0],
+  ["Stud cover, after placement opens", (input) => input.timings.coverPhases?.coverMs ?? 0],
+  ["Vehicles", (input) => bakeMs(input, "vehiclesMs")],
+];
+
+function otherMs(input: TimedInput): number {
+  const named = PHASES.slice(1).reduce((sum, [, ms]) => sum + ms(input), 0);
+  return Math.max(0, input.timings.totalMs - named);
+}
+
+function phaseRow(
+  label: string,
+  timed: ReadonlyArray<TimedInput>,
+  ms: (input: TimedInput) => number,
+  importMs: number,
+): string {
+  const values = timed.map(ms);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const share = importMs > 0 ? `${((total * 100) / importMs).toFixed(1)}%` : "n/a";
+  return `| ${label} | ${milliseconds(total)} | ${share} | ${milliseconds(median(values))} | ${milliseconds(Math.max(...values))} |`;
+}
+
+function phaseTable(
+  timed: ReadonlyArray<TimedInput>,
+  threadStartsMs: ReadonlyArray<number>,
+): string[] {
+  if (timed.length === 0) return [];
+  const importMs = timed.reduce((sum, input) => sum + input.timings.totalMs, 0);
+  const threads = threadStartsMs.reduce((sum, ms) => sum + ms, 0);
+  return [
+    "#### Where the import time goes",
+    "",
+    `Summed over the ${timed.length} inputs that imported, ${milliseconds(importMs)} on the engine's clock; the compiler start is outside that clock. The bake phases are the primary's own clock inside the compiler: its placement call and its own slice of the stud cover. Bake helpers, when there are any, work in parallel and aren't counted. ${threadStartsMs.length} import ${threadStartsMs.length === 1 ? "thread" : "threads"} started in ${milliseconds(threads)} in all, opening the bundle once each.`,
+    "",
+    "| Phase | Total | Share of import time | Median per input | Slowest input |",
+    "|---|---|---|---|---|",
+    ...PHASES.map(([label, ms]) => phaseRow(label, timed, ms, importMs)),
+    phaseRow("Everything else", timed, otherMs, importMs),
+    "",
+  ];
+}
+
 export function markdownReport(context: RunContext, inputs: ReadonlyArray<CheckedInput>): string {
   const header = `| Inputs | Files | ${CHECKS.map((check) => check[0]?.toUpperCase() + check.slice(1)).join(" | ")} |`;
   const rule = `|---|---|${CHECKS.map(() => "---").join("|")}|`;
@@ -262,6 +397,8 @@ export function markdownReport(context: RunContext, inputs: ReadonlyArray<Checke
     coverageLine(context.coverage),
     "",
     ...importTimeTable(context.importLimitSeconds, context.recordsIndex, inputs),
+    ...readinessTable(timedInputs(inputs)),
+    ...phaseTable(timedInputs(inputs), context.threadStartsMs),
     ...classTable("Failures and blocks by bug class", classRows(inputs, failures)),
     ...classTable("Refused by policy (expected)", classRows(inputs, policies)),
     ...classTable("Skipped and reported by the importer (never drawn, by design)", reported),

@@ -1,14 +1,14 @@
 import type { IByteCache } from "@brr/import";
-import { injectable } from "inversify";
 
-const DATABASE = "brr-library-bake";
+export const LIBRARY_BAKE_DATABASE = "brr-library-bake";
+export const LIBRARY_CONNECTORS_DATABASE = "brr-library-connectors";
 const STORE = "files";
 const VERSION = 1;
 
-function opened(): Promise<IDBDatabase | null> {
+function opened(database: string): Promise<IDBDatabase | null> {
   if (typeof indexedDB === "undefined") return Promise.resolve(null);
   return new Promise((resolve) => {
-    const request = indexedDB.open(DATABASE, VERSION);
+    const request = indexedDB.open(database, VERSION);
     request.addEventListener("upgradeneeded", () => request.result.createObjectStore(STORE));
     request.addEventListener("success", () => resolve(request.result));
     request.addEventListener("error", () => resolve(null));
@@ -23,9 +23,12 @@ function settled<T>(request: IDBRequest<T>): Promise<T | undefined> {
   });
 }
 
-@injectable()
 export class IndexedDbByteCache implements IByteCache {
-  private readonly database = opened();
+  private readonly database: Promise<IDBDatabase | null>;
+
+  constructor(database: string) {
+    this.database = opened(database);
+  }
 
   async get(key: string): Promise<Uint8Array | undefined> {
     const database = await this.database;
