@@ -77,6 +77,7 @@ async function importer(manifest: Manifest, module: WebAssembly.Module) {
       null,
       () => 0,
       helpers,
+      null,
     );
     return engine.importText({
       fileName,

@@ -213,20 +213,30 @@ class Sequence {
           x + (this.int(9) - 4) * 16 * STUD_LDU,
           z + (this.int(9) - 4) * 16 * STUD_LDU,
         );
-        const commit = this.drawing.endDrag();
-        if (commit.laid > 0) this.lay(commit);
+        const { change } = this.drawing.endDrag();
+        this.drawing.applyTrack(change);
+        if (change.lay.length > 0) this.lay({ laid: change.lay.length });
         return;
       }
       case 9: {
         const part = this.drawing.pieceParts().find((p) => p.piece.id === RIGHT_SWITCH);
-        if (part)
-          this.lay(this.drawing.placePiece(part.catalogIndex, this.studPose(this.int(4) * 4)));
+        if (part) {
+          const change = this.drawing.pieceChange(
+            part.catalogIndex,
+            this.studPose(this.int(4) * 4),
+            0,
+          );
+          this.drawing.applyTrack(change);
+          this.lay({ laid: change.lay.length });
+        }
         return;
       }
       case 10: {
         const levers = this.drawing.switchLevers();
         const lever = levers[this.int(levers.length)];
-        if (lever && this.drawing.throwSwitch(lever.placement)) {
+        const thrown = lever ? this.drawing.switchThrow(lever.placement) : null;
+        if (lever && thrown) {
+          this.drawing.applyTrack(thrown.change);
           writeTrackThrow(this.delta, this.drawing, lever.placement);
           this.plans.apply(this.delta);
         }

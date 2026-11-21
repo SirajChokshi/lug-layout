@@ -1,11 +1,10 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import type { TrackCatalog } from "@brr/schema/bundle";
-import { TrackGraph } from "@brr/domain";
+import { TrackGraph, simTrackFromGraph } from "@brr/domain";
 import {
   SIM_TICK_HZ,
   POSE_FLOATS_PER_VEHICLE,
   createSimSession,
-  simTrackFromGraph,
   type SimSession,
   type OpenEndRule,
   type VehicleSpec,

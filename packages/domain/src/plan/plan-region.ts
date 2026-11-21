@@ -1,4 +1,4 @@
-import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm } from "@brr/math";
+import { CHUNK_LDU, MM_PER_STUD, STUD_LDU, lduFromMm, mmFromLdu } from "@brr/math";
 
 export interface MmRect {
   readonly x: number;
@@ -34,6 +34,12 @@ export interface PlanRegion {
   readonly originChunkZ: number;
   readonly footprint: PlanFootprint;
   readonly maxOverhangMm: number;
+  readonly maxReachMm: number;
+}
+
+export interface PlanState {
+  readonly regions: ReadonlyArray<PlanRegion>;
+  readonly activePlanId: string | null;
 }
 
 export interface LduRect {
@@ -75,6 +81,55 @@ export function roomRect(region: PlanRegion): LduRect {
     width: region.footprint.roomWidthMm,
     depth: region.footprint.roomDepthMm,
   });
+}
+
+export function mmRectFromWorld(region: PlanRegion, rect: LduRect): MmRect {
+  return {
+    x: mmFromLdu(rect.minX - regionOriginX(region)),
+    z: mmFromLdu(rect.minZ - regionOriginZ(region)),
+    width: mmFromLdu(rect.maxX - rect.minX),
+    depth: mmFromLdu(rect.maxZ - rect.minZ),
+  };
+}
+
+function chunksToCover(gapLdu: number): number {
+  return gapLdu > 0 ? Math.ceil(gapLdu / CHUNK_LDU) : 0;
+}
+
+export function regionAround(region: PlanRegion, rect: LduRect): PlanRegion {
+  const room = roomRect(region);
+  const shiftX = chunksToCover(room.minX - rect.minX);
+  const shiftZ = chunksToCover(room.minZ - rect.minZ);
+  if (shiftX === 0 && shiftZ === 0 && rect.maxX <= room.maxX && rect.maxZ <= room.maxZ) {
+    return region;
+  }
+  const shiftMmX = mmFromLdu(shiftX * CHUNK_LDU);
+  const shiftMmZ = mmFromLdu(shiftZ * CHUNK_LDU);
+  const shifted: PlanRegion = {
+    ...region,
+    originChunkX: region.originChunkX - shiftX,
+    originChunkZ: region.originChunkZ - shiftZ,
+  };
+  const move = <T extends { readonly rect: MmRect }>(item: T): T => ({
+    ...item,
+    rect: { ...item.rect, x: item.rect.x + shiftMmX, z: item.rect.z + shiftMmZ },
+  });
+  const { footprint } = region;
+  return {
+    ...shifted,
+    footprint: {
+      roomWidthMm: Math.max(
+        footprint.roomWidthMm + shiftMmX,
+        mmFromLdu(rect.maxX - regionOriginX(shifted)),
+      ),
+      roomDepthMm: Math.max(
+        footprint.roomDepthMm + shiftMmZ,
+        mmFromLdu(rect.maxZ - regionOriginZ(shifted)),
+      ),
+      tables: footprint.tables.map(move),
+      obstacles: footprint.obstacles.map(move),
+    },
+  };
 }
 
 export function studsInside(region: PlanRegion, rect: MmRect): StudRect {

@@ -4,7 +4,7 @@ import { catalogSourceDirectory, type CatalogLock } from "../fetch-ldraw.ts";
 import { normalizeReference } from "../ldraw/parse.ts";
 import { readGzipCsv } from "./csv.ts";
 import { readTarGz } from "./tar.ts";
-import type { CrosswalkSourcePin } from "@brr/schema/bundle";
+import type { CatalogSourceUse, CrosswalkSourcePin } from "@brr/schema/bundle";
 import type {
   ApiColor,
   ApiPart,
@@ -15,6 +15,8 @@ import type {
 
 const LDCONFIG = "LDConfig.ldr";
 const LDRAW_ARCHIVE_SOURCE = "ldraw-library";
+const INVENTORY_SOURCE = "rebrickable-inventories";
+const INVENTORY_PARTS_FILE = "inventory_parts.csv.gz";
 const SUBFILE_REFERENCE_TOKEN = 14;
 const PART_REFERENCE = /^([^/]+)\.dat$/u;
 
@@ -32,10 +34,13 @@ function sourceFile(lock: CatalogLock, catalogRoot: string, name: string, file: 
   return join(catalogSourceDirectory(catalogRoot, name), file);
 }
 
-export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSourcePin> {
+export function catalogSources(
+  lock: CatalogLock,
+  uses: ReadonlyArray<CatalogSourceUse>,
+): Record<string, CrosswalkSourcePin> {
   return Object.fromEntries(
     Object.entries(lock)
-      .filter(([, entry]) => entry.use === "crosswalk")
+      .filter(([, entry]) => uses.includes(entry.use))
       .map(([name, { source, files }]) => [
         name,
         { repo: source.repo, commit: source.commit, root: source.root, files },
@@ -43,11 +48,20 @@ export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSou
   );
 }
 
+export function crosswalkSources(lock: CatalogLock): Record<string, CrosswalkSourcePin> {
+  return catalogSources(lock, ["crosswalk"]);
+}
+
+export function inventoryPartsPath(lock: CatalogLock, catalogRoot: string): string {
+  return sourceFile(lock, catalogRoot, INVENTORY_SOURCE, INVENTORY_PARTS_FILE);
+}
+
 interface ScannedPart {
   readonly title: string;
   readonly category: string | undefined;
   readonly keywords: ReadonlyArray<string>;
   readonly ldrawOrg: string;
+  readonly license: string;
   readonly references: ReadonlyArray<LdrawComponent>;
 }
 
@@ -55,6 +69,7 @@ function scanPart(text: string): ScannedPart {
   let title: string | undefined;
   let category: string | undefined;
   let ldrawOrg = "";
+  let license = "";
   const keywords: string[] = [];
   const references: LdrawComponent[] = [];
   for (const raw of text.split(/\r?\n/u)) {
@@ -64,6 +79,7 @@ function scanPart(text: string): ScannedPart {
     if (tokens[0] === "0") {
       if (title === undefined) title = tokens.slice(1).join(" ");
       else if (tokens[1] === "!LDRAW_ORG") ldrawOrg = tokens.slice(2).join(" ");
+      else if (tokens[1] === "!LICENSE") license = tokens.slice(2).join(" ");
       else if (tokens[1] === "!CATEGORY") category = tokens.slice(2).join(" ");
       else if (tokens[1] === "!KEYWORDS") {
         keywords.push(
@@ -81,7 +97,7 @@ function scanPart(text: string): ScannedPart {
       if (id !== undefined) references.push({ id, color: Number(tokens[1]) });
     }
   }
-  return { title: title ?? "", category, keywords, ldrawOrg, references };
+  return { title: title ?? "", category, keywords, ldrawOrg, license, references };
 }
 
 async function ldrawPartFacts(
@@ -106,6 +122,7 @@ async function ldrawPartFacts(
         ...(part.category === undefined ? {} : { category: part.category }),
         keywords: part.keywords,
         ldrawOrg: part.ldrawOrg,
+        license: part.license,
         components: part.references.filter((reference) => scanned.has(reference.id)),
       },
     ]),
