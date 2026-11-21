@@ -441,12 +441,17 @@ export {
 export {
   VolumeIndex,
   FootprintGrid,
+  CELL_BOX_INTS,
+  HEIGHT_BOX_INTS,
   NO_OVERLAP,
+  NO_PART_INSTANCE,
   firstOverlap,
   firstOverlapFrom,
+  type CellParts,
   type CellVolumes,
   type OverlapHit,
   type OwnerFilter,
+  type PairExcuse,
   type VolumeHit,
 } from "./volume-index.ts";
 export {

@@ -5,6 +5,7 @@ import {
   TRAIN_PLAY,
   type EditorActionId,
   type EditorSnapshot,
+  type HoverRefusalHit,
   type IEditor,
   type PlacementHover,
   type PlaySnapshot,
@@ -32,6 +33,14 @@ const SWEEP_STEP_MS = 100;
 const FINDING_A_FIT = "Finding a fit…";
 const TURN_LINE = "Turn it to snap here";
 
+const HELD = "custom-modular-holes.ldr";
+
+function refusalOf(hit: HoverRefusalHit | null): string {
+  return hit
+    ? `${HELD} would overlap ${hit.partLabel}'s bounds in ${hit.placed.label} at cell ${hit.cellX}, ${hit.cellZ}`
+    : `${HELD} has nothing to rest on here: none of its connectors mate, and it isn't on the table`;
+}
+
 const REFUSED: PlacementHover = {
   pose: { x: 0, z: 0, yPlates: 0, rot: 0 },
   accepted: false,
@@ -49,7 +58,6 @@ const REFUSED: PlacementHover = {
     placedTopLdu: 0,
     heldBottomLdu: -4,
     heldTopLdu: 0,
-    byColumnOnly: false,
   },
   mates: [],
   joints: 0,
@@ -99,7 +107,7 @@ function placing(
       z: hovered.pose.z,
       yPlates: 0,
       onRails: false,
-      refusal: hovered.accepted ? null : "custom-modular-holes.ldr would hit Baseplate 16 x 16",
+      refusal: hovered.accepted ? null : refusalOf(hovered.hit),
       placement: hovered,
     },
   };
@@ -190,8 +198,8 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       region: "status off",
       tone: "warn",
       detail:
-        "Magnetic · 0° · Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
-      chip: "Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
+        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
+      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
       busy: "false",
       said: "",
     },
@@ -199,10 +207,10 @@ it("says nothing while an assist search is unsettled, shows the searching cue on
       region: "status off",
       tone: "warn",
       detail:
-        "Magnetic · 0° · Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
-      chip: "Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
+        "Magnetic · 0° · custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
+      chip: "custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
       busy: "false",
-      said: "Magnetic, 0°. Refused: Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-11, -8)",
+      said: "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -11, -8",
     },
   });
 });
@@ -237,7 +245,7 @@ it("speaks nothing while the pointer sweeps across cells and the verdict where i
   heard.push(verdict.textContent ?? "");
 
   expect(heard.filter((said) => said !== "")).toEqual([
-    "Magnetic, 0°. Refused: Hits Baseplate 16 x 16 in custom-modular-pinned.ldr at cell (-6, -8)",
+    "Magnetic, 0°. Refused: custom-modular-holes.ldr would overlap Baseplate 16 x 16's bounds in custom-modular-pinned.ldr at cell -6, -8",
   ]);
 });
 

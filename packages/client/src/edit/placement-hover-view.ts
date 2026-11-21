@@ -13,7 +13,6 @@ import {
   type MateReport,
   type SnapShapes,
 } from "@brr/domain";
-import { STUD_LDU } from "@brr/math";
 import type {
   ConnectorKindView,
   ConnectorSectionView,
@@ -22,12 +21,6 @@ import type {
   PlacedModelView,
   SectionProfile,
 } from "./placement-hover.ts";
-
-const BOX_FLOATS = 6;
-const MIN_Y = 1;
-const MAX_X = 3;
-const MAX_Y = 4;
-const MAX_Z = 5;
 
 function sectionProfile(code: number): SectionProfile {
   switch (code) {
@@ -126,39 +119,13 @@ export function mateCounts(
   }));
 }
 
-export interface HitPart {
-  readonly part: string;
-  readonly partLabel: string;
-}
-
-export function partAtHit(
-  worldBoxes: Float64Array,
-  boxFloats: number,
-  cellX: number,
-  cellZ: number,
-  bottomLdu: number,
-  topLdu: number,
-  partOf: (instance: number) => HitPart | null,
-): HitPart | null {
-  const x0 = cellX * STUD_LDU;
-  const z0 = cellZ * STUD_LDU;
-  for (let b = 0; b < boxFloats; b += BOX_FLOATS) {
-    if ((worldBoxes[b] ?? 0) >= x0 + STUD_LDU || (worldBoxes[b + MAX_X] ?? 0) <= x0) continue;
-    if ((worldBoxes[b + 2] ?? 0) >= z0 + STUD_LDU || (worldBoxes[b + MAX_Z] ?? 0) <= z0) continue;
-    if ((worldBoxes[b + MIN_Y] ?? 0) >= topLdu || (worldBoxes[b + MAX_Y] ?? 0) <= bottomLdu)
-      continue;
-    const part = partOf(b / BOX_FLOATS);
-    if (part) return part;
-  }
-  return null;
-}
-
 export function refusalText(heldLabel: string, hit: HoverRefusalHit | null): string {
   if (!hit) {
     return `${heldLabel} has nothing to rest on here: none of its connectors mate, and it isn't on the table`;
   }
-  const part = hit.partLabel ? `${hit.partLabel} in ${hit.placed.label}` : hit.placed.label;
-  return `${heldLabel} would hit ${part} at cell ${hit.cellX}, ${hit.cellZ}`;
+  const part = hit.partLabel || hit.part;
+  const model = hit.placed.label || hit.placed.item;
+  return `${heldLabel} would overlap ${part}'s bounds in ${model} at cell ${hit.cellX}, ${hit.cellZ}`;
 }
 
 export function failedLoadText(subject: string, neighbour: string, place: string): string {
