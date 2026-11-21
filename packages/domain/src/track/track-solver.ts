@@ -1,11 +1,8 @@
 import {
   HALF_TURN_16,
   ZETA16_COEFFICIENT_COUNT,
-  ZETA16_ORDER,
   normalizeHeading16,
   subtractZeta16,
-  zeta16ToStuds,
-  type PlaneStuds,
   type Pose16,
   type Zeta16,
 } from "@brr/math";
@@ -22,20 +19,7 @@ export interface TrackRun {
   readonly pieces: number;
 }
 
-export interface DragPlan extends TrackRun {
-  readonly key: string;
-  readonly missStuds: number;
-  readonly costStuds: number;
-}
-
 export const DEFAULT_CLOSURE_TURNS = 3;
-const DRAG_MAX_TURN_CURVES = ZETA16_ORDER / 2;
-const DRAG_MAX_STRAIGHTS = 96;
-const STRAIGHT_COST_STUDS = 0.25;
-const CURVE_COST_STUDS = 0.5;
-const S_CURVE_COST_STUDS = 3;
-const HYSTERESIS_STUDS = 1.5;
-const PARALLEL_EPSILON = 1e-9;
 
 export function runMoves(kit: DrawingKit, run: TrackRun): ReadonlyArray<TrackMove> {
   const moves: TrackMove[] = [];
@@ -88,19 +72,25 @@ function turnSign(turn: number): TurnSign {
   return turn > 0 ? 1 : -1;
 }
 
-function turnSequences(needed: number, maxTurns: number): ReadonlyArray<ReadonlyArray<number>> {
-  const all = signedTurns(MAX_TURN_CURVES);
+function turnSequences(
+  needed: number,
+  maxTurns: number,
+  maxCurves: number,
+): ReadonlyArray<ReadonlyArray<number>> {
+  const all = signedTurns(Math.min(MAX_TURN_CURVES, maxCurves));
   const out: number[][] = [];
-  const walk = (prefix: number[], sum: number): void => {
+  const walk = (prefix: number[], sum: number, curves: number): void => {
     if (normalizeHeading16(sum) === needed) out.push([...prefix]);
     if (prefix.length === maxTurns) return;
     for (const m of all) {
+      const used = curves + Math.abs(m);
+      if (used > maxCurves) continue;
       prefix.push(m);
-      walk(prefix, sum + m);
+      walk(prefix, sum + m, used);
       prefix.pop();
     }
   };
-  walk([], 0);
+  walk([], 0, 0);
   return out;
 }
 
@@ -146,15 +136,6 @@ function closureRun(
   return { segments, pieces };
 }
 
-export function closureWithinTurns(
-  kit: DrawingKit,
-  start: Pose16,
-  goal: Pose16,
-  maxTurns: number = DEFAULT_CLOSURE_TURNS,
-): TrackRun | null {
-  return fewestWithinTurns(closuresWithinTurns(kit, start, goal, maxTurns));
-}
-
 function turnCount(run: TrackRun): number {
   return run.segments.filter((segment) => segment.kind === "turn").length;
 }
@@ -178,165 +159,13 @@ export function closuresWithinTurns(
   start: Pose16,
   goal: Pose16,
   maxTurns: number = DEFAULT_CLOSURE_TURNS,
+  maxPieces: number = Number.POSITIVE_INFINITY,
 ): ReadonlyArray<TrackRun> {
   const needed = normalizeHeading16(goal.heading + HALF_TURN_16 - start.heading);
   const runs: TrackRun[] = [];
-  for (const turns of turnSequences(needed, maxTurns)) {
+  for (const turns of turnSequences(needed, maxTurns, maxPieces)) {
     const run = closureRun(kit, start, goal, turns);
-    if (run) runs.push(run);
+    if (run && run.pieces <= maxPieces) runs.push(run);
   }
   return runs;
-}
-
-interface Vec {
-  readonly x: number;
-  readonly z: number;
-}
-
-function direction(heading: number): Vec {
-  const angle = (normalizeHeading16(heading) * 2 * Math.PI) / ZETA16_ORDER;
-  return { x: Math.cos(angle), z: Math.sin(angle) };
-}
-
-function straightCounts(
-  v: Vec,
-  u: Vec,
-  w: Vec,
-  length: number,
-): ReadonlyArray<readonly [number, number]> {
-  const det = u.x * w.z - u.z * w.x;
-  if (Math.abs(det) < PARALLEL_EPSILON) {
-    const along = (v.x * u.x + v.z * u.z) / length;
-    const sameWay = u.x * w.x + u.z * w.z > 0;
-    if (sameWay || along >= 0) {
-      const a = Math.max(0, along);
-      return [
-        [Math.floor(a), 0],
-        [Math.ceil(a), 0],
-      ];
-    }
-    return [
-      [0, Math.floor(-along)],
-      [0, Math.ceil(-along)],
-    ];
-  }
-  const a = Math.max(0, (v.x * w.z - v.z * w.x) / (det * length));
-  const b = Math.max(0, (u.x * v.z - u.z * v.x) / (det * length));
-  return [
-    [Math.floor(a), Math.floor(b)],
-    [Math.floor(a), Math.ceil(b)],
-    [Math.ceil(a), Math.floor(b)],
-    [Math.ceil(a), Math.ceil(b)],
-  ];
-}
-
-interface Family {
-  readonly key: string;
-  readonly turns: ReadonlyArray<number>;
-  readonly leadingStraight: boolean;
-}
-
-function dragFamilies(): ReadonlyArray<Family> {
-  const families: Family[] = [{ key: "S", turns: [], leadingStraight: true }];
-  const turns = signedTurns(DRAG_MAX_TURN_CURVES);
-  for (const m of turns) families.push({ key: `SCS${m}`, turns: [m], leadingStraight: true });
-  for (const m of turns) {
-    for (const p of turns)
-      families.push({ key: `CSCS${m},${p}`, turns: [m, p], leadingStraight: false });
-  }
-  return families;
-}
-
-const DRAG_FAMILIES = dragFamilies();
-
-function arcStuds(kit: DrawingKit, turn: number, heading: number): Vec {
-  return zeta16ToStuds(kit.arc(turnSign(turn), Math.abs(turn), heading));
-}
-
-function planFor(
-  kit: DrawingKit,
-  family: Family,
-  start: Pose16,
-  origin: Vec,
-  target: PlaneStuds,
-): DragPlan | undefined {
-  const length = Number(kit.straightStuds);
-  const [m, p] = family.turns;
-  const h0 = start.heading;
-  let offset: Vec = { x: 0, z: 0 };
-  let u: Vec;
-  let w: Vec;
-  if (family.leadingStraight) {
-    u = direction(h0);
-    if (m === undefined) {
-      w = u;
-    } else {
-      offset = arcStuds(kit, m, h0);
-      w = direction(h0 + m);
-    }
-  } else {
-    if (m === undefined || p === undefined) return undefined;
-    const first = arcStuds(kit, m, h0);
-    const second = arcStuds(kit, p, h0 + m);
-    offset = { x: first.x + second.x, z: first.z + second.z };
-    u = direction(h0 + m);
-    w = direction(h0 + m + p);
-  }
-  const v: Vec = { x: target.x - origin.x - offset.x, z: target.z - origin.z - offset.z };
-  let best: DragPlan | undefined;
-  for (const [a, b] of straightCounts(v, u, w, length)) {
-    if (a + b > DRAG_MAX_STRAIGHTS) continue;
-    let segments: TrackSegment[];
-    let curves = 0;
-    let cost = 0;
-    if (family.leadingStraight) {
-      segments = [];
-      if (a > 0) segments.push({ kind: "straight", count: a });
-      if (m !== undefined) {
-        segments.push({ kind: "turn", sign: turnSign(m), curves: Math.abs(m) });
-        curves = Math.abs(m);
-        if (b > 0) segments.push({ kind: "straight", count: b });
-      }
-    } else {
-      if (m === undefined || p === undefined) continue;
-      if (a === 0 && turnSign(m) === turnSign(p)) continue;
-      if (a === 0) cost += S_CURVE_COST_STUDS;
-      segments = [{ kind: "turn", sign: turnSign(m), curves: Math.abs(m) }];
-      if (a > 0) segments.push({ kind: "straight", count: a });
-      segments.push({ kind: "turn", sign: turnSign(p), curves: Math.abs(p) });
-      if (b > 0) segments.push({ kind: "straight", count: b });
-      curves = Math.abs(m) + Math.abs(p);
-    }
-    const end = {
-      x: origin.x + offset.x + length * (a * u.x + b * w.x),
-      z: origin.z + offset.z + length * (a * u.z + b * w.z),
-    };
-    const missStuds = Math.hypot(end.x - target.x, end.z - target.z);
-    const straights = family.leadingStraight && m === undefined ? a : a + b;
-    cost += missStuds + STRAIGHT_COST_STUDS * straights + CURVE_COST_STUDS * curves;
-    if (!best || cost < best.costStuds) {
-      best = { key: family.key, segments, pieces: straights + curves, missStuds, costStuds: cost };
-    }
-  }
-  return best;
-}
-
-export function solveDrag(
-  kit: DrawingKit,
-  start: Pose16,
-  target: PlaneStuds,
-  previousKey: string | null = null,
-): DragPlan {
-  const origin = zeta16ToStuds(start.position);
-  const stay = Math.hypot(target.x - origin.x, target.z - origin.z);
-  let best: DragPlan = { key: "none", segments: [], pieces: 0, missStuds: stay, costStuds: stay };
-  let previous: DragPlan | undefined;
-  for (const family of DRAG_FAMILIES) {
-    const plan = planFor(kit, family, start, origin, target);
-    if (!plan) continue;
-    if (family.key === previousKey) previous = plan;
-    if (plan.costStuds < best.costStuds) best = plan;
-  }
-  if (previous && previous.costStuds <= best.costStuds + HYSTERESIS_STUDS) return previous;
-  return best;
 }

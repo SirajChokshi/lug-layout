@@ -23,12 +23,10 @@ import {
   type RunningGearOverride,
   type Vec3,
 } from "@brr/schema/bundle";
-import {
-  IndexedDbRunningGearOverrideStore,
-  type IRunningGearOverrideStore,
-} from "./override-store.ts";
+import { IndexedDbRunningGearOverrideStore } from "./override-store.ts";
 import { instanceBoxes } from "./instance-boxes.ts";
 import { exactLduText, RunningGearEditor, type GearModelSource } from "./running-gear-editor.ts";
+import { MemoryOverrideStore } from "./memory-override-store.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const BAKED_GEAR_TIMEOUT_MS = 60_000;
@@ -48,7 +46,7 @@ function bundleLoader() {
   container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue("unused/");
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue(DEFAULT_BUNDLE_MANIFEST_FILE);
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  container.bind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   return container.get(PART_BUNDLE_LOADER);
 }
 
@@ -67,23 +65,6 @@ async function gp38(): Promise<{ vehicle: PartVehicle; sha256: string; boxes: Fl
   const vehicle = source.vehicles[0];
   if (!vehicle) throw new Error("10133-1 has no vehicle");
   return { vehicle, sha256: source.sha256, boxes: source.instanceBoxes };
-}
-
-class MemoryOverrideStore implements IRunningGearOverrideStore {
-  readonly records = new Map<string, RunningGearOverride>();
-
-  async load(modelSha256: string): Promise<RunningGearOverride | null> {
-    return this.records.get(modelSha256) ?? null;
-  }
-  async save(override: RunningGearOverride): Promise<void> {
-    this.records.set(override.modelSha256, structuredClone(override));
-  }
-  async remove(modelSha256: string): Promise<void> {
-    this.records.delete(modelSha256);
-  }
-  async all(): Promise<ReadonlyArray<RunningGearOverride>> {
-    return [...this.records.values()];
-  }
 }
 
 function frontFace(vehicle: PartVehicle): { instance: number; x: number; z: number } {
