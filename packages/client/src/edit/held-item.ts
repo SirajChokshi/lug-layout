@@ -15,5 +15,5 @@ export function heldItem(
   if (mode !== "place" || activeItem === null) return null;
   return pendingItem === activeItem
     ? { item: activeItem, tables: "loading", queued: queuedPlacement }
-    : { item: activeItem, tables: "ready", queued: null };
+    : { item: activeItem, tables: "ready", queued: queuedPlacement };
 }

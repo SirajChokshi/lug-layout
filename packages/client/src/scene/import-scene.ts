@@ -122,7 +122,7 @@ class ChunkBuilder {
 function importUncounted(result: ImportResult, placements: number): UncountedItem[] {
   const source = result.report.fileName;
   const parts = result.report.parts.flatMap((part): UncountedItem[] =>
-    part.kind === "bundle" || part.kind === "compiled"
+    part.kind === "bundle" || part.kind === "compiled" || part.kind === "custom"
       ? []
       : [
           {

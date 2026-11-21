@@ -13,7 +13,7 @@ test("a click made while a set's connectors load places it there once they load"
 
   await editor.pick(GROCER);
   await page.mouse.click(point.sx, point.sy);
-  await expect(page.locator(".tool-hud")).toContainText("goes down at -640, 0");
+  await expect(page.locator(".tool-hud")).toContainText("Queued: placing at -640, 0 when ready");
   const whileLoading = { tables: await editor.heldTables(), poses: await editor.poses() };
   release();
 

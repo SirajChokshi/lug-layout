@@ -15,6 +15,7 @@ enum PartCategory: string implements HasLabel
     case Brick = 'Brick';
     case Plate = 'Plate';
     case Tile = 'Tile';
+    case Slope = 'Slope';
     case Train = 'Train';
     case MinifigAccessory = 'Minifig Accessory';
     case Moved = 'Moved';
@@ -42,6 +43,7 @@ function facts(title: string, keywords: string[] = [], category?: string): Ldraw
     title,
     keywords,
     ldrawOrg: "Part",
+    license: "Licensed under CC BY 4.0 : see CAreadme.txt",
     components: [],
     ...(category === undefined ? {} : { category }),
   };
@@ -56,6 +58,7 @@ const library = new Map<string, LdrawPartFacts>([
   ["3020", facts("Plate  2 x  4")],
   ["3062b", facts("Brick  1 x  1 Round with Hollow Stud")],
   ["3068b", facts("Tile  2 x  2 with Groove")],
+  ["4515", facts("Slope Brick 10  6 x  8")],
   ["3023", { ...facts("~Moved to 3023b"), components: [{ id: "3023b", color: 16 }] }],
   ["3023b", facts("Plate  1 x  2 with Groove with 1 Centre Stud")],
   ["63325", { ...facts("=Plate  2 x  2 Corner"), components: [{ id: "2420", color: 16 }] }],
@@ -112,6 +115,7 @@ describe("palette categories", () => {
       ["3020", "roof"],
       ["3062b", "detail"],
       ["3068b", "detail"],
+      ["4515", "detail"],
     ]);
     expect(paletteCategoryProblems(ok, library, categories)).toEqual([]);
   });
