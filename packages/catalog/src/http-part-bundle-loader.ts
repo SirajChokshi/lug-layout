@@ -159,6 +159,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<RollingDiagnosticsFile | null>
   >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
+  private readonly partConnectorReads = new Map<string, Promise<ConnectorLoad>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
     Promise<PinnedSectionVocabularyFile | null>
@@ -453,8 +454,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return (await this.records(lod)).load(partId);
   }
 
-  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
-    return (await this.records(lod)).read(partId);
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.cached(this.partConnectorReads, `${lod}/${partId}`, async () =>
+      (await this.records(lod)).read(partId),
+    );
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
