@@ -1,3 +1,4 @@
+import { isCustomPartId } from "@brr/schema/bundle";
 import type { BomLine } from "./bom-counter.ts";
 
 export type CatalogSystem = "rebrickable" | "bricklink";
@@ -48,6 +49,7 @@ export interface CatalogBom {
   readonly system: CatalogSystem;
   readonly lines: ReadonlyArray<CatalogLine>;
   readonly unmapped: ReadonlyArray<UnmappedLine>;
+  readonly custom: ReadonlyArray<ResolvedLine>;
 }
 
 function missingMapping(part: string | null): MissingMapping {
@@ -92,9 +94,22 @@ export function toCatalog(
   crosswalk: Crosswalk,
   system: CatalogSystem,
 ): CatalogBom {
+  return catalogOf(resolveLines(lines, crosswalk), crosswalk, system);
+}
+
+export function catalogOf(
+  resolved: ReadonlyArray<ResolvedLine>,
+  crosswalk: Crosswalk,
+  system: CatalogSystem,
+): CatalogBom {
   const merged = new Map<string, CatalogLine>();
   const unmapped: UnmappedLine[] = [];
-  for (const line of resolveLines(lines, crosswalk)) {
+  const custom: ResolvedLine[] = [];
+  for (const line of resolved) {
+    if (isCustomPartId(line.part)) {
+      custom.push(line);
+      continue;
+    }
     const entry = crosswalk.parts.get(line.part);
     const part = entry?.[system] ?? null;
     const color = crosswalk.colors.get(line.ldrawColor)?.[system] ?? null;
@@ -119,5 +134,5 @@ export function toCatalog(
   const sorted = [...merged.values()].toSorted((a, b) =>
     a.part === b.part ? a.color - b.color : a.part < b.part ? -1 : 1,
   );
-  return { system, lines: sorted, unmapped };
+  return { system, lines: sorted, unmapped, custom };
 }
