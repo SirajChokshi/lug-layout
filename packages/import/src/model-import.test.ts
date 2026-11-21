@@ -1596,6 +1596,48 @@ it(
   BAKE_TIMEOUT_MS,
 );
 
+const CUSTOM_BENCH_BESIDE_A_CURVED_WEDGE = [
+  "0 Bench of two jumpers under a tile, beside a 4 x 4 curved wedge, built for the lattice test",
+  "0 Name: custom-bench-beside-a-curved-wedge.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  ...CUSTOM_JUMPER_BENCH.slice(4),
+  "1 1 90 -8 0 1 0 0 0 1 0 0 0 1 45677.dat",
+];
+
+const CUSTOM_BENCH_BESIDE_A_NOTCHED_CORNER = [
+  "0 Bench of two jumpers under a tile, beside a corner round brick with a stud notch, built for the lattice test",
+  "0 Name: custom-bench-beside-a-notched-corner.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  ...CUSTOM_JUMPER_BENCH.slice(4),
+  "1 1 100 -16 0 1 0 0 0 1 0 0 0 1 3063b.dat",
+];
+
+it(
+  "seats a stud by the connector records of the receptor it enters where the drawn cavity is tighter than the stud: a studless corner panel and a custom bench beside a curved wedge take their receptor frames, as the pipeline bakes them, while a bench beside a stud notch drawn inside the stud still falls back",
+  async () => {
+    expect({
+      cornerPanel: await importedPhase("corner-panel.ldr", [
+        "1 4 0 0 0 1 0 0 0 1 0 0 0 1 91501.dat",
+      ]),
+      besideACurvedWedge: await importedPhase(
+        "custom-bench-beside-a-curved-wedge.ldr",
+        CUSTOM_BENCH_BESIDE_A_CURVED_WEDGE,
+      ),
+      besideANotchedCorner: await importedPhase(
+        "custom-bench-beside-a-notched-corner.ldr",
+        CUSTOM_BENCH_BESIDE_A_NOTCHED_CORNER,
+      ),
+    }).toEqual({
+      cornerPanel: [0, 0],
+      besideACurvedWedge: [0, 0],
+      besideANotchedCorner: [10, 0],
+    });
+  },
+  BAKE_TIMEOUT_MS,
+);
+
 it(
   "bakes a generated jumper to the lattice the pipeline baked for it, framed on both paths by the anti-studs it stands on rather than its centre stud",
   async () => {
