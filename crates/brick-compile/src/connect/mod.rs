@@ -1,4 +1,5 @@
 mod axle;
+mod covered;
 mod depth_bands;
 mod faces;
 mod inferred;
@@ -17,6 +18,7 @@ use crate::identify::{identifies, sixteenths};
 use crate::lattice::{non_finite, unplaceable, Malformation, MalformedGeometry};
 use crate::pieces::NO_PIECE;
 
+pub use covered::CoveredFloor;
 pub use faces::{
     mating_faces, FaceSection, MatingFace, Unreadable, AXLE, CAP_FAR, CAP_ROOT, FEMALE_FINGER,
     FINGER_RADIUS_UNSTATED, FLARE_JOINS_NEXT, FLARE_JOINS_PREVIOUS, MALE_FINGER, ROUND, SQUARE,
@@ -27,10 +29,10 @@ pub use inferred::{
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
-    is_connectivity, published_faces, record_json, source_code, status_code, PartRecords,
-    PublishedFace, TierRecord,
+    is_connectivity, lattice_receptors, published_faces, record_json, source_code, status_code,
+    PartRecords, PublishedFace, TierRecord, CONNECTIVITY_LICENSE,
 };
-pub use shadow::{IncludeRefusal, ShadowPatches, ShadowSnaps};
+pub use shadow::{patch_path, verified_patch_paths, IncludeRefusal, ShadowPatches, ShadowSnaps};
 
 const UNIT_SCALE_TOLERANCE: f64 = 1e-3;
 const ROTATION_DUST: f64 = 1e-9;
@@ -356,6 +358,11 @@ pub enum Issue {
         reason: Withholding,
         shadow_closes: bool,
         mesh: EntranceClosure,
+    },
+    CoveredInference {
+        inferred: MatingFace,
+        cover: MatingFace,
+        floor: CoveredFloor,
     },
 }
 
@@ -763,7 +770,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
             }));
         extraction.off_lattice.extend(inferred.off_lattice);
         merge(&mut extraction, inferred.connectors, anchor_and_face_keys);
+        covered::drop_covered_inferences(&mut extraction);
         for free in records::free_faces_of_partly_held(&extraction) {
+            let face = WithheldFace {
+                connector: free.connector,
+                face: free.face,
+            };
+            if extraction.withheld.contains(&face) {
+                continue;
+            }
             let shadow_closes = free
                 .holders
                 .iter()
@@ -775,10 +790,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ConnectorExtractor<'a, L, S> 
                 (true, EntranceClosure::Open) => Withholding::SourcesDisagree,
                 (_, EntranceClosure::Unmeasurable) => Withholding::NotProvenOpen,
             };
-            extraction.withheld.push(WithheldFace {
-                connector: free.connector,
-                face: free.face,
-            });
+            extraction.withheld.push(face);
             extraction.issues.push(Issue::FreeFaceWithheld {
                 origin: free.mating.origin,
                 reason,

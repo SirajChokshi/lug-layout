@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
-use crate::flatten::{StudReference, INHERIT_COLOR};
-use crate::lattice::{model_lattice, LatticeError, LatticeInstance, StudPose};
+use crate::flatten::INHERIT_COLOR;
+use crate::lattice::ModelLattice;
 use crate::mesh::{ColorGroup, Mesh, WELD_EPSILON_LDU};
 
 pub const CELL_LDU: [i64; 3] = [20, 8, 20];
@@ -15,24 +15,23 @@ const AREA_TIE_LDU2: f64 = 1e-6;
 
 pub struct VoxelPart<'a> {
     pub mesh: &'a Mesh,
-    pub studs: &'a [StudReference],
     pub color: u32,
     pub matrix: &'a Affine,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum VoxelError {
-    Lattice(LatticeError),
-    FractionalStudLayer(f64),
+    NoLattice,
+    FractionalPhaseLayer(f64),
     Empty,
 }
 
 impl std::fmt::Display for VoxelError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            VoxelError::Lattice(error) => write!(f, "{error}"),
-            VoxelError::FractionalStudLayer(y) => {
-                write!(f, "lowest stud layer at y = {y} is not on a whole LDU")
+            VoxelError::NoLattice => write!(f, "model has no lattice"),
+            VoxelError::FractionalPhaseLayer(y) => {
+                write!(f, "phase layer at y = {y} is not on a whole LDU")
             }
             VoxelError::Empty => write!(f, "model has no body triangles to voxelize"),
         }
@@ -63,39 +62,10 @@ impl VoxelGrid {
 
 type CellKey = (i64, i64, i64);
 
-fn lattice_instances<'a>(
-    parts: &'a [VoxelPart],
-    studs: &'a [Vec<StudPose>],
-) -> Vec<LatticeInstance<'a>> {
-    parts
-        .iter()
-        .zip(studs)
-        .map(|(part, studs)| {
-            let [min, max] = part.mesh.bounds().unwrap_or([[0.0; 3]; 2]);
-            LatticeInstance {
-                matrix: part.matrix,
-                studs,
-                bounds_min: min.map(f64::from),
-                bounds_max: max.map(f64::from),
-            }
-        })
-        .collect()
-}
-
-pub fn grid_phase(parts: &[VoxelPart]) -> Result<[i64; 3], VoxelError> {
-    let studs: Vec<Vec<StudPose>> = parts
-        .iter()
-        .map(|part| {
-            part.studs
-                .iter()
-                .map(|stud| StudPose::of(&stud.matrix))
-                .collect()
-        })
-        .collect();
-    let lattice = model_lattice(&lattice_instances(parts, &studs)).map_err(VoxelError::Lattice)?;
+pub fn grid_phase(lattice: &ModelLattice) -> Result<[i64; 3], VoxelError> {
     let layer = lattice.phase_layer_y;
     if layer.fract() != 0.0 {
-        return Err(VoxelError::FractionalStudLayer(layer));
+        return Err(VoxelError::FractionalPhaseLayer(layer));
     }
     Ok([
         (i64::from(lattice.phase[0]) - STUD_CENTRE_TO_CELL_EDGE_LDU).rem_euclid(CELL_LDU[0]),
@@ -175,8 +145,12 @@ fn dominant_color(areas: &BTreeMap<u32, f64>, translucent: &HashSet<u32>) -> u32
     pick(true).or_else(|| pick(false)).unwrap_or(INHERIT_COLOR)
 }
 
-pub fn voxelize(parts: &[VoxelPart], translucent: &HashSet<u32>) -> Result<VoxelGrid, VoxelError> {
-    let phase = grid_phase(parts)?;
+pub fn voxelize(
+    parts: &[VoxelPart],
+    lattice: &ModelLattice,
+    translucent: &HashSet<u32>,
+) -> Result<VoxelGrid, VoxelError> {
+    let phase = grid_phase(lattice)?;
     let mut areas: HashMap<CellKey, BTreeMap<u32, f64>> = HashMap::new();
     for part in parts {
         let positions = part.mesh.positions.as_chunks::<3>().0;
@@ -398,11 +372,6 @@ mod tests {
         };
         push_box(&mut mesh, [-10.0, -24.0, -10.0], [10.0, 0.0, 10.0]);
         push_box(&mut mesh, [-6.0, -24.0, -6.0], [6.0, -4.0, 6.0]);
-        let studs = [StudReference {
-            primitive: "stud.dat".into(),
-            color: INHERIT_COLOR,
-            matrix: Affine::IDENTITY,
-        }];
         let at = Affine {
             m: [
                 1.0, 0.0, 0.0, 40.0, 0.0, 1.0, 0.0, 24.0, 0.0, 0.0, 1.0, -20.0,
@@ -410,11 +379,18 @@ mod tests {
         };
         let part = VoxelPart {
             mesh: &mesh,
-            studs: &studs,
             color: 4,
             matrix: &at,
         };
-        let grid = voxelize(&[part], &HashSet::new()).expect("voxelizes");
+        let lattice = ModelLattice {
+            phase: [0, 0],
+            phase_layer_y: 24.0,
+            phase_layer_votes: 1,
+            phase_layer_agreeing: 1,
+            aabb_min: [30.0, 0.0, -30.0],
+            aabb_max: [50.0, 24.0, -10.0],
+        };
+        let grid = voxelize(&[part], &lattice, &HashSet::new()).expect("voxelizes");
         assert_eq!(grid.origin, [30, 0, -30]);
         assert_eq!(grid.dims, [1, 3, 1]);
         assert_eq!(grid.colors, [4, 4, 4]);

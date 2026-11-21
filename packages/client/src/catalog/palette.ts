@@ -1,5 +1,7 @@
 import { inject, injectable } from "inversify";
+import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
 import {
+  COMMAND_PALETTE_SEARCH,
   LIBRARY_PART_PLACER,
   PALETTE_DRAG,
   PALETTE_MEMORY,
@@ -16,6 +18,7 @@ import type { IPaletteThumbnails } from "./palette-thumbnails.ts";
 
 export interface IPalette {
   readonly search: IPaletteSearch;
+  readonly commandSearch: ICommandPaletteSearch;
   readonly drag: IPaletteDrag;
   readonly prefetch: IPalettePrefetch;
   readonly memory: IPaletteMemory;
@@ -27,6 +30,7 @@ export interface IPalette {
 export class Palette implements IPalette {
   constructor(
     @inject(PALETTE_SEARCH) readonly search: IPaletteSearch,
+    @inject(COMMAND_PALETTE_SEARCH) readonly commandSearch: ICommandPaletteSearch,
     @inject(PALETTE_DRAG) readonly drag: IPaletteDrag,
     @inject(PALETTE_PREFETCH) readonly prefetch: IPalettePrefetch,
     @inject(PALETTE_MEMORY) readonly memory: IPaletteMemory,

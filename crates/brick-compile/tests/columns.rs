@@ -13,6 +13,7 @@ use common::fixture_library;
 const STUD: StudShape = StudShape {
     height: 4.0,
     radius: 6.0,
+    inscribed_radius: 6.0,
 };
 fn table_depth() -> f64 {
     let path =

@@ -1,4 +1,4 @@
-import { LIBRARY_BAKE_BUCKETS, LibraryBakePin, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { LIBRARY_BAKE_BUCKETS, LibraryBakePin } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdir, readFile, rm } from "node:fs/promises";
@@ -7,7 +7,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
-import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import { extractLibrary, httpReader, pinnedArchive } from "../library/ldraw-library.ts";
+import { readPrimitiveTable, studPrimitives } from "../palette.ts";
+import { bundleBaseUrl, liveBundleLibraryBakeIndexes } from "../pointer/live-bundles.ts";
 import {
   runPointerCommand,
   runPublicationCommand,
@@ -27,9 +29,9 @@ const palettePath = join(toolRoot, "palette.json");
 const primitivesPath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const binary = join(repoRoot, "target", "release", "library-bake");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 interface PaletteOptions {
-  readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
 }
 
@@ -86,29 +88,20 @@ async function precompute(check: boolean): Promise<void> {
     ),
   );
   const palette = JSON.parse(await readFile(palettePath, "utf8")) as PaletteOptions;
+  const primitives = await readPrimitiveTable(primitivesPath);
   const pin = await assembleLibraryBake({
     build: buildRoot,
     out: outRoot,
     source: pinnedArchive(lock).mirror,
     options: {
-      studPrimitives: palette.studPrimitives,
+      studPrimitives: studPrimitives(primitives),
       unofficialAllowlist: palette.unofficialAllowlist,
-      primitives: decodedOrThrow(
-        decode(PrimitiveConnectorTable, JSON.parse(await readFile(primitivesPath, "utf8"))),
-        primitivesPath,
-      ),
+      primitives,
     },
   });
   await rm(buildRoot, { recursive: true, force: true });
   const seconds = Math.round((performance.now() - started) / 1000);
-  const summary = `${pin.parts} parts in ${seconds} s on ${shards} shards: ${pin.records} records, ${pin.failed} failed, ${pin.refused.length} refused, index ${pin.index.sha256}`;
-  if (pin.refused.length > 0) {
-    process.stderr.write(
-      `the licence gate refused ${pin.refused.map(({ part }) => part).join(", ")}\n`,
-    );
-    process.exitCode = 1;
-    return;
-  }
+  const summary = `${pin.parts} parts in ${seconds} s on ${shards} shards: ${pin.records} records, ${pin.failed} failed, index ${pin.index.sha256}`;
   const outcome = await writeOrCheckPin(
     join(repoRoot, LIBRARY_BAKE_PIN),
     LibraryBakePin,
@@ -143,6 +136,15 @@ const commands = {
       : `the index and its ${LIBRARY_BAKE_BUCKETS} buckets`,
 };
 
+const libraryBakePointerRetainingLiveBundles = {
+  ...libraryBakePointer,
+  retained: async () =>
+    liveBundleLibraryBakeIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
   case "upload":
@@ -155,7 +157,11 @@ switch (process.argv[2]) {
   case "verify-pointer":
   case "prune":
     await runPointerCommand(
-      { ...commands, pointer: libraryBakePointer, manifestOf: (pin) => pin.index },
+      {
+        ...commands,
+        pointer: libraryBakePointerRetainingLiveBundles,
+        manifestOf: (pin) => pin.index,
+      },
       process.argv.slice(2),
     );
     break;

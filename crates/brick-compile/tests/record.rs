@@ -4,7 +4,8 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use brick_compile::bake::{drawn_lattice, BakeError, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::bake::{BakeError, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::cover::{tree_order, CoverShard, PartSolid};
 use brick_compile::model::bake_model;
 use brick_compile::record::{BakeRecord, RecordError};
@@ -38,6 +39,18 @@ fn palette_list(palette: &Value, key: &str) -> Vec<String> {
         .collect()
 }
 
+fn table_studs() -> Vec<String> {
+    let table: Value = serde_json::from_slice(
+        &fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/primitive-connectors.json"),
+        )
+        .expect("the primitive table is readable"),
+    )
+    .expect("the primitive table is JSON");
+    stud_primitives_from_table(&table).expect("the table names stud primitives")
+}
+
 fn bits(values: &[f32]) -> Vec<u32> {
     values.iter().map(|value| value.to_bits()).collect()
 }
@@ -54,7 +67,7 @@ fn every_fixture_part_decodes_to_its_compiled_mesh_studs_bounds_and_the_same_sol
     .expect("palette json");
     let options = CompileOptions {
         lod: Lod::Standard,
-        stud_primitives: palette_list(&palette, "studPrimitives"),
+        stud_primitives: table_studs(),
         unofficial_allowlist: palette_list(&palette, "unofficialAllowlist"),
         ..CompileOptions::default()
     };
@@ -158,7 +171,7 @@ fn palette() -> Value {
 fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
     let library = common::fixture_library();
     let palette = palette();
-    let stud_primitives = palette_list(&palette, "studPrimitives");
+    let stud_primitives = table_studs();
     let allowlist = palette_list(&palette, "unofficialAllowlist");
     let vehicle_parts = &palette["vehicleParts"];
     let signatures = VehicleSignatures {
@@ -221,7 +234,9 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
             .iter()
             .map(|instance| baker.lattice_shape(&instance.part).expect("shape"))
             .collect();
-        let lattice = drawn_lattice(&drawn, &shapes.iter().collect::<Vec<_>>()).expect("lattice");
+        let lattice = baker
+            .lattice(&drawn, &shapes.iter().collect::<Vec<_>>())
+            .expect("lattice");
         let cover = baker
             .cover(&drawn, lattice.as_ref(), CoverShard::WHOLE)
             .expect("cover");
