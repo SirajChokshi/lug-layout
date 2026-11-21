@@ -156,6 +156,16 @@
       }
     },
     {
+      "name": "track-world-never-imports-the-edit-tools",
+      "severity": "error",
+      "from": {
+        "path": "^packages/client/src/edit/track-world\\.ts$"
+      },
+      "to": {
+        "path": "^packages/client/src/edit/(track-edit-session|road-edit-session|editor)\\.ts$"
+      }
+    },
+    {
       "name": "workers-depend-on-rpc-and-their-engine",
       "severity": "error",
       "from": {
