@@ -382,6 +382,18 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           key("measure", "done"),
         ],
       };
+    case "table":
+      return {
+        tone: "place",
+        title: "Drawing tables",
+        detail: "edges land on the 8-stud grid",
+        hints: [
+          gesture("Drag", "draw, or drag an edge to resize"),
+          key("delete", "remove the table under the cursor"),
+          key("undo", "undo"),
+          key("draw-tables", "done"),
+        ],
+      };
     case "select": {
       const { selection } = snapshot;
       if (snapshot.gesture) return gestureView(snapshot.gesture);

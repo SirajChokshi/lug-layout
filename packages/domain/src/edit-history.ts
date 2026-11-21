@@ -1,4 +1,5 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
+import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import type { PlacementHandle, World } from "./world.ts";
 
@@ -11,7 +12,8 @@ export type EditKind =
   | "remove"
   | "road"
   | "lay-track"
-  | "throw-switch";
+  | "throw-switch"
+  | "plan";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -28,8 +30,13 @@ export interface TrackChange {
 
 export const NO_TRACK_CHANGE: TrackChange = { lift: [], lay: [] };
 
+export interface PlanChange {
+  readonly before: PlanState;
+  readonly after: PlanState;
+}
+
 export type EditSummary =
-  | { readonly kind: "place" | "rotate" | "move" | "remove" }
+  | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number };
@@ -78,6 +85,7 @@ export interface AppliedEdit {
   readonly changes: ReadonlyArray<AppliedChange>;
   readonly consists: ReadonlyArray<AppliedConsistChange>;
   readonly track: TrackChange;
+  readonly plan: PlanChange | null;
 }
 
 class Ref implements PlacementRef {
@@ -109,6 +117,7 @@ interface Edit {
   readonly changes: ReadonlyArray<Change>;
   readonly consists: ReadonlyArray<ConsistChange>;
   readonly track: TrackChange;
+  readonly plan: PlanChange | null;
 }
 
 function poseOf(handle: PlacementHandle): PlacementPose {
@@ -153,6 +162,7 @@ function summary(edit: Edit): EditSummary {
     case "rotate":
     case "move":
     case "remove":
+    case "plan":
       return { kind: edit.kind };
     case "throw-switch":
       return { kind: edit.kind, switchAt: edit.track.lay[0]?.index ?? 0 };
@@ -218,6 +228,7 @@ export class EditHistory {
       changes: [],
       consists: [{ ref: new TrainRef(this), before: null, after: pose }],
       track: NO_TRACK_CHANGE,
+      plan: null,
     });
   }
 
@@ -229,6 +240,7 @@ export class EditHistory {
       changes: [],
       consists: [{ ref, before: ref.handle.pose, after: null }],
       track: NO_TRACK_CHANGE,
+      plan: null,
     });
   }
 
@@ -264,7 +276,17 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    return this.record({ kind, changes, consists: [], track });
+    return this.record({ kind, changes, consists: [], track, plan: null });
+  }
+
+  commitPlan(change: PlanChange): AppliedEdit {
+    return this.record({
+      kind: "plan",
+      changes: [],
+      consists: [],
+      track: NO_TRACK_CHANGE,
+      plan: change,
+    });
   }
 
   private record(edit: Edit): AppliedEdit {
@@ -334,7 +356,16 @@ export class EditHistory {
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
     }
     const track = backwards ? { lift: edit.track.lay, lay: edit.track.lift } : edit.track;
-    return { kind: edit.kind, step, changes, consists: this.applyConsists(edit, step), track };
+    const plan =
+      backwards && edit.plan ? { before: edit.plan.after, after: edit.plan.before } : edit.plan;
+    return {
+      kind: edit.kind,
+      step,
+      changes,
+      consists: this.applyConsists(edit, step),
+      track,
+      plan,
+    };
   }
 
   private applyConsists(edit: Edit, step: HistoryStep): AppliedConsistChange[] {
