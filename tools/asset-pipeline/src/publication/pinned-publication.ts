@@ -573,13 +573,25 @@ export async function verifyServedPointer<TManifest>(
   if (pointer === null) return [`${adapter.key} is not served`];
   const problems: string[] = [];
   for (const manifest of await keptManifests(adapter, pointer)) {
-    const listed = await adapter
-      .references(manifest, read)
-      .catch((error: unknown): ManifestReferences => {
-        problems.push(`${adapter.describeManifest(manifest)}: ${String(error)}`);
-        return { indexes: [], files: [] };
-      });
-    if (scope !== "all") continue;
+    problems.push(...(await verifyServedManifest(adapter, read, manifest, scope)));
+  }
+  return problems.toSorted();
+}
+
+export async function verifyServedManifest<TManifest>(
+  adapter: PointerAdapter<TManifest>,
+  read: ObjectReader,
+  manifest: TManifest,
+  scope: ServedScope,
+): Promise<string[]> {
+  const problems: string[] = [];
+  const listed = await adapter
+    .references(manifest, read)
+    .catch((error: unknown): ManifestReferences => {
+      problems.push(`${adapter.describeManifest(manifest)}: ${String(error)}`);
+      return { indexes: [], files: [] };
+    });
+  if (scope === "all") {
     await runAll(listed.files, async (file) => {
       const bytes = await read(file.key);
       const problem =
@@ -631,8 +643,10 @@ export async function pruneUnreferenced<TManifest>(
   return { live: live.size, doomed, deleted: dryRun ? 0 : doomed.length };
 }
 
-export interface PointerCommands<TPin, TManifest> extends PublicationCommands<TPin> {
+export interface PointerCommands<TPin, TManifest> {
+  readonly storeConfigPath: string;
   readonly pointer: PointerAdapter<TManifest>;
+  readPin(): Promise<TPin>;
   manifestOf(pin: TPin): TManifest;
 }
 
