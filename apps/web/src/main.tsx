@@ -3,6 +3,7 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
@@ -144,6 +145,7 @@ function root(): ReactNode {
         palettePrefetch={container.get(PALETTE_PREFETCH)}
         paletteMemory={container.get(PALETTE_MEMORY)}
         paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
+        hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,
