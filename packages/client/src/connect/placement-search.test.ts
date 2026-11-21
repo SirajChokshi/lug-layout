@@ -1078,7 +1078,7 @@ describe("PlacementSearch assist support", () => {
       atCursor: [false, 0, HELD_PLATES, WALL],
     },
     {
-      name: "held-out pair 78, flush: the only mated pose in reach takes a stud from below but presses its own studs up into a partner, so assist keeps precise's refusal at the cursor",
+      name: "held-out pair 78, flush: the only mated pose in reach takes a stud from below but presses its own stud up into a partner, so assist keeps precise's refusal at the cursor",
       f: sandwich,
       held: brickWithStudAndReceptor,
       cursorX: 0,

@@ -572,11 +572,27 @@ export interface RoadPlacementDump {
 export interface ModelBakeView {
   readonly id: string;
   readonly lattice: PartModelLattice;
-  readonly cells: Omit<ModelCells, "footprint" | "flat" | "columnBottom" | "columnTop"> & {
+  readonly cells: Omit<
+    ModelCells,
+    "footprint" | "flat" | "columnBottom" | "columnTop" | "partCells"
+  > & {
     readonly footprint: ReadonlyArray<number>;
     readonly flat: ReadonlyArray<number>;
     readonly columnBottom: ReadonlyArray<number>;
     readonly columnTop: ReadonlyArray<number>;
+    readonly partCellEntries: number | null;
+  };
+}
+
+function cellsView(cells: ModelCells): ModelBakeView["cells"] {
+  const { partCells, ...columns } = cells;
+  return {
+    ...columns,
+    footprint: [...cells.footprint],
+    flat: [...cells.flat],
+    columnBottom: [...cells.columnBottom],
+    columnTop: [...cells.columnTop],
+    partCellEntries: partCells?.instance.length ?? null,
   };
 }
 
@@ -5680,13 +5696,7 @@ export class Editor implements IEditor, IEditedWorld {
               {
                 id: placeable.id,
                 lattice,
-                cells: {
-                  ...cells,
-                  footprint: [...cells.footprint],
-                  flat: [...cells.flat],
-                  columnBottom: [...cells.columnBottom],
-                  columnTop: [...cells.columnTop],
-                },
+                cells: cellsView(cells),
               },
             ]
           : [];
