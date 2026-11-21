@@ -69,6 +69,7 @@ const ROAD_SCENE_PLATES = ["44336", "2358", "610", "606", "30225b"];
 const RECESSED_ROAD_SCENE_PLATES = ["69958", "71772"];
 const BASEPLATE_ROW_PLATES = ["3811", "44336"];
 const DENSE_STACK_BRICK = "3001";
+const LONE_BASEPLATE = "3811";
 const MAGNET_HOLDER = "2920";
 const MAGNET_CASING = "2959";
 
@@ -153,6 +154,10 @@ export function geometryReports(
     {
       fileName: "scenes/brick-2x4.ldr",
       render: () => singlePartScene(library, DENSE_STACK_BRICK, "Brick 2x4"),
+    },
+    {
+      fileName: "scenes/baseplate-3811.ldr",
+      render: () => singlePartScene(library, LONE_BASEPLATE, "Baseplate 3811"),
     },
     {
       fileName: "track-loops.json",
