@@ -34,15 +34,75 @@ export {
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
+  NO_TRACK_CHANGE,
   type AppliedChange,
+  type AppliedConsistChange,
   type AppliedEdit,
+  type ConsistRef,
   type EditKind,
+  type EditSummary,
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
+  type TrackChange,
+  type TrackPieceAt,
 } from "./edit-history.ts";
+export {
+  ConsistHandle,
+  ConsistLayout,
+  consistPoseProblem,
+  sameCarrier,
+  type CarriedPieceRef,
+  type CarrierPose,
+  type ConsistAnchor,
+  type ConsistPose,
+  type LaidPieceRef,
+  type TrackPieceRef,
+} from "./rail/consist-layout.ts";
+export {
+  RAIL_SPOT_FLOATS,
+  RailNetwork,
+  RailRun,
+  SPOT_DISTANCE,
+  SPOT_EDGE,
+  SPOT_OFFSET,
+} from "./rail/rail-network.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
+export {
+  pointOnSegment,
+  placeSegments,
+  reversedSegments,
+  segmentsEnd,
+  wrapAngle,
+  type PlacedSegment,
+  type PlanPose,
+  type SimPathSegment,
+} from "./rail/route-geometry.ts";
+export {
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  trackPoint,
+  type BuiltSimTrack,
+  type SimRoute,
+  type SimTrack,
+  type SimTrackInput,
+} from "./rail/sim-track.ts";
+export { simTrackFromGraph, type TrackGraphTopology } from "./rail/graph-track.ts";
+export {
+  GEOMETRY_FIELDS,
+  PIVOT_POINT_FLOATS,
+  RunningGearPoser,
+  VEHICLE_POSE_FLOATS,
+  packGeometry,
+  packSpecOnlyGeometry,
+  type CouplerGeometry,
+  type CouplerMount,
+  type GuideGeometry,
+  type PathSampler,
+  type VehicleGeometry,
+} from "./rail/running-gear.ts";
 export {
   TrackLayout,
   type TrackEndRef,
@@ -144,24 +204,30 @@ export {
   type TrackMove,
   type TrackPieceDef,
 } from "./track/track-pose.ts";
-export {
-  runMoves,
-  solveDrag,
-  type DragPlan,
-  type TrackRun,
-  type TrackSegment,
-} from "./track/track-solver.ts";
+export { runMoves, type TrackRun, type TrackSegment } from "./track/track-solver.ts";
 export {
   solveClosure,
   UNLIMITED_BUDGET,
   type ClosureResult,
-  type ClosureSite,
   type SearchBudget,
 } from "./track/closure.ts";
+export type { ClosureSite } from "./track/clear-closure.ts";
+export { KitOutlines } from "./track/kit-outlines.ts";
+export { StrokePath } from "./track/stroke-path.ts";
+export {
+  StrokeRouter,
+  type FollowedRun,
+  type StrokeGoal,
+  type StrokeJoin,
+  type StrokeSite,
+} from "./track/stroke-router.ts";
 export {
   NO_OBSTACLE,
+  RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  outlineContains,
+  placedOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";

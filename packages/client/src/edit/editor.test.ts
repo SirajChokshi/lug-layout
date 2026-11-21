@@ -47,7 +47,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -79,20 +79,33 @@ import {
   EDITOR,
   MODEL_IMPORTER,
   PLACEMENT_SEARCH,
+  PLAN_SERVICE,
+  RAIL_YARD,
+  RUNNING_GEAR,
+  RUNNING_GEAR_OVERRIDES,
+  SIM_CLIENT,
   TRAIN_PLAY,
   PLACEABLE_CATALOG,
+  WORLD_SESSION,
 } from "../tokens.ts";
+import { MemoryOverrideStore } from "../running-gear/memory-override-store.test-support.ts";
+import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
+import {
+  InThreadModelImporter,
+  pinnedOmrModel,
+} from "../import/in-thread-importer.test-support.ts";
+import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
+import { TRACK_SEGMENT, WRITE_ADD, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
-const SET_WITHOUT_TRACK = "10185-1";
 const RAY_HEIGHT_LDU = 10_000;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
@@ -321,9 +334,16 @@ class HeadlessBackend implements ISceneBackend {
   setMarkers(): void {}
   setTrackEnds(): void {}
   setGround(): void {}
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  deleteVehicle(): void {}
+  readonly vehicles = new Map<number, ReadonlyArray<number>>();
+  setVehicle(vehicle: number): void {
+    this.vehicles.set(vehicle, []);
+  }
+  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
+    this.vehicles.set(vehicle, [x, y, z, yaw]);
+  }
+  deleteVehicle(vehicle: number): void {
+    this.vehicles.delete(vehicle);
+  }
   setIssueBoxes(): void {}
   setGuides(): void {}
   projectToNdc(): void {}
@@ -365,7 +385,7 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
   userModels: ReadonlyArray<string> = [],
-  importer: IModelImporter | null = null,
+  rebind: (container: Container) => void = () => undefined,
 ) {
   const backend = new HeadlessBackend();
   let scheduled: FrameRequestCallback | null = null;
@@ -396,7 +416,7 @@ async function startEditor(
       );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  if (importer !== null) container.rebind(MODEL_IMPORTER).toConstantValue(importer);
+  rebind(container);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -531,84 +551,272 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
-it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
-  const { editor, backend, container, catalog } = await startEditor([
-    SET_WITHOUT_TRACK,
-    "10205-1",
-    "10133-1",
-  ]);
-  const play = container.get(TRAIN_PLAY);
-  const place = placer(editor, backend);
-  const set = `omr:${SET_WITHOUT_TRACK}`;
-  const myOwnTrain = "omr:10205-1";
-  const locomotive = "omr:10133-1";
-  const trains = () => editor.playSetup()?.models.map((model) => model.name);
-  const openPlay = async () => {
-    startPlay(editor, play);
-    await vi.waitFor(() => expect(play.snapshot().status).toBe("error"));
-    return play.snapshot().error;
+const LOCOMOTIVE = "omr:10133-1";
+const CABOOSE = "omr:10014-1";
+const MY_OWN_TRAIN = "omr:10205-1";
+const DRAG_STEPS = 8;
+const TRAIN_SPEED_LDU_PER_S = 200;
+const RUN_TICKS = 180;
+const SAME_POSE_LDU = 1e-9;
+const PIVOT_SHIFT_LDU = 8;
+
+function onLattice(ldu: number): number {
+  return Math.round(ldu / STUD_LDU) * STUD_LDU;
+}
+
+function drawOval(editor: IEditor, backend: AimedBackend): void {
+  editor.chooseItem(TRACK_ITEM_ID);
+  const drag = (from: { x: number; z: number }, to: { x: number; z: number }) => {
+    backend.aim(from.x, from.z);
+    editor.dragStart(0, 0);
+    for (let step = 1; step <= DRAG_STEPS; step++) {
+      const t = step / DRAG_STEPS;
+      backend.aim(from.x + (to.x - from.x) * t, from.z + (to.z - from.z) * t);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
   };
-  const noTrack = expect.stringContaining("Lay some track first");
+  drag({ x: -400, z: 0 }, { x: 400, z: 0 });
+  const ends = editor.dump().trackEnds;
+  const east = ends.find((end) => end.heading === 0);
+  const west = ends.find((end) => end.heading === ZETA16_ORDER / 2);
+  if (!east || !west) throw new Error(`a straight run has two ends: ${JSON.stringify(ends)}`);
+  drag(
+    { x: onLattice(east.xLdu), z: onLattice(east.zLdu) },
+    { x: onLattice(west.xLdu), z: onLattice(west.zLdu) },
+  );
+  if (editor.dump().trackEnds.length > 0) throw new Error("the oval did not close");
+  editor.chooseItem(null);
+}
 
-  const nothingPlaced = { trains: trains(), play: await openPlay() };
-  for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
-  await place(set, 0, 0);
-  const setPlaced = trains();
-  await place(myOwnTrain, 1600, 0);
-  const myOwnTrainPlaced = trains();
-  await place(locomotive, 0, 1600);
-  await place(myOwnTrain, 1600, 1600);
-  const allPlaced = trains();
-  const locomotiveLabel = editor.playSetup()?.models[0]?.label;
-  play.chooseTrain("10133-1");
-  selectAt(editor, backend, 0, 1600);
-  editor.deleteSelection(0);
-  const locomotiveDeleted = trains();
-  const playAfterDelete = await openPlay();
-  editor.undo(0);
-  const deleteUndone = trains();
+async function myBlueCaboose(): Promise<Uint8Array> {
+  const official = await pinnedOmrModel("10014-1.mpd");
+  const custom = official
+    .replaceAll("10014 - ", "my blue caboose - ")
+    .split("\n")
+    .map((line) => line.replace(/^1 0 /u, "1 1 "))
+    .join("\n");
+  return new TextEncoder().encode(custom);
+}
 
-  expect({
-    nothingPlaced,
-    setPlaced,
-    myOwnTrainPlaced,
-    allPlaced,
-    locomotiveLabel,
-    locomotiveDeleted,
-    playAfterDelete,
-    deleteUndone,
-  }).toEqual({
-    nothingPlaced: { trains: [], play: "No train is placed on the layout." },
-    setPlaced: [],
-    myOwnTrainPlaced: ["10205-1"],
-    allPlaced: ["10133-1", "10205-1"],
-    locomotiveLabel: "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
-    locomotiveDeleted: ["10205-1"],
-    playAfterDelete: noTrack,
-    deleteUndone: ["10133-1", "10205-1"],
+function trainsOf(editor: IEditor) {
+  return editor.snapshot().trains.map((train) => [train.item, train.onRails]);
+}
+
+function standingPoses(backend: HeadlessBackend): ReadonlyArray<ReadonlyArray<number>> {
+  return [...backend.vehicles.values()].toSorted(
+    (a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0),
+  );
+}
+
+function sameStanding(
+  a: ReadonlyArray<ReadonlyArray<number>>,
+  b: ReadonlyArray<ReadonlyArray<number>>,
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((pose, i) =>
+      pose.every((value, k) => Math.abs(value - (b[i]?.[k] ?? NaN)) < SAME_POSE_LDU),
+    )
+  );
+}
+
+it("seats a held train on the rails of a hand-drawn oval where the cursor points at them, places it as a model away from them, and refuses a second train on track a train already stands on", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    [LOCOMOTIVE, CABOOSE].map((id) => id.slice(4)),
+  );
+  drawOval(editor, backend);
+  for (const item of [LOCOMOTIVE, CABOOSE]) await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+
+  const onRails = await place(LOCOMOTIVE, 0, 0);
+  const onRailsVehicles = backend.vehicles.size;
+  const sameTrack = await place(CABOOSE, 100, 0);
+  const farSide = await place(CABOOSE, -100, 1600);
+  const awayFromRails = await place(LOCOMOTIVE, 0, 4000);
+
+  expect(onRails).toMatchObject({ placements: 0, refusedClicks: 0 });
+  expect(onRailsVehicles).toBeGreaterThan(0);
+  expect(sameTrack).toMatchObject({
+    placements: 0,
+    refusedClicks: 1,
+    reason: expect.stringContaining("already stands on"),
   });
+  expect(farSide).toMatchObject({ placements: 0, refusedClicks: 1 });
+  expect(awayFromRails).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect(trainsOf(editor)).toEqual([
+    [LOCOMOTIVE, true],
+    [CABOOSE, true],
+  ]);
 }, 120_000);
 
-it("runs Play on the track inside a placed set, with the placed train", async () => {
-  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET, "10205-1"]);
-  const play = container.get(TRAIN_PLAY);
-  const place = placer(editor, backend);
-  for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
-    await loadCatalogItem(catalog, item);
-  }
-  await place(`omr:${PLACEABLE_SET}`, 0, 0);
-  await place("omr:10205-1", 1600, 0);
-  const setTrack = editor.snapshot().track?.modelPieces ?? 0;
+async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<string | null> {
+  gear.select(model, 0);
+  const pivot = gear.snapshot().view?.pivots[0];
+  if (!pivot) throw new Error(`${model} has no bogie pivot`);
+  gear.setPivot(0, pivot[0] + PIVOT_SHIFT_LDU, pivot[2]);
+  await gear.save();
+  return gear.snapshot().error;
+}
 
-  startPlay(editor, play);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+it("runs every train on the rails, an imported one included, from exactly where each stands on its saved running gear, and stands them back there when Play stops", async () => {
+  const sim = new InThreadSim();
+  const overrides = new MemoryOverrideStore();
+  const { editor, backend, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+      bound.rebind(RUNNING_GEAR_OVERRIDES).toConstantValue(overrides);
+    },
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const imported = await editor.importModelFile({
+    name: "my-blue-caboose.mpd",
+    bytes: await myBlueCaboose(),
+  });
+  const custom = editor.snapshot().modelImport?.item ?? "";
+  const place = placer(editor, backend);
+  await place(LOCOMOTIVE, 0, 0);
+  await place(custom, -100, 1600);
+  editor.chooseItem(null);
+  const gear = container.get(RUNNING_GEAR);
+  await vi.waitFor(() => expect(gear.snapshot().models).toHaveLength(2));
+  const detected = standingPoses(backend);
+  const saveError = await saveShiftedPivot(gear, LOCOMOTIVE.slice(4));
+  await vi.waitFor(() => expect(sameStanding(standingPoses(backend), detected)).toBe(false));
+  const parked = standingPoses(backend);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
   const started = play.snapshot();
+  const playing = standingPoses(backend);
+  const trainAt = () => {
+    const data = sim.latestFrame()?.data ?? new Float64Array(0);
+    const { trainEdgeStart, trainOffsetStart } = sim.frameLayout();
+    return [0, 1].map((t) => [data[trainEdgeStart + t], data[trainOffsetStart + t]]);
+  };
+  const before = trainAt();
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  play.chooseDriven(1);
+  play.drive(-TRAIN_SPEED_LDU_PER_S);
+  sim.advance(RUN_TICKS);
+  const after = trainAt();
   play.stop();
 
-  expect(setTrack).toBeGreaterThan(0);
-  expect(editor.playSetup()?.track.layout.count).toBe(setTrack);
-  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
-  expect(started).toMatchObject({ status: "loading", error: null });
+  expect(saveError).toBeNull();
+  expect(imported).toBe(true);
+  expect(custom).toMatch(/^import:/u);
+  expect(started).toMatchObject({ status: "running", error: null });
+  expect(started.trains.map((train) => train.label)).toEqual([
+    "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
+    "my-blue-caboose.mpd",
+  ]);
+  expect(parked.length).toBeGreaterThan(0);
+  expect(sameStanding(playing, parked)).toBe(true);
+  expect(after.every((position, t) => JSON.stringify(position) !== JSON.stringify(before[t]))).toBe(
+    true,
+  );
+  expect(sameStanding(standingPoses(backend), parked)).toBe(true);
+}, 240_000);
+
+it("keeps the trains on the rails in the one undo history and in the saved world: delete, undo and redo a train, and reopen the world", async () => {
+  const repository = new MemoryRepository();
+  const { editor, backend, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => bound.rebind(WORLD_REPOSITORY).toConstantValue(repository),
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const selected = selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = trainsOf(editor);
+  const undoLabel = editor.snapshot().history.undo;
+  editor.undo(0);
+  const undone = trainsOf(editor);
+  editor.redo(0);
+  const redone = trainsOf(editor);
+  editor.undo(0);
+  await vi.waitFor(() => expect(repository.storedConsists()).toBe(1));
+  const first = editor.snapshot().world?.id ?? "";
+  await editor.newWorld("Second");
+  const fresh = trainsOf(editor);
+  await editor.openWorld(first);
+
+  expect(selected?.kind).toBe("train");
+  expect({ deleted, undoLabel, undone, redone, fresh }).toEqual({
+    deleted: [],
+    undoLabel: "remove",
+    undone: [[LOCOMOTIVE, true]],
+    redone: [],
+    fresh: [],
+  });
+  expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
+  expect(backend.vehicles.size).toBeGreaterThan(0);
+}, 120_000);
+
+it("selects a train rather than the track it stands on, and refuses to delete a track piece a train stands on", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const laid = editor.snapshot().track?.pieces;
+  const train = selectAt(editor, backend, 0, 0);
+  let refusal: string | null = null;
+  for (let x = -600; x <= 600 && refusal === null; x += STUD_LDU) {
+    if (selectAt(editor, backend, x, 0)?.kind !== "track") continue;
+    editor.deleteSelection(0);
+    refusal = editor.snapshot().selectionRefusal;
+    if (refusal === null) editor.undo(0);
+  }
+
+  expect(train?.kind).toBe("train");
+  expect(refusal).toContain("stands on this track piece");
+  expect(editor.snapshot().track?.pieces).toBe(laid);
+  expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
+}, 120_000);
+
+it("sets a train on the track inside a placed set, and refuses to delete or turn the set while the train stands on that track", async () => {
+  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET, MY_OWN_TRAIN.slice(4)]);
+  const set = `omr:${PLACEABLE_SET}`;
+  for (const item of [set, MY_OWN_TRAIN]) await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+  await place(set, 0, 0);
+  const route = editor.trackRoutes()[0];
+  if (!route) throw new Error(`${set} carries no track`);
+  const along = {
+    x: (route.from.xLdu + route.to.xLdu) / 2,
+    z: (route.from.zLdu + route.to.zLdu) / 2,
+  };
+  const train = await place(MY_OWN_TRAIN, along.x, along.z);
+  const box = editor.dump().placements;
+  const setAt = { x: (box.x[0] ?? 0) + 20, z: (box.z[0] ?? 0) + 20 };
+  editor.chooseItem(null);
+  const candidates = [-300, -100, 100, 300].flatMap((dx) =>
+    [-300, -100, 100, 300].map((dz) => ({ x: setAt.x + dx, z: setAt.z + dz })),
+  );
+  const onSet = candidates.find(
+    (point) => selectAt(editor, backend, point.x, point.z)?.item === set,
+  );
+  if (!onSet) throw new Error("no point selects the set");
+  editor.deleteSelection(0);
+  const deleteRefusal = editor.snapshot().selectionRefusal;
+  editor.rotate(0);
+  const turnRefusal = editor.snapshot().selectionRefusal;
+
+  expect(train).toMatchObject({ placements: 1, refusedClicks: 0 });
+  expect(trainsOf(editor)).toEqual([[MY_OWN_TRAIN, true]]);
+  expect(deleteRefusal).toContain("stands on its track");
+  expect(turnRefusal).toContain("stands on its track");
+  expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
 
 const TRACK_STRAIGHT = "ldraw:74746";
@@ -695,6 +903,20 @@ class MemoryRepository implements IWorldRepository {
     let count = 0;
     for (const world of this.worlds.values()) {
       for (const shard of world.shards.values()) count += shard.placements.length;
+    }
+    return count;
+  }
+
+  storedConsists(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) count += world.header.consists?.length ?? 0;
+    return count;
+  }
+
+  storedTrack(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) {
+      for (const shard of world.shards.values()) count += shard.track.length;
     }
     return count;
   }
@@ -830,8 +1052,8 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
   editor.rotate(0, direction);
   const { selection, selectionRefusal, lastRefusal } = editor.snapshot();
   return {
-    rot: selection?.rot ?? null,
-    yPlates: selection?.yPlates ?? null,
+    rot: selection?.kind === "model" ? selection.rot : null,
+    yPlates: selection?.kind === "model" ? selection.yPlates : null,
     refusal: selectionRefusal,
     roadCells: lastRefusal ? lastRefusal.mismatchedCells + lastRefusal.overlappingCells : null,
   };
@@ -1034,6 +1256,379 @@ it("offers none of the editing commands on a selection in a world another tab ho
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
 }, 120_000);
 
+function dragTrack(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(...from);
+  editor.pointerMove(0, 0);
+  expect(editor.dragStart(0, 0)).toBe(true);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function layoutState(editor: IEditor) {
+  const { refs, placements, laidTrack } = editor.dump();
+  const poses = placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.x[i]} ${placements.z[i]} ${placements.yPlates[i]} ${placements.rot[i]}`,
+    )
+    .toSorted();
+  const track = editor.snapshot().track;
+  return { poses, laidTrack, openEnds: track?.openEnds, joins: track?.joins };
+}
+
+const STUD = 20;
+const RIGHT_SWITCH = "ldraw:75541-f1";
+const NINE_VOLT_CURVE = "ldraw:74747";
+
+const NINE_VOLT_STRAIGHT = "ldraw:74746";
+
+it("selects a laid track piece by clicking it and deletes it as one step that undo restores and re-selects", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  const laid = layoutState(editor);
+
+  const picked = selectAt(editor, backend, 0, 0);
+  const cleared = selectAt(editor, backend, 0, 40 * STUD);
+  selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = layoutState(editor);
+  const afterDelete = editor.snapshot();
+  editor.undo(0);
+  const restored = layoutState(editor);
+  const reselected = editor.snapshot().selection;
+  editor.redo(0);
+
+  expect(picked).toMatchObject({
+    kind: "track",
+    item: `${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`,
+  });
+  expect(cleared).toBeNull();
+  expect({
+    pieces: deleted.laidTrack.length,
+    openEnds: deleted.openEnds,
+    joins: deleted.joins,
+    selection: afterDelete.selection,
+    undo: afterDelete.history.undoLabel,
+  }).toEqual({
+    pieces: laid.laidTrack.length - 1,
+    openEnds: (laid.openEnds ?? 0) + 2,
+    joins: (laid.joins ?? 0) - 2,
+    selection: null,
+    undo: "delete",
+  });
+  expect(restored).toEqual(laid);
+  expect(reselected).toEqual(picked);
+  expect(layoutState(editor)).toEqual(deleted);
+});
+
+it("undoes and redoes model and track edits in the order they happened, each track gesture one step named by what it laid", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const states = [layoutState(editor)];
+  const labels: Array<string | null> = [];
+  const record = () => {
+    states.push(layoutState(editor));
+    labels.push(editor.snapshot().history.undoLabel);
+  };
+
+  await place(BASEPLATE, 0, 0);
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const heldCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [51 * STUD, 100 * STUD], [99 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [163 * STUD, 100 * STUD], [211 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [99 * STUD, 100 * STUD], [163 * STUD, 100 * STUD]);
+  const closureCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 200 * STUD);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  record();
+  const lever = editor.snapshot().track?.switches[0];
+  if (!lever) throw new Error("the laid switch has no lever");
+  selectAt(editor, backend, lever.xLdu, lever.zLdu);
+  record();
+  await place(BASEPLATE, 64 * STUD, 0);
+  record();
+
+  expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
+  expect(labels).toEqual([
+    "place",
+    "lay 2 pieces",
+    "lay 1 piece",
+    "lay 3 pieces",
+    "lay 3 pieces",
+    "lay 4 pieces",
+    "lay 1 piece",
+    "throw switch",
+    "place",
+  ]);
+  expect(states.map((state) => [state.poses.length, state.laidTrack.length])).toEqual([
+    [0, 0],
+    [1, 0],
+    [1, 2],
+    [1, 3],
+    [1, 6],
+    [1, 9],
+    [1, 13],
+    [1, 14],
+    [1, 14],
+    [2, 14],
+  ]);
+  expect(states[8]?.laidTrack).not.toEqual(states[7]?.laidTrack);
+
+  for (let step = states.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(layoutState(editor), `after undoing edit ${step}`).toEqual(states[step - 1]);
+  }
+  expect(editor.snapshot().history.undo).toBeNull();
+  for (let step = 1; step < states.length; step++) {
+    expect(editor.snapshot().history.redoLabel).toBe(labels[step - 1]);
+    editor.redo(0);
+    expect(layoutState(editor), `after redoing edit ${step}`).toEqual(states[step]);
+  }
+  expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);
+
+function trackRowsOf(delta: PlanDelta) {
+  const removed: number[] = [];
+  const added: number[] = [];
+  const updated: number[] = [];
+  for (let k = 0; k < delta.removalCount; k++) {
+    if (delta.removalSegment[k] === TRACK_SEGMENT) removed.push(delta.removalSource[k] ?? -1);
+  }
+  for (let e = 0; e < delta.writeCount; e++) {
+    if (delta.writeSegment[e] !== TRACK_SEGMENT) continue;
+    (delta.writeKind[e] === WRITE_ADD ? added : updated).push(delta.writeSource[e] ?? -1);
+  }
+  return { removed, added, updated };
+}
+
+function pieceRange(from: number, to: number): number[] {
+  return Array.from({ length: to - from }, (_, i) => from + i);
+}
+
+function trackRows(added: number[], removed: number[] = [], updated: number[] = []) {
+  return { deltas: [{ removed, added, updated }] };
+}
+
+it("sends the plan each track step's rows and saves its lifted pieces, on commit, undo and redo alike", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const plans = container.get(PLAN_SERVICE);
+  const session = container.get(WORLD_SESSION);
+  const apply = plans.apply.bind(plans);
+  let applied: Array<ReturnType<typeof trackRowsOf>> = [];
+  vi.spyOn(plans, "apply").mockImplementation((delta) => {
+    applied.push(trackRowsOf(delta));
+    apply(delta);
+  });
+  const trackEdited = vi.spyOn(session, "trackEdited");
+  const setTrack = vi.spyOn(container.get(RAIL_YARD), "setTrack");
+  const step = (act: () => void) => {
+    applied = [];
+    trackEdited.mockClear();
+    setTrack.mockClear();
+    act();
+    return {
+      deltas: applied,
+      lifted: trackEdited.mock.calls.map(([lifted]) => lifted.map((piece) => piece.index)),
+      railsSet: setTrack.mock.calls.length,
+    };
+  };
+
+  await placer(editor, backend)(BASEPLATE, 0, 0);
+  const plansAt = [plans.materialize()];
+  const gestures: Array<() => void> = [
+    () => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+    },
+    () => {
+      editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
+      backend.aim(16 * STUD, 0);
+      editor.pointerMove(0, 0);
+      editor.click(0, 0, 0);
+    },
+    () => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      dragTrack(editor, backend, [51 * STUD, 100 * STUD], [99 * STUD, 100 * STUD]);
+    },
+    () => dragTrack(editor, backend, [163 * STUD, 100 * STUD], [211 * STUD, 100 * STUD]),
+    () => dragTrack(editor, backend, [99 * STUD, 100 * STUD], [163 * STUD, 100 * STUD]),
+    () => {
+      editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+      backend.aim(0, 200 * STUD);
+      editor.pointerMove(0, 0);
+      editor.click(0, 0, 0);
+    },
+    () => {
+      const lever = editor.snapshot().track?.switches[0];
+      if (!lever) throw new Error("the laid switch has no lever");
+      selectAt(editor, backend, lever.xLdu, lever.zLdu);
+    },
+  ];
+  const committed = gestures.map((gesture) => {
+    const seen = step(gesture);
+    plansAt.push(plans.materialize());
+    return seen;
+  });
+  const undone = gestures.map((_, i) => {
+    const seen = step(() => editor.undo(0));
+    expect(plans.materialize(), `plan after undoing step ${gestures.length - i}`).toEqual(
+      plansAt[gestures.length - i - 1],
+    );
+    return seen;
+  });
+  const redone = gestures.map((_, i) => {
+    const seen = step(() => editor.redo(0));
+    expect(plans.materialize(), `plan after redoing step ${i + 1}`).toEqual(plansAt[i + 1]);
+    return seen;
+  });
+
+  const laidRows = [
+    pieceRange(0, 2),
+    [2],
+    pieceRange(3, 6),
+    pieceRange(6, 9),
+    pieceRange(9, 13),
+    [13],
+  ];
+  expect(committed).toEqual([
+    ...laidRows.map((added) => ({ ...trackRows(added), lifted: [[]], railsSet: 1 })),
+    { ...trackRows([], [], [13]), lifted: [[13]], railsSet: 1 },
+  ]);
+  expect(undone).toEqual([
+    { ...trackRows([], [], [13]), lifted: [[13]], railsSet: 1 },
+    ...laidRows
+      .toReversed()
+      .map((removed) => ({ ...trackRows([], removed), lifted: [removed], railsSet: 1 })),
+  ]);
+  expect(redone).toEqual(committed);
+  expect(plansAt.at(-1)?.placements).toHaveLength(15);
+}, 120_000);
+
+it("refuses to throw a switch a train stands on, whether the throw comes from a click, an undo or a redo", async () => {
+  const { editor, backend, container, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  const yard = container.get(RAIL_YARD);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  for (const heading of [0, ZETA16_ORDER / 2]) {
+    const end = editor.dump().trackEnds.find((open) => open.heading === heading);
+    if (!end) throw new Error(`the switch has no end at heading ${heading}`);
+    const from = [onLattice(end.xLdu), onLattice(end.zLdu)] as const;
+    const away = heading === 0 ? 1 : -1;
+    dragTrack(editor, backend, from, [from[0] + away * 128 * STUD, from[1]]);
+  }
+  const lever = () => editor.snapshot().track?.switches[0];
+  const at = lever();
+  if (!at) throw new Error("the laid switch has no lever");
+  const outcome = () => ({
+    lever: lever()?.lever,
+    undoDepth: editor.snapshot().history.undoDepth,
+    redoDepth: editor.snapshot().history.redoDepth,
+    refusal: editor.snapshot().lastRefusal?.reason ?? null,
+    refusals: editor.snapshot().refusedClicks,
+  });
+  const clickSwitch = () => {
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(at.xLdu, at.zLdu);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  clickSwitch();
+  const thrown = outcome();
+  await placer(editor, backend)(LOCOMOTIVE, Math.round(at.xLdu), Math.round(at.zLdu));
+  const train = yard.trains()[0]?.handle;
+  if (!train || yard.standingOn(at.placement) !== train) {
+    throw new Error("the locomotive does not stand on the switch");
+  }
+  clickSwitch();
+  const clicked = outcome();
+  editor.undo(0);
+  const trainLifted = outcome();
+  const standingOn = yard.standingOn.bind(yard);
+  const stillStanding = vi
+    .spyOn(yard, "standingOn")
+    .mockImplementation((placement) =>
+      placement === at.placement ? train : standingOn(placement),
+    );
+  editor.undo(0);
+  const undoRefused = outcome();
+  stillStanding.mockRestore();
+  editor.undo(0);
+  const undone = outcome();
+  vi.spyOn(yard, "standingOn").mockImplementation((placement) =>
+    placement === at.placement ? train : standingOn(placement),
+  );
+  editor.redo(0);
+  const redoRefused = outcome();
+
+  const refusal = expect.stringContaining("stands on this switch, so it can't be thrown under it");
+  expect({ thrown, clicked, trainLifted, undoRefused, undone, redoRefused }).toEqual({
+    thrown: { lever: "branching", undoDepth: 4, redoDepth: 0, refusal: null, refusals: 0 },
+    clicked: { lever: "branching", undoDepth: 5, redoDepth: 0, refusal, refusals: 1 },
+    trainLifted: { lever: "branching", undoDepth: 4, redoDepth: 1, refusal, refusals: 1 },
+    undoRefused: { lever: "branching", undoDepth: 4, redoDepth: 1, refusal, refusals: 2 },
+    undone: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 2 },
+    redoRefused: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 3 },
+  });
+}, 120_000);
+
+it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const repository = new MemoryRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+
+  await placer(editor, backend)(BASEPLATE, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const laid = editor.dump().laidTrack.length;
+  expect(laid).toBe(2);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
+  editor.undo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(0));
+  expect(repository.storedPlacements()).toBe(1);
+  editor.redo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
+}, 120_000);
+
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 
 function importReport(
@@ -1232,7 +1827,7 @@ it("places an import while its studs are checked, offers none of them to the sta
     [],
     new BundleDirectoryFetcher(),
     [],
-    importer,
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
   const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
   const { covered } = record.model.studCover;
@@ -1245,6 +1840,11 @@ it("places an import while its studs are checked, offers none of them to the sta
   const place = placer(editor, backend);
   const copies = [await place(item, 0, 0), await place(item, 2_000, 0)];
   const coverOf = () => editor.dump().covers.find((cover) => cover.id === item);
+  const play = container.get(TRAIN_PLAY);
+  const playAttempt = () => {
+    startPlay(editor, play);
+    return play.snapshot().status === "idle" ? "waits" : "starts";
+  };
   const readiness = () => {
     const { modelImport, studChecks, studs, placements } = editor.snapshot();
     const cover = coverOf();
@@ -1256,7 +1856,7 @@ it("places an import while its studs are checked, offers none of them to the sta
       culledInsideModels: studs?.culledInsideModels,
       pending: cover?.studsPending,
       culledAtBake: cover?.studsCulledAtBake,
-      play: editor.playSetup() === null ? "waits" : "runs",
+      play: playAttempt(),
     };
   };
   const pending = readiness();
@@ -1289,7 +1889,7 @@ it("places an import while its studs are checked, offers none of them to the sta
     culledInsideModels: 2 * covered,
     pending: false,
     culledAtBake: covered,
-    play: "runs",
+    play: "starts",
   });
   expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
   expect(posesOf(editor)).toEqual(posesPending);
@@ -1297,7 +1897,9 @@ it("places an import while its studs are checked, offers none of them to the sta
 
 async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
   const importer = new GatedModelImporter();
-  const started = await startEditor([], fetcher, [], importer);
+  const started = await startEditor([], fetcher, [], (bound) =>
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
+  );
   const { container, editor } = started;
   const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
   importer.serve(importedRecord("checking.mpd", record));
@@ -2806,7 +3408,7 @@ async function bundleSetAfterAnImport(withImport: boolean) {
     [PLACEABLE_SET],
     new BundleDirectoryFetcher(),
     [],
-    importer,
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
   const tables = container.get(CONNECTOR_TABLES);
   let imported: PlaceableConnectorTables | null = null;
@@ -2885,11 +3487,8 @@ it("gives a part the bundle's packages don't list the record an import brought f
   const shipped = new BundleDirectoryFetcher();
   const { container: reader } = await startEditor([], shipped);
   const record = await reader.get(PART_BUNDLE_LOADER).loadPartConnectors("standard", "ldraw:3811");
-  const { editor, container } = await startEditor(
-    [],
-    hidden,
-    [],
-    new ImporterBringing(["ldraw:3811"], [record]),
+  const { editor, container } = await startEditor([], hidden, [], (bound) =>
+    bound.rebind(MODEL_IMPORTER).toConstantValue(new ImporterBringing(["ldraw:3811"], [record])),
   );
 
   await editor.importModelFile({

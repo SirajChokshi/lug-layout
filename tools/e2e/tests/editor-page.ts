@@ -61,6 +61,14 @@ export interface TrackEnd {
   readonly heading: number;
 }
 
+export interface LaidTrackPiece {
+  readonly index: number;
+  readonly ref: string;
+  readonly heading: number;
+  readonly position: ReadonlyArray<string>;
+  readonly yPlates: number;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -109,14 +117,21 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface TrackRoute {
+  readonly from: TrackEnd;
+  readonly to: TrackEnd;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
+    readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
     readonly studChecks: number;
   };
+  readonly routes: ReadonlyArray<TrackRoute>;
 }
 
 interface PlanState {
@@ -272,11 +287,42 @@ export class EditorPage {
     this.samples.length = 0;
   }
 
+  private async viewAtRest(): Promise<void> {
+    await expect
+      .poll(
+        () =>
+          this.page.evaluate(
+            () =>
+              new Promise<boolean>((resolve) => {
+                const dump = document.getElementById("camera-state");
+                const before = dump?.textContent ?? "";
+                requestAnimationFrame(() =>
+                  requestAnimationFrame(() =>
+                    requestAnimationFrame(() =>
+                      resolve(before !== "" && dump?.textContent === before),
+                    ),
+                  ),
+                );
+              }),
+          ),
+        { message: "the camera's view holds still across consecutive frames" },
+      )
+      .toBe(true);
+  }
+
+  async goTo(target: LatticePoint): Promise<void> {
+    await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
+    await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
+    await this.page.getByRole("button", { name: "Go to x, z" }).click();
+    await this.settle();
+    this.forgetView();
+  }
+
   async zoom(wheelDelta: number): Promise<void> {
     const centre = await this.canvasCentre();
     await this.page.mouse.move(centre.sx, centre.sy);
     await this.page.mouse.wheel(0, wheelDelta);
-    await this.settle();
+    await this.viewAtRest();
     this.forgetView();
   }
 
@@ -420,6 +466,27 @@ export class EditorPage {
     return this.trackCounts();
   }
 
+  async strokeTrack(points: ReadonlyArray<LatticePoint>): Promise<TrackCounts> {
+    const [first, ...rest] = points;
+    if (!first) throw new Error("a stroke has at least one point");
+    const start = await this.screenOf(first);
+    const map = await this.groundMap();
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (const point of rest) {
+      const at = map.screenOf(point.x, point.z);
+      await this.page.mouse.move(at.sx, at.sy);
+    }
+    await this.page.mouse.up();
+    await this.settle();
+    return this.trackCounts();
+  }
+
+  async toolHint(): Promise<string> {
+    return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>
@@ -490,7 +557,10 @@ export class EditorPage {
 
   async importModel(file: string): Promise<ModelImport> {
     await this.page.locator("input.model-file-import").setInputFiles(file);
-    const name = basename(file);
+    return this.importOutcome(basename(file));
+  }
+
+  private async importOutcome(name: string): Promise<ModelImport> {
     const status = this.page.locator(
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
@@ -500,6 +570,33 @@ export class EditorPage {
       item: (await status.getAttribute("data-item")) ?? "",
       text: (await status.locator("p").first().textContent()) ?? "",
     };
+  }
+
+  async searchPalette(query: string): Promise<void> {
+    await this.page.locator(".palette-search").fill(query);
+    await expect(this.page.locator(".palette-library")).toHaveAttribute(
+      "data-library-status",
+      "ready",
+      { timeout: READY_TIMEOUT_MS },
+    );
+  }
+
+  async libraryParts(): Promise<ReadonlyArray<string>> {
+    return this.page
+      .locator(".palette-library [data-library-part]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-library-part") ?? ""));
+  }
+
+  async pickLibraryPart(part: string, color: number): Promise<ModelImport> {
+    const swatch = this.page.locator(`.palette-library [data-library-item="${part}@${color}"]`);
+    const partInColor = await swatch.getAttribute("aria-label");
+    if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
+    await swatch.click();
+    return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async refs(): Promise<ReadonlyArray<string>> {
+    return (await this.editState()).world.refs;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {
@@ -522,6 +619,18 @@ export class EditorPage {
 
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
+  }
+
+  async trackRoutes(): Promise<ReadonlyArray<TrackRoute>> {
+    return (await this.editState()).routes;
+  }
+
+  async trainsOnRails(): Promise<number> {
+    return Number(await this.page.locator("section.play-panel").getAttribute("data-trains"));
+  }
+
+  async laidTrack(): Promise<ReadonlyArray<LaidTrackPiece>> {
+    return (await this.editState()).world.laidTrack;
   }
 
   private async planState(): Promise<PlanState> {
@@ -551,6 +660,13 @@ export class EditorPage {
   ): Promise<number> {
     return Number(await this.root.getAttribute(`data-${name}`));
   }
+}
+
+export function routeMiddle(route: TrackRoute): LatticePoint {
+  return {
+    x: Math.round((route.from.xLdu + route.to.xLdu) / 2 / STUD) * STUD,
+    z: Math.round((route.from.zLdu + route.to.zLdu) / 2 / STUD) * STUD,
+  };
 }
 
 export function nearestLattice(end: TrackEnd): LatticePoint {

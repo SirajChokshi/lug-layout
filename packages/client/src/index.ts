@@ -76,6 +76,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -86,6 +88,8 @@ export type {
   PlaceableCoverView,
   QueuedPlacement,
   SelectionView,
+  TrackSelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
@@ -168,6 +172,8 @@ export {
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_POOL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
@@ -179,8 +185,13 @@ export {
   HOTBAR,
   SCALE_BAR,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
   RollingDiagnosticsPanel,
@@ -222,6 +233,7 @@ export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export {
   toolHints,
+  trackBlockText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -253,6 +265,7 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  TrackBlockView,
   TrackDragView,
   SwitchLeverView,
   TrackEndView,
@@ -295,6 +308,18 @@ export type {
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
+export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
+export type {
+  ILibraryPartSearch,
+  LibrarySearchStatus,
+  LibrarySearchView,
+} from "./catalog/library-part-search.ts";
+export type {
+  ILibraryPartPlacer,
+  LibraryPlacementRefusal,
+  LibraryPlacementTarget,
+  LibraryPlacementView,
+} from "./catalog/library-part-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 export type { IPalette } from "./catalog/palette.ts";
 export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

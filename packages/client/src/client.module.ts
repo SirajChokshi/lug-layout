@@ -1,4 +1,5 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
@@ -21,7 +22,10 @@ import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { ScaleBar } from "./camera/scale-bar.ts";
+import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
+import { LibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import { LibraryPartSearch } from "./catalog/library-part-search.ts";
 import { Palette } from "./catalog/palette.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
@@ -50,6 +54,8 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
+import { RailYard } from "./trains/rail-yard.ts";
+import { VehicleIds } from "./trains/vehicle-ids.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
@@ -72,6 +78,8 @@ import {
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
   LIBRARY_CONNECTORS_BASE_URL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
@@ -91,6 +99,8 @@ import {
   SIM_WORKER_PORT,
   TRACK_SCENE,
   TRAIN_PLAY,
+  RAIL_YARD,
+  VEHICLE_IDS,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -99,6 +109,7 @@ import {
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
+  bind(ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
@@ -118,6 +129,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
+  bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())
     .inSingletonScope();
@@ -162,6 +175,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
+  bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
+  bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
   bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();

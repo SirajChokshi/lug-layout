@@ -1,4 +1,5 @@
 import {
+  STUD_LDU,
   commandActive,
   commandEnabled,
   type EditorActionId,
@@ -257,7 +258,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
-        Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
+        Undo{history.undoLabel === null ? "" : ` ${history.undoLabel}`} ({shortcutText("undo")})
       </button>
       <button
         type="button"
@@ -265,7 +266,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
-        Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
+        Redo{history.redoLabel === null ? "" : ` ${history.redoLabel}`} ({shortcutText("redo")})
       </button>
       <button
         type="button"
@@ -389,12 +390,38 @@ export function Inspector({
 }) {
   const { selection } = snapshot;
   if (!selection) return null;
+  if (selection.kind === "train") {
+    return (
+      <section className="inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        <dl>
+          <div>
+            <dt>Train</dt>
+            <dd>{itemLabel(snapshot, selection.item)}</dd>
+          </div>
+          <div>
+            <dt>Stands</dt>
+            <dd>on the rails</dd>
+          </div>
+          <div>
+            <dt>Vehicles</dt>
+            <dd>{selection.vehicles}</dd>
+          </div>
+          <div>
+            <dt>Length (studs)</dt>
+            <dd>{Math.round(selection.lengthLdu / STUD_LDU)}</dd>
+          </div>
+        </dl>
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      </section>
+    );
+  }
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       <dl>
         <div>
-          <dt>Model</dt>
+          <dt>{selection.kind === "track" ? "Track piece" : "Model"}</dt>
           <dd>{itemLabel(snapshot, selection.item)}</dd>
         </div>
         <div>
@@ -407,10 +434,12 @@ export function Inspector({
           <dt>Height (plates)</dt>
           <dd>{selection.yPlates}</dd>
         </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
+        {selection.kind === "model" && (
+          <div>
+            <dt>Rotation</dt>
+            <dd>{degrees(selection.rot)}</dd>
+          </div>
+        )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>
@@ -425,7 +454,9 @@ export function Inspector({
           </dd>
         </div>
       </dl>
-      <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      {selection.kind === "model" && (
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      )}
     </section>
   );
 }

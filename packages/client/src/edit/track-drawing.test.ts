@@ -13,7 +13,7 @@ import {
   solveClosure,
   type TrackSegment,
 } from "@brr/domain";
-import { lduFromMm, pose16, STUD_LDU, zeta16, type Pose16 } from "@brr/math";
+import { lduFromMm, pose16, STUD_LDU, zeta16, zeta16ToStuds, type Pose16 } from "@brr/math";
 import type { TrackShape } from "@brr/schema/bundle";
 import {
   INSTANCE_MATRIX_FLOATS,
@@ -36,12 +36,16 @@ import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
 import {
   TrackDrawing,
   type ClosureState,
+  type TrackBlockView,
+  type TrackDragView,
   type TrackEndView,
   type TrackFootprint,
+  type TrackRouteView,
 } from "./track-drawing.ts";
-import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
+import { seatsPending, trackObstacles, type TrackObstacles } from "./track-obstacles.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const NO_TRACK_PARTS = (): ReadonlySet<number> => new Set();
 const MM_PER_LDU = 1 / lduFromMm(1);
 const SHRINK_MM = 2;
 const RENDER_FLOAT_LDU = 1e-3;
@@ -126,17 +130,190 @@ function grow(extent: Extent, x: number, z: number): void {
   extent.maxZ = Math.max(extent.maxZ, z);
 }
 
+function commitDrag(layout: TrackDrawing) {
+  const outcome = layout.endDrag();
+  layout.applyTrack(outcome.change);
+  return {
+    laid: outcome.change.lay.length,
+    joined: outcome.goal !== null && layout.joinsAt(outcome.goal),
+    refusal: outcome.refusal,
+    blocked: outcome.blocked,
+  };
+}
+
+function layPiece(layout: TrackDrawing, catalogIndex: number, placement: Pose16): void {
+  layout.applyTrack(layout.pieceChange(catalogIndex, placement));
+}
+
 const container = new Container();
 let drawing: TrackDrawing;
 let footprints: ReadonlyArray<TrackFootprint>;
 let rendered: Extent;
+let ovalStrokes: ReadonlyArray<DrawnStroke>;
 
-function drag(from: readonly [number, number], to: readonly [number, number]): void {
-  const [fx, fz] = from;
-  const [tx, tz] = to;
-  drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
-  drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-  drawing.endDrag();
+type StudPoint = readonly [number, number];
+
+interface DrawnStroke {
+  readonly points: ReadonlyArray<StudPoint>;
+  readonly view: TrackDragView | null;
+  readonly ghost: ReturnType<TrackDrawing["ghost"]>;
+  readonly commit: ReturnType<typeof commitDrag>;
+  readonly laid: ReadonlyArray<TrackRouteView>;
+}
+
+const POINT_SPACING_STUDS = 1;
+const HAND_WOBBLE_STUDS = 1.5;
+const HAND_WAVELENGTHS_STUDS = [23, 61] as const;
+
+function linePoints(from: StudPoint, to: StudPoint): StudPoint[] {
+  const length = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  const steps = Math.max(1, Math.ceil(length / POINT_SPACING_STUDS));
+  return Array.from({ length: steps + 1 }, (_v, i): StudPoint => {
+    const t = i / steps;
+    return [from[0] + t * (to[0] - from[0]), from[1] + t * (to[1] - from[1])];
+  });
+}
+
+function arcPoints(centre: StudPoint, radius: number, fromDeg: number, toDeg: number): StudPoint[] {
+  const sweep = ((toDeg - fromDeg) * Math.PI) / 180;
+  const steps = Math.max(1, Math.ceil((Math.abs(sweep) * radius) / POINT_SPACING_STUDS));
+  return Array.from({ length: steps + 1 }, (_v, i): StudPoint => {
+    const angle = (fromDeg * Math.PI) / 180 + (sweep * i) / steps;
+    return [centre[0] + radius * Math.cos(angle), centre[1] + radius * Math.sin(angle)];
+  });
+}
+
+function chained(...parts: ReadonlyArray<ReadonlyArray<StudPoint>>): StudPoint[] {
+  return parts.flatMap((part, i) => (i === 0 ? part : part.slice(1)));
+}
+
+function byHand(points: ReadonlyArray<StudPoint>, phase: number): StudPoint[] {
+  let travelled = 0;
+  const arcs = points.map((point, i) => {
+    const previous = points[i - 1];
+    if (previous) travelled += Math.hypot(point[0] - previous[0], point[1] - previous[1]);
+    return travelled;
+  });
+  return points.map((point, i): StudPoint => {
+    const previous = points[Math.max(0, i - 1)] ?? point;
+    const next = points[Math.min(points.length - 1, i + 1)] ?? point;
+    const length = Math.hypot(next[0] - previous[0], next[1] - previous[1]) || 1;
+    const s = arcs[i] ?? 0;
+    const taper = Math.min(1, s / 8, (travelled - s) / 8);
+    const offset =
+      HAND_WOBBLE_STUDS *
+      taper *
+      HAND_WAVELENGTHS_STUDS.reduce(
+        (sum, wavelength) => sum + Math.sin((2 * Math.PI * s) / wavelength + phase) / 2,
+        0,
+      );
+    const nx = -(next[1] - previous[1]) / length;
+    const nz = (next[0] - previous[0]) / length;
+    return [point[0] + offset * nx, point[1] + offset * nz];
+  });
+}
+
+function drawStroke(layout: TrackDrawing, points: ReadonlyArray<StudPoint>): DrawnStroke {
+  const [first, ...rest] = points;
+  if (!first) throw new Error("a stroke has at least one point");
+  const before = layout.routes().length;
+  layout.beginDrag(
+    first[0] * STUD_LDU,
+    first[1] * STUD_LDU,
+    Math.round(first[0]) * STUD_LDU,
+    Math.round(first[1]) * STUD_LDU,
+  );
+  for (const [x, z] of rest) layout.moveDrag(x * STUD_LDU, z * STUD_LDU);
+  const view = layout.dragView();
+  const ghost = layout.ghost();
+  const commit = commitDrag(layout);
+  return { points, view, ghost, commit, laid: layout.routes().slice(before) };
+}
+
+function distanceToStroke(
+  points: ReadonlyArray<StudPoint>,
+  xStuds: number,
+  zStuds: number,
+): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (let i = 1; i < points.length; i++) {
+    const [ax, az] = points[i - 1] ?? [0, 0];
+    const [bx, bz] = points[i] ?? [0, 0];
+    const length2 = (bx - ax) ** 2 + (bz - az) ** 2;
+    const t =
+      length2 === 0
+        ? 0
+        : Math.min(
+            1,
+            Math.max(0, ((xStuds - ax) * (bx - ax) + (zStuds - az) * (bz - az)) / length2),
+          );
+    best = Math.min(best, Math.hypot(xStuds - (ax + t * (bx - ax)), zStuds - (az + t * (bz - az))));
+  }
+  return best;
+}
+
+function sameSpot(a: TrackEndView, b: TrackEndView): boolean {
+  return Math.abs(a.xLdu - b.xLdu) < COINCIDENT_LDU && Math.abs(a.zLdu - b.zLdu) < COINCIDENT_LDU;
+}
+
+function runEnd(laid: ReadonlyArray<TrackRouteView>): TrackEndView | null {
+  const last = laid.at(-1);
+  if (!last) return null;
+  const previous = laid.at(-2);
+  if (!previous) return last.to;
+  const joinsPrevious = (end: TrackEndView) =>
+    sameSpot(end, previous.from) || sameSpot(end, previous.to);
+  return joinsPrevious(last.from) ? last.to : last.from;
+}
+
+function furthestFromStroke(stroke: DrawnStroke): number {
+  const free = runEnd(stroke.laid);
+  let worst = 0;
+  for (const route of stroke.laid) {
+    for (const end of [route.from, route.to]) {
+      if (free && end === free) continue;
+      const away = distanceToStroke(stroke.points, end.xLdu / STUD_LDU, end.zLdu / STUD_LDU);
+      worst = Math.max(worst, away);
+    }
+  }
+  return worst;
+}
+
+function openEndNearest(layout: TrackDrawing, [x, z]: StudPoint): StudPoint {
+  const end = layout
+    .openEnds()
+    .reduce<TrackEndView | null>(
+      (best, e) =>
+        best &&
+        Math.hypot(best.xLdu / STUD_LDU - x, best.zLdu / STUD_LDU - z) <=
+          Math.hypot(e.xLdu / STUD_LDU - x, e.zLdu / STUD_LDU - z)
+          ? best
+          : e,
+      null,
+    );
+  if (!end) throw new Error("the layout has no open end");
+  return [end.xLdu / STUD_LDU, end.zLdu / STUD_LDU];
+}
+
+function handDrawnOval(layout: TrackDrawing, at: StudPoint): ReadonlyArray<DrawnStroke> {
+  const [x, z] = at;
+  const out = drawStroke(
+    layout,
+    byHand(
+      chained(
+        linePoints([x, z], [x + 64, z]),
+        arcPoints([x + 64, z + 40], 40, -90, 90),
+        linePoints([x + 64, z + 80], [x, z + 80]),
+      ),
+      0.4,
+    ),
+  );
+  const from = openEndNearest(layout, [x, z + 80]);
+  const back = drawStroke(
+    layout,
+    byHand(chained([from], arcPoints([x, z + 40], 40, 90, 270), [[x, z]]), 1.9),
+  );
+  return [out, back];
 }
 
 beforeAll(async () => {
@@ -147,10 +324,7 @@ beforeAll(async () => {
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
   drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  drag([180, 190], [260, 190]);
-  drag([260, 190], [260, 270]);
-  drag([260, 270], [180, 270]);
-  drag([180, 270], [180, 190]);
+  ovalStrokes = handDrawnOval(drawing, [180, 190]);
   footprints = Array.from({ length: drawing.pieceCount }, (_, p) => drawing.footprintAt(p));
   rendered = emptyExtent();
   for (const key of new Set(footprints.map((f) => f.key.chunkKey))) {
@@ -198,10 +372,15 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
   return issues.filter((issue) => issue.rule === "fit").length;
 }
 
-it("lays a closed oval of real 9V pieces from four drags", () => {
-  expect(drawing.pieceCount).toBe(26);
-  expect(drawing.joinedPairs()).toBe(26);
+it("closes an oval drawn by hand in two strokes, every piece within half a straight of the stroke", () => {
+  const halfStraight = Number(drawing.kit.straightStuds) / 2;
+  expect(ovalStrokes.map((stroke) => stroke.commit.blocked)).toEqual([null, null]);
+  expect(ovalStrokes.map((stroke) => stroke.commit.joined)).toEqual([false, true]);
   expect(drawing.openEnds()).toHaveLength(0);
+  expect(drawing.joinedPairs()).toBe(drawing.pieceCount);
+  for (const stroke of ovalStrokes) {
+    expect(furthestFromStroke(stroke)).toBeLessThanOrEqual(halfStraight);
+  }
 });
 
 it("gives the plan the same extent as the rendered geometry of the laid pieces", () => {
@@ -235,7 +414,7 @@ it("marks a drag target as joining only when the closure solver finds an exact j
       from[1] * STUD_LDU,
     );
     layout.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-    layout.endDrag();
+    commitDrag(layout);
   };
   const aim = (from: readonly [number, number], to: readonly [number, number]) => {
     layout.beginDrag(
@@ -281,7 +460,7 @@ it("starts a run drawn on open ground on the studs, facing a quarter turn, at an
     const run = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     run.beginDrag(0, 0, 0, 0);
     run.moveDrag(Math.cos(angle) * DRAG_STUDS * STUD_LDU, Math.sin(angle) * DRAG_STUDS * STUD_LDU);
-    expect(run.endDrag().laid).toBeGreaterThan(0);
+    expect(commitDrag(run).laid).toBeGreaterThan(0);
     const start = run.openEnds().find((end) => end.xLdu === 0 && end.zLdu === 0);
     if (start?.heading === undefined || start.heading % QUARTER_TURN_STEPS !== 0) {
       offGrid.push(`${((angle * 180) / Math.PI).toFixed(1)}°: ${JSON.stringify(start)}`);
@@ -319,7 +498,7 @@ it(
             const free = latticePose(x, z, heading);
             const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
             expect(snap.end).toBeNull();
-            yard.placePiece(part.catalogIndex, snap.placement);
+            layPiece(yard, part.catalogIndex, snap.placement);
           }
         }
       });
@@ -368,7 +547,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const snapAt = (piece: number, connector: number, end: { xLdu: number; zLdu: number }) => {
     const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, latticePose(0, 0));
     expect(snap.end).not.toBeNull();
-    siding.placePiece(piece, snap.placement);
+    layPiece(siding, piece, snap.placement);
   };
   const openEndNear = (xStuds: number, zStuds: number) => {
     const end = siding
@@ -378,7 +557,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
     return end;
   };
 
-  siding.placePiece(right, latticePose(0, 0));
+  layPiece(siding, right, latticePose(0, 0));
   snapAt(curve, 1, openEndNear(32.69, 12.96));
   const draw = (from: readonly [number, number], to: readonly [number, number]) => {
     siding.beginDrag(
@@ -388,7 +567,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
       from[1] * STUD_LDU,
     );
     siding.moveDrag(to[0] * STUD_LDU, to[1] * STUD_LDU);
-    return siding.endDrag();
+    return commitDrag(siding);
   };
   draw([32, 0], [80, 0]);
   snapAt(left, 1, openEndNear(80, 0));
@@ -400,7 +579,10 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   expect(siding.openEnds()).toHaveLength(2);
   expect(siding.gaps()).toHaveLength(0);
 
-  for (const lever of siding.switchLevers()) siding.throwSwitch(lever.placement);
+  for (const lever of siding.switchLevers()) {
+    const thrown = siding.switchThrow(lever.placement);
+    if (thrown) siding.applyTrack(thrown.change);
+  }
   expect(siding.switchLevers().map((s) => s.lever)).toEqual(["branching", "branching"]);
   expect(siding.joinedPairs()).toBe(8);
   expect(siding.openEnds()).toHaveLength(2);
@@ -442,7 +624,7 @@ function layRun(layout: TrackDrawing, start: Pose16, run: Run): Pose16 {
   for (const piece of placed) {
     const part = layout.kitParts().find((k) => k.def.id === piece.piece.id);
     if (!part) throw new Error(`${piece.piece.id} is not in the drawing kit`);
-    layout.placePiece(part.catalogIndex, piece.placement);
+    layPiece(layout, part.catalogIndex, piece.placement);
   }
   return end;
 }
@@ -585,6 +767,15 @@ function plateRect(parts: ReadonlyArray<PartAsset>, id: string, xStuds: number, 
   ] as const;
 }
 
+function plateObstacles(...rects: ReadonlyArray<Rect>): TrackObstacles {
+  return {
+    rects: Float64Array.from(rects.flat()),
+    owners: new Int32Array(rects.length),
+    unseated: new Uint8Array(rects.length),
+    labels: ["Road plate"],
+  };
+}
+
 function endAt(layout: TrackDrawing, xStuds: number, zStuds: number): TrackEndView {
   const end = layout
     .openEnds()
@@ -601,7 +792,7 @@ function closeFrom(layout: TrackDrawing, from: TrackEndView, to: TrackEndView) {
   const view = layout.dragView();
   const target = layout.dragTarget();
   const ghost = layout.ghost();
-  const commit = layout.endDrag();
+  const commit = commitDrag(layout);
   return { view, target, ghost, commit };
 }
 
@@ -659,7 +850,7 @@ it("routes a closure around a road plate in its way with no extra loop", async (
     { kind: "straight", count: 4 },
   ]);
   const plate = plateRect(bundle.parts, "ldraw:69958", -40, 40);
-  layout.setObstacles(Float64Array.from(plate), false);
+  layout.setObstacles(plateObstacles(plate), false);
   const top = endAt(layout, 0, 80);
   const bottom = endAt(layout, 0, 0);
   const fewest = unobstructedFewest(layout, top, bottom);
@@ -681,7 +872,7 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
-  layout.setObstacles(Float64Array.from(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)), false);
+  layout.setObstacles(plateObstacles(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)), false);
   const before = layout.pieceCount;
 
   const { view, target, ghost, commit } = closeFrom(
@@ -719,7 +910,7 @@ function snapOnto(layout: TrackDrawing, id: string, connector: number, end: Trac
   const piece = placeableIndex(layout, id);
   const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, studPose(0, 0, 0));
   if (snap.end === null) throw new Error(`${id} did not snap onto the open end`);
-  layout.placePiece(piece, snap.placement);
+  layPiece(layout, piece, snap.placement);
 }
 
 function sameEnd(a: TrackEndView, b: TrackEndView): boolean {
@@ -747,7 +938,7 @@ function addRung(layout: TrackDrawing, entry: TrackEndView) {
 }
 
 function buildLadder(layout: TrackDrawing, rungs: number): ReadonlyArray<TrackEndView> {
-  layout.placePiece(placeableIndex(layout, RIGHT_SWITCH), studPose(0, 0, 0));
+  layPiece(layout, placeableIndex(layout, RIGHT_SWITCH), studPose(0, 0, 0));
   const west = endAt(layout, 0, 0);
   const first = layout.openEnds().filter((e) => !sameEnd(e, west));
   const straight = first.find((e) => Math.abs(e.zLdu) < COINCIDENT_LDU);
@@ -843,7 +1034,7 @@ it("closes straights flush along a road plate's edge", async () => {
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, centreOffset),
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, -centreOffset),
   ];
-  layout.setObstacles(Float64Array.from(plates.flat()), false);
+  layout.setObstacles(plateObstacles(...plates), false);
 
   closesWithFewest(layout, endAt(layout, straightStuds, 0), endAt(layout, gapEnd, 0));
   expect(crossings(layout, bundle.parts, plates)).toEqual([]);
@@ -904,7 +1095,7 @@ it(
       }
       if (!rect) throw new Error(`no clear plate position at step ${step}`);
       const layout = base();
-      layout.setObstacles(Float64Array.from(rect), false);
+      layout.setObstacles(plateObstacles(rect), false);
       closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
       expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
     }
@@ -973,7 +1164,7 @@ async function trackOver(
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const range = layout.verticalRange();
-  layout.setObstacles(trackObstacleRects(ground, range), pendingSeats(range));
+  layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), pendingSeats(range));
   return layout;
 }
 
@@ -1081,4 +1272,218 @@ it("judges a road plate inside a model by the same geometry as one placed alone"
   const loose = await verdicts(alone);
   expect(loose).toEqual({ across: "blocked", beside: "exact" });
   expect(await verdicts(roadContainer)).toEqual(loose);
+});
+
+const RANDOM_STROKES = 40;
+const STROKE_SEED = 20261120;
+const QUARTER_TURN_DEGREES = 90;
+
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function curveRadiusStuds(layout: TrackDrawing): number {
+  const chord = zeta16ToStuds(layout.kit.left.delta);
+  return Math.hypot(chord.x, chord.z) / (2 * Math.sin(Math.PI / FULL_TURN_CURVES));
+}
+
+function randomStroke(random: () => number, minRadius: number): StudPoint[] {
+  let heading = Math.floor(random() * 4) * QUARTER_TURN_DEGREES;
+  let at: StudPoint = [0, 0];
+  const parts: StudPoint[][] = [[at]];
+  const segments = 2 + Math.floor(random() * 3);
+  for (let s = 0; s < segments; s++) {
+    const radians = (heading * Math.PI) / 180;
+    if (random() < 0.4) {
+      const length = 16 + random() * 64;
+      const to: StudPoint = [
+        at[0] + length * Math.cos(radians),
+        at[1] + length * Math.sin(radians),
+      ];
+      parts.push(linePoints(at, to));
+      at = to;
+      continue;
+    }
+    const radius = minRadius * (1 + 2 * random());
+    const side = random() < 0.5 ? 1 : -1;
+    const sweep = side * (30 + random() * 90);
+    const centre: StudPoint = [
+      at[0] - side * radius * Math.sin(radians),
+      at[1] + side * radius * Math.cos(radians),
+    ];
+    const from = heading - side * QUARTER_TURN_DEGREES;
+    const arc = arcPoints(centre, radius, from, from + sweep);
+    parts.push(arc);
+    at = arc.at(-1) ?? at;
+    heading += sweep;
+  }
+  return chained(...parts);
+}
+
+function strokeLengthStuds(points: ReadonlyArray<StudPoint>): number {
+  let length = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [ax, az] = points[i - 1] ?? [0, 0];
+    const [bx, bz] = points[i] ?? [0, 0];
+    length += Math.hypot(bx - ax, bz - az);
+  }
+  return length;
+}
+
+function centrelineStuds(routes: ReadonlyArray<TrackRouteView>): number {
+  return routes.reduce((sum, { from, to }) => {
+    const chord = Math.hypot(to.xLdu - from.xLdu, to.zLdu - from.zLdu) / STUD_LDU;
+    const turn = Math.abs(
+      Math.atan2(
+        Math.sin(to.headingRadians - from.headingRadians - Math.PI),
+        Math.cos(to.headingRadians - from.headingRadians - Math.PI),
+      ),
+    );
+    return sum + (turn === 0 ? chord : (chord * turn) / (2 * Math.sin(turn / 2)));
+  }, 0);
+}
+
+it(
+  "lays any drawable stroke along itself: no piece strays half a straight from it, and it lays no more than the stroke's length and one piece",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const halfStraight = Number(probe.kit.straightStuds) / 2;
+    const longestPiece = Math.max(...kitPieceLengthsStuds(bundle));
+    const random = seeded(STROKE_SEED);
+    const faults: string[] = [];
+    for (let trial = 0; trial < RANDOM_STROKES; trial++) {
+      const points = byHand(randomStroke(random, curveRadiusStuds(probe)), random() * 2 * Math.PI);
+      const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+      const stroke = drawStroke(layout, points);
+      const length = strokeLengthStuds(points);
+      const laidLength = centrelineStuds(stroke.laid);
+      if (stroke.commit.laid === 0) faults.push(`stroke ${trial} laid nothing`);
+      if (laidLength > length + longestPiece) {
+        faults.push(`stroke ${trial} laid ${laidLength.toFixed(1)} of ${length.toFixed(1)} studs`);
+      }
+      const worst = furthestFromStroke(stroke);
+      if (worst > halfStraight) faults.push(`stroke ${trial} strays ${worst.toFixed(1)} studs`);
+      const end = runEnd(stroke.laid);
+      const [lastX, lastZ] = points.at(-1) ?? [0, 0];
+      const reached = end
+        ? Math.hypot(end.xLdu / STUD_LDU - lastX, end.zLdu / STUD_LDU - lastZ)
+        : Number.POSITIVE_INFINITY;
+      if (stroke.commit.blocked === null && reached > longestPiece) {
+        faults.push(`stroke ${trial} ends ${reached.toFixed(1)} studs from its last point`);
+      }
+    }
+    expect(faults).toEqual([]);
+  },
+  SWEEP_TIMEOUT_MS,
+);
+
+type TrackBundle = Awaited<ReturnType<typeof trackAndRoadBundle>>;
+
+function kitPieceLengthsStuds(bundle: TrackBundle): ReadonlyArray<number> {
+  const probe = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  return probe.kitParts().map((part) => {
+    const alone = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    layPiece(alone, part.catalogIndex, studPose(0, 0, 0));
+    return centrelineStuds(alone.routes());
+  });
+}
+
+const CUSTOM_BRICK = "brick-2x4";
+const WALL_X_STUDS = 100;
+const WALL_HALF_STUDS = 48;
+const BRICK_STEP_STUDS = 4;
+const REFUSED_GHOST_COLOR = 4;
+
+interface CrossingCase {
+  readonly name: string;
+  readonly ground: () => Promise<ReadonlyArray<PlacedModel>>;
+  readonly track: (layout: TrackDrawing) => void;
+  readonly stroke: (layout: TrackDrawing) => ReadonlyArray<StudPoint>;
+  readonly blocked: TrackBlockView;
+}
+
+async function brickWall(): Promise<ReadonlyArray<PlacedModel>> {
+  const brick = await fixtureModel(CUSTOM_BRICK);
+  const items: GroundItem[] = [];
+  for (let z = -WALL_HALF_STUDS; z <= WALL_HALF_STUDS; z += BRICK_STEP_STUDS) {
+    items.push({ placeable: brick, x: WALL_X_STUDS * STUD_LDU, z: z * STUD_LDU });
+  }
+  return placeGround(items);
+}
+
+function groundRects(models: ReadonlyArray<PlacedModel>): ReadonlyArray<Rect> {
+  return models.map((model) => [model.box.minX, model.box.minZ, model.box.maxX, model.box.maxZ]);
+}
+
+const CROSSING_CASES: ReadonlyArray<CrossingCase> = [
+  {
+    name: "track laid across the stroke",
+    ground: async () => [],
+    track: (layout) =>
+      layRun(layout, studPose(WALL_X_STUDS, -WALL_HALF_STUDS, SOUTH), [
+        { kind: "straight", count: 6 },
+      ]),
+    stroke: () => linePoints([0, 0], [2 * WALL_X_STUDS, 0]),
+    blocked: { kind: "track" },
+  },
+  {
+    name: "a custom building of 2x4 bricks",
+    ground: brickWall,
+    track: () => {},
+    stroke: () => byHand(linePoints([0, 0], [2 * WALL_X_STUDS, 0]), 0.7),
+    blocked: { kind: "model", label: CUSTOM_BRICK, unseated: false },
+  },
+  {
+    name: "the stroke's own run, drawn round past its start",
+    ground: async () => [],
+    track: () => {},
+    stroke: (layout) => {
+      const radius = 1.5 * curveRadiusStuds(layout);
+      return arcPoints([0, radius], radius, -90, 360);
+    },
+    blocked: { kind: "run" },
+  },
+];
+
+it("stops a stroke before the first piece that would cross track, a custom building or itself, names it, and shows that piece red", async () => {
+  const bundle = await trackAndRoadBundle();
+  const observed = [];
+  for (const crossing of CROSSING_CASES) {
+    const colors = new ColorTable(bundle);
+    const layout = new TrackDrawing(bundle, bundle.parts, colors);
+    const ground = await crossing.ground();
+    const range = layout.verticalRange();
+    layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), seatsPending(ground, range));
+    crossing.track(layout);
+    const before = layout.pieceCount;
+    const { view, ghost, commit } = drawStroke(layout, crossing.stroke(layout));
+    const refused = ghost?.instances.colorIndex[commit.laid] ?? -1;
+    observed.push({
+      name: crossing.name,
+      shown: view?.blocked,
+      named: commit.blocked,
+      laidAsShown: commit.laid === view?.pieces && layout.pieceCount - before === commit.laid,
+      laidSome: commit.laid > 0,
+      ghostHasTheRefusedPiece: ghost?.instances.count === commit.laid + 1,
+      refusedColor: colors.codeAt(refused),
+      crossings: crossings(layout, bundle.parts, groundRects(ground)),
+    });
+  }
+  expect(observed).toEqual(
+    CROSSING_CASES.map((crossing) => ({
+      name: crossing.name,
+      shown: crossing.blocked,
+      named: crossing.blocked,
+      laidAsShown: true,
+      laidSome: true,
+      ghostHasTheRefusedPiece: true,
+      refusedColor: REFUSED_GHOST_COLOR,
+      crossings: [],
+    })),
+  );
 });

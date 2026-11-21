@@ -11,6 +11,8 @@ import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { ILibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import type { ILibraryPartSearch } from "./catalog/library-part-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
@@ -38,6 +40,8 @@ import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
+import type { IRailYard } from "./trains/rail-yard.ts";
+import type { IVehicleIds } from "./trains/vehicle-ids.ts";
 
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
@@ -60,6 +64,12 @@ export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
 );
 export const PALETTE_SEARCH: ServiceIdentifier<IPaletteSearch> = Symbol.for(
   "brr.client.PaletteSearch",
+);
+export const LIBRARY_PART_SEARCH: ServiceIdentifier<ILibraryPartSearch> = Symbol.for(
+  "brr.client.LibraryPartSearch",
+);
+export const LIBRARY_PART_PLACER: ServiceIdentifier<ILibraryPartPlacer> = Symbol.for(
+  "brr.client.LibraryPartPlacer",
 );
 export const PALETTE_DRAG: ServiceIdentifier<IPaletteDrag> = Symbol.for("brr.client.PaletteDrag");
 export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
@@ -99,6 +109,8 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
+export const RAIL_YARD: ServiceIdentifier<IRailYard> = Symbol.for("brr.client.RailYard");
+export const VEHICLE_IDS: ServiceIdentifier<IVehicleIds> = Symbol.for("brr.client.VehicleIds");
 export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symbol.for(
   "brr.client.PaletteMemoryStore",
 );

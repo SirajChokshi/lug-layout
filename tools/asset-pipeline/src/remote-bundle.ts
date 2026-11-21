@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { bundleFiles, CONTENT_HASH_HEX_DIGITS, MANIFEST_FILE } from "./publish.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
+import { bundleFiles, MANIFEST_FILE } from "./publish.ts";
 import { sha256Hex, type ObjectStore } from "./r2.ts";
 
 const IMMUTABLE = "public, max-age=31536000, immutable";

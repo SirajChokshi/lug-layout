@@ -1,4 +1,4 @@
-import type { PlacementHandle } from "@brr/domain";
+import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
 import type { BufferMemory, ChunkInstances, ISceneBackend, RebaseEvent } from "@brr/render";
 import { expect, it } from "vitest";
 import { ColorTable } from "../scene/viewer-scene.ts";
@@ -147,6 +147,8 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             changes: [
               { placement: { handle: null }, from: null, to: null, removed: handle, added: null },
             ],
+            consists: [],
+            track: NO_TRACK_CHANGE,
           },
           placeableOf,
         );
@@ -192,6 +194,8 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
                 added: handle,
               },
             ],
+            consists: [],
+            track: NO_TRACK_CHANGE,
           },
           placeableOf,
         );
