@@ -268,7 +268,8 @@ describe("world schema v1", () => {
           0n,
         ]),
       ),
-      yPlates: 0,
+      yPlates: heading % 3 === 0 ? 0 : heading * 5,
+      ...(heading % 4 === 1 ? { rise: heading % 8 === 1 ? 1 : -2 } : {}),
     }),
   );
 

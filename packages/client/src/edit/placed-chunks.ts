@@ -368,6 +368,19 @@ export function posedBox(box: LocalBox, x: number, z: number, yLdu: number, rot:
   return new LatticePose(x, z, rot).boxOf(box, yLdu);
 }
 
+export function posedCell(
+  x: number,
+  z: number,
+  rot: number,
+  localCellX: number,
+  localCellZ: number,
+  out: Int32Array,
+): void {
+  const pose = posingScratch.at(x, z, rot);
+  out[0] = pose.worldCellX(localCellX, localCellZ);
+  out[1] = pose.worldCellZ(localCellX, localCellZ);
+}
+
 export function posedPartBoxes(
   partBoxes: Float32Array,
   x: number,

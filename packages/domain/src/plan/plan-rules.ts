@@ -49,6 +49,7 @@ export type PlanRuleId =
   | "fit"
   | "crossesRegion"
   | "unsupported"
+  | "clearance"
   | "seam"
   | "reach"
   | "overlap"
@@ -68,6 +69,12 @@ export interface PlacementKey {
   readonly slot: number;
 }
 
+export interface PlateClearance {
+  readonly train: string;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+}
+
 export interface PlanPlacement {
   readonly key: PlacementKey;
   readonly ref: string;
@@ -75,6 +82,7 @@ export interface PlanPlacement {
   readonly box: LduRect;
   readonly unsupported?: boolean;
   readonly carriedTrackUnsupported?: boolean;
+  readonly lowClearance?: PlateClearance;
   readonly shape?: PlanShape | null;
   readonly outline?: TrackOutline | null;
   readonly carried?: CarriedTrack | null;
@@ -670,6 +678,7 @@ export function placementIssueCount(
   const maxX = box[offset + BOX_MAX_X] ?? Number.NaN;
   const maxZ = box[offset + BOX_MAX_Z] ?? Number.NaN;
   let count = rows.unsupported[row] === HELD ? 0 : 1;
+  if ((rows.clearanceNeed[row] ?? 0) > 0) count++;
   if (!(minX >= room.minX && maxX <= room.maxX && minZ >= room.minZ && maxZ <= room.maxZ)) count++;
   const obstacles = ctx.obstacleEdges;
   for (let i = 0; i < obstacles.length; i += RECT_STRIDE) {
@@ -833,6 +842,16 @@ export function placementIssues(
         "unsupported",
         [key],
         `${label} carries track that isn't held: none of that track's anti-studs sits on a stud, and it doesn't stand on the bare table.`,
+      ),
+    );
+  }
+  if (placement.lowClearance) {
+    const { train, needPlates, hasPlates } = placement.lowClearance;
+    out.push(
+      issue(
+        "clearance",
+        [key],
+        `${label} is too low for the tallest train: ${train} needs ${needPlates} plates, this bridge has ${hasPlates}.`,
       ),
     );
   }

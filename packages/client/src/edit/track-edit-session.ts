@@ -1,6 +1,14 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
 import type { TrackChange } from "@brr/domain";
-import { QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, pose16, zeta16, type Pose16 } from "@brr/math";
+import {
+  PLATE_LDU,
+  QUARTER_TURN_16,
+  STUD_LDU,
+  ZETA16_ORDER,
+  pose16,
+  zeta16,
+  type Pose16,
+} from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import type { CatalogItemView, IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
@@ -8,6 +16,7 @@ import { PLACEABLE_CATALOG, RAIL_YARD, TRACK_WORLD, WORLD_SESSION } from "../tok
 import type { IRailYard } from "../trains/rail-yard.ts";
 import { trackBlockText } from "./track-drag.ts";
 import {
+  RAMP_RATES,
   TRACK_SYSTEM,
   type JoinWithheld,
   type PieceSnap,
@@ -19,7 +28,8 @@ import {
 } from "./track-drawing.ts";
 import type { ExtensionRun, ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import type { Lever } from "./track-pieces.ts";
-import type { ITrackWorld, TrackUnsupportedView } from "./track-world.ts";
+import type { ITrackWorld, TrackLowClearanceView, TrackUnsupportedView } from "./track-world.ts";
+import type { TallestTrain } from "../trains/tallest-train.ts";
 import type { TurnDirection } from "./turn.ts";
 import type { SuggestedCrossing } from "./crossing-ramps.ts";
 import type { IWorldSession } from "./world-session.ts";
@@ -48,6 +58,8 @@ export type TrackCommitResult =
   | "refused-impossible"
   | "refused-blocked"
   | "refused-limit"
+  | "refused-too-steep"
+  | "refused-changed"
   | "switch-straight"
   | "switch-branching";
 
@@ -96,6 +108,19 @@ export interface TrackView {
   readonly unsupported: number | null;
   readonly crossings: ReadonlyArray<CrossingView>;
   readonly solve: TrackSolveStats | null;
+  readonly placingPiers: boolean;
+  readonly lowClearance: number | null;
+  readonly lastLowClearance: TrackLowClearanceView | null;
+  readonly height: TrackHeightView;
+}
+
+export interface TrackHeightView {
+  readonly drawingPlates: number;
+  readonly drawingLdu: number;
+  readonly rampPlates: number;
+  readonly rampRates: ReadonlyArray<number>;
+  readonly gradePercent: number;
+  readonly tallestTrain: TallestTrain | null;
 }
 
 export interface TrackEditView {
@@ -208,7 +233,13 @@ export interface ITrackEditSession {
   throwSwitch(piece: number, hitX: number, hitZ: number): SwitchAttempt;
   switchRefusal(piece: number, x: number, z: number): TrackClickRefusal | null;
   finishLay(lay: TrackLayRequest): void;
+  settleLay(lay: TrackLayRequest): void;
   finishThrow(thrown: SwitchThrowRequest): void;
+  piering(): boolean;
+  setPiering(on: boolean): void;
+  abandonLay(): void;
+  raise(plates: number): number | null;
+  setRampPlates(plates: number): boolean;
   interruptDrag(): void;
   clearEnds(): void;
   turnHeld(direction: TurnDirection): void;
@@ -254,6 +285,8 @@ export class TrackEditSession implements ITrackEditSession {
   private lastBlock: TrackBlockView | null = null;
   private lastWithheld: JoinWithheld | null = null;
   private lastUnsupported: TrackUnsupportedView | null = null;
+  private lastLow: TrackLowClearanceView | null = null;
+  private placingPiers = false;
 
   constructor(
     @inject(TRACK_WORLD) private readonly trackWorld: ITrackWorld,
@@ -332,7 +365,7 @@ export class TrackEditSession implements ITrackEditSession {
     );
     const snap = track.snapPiece(held.catalogIndex, held.connector, hitX, hitZ, free);
     this.held = { ...held, snap };
-    const ghost = track.pieceGhost(held.catalogIndex, snap.placement);
+    const ghost = track.pieceGhost(held.catalogIndex, snap.placement, snap.yPlates);
     this.backend.setGhost(ghost.instances);
     this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
     this.targetTrackEnds(snap.end === null ? [] : [snap.end], snap.misses);
@@ -370,6 +403,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.lastBlock = null;
     this.lastWithheld = null;
     this.lastUnsupported = null;
+    this.lastLow = null;
     this.backend.setGhost(null);
     this.showTrackEnds([]);
   }
@@ -443,6 +477,7 @@ export class TrackEditSession implements ITrackEditSession {
     if (!plan) return NOTHING;
     this.lastWithheld = null;
     this.lastUnsupported = null;
+    this.lastLow = null;
     if (plan.run.choice.blocked !== null) {
       this.lastCommit = null;
       this.lastBlock = plan.run.choice.blocked;
@@ -485,11 +520,12 @@ export class TrackEditSession implements ITrackEditSession {
     const track = this.trackWorld.drawing();
     const held = this.held;
     const snap = held?.snap;
-    if (!track || !held || !snap) return NOTHING;
+    if (!track || !held || !snap || this.placingPiers) return NOTHING;
     this.trackWorld.setObstacles();
-    const block = track.pieceBlock(held.catalogIndex, snap.placement);
+    const block = track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
     this.lastWithheld = null;
     this.lastUnsupported = null;
+    this.lastLow = null;
     if (block) {
       const label = track.pieceByIndex(held.catalogIndex).piece.title;
       this.lastCommit = null;
@@ -502,7 +538,8 @@ export class TrackEditSession implements ITrackEditSession {
     }
     const joinsBefore = track.joinedPairs();
     const firstLaid = track.pieceCount;
-    const change = track.pieceChange(held.catalogIndex, snap.placement);
+    const change = track.pieceChange(held.catalogIndex, snap.placement, snap.yPlates);
+    this.lastBlock = null;
     return {
       kind: "lay",
       lay: { change, sample: null, origin: { kind: "held", joinsBefore, firstLaid } },
@@ -554,18 +591,36 @@ export class TrackEditSession implements ITrackEditSession {
         this.lastCommit = origin.goal !== null && track.joinsAt(origin.goal) ? "joined" : "laid";
         track.extension.continueFrom(origin.end);
         this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
-        this.lastBlock = origin.blocked;
-        this.lastWithheld = origin.withheld;
+        this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
         return;
       case "extension":
         this.lastCommit = origin.goal !== null && track.joinsAt(origin.goal) ? "joined" : "laid";
         this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
+        this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
         track.extension.laid(origin.run, origin.end);
         return;
-      case "held": {
+      case "held":
         this.lastCommit = track.joinedPairs() > origin.joinsBefore ? "joined" : "laid";
-        this.lastBlock = null;
         this.lastUnsupported = this.trackWorld.unsupportedSince(origin.firstLaid);
+        this.lastLow = this.trackWorld.lowClearanceSince(origin.firstLaid);
+        return;
+      default: {
+        const unhandled: never = origin;
+        throw new Error(`unhandled lay origin ${String(unhandled)}`);
+      }
+    }
+  }
+
+  settleLay(lay: TrackLayRequest): void {
+    const { origin } = lay;
+    switch (origin.kind) {
+      case "drag":
+        this.lastBlock = origin.blocked;
+        this.lastWithheld = origin.withheld;
+        return;
+      case "extension":
+        return;
+      case "held": {
         const held = this.held;
         if (held) this.held = { ...held, snap: null };
         return;
@@ -575,6 +630,34 @@ export class TrackEditSession implements ITrackEditSession {
         throw new Error(`unhandled lay origin ${String(unhandled)}`);
       }
     }
+  }
+
+  piering(): boolean {
+    return this.placingPiers;
+  }
+
+  setPiering(on: boolean): void {
+    this.placingPiers = on;
+  }
+
+  abandonLay(): void {
+    this.lastCommit = "refused-changed";
+  }
+
+  raise(plates: number): number | null {
+    const track = this.trackWorld.drawing();
+    if (!track || this.worldSession.view().readOnly) return null;
+    const height = Math.max(0, track.drawingPlates + plates);
+    if (height === track.drawingPlates) return null;
+    track.setDrawingPlates(height);
+    return height;
+  }
+
+  setRampPlates(plates: number): boolean {
+    const track = this.trackWorld.drawing();
+    if (!track || this.worldSession.view().readOnly) return false;
+    track.setRampPlates(plates);
+    return true;
   }
 
   finishThrow(thrown: SwitchThrowRequest): void {
@@ -643,7 +726,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.backend.setTrackEnds(
       track.openEnds().map((end, index) => ({
         xLdu: end.xLdu,
-        yLdu: 0,
+        yLdu: track.bandBottomLdu(end.yPlates),
         zLdu: end.zLdu,
         headingRadians: end.heading * TRACK_HEADING_RADIANS,
         kind: targets.includes(index)
@@ -802,6 +885,17 @@ export class TrackEditSession implements ITrackEditSession {
       lastUnsupported: this.lastUnsupported,
       unsupported: this.trackWorld.unsupportedCount(),
       crossings: this.trackWorld.crossings().map((crossing) => this.crossingView(crossing)),
+      placingPiers: this.placingPiers,
+      lowClearance: this.trackWorld.lowClearanceCount(),
+      lastLowClearance: this.lastLow,
+      height: {
+        drawingPlates: track.drawingPlates,
+        drawingLdu: track.drawingPlates * PLATE_LDU,
+        rampPlates: track.rampPlates,
+        rampRates: RAMP_RATES,
+        gradePercent: track.gradePercent(),
+        tallestTrain: track.tallestTrain,
+      },
       solve:
         samples.length === 0
           ? null

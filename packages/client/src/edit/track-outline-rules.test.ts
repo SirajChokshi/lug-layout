@@ -112,6 +112,7 @@ function laidIn(
       piece: bundle.trackCatalog.pieces.indexOf(catalogPieceOf(bundle, partId)),
       pose,
       yPlates: 0,
+      rise: 0,
     })),
   };
   drawing.applyTrack(change);
