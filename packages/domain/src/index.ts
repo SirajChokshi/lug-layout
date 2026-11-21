@@ -457,6 +457,7 @@ export {
 } from "./plan/placed-outline.ts";
 export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
+  RoadSurfaceCells,
   levelCrossings,
   type CrossingTrack,
   type LevelCrossing,

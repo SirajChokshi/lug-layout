@@ -1,4 +1,4 @@
-import { STUD_LDU, rot90Cos, rot90Sin, type Rot90 } from "@brr/math";
+import { STUD_LDU, isRot90, rot90Cos, rot90Sin, type Rot90 } from "@brr/math";
 import type { CrossingRamp } from "@brr/schema/bundle";
 import { PlacedOutline, type AxisEdge, type OutlineRing } from "./plan/placed-outline.ts";
 import type { LduRect } from "./plan/plan-region.ts";
@@ -283,53 +283,119 @@ function rampCandidates(
   return valid.toSorted((a, b) => b.roadwayCovered - a.roadwayCovered);
 }
 
+interface CellRange {
+  readonly minX: number;
+  readonly maxX: number;
+  readonly minZ: number;
+  readonly maxZ: number;
+}
+
+function placedCellRange(placement: RoadPlacement): CellRange | null {
+  const { surface, rot } = placement;
+  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+  if (surface.rows === 0 || surface.columns === 0) return null;
+  const cos = rot90Cos(rot);
+  const sin = rot90Sin(rot);
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (const row of [0, surface.rows - 1]) {
+    for (const column of [0, surface.columns - 1]) {
+      const localX = surface.minX + column * STUD_LDU + HALF_STUD_LDU;
+      const localZ = surface.minZ + row * STUD_LDU + HALF_STUD_LDU;
+      const cellX = Math.floor((placement.x + cos * localX + sin * localZ) / STUD_LDU);
+      const cellZ = Math.floor((placement.z - sin * localX + cos * localZ) / STUD_LDU);
+      minX = Math.min(minX, cellX);
+      maxX = Math.max(maxX, cellX);
+      minZ = Math.min(minZ, cellZ);
+      maxZ = Math.max(maxZ, cellZ);
+    }
+  }
+  return { minX, maxX, minZ, maxZ };
+}
+
+export class RoadSurfaceCells {
+  private built: ReadonlyMap<number, SurfaceCell> | null = null;
+  private readonly ranges: ReadonlyArray<CellRange>;
+
+  constructor(private readonly roads: ReadonlyArray<RoadPlacement>) {
+    this.ranges = roads.flatMap((road) => placedCellRange(road) ?? []);
+  }
+
+  get empty(): boolean {
+    return this.roads.length === 0;
+  }
+
+  private underRoad(track: CrossingTrack): boolean {
+    const { bounds } = track.outline;
+    const minX = Math.floor(bounds.minX / STUD_LDU);
+    const maxX = Math.ceil(bounds.maxX / STUD_LDU) - 1;
+    const minZ = Math.floor(bounds.minZ / STUD_LDU);
+    const maxZ = Math.ceil(bounds.maxZ / STUD_LDU) - 1;
+    return this.ranges.some(
+      (range) =>
+        minX <= range.maxX && range.minX <= maxX && minZ <= range.maxZ && range.minZ <= maxZ,
+    );
+  }
+
+  crossings(
+    tracks: ReadonlyArray<CrossingTrack>,
+    rampParts: ReadonlyArray<RampPart>,
+  ): ReadonlyArray<LevelCrossing> {
+    if (!tracks.some((track) => this.underRoad(track))) return [];
+    this.built ??= surfaceCells(this.roads);
+    const cells = this.built;
+    const coveredBy = new Map<number, Set<number>>();
+    tracks.forEach((track, index) => {
+      for (const key of coveredRoadway(track, cells)) {
+        const set = coveredBy.get(key) ?? new Set<number>();
+        set.add(index);
+        coveredBy.set(key, set);
+      }
+    });
+    return components(new Set(coveredBy.keys())).map((group) => {
+      const members = new Set<number>();
+      const roadIds = new Set<number>();
+      for (const key of group) {
+        for (const track of coveredBy.get(key) ?? []) members.add(track);
+        const placement = cells.get(key)?.placement;
+        if (placement !== undefined) roadIds.add(placement);
+      }
+      const trackList = [...members].toSorted((a, b) => a - b);
+      const bed = cells.get(group[0] ?? 0)?.top;
+      const roadway = new Set<number>();
+      for (const [key, cell] of cells) {
+        if (cell.road && cell.top === bed && roadIds.has(cell.placement)) roadway.add(key);
+      }
+      const candidates: Candidate[] = [];
+      for (const index of trackList) {
+        const track = tracks[index];
+        if (!track) continue;
+        const edges = track.outline.axisEdges();
+        for (const part of rampParts) {
+          if (part.facts.highEdgeLdu !== track.railTopLdu) continue;
+          for (const rot of ROTATIONS) {
+            for (const edge of edges) {
+              candidates.push(...candidatesAlong(index, edge, part, rot));
+            }
+          }
+        }
+      }
+      return {
+        tracks: trackList,
+        roads: [...roadIds].toSorted((a, b) => a - b),
+        roadwayCells: group.length,
+        candidates: rampCandidates(candidates, tracks, roadway),
+      };
+    });
+  }
+}
+
 export function levelCrossings(
   roads: ReadonlyArray<RoadPlacement>,
   tracks: ReadonlyArray<CrossingTrack>,
   rampParts: ReadonlyArray<RampPart>,
 ): ReadonlyArray<LevelCrossing> {
-  const cells = surfaceCells(roads);
-  const coveredBy = new Map<number, Set<number>>();
-  tracks.forEach((track, index) => {
-    for (const key of coveredRoadway(track, cells)) {
-      const set = coveredBy.get(key) ?? new Set<number>();
-      set.add(index);
-      coveredBy.set(key, set);
-    }
-  });
-  return components(new Set(coveredBy.keys())).map((group) => {
-    const members = new Set<number>();
-    const roadIds = new Set<number>();
-    for (const key of group) {
-      for (const track of coveredBy.get(key) ?? []) members.add(track);
-      const placement = cells.get(key)?.placement;
-      if (placement !== undefined) roadIds.add(placement);
-    }
-    const trackList = [...members].toSorted((a, b) => a - b);
-    const bed = cells.get(group[0] ?? 0)?.top;
-    const roadway = new Set<number>();
-    for (const [key, cell] of cells) {
-      if (cell.road && cell.top === bed && roadIds.has(cell.placement)) roadway.add(key);
-    }
-    const candidates: Candidate[] = [];
-    for (const index of trackList) {
-      const track = tracks[index];
-      if (!track) continue;
-      const edges = track.outline.axisEdges();
-      for (const part of rampParts) {
-        if (part.facts.highEdgeLdu !== track.railTopLdu) continue;
-        for (const rot of ROTATIONS) {
-          for (const edge of edges) {
-            candidates.push(...candidatesAlong(index, edge, part, rot));
-          }
-        }
-      }
-    }
-    return {
-      tracks: trackList,
-      roads: [...roadIds].toSorted((a, b) => a - b),
-      roadwayCells: group.length,
-      candidates: rampCandidates(candidates, tracks, roadway),
-    };
-  });
+  return new RoadSurfaceCells(roads).crossings(tracks, rampParts);
 }

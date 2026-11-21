@@ -4,14 +4,13 @@ import {
   OUTLINE_BOX_FLOATS,
   PlacedOutline,
   convexHull,
-  levelCrossings,
   outlineBox,
+  type RoadSurfaceCells,
   type CrossingTrack,
   type LduRect,
   type LevelCrossing,
   type RampCandidate,
   type RampPart,
-  type RoadPlacement,
   type TrackClearance,
 } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf, rot90Cos, rot90Sin } from "@brr/math";
@@ -22,7 +21,7 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 import type { PlacedTrackPiece } from "./track-drawing.ts";
-import { cellKey, studSeats } from "./track-obstacles.ts";
+import { cellKey, studSeats, type StudSeats } from "./track-obstacles.ts";
 
 export interface SeatedRamp extends RampCandidate {
   readonly studMates: number;
@@ -63,7 +62,7 @@ function planHullOf(outline: RampPart["outline"]): Float64Array {
 }
 
 class LayoutProbe {
-  private readonly seats = new Map<number, ReadonlySet<number>>();
+  private readonly seats = new Map<number, StudSeats>();
   private readonly fields = new Map<string, TrackClearance>();
   private readonly box = new Float64Array(OUTLINE_BOX_FLOATS);
 
@@ -142,12 +141,12 @@ export class CrossingRamps {
   }
 
   suggest(
-    roads: ReadonlyArray<RoadPlacement>,
+    roads: RoadSurfaceCells,
     pieces: ReadonlyArray<PlacedTrackPiece>,
     models: ReadonlyArray<PlacedModel>,
     clearanceIn: ClearanceInBand,
   ): ReadonlyArray<SuggestedCrossing> {
-    if (roads.length === 0 || pieces.length === 0) return [];
+    if (roads.empty || pieces.length === 0) return [];
     const tracks = pieces.map((piece): CrossingTrack => {
       const railTopLdu = this.railTops.get(piece.system);
       if (railTopLdu === undefined) {
@@ -155,8 +154,7 @@ export class CrossingRamps {
       }
       return { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu };
     });
-    const crossings = levelCrossings(
-      roads,
+    const crossings = roads.crossings(
       tracks,
       this.ramps.map((ramp) => ramp.part),
     );
