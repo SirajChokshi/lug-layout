@@ -26,6 +26,11 @@ function ground(camera: ViewCamera, ndcX: number, ndcY: number): readonly [numbe
   return [originX + dirX * t, originZ + dirZ * t];
 }
 
+function unit(x: number, z: number): ReadonlyArray<number> {
+  const length = Math.hypot(x, z);
+  return [x / length, z / length];
+}
+
 function ray(camera: ViewCamera, ndcX: number, ndcY: number): ReadonlyArray<number> {
   const out = new Float64Array(6);
   camera.rayThrough(ndcX, ndcY, out);
@@ -50,6 +55,37 @@ describe.each<ViewMode>(["orbit", "plan"])("in the %s view", (mode) => {
     }
     expect(ground(camera, 0, 0)).not.toEqual(ground(settledCamera(mode), 0, 0));
   });
+
+  it.each([
+    [0, 0],
+    [140, -60],
+    [-610, 90],
+    [905, 30],
+  ])(
+    "a screen direction runs the way it does on the ground at the centre, orbited %d, %d",
+    (dx, dy) => {
+      const camera = settledCamera(mode);
+      camera.orbit(dx, dy);
+      camera.step(SETTLED_MS * 2);
+      const centre = ground(camera, 0, 0);
+      const toward = (ndcX: number, ndcY: number): ReadonlyArray<number> => {
+        const [x, z] = ground(camera, ndcX, ndcY);
+        return unit(x - centre[0], z - centre[1]);
+      };
+      const along = (rightPx: number, downPx: number): ReadonlyArray<number> => {
+        const { x, z } = camera.groundDirection(rightPx, downPx);
+        return unit(x, z);
+      };
+
+      for (const [screen, direction] of [
+        [toward(0.1, 0), along(1, 0)],
+        [toward(0, 0.1), along(0, -1)],
+      ] as const) {
+        expect(direction[0]).toBeCloseTo(screen[0] ?? 0, LDU_TOLERANCE_DIGITS);
+        expect(direction[1]).toBeCloseTo(screen[1] ?? 0, LDU_TOLERANCE_DIGITS);
+      }
+    },
+  );
 
   it("dragging the ground carries the grabbed point with the cursor", () => {
     const camera = settledCamera(mode);
