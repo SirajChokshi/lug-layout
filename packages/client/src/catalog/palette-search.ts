@@ -3,8 +3,9 @@ import { searchPalette, type PaletteResult } from "../commands/command-search.ts
 import type { CommandId } from "../commands/editor-commands.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
-import { CATALOG_SEARCH, EDITOR, PALETTE_MEMORY } from "../tokens.ts";
+import { CATALOG_SEARCH, EDITOR, LIBRARY_PART_SEARCH, PALETTE_MEMORY } from "../tokens.ts";
 import type { CatalogSearchStatus, ICatalogSearch } from "./catalog-search.ts";
+import type { ILibraryPartSearch, LibrarySearchView } from "./library-part-search.ts";
 import type { IPaletteMemory } from "./palette-memory.ts";
 import {
   PALETTE_CATEGORIES,
@@ -51,6 +52,7 @@ export interface PaletteSearchSnapshot {
   readonly hits: ReadonlyArray<PaletteRow>;
   readonly counts: ReadonlyMap<PaletteTab, number>;
   readonly status: CatalogSearchStatus;
+  readonly library: LibrarySearchView | null;
   readonly find: PaletteFind;
 }
 
@@ -66,9 +68,19 @@ interface IndexedCatalog {
   readonly catalog: EditorSnapshot["catalog"];
   readonly trackTerms: string;
   readonly index: PaletteIndex;
+  readonly offeredParts: ReadonlySet<string>;
 }
 
 const ELEMENT_NAMESPACE = /^[a-z]+:/u;
+const LDRAW_GROUP = "ldraw:";
+
+function offeredParts(catalog: EditorSnapshot["catalog"]): ReadonlySet<string> {
+  return new Set(
+    catalog.flatMap((item) =>
+      item.group.startsWith(LDRAW_GROUP) ? [item.group.slice(LDRAW_GROUP.length)] : [],
+    ),
+  );
+}
 
 function trackTerms(track: EditorSnapshot["track"]): ReadonlyArray<string> {
   return (track?.bom ?? []).flatMap((line) => [
@@ -88,6 +100,7 @@ function indexCatalog(
     catalog,
     trackTerms: key,
     index: new PaletteIndex(catalog, [{ entryKey: TRACK_ITEM_ID, terms }]),
+    offeredParts: previous?.catalog === catalog ? previous.offeredParts : offeredParts(catalog),
   };
 }
 
@@ -136,12 +149,14 @@ export class PaletteSearch implements IPaletteSearch {
     @inject(EDITOR) private readonly editor: Pick<IEditor, "snapshot" | "subscribe">,
     @inject(CATALOG_SEARCH) private readonly catalogSearch: ICatalogSearch,
     @inject(PALETTE_MEMORY) private readonly memory: Pick<IPaletteMemory, "snapshot" | "subscribe">,
+    @inject(LIBRARY_PART_SEARCH) private readonly library: ILibraryPartSearch,
   ) {
     this.indexed = indexCatalog(editor.snapshot(), null);
     this.state = this.searched();
     editor.subscribe(() => this.reindex());
     catalogSearch.subscribe(() => this.update());
     memory.subscribe(() => this.update());
+    library.subscribe(() => this.update());
   }
 
   subscribe(listener: () => void): () => void {
@@ -157,6 +172,7 @@ export class PaletteSearch implements IPaletteSearch {
     if (query === this.query) return;
     this.query = query;
     this.catalogSearch.search(query);
+    this.library.search(query, this.indexed.offeredParts);
     this.update();
   }
 
@@ -176,6 +192,7 @@ export class PaletteSearch implements IPaletteSearch {
     const next = indexCatalog(this.editor.snapshot(), this.indexed);
     if (next === this.indexed) return;
     this.indexed = next;
+    this.library.search(this.query, next.offeredParts);
     this.update();
   }
 
@@ -213,6 +230,7 @@ export class PaletteSearch implements IPaletteSearch {
         ["favorites", index.search(query, "all").filter(isFavorite).length],
       ]),
       status: results.status,
+      library: tab === "all" ? this.library.view() : null,
       find: (findQuery, enabled) =>
         searchPalette(findQuery, { catalog, index, recent: recents, enabled }),
     };

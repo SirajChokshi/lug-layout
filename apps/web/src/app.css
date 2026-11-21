@@ -548,6 +548,37 @@ footer {
   padding: 3px 4px;
 }
 
+.scene-labels {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.scene-label-text {
+  fill: var(--text-on-accent);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-label[data-kind="ruler"] .scene-label-pill {
+  fill: var(--accent);
+}
+
+.scene-label[data-kind="draft"] .scene-label-pill {
+  fill: var(--accent-hover);
+}
+
+.scene-label[data-kind="ghost"] .scene-label-pill {
+  fill: var(--text-primary);
+}
+
+.scene-label[data-kind="selection"] .scene-label-pill {
+  fill: rgb(204 112 0);
+}
+
 .toolbar-hint {
   grid-column: 1 / -1;
   margin: 0;
