@@ -5,14 +5,15 @@ import {
   importStudioFile,
   LibraryBakeStore,
   LibraryConnectorStore,
+  ShadowMirror,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
-  type IByteCache,
   type ImportResult,
   type PlacementListener,
   type ImportWorkerRequest,
   type IPartRecords,
+  type IShadowLibrary,
   type LdrawMirror,
   type LibraryBakeSource,
   type MirrorSource,
@@ -20,18 +21,18 @@ import {
   type PartConnectorSource,
   type RollingDiagnosticsRequest,
   type RollingDiagnosticsRows,
+  type ShadowLibrarySource,
 } from "@brr/import";
+import { ASSET_CACHE, type IAssetCache } from "@brr/storage";
 import { inject, injectable } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
 import type { ICompilerLoader } from "./compiler-loader.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
-  CONNECTOR_RECORD_CACHE,
   IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
-  RECORD_CACHE,
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
@@ -47,6 +48,7 @@ export type ModelImportEngineFactory = (
   connectors: PartConnectorSource,
   records: IPartRecords | null,
   helpers: ReadonlyArray<IBakeHelper>,
+  shadowLibrary: IShadowLibrary | null,
 ) => ModelImportEngine;
 
 @injectable()
@@ -54,6 +56,7 @@ export class ImportWorkerService implements IImportWorkerService {
   private readonly connectorStores = new Map<string, ConnectorRecords>();
   private readonly libraryConnectorStores = new Map<string, LibraryConnectorStore>();
   private readonly recordStores = new Map<string, IPartRecords>();
+  private readonly shadowMirrors = new Map<string, ShadowMirror>();
 
   constructor(
     @inject(COMPILER_LOADER) private readonly compilers: ICompilerLoader,
@@ -61,8 +64,7 @@ export class ImportWorkerService implements IImportWorkerService {
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
     @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
-    @inject(RECORD_CACHE) private readonly recordCache: IByteCache,
-    @inject(CONNECTOR_RECORD_CACHE) private readonly connectorRecordCache: IByteCache,
+    @inject(ASSET_CACHE) private readonly assetCache: IAssetCache,
   ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
@@ -92,12 +94,7 @@ export class ImportWorkerService implements IImportWorkerService {
     const key = `${source.url} ${source.pin.sha256}`;
     let store = this.libraryConnectorStores.get(key);
     if (store === undefined) {
-      store = new LibraryConnectorStore(
-        source.url,
-        source.pin,
-        this.fetchUrl,
-        this.connectorRecordCache,
-      );
+      store = new LibraryConnectorStore(source.url, source.pin, this.fetchUrl, this.assetCache);
       this.libraryConnectorStores.set(key, store);
     }
     const library = store.source({
@@ -112,10 +109,21 @@ export class ImportWorkerService implements IImportWorkerService {
     const key = `${source.url} ${source.pin.sha256}`;
     let store = this.recordStores.get(key);
     if (store === undefined) {
-      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.recordCache);
+      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.assetCache);
       this.recordStores.set(key, store);
     }
     return store;
+  }
+
+  private shadowLibrary(source: ShadowLibrarySource | undefined): IShadowLibrary | null {
+    if (source === undefined) return null;
+    const key = `${source.url} ${source.pin.sha256}`;
+    let mirror = this.shadowMirrors.get(key);
+    if (mirror === undefined) {
+      mirror = new ShadowMirror(source.url, source.pin, this.fetchUrl, this.assetCache);
+      this.shadowMirrors.set(key, mirror);
+    }
+    return mirror;
   }
 
   async rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows> {
@@ -134,7 +142,8 @@ export class ImportWorkerService implements IImportWorkerService {
     const records = this.partRecords(request.libraryBake);
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
-    const engine = this.createEngine(compiler, mirror, connectors, records, helpers);
+    const shadow = this.shadowLibrary(request.shadowLibrary);
+    const engine = this.createEngine(compiler, mirror, connectors, records, helpers, shadow);
     switch (input.kind) {
       case "ldraw":
         return engine.importText(input.job, onPlaced);

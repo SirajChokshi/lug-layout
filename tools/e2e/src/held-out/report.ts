@@ -63,16 +63,17 @@ const EXAMPLE_PARTS = 8;
 const BUDGET_INSTANCES = 10_000;
 const RECORD_INDEX_DIGITS = 16;
 const MAX_CLASS_ROWS = 25;
+const PLACEMENT_NOTE =
+  "Placement isn't checked per input here: the editor-path report in this workflow summary places generated pinned and holed module pairs through `IEditor`, in assist and precise modes.";
 
 interface Tally {
   pass: number;
   fail: number;
-  blocked: number;
   policy: number;
 }
 
 function tallyOf(inputs: ReadonlyArray<CheckedInput>, check: CheckId): Tally {
-  const tally: Tally = { pass: 0, fail: 0, blocked: 0, policy: 0 };
+  const tally: Tally = { pass: 0, fail: 0, policy: 0 };
   for (const input of inputs) {
     const outcome = input.checks.outcomes.get(check);
     if (!outcome || outcome.kind === "skipped") continue;
@@ -85,8 +86,6 @@ function cell(tally: Tally): string {
   const judged = tally.pass + tally.fail;
   const parts: string[] = [];
   if (judged > 0) parts.push(`${tally.pass}/${judged} pass`);
-  if (tally.blocked > 0)
-    parts.push(judged > 0 ? `${tally.blocked} blocked` : `blocked (${tally.blocked})`);
   if (tally.policy > 0) parts.push(`${tally.policy} refused by policy`);
   return parts.length === 0 ? "n/a" : parts.join(", ");
 }
@@ -126,7 +125,6 @@ function failures(input: CheckedInput): Array<readonly [CheckId, Finding]> {
   const out: Array<readonly [CheckId, Finding]> = [];
   for (const [check, outcome] of input.checks.outcomes) {
     if (outcome.kind === "fail") for (const finding of outcome.findings) out.push([check, finding]);
-    if (outcome.kind === "blocked") out.push([check, { bugClass: outcome.bugClass, parts: [] }]);
   }
   return out;
 }
@@ -394,12 +392,14 @@ export function markdownReport(context: RunContext, inputs: ReadonlyArray<Checke
     ...rows,
     total,
     "",
+    PLACEMENT_NOTE,
+    "",
     coverageLine(context.coverage),
     "",
     ...importTimeTable(context.importLimitSeconds, context.recordsIndex, inputs),
     ...readinessTable(timedInputs(inputs)),
     ...phaseTable(timedInputs(inputs), context.threadStartsMs),
-    ...classTable("Failures and blocks by bug class", classRows(inputs, failures)),
+    ...classTable("Failures by bug class", classRows(inputs, failures)),
     ...classTable("Refused by policy (expected)", classRows(inputs, policies)),
     ...classTable("Skipped and reported by the importer (never drawn, by design)", reported),
   ].join("\n");
