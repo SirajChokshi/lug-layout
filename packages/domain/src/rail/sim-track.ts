@@ -1,4 +1,4 @@
-import { NO_SWITCH } from "@brr/domain";
+import { NO_SWITCH } from "../track/track-graph.ts";
 import {
   placeSegments,
   reversedSegments,

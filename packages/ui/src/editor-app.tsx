@@ -73,6 +73,7 @@ function EditorState({ editor }: { readonly editor: IEditor }) {
         stats: snapshot.stats,
         measurement: snapshot.measurement,
         world: editor.dump(),
+        routes: editor.trackRoutes(),
       })}
     </pre>
   );
