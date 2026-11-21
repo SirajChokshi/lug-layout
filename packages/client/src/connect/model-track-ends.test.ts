@@ -76,7 +76,7 @@ function laid(
   for (const [[fx, fz], [tx, tz]] of drags) {
     drawing.beginDrag(fx * STUD_LDU, fz * STUD_LDU, fx * STUD_LDU, fz * STUD_LDU);
     drawing.moveDrag(tx * STUD_LDU, tz * STUD_LDU);
-    drawing.endDrag();
+    drawing.applyTrack(drawing.endDrag().change);
   }
   return drawing;
 }
@@ -444,7 +444,9 @@ describe("modelTrackEnds", () => {
     );
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
-    drawing.placePiece(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd));
+    drawing.applyTrack(
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd)),
+    );
     expect(drawing.joinedPairs()).toBe(internalJoins);
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });
