@@ -947,3 +947,187 @@ describe("PlacementSearch mate zones", () => {
     });
   });
 });
+
+function brickWithStudAndReceptor(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      table([
+        [f.stud, GENDER_MALE, HALF, BRICK_LDU, HALF, AXIS_POS_Y],
+        [f.receptor(BRICK_LDU - 4), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y],
+      ]),
+    ]),
+    volumes: columns(1, 1, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+  };
+}
+
+function bricksStepped(f: Fixture): Piece {
+  const lower = [0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU];
+  const upper = [STUD_LDU, BRICK_LDU, 0, 2 * STUD_LDU, 2 * BRICK_LDU, STUD_LDU];
+  return {
+    connectors: f.connectors([
+      table([[f.receptor(BRICK_LDU - 4), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y]]),
+      table([
+        [f.receptor(BRICK_LDU - 4), GENDER_FEMALE, STUD_LDU + HALF, BRICK_LDU, HALF, AXIS_NEG_Y],
+      ]),
+    ]),
+    volumes: boxVolumes(0, 0, 2, 1, [lower, upper]),
+    parts: partsOf([lower, upper]),
+  };
+}
+
+describe("PlacementSearch assist support", () => {
+  const WALL = 7;
+  const CEILING = 8;
+  const FLOOR = 9;
+  const PILLAR = 10;
+  const CEILING_UNDERSIDE_PLATES = 4;
+  const PILLAR_TOP_LDU = 4 * PLATE_LDU;
+  const HELD_PLATES = 1;
+  const NO_HIT = -1;
+
+  type Neighbour = "wall" | "ceiling" | "floor" | "pillar";
+
+  function scene(neighbours: ReadonlyArray<Neighbour>): Fixture {
+    const f = fixture();
+    const studAt = (top: number): Piece => ({
+      connectors: f.connectors([grid(1, 1, f.stud, GENDER_MALE, top, AXIS_POS_Y)]),
+      volumes: columns(1, 1, 0, top),
+      parts: partsOf([[0, 0, 0, STUD_LDU, top, STUD_LDU]]),
+    });
+    for (const neighbour of neighbours) {
+      switch (neighbour) {
+        case "wall":
+          place(f, WALL, {
+            connectors: f.connectors([null]),
+            volumes: columns(1, 1, 0, BRICK_LDU),
+            parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+          });
+          break;
+        case "ceiling":
+          place(f, CEILING, brickWithStudAndReceptor(f), {
+            x: STUD_LDU,
+            z: 0,
+            yPlates: CEILING_UNDERSIDE_PLATES,
+            rot: 0,
+          });
+          break;
+        case "floor":
+          place(f, FLOOR, studAt(PLATE_LDU), { x: 2 * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+          break;
+        case "pillar":
+          place(f, PILLAR, studAt(PILLAR_TOP_LDU), { x: 2 * STUD_LDU, z: 0, yPlates: 0, rot: 0 });
+          break;
+        default: {
+          const unknown: never = neighbour;
+          throw new Error(`no neighbour ${String(unknown)}`);
+        }
+      }
+    }
+    return f;
+  }
+
+  function sandwich(): Fixture {
+    const f = scene(["wall", "ceiling"]);
+    place(
+      f,
+      FLOOR,
+      {
+        connectors: f.connectors([grid(1, 1, f.stud, GENDER_MALE, PLATE_LDU, AXIS_POS_Y)]),
+        volumes: columns(1, 1, 0, PLATE_LDU),
+        parts: partsOf([[0, 0, 0, STUD_LDU, PLATE_LDU, STUD_LDU]]),
+      },
+      { x: STUD_LDU, z: 0, yPlates: 0, rot: 0 },
+    );
+    return f;
+  }
+
+  const outcome = (choice: PlacementChoice) => [
+    choice.accepted,
+    choice.x,
+    choice.yPlates,
+    choice.accepted ? NO_HIT : choice.overlap.owner,
+  ];
+
+  it.each([
+    {
+      name: "a nearer pose that only hangs from the ceiling and a farther one resting on the floor's stud",
+      f: () => scene(["ceiling", "floor"]),
+      held: brickWithStudAndReceptor,
+      cursorX: 0,
+      cells: 2,
+      chosen: [true, 2 * STUD_LDU, HELD_PLATES, NO_HIT],
+      atCursor: [false, 0, HELD_PLATES, NO_HIT],
+    },
+    {
+      name: "a cursor pose that only hangs and a resting pose within reach",
+      f: () => scene(["ceiling", "floor"]),
+      held: brickWithStudAndReceptor,
+      cursorX: STUD_LDU,
+      cells: 1,
+      chosen: [true, 2 * STUD_LDU, HELD_PLATES, NO_HIT],
+      atCursor: [true, STUD_LDU, HELD_PLATES, NO_HIT],
+    },
+    {
+      name: "held-out pair 4245, 3 in: the only mated pose in reach hangs from above, so assist keeps precise's refusal at the cursor",
+      f: () => scene(["wall", "ceiling"]),
+      held: brickWithStudAndReceptor,
+      cursorX: 0,
+      cells: 1,
+      chosen: [false, 0, HELD_PLATES, WALL],
+      atCursor: [false, 0, HELD_PLATES, WALL],
+    },
+    {
+      name: "held-out pair 78, flush: the only mated pose in reach takes a stud from below but presses its own studs up into a partner, so assist keeps precise's refusal at the cursor",
+      f: sandwich,
+      held: brickWithStudAndReceptor,
+      cursorX: 0,
+      cells: 1,
+      chosen: [false, 0, HELD_PLATES, WALL],
+      atCursor: [false, 0, HELD_PLATES, WALL],
+    },
+    {
+      name: "the only mated pose in reach takes a stud at the held model's upper layer while its lowest layer has nothing under it, so assist keeps precise's refusal at the cursor",
+      f: () => scene(["wall", "pillar"]),
+      held: bricksStepped,
+      cursorX: 0,
+      cells: 1,
+      chosen: [false, 0, HELD_PLATES, WALL],
+      atCursor: [false, 0, HELD_PLATES, WALL],
+    },
+    {
+      name: "a mated cursor pose that only hangs, which assist keeps as precise does",
+      f: () => scene(["ceiling"]),
+      held: brickWithStudAndReceptor,
+      cursorX: STUD_LDU,
+      cells: 1,
+      chosen: [true, STUD_LDU, HELD_PLATES, NO_HIT],
+      atCursor: [true, STUD_LDU, HELD_PLATES, NO_HIT],
+    },
+  ])(
+    "takes the nearest mated pose that rests on its lowest layer with nothing pressed up into a partner, and otherwise precise's verdict at the cursor: $name",
+    ({ f: build, held, cursorX, cells, chosen, atCursor }) => {
+      const f = build();
+      const piece = held(f);
+      const assist = choose(f, piece, window(cursorX, 0, cells, HELD_PLATES, 0));
+      const precise = choose(f, piece, window(cursorX, 0, 0, HELD_PLATES, 0));
+      expect({ assist: outcome(assist), precise: outcome(precise) }).toEqual({
+        assist: chosen,
+        precise: atCursor,
+      });
+    },
+  );
+
+  it("settles a sliced search on exactly the pose the whole search takes when it must walk past a nearer pose that only hangs", () => {
+    const once = scene(["ceiling", "floor"]);
+    const whole = choose(once, brickWithStudAndReceptor(once), window(0, 0, 2, HELD_PLATES, 0));
+    const f = scene(["ceiling", "floor"]);
+    const sliced = chooseInSlices(f, brickWithStudAndReceptor(f), window(0, 0, 2, HELD_PLATES, 0));
+    expect([sliced.choice.x, sliced.choice.yPlates, sliced.choice.accepted]).toEqual([
+      whole.x,
+      whole.yPlates,
+      whole.accepted,
+    ]);
+    expect([whole.x, sliced.slices > 1]).toEqual([2 * STUD_LDU, true]);
+  });
+});

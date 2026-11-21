@@ -1,9 +1,12 @@
 import {
+  AXIS_NEG_Y,
+  AXIS_POS_Y,
   CandidatePoses,
   FootprintGrid,
   MateReport,
   NO_OVERLAP,
   NO_PART_INSTANCE,
+  NO_SHAPE,
   ProposalProgress,
   VolumeIndex,
   firstOverlap,
@@ -32,6 +35,8 @@ import type { PartBoxes } from "./part-boxes.ts";
 import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+const ORIGIN_INTS = 3;
+const Y = 1;
 const NO_PLACEMENT = -1;
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
 
@@ -415,6 +420,34 @@ class RegionWindow implements SnapWindow {
   }
 }
 
+class Candidate {
+  found = false;
+  key = 0;
+  reach = 0;
+  joints = 0;
+  votes = 0;
+
+  reset(): void {
+    this.found = false;
+  }
+
+  consider(key: number, reach: number, joints: number, votes: number): void {
+    if (
+      this.found &&
+      (reach !== this.reach ||
+        joints < this.joints ||
+        (joints === this.joints && votes <= this.votes))
+    ) {
+      return;
+    }
+    this.found = true;
+    this.key = key;
+    this.reach = reach;
+    this.joints = joints;
+    this.votes = votes;
+  }
+}
+
 class Flight implements PlacementWindow {
   x = 0;
   z = 0;
@@ -435,11 +468,7 @@ class Flight implements PlacementWindow {
   revision = -1;
   keyCount = 0;
   nextKey = 0;
-  found = false;
-  bestKey = 0;
-  bestReach = 0;
-  bestJoints = 0;
-  bestVotes = 0;
+  readonly resting = new Candidate();
   coverAttempt = 0;
   coverStage = COVER_HELD;
   covering = false;
@@ -521,6 +550,8 @@ export class PlacementSearch implements IPlacementSearch {
   private readonly gridUses = new Map<FootprintGrid, number>();
   private moving = NO_PLACEMENT;
   private withheld = NO_PLACEMENTS;
+  private lowestModel: ModelConnectors | null = null;
+  private lowestY = Number.POSITIVE_INFINITY;
 
   constructor(
     @inject(CONNECTION_SOLVER) private readonly solver: ConnectionSolver,
@@ -708,10 +739,11 @@ export class PlacementSearch implements IPlacementSearch {
     out.walked = 0;
     this.atCursor(model, volumes, boxes, technic, window, window, tableYPlates, out);
     this.zones.clear();
+    const matedAtCursor = out.waitingOn === NOT_WAITING && out.accepted && out.votes > 0;
     if (
       out.waitingOn !== NOT_WAITING ||
-      (out.accepted && out.votes > 0) ||
-      !reachesBeyondCursor(window)
+      !reachesBeyondCursor(window) ||
+      (matedAtCursor && this.rests(model, this.pose, tableYPlates))
     ) {
       this.moving = NO_PLACEMENT;
       return SETTLED_AT_ONCE;
@@ -729,7 +761,7 @@ export class PlacementSearch implements IPlacementSearch {
     flight.keyCount = this.reachOrder(flight, tableYPlates);
     this.prepareMemo(model, flight.keyCount);
     flight.nextKey = 0;
-    flight.found = false;
+    flight.resting.reset();
     flight.coverAttempt = 0;
     flight.coverStage = COVER_HELD;
     flight.covering = false;
@@ -901,7 +933,7 @@ export class PlacementSearch implements IPlacementSearch {
       first = false;
       const key = this.keys[flight.nextKey++] ?? 0;
       const reach = this.decode(flight, key, pose);
-      if (flight.found && reach > flight.bestReach) {
+      if (flight.resting.found && reach > flight.resting.reach) {
         flight.nextKey = flight.keyCount;
         return true;
       }
@@ -918,29 +950,19 @@ export class PlacementSearch implements IPlacementSearch {
       const votes = dense + this.proposalAt(model, pose, slot);
       if (votes === 0) continue;
       out.walked++;
-      this.solver.evaluate(model, pose, this.tieReport);
-      const joints = this.tieReport.jointCount;
-      if (
-        !flight.found ||
-        joints > flight.bestJoints ||
-        (joints === flight.bestJoints && votes > flight.bestVotes)
-      ) {
-        flight.found = true;
-        flight.bestKey = key;
-        flight.bestReach = reach;
-        flight.bestJoints = joints;
-        flight.bestVotes = votes;
-      }
+      if (!this.rests(model, pose, flight.tableYPlates)) continue;
+      flight.resting.consider(key, reach, this.tieReport.jointCount, votes);
     }
     return true;
   }
 
   private finishWalk(flight: Flight): void {
     const out = flight.out;
-    if (!flight.found || !out) return;
+    const chosen = flight.resting;
+    if (!chosen.found || !out) return;
     const pose = this.pose;
-    this.decode(flight, flight.bestKey, pose);
-    this.chooseAt(out, pose, flight.bestVotes);
+    this.decode(flight, chosen.key, pose);
+    this.chooseAt(out, pose, chosen.votes);
     out.accepted = true;
   }
 
@@ -1005,6 +1027,35 @@ export class PlacementSearch implements IPlacementSearch {
     this.keys.fill(Number.POSITIVE_INFINITY, count);
     this.keys.sort();
     return count;
+  }
+
+  private rests(model: ModelConnectors, pose: LatticePose, tableYPlates: number): boolean {
+    const report = this.tieReport;
+    this.solver.evaluate(model, pose, report);
+    const lowest = this.lowestFacingDown(model);
+    let heldFromBelow = pose.yPlates === tableYPlates;
+    for (let k = 0; k < report.count; k++) {
+      if (report.shape[k] === NO_SHAPE) continue;
+      const connector = report.connector[k] ?? 0;
+      const axis = model.axis[connector];
+      if (axis === AXIS_POS_Y) return false;
+      if (axis === AXIS_NEG_Y && model.origin[connector * ORIGIN_INTS + Y] === lowest) {
+        heldFromBelow = true;
+      }
+    }
+    return heldFromBelow;
+  }
+
+  private lowestFacingDown(model: ModelConnectors): number {
+    if (model === this.lowestModel) return this.lowestY;
+    let lowest = Number.POSITIVE_INFINITY;
+    for (let c = 0; c < model.count; c++) {
+      if (model.axis[c] !== AXIS_NEG_Y) continue;
+      lowest = Math.min(lowest, model.origin[c * ORIGIN_INTS + Y] ?? lowest);
+    }
+    this.lowestModel = model;
+    this.lowestY = lowest;
+    return lowest;
   }
 
   private decode(window: PlacementWindow, key: number, out: Pose): number {
