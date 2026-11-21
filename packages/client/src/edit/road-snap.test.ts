@@ -1,7 +1,7 @@
-import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
+import { NO_STUD, RoadFit, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { ANY_TURN, cellExtent, snapToRoadEdge } from "./road-snap.ts";
+import { ANY_TURN, cellExtent, coveredCells, coversRoad, snapToRoadEdge } from "./road-snap.ts";
 
 const STUD = 20;
 const PLATE_SPAN = 640;
@@ -57,14 +57,10 @@ describe("road-edge snap", () => {
       );
       expect(snap).not.toBeNull();
       if (!snap) continue;
-      const fit = network.fit({
-        id: 1,
-        x: snap.x,
-        z: snap.z,
-        yLdu: 0,
-        rot: snap.rot,
-        surface: curve,
-      });
+      const fit = network.fit(
+        { id: 1, x: snap.x, z: snap.z, yLdu: 0, rot: snap.rot, surface: curve },
+        new RoadFit(),
+      );
       expect(fit.mismatchedCells).toBe(0);
       expect(fit.joinedRoadCells).toBeGreaterThan(0);
       expect(snap.joinedRoadCells).toBe(fit.joinedRoadCells);
@@ -113,10 +109,154 @@ describe("road-edge snap", () => {
     const sideX = cellExtent(straight).maxX;
     for (const cursorZ of [-260, -60, 0, 140, 300]) {
       const snap = snapToRoadEdge(network, extents, curve, 0, 1, 0, sideX + 300, cursorZ, ANY_TURN);
-      expect(snap?.joinedRoadCells).toBe(0);
-      expect(snap?.x).toBe(sideX + PLATE_SPAN / 2);
-      expect(snap?.z).toBe(straight.z);
+      expect(snap).toEqual({
+        x: sideX + PLATE_SPAN / 2,
+        z: straight.z,
+        rot: 2,
+        metCells: 32,
+        joinedCells: 0,
+        joinedRoadCells: 0,
+      });
     }
+  });
+
+  it("never snaps a crossroads beside a straight's sidewalk, where every turn would butt a road end into it", () => {
+    const crossroads = roadBaseplate("44343");
+    const sideX = cellExtent(straight).maxX;
+    for (const preferred of QUARTER_TURNS) {
+      for (const cursorZ of [-260, 0, 300]) {
+        const snap = snapToRoadEdge(
+          network,
+          extents,
+          crossroads,
+          preferred,
+          1,
+          0,
+          sideX + 300,
+          cursorZ,
+          ANY_TURN,
+        );
+        expect(snap).toBeNull();
+      }
+    }
+  });
+
+  it("snaps a clean road join whether or not a crossroads beside it is flush with its corner", () => {
+    const turned: RoadPlacement = { ...straight, rot: 3 };
+    for (const crossroadsX of [-640, -660, -720]) {
+      const crossroads: RoadPlacement = {
+        id: 1,
+        x: crossroadsX,
+        z: -PLATE_SPAN,
+        yLdu: 0,
+        rot: 3,
+        surface: roadBaseplate("44343"),
+      };
+      const both = world([turned, crossroads]);
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        0,
+        1,
+        0,
+        -400,
+        -160,
+        ANY_TURN,
+      );
+      expect(snap).toMatchObject({ x: -PLATE_SPAN, z: 0, joinedRoadCells: 20 });
+    }
+  });
+
+  it("never snaps a piece onto the footprint of a road plate raised above it, where the joining pose isn't there", () => {
+    const raised: RoadPlacement = { ...straight, id: 1, z: PLATE_SPAN, yLdu: 8 };
+    const both = world([straight, raised]);
+    for (const preferred of QUARTER_TURNS) {
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        preferred,
+        1,
+        0,
+        0,
+        openEnd + 200,
+        ANY_TURN,
+      );
+      expect(snap).toBeNull();
+    }
+  });
+
+  it("snaps a piece flush against a road plate at a sub-stud phase, joining its road end, never into it or short of it", () => {
+    for (const offsetZ of [-7, 7]) {
+      const offset: RoadPlacement = { ...straight, id: 1, x: PLATE_SPAN, z: PLATE_SPAN + offsetZ };
+      const both = world([straight, offset]);
+      const snap = snapToRoadEdge(
+        both.network,
+        both.extents,
+        straight.surface,
+        0,
+        1,
+        0,
+        PLATE_SPAN + 80,
+        0,
+        ANY_TURN,
+      );
+      expect(snap).toEqual({
+        x: PLATE_SPAN,
+        z: offsetZ,
+        rot: 0,
+        metCells: 32,
+        joinedCells: 32,
+        joinedRoadCells: 20,
+      });
+    }
+  });
+
+  it("counts the held piece's exact cells inside other road pieces' footprints once each, on every side and at any whole-LDU offset", () => {
+    const ghost = cellExtent({ ...straight, x: 0, z: 0 });
+    const piece = (x: number, z: number) => cellExtent({ ...straight, id: 1, x, z });
+    const half = PLATE_SPAN / 2;
+    expect(coveredCells([piece(half, 0)], ghost, 0, 0)).toBe(16 * 32);
+    expect(coveredCells([piece(PLATE_SPAN, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(PLATE_SPAN - 7, 0)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(PLATE_SPAN + 7, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(PLATE_SPAN, 0)], ghost, 7, 0)).toBe(32);
+    expect(coveredCells([piece(-(PLATE_SPAN - 7), 0)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(-PLATE_SPAN, 0)], ghost, -7, 0)).toBe(32);
+    expect(coveredCells([piece(-PLATE_SPAN, 0)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(0, PLATE_SPAN - 7)], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(0, -(PLATE_SPAN - 7))], ghost, 0, 0)).toBe(32);
+    expect(coveredCells([piece(PLATE_SPAN, PLATE_SPAN)], ghost, 0, 0)).toBe(0);
+    expect(coveredCells([piece(-2 * PLATE_SPAN, -2 * PLATE_SPAN)], ghost, 0, 0)).toBe(0);
+    expect(
+      coveredCells([piece(half, 0), piece(-2 * PLATE_SPAN, 2 * PLATE_SPAN)], ghost, 0, 0),
+    ).toBe(16 * 32);
+    expect(coveredCells([piece(7 - half, 0), piece(7 + half, 0)], ghost, 0, 0)).toBe(32 * 32);
+  });
+
+  it("finds a road footprint under the held piece down to a 1 LDU sliver on every side, and none flush beside it", () => {
+    const ghost = cellExtent({ ...straight, x: 0, z: 0 });
+    const piece = (x: number, z: number) => [cellExtent({ ...straight, id: 1, x, z })];
+    const near = PLATE_SPAN - 1;
+    const covering = [
+      [near, 0],
+      [-near, 0],
+      [0, near],
+      [0, -near],
+      [near, near],
+    ] as const;
+    const clear = [
+      [PLATE_SPAN, 0],
+      [PLATE_SPAN + 1, 0],
+      [-PLATE_SPAN, 0],
+      [PLATE_SPAN, PLATE_SPAN],
+      [near, -PLATE_SPAN],
+    ] as const;
+    for (const [x, z] of covering)
+      expect(coversRoad(piece(x, z), ghost, 0, 0), `${x}, ${z}`).toBe(true);
+    for (const [x, z] of clear)
+      expect(coversRoad(piece(x, z), ghost, 0, 0), `${x}, ${z}`).toBe(false);
   });
 
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {
@@ -133,7 +273,7 @@ describe("road-edge snap", () => {
         openEnd + 200,
         ANY_TURN,
       );
-      expect(snap?.joinedRoadCells ?? 0).toBe(0);
+      expect(snap).toBeNull();
     }
   });
 });

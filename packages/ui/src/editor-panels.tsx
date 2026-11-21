@@ -674,10 +674,11 @@ function snapText(snapshot: EditorSnapshot): string {
     case "snapped":
       return snap.joinedRoadCells > 0
         ? `snapped, lanes join on ${snap.joinedRoadCells} of ${snap.joinedCells} edge cells`
-        : `snapped beside a sidewalk, ${snap.joinedCells} edge cells join`;
+        : `snapped beside a sidewalk, ${snap.metCells} edge cells meet`;
     case "free":
-      return snap.joinedCells > 0
-        ? `exact here, ${snap.joinedCells} edge cells join`
+      if (snap.joinedCells > 0) return `exact here, ${snap.joinedCells} edge cells join`;
+      return snap.metCells > 0
+        ? `exact here, ${snap.metCells} edge cells meet`
         : "free, touches no road";
     case "refused":
       return `click refused: ${snap.mismatchedCells} mismatched, ${snap.overlappingCells} overlapping cells`;
