@@ -1221,6 +1221,7 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
 
 const READ_ONLY_REFUSED: ReadonlyArray<CommandId> = [
   "rotate",
+  "nudge-right",
   "delete",
   "duplicate",
   "draw-track",
@@ -1284,6 +1285,10 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+  const held = { poses: posesOf(editor), turns: turnsOf(editor) };
+  editor.moveSelectionTo(40, 0, 0);
+  editor.turnSelectedModelTo(2, 0);
+  expect({ poses: posesOf(editor), turns: turnsOf(editor) }).toEqual(held);
 }, 120_000);
 
 function dragTrack(
@@ -2713,7 +2718,169 @@ async function rowBesideBaseplate() {
   return started;
 }
 
+function rowBetweenPlates(poses: ReadonlyArray<string>, refusal: unknown = null) {
+  return { poses, refusal, undoDepth: 4, turns: [0, 0, 0], pivotStuds: { x: 32, z: 0 } };
+}
+
 describe("selection groups", () => {
+  it("sets a user's model's position in studs and its rotation from the properties panel through placement, refusing a collision, each edit one undo step, and moves a group by the pivot it turns about, kept through a turn, a typed move and a drag", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(BASEPLATE, 1300, 0);
+    await place(HELD_ROW, 640, 2000);
+    expect(selectAt(editor, backend, 640, 2000)?.item).toBe(HELD_ROW);
+    const outcome = () => ({
+      ...editOutcome(editor),
+      turns: turnsOf(editor),
+      pivotStuds: editor.snapshot().selection?.pivotStuds,
+    });
+    const start = outcome();
+
+    editor.moveSelectionTo(32, 0, 0);
+    const between = outcome();
+    editor.moveSelectionTo(31.5, 0, 0);
+    editor.moveSelectionTo(2 ** 27, 0, 0);
+    const offLatticeOrWorld = outcome();
+    editor.moveSelectionTo(31, 0, 0);
+    const oneIn = outcome();
+    editor.turnSelectedModelTo(1, 0);
+    const quarter = outcome();
+    editor.turnSelectedModelTo(3, 0);
+    const threeQuarters = outcome();
+    editor.turnSelectedModelTo(2, 0);
+    const half = outcome();
+    editor.turnSelectedModelTo(0, 0);
+    const back = outcome();
+    const undone = [0, 1, 2].map(() => {
+      editor.undo(0);
+      return { poses: posesOf(editor), turns: turnsOf(editor) };
+    });
+    boxSelect(editor, backend, [-400, -400], [1700, 400]);
+    editor.turnSelectedModelTo(1, 0);
+    const group = outcome();
+    editor.rotate(0, 1);
+    const groupTurned = outcome();
+    editor.moveSelectionTo(33, 10, 0);
+    const groupMoved = outcome();
+    dragGroup(editor, backend, [660, 860], [860, 860]);
+    const groupDragged = outcome();
+
+    const plates = [`${BASEPLATE} 0,0 y0`, `${BASEPLATE} 1300,0 y0`];
+    const betweenPoses = [...plates, `${HELD_ROW} 640,0 y0`].toSorted();
+    expect({
+      start,
+      between,
+      oneIn,
+      offLatticeOrWorld,
+      quarter,
+      threeQuarters,
+      half,
+      back,
+      undone,
+      group,
+      groupTurned,
+      groupMoved,
+      groupDragged,
+    }).toEqual({
+      start: {
+        poses: [...plates, `${HELD_ROW} 640,2000 y0`].toSorted(),
+        refusal: null,
+        undoDepth: 3,
+        turns: [0, 0, 0],
+        pivotStuds: { x: 32, z: 100 },
+      },
+      between: rowBetweenPlates(betweenPoses),
+      oneIn: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't move it there\\. .*${OVERLAP}`, "u")),
+      ),
+      offLatticeOrWorld: rowBetweenPlates(betweenPoses),
+      quarter: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't turn to 90°\\. .*${OVERLAP}`, "u")),
+      ),
+      threeQuarters: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't turn to 270°\\. .*${OVERLAP}`, "u")),
+      ),
+      half: { ...rowBetweenPlates(betweenPoses), undoDepth: 5, turns: [0, 0, 2] },
+      back: { ...rowBetweenPlates(betweenPoses), undoDepth: 6 },
+      undone: [
+        { poses: betweenPoses, turns: [0, 0, 2] },
+        { poses: betweenPoses, turns: [0, 0, 0] },
+        { poses: start.poses, turns: [0, 0, 0] },
+      ],
+      group: { ...start, pivotStuds: { x: 33, z: 0 } },
+      groupTurned: {
+        poses: [
+          `${BASEPLATE} 660,660 y0`,
+          `${BASEPLATE} 660,-640 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 4,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 33, z: 0 },
+      },
+      groupMoved: {
+        poses: [
+          `${BASEPLATE} 660,860 y0`,
+          `${BASEPLATE} 660,-440 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 5,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 33, z: 10 },
+      },
+      groupDragged: {
+        poses: [
+          `${BASEPLATE} 860,860 y0`,
+          `${BASEPLATE} 860,-440 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 6,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 43, z: 10 },
+      },
+    });
+  }, 120_000);
+
+  it("turns a model from the properties panel about the origin R turns it on, where 10190-1's overhang puts its footprint's lattice centre a stud away", async () => {
+    const overhanging = "10190-1";
+    const held = `omr:${overhanging}`;
+    const { editor, backend, catalog } = await startEditor(
+      [overhanging],
+      new BundleDirectoryFetcher(),
+      [],
+    );
+    await loadCatalogItem(catalog, held);
+    await placer(editor, backend)(held, 0, 0);
+    const selected = selectAt(editor, backend, 0, 0);
+    if (!selected) throw new Error(`${held} was not selected`);
+    const centre = [
+      nearestStud((selected.box.minX + selected.box.maxX) / 2),
+      nearestStud((selected.box.minZ + selected.box.maxZ) / 2),
+    ];
+
+    const turned = [1, 3, 2, 0].map((rot) => {
+      editor.turnSelectedModelTo(rot, 0);
+      return { ...editOutcome(editor), turns: turnsOf(editor) };
+    });
+
+    expect(centre).not.toEqual([0, 0]);
+    expect(turned).toEqual(
+      [1, 3, 2, 0].map((rot, step) => ({
+        poses: [`${held} 0,0 y0`],
+        refusal: null,
+        undoDepth: step + 2,
+        turns: [rot],
+      })),
+    );
+  }, 120_000);
+
   it("drags a user's model through placement: it lands flush beside a 3811, is refused one stud in, shows each pose as it goes, and Esc leaves it where it was", async () => {
     const { editor, backend } = await rowBesideBaseplate();
     const place = placer(editor, backend);
@@ -2776,11 +2943,11 @@ describe("selection groups", () => {
     const nudgeOffered = commandEnabled("nudge-left", editor.snapshot());
     const before = editOutcome(editor);
 
-    editor.nudgeSelection(-20, 0, 0);
+    editor.moveSelectionBy(-20, 0, 0);
     const oneStud = editOutcome(editor);
-    editor.nudgeSelection(-20, 0, 0);
+    editor.moveSelectionBy(-20, 0, 0);
     const flush = editOutcome(editor);
-    editor.nudgeSelection(-20, 0, 0);
+    editor.moveSelectionBy(-20, 0, 0);
     const oneIn = editOutcome(editor);
     editor.undo(0);
     const undoneOnce = posesOf(editor);
@@ -3078,7 +3245,7 @@ describe("selection groups with laid track", () => {
 
     const partial = boxSelect(editor, backend, [-520, -200], [-140, 500]);
     const partialPieces = pieceCentres(editor);
-    editor.nudgeSelection(STUD, 0, 0);
+    editor.moveSelectionBy(STUD, 0, 0);
     const nudgeOff = groupOutcome(editor);
     editor.rotate(0, 1);
     const turnOff = groupOutcome(editor);
@@ -3086,7 +3253,7 @@ describe("selection groups with laid track", () => {
     const whole = boxSelect(editor, backend, [-520, -200], [520, 500]);
     const wholeTitle = toolHints(editor.snapshot()).title;
     const before = groupOutcome(editor);
-    editor.nudgeSelection(0, STUD, 0);
+    editor.moveSelectionBy(0, STUD, 0);
     const nudged = groupOutcome(editor);
     editor.undo(0);
     const nudgeUndone = groupOutcome(editor);
@@ -3184,7 +3351,7 @@ describe("selection groups with laid track", () => {
     const { editor, backend } = await brickBesideRun();
     boxSelect(editor, backend, [-520, -200], [520, 500]);
     const laid = groupOutcome(editor);
-    editor.nudgeSelection(0, STUD, 0);
+    editor.moveSelectionBy(0, STUD, 0);
     const nudged = groupOutcome(editor);
     editor.rotate(0, 1);
     const turned = groupOutcome(editor);
@@ -3208,7 +3375,7 @@ describe("selection groups with laid track", () => {
 
     const slid = dragGroup(editor, backend, [16 * STUD, 0], [0, 0]);
     const joined = groupOutcome(editor);
-    editor.nudgeSelection(STUD, 0, 0);
+    editor.moveSelectionBy(STUD, 0, 0);
     const nudgeOff = groupOutcome(editor);
     editor.copySelection();
     editor.pasteClipboard();
@@ -3265,6 +3432,44 @@ describe("selection groups with laid track", () => {
     });
   }, 120_000);
 
+  it("moves a lone laid piece from the properties panel by its centre in studs until it joins the open end, refuses pulling it off that join, and offers it no model rotation", async () => {
+    const { editor, backend } = await startEditor([]);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [-8 * STUD, 0]);
+    dragTrack(editor, backend, [8 * STUD, 0], [24 * STUD, 0]);
+    editor.chooseItem(null);
+    expect(selectAt(editor, backend, 16 * STUD, 0)?.item).toBe(STRAIGHT_PIECE);
+    const pivot = () => editor.snapshot().selection?.pivotStuds;
+    const apart = { ...groupOutcome(editor), pivotStuds: pivot() };
+
+    editor.moveSelectionTo(0, 0, 0);
+    const joined = { ...groupOutcome(editor), pivotStuds: pivot() };
+    editor.turnSelectedModelTo(1, 0);
+    const turned = { ...groupOutcome(editor), pivotStuds: pivot() };
+    editor.moveSelectionTo(1, 0, 0);
+    const pulled = { ...groupOutcome(editor), pivotStuds: pivot() };
+
+    expect({ apart: apart.pivotStuds, joined, pulled, turned }).toEqual({
+      apart: { x: 16, z: 0 },
+      joined: {
+        ...apart,
+        joins: 1,
+        openEnds: 2,
+        undo: "move",
+        undoDepth: apart.undoDepth + 1,
+        pieces: ["0,0"],
+        pivotStuds: { x: 0, z: 0 },
+      },
+      pulled: {
+        ...joined,
+        refusal: expect.stringMatching(
+          /^Can't move it there\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+      turned: joined,
+    });
+  }, 120_000);
+
   it("keeps a selected piece selected through a redo that lifts a piece laid before it", async () => {
     const { editor, backend } = await startEditor([]);
     editor.chooseItem(TRACK_ITEM_ID);
@@ -3307,7 +3512,7 @@ describe("selection groups with laid track", () => {
     const joined = groupOutcome(editor);
 
     expect(selectAt(editor, backend, 0, 0)?.item).toBe(SET);
-    editor.nudgeSelection(outward[1] * STUD, outward[0] * STUD, 0);
+    editor.moveSelectionBy(outward[1] * STUD, outward[0] * STUD, 0);
     const setAlone = groupOutcome(editor);
     toggleAt(editor, backend, [
       from[0] + (outward[0] * reach) / 2,
@@ -3315,7 +3520,7 @@ describe("selection groups with laid track", () => {
     ]);
     const pair = groupOutcome(editor);
     const [dx, dz] = [outward[1] * STUD, outward[0] * STUD];
-    editor.nudgeSelection(dx, dz, 0);
+    editor.moveSelectionBy(dx, dz, 0);
     const together = groupOutcome(editor);
     const ontoModule = dragGroup(editor, backend, [0, 0], [0, 1600]).gesture;
     const left = groupOutcome(editor);
