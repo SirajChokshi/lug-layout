@@ -10,6 +10,8 @@ export type {
   GeometrySet,
   GraphicsApi,
   GroundSettings,
+  GuideKind,
+  GuideSegment,
   ISceneBackend,
   IThumbnailRenderer,
   LdrawColor,
@@ -34,6 +36,10 @@ export {
   DEFAULT_LOOK_FEATURES,
   INSTANCE_MATRIX_FLOATS,
   LOOK_FEATURES,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
   RAY_FLOATS,
 } from "./scene-backend.ts";
 export { SCENE_BACKEND, THUMBNAIL_RENDERER } from "./tokens.ts";

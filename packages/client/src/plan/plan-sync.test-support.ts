@@ -190,6 +190,8 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.boxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}

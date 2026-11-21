@@ -11,6 +11,8 @@ import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { ILibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import type { ILibraryPartSearch } from "./catalog/library-part-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
@@ -62,6 +64,12 @@ export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
 );
 export const PALETTE_SEARCH: ServiceIdentifier<IPaletteSearch> = Symbol.for(
   "brr.client.PaletteSearch",
+);
+export const LIBRARY_PART_SEARCH: ServiceIdentifier<ILibraryPartSearch> = Symbol.for(
+  "brr.client.LibraryPartSearch",
+);
+export const LIBRARY_PART_PLACER: ServiceIdentifier<ILibraryPartPlacer> = Symbol.for(
+  "brr.client.LibraryPartPlacer",
 );
 export const PALETTE_DRAG: ServiceIdentifier<IPaletteDrag> = Symbol.for("brr.client.PaletteDrag");
 export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(

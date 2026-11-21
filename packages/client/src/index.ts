@@ -9,7 +9,14 @@ export type {
   RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
-export { DEFAULT_LOOK_FEATURES, LOOK_FEATURES } from "@brr/render";
+export {
+  DEFAULT_LOOK_FEATURES,
+  LOOK_FEATURES,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
+} from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type {
   FarModelSummary,
@@ -165,6 +172,8 @@ export {
   EDITOR_CAMERA,
   IMPORT_SCENE,
   IMPORT_WORKER_POOL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
@@ -263,6 +272,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {
@@ -298,6 +308,18 @@ export type {
 } from "./bom/bom-service.ts";
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
+export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
+export type {
+  ILibraryPartSearch,
+  LibrarySearchStatus,
+  LibrarySearchView,
+} from "./catalog/library-part-search.ts";
+export type {
+  ILibraryPartPlacer,
+  LibraryPlacementRefusal,
+  LibraryPlacementTarget,
+  LibraryPlacementView,
+} from "./catalog/library-part-placer.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 export type { IPalette } from "./catalog/palette.ts";
 export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

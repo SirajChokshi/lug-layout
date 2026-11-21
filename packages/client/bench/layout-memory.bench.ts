@@ -8,6 +8,7 @@ import {
   type EdgeMarker,
   type FarModelPlacement,
   type FrameStats,
+  type GuideSegment,
   type GroundSettings,
   type ISceneBackend,
   type LookSettings,
@@ -328,6 +329,12 @@ class WindowlessBackend implements ISceneBackend {
   }
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.scene.setIssueBoxes(boxes);
+  }
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    this.scene.setGuides(segments);
+  }
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
+    this.scene.projectToNdc(x, y, z, out, offset);
   }
   aim(x: number, z: number): void {
     this.aimX = x;
