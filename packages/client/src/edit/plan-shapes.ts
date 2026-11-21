@@ -1,10 +1,15 @@
 import { RECT_FLOATS, type CellVolumes, type PlanShape } from "@brr/domain";
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin, type Rot90 } from "@brr/math";
 import { FrozenVolumes, type PlaceableColumns } from "../connect/placeable-volumes.ts";
+import type { PlaceableCells } from "./placeable.ts";
 
 const QUARTER_TURNS = 4;
 const NO_CELL = -1;
-const REST_PLANE_LDU = 0;
+const NO_INSTANCES: ReadonlySet<number> = new Set();
+
+export interface ShapeSource extends PlaceableColumns {
+  readonly cells: PlaceableColumns["cells"] & Pick<PlaceableCells, "footing">;
+}
 
 interface CellGrid {
   readonly cellX0: number;
@@ -15,10 +20,11 @@ interface CellGrid {
 
 interface CachedShapes {
   readonly volumes: CellVolumes;
+  readonly without: ReadonlySet<number>;
   readonly byTurn: Array<PlanShape | null | undefined>;
 }
 
-const cache = new WeakMap<PlaceableColumns, CachedShapes>();
+const cache = new WeakMap<ShapeSource, CachedShapes>();
 
 function gridOf(volumes: CellVolumes): CellGrid {
   let x0 = Number.POSITIVE_INFINITY;
@@ -51,11 +57,22 @@ function chosenCells(
   return chosen;
 }
 
-function footingCells(volumes: CellVolumes, grid: CellGrid): Uint8Array {
-  let lowest = Number.POSITIVE_INFINITY;
-  for (let c = 0; c < volumes.count; c++) lowest = Math.min(lowest, volumes.bottomLdu[c] ?? 0);
-  const standing = Math.max(lowest, REST_PLANE_LDU);
-  return chosenCells(volumes, grid, (c) => (volumes.bottomLdu[c] ?? 0) <= standing);
+function footingCells(
+  source: ShapeSource,
+  grid: CellGrid,
+  without: ReadonlySet<number>,
+): Uint8Array {
+  const { cells } = source;
+  const { instance, cell } = cells.footing;
+  const chosen = new Uint8Array(grid.width * grid.depth);
+  for (let k = 0; k < cell.length; k++) {
+    if (without.has(instance[k] ?? -1)) continue;
+    const c = cell[k] ?? 0;
+    const i = cells.cellX0 + (c % cells.width) - grid.cellX0;
+    const j = cells.cellZ0 + Math.floor(c / cells.width) - grid.cellZ0;
+    chosen[j * grid.width + i] = 1;
+  }
+  return chosen;
 }
 
 function coverRects(grid: CellGrid, chosen: Uint8Array): number[] {
@@ -105,7 +122,12 @@ function turnedRects(grid: CellGrid, rects: ReadonlyArray<number>, rot: Rot90): 
   return out;
 }
 
-function buildShape(volumes: CellVolumes, rot: Rot90): PlanShape | null {
+function buildShape(
+  source: ShapeSource,
+  volumes: CellVolumes,
+  without: ReadonlySet<number>,
+  rot: Rot90,
+): PlanShape | null {
   if (volumes.count === 0) return null;
   const grid = gridOf(volumes);
   const occupancy = coverRects(
@@ -113,24 +135,29 @@ function buildShape(volumes: CellVolumes, rot: Rot90): PlanShape | null {
     chosenCells(volumes, grid, () => true),
   );
   return {
-    footing: turnedRects(grid, coverRects(grid, footingCells(volumes, grid)), rot),
+    footing: turnedRects(grid, coverRects(grid, footingCells(source, grid, without)), rot),
     occupancy: turnedRects(grid, occupancy, rot),
   };
 }
 
-export function planShapeOf(source: PlaceableColumns, rot: number): PlanShape | null {
+export function planShapeOf(
+  source: ShapeSource,
+  rot: number,
+  without: ReadonlySet<number> = NO_INSTANCES,
+): PlanShape | null {
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
   let cached = cache.get(source);
-  if (!cached) {
+  if (!cached || cached.without !== without) {
     cached = {
       volumes: FrozenVolumes.ofPlaceable(source),
+      without,
       byTurn: Array.from<PlanShape | null | undefined>({ length: QUARTER_TURNS }),
     };
     cache.set(source, cached);
   }
   const known = cached.byTurn[rot];
   if (known !== undefined) return known;
-  const shape = buildShape(cached.volumes, rot);
+  const shape = buildShape(source, cached.volumes, without, rot);
   cached.byTurn[rot] = shape;
   return shape;
 }

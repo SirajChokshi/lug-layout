@@ -105,6 +105,10 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
+    footing: {
+      instance: Uint32Array.from(cells.footing.instance),
+      cell: Uint32Array.from(cells.footing.cell),
+    },
   };
 }
 

@@ -97,6 +97,7 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
         placeable: { id: "ldraw:3811", label: "3811" },
         box: unreadable,
         shape: null,
+        carried: null,
         facts: emptyFacts(),
       },
     ],
