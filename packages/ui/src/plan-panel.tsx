@@ -515,6 +515,8 @@ const PLAN_CHECKS = {
   trackJoin: "Track ends that meet join exactly",
   trackUnverified: "Every track part's connector poses are verified",
   trackUnidentified: "Every model's track sits on exact track poses",
+  trackOffTable: "Laid track stands on the tables, by its outline",
+  trackSeam: "No laid track piece's body spans a table seam; a joint may sit on one",
 } satisfies Record<CheckedRule, string>;
 
 function isCheckedRule(rule: string): rule is CheckedRule {
