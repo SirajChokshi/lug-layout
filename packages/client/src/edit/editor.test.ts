@@ -232,6 +232,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.readPartConnectors(lod, partId);
   }
 
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.loader.prefetchPartConnectors(lod);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.loader.loadConnectivityAttribution(lod);
   }
@@ -1248,53 +1252,51 @@ it("has an import's connector tables before it is announced placeable, and keeps
   });
 }, 120_000);
 
-it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
+it("resolves a click queued while the held item's tables load, over an import whose studs are being checked, exactly as one made once they have loaded, and the refused click after it alike", async () => {
   const outcome = async (queued: boolean) => {
-    const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>
-      path.includes("/connectivity-44336p01."),
-    );
-    const baseplateGate = new HeldText(roadPlateGate, (path) =>
-      path.includes("/connectivity-3811."),
-    );
-    const { editor, backend } = await checkingImport(baseplateGate);
+    const gate = heldConnectivity();
+    const { editor, backend } = await checkingImport(gate);
     const item = await importChecking(editor);
     await placer(editor, backend)(item, 0, 0);
-    const clicks: Array<[string, HeldText]> = [
-      [BASEPLATE, baseplateGate],
-      [ROAD_PLATE, roadPlateGate],
-    ];
-    for (const [held, gate] of clicks) {
-      if (queued) {
-        placerNow(editor, backend)(held, 0, 0);
-        gate.open();
-        await settledChoice(editor);
-      } else {
-        gate.open();
-        await placer(editor, backend)(held, 0, 0);
-      }
+    let atClick: EditorSnapshot["queuedPlacement"] = null;
+    if (queued) {
+      placerNow(editor, backend)(BASEPLATE, 0, 0);
+      atClick = editor.snapshot().queuedPlacement;
+      gate.open();
+      await settledChoice(editor);
+    } else {
+      gate.open();
+      await placer(editor, backend)(BASEPLATE, 0, 0);
     }
+    await placer(editor, backend)(ROAD_PLATE, 0, 0);
     const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
       editor.snapshot();
     return {
-      placements,
-      refusedClicks,
-      reason: lastRefusal?.reason ?? null,
-      studChecks,
-      queuedPlacement,
-      poses: posesOf(editor),
+      atClick,
+      settled: {
+        placements,
+        refusedClicks,
+        reason: lastRefusal?.reason ?? null,
+        studChecks,
+        queuedPlacement,
+        poses: posesOf(editor),
+      },
     };
   };
 
   const [queued, direct] = [await outcome(true), await outcome(false)];
 
-  expect(queued).toEqual(direct);
-  expect(queued).toMatchObject({
+  expect(queued).toEqual({
+    atClick: expect.objectContaining({ item: BASEPLATE }),
+    settled: direct.settled,
+  });
+  expect(queued.settled).toMatchObject({
     placements: 2,
     refusedClicks: 1,
     studChecks: 1,
     queuedPlacement: null,
   });
-  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+  expect(queued.settled.poses).toContain(`${BASEPLATE} 0,0 y32`);
 }, 120_000);
 
 it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
@@ -2364,6 +2366,9 @@ it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a ch
   });
 }, 120_000);
 
+const CONNECTOR_INDEX = /\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u;
+const CONNECTOR_PACK = /\/(connectivity|connectors)-pack\.[0-9a-f]+\.json$/u;
+
 class WithoutConnectorRecordsFor implements IAssetFetcher {
   constructor(
     private readonly files: IAssetFetcher,
@@ -2376,10 +2381,20 @@ class WithoutConnectorRecordsFor implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     const text = await this.files.text(path);
-    if (!/\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u.test(path)) return text;
-    const index = JSON.parse(text) as { parts: Record<string, unknown> };
+    if (CONNECTOR_INDEX.test(path)) return JSON.stringify(this.withdrawn(JSON.parse(text)));
+    if (!CONNECTOR_PACK.test(path)) return text;
+    const pack = JSON.parse(text) as { files: Record<string, unknown> };
+    const files = Object.entries(pack.files).map(([name, file]) => [
+      name,
+      CONNECTOR_INDEX.test(`/${name}`) ? this.withdrawn(file) : file,
+    ]);
+    return JSON.stringify({ ...pack, files: Object.fromEntries(files) });
+  }
+
+  private withdrawn(file: unknown): unknown {
+    const index = file as { parts: Record<string, unknown> };
     const { [this.partId]: _withdrawn, ...parts } = index.parts;
-    return JSON.stringify({ ...index, parts });
+    return { ...index, parts };
   }
 }
 
@@ -2413,7 +2428,7 @@ class HeldText implements IAssetFetcher {
 }
 
 function heldConnectivity(): HeldText {
-  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-3811."));
+  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-pack."));
 }
 
 it("places nothing while an item's connector tables load, and places a click made meanwhile once they load", async () => {

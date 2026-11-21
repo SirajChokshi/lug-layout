@@ -233,6 +233,12 @@ It reads the package indexes and records with `ConnectorRecords`, the loader the
 
 **Held-out.** The held-out workflow runs `library-connectors --check`, and its harness reads `dist/library-connectors` from disk.
 
+## Connector packs
+
+`publishBundle` also writes each connector package as one file, `connectivity-pack.<sha>.json` and `connectors-pack.<sha>.json` (`ConnectorPackFile`): `{ package, files }`, where `files` maps the package's published index and every record it lists, by their content-addressed names, to their JSON exactly as published. The two packages stay in separate packs, so the CC BY-SA connectivity data never shares a file with the CA-licensed records. The manifest names them in `connectorPacks`, which is optional, so a manifest published before packs still loads.
+
+The editor's bundle loader reads a manifest's packs instead of the per-part files. `ConnectorRecords` reads the index and records out of them, with the same tier order and vocabulary refusals. `PlaceableCatalog.start` asks for both packs (`prefetchPartConnectors`) once the palette is in, so the first pick of a set reads no connector file. For the standard LOD that is two requests of about 130 KB and 20 KB gzipped (1.4 MB and 0.25 MB raw), where a set used to need one request per record file. A pack that fails to load is fetched again on the next read. Without `connectorPacks` the loader reads the per-part files as before, and the import worker always does; the bundle still ships them.
+
 ## Local development
 
 Nothing changes locally. `pnpm --filter @brr/asset-pipeline build` writes `tools/asset-pipeline/dist/bundle`, and `vite` serves it at `/bundle/`. To use the published bundle instead:

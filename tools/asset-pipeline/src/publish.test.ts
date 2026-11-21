@@ -321,7 +321,7 @@ afterEach(async () => {
 
 describe("publishBundle", () => {
   it("publishes a bundle whose every key is declared", async () => {
-    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 9 } });
+    await expect(publish(() => undefined)).resolves.toMatchObject({ published: { files: 11 } });
   });
 
   it("points each connector index at the content-addressed record of its part", async () => {
@@ -388,6 +388,24 @@ describe("publishBundle", () => {
     await expect(publish(edit)).rejects.toThrow(refusal);
   });
 
+  it("packs each connector package's published index and records, as published, into one content-addressed file the manifest names", async () => {
+    const { directory } = await publish(() => undefined);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    const read = async (file: string) => JSON.parse(await readFile(join(directory, file), "utf8"));
+    for (const pkg of ["connectivity", "connectors"] as const) {
+      const indexFile: string = manifest[pkg].file;
+      const packFile: string = manifest.connectorPacks[pkg].file;
+      const index = await read(indexFile);
+      const recordFile: string = index.parts[BRICK].file;
+
+      expect(packFile).toMatch(new RegExp(`^${pkg}-pack\\.[0-9a-f]{16}\\.json$`, "u"));
+      expect(await read(packFile)).toEqual({
+        package: pkg,
+        files: { [indexFile]: index, [recordFile]: await read(recordFile) },
+      });
+    }
+  });
+
   it("points every record at the content-addressed GLB of its parts", async () => {
     const { directory } = await publish((bundle) => {
       const part = {
@@ -424,7 +442,7 @@ describe("publishBundle", () => {
 
   it("publishes the section vocabulary byte for byte as its own content-addressed asset, which the manifest references with its SHA-256", async () => {
     const { directory, published } = await publish(withCompiler);
-    expect(published.files).toBe(11);
+    expect(published.files).toBe(13);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const { file, sha256 } = manifest.compiler.sectionVocabulary;
     expect(file).toMatch(/^section-vocabulary\.[0-9a-f]{16}\.json$/u);
@@ -578,7 +596,7 @@ describe("publishBundle", () => {
 
   it("publishes each thumbnail in thumb/ under its content address", async () => {
     const { directory, published } = await publish(withThumbnail(png(THUMBNAIL_PX)));
-    expect(published.files).toBe(10);
+    expect(published.files).toBe(12);
     const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
     const [thumbnail] = manifest.thumbnails;
     expect(thumbnail.item).toBe("ldraw:3811@2");

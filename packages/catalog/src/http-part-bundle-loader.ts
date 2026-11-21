@@ -4,10 +4,13 @@ import {
   type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
+  type ReadJson,
 } from "./connector-records.ts";
 import {
   ALPHA_OPAQUE,
   BundleIndex,
+  ConnectorPackage,
+  ConnectorPackFile,
   CreditTableFile,
   CrosswalkFile,
   ModelFile,
@@ -18,6 +21,7 @@ import {
   type BundleLod,
   type BundleManifest,
   type CatalogPart,
+  type ConnectorPacks,
   type ManifestPart,
   type StudRecord,
 } from "@brr/schema/bundle";
@@ -150,6 +154,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
   private readonly partConnectorReads = new Map<string, Promise<ConnectorLoad>>();
+  private readonly connectorPackFiles = new Map<BundleLod, Promise<ReadonlyMap<string, unknown>>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
     Promise<PinnedSectionVocabularyFile | null>
@@ -429,7 +434,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       records = this.loadIndex(lod).then(
         (index) =>
           new ConnectorRecords(
-            async (path) => JSON.parse(await this.fetcher.text(path)),
+            this.connectorJson(lod, index.connectorPacks),
             connectorIndexPaths(lod, index),
             index.compiler?.sectionVocabulary.sha256 ?? null,
           ),
@@ -437,6 +442,36 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       this.connectorRecords.set(lod, records);
     }
     return records;
+  }
+
+  private connectorJson(lod: BundleLod, packs: ConnectorPacks | undefined): ReadJson {
+    if (packs === undefined) return async (path) => JSON.parse(await this.fetcher.text(path));
+    return async (path) => {
+      const file = (await this.packedConnectorFiles(lod, packs)).get(path);
+      if (file === undefined) throw new Error(`neither connector pack holds ${path}`);
+      return file;
+    };
+  }
+
+  private packedConnectorFiles(
+    lod: BundleLod,
+    packs: ConnectorPacks,
+  ): Promise<ReadonlyMap<string, unknown>> {
+    return this.cached(this.connectorPackFiles, lod, async () => {
+      const loaded = await Promise.all(
+        ConnectorPackage.options.map(async (pkg) => {
+          const path = `${lod}/${packs[pkg].file}`;
+          const pack = await this.json(ConnectorPackFile, path);
+          if (pack.package !== pkg) throw new Error(`${path} packs ${pack.package}, not ${pkg}`);
+          return Object.entries(pack.files);
+        }),
+      );
+      return new Map(loaded.flat().map(([file, json]) => [`${lod}/${file}`, json]));
+    });
+  }
+
+  async prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    await (await this.records(lod)).prepare();
   }
 
   async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
