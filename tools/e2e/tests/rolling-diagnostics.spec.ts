@@ -7,7 +7,6 @@ const MODULE_AIM: LatticePoint = { x: 380, z: 420 };
 const COMPILED_AIM: LatticePoint = { x: -320, z: 420 };
 const DIAGNOSTICS = /\/rolling-diagnostics[./]/u;
 const BUNDLE_DIAGNOSTICS = /\/rolling-diagnostics\.[0-9a-f]{16}\.json$/u;
-const LIBRARY_BAKE_URL = "**/library-bake/**";
 const LATTICE_PILLAR = "ldraw:2580";
 const NOT_KEPT = "were computed at import and their rows aren't kept";
 
@@ -31,19 +30,26 @@ test("the selection panel alone loads rolling diagnostics: a placement session a
   const diagnosticsRequests = (): ReadonlyArray<string> =>
     requested.filter((path) => DIAGNOSTICS.test(path));
   const editor = await EditorPage.open(page);
-  await editor.serveLdrawLibrary();
+  const raw = await editor.serveLdrawLibrary();
 
   await editor.zoom(400);
   await editor.placeAt(PALETTE_MODULE, MODULE_AIM);
   await editor.escape();
   expect(diagnosticsRequests(), "a placement session").toEqual([]);
 
-  await page.context().route(LIBRARY_BAKE_URL, (route) => route.abort());
+  const allowLibraryBake = editor.blockLibraryBake();
   const file = test.info().outputPath("lattice-pillar.ldr");
   await writeFile(file, pillarModel());
+  const servedBefore = raw.served();
   const imported = await editor.importModel(file);
-  await page.context().unroute(LIBRARY_BAKE_URL);
+  allowLibraryBake();
   expect(imported.status, imported.text).toBe("placeable");
+  const servedRaw = raw.served() - servedBefore;
+  process.stdout.write(`library bake blocked: the raw route served ${servedRaw} LDraw files\n`);
+  expect(
+    servedRaw,
+    "with the bake blocked, the import reads its parts from the raw library",
+  ).toBeGreaterThan(0);
   await editor.placeAt(imported.item, COMPILED_AIM);
   await editor.escape();
   expect(diagnosticsRequests(), "an import compiled at import").toEqual([]);

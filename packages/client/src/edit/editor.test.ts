@@ -27,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  LibraryPartsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -116,7 +117,8 @@ import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/do
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
+import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { TrackRouteView } from "./track-drawing.ts";
@@ -308,6 +310,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
     return this.loader.loadRollingDiagnostics(lod);
+  }
+
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.loader.loadLibraryParts(lod);
   }
 }
 
@@ -1080,9 +1086,12 @@ it("keeps the trains on the rails in the one undo history and in the saved world
   editor.undo(0);
   await vi.waitFor(() => expect(repository.storedConsists()).toBe(1));
   const first = editor.snapshot().world?.id ?? "";
+  const drawnBeforeSaving = drawnChunks(backend);
   await editor.newWorld("Second");
   const fresh = trainsOf(editor);
   await editor.openWorld(first);
+  expect(drawnBeforeSaving).not.toBe("");
+  expect(drawnChunks(backend)).toBe(drawnBeforeSaving);
 
   expect(selected?.kind).toBe("train");
   expect({ deleted, undoLabel, undone, redone, fresh }).toEqual({
@@ -1733,6 +1742,19 @@ it("offers none of the world's editing commands in a world another tab holds, bu
   });
 }, 120_000);
 
+function drawnChunks(backend: HeadlessBackend): string {
+  return [...backend.chunks]
+    .toSorted(([a], [b]) => a - b)
+    .map(([key, chunk]) => {
+      const parts = [...chunk.partIndex.subarray(0, chunk.count)].map((i) => backend.partIds[i]);
+      const poses = [...chunk.matrices.subarray(0, chunk.count * INSTANCE_MATRIX_FLOATS)].map(
+        (value) => value.toFixed(3),
+      );
+      return `${key}:${parts.join(",")}:${poses.join(",")}`;
+    })
+    .join("|");
+}
+
 function dragTrack(
   editor: IEditor,
   backend: AimedBackend,
@@ -1842,10 +1864,13 @@ it("undoes and redoes model and track edits in the order they happened, each tra
   record();
   const lever = editor.snapshot().track?.switches[0];
   if (!lever) throw new Error("the laid switch has no lever");
+  const drawnBeforeThrow = drawnChunks(backend);
   selectAt(editor, backend, lever.xLdu, lever.zLdu);
+  const drawnAfterThrow = drawnChunks(backend);
   record();
   await place(BASEPLATE, 64 * STUD, 0);
   record();
+  let drawnAfterUndoingThrow = "";
 
   expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
   expect(labels).toEqual([
@@ -1875,8 +1900,11 @@ it("undoes and redoes model and track edits in the order they happened, each tra
 
   for (let step = states.length - 1; step > 0; step--) {
     editor.undo(0);
+    if (labels[step - 1] === "throw switch") drawnAfterUndoingThrow = drawnChunks(backend);
     expect(layoutState(editor), `after undoing edit ${step}`).toEqual(states[step - 1]);
   }
+  expect(drawnAfterThrow).not.toBe(drawnBeforeThrow);
+  expect(drawnAfterUndoingThrow).toBe(drawnBeforeThrow);
   expect(editor.snapshot().history.undo).toBeNull();
   for (let step = 1; step < states.length; step++) {
     expect(editor.snapshot().history.redoLabel).toBe(labels[step - 1]);
@@ -1941,6 +1969,10 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
     originChunkZ: -2,
   });
   const plansAt = [plans.materialize()];
+  const drawnBeforeTrack = drawnChunks(backend);
+  let drawnFirstLay = "";
+  let drawnFirstLayUndone = "";
+  let drawnFirstLayRedone = "";
   const gestures: Array<() => void> = [
     () => {
       editor.chooseItem(TRACK_ITEM_ID);
@@ -1970,13 +2002,15 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       selectAt(editor, backend, lever.xLdu, lever.zLdu);
     },
   ];
-  const committed = gestures.map((gesture) => {
+  const committed = gestures.map((gesture, i) => {
     const seen = step(gesture);
+    if (i === 0) drawnFirstLay = drawnChunks(backend);
     plansAt.push(plans.materialize());
     return seen;
   });
   const undone = gestures.map((_, i) => {
     const seen = step(() => editor.undo(0));
+    if (i === gestures.length - 1) drawnFirstLayUndone = drawnChunks(backend);
     expect(plans.materialize(), `plan after undoing step ${gestures.length - i}`).toEqual(
       plansAt[gestures.length - i - 1],
     );
@@ -1984,6 +2018,7 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
   });
   const redone = gestures.map((_, i) => {
     const seen = step(() => editor.redo(0));
+    if (i === 0) drawnFirstLayRedone = drawnChunks(backend);
     expect(plans.materialize(), `plan after redoing step ${i + 1}`).toEqual(plansAt[i + 1]);
     return seen;
   });
@@ -2007,6 +2042,11 @@ it("sends the plan each track step's rows and saves its lifted pieces, on commit
       .map((removed) => ({ ...trackRows([], removed), lifted: [removed], railsSet: 1 })),
   ]);
   expect(redone).toEqual(committed);
+  expect(drawnFirstLay).not.toBe(drawnBeforeTrack);
+  expect({ undone: drawnFirstLayUndone, redone: drawnFirstLayRedone }).toEqual({
+    undone: drawnBeforeTrack,
+    redone: drawnFirstLay,
+  });
   expect(plansAt.at(-1)?.placements).toHaveLength(15);
   expect(
     plansAt.map(
@@ -7692,3 +7732,409 @@ it("prints a plan of tables drawn on the canvas, a road plate with track laid ac
   expect(svg).toContain('class="roadway"');
   expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 }, 120_000);
+
+const SEAT_LEVEL_MODULE = "mils-plain";
+
+it("re-plans a track drag in flight against the new obstacles when a seat-level import's studs land, and shows it before the pointer moves again", async () => {
+  const importer = new GatedModelImporter();
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
+  );
+  const record = await container
+    .get(PART_BUNDLE_LOADER)
+    .loadModelRecord("standard", SEAT_LEVEL_MODULE);
+  importer.serve(importedRecord("module.mpd", record));
+  await editor.importModelFile({
+    name: "module.mpd",
+    bytes: new TextEncoder().encode("0 a plain module, its studs still being checked\n"),
+  });
+  await placer(editor, backend)(editor.snapshot().modelImport?.item ?? "", -12_800, -12_800);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [320, 320], [2_240, 320]);
+  const [west, east] = editor.dump().trackEnds.toSorted((a, b) => a.xLdu - b.xLdu);
+  if (!west || !east) throw new Error("the run left no open ends");
+  backend.aim(east.xLdu, east.zLdu);
+  editor.dragStart(0, 0);
+  backend.aim(west.xLdu, west.zLdu);
+  editor.dragMove(0, 0);
+  const whilePending = editor.snapshot().track?.drag?.closure;
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const landed = editor.snapshot().track?.drag?.closure;
+  editor.dragMove(0, 0);
+
+  expect(whilePending).toBe("pending");
+  expect(landed).not.toBe("pending");
+  expect(landed).toBe(editor.snapshot().track?.drag?.closure);
+}, 120_000);
+
+const PIER_PLATES = 5;
+const TALLEST_TRAIN = "10014-1";
+const BRIDGE_PLATES = 39;
+const BESIDE_BRIDGE_LDU = 6 * STUD;
+const PIER_SIDE_SLOPE = 10;
+const PIER_SIDE_INSET_LDU = 30;
+const PIER_BRICK = "ldraw:3001";
+const PIER_PLATE = "ldraw:3020";
+
+async function raisedEditor(models: ReadonlyArray<string>, repository = new MemoryRepository()) {
+  const started = await startEditor(models, new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  });
+  const place = placer(started.editor, started.backend);
+  for (const x of [-32, 0, 32]) {
+    for (const z of [-32, 0, 32]) await place(BASEPLATE, x * STUD, z * STUD);
+  }
+  return started;
+}
+
+async function layRaised(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): Promise<void> {
+  dragTrack(editor, backend, from, to);
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
+    timeout: 60_000,
+  });
+}
+
+function placedImports(editor: IEditor) {
+  const { refs, placements } = editor.dump();
+  return placements.refId.flatMap((ref, i) =>
+    refs[ref]?.startsWith("import:")
+      ? [
+          {
+            ref: refs[ref] ?? "",
+            x: placements.x[i] ?? 0,
+            z: placements.z[i] ?? 0,
+            yPlates: placements.yPlates[i] ?? 0,
+            rot: placements.rot[i] ?? 0,
+          },
+        ]
+      : [],
+  );
+}
+
+function catalogLabel(editor: IEditor, ref: string): string {
+  return editor.snapshot().catalog.find((item) => item.id === ref)?.label ?? ref;
+}
+
+function laidHeights(editor: IEditor) {
+  return editor.dump().laidTrack.map((piece) => [piece.yPlates, piece.rise ?? 0]);
+}
+
+function selectFromSide(editor: IEditor, backend: AimedBackend, x: number, z: number) {
+  editor.chooseItem(null);
+  backend.aim(x, z - PIER_SIDE_INSET_LDU, PIER_SIDE_SLOPE);
+  editor.click(0, 0, 0);
+  return editor.snapshot().selection?.primary ?? null;
+}
+
+it("lays raised runs on generated brick piers of real parts, each piece held only by its anti-studs on a pier's studs: joined, reported unsupported once its pier is removed, and undone and redone with its piers as one edit", async () => {
+  const { editor, backend, catalog } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, 0], [0, 0]);
+  await layRaised(editor, backend, [16 * STUD, 0], [48 * STUD, 0]);
+  await layRaised(editor, backend, [0, 0], [16 * STUD, 0]);
+  const closed = editor.snapshot().track?.lastCommit;
+  const piers = placedImports(editor);
+  const pierRef = piers[0]?.ref ?? "";
+  const pier = catalog.placeables()[catalog.itemRefId(pierRef) ?? -1];
+  const pierParts = Array.from(pier?.parts.partIndex ?? [], (index) => catalog.parts()[index]?.id);
+  const supported = editor.snapshot().track?.unsupported;
+  const laid = editor.dump().laidTrack.length;
+  const heights = laidHeights(editor);
+  const raisedLabels = editor.snapshot().labels.filter((label) => label.kind === "height");
+  const removed = selectFromSide(editor, backend, piers[0]?.x ?? 0, piers[0]?.z ?? 0);
+  editor.deleteSelection(0);
+  const afterRemoval = editor.snapshot().track?.unsupported;
+  editor.undo(0);
+  const pierBack = editor.snapshot().track?.unsupported;
+  const before = layoutState(editor);
+  editor.undo(0);
+  const undone = { laid: editor.dump().laidTrack.length, piers: placedImports(editor).length };
+  editor.redo(0);
+
+  expect(closed).toBe("joined");
+  expect(catalogLabel(editor, pierRef)).toBe(`track-pier-${PIER_PLATES}-plates.ldr`);
+  expect(pierParts.toSorted()).toEqual([PIER_BRICK, PIER_PLATE, PIER_PLATE]);
+  expect(heights).toEqual(Array.from({ length: laid }, () => [PIER_PLATES, 0]));
+  expect(piers).toHaveLength(laid);
+  expect(piers.every((placed) => placed.ref === pierRef && placed.yPlates === 0)).toBe(true);
+  expect(supported).toBe(0);
+  expect(raisedLabels.length).toBeGreaterThan(0);
+  expect(raisedLabels.every((label) => label.text.startsWith(`${PIER_PLATES} plates`))).toBe(true);
+  expect(removed).toMatchObject({ kind: "model", item: pierRef });
+  expect(afterRemoval).toBe(1);
+  expect(pierBack).toBe(0);
+  expect(undone).toEqual({ laid: laid - 1, piers: laid - 1 });
+  expect(layoutState(editor)).toEqual(before);
+}, 180_000);
+
+function clearanceOutcome(editor: IEditor, ground: number) {
+  const track = editor.snapshot().track;
+  return {
+    commit: track?.lastCommit,
+    block: track?.lastBlock,
+    raised: editor.dump().laidTrack.length - ground,
+    lowClearance: track?.lowClearance,
+    lastLow: track?.lastLowClearance,
+  };
+}
+
+it("lays a bridge over laid track wherever its own height clears, reports one lower than the tallest train as a finding the plan lists, and refuses it only where a train standing below would be hit", async () => {
+  const { editor, backend, catalog, container } = await raisedEditor([TALLEST_TRAIN]);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -960, minZ: -960, maxX: 960, maxZ: 960 });
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-8 * STUD, -40 * STUD], [-8 * STUD, 40 * STUD]);
+  const ground = editor.dump().laidTrack.length;
+  editor.raiseTrack(BRIDGE_PLATES - 1);
+  await vi.waitFor(() => expect(editor.snapshot().track?.height.tallestTrain).not.toBeNull(), {
+    timeout: 60_000,
+  });
+  const tallest = editor.snapshot().track?.height.tallestTrain;
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const low = clearanceOutcome(editor, ground);
+  const hint = toolHints(editor.snapshot());
+  const issues = plans
+    .issues(planId)
+    .filter((issue) => issue.rule === "clearance")
+    .map((issue) => issue.message);
+  const labels = editor
+    .snapshot()
+    .labels.filter((label) => label.kind === "height" && label.text.includes("clear"))
+    .map((label) => label.text);
+  await loadCatalogItem(catalog, CABOOSE);
+  const place = placer(editor, backend);
+  const underLowBridge = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
+  editor.chooseItem(null);
+  editor.undo(0);
+  const issuesUndone = plans.issues(planId).filter((issue) => issue.rule === "clearance");
+  const seated = await place(CABOOSE, -8 * STUD, -BESIDE_BRIDGE_LDU);
+  editor.chooseItem(TRACK_ITEM_ID);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const throughTrain = clearanceOutcome(editor, ground);
+  editor.undo(0);
+  editor.raiseTrack(1);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const overTrain = clearanceOutcome(editor, ground);
+  const caboose = editor.snapshot().catalog.find((item) => item.id === CABOOSE)?.label ?? CABOOSE;
+  const tooLow = `too low for the tallest train: ${TALLEST_TRAIN} needs ${BRIDGE_PLATES} plates, this bridge has ${BRIDGE_PLATES - 1}`;
+
+  expect(tallest?.model).toBe(TALLEST_TRAIN);
+  expect(tallest?.heightLdu).toBeCloseTo(282.92, 2);
+  expect(low).toEqual({
+    commit: "laid",
+    block: null,
+    raised: 3,
+    lowClearance: 1,
+    lastLow: {
+      pieces: 1,
+      needPlates: BRIDGE_PLATES,
+      hasPlates: BRIDGE_PLATES - 1,
+      train: TALLEST_TRAIN,
+    },
+  });
+  expect(hint).toMatchObject({ tone: "warn", title: "Laid too low", detail: tooLow });
+  expect(issues).toEqual([expect.stringContaining(tooLow)]);
+  expect(issuesUndone).toEqual([]);
+  expect(labels).toEqual([`35 plates (112 mm) clear: too low for ${TALLEST_TRAIN}`]);
+  expect(underLowBridge).toMatchObject({
+    refusedClicks: 1,
+    reason: expect.stringContaining("would run into raised track"),
+  });
+  expect(seated).toMatchObject({ refusedClicks: 1 });
+  expect(trainsOf(editor)).toEqual([[CABOOSE, true]]);
+  expect(throughTrain).toMatchObject({
+    commit: "laid",
+    block: { kind: "model", label: caboose, unseated: false },
+    raised: 1,
+  });
+  expect(overTrain).toMatchObject({ commit: "laid", block: null, raised: 3, lowClearance: 0 });
+}, 180_000);
+
+const MY_PIER = `0 My viaduct pier
+0 Name: my-viaduct-pier.ldr
+0 Author: A Builder
+1 15 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 3022.dat
+1 15 0 -16 0 1 0 0 0 1 0 0 0 1 3022.dat
+`;
+
+it("holds raised track on a user's own pier of official parts exactly like a generated one, and builds piers only where nothing holds a piece already", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  const imported = await editor.importModelFile({
+    name: "my-viaduct-pier.ldr",
+    bytes: new TextEncoder().encode(MY_PIER),
+  });
+  const mine = editor.snapshot().modelImport?.item ?? "";
+  const placed = placerNow(editor, backend)(mine, -8 * STUD, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const imports = placedImports(editor);
+
+  expect(imported).toBe(true);
+  expect(placed).toMatchObject({ refusedClicks: 0 });
+  expect(imports.filter((pier) => pier.ref === mine)).toHaveLength(1);
+  expect(imports.filter((pier) => pier.ref !== mine)).toHaveLength(1);
+  expect(laidHeights(editor)).toEqual([
+    [PIER_PLATES, 0],
+    [PIER_PLATES, 0],
+  ]);
+  expect(editor.snapshot().track?.unsupported).toBe(0);
+}, 180_000);
+
+it("ramps a run from a raised end toward the drawing height one plate per straight, reports its tilted pieces unsupported, and refuses a join it can't climb to in its pieces as too steep", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [32 * STUD, 0], [48 * STUD, 0]);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-48 * STUD, 0], [-32 * STUD, 0]);
+  await layRaised(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
+  const steep = editor.snapshot().track?.lastCommit;
+  editor.raiseTrack(-PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const ramp = laidHeights(editor).slice(2);
+  const unsupported = editor.snapshot().track?.lastUnsupported;
+
+  expect(steep).toBe("refused-too-steep");
+  expect(ramp).toEqual([
+    [PIER_PLATES, -1],
+    [PIER_PLATES - 1, -1],
+    [PIER_PLATES - 2, -1],
+  ]);
+  expect(unsupported).toMatchObject({ pieces: 3, tilted: 3 });
+}, 180_000);
+
+class StudsLandLaterImporter implements IModelImporter {
+  private readonly gate = Promise.withResolvers<void>();
+
+  constructor(private readonly inner: IModelImporter) {}
+
+  release(): void {
+    this.gate.resolve();
+  }
+
+  async importText(
+    fileName: string,
+    text: string,
+    lod?: BundleLod,
+    onPlaced?: PlacementListener,
+  ): Promise<ImportResult> {
+    const result = await this.inner.importText(fileName, text, lod);
+    if (!result.bake) throw new Error(`${fileName} has no bake`);
+    const { bake, report, studio: _studio, ...shape } = result;
+    const { studCover: _studCover, ...placement } = bake;
+    onPlaced?.({
+      ...shape,
+      sections: report.sections,
+      refusedConnectorRecords: report.refusedConnectorRecords,
+      bake: placement,
+    });
+    await this.gate.promise;
+    return result;
+  }
+
+  importStudio(): Promise<ImportResult> {
+    throw new Error("piers are LDraw files");
+  }
+
+  rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return this.inner.rollingDiagnostics([], "standard");
+  }
+}
+
+it("waits for a generated pier's studs to be checked before laying the raised run on it, then lays the run and its piers together", async () => {
+  let importer: StudsLandLaterImporter | null = null;
+  const started = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    importer = new StudsLandLaterImporter(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer);
+  });
+  const { editor, backend } = started;
+  const place = placer(editor, backend);
+  for (const x of [-32, 0, 32]) await place(BASEPLATE, x * STUD, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(1));
+  const waiting = {
+    placing: editor.snapshot().track?.placingPiers,
+    laid: editor.dump().laidTrack.length,
+    piers: placedImports(editor).length,
+  };
+  (importer as StudsLandLaterImporter | null)?.release();
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false));
+
+  expect(waiting).toEqual({ placing: true, laid: 0, piers: 0 });
+  expect(laidHeights(editor)).toEqual([
+    [PIER_PLATES, 0],
+    [PIER_PLATES, 0],
+  ]);
+  expect(placedImports(editor)).toHaveLength(2);
+  expect(editor.snapshot().track?.unsupported).toBe(0);
+}, 180_000);
+
+const ROOF_BRICK = "1 4 40 -311 10 1 0 0 0 1 0 0 0 1 3005.dat";
+const BRICK_LDU = 24;
+
+async function myTallCaboose(): Promise<Uint8Array> {
+  const official = await pinnedOmrModel("10014-1.mpd");
+  const lines = official.replaceAll("10014 - ", "my tall caboose - ").split("\n");
+  const car = lines.findIndex((line) => line.startsWith("0 FILE my tall caboose - train car"));
+  lines.splice(car + 1, 0, ROOF_BRICK);
+  return new TextEncoder().encode(lines.join("\n"));
+}
+
+it("measures the tallest train from every train in the catalog, and again when a user imports a taller one, which it then names", async () => {
+  const { editor } = await raisedEditor([TALLEST_TRAIN]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(1);
+  const tallest = () => editor.snapshot().track?.height.tallestTrain ?? null;
+  await vi.waitFor(() => expect(tallest()).not.toBeNull(), { timeout: 60_000 });
+  const bundled = tallest();
+  const imported = await editor.importModelFile({
+    name: "my-tall-caboose.mpd",
+    bytes: await myTallCaboose(),
+  });
+  await vi.waitFor(() => expect(tallest()?.model).toBe("my-tall-caboose.mpd"), { timeout: 60_000 });
+
+  expect(imported).toBe(true);
+  expect(bundled?.model).toBe(TALLEST_TRAIN);
+  expect(tallest()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
+}, 180_000);
+
+it("reopens a saved world with its raised run, its generated piers and a ramp's rises exactly as laid, the run still held by its piers", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-48 * STUD, -16 * STUD], [-32 * STUD, -16 * STUD]);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, -16 * STUD], [16 * STUD, -16 * STUD]);
+  await layRaised(editor, backend, [-16 * STUD, 16 * STUD], [16 * STUD, 16 * STUD]);
+  const laid = { state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported };
+  const first = editor.snapshot().world?.id ?? "";
+  await editor.newWorld("Second");
+  const fresh = editor.dump().laidTrack.length;
+  const reopened = await editor.openWorld(first);
+  await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).toBe(laid.unsupported), {
+    timeout: 30_000,
+  });
+
+  expect(laid.state.laidTrack.some((piece) => (piece.rise ?? 0) !== 0)).toBe(true);
+  expect(placedImports(editor)).toHaveLength(2);
+  expect({ fresh, reopened }).toEqual({ fresh: 0, reopened: true });
+  expect({ state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported }).toEqual(
+    laid,
+  );
+}, 180_000);

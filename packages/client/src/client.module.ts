@@ -40,6 +40,9 @@ import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
+import { RoadEditSession } from "./edit/road-edit-session.ts";
+import { TrackEditSession } from "./edit/track-edit-session.ts";
+import { TrackWorld } from "./edit/track-world.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
@@ -57,6 +60,8 @@ import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
 import { RailYard } from "./trains/rail-yard.ts";
+import { TallestTrainMeter } from "./trains/tallest-train.ts";
+import { TrackPiers } from "./edit/track-piers.ts";
 import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
@@ -106,12 +111,17 @@ import {
   TRACK_SCENE,
   TRAIN_PLAY,
   RAIL_YARD,
+  TALLEST_TRAIN,
+  TRACK_PIERS,
   VEHICLE_IDS,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
+  ROAD_EDIT_SESSION,
+  TRACK_EDIT_SESSION,
+  TRACK_WORLD,
   STARTER_FILE_URLS,
   STARTER_FILES,
   STARTER_WORLDS,
@@ -125,6 +135,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
+  bind(TRACK_WORLD).to(TrackWorld).inSingletonScope();
+  bind(TRACK_EDIT_SESSION).to(TrackEditSession).inSingletonScope();
+  bind(ROAD_EDIT_SESSION).to(RoadEditSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(SCALE_BAR).to(ScaleBar).inSingletonScope();
   bind(TABLE_GROUND).to(TableGround).inSingletonScope();
@@ -142,6 +155,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(OWNED_PARTS).to(OwnedPartsService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
   bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(TALLEST_TRAIN).to(TallestTrainMeter).inSingletonScope();
+  bind(TRACK_PIERS).to(TrackPiers).inSingletonScope();
   bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())

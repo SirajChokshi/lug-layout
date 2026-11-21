@@ -138,8 +138,38 @@ jobs:
           name: part-bundle
           path: tools/asset-pipeline
       - uses: ./.github/actions/ldraw-inputs
+      - id: bake-subset
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/library-bake
+          key: library-bake-subset-v1-${{ hashFiles('tools/asset-pipeline/library-bake.json') }}-${{ hashFiles('tools/e2e/tests/**', 'tools/e2e/playwright.config.ts', 'packages/test-fixtures/**', 'packages/import/test-data/**', 'packages/import/src/**', 'tools/asset-pipeline/palette.json', 'tools/asset-pipeline/fixture-models.json') }}-${{ matrix.shard }}-of-${{ strategy.job-total }}
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        name: Build the whole library bake, since no subset is cached for this pin, fixture set and shard
+        run: pnpm --filter @brr/asset-pipeline library-bake --check
       - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        env:
+          LIBRARY_BAKE_REQUEST_LOG: ${{ runner.temp }}/library-bake-requests.txt
+      - if: ${{ github.event_name != 'pull_request' && steps.bake-subset.outputs.cache-hit != 'true' }}
+        name: Keep only the library bake files this shard's e2e asked for
+        run: |
+          sort -u "$RUNNER_TEMP/library-bake-requests.txt" > "$RUNNER_TEMP/library-bake-kept.txt"
+          before=$(find .cache/library-bake -type f | wc -l)
+          (cd .cache/library-bake && find . -type f -printf '%P\n' | grep -vxFf "$RUNNER_TEMP/library-bake-kept.txt" | xargs -r rm -f)
+          echo "library bake subset: kept $(find .cache/library-bake -type f | wc -l) of ${before} files, $(du -sh .cache/library-bake | cut -f1)"
+      - if: ${{ github.event_name != 'pull_request' && steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/library-bake
+          key: ${{ steps.bake-subset.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -166,6 +196,7 @@ jobs:
         with:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-connector-inputs-
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
@@ -216,6 +247,7 @@ jobs:
         with:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-bake-inputs-
       - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}

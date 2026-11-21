@@ -652,6 +652,7 @@ function planLaid(
         piece: layout.piece(p),
         pose: pose16(addZeta16(pose.position, shift), pose.heading),
         yPlates: 0,
+        rise: 0,
       };
     }),
   };
@@ -679,6 +680,7 @@ function layTrack(track: LoadedTrack): TrackDeltas {
   const outside = drawing.pieceChange(
     straight,
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+    0,
   );
   drawing.applyTrack(outside);
   const openLay = new PlanDelta();
@@ -736,6 +738,7 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
           zeta16([KEPT_L_CORNER_STUDS.x, 0n, 0n, 0n, KEPT_L_CORNER_STUDS.z, 0n, 0n, 0n]),
           heading,
         ),
+        0,
       ),
     );
   }
@@ -743,6 +746,7 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
   const outside = kept.pieceChange(
     straight,
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+    0,
   );
   kept.applyTrack(outside);
   const lay = new PlanDelta();
@@ -1238,6 +1242,7 @@ function openStraight(straight: number, slot: number): TrackPieceAt {
     piece: straight,
     pose: pose16(zeta16([x + 4n, 0n, 0n, 0n, z + 8n, 0n, 0n, 0n]), 0),
     yPlates: 0,
+    rise: 0,
   };
 }
 
