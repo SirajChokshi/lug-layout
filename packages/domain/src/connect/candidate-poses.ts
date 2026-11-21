@@ -12,6 +12,11 @@ export interface SnapWindow extends LatticePose {
 }
 
 const INITIAL_CAPACITY = 128;
+const TABLE_LOAD = 2;
+const HASH_X = 0x9e3779b1;
+const HASH_Z = 0x85ebca77;
+const HASH_Y = 0xc2b2ae3d;
+const HASH_ROT = 0x27d4eb2f;
 
 export class CandidatePoses {
   private size = 0;
@@ -20,6 +25,10 @@ export class CandidatePoses {
   private ys: Int32Array;
   private rots: Uint8Array;
   private voteCounts: Int32Array;
+  private table: Int32Array;
+  private tableEpoch: Int32Array;
+  private epoch = 1;
+  private tableValid = true;
 
   constructor(capacity: number = INITIAL_CAPACITY) {
     this.xs = new Int32Array(capacity);
@@ -27,6 +36,8 @@ export class CandidatePoses {
     this.ys = new Int32Array(capacity);
     this.rots = new Uint8Array(capacity);
     this.voteCounts = new Int32Array(capacity);
+    this.table = new Int32Array(tableSize(capacity));
+    this.tableEpoch = new Int32Array(this.table.length);
   }
 
   get count(): number {
@@ -55,24 +66,38 @@ export class CandidatePoses {
 
   clear(): void {
     this.size = 0;
+    this.nextEpoch();
+    this.tableValid = true;
   }
 
   add(x: number, z: number, yPlates: number, rot: number): void {
     if (!Number.isInteger(x) || !Number.isInteger(z) || !Number.isInteger(yPlates)) {
       throw new RangeError(`candidate ${x}, ${z}, ${yPlates} is not an exact lattice pose`);
     }
-    for (let i = 0; i < this.size; i++) {
-      if (this.xs[i] === x && this.zs[i] === z && this.ys[i] === yPlates && this.rots[i] === rot) {
+    if (!this.tableValid) this.rehash();
+    if (this.size === this.xs.length) this.grow();
+    const mask = this.table.length - 1;
+    let h = hashPose(x, z, yPlates, rot) & mask;
+    while (this.tableEpoch[h] === this.epoch) {
+      const at = this.table[h] ?? 0;
+      if (
+        this.xs[at] === x &&
+        this.zs[at] === z &&
+        this.ys[at] === yPlates &&
+        this.rots[at] === rot
+      ) {
         return;
       }
+      h = (h + 1) & mask;
     }
-    if (this.size === this.xs.length) this.grow();
     const i = this.size++;
     this.xs[i] = x;
     this.zs[i] = z;
     this.ys[i] = yPlates;
     this.rots[i] = rot;
     this.voteCounts[i] = 0;
+    this.table[h] = i;
+    this.tableEpoch[h] = this.epoch;
   }
 
   setVotes(index: number, votes: number): void {
@@ -85,6 +110,7 @@ export class CandidatePoses {
     swapIn(this.ys, a, b);
     swapIn(this.rots, a, b);
     swapIn(this.voteCounts, a, b);
+    this.tableValid = false;
   }
 
   private grow(): void {
@@ -94,7 +120,46 @@ export class CandidatePoses {
     this.ys = grown(this.ys, new Int32Array(capacity));
     this.rots = grown(this.rots, new Uint8Array(capacity));
     this.voteCounts = grown(this.voteCounts, new Int32Array(capacity));
+    this.table = new Int32Array(tableSize(capacity));
+    this.tableEpoch = new Int32Array(this.table.length);
+    this.epoch = 1;
+    this.rehash();
   }
+
+  private rehash(): void {
+    this.nextEpoch();
+    const mask = this.table.length - 1;
+    for (let i = 0; i < this.size; i++) {
+      let h = hashPose(this.xs[i] ?? 0, this.zs[i] ?? 0, this.ys[i] ?? 0, this.rots[i] ?? 0) & mask;
+      while (this.tableEpoch[h] === this.epoch) h = (h + 1) & mask;
+      this.table[h] = i;
+      this.tableEpoch[h] = this.epoch;
+    }
+    this.tableValid = true;
+  }
+
+  private nextEpoch(): void {
+    if (this.epoch === 0x7fffffff) {
+      this.tableEpoch.fill(0);
+      this.epoch = 0;
+    }
+    this.epoch++;
+  }
+}
+
+function tableSize(capacity: number): number {
+  let size = 1;
+  while (size < capacity * TABLE_LOAD) size *= 2;
+  return size;
+}
+
+function hashPose(x: number, z: number, yPlates: number, rot: number): number {
+  const h =
+    Math.imul(x, HASH_X) ^
+    Math.imul(z, HASH_Z) ^
+    Math.imul(yPlates, HASH_Y) ^
+    Math.imul(rot, HASH_ROT);
+  return (h ^ (h >>> 15)) >>> 0;
 }
 
 function swapIn(values: Int32Array | Uint8Array, a: number, b: number): void {

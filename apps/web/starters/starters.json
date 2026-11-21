@@ -1,0 +1,16 @@
+{
+  "starters": [
+    {
+      "world": "train-loop",
+      "summary": "An oval of 9V track on green baseplates, with a locomotive standing on the rails ready to run."
+    },
+    {
+      "world": "main-street",
+      "summary": "Three modular buildings side by side along a street of road plates."
+    },
+    {
+      "world": "station-stop",
+      "summary": "A longer loop round a train station, with a steam locomotive standing at the platform."
+    }
+  ]
+}
