@@ -466,6 +466,27 @@ export class EditorPage {
     return this.trackCounts();
   }
 
+  async strokeTrack(points: ReadonlyArray<LatticePoint>): Promise<TrackCounts> {
+    const [first, ...rest] = points;
+    if (!first) throw new Error("a stroke has at least one point");
+    const start = await this.screenOf(first);
+    const map = await this.groundMap();
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (const point of rest) {
+      const at = map.screenOf(point.x, point.z);
+      await this.page.mouse.move(at.sx, at.sy);
+    }
+    await this.page.mouse.up();
+    await this.settle();
+    return this.trackCounts();
+  }
+
+  async toolHint(): Promise<string> {
+    return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>
@@ -536,7 +557,10 @@ export class EditorPage {
 
   async importModel(file: string): Promise<ModelImport> {
     await this.page.locator("input.model-file-import").setInputFiles(file);
-    const name = basename(file);
+    return this.importOutcome(basename(file));
+  }
+
+  private async importOutcome(name: string): Promise<ModelImport> {
     const status = this.page.locator(
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
@@ -546,6 +570,33 @@ export class EditorPage {
       item: (await status.getAttribute("data-item")) ?? "",
       text: (await status.locator("p").first().textContent()) ?? "",
     };
+  }
+
+  async searchPalette(query: string): Promise<void> {
+    await this.page.locator(".palette-search").fill(query);
+    await expect(this.page.locator(".palette-library")).toHaveAttribute(
+      "data-library-status",
+      "ready",
+      { timeout: READY_TIMEOUT_MS },
+    );
+  }
+
+  async libraryParts(): Promise<ReadonlyArray<string>> {
+    return this.page
+      .locator(".palette-library [data-library-part]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-library-part") ?? ""));
+  }
+
+  async pickLibraryPart(part: string, color: number): Promise<ModelImport> {
+    const swatch = this.page.locator(`.palette-library [data-library-item="${part}@${color}"]`);
+    const partInColor = await swatch.getAttribute("aria-label");
+    if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
+    await swatch.click();
+    return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async refs(): Promise<ReadonlyArray<string>> {
+    return (await this.editState()).world.refs;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {

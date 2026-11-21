@@ -9,6 +9,7 @@ import {
   GltfDocument,
   LibraryBakePin,
   LibraryConnectorsPin,
+  LibraryPartsFile,
   ModelFile,
   PartShape,
   PartTableFile,
@@ -34,6 +35,7 @@ import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
 export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
+export const LIBRARY_PARTS_FILE = "library-parts.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
 export const ROLLING_DIAGNOSTICS_FILE = "rolling-diagnostics.json";
 const LEAKED_PATHS_SHOWN = 3;
@@ -154,6 +156,17 @@ export async function attachCrosswalk(directory: string, crosswalk: unknown): Pr
   await writeFile(
     manifestPath,
     `${JSON.stringify({ ...compiled, crosswalk: { file: CROSSWALK_FILE } }, null, 2)}\n`,
+  );
+}
+
+export async function attachLibraryParts(directory: string, libraryParts: unknown): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
+  await writeFile(join(directory, LIBRARY_PARTS_FILE), JSON.stringify(libraryParts));
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, libraryParts: { file: LIBRARY_PARTS_FILE } }, null, 2)}\n`,
   );
 }
 
@@ -351,6 +364,13 @@ export async function publishBundle(
     JSON.parse((await publish(manifest.crosswalk.file)).toString("utf8")),
     manifest.crosswalk.file,
   );
+  if (manifest.libraryParts !== undefined) {
+    decodeDeclared(
+      LibraryPartsFile,
+      JSON.parse((await publish(manifest.libraryParts.file)).toString("utf8")),
+      manifest.libraryParts.file,
+    );
+  }
   for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
   const packages: ReadonlyArray<readonly [ConnectorPackage, string]> = [
     ["connectors", manifest.connectors.file],
