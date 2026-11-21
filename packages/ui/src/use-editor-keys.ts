@@ -78,7 +78,9 @@ export function useEditorKeys(
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) return;
       if (controlTakesKey(event.target, event.key)) return;
-      const match = commandForKey(event, isTyping(event.target));
+      const match = commandForKey(event, isTyping(event.target), (candidate) =>
+        commandEnabled(candidate, editor.snapshot(), play.snapshot()),
+      );
       if (match === null) return;
       if (event.repeat && commandSpec(match.id).repeats !== true) {
         event.preventDefault();
@@ -91,7 +93,7 @@ export function useEditorKeys(
       }
       if (overlayOpen) {
         event.preventDefault();
-        if (match.id === "select-tool") closeOverlay();
+        if (match.id === "select-tool" || match.id === "cancel") closeOverlay();
         return;
       }
       if (!commandEnabled(match.id, editor.snapshot(), play.snapshot())) return;

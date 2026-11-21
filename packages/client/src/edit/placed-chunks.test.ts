@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { modelPlaceable, partPlaceable, type Placeable } from "./placeable.ts";
-import { PlacedChunks } from "./placed-chunks.ts";
+import { NO_MODELS, PlacedChunks } from "./placed-chunks.ts";
 
 const TILE_LDU = 640;
 const HALF_TILE_LDU = TILE_LDU / 2;
@@ -39,7 +39,7 @@ class ChunkRecorder implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -167,7 +167,10 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
         const rot = refId === 0 ? 0 : Math.floor(random() * 4);
         const occupied = live.some((h) => h.refId === 0 && refId === 0 && h.x === x && h.z === z);
         if (occupied) continue;
-        const yPlates = chunks.restingHeight(placeableOf(refId), x, z, rot, null);
+        const [yPlates = 0] = chunks.restingHeights(
+          [{ placeable: placeableOf(refId), x, z, rot }],
+          NO_MODELS,
+        );
         const handle: PlacementHandle = {
           chunkKey: 0,
           slot: slot++,

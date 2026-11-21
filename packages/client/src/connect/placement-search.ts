@@ -86,7 +86,7 @@ export interface IPlacementSearch {
     moving: number | null,
     out: PlacementChoice,
   ): void;
-  strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null;
+  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null;
 }
 
 interface Placed extends PlacedParts {
@@ -284,16 +284,22 @@ export class PlacementSearch implements IPlacementSearch {
     this.zones.clear();
   }
 
-  strandedByRemoval(placement: number, restsOnTable: RestsOnTable): number | null {
-    const removed = this.placed.get(placement);
-    if (!removed) throw new RangeError(`placement ${placement} is not placed`);
+  strandedByRemoval(placements: ReadonlySet<number>, restsOnTable: RestsOnTable): number | null {
+    const removed: Array<readonly [number, Placed]> = [];
+    for (const placement of placements) {
+      const placed = this.placed.get(placement);
+      if (!placed) throw new RangeError(`placement ${placement} is not placed`);
+      removed.push([placement, placed]);
+    }
     const before = new Map<number, number>();
     for (const [other, placed] of this.placed) {
-      if (other === placement) continue;
+      if (placements.has(other)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
       if (this.report.count > 0) before.set(other, this.report.count);
     }
-    this.solver.remove(removed.model, removed.pose, placement);
+    for (const [placement, placed] of removed) {
+      this.solver.remove(placed.model, placed.pose, placement);
+    }
     let stranded: number | null = null;
     for (const [other, mates] of before) {
       const placed = this.placed.get(other);
@@ -304,7 +310,9 @@ export class PlacementSearch implements IPlacementSearch {
         break;
       }
     }
-    this.solver.insert(removed.model, removed.pose, placement);
+    for (const [placement, placed] of removed) {
+      this.solver.insert(placed.model, placed.pose, placement);
+    }
     return stranded;
   }
 
