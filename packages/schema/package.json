@@ -7,8 +7,10 @@
     "./bundle-pointer": "./src/bundle-pointer/index.ts",
     "./catalog-api": "./src/catalog-api/index.ts",
     "./decode": "./src/decode/index.ts",
+    "./owned-parts": "./src/owned-parts/index.ts",
     "./palette": "./src/palette/index.ts",
     "./panels": "./src/panels/index.ts",
+    "./plan": "./src/plan/index.ts",
     "./starters": "./src/starters/index.ts",
     "./world": "./src/world/index.ts"
   },
