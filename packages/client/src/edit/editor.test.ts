@@ -978,6 +978,10 @@ class MemoryRepository implements IWorldRepository {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
 
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
+  }
+
   async putImportedFile(): Promise<void> {}
 
   async importedFile(): Promise<undefined> {

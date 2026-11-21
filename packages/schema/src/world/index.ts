@@ -375,11 +375,14 @@ export interface ImportedFile {
   readonly bytes: Uint8Array;
 }
 
-export type WorldArchive = {
+export type WorldFiles = {
   readonly manifest: WorldManifestV1;
   readonly shards: ReadonlyArray<WorldShardV1>;
-  readonly credits: string;
   readonly imports: ReadonlyArray<ImportedFile>;
+};
+
+export type WorldArchive = WorldFiles & {
+  readonly credits: string;
 };
 
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
@@ -592,6 +595,17 @@ export function parseJsonText(text: string, path: string): Decoded<unknown> {
 export function readWorldArchive(
   files: ReadonlyMap<string, string>,
 ): Decoded<Omit<WorldArchive, "imports">> {
+  const credits = files.get(CREDITS_FILE);
+  const world = readWorldFiles(new Map([...files].filter(([name]) => name !== CREDITS_FILE)));
+  if (world.ok && credits !== undefined) return { ok: true, value: { ...world.value, credits } };
+  const missingCredits: Issue[] =
+    credits === undefined ? [{ path: CREDITS_FILE, message: "is missing" }] : [];
+  return { ok: false, issues: [...missingCredits, ...(world.ok ? [] : world.issues)] };
+}
+
+export function readWorldFiles(
+  files: ReadonlyMap<string, string>,
+): Decoded<Omit<WorldFiles, "imports">> {
   const manifestText = files.get(MANIFEST_FILE);
   if (manifestText === undefined) {
     return { ok: false, issues: [{ path: MANIFEST_FILE, message: "is missing from the archive" }] };
@@ -600,10 +614,8 @@ export function readWorldArchive(
   if (!manifestJson.ok) return manifestJson;
   const manifest = decode(WorldManifestV1, manifestJson.value, MANIFEST_FILE);
   if (!manifest.ok) return manifest;
-  const credits = files.get(CREDITS_FILE);
   const issues: Issue[] = [];
-  if (credits === undefined) issues.push({ path: CREDITS_FILE, message: "is missing" });
-  const expected = new Set([MANIFEST_FILE, CREDITS_FILE]);
+  const expected = new Set([MANIFEST_FILE]);
   const shards: WorldShardV1[] = [];
   for (const entry of manifest.value.shards) {
     const path = shardPath(entry.superChunk);
@@ -644,8 +656,8 @@ export function readWorldArchive(
     });
   }
   for (const name of files.keys()) {
-    if (!expected.has(name)) issues.push({ path: name, message: "is not part of a world archive" });
+    if (!expected.has(name)) issues.push({ path: name, message: "is not part of a world" });
   }
   if (issues.length > 0) return { ok: false, issues };
-  return { ok: true, value: { manifest: manifest.value, shards, credits: credits ?? "" } };
+  return { ok: true, value: { manifest: manifest.value, shards } };
 }

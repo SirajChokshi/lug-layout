@@ -1,4 +1,10 @@
-import type { EditorSnapshot, IEditor, ModelImportView, WorldFileView } from "@brr/client";
+import type {
+  EditorSnapshot,
+  IEditor,
+  IStarterWorlds,
+  ModelImportView,
+  WorldFileView,
+} from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { ImportReportDetails } from "./import-report.tsx";
@@ -10,6 +16,7 @@ const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 interface WorldMenuProps {
   readonly editor: IEditor;
   readonly snapshot: EditorSnapshot;
+  readonly starters: IStarterWorlds;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -150,7 +157,7 @@ function useUnloadGuard(unsavedEdits: boolean): void {
   }, [unsavedEdits]);
 }
 
-export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
+export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -288,6 +295,14 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
           </button>
         </form>
         {nameIssue !== null && <p className="world-name-issue">The name {nameIssue}.</p>}
+        <button
+          type="button"
+          data-action="show-starters"
+          disabled={!ready}
+          onClick={() => starters.show()}
+        >
+          Starter worlds
+        </button>
         <button type="button" disabled={!ready} onClick={onExport}>
           Export .brr.zip
         </button>

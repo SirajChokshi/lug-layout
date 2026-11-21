@@ -11,6 +11,7 @@ import {
   parseImportPath,
   parseJsonText,
   readWorldArchive,
+  readWorldFiles,
   referencedImports,
   shardEntry,
   shardName,
@@ -20,6 +21,7 @@ import {
   type ShardEntryV1,
   type SuperChunk,
   type WorldArchive,
+  type WorldFiles,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { deleteDatabase, openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
@@ -64,6 +66,7 @@ export interface IWorldRepository {
   shardFiles(id: string): Promise<ReadonlyArray<ShardFile>>;
   packArchive(archive: WorldArchive): Uint8Array;
   readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>>;
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>>;
   putImportedFile(file: ImportedFile): Promise<void>;
   importedFile(sha256: string): Promise<ImportedFile | undefined>;
 }
@@ -323,12 +326,22 @@ export class IndexedDbWorldRepository implements IWorldRepository {
 
   async readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>> {
     const zip = await readZip(bytes);
-    if (!zip.ok) return zip;
+    return zip.ok ? this.readFiles(zip.value, readWorldArchive) : zip;
+  }
+
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>> {
+    return this.readFiles(files, readWorldFiles);
+  }
+
+  private async readFiles<T extends Omit<WorldFiles, "imports">>(
+    files: ReadonlyMap<string, Uint8Array>,
+    readTexts: (texts: ReadonlyMap<string, string>) => Decoded<T>,
+  ): Promise<Decoded<T & { readonly imports: ReadonlyArray<ImportedFile> }>> {
     const texts = new Map<string, string>();
     const imports: ImportedFile[] = [];
     const issues: Issue[] = [];
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    for (const [name, data] of zip.value) {
+    for (const [name, data] of files) {
       if (name.startsWith(IMPORT_DIRECTORY)) {
         const path = parseImportPath(name);
         if (path === null) {
@@ -346,7 +359,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
         return { ok: false, issues: [{ path: name, message: "is not UTF-8 text" }] };
       }
     }
-    const archive = readWorldArchive(texts);
+    const archive = readTexts(texts);
     if (!archive.ok) return { ok: false, issues: [...issues, ...archive.issues] };
     const referenced = referencedImports(
       archive.value.shards,
