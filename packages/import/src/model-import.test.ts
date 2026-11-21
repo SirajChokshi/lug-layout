@@ -1624,7 +1624,7 @@ const CUSTOM_BENCH_BESIDE_A_NOTCHED_CORNER = [
 ];
 
 it(
-  "seats a stud by the connector records of the receptor it enters where the drawn cavity is tighter than the stud: a studless corner panel and a custom bench beside a curved wedge take their receptor frames, as the pipeline bakes them, while a bench beside a stud notch drawn inside the stud still falls back",
+  "seats a stud by the connector records of the receptor it enters where the drawn cavity is tighter than the stud, and by the circle a faceted round wall approximates where no receptor is: a studless corner panel, a custom bench beside a curved wedge and a custom bench beside a corner round brick take their receptor frames, as the pipeline bakes them",
   async () => {
     expect({
       cornerPanel: await importedPhase("corner-panel.ldr", [
@@ -1641,7 +1641,7 @@ it(
     }).toEqual({
       cornerPanel: [0, 0],
       besideACurvedWedge: [0, 0],
-      besideANotchedCorner: [10, 0],
+      besideANotchedCorner: [0, 0],
     });
   },
   BAKE_TIMEOUT_MS,
