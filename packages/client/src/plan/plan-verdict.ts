@@ -10,9 +10,9 @@ export const NOT_YET_ASSIGNED = "not yet assigned";
 
 export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
   {
-    id: "trackSeam",
-    text: "Track across a table seam",
-    owner: "#619 (track outline rules)",
+    id: "modelTrackSeam",
+    text: "A model's own track at a table seam is judged by the model's footing cells, so a track container whose end sits exactly on a seam is reported as across the seam",
+    owner: `${NOT_YET_ASSIGNED} (needs per-part footing and carried-track outlines on model rows)`,
   },
   {
     id: "seamJoins",
