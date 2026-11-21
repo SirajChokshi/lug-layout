@@ -8,7 +8,6 @@ import {
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
-  type IByteCache,
   type ImportResult,
   type PlacementListener,
   type ImportWorkerRequest,
@@ -21,17 +20,16 @@ import {
   type RollingDiagnosticsRequest,
   type RollingDiagnosticsRows,
 } from "@brr/import";
+import { ASSET_CACHE, type IAssetCache } from "@brr/storage";
 import { inject, injectable } from "inversify";
 import type { IBakeHelperRegistry } from "./bake-helper-registry.ts";
 import type { ICompilerLoader } from "./compiler-loader.ts";
 import {
   BAKE_HELPER_REGISTRY,
   COMPILER_LOADER,
-  CONNECTOR_RECORD_CACHE,
   IMPORT_FETCH,
   LDRAW_MIRROR_FACTORY,
   MODEL_IMPORT_ENGINE_FACTORY,
-  RECORD_CACHE,
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
@@ -61,8 +59,7 @@ export class ImportWorkerService implements IImportWorkerService {
     @inject(LDRAW_MIRROR_FACTORY) private readonly createMirror: LdrawMirrorFactory,
     @inject(MODEL_IMPORT_ENGINE_FACTORY) private readonly createEngine: ModelImportEngineFactory,
     @inject(IMPORT_FETCH) private readonly fetchUrl: FetchFunction,
-    @inject(RECORD_CACHE) private readonly recordCache: IByteCache,
-    @inject(CONNECTOR_RECORD_CACHE) private readonly connectorRecordCache: IByteCache,
+    @inject(ASSET_CACHE) private readonly assetCache: IAssetCache,
   ) {}
 
   private connectorRecords(request: ImportWorkerRequest): ConnectorRecords {
@@ -92,12 +89,7 @@ export class ImportWorkerService implements IImportWorkerService {
     const key = `${source.url} ${source.pin.sha256}`;
     let store = this.libraryConnectorStores.get(key);
     if (store === undefined) {
-      store = new LibraryConnectorStore(
-        source.url,
-        source.pin,
-        this.fetchUrl,
-        this.connectorRecordCache,
-      );
+      store = new LibraryConnectorStore(source.url, source.pin, this.fetchUrl, this.assetCache);
       this.libraryConnectorStores.set(key, store);
     }
     const library = store.source({
@@ -112,7 +104,7 @@ export class ImportWorkerService implements IImportWorkerService {
     const key = `${source.url} ${source.pin.sha256}`;
     let store = this.recordStores.get(key);
     if (store === undefined) {
-      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.recordCache);
+      store = new LibraryBakeStore(source.url, source.pin, this.fetchUrl, this.assetCache);
       this.recordStores.set(key, store);
     }
     return store;

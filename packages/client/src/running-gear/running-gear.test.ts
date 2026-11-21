@@ -46,7 +46,7 @@ function bundleLoader() {
   container.load(catalogModule);
   container.bind(BUNDLE_BASE_URL).toConstantValue("unused/");
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue(DEFAULT_BUNDLE_MANIFEST_FILE);
-  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  container.bind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   return container.get(PART_BUNDLE_LOADER);
 }
 
