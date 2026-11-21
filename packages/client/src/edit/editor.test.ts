@@ -1825,6 +1825,69 @@ it("draws road across a user's own baseplate model, swapping it for road, and er
   expect(posesOf(editor)).toEqual(laidOut);
 }, 120_000);
 
+it.each(["320", "319.9999", "320.0001"])(
+  "lays road past a user's brick column whose box edge, at %s LDU in the file, identifies to the stroke tile's edge",
+  async (edge) => {
+    const { editor, backend } = await startImportingEditor();
+    const column = Number(edge) + 10;
+    const street = userRoadFile("my-road-and-column.ldr", [
+      "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat",
+      `1 4 ${column} -24 650 1 0 0 0 1 0 0 0 1 3005.dat`,
+    ]);
+    await placer(editor, backend)(
+      await importUserFile(editor, "my-road-and-column.ldr", street),
+      320,
+      320,
+    );
+    expect(roadStrokeResult(editor, backend, [320, -1600], [320, -320])).toBe("laid");
+    expect(editor.snapshot().roads).toMatchObject({ mismatchedCells: 0, overlaps: 0 });
+  },
+  120_000,
+);
+
+const PLATE_ON_BASEPLATE = [
+  "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+  "1 72 -160 -16 160 1 0 0 0 1 0 0 0 1 69958.dat",
+];
+
+async function roadEndsOfAPlateOnABaseplate(oneFile: boolean) {
+  const { editor, backend, frame } = await startImportingEditor();
+  const place = placer(editor, backend);
+  if (oneFile) {
+    const scene = userRoadFile("my-corner.ldr", PLATE_ON_BASEPLATE);
+    await place(await importUserFile(editor, "my-corner.ldr", scene), 320, 320);
+  } else {
+    const [baseplateLine = "", plateLine = ""] = PLATE_ON_BASEPLATE;
+    const baseplate = userRoadFile("my-baseplate.ldr", [baseplateLine]);
+    await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    const plate = userRoadFile("my-road-plate.ldr", [plateLine.replace("-160 -16 160", "0 0 0")]);
+    await place(await importUserFile(editor, "my-road-plate.ldr", plate), 160, 160);
+  }
+  const ends = editor.snapshot().roads.issues.filter((issue) => issue.status === "open");
+  await chosen(editor, "ldraw:69958@72");
+  const outcomes = [];
+  for (const end of ends) {
+    const middle = (end.from + end.to) / 2;
+    const outward = end.side.startsWith("max") ? 1 : -1;
+    const acrossX = end.side.endsWith("X");
+    const flush = end.line + outward * 160;
+    const short = flush + outward * STUD;
+    const [x, z] = acrossX ? [short, middle] : [middle, short];
+    outcomes.push({
+      end: `${end.side} ${end.line}`,
+      ...(await settledAt(editor, backend, frame, x, z)),
+    });
+  }
+  return outcomes;
+}
+
+it("road-snaps a plate to each road end of a user's road plate on their own baseplate alike in one file or two, ends facing the baseplate included", async () => {
+  const twoFiles = await roadEndsOfAPlateOnABaseplate(false);
+  expect(twoFiles).toHaveLength(4);
+  expect(twoFiles.every((outcome) => outcome.snap === "snapped")).toBe(true);
+  expect(await roadEndsOfAPlateOnABaseplate(true)).toEqual(twoFiles);
+}, 240_000);
+
 it("refuses a road stroke over a user's car with a tile roof, by the car's own part boxes", async () => {
   const { editor, backend } = await startImportingEditor();
   const car = userRoadFile("my-car.ldr", [

@@ -1,5 +1,6 @@
 import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
 import type { BufferMemory, ChunkInstances, ISceneBackend, RebaseEvent } from "@brr/render";
+import { IDENTIFICATION_ACCEPTED_DEVIATION_LDU, SIXTEENTHS_PER_LDU } from "@brr/math";
 import { expect, it } from "vitest";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
@@ -249,6 +250,14 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
   }
 }, 120_000);
 
+function identified(ldu: number): number {
+  const sixteenths = ldu * SIXTEENTHS_PER_LDU;
+  const whole = Math.round(sixteenths);
+  return Math.abs(sixteenths - whole) <= IDENTIFICATION_ACCEPTED_DEVIATION_LDU * SIXTEENTHS_PER_LDU
+    ? whole / SIXTEENTHS_PER_LDU
+    : ldu;
+}
+
 it("finds the highest part top over a point, the parts meeting a plan rectangle and the models over a box exactly as a scan of every part box does, at every turn", async () => {
   const placeables = [
     await fixtureModelPlaceable("switch-then-reversed-curve"),
@@ -317,7 +326,12 @@ it("finds the highest part top over a point, the parts meeting a plan rectangle 
       for (let b = 0; b < boxes.length; b += 6) {
         const [minX = 0, , minZ = 0, maxX = 0, maxY = 0, maxZ = 0] = boxes.subarray(b, b + 6);
         if (x >= minX && x <= maxX && z >= minZ && z <= maxZ) top = Math.max(top, maxY);
-        if (minX < rect.maxX && maxX > rect.minX && minZ < rect.maxZ && maxZ > rect.minZ) {
+        const inPlan =
+          identified(minX) < rect.maxX &&
+          identified(maxX) > rect.minX &&
+          identified(minZ) < rect.maxZ &&
+          identified(maxZ) > rect.minZ;
+        if (inPlan) {
           meets = true;
         }
       }

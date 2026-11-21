@@ -16,7 +16,9 @@ import {
 import {
   CHUNK_LDU,
   CHUNK_STUDS,
+  IDENTIFICATION_ACCEPTED_DEVIATION_LDU,
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   chunkKey,
   chunkOf,
@@ -41,6 +43,14 @@ import {
   FOOTPRINT_NONE,
   type Placeable,
 } from "./placeable.ts";
+
+const IDENTIFIED_SIXTEENTHS = IDENTIFICATION_ACCEPTED_DEVIATION_LDU * SIXTEENTHS_PER_LDU;
+
+function identifiedEdge(ldu: number): number {
+  const sixteenths = ldu * SIXTEENTHS_PER_LDU;
+  const whole = Math.round(sixteenths);
+  return Math.abs(sixteenths - whole) <= IDENTIFIED_SIXTEENTHS ? whole / SIXTEENTHS_PER_LDU : ldu;
+}
 
 export interface PlacedModel {
   readonly id: number;
@@ -898,10 +908,10 @@ class PlacedEntry implements PlacedModel {
           const loZ = boxes[b + 2] ?? 0;
           const hiX = boxes[b + 3] ?? 0;
           const hiZ = boxes[b + 5] ?? 0;
-          const ax = this.x + cos * loX + sin * loZ;
-          const az = this.z - sin * loX + cos * loZ;
-          const bx = this.x + cos * hiX + sin * hiZ;
-          const bz = this.z - sin * hiX + cos * hiZ;
+          const ax = identifiedEdge(this.x + cos * loX + sin * loZ);
+          const az = identifiedEdge(this.z - sin * loX + cos * loZ);
+          const bx = identifiedEdge(this.x + cos * hiX + sin * hiZ);
+          const bz = identifiedEdge(this.z - sin * hiX + cos * hiZ);
           if (
             Math.min(ax, bx) < box.maxX &&
             Math.max(ax, bx) > box.minX &&

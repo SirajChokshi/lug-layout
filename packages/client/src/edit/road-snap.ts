@@ -388,9 +388,9 @@ interface WorldRun {
 const NO_RUN = -1;
 const openRunsBySurface = new WeakMap<RoadSurface, ReadonlyArray<OpenRun>>();
 
-function emptyAt(surface: RoadSurface, column: number, row: number): boolean {
+function nothingMeetsAt(surface: RoadSurface, column: number, row: number, top: number): boolean {
   if (column < 0 || row < 0 || column >= surface.columns || row >= surface.rows) return true;
-  return (surface.topSixteenths[row * surface.columns + column] ?? NO_TOP) === NO_TOP;
+  return (surface.topSixteenths[row * surface.columns + column] ?? NO_TOP) !== top;
 }
 
 function openFace(
@@ -401,8 +401,10 @@ function openFace(
   stepRow: number,
 ): boolean {
   if (column >= surface.columns || row >= surface.rows) return false;
-  if (surface.road[row * surface.columns + column] !== 1) return false;
-  return emptyAt(surface, column + stepColumn, row + stepRow);
+  const cell = row * surface.columns + column;
+  if (surface.road[cell] !== 1) return false;
+  const top = surface.topSixteenths[cell] ?? NO_TOP;
+  return nothingMeetsAt(surface, column + stepColumn, row + stepRow, top);
 }
 
 function localOpenRuns(surface: RoadSurface): ReadonlyArray<OpenRun> {
