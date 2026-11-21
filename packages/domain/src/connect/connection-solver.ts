@@ -3,6 +3,7 @@ import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.
 import type { MateFinder } from "./mate-finder.ts";
 import type { MateReport } from "./mate-report.ts";
 import type { ModelConnectors } from "./model-connectors.ts";
+import { ProposalProgress } from "./proposal-progress.ts";
 
 const QUARTER_TURNS = 4;
 
@@ -64,6 +65,7 @@ function ranksBefore(
 
 export class ConnectionSolver {
   private readonly pose = new CandidatePose();
+  private readonly wholeProposal = new ProposalProgress();
 
   constructor(private readonly finders: ReadonlyArray<MateFinder>) {
     if (finders.length === 0) throw new RangeError("a connection solver needs at least one finder");
@@ -82,23 +84,79 @@ export class ConnectionSolver {
     out.clear();
     out.add(window.x, window.z, window.yPlates, window.rot);
     for (let f = 0; f < this.finders.length; f++) this.finders[f]?.propose(model, window, out);
-    for (let i = 0; i < out.count; i++) {
-      const pose = this.pose.read(out, i);
-      let votes = 0;
-      for (let f = 0; f < this.finders.length; f++)
-        votes += this.finders[f]?.count(model, pose) ?? 0;
-      out.setVotes(i, votes);
-    }
+    for (let i = 0; i < out.count; i++) out.setVotes(i, this.votes(model, this.pose.read(out, i)));
     for (let i = 1; i < out.count; i++) {
       for (let j = i; j > 0 && ranksBefore(window, out, j, j - 1); j--) out.swap(j, j - 1);
     }
   }
 
+  votes(model: ModelConnectors, pose: LatticePose): number {
+    return this.denseVotes(model, pose) + this.proposalVotes(model, pose);
+  }
+
+  denseVotes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder?.proposesEveryPose) votes += finder.count(model, pose);
+    }
+    return votes;
+  }
+
+  proposalVotes(model: ModelConnectors, pose: LatticePose): number {
+    let votes = 0;
+    for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (finder && !finder.proposesEveryPose) votes += finder.count(model, pose);
+    }
+    return votes;
+  }
+
+  proposeMates(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
+    this.wholeProposal.restart();
+    this.proposeMatesFrom(model, window, out, this.wholeProposal, Number.POSITIVE_INFINITY);
+  }
+
+  proposeMatesFrom(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    progress: ProposalProgress,
+    slotBudget: number,
+  ): boolean {
+    checkWindow(window);
+    if (!progress.started) {
+      out.clear();
+      progress.started = true;
+    }
+    for (; progress.finder < this.finders.length; progress.finishFinder()) {
+      const finder = this.finders[progress.finder];
+      if (!finder || finder.proposesEveryPose) continue;
+      if (!finder.proposeOnLattice(model, window, out, progress, slotBudget)) return false;
+    }
+    return true;
+  }
+
   evaluate(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, false);
+  }
+
+  partneredMates(model: ModelConnectors, pose: LatticePose, out: MateReport): void {
+    this.mates(model, pose, out, true);
+  }
+
+  private mates(
+    model: ModelConnectors,
+    pose: LatticePose,
+    out: MateReport,
+    partneredOnly: boolean,
+  ): void {
     out.clear();
     for (let f = 0; f < this.finders.length; f++) {
+      const finder = this.finders[f];
+      if (!finder || (partneredOnly && !finder.namesPartners)) continue;
       const from = out.count;
-      this.finders[f]?.mates(model, pose, out);
+      finder.mates(model, pose, out);
       out.assignFamily(from, f);
     }
   }

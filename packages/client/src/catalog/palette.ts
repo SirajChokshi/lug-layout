@@ -1,11 +1,13 @@
 import { inject, injectable } from "inversify";
 import {
+  LIBRARY_PART_PLACER,
   PALETTE_DRAG,
   PALETTE_MEMORY,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
 } from "../tokens.ts";
+import type { ILibraryPartPlacer } from "./library-part-placer.ts";
 import type { IPaletteDrag } from "./palette-drag.ts";
 import type { IPaletteMemory } from "./palette-memory.ts";
 import type { IPalettePrefetch } from "./palette-prefetch.ts";
@@ -18,6 +20,7 @@ export interface IPalette {
   readonly prefetch: IPalettePrefetch;
   readonly memory: IPaletteMemory;
   readonly thumbnails: IPaletteThumbnails;
+  readonly libraryPlacer: ILibraryPartPlacer;
 }
 
 @injectable()
@@ -28,5 +31,6 @@ export class Palette implements IPalette {
     @inject(PALETTE_PREFETCH) readonly prefetch: IPalettePrefetch,
     @inject(PALETTE_MEMORY) readonly memory: IPaletteMemory,
     @inject(PALETTE_THUMBNAILS) readonly thumbnails: IPaletteThumbnails,
+    @inject(LIBRARY_PART_PLACER) readonly libraryPlacer: ILibraryPartPlacer,
   ) {}
 }
