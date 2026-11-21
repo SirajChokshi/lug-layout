@@ -1,4 +1,4 @@
-export type SpentOn = "recordFetchMs" | "compileMs" | "ldrawFetchMs";
+export type SpentOn = "recordFetchMs" | "compileMs" | "ldrawFetchMs" | "shadowFetchMs";
 
 export type SpentTotals = Readonly<Record<SpentOn, number>>;
 
@@ -7,6 +7,7 @@ export class TimeSpent {
     recordFetchMs: 0,
     compileMs: 0,
     ldrawFetchMs: 0,
+    shadowFetchMs: 0,
   };
 
   constructor(private readonly now: () => number) {}

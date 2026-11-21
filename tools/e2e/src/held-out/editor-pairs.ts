@@ -1,0 +1,1313 @@
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import type {
+  AssistNeighbourhood,
+  ConnectorKindView,
+  HoverMateCount,
+  HoverRefusalHit,
+  HoverWait,
+  IEditor,
+  PlacementHover,
+  PlacementMode,
+} from "@brr/client";
+import { distinctJoints } from "@brr/client/placement-hover";
+import { collisions, translated, type Assembly, type AssemblyPart } from "./assembly.ts";
+import type { ModulePair } from "./generator.ts";
+import { seamPredictions, shiftedOutcomes, type SeamPrediction } from "./pair-scenario.ts";
+import { CANVAS_WIDTH, VIEW_HALF_WIDTH_LDU } from "./headless-camera.ts";
+import type { AimedBackend } from "./headless-editor.ts";
+import {
+  EDITOR_FIRST_SLICE_MS,
+  FIRST_SLICE_READ_BUDGET,
+  SLICE_CLOCK_STEP_MS,
+  type SliceClock,
+} from "./slice-clock.ts";
+
+const QUARTER_TURNS_AWAY = 2;
+const QUARTER_TURNS = 4;
+const MODEL_IDENTITY_KEYS = new Set(["item", "label"]);
+const MODE_DEPENDENT_KEYS = new Set(["mode", "turnBlocksSnap", "turnMates", "turnJoints"]);
+const EVALUATION_SCOPED_KEYS = new Set(["jointIds"]);
+const LISTED_FAILURES = 4;
+const DISTANCE_RELATIVE_SLACK = 1e-12;
+const ASSIST_TOLERANCE_PX = 32;
+const ASSIST_FLOOR_LDU = STUD_LDU;
+const ASSIST_CAP_LDU = 3 * STUD_LDU;
+const NDC_SPAN = 2;
+const CLOSE_VIEW_HALF_WIDTH_LDU = 100;
+const MIDDLE_VIEW_HALF_WIDTH_LDU = 440;
+const LOAD_POLL_MS = 10;
+const LOAD_TIMEOUT_MS = 60_000;
+const NO_TIME = 0;
+const SETTLE_FRAME_LIMIT = 1_000;
+
+export interface Pose {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly rot: number;
+}
+
+type Vec3 = readonly [number, number, number];
+
+export interface EditorCheck {
+  readonly label: string;
+  readonly passed: boolean;
+  readonly detail: string;
+}
+
+interface SettleFlags {
+  readonly settled: boolean;
+  readonly turnSettled: boolean;
+}
+
+interface Step {
+  readonly aim: Pose;
+  readonly cursor: Pose | null;
+  readonly hover: PlacementHover | null;
+  readonly firstFrame: SettleFlags | null;
+  readonly settleReads: number | null;
+  readonly handlerMs: number;
+  readonly hoverText: string | null;
+  readonly committed: Pose | null;
+  readonly refused: boolean;
+  readonly refusal: string | null;
+}
+
+export interface ModelInput {
+  readonly name: string;
+  readonly text: string;
+}
+
+function describePose(pose: Pose | null | undefined): string {
+  if (!pose) return "none";
+  return `(${pose.x}, ${pose.z}) at ${pose.yPlates} plates, ${pose.rot} quarter turns`;
+}
+
+function samePose(a: Pose | null | undefined, b: Pose | null | undefined): boolean {
+  return !!a && !!b && a.x === b.x && a.z === b.z && a.yPlates === b.yPlates && a.rot === b.rot;
+}
+
+function roundSections(kind: ConnectorKindView): boolean {
+  return kind.sections.every(
+    (section) => section.profile === "round" || section.profile === "flare",
+  );
+}
+
+function counterboredAtBothMouths(kind: ConnectorKindView): boolean {
+  const first = kind.sections[0];
+  const last = kind.sections.at(-1);
+  const inner = kind.sections.slice(1, -1);
+  return (
+    first !== undefined &&
+    last !== undefined &&
+    inner.length > 0 &&
+    inner.every((section) => section.sizeLdu < first.sizeLdu && section.sizeLdu < last.sizeLdu)
+  );
+}
+
+function isTechnicHole(kind: ConnectorKindView): boolean {
+  return (
+    kind.gender === "female" &&
+    kind.slides &&
+    kind.sections.every((section) => section.profile === "round") &&
+    counterboredAtBothMouths(kind)
+  );
+}
+
+function isTechnicPin(kind: ConnectorKindView): boolean {
+  return (
+    kind.gender === "male" &&
+    roundSections(kind) &&
+    kind.sections.some((section) => section.profile === "flare")
+  );
+}
+
+interface PinHoleMateCount {
+  readonly kind: ConnectorKindView;
+  readonly partnerKinds: ReadonlyArray<ConnectorKindView>;
+  readonly jointIds: Iterable<number>;
+}
+
+function pinHoleMates<Mate extends PinHoleMateCount>(
+  mates: ReadonlyArray<Mate>,
+): ReadonlyArray<Mate> {
+  return mates.filter(
+    (mate) =>
+      mate.partnerKinds.length > 0 &&
+      ((isTechnicHole(mate.kind) && mate.partnerKinds.every(isTechnicPin)) ||
+        (isTechnicPin(mate.kind) && mate.partnerKinds.every(isTechnicHole))),
+  );
+}
+
+export function pinHoleJoints(mates: ReadonlyArray<PinHoleMateCount>): number {
+  return distinctJoints(pinHoleMates(mates));
+}
+
+function describeMates(mates: ReadonlyArray<HoverMateCount>): string {
+  if (mates.length === 0) return "no mates";
+  return mates
+    .map(
+      (mate) =>
+        `${mate.joints} joints (${mate.connectors} held ${mate.kind.gender} ${mate.kind.sections.map((s) => `${s.profile} ${s.sizeLdu}`).join("/")}${mate.kind.slides ? " sliding" : ""} against ${mate.partnerKinds.map((k) => `${k.gender} ${k.sections.map((s) => `${s.profile} ${s.sizeLdu}`).join("/")}`).join(", ")})`,
+    )
+    .join("; ");
+}
+
+function describeWait(wait: HoverWait | null): string {
+  if (!wait) return "";
+  const placed = `${wait.placed.label} at ${describePose(wait.placed.pose)}`;
+  return wait.failed
+    ? `, ${placed} failed to load its connector data`
+    : `, waiting on ${placed} to load its connector data`;
+}
+
+function describeHover(hover: PlacementHover | null): string {
+  if (!hover) return "no placement hover";
+  const verdict = hover.accepted ? "accepted" : "refused";
+  const hit = hover.hit
+    ? `, hit ${hover.hit.partLabel ?? hover.hit.part ?? "a part"} of ${hover.hit.placed.label} in cell (${hover.hit.cellX}, ${hover.hit.cellZ})${hover.hit.byColumnOnly ? " by the column model only" : ""}`
+    : "";
+  const magnet = hover.magnetised
+    ? `, magnetised by (${hover.magnet.dxLdu}, ${hover.magnet.dzLdu}) LDU`
+    : "";
+  const unsettled = unsettledFlags(settleFlags(hover));
+  return `${hover.mode} ${verdict}${unsettled.length === 0 ? "" : ` (${unsettled.join(" and ")} false)`} at ${describePose(hover.pose)}${magnet}${hover.lifted ? ", lifted" : ""}${hit}${describeWait(hover.waitingOn)}; ${describeMates(hover.mates)}`;
+}
+
+function settleFlags(hover: PlacementHover | null): SettleFlags | null {
+  return hover ? { settled: hover.settled, turnSettled: hover.turnSettled } : null;
+}
+
+function unsettledFlags(flags: SettleFlags | null): ReadonlyArray<string> {
+  if (flags === null) return [];
+  return [...(flags.settled ? [] : ["settled"]), ...(flags.turnSettled ? [] : ["turnSettled"])];
+}
+
+export class EditorPath {
+  constructor(
+    private readonly editor: IEditor,
+    private readonly backend: AimedBackend,
+    private readonly frame: () => Promise<void>,
+    private readonly clock: SliceClock,
+  ) {}
+
+  async importModel(model: ModelInput): Promise<string> {
+    const imported = await this.editor.importModelFile({
+      name: model.name,
+      bytes: new TextEncoder().encode(model.text),
+    });
+    const item = this.editor.snapshot().activeItem;
+    if (!imported || item === null) {
+      const view = this.editor.snapshot().modelImport;
+      throw new Error(
+        `${model.name} didn't become placeable: ${view?.reason ?? "no reason given"}`,
+      );
+    }
+    return item;
+  }
+
+  frameShift(item: string): Vec3 {
+    const dump = this.editor.dump();
+    const index = dump.covers.findIndex(
+      (cover) => item === cover.id || item.startsWith(`${cover.id}@`),
+    );
+    const shift = dump.frameShifts[index];
+    if (index < 0 || !shift) throw new Error(`${item} has no loaded placeable`);
+    return [shift[0], shift[1], shift[2]];
+  }
+
+  async hold(item: string, turns = 0): Promise<void> {
+    this.editor.pointerLeave();
+    this.editor.chooseItem(item);
+    const deadline = performance.now() + LOAD_TIMEOUT_MS;
+    while (
+      this.editor.snapshot().activeItem !== item ||
+      this.editor.snapshot().pendingItem !== null
+    ) {
+      if (performance.now() > deadline)
+        throw new Error(`${item} didn't load within ${LOAD_TIMEOUT_MS} ms`);
+      await new Promise((resolve) => setTimeout(resolve, LOAD_POLL_MS));
+    }
+    for (
+      let press = 0;
+      press < QUARTER_TURNS && this.editor.snapshot().ghostRot !== turns;
+      press++
+    ) {
+      this.editor.rotate(NO_TIME);
+    }
+  }
+
+  setMode(mode: PlacementMode): void {
+    this.editor.setPlacementMode(mode);
+  }
+
+  viewHalfWidth(ldu: number): void {
+    this.backend.viewHalfWidth(ldu);
+  }
+
+  private placementFlags(): SettleFlags | null {
+    return settleFlags(this.editor.snapshot().hover?.placement ?? null);
+  }
+
+  private async settle(x: number, z: number): Promise<void> {
+    for (let frames = 0; ; frames++) {
+      const unsettled = unsettledFlags(this.placementFlags());
+      if (unsettled.length === 0) return;
+      if (frames >= SETTLE_FRAME_LIMIT) {
+        throw new Error(
+          `the hover aimed at (${x}, ${z}) still has ${unsettled.join(" and ")} false after ${SETTLE_FRAME_LIMIT} frames`,
+        );
+      }
+      await this.frame();
+    }
+  }
+
+  async hoverAt(
+    x: number,
+    z: number,
+  ): Promise<{
+    readonly hover: PlacementHover | null;
+    readonly text: string | null;
+    readonly cursor: Pose | null;
+    readonly firstFrame: SettleFlags | null;
+    readonly settleReads: number | null;
+    readonly handlerMs: number;
+  }> {
+    return this.clock.during(async () => {
+      this.backend.aim(x, z);
+      const handlerStartMs = this.clock.realMs();
+      this.editor.pointerMove(0, 0);
+      const handlerMs = this.clock.realMs() - handlerStartMs;
+      const firstFrame = this.placementFlags();
+      const settleReads = firstFrame?.settled ? this.clock.readsToFirstPublish() : null;
+      await this.settle(x, z);
+      const { hover, ghostRot } = this.editor.snapshot();
+      return {
+        hover: hover?.placement ?? null,
+        text: hover?.refusal ?? null,
+        cursor: hover ? { x: hover.x, z: hover.z, yPlates: hover.yPlates, rot: ghostRot } : null,
+        firstFrame,
+        settleReads,
+        handlerMs,
+      };
+    });
+  }
+
+  async step(x: number, z: number, commit: boolean): Promise<Step> {
+    const { hover, text, cursor, firstFrame, settleReads, handlerMs } = await this.hoverAt(x, z);
+    const before = this.editor.snapshot();
+    const aim: Pose = { x, z, yPlates: 0, rot: before.ghostRot };
+    if (!commit)
+      return {
+        aim,
+        cursor,
+        hover,
+        firstFrame,
+        settleReads,
+        handlerMs,
+        hoverText: text,
+        committed: null,
+        refused: false,
+        refusal: null,
+      };
+    this.editor.click(0, 0, NO_TIME);
+    const after = this.editor.snapshot();
+    const refused = after.refusedClicks > before.refusedClicks;
+    const committed = after.placements > before.placements ? this.lastPlacement() : null;
+    return {
+      aim,
+      cursor,
+      hover,
+      firstFrame,
+      settleReads,
+      handlerMs,
+      hoverText: text,
+      committed,
+      refused,
+      refusal: refused ? (after.lastRefusal?.reason ?? null) : null,
+    };
+  }
+
+  undoLast(): void {
+    this.editor.undo(NO_TIME);
+  }
+
+  lastPlacement(): Pose {
+    const { placements } = this.editor.dump();
+    const last = placements.x.length - 1;
+    return {
+      x: placements.x[last] ?? 0,
+      z: placements.z[last] ?? 0,
+      yPlates: placements.yPlates[last] ?? 0,
+      rot: placements.rot[last] ?? 0,
+    };
+  }
+}
+
+export function fromLdrawFrame(vector: Vec3): Vec3 {
+  return [vector[0], 0 - vector[1], 0 - vector[2]];
+}
+
+export interface Seam {
+  readonly flush: Pose;
+  readonly toward: Vec3;
+  readonly along: Vec3;
+}
+
+export interface PairPoses extends Seam {
+  readonly placed: Pose;
+  readonly placedShift: Vec3;
+  readonly heldShift: Vec3;
+}
+
+export function pairPoses(
+  path: EditorPath,
+  heldOffset: Vec3,
+  alongEdge: Vec3,
+  placedItem: string,
+  placed: Pose,
+  heldItem: string,
+): PairPoses {
+  const placedShift = path.frameShift(placedItem);
+  const heldShift = path.frameShift(heldItem);
+  const worldOffset = fromLdrawFrame(heldOffset);
+  const flush: Pose = {
+    x: placed.x + placedShift[0] + worldOffset[0] - heldShift[0],
+    z: placed.z + placedShift[2] + worldOffset[2] - heldShift[2],
+    yPlates: placed.yPlates,
+    rot: placed.rot,
+  };
+  const toward: Vec3 = [
+    -Math.sign(worldOffset[0]) * STUD_LDU,
+    0,
+    -Math.sign(worldOffset[2]) * STUD_LDU,
+  ];
+  return { placed, placedShift, heldShift, flush, toward, along: fromLdrawFrame(alongEdge) };
+}
+
+function offset(pose: Pose, by: Vec3, studs: number): Pose {
+  return { ...pose, x: pose.x + by[0] * studs, z: pose.z + by[2] * studs };
+}
+
+export interface LoggedStep {
+  readonly label: string;
+  readonly step: Step;
+}
+
+export interface PairRun {
+  readonly placedLabel: string;
+  readonly checks: ReadonlyArray<EditorCheck>;
+  readonly steps: ReadonlyArray<LoggedStep>;
+}
+
+function stem(reference: string): string {
+  return reference.replace(/\.dat$/iu, "").toLowerCase();
+}
+
+function namesPart(part: string | null, parts: Assembly): boolean {
+  if (part === null) return false;
+  const named = part.toLowerCase();
+  return parts.some(
+    (candidate) =>
+      named === stem(candidate.reference) || named.endsWith(`:${stem(candidate.reference)}`),
+  );
+}
+
+export interface PosedAssembly {
+  readonly parts: Assembly;
+  readonly origin: Vec3;
+}
+
+export function posed(parts: Assembly, pose: Pose, shift: Vec3): PosedAssembly {
+  if (pose.rot !== 0) throw new Error("the harness poses assemblies unturned only");
+  return {
+    parts,
+    origin: [pose.x + shift[0], pose.yPlates * PLATE_LDU + shift[1], pose.z + shift[2]],
+  };
+}
+
+export function pinsOf(parts: Assembly): Assembly {
+  return parts.filter((part) => part.pin !== null);
+}
+
+interface HitBox {
+  readonly cellX: number;
+  readonly cellZ: number;
+  readonly bottomLdu: number;
+  readonly topLdu: number;
+}
+
+function coversCell(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
+  const x0 = box.cellX * STUD_LDU;
+  const z0 = box.cellZ * STUD_LDU;
+  return (
+    origin[0] + part.min[0] < x0 + STUD_LDU &&
+    origin[0] + part.max[0] > x0 &&
+    origin[2] - part.max[2] < z0 + STUD_LDU &&
+    origin[2] - part.min[2] > z0
+  );
+}
+
+function overlapsHit(part: AssemblyPart, origin: Vec3, box: HitBox): boolean {
+  return (
+    coversCell(part, origin, box) &&
+    origin[1] - part.max[1] < box.topLdu &&
+    origin[1] - part.min[1] > box.bottomLdu
+  );
+}
+
+function columnOverlapsHit(posedParts: PosedAssembly, box: HitBox): boolean {
+  const inCell = posedParts.parts.filter((part) => coversCell(part, posedParts.origin, box));
+  const bottom = Math.min(...inCell.map((part) => posedParts.origin[1] - part.max[1]));
+  const top = Math.max(...inCell.map((part) => posedParts.origin[1] - part.min[1]));
+  return inCell.length > 0 && bottom < box.topLdu && top > box.bottomLdu;
+}
+
+export interface PosedPair {
+  readonly placed: PosedAssembly;
+  readonly held: PosedAssembly;
+}
+
+function inFrameOf(base: PosedAssembly, other: PosedAssembly): Assembly {
+  return translated(other.parts, [
+    other.origin[0] - base.origin[0],
+    base.origin[1] - other.origin[1],
+    base.origin[2] - other.origin[2],
+  ]);
+}
+
+export function partsCollide({ placed, held }: PosedPair): boolean {
+  return collisions(placed.parts, inFrameOf(placed, held)) > 0;
+}
+
+export function hitIsReal(
+  hit: HoverRefusalHit | null,
+  placedItem: string,
+  named: PosedAssembly,
+  held: PosedAssembly,
+  whole: PosedPair = { placed: named, held },
+): boolean {
+  if (hit === null || hit.placed.item !== placedItem) return false;
+  const box: HitBox = {
+    cellX: hit.cellX,
+    cellZ: hit.cellZ,
+    bottomLdu: Math.max(hit.placedBottomLdu, hit.heldBottomLdu),
+    topLdu: Math.min(hit.placedTopLdu, hit.heldTopLdu),
+  };
+  if (box.bottomLdu >= box.topLdu) return false;
+  if (hit.byColumnOnly) {
+    return (
+      hit.part === null &&
+      !partsCollide(whole) &&
+      columnOverlapsHit(whole.placed, box) &&
+      columnOverlapsHit(whole.held, box)
+    );
+  }
+  if (hit.part === null) return false;
+  return (
+    named.parts.some(
+      (part) => namesPart(hit.part, [part]) && overlapsHit(part, named.origin, box),
+    ) && columnOverlapsHit(held, box)
+  );
+}
+
+export interface SweepOffset {
+  readonly along: number;
+  readonly across: number;
+}
+
+const AT_FLUSH: SweepOffset = { along: 0, across: 0 };
+const ONE_STUD_SHORT: SweepOffset = { along: 0, across: -1 };
+const ONE_STUD_IN: SweepOffset = { along: 0, across: 1 };
+const ONE_STUD_ALONG: SweepOffset = { along: 1, across: 0 };
+const ONE_STUD_BACK_ALONG: SweepOffset = { along: -1, across: 0 };
+const NO_NEIGHBOURHOOD: AssistNeighbourhood = { ldu: 0, cells: 0, plates: 0 };
+
+export function sweepOffsets(reachCells: number, full: boolean): ReadonlyArray<SweepOffset> {
+  const outer = reachCells + 1;
+  const offsets = new Map<string, SweepOffset>();
+  const add = (along: number, across: number): void => {
+    offsets.set(`${along},${across}`, { along: along + 0, across: across + 0 });
+  };
+  if (full) {
+    for (let along = -outer; along <= outer; along++) {
+      for (let across = -outer; across <= outer; across++) add(along, across);
+    }
+    return [...offsets.values()];
+  }
+  for (const reach of new Set([0, 1, reachCells, outer])) {
+    for (const value of [reach, -reach]) {
+      add(0, value);
+      add(value, 0);
+      add(value, value);
+      add(value, -value);
+    }
+  }
+  return [...offsets.values()];
+}
+
+function cursorAt(seam: Seam, at: SweepOffset): Pose {
+  return offset(offset(seam.flush, seam.along, at.along), seam.toward, at.across);
+}
+
+function describeOffset(at: SweepOffset): string {
+  const across =
+    at.across === 0 ? "flush" : at.across > 0 ? `${at.across} in` : `${-at.across} short`;
+  return at.along === 0 ? across : `${across}, ${at.along} along`;
+}
+
+export function sameDistance(reported: number, expected: number): boolean {
+  return Math.abs(reported - expected) <= DISTANCE_RELATIVE_SLACK * Math.max(1, expected);
+}
+
+function settledIn(hover: PlacementHover, mode: PlacementMode): boolean {
+  return hover.mode === mode && hover.settled && hover.turnSettled;
+}
+
+function settledOnFirstFrame(step: Step): boolean {
+  return !unsettledFlags(step.firstFrame).includes("settled");
+}
+
+function firstFrameNote(step: Step): string {
+  return settledOnFirstFrame(step)
+    ? "its pose settled on the first frame"
+    : "its pose needed later frames to settle";
+}
+
+export function settledCheck(steps: ReadonlyArray<LoggedStep>): EditorCheck {
+  const lateOn = (flag: string): ReadonlyArray<LoggedStep> =>
+    steps.filter(({ step }) => unsettledFlags(step.firstFrame).includes(flag));
+  const listed = (late: ReadonlyArray<LoggedStep>): string =>
+    late
+      .slice(0, LISTED_FAILURES)
+      .map(({ label }) => label)
+      .join("; ");
+  const lateSettled = lateOn("settled");
+  const lateTurns = lateOn("turnSettled");
+  const settleReads = steps.flatMap(({ step }) =>
+    step.settleReads === null ? [] : [step.settleReads],
+  );
+  const reads = `fake clock at ${SLICE_CLOCK_STEP_MS} ms a read, so the ${EDITOR_FIRST_SLICE_MS} ms first slice allows ${FIRST_SLICE_READ_BUDGET} reads; the pose settled within ${Math.max(0, ...settleReads)} reads at most`;
+  const handlerMs = steps.map(({ step }) => step.handlerMs).toSorted((a, b) => a - b);
+  const quantile = (fraction: number): string =>
+    (
+      handlerMs[Math.min(handlerMs.length - 1, Math.ceil(fraction * handlerMs.length) - 1)] ?? 0
+    ).toFixed(1);
+  const overSlice = handlerMs.filter((ms) => ms > EDITOR_FIRST_SLICE_MS).length;
+  const wallClock = `wall clock, as a metric only: pointer handlers took ${quantile(0.5)} ms median, ${quantile(0.95)} ms p95, ${quantile(1)} ms max, ${overSlice} of ${handlerMs.length} over ${EDITOR_FIRST_SLICE_MS} ms`;
+  const turns =
+    lateTurns.length === 0
+      ? "every turn hint settled on the first frame too"
+      : `${lateTurns.length} turn hints settled in later frames, within the ${SETTLE_FRAME_LIMIT}-frame bound: ${listed(lateTurns)}`;
+  return {
+    label:
+      "Every hover's pose and verdict are settled on the first frame after the pointer moves, so no step needs a sliced assist search; turn hints settle within the frame bound",
+    passed: lateSettled.length === 0,
+    detail:
+      lateSettled.length === 0
+        ? `${steps.length} hovers settled on the first frame; ${turns}; ${reads}; ${wallClock}`
+        : `${lateSettled.length} of ${steps.length} needed later frames to settle: ${listed(lateSettled)}; ${turns}; ${reads}; ${wallClock}`,
+  };
+}
+
+function magnetIsExact(hover: PlacementHover, cursor: Pose): boolean {
+  const dx = hover.pose.x - cursor.x;
+  const dz = hover.pose.z - cursor.z;
+  const dy = hover.pose.yPlates - cursor.yPlates;
+  const moved = dx !== 0 || dz !== 0 || dy !== 0 || hover.pose.rot !== cursor.rot;
+  return (
+    hover.magnetised === moved &&
+    hover.magnet.dxLdu === dx &&
+    hover.magnet.dzLdu === dz &&
+    hover.magnet.dyPlates === dy &&
+    sameDistance(hover.magnet.distanceLdu, Math.sqrt(dx * dx + dz * dz + (PLATE_LDU * dy) ** 2))
+  );
+}
+
+function snapsFlush(step: Step, seam: Seam, pins: number): boolean {
+  const { hover, cursor } = step;
+  return (
+    hover !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    settledIn(hover, "assist") &&
+    hover.accepted &&
+    samePose(hover.pose, seam.flush) &&
+    !hover.lifted &&
+    pinHoleJoints(hover.mates) === pins &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+function atCursor(step: Step, mode: PlacementMode): boolean {
+  const { hover, cursor } = step;
+  return (
+    hover !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    settledIn(hover, mode) &&
+    samePose(hover.pose, cursor) &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+export function placementVerdict(hover: Pick<PlacementHover, "pose" | "accepted"> | null): string {
+  return JSON.stringify(hover, (key, field: unknown) =>
+    MODE_DEPENDENT_KEYS.has(key) || EVALUATION_SCOPED_KEYS.has(key) ? undefined : field,
+  );
+}
+
+function stepVerdict(step: Step): string {
+  return `${JSON.stringify(step.cursor)} ${placementVerdict(step.hover)}`;
+}
+
+function sweepCheck<T>(
+  label: string,
+  items: ReadonlyArray<T>,
+  passes: (item: T) => boolean,
+  describe: (item: T) => string,
+  passedDetail: string,
+): EditorCheck {
+  const failed = items.filter((item) => !passes(item));
+  const listed = failed.slice(0, LISTED_FAILURES).map(describe).join("; ");
+  const more = failed.length > LISTED_FAILURES ? `; ${failed.length - LISTED_FAILURES} more` : "";
+  return {
+    label,
+    passed: items.length > 0 && failed.length === 0,
+    detail:
+      items.length === 0
+        ? "no offsets to check"
+        : failed.length === 0
+          ? passedDetail
+          : `${failed.length} of ${items.length} fail: ${listed}${more}`,
+  };
+}
+
+interface Compared {
+  readonly at: SweepOffset;
+  readonly assist: Step;
+  readonly precise: Step;
+}
+
+class StepLog {
+  readonly steps: LoggedStep[] = [];
+
+  constructor(
+    private readonly path: EditorPath,
+    private readonly heldItem: string,
+    private readonly seam: Seam,
+  ) {}
+
+  async at(mode: PlacementMode, at: SweepOffset, commit: boolean, turns = 0): Promise<Step> {
+    await this.path.hold(this.heldItem, turns);
+    this.path.setMode(mode);
+    const cursor = cursorAt(this.seam, at);
+    const step = await this.path.step(cursor.x, cursor.z, commit);
+    if (step.committed) this.path.undoLast();
+    const turned = turns === 0 ? "" : `, turned ${turns} quarter turns`;
+    this.steps.push({
+      label: `${mode} ${describeOffset(at)}${turned}${commit ? ", clicked" : ""}`,
+      step,
+    });
+    return step;
+  }
+}
+
+interface MatedPose {
+  readonly along: number;
+  readonly step: Step;
+}
+
+interface Snapped {
+  readonly at: SweepOffset;
+  readonly step: Step;
+  readonly target: MatedPose;
+}
+
+function jointsOf(step: Step): number {
+  return step.hover?.joints ?? 0;
+}
+
+function connectorsOf(step: Step): number {
+  return (step.hover?.mates ?? []).reduce((sum, mate) => sum + mate.connectors, 0);
+}
+
+function seamSpan(neighbourhood: AssistNeighbourhood): number {
+  return 2 * (neighbourhood.cells + 1);
+}
+
+async function seamPoses(log: StepLog, span: number): Promise<ReadonlyArray<MatedPose>> {
+  const poses: MatedPose[] = [];
+  for (let along = -span; along <= span; along++) {
+    poses.push({ along, step: await log.at("precise", { along: along + 0, across: 0 }, false) });
+  }
+  return poses;
+}
+
+async function matedPoses(
+  log: StepLog,
+  neighbourhood: AssistNeighbourhood,
+): Promise<ReadonlyArray<MatedPose>> {
+  return (await seamPoses(log, seamSpan(neighbourhood))).filter(
+    ({ step }) => step.hover?.accepted === true && step.hover.mates.length > 0,
+  );
+}
+
+interface PredictedMate {
+  readonly along: number;
+  readonly joints: number;
+  readonly pose: Pose;
+}
+
+interface PredictedSnap {
+  readonly at: SweepOffset;
+  readonly step: Step;
+  readonly target: PredictedMate;
+}
+
+function nearestPredicted(
+  at: SweepOffset,
+  mates: ReadonlyArray<PredictedMate>,
+  neighbourhood: AssistNeighbourhood,
+): PredictedMate | null {
+  const reach = neighbourhood.ldu * neighbourhood.ldu;
+  const ranked = mates
+    .filter((mate) => squaredDistance(at, mate.along) <= reach)
+    .toSorted(
+      (a, b) =>
+        squaredDistance(at, a.along) - squaredDistance(at, b.along) ||
+        b.joints - a.joints ||
+        a.pose.x - b.pose.x ||
+        a.pose.z - b.pose.z,
+    );
+  return ranked[0] ?? null;
+}
+
+function snapsToPredicted(step: Step, target: PredictedMate): boolean {
+  const { hover, cursor } = step;
+  return (
+    hover !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    settledIn(hover, "assist") &&
+    hover.accepted &&
+    samePose(hover.pose, target.pose) &&
+    !hover.lifted &&
+    pinHoleJoints(hover.mates) === target.joints &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+function describePredictions(predictions: ReadonlyArray<SeamPrediction>): string {
+  return predictions
+    .filter(({ fit }) => fit === "mated")
+    .map(({ along, joints }) => `${along === 0 ? "flush" : `${along} along`} (${joints} joints)`)
+    .join(", ");
+}
+
+function squaredDistance(at: SweepOffset, along: number): number {
+  return STUD_LDU * STUD_LDU * ((at.along - along) ** 2 + at.across * at.across);
+}
+
+function nearestMated(
+  at: SweepOffset,
+  mated: ReadonlyArray<MatedPose>,
+  neighbourhood: AssistNeighbourhood,
+): MatedPose | null {
+  const reach = neighbourhood.ldu * neighbourhood.ldu;
+  const ranked = mated
+    .filter((candidate) => squaredDistance(at, candidate.along) <= reach)
+    .toSorted(
+      (a, b) =>
+        squaredDistance(at, a.along) - squaredDistance(at, b.along) ||
+        jointsOf(b.step) - jointsOf(a.step) ||
+        connectorsOf(b.step) - connectorsOf(a.step) ||
+        (a.step.hover?.pose.x ?? 0) - (b.step.hover?.pose.x ?? 0) ||
+        (a.step.hover?.pose.z ?? 0) - (b.step.hover?.pose.z ?? 0),
+    );
+  return ranked[0] ?? null;
+}
+
+function snapsTo(step: Step, target: MatedPose): boolean {
+  const { hover, cursor } = step;
+  const expected = target.step.hover;
+  return (
+    hover !== null &&
+    expected !== null &&
+    cursor !== null &&
+    samePose(cursor, step.aim) &&
+    settledIn(hover, "assist") &&
+    hover.accepted &&
+    samePose(hover.pose, expected.pose) &&
+    !hover.lifted &&
+    JSON.stringify(hover.mates) === JSON.stringify(expected.mates) &&
+    magnetIsExact(hover, cursor)
+  );
+}
+
+function describeMated(mated: ReadonlyArray<MatedPose>): string {
+  return mated
+    .map(
+      ({ along, step }) => `${along === 0 ? "flush" : `${along} along`} (${jointsOf(step)} joints)`,
+    )
+    .join(", ");
+}
+
+function farthestLatticeDistance(limitLdu: number): number {
+  let farthest = 0;
+  for (let across = 0; across * STUD_LDU <= limitLdu; across++) {
+    for (let along = 0; along <= across; along++) {
+      for (let up = 0; up * PLATE_LDU <= limitLdu; up++) {
+        const distance = Math.hypot(across * STUD_LDU, along * STUD_LDU, up * PLATE_LDU);
+        if (distance <= limitLdu && distance > farthest) farthest = distance;
+      }
+    }
+  }
+  return farthest;
+}
+
+function expectedNeighbourhood(viewHalfWidthLdu: number): AssistNeighbourhood {
+  const tolerance = (NDC_SPAN * ASSIST_TOLERANCE_PX * viewHalfWidthLdu) / CANVAS_WIDTH;
+  const ldu = farthestLatticeDistance(
+    Math.min(Math.max(tolerance, ASSIST_FLOOR_LDU), ASSIST_CAP_LDU),
+  );
+  return { ldu, cells: Math.ceil(ldu / STUD_LDU), plates: Math.floor(ldu / PLATE_LDU) };
+}
+
+async function reachAcrossScales(path: EditorPath, log: StepLog): Promise<EditorCheck> {
+  const scales: string[] = [];
+  let passed = true;
+  for (const viewHalfWidthLdu of [
+    CLOSE_VIEW_HALF_WIDTH_LDU,
+    MIDDLE_VIEW_HALF_WIDTH_LDU,
+    VIEW_HALF_WIDTH_LDU,
+  ]) {
+    path.viewHalfWidth(viewHalfWidthLdu);
+    const reported = (await log.at("assist", AT_FLUSH, false)).hover?.assistNeighbourhood ?? null;
+    const expected = expectedNeighbourhood(viewHalfWidthLdu);
+    passed &&=
+      reported !== null &&
+      sameDistance(reported.ldu, expected.ldu) &&
+      reported.cells === expected.cells &&
+      reported.plates === expected.plates;
+    scales.push(
+      `${viewHalfWidthLdu} LDU half-width: expected ${JSON.stringify(expected)}, reported ${JSON.stringify(reported)}`,
+    );
+  }
+  path.viewHalfWidth(VIEW_HALF_WIDTH_LDU);
+  return {
+    label: `The reported neighbourhood is the farthest lattice distance within ${ASSIST_TOLERANCE_PX} px at the cursor in LDU, clamped to the ${ASSIST_FLOOR_LDU} LDU floor and the ${ASSIST_CAP_LDU} LDU cap, at three camera scales, with the cells it spans from the cursor rounded up and the plates within it rounded down`,
+    passed,
+    detail: scales.join("; "),
+  };
+}
+
+function outcome(step: Step): string {
+  const clicked = step.refused
+    ? `; refused: ${step.refusal ?? "no reason"}`
+    : step.committed
+      ? `; committed ${describePose(step.committed)}`
+      : "";
+  return `cursor ${describePose(step.cursor)}; hover ${describeHover(step.hover)}${clicked}`;
+}
+
+export async function pinnedPairChecks(
+  path: EditorPath,
+  poses: PairPoses,
+  pair: ModulePair,
+  placedItem: string,
+  heldItem: string,
+  full: boolean,
+): Promise<PairRun> {
+  const { pins } = pair;
+  const log = new StepLog(path, heldItem, poses);
+  const reach = await reachAcrossScales(path, log);
+  const probe = await log.at("assist", AT_FLUSH, false);
+  const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
+  const span = seamSpan(neighbourhood);
+  const precisely = await seamPoses(log, span);
+  const predictions = seamPredictions(pair, span);
+  const predictedMates: ReadonlyArray<PredictedMate> = predictions
+    .filter(({ fit }) => fit === "mated")
+    .map(({ along, joints }) => ({ along, joints, pose: offset(poses.flush, poses.along, along) }));
+  const snapped: PredictedSnap[] = [];
+  const beyond: Compared[] = [];
+  for (const at of sweepOffsets(neighbourhood.cells, full)) {
+    const assist = await log.at("assist", at, false);
+    const target = nearestPredicted(at, predictedMates, neighbourhood);
+    if (target) snapped.push({ at, step: assist, target });
+    else beyond.push({ at, assist, precise: await log.at("precise", at, false) });
+  }
+  const assistShort = await log.at("assist", ONE_STUD_SHORT, true);
+  const assistIn = await log.at("assist", ONE_STUD_IN, true);
+  const preciseFlush = await log.at("precise", AT_FLUSH, true);
+  const preciseShort = await log.at("precise", ONE_STUD_SHORT, true);
+  const preciseIn = await log.at("precise", ONE_STUD_IN, true);
+  const alongForward = await log.at("precise", ONE_STUD_ALONG, true);
+  const alongBack = await log.at("precise", ONE_STUD_BACK_ALONG, true);
+  path.setMode("assist");
+  const named = posed(pair.subject.assembly, poses.placed, poses.placedShift);
+  const realHit = (step: Step): boolean =>
+    step.hover !== null &&
+    step.hover.accepted === false &&
+    hitIsReal(
+      step.hover.hit,
+      placedItem,
+      named,
+      posed(pair.partner.assembly, step.hover.pose, poses.heldShift),
+    );
+  const committedFlush = (step: Step): boolean => samePose(step.committed, poses.flush);
+  const shiftedAllowed = (step: Step, sign: number): boolean => {
+    if (!atCursor(step, "precise")) return false;
+    if (shiftedOutcomes(pair, sign).some((shifted) => shifted.kind === "colliding")) {
+      return realHit(step) && step.committed === null;
+    }
+    return step.hover !== null && pinHoleJoints(step.hover.mates) < pins;
+  };
+  const refusedBeyond = beyond.filter(({ precise }) => precise.hover?.accepted === false).length;
+  const toFlush = snapped.filter(({ target }) => target.along === 0).length;
+  const seamDisagrees = (prediction: SeamPrediction): boolean => {
+    const step = precisely.find(({ along }) => along === prediction.along)?.step;
+    if (!step?.hover || !atCursor(step, "precise")) return true;
+    const joints = pinHoleJoints(step.hover.mates);
+    switch (prediction.fit) {
+      case "out":
+        return !realHit(step);
+      case "mated":
+        return !step.hover.accepted || joints !== prediction.joints;
+      case "free":
+        return !step.hover.accepted || joints !== 0;
+      default: {
+        const unhandled: never = prediction.fit;
+        throw new Error(`unhandled seam fit ${String(unhandled)}`);
+      }
+    }
+  };
+  const seamMismatches = predictions.filter(seamDisagrees);
+  const describeSeam = (prediction: SeamPrediction): string => {
+    const step = precisely.find(({ along }) => along === prediction.along)?.step;
+    return `${describeOffset({ along: prediction.along, across: 0 })}: predicted ${prediction.fit} with ${prediction.joints} joints; precise ${step ? outcome(step) : "not evaluated"}`;
+  };
+  const checks: EditorCheck[] = [
+    {
+      label:
+        "Assist reaches at least one stud: from one stud short and from one stud in it snaps flush with every pin engaged, and the click commits flush",
+      passed:
+        snapsFlush(assistShort, poses, pins) &&
+        committedFlush(assistShort) &&
+        snapsFlush(assistIn, poses, pins) &&
+        committedFlush(assistIn),
+      detail: `expected ${describePose(poses.flush)} with ${pins} pin/hole joints; one stud short: ${outcome(assistShort)}; one stud in: ${outcome(assistIn)}`,
+    },
+    reach,
+    {
+      label:
+        "Precise along the seam at flush depth matches the generator's geometry: refused with a real hit where a pin lands in a solid, accepted with exactly the predicted pin/hole joints where pins land in holes, and accepted with none where every pin is free",
+      passed: seamMismatches.length === 0,
+      detail:
+        seamMismatches.length === 0
+          ? `${predictions.length} seam offsets agree; predicted mates: ${describePredictions(predictions)}`
+          : `${seamMismatches.length} of ${predictions.length} disagree: ${seamMismatches.slice(0, LISTED_FAILURES).map(describeSeam).join("; ")}`,
+    },
+    sweepCheck(
+      `Assist sweep: every cursor offset within the reported neighbourhood (${neighbourhood.ldu} LDU) of a predicted mate snaps to the nearest one, with its predicted joints, magnetised by exactly the offset`,
+      snapped,
+      ({ step, target }) => snapsToPredicted(step, target),
+      ({ at, step, target }) =>
+        `${describeOffset(at)}: expected the mate at ${describeOffset({ along: target.along, across: 0 })} with ${target.joints} joints; ${outcome(step)}`,
+      `${snapped.length} offsets: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate along the seam; predicted mates: ${describePredictions(predictions)}`,
+    ),
+    sweepCheck(
+      "Assist sweep: beyond the neighbourhood of every predicted mate, assist gives exactly the precise result at the same cursor pose (pose, verdict, hit and mates; the turn hint is assist's own), and every refusal names a part and cell where the two models overlap",
+      beyond,
+      ({ assist, precise }) =>
+        stepVerdict(assist) === stepVerdict(precise) &&
+        atCursor(precise, "precise") &&
+        (precise.hover?.accepted === true || realHit(precise)),
+      ({ at, assist, precise }) =>
+        `${describeOffset(at)}: assist ${outcome(assist)}; precise ${outcome(precise)}`,
+      `${beyond.length} offsets: ${refusedBeyond} refused with a real hit, ${beyond.length - refusedBeyond} accepted at the cursor pose, assist identical to precise at each`,
+    ),
+    {
+      label: "Both modes report the same assist neighbourhood",
+      passed:
+        probe.hover !== null &&
+        preciseFlush.hover !== null &&
+        JSON.stringify(probe.hover.assistNeighbourhood) ===
+          JSON.stringify(preciseFlush.hover.assistNeighbourhood),
+      detail: `assist ${JSON.stringify(probe.hover?.assistNeighbourhood ?? null)}; precise ${JSON.stringify(preciseFlush.hover?.assistNeighbourhood ?? null)}`,
+    },
+    {
+      label: "Precise: flush is accepted with every pin mated, and the click commits it",
+      passed:
+        atCursor(preciseFlush, "precise") &&
+        preciseFlush.hover?.accepted === true &&
+        pinHoleJoints(preciseFlush.hover.mates) === pins &&
+        committedFlush(preciseFlush),
+      detail: `expected ${pins} pin/hole joints; ${outcome(preciseFlush)}`,
+    },
+    {
+      label:
+        "Precise: one stud short is accepted at the cursor pose with a gap and no mates, and the click commits it there",
+      passed:
+        atCursor(preciseShort, "precise") &&
+        preciseShort.hover?.accepted === true &&
+        preciseShort.hover.mates.length === 0 &&
+        samePose(preciseShort.committed, preciseShort.cursor),
+      detail: outcome(preciseShort),
+    },
+    {
+      label:
+        "Precise: one stud in is refused, naming the part and cell it hits, and the click places nothing",
+      passed:
+        atCursor(preciseIn, "precise") &&
+        realHit(preciseIn) &&
+        preciseIn.refused &&
+        preciseIn.committed === null,
+      detail: outcome(preciseIn),
+    },
+    {
+      label:
+        "Precise: one stud along the edge either way, at least one pin collides or misses (#441): a colliding pose is refused, and a missing one never has every pin engaged",
+      passed: shiftedAllowed(alongForward, 1) && shiftedAllowed(alongBack, -1),
+      detail: `forward: ${outcome(alongForward)}; back: ${outcome(alongBack)}`,
+    },
+  ];
+  return { placedLabel: "pinned", checks: [...checks, settledCheck(log.steps)], steps: log.steps };
+}
+
+export async function holesAgainstHolesCheck(
+  path: EditorPath,
+  poses: PairPoses,
+  heldItem: string,
+): Promise<EditorCheck> {
+  const step = await new StepLog(path, heldItem, poses).at("assist", AT_FLUSH, true);
+  return {
+    label: "Holes against holes place flush, with the pose settled on the first frame",
+    passed:
+      step.hover?.accepted === true &&
+      !step.hover.lifted &&
+      step.hover.hit === null &&
+      pinHoleJoints(step.hover.mates) === 0 &&
+      samePose(step.committed, poses.flush) &&
+      settledOnFirstFrame(step),
+    detail: `expected ${describePose(poses.flush)} with no pin/hole joint; ${outcome(step)}; ${firstFrameNote(step)}`,
+  };
+}
+
+export async function turnedAwayCheck(
+  path: EditorPath,
+  poses: PairPoses,
+  heldItem: string,
+  pins: number,
+): Promise<EditorCheck> {
+  const log = new StepLog(path, heldItem, poses);
+  const step = await log.at("assist", ONE_STUD_SHORT, false, QUARTER_TURNS_AWAY);
+  await path.hold(heldItem, 0);
+  return {
+    label:
+      "Turned 180° so the holes face away, assist doesn't snap: no pin/hole mates and the cursor pose is kept, settled on the first frame, while turnBlocksSnap and turnMates say a turn would engage every pin",
+    passed:
+      step.hover !== null &&
+      atCursor(step, "assist") &&
+      pinHoleJoints(step.hover.mates) === 0 &&
+      step.hover.turnBlocksSnap &&
+      pinHoleJoints(step.hover.turnMates) === pins &&
+      settledOnFirstFrame(step),
+    detail: `held turned ${QUARTER_TURNS_AWAY} quarter turns, aimed one stud short; ${outcome(step)}${step.hover?.turnBlocksSnap ? `; a turn would snap: ${describeMates(step.hover.turnMates)}` : ""}; ${firstFrameNote(step)}`,
+  };
+}
+
+function withoutModelIdentity(value: unknown): string {
+  return JSON.stringify(value, (key, field: unknown) =>
+    MODEL_IDENTITY_KEYS.has(key) || EVALUATION_SCOPED_KEYS.has(key) ? undefined : field,
+  );
+}
+
+export function sameOutcomes(a: PairRun, b: PairRun): ReadonlyArray<string> {
+  const differences: string[] = [];
+  a.steps.forEach(({ label, step }, index) => {
+    const other = b.steps[index]?.step;
+    if (!other) {
+      differences.push(`${label}: missing`);
+      return;
+    }
+    const left = withoutModelIdentity({
+      hover: step.hover,
+      committed: step.committed,
+      refused: step.refused,
+    });
+    const right = withoutModelIdentity({
+      hover: other.hover,
+      committed: other.committed,
+      refused: other.refused,
+    });
+    if (left !== right) differences.push(label);
+  });
+  if (a.steps.length !== b.steps.length) {
+    differences.push(`${a.steps.length} steps against ${b.steps.length}`);
+  }
+  return differences;
+}
+
+export async function cornerModuleCheck(
+  path: EditorPath,
+  templateItem: string,
+  templatePose: Pose,
+  moduleItem: string,
+  offsetFromTemplate: Vec3,
+  pins: number,
+  full: boolean,
+): Promise<EditorCheck> {
+  const templateShift = path.frameShift(templateItem);
+  const moduleShift = path.frameShift(moduleItem);
+  const worldOffset = fromLdrawFrame(offsetFromTemplate);
+  const toward: Vec3 = [
+    -Math.sign(worldOffset[0]) * STUD_LDU,
+    0,
+    -Math.sign(worldOffset[2]) * STUD_LDU,
+  ];
+  const seam: Seam = {
+    flush: {
+      x: templatePose.x + templateShift[0] + worldOffset[0] - moduleShift[0],
+      z: templatePose.z + templateShift[2] + worldOffset[2] - moduleShift[2],
+      yPlates: templatePose.yPlates,
+      rot: templatePose.rot,
+    },
+    toward,
+    along: [toward[2] === 0 ? 0 : STUD_LDU, 0, toward[0] === 0 ? 0 : STUD_LDU],
+  };
+  const log = new StepLog(path, moduleItem, seam);
+  const probe = await log.at("assist", AT_FLUSH, false);
+  const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
+  const mated = await matedPoses(log, neighbourhood);
+  const snapped: Snapped[] = [];
+  for (const at of sweepOffsets(neighbourhood.cells, full)) {
+    const target = nearestMated(at, mated, neighbourhood);
+    if (target) snapped.push({ at, step: await log.at("assist", at, false), target });
+  }
+  const clicked = await log.at("assist", ONE_STUD_SHORT, true);
+  const toFlush = snapped.filter(({ target }) => target.along === 0).length;
+  const sweep = sweepCheck(
+    "",
+    snapped,
+    ({ step, target }) =>
+      snapsTo(step, target) &&
+      (target.along !== 0 || pinHoleJoints(step.hover?.mates ?? []) === pins),
+    ({ at, step, target }) =>
+      `${describeOffset(at)}: expected the mated pose at ${describeOffset({ along: target.along, across: 0 })}; ${outcome(step)}`,
+    `${snapped.length} offsets within ${neighbourhood.ldu} LDU of a mated pose: ${toFlush} snap flush with ${pins} pin/hole joints, ${snapped.length - toFlush} to a nearer partial mate; mated poses: ${describeMated(mated)}`,
+  );
+  const clickedFlush = snapsFlush(clicked, seam, pins) && samePose(clicked.committed, seam.flush);
+  const settled = settledCheck(log.steps);
+  return {
+    label:
+      "A generated module with corner Technic joins mates an official template: in assist, every offset within the neighbourhood of a mated pose snaps to the nearest one, flush engaging every pin, and a click from one stud short commits flush; every hover settles on the first frame",
+    passed: sweep.passed && clickedFlush && settled.passed,
+    detail: `${sweep.detail}; one stud short, clicked: ${outcome(clicked)}; ${settled.detail}`,
+  };
+}
+
+export async function solidEdgeChecks(
+  path: EditorPath,
+  poses: PairPoses,
+  solidParts: Assembly,
+  heldParts: Assembly,
+  placedItem: string,
+  heldItem: string,
+  full: boolean,
+  pinsMeetBricksAt: (along: number) => boolean,
+): Promise<PairRun> {
+  const log = new StepLog(path, heldItem, poses);
+  const probe = await log.at("assist", AT_FLUSH, false);
+  const neighbourhood = probe.hover?.assistNeighbourhood ?? NO_NEIGHBOURHOOD;
+  const compared: Compared[] = [];
+  for (const at of sweepOffsets(neighbourhood.cells, full)) {
+    compared.push({
+      at,
+      assist: await log.at("assist", at, false),
+      precise: await log.at("precise", at, false),
+    });
+  }
+  const clicked = await log.at("assist", AT_FLUSH, true);
+  path.setMode("assist");
+  const realHit = (step: Step, named: Assembly, held: Assembly): boolean =>
+    step.hover !== null &&
+    step.hover.accepted === false &&
+    hitIsReal(
+      step.hover.hit,
+      placedItem,
+      posed(named, poses.placed, poses.placedShift),
+      posed(held, step.hover.pose, poses.heldShift),
+      {
+        placed: posed(solidParts, poses.placed, poses.placedShift),
+        held: posed(heldParts, step.hover.pose, poses.heldShift),
+      },
+    );
+  const bothModes = (item: Compared, holds: (step: Step) => boolean): boolean =>
+    holds(item.assist) && holds(item.precise);
+  const describe = ({ at, assist, precise }: Compared): string =>
+    `${describeOffset(at)}: assist ${outcome(assist)}; precise ${outcome(precise)}`;
+  const flush = compared.filter(({ at }) => at.along === 0 && at.across === 0);
+  const pressed = compared.filter(({ at }) => at.across > 0);
+  const clear = compared.filter(({ at }) => at.across < 0);
+  const shifted = compared.filter(
+    ({ at }) => at.across === 0 && at.along !== 0 && pinsMeetBricksAt(at.along),
+  );
+  const shiftedRefused = shifted.filter(
+    (item) => !bothModes(item, (step) => realHit(step, solidParts, heldParts)),
+  );
+  const checks: EditorCheck[] = [
+    sweepCheck(
+      "Pins against a solid edge: at every cursor offset assist gives exactly the precise result at the cursor pose, so it never relocates to an unmated free pose, and every refusal names a part and cell where the models overlap",
+      compared,
+      (item) =>
+        stepVerdict(item.assist) === stepVerdict(item.precise) &&
+        atCursor(item.assist, "assist") &&
+        atCursor(item.precise, "precise") &&
+        (item.precise.hover?.accepted === true || realHit(item.precise, solidParts, heldParts)),
+      describe,
+      `${compared.length} offsets, assist identical to precise at each`,
+    ),
+    sweepCheck(
+      "Pins against a solid edge, flush: refused in both modes, naming a hole-free part of the solid module and the pin cell it hits, with no pin/hole joint, and the click places nothing",
+      flush,
+      (item) =>
+        bothModes(
+          item,
+          (step) =>
+            realHit(step, solidParts, pinsOf(heldParts)) &&
+            pinHoleJoints(step.hover?.mates ?? []) === 0,
+        ) &&
+        clicked.refused &&
+        clicked.committed === null,
+      (item) => `${describe(item)}; clicked: ${outcome(clicked)}`,
+      `refused in both modes: ${outcome(flush[0]?.assist ?? clicked)}`,
+    ),
+    sweepCheck(
+      "Pins against a solid edge, pressed in by a stud or more: refused in both modes, naming a part and cell where the models overlap",
+      pressed,
+      (item) => bothModes(item, (step) => realHit(step, solidParts, heldParts)),
+      describe,
+      `${pressed.length} offsets, all refused with a real hit`,
+    ),
+    sweepCheck(
+      "Pins against a solid edge, standing clear by a stud or more: accepted at the cursor pose in both modes, with no mates",
+      clear,
+      (item) =>
+        bothModes(item, (step) => step.hover?.accepted === true && step.hover.mates.length === 0),
+      describe,
+      `${clear.length} offsets, all accepted with no mates`,
+    ),
+    {
+      label:
+        "Pins against a solid edge, shifted along the seam: refused in both modes, with a real hit, wherever the generator's geometry puts a pin into a brick",
+      passed: shiftedRefused.length === 0,
+      detail:
+        shiftedRefused.length === 0
+          ? `${shifted.length} shifted offsets put a pin into a brick, all refused with a real hit`
+          : `${shiftedRefused.length} of ${shifted.length} fail: ${shiftedRefused.slice(0, LISTED_FAILURES).map(describe).join("; ")}`,
+    },
+  ];
+  return { placedLabel: "solid", checks: [...checks, settledCheck(log.steps)], steps: log.steps };
+}
