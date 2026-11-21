@@ -147,9 +147,12 @@ export interface ImportedSubmodels extends SubmodelInstances {
   readonly ofPart: Int32Array;
 }
 
+export type CompiledSource = "library-bake" | "import";
+
 export interface CompiledGlb {
   readonly partId: string;
   readonly glb: Uint8Array;
+  readonly source: CompiledSource;
 }
 
 export type ModelBake = Omit<BakedModel, "status" | "recordedParts" | "resumedParts" | "phases">;
@@ -288,6 +291,7 @@ interface Outcomes {
   readonly inline: Map<string, Exclude<InlineOutcome, { status: "need" }>>;
   readonly rounds: number;
   readonly weldEpsilonLdu: number;
+  readonly fromLibraryBake: ReadonlySet<string>;
 }
 
 interface ImportLibrary extends LibraryFiles {
@@ -659,8 +663,10 @@ export class ModelImportEngine {
     const recorded = await spent.during("recordFetchMs", () =>
       this.fromRecords(job, outside, pinned),
     );
+    const fromLibraryBake = new Set<string>();
     for (const outcome of recorded) {
       parts.set(outcome.reference, outcome);
+      fromLibraryBake.add(outcome.reference);
     }
     let pendingParts = outside.filter((reference) => !parts.has(reference));
     let pendingChecks = [...inlineParts];
@@ -708,7 +714,7 @@ export class ModelImportEngine {
       }
       await this.fetchNeeded(library, needed, spent);
     }
-    return { parts, inline, rounds, weldEpsilonLdu };
+    return { parts, inline, rounds, weldEpsilonLdu, fromLibraryBake };
   }
 }
 
@@ -922,7 +928,11 @@ function assemble(
     const outcome = outcomes.parts.get(resolved.official);
     if (outcome?.status !== "compiled") continue;
     compiledIds.add(resolved.partId);
-    compiled.push({ partId: resolved.partId, glb: outcome.glb });
+    compiled.push({
+      partId: resolved.partId,
+      glb: outcome.glb,
+      source: outcomes.fromLibraryBake.has(resolved.official) ? "library-bake" : "import",
+    });
   }
   return {
     drawn: drawnMask,

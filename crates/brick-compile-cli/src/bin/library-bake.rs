@@ -178,7 +178,12 @@ fn bake_part(
         .iter()
         .map(|file| file.header.license.as_deref().unwrap_or_default())
         .collect();
-    Ok(json!({ "record": record_file, "glb": glb_file, "licenses": licenses }))
+    let mut entry = json!({ "record": record_file, "glb": glb_file, "licenses": licenses });
+    let diagnostics = compiled.rolling_diagnostics();
+    if !diagnostics.is_empty() {
+        entry["rollingDiagnostics"] = json!(diagnostics);
+    }
+    Ok(entry)
 }
 
 fn run(args: &Args) -> Result<usize, String> {

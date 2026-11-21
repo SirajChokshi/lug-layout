@@ -183,6 +183,7 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   }
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}

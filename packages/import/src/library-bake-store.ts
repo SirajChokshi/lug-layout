@@ -3,8 +3,11 @@ import {
   LibraryBakeBucket,
   LibraryBakeIndex,
   libraryBakeBucket,
+  RollingDiagnosticsFile,
   type LibraryBakePart,
   type PrimitiveConnectorTable,
+  type RollingDiagnosticsRef,
+  type UnreadBandDiagnostic,
 } from "@brr/schema/bundle";
 import { decode } from "@brr/schema/decode";
 import { sameSource, type FetchFunction, type MirrorSource } from "./ldraw-mirror.ts";
@@ -31,8 +34,18 @@ export interface IPartRecords {
     options: RecordOptions,
   ): Promise<ReadonlyMap<string, LibraryBakePart>>;
   bytes(file: string): Promise<Uint8Array>;
+  rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+  ): Promise<ReadonlyMap<string, ReadonlyArray<UnreadBandDiagnostic>>>;
   stats(): RecordStats;
 }
+
+interface ListedBucket {
+  readonly parts: ReadonlyMap<string, LibraryBakePart>;
+  readonly rollingDiagnostics: RollingDiagnosticsRef | null;
+}
+
+const EMPTY_BUCKET: ListedBucket = { parts: new Map(), rollingDiagnostics: null };
 
 function json(bytes: Uint8Array): unknown {
   return JSON.parse(new TextDecoder().decode(bytes));
@@ -60,7 +73,7 @@ export class LibraryBakeStore implements IPartRecords {
   readonly key: string;
   private readonly files: VerifiedFiles;
   private index: Promise<LibraryBakeIndex | null> | null = null;
-  private readonly buckets = new Map<number, Promise<ReadonlyMap<string, LibraryBakePart>>>();
+  private readonly buckets = new Map<number, Promise<ListedBucket>>();
 
   constructor(
     baseUrl: string,
@@ -90,7 +103,7 @@ export class LibraryBakeStore implements IPartRecords {
     const buckets = [...new Set([...wanted].map(libraryBakeBucket))];
     const listed = await Promise.all(buckets.map((bucket) => this.bucket(index, bucket)));
     const found = new Map<string, LibraryBakePart>();
-    for (const parts of listed) {
+    for (const { parts } of listed) {
       for (const [id, part] of parts) if (wanted.has(id)) found.set(id, part);
     }
     return found;
@@ -98,6 +111,27 @@ export class LibraryBakeStore implements IPartRecords {
 
   bytes(file: string): Promise<Uint8Array> {
     return this.files.addressed(file);
+  }
+
+  async rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+  ): Promise<ReadonlyMap<string, ReadonlyArray<UnreadBandDiagnostic>>> {
+    const index = await this.loadIndex();
+    const found = new Map<string, ReadonlyArray<UnreadBandDiagnostic>>();
+    if (index === null) return found;
+    const wanted = new Set(partIds);
+    for (const bucket of new Set([...wanted].map(libraryBakeBucket))) {
+      const { rollingDiagnostics } = await this.bucket(index, bucket);
+      if (rollingDiagnostics === null) continue;
+      const bytes = await this.files.referenced(rollingDiagnostics.file, rollingDiagnostics.sha256);
+      const decoded = decode(RollingDiagnosticsFile, json(bytes));
+      if (!decoded.ok)
+        throw new Error(`${rollingDiagnostics.file} is not a rolling diagnostics file`);
+      for (const [id, rows] of Object.entries(decoded.value.parts)) {
+        if (wanted.has(id) && libraryBakeBucket(id) === bucket) found.set(id, rows);
+      }
+    }
+    return found;
   }
 
   stats(): RecordStats {
@@ -119,31 +153,28 @@ export class LibraryBakeStore implements IPartRecords {
     return decoded.ok ? decoded.value : null;
   }
 
-  private bucket(
-    index: LibraryBakeIndex,
-    bucket: number,
-  ): Promise<ReadonlyMap<string, LibraryBakePart>> {
+  private bucket(index: LibraryBakeIndex, bucket: number): Promise<ListedBucket> {
     let loading = this.buckets.get(bucket);
     if (loading === undefined) {
       loading = this.readBucket(index, bucket).catch(() => {
         this.buckets.delete(bucket);
-        return new Map();
+        return EMPTY_BUCKET;
       });
       this.buckets.set(bucket, loading);
     }
     return loading;
   }
 
-  private async readBucket(
-    index: LibraryBakeIndex,
-    bucket: number,
-  ): Promise<ReadonlyMap<string, LibraryBakePart>> {
+  private async readBucket(index: LibraryBakeIndex, bucket: number): Promise<ListedBucket> {
     const file = index.buckets[bucket];
-    if (file === undefined) return new Map();
+    if (file === undefined) return EMPTY_BUCKET;
     const decoded = decode(LibraryBakeBucket, json(await this.bytes(file)));
-    if (!decoded.ok || decoded.value.bucket !== bucket) return new Map();
-    return new Map(
-      Object.entries(decoded.value.parts).filter(([id]) => libraryBakeBucket(id) === bucket),
-    );
+    if (!decoded.ok || decoded.value.bucket !== bucket) return EMPTY_BUCKET;
+    return {
+      parts: new Map(
+        Object.entries(decoded.value.parts).filter(([id]) => libraryBakeBucket(id) === bucket),
+      ),
+      rollingDiagnostics: decoded.value.rollingDiagnostics ?? null,
+    };
   }
 }

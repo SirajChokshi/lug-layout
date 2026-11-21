@@ -44,6 +44,7 @@ export {
   type IBakeHelper,
   type ColorIssue,
   type CompiledGlb,
+  type CompiledSource,
   type ImportResult,
   type ImportJob,
   type ImportReport,
@@ -80,6 +81,8 @@ export {
   type LdrawTextInput,
   type LibraryBakeSource,
   type LibraryConnectorsSource,
+  type RollingDiagnosticsRequest,
+  type RollingDiagnosticsRows,
   type StudioFileInput,
 } from "./worker-protocol.ts";
 export type { LooseGeometry } from "./brick-compiler.ts";

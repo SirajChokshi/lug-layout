@@ -1,6 +1,12 @@
 import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
-import type { ImportInput, ImportJob, ImportResult, PlacementListener } from "@brr/import";
+import type {
+  ImportInput,
+  ImportJob,
+  ImportResult,
+  PlacementListener,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 import { inject, injectable } from "inversify";
 import {
   IMPORT_WORKER_POOL,
@@ -23,6 +29,10 @@ export interface IModelImporter {
     lod?: BundleLod,
     onPlaced?: PlacementListener,
   ): Promise<ImportResult>;
+  rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod?: BundleLod,
+  ): Promise<RollingDiagnosticsRows>;
 }
 
 @injectable()
@@ -58,6 +68,18 @@ export class WorkerModelImporter implements IModelImporter {
     ]);
     const input = { kind: "studio", job, bytes, bricklinkParts } as const;
     return this.request(lod, input, [bytes.buffer], onPlaced);
+  }
+
+  async rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod: BundleLod = "standard",
+  ): Promise<RollingDiagnosticsRows> {
+    const context = await this.loader.importContext(lod);
+    if (this.libraryBakeBaseUrl === null || context.libraryBake === null) return {};
+    return this.workers.rollingDiagnostics(
+      { url: this.libraryBakeBaseUrl, pin: context.libraryBake },
+      partIds,
+    );
   }
 
   private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {
