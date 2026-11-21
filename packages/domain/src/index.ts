@@ -1,5 +1,6 @@
 export {
   NO_STUD,
+  NO_TOP,
   PLACEMENT_CELL_INTS,
   PLACEMENT_JOINED,
   PLACEMENT_MISMATCHED,
@@ -8,12 +9,12 @@ export {
   roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
-  type RoadFit,
   type RoadJoinReport,
   type RoadPlacement,
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+export { RoadFit } from "./road-fit.ts";
 export {
   ARM_BITS,
   armToward,
