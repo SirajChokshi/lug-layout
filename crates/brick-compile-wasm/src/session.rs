@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use brick_compile::bake::{drawn_lattice, KeptParts, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::bake::{KeptParts, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::rolling_mode_from_studs;
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::flatten::Flattener;
@@ -28,6 +28,7 @@ static NO_RECORDS: std::sync::LazyLock<RecordShelf> = std::sync::LazyLock::new(R
 
 use crate::connectors::ConnectorInference;
 use crate::frame::{respond, split, Body, Request};
+use crate::receptors::DrawnReceptors;
 use crate::reply::{
     AuthoredIdentification, BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair,
     Lattice, LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
@@ -75,7 +76,7 @@ struct BakeInputs<'a> {
     table_depth: f64,
     vehicles: Option<&'a VehicleInputs>,
     shard: CoverShard,
-    visibility_only: bool,
+    receptors: Option<DrawnReceptors>,
 }
 
 impl Session {
@@ -183,6 +184,12 @@ impl Session {
                         omr_authoring_identification: *omr_authoring_identification,
                     },
                 )?;
+                let visibility_only = shard.is_some_and(|shard| shard.visibility_only);
+                let receptors = if visibility_only {
+                    None
+                } else {
+                    Some(DrawnReceptors::read(&request, drawn.len())?)
+                };
                 let inputs = BakeInputs {
                     stud_primitives,
                     unofficial_allowlist,
@@ -190,7 +197,7 @@ impl Session {
                     table_depth: *table_depth_ldu,
                     vehicles: vehicles.as_ref(),
                     shard: shard.map_or(Ok(CoverShard::WHOLE), |shard| shard.cover())?,
-                    visibility_only: shard.is_some_and(|shard| shard.visibility_only),
+                    receptors,
                 };
                 let decoded = std::mem::take(&mut self.decoded_since_bake);
                 let offered = self.offered_references();
@@ -575,27 +582,42 @@ fn bake_drawn(
         .map_err(|e| e.to_string())?,
     };
     let mut baker = baker.with_records(records);
-    let mut shapes: HashMap<&str, LatticeShape> = HashMap::new();
-    for instance in drawn {
-        if !shapes.contains_key(instance.part.as_str()) {
-            let resolving = Instant::now();
-            let shape = baker
-                .lattice_shape(&instance.part)
-                .map_err(|e| format!("{}: {e}", instance.part))?;
-            let resolved = ms(resolving.elapsed());
-            if records.contains_key(&instance.part) {
-                phases.decode_ms += resolved;
-            } else {
-                phases.compile_ms += resolved;
+    let mut shapes: HashMap<&str, (Option<usize>, LatticeShape)> = HashMap::new();
+    for (index, instance) in drawn.iter().enumerate() {
+        let part = inputs
+            .receptors
+            .as_ref()
+            .map(|receptors| receptors.part_of(index));
+        if let Some((first, _)) = shapes.get(instance.part.as_str()) {
+            if *first != part {
+                return Err(format!(
+                    "instances of {} name different receptor parts",
+                    instance.part
+                ));
             }
-            shapes.insert(&instance.part, shape);
+            continue;
         }
+        let resolving = Instant::now();
+        let shape = baker
+            .lattice_shape(&instance.part)
+            .map_err(|e| format!("{}: {e}", instance.part))?;
+        let receptors = match (&inputs.receptors, part) {
+            (Some(receptors), Some(part)) => receptors.of_part(part).to_vec(),
+            _ => Vec::new(),
+        };
+        let resolved = ms(resolving.elapsed());
+        if records.contains_key(&instance.part) {
+            phases.decode_ms += resolved;
+        } else {
+            phases.compile_ms += resolved;
+        }
+        shapes.insert(&instance.part, (part, shape.with_receptors(receptors)));
     }
     let drawn_shapes: Vec<&LatticeShape> = drawn
         .iter()
-        .map(|instance| &shapes[instance.part.as_str()])
+        .map(|instance| &shapes[instance.part.as_str()].1)
         .collect();
-    if inputs.visibility_only {
+    if inputs.receptors.is_none() {
         let covering = Instant::now();
         let cover = baker
             .cover(drawn, None, inputs.shard)
@@ -617,7 +639,7 @@ fn bake_drawn(
         return Ok((reply, baker.keep()));
     }
     let latticing = Instant::now();
-    let (lattice, lattice_issue) = match drawn_lattice(drawn, &drawn_shapes) {
+    let (lattice, lattice_issue) = match baker.lattice(drawn, &drawn_shapes) {
         Ok(lattice) => (lattice, None),
         Err(error) => (None, Some(error.to_string())),
     };

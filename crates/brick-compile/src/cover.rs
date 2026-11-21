@@ -2,6 +2,7 @@ mod below;
 mod instance_tree;
 mod ray;
 mod reservation;
+mod stud_field;
 mod triangle_tree;
 
 use std::thread;
@@ -13,6 +14,7 @@ use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::reservation::{axis_span, cell_span, CellColumns};
 pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
+pub use self::stud_field::{inscribed_radius, stud_field_collides};
 use self::triangle_tree::{TriangleHit, TriangleTree};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
@@ -236,6 +238,7 @@ fn enclosure_directions() -> Vec<Vec3> {
 pub struct StudShape {
     pub height: f64,
     pub radius: f64,
+    pub inscribed_radius: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -1377,6 +1380,7 @@ mod tests {
     const STUD: StudShape = StudShape {
         height: 4.0,
         radius: 6.0,
+        inscribed_radius: 6.0,
     };
     const OPAQUE: u32 = 4;
     const TRANS_CLEAR: u32 = 47;
