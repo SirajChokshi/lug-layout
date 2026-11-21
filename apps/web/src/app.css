@@ -104,8 +104,8 @@ footer {
   --library-reach: var(--library-chip-width);
 }
 
-.editor[data-layout="compact"]:has(> .library[data-open="false"]) .tool-hud {
-  left: var(--panel-edge);
+.editor[data-layout="compact"]:has(> .library[data-open="false"]) {
+  --centre-left: var(--panel-edge);
 }
 
 .editor-hud > summary {
