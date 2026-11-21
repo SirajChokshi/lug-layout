@@ -41,6 +41,8 @@ it("commits a typed table size on Enter or blur, keeps the typed text while the 
       fillGridStuds: 8,
       plans,
       sheets: container.get(PLAN_SHEET_SERVICE),
+      ready: true,
+      readOnly: false,
     }),
   );
   const table = () => plans.plans()[0]?.footprint.tables[0];
