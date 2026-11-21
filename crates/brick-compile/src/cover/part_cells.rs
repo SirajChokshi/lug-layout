@@ -36,12 +36,16 @@ impl PartCells {
 struct Extent {
     low: Vec3,
     high: Vec3,
+    cut_low: [bool; 2],
+    cut_high: [bool; 2],
 }
 
 impl Extent {
     const EMPTY: Extent = Extent {
         low: [f64::INFINITY; 3],
         high: [f64::NEG_INFINITY; 3],
+        cut_low: [false; 2],
+        cut_high: [false; 2],
     };
 
     fn grow(&mut self, point: Vec3) {
@@ -50,7 +54,25 @@ impl Extent {
             self.high[axis] = self.high[axis].max(point[axis]);
         }
     }
+
+    fn plan_low(&self, plan: usize, axis: usize) -> i32 {
+        if self.cut_low[plan] {
+            0
+        } else {
+            low_sixteenths(self.low[axis])
+        }
+    }
+
+    fn plan_high(&self, plan: usize, axis: usize) -> i32 {
+        if self.cut_high[plan] {
+            CELL_SIXTEENTHS
+        } else {
+            high_sixteenths(self.high[axis])
+        }
+    }
 }
+
+const CELL_SIXTEENTHS: i32 = STUD_LDU as i32 * SIXTEENTHS_PER_LDU;
 
 type CellExtents = Vec<(i64, i64, Extent)>;
 
@@ -133,6 +155,10 @@ fn local_extents(solid: &PartSolid, linear: &[f64; 9], phase: [f64; 2]) -> CellE
                     continue;
                 }
                 let extent = cells.entry((i, j)).or_insert(Extent::EMPTY);
+                extent.cut_low[0] |= lo_x < edge_x + WELD_EPSILON_LDU;
+                extent.cut_high[0] |= hi_x > edge_x + STUD_LDU - WELD_EPSILON_LDU;
+                extent.cut_low[1] |= lo_z < edge_z + WELD_EPSILON_LDU;
+                extent.cut_high[1] |= hi_z > edge_z + STUD_LDU - WELD_EPSILON_LDU;
                 let (points, len) = inside;
                 for point in &points[..len] {
                     extent.grow([point[0] - edge_x, point[1], point[2] - edge_z]);
@@ -176,11 +202,11 @@ pub fn part_cells(
                 continue;
             }
             let part_box = [
-                low_sixteenths(extent.low[0]),
-                low_sixteenths(extent.low[2]),
+                extent.plan_low(0, 0),
+                extent.plan_low(1, 2),
                 low_sixteenths(extent.low[1] + rest),
-                high_sixteenths(extent.high[0]),
-                high_sixteenths(extent.high[2]),
+                extent.plan_high(0, 0),
+                extent.plan_high(1, 2),
                 high_sixteenths(extent.high[1] + rest),
             ];
             if part_box[BOX_X1] <= part_box[BOX_X0]
