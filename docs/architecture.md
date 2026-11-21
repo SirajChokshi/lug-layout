@@ -422,6 +422,8 @@ Extra plan rules:
 - a printable plan: a dimensioned top view on the tables, module numbering, track piece positions, switch ids, and one sheet per module listing its pieces and models;
 - the plan exported as an LDraw `.mpd`.
 
+The printable plan (Plan panel, "Printable plan (SVG)") is an SVG drawn at 1:1: its width and height are in millimetres, so it prints at actual size at 100%, and a check bar on the sheet is 8 studs, 64 mm, long. Geometry is written in LDU relative to the plan's origin inside one 0.4 scale, so lattice placements keep their integer coordinates and a track piece's ℤ[ζ₁₆] outline is converted to floats once, at export. It draws the room, each table with its width and depth in studs and cm, obstacles, every placement inside the plan (a model by its footprint box, a laid track piece by its plan outline from the bundle), roadway cells from road surfaces, and suggested crossing ramps by their outlines (dashed: they aren't in the parts list). Placements are numbered in the plan's own order (models as placed, then track pieces by index), whatever they are, so a switch is numbered like any other track piece; the key lists each number with its label and its part count, counted by the same code the plan's parts list counts with, and totals them. The header gives the plan's parts list totals and its verdict from `buildableAsPlanned`, and the checks not made yet are listed under the key. Switch ids and per-module part sheets come later.
+
 ## 8. Simulation
 
 - **Where it runs.** A fixed timestep of 60 Hz in a worker. Simulation state is kept separate from render state, so it can run headless in tests.
