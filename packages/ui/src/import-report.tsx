@@ -37,8 +37,6 @@ function refusedCustomReason(part: RefusedCustomPart): string {
 function refusalText(part: RefusedCustomPart): string {
   const origin = `Custom part, ${CUSTOM_ORIGIN_TEXT[part.origin]}`;
   switch (part.gate) {
-    case "license":
-      return `${origin}: ${part.path} carries no CA licence header (CC BY 4.0, CC BY 2.0 or CCAL 2.0), so it is reported and not drawn.`;
     case "unofficial":
       return `${origin}: it reaches ${part.path} in the LDraw library, which declares an Unofficial LDraw org, and library parts that do are drawn only from the allowlist.`;
     case "malformed":
@@ -69,7 +67,7 @@ function notDrawnReason(part: PartResolution, report: ImportReport): string | nu
     case "missingSubfile":
       return `LDraw part found, but its sub-file ${part.missing} (used by ${part.from}) is not in the library.`;
     case "rejected":
-      return `Rejected by the ${part.gate === "license" ? "license" : "unofficial-part"} gate: ${part.path}.`;
+      return `Rejected by the unofficial-part gate: ${part.path}.`;
     case "inlineDiffers":
       return differenceText(part, part.official);
     case "malformed":
@@ -100,7 +98,7 @@ function studioReason(part: StudioPart): string {
     case "ambiguous":
       return `${id} has ${part.outcome.candidates.length} LDraw candidates (${part.outcome.candidates.join(", ")}), so nothing is substituted.`;
     case "custom":
-      return "A Studio CustomParts file: drawn as a custom part only when it carries a CA licence header.";
+      return "A Studio CustomParts file, drawn as a custom part.";
     default: {
       const unhandled: never = part.outcome;
       throw new Error(`unhandled Studio outcome ${JSON.stringify(unhandled)}`);

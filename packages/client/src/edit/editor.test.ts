@@ -2575,6 +2575,122 @@ it("has an import's connector tables before it is announced placeable, and keeps
   });
 }, 120_000);
 
+const IMPORTED_COPY = "imported copy";
+
+function oneTableRoom(plans: IPlanService): string {
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 3200,
+    roomDepthMm: 1100,
+    originChunkX: -4,
+    originChunkZ: -2,
+  });
+  plans.addTable(planId, {
+    name: "Table",
+    rect: { x: 0, z: 0, width: 2000, depth: 1100 },
+    heightMm: 750,
+  });
+  return planId;
+}
+
+function planQueries(plans: IPlanService, planId: string) {
+  return {
+    state: plans.materialize(),
+    plans: plans.plans(),
+    activePlanId: plans.activePlanId(),
+    tableTopY: plans.tableTopY(),
+    region: plans.regionView(planId),
+    inside: plans.insideCount(planId),
+    issueCount: plans.issueCount(planId),
+    issues: plans.issues(planId),
+    tallies: [
+      plans.joinedRoadCells(planId),
+      plans.unmeasuredCount(planId),
+      plans.customParts(planId),
+    ],
+    sandbox: plans.sandboxCount(),
+    placements: plans.placementCount(),
+  };
+}
+
+async function placedOnceChecked(layout: ReadonlyArray<readonly [string, number]>) {
+  const { editor, backend, container, importer } = await checkingImport();
+  importer.release();
+  const item = await importChecking(editor);
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const plans = container.get(PLAN_SERVICE);
+  const planId = oneTableRoom(plans);
+  const place = placer(editor, backend);
+  for (const [id, x] of layout) await place(id === IMPORTED_COPY ? item : id, x, 0);
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0));
+  return planQueries(plans, planId);
+}
+
+it("keeps the plan equal to today's recompute when the checked studs land, with the swapped copies moved to the end as syncPlan listed them", async () => {
+  const west = [BASEPLATE, -2_000] as const;
+  const near = [IMPORTED_COPY, 0] as const;
+  const middle = [BASEPLATE, 2_000] as const;
+  const far = [IMPORTED_COPY, 4_000] as const;
+  const east = [BASEPLATE, 6_000] as const;
+  const recomputed = {
+    landed: await placedOnceChecked([west, middle, east, near, far]),
+    undone: await placedOnceChecked([west, middle, near, far]),
+    undoneTwice: await placedOnceChecked([west, middle, near]),
+  };
+  const { editor, backend, container, importer } = await checkingImport();
+  const item = await importChecking(editor);
+  const plans = container.get(PLAN_SERVICE);
+  const planId = oneTableRoom(plans);
+  const place = placer(editor, backend);
+  const refused: number[] = [];
+  for (const [id, x] of [west, near, middle, far, east]) {
+    refused.push((await place(id === IMPORTED_COPY ? item : id, x, 0)).refusedClicks);
+  }
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0));
+  const [plateWest, copyNear, plateMiddle, copyFar, plateEast] = plans.materialize().placements;
+  const observed = () => ({
+    listed: plans.materialize().placements,
+    queries: planQueries(plans, planId),
+  });
+  const pending = planQueries(plans, planId);
+  expect(refused).toEqual([0, 0, 0, 0, 0]);
+  expect({
+    inside: pending.inside,
+    issues: Object.groupBy(pending.issues, (issue) => issue.rule),
+    sandbox: pending.sandbox,
+  }).toEqual({
+    inside: 4,
+    issues: {
+      bomMapping: [expect.anything(), expect.anything()],
+      fit: [expect.objectContaining({ placements: [copyFar?.key] })],
+      trackOpenEnd: Array.from({ length: 8 }, () => expect.anything()),
+    },
+    sandbox: 1,
+  });
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  expect(observed()).toEqual({
+    listed: [plateWest, plateMiddle, plateEast, copyNear, copyFar],
+    queries: recomputed.landed,
+  });
+  editor.undo(0);
+  expect(observed()).toEqual({
+    listed: [plateWest, plateMiddle, copyNear, copyFar],
+    queries: recomputed.undone,
+  });
+  editor.undo(0);
+  expect(observed()).toEqual({
+    listed: [plateWest, plateMiddle, copyNear],
+    queries: recomputed.undoneTwice,
+  });
+  editor.redo(0);
+  expect(observed()).toEqual({
+    listed: [plateWest, plateMiddle, copyNear, copyFar],
+    queries: recomputed.undone,
+  });
+}, 120_000);
+
 it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
   const outcome = async (queued: boolean) => {
     const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>

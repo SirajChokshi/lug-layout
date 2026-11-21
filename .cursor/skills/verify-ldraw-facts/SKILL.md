@@ -10,7 +10,7 @@ Memory, forum posts and older research notes are leads, not evidence.
 1. **State the claim** so it can be shown false, for example "53401's `!LICENSE` is CC BY 4.0" or "the 2861 diverging end is at (x, z, heading) = …". Note its §11 item number if it has one.
 2. **Use the pinned source.** That's the `complete.zip` or `ldrawunf.zip` version in the pipeline lock (or download from library.ldraw.org and record the version and hash), the LDCad shadow library, the Rebrickable dumps, or the standard's own published document (MILS and so on). If the network blocks it, report the claim as **inconclusive**. Don't fill in from memory.
 3. **Read it from the file.**
-   - License, type and author: the header lines `0 !LICENSE`, `0 !LDRAW_ORG`, `0 Author:`. `Part` vs `Unofficial_Part` matters, and so does CA vs `OfficialNonCA` (check the library's NonCA list).
+   - License, type and author: the header lines `0 !LICENSE`, `0 !LDRAW_ORG`, `0 Author:`. `Part` vs `Unofficial_Part` matters (unofficial parts ship only through the allowlist). The licence is recorded for attribution and gates nothing.
    - Geometry: compose the type-1 sub-file matrices exactly. LDraw is −Y up, 1 LDU = 0.4 mm, stud = 20, plate = 8, brick = 24.
    - Connectors: the LDCad `!LDCAD SNAP_*` metas in the shadow file. Cross-check them against the geometry.
    - Aliases and moves: follow `~Moved to` and alias files to the canonical part.
