@@ -7,6 +7,7 @@ export {
   SIXTEENTHS_PER_LDU,
   STUD_LDU,
   lduFromMm,
+  mmFromLdu,
 } from "./units.ts";
 export { isRot90, rot90Cos, rot90Sin, type Rot90 } from "./rot90.ts";
 export { isLatticePose } from "./lattice.ts";

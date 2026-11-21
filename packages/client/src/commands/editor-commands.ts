@@ -13,6 +13,7 @@ export type EditorActionId =
   | "draw-track"
   | "draw-road"
   | "measure"
+  | "draw-tables"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
@@ -128,6 +129,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "u" }],
     keywords: "ruler distance length dimension tape size",
+  },
+  {
+    id: "draw-tables",
+    title: "Draw tables: drag to draw, drag an edge or corner to resize",
+    group: "Tools",
+    keys: [{ key: "b" }],
+    keywords: "table board room plan size studs cm",
   },
   {
     id: "rotate",
@@ -509,6 +517,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
   if (id === "measure") return snapshot.mode === "measure";
+  if (id === "draw-tables") return snapshot.mode === "table";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
@@ -599,6 +608,7 @@ export function commandEnabled(
       return snapshot.track?.extend != null && !snapshot.readOnly;
     case "delete":
       if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
+      if (snapshot.mode === "table") return snapshot.hoveredTable !== null;
       return snapshot.selection !== null && snapshot.gesture === null && !snapshot.readOnly;
     case "duplicate":
       return snapshot.selection?.members.length === 1 && !snapshot.readOnly;
@@ -626,9 +636,13 @@ export function commandEnabled(
     case "focus":
       return snapshot.selection !== null;
     case "undo":
-      return snapshot.history.undo !== null && !snapshot.readOnly;
+      return (
+        snapshot.history.undo === "plan" || (snapshot.history.undo !== null && !snapshot.readOnly)
+      );
     case "redo":
-      return snapshot.history.redo !== null && !snapshot.readOnly;
+      return (
+        snapshot.history.redo === "plan" || (snapshot.history.redo !== null && !snapshot.readOnly)
+      );
     case "centre":
       return snapshot.hover !== null;
     case "draw-track":
@@ -649,6 +663,7 @@ export function commandEnabled(
     case "zoom-in":
     case "zoom-out":
     case "measure":
+    case "draw-tables":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
@@ -809,6 +824,9 @@ export function runEditorAction(
       return;
     case "measure":
       editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
+    case "draw-tables":
+      editor.setTableTool(editor.snapshot().mode !== "table");
       return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
