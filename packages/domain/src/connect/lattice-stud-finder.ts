@@ -11,6 +11,7 @@ import {
   verticalSign,
 } from "./lattice-frame.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import type { ProposalProgress } from "./proposal-progress.ts";
 import { MateClasses } from "./mate-classes.ts";
 import { NO_PARTNER, type MateReport } from "./mate-report.ts";
 import type { SnapMating } from "./mating.ts";
@@ -34,6 +35,8 @@ function centredCell(turned16: number): number {
 }
 
 export class LatticeStudFinder implements MateFinder {
+  readonly namesPartners = false;
+  readonly proposesEveryPose = true;
   private readonly classes: MateClasses;
   private readonly levelYs: Int32Array[] = [];
   private readonly levelsOf: StudLevel[][] = [];
@@ -79,6 +82,17 @@ export class LatticeStudFinder implements MateFinder {
 
   remove(model: ModelConnectors, pose: LatticePose): void {
     this.stamp(model, pose, false);
+  }
+
+  proposeOnLattice(
+    model: ModelConnectors,
+    window: SnapWindow,
+    out: CandidatePoses,
+    _progress: ProposalProgress,
+    _slotBudget: number,
+  ): boolean {
+    this.propose(model, window, out);
+    return true;
   }
 
   propose(model: ModelConnectors, window: SnapWindow, out: CandidatePoses): void {
@@ -182,6 +196,10 @@ export class LatticeStudFinder implements MateFinder {
             if (!levels[l]?.has(x, z)) continue;
             out.push(
               i,
+              model.shape[i] ?? 0,
+              model.gender[i] ?? 0,
+              classes.shapeOf(partner),
+              classes.genderOf(partner),
               ownSource | provenanceSource(provenance),
               Math.max(ownStatus, provenanceStatus(provenance)),
               NO_PARTNER,
