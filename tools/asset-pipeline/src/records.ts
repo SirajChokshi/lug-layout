@@ -1,14 +1,17 @@
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain/heading-footprints";
+import { pieceFrameOutline } from "@brr/domain/piece-outline";
 import {
   BundleCredit,
   BundleModelEntry,
+  LevelCrossingFacts,
   ManifestPart,
   TrackCatalog,
   type CatalogPart,
   type PartExtras,
   type PartRole,
   type PartShape,
+  type PlanOutline,
   type TrackShape,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
@@ -29,6 +32,7 @@ const CompiledTables = v.object({
   credits: v.array(BundleCredit),
   models: v.array(BundleModelEntry),
   trackCatalog: TrackCatalog,
+  levelCrossing: LevelCrossingFacts,
 });
 
 const RawModelFile = v.object({ parts: v.array(v.string()) });
@@ -44,6 +48,7 @@ function arrayBuffer(bytes: Buffer): ArrayBuffer {
 function partShape(
   part: ManifestPart,
   { studs, technic, rolling }: Pick<PartExtras, "studs" | "technic" | "rolling">,
+  outline: PlanOutline | undefined,
 ): PartShape {
   return {
     id: part.id,
@@ -57,10 +62,16 @@ function partShape(
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(technic ? { technic } : {}),
     ...(rolling ? { rolling } : {}),
+    ...(outline ? { outline } : {}),
   };
 }
 
-function trackShape(piece: string, positions: Float32Array, headingHalfSteps: number): TrackShape {
+function trackShape(
+  piece: string,
+  positions: Float32Array,
+  headingHalfSteps: number,
+  outline: PlanOutline,
+): TrackShape {
   const [minY, maxY] = verticalRange(positions);
   return {
     piece,
@@ -68,6 +79,7 @@ function trackShape(piece: string, positions: Float32Array, headingHalfSteps: nu
     hull: Array.from(planHull(positions, headingHalfSteps)),
     minY,
     maxY,
+    outline,
   };
 }
 
@@ -75,10 +87,13 @@ async function writeJson(path: string, value: unknown): Promise<void> {
   await writeFile(path, JSON.stringify(value));
 }
 
-export async function attachRecords(directory: string): Promise<void> {
+export async function attachRecords(
+  directory: string,
+  outlines: ReadonlyMap<string, PlanOutline>,
+): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: Record<string, unknown> = JSON.parse(await readFile(manifestPath, "utf8"));
-  const { parts, credits, models, trackCatalog } = decodedOrThrow(
+  const { parts, credits, models, trackCatalog, levelCrossing } = decodedOrThrow(
     decode(CompiledTables, compiled),
     manifestPath,
   );
@@ -86,7 +101,7 @@ export async function attachRecords(directory: string): Promise<void> {
   const positions = new Map<string, Float32Array>();
   for (const part of parts) {
     const glb = parseGlb(arrayBuffer(await readFile(join(directory, part.file))), part.file);
-    shapes.set(part.id, partShape(part, glb.document.extras));
+    shapes.set(part.id, partShape(part, glb.document.extras, outlines.get(part.id)));
     if (part.role === "track") positions.set(part.id, readPartMesh(glb, part.file).positions);
   }
   const shapeOf = (id: string, where: string): PartShape => {
@@ -102,8 +117,9 @@ export async function attachRecords(directory: string): Promise<void> {
   }
   const catalogParts: CatalogPart[] = [];
   const shapeFiles = new Set<string>();
+  const ramps = new Set(levelCrossing.ramps.map((ramp) => ramp.part));
   for (const part of parts) {
-    if (!CATALOG_PART_ROLES.has(part.role)) continue;
+    if (!CATALOG_PART_ROLES.has(part.role) && !ramps.has(part.id)) continue;
     const file = shapeFileName(part.id);
     if (shapeFiles.has(file)) throw new Error(`two catalog parts share the shape file ${file}`);
     shapeFiles.add(file);
@@ -114,7 +130,14 @@ export async function attachRecords(directory: string): Promise<void> {
     const mesh = positions.get(piece.part);
     if (!mesh)
       throw new Error(`track piece ${piece.id} names ${piece.part}, not a bundled track part`);
-    return trackShape(piece.id, mesh, piece.partFrame.headingHalfSteps);
+    const outline = outlines.get(piece.part);
+    if (!outline) throw new Error(`track piece ${piece.id} has no plan outline for ${piece.part}`);
+    return trackShape(
+      piece.id,
+      mesh,
+      piece.partFrame.headingHalfSteps,
+      pieceFrameOutline(outline, piece.partFrame),
+    );
   });
   await writeJson(join(directory, PART_TABLE_FILE), { parts });
   await writeJson(join(directory, CREDIT_TABLE_FILE), { credits });
