@@ -215,8 +215,8 @@ export {
   type ClosureResult,
   type SearchBudget,
 } from "./track/closure.ts";
-export type { ClosureSite } from "./track/clear-closure.ts";
-export { KitOutlines } from "./track/kit-outlines.ts";
+export type { ClosureSite, SupportSite } from "./track/clear-closure.ts";
+export { KitOutlines, type MoveFrame } from "./track/kit-outlines.ts";
 export { StrokePath } from "./track/stroke-path.ts";
 export {
   StrokeRouter,
@@ -224,6 +224,7 @@ export {
   type StrokeGoal,
   type StrokeJoin,
   type StrokeSite,
+  type StudlessScan,
 } from "./track/stroke-router.ts";
 export {
   NO_OBSTACLE,
@@ -235,12 +236,15 @@ export {
   outlineContains,
   placedOutline,
   rotateOutline,
+  studlessTopBlocker,
+  studlessTopOf,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";
 export {
   FOOTPRINT_FLOATS,
   HEADING_FOOTPRINT_FLOATS,
+  convexHull,
   headingFootprints,
   planHull,
   verticalRange,
@@ -381,3 +385,16 @@ export {
   type OwnerFilter,
   type VolumeHit,
 } from "./volume-index.ts";
+export {
+  PlacedOutline,
+  type AxisEdge,
+  type OutlinePoint,
+  type OutlineRing,
+} from "./plan/placed-outline.ts";
+export {
+  levelCrossings,
+  type CrossingTrack,
+  type LevelCrossing,
+  type RampCandidate,
+  type RampPart,
+} from "./level-crossings.ts";

@@ -10,6 +10,7 @@ import {
   type Zeta16,
 } from "@brr/math";
 import * as v from "valibot";
+import { LevelCrossingFacts, PlanOutline } from "./level-crossing.ts";
 
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
@@ -563,6 +564,7 @@ export const PartShape = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -585,6 +587,7 @@ export const TrackShape = v.object({
   ),
   minY: Finite,
   maxY: Finite,
+  outline: PlanOutline,
 });
 export type TrackShape = v.InferOutput<typeof TrackShape>;
 
@@ -838,6 +841,7 @@ export const BundleIndex = v.object({
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
   tablePlane: TablePlane,
+  levelCrossing: LevelCrossingFacts,
   compiler: v.nullable(BundleCompiler),
   connectors: FileRef,
   connectivity: FileRef,
@@ -1771,6 +1775,21 @@ export type Palette = v.InferOutput<typeof Palette>;
 
 export const FixtureModels = v.strictObject({ models: v.array(PaletteModel) });
 export type FixtureModels = v.InferOutput<typeof FixtureModels>;
+
+export {
+  CrossingRamp,
+  CrossingTrackSystem,
+  LevelCrossingFacts,
+  OUTLINE_UNITS_PER_LDU,
+  PartOutline,
+  PlanAxis,
+  PlanBox,
+  PlanOutline,
+  PlanOutlinesFile,
+  PlanPoint,
+  PlanRing,
+  RampRise,
+} from "./level-crossing.ts";
 
 export {
   MilsBuild,

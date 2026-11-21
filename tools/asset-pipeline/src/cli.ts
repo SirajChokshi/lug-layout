@@ -2,9 +2,12 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  LevelCrossingFacts,
+  PlanOutlinesFile,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
+  type PlanOutline,
   type CatalogSourceUse,
   type CrosswalkFile,
   type Palette,
@@ -102,8 +105,10 @@ import {
 } from "./remote-bundle.ts";
 import {
   geometryReports,
+  levelCrossingReports,
   licenseAuditReport,
   magnetSeatReports,
+  paletteTrackCatalog,
   readSources,
   trackCatalogReports,
   writeReports,
@@ -371,6 +376,8 @@ async function factsCommand(check: boolean): Promise<void> {
   }
   const auditLibrary = new LdrawLibrary([auditRoot]);
   const shadowLibrary = new LdrawLibrary([connectivityRoot]);
+  const catalog = paletteTrackCatalog(auditLibrary, palette);
+  const studs = studPrimitives(await readPrimitiveTable(primitiveTablePath));
   const reports = [
     licenseAuditReport({
       lock,
@@ -382,13 +389,15 @@ async function factsCommand(check: boolean): Promise<void> {
       auditLibrary,
       shadowLibrary,
     }),
-    ...geometryReports(
+    ...geometryReports(lock.source, auditLibrary, shadowLibrary, studs),
+    ...trackCatalogReports(auditLibrary, catalog),
+    ...levelCrossingReports(
+      new LdrawLibrary([ldrawRoot, auditRoot]),
+      palette,
+      catalog,
       lock.source,
-      auditLibrary,
-      shadowLibrary,
-      studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+      studs,
     ),
-    ...trackCatalogReports(auditLibrary, palette),
     ...magnetSeatReports(
       lock,
       connectivity,
@@ -502,10 +511,25 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   const geometryPath = join(repoRoot, BUNDLE_DATA_FILES.geometry);
   const geometry: Record<string, unknown> = JSON.parse(await readFile(geometryPath, "utf8"));
   const tablePlane = decodedOrThrow(decode(TablePlane, geometry["tablePlane"]), geometryPath);
+  const crossingPath = join(repoRoot, BUNDLE_DATA_FILES.levelCrossing);
+  const crossing = decodedOrThrow(
+    decode(LevelCrossingFacts, JSON.parse(await readFile(crossingPath, "utf8"))),
+    crossingPath,
+  );
+  const levelCrossing = { systems: crossing.systems, ramps: crossing.ramps };
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane, levelCrossing }, null, 2)}\n`,
   );
+}
+
+async function readPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> {
+  const path = join(repoRoot, BUNDLE_DATA_FILES.planOutlines);
+  const { outlines } = decodedOrThrow(
+    decode(PlanOutlinesFile, JSON.parse(await readFile(path, "utf8"))),
+    path,
+  );
+  return new Map(outlines.map((outline) => [outline.part, outline.rings]));
 }
 
 const BYTES_PER_KB = 1024;
@@ -559,6 +583,7 @@ interface SharedBuild {
   readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
   readonly categories: LdrawCategories;
   readonly libraryParts: DerivedLibraryParts;
+  readonly outlines: ReadonlyMap<string, PlanOutline>;
 }
 
 const LIBRARY_PARTS_LOD: BundleLod = "standard";
@@ -609,7 +634,7 @@ async function compileLod(
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
   if (offersLibraryParts) await attachLibraryParts(out, shared.libraryParts.file);
-  await attachRecords(out);
+  await attachRecords(out, shared.outlines);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
   await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
   await attachShadowLibrary(out, join(repoRoot, BUNDLE_DATA_FILES.shadowLibraryPin));
@@ -710,7 +735,8 @@ async function bundleCommand(): Promise<void> {
     catalogSources(catalog, LIBRARY_PART_SOURCES),
   );
   reportLibraryParts(libraryParts);
-  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts };
+  const outlines = await readPlanOutlines();
+  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts, outlines };
   for (const build of builds) await compileLod(build, shared);
   if (!(await studAuditCommand(undefined))) {
     throw new Error("the stud audit found the bundle's studs disagreeing with LDraw");
