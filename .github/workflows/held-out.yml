@@ -23,12 +23,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pnpm-install
       - id: bundle-key
         run: |
           manifest_file=$(node tools/asset-pipeline/src/cli.ts manifest-file)
@@ -46,6 +41,8 @@ jobs:
           toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - uses: actions/cache/save@v4
@@ -59,7 +56,8 @@ jobs:
         run: pnpm --filter @brr/asset-pipeline library-bake --check
       - name: Precompute the pinned library's connector records the import fetches beside the bundle's
         run: pnpm --filter @brr/asset-pipeline library-connectors --check
-      - uses: actions/cache@v4
+      - id: held-out-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             .cache/held-out/corpus
@@ -69,6 +67,14 @@ jobs:
       - run: pnpm --filter @brr/e2e held-out
         env:
           HELD_OUT_SEED: ${{ inputs.seed }}
+          HELD_OUT_SWEEP: ${{ github.event_name == 'schedule' && 'full' || '' }}
+      - if: ${{ github.event_name != 'pull_request' && steps.held-out-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .cache/held-out/corpus
+            .cache/held-out/ldraw
+          key: ${{ steps.held-out-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:

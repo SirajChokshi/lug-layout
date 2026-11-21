@@ -7,7 +7,6 @@ const MODULE_AIM: LatticePoint = { x: 380, z: 420 };
 const COMPILED_AIM: LatticePoint = { x: -320, z: 420 };
 const DIAGNOSTICS = /\/rolling-diagnostics[./]/u;
 const BUNDLE_DIAGNOSTICS = /\/rolling-diagnostics\.[0-9a-f]{16}\.json$/u;
-const LIBRARY_BAKE_URL = "**/library-bake/**";
 const LATTICE_PILLAR = "ldraw:2580";
 const NOT_KEPT = "were computed at import and their rows aren't kept";
 
@@ -23,7 +22,7 @@ function pillarModel(): string {
   ].join("\n");
 }
 
-test("the inspector alone loads rolling diagnostics: a placement session and an import compiled at import fetch none, and asking shows the bundle's rows or names a part compiled at import", async ({
+test("the selection panel alone loads rolling diagnostics: a placement session and an import compiled at import fetch none, and asking shows the bundle's rows or names a part compiled at import", async ({
   page,
 }) => {
   const requested: string[] = [];
@@ -31,28 +30,35 @@ test("the inspector alone loads rolling diagnostics: a placement session and an 
   const diagnosticsRequests = (): ReadonlyArray<string> =>
     requested.filter((path) => DIAGNOSTICS.test(path));
   const editor = await EditorPage.open(page);
-  await editor.serveLdrawLibrary();
+  const raw = await editor.serveLdrawLibrary();
 
   await editor.zoom(400);
   await editor.placeAt(PALETTE_MODULE, MODULE_AIM);
   await editor.escape();
   expect(diagnosticsRequests(), "a placement session").toEqual([]);
 
-  await page.context().route(LIBRARY_BAKE_URL, (route) => route.abort());
+  const allowLibraryBake = editor.blockLibraryBake();
   const file = test.info().outputPath("lattice-pillar.ldr");
   await writeFile(file, pillarModel());
+  const servedBefore = raw.served();
   const imported = await editor.importModel(file);
-  await page.context().unroute(LIBRARY_BAKE_URL);
+  allowLibraryBake();
   expect(imported.status, imported.text).toBe("placeable");
+  const servedRaw = raw.served() - servedBefore;
+  process.stdout.write(`library bake blocked: the raw route served ${servedRaw} LDraw files\n`);
+  expect(
+    servedRaw,
+    "with the bake blocked, the import reads its parts from the raw library",
+  ).toBeGreaterThan(0);
   await editor.placeAt(imported.item, COMPILED_AIM);
   await editor.escape();
   expect(diagnosticsRequests(), "an import compiled at import").toEqual([]);
 
-  const inspector = page.getByRole("region", { name: "Inspector" });
+  const panel = page.getByRole("region", { name: "Selection" });
   const showBands = async (): Promise<ReadonlyArray<string>> => {
     const before = diagnosticsRequests().length;
-    await inspector.getByRole("button", { name: "Show unread rolling bands" }).click();
-    await expect(inspector.getByLabel("Unread rolling bands")).toBeVisible();
+    await panel.getByRole("button", { name: "Show unread rolling bands" }).click();
+    await expect(panel.getByLabel("Unread rolling bands")).toBeVisible();
     return diagnosticsRequests().slice(before);
   };
 
@@ -60,14 +66,16 @@ test("the inspector alone loads rolling diagnostics: a placement session and an 
   const bundleAsked = await showBands();
   expect(bundleAsked).toHaveLength(1);
   expect(bundleAsked.every((path) => BUNDLE_DIAGNOSTICS.test(path))).toBe(true);
-  await inspector.screenshot({ path: test.info().outputPath("inspector-module.png") });
+  await panel.screenshot({ path: test.info().outputPath("selection-panel-module.png") });
 
   expect(await editor.select(COMPILED_AIM)).toBe(imported.item);
   expect(await showBands()).toEqual([]);
-  const pillar = inspector
+  const pillar = panel
     .getByLabel("Unread rolling bands")
     .locator(".rolling-diagnostics-part", { hasText: LATTICE_PILLAR });
   await expect(pillar).toContainText(NOT_KEPT);
   await expect(pillar.locator("li")).toHaveCount(0);
-  await inspector.screenshot({ path: test.info().outputPath("inspector-compiled-at-import.png") });
+  await panel.screenshot({
+    path: test.info().outputPath("selection-panel-compiled-at-import.png"),
+  });
 });
