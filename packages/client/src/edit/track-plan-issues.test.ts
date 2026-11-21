@@ -189,6 +189,7 @@ function userModel(
     placeable: { id: `user:${label}`, label },
     box: boundsOf(instances),
     shape: null,
+    carried: null,
     facts: emptyFacts(),
   };
   return {

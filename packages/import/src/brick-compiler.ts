@@ -251,6 +251,10 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
             flat: new Uint32Array(bytesOf(body, blobs, "flat")),
             columnBottom: new Int16Array(bytesOf(body, blobs, "columnBottom")),
             columnTop: new Int16Array(bytesOf(body, blobs, "columnTop")),
+            footing: {
+              instance: new Uint32Array(bytesOf(body, blobs, "footingInstance")),
+              cell: new Uint32Array(bytesOf(body, blobs, "footingCell")),
+            },
           },
     vehicles: bakedVehicles(header, body),
     vehicleIssue: header.vehicleIssue ?? null,
