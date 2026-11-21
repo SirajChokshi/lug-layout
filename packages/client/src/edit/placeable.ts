@@ -1,5 +1,6 @@
 import {
   EMPTY_COLUMN,
+  type InstanceFooting,
   type ModelCells,
   type ModelStudCover,
   type PartShapeAsset,
@@ -26,6 +27,7 @@ export interface PlaceableCells {
   readonly footprint: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly footing: InstanceFooting;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
@@ -213,10 +215,17 @@ function modelCells(cells: ModelCells, shift: Vec3, label: string): PlaceableCel
     footprint,
     columnBottom,
     columnTop,
+    footing: cells.footing,
     footprintCells: cells.footprint.length,
     flatCells: cells.flat.length,
     heightPlates,
   };
+}
+
+function everyCellOfOneInstance(cells: number): InstanceFooting {
+  const cell = new Uint32Array(cells);
+  for (let c = 0; c < cells; c++) cell[c] = c;
+  return { instance: new Uint32Array(cells), cell };
 }
 
 function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
@@ -233,6 +242,7 @@ function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
     footprint: new Uint8Array(width * depth),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
+    footing: everyCellOfOneInstance(width * depth),
     footprintCells: 0,
     flatCells: 0,
     heightPlates,

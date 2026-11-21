@@ -76,6 +76,8 @@ export function bakeTransferables(bake: ModelBake): Transferable[] {
           bake.cells.flat.buffer,
           bake.cells.columnBottom.buffer,
           bake.cells.columnTop.buffer,
+          bake.cells.footing.instance.buffer,
+          bake.cells.footing.cell.buffer,
         ]
       : []),
     ...bake.vehicles.flatMap((vehicle) => [
