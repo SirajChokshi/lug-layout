@@ -3,17 +3,15 @@ import { EditorPage } from "./editor-page.ts";
 
 const GROCER = "omr:10185-1";
 
-test("a click made while a set's connectors load places it there once they load", async ({
-  page,
-}) => {
+test("a click made while a set loads places it there once it has loaded", async ({ page }) => {
   const editor = await EditorPage.open(page);
   await editor.zoom(400);
   const point = await editor.screenOf({ x: -640, z: 0 });
-  const release = await editor.holdConnectorRecords();
+  const release = await editor.holdModelRecords();
 
   await editor.pick(GROCER);
   await page.mouse.click(point.sx, point.sy);
-  await expect(page.locator(".tool-hud")).toContainText("goes down at -640, 0");
+  await expect(page.locator(".tool-hud")).toContainText("Queued: placing at -640, 0 when ready");
   const whileLoading = { tables: await editor.heldTables(), poses: await editor.poses() };
   release();
 

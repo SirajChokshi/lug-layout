@@ -1,6 +1,11 @@
-import { POSE16_IDENTITY, STUD_LDU } from "@brr/math";
+import { POSE16_IDENTITY, STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { describe, expect, it } from "vitest";
-import { EditHistory, type ConsistRef, type PlacementRef } from "./edit-history.ts";
+import {
+  EditHistory,
+  type ConsistRef,
+  type PlacementRef,
+  type TrackPieceAt,
+} from "./edit-history.ts";
 import { ConsistLayout } from "./rail/consist-layout.ts";
 import { SLOT_LIVE, World } from "./world.ts";
 
@@ -39,6 +44,16 @@ function lcg(seed: number): () => number {
   return () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
     return state;
+  };
+}
+
+function straightAt(index: number, x: bigint): TrackPieceAt {
+  return {
+    index,
+    piece: 0,
+    pose: pose16(zeta16([x, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+    yPlates: 0,
+    rise: 0,
   };
 }
 
@@ -132,7 +147,59 @@ describe("EditHistory", () => {
     expect(undone?.kind).toBe("rotate");
     expect(undone?.changes[0]?.to?.rot).toBe(0);
     expect(placement.handle?.rot).toBe(0);
-    expect(history.nextRedo()).toBe("rotate");
+    expect(history.nextRedo()).toEqual({ kind: "rotate" });
+  });
+
+  it("keeps a track change as one step beside placements, handing it back reversed on undo and as made on redo", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    history.place({ refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 0 });
+    const run = { lift: [], lay: [straightAt(0, 0n), straightAt(1, 16n)] };
+    const thrown = { lift: [straightAt(1, 16n)], lay: [{ ...straightAt(1, 16n), piece: 2 }] };
+
+    expect(history.commit("lay-track", [], run).track).toBe(run);
+    expect(history.commit("throw-switch", [], thrown).track).toBe(thrown);
+    expect(history.nextUndo()).toEqual({ kind: "throw-switch", switchAt: 1 });
+    expect(history.undo()?.track).toEqual({ lift: thrown.lay, lay: thrown.lift });
+    expect(history.undo()).toMatchObject({ kind: "lay-track", track: { lift: run.lay, lay: [] } });
+    expect(history.nextUndo()?.kind).toBe("place");
+    expect(livePlacements(world)).toEqual(["1,0,0,0,0,0"]);
+    expect(history.nextRedo()).toEqual({ kind: "lay-track", pieces: 2 });
+    expect(history.redo()?.track).toBe(run);
+    expect(history.redo()?.track).toBe(thrown);
+    expect([history.undoDepth, history.redoDepth]).toEqual([3, 0]);
+  });
+
+  it("keeps placements, track and a plan change committed together as one step, all undone and redone together", () => {
+    const world = new World();
+    const history = new EditHistory(world);
+    const empty = { regions: [], activePlanId: null };
+    const opened = { regions: [], activePlanId: "plan-1" };
+    const change = { before: empty, after: opened };
+    const run = { lift: [], lay: [straightAt(0, 0n)] };
+
+    const done = history.commit(
+      "open-plan",
+      [
+        { placement: null, to: { refId: 1, colorId: 2, x: 0, z: 0, yPlates: 0, rot: 0 } },
+        { placement: null, to: { refId: 3, colorId: 0, x: 40, z: 60, yPlates: 1, rot: 3 } },
+      ],
+      run,
+      change,
+    );
+    expect(done.plan).toBe(change);
+    expect(history.nextUndo()).toEqual({ kind: "open-plan", placements: 2, pieces: 1 });
+
+    const undone = history.undo();
+    expect(undone).toMatchObject({
+      track: { lift: run.lay, lay: [] },
+      plan: { before: opened, after: empty },
+    });
+    expect(livePlacements(world)).toEqual([]);
+    expect(history.undoDepth).toBe(0);
+
+    expect(history.redo()).toMatchObject({ track: run, plan: change });
+    expect(livePlacements(world)).toEqual(["1,2,0,0,0,0", "3,0,40,60,1,3"]);
   });
 
   it("drops the redo branch when a new edit follows an undo", () => {
@@ -167,6 +234,32 @@ describe("EditHistory", () => {
         { placement, to: { refId: 1, colorId: 0, x: 0, z: 0, yPlates: 0, rot: 4 } },
       ]),
     ).toThrow(/quarter turn/u);
+    const straight = {
+      piece: 0,
+      pose: pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0),
+      rise: 0,
+    };
+    expect(() =>
+      history.commit("remove", [{ placement, to: null }], {
+        lift: [
+          { ...straight, index: 3, yPlates: 0 },
+          { ...straight, index: 1, yPlates: 0 },
+        ],
+        lay: [],
+      }),
+    ).toThrow(/ascending/u);
+    expect(() =>
+      history.commit("lay-track", [], {
+        lift: [],
+        lay: [{ ...straight, index: 0, yPlates: 2 ** 15 }],
+      }),
+    ).toThrow(/int16/u);
+    expect(() =>
+      history.commit("lay-track", [], {
+        lift: [],
+        lay: [{ ...straight, index: 0, yPlates: 0, rise: 2 ** 7 }],
+      }),
+    ).toThrow(/int8/u);
     expect(livePlacements(world)).toEqual(before);
     expect(history.undoDepth).toBe(1);
   });

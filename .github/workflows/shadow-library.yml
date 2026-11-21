@@ -1,0 +1,99 @@
+name: Shadow library
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - tools/asset-pipeline/shadow-library.json
+      - tools/asset-pipeline/src/shadow-library/**
+      - tools/asset-pipeline/src/publication/**
+      - tools/asset-pipeline/src/r2.ts
+      - infra/cloudflare/part-bundles.json
+      - .github/workflows/shadow-library.yml
+      - "!tools/asset-pipeline/src/shadow-library/*.test.ts"
+      - "!tools/asset-pipeline/src/publication/*.test.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shadow-library-production
+  cancel-in-progress: false
+
+jobs:
+  status:
+    name: Check the public shadow library
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      served: ${{ steps.served.outputs.served }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Look for the pinned index at the public URL
+        id: served
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/shadow-library/cli.ts served
+
+  publish:
+    name: Publish the shadow library
+    needs: status
+    if: needs.status.outputs.served != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
+      - name: Check the bucket for the pinned index
+        id: status
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/shadow-library/cli.ts published
+      - name: Report missing credentials
+        if: steps.status.outputs.configured == 'false'
+        run: echo "::warning::Shadow library not published. The production environment has no Cloudflare token; see docs/part-bundle.md."
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        if: steps.status.outputs.published == 'false'
+        with:
+          path: .cache/catalog
+          key: shadow-library-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+      - name: Reassemble the shadow files and patches and check them against the pin
+        if: steps.status.outputs.published == 'false'
+        run: node tools/asset-pipeline/src/shadow-library/cli.ts --check
+      - name: Upload the shadow files, patches and manifest, then the pinned index
+        if: steps.status.outputs.published == 'false'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
+        run: node tools/asset-pipeline/src/shadow-library/cli.ts upload
+      - name: Verify every served file against its content address
+        if: steps.status.outputs.configured == 'true'
+        env:
+          PART_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: node tools/asset-pipeline/src/shadow-library/cli.ts verify-served --all --wait
+      - name: Summary
+        if: steps.status.outputs.configured == 'true'
+        env:
+          ALREADY_PUBLISHED: ${{ steps.status.outputs.published }}
+        run: |
+          echo "Shadow library \`$(node -p "require('./tools/asset-pipeline/shadow-library.json').index.sha256")\`, already published before this run: $ALREADY_PUBLISHED" >> "$GITHUB_STEP_SUMMARY"
