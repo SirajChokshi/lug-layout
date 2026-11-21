@@ -14,12 +14,14 @@ import type { ICatalogSearch } from "./catalog/catalog-search.ts";
 import type { ILibraryPartPlacer } from "./catalog/library-part-placer.ts";
 import type { ILibraryPartSearch } from "./catalog/library-part-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
+import type { IPaletteCatalog } from "./catalog/palette-catalog.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import type { ICommandPaletteSearch } from "./commands/command-palette-search.ts";
 import type { IHotbar } from "./commands/hotbar.ts";
 import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
@@ -78,8 +80,17 @@ export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credi
 export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
   "brr.client.CatalogSearch",
 );
+export const COMMAND_CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
+  "brr.client.CommandCatalogSearch",
+);
+export const PALETTE_CATALOG: ServiceIdentifier<IPaletteCatalog> = Symbol.for(
+  "brr.client.PaletteCatalog",
+);
 export const PALETTE_SEARCH: ServiceIdentifier<IPaletteSearch> = Symbol.for(
   "brr.client.PaletteSearch",
+);
+export const COMMAND_PALETTE_SEARCH: ServiceIdentifier<ICommandPaletteSearch> = Symbol.for(
+  "brr.client.CommandPaletteSearch",
 );
 export const LIBRARY_PART_SEARCH: ServiceIdentifier<ILibraryPartSearch> = Symbol.for(
   "brr.client.LibraryPartSearch",
