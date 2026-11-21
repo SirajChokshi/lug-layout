@@ -227,6 +227,7 @@ export class PlanRows {
   segment = new Uint8Array(INITIAL_ROWS);
   source = new Int32Array(INITIAL_ROWS);
   boxState = new Uint8Array(INITIAL_ROWS);
+  unsupported = new Uint8Array(INITIAL_ROWS);
   readonly order = new RowList(INITIAL_ROWS);
   private free = new Int32Array(INITIAL_ROWS);
   private freeCount = 0;
@@ -239,6 +240,7 @@ export class PlanRows {
     const row = this.allocate();
     this.segment[row] = segment;
     this.source[row] = source;
+    this.unsupported[row] = 0;
     if (segment === TRACK_SEGMENT) this.setTrackRow(source, row);
     else this.models.set(source, row);
     this.order.link(this, row);
@@ -317,6 +319,7 @@ export class PlanRows {
     this.segment = grownUint8(this.segment, capacity);
     this.source = grownInt32(this.source, capacity);
     this.boxState = grownUint8(this.boxState, capacity);
+    this.unsupported = grownUint8(this.unsupported, capacity);
     this.free = grownInt32(this.free, capacity);
     this.order.grow(capacity);
     this.capacity = capacity;

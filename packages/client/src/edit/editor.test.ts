@@ -126,6 +126,7 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 const BASEPLATE = "ldraw:3811@2";
+const ROAD_T_JUNCTION = "ldraw:44341p02@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -578,6 +579,7 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
 }, 120_000);
 
 const LOCOMOTIVE = "omr:10133-1";
+const LOCOMOTIVE_LABEL = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
 const CABOOSE = "omr:10014-1";
 const MY_OWN_TRAIN = "omr:10205-1";
 const DRAG_STEPS = 8;
@@ -1742,27 +1744,37 @@ it("selects nothing on a laid piece clicked in the track tool, leaves the tool o
   expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
 }, 120_000);
 
-it("lays no piece that would run onto a road plate's roadway, and says why", async () => {
+it("lays a piece onto a road plate's roadway, reports it unsupported, and says why", async () => {
   const { editor, backend } = await startEditor([]);
   await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [0, -48 * STUD], [0, -16 * STUD]);
   const laid = editor.dump().laidTrack.length;
 
   editor.extendTrack("straight", 0);
-  const refused = { laid: editor.dump().laidTrack.length, hud: toolHints(editor.snapshot()) };
+  const onRoadway = {
+    laid: editor.dump().laidTrack.length,
+    hud: toolHints(editor.snapshot()),
+    unsupported: editor.snapshot().track?.unsupported,
+  };
   backend.aim(0, -48 * STUD);
   editor.pointerMove(0, 0);
   editor.extendTrack("straight", 0);
 
-  expect(refused.laid).toBe(laid);
-  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
-  expect(refused.hud).toMatchObject({
-    tone: "warn",
-    title: "Nothing laid",
-    detail: expect.stringMatching(/^the next piece would sit on .+ where it has no studs$/u),
+  expect(onRoadway).toEqual({
+    laid: laid + 1,
+    hud: expect.objectContaining({
+      tone: "warn",
+      title: "Laid unsupported",
+      detail: expect.stringMatching(
+        /^1 piece rests on .+ where it has no studs, so it isn't supported$/u,
+      ),
+    }),
+    unsupported: 1,
   });
-  expect(editor.dump().laidTrack).toHaveLength(laid + 1);
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+  expect(editor.dump().laidTrack).toHaveLength(laid + 2);
 }, 120_000);
 
 it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {
@@ -3688,6 +3700,42 @@ describe("selection groups with laid track", () => {
     });
     expect(left.refusal).toMatch(/^Can't move them there\. /u);
   }, 120_000);
+
+  it("drags laid track onto a road plate's roadway as a level crossing reported unsupported, as a stroke lays it, and won't drag it across track it doesn't join", async () => {
+    const { editor, backend } = await startEditor([]);
+    await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+    await supportChecked(editor);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 40 * STUD], [24 * STUD, 40 * STUD]);
+    dragTrack(editor, backend, [-24 * STUD, 70 * STUD], [24 * STUD, 70 * STUD]);
+    const crossingOf = () => ({
+      unsupported: editor.snapshot().track?.unsupported,
+      crossings: editor.dump().crossings.length,
+    });
+    const laid = crossingOf();
+
+    boxSelect(editor, backend, [-26 * STUD, 35 * STUD], [26 * STUD, 45 * STUD]);
+    const ontoRoadway = dragGroup(editor, backend, [0, 40 * STUD], [0, 0]);
+    const onRoadway = { ...groupOutcome(editor), ...crossingOf() };
+    const acrossTrack = dragGroup(editor, backend, [0, 0], [0, 70 * STUD]);
+    const left = { ...groupOutcome(editor), ...crossingOf() };
+
+    expect(laid).toEqual({ unsupported: 0, crossings: 0 });
+    expect(ontoRoadway.gesture).toMatchObject({ kind: "move", pieces: 3, refusal: null });
+    expect(onRoadway).toMatchObject({
+      undo: "move",
+      refusal: null,
+      unsupported: expect.any(Number),
+      crossings: 1,
+    });
+    expect(onRoadway.unsupported).toBeGreaterThan(0);
+    expect(acrossTrack.gesture).toMatchObject({
+      kind: "move",
+      pieces: 3,
+      refusal: expect.stringMatching(/ would cross the track laid there\.$/u),
+    });
+    expect({ ...left, refusal: null }).toEqual({ ...onRoadway, refusal: null });
+  }, 120_000);
 });
 
 function nearestStud(ldu: number): number {
@@ -4711,4 +4759,441 @@ it("gives a part the bundle's packages don't list the record an import brought f
     gaps: editor.snapshot().connectorGaps,
     tabled: tables?.tables.filter((table) => table !== null).length,
   }).toEqual({ gaps: [], tabled: 1 });
+}, 120_000);
+
+function dragFill(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(from[0], from[1]);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(to[0], to[1]);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function placedPoses(editor: IEditor, refId: number) {
+  const { x, z, yPlates, refId: refs } = editor.dump().placements;
+  return x
+    .map((at, i) => ({ x: at, z: z[i] ?? 0, yPlates: yPlates[i] ?? 0, refId: refs[i] }))
+    .filter((pose) => pose.refId === refId)
+    .map(({ x: px, z: pz, yPlates: py }) => [px, pz, py] as const)
+    .toSorted((a, b) => a[1] - b[1] || a[0] - b[0]);
+}
+
+it("fills a dragged row with a user's model at its own size rounded up to the 8-, 16- or 32-stud grid, each tile resting where a click there would put it", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const refId = catalog.itemRefId(brick) ?? -1;
+  await chosen(editor, brick);
+  const steps: number[][] = [];
+  for (const _ of [8, 16, 32]) {
+    dragFill(editor, backend, [0, 0], [1300, 10]);
+    const xs = placedPoses(editor, refId).map(([x]) => x);
+    steps.push(xs.slice(1).map((x, i) => x - (xs[i] ?? 0)));
+    editor.undo(0);
+    editor.cycleFillGrid();
+  }
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+  const row = placedPoses(editor, refId);
+  editor.undo(0);
+  const under = row[2] ?? [0, 0, 0];
+  backend.aim(under[0], under[1]);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+
+  expect(steps).toEqual([Array(8).fill(160), Array(4).fill(320), Array(2).fill(640)]);
+  expect(placedPoses(editor, refId).filter(([, , y]) => y > 0)).toEqual([[under[0], under[1], 3]]);
+  expect(editor.snapshot().lastFill).toEqual({
+    item: brick,
+    placed: row.length,
+    refused: 0,
+    reason: null,
+  });
+}, 120_000);
+
+it("skips and reports the tiles a click would refuse, places the rest, and one undo takes the whole fill back", async () => {
+  const { editor, backend, catalog } = await startEditor([]);
+  const refId = catalog.itemRefId(BASEPLATE) ?? -1;
+  expect((await placer(editor, backend)(BASEPLATE, 960, 320)).placements).toBe(1);
+  editor.cycleFillGrid();
+  editor.cycleFillGrid();
+  const seen = () => {
+    const { placements, lastFill, history } = editor.snapshot();
+    return {
+      placements,
+      placed: lastFill?.placed ?? null,
+      refused: lastFill?.refused ?? null,
+      overlap: lastFill?.reason?.includes("would overlap 3811 Baseplate 32 x 32") ?? null,
+      undo: history.undoLabel,
+    };
+  };
+
+  dragFill(editor, backend, [0, 0], [1900, 10]);
+  const filled = seen();
+  editor.undo(0);
+  const undone = seen();
+  editor.redo(0);
+
+  expect(filled).toEqual({
+    placements: 3,
+    placed: 2,
+    refused: 1,
+    overlap: true,
+    undo: "fill (2 placements)",
+  });
+  expect(undone).toEqual({
+    placements: 1,
+    placed: null,
+    refused: null,
+    overlap: null,
+    undo: "place",
+  });
+  expect(placedPoses(editor, refId)).toEqual([
+    [320, 320, 0],
+    [960, 320, 0],
+    [1600, 320, 0],
+  ]);
+}, 120_000);
+
+it("fills the active plan's tables with a user's model, inside the tables, and the plan counts every tile", async () => {
+  const userModel = "brick-2x4";
+  const { editor, catalog, container } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -160, minZ: 0, maxX: 1440, maxZ: 640 });
+  await chosen(editor, brick);
+
+  editor.fillTables(0);
+  const filled = {
+    placements: editor.snapshot().placements,
+    inside: plans.insideCount(planId),
+    issues: plans.issues(planId).length,
+  };
+  editor.undo(0);
+
+  expect(filled).toEqual({ placements: 40, inside: 40, issues: 0 });
+  expect({ placements: editor.snapshot().placements, inside: plans.insideCount(planId) }).toEqual({
+    placements: 0,
+    inside: 0,
+  });
+}, 120_000);
+
+it.each([
+  { snapRoads: true, mismatched: false },
+  { snapRoads: false, mismatched: true },
+] as const)(
+  "with road snapping $snapRoads, fills T-junctions so that their own edges mismatch only where a click would allow it",
+  async ({ snapRoads, mismatched }) => {
+    const { editor, backend } = await startEditor([]);
+    editor.setSnapRoads(snapRoads);
+    await chosen(editor, ROAD_T_JUNCTION);
+    editor.cycleFillGrid();
+    editor.cycleFillGrid();
+
+    dragFill(editor, backend, [0, 0], [1900, 1900]);
+    const { lastFill, roads, placements } = editor.snapshot();
+
+    expect({
+      refusedSome: (lastFill?.refused ?? 0) > 0,
+      mismatched: roads.mismatchedCells > 0,
+      placements: placements + (lastFill?.refused ?? 0),
+    }).toEqual({ refusedSome: !mismatched, mismatched, placements: 9 });
+  },
+  120_000,
+);
+
+it("refuses a fill tile where a held train would stand on the rails, and places the rest on the ground", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await chosen(editor, LOCOMOTIVE);
+
+  dragFill(editor, backend, [-640, -640], [640, 640]);
+  const { lastFill, placements } = editor.snapshot();
+
+  expect({
+    placed: lastFill?.placed,
+    refusedSome: (lastFill?.refused ?? 0) > 0,
+    reason: lastFill?.reason,
+    placements,
+    trains: trainsOf(editor),
+  }).toEqual({
+    placed: placements,
+    refusedSome: true,
+    reason: `${LOCOMOTIVE_LABEL} would stand on the rails there. Set it on the rails with a click.`,
+    placements: expect.any(Number),
+    trains: [],
+  });
+  expect(placements).toBeGreaterThan(0);
+}, 120_000);
+
+it("offers the fill grid key only while a part is in hand, and leaves selecting and the camera live everywhere", async () => {
+  const { editor } = await startEditor([]);
+  const live = (id: CommandId) => commandEnabled(id, editor.snapshot());
+  const selecting = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+  await chosen(editor, BASEPLATE);
+  const placing = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+
+  expect({ selecting, placing }).toEqual({
+    selecting: [false, true, true, true],
+    placing: [true, true, true, true],
+  });
+}, 120_000);
+
+it("cancels a fill mid-drag with the part kept in hand, so its release places nothing and the next drag starts afresh", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(1900, 1900);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  const drafted = editor.snapshot().fillDraft?.wanted ?? 0;
+  const cancellable = commandEnabled("cancel", editor.snapshot());
+  editor.cancelGesture();
+  editor.dragEnd(0, 0, 0);
+  const released = {
+    placements: editor.snapshot().placements,
+    fillDraft: editor.snapshot().fillDraft,
+    lastFill: editor.snapshot().lastFill,
+    held: editor.snapshot().activeItem,
+    cancellable: commandEnabled("cancel", editor.snapshot()),
+  };
+  dragFill(editor, backend, [0, 0], [1260, 10]);
+
+  expect({ drafted: drafted > 1, cancellable }).toEqual({ drafted: true, cancellable: true });
+  expect(released).toEqual({
+    placements: 0,
+    fillDraft: null,
+    lastFill: null,
+    held: BASEPLATE,
+    cancellable: false,
+  });
+  expect(editor.snapshot().lastFill?.placed).toBe(editor.snapshot().placements);
+  expect(editor.snapshot().placements).toBe(2);
+}, 120_000);
+
+const RAISED_ROAD = "ldraw:69958@72";
+const USER_TRACK = "switch-then-reversed-curve";
+const DRAG_STEP_LDU = 40;
+const QUARTER_TURN_STEPS = 4;
+const REACH_LDU = 400;
+const ONE_STRAIGHT_LDU = 320;
+
+type PlanPoint = readonly [number, number];
+
+function trackDrawer(editor: IEditor, backend: AimedBackend) {
+  return (from: PlanPoint, to: PlanPoint) => {
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(from[0], from[1]);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    const steps = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / DRAG_STEP_LDU);
+    for (let step = 1; step <= steps; step++) {
+      backend.aim(
+        from[0] + ((to[0] - from[0]) * step) / steps,
+        from[1] + ((to[1] - from[1]) * step) / steps,
+      );
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+    const { track } = editor.snapshot();
+    return {
+      pieces: track?.pieces ?? 0,
+      lastCommit: track?.lastCommit ?? null,
+      lastBlock: track?.lastBlock ?? null,
+      lastWithheld: track?.lastWithheld ?? null,
+      lastUnsupported: track?.lastUnsupported ?? null,
+    };
+  };
+}
+
+async function supportChecked(editor: IEditor): Promise<void> {
+  await vi.waitFor(() => {
+    expect(editor.dump().studChecks).toBe(0);
+    expect(editor.snapshot().track?.unsupported).not.toBeNull();
+  });
+}
+
+function holdAndClick(editor: IEditor, backend: AimedBackend, piece: string, at: PlanPoint) {
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${piece}`);
+  backend.aim(at[0], at[1]);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const { refusedClicks, lastRefusal, track } = editor.snapshot();
+  return { refusedClicks, reason: lastRefusal?.reason ?? null, pieces: track?.pieces ?? 0 };
+}
+
+it("lays a run across a road plate's roadway as a level crossing reported unsupported, with ramps on the verge studs; a raised plate stops a run short and can't be dropped onto track", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+
+  const across = draw([-480, 0], [480, 0]);
+  const hud = toolHints(editor.snapshot());
+  const [crossing, ...others] = editor.dump().crossings;
+  expect(across).toMatchObject({
+    lastCommit: "laid",
+    lastBlock: null,
+    lastWithheld: null,
+    lastUnsupported: {
+      pieces: expect.any(Number),
+      block: { kind: "model", label: expect.stringContaining("44336p04"), unseated: true },
+    },
+  });
+  expect(hud).toMatchObject({
+    title: "Laid unsupported",
+    detail: expect.stringContaining("where it has no studs"),
+  });
+  expect(editor.snapshot().track?.unsupported).toBeGreaterThan(0);
+  expect(others).toEqual([]);
+  expect(crossing?.ramps.length).toBeGreaterThan(0);
+  for (const ramp of crossing?.ramps ?? []) expect(ramp.studMates).toBeGreaterThan(0);
+
+  await place(RAISED_ROAD, 0, 1600);
+  const through = draw([-800, 1600], [480, 1600]);
+  expect(through.lastBlock).toEqual({
+    kind: "model",
+    label: expect.stringContaining("69958"),
+    unseated: false,
+  });
+
+  editor.setSnapRoads(false);
+  const onto = await place(RAISED_ROAD, -500, 0);
+  expect(onto.reason).toMatch(/69958 .* would cross the track laid there\./u);
+}, 120_000);
+
+it("stops a run short at a user's brick model or track it doesn't join and names it, refuses a held piece or the model dropped onto track, and lays a run that joins an open end", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_BRICK,
+  ]);
+  const brick = `omr:${USER_BRICK}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+  await place(brick, 0, 0);
+  const label = editor.snapshot().catalog.find((item) => item.id === brick)?.label ?? brick;
+
+  const throughBrick = draw([-480, 0], [480, 0]);
+  const beside = draw([-480, 400], [480, 400]);
+  const acrossTrack = draw([440, -300], [440, 700]);
+  const fromOpenEnd = draw([480, 400], [800, 400]);
+  const heldOntoBrick = holdAndClick(editor, backend, TRACK_STRAIGHT, [0, 0]);
+  editor.chooseItem(null);
+  const brickOntoTrack = await place(brick, 0, 400);
+
+  expect(throughBrick.lastBlock).toEqual({ kind: "model", label, unseated: false });
+  expect(beside).toMatchObject({ lastCommit: "laid", lastBlock: null });
+  expect(acrossTrack.lastBlock).toEqual({ kind: "track" });
+  expect(fromOpenEnd.pieces).toBeGreaterThan(acrossTrack.pieces);
+  expect(fromOpenEnd).toMatchObject({ lastCommit: "laid", lastBlock: null });
+  expect(heldOntoBrick).toMatchObject({
+    pieces: fromOpenEnd.pieces,
+    reason: `Train Track 9V Straight would run into ${label}.`,
+  });
+  expect(brickOntoTrack.reason).toBe(`${label} would cross the track laid there.`);
+}, 120_000);
+
+function outwardFrom(
+  end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number },
+  reach: number,
+) {
+  const radians = (end.heading * Math.PI) / (2 * QUARTER_TURN_STEPS);
+  return [end.xLdu + reach * Math.cos(radians), end.zLdu + reach * Math.sin(radians)] as const;
+}
+
+it("lets a run start from or close onto the open end of a user's track model and stops one short at its track", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
+  const container = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, container);
+  await placer(editor, backend)(container, 0, 0);
+  const draw = trackDrawer(editor, backend);
+  const [from, onto] = editor
+    .dump()
+    .trackEnds.filter(
+      (open) =>
+        open.heading % QUARTER_TURN_STEPS === 0 &&
+        Number.isInteger(open.xLdu / 20) &&
+        Number.isInteger(open.zLdu / 20),
+    );
+  if (!from || !onto) {
+    throw new Error(`${USER_TRACK} has no two open ends on the stud grid facing a quarter turn`);
+  }
+
+  const joined = draw([from.xLdu, from.zLdu], outwardFrom(from, REACH_LDU));
+  const closed = draw(outwardFrom(onto, ONE_STRAIGHT_LDU), [onto.xLdu, onto.zLdu]);
+  const stillOpen = editor.dump().trackEnds;
+  const crossing = draw([-160, -600], [-160, 400]);
+
+  expect(joined).toMatchObject({ pieces: 1, lastCommit: "laid", lastBlock: null });
+  expect(closed).toMatchObject({ pieces: 2, lastCommit: "joined", lastBlock: null });
+  expect(stillOpen).not.toContainEqual(
+    expect.objectContaining({ xLdu: onto.xLdu, zLdu: onto.zLdu }),
+  );
+  expect(crossing.lastBlock).toEqual({ kind: "track" });
+}, 120_000);
+
+it("fills a user's track container across a road plate's roadway as track the plan reports unsupported, and skips the tiles whose track would cross laid track", async () => {
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [USER_TRACK],
+  );
+  const carrier = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, carrier);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -1920, minZ: -1920, maxX: 1920, maxZ: 1920 });
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  const label = editor.snapshot().catalog.find((item) => item.id === carrier)?.label ?? carrier;
+  const outcome = () => {
+    const unsupported = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
+    return {
+      lastFill: editor.snapshot().lastFill,
+      unsupportedTrack: editor.snapshot().track?.unsupported ?? 0,
+      carriersFlagged: unsupported.filter((issue) => issue.message.startsWith(label)).length,
+    };
+  };
+
+  await chosen(editor, carrier);
+  dragFill(editor, backend, [-1140, 0], [1420, 10]);
+  await supportChecked(editor);
+  const acrossRoadway = outcome();
+  editor.undo(0);
+  const undone = outcome();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [0, 2000], [0, 2960]);
+  await chosen(editor, carrier);
+  dragFill(editor, backend, [-1280, 2480], [1280, 2490]);
+  const acrossTrack = editor.snapshot().lastFill;
+
+  expect(acrossRoadway.lastFill).toMatchObject({ item: carrier, refused: 0, reason: null });
+  expect(acrossRoadway.lastFill?.placed).toBeGreaterThan(1);
+  expect(acrossRoadway.unsupportedTrack).toBeGreaterThan(0);
+  expect(acrossRoadway.carriersFlagged).toBeGreaterThan(0);
+  expect(undone).toMatchObject({ unsupportedTrack: 0, carriersFlagged: 0 });
+  expect(acrossTrack).toMatchObject({
+    item: carrier,
+    reason: `${label} would cross the track laid there.`,
+  });
+  expect(acrossTrack?.refused).toBeGreaterThan(0);
+  expect(acrossTrack?.placed).toBeGreaterThan(0);
 }, 120_000);

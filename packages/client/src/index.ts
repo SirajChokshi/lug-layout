@@ -69,6 +69,7 @@ export type {
   EditorOptions,
   EditorSnapshot,
   EditorStatus,
+  FillResult,
   GestureView,
   HistoryView,
   HoverView,
@@ -98,9 +99,13 @@ export type {
   TrackCommitResult,
   TrackPieceView,
   TrackSolveStats,
+  TrackUnsupportedView,
   TrackView,
+  CrossingView,
+  CrossingRampView,
 } from "./edit/editor.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
+export type { FillView } from "./edit/fill-tool.ts";
 export type {
   ExportedWorld,
   ModelFileInput,

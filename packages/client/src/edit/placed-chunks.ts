@@ -330,6 +330,20 @@ export function posedBox(box: LocalBox, x: number, z: number, yLdu: number, rot:
   return new LatticePose(x, z, rot).boxOf(box, yLdu);
 }
 
+export function posedPartBoxes(
+  partBoxes: Float32Array,
+  x: number,
+  z: number,
+  yLdu: number,
+  rot: number,
+): Float64Array {
+  const pose = new LatticePose(x, z, rot);
+  const boxes = new Float64Array(partBoxes.length);
+  for (let b = 0; b < partBoxes.length; b += BOX_FLOATS)
+    pose.worldBox(partBoxes, b, yLdu, boxes, b);
+  return boxes;
+}
+
 function closedAround(
   cellX: number,
   cellZ: number,
@@ -963,6 +977,10 @@ export class PlacedChunks {
       added.push(replaced);
     }
     return { added, removed, report: this.rebuild(touched) };
+  }
+
+  restingHeightAt(placeable: Placeable, x: number, z: number, rot: number): number {
+    return restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
   }
 
   restingHeights(

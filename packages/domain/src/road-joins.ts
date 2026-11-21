@@ -373,6 +373,16 @@ class CellGrid {
     return claimed;
   }
 
+  clear(): void {
+    for (const row of this.blocks.values()) {
+      for (const block of row.values()) {
+        if (block.claimed === 0) continue;
+        block.owner.fill(NO_OWNER);
+        block.claimed = 0;
+      }
+    }
+  }
+
   claim(cellX: number, cellZ: number, owner: number, top: number, stud: number, road: number) {
     const blockX = cellX >> BLOCK_SHIFT;
     const blockZ = cellZ >> BLOCK_SHIFT;
@@ -411,9 +421,9 @@ class EdgeTally {
 
 export class RoadNetwork {
   private readonly grid = new CellGrid();
-  private readonly ids: ReadonlyArray<number>;
-  private readonly placed: ReadonlyArray<PlacedStamp>;
-  private readonly lostCells: Uint8Array;
+  private readonly ids: number[];
+  private readonly placed: PlacedStamp[];
+  private lostCells: Uint8Array;
   private readonly overlapPairs = new Set<string>();
   private readonly scratchFit: EdgeFit = { joinedCells: 0, joinedRoadCells: 0, mismatchedCells: 0 };
 
@@ -422,6 +432,26 @@ export class RoadNetwork {
     this.placed = placements.map(placedStamp);
     this.lostCells = new Uint8Array(placements.length);
     for (let p = 0; p < this.placed.length; p++) this.claimCells(p);
+  }
+
+  add(placement: RoadPlacement): void {
+    const p = this.placed.length;
+    this.ids.push(placement.id);
+    this.placed.push(placedStamp(placement));
+    if (p >= this.lostCells.length) {
+      const grown = new Uint8Array(Math.max(1, 2 * this.lostCells.length));
+      grown.set(this.lostCells);
+      this.lostCells = grown;
+    }
+    this.claimCells(p);
+  }
+
+  clear(): void {
+    this.ids.length = 0;
+    this.placed.length = 0;
+    this.lostCells.fill(0);
+    this.overlapPairs.clear();
+    this.grid.clear();
   }
 
   private claimCells(p: number): void {
