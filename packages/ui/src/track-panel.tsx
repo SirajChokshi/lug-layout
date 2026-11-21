@@ -40,6 +40,8 @@ function closureText(drag: TrackDragView): string {
       return "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
     case "limit":
       return "the search hit its time limit before finding an exact join: release lays nothing";
+    case "pending":
+      return "a model under this join is still checking its studs: release lays nothing yet";
     case null:
       return drag.pieces === 0
         ? "drag away from the start"
@@ -97,6 +99,8 @@ function commitText(track: TrackView): string {
       return "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
+    case "refused-pending":
+      return "refused: a model under the join was still checking its studs";
     case "switch-straight":
       return "switch thrown to the straight route";
     case "switch-branching":
@@ -142,7 +146,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
   }
   return (
     <section
-      className="inspector track-panel"
+      className="stats-section track-panel"
       aria-label="Track"
       data-track-pieces={track.pieces}
       data-model-pieces={track.modelPieces}
@@ -159,14 +163,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-snapped={track.held?.snapped ? "1" : ""}
       data-held-misses={track.held?.misses ?? 0}
     >
-      <h2>Track</h2>
-      {snapshot.mode === "track" && !track.held && (
-        <p className="toolbar-hint">
-          Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
-          but don't join.
-        </p>
-      )}
+      <h3>Track</h3>
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>

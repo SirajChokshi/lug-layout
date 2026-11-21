@@ -45,10 +45,70 @@ afterEach(async () => {
 interface Listed {
   readonly id: string;
   readonly record?: string;
-  readonly glb?: string;
+  readonly unread?: ReadonlyArray<unknown>;
+  readonly rows?: ReadonlyArray<unknown>;
   readonly licenses?: ReadonlyArray<string>;
   readonly failed?: string;
 }
+
+const GLB_MAGIC = 0x46546c67;
+const GLB_VERSION = 2;
+const CHUNK_JSON = 0x4e4f534a;
+const CHUNK_BIN = 0x004e4942;
+const ORIGIN = { min: [0, 0, 0], max: [0, 0, 0] };
+
+function glbBytes(stem: string, unread: ReadonlyArray<unknown> | undefined): Buffer {
+  const document = {
+    asset: { version: "2.0", generator: "brick-compile" },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0, name: `parts/${stem}.dat` }],
+    meshes: [{ name: `parts/${stem}.dat`, primitives: [] }],
+    accessors: [],
+    bufferViews: [],
+    buffers: [{ byteLength: 0 }],
+    extras: {
+      unit: "LDU",
+      upAxis: "+Y",
+      ldraw: {
+        file: `parts/${stem}.dat`,
+        name: `${stem}.dat`,
+        title: stem,
+        author: "James Jessiman",
+        license: CA,
+        ldrawOrg: null,
+        note: "modified from LDraw",
+      },
+      sources: [],
+      studs: [],
+      bounds: ORIGIN,
+      ...(unread === undefined ? {} : { rolling: { stepsPerLdu: 16, surfaces: [], unread } }),
+    },
+  };
+  const text = JSON.stringify(document);
+  const json = Buffer.from(text.padEnd(Math.ceil(text.length / 4) * 4, " "));
+  const header = Buffer.alloc(12);
+  header.writeUInt32LE(GLB_MAGIC, 0);
+  header.writeUInt32LE(GLB_VERSION, 4);
+  header.writeUInt32LE(12 + 8 + json.length + 8, 8);
+  const jsonHeader = Buffer.alloc(8);
+  jsonHeader.writeUInt32LE(json.length, 0);
+  jsonHeader.writeUInt32LE(CHUNK_JSON, 4);
+  const binHeader = Buffer.alloc(8);
+  binHeader.writeUInt32LE(0, 0);
+  binHeader.writeUInt32LE(CHUNK_BIN, 4);
+  return Buffer.concat([header, jsonHeader, json, binHeader]);
+}
+
+const ARC_RAW = {
+  from: { numerator: "-31", denominator: "2" },
+  to: { numerator: "-13", denominator: "1" },
+};
+const ARC_ROWS = [
+  { reason: "arcs", axis: 1, at: [0, 0], from: -248, to: -208, raw: ARC_RAW },
+  { reason: "unoriented", raw: ARC_RAW },
+];
+const ARC_BANDS = [{ reason: "arcs", axis: 1 }, { reason: "unoriented" }];
 
 async function build(
   shards: ReadonlyArray<ReadonlyArray<Listed>>,
@@ -69,13 +129,14 @@ async function build(
         record: `records/${stem}.bin`,
         glb: `standard/${stem}.glb`,
         licenses: listed.licenses ?? [CA],
+        ...(listed.rows === undefined ? {} : { rollingDiagnostics: listed.rows }),
       };
     });
     for (const listed of parts) {
       if (listed.failed !== undefined) continue;
       const stem = listed.id.slice("ldraw:".length);
       await writeFile(join(directory, "records", `${stem}.bin`), listed.record ?? `record ${stem}`);
-      await writeFile(join(directory, "standard", `${stem}.glb`), listed.glb ?? `glb ${stem}`);
+      await writeFile(join(directory, "standard", `${stem}.glb`), glbBytes(stem, listed.unread));
     }
     await writeFile(
       join(directory, `shard-${shard}-of-${shards.length}.json`),
@@ -136,10 +197,10 @@ it("files every part under its own bucket with content-addressed records and GLB
   for (const [id, part] of filed) {
     const stem = id.slice("ldraw:".length);
     for (const [file, content] of [
-      [part.record, `record ${stem}`],
-      [part.glb, `glb ${stem}`],
+      [part.record, Buffer.from(`record ${stem}`)],
+      [part.glb, glbBytes(stem, undefined)],
     ] as const) {
-      expect(await readFile(join(inputs.out, file), "utf8")).toBe(content);
+      expect(await readFile(join(inputs.out, file))).toEqual(content);
       expect(file).toContain(sha256(content).slice(0, 16));
     }
   }
@@ -169,6 +230,49 @@ it("lists failures, refuses parts whose sources are not all CA, and ships no fil
   );
   expect(shipped).not.toContain("9999");
   expect(shipped).not.toContain("93606dyf");
+});
+
+it("files each bucket's rolling diagnostics rows in its own content-addressed file, which the bucket names with its SHA-256", async () => {
+  const withRows = ["ldraw:3941p01", "ldraw:6143"];
+  const inputs = await build([
+    [{ id: "ldraw:3001" }, ...withRows.map((id) => ({ id, unread: ARC_BANDS, rows: ARC_ROWS }))],
+  ]);
+  const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
+  const index = await readIndex(inputs.out);
+  const filed = new Map<string, unknown>();
+  for (const file of index.buckets) {
+    const bucket = decodedOrThrow(
+      decode(LibraryBakeBucket, JSON.parse(await readFile(join(inputs.out, file), "utf8"))),
+      file,
+    );
+    const hasRows = Object.keys(bucket.parts).some((id) => withRows.includes(id));
+    expect(bucket.rollingDiagnostics !== undefined).toBe(hasRows);
+    if (bucket.rollingDiagnostics === undefined) continue;
+    const bytes = await readFile(join(inputs.out, bucket.rollingDiagnostics.file));
+    expect(bucket.rollingDiagnostics.sha256).toBe(sha256(bytes));
+    expect(bucket.rollingDiagnostics.file).toContain(sha256(bytes).slice(0, 16));
+    for (const [id, rows] of Object.entries(JSON.parse(bytes.toString("utf8")).parts)) {
+      expect(libraryBakeBucket(id)).toBe(bucket.bucket);
+      filed.set(id, rows);
+    }
+  }
+  expect(pin.records).toBe(3);
+  expect(new Map([...filed].toSorted())).toEqual(new Map(withRows.map((id) => [id, ARC_ROWS])));
+});
+
+it.each([
+  [
+    "rows in another order than its GLB's bands",
+    { unread: ARC_BANDS, rows: ARC_ROWS.toReversed() },
+  ],
+  ["a row fewer than its GLB's bands", { unread: ARC_BANDS, rows: ARC_ROWS.slice(1) }],
+  ["bands in its GLB with no rows", { unread: ARC_BANDS }],
+  ["rows for bands its GLB doesn't serve", { rows: ARC_ROWS }],
+])("refuses a part with %s", async (_case, listed) => {
+  const inputs = await build([[{ id: "ldraw:3941p01", ...listed }]]);
+  await expect(
+    assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS }),
+  ).rejects.toThrow("ldraw:3941p01: its rolling diagnostics rows don't match");
 });
 
 it("refuses a part that two shards both list", async () => {
@@ -227,11 +331,12 @@ const PUBLISHED_TYPES: Readonly<Record<string, string>> = {
   records: "application/octet-stream",
   standard: "model/gltf-binary",
   buckets: "application/json",
+  "rolling-diagnostics": "application/json",
 };
 
 it("publishes every file the assembly wrote under library-bake/, records as bytes and GLBs as glTF, with the pinned index under its pinned hash", async () => {
   const inputs = await build([
-    [{ id: "ldraw:3001" }, { id: "ldraw:3040b" }],
+    [{ id: "ldraw:3001" }, { id: "ldraw:3040b", unread: ARC_BANDS, rows: ARC_ROWS }],
     [{ id: "ldraw:3626c" }],
   ]);
   const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
@@ -285,10 +390,10 @@ it("routes the CLI's served command to the committed pin's index under library-b
   }
 });
 
-it("the library-bake pointer's manifest references its index, every bucket, and every record and GLB", async () => {
+it("the library-bake pointer's manifest references its index, every bucket, and every record, GLB and rolling diagnostics file", async () => {
   const inputs = await build([
-    [{ id: "ldraw:3001" }, { id: "ldraw:3040b" }],
-    [{ id: "ldraw:3626c" }],
+    [{ id: "ldraw:3001" }, { id: "ldraw:3040b", unread: ARC_BANDS, rows: ARC_ROWS }],
+    [{ id: "ldraw:3626c", unread: ARC_BANDS, rows: ARC_ROWS }],
   ]);
   const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
   const read = async (key: string) => {
@@ -314,4 +419,7 @@ it("the library-bake pointer's manifest references its index, every bucket, and 
     ].toSorted(),
   );
   expect(leaves.every((key) => !key.startsWith("library-bake/buckets/"))).toBe(true);
+  expect(leaves.filter((key) => key.startsWith("library-bake/rolling-diagnostics/"))).toHaveLength(
+    new Set(["ldraw:3040b", "ldraw:3626c"].map(libraryBakeBucket)).size,
+  );
 });
