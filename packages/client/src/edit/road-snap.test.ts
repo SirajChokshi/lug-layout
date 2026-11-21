@@ -1,7 +1,7 @@
 import { NO_STUD, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { cellExtent, snapToRoadEdge } from "./road-snap.ts";
+import { ANY_TURN, cellExtent, snapToRoadEdge } from "./road-snap.ts";
 
 const STUD = 20;
 const PLATE_SPAN = 640;
@@ -44,7 +44,17 @@ describe("road-edge snap", () => {
 
   it("turns a curve to whichever quarter turn joins its lanes to an open straight end, from any starting rotation", () => {
     for (const preferred of QUARTER_TURNS) {
-      const snap = snapToRoadEdge(network, extents, curve, preferred, 1, 0, 0, openEnd + 200);
+      const snap = snapToRoadEdge(
+        network,
+        extents,
+        curve,
+        preferred,
+        1,
+        0,
+        0,
+        openEnd + 200,
+        ANY_TURN,
+      );
       expect(snap).not.toBeNull();
       if (!snap) continue;
       const fit = network.fit({
@@ -69,7 +79,17 @@ describe("road-edge snap", () => {
     "offers the curve's other lane-joining turn when the user asks for the %s rotation",
     (_, direction) => {
       for (const preferred of QUARTER_TURNS) {
-        const first = snapToRoadEdge(network, extents, curve, preferred, 1, 0, 0, openEnd + 200);
+        const first = snapToRoadEdge(
+          network,
+          extents,
+          curve,
+          preferred,
+          1,
+          0,
+          0,
+          openEnd + 200,
+          ANY_TURN,
+        );
         if (!first) throw new Error("the curve does not snap to the open end");
         const turned = (first.rot + direction + 4) % 4;
         const next = snapToRoadEdge(
@@ -81,6 +101,7 @@ describe("road-edge snap", () => {
           0,
           0,
           openEnd + 200,
+          ANY_TURN,
         );
         expect(next?.rot).not.toBe(first.rot);
         expect(next?.joinedRoadCells).toBe(first.joinedRoadCells);
@@ -91,7 +112,7 @@ describe("road-edge snap", () => {
   it("snaps a piece beside a sidewalk only flush with the neighbour's corner, never part-way along it", () => {
     const sideX = cellExtent(straight).maxX;
     for (const cursorZ of [-260, -60, 0, 140, 300]) {
-      const snap = snapToRoadEdge(network, extents, curve, 0, 1, 0, sideX + 300, cursorZ);
+      const snap = snapToRoadEdge(network, extents, curve, 0, 1, 0, sideX + 300, cursorZ, ANY_TURN);
       expect(snap?.joinedRoadCells).toBe(0);
       expect(snap?.x).toBe(sideX + PLATE_SPAN / 2);
       expect(snap?.z).toBe(straight.z);
@@ -101,7 +122,17 @@ describe("road-edge snap", () => {
   it("never snaps an 8-stud dual carriageway end onto a 6-stud road end, whatever the rotation", () => {
     const dual = roadBaseplate("30225b");
     for (const preferred of QUARTER_TURNS) {
-      const snap = snapToRoadEdge(network, extents, dual, preferred, 1, 0, 0, openEnd + 200);
+      const snap = snapToRoadEdge(
+        network,
+        extents,
+        dual,
+        preferred,
+        1,
+        0,
+        0,
+        openEnd + 200,
+        ANY_TURN,
+      );
       expect(snap?.joinedRoadCells ?? 0).toBe(0);
     }
   });

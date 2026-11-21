@@ -31,17 +31,21 @@ export class LdrawLibrary {
     }
   }
 
-  load(reference: string): LdrawFile | undefined {
+  resolve(reference: string): string | undefined {
     const name = normalizeReference(reference);
-    for (const folder of SEARCH_FOLDERS) {
-      const path = this.index.get(`${folder}/${name}`);
-      if (path === undefined) continue;
-      const cached = this.cache.get(path);
-      if (cached !== undefined) return cached;
-      const parsed = parseLdraw(readFileSync(path, "utf8"));
-      this.cache.set(path, parsed);
-      return parsed;
-    }
-    return undefined;
+    return [...SEARCH_FOLDERS.map((folder) => `${folder}/${name}`), name].find((key) =>
+      this.index.has(key),
+    );
+  }
+
+  load(reference: string): LdrawFile | undefined {
+    const key = this.resolve(reference);
+    const path = key === undefined ? undefined : this.index.get(key);
+    if (path === undefined) return undefined;
+    const cached = this.cache.get(path);
+    if (cached !== undefined) return cached;
+    const parsed = parseLdraw(readFileSync(path, "utf8"));
+    this.cache.set(path, parsed);
+    return parsed;
   }
 }

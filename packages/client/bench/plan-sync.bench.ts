@@ -532,10 +532,12 @@ function layTrack(drawing: TrackDrawing): TrackDeltas {
   for (let k = 0; k < TRACK_PIECES; k++) {
     const x = BigInt(40 + 30 * (k % 3));
     const z = BigInt(40 + 60 * Math.floor(k / 3));
-    laid = drawing.placePiece(
+    const change = drawing.pieceChange(
       part.catalogIndex,
       pose16(zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n]), 0),
-    ).laid;
+    );
+    drawing.applyTrack(change);
+    laid = change.lay.length;
   }
   if (laid < 1) throw new Error("the last switch did not lay");
   const lay = new PlanDelta();
@@ -545,10 +547,14 @@ function layTrack(drawing: TrackDrawing): TrackDeltas {
   for (let p = drawing.pieceCount - laid; p < drawing.pieceCount; p++)
     unlay.remove(TRACK_SEGMENT, p);
   const lever = drawing.switchLevers()[0];
-  if (!lever || !drawing.throwSwitch(lever.placement)) throw new Error("no switch to throw");
+  const over = lever ? drawing.switchThrow(lever.placement) : null;
+  if (!lever || !over) throw new Error("no switch to throw");
+  drawing.applyTrack(over.change);
   const throwOver = new PlanDelta();
   writeTrackThrow(throwOver, drawing, lever.placement);
-  if (!drawing.throwSwitch(lever.placement)) throw new Error("the switch did not throw back");
+  const back = drawing.switchThrow(lever.placement);
+  if (!back) throw new Error("the switch did not throw back");
+  drawing.applyTrack(back.change);
   const throwBack = new PlanDelta();
   writeTrackThrow(throwBack, drawing, lever.placement);
   return { lay, unlay, throwOver, throwBack };

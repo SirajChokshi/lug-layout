@@ -3,6 +3,7 @@ import { NO_INSTANCE } from "./model-connectors.ts";
 
 const INITIAL_CAPACITY = 256;
 export const NO_PARTNER = -1;
+export const NO_SHAPE = -1;
 export const NOT_ENGAGED = -1;
 export const ENGAGED_AXIS = 0;
 export const ENGAGED_U = 1;
@@ -16,6 +17,10 @@ const JOINT_KEY_INTS = 6;
 export class MateReport {
   private size = 0;
   private connectors: Int32Array;
+  private shapes: Int32Array;
+  private genders: Uint8Array;
+  private partnerShapes: Int32Array;
+  private partnerGenders: Uint8Array;
   private sources: Uint8Array;
   private statuses: Uint8Array;
   private families: Uint8Array;
@@ -30,6 +35,10 @@ export class MateReport {
 
   constructor(capacity: number = INITIAL_CAPACITY) {
     this.connectors = new Int32Array(capacity);
+    this.shapes = new Int32Array(capacity);
+    this.genders = new Uint8Array(capacity);
+    this.partnerShapes = new Int32Array(capacity);
+    this.partnerGenders = new Uint8Array(capacity);
     this.sources = new Uint8Array(capacity);
     this.statuses = new Uint8Array(capacity);
     this.families = new Uint8Array(capacity);
@@ -46,6 +55,22 @@ export class MateReport {
 
   get connector(): Int32Array {
     return this.connectors;
+  }
+
+  get shape(): Int32Array {
+    return this.shapes;
+  }
+
+  get gender(): Uint8Array {
+    return this.genders;
+  }
+
+  get partnerShape(): Int32Array {
+    return this.partnerShapes;
+  }
+
+  get partnerGender(): Uint8Array {
+    return this.partnerGenders;
   }
 
   get sourceMask(): Uint8Array {
@@ -92,6 +117,10 @@ export class MateReport {
 
   push(
     connector: number,
+    shape: number,
+    gender: number,
+    partnerShape: number,
+    partnerGender: number,
     sourceMask: number,
     status: number,
     partner: number,
@@ -102,6 +131,10 @@ export class MateReport {
     if (this.size === this.connectors.length) this.grow();
     const k = this.size++;
     this.connectors[k] = connector;
+    this.shapes[k] = shape;
+    this.genders[k] = gender;
+    this.partnerShapes[k] = partnerShape;
+    this.partnerGenders[k] = partnerGender;
     this.sources[k] = sourceMask;
     this.statuses[k] = status;
     this.partners[k] = partner;
@@ -145,6 +178,10 @@ export class MateReport {
   private grow(): void {
     const capacity = Math.max(1, this.connectors.length * 2);
     this.connectors = widened(this.connectors, new Int32Array(capacity));
+    this.shapes = widened(this.shapes, new Int32Array(capacity));
+    this.genders = widened(this.genders, new Uint8Array(capacity));
+    this.partnerShapes = widened(this.partnerShapes, new Int32Array(capacity));
+    this.partnerGenders = widened(this.partnerGenders, new Uint8Array(capacity));
     this.sources = widened(this.sources, new Uint8Array(capacity));
     this.statuses = widened(this.statuses, new Uint8Array(capacity));
     this.families = widened(this.families, new Uint8Array(capacity));

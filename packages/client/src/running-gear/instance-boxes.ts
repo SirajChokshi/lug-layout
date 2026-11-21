@@ -10,7 +10,7 @@ export interface PlanBox {
 }
 
 export function instanceBoxes(
-  model: PartModel,
+  model: Omit<PartModel, "studCover">,
   bundle: { readonly parts: ReadonlyArray<PartShapeAsset> },
 ): Float64Array {
   const out = new Float64Array(model.instanceCount * BOX_FLOATS);

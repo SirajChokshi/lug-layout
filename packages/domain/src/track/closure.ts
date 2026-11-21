@@ -21,12 +21,11 @@ import {
 } from "./track-solver.ts";
 
 export { UNLIMITED_BUDGET, type SearchBudget } from "./search-deadline.ts";
-export type { ClosureSite } from "./clear-closure.ts";
 
 export type ClosureResult =
   | { readonly kind: "exact"; readonly run: TrackRun }
   | { readonly kind: "impossible" }
-  | { readonly kind: "blocked" }
+  | { readonly kind: "blocked"; readonly blocker: number }
   | { readonly kind: "limit" };
 
 const BASIS = ZETA16_COEFFICIENT_COUNT;

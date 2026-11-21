@@ -176,6 +176,28 @@ fn standard_triangles<L: Library>(
 pub const NO_STUD_RING: &str =
     "the stud primitives draw no closed round ring to measure roundness by";
 
+const STUD_ROLE: &str = "stud";
+const PRIMITIVE_FOLDER: &str = "p/";
+
+pub fn stud_primitives_from_table(table: &Value) -> Result<Vec<String>, String> {
+    table["primitives"]
+        .as_array()
+        .ok_or("primitive table: primitives must be an array")?
+        .iter()
+        .filter(|entry| entry[STUD_ROLE].as_bool() == Some(true))
+        .map(|entry| {
+            let file = entry["file"]
+                .as_str()
+                .ok_or("primitive table: every entry needs a file")?;
+            file.strip_prefix(PRIMITIVE_FOLDER)
+                .map(str::to_string)
+                .ok_or(format!(
+                    "{file}: a stud primitive lives in {PRIMITIVE_FOLDER}"
+                ))
+        })
+        .collect()
+}
+
 pub fn required_stud_roundness<L: Library>(
     library: &L,
     stud_primitives: &[String],
