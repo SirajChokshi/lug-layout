@@ -9,7 +9,10 @@ export function isContentAddressedPath(path: string): boolean {
   return CONTENT_ADDRESSED_PATH.test(path);
 }
 
+export const BundleManifestFile = v.pipe(v.string(), v.regex(/^manifest\.[0-9a-f]{16}\.json$/u));
+
 export const BundlePointer = v.object({
-  manifestFile: v.pipe(v.string(), v.regex(/^manifest\.[0-9a-f]{16}\.json$/u)),
+  manifestFile: BundleManifestFile,
+  previous: v.optional(v.nullable(BundleManifestFile)),
 });
 export type BundlePointer = v.InferOutput<typeof BundlePointer>;
