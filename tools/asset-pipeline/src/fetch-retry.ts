@@ -126,7 +126,7 @@ export async function fetchWithRetry(url: string, network: RetryingFetch): Promi
     if (retry === policy.attempts - 1) break;
     const delayMs = Math.min(
       policy.maxDelayMs,
-      result.retryAfterMs ?? backoffMs(retry, policy, clock),
+      Math.max(backoffMs(retry, policy, clock), result.retryAfterMs ?? 0),
     );
     network.log(
       `GET ${url} failed with ${reason}; retry ${retry + 1} of ${policy.attempts - 1} in ${delayMs} ms`,
