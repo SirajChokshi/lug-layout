@@ -4,9 +4,12 @@ import type {
   CatalogBom,
   IBomService,
   IBomSource,
+  IPlanService,
   PlacementRegion,
+  PlanRegion,
 } from "@brr/client";
 import { useState } from "react";
+import { usePlanVersion } from "./use-plan-version.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
@@ -15,6 +18,7 @@ interface BomPanelProps {
   readonly source: IBomSource;
   readonly region: PlacementRegion | null;
   readonly selectionLabel: string | null;
+  readonly plans: IPlanService | null;
 }
 
 interface Download {
@@ -74,6 +78,7 @@ function fileStem(bom: BillOfMaterials): string {
   switch (scope.kind) {
     case "world":
     case "selection":
+    case "plan":
       return bom.name;
     case "region": {
       const { minX, minZ, maxX, maxZ } = scope.region;
@@ -106,22 +111,68 @@ function catalogText(catalog: CatalogBom): string {
   return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped${keywordText}`;
 }
 
-export function BomPanel({ service, source, region, selectionLabel }: BomPanelProps) {
-  const [scopeKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
+function activePlanOf(plans: IPlanService | null): PlanRegion | null {
+  if (!plans) return null;
+  const id = plans.activePlanId();
+  return plans.plans().find((plan) => plan.id === id) ?? null;
+}
+
+function scopeOf(
+  kind: BomScope["kind"],
+  draft: RegionDraft,
+  plan: PlanRegion | null,
+): BomScope | string {
+  switch (kind) {
+    case "world":
+      return { kind: "world" };
+    case "selection":
+      return { kind: "selection" };
+    case "region": {
+      const parsed = regionOf(draft);
+      return typeof parsed === "string" ? parsed : { kind: "region", region: parsed };
+    }
+    case "plan":
+      return plan ? { kind: "plan", planId: plan.id } : { kind: "world" };
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled scope ${String(unhandled)}`);
+    }
+  }
+}
+
+function UnmappedLines({ catalog, name }: { readonly catalog: CatalogBom; readonly name: string }) {
+  if (catalog.unmapped.length === 0) return null;
+  return (
+    <details>
+      <summary>
+        Not in {name}'s crosswalk ({integer.format(catalog.unmapped.length)} lines)
+      </summary>
+      <ul>
+        {catalog.unmapped.map((line) => (
+          <li key={`${line.part}-${line.ldrawColor}`}>
+            {line.quantity}× {line.part} colour {line.ldrawColor} (no {line.missing} id)
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+export function BomPanel({ service, source, region, selectionLabel, plans }: BomPanelProps) {
+  usePlanVersion(plans);
+  const plan = activePlanOf(plans);
+  const [chosenKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
+  const scopeKind = chosenKind === "plan" && !plan ? "world" : chosenKind;
   const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region));
   const [bom, setBom] = useState<BillOfMaterials | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const build = (): void => {
     setError(null);
-    let scope: BomScope = { kind: scopeKind === "selection" ? "selection" : "world" };
-    if (scopeKind === "region") {
-      const parsed = regionOf(draft);
-      if (typeof parsed === "string") {
-        setError(parsed);
-        return;
-      }
-      scope = { kind: "region", region: parsed };
+    const scope = scopeOf(scopeKind, draft, plan);
+    if (typeof scope === "string") {
+      setError(scope);
+      return;
     }
     service.billOfMaterials(source, scope).then(setBom, (e: unknown) => setError(String(e)));
   };
@@ -160,6 +211,18 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               onChange={() => setScopeKind("selection")}
             />
             Selection ({selectionLabel})
+          </label>
+        )}
+        {plan !== null && (
+          <label>
+            <input
+              type="radio"
+              name="bom-scope"
+              value="plan"
+              checked={scopeKind === "plan"}
+              onChange={() => setScopeKind("plan")}
+            />
+            Plan ({plan.name})
           </label>
         )}
       </div>
@@ -231,21 +294,8 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               </ul>
             </details>
           )}
-          {bom.rebrickable.unmapped.length > 0 && (
-            <details>
-              <summary>
-                Not in Rebrickable's crosswalk ({integer.format(bom.rebrickable.unmapped.length)}{" "}
-                lines)
-              </summary>
-              <ul>
-                {bom.rebrickable.unmapped.map((line) => (
-                  <li key={`${line.part}-${line.ldrawColor}`}>
-                    {line.quantity}× {line.part} colour {line.ldrawColor} (no {line.missing} id)
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
+          <UnmappedLines catalog={bom.rebrickable} name="Rebrickable" />
+          <UnmappedLines catalog={bom.bricklink} name="BrickLink" />
           {bom.uncounted.length > 0 && (
             <details>
               <summary>Not counted ({integer.format(bom.uncounted.length)} items)</summary>
