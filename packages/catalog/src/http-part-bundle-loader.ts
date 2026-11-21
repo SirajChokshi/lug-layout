@@ -425,6 +425,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
+      shadowLibrary: manifest.compiler.shadowLibrary ?? null,
     };
   }
 
@@ -647,6 +648,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    outline: shape.outline ?? null,
   };
 }
 
@@ -705,5 +707,6 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    outline: null,
   };
 }

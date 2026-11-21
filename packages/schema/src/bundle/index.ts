@@ -10,6 +10,7 @@ import {
   type Zeta16,
 } from "@brr/math";
 import * as v from "valibot";
+import { LevelCrossingFacts, PlanOutline } from "./level-crossing.ts";
 
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
@@ -62,6 +63,12 @@ export const Vec3 = v.tuple([Finite, Finite, Finite]);
 export type Vec3 = v.InferOutput<typeof Vec3>;
 
 const Bounds = v.object({ min: Vec3, max: Vec3 });
+
+export const CUSTOM_PART_NAMESPACE = "custom:";
+
+export function isCustomPartId(partId: string): boolean {
+  return partId.startsWith(CUSTOM_PART_NAMESPACE);
+}
 
 export const PartRole = v.picklist(["ground", "road", "track", "wall", "roof", "detail", "model"]);
 export type PartRole = v.InferOutput<typeof PartRole>;
@@ -557,6 +564,7 @@ export const PartShape = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -579,6 +587,7 @@ export const TrackShape = v.object({
   ),
   minY: Finite,
   maxY: Finite,
+  outline: PlanOutline,
 });
 export type TrackShape = v.InferOutput<typeof TrackShape>;
 
@@ -651,6 +660,9 @@ export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
 export const LibraryConnectorsIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type LibraryConnectorsIndexRef = v.InferOutput<typeof LibraryConnectorsIndexRef>;
 
+export const ShadowLibraryIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type ShadowLibraryIndexRef = v.InferOutput<typeof ShadowLibraryIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -660,6 +672,7 @@ export const BundleCompiler = v.object({
   cavityProbe: v.string(),
   libraryBake: v.optional(LibraryBakeIndexRef),
   libraryConnectors: v.optional(LibraryConnectorsIndexRef),
+  shadowLibrary: v.optional(ShadowLibraryIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -674,6 +687,7 @@ export const StudioArchive = v.object({
   unconvertedLines: v.array(LineNumber),
   bricklinkIds: v.record(v.string(), v.string()),
   customParts: v.array(v.string()),
+  customFiles: v.array(v.object({ name: v.string(), text: v.string() })),
 });
 export type StudioArchive = v.InferOutput<typeof StudioArchive>;
 
@@ -714,6 +728,7 @@ export type BundleLod = v.InferOutput<typeof BundleLod>;
 
 export const CONNECTIVITY_LICENSE = "CC BY-SA 4.0";
 export const CONNECTOR_SOURCE = { shadow: 1, primitive: 2, inferred: 4, patch: 8 } as const;
+export const CONNECTOR_STATUS = { verified: 0, unverified: 1 } as const;
 export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
   CONNECTOR_SOURCE.shadow,
   CONNECTOR_SOURCE.patch,
@@ -729,7 +744,7 @@ export type ConnectorPackage = v.InferOutput<typeof ConnectorPackage>;
 const ConnectorFaces = v.object({
   gender: v.array(v.picklist([0, 1])),
   source: v.array(v.picklist(Object.values(CONNECTOR_SOURCE))),
-  status: v.array(v.picklist([0, 1])),
+  status: v.array(v.picklist(Object.values(CONNECTOR_STATUS))),
   caps: v.array(Count),
   slide: v.array(v.boolean()),
   group: v.array(v.string()),
@@ -826,6 +841,7 @@ export const BundleIndex = v.object({
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
   tablePlane: TablePlane,
+  levelCrossing: LevelCrossingFacts,
   compiler: v.nullable(BundleCompiler),
   connectors: FileRef,
   connectivity: FileRef,
@@ -1010,6 +1026,9 @@ const ByteRange = v.pipe(v.tuple([Count, Count]), v.readonly());
 const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
+
+export const SHADOW_NAMESPACE = "shadow:";
+export const SHADOW_PATCH_NAMESPACE = "shadow-patch:";
 
 export const InferredConnectorRecords = v.strictObject({
   connectivity: v.nullable(ConnectorRecordFile),
@@ -1607,9 +1626,6 @@ export type LibraryConnectorsPin = v.InferOutput<typeof LibraryConnectorsPin>;
 export const SHADOW_LIBRARY_FORMAT = 1;
 export const SHADOW_LIBRARY_INDEX_FILE = "shadow-library.json";
 
-export const ShadowLibraryIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
-export type ShadowLibraryIndexRef = v.InferOutput<typeof ShadowLibraryIndexRef>;
-
 const AddressedFiles = v.record(v.string(), v.string());
 
 export const ShadowLibraryIndex = v.strictObject({
@@ -1759,6 +1775,21 @@ export type Palette = v.InferOutput<typeof Palette>;
 
 export const FixtureModels = v.strictObject({ models: v.array(PaletteModel) });
 export type FixtureModels = v.InferOutput<typeof FixtureModels>;
+
+export {
+  CrossingRamp,
+  CrossingTrackSystem,
+  LevelCrossingFacts,
+  OUTLINE_UNITS_PER_LDU,
+  PartOutline,
+  PlanAxis,
+  PlanBox,
+  PlanOutline,
+  PlanOutlinesFile,
+  PlanPoint,
+  PlanRing,
+  RampRise,
+} from "./level-crossing.ts";
 
 export {
   MilsBuild,

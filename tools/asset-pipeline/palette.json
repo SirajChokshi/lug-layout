@@ -898,6 +898,22 @@
         "ldraw": 72,
         "source": "32087 element 4493794 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
       }
+    },
+    {
+      "id": "4515",
+      "role": "detail",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "4515 element 4211027 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
+    },
+    {
+      "id": "3297",
+      "role": "detail",
+      "displayColor": {
+        "ldraw": 72,
+        "source": "3297 element 4261715 in Dark Bluish Gray; Rebrickable database export elements.csv.gz (sha256 ce7d365f3a8359753ca61edb9fb3dd32597669f26e2312247fc2d965ac5ae88e, retrieved 2026-11-16)"
+      }
     }
   ],
   "omrSource": {
@@ -1324,6 +1340,10 @@
     {
       "group": "road-plate-recessed",
       "parts": ["69958", "71772", "71772p01"]
+    },
+    {
+      "group": "slope",
+      "parts": ["4515", "3297"]
     },
     {
       "group": "baseplate",
