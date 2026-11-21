@@ -6,7 +6,6 @@ import {
   type CrosswalkSourcePin,
   type LibraryPartsFile,
 } from "@brr/schema/bundle";
-import { isCaLicense } from "../verify/license-audit.ts";
 import { parseCsv } from "./csv.ts";
 import { LDRAW_NAMESPACE, type LdrawPartFacts } from "./crosswalk.ts";
 import { listedCategory, type LdrawCategories } from "./part-categories.ts";
@@ -29,7 +28,6 @@ export interface LibraryPartsReport {
   readonly scanned: number;
   readonly listed: number;
   readonly unlisted: number;
-  readonly notContributorAgreement: number;
   readonly unofficial: number;
   readonly withoutRebrickable: number;
   readonly withoutProducedColor: number;
@@ -121,7 +119,6 @@ export function deriveLibraryParts(
   const ldrawOf = ldrawColorOfRebrickable(inputs.crosswalk, inputs.ldrawColors);
   const listed: ListedPart[] = [];
   let unlisted = 0;
-  let notContributorAgreement = 0;
   let unofficial = 0;
   let withoutRebrickable = 0;
   let withoutProducedColor = 0;
@@ -133,10 +130,6 @@ export function deriveLibraryParts(
     }
     if (facts.ldrawOrg.startsWith(UNOFFICIAL_PREFIX)) {
       unofficial++;
-      continue;
-    }
-    if (!isCaLicense(facts.license)) {
-      notContributorAgreement++;
       continue;
     }
     const rebrickable = inputs.crosswalk.parts[LDRAW_NAMESPACE + id]?.rebrickable ?? null;
@@ -173,7 +166,6 @@ export function deriveLibraryParts(
       scanned: inputs.ldrawParts.size,
       listed: listed.length,
       unlisted,
-      notContributorAgreement,
       unofficial,
       withoutRebrickable,
       withoutProducedColor,

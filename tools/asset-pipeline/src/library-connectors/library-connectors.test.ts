@@ -21,6 +21,7 @@ import type { ObjectStore } from "../r2.ts";
 import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
 
 const [PART_LICENSE = ""] = CA_LICENSE_LINES;
+const NON_CA_LICENSE = "Not redistributable : see NonCAreadme.txt";
 const VOCABULARY = "a".repeat(64);
 const ldraw = { kind: "github-mirror" as const, repo: "owner/ldraw", commit: "abc", root: "ldraw" };
 const shadow = { kind: "github-archive" as const, repo: "owner/shadow", commit: "def", root: "" };
@@ -68,6 +69,10 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
     join(build, "connectors", "3815c01.json"),
     JSON.stringify(record("ldraw:3815c01", PART_LICENSE, CONNECTOR_SOURCE.inferred, 1)),
   );
+  await writeFile(
+    join(build, "connectors", "nonca.json"),
+    JSON.stringify(record("ldraw:nonca", NON_CA_LICENSE, CONNECTOR_SOURCE.primitive, 0)),
+  );
   const listing = [
     {
       part: "ldraw:3815c01",
@@ -79,9 +84,9 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
     {
       part: "ldraw:nonca",
       path: "parts/nonca.dat",
-      license: "Not redistributable : see NonCAreadme.txt",
+      license: NON_CA_LICENSE,
       connectivity: null,
-      connectors: null,
+      connectors: "connectors/nonca.json",
     },
   ];
   await writeFile(
@@ -99,13 +104,12 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
   return { out, pin };
 }
 
-it("publishes CA parts' records under their content addresses, stamps the connector records with the section vocabulary, and refuses a part outside the CA licences", async () => {
+it("publishes each part's records under their content addresses, whatever licence the part names, and stamps the connector records with the section vocabulary", async () => {
   const { out, pin } = await assembled();
 
   expect(pin).toMatchObject({
     parts: 2,
-    refused: [{ part: "ldraw:nonca", license: "Not redistributable : see NonCAreadme.txt" }],
-    records: { connectivity: 1, connectors: 1 },
+    records: { connectivity: 1, connectors: 2 },
     partsWithPieces: 1,
   });
   const indexText = await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8");
@@ -123,7 +127,6 @@ it("publishes CA parts' records under their content addresses, stamps the connec
   ] as const) {
     const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
     expect(packageIndex.sectionVocabulary).toBe(stamped);
-    expect(packageIndex.parts["ldraw:nonca"]).toBeUndefined();
     const file: string = packageIndex.parts["ldraw:3815c01"].file;
     expect(file).toMatch(new RegExp(`^${pkg}/3815c01\\.[0-9a-f]{16}\\.json$`, "u"));
     expect(JSON.parse(await readFile(join(out, file), "utf8")).sectionVocabulary).toBe(stamped);

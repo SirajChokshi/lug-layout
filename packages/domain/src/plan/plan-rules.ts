@@ -3,6 +3,7 @@ import {
   ExactFrame,
   exactArea,
   exactCoveredWithin,
+  exactGrown,
   exactNearest,
   exactOverlap,
   exactReach,
@@ -41,6 +42,7 @@ import {
   type TableSeams,
 } from "./plan-table-edges.ts";
 import { PIECES_PER_CUT, RECT_STRIDE, growTo, subtractCut } from "./rect-cut.ts";
+import type { TrackOutline } from "./track-outline.ts";
 
 export type PlanRuleId =
   | "footprint"
@@ -52,7 +54,13 @@ export type PlanRuleId =
   | "overlap"
   | "roadJoin"
   | "bomMapping"
-  | "unchecked";
+  | "unchecked"
+  | "trackOpenEnd"
+  | "trackJoin"
+  | "trackUnverified"
+  | "trackUnidentified"
+  | "trackOffTable"
+  | "trackSeam";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
@@ -68,8 +76,15 @@ export interface PlanPlacement {
   readonly unsupported?: boolean;
   readonly carriedTrackUnsupported?: boolean;
   readonly shape?: PlanShape | null;
+  readonly outline?: TrackOutline | null;
+  readonly carried?: CarriedTrack | null;
   readonly anchor?: { readonly x: number; readonly z: number };
   readonly facts?: PlacementFacts;
+}
+
+export interface CarriedTrack {
+  readonly outlines: ReadonlyArray<TrackOutline>;
+  readonly bodyBox: Float64Array | null;
 }
 
 export interface PlanIssue {
@@ -221,7 +236,7 @@ function offTableMessage(
   entirelyOff: boolean,
   limitMm: number,
 ): string {
-  const reach = `${label} overhangs the tables: it reaches ${shown.overhangTenthsUp} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${shown.offTableMm2Up} mm² of its footprint off the table tops.`;
+  const reach = `${label} overhangs the tables: it reaches ${shown.overhangTenthsUp} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${shown.offTableMm2Up} mm² of its footprint box off the table tops.`;
   if (!entirelyOff) return reach;
   return shown.nearestTenths === 0
     ? `${reach} It is entirely off the tables, touching the edge of the nearest one.`
@@ -532,6 +547,95 @@ function crossesSeam(
   return below && above;
 }
 
+const outlineBox = new Float64Array(BOX_STRIDE);
+const seamSides = new Float64Array(2 * RECT_STRIDE);
+
+function outlineOffTableExactly(coverage: CoverageContext, outline: TrackOutline): boolean {
+  const box = { minX: outline.minX, minZ: outline.minZ, maxX: outline.maxX, maxZ: outline.maxZ };
+  const frame = frameFor(box, coverage.surfaces, coverage.reachLdu);
+  const grow = frame.of(coverage.reachLdu);
+  const pieces = exactUncovered(
+    frame.rect(box),
+    coverage.surfaces.map((table) => exactGrown(frame.rect(table), grow)),
+  );
+  return pieces.some((piece) => outline.meetsExactRect(piece, frame.shift));
+}
+
+function outlineOffTable(
+  coverage: CoverageContext,
+  outline: TrackOutline,
+  scratch: CoverageScratch,
+): boolean {
+  outlineBox[BOX_MIN_X] = outline.minX;
+  outlineBox[BOX_MIN_Z] = outline.minZ;
+  outlineBox[BOX_MAX_X] = outline.maxX;
+  outlineBox[BOX_MAX_Z] = outline.maxZ;
+  const pieces = uncoveredPieces(coverage, outlineBox, 0, scratch);
+  if (pieces === UNDECIDED) return outlineOffTableExactly(coverage, outline);
+  const rects = scratch.pieces;
+  for (let p = 0; p < pieces; p++) {
+    const at = p * RECT_STRIDE;
+    if (outline.meetsOpenRect(rects, at)) return true;
+  }
+  return false;
+}
+
+function anyOutlineOffTable(
+  coverage: CoverageContext,
+  outlines: ReadonlyArray<TrackOutline>,
+  scratch: CoverageScratch,
+): boolean {
+  for (let k = 0; k < outlines.length; k++) {
+    const outline = outlines[k];
+    if (outline !== undefined && outlineOffTable(coverage, outline, scratch)) return true;
+  }
+  return false;
+}
+
+function outlineCrossesSeam(seams: Float64Array, seam: number, outline: TrackOutline): boolean {
+  const alongX = seams[seam + EDGE_AXIS] === ALONG_X;
+  const line = seams[seam + EDGE_LINE] ?? Number.NaN;
+  const from = Math.max(
+    seams[seam + EDGE_FROM] ?? Number.NaN,
+    alongX ? outline.minX : outline.minZ,
+  );
+  const to = Math.min(seams[seam + EDGE_TO] ?? Number.NaN, alongX ? outline.maxX : outline.maxZ);
+  const acrossMin = alongX ? outline.minZ : outline.minX;
+  const acrossMax = alongX ? outline.maxZ : outline.maxX;
+  if (!(from < to && acrossMin < line && line < acrossMax)) return false;
+  if (outline.jointOnSeam(seams, seam)) return false;
+  const near = alongX ? 1 : 0;
+  const far = 1 - near;
+  seamSides[far] = from;
+  seamSides[near] = acrossMin;
+  seamSides[far + 2] = to;
+  seamSides[near + 2] = line;
+  seamSides[RECT_STRIDE + far] = from;
+  seamSides[RECT_STRIDE + near] = line;
+  seamSides[RECT_STRIDE + far + 2] = to;
+  seamSides[RECT_STRIDE + near + 2] = acrossMax;
+  return outline.meetsOpenRect(seamSides, 0) && outline.meetsOpenRect(seamSides, RECT_STRIDE);
+}
+
+function outlineCrossesAnySeam(seams: TableSeams, outline: TrackOutline): boolean {
+  const edges = seams.edges;
+  for (let seam = 0; seam < edges.length; seam += SEAM_FLOATS) {
+    if (outlineCrossesSeam(edges, seam, outline)) return true;
+  }
+  return false;
+}
+
+function anyOutlineCrossesAnySeam(
+  seams: TableSeams,
+  outlines: ReadonlyArray<TrackOutline>,
+): boolean {
+  for (let k = 0; k < outlines.length; k++) {
+    const outline = outlines[k];
+    if (outline !== undefined && outlineCrossesAnySeam(seams, outline)) return true;
+  }
+  return false;
+}
+
 function crossesAnySeam(seams: TableSeams, rects: Float64Array, count: number): boolean {
   const edges = seams.edges;
   for (let seam = 0; seam < edges.length; seam += SEAM_FLOATS) {
@@ -576,11 +680,31 @@ export function placementIssueCount(
     if (oMinX < maxX && minX < oMaxX && oMinZ < maxZ && minZ < oMaxZ) count++;
   }
   const arm = fitArm(ctx.coverage, box, offset);
-  count += arm === FIT_MEASURED ? measuredFitIssueCount(ctx.coverage, box, offset, scratch) : 1;
+  const outline = rows.outline[row] ?? null;
+  const carried = rows.carried[row] ?? null;
+  if (arm !== FIT_MEASURED) count++;
+  else if (outline !== null) {
+    if (outlineOffTable(ctx.coverage, outline, scratch)) count++;
+  } else if (carried === null) {
+    count += measuredFitIssueCount(ctx.coverage, box, offset, scratch);
+  } else {
+    if (carried.bodyBox !== null) {
+      count += measuredFitIssueCount(ctx.coverage, carried.bodyBox, 0, scratch);
+    }
+    if (anyOutlineOffTable(ctx.coverage, carried.outlines, scratch)) count++;
+  }
   const shape = rows.shapeOf(row);
-  if (shape !== null && ctx.seams.edges.length > 0) {
-    scratch.footing = placedRects(shape.footing, rows.labelA, rows.labelB, row, scratch.footing);
-    if (crossesAnySeam(ctx.seams, scratch.footing, shape.footing.length / RECT_FLOATS)) count++;
+  const seamed = ctx.seams.edges.length > 0;
+  if (outline !== null) {
+    if (seamed && outlineCrossesAnySeam(ctx.seams, outline)) count++;
+  } else {
+    if (shape !== null && seamed) {
+      scratch.footing = placedRects(shape.footing, rows.labelA, rows.labelB, row, scratch.footing);
+      if (crossesAnySeam(ctx.seams, scratch.footing, shape.footing.length / RECT_FLOATS)) count++;
+    }
+    if (carried !== null && seamed && anyOutlineCrossesAnySeam(ctx.seams, carried.outlines)) {
+      count++;
+    }
   }
   const reach = ctx.reach;
   if (arm === FIT_MEASURED && reach !== null) {
@@ -615,6 +739,68 @@ function seamPairs(ctx: PlanRegionContext, rects: Float64Array, count: number): 
   return pairs;
 }
 
+function outlineSeamPairs(ctx: PlanRegionContext, outlines: ReadonlyArray<TrackOutline>): string[] {
+  const pairs: string[] = [];
+  const edges = ctx.seams.edges;
+  for (let seam = 0; seam < edges.length; seam += SEAM_FLOATS) {
+    if (!outlines.some((outline) => outlineCrossesSeam(edges, seam, outline))) continue;
+    const pair = ctx.seams.pairs[edges[seam + SEAM_PAIR] ?? -1];
+    if (pair !== undefined && !pairs.includes(pair)) pairs.push(pair);
+  }
+  return pairs;
+}
+
+function outlineSeamIssue(
+  ctx: PlanRegionContext,
+  key: PlacementKey,
+  subject: string,
+  outlines: ReadonlyArray<TrackOutline>,
+): PlanIssue | null {
+  const pairs = ctx.seams.edges.length > 0 ? outlineSeamPairs(ctx, outlines) : [];
+  if (pairs.length === 0) return null;
+  return issue(
+    "trackSeam",
+    [key],
+    `${subject} stands across the seam between tables ${pairs.join("; ")}; a seam must fall between placements.`,
+  );
+}
+
+function outlineOffTableIssue(
+  ctx: PlanRegionContext,
+  key: PlacementKey,
+  subject: string,
+  outlines: ReadonlyArray<TrackOutline>,
+): PlanIssue | null {
+  const { coverage, region } = ctx;
+  if (!anyOutlineOffTable(coverage, outlines, listScratch)) return null;
+  const entirelyOffTables = !coverage.surfaces.some((table) =>
+    outlines.some((outline) =>
+      outline.meetsOpenRect(Float64Array.of(table.minX, table.minZ, table.maxX, table.maxZ), 0),
+    ),
+  );
+  const limit = `${region.maxOverhangMm} mm`;
+  const reach = `${subject} overhangs the tables: part of its outline is more than ${limit} past the edge of every table.`;
+  return issue(
+    "trackOffTable",
+    [key],
+    entirelyOffTables ? `${reach} It is entirely off the tables.` : reach,
+    { ...ON_TABLE, entirelyOffTables },
+  );
+}
+
+function carriedTrackSubject(label: string): string {
+  return `Track carried by ${label}`;
+}
+
+function bodyRect(bodyBox: Float64Array): LduRect {
+  return {
+    minX: bodyBox[BOX_MIN_X] ?? Number.NaN,
+    minZ: bodyBox[BOX_MIN_Z] ?? Number.NaN,
+    maxX: bodyBox[BOX_MAX_X] ?? Number.NaN,
+    maxZ: bodyBox[BOX_MAX_Z] ?? Number.NaN,
+  };
+}
+
 function placedShapeRects(
   rects: Float64Array,
   anchor: { readonly x: number; readonly z: number },
@@ -631,6 +817,8 @@ export function placementIssues(
   const { region, room, obstacles, coverage } = ctx;
   if (!rectsOverlap(room, placement.box)) return;
   const { key, label } = placement;
+  const outline = placement.outline ?? null;
+  const carried = placement.carried ?? null;
   if (placement.unsupported) {
     out.push(
       issue(
@@ -664,23 +852,50 @@ export function placementIssues(
     out.push(issue("fit", [key], `${label} has no finite footprint to measure.`));
   } else {
     measured = true;
-    const offTable = offTableIssue(placement, coverage.surfaces, region.maxOverhangMm);
-    if (offTable) out.push(offTable);
+    const offTables =
+      outline !== null
+        ? [outlineOffTableIssue(ctx, key, label, [outline])]
+        : carried === null
+          ? [offTableIssue(placement, coverage.surfaces, region.maxOverhangMm)]
+          : [
+              carried.bodyBox === null
+                ? null
+                : offTableIssue(
+                    {
+                      ...placement,
+                      label: `${label}, apart from the track it carries,`,
+                      box: bodyRect(carried.bodyBox),
+                    },
+                    coverage.surfaces,
+                    region.maxOverhangMm,
+                  ),
+              outlineOffTableIssue(ctx, key, carriedTrackSubject(label), carried.outlines),
+            ];
+    for (const offTable of offTables) if (offTable) out.push(offTable);
   }
   const shape = placement.shape ?? null;
   const anchor = placement.anchor ?? NO_ANCHOR;
   const scratch = listScratch;
-  if (shape !== null && ctx.seams.edges.length > 0) {
-    scratch.footing = placedShapeRects(shape.footing, anchor, scratch.footing);
-    const pairs = seamPairs(ctx, scratch.footing, shape.footing.length / RECT_FLOATS);
-    if (pairs.length > 0) {
-      out.push(
-        issue(
-          "seam",
-          [key],
-          `${label} stands across the seam between tables ${pairs.join("; ")}; a seam must fall between placements.`,
-        ),
-      );
+  if (outline !== null) {
+    const crossing = outlineSeamIssue(ctx, key, label, [outline]);
+    if (crossing) out.push(crossing);
+  } else {
+    if (shape !== null && ctx.seams.edges.length > 0) {
+      scratch.footing = placedShapeRects(shape.footing, anchor, scratch.footing);
+      const pairs = seamPairs(ctx, scratch.footing, shape.footing.length / RECT_FLOATS);
+      if (pairs.length > 0) {
+        out.push(
+          issue(
+            "seam",
+            [key],
+            `${label} stands across the seam between tables ${pairs.join("; ")}; a seam must fall between placements.`,
+          ),
+        );
+      }
+    }
+    if (carried !== null) {
+      const crossing = outlineSeamIssue(ctx, key, carriedTrackSubject(label), carried.outlines);
+      if (crossing) out.push(crossing);
     }
   }
   const reach = ctx.reach;

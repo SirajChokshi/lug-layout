@@ -40,6 +40,7 @@ import {
   PlanRows,
   RowList,
 } from "./plan-rows.ts";
+import { trackIssue, TrackIssueRows } from "./track-issue-rows.ts";
 
 const BOM_SUMS = 2;
 const NO_SOURCES: ReadonlySet<number> = new Set();
@@ -55,6 +56,8 @@ function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
   return true;
 }
 
+const NO_TRACK_ISSUES = new TrackIssueRows();
+
 function grownUint32(array: Uint32Array<ArrayBuffer>, length: number): Uint32Array<ArrayBuffer> {
   const grown = new Uint32Array(length);
   grown.set(array);
@@ -67,12 +70,19 @@ function grownUint8(array: Uint8Array<ArrayBuffer>, length: number): Uint8Array<
   return grown;
 }
 
+function roomUint8(array: Uint8Array<ArrayBuffer>, length: number): Uint8Array<ArrayBuffer> {
+  return array.length >= length ? array : new Uint8Array(Math.max(length, array.length * 2));
+}
+
 class RegionState {
   inside: Uint8Array<ArrayBuffer>;
   issues: Uint32Array<ArrayBuffer>;
   readonly flagged: RowList;
   insideCount = 0;
   rowIssueCount = 0;
+  trackInside = new Uint8Array(0);
+  nextTrackInside = new Uint8Array(0);
+  trackCount = 0;
   issueVersion = 0;
   roadJoined = 0;
   roadMismatched = 0;
@@ -121,12 +131,15 @@ class RegionState {
     return bomMappingIssueCount(this.unmappedRebrickable, this.unmappedBrickLink);
   }
 
-  issueList(rows: PlanRows): ReadonlyArray<PlanIssue> {
+  issueList(rows: PlanRows, track: TrackIssueRows): ReadonlyArray<PlanIssue> {
     if (this.cachedAt === this.issueVersion) return this.cached;
     const issues = [...this.ctx.footprintIssues];
     bomMappingIssues(this.unmappedRebrickable, this.unmappedBrickLink, issues);
     for (let row = this.flagged.first(); row !== NO_ROW; row = this.flagged.after(rows, row)) {
       placementIssues(this.ctx, placementOf(rows, row), issues);
+    }
+    for (let i = 0; i < track.count; i++) {
+      if (this.trackInside[i] === 1) issues.push(trackIssue(this.ctx.region, track, i));
     }
     this.cached = issues;
     this.cachedAt = this.issueVersion;
@@ -159,6 +172,8 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
     unsupported: rows.unsupported[row] === NOT_HELD,
     carriedTrackUnsupported: rows.unsupported[row] === CARRIED_TRACK_NOT_HELD,
     shape: rows.shapeOf(row),
+    outline: rows.outline[row] ?? null,
+    carried: rows.carried[row] ?? null,
     anchor: { x: rows.labelA[row] ?? 0, z: rows.labelB[row] ?? 0 },
     facts: factsOf(rows, row),
     box: {
@@ -179,6 +194,10 @@ export class PlanEvaluation {
   flaggedMembershipChanged = false;
   flaggedBoxChanged = false;
   uncheckedChanged = false;
+  trackIssuesChanged = false;
+  private currentTrackIssues = new TrackIssueRows();
+  private spareTrackIssues = new TrackIssueRows();
+  private trackRegionsIn = new Uint32Array(0);
   private readonly regions: RegionState[] = [];
   private capacity = 0;
   private regionsIn = new Uint32Array(0);
@@ -199,6 +218,10 @@ export class PlanEvaluation {
     return this.regions.length;
   }
 
+  get trackIssues(): TrackIssueRows {
+    return this.currentTrackIssues;
+  }
+
   context(region: number): PlanRegionContext {
     return this.state(region).ctx;
   }
@@ -213,7 +236,12 @@ export class PlanEvaluation {
 
   issueCount(region: number): number {
     const state = this.state(region);
-    return state.ctx.footprintIssues.length + state.bomIssueCount() + state.rowIssueCount;
+    return (
+      state.ctx.footprintIssues.length +
+      state.bomIssueCount() +
+      state.rowIssueCount +
+      state.trackCount
+    );
   }
 
   joinedRoadCells(region: number): number {
@@ -233,7 +261,11 @@ export class PlanEvaluation {
   }
 
   issues(region: number): ReadonlyArray<PlanIssue> {
-    return this.state(region).issueList(this.rows);
+    return this.state(region).issueList(this.rows, this.trackIssues);
+  }
+
+  trackIssueInRegions(issue: number): boolean {
+    return (this.trackRegionsIn[issue] ?? 0) > 0;
   }
 
   isInside(region: number, row: number): boolean {
@@ -260,6 +292,7 @@ export class PlanEvaluation {
     this.flaggedMembershipChanged = false;
     this.flaggedBoxChanged = false;
     this.uncheckedChanged = false;
+    this.trackIssuesChanged = false;
   }
 
   apply(delta: PlanDelta): void {
@@ -277,6 +310,8 @@ export class PlanEvaluation {
       if (delta.writeKind[e] === WRITE_UPDATE) this.updateRow(delta, e);
     }
     this.bumpChangedBomSums();
+    if (delta.trackIssuesWritten) this.replaceTrackIssues(delta.trackIssues);
+    else if (delta.cleared) this.replaceTrackIssues(NO_TRACK_ISSUES);
     this.version++;
   }
 
@@ -364,6 +399,7 @@ export class PlanEvaluation {
     if (this.before.length < this.regions.length)
       this.before = new Uint32Array(this.before.length * 2);
     this.evaluateRegion(state);
+    this.evaluateTrack(state);
     this.rebuildLists(state);
     state.issueVersion++;
     this.version++;
@@ -372,8 +408,10 @@ export class PlanEvaluation {
   replaceRegion(index: number, region: PlanRegion): void {
     const state = this.state(index);
     this.withdrawRegion(state);
+    this.withdrawTrack(state);
     state.ctx = regionContext(region);
     this.evaluateRegion(state);
+    this.evaluateTrack(state);
     this.rebuildLists(state);
     state.issueVersion++;
     this.version++;
@@ -389,9 +427,87 @@ export class PlanEvaluation {
   removeRegion(index: number): void {
     const state = this.state(index);
     this.withdrawRegion(state);
+    this.withdrawTrack(state);
     this.regions.splice(index, 1);
     this.rebuildLists(null);
     this.version++;
+  }
+
+  private replaceTrackIssues(next: TrackIssueRows): void {
+    const before = this.currentTrackIssues;
+    if (before.sameAs(next)) return;
+    const after = this.spareTrackIssues;
+    after.copyFrom(next);
+    if (this.trackRegionsIn.length < after.count) {
+      this.trackRegionsIn = new Uint32Array(Math.max(after.count, this.trackRegionsIn.length * 2));
+    }
+    this.trackRegionsIn.fill(0, 0, Math.max(before.count, after.count));
+    let shown = false;
+    for (let r = 0; r < this.regions.length; r++) {
+      const state = this.state(r);
+      state.nextTrackInside = roomUint8(state.nextTrackInside, after.count);
+      const count = this.insideTrack(state.ctx, after, state.nextTrackInside);
+      if (this.trackSubsetChanged(state, before, after, count)) {
+        state.issueVersion++;
+        shown = true;
+      }
+      const swap = state.trackInside;
+      state.trackInside = state.nextTrackInside;
+      state.nextTrackInside = swap;
+      state.trackCount = count;
+    }
+    this.currentTrackIssues = after;
+    this.spareTrackIssues = before;
+    if (shown) this.trackIssuesChanged = true;
+  }
+
+  private trackSubsetChanged(
+    state: RegionState,
+    before: TrackIssueRows,
+    after: TrackIssueRows,
+    count: number,
+  ): boolean {
+    if (count !== state.trackCount) return true;
+    let j = 0;
+    for (let i = 0; i < before.count; i++) {
+      if (state.trackInside[i] !== 1) continue;
+      while (j < after.count && state.nextTrackInside[j] !== 1) j++;
+      if (j === after.count || !before.sameIssue(i, after, j)) return true;
+      j++;
+    }
+    return false;
+  }
+
+  private insideTrack(ctx: PlanRegionContext, track: TrackIssueRows, inside: Uint8Array): number {
+    let count = 0;
+    for (let i = 0; i < track.count; i++) {
+      let holds = false;
+      const last = track.ownerStart[i + 1] ?? 0;
+      for (let owner = track.ownerStart[i] ?? 0; owner < last && !holds; owner++) {
+        holds = placementInside(ctx, track.ownerBox, owner * BOX_STRIDE);
+      }
+      inside[i] = holds ? 1 : 0;
+      if (!holds) continue;
+      count++;
+      this.trackRegionsIn[i] = (this.trackRegionsIn[i] ?? 0) + 1;
+    }
+    return count;
+  }
+
+  private evaluateTrack(state: RegionState): void {
+    const track = this.currentTrackIssues;
+    state.trackInside = roomUint8(state.trackInside, track.count);
+    state.trackCount = this.insideTrack(state.ctx, track, state.trackInside);
+  }
+
+  private withdrawTrack(state: RegionState): void {
+    const track = this.currentTrackIssues;
+    for (let i = 0; i < track.count; i++) {
+      if (state.trackInside[i] !== 1) continue;
+      state.trackInside[i] = 0;
+      this.trackRegionsIn[i] = (this.trackRegionsIn[i] ?? 0) - 1;
+    }
+    state.trackCount = 0;
   }
 
   private state(region: number): RegionState {
@@ -445,6 +561,8 @@ export class PlanEvaluation {
     for (let k = 0; k < BOX_STRIDE; k++) rows.box[to + k] = delta.box[from + k] ?? 0;
     rows.boxState[row] = delta.boxState[entry] ?? 0;
     rows.shape[row] = rows.shapes.intern(delta.shape[entry] ?? null);
+    rows.outline[row] = delta.outline[entry] ?? null;
+    rows.carried[row] = delta.carried[entry] ?? null;
     copyFacts(delta.facts, entry * FACT_STRIDE, rows.facts, row * FACT_STRIDE);
   }
 

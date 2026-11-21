@@ -14,6 +14,7 @@ import {
   TRACK_SEGMENT,
   WRITE_ADD,
   WRITE_UPDATE,
+  type CarriedTrack,
   type PlanDelta,
   type PlanShape,
   type TrackChange,
@@ -31,12 +32,14 @@ export interface PlanModelSource {
   readonly placeable: { readonly id: string; readonly label: string };
   readonly box: WorldBox;
   readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
   readonly facts: Int32Array;
 }
 
 export interface PlanTrackSource {
   readonly pieceCount: number;
   writeFootprint(piece: number, delta: PlanDelta, kind: number): void;
+  writeIssues(delta: PlanDelta): void;
 }
 
 export interface PlanViewUpdate {
@@ -83,6 +86,7 @@ export function writeModelRow(delta: PlanDelta, kind: number, model: PlanModelSo
   delta.labelA[entry] = handle.x;
   delta.labelB[entry] = handle.z;
   delta.shape[entry] = model.shape;
+  delta.carried[entry] = model.carried;
   const facts = model.facts;
   const factsAt = entry * FACT_STRIDE;
   for (let k = 0; k < FACT_STRIDE; k++) delta.facts[factsAt + k] = facts[k] ?? 0;
@@ -98,6 +102,10 @@ export function writeModelRow(delta: PlanDelta, kind: number, model: PlanModelSo
 
 export function writeViewUpdate(delta: PlanDelta, view: PlanViewUpdate): void {
   delta.reset();
+  appendViewUpdate(delta, view);
+}
+
+export function appendViewUpdate(delta: PlanDelta, view: PlanViewUpdate): void {
   const { removed, added } = view;
   for (let i = 0; i < removed.length; i++) {
     const model = removed[i];
@@ -131,20 +139,31 @@ export function writeFullRebuild(
     const model = models[i];
     if (model) writeModelRow(delta, WRITE_ADD, model);
   }
-  const pieces = track?.pieceCount ?? 0;
-  for (let p = 0; p < pieces; p++) track?.writeFootprint(p, delta, WRITE_ADD);
+  if (!track) return;
+  for (let p = 0; p < track.pieceCount; p++) track.writeFootprint(p, delta, WRITE_ADD);
+  track.writeIssues(delta);
 }
 
 export function writeTrackLay(delta: PlanDelta, track: PlanTrackSource, laid: number): void {
   delta.reset();
+  appendTrackLay(delta, track, laid);
+}
+
+function appendTrackLay(delta: PlanDelta, track: PlanTrackSource, laid: number): void {
   for (let p = track.pieceCount - laid; p < track.pieceCount; p++) {
     track.writeFootprint(p, delta, WRITE_ADD);
   }
+  track.writeIssues(delta);
 }
 
 export function writeTrackThrow(delta: PlanDelta, track: PlanTrackSource, piece: number): void {
   delta.reset();
+  appendTrackThrow(delta, track, piece);
+}
+
+function appendTrackThrow(delta: PlanDelta, track: PlanTrackSource, piece: number): void {
   track.writeFootprint(piece, delta, WRITE_UPDATE);
+  track.writeIssues(delta);
 }
 
 export function writeTrackChange(
@@ -152,20 +171,29 @@ export function writeTrackChange(
   track: PlanTrackSource,
   change: TrackChange,
 ): void {
+  delta.reset();
+  appendTrackChange(delta, track, change);
+}
+
+export function appendTrackChange(
+  delta: PlanDelta,
+  track: PlanTrackSource,
+  change: TrackChange,
+): void {
   const { lift, lay } = change;
   const before = track.pieceCount - lay.length + lift.length;
   if (lift.length === 0 && lay.every((at, i) => at.index === before + i)) {
-    writeTrackLay(delta, track, lay.length);
+    appendTrackLay(delta, track, lay.length);
     return;
   }
   const [lifted] = lift;
   const [laid] = lay;
   if (lift.length === 1 && lay.length === 1 && lifted && laid && lifted.index === laid.index) {
-    writeTrackThrow(delta, track, laid.index);
+    appendTrackThrow(delta, track, laid.index);
     return;
   }
-  delta.reset();
   const first = Math.min(lifted?.index ?? before, laid?.index ?? before);
   for (let p = first; p < before; p++) delta.remove(TRACK_SEGMENT, p);
   for (let p = first; p < track.pieceCount; p++) track.writeFootprint(p, delta, WRITE_ADD);
+  track.writeIssues(delta);
 }

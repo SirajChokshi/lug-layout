@@ -20,6 +20,7 @@ import {
   type PlanChange,
   type PlanCheck,
   type PlanDelta,
+  type PlanFootprint,
   type PlanIssue,
   type PlanObstacle,
   type PlanRegion,
@@ -91,6 +92,13 @@ export type PlanPatch = Partial<
 export type TableInput = Omit<PlanTable, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
 
+export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
+  readonly footprint: Omit<PlanFootprint, "tables" | "obstacles"> & {
+    readonly tables: ReadonlyArray<TableInput>;
+    readonly obstacles: ReadonlyArray<ObstacleInput>;
+  };
+}
+
 export interface DrawnTable {
   readonly planId: string;
   readonly tableId: string;
@@ -136,6 +144,7 @@ export interface IPlanService {
   setTableTopY(y: number): void;
   onEdit(listener: (change: PlanChange) => void): () => void;
   restore(state: PlanState): void;
+  addition(plan: PlanInput): PlanChange;
 }
 
 interface UnreadableBox {
@@ -557,6 +566,31 @@ export class PlanService implements IPlanService {
     this.afterChange(true);
   }
 
+  addition(plan: PlanInput): PlanChange {
+    const { footprint } = plan;
+    const region: PlanRegion = {
+      id: this.newId("plan"),
+      name: plan.name,
+      originChunkX: plan.originChunkX,
+      originChunkZ: plan.originChunkZ,
+      footprint: {
+        roomWidthMm: footprint.roomWidthMm,
+        roomDepthMm: footprint.roomDepthMm,
+        tables: footprint.tables.map((table) => ({ id: this.newId("table"), ...table })),
+        obstacles: footprint.obstacles.map((obstacle) => ({
+          id: this.newId("obstacle"),
+          ...obstacle,
+        })),
+      },
+      maxOverhangMm: plan.maxOverhangMm,
+      maxReachMm: plan.maxReachMm,
+    };
+    return {
+      before: this.planState(),
+      after: { regions: [...this.regions, region], activePlanId: region.id },
+    };
+  }
+
   createPlan(plan: NewPlan): string {
     const region = this.newRegion(plan);
     this.insertRegion(region);
@@ -741,11 +775,28 @@ export class PlanService implements IPlanService {
     const changed =
       evaluation.uncheckedChanged ||
       evaluation.flaggedMembershipChanged ||
-      evaluation.flaggedBoxChanged;
+      evaluation.flaggedBoxChanged ||
+      evaluation.trackIssuesChanged;
     if (!changed) return;
     const boxes: WorldBox[] = [];
     for (let row = evaluation.firstFlagged(); row !== NO_ROW; row = evaluation.nextFlagged(row)) {
       boxes.push(this.boxOf(row));
+    }
+    const track = evaluation.trackIssues;
+    for (let issue = 0; issue < track.count; issue++) {
+      if (!evaluation.trackIssueInRegions(issue)) continue;
+      const last = track.ownerStart[issue + 1] ?? 0;
+      for (let owner = track.ownerStart[issue] ?? 0; owner < last; owner++) {
+        const at = owner * BOX_STRIDE;
+        boxes.push({
+          minX: track.ownerBox[at + BOX_MIN_X] ?? Number.NaN,
+          minY: track.ownerBox[at + BOX_MIN_Y] ?? Number.NaN,
+          minZ: track.ownerBox[at + BOX_MIN_Z] ?? Number.NaN,
+          maxX: track.ownerBox[at + BOX_MAX_X] ?? Number.NaN,
+          maxY: track.ownerBox[at + BOX_MAX_Y] ?? Number.NaN,
+          maxZ: track.ownerBox[at + BOX_MAX_Z] ?? Number.NaN,
+        });
+      }
     }
     this.backend.setIssueBoxes(boxes);
   }

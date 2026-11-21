@@ -9,9 +9,11 @@ export interface UncheckedPlanRule {
 export const NOT_YET_ASSIGNED = "not yet assigned";
 
 export const UNCHECKED_PLAN_RULES: ReadonlyArray<UncheckedPlanRule> = [
-  { id: "trackEnds", text: "Open and unjoined track ends", owner: "#47" },
-  { id: "unverifiedCurve", text: "The unverified 53400 curve warning", owner: "#47" },
-  { id: "trackSeam", text: "Track across a table seam", owner: NOT_YET_ASSIGNED },
+  {
+    id: "runFrameTrack",
+    text: "A model's own track off the track lattice (in a run frame) counts as ordinary parts: its footing cells and box can report it across a seam or off the table where its exact outline wouldn't",
+    owner: `${NOT_YET_ASSIGNED} (needs exact poses for run-frame track)`,
+  },
   {
     id: "seamJoins",
     text: "Whether placements meeting at a seam join or leave a gap: stud mates name no partner, so a join through a bridging part can't be told from a gap yet",

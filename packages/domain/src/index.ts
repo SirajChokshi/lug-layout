@@ -5,6 +5,7 @@ export {
   PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
+  roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
   type RoadFit,
@@ -176,6 +177,7 @@ export {
   type PlanCheck,
   type PlanIssue,
   type PlanPlacement,
+  type CarriedTrack,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
@@ -212,6 +214,13 @@ export {
   type PlacementFacts,
 } from "./plan/plan-facts.ts";
 export { disksCover } from "./plan/plan-reach.ts";
+export {
+  TRACK_OPEN_END,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
+  TrackIssueRows,
+} from "./plan/track-issue-rows.ts";
 export {
   drawingKit,
   MAX_TURN_CURVES,
@@ -276,11 +285,18 @@ export { cellChunkKey } from "./cell-chunk-key.ts";
 export {
   DirtyShards,
   addShards,
+  shardPoses,
   worldPlacements,
   type PlacementTarget,
   type ShardChange,
 } from "./world-shards.ts";
-export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
+export {
+  BomCounter,
+  byPartThenColor,
+  PartTally,
+  type BomLine,
+  type PartSink,
+} from "./bom/bom-counter.ts";
 export {
   countPlacements,
   regionHolds,
@@ -289,6 +305,7 @@ export {
 } from "./bom/count-placements.ts";
 export {
   INHERITED_COLOR,
+  catalogOf,
   resolveLines,
   toCatalog,
   type CatalogBom,
@@ -308,6 +325,17 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  type OwnBuyLine,
+  type OwnedPart,
+  type OwnedParts,
+  type OwnedPartsRead,
+  type OwnVsBuy,
+  type RejectedRow,
+  type UnknownOwnedPart,
+} from "./bom/owned-parts.ts";
 export {
   AXIS_FREE,
   AXIS_NEG_X,
@@ -420,6 +448,7 @@ export {
   type OutlinePoint,
   type OutlineRing,
 } from "./plan/placed-outline.ts";
+export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
   levelCrossings,
   type CrossingTrack,
