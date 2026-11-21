@@ -47,7 +47,12 @@ function arrayBuffer(bytes: Buffer): ArrayBuffer {
 
 function partShape(
   part: ManifestPart,
-  { studs, technic, rolling }: Pick<PartExtras, "studs" | "technic" | "rolling">,
+  {
+    studs,
+    technic,
+    rolling,
+    topSurface,
+  }: Pick<PartExtras, "studs" | "technic" | "rolling" | "topSurface">,
   outline: PlanOutline | undefined,
 ): PartShape {
   return {
@@ -62,6 +67,7 @@ function partShape(
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(technic ? { technic } : {}),
     ...(rolling ? { rolling } : {}),
+    ...(topSurface ? { topSurface } : {}),
     ...(outline ? { outline } : {}),
   };
 }
