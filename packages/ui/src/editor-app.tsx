@@ -230,7 +230,12 @@ export function EditorApp({
           ready={snapshot.status === "ready"}
           checkingStuds={snapshot.studChecks > 0}
         />
-        <PlanPanel camera={camera} plans={plans} />
+        <PlanPanel
+          camera={camera}
+          editor={editor}
+          drawing={snapshot.mode === "table"}
+          plans={plans}
+        />
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
