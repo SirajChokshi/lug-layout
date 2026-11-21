@@ -6,6 +6,7 @@ import {
   type RebaseEvent,
 } from "@brr/render";
 import type { Decoded, Issue } from "@brr/schema/decode";
+import type { PlanArchive } from "@brr/schema/plan";
 import {
   shardEntry,
   shardName,
@@ -28,7 +29,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
-import type { IEditedWorld, IWorldSession, WorldContents } from "./world-session.ts";
+import type { BomInput } from "../bom/bom-service.ts";
+import type { PlanSheetShapes } from "../plan/plan-sheet-service.ts";
+import type {
+  IEditedWorld,
+  IWorldSession,
+  PlanContents,
+  StoredContents,
+  WorldContents,
+} from "./world-session.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const BASEPLATE_LDU = 640;
@@ -48,14 +57,18 @@ class StubSceneBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -92,19 +105,19 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [], consists: [] };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
     return [];
   }
 
-  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
+  validate({ shards }: StoredContents): ReadonlyArray<Issue> {
     const handles = addShards(new World(), shards, baseplateTarget);
     return handles.ok ? [] : handles.issues;
   }
 
-  async load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>> {
+  async load({ shards }: StoredContents): Promise<ReadonlyArray<Issue>> {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;
@@ -115,6 +128,22 @@ class BaseplateWorld implements IEditedWorld {
 
   async addImportedModel(): Promise<string | null> {
     return null;
+  }
+
+  planContents(): Decoded<PlanContents> {
+    return { ok: false, issues: [{ path: "plan", message: "is not saved in this test" }] };
+  }
+
+  async addPlan(): Promise<ReadonlyArray<Issue>> {
+    return [{ path: "plan", message: "is not opened in this test" }];
+  }
+
+  bomInput(): BomInput {
+    throw new Error("this test counts no parts");
+  }
+
+  planSheetShapes(): PlanSheetShapes {
+    throw new Error("this test draws no plan sheet");
   }
 }
 
@@ -207,6 +236,18 @@ class FailingSaveRepository implements IWorldRepository {
   }
 
   async readArchive(): Promise<Decoded<WorldArchive>> {
+    return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
+  }
+
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
+  }
+
+  packPlanArchive(): Uint8Array {
+    return new Uint8Array();
+  }
+
+  async readPlanArchive(): Promise<Decoded<PlanArchive>> {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
 }

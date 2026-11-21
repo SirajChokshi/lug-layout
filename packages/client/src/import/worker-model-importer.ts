@@ -1,12 +1,19 @@
 import { BUNDLE_BASE_URL, PART_BUNDLE_LOADER, type IPartBundleLoader } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
-import type { ImportInput, ImportJob, ImportResult, PlacementListener } from "@brr/import";
+import type {
+  ImportInput,
+  ImportJob,
+  ImportResult,
+  PlacementListener,
+  RollingDiagnosticsRows,
+} from "@brr/import";
 import { inject, injectable } from "inversify";
 import {
   IMPORT_WORKER_POOL,
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
   LIBRARY_CONNECTORS_BASE_URL,
+  SHADOW_LIBRARY_BASE_URL,
 } from "../tokens.ts";
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
 
@@ -23,6 +30,10 @@ export interface IModelImporter {
     lod?: BundleLod,
     onPlaced?: PlacementListener,
   ): Promise<ImportResult>;
+  rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod?: BundleLod,
+  ): Promise<RollingDiagnosticsRows>;
 }
 
 @injectable()
@@ -34,6 +45,7 @@ export class WorkerModelImporter implements IModelImporter {
     @inject(LDRAW_LIBRARY_BASE_URL) private readonly ldrawLibraryBaseUrl: string | null,
     @inject(LIBRARY_BAKE_BASE_URL) private readonly libraryBakeBaseUrl: string | null,
     @inject(LIBRARY_CONNECTORS_BASE_URL) private readonly libraryConnectorsBaseUrl: string | null,
+    @inject(SHADOW_LIBRARY_BASE_URL) private readonly shadowLibraryBaseUrl: string | null,
   ) {}
 
   async importText(
@@ -58,6 +70,18 @@ export class WorkerModelImporter implements IModelImporter {
     ]);
     const input = { kind: "studio", job, bytes, bricklinkParts } as const;
     return this.request(lod, input, [bytes.buffer], onPlaced);
+  }
+
+  async rollingDiagnostics(
+    partIds: ReadonlyArray<string>,
+    lod: BundleLod = "standard",
+  ): Promise<RollingDiagnosticsRows> {
+    const context = await this.loader.importContext(lod);
+    if (this.libraryBakeBaseUrl === null || context.libraryBake === null) return {};
+    return this.workers.rollingDiagnostics(
+      { url: this.libraryBakeBaseUrl, pin: context.libraryBake },
+      partIds,
+    );
   }
 
   private async job(fileName: string, lod: BundleLod): Promise<Omit<ImportJob, "text">> {
@@ -105,6 +129,9 @@ export class WorkerModelImporter implements IModelImporter {
                 pin: context.libraryConnectors,
               },
             }),
+        ...(this.shadowLibraryBaseUrl === null || context.shadowLibrary === null
+          ? {}
+          : { shadowLibrary: { url: this.shadowLibraryBaseUrl, pin: context.shadowLibrary } }),
         input,
       },
       transfer,

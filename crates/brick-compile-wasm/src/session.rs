@@ -691,19 +691,21 @@ fn plates(columns: &[i32]) -> Result<Vec<i16>, String> {
         .collect()
 }
 
-fn cell_indices(cells: &[usize]) -> Result<Vec<u32>, String> {
-    cells
+fn u32_indices(indices: &[usize]) -> Result<Vec<u32>, String> {
+    indices
         .iter()
-        .map(|&cell| u32::try_from(cell).map_err(|e| e.to_string()))
+        .map(|&index| u32::try_from(index).map_err(|e| e.to_string()))
         .collect()
 }
 
 fn put_cover(body: &mut Body, cover: &ModelCover) -> Result<(), String> {
     if let Some(cells) = &cover.cells {
-        body.blob("footprint", &cell_indices(&cells.footprint)?);
-        body.blob("flat", &cell_indices(&cells.flat)?);
+        body.blob("footprint", &u32_indices(&cells.footprint)?);
+        body.blob("flat", &u32_indices(&cells.flat)?);
         body.blob("columnBottom", &plates(&cells.column_bottom)?);
         body.blob("columnTop", &plates(&cells.column_top)?);
+        body.blob("footingInstance", &u32_indices(&cells.footing.instance)?);
+        body.blob("footingCell", &u32_indices(&cells.footing.cell)?);
     }
     body.blob("visibleBits", &cover.visible_bits());
     Ok(())

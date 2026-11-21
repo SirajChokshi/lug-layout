@@ -79,3 +79,67 @@ test("track laid on open ground sits on the studs: a shallow drag and a switch h
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("track-on-studs.png") });
 });
+
+const HALF_TURN_CURVES = 8;
+
+test("an oval laid piece by piece from the keyboard closes through the join it suggests, and Ctrl+Z walks it back one step at a time", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  await editor.zoom(700);
+  await editor.choose(TRACK_ITEM);
+  const run = await editor.dragTrack({ x: -320, z: 0 }, { x: 320, z: 0 });
+  const keys = [
+    ...Array<string>(HALF_TURN_CURVES).fill("a"),
+    ...Array<string>(run.pieces).fill("w"),
+    ...Array<string>(HALF_TURN_CURVES / 2).fill("a"),
+  ];
+  for (const key of keys) await editor.press(key);
+  const suggested = await editor.trackChoice();
+  await editor.press("Enter");
+  const closed = await editor.trackCounts();
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("oval-by-extending.png") });
+  const left: number[] = [];
+  for (let step = 0; step <= keys.length; step++) {
+    await editor.undo();
+    left.push((await editor.laidTrack()).length);
+  }
+
+  const loop = run.pieces + keys.length + HALF_TURN_CURVES / 2;
+  expect(run).toMatchObject({ lastCommit: "laid", openEnds: 2 });
+  expect(suggested).toEqual({ kind: "join", pieces: HALF_TURN_CURVES / 2, joins: true });
+  expect(closed).toEqual({ lastCommit: "joined", pieces: loop, openEnds: 0, joins: loop });
+  expect(left).toEqual([loop - HALF_TURN_CURVES / 2, ...keys.map((_, i) => loop - 5 - i)]);
+});
+
+test("an end that can't be joined, a refused drag and a blocked piece each say why", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  await editor.zoom(700);
+  await editor.choose(TRACK_ITEM);
+  const end = { x: -320, z: 0 };
+  const offset = { x: -260, z: 40 };
+  await editor.dragTrack({ x: -960, z: 0 }, end);
+  await editor.dragTrack(offset, { x: 380, z: 40 });
+  await editor.escape();
+  const laid = (await editor.laidTrack()).length;
+
+  await editor.hoverAt(await editor.screenOf(end));
+  const pointed = await editor.toolHint();
+  const released = await editor.dragTrack(end, offset);
+  const releasedHint = await editor.toolHint();
+  await editor.hoverAt(await editor.screenOf(end));
+  await editor.press("w");
+  const pressed = await editor.toolHint();
+
+  expect(pointed).toContain("Next piece: straight (blocked)");
+  expect(pointed).toContain("can't be joined: no exact join reaches it");
+  expect(released.lastCommit).toBe("refused-impossible");
+  expect(releasedHint).toContain("Nothing laid");
+  expect(releasedHint).toContain("no exact join reaches that end");
+  expect(pressed).toContain("Nothing laid");
+  expect(pressed).toContain("the next piece would cross the track laid there");
+  expect(await editor.laidTrack()).toHaveLength(laid);
+});

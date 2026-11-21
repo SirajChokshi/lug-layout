@@ -1,21 +1,23 @@
 ---
-description: LDraw/LDCad/Rebrickable licensing, NonCA ban, .io password ban, attribution and trademark rules
+description: No licence gating; LDraw/LDCad attribution and credits, .io password ban, trademark rules
 alwaysApply: true
 ---
 
-# Licensing and IP (§3.4, §10)
+# Licensing, attribution and IP (§3.4, §10)
+
+**No licence gating** (owner decision, 2026-11-20: this is a free, fun project). Nothing is refused, filtered, left unpublished or reported as not drawn because of the `!LICENSE` line it carries or lacks: library parts, custom parts in an imported file, connector records, the bundle and the published library files alike. Don't add a licence check back.
 
 **Never:**
-- Ship, commit or bundle an `OfficialNonCA` part, or any part without a CA `!LICENSE` header (CCAL 2.0 or CC BY 4.0). The pipeline's license gate fails the build. Don't bypass it, allowlist around it or weaken it.
-- Ship, commit or derive code from the legacy Studio `.io` ZIP password, or decrypt encrypted `.io` files. Reject them with a "re-save in current Studio" message. This holds even though the project is non-commercial.
+- Ship, commit or derive code from the legacy Studio `.io` ZIP password, or decrypt encrypted `.io` files. Reject them with a "re-save in current Studio" message.
 - Redistribute Studio's part library or any BrickLink or LEGO proprietary assets.
 - Scrape BrickLink or LEGO.com. Use only Rebrickable dumps and APIs and BrickLink Wanted List XML (the BrickLink API waits on a terms review).
 - Use the LEGO logo, stud logos, red-square branding, LEGO fonts or trade dress, the minifigure as an icon, box art, instruction images, or "LEGO" in product names.
-- Ship third-party vendor geometry (BrickTracks, TrixBrix, …) until it's licensed. Unofficial LDraw parts are opt-in by allowlist only, and badged.
 
 **Always:**
-- Keep LDraw attribution: authors, license and a "modified from LDraw" note in `extras.ldraw` and the generated credits.
-- Keep LDCad-derived connectivity in its own CC BY-SA 4.0 data package with attribution to Roland Melkert. App code never inlines it.
+- Keep LDraw attribution: authors, the licence line as the file states it (or that it states none) and a "modified from LDraw" note in `extras.ldraw` and the generated credits.
+- Keep LDCad-derived connectivity in its own data package, labelled CC BY-SA 4.0, with attribution to Roland Melkert, and credit it in the generated credits.
 - Show the trademark disclaimer in the footer, the about page and every export.
-- Keep test fixtures license-clean: CA parts and OMR models only, with original headers intact and listed in `packages/test-fixtures/ATTRIBUTION.md`. User-supplied `.io` or `.mpd` samples need explicit permission.
+- Keep unofficial LDraw parts we ship opt-in by allowlist, and badged. That's about review status (unreviewed geometry), not licence. The allowlist governs only parts we ship: the pipeline, the bundle, the precompiled library-bake records and library resolution at import.
+- Treat custom parts from the user's own imported file (MPD-embedded, inline parts that differ from the library, Studio `CustomParts`) as the user's content. Draw every one, whatever its `!LDRAW_ORG` or `!LICENSE`; refuse and report only one that can't compile, such as files that refer to each other in a loop. Library files it reaches stay under library resolution and its allowlist. Keep it local: never in the pipeline, the bundle, the LDraw library mirror, the library-bake or library connector records, or any other published file. Badge it custom with a `custom:` id, flag its connectors unverified, and list it as not buyable in the parts list.
+- Keep test fixtures' original headers intact and list them in `packages/test-fixtures/ATTRIBUTION.md`. User-supplied `.io` or `.mpd` samples need explicit permission.
 - Never commit large upstream archives (`complete.zip`, Rebrickable dumps). The pipeline fetches and pins them by hash.

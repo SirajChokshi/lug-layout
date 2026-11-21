@@ -56,6 +56,22 @@ export class VerifiedFiles {
     return bytes;
   }
 
+  async referenced(file: string, sha256: string): Promise<Uint8Array> {
+    const digest = contentDigestOf(file);
+    if (digest === null || !sha256.startsWith(digest)) {
+      throw new Error(`${file} is not content-addressed by ${sha256}`);
+    }
+    const hit = await this.cache.get(file);
+    if (hit !== undefined && (await sha256Hex(hit)) === sha256) {
+      this.cached++;
+      return hit;
+    }
+    const bytes = await this.download(file);
+    if ((await sha256Hex(bytes)) !== sha256) throw new Error(`${file} differs from its SHA-256`);
+    await this.cache.put(file, bytes);
+    return bytes;
+  }
+
   async pinned(file: string, sha256: string): Promise<Uint8Array | null> {
     const addressed = contentAddressedFile(file, sha256);
     const cached = await this.cache.get(addressed);

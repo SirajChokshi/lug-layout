@@ -4,22 +4,24 @@ import {
   LIBRARY_CONNECTORS_INDEX_FILE,
   type LibraryConnectorsPin,
 } from "@brr/schema/bundle";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 import { contentAddressedName } from "../publish.ts";
-import { assembleLibraryConnectors } from "./assemble.ts";
-import {
-  libraryConnectorsIndexKey,
-  LIBRARY_CONNECTORS_PREFIX,
-  uploadLibraryConnectors,
-  verifyServedLibraryConnectors,
-} from "./publish.ts";
+import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
+import { libraryConnectorsPublication } from "./publish.ts";
+import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
 import type { ObjectStore } from "../r2.ts";
 import { CA_LICENSE_LINES } from "../verify/license-audit.ts";
 
 const [PART_LICENSE = ""] = CA_LICENSE_LINES;
+const NON_CA_LICENSE = "Not redistributable : see NonCAreadme.txt";
 const VOCABULARY = "a".repeat(64);
 const ldraw = { kind: "github-mirror" as const, repo: "owner/ldraw", commit: "abc", root: "ldraw" };
 const shadow = { kind: "github-archive" as const, repo: "owner/shadow", commit: "def", root: "" };
@@ -67,6 +69,10 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
     join(build, "connectors", "3815c01.json"),
     JSON.stringify(record("ldraw:3815c01", PART_LICENSE, CONNECTOR_SOURCE.inferred, 1)),
   );
+  await writeFile(
+    join(build, "connectors", "nonca.json"),
+    JSON.stringify(record("ldraw:nonca", NON_CA_LICENSE, CONNECTOR_SOURCE.primitive, 0)),
+  );
   const listing = [
     {
       part: "ldraw:3815c01",
@@ -78,9 +84,9 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
     {
       part: "ldraw:nonca",
       path: "parts/nonca.dat",
-      license: "Not redistributable : see NonCAreadme.txt",
+      license: NON_CA_LICENSE,
       connectivity: null,
-      connectors: null,
+      connectors: "connectors/nonca.json",
     },
   ];
   await writeFile(
@@ -98,13 +104,12 @@ async function assembled(): Promise<{ readonly out: string; readonly pin: Librar
   return { out, pin };
 }
 
-it("publishes CA parts' records under their content addresses, stamps the connector records with the section vocabulary, and refuses a part outside the CA licences", async () => {
+it("publishes each part's records under their content addresses, whatever licence the part names, and stamps the connector records with the section vocabulary", async () => {
   const { out, pin } = await assembled();
 
   expect(pin).toMatchObject({
     parts: 2,
-    refused: [{ part: "ldraw:nonca", license: "Not redistributable : see NonCAreadme.txt" }],
-    records: { connectivity: 1, connectors: 1 },
+    records: { connectivity: 1, connectors: 2 },
     partsWithPieces: 1,
   });
   const indexText = await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8");
@@ -122,88 +127,81 @@ it("publishes CA parts' records under their content addresses, stamps the connec
   ] as const) {
     const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
     expect(packageIndex.sectionVocabulary).toBe(stamped);
-    expect(packageIndex.parts["ldraw:nonca"]).toBeUndefined();
     const file: string = packageIndex.parts["ldraw:3815c01"].file;
     expect(file).toMatch(new RegExp(`^${pkg}/3815c01\\.[0-9a-f]{16}\\.json$`, "u"));
     expect(JSON.parse(await readFile(join(out, file), "utf8")).sectionVocabulary).toBe(stamped);
   }
 });
 
-class MemoryStore implements ObjectStore {
-  readonly objects = new Map<string, Uint8Array>();
-  readonly order: string[] = [];
+class RecordingStore implements ObjectStore {
+  readonly types = new Map<string, string | undefined>();
 
-  async has(key: string): Promise<boolean> {
-    return this.objects.has(key);
+  async has(): Promise<boolean> {
+    return false;
   }
 
-  async put(key: string, body: Uint8Array): Promise<void> {
-    this.objects.set(key, body);
-    this.order.push(key);
+  async put(
+    key: string,
+    _body: Uint8Array,
+    headers: Readonly<Record<string, string>>,
+  ): Promise<void> {
+    this.types.set(key, headers["Content-Type"]);
   }
-
-  readonly read = async (key: string): Promise<Uint8Array | undefined> => this.objects.get(key);
 }
 
-async function addressedFiles(out: string): Promise<string[]> {
-  const index = JSON.parse(await readFile(join(out, LIBRARY_CONNECTORS_INDEX_FILE), "utf8"));
-  const files: string[] = [];
-  for (const pkg of ["connectivity", "connectors"]) {
-    const packageIndex = JSON.parse(await readFile(join(out, index[pkg].file), "utf8"));
-    files.push(
-      index[pkg].file,
-      ...Object.values<{ file: string }>(packageIndex.parts).map((e) => e.file),
+async function filesUnder(root: string): Promise<string[]> {
+  const entries = await readdir(root, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(root, join(entry.parentPath, entry.name)));
+}
+
+it("publishes every file the assembly wrote as JSON under library-connectors/, with the pinned index under its pinned hash", async () => {
+  const { out, pin } = await assembled();
+  const store = new RecordingStore();
+
+  await uploadPublication(libraryConnectorsPublication, store, out, pin);
+
+  const indexKey = `library-connectors/library-connectors.${pin.index.sha256.slice(0, 16)}.json`;
+  expect(publicationIndexKey(libraryConnectorsPublication, pin)).toBe(indexKey);
+  const addressed = (await filesUnder(out)).filter(
+    (file) => file !== LIBRARY_CONNECTORS_INDEX_FILE,
+  );
+  expect([...store.types.keys()].toSorted()).toEqual(
+    [...new Set([...addressed.map((file) => `library-connectors/${file}`), indexKey])].toSorted(),
+  );
+  expect(new Set(store.types.values())).toEqual(new Set(["application/json"]));
+});
+
+it("routes the CLI's served command to the committed pin's index under library-connectors/", async () => {
+  const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+  const committed = JSON.parse(
+    await readFile(join(toolRoot, "..", "..", LIBRARY_CONNECTORS_PIN), "utf8"),
+  ) as LibraryConnectorsPin;
+  const requested: string[] = [];
+  const server = createServer((request, response) => {
+    requested.push(`${request.method} ${request.url}`);
+    response.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    const { stdout } = await promisify(execFile)(
+      process.execPath,
+      ["src/library-connectors/cli.ts", "served"],
+      {
+        cwd: toolRoot,
+        env: {
+          ...process.env,
+          PART_BUNDLE_BASE_URL: `http://127.0.0.1:${port}/`,
+          GITHUB_OUTPUT: "",
+        },
+      },
     );
+    const indexPath = `/library-connectors/library-connectors.${committed.index.sha256.slice(0, 16)}.json`;
+    expect(requested).toEqual([`HEAD ${indexPath}`]);
+    expect(stdout).toBe(`http://127.0.0.1:${port}${indexPath}: served\n`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
-  return files;
-}
-
-it("uploads every record and both package indexes under their content addresses, then the pinned index, and only once", async () => {
-  const { out, pin } = await assembled();
-  const store = new MemoryStore();
-
-  const first = await uploadLibraryConnectors(store, out, pin);
-  const again = await uploadLibraryConnectors(store, out, pin);
-
-  const files = await addressedFiles(out);
-  const indexKey = libraryConnectorsIndexKey(pin);
-  expect(indexKey).toBe(
-    `${LIBRARY_CONNECTORS_PREFIX}/library-connectors.${pin.index.sha256.slice(0, 16)}.json`,
-  );
-  expect(store.order.toSorted()).toEqual(
-    [...files.map((file) => `${LIBRARY_CONNECTORS_PREFIX}/${file}`), indexKey].toSorted(),
-  );
-  expect(store.order.at(-1)).toBe(indexKey);
-  expect([first, again]).toEqual([
-    { uploaded: files.length + 1, present: 0 },
-    { uploaded: 0, present: files.length + 1 },
-  ]);
-  expect(await verifyServedLibraryConnectors(store.read, pin, "all")).toEqual([]);
-});
-
-it("refuses to upload a dist whose index is not the pinned one, or a record not named by its content", async () => {
-  const { out, pin } = await assembled();
-  const otherPin = { ...pin, index: { ...pin.index, sha256: "0".repeat(64) } };
-  await expect(uploadLibraryConnectors(new MemoryStore(), out, otherPin)).rejects.toThrow(
-    "is not the pinned index",
-  );
-  const [, recordFile = ""] = await addressedFiles(out);
-  await writeFile(join(out, recordFile), "{}");
-  await expect(uploadLibraryConnectors(new MemoryStore(), out, pin)).rejects.toThrow(
-    `${recordFile} is not named by its content hash`,
-  );
-});
-
-it("finds a served record that differs from its content address only when every record is checked", async () => {
-  const { out, pin } = await assembled();
-  const store = new MemoryStore();
-  await uploadLibraryConnectors(store, out, pin);
-  const [, recordFile = ""] = await addressedFiles(out);
-  const key = `${LIBRARY_CONNECTORS_PREFIX}/${recordFile}`;
-  store.objects.set(key, new TextEncoder().encode("{}"));
-
-  expect(await verifyServedLibraryConnectors(store.read, pin, "indexes")).toEqual([]);
-  expect(await verifyServedLibraryConnectors(store.read, pin, "all")).toEqual([
-    `${key} differs from its content address`,
-  ]);
 });

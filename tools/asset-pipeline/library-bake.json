@@ -1,10 +1,9 @@
 {
   "index": {
     "file": "library-bake.json",
-    "sha256": "f8cdaa5115f7db7b7318c1cd87f4d5a1cc67691018eb949d601a5c0b0982e278"
+    "sha256": "3dcb31a12d040d13f9464a4e449b7408e493080b1c76ccbb5c4066fa5b861a1e"
   },
   "parts": 24985,
   "records": 24983,
-  "failed": 2,
-  "refused": []
+  "failed": 2
 }

@@ -1,4 +1,10 @@
-import type { BundleLod, BundleManifest, BundleModelEntry, BundleSource } from "@brr/schema/bundle";
+import type {
+  BundleLod,
+  BundleManifest,
+  BundleModelEntry,
+  BundleSource,
+  ModelErratum,
+} from "@brr/schema/bundle";
 
 export interface CreditedFile {
   readonly path: string;
@@ -33,6 +39,7 @@ export interface SetCredit {
   readonly sections: number;
   readonly instances: number;
   readonly inlinePartsResolved: number;
+  readonly errata: ReadonlyArray<ModelErratum>;
   readonly source: string;
 }
 
@@ -40,6 +47,21 @@ export interface GeneratedModelCredit {
   readonly name: string;
   readonly authors: ReadonlyArray<string>;
   readonly source: string;
+}
+
+export interface CustomPartCredit {
+  readonly reference: string;
+  readonly title: string;
+  readonly author: string;
+  readonly license: string | null;
+}
+
+export interface ImportedModelCredit {
+  readonly name: string;
+  readonly sha256: string;
+  readonly authors: ReadonlyArray<string>;
+  readonly licenses: ReadonlyArray<string>;
+  readonly customParts: ReadonlyArray<CustomPartCredit>;
 }
 
 export interface DataSourceCredit {
@@ -69,6 +91,7 @@ export interface CreditsView {
   readonly licenses: ReadonlyArray<LicenseGroup>;
   readonly sets: ReadonlyArray<SetCredit>;
   readonly generated: ReadonlyArray<GeneratedModelCredit>;
+  readonly imported: ReadonlyArray<ImportedModelCredit>;
   readonly dataSources: ReadonlyArray<DataSourceCredit>;
   readonly dataPackages: ReadonlyArray<DataPackageCredit>;
   readonly counts: CreditCounts;
@@ -158,6 +181,7 @@ export function buildCredits(
           sections: model.sections.length,
           instances: model.instances,
           inlinePartsResolved: model.inlinePartsResolvedToOfficial.length,
+          errata: model.errata ?? [],
           source: model.source,
         });
         break;
@@ -182,6 +206,7 @@ export function buildCredits(
     licenses: licenseGroups(credited),
     sets,
     generated,
+    imported: [],
     dataSources: [...dataSources].map(([source, usedFor]) => ({ source, usedFor })),
     dataPackages,
     counts: {
@@ -210,6 +235,23 @@ export function setTitle(set: SetCredit): string {
 
 function filesText(count: number): string {
   return count === 1 ? "1 file" : `${count} files`;
+}
+
+function importedLines(models: ReadonlyArray<ImportedModelCredit>): string[] {
+  return models.flatMap((model) => [
+    `  ${model.name} (sha256 ${model.sha256})`,
+    `    Authors: ${model.authors.join("; ") || "none given"}`,
+    `    License: ${model.licenses.join("; ") || "none given"}`,
+    ...(model.customParts.length === 0
+      ? []
+      : [
+          "    Custom parts, compiled from this file and drawn only on the device that opens it:",
+          ...model.customParts.map(
+            (part) =>
+              `      ${part.reference}: ${part.title}, by ${part.author || "no author given"}, ${licenseText(part.license)}`,
+          ),
+        ]),
+  ]);
 }
 
 export function creditsText(view: CreditsView): string {
@@ -247,6 +289,11 @@ export function creditsText(view: CreditsView): string {
       `  ${set.sections} submodel sections, ${set.instances} part instances, ${set.inlinePartsResolved} inline part copies replaced by the official part`,
       `  File: ${set.source}`,
     );
+    for (const erratum of set.errata) {
+      lines.push(
+        `  Modified from OMR, line ${erratum.line}: ${erratum.from} → ${erratum.to}. ${erratum.summary}`,
+      );
+    }
     if (set.setSource !== null) lines.push(`  Set name and year: ${set.setSource}`);
   }
   if (view.generated.length > 0) {
@@ -255,6 +302,7 @@ export function creditsText(view: CreditsView): string {
       lines.push(`  ${scene.name}: ${scene.authors.join("; ")}. ${scene.source}`);
     }
   }
+  if (view.imported.length > 0) lines.push("", "Imported models", ...importedLines(view.imported));
   lines.push("", "Connector data");
   for (const data of view.dataPackages) {
     lines.push(

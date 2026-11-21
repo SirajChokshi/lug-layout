@@ -5,7 +5,6 @@ use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
-use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
@@ -29,10 +28,6 @@ pub fn modified_note(lod: Lod) -> String {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileError {
     Flatten(FlattenError),
-    License {
-        path: String,
-        verdict: LicenseVerdict,
-    },
     Unofficial {
         path: String,
         ldraw_org: String,
@@ -72,7 +67,6 @@ impl CompileError {
         match self {
             CompileError::TooLarge { cells, .. } => cells.cause.depends_on_machine(),
             CompileError::Flatten(_)
-            | CompileError::License { .. }
             | CompileError::Unofficial { .. }
             | CompileError::NoStudRing
             | CompileError::Malformed { .. } => false,
@@ -89,13 +83,10 @@ impl std::fmt::Display for CompileError {
             CompileError::Flatten(FlattenError::TooDeep { path }) => {
                 write!(f, "sub-file nesting too deep at {path}")
             }
-            CompileError::License { path, verdict } => {
-                write!(f, "license gate rejected {path}: {verdict:?}")
-            }
             CompileError::Unofficial { path, ldraw_org } => {
                 write!(
                     f,
-                    "license gate rejected unofficial {path} ({ldraw_org}) not on the allowlist"
+                    "{path} is an unofficial LDraw file ({ldraw_org}) that is not on the allowlist"
                 )
             }
             CompileError::NoStudRing => f.write_str(NO_STUD_RING),
@@ -133,17 +124,11 @@ fn to_y_up(p: Vec3) -> Vec3 {
     Affine::LDRAW_TO_Y_UP.apply(p).map(|v| v + 0.0)
 }
 
-pub fn license_gate(
+pub fn unofficial_gate(
     flattened: &Flattened,
     unofficial_allowlist: &[String],
 ) -> Result<(), CompileError> {
     for file in &flattened.files {
-        if !file.license.is_shippable() {
-            return Err(CompileError::License {
-                path: file.path.clone(),
-                verdict: file.license.clone(),
-            });
-        }
         let ldraw_org = file.header.ldraw_org.as_deref().unwrap_or_default();
         if ldraw_org.starts_with(UNOFFICIAL_PREFIX) && !unofficial_allowlist.contains(&file.path) {
             return Err(CompileError::Unofficial {
@@ -175,6 +160,28 @@ fn standard_triangles<L: Library>(
 
 pub const NO_STUD_RING: &str =
     "the stud primitives draw no closed round ring to measure roundness by";
+
+const STUD_ROLE: &str = "stud";
+const PRIMITIVE_FOLDER: &str = "p/";
+
+pub fn stud_primitives_from_table(table: &Value) -> Result<Vec<String>, String> {
+    table["primitives"]
+        .as_array()
+        .ok_or("primitive table: primitives must be an array")?
+        .iter()
+        .filter(|entry| entry[STUD_ROLE].as_bool() == Some(true))
+        .map(|entry| {
+            let file = entry["file"]
+                .as_str()
+                .ok_or("primitive table: every entry needs a file")?;
+            file.strip_prefix(PRIMITIVE_FOLDER)
+                .map(str::to_string)
+                .ok_or(format!(
+                    "{file}: a stud primitive lives in {PRIMITIVE_FOLDER}"
+                ))
+        })
+        .collect()
+}
 
 pub fn required_stud_roundness<L: Library>(
     library: &L,
@@ -217,7 +224,7 @@ pub fn compile_part<L: Library>(
                 from: String::new(),
             }))?;
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
-    license_gate(&flattened, &options.unofficial_allowlist)?;
+    unofficial_gate(&flattened, &options.unofficial_allowlist)?;
     refuse_malformed(flattener.malformed())?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,
@@ -348,6 +355,13 @@ impl CompiledPart {
             extras["rolling"] = rolling.to_json();
         }
         extras
+    }
+
+    pub fn rolling_diagnostics(&self) -> Vec<Value> {
+        self.rolling
+            .as_ref()
+            .map(PartRolling::diagnostics)
+            .unwrap_or_default()
     }
 
     pub fn to_glb(&self) -> Vec<u8> {

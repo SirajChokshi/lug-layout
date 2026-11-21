@@ -14,7 +14,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type IEditor } from "../edit/editor.ts";
+import type { IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
 import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
 import { loadCatalogItem } from "./catalog-item.test-support.ts";
@@ -22,6 +23,9 @@ import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
   CONNECTOR_TABLES,
   EDITOR,
+  HOTBAR,
+  LIBRARY_PART_PLACER,
+  MODEL_IMPORTER,
   PALETTE_DRAG,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
@@ -33,6 +37,8 @@ import {
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
 import { chosen } from "../edit/editor-choice.test-support.ts";
+import type { IModelImporter } from "../import/worker-model-importer.ts";
+import type { ImportResult, RollingDiagnosticsRows } from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -59,6 +65,9 @@ const MADE_IN_WHITE = [
   "ldraw:3865",
 ];
 const NOT_MADE_IN_WHITE = ["ldraw:3334", "ldraw:3497"];
+const RED = 4;
+const BRICK_2_X_4 = "3001";
+const WORKER_UNREACHABLE = "the import worker is unreachable";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   readonly paths: string[] = [];
@@ -98,11 +107,15 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   aim(x: number, z: number): void {
     this.aimX = x;
     this.aimZ = z;
@@ -144,7 +157,7 @@ class RecordingThumbnailRenderer implements IThumbnailRenderer {
   }
 }
 
-async function startEditor() {
+async function startEditor(configure: (container: Container) => void = () => {}) {
   const fetcher = new BundleDirectoryFetcher();
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -152,6 +165,7 @@ async function startEditor() {
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  configure(container);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -179,6 +193,28 @@ function rowKeys(rows: PaletteSection["rows"]): ReadonlyArray<string> {
 
 function capabilities({ draggable, toggleable, listedUnder }: CatalogItemView) {
   return { draggable, toggleable, listedUnder };
+}
+
+function libraryIds(search: IPaletteSearch): ReadonlyArray<string> {
+  return search.snapshot().library?.hits.map((hit) => hit.part.id) ?? [];
+}
+
+class UnreachableWorkerImporter implements IModelImporter {
+  readonly files: Array<{ readonly name: string; readonly text: string }> = [];
+
+  async importText(name: string, text: string): Promise<ImportResult> {
+    this.files.push({ name, text });
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async importStudio(name: string): Promise<ImportResult> {
+    this.files.push({ name, text: "" });
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    throw new Error(WORKER_UNREACHABLE);
+  }
 }
 
 function placedItems(editor: IEditor): ReadonlyArray<string> {
@@ -391,8 +427,9 @@ describe("palette item labels", () => {
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
     expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
-    expect(pieces.map((item) => item.shortLabel)).toEqual(pieces.map(() => "Track"));
+    expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);
   }, 120_000);
 });
 
@@ -418,5 +455,75 @@ describe("palette drag", () => {
     backend.aim(2560, 2560);
     drag.drop(0, 0, 0);
     expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
+  }, 120_000);
+});
+
+describe("hotbar", () => {
+  it("gives each part the editor picks its own slot, keeps it through a deselect, and picks it again by slot", async () => {
+    const { container, editor } = await startEditor();
+    const hotbar = container.get(HOTBAR);
+    const slots = (): ReadonlyArray<string> => hotbar.snapshot().slots.map((slot) => slot.item);
+
+    editor.chooseItem(GREEN_BASEPLATE);
+    editor.chooseItem(SET);
+    editor.chooseItem(TRACK_ITEM_ID);
+    editor.chooseItem(null);
+    editor.chooseItem(GREEN_BASEPLATE);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+
+    hotbar.pick(1);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    hotbar.pick(5);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+  }, 120_000);
+});
+
+describe("parts library", () => {
+  it("falls back to the pinned library's single parts on the All tab, ranked by their own titles, without the parts the palette already offers", async () => {
+    const { container } = await startEditor();
+    const search = container.get(PALETTE_SEARCH);
+
+    search.setQuery("brick 2 x 4");
+    expect(search.snapshot().library?.status).toBe("loading");
+    await vi.waitFor(() => expect(search.snapshot().library?.status).toBe("ready"));
+    const [first] = search.snapshot().library?.hits ?? [];
+    expect(first?.part).toMatchObject({ id: BRICK_2_X_4, title: "Brick 2 x 4", category: "Brick" });
+    expect(first?.colors.map((color) => color.code)).toContain(RED);
+
+    search.setQuery("baseplate 32 x 32");
+    expect(libraryIds(search).length).toBeGreaterThan(0);
+    expect(libraryIds(search)).not.toContain(BASEPLATE_32);
+
+    search.setTab("road");
+    expect(search.snapshot().library).toBeNull();
+  }, 120_000);
+
+  it("hands the editor's import a one-part LDraw file of the picked part in the picked colour, and keeps the failure on that part", async () => {
+    const importer = new UnreachableWorkerImporter();
+    const { container } = await startEditor((loading) =>
+      loading.rebind(MODEL_IMPORTER).toConstantValue(importer),
+    );
+    const search = container.get(PALETTE_SEARCH);
+    const placer = container.get(LIBRARY_PART_PLACER);
+    search.setQuery("brick 2 x 4");
+    await vi.waitFor(() => expect(search.snapshot().library?.status).toBe("ready"));
+    const [hit] = search.snapshot().library?.hits ?? [];
+    const red = hit?.colors.find((color) => color.code === RED);
+    if (!hit || !red) throw new Error("the library offers no red 2 x 4 brick");
+
+    expect(await placer.place(hit.part, red)).toBe(false);
+
+    expect(importer.files).toEqual([
+      { name: "3001 Brick 2 x 4 in Red.ldr", text: "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n" },
+    ]);
+    expect(placer.view()).toEqual({
+      pending: null,
+      refused: {
+        part: BRICK_2_X_4,
+        color: RED,
+        reason: `model import failed: ${WORKER_UNREACHABLE}`,
+      },
+    });
   }, 120_000);
 });
