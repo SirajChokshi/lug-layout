@@ -77,6 +77,7 @@ describe("road joins (layout rule 7)", () => {
       expect(report.joinedCells).toBe(16);
       expect(report.mismatchedCells).toBe(0);
       expect(report.openCells).toBe(2 * 3 * 16);
+      expect(Array.from(report.placementCells)).toEqual([16, 0, 0, 0]);
     }
   });
 
@@ -90,6 +91,7 @@ describe("road joins (layout rule 7)", () => {
     const report = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 320, 0, 0, 8)]).report();
     expect(report.joinedCells).toBe(0);
     expect(report.mismatchedCells).toBe(16);
+    expect(Array.from(report.placementCells)).toEqual([0, 16, 0, 16]);
   });
 
   it("joins 6-stud road baseplate ends but rejects a 6-stud end against an 8-stud dual end", () => {
