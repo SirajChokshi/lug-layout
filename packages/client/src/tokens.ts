@@ -26,13 +26,18 @@ import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
+import type { IRoadEditSession } from "./edit/road-edit-session.ts";
+import type { ITrackEditSession } from "./edit/track-edit-session.ts";
+import type { ITrackWorld } from "./edit/track-world.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
+import type { IPlanSheetService } from "./plan/plan-sheet-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
+import type { IOwnedParts } from "./bom/owned-parts-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
@@ -55,6 +60,13 @@ export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.fo
 );
 export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for(
   "brr.client.EditorFrameLoop",
+);
+export const TRACK_WORLD: ServiceIdentifier<ITrackWorld> = Symbol.for("brr.client.TrackWorld");
+export const TRACK_EDIT_SESSION: ServiceIdentifier<ITrackEditSession> = Symbol.for(
+  "brr.client.TrackEditSession",
+);
+export const ROAD_EDIT_SESSION: ServiceIdentifier<IRoadEditSession> = Symbol.for(
+  "brr.client.RoadEditSession",
 );
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
@@ -105,6 +117,9 @@ export const IMPORT_SCENE: ServiceIdentifier<IImportScene> = Symbol.for("brr.cli
 export const SIM_CLIENT: ServiceIdentifier<ISimClient> = Symbol.for("brr.client.SimClient");
 export const SIM_WORKER_PORT: ServiceIdentifier<RpcPort> = Symbol.for("brr.client.SimWorkerPort");
 export const PLAN_SERVICE: ServiceIdentifier<IPlanService> = Symbol.for("brr.client.PlanService");
+export const PLAN_SHEET_SERVICE: ServiceIdentifier<IPlanSheetService> = Symbol.for(
+  "brr.client.PlanSheetService",
+);
 export const RUNNING_GEAR_OVERRIDES: ServiceIdentifier<IRunningGearOverrideStore> = Symbol.for(
   "brr.client.RunningGearOverrides",
 );
@@ -113,6 +128,7 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
   "brr.client.TrademarkDisclaimer",
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
+export const OWNED_PARTS: ServiceIdentifier<IOwnedParts> = Symbol.for("brr.client.OwnedParts");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
 export const RAIL_YARD: ServiceIdentifier<IRailYard> = Symbol.for("brr.client.RailYard");
 export const VEHICLE_IDS: ServiceIdentifier<IVehicleIds> = Symbol.for("brr.client.VehicleIds");

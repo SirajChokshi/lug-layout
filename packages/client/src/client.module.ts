@@ -40,13 +40,18 @@ import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
+import { RoadEditSession } from "./edit/road-edit-session.ts";
+import { TrackEditSession } from "./edit/track-edit-session.ts";
+import { TrackWorld } from "./edit/track-world.ts";
 import { WorldSession } from "./edit/world-session.ts";
 import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { PlanService } from "./plan/plan-service.ts";
+import { PlanSheetService } from "./plan/plan-sheet-service.ts";
 import { BomService } from "./bom/bom-service.ts";
+import { OwnedPartsService } from "./bom/owned-parts-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
 import { ModelScene } from "./scene/model-scene.ts";
 import { IndexedDbRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -60,6 +65,7 @@ import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
   BOM_SERVICE,
+  OWNED_PARTS,
   CATALOG_SEARCH,
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
@@ -105,9 +111,13 @@ import {
   RAIL_YARD,
   VEHICLE_IDS,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
   EDITOR_FRAME_LOOP,
+  ROAD_EDIT_SESSION,
+  TRACK_EDIT_SESSION,
+  TRACK_WORLD,
   STARTER_FILE_URLS,
   STARTER_FILES,
   STARTER_WORLDS,
@@ -121,6 +131,9 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
+  bind(TRACK_WORLD).to(TrackWorld).inSingletonScope();
+  bind(TRACK_EDIT_SESSION).to(TrackEditSession).inSingletonScope();
+  bind(ROAD_EDIT_SESSION).to(RoadEditSession).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
   bind(SCALE_BAR).to(ScaleBar).inSingletonScope();
   bind(TABLE_GROUND).to(TableGround).inSingletonScope();
@@ -131,9 +144,11 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(TRACK_SCENE).to(TrackScene).inSingletonScope();
   bind(SIM_CLIENT).to(SimWorkerProxy).inSingletonScope();
   bind(PLAN_SERVICE).to(PlanService).inSingletonScope();
+  bind(PLAN_SHEET_SERVICE).to(PlanSheetService).inSingletonScope();
   bind(RUNNING_GEAR_OVERRIDES).to(IndexedDbRunningGearOverrideStore).inSingletonScope();
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
+  bind(OWNED_PARTS).to(OwnedPartsService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
   bind(RAIL_YARD).to(RailYard).inSingletonScope();
   bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();

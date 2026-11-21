@@ -1,7 +1,13 @@
 import { ContainerModule } from "inversify";
 import { bindAssetCache } from "./asset-cache.module.ts";
+import { IndexedDbOwnedPartsRepository } from "./owned-parts-repository.ts";
 import { isPersistentStorage } from "./persistent-storage.ts";
-import { PERSISTENT_STORAGE, WORLD_LOCKS, WORLD_REPOSITORY } from "./tokens.ts";
+import {
+  OWNED_PARTS_REPOSITORY,
+  PERSISTENT_STORAGE,
+  WORLD_LOCKS,
+  WORLD_REPOSITORY,
+} from "./tokens.ts";
 import { WebWorldLocks } from "./world-locks.ts";
 import { IndexedDbWorldRepository } from "./world-repository.ts";
 
@@ -13,4 +19,5 @@ export const storageModule = new ContainerModule(({ bind }) => {
   });
   bind(WORLD_REPOSITORY).to(IndexedDbWorldRepository).inSingletonScope();
   bind(WORLD_LOCKS).to(WebWorldLocks).inSingletonScope();
+  bind(OWNED_PARTS_REPOSITORY).to(IndexedDbOwnedPartsRepository).inSingletonScope();
 });

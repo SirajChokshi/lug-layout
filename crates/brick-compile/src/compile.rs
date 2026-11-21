@@ -5,7 +5,6 @@ use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
-use crate::license::LicenseVerdict;
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
@@ -29,10 +28,6 @@ pub fn modified_note(lod: Lod) -> String {
 #[derive(Clone, Debug, PartialEq)]
 pub enum CompileError {
     Flatten(FlattenError),
-    License {
-        path: String,
-        verdict: LicenseVerdict,
-    },
     Unofficial {
         path: String,
         ldraw_org: String,
@@ -72,7 +67,6 @@ impl CompileError {
         match self {
             CompileError::TooLarge { cells, .. } => cells.cause.depends_on_machine(),
             CompileError::Flatten(_)
-            | CompileError::License { .. }
             | CompileError::Unofficial { .. }
             | CompileError::NoStudRing
             | CompileError::Malformed { .. } => false,
@@ -89,13 +83,10 @@ impl std::fmt::Display for CompileError {
             CompileError::Flatten(FlattenError::TooDeep { path }) => {
                 write!(f, "sub-file nesting too deep at {path}")
             }
-            CompileError::License { path, verdict } => {
-                write!(f, "license gate rejected {path}: {verdict:?}")
-            }
             CompileError::Unofficial { path, ldraw_org } => {
                 write!(
                     f,
-                    "license gate rejected unofficial {path} ({ldraw_org}) not on the allowlist"
+                    "{path} is an unofficial LDraw file ({ldraw_org}) that is not on the allowlist"
                 )
             }
             CompileError::NoStudRing => f.write_str(NO_STUD_RING),
@@ -133,17 +124,11 @@ fn to_y_up(p: Vec3) -> Vec3 {
     Affine::LDRAW_TO_Y_UP.apply(p).map(|v| v + 0.0)
 }
 
-pub fn license_gate(
+pub fn unofficial_gate(
     flattened: &Flattened,
     unofficial_allowlist: &[String],
 ) -> Result<(), CompileError> {
     for file in &flattened.files {
-        if !file.license.is_shippable() {
-            return Err(CompileError::License {
-                path: file.path.clone(),
-                verdict: file.license.clone(),
-            });
-        }
         let ldraw_org = file.header.ldraw_org.as_deref().unwrap_or_default();
         if ldraw_org.starts_with(UNOFFICIAL_PREFIX) && !unofficial_allowlist.contains(&file.path) {
             return Err(CompileError::Unofficial {
@@ -239,7 +224,7 @@ pub fn compile_part<L: Library>(
                 from: String::new(),
             }))?;
     let mut flattened = flattener.flatten(&path).map_err(CompileError::Flatten)?;
-    license_gate(&flattened, &options.unofficial_allowlist)?;
+    unofficial_gate(&flattened, &options.unofficial_allowlist)?;
     refuse_malformed(flattener.malformed())?;
     let roundness = match options.rolling_mode {
         RollingMode::Skip => None,

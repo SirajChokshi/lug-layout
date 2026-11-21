@@ -1,13 +1,8 @@
 import { STUD_LDU } from "@brr/math";
 import { MAX_FILL_TILES, type FillView } from "../edit/fill-tool.ts";
-import type {
-  EditorSnapshot,
-  FillResult,
-  GestureView,
-  SelectionTally,
-  TrackUnsupportedView,
-  TrackView,
-} from "../edit/editor.ts";
+import type { EditorSnapshot, FillResult, GestureView, SelectionTally } from "../edit/editor.ts";
+import type { TrackView } from "../edit/track-edit-session.ts";
+import type { TrackUnsupportedView } from "../edit/track-world.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import {
   lineText,

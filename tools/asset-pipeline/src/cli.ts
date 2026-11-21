@@ -671,7 +671,7 @@ const LIBRARY_PART_SOURCES: ReadonlyArray<CatalogSourceUse> = [
 
 function reportLibraryParts({ report }: DerivedLibraryParts): void {
   process.stdout.write(
-    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.notContributorAgreement} without a CA licence, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
+    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
   );
 }
 
