@@ -12,7 +12,7 @@ Sources: [part-data.md](research/part-data.md), [engine-stack.md](research/engin
 
 | # | Decision | Effect on this plan |
 |---|---|---|
-| D1 | **The project is non-commercial.** | BrickLink API use and share-alike (CC BY-SA) connectivity data are now acceptable in principle. We import the LDCad shadow library directly and publish our connectivity dataset under CC BY-SA 4.0 (§3.4, §10). LEGO trademark rules and the ban on redistributing `OfficialNonCA` parts still apply in full. |
+| D1 | **The project is non-commercial.** | BrickLink API use and share-alike (CC BY-SA) connectivity data are now acceptable in principle. We import the LDCad shadow library directly and publish our connectivity dataset under CC BY-SA 4.0 (§3.4, §10). LEGO trademark rules still apply in full. There is no licence gating on parts (owner decision, 2026-11-20). |
 | D2 | **Users work with whole modules and models; we don't do brick-level modeling.** Users build in Studio, LDCad or LeoCAD and import the result. | The editor places imported models, OMR sets, modules, baseplates, track and road pieces. A model is immutable once imported, and users fix bricks in their own tool and re-import. Brick-level structural checks become import badges, never live editing rules. Renderer and storage work at model granularity (§4, §6, §9). |
 | D3 | **Third-party track (BrickTracks, TrixBrix, ME Models) is out of scope for now, but adding it must be easy later.** | Parts come from pluggable *part sources*, each with provenance and license. Track rules live in *track profiles*. Exact track arithmetic is generic over the angle step. Everything third-party is flagged in the BOM. Only official LEGO track ships (§3.5, §5.4). |
 | D4 | **It must be both a boundless sandbox and a solid tool for planning a real layout:** real table and room footprint, a parts list, buildable as planned. | **One world model in two modes.** The world is an unbounded, sparse chunk map, stored and streamed per super-chunk (§6, §9). **Plan regions** are bounded areas tied to a physical footprint (room, tables, obstacles, aisles) in millimetres. Inside a plan region the rules are strict, and the region gets its own complete BOM (including baseplates and module substructure), an "own vs buy" view, printable plans, and a **"Buildable as planned"** status (§7.3). Outside plan regions the rules only warn. Planning features move into the MVP. |
@@ -20,7 +20,7 @@ Sources: [part-data.md](research/part-data.md), [engine-stack.md](research/engin
 
 ## 1. One-paragraph architecture
 
-An **offline data pipeline** (Rust plus scripts, run in CI) compiles the LDraw CA parts library, Rebrickable dumps, the LDraw OMR and the LDCad shadow library into a versioned, content-addressed **asset bundle** on a static CDN. That bundle holds part meshes with studs extracted, a connector database, the catalog, element-existence tables, verified set models and attribution. In the browser, a **TypeScript app** has five parts:
+An **offline data pipeline** (Rust plus scripts, run in CI) compiles the LDraw parts library, Rebrickable dumps, the LDraw OMR and the LDCad shadow library into a versioned, content-addressed **asset bundle** on a static CDN. That bundle holds part meshes with studs extracted, a connector database, the catalog, element-existence tables, verified set models and attribution. In the browser, a **TypeScript app** has five parts:
 - a React UI shell;
 - an **import worker**, the same Rust crate built for WASM, that parses `.ldr`, `.mpd` and plain-ZIP `.io` files, resolves parts and colors, computes badges, and bakes models;
 - a **layout core** that holds the unbounded world of placements, exact track and road joins, plan regions with their physical footprints, and validation;
@@ -52,17 +52,17 @@ Every part and model comes through a **`PartSource`** plugin. Each source declar
 
 | Source id | Provenance | Content | License or terms | Shipped |
 |---|---|---|---|---|
-| `ldraw-official` | `official` | LDraw `complete.zip`, filtered to CA parts | CC BY 2.0 / CC BY 4.0, with attribution | Yes |
+| `ldraw-official` | `official` | LDraw `complete.zip` | CC BY 2.0 / CC BY 4.0, with attribution | Yes |
 | `ldraw-unofficial` | `unofficial` | `ldrawunf.zip`, specific parts by allowlist only | Per part | Opt-in, badged |
-| `user-inline` | `custom` | Inline `0 FILE` parts or Studio CustomParts found in an import | User's own; drawn only with a CA `!LICENSE` header | No: compiled and drawn on the user's device only (§3.3) |
+| `user-inline` | `custom` | Inline `0 FILE` parts or Studio CustomParts found in an import | User's own; drawn whatever licence it names, or none | No: compiled and drawn on the user's device only (§3.3) |
 | `omr` | `official` model | OMR `.mpd` sets | CC BY 2.0 | Yes, after verification |
 | `ldcad-shadow` | connectivity | `!LDCAD SNAP_*` metadata | CC BY-SA 4.0 | Yes, as a separate data package |
 | `rebrickable` | catalog | Daily CSV dumps, plus nightly API crosswalks | Any use, attribution requested | Yes, derived tables |
-| *(later)* `thirdparty-<vendor>` | `thirdParty` | Vendor track geometry and connectors | Per vendor, needs clearance | **No (D3)** |
+| *(later)* `thirdparty-<vendor>` | `thirdParty` | Vendor track geometry and connectors | Per vendor | **No (D3)** |
 
 ### 3.2 Pipeline stages
 1. **Fetch and pin.** Download the inputs, record versions and hashes, and fail if any input changes without a version bump.
-2. **License gate.** Read the `!LICENSE` header of every LDraw file. **The build fails if any `OfficialNonCA` part, or a part without a license, enters the bundle.** Write `attribution.json` (part to authors, license, history and a "modified" note) and a generated credits page.
+2. **Attribution.** Read the `!LICENSE` header of every LDraw file and record it; no licence gates the build (owner decision, 2026-11-20). Write `attribution.json` (part to authors, license, history and a "modified" note) and a generated credits page.
 3. **Catalog database.** Load the Rebrickable CSVs into SQLite at build time, then emit static, sharded, compressed outputs:
    - `colors`, `parts`, `part_relationships` and the crosswalks to LDraw and BrickLink;
    - an **element-existence table** of (part, color) pairs, as a compact sorted array or bitset that loads lazily;
@@ -84,7 +84,7 @@ Every part and model comes through a **`PartSource`** plugin. Each source declar
 ### 3.3 Model bake
 The browser import worker and the OMR ingest share the same code.
 1. Unpack and parse the file. For `.io`, read `modelv2.ldr` with Studio's type-11 part lines rewritten as standard type-1 lines, which reproduces Studio's own `model.ldr` exactly, and fall back to `model.ldr`. `model2.ldr` is read only for each part's `BL_Item_No`; its embedded Studio geometry is never used. Encrypted legacy archives are rejected with a "re-save in current Studio" message.
-2. Resolve each part against the pinned LDraw library: the prebuilt bundle first, then official parts compiled from the pinned mirror (license-gated; unofficial parts only through the allowlist). A Studio name that isn't an LDraw part is renamed only when the BrickLink crosswalk names exactly one LDraw part that exists at the pin. Inline definitions are compared with the official part and never drawn in its place. A **custom part** (an inline part the library lacks, an inline copy that differs from its official part, or a Studio CustomParts file) is compiled from the user's own file when, and only when, every file it reaches carries a CA `!LICENSE` header (CCAL 2.0, CC BY 2.0 or CC BY 4.0). For the user's own files that header is enough whatever their `!LDRAW_ORG`, `Unofficial_*` included; a library file the part reaches still needs the unofficial allowlist, which governs shipped and library parts only. Its own embedded sub-files take precedence over library files of the same name, as MPD requires. It gets a content-addressed id `custom:<sha12>/<name>` over every file it reaches, a `custom` badge, connectors inferred at import (flagged unverified, never from published records), and a BOM line that is never buyable. It is drawn on the user's device only, never shipped or bundled. Parts that can't be resolved (not in the library and not a licensed custom part, a missing subfile, refused by a gate, or an ambiguous or missing Studio part) are skipped and reported, never turned into placeholders.
+2. Resolve each part against the pinned LDraw library: the prebuilt bundle first, then official parts compiled from the pinned mirror (unofficial parts only through the allowlist). A Studio name that isn't an LDraw part is renamed only when the BrickLink crosswalk names exactly one LDraw part that exists at the pin. Inline definitions are compared with the official part and never drawn in its place. A **custom part** (an inline part the library lacks, an inline copy that differs from its official part, or a Studio CustomParts file) is compiled from the user's own file whatever `!LICENSE` its files carry, or none, and whatever their `!LDRAW_ORG`, `Unofficial_*` included; a library file the part reaches still needs the unofficial allowlist, which governs shipped and library parts only. Its own embedded sub-files take precedence over library files of the same name, as MPD requires. It gets a content-addressed id `custom:<sha12>/<name>` over every file it reaches, a `custom` badge, connectors inferred at import (flagged unverified, never from published records), and a BOM line that is never buyable. It is drawn on the user's device only, never shipped or bundled. Parts that can't be resolved (not in the library and not a custom part, a missing subfile, an unofficial library part off the allowlist, a custom part whose files refer to each other in a loop, or an ambiguous or missing Studio part) are skipped and reported, never turned into placeholders.
 3. Map colors. Instances in an unknown colour, including Studio-only codes, are skipped and reported, never snapped to a nearby colour.
 4. Build the **instance list**: part id, color id and a 4×3 matrix in LDU. Keep the **submodel tree**, because bogies and vehicles need it.
 5. Build the **BOM**, normalized through aliases and `part_relationships`.
@@ -124,7 +124,7 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 | Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
 | Backend (P1+) | server | Small API plus object storage | Accounts, cloud layouts, share links, model blob storage |
 
-**Single parts from the pinned library.** The standard bundle carries `libraryParts`, an index of every pinned part that LDraw lists in part lists (not moved, alias, `~` or baked-colour files), that is contributor-agreement licensed, sits in an active LDraw category and has at least one produced colour: its title, category, keywords, Rebrickable number and produced colours (`docs/part-bundle.md`). The palette searches it only once a query has two characters, on the All tab, under its own results, and leaves out parts the palette already offers. Search ranks on that metadata alone. Picking a part in a colour writes a one-line LDraw model, `1 <colour> 0 0 0 1 0 0 0 1 0 0 0 1 <part>.dat`, and hands it to the same import as a user's file. So placing and connecting it come only from the part's own geometry, through the import and bake, exactly as the same part inside any imported file. The bytes depend only on the part and colour, so picking it again finds the stored import by its SHA-256 and adds nothing.
+**Single parts from the pinned library.** The standard bundle carries `libraryParts`, an index of every pinned part that LDraw lists in part lists (not moved, alias, `~` or baked-colour files), sits in an active LDraw category and has at least one produced colour: its title, category, keywords, Rebrickable number and produced colours (`docs/part-bundle.md`). The palette searches it only once a query has two characters, on the All tab, under its own results, and leaves out parts the palette already offers. Search ranks on that metadata alone. Picking a part in a colour writes a one-line LDraw model, `1 <colour> 0 0 0 1 0 0 0 1 0 0 0 1 <part>.dat`, and hands it to the same import as a user's file. So placing and connecting it come only from the part's own geometry, through the import and bake, exactly as the same part inside any imported file. The bytes depend only on the part and colour, so picking it again finds the stored import by its SHA-256 and adds nothing.
 
 ## 5. Connector and placement schema
 
@@ -484,13 +484,13 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 ## 10. Licensing and IP posture (non-commercial)
 
 - **We can use:**
-  - LDraw CA parts and OMR models, with attribution and a "modified from LDraw" note.
+  - LDraw parts and OMR models, whatever licence they carry, with attribution and a "modified from LDraw" note. There is no licence gating (owner decision, 2026-11-20).
   - Rebrickable data and set, part and minifig images (hotlinking allowed; MOC images never).
   - The LDCad shadow library, imported directly. Our derived connectivity dataset is published under **CC BY-SA 4.0** as a separate package.
   - BrickLink Wanted List XML export.
   - The BrickLink API price guide, as a **P1 option only after reading its terms** for a free, non-commercial site.
 - **Still prohibited, whatever D1 says:**
-  - redistributing `OfficialNonCA` parts or Studio's part library;
+  - redistributing Studio's part library;
   - shipping the legacy `.io` password;
   - the LEGO logo or stud logo, red-square branding, LEGO fonts or trade dress, the minifigure as a mascot or icon;
   - box art and instruction images;
@@ -503,6 +503,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 **Blocking for M0 and M1.**
 1. **The license of every city-palette part:** track 53400, 53401, 2865 and 2867, the switches and crossings, the road plates (60304 set pieces) and the baseplates must all be CA, not `OfficialNonCA`. If any is NonCA, we can't ship it and need a replacement plan.
    *Status 2026-11-16 (`docs/verified-facts.md`, at the bundle's pin):* the 9V straight, curve, switches (75541/75542) and crossing (32087), the 6-wide plastic straight and curve (53401/53400), the classic road baseplates and the baseplates are all CA and official. **Not cleared:** the 6-wide plastic switches 53404/53407 aren't in the official library. No 6-wide plastic crossing and no 60304-style road plate exists in LDraw under any title we could find, and identifying them needs Rebrickable, which is blocked. These need a replacement plan.
+   *Superseded 2026-11-20 (owner):* there is no licence gating, so a part's licence no longer decides whether it ships; it is recorded for attribution only. The open items above remain open because those parts are missing from the library, not because of their licence.
 2. The current LDraw parts count and the CC BY 2.0 / CC BY 4.0 license split. *Cleared 2026-11-16 (manual read of the pinned tarball):* update 2026-10 has 37,151 files, 35,140 CC BY 4.0 and 2,011 dual-licensed.
 3. **Whether the LDCad shadow library covers** track, road plates, baseplates and Technic bricks, and that it really is CC BY-SA 4.0. *Cleared 2026-11-16:* it is CC BY-SA 4.0. Coverage is partial: track snaps exist only for 53400 and 32087, baseplates have stud primitives only, and Technic bricks are covered.
 4. The exact connector poses for both switches (the diverging end), the 90° crossing and the R40 curve, extracted from data and run through the field test. *Cleared 2026-11-16 for 9V track:* the R40 curve exit is 40ζ³ − 40ζ⁴ and the switch diverging end is 48 − 40ζ³ + 24ζ⁴ studs (mirrored for the left switch), both in ℤ[ζ₁₆]. A switch plus a reversed R40 gives a parallel track 16 studs over (48 − 16ζ⁴, derived exactly from the two certified parts). The 3-decimal plastic 53400's printed ends agree with 74747's to 7.4e-4 LDU per coordinate, but its exit is 1.456e-3 LDU per coordinate from the R40 candidate and has no unique candidate at its precision, so it can't be certified (`docs/verified-facts.md`). The plastic switches aren't in the official library. **Project decision (delegated by the owner, 2026-11-16; see §5.3):** an imported pose is certified iff its residual to the unique ℤ[ζ₁₆] candidate is ≤ 0.0005 LDU per coordinate, half the last decimal of 3-decimal LDraw data.
@@ -554,12 +555,13 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 
 ## 12. Owner decisions still open (recommended default first)
 
-1. **Definition of "real."** Default: official LDraw CA parts, in colors produced in at least one real element. Imports that fail get badges, not blocks; "Real set" and "Verified" need badges to pass.
+1. **Definition of "real."** Default: official LDraw parts, in colors produced in at least one real element. Imports that fail get badges, not blocks; "Real set" and "Verified" need badges to pass.
 2. **Layout validity.** Default: exact, zero-tolerance rules decide "Valid". Draft layouts can always be saved. A "real-world play" tolerance mode is off and never counts as Valid.
 3. **Scale target.** Default: 250k parts loaded near the camera at 60 fps on an integrated GPU (MVP), 1M as a stretch. Total sandbox world size is unlimited, handled by streaming. Phones and tablets are view-only after the MVP.
 4. **Renderer path.** Default: three.js `WebGPURenderer` with WebGL2 fallback, behind `SceneBackend`. A custom WebGPU backend only if the M0 or M6 gates fail.
 5. **Unofficial and custom parts in imports.** Default: allowed and rendered from inline geometry, with a badge. They exclude a model from "Real set" and "Verified".
    *Decided 2026-11-18 (owner):* custom parts in an import are compiled and drawn locally when every file they reach carries a CA `!LICENSE` header, with a `custom` badge, connectors inferred at import and flagged unverified, and a not-buyable BOM line (§3.3 step 2). Parts without that header stay reported and undrawn. A CA-licensed `Unofficial_*` part from the user's own file counts as custom and is drawn; the unofficial allowlist governs only parts from the library, the pipeline and the bundle. Import-time inference runs the library precompute's extractor over the part's closure: the pinned LDCad shadow files and verified project patches (tier 1), then LDraw primitives (tier 2), then geometry (tier 4). Each face keeps its source tier, and every face of a custom part is flagged unverified.
+   *Updated 2026-11-20 (owner):* no licence gating. Every custom part is drawn whatever `!LICENSE` its files carry, or none; only one that can't compile, such as files that refer to each other in a loop, is refused and reported.
 6. **MILS variant.** Default: adopt MILS core as published in HispaBrick Magazine I–IX as the `mils` profile. Ship club road systems (MultiRoad first) as a separate `club-road` profile, and also ship `lego-modular` and `free`.
 7. **Simulation ambition.** Default: a cozy toy for the MVP (throttle, A* routing, occupancy stop). Block signals and stations come in P1, timetables after that.
 8. **Audience and accounts.** Default: adult fans and LUG planners on desktop. No accounts in the MVP, which avoids COPPA and moderation; P1 accounts are 13+ with a DMCA process.
@@ -609,12 +611,11 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 - Powered Up digital twin (if chosen).
 
 ### Later, unscheduled (D3)
-**Third-party track packs.** Each needs a `thirdparty-<vendor>` source, vendor connectors, a `TrackProfile` with N = 32 if any piece needs it, a UI toggle for `allowThirdParty`, BOM flags and vendor license clearance. No core changes are expected thanks to §3.5 and §5.3.
+**Third-party track packs.** Each needs a `thirdparty-<vendor>` source, vendor connectors, a `TrackProfile` with N = 32 if any piece needs it, a UI toggle for `allowThirdParty`, and BOM flags. No core changes are expected thanks to §3.5 and §5.3.
 
 ### Cross-cutting rules
 - Every rule and simulation module stays headless-testable.
 - Asset builds are reproducible from pinned inputs.
-- The license gate fails the build.
 - Benchmarks run on real Tier A hardware before each phase gate.
 
 ## 14. Code architecture
@@ -650,7 +651,7 @@ crates/
   brick-compile-cli/      offline pipeline entry
   brick-compile-wasm/     wasm-bindgen wrapper → packages/compile-wasm
 tools/
-  asset-pipeline/         Node CLI: fetch/pin inputs, license gate, Rebrickable → SQLite → shards, connector merge, OMR ingest, publish
+  asset-pipeline/         Node CLI: fetch/pin inputs, attribution, Rebrickable → SQLite → shards, connector merge, OMR ingest, publish
 infra/
   cloudflare/             Terraform for the catalog Worker, its D1 database and its R2 release bucket (D5)
 ```
