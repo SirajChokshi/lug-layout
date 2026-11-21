@@ -73,17 +73,32 @@ export function rotateOutline(
   offsetX: number,
   offsetZ: number,
 ): Float64Array {
+  return rotateOutlineInto(
+    outline,
+    headingSteps,
+    offsetX,
+    offsetZ,
+    new Float64Array(outline.length),
+  );
+}
+
+export function rotateOutlineInto(
+  outline: Float64Array,
+  headingSteps: number,
+  offsetX: number,
+  offsetZ: number,
+  out: Float64Array,
+): Float64Array {
   const theta = headingSteps * HEADING_RADIANS;
   const c = Math.cos(theta);
   const s = Math.sin(theta);
-  const rotated = new Float64Array(outline.length);
   for (let p = 0; p < outline.length; p += 2) {
     const x = outline[p] ?? 0;
     const z = outline[p + 1] ?? 0;
-    rotated[p] = offsetX + c * x - s * z;
-    rotated[p + 1] = offsetZ + s * x + c * z;
+    out[p] = offsetX + c * x - s * z;
+    out[p + 1] = offsetZ + s * x + c * z;
   }
-  return rotated;
+  return out;
 }
 
 export function outlineBox(outline: Float64Array, out: Float64Array, at: number): void {
@@ -111,8 +126,16 @@ export function poseLdu(pose: Pose16): { readonly x: number; readonly z: number 
 }
 
 export function placedOutline(outline: Float64Array, placement: Pose16): Float64Array {
+  return placedOutlineInto(outline, placement, new Float64Array(outline.length));
+}
+
+export function placedOutlineInto(
+  outline: Float64Array,
+  placement: Pose16,
+  out: Float64Array,
+): Float64Array {
   const at = poseLdu(placement);
-  return rotateOutline(outline, placement.heading, at.x, at.z);
+  return rotateOutlineInto(outline, placement.heading, at.x, at.z, out);
 }
 
 export function outlineContains(outline: Float64Array, x: number, z: number): boolean {

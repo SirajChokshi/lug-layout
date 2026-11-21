@@ -47,6 +47,7 @@ export class InThreadModelImporter implements IModelImporter {
       null,
       () => 0,
       [],
+      null,
     );
     return engine.importText({
       fileName,

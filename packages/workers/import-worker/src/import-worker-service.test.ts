@@ -53,6 +53,8 @@ const vocabularyFile = new URL(
 );
 const MIRROR_PREFIX = "/mirror/";
 const LIBRARY_PREFIX = "/library/";
+const SHADOW_LIBRARY_PREFIX = "/shadow-library/";
+const shadowLibraryDist = new URL("dist/shadow-library/", pipelineRoot);
 const HTTP_OK = 200;
 const HTTP_NOT_FOUND = 404;
 const LOD = "standard";
@@ -159,6 +161,9 @@ function expectTableOf(table: PartConnectors, records: ReadonlyArray<ConnectorRe
 }
 
 function served(path: string): URL {
+  if (path.startsWith(SHADOW_LIBRARY_PREFIX)) {
+    return new URL(path.slice(SHADOW_LIBRARY_PREFIX.length), shadowLibraryDist);
+  }
   if (path.startsWith(LIBRARY_PREFIX)) {
     return new URL(path.slice(LIBRARY_PREFIX.length), new URL(`${LOD}/`, bundleRoot));
   }
@@ -608,6 +613,65 @@ it("infers at import, for a custom brick with 3001's geometry, official 3001's p
     connectivity: connectivity && { ...connectivity, part: CUSTOM_BRICK },
     connectors: connectors && { ...connectors, part: CUSTOM_BRICK, sectionVocabulary: undefined },
   });
+});
+
+it("reads a custom part's shadow files through the shadow library the request names, and keeps them in the asset cache for a later worker that can't reach it", async () => {
+  const context = await (await bundleLoader()).importContext(LOD);
+  const { repo, commit, root } = context.source;
+  mirrorRoot = `${MIRROR_PREFIX}${[repo, commit, root].filter((segment) => segment !== "").join("/")}/`;
+  if (context.shadowLibrary === null) throw new Error("the bundle manifest pins no shadow library");
+  const request: ImportWorkerRequest = {
+    kind: "import",
+    ticket: 1,
+    compilerUrl: new URL(context.compilerPath, base).href,
+    bundleBaseUrl: base,
+    connectorIndexes: context.connectorIndexes,
+    connectorVocabulary: context.sectionVocabulary.sha256,
+    ldrawLibraryUrl: new URL(MIRROR_PREFIX, base).href,
+    shadowLibrary: { url: new URL(SHADOW_LIBRARY_PREFIX, base).href, pin: context.shadowLibrary },
+    input: {
+      kind: "ldraw",
+      job: {
+        fileName: "custom.mpd",
+        text: [
+          "0 FILE custom.ldr",
+          "0 !LDRAW_ORG Model",
+          `1 4 0 0 0 1 0 0 0 1 0 0 0 1 ${CUSTOM_BRICK}`,
+          "0 NOFILE",
+          `0 FILE ${CUSTOM_BRICK}`,
+          await customBrick(),
+          "0 NOFILE",
+        ].join("\n"),
+        lod: LOD,
+        source: context.source,
+        studPrimitives: context.studPrimitiveNames,
+        unofficialAllowlist: context.unofficialAllowlist,
+        primitives: context.primitives,
+        sectionVocabulary: context.sectionVocabulary.vocabulary,
+        cavityProbe: context.cavityProbe,
+        bundlePartIds: context.partIds,
+        ldconfigCodes: context.ldconfigCodes,
+        translucentColors: context.translucentCodes,
+        tableDepthLdu: context.tableDepthLdu,
+        vehicles: context.vehicles,
+      },
+    },
+  };
+  const shadowLibraryUnreachable: FetchFunction = async (url) => {
+    if (new URL(url).pathname.startsWith(SHADOW_LIBRARY_PREFIX)) {
+      throw new TypeError("Failed to fetch");
+    }
+    return fetch(url);
+  };
+
+  const indexedDb = new IDBFactory();
+  const first = await importWorker(indexedDb).run(request);
+  const later = await importWorker(indexedDb, shadowLibraryUnreachable).run(request);
+
+  const [table] = first.connectors;
+  expect(first.report.parts.map((part) => part.kind)).toEqual(["custom"]);
+  expect(table?.source).toContain(CONNECTOR_SOURCE.shadow);
+  expect(later.connectors).toEqual(first.connectors);
 });
 
 const standardBundleRoot = new URL(

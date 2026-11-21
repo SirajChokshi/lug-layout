@@ -86,6 +86,9 @@ export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.fo
 export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LibraryConnectorsBaseUrl",
 );
+export const SHADOW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.ShadowLibraryBaseUrl",
+);
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
 );
