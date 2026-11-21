@@ -2,9 +2,11 @@ import {
   BOX_STRIDE,
   checkPlan,
   LABEL_NUMBERED,
+  mmRectFromWorld,
   mmRectInWorld,
   NO_ROW,
   PlanDelta,
+  regionAround,
   regionOf,
   roomRect,
   TRACK_SEGMENT,
@@ -14,11 +16,13 @@ import {
   type PlanCheck,
   type PlanPlacement,
   type PlanRegion,
+  type PlanState,
 } from "@brr/domain";
-import { chunkKey, lduFromMm } from "@brr/math";
+import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
 import { fitAllBox } from "../camera/editor-camera.ts";
 import { overviewOf } from "../camera/overview.ts";
+import { GUIDE_GRID_LDU } from "../edit/table-tool.ts";
 import {
   writeFullRebuild,
   writeTrackLay,
@@ -29,7 +33,7 @@ import {
 } from "./plan-producer.ts";
 import {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   PlanService,
   type NewPlan,
   type ObstacleInput,
@@ -363,6 +367,55 @@ class TodaysPlanService {
     }));
   }
 
+  drawTable(rect: LduRect): { planId: string; tableId: string } {
+    const planId = this.state.activePlanId ?? this.createPlanAround(rect);
+    const tableId = this.newId("table");
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const { tables } = grown.footprint;
+      const table = {
+        id: tableId,
+        name: `Table ${tables.length + 1}`,
+        rect: mmRectFromWorld(grown, rect),
+        heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+      };
+      return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+    });
+    return { planId, tableId };
+  }
+
+  placeTable(planId: string, tableId: string, rect: LduRect): void {
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const placed = mmRectFromWorld(grown, rect);
+      return {
+        ...grown,
+        footprint: {
+          ...grown.footprint,
+          tables: grown.footprint.tables.map((t) =>
+            t.id === tableId ? { ...t, rect: placed } : t,
+          ),
+        },
+      };
+    });
+  }
+
+  private createPlanAround(rect: LduRect): string {
+    const originChunkX = chunkOf(rect.minX);
+    const originChunkZ = chunkOf(rect.minZ);
+    return this.createPlan({
+      name: `Plan ${this.state.plans.length + 1}`,
+      roomWidthMm: mmFromLdu(rect.maxX - originChunkX * CHUNK_LDU),
+      roomDepthMm: mmFromLdu(rect.maxZ - originChunkZ * CHUNK_LDU),
+      originChunkX,
+      originChunkZ,
+    });
+  }
+
+  restore(state: PlanState): void {
+    this.commit({ plans: state.regions, activePlanId: state.activePlanId });
+  }
+
   addObstacle(planId: string, obstacle: ObstacleInput): string {
     const id = this.newId("obstacle");
     this.replacePlan(planId, (plan) => ({
@@ -443,7 +496,6 @@ class TodaysPlanService {
         },
         tables,
         obstacles,
-        gridStepLdu: lduFromMm(PLAN_GRID_MM),
         active: plan.id === activePlanId,
       };
     });
@@ -463,6 +515,7 @@ const EDITS = 1_000;
 const MAX_MODELS = 24;
 const MAX_PIECES = 10;
 const MAX_REGIONS = 3;
+const SAVED_PLAN_STATES = 4;
 const CHUNK = 640;
 const MANDATORY_EVERY = 12;
 
@@ -577,6 +630,7 @@ export class Pair {
   removedLast: TestModel | null = null;
   private nextModel = 1;
   private nextSlot = 1;
+  private readonly saved: PlanState[] = [];
   readonly hit = new Set<string>();
 
   constructor(
@@ -797,7 +851,24 @@ export class Pair {
     );
   }
 
+  latticeRect(): LduRect {
+    const minX = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    const minZ = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    return {
+      minX,
+      minZ,
+      maxX: minX + (1 + this.int(16)) * GUIDE_GRID_LDU,
+      maxZ: minZ + (1 + this.int(10)) * GUIDE_GRID_LDU,
+    };
+  }
+
+  sutState(): PlanState {
+    return { regions: this.sut.plans(), activePlanId: this.sut.activePlanId() };
+  }
+
   regionEdit(): void {
+    this.saved.push(this.sutState());
+    if (this.saved.length > SAVED_PLAN_STATES) this.saved.shift();
     const ids = this.planIds();
     const planId = ids.length > 0 ? this.pick(ids) : null;
     const roll = this.int(12);
@@ -812,6 +883,8 @@ export class Pair {
     const table = this.table();
     const obstacle = this.obstacle();
     const name = `Renamed ${this.int(9)}`;
+    const drawn = this.latticeRect();
+    const saved = this.pick(this.saved);
     const edits: Array<(s: TodaysPlanService | PlanService) => unknown> = [
       (s) => s.updatePlan(planId, patch),
       (s) => s.updatePlan(planId, { name }),
@@ -819,11 +892,14 @@ export class Pair {
       (s) => s.addObstacle(planId, obstacle),
       (s) => s.activatePlan(planId),
       (s) => s.activatePlan(null),
+      (s) => s.drawTable(drawn),
+      (s) => s.restore(saved),
     ];
     if (tableId) {
       edits.push((s) => s.updateTable(planId, tableId, { rect: table.rect }));
       edits.push((s) => s.updateTable(planId, tableId, { name }));
       edits.push((s) => s.removeTable(planId, tableId));
+      edits.push((s) => s.placeTable(planId, tableId, drawn));
     }
     if (obstacleId) {
       edits.push((s) => s.updateObstacle(planId, obstacleId, { rect: obstacle.rect }));
@@ -1049,6 +1125,43 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
       const rect = p.table().rect;
       p.both((s) => s.updateTable(id, tableId, { rect }));
       p.both((s) => s.removeTable(id, tableId));
+    },
+  },
+  {
+    name: "draw a table that starts a plan, then move it and draw another past the room",
+    run: (p) => {
+      p.both((s) => s.activatePlan(null));
+      const rect = p.latticeRect();
+      p.both((s) => s.drawTable(rect));
+      const planId = p.today.snapshot().activePlanId;
+      const tableId = planId === null ? null : p.firstTable(planId);
+      if (planId === null || tableId === null) return;
+      const moved = {
+        minX: rect.minX - 3 * CHUNK_LDU,
+        minZ: rect.minZ - 2 * CHUNK_LDU,
+        maxX: rect.maxX + CHUNK_LDU,
+        maxZ: rect.maxZ,
+      };
+      p.both((s) => s.placeTable(planId, tableId, moved));
+      const far = p.latticeRect();
+      p.both((s) => s.drawTable(far));
+      p.place();
+    },
+  },
+  {
+    name: "restore earlier plan states across a created and a removed plan",
+    run: (p) => {
+      const before = p.sutState();
+      const plan = p.newPlan();
+      p.both((s) => s.createPlan(plan));
+      const created = p.sutState();
+      const id = withPlan(p);
+      const table = p.table();
+      p.both((s) => s.addTable(id, table));
+      p.both((s) => s.restore(created));
+      p.both((s) => s.restore(before));
+      p.both((s) => s.restore(created));
+      p.place();
     },
   },
   {

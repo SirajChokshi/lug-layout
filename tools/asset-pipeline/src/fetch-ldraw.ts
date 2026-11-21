@@ -127,6 +127,7 @@ export async function fetchClosure(
   outDirectory: string,
   connectivityDirectory: string,
   modelSources: ReadonlyArray<string>,
+  studPrimitives: ReadonlyArray<string>,
   probeParts: ReadonlyArray<string>,
 ): Promise<PinnedClosure> {
   const files: Record<string, string> = {};
@@ -135,7 +136,7 @@ export async function fetchClosure(
   const queue: string[] = [
     ...new Set([
       ...palette.parts.map((part) => `${part.id}.dat`),
-      ...palette.studPrimitives,
+      ...studPrimitives,
       ...probeParts.map(libraryReference),
       ...modelSources.flatMap((source) => {
         const structure = modelStructure(source);
