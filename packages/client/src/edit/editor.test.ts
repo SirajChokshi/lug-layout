@@ -1716,8 +1716,9 @@ it("keeps the end pointed at while a choice is picked off the canvas, and lays t
   expect(editor.snapshot().track?.extend?.continuing).toBe(true);
 }, 120_000);
 
-it("selects a laid piece clicked in the track tool, and extends an open end clicked there", async () => {
-  const { editor, backend } = await startEditor([]);
+it("selects nothing on a laid piece clicked in the track tool, leaves the tool on one Esc with nothing to let go of, and extends an open end clicked there", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
   editor.dropTrackEnd();
@@ -1728,13 +1729,15 @@ it("selects a laid piece clicked in the track tool, and extends an open end clic
     editor.dragEnd(0, 0, 0);
   };
   clickAt(-8 * STUD, 0);
-  const selected = editor.snapshot().selection;
+  const clickedLaid = { mode: editor.snapshot().mode, selection: editor.snapshot().selection };
+  runEditorAction(editor, camera, "select-tool", 0);
+  const escaped = { mode: editor.snapshot().mode, selection: editor.snapshot().selection };
+  editor.chooseItem(TRACK_ITEM_ID);
   const laidBefore = editor.dump().laidTrack.length;
   clickAt(16 * STUD, 0);
 
-  expect(selected?.members).toEqual([
-    expect.objectContaining({ kind: "track", centreX: -8 * STUD, centreZ: 0 }),
-  ]);
+  expect(clickedLaid).toEqual({ mode: "track", selection: null });
+  expect(escaped).toEqual({ mode: "select", selection: null });
   expect(editor.dump().laidTrack).toHaveLength(laidBefore + 1);
   expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
 }, 120_000);
