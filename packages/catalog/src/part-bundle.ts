@@ -21,6 +21,7 @@ import {
   type PartRole,
   type PartRolling,
   type PartTechnic,
+  type PartTopSurface,
   type PlanOutline,
   type ProducedColors,
   type PrimitiveConnectorTable,
@@ -66,6 +67,7 @@ export interface PartShapeAsset {
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
   readonly rolling: PartRolling | null;
+  readonly topSurface: PartTopSurface | null;
   readonly outline: PlanOutline | null;
 }
 
