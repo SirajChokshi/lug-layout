@@ -14,6 +14,9 @@ const TRACK_PLATES = 4;
 const RAIL_TOP_LDU = 24;
 const WARMUP = 3;
 const RUNS = 15;
+const DENSE_WARMUP = 1;
+const DENSE_RUNS = 3;
+const DENSE_FIELD = 16;
 const FIELDS: ReadonlyArray<number> = [16, 32];
 
 function straightSurface(): RoadSurface {
@@ -79,35 +82,76 @@ function crossingTracks(side: number): ReadonlyArray<CrossingTrack> {
   return tracks;
 }
 
-function medianMs(call: () => number): { readonly ms: number; readonly result: number } {
+function trackDownEveryRow(side: number): ReadonlyArray<CrossingTrack> {
+  const tracks: CrossingTrack[] = [];
+  for (let row = 0; row < side; row++) {
+    const z = row * BASEPLATE_SPAN;
+    tracks.push({
+      outline: PlacedOutline.ofRect({
+        minX: -BASEPLATE_SPAN / 2,
+        minZ: z - TRACK_WIDTH_LDU / 2,
+        maxX: side * BASEPLATE_SPAN - BASEPLATE_SPAN / 2,
+        maxZ: z + TRACK_WIDTH_LDU / 2,
+      }),
+      bedLdu: 0,
+      railTopLdu: RAIL_TOP_LDU,
+    });
+  }
+  return tracks;
+}
+
+function medianMs(
+  call: () => number,
+  warmup = WARMUP,
+  runs = RUNS,
+): { readonly ms: number; readonly result: number } {
   let result = 0;
-  for (let i = 0; i < WARMUP; i++) result = call();
+  for (let i = 0; i < warmup; i++) result = call();
   const samples: number[] = [];
-  for (let i = 0; i < RUNS; i++) {
+  for (let i = 0; i < runs; i++) {
     const start = performance.now();
     result = call();
     samples.push(performance.now() - start);
   }
-  return { ms: samples.toSorted((a, b) => a - b)[Math.floor(RUNS / 2)] ?? 0, result };
+  return { ms: samples.toSorted((a, b) => a - b)[Math.floor(runs / 2)] ?? 0, result };
 }
 
 const lines = [
-  `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}; ${TRACKS} straight track strips ${TRACK_PLATES} plates long across a field of 44336 road surfaces, ${SIXTEENTHS_PER_LDU} sixteenths per LDU`,
+  `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}; straight track strips across a field of 44336 road surfaces, ${SIXTEENTHS_PER_LDU} sixteenths per LDU; median of ${RUNS} calls (${DENSE_RUNS} for the dense row)`,
   "",
-  "| Field | Road placements | Road cells | levelCrossings median ms | Crossings | Roadway cells |",
-  "|---|---:|---:|---:|---:|---:|",
+  "| Field | Tracks | Road placements | Road cells | levelCrossings median ms | Crossings | Roadway cells |",
+  "|---|---|---:|---:|---:|---:|---:|",
 ];
-for (const side of FIELDS) {
+const scenes = [
+  ...FIELDS.map((side) => ({
+    side,
+    tracks: crossingTracks(side),
+    label: `${TRACKS} strips, ${TRACK_PLATES} plates long`,
+    warmup: WARMUP,
+    runs: RUNS,
+  })),
+  {
+    side: DENSE_FIELD,
+    tracks: trackDownEveryRow(DENSE_FIELD),
+    label: "one strip down every row, full width",
+    warmup: DENSE_WARMUP,
+    runs: DENSE_RUNS,
+  },
+];
+for (const { side, tracks, label, warmup, runs } of scenes) {
   const roads = field(side);
-  const tracks = crossingTracks(side);
   let roadway = 0;
-  const { ms, result } = medianMs(() => {
-    const crossings = levelCrossings(roads, tracks, []);
-    roadway = crossings.reduce((sum, crossing) => sum + crossing.roadwayCells, 0);
-    return crossings.length;
-  });
+  const { ms, result } = medianMs(
+    () => {
+      const crossings = levelCrossings(roads, tracks, []);
+      roadway = crossings.reduce((sum, crossing) => sum + crossing.roadwayCells, 0);
+      return crossings.length;
+    },
+    warmup,
+    runs,
+  );
   lines.push(
-    `| ${side} x ${side} | ${roads.length} | ${roads.length * straight.columns * straight.rows} | ${ms.toFixed(1)} | ${result} | ${roadway} |`,
+    `| ${side} x ${side} | ${label} | ${roads.length} | ${roads.length * straight.columns * straight.rows} | ${ms.toFixed(1)} | ${result} | ${roadway} |`,
   );
 }
 process.stdout.write(`${lines.join("\n")}\n`);
