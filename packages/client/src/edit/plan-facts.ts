@@ -50,6 +50,9 @@ function unmappedIn(
 
 export class PlanFacts {
   private readonly dirty = new Set<PlacedModel>();
+  private readonly nearby = new Set<PlacedModel>();
+  private readonly removedIds = new Set<number>();
+  private readonly walked = new Set<PlacedModel>();
   private readonly fresh = new Set<PlacedModel>();
   private readonly rewritten = new Set<PlacedModel>();
   private readonly unsupportedIds = new Set<number>();
@@ -80,12 +83,16 @@ export class PlanFacts {
   noteAdded(models: ReadonlyArray<PlacedModel>): void {
     for (const model of models) {
       this.fresh.add(model);
-      this.dirtyAround(model);
+      this.dirty.add(model);
+      this.nearbyOf(model);
     }
   }
 
   noteWorld(models: ReadonlyArray<PlacedModel>): void {
     this.dirty.clear();
+    this.nearby.clear();
+    this.removedIds.clear();
+    this.walked.clear();
     this.fresh.clear();
     this.rewritten.clear();
     this.unsupportedIds.clear();
@@ -98,7 +105,9 @@ export class PlanFacts {
   noteRemoved(models: ReadonlyArray<PlacedModel>): void {
     for (const model of models) {
       this.unsupportedIds.delete(model.id);
-      this.dirtyAround(model);
+      this.walked.delete(model);
+      this.removedIds.add(model.id);
+      this.nearbyOf(model);
     }
   }
 
@@ -128,10 +137,17 @@ export class PlanFacts {
     for (const model of this.dirty) {
       if (this.placed.contains(model) && this.measure(model)) this.rewritten.add(model);
     }
+    const rewalk = this.addedMayOverlap();
+    for (const model of this.nearby) {
+      if (this.dirty.has(model) || !this.placed.contains(model)) continue;
+      if (this.remeasureBeside(model, rewalk)) this.rewritten.add(model);
+    }
     for (const model of this.rewritten) {
       if (!this.fresh.has(model) && this.placed.contains(model)) out.push(model);
     }
     this.dirty.clear();
+    this.nearby.clear();
+    this.removedIds.clear();
     this.fresh.clear();
     this.rewritten.clear();
     return out.length;
@@ -143,6 +159,54 @@ export class PlanFacts {
     for (const other of this.near) this.dirty.add(other);
   }
 
+  private nearbyOf(model: PlacedModel): void {
+    this.placed.touching(model.box, this.near);
+    for (const other of this.near) this.nearby.add(other);
+  }
+
+  private addedMayOverlap(): boolean {
+    for (const model of this.fresh) {
+      if (!this.walked.has(model)) return true;
+      if (model.facts[FACT_OVERLAP_SEGMENT] !== NO_OVERLAP_PARTNER) return true;
+    }
+    return false;
+  }
+
+  private remeasureBeside(model: PlacedModel, rewalk: boolean): boolean {
+    if (!this.walked.has(model)) return this.measure(model);
+    const id = this.measurableIdOf(model);
+    if (id === NOT_PLACED) return this.measure(model);
+    const changed =
+      rewalk || this.partnerRemoved(model.facts) ? this.writePartner(model, id) : false;
+    this.writeHeld(model, id);
+    return changed;
+  }
+
+  private partnerRemoved(facts: Int32Array): boolean {
+    return (
+      facts[FACT_OVERLAP_SEGMENT] === MODEL_SEGMENT &&
+      this.removedIds.has(facts[FACT_OVERLAP_SOURCE] ?? NO_OVERLAP_PARTNER)
+    );
+  }
+
+  private writePartner(model: PlacedModel, id: number): boolean {
+    const facts = model.facts;
+    const partner = this.partnerOf(id);
+    const segment = partner === NOT_PLACED ? NO_OVERLAP_PARTNER : MODEL_SEGMENT;
+    const source = partner === NOT_PLACED ? NO_OVERLAP_PARTNER : partner;
+    if (facts[FACT_OVERLAP_SEGMENT] === segment && facts[FACT_OVERLAP_SOURCE] === source) {
+      return false;
+    }
+    facts[FACT_OVERLAP_SEGMENT] = segment;
+    facts[FACT_OVERLAP_SOURCE] = source;
+    return true;
+  }
+
+  private writeHeld(model: PlacedModel, id: number): void {
+    if (this.held(id)) this.unsupportedIds.delete(model.id);
+    else this.unsupportedIds.add(model.id);
+  }
+
   private measure(model: PlacedModel): boolean {
     const facts = model.facts;
     const before = this.before;
@@ -151,14 +215,19 @@ export class PlanFacts {
     const searchable = id !== NOT_PLACED;
     const unmapped = this.unmappedOf(model.placeable);
     facts[FACT_FLAGS] = searchable && unmapped !== null ? 0 : FLAG_UNMEASURED;
-    const partner = searchable ? this.partnerOf(id) : NOT_PLACED;
-    facts[FACT_OVERLAP_SEGMENT] = partner === NOT_PLACED ? NO_OVERLAP_PARTNER : MODEL_SEGMENT;
-    facts[FACT_OVERLAP_SOURCE] = partner === NOT_PLACED ? NO_OVERLAP_PARTNER : partner;
+    if (searchable) {
+      this.walked.add(model);
+      this.writePartner(model, id);
+      this.writeHeld(model, id);
+    } else {
+      this.walked.delete(model);
+      facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+      this.unsupportedIds.delete(model.id);
+    }
     facts[FACT_UNMAPPED_REBRICKABLE] = unmapped?.rebrickable ?? 0;
     facts[FACT_UNMAPPED_BRICKLINK] = unmapped?.bricklink ?? 0;
     facts[FACT_CUSTOM_PARTS] = this.customPartsOf(model.placeable);
-    if (searchable && !this.held(id)) this.unsupportedIds.add(model.id);
-    else this.unsupportedIds.delete(model.id);
     for (let k = 0; k < FACT_STRIDE; k++) {
       if (facts[k] !== before[k]) return true;
     }
@@ -174,7 +243,7 @@ export class PlanFacts {
   }
 
   private held(id: number): boolean {
-    return this.search.holdingMates(id) > 0 || this.search.standsOnTable(id, this.tableYPlates);
+    return this.search.standsOnTable(id, this.tableYPlates) || this.search.holdingMates(id) > 0;
   }
 
   private measurableIdOf(model: PlacedModel): number {
