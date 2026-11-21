@@ -13,6 +13,7 @@ import {
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
   LIBRARY_CONNECTORS_BASE_URL,
+  SHADOW_LIBRARY_BASE_URL,
 } from "../tokens.ts";
 import type { IImportWorkerPool } from "./import-worker-pool.ts";
 
@@ -44,6 +45,7 @@ export class WorkerModelImporter implements IModelImporter {
     @inject(LDRAW_LIBRARY_BASE_URL) private readonly ldrawLibraryBaseUrl: string | null,
     @inject(LIBRARY_BAKE_BASE_URL) private readonly libraryBakeBaseUrl: string | null,
     @inject(LIBRARY_CONNECTORS_BASE_URL) private readonly libraryConnectorsBaseUrl: string | null,
+    @inject(SHADOW_LIBRARY_BASE_URL) private readonly shadowLibraryBaseUrl: string | null,
   ) {}
 
   async importText(
@@ -127,6 +129,9 @@ export class WorkerModelImporter implements IModelImporter {
                 pin: context.libraryConnectors,
               },
             }),
+        ...(this.shadowLibraryBaseUrl === null || context.shadowLibrary === null
+          ? {}
+          : { shadowLibrary: { url: this.shadowLibraryBaseUrl, pin: context.shadowLibrary } }),
         input,
       },
       transfer,
