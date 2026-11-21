@@ -320,6 +320,7 @@ class HeadlessBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
@@ -2005,6 +2006,9 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setTrackEnds(...args: Parameters<ISceneBackend["setTrackEnds"]>): void {
     this.three.setTrackEnds(...args);
+  }
+  setGround(...args: Parameters<ISceneBackend["setGround"]>): void {
+    this.three.setGround(...args);
   }
   setPlanOverlays(...args: Parameters<ISceneBackend["setPlanOverlays"]>): void {
     this.three.setPlanOverlays(...args);

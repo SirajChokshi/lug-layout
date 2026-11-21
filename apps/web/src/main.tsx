@@ -10,6 +10,7 @@ import {
   PALETTE,
   PANEL_LAYOUT,
   RUNNING_GEAR,
+  SCALE_BAR,
   TRACK_SCENE,
   TRAIN_PLAY,
   type IBomSource,
@@ -134,6 +135,7 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         camera={container.get(EDITOR_CAMERA)}
+        scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         play={container.get(TRAIN_PLAY)}

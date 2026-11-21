@@ -451,7 +451,8 @@ function containerContents(backend: ThreeSceneBackend): Array<Array<number | str
   const farModels: Map<number, { readonly group: Object3D }> = backend["farModelNodes"];
   const vehicles: Map<number, { readonly group: Object3D }> = backend["vehicles"];
   const ghost: Object3D | undefined = backend["ghost"];
-  const labels = new Map<Object3D, number | string>();
+  const ground: Object3D = backend["ground"]["mesh"];
+  const labels = new Map<Object3D, number | string>([[ground, "ground"]]);
   for (const [key, record] of chunks) labels.set(record.group, key);
   for (const [id, node] of farModels) labels.set(node.group, `far model ${id}`);
   for (const [id, record] of vehicles) labels.set(record.group, `vehicle ${id}`);
@@ -488,8 +489,9 @@ it("keeps every holder under its own container, and the scene's direct children 
       ["ghost"],
       ["at x 1280", "at x 0"],
       ["at x 210", "at x 10"],
+      ["ground"],
     ],
-    [[], [], [], [], ["at x 1280", "at x 0"], ["at x 210", "at x 10"]],
+    [[], [], [], [], ["at x 1280", "at x 0"], ["at x 210", "at x 10"], ["ground"]],
   ]);
 });
 
