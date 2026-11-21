@@ -1,5 +1,5 @@
-import type { BomLine } from "./bom-counter.ts";
-import { resolveLines, type CatalogLine, type Crosswalk } from "./catalog-ids.ts";
+import { isCustomPartId } from "@brr/schema/bundle";
+import type { CatalogLine, Crosswalk, PartCrosswalkEntry, ResolvedLine } from "./catalog-ids.ts";
 
 const CSV_SPECIAL = /[",\r\n]/u;
 const BRICKLINK_PART_ITEM_TYPE = "P";
@@ -69,9 +69,15 @@ export interface UncountedItem {
 }
 
 const KEYWORD_ONLY_NOTE = "BrickLink id from an LDraw keyword only";
+const CUSTOM_PART_NOTE = "custom part from an imported file, not buyable";
+
+function lineNote(partId: string, part: PartCrosswalkEntry | undefined): string | null {
+  if (isCustomPartId(partId)) return CUSTOM_PART_NOTE;
+  return part?.bricklink && part.bricklinkFromKeywordOnly ? KEYWORD_ONLY_NOTE : null;
+}
 
 export function plainBomCsv(
-  lines: ReadonlyArray<BomLine>,
+  resolved: ReadonlyArray<ResolvedLine>,
   crosswalk: Crosswalk,
   uncounted: ReadonlyArray<UncountedItem>,
   disclaimer: string,
@@ -88,7 +94,7 @@ export function plainBomCsv(
       "Expanded from",
       "Note",
     ],
-    ...resolveLines(lines, crosswalk).map((line) => {
+    ...resolved.map((line) => {
       const part = crosswalk.parts.get(line.part);
       const color = crosswalk.colors.get(line.ldrawColor);
       return [
@@ -100,7 +106,7 @@ export function plainBomCsv(
         part?.bricklink ?? null,
         color?.bricklink ?? null,
         line.expandedFrom,
-        part?.bricklink && part.bricklinkFromKeywordOnly ? KEYWORD_ONLY_NOTE : null,
+        lineNote(line.part, part),
       ];
     }),
     ...uncounted.map((item) => [
