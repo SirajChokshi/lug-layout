@@ -115,6 +115,14 @@ export class SnapShapes {
     return this.spanOf[section] ?? 0;
   }
 
+  internedCode(section: number): number {
+    return this.codeOf[section] ?? 0;
+  }
+
+  internedSize(section: number): number {
+    return this.sizeOf[section] ?? 0;
+  }
+
   maleCode(section: number): number {
     return this.maleCodeOf[section] ?? 0;
   }

@@ -359,7 +359,7 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView
     detail:
       queued === null
         ? "loading connectors… a click places it once they load"
-        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} if the pointer stays there`,
+        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} (Esc cancels)`,
     hints: [
       gesture("Click", "place once loaded"),
       key("open-palette", "another part"),

@@ -491,6 +491,8 @@ test("an imported model whose own 9V run is joined to drawn track won't nudge of
   expect(await editor.selectionCount()).toBe(3);
 
   await editor.dragFrom({ x: movedModel.x, z: movedModel.z }, { x: raised.x, z: raised.z + dz });
-  await expect(page.locator(".tool-hud")).toContainText("different height");
+  await expect(page.locator(".tool-hud")).toContainText(
+    "would hit Brick 2 x 2 in MILS Basic Terrain Module",
+  );
   expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
 });
