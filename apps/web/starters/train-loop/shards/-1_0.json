@@ -1,0 +1,48 @@
+{
+  "format": "brr.shard",
+  "placements": [
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -960, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -960, "yPlates": 0, "z": 640 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -320, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -320, "yPlates": 0, "z": 640 }
+  ],
+  "schemaVersion": 1,
+  "superChunk": [-1, 0],
+  "track": [
+    {
+      "heading": 8,
+      "index": 12,
+      "position": ["-16", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 9,
+      "index": 13,
+      "position": ["-16", "0", "0", "0", "0", "40", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 10,
+      "index": 14,
+      "position": ["-16", "0", "0", "0", "0", "0", "40", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 11,
+      "index": 15,
+      "position": ["-16", "0", "0", "0", "0", "0", "0", "40"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 12,
+      "index": 16,
+      "position": ["-56", "0", "0", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    }
+  ]
+}

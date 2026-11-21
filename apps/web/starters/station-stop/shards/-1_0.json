@@ -1,0 +1,55 @@
+{
+  "format": "brr.shard",
+  "placements": [
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -1280, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -1280, "yPlates": 0, "z": 640 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -640, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -640, "yPlates": 0, "z": 640 }
+  ],
+  "schemaVersion": 1,
+  "superChunk": [-1, 0],
+  "track": [
+    {
+      "heading": 8,
+      "index": 15,
+      "position": ["-16", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    },
+    {
+      "heading": 8,
+      "index": 16,
+      "position": ["-32", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 9,
+      "index": 17,
+      "position": ["-32", "0", "0", "0", "0", "40", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 10,
+      "index": 18,
+      "position": ["-32", "0", "0", "0", "0", "0", "40", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 11,
+      "index": 19,
+      "position": ["-32", "0", "0", "0", "0", "0", "0", "40"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 12,
+      "index": 20,
+      "position": ["-72", "0", "0", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    }
+  ]
+}
