@@ -587,6 +587,23 @@ const customParts = new Map([
       "3 16 0 0 0 1 0 0 0 0 1",
     ].join("\n"),
   ],
+  [
+    "parts/zz-custom-recessed-plate.dat",
+    [
+      "0 Custom plate with a stud recessed in its middle",
+      "0 Name: zz-custom-recessed-plate.dat",
+      "0 Author: synthetic test fixture",
+      CA_LICENSE,
+      "0 BFC CERTIFY CCW",
+      "1 16 0 -16 -20 30 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -16 20 30 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 -20 -16 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 20 -16 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -8 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -8 0 1 0 0 0 1 0 0 0 1 stud.dat",
+      "1 16 0 0 0 30 0 0 0 -8 0 0 0 30 box5.dat",
+    ].join("\n"),
+  ],
 ]);
 
 const customMirror: FetchFunction = async (url) => {
@@ -1655,6 +1672,29 @@ it(
       band(53.5, 56, [2.5, 0]),
     ]);
     expect(rolling?.unread).toEqual([]);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "reads the top surface of a part the bundle doesn't hold when the import compiles it",
+  async () => {
+    const result = await importWith(
+      customMirror,
+      "recessed.ldr",
+      "0 A plate with a recessed stud\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 zz-custom-recessed-plate.dat\n",
+    );
+
+    const [compiled] = result.compiled;
+    if (!compiled) throw new Error("the import compiled no part");
+    const { topSurface } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
+    expect(topSurface).toEqual({
+      stepsPerLdu: SIXTEENTHS_PER_LDU,
+      top: 16 * SIXTEENTHS_PER_LDU,
+      origin: [-30 * SIXTEENTHS_PER_LDU, -30 * SIXTEENTHS_PER_LDU],
+      size: [3, 3],
+      cells: ["fff", "fpf", "fff"],
+    });
   },
   BAKE_TIMEOUT_MS,
 );
