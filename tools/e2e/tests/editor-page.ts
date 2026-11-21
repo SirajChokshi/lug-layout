@@ -194,6 +194,36 @@ interface EditState {
   readonly routes: ReadonlyArray<TrackRoute>;
 }
 
+export interface PlanRect {
+  readonly x: number;
+  readonly z: number;
+  readonly width: number;
+  readonly depth: number;
+}
+
+export interface PlanRegion {
+  readonly id: string;
+  readonly name: string;
+  readonly originChunkX: number;
+  readonly originChunkZ: number;
+  readonly maxOverhangMm: number;
+  readonly footprint: {
+    readonly roomWidthMm: number;
+    readonly roomDepthMm: number;
+    readonly tables: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly rect: PlanRect;
+      readonly heightMm: number;
+    }>;
+    readonly obstacles: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly rect: PlanRect;
+    }>;
+  };
+}
+
 export interface PlanRow {
   readonly rule: string;
   readonly severity: string;
@@ -201,6 +231,7 @@ export interface PlanRow {
 }
 
 interface PlanState {
+  readonly plans: ReadonlyArray<PlanRegion>;
   readonly placements: ReadonlyArray<PlanFootprint>;
   readonly tableTopY: number;
   readonly checks: ReadonlyArray<{ readonly issues: ReadonlyArray<PlanRow> }>;
@@ -859,6 +890,10 @@ export class EditorPage {
 
   async tableTopY(): Promise<number> {
     return (await this.planState()).tableTopY;
+  }
+
+  async plans(): Promise<ReadonlyArray<PlanRegion>> {
+    return (await this.planState()).plans;
   }
 
   async planRows(): Promise<ReadonlyArray<PlanRow>> {

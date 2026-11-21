@@ -167,6 +167,11 @@ export {
   type UncheckedPlanRule,
 } from "./plan/plan-verdict.ts";
 export type {
+  IPlanSheetService,
+  IPlanSheetSource,
+  PlanSheetShapes,
+} from "./plan/plan-sheet-service.ts";
+export type {
   IssueSeverity,
   LduRect,
   MmRect,
@@ -183,6 +188,7 @@ export type {
 export {
   RUNNING_GEAR,
   BOM_SERVICE,
+  OWNED_PARTS,
   CATALOG_SEARCH,
   CREDITS,
   EDITOR,
@@ -199,6 +205,7 @@ export {
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
@@ -375,8 +382,17 @@ export type {
   BomScope,
   IBomService,
   IBomSource,
+  OwnVsBuyReport,
 } from "./bom/bom-service.ts";
-export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export type { IOwnedParts, OwnedPartsView, TextFile } from "./bom/owned-parts-service.ts";
+export type {
+  CatalogBom,
+  CatalogLine,
+  OwnedParts,
+  PlacementRegion,
+  UnknownOwnedPart,
+  UnmappedLine,
+} from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
 export type {
