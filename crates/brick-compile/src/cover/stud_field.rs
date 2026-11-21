@@ -180,17 +180,31 @@ mod tests {
     }
 
     fn corner(half: f64, k: usize, y: f64) -> Vec3 {
-        let [x, z] = CORNERS[k % CORNERS.len()];
-        [x * half, y, z * half]
+        rectangle_corner([half, half], k, y)
     }
 
-    fn square_wall(triangles: &mut Vec<Triangle>, half: f64) {
+    fn rectangle_corner([half_x, half_z]: [f64; 2], k: usize, y: f64) -> Vec3 {
+        let [x, z] = CORNERS[k % CORNERS.len()];
+        [x * half_x, y, z * half_z]
+    }
+
+    fn rectangle_wall(triangles: &mut Vec<Triangle>, halves: [f64; 2]) {
         for k in 0..CORNERS.len() {
-            let [a, b] = [corner(half, k, 0.0), corner(half, k + 1, 0.0)];
-            let [c, d] = [corner(half, k + 1, HEIGHT), corner(half, k, HEIGHT)];
+            let [a, b] = [
+                rectangle_corner(halves, k, 0.0),
+                rectangle_corner(halves, k + 1, 0.0),
+            ];
+            let [c, d] = [
+                rectangle_corner(halves, k + 1, HEIGHT),
+                rectangle_corner(halves, k, HEIGHT),
+            ];
             triangles.push(triangle([a, b, c]));
             triangles.push(triangle([a, c, d]));
         }
+    }
+
+    fn square_wall(triangles: &mut Vec<Triangle>, half: f64) {
+        rectangle_wall(triangles, [half, half]);
     }
 
     fn square_annulus(triangles: &mut Vec<Triangle>, outer: f64, inner: f64) {
@@ -213,6 +227,27 @@ mod tests {
             inscribed_radius(&mesh::build(&triangles, &[])),
             Some(half_width)
         );
+    }
+
+    #[test]
+    fn a_flat_cap_whose_corners_all_lie_on_the_rim_is_not_part_of_the_outer_wall() {
+        let half_width = 3.0;
+        let mut triangles = Vec::new();
+        square_wall(&mut triangles, half_width);
+        let cap = [0, 1, 2, 3].map(|k| corner(half_width, k, HEIGHT));
+        triangles.push(triangle([cap[0], cap[1], cap[2]]));
+        triangles.push(triangle([cap[0], cap[2], cap[3]]));
+        assert_eq!(
+            inscribed_radius(&mesh::build(&triangles, &[])),
+            Some(half_width)
+        );
+    }
+
+    #[test]
+    fn an_outer_wall_measures_its_nearest_face() {
+        let mut triangles = Vec::new();
+        rectangle_wall(&mut triangles, [3.0, 2.5]);
+        assert_eq!(inscribed_radius(&mesh::build(&triangles, &[])), Some(2.5));
     }
 
     #[test]
