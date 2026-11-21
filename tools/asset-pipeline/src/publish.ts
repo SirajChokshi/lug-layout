@@ -9,6 +9,7 @@ import {
   GltfDocument,
   LibraryBakePin,
   LibraryConnectorsPin,
+  ShadowLibraryPin,
   LibraryPartsFile,
   ModelFile,
   PartShape,
@@ -115,7 +116,7 @@ export function contentAddressedName(file: string, digest: string): string {
 
 async function attachCompilerPin(
   directory: string,
-  field: "libraryBake" | "libraryConnectors",
+  field: "libraryBake" | "libraryConnectors" | "shadowLibrary",
   index: { readonly file: string; readonly sha256: string },
 ): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
@@ -144,6 +145,14 @@ export async function attachLibraryConnectors(directory: string, pinPath: string
     pinPath,
   );
   await attachCompilerPin(directory, "libraryConnectors", pin.index);
+}
+
+export async function attachShadowLibrary(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(ShadowLibraryPin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  await attachCompilerPin(directory, "shadowLibrary", pin.index);
 }
 
 export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {

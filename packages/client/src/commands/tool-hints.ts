@@ -5,11 +5,17 @@ import type {
   FillResult,
   GestureView,
   SelectionTally,
+  TrackUnsupportedView,
   TrackView,
 } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
-import type { TrackBlockView, TrackDragView, TrackRefusal } from "../edit/track-drawing.ts";
+import type {
+  JoinWithheld,
+  TrackBlockView,
+  TrackDragView,
+  TrackRefusal,
+} from "../edit/track-drawing.ts";
 import { trackBlockText } from "../edit/track-drag.ts";
 import type { TrackChoiceView, TrackExtendView, UnjoinedEndView } from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
@@ -100,6 +106,25 @@ function blockedJoinText(block: TrackBlockView | null): string {
     : `every exact join here would ${trackBlockText(block)}`;
 }
 
+function withheldJoinText(withheld: JoinWithheld, block: TrackBlockView | null): string {
+  switch (withheld) {
+    case "unsupported":
+      return blockedJoinText(block);
+    case "pending":
+      return "a model under that join was still checking its studs";
+    default: {
+      const unhandled: never = withheld;
+      throw new Error(`unhandled withheld join ${String(unhandled)}`);
+    }
+  }
+}
+
+function unsupportedText({ pieces: count, block }: TrackUnsupportedView): string {
+  const rest = count === 1 ? "rests" : "rest";
+  const where = block?.kind === "model" ? ` on ${block.label}` : "";
+  return `${pieces(count)} ${rest}${where} where it has no studs, so ${count === 1 ? "it isn't" : "they aren't"} supported`;
+}
+
 function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   const title = `Laying ${pieces(drag.pieces)}`;
   const refused = "Nothing to lay";
@@ -113,6 +138,7 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
         detail: "no exact join reaches here, so release lays nothing",
       };
     case "blocked":
+      if (drag.withheld) return withheldDragView(drag, drag.withheld, title, refused);
       return {
         tone: "warn",
         title: refused,
@@ -121,11 +147,7 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
     case "limit":
       return { tone: "warn", title: refused, detail: "the join search ran out of time here" };
     case "pending":
-      return {
-        tone: "warn",
-        title: "Waiting for the stud check",
-        detail: "a model under this join is still checking its studs, so release lays nothing yet",
-      };
+      return withheldDragView(drag, "pending", title, refused);
     case null:
       if (drag.blocked) {
         return {
@@ -146,6 +168,22 @@ function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
   }
 }
 
+function withheldDragView(
+  drag: TrackDragView,
+  withheld: JoinWithheld,
+  title: string,
+  refused: string,
+): Omit<ToolHintView, "hints"> {
+  const reason = withheldJoinText(withheld, drag.blocked);
+  return drag.pieces === 0
+    ? { tone: "warn", title: refused, detail: `${reason}, so release lays nothing` }
+    : {
+        tone: "warn",
+        title,
+        detail: `${reason}, so release lays the run and leaves that end open`,
+      };
+}
+
 function releaseView(track: TrackView): Omit<ToolHintView, "hints"> | null {
   const block = track.lastBlock;
   switch (track.lastCommit) {
@@ -155,21 +193,10 @@ function releaseView(track: TrackView): Omit<ToolHintView, "hints"> | null {
       return { tone: "warn", title: "Nothing laid", detail: blockedJoinText(block) };
     case "refused-limit":
       return { tone: "warn", title: "Nothing laid", detail: "the join search ran out of time" };
-    case "refused-pending":
-      return {
-        tone: "warn",
-        title: "Nothing laid",
-        detail: "a model under that join was still checking its studs",
-      };
     case "laid":
-    case null:
-      if (block === null) return null;
-      return {
-        tone: "warn",
-        title: track.lastCommit === "laid" ? "Stopped short" : "Nothing laid",
-        detail: `the next piece would ${trackBlockText(block)}`,
-      };
     case "joined":
+    case null:
+      return laidView(track, block);
     case "switch-straight":
     case "switch-branching":
       return null;
@@ -299,6 +326,28 @@ function filledView(fill: FillResult, name: string): Omit<ToolHintView, "hints">
     tone: skipped === null ? "place" : "warn",
     title: `Filled ${fill.placed} × ${name}`,
     detail: skipped ?? "one undo removes them",
+  };
+}
+
+function laidView(
+  track: TrackView,
+  block: TrackBlockView | null,
+): Omit<ToolHintView, "hints"> | null {
+  const unsupported = track.lastUnsupported ? unsupportedText(track.lastUnsupported) : null;
+  if (track.lastWithheld) {
+    const withheld = withheldJoinText(track.lastWithheld, block);
+    return {
+      tone: "warn",
+      title: track.lastCommit === null ? "Nothing laid" : "Laid, end left open",
+      detail: unsupported ? `${withheld}; ${unsupported}` : withheld,
+    };
+  }
+  if (unsupported) return { tone: "warn", title: "Laid unsupported", detail: unsupported };
+  if (block === null || track.lastCommit === "joined") return null;
+  return {
+    tone: "warn",
+    title: track.lastCommit === "laid" ? "Stopped short" : "Nothing laid",
+    detail: `the next piece would ${trackBlockText(block)}`,
   };
 }
 

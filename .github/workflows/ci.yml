@@ -143,6 +143,7 @@ jobs:
           name: part-bundle
           path: tools/asset-pipeline
       - uses: ./.github/actions/ldraw-inputs
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
         if: failure()
