@@ -7,6 +7,8 @@ use brick_compile::connect::SectionVocabulary;
 pub use brick_compile::connect::{patch_path, verified_patch_paths};
 use brick_compile::flatten::Library;
 
+pub mod errata;
+
 const COMMENTED_SNAP: &str = "0 //!LDCAD SNAP_";
 const LIVE_SNAP: &str = "0 !LDCAD SNAP_";
 
