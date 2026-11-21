@@ -5,17 +5,15 @@ use crate::affine::{Affine, Vec3};
 use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::connect::ShapeError;
 use crate::cover::{
-    inscribed_radius, model_cover_with, stud_field_collides, AxisSpan, CellsTooLarge,
-    CoverInstance, CoverModel, CoverShard, ModelCover, ModelTooLarge, Opacity, PartSolid,
-    ProbeCache, StudShape,
+    inscribed_radius, model_cover_with, AxisSpan, CellsTooLarge, CoverInstance, CoverModel,
+    CoverShard, ModelCover, ModelTooLarge, Opacity, PartSolid, ProbeCache, StudField, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
-use crate::lattice::{
-    model_lattice, AxisPose, LatticeError, LatticeInstance, LatticeReceptor, ModelLattice,
-};
+use crate::lattice::{AxisPose, LatticeError, LatticeInstance, LatticeReceptor, ModelLattice};
 use crate::mesh::Mesh;
 use crate::model::ModelInstance;
 use crate::record::{BakeRecord, RecordError};
+use crate::seat::{seat, Seating};
 use crate::stud_fit::{ReceptorSeats, StudFit};
 use crate::technic::TechnicPrimitives;
 use crate::vehicle::{
@@ -345,7 +343,8 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             }
             None => {
                 let compiled = compile_part(self.library, reference, &self.options)?;
-                self.solids.push(PartSolid::from_mesh(&compiled.mesh));
+                self.solids
+                    .push(PartSolid::from_mesh(&compiled.mesh).with_rounds(&compiled.rounds));
                 PartSource::Compiled(Box::new(compiled))
             }
         };
@@ -392,6 +391,18 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         drawn: &[ModelInstance],
         shapes: &[&LatticeShape],
     ) -> Result<Option<ModelLattice>, BakeError> {
+        match self.seating(drawn, shapes)?.lattice {
+            Ok(lattice) => Ok(Some(lattice)),
+            Err(LatticeError::NoIntegerPhase) => Ok(None),
+            Err(error) => Err(BakeError::Lattice(error)),
+        }
+    }
+
+    pub fn seating(
+        &mut self,
+        drawn: &[ModelInstance],
+        shapes: &[&LatticeShape],
+    ) -> Result<Seating, BakeError> {
         let slots = self.slots(drawn)?;
         let mut receptors: HashMap<*const LatticeShape, PartReceptors> = HashMap::new();
         for &shape in shapes {
@@ -437,15 +448,8 @@ impl<'a, L: Library> ModelBaker<'a, L> {
             })
             .collect();
         let seats = ReceptorSeats::of(&seating_instances);
-        let (solids, stud) = (&self.solids, self.stud_shape);
-        let seated = model_lattice(&lattice_instances, |phase, floor_y| {
-            stud_field_collides(&cover_instances, solids, stud, phase, floor_y, &seats)
-        });
-        match seated {
-            Ok(lattice) => Ok(Some(lattice)),
-            Err(LatticeError::NoIntegerPhase) => Ok(None),
-            Err(error) => Err(BakeError::Lattice(error)),
-        }
+        let field = StudField::new(&cover_instances, &self.solids, self.stud_shape, &seats);
+        Ok(seat(&lattice_instances, &field))
     }
 
     pub fn stud_total(

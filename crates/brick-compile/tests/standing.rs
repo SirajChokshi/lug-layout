@@ -9,8 +9,9 @@ use brick_compile::connect::{
     PrimitiveConnectors, PrimitiveTable, SectionVocabulary, ShadowPatches, ShadowSnaps, SnapShape,
     CAP_FAR, ROUND,
 };
-use brick_compile::lattice::LatticeReceptor;
+use brick_compile::lattice::{LatticeError, LatticeReceptor};
 use brick_compile::model::bake_model;
+use brick_compile::seat::Seating;
 use brick_compile::Library;
 
 struct Pinned(HashMap<String, String>);
@@ -98,15 +99,15 @@ impl Bench {
         }
     }
 
-    fn lattice(&self, text: &str) -> Option<([u32; 2], f64)> {
-        self.lattice_with(text, |receptors| receptors)
+    fn seating(&self, text: &str) -> Seating {
+        self.seating_with(text, |receptors| receptors)
     }
 
-    fn lattice_with(
+    fn seating_with(
         &self,
         text: &str,
         receptors_of: impl Fn(Vec<LatticeReceptor>) -> Vec<LatticeReceptor>,
-    ) -> Option<([u32; 2], f64)> {
+    ) -> Seating {
         let mut extractor = ConnectorExtractor::new(
             ShadowSnaps::new(&self.library, &self.shadow).patched(ShadowPatches {
                 files: &self.patches,
@@ -146,9 +147,24 @@ impl Bench {
             .collect();
         let drawn: Vec<&LatticeShape> = shapes.iter().collect();
         baker
-            .lattice(&model.instances, &drawn)
-            .expect("no tied stud layer")
-            .map(|lattice| (lattice.phase, lattice.phase_layer_y))
+            .seating(&model.instances, &drawn)
+            .expect("every part compiles")
+    }
+
+    fn lattice(&self, text: &str) -> Option<([u32; 2], f64)> {
+        self.lattice_with(text, |receptors| receptors)
+    }
+
+    fn lattice_with(
+        &self,
+        text: &str,
+        receptors_of: impl Fn(Vec<LatticeReceptor>) -> Vec<LatticeReceptor>,
+    ) -> Option<([u32; 2], f64)> {
+        match self.seating_with(text, receptors_of).lattice {
+            Ok(lattice) => Some((lattice.phase, lattice.phase_layer_y)),
+            Err(LatticeError::NoIntegerPhase) => None,
+            Err(error) => panic!("no tied stud layer: {error}"),
+        }
     }
 }
 
@@ -173,6 +189,33 @@ const JUMPER_BENCH: &str = "0 Custom bench of two jumpers under a tile
 const JUMPER_BESIDE_A_PLATE: &str = "0 Custom jumper beside a 1 x 1 plate, whose two studs tie
 1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
 1 15 10 0 20 1 0 0 0 1 0 0 0 1 3024.dat
+";
+
+const JUMPER_BENCH_BESIDE_A_MACARONI_BRICK: &str =
+    "0 Custom bench beside a 2 x 2 corner round brick with stud notch
+1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat
+1 14 0 -16 -60 1 0 0 0 1 0 0 0 1 3063b.dat
+";
+
+const JUMPER_BENCH_BESIDE_A_CORNER_TILE: &str = "0 Custom bench beside a 2 x 2 corner round tile
+1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat
+1 14 0 0 -60 1 0 0 0 1 0 0 0 1 27925.dat
+";
+
+const HINGE_INDEX: usize = 5;
+
+const JUMPER_ROW_BESIDE_A_LOCKING_HINGE: &str =
+    "0 Custom row of jumpers beside a locking hinge plate whose anti-studs share their frame
+1 4 -70 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 50 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 4 90 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
+1 7 10 0 -60 1 0 0 0 1 0 0 0 1 44568.dat
 ";
 
 const TURNTABLE_ON_ITS_BASE: &str = "0 Custom turntable, top on base
@@ -207,6 +250,7 @@ fn a_model_keeps_its_stud_phase_where_its_studs_seat_on_a_stud_field_and_takes_t
         ("3069b.dat", [10, 0]),
         ("3070b.dat", [0, 0]),
         ("3680.dat", [10, 10]),
+        ("27925.dat", [0, 0]),
     ]
     .map(|(part, receptor_phase)| (part, phase(&one(part)), Some(receptor_phase)));
     let custom = [
@@ -225,6 +269,21 @@ fn a_model_keeps_its_stud_phase_where_its_studs_seat_on_a_stud_field_and_takes_t
             "turntable on its base",
             phase(TURNTABLE_ON_ITS_BASE),
             Some([10, 10]),
+        ),
+        (
+            "jumper bench beside a macaroni brick",
+            phase(JUMPER_BENCH_BESIDE_A_MACARONI_BRICK),
+            Some([0, 0]),
+        ),
+        (
+            "jumper bench beside a corner round tile",
+            phase(JUMPER_BENCH_BESIDE_A_CORNER_TILE),
+            Some([0, 0]),
+        ),
+        (
+            "jumper row beside a locking hinge",
+            phase(JUMPER_ROW_BESIDE_A_LOCKING_HINGE),
+            Some([10, 0]),
         ),
     ];
 
@@ -254,14 +313,6 @@ const JUMPER_BENCH_BESIDE_A_CURVED_WEDGE: &str =
 1 1 90 -8 0 1 0 0 0 1 0 0 0 1 45677.dat
 ";
 
-const JUMPER_BENCH_BESIDE_A_NOTCHED_CORNER: &str =
-    "0 Custom bench of two jumpers under a tile, beside a corner round brick with a stud notch
-1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
-1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat
-1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat
-1 1 100 -16 0 1 0 0 0 1 0 0 0 1 3063b.dat
-";
-
 #[test]
 fn a_receptor_that_takes_the_stud_seats_it_by_its_connector_data_where_the_drawn_cavity_is_tighter_than_the_stud(
 ) {
@@ -270,8 +321,6 @@ fn a_receptor_that_takes_the_stud_seats_it_by_its_connector_data_where_the_drawn
 
     assert_eq!(bench.lattice(&one("91501.dat")), Some(([0, 0], -24.0)));
     assert_eq!(phase(JUMPER_BENCH_BESIDE_A_CURVED_WEDGE), Some([0, 0]));
-    assert_eq!(phase(&one("27925.dat")), None);
-    assert_eq!(phase(JUMPER_BENCH_BESIDE_A_NOTCHED_CORNER), Some([10, 0]));
 }
 
 #[test]
@@ -304,4 +353,20 @@ fn a_receptor_too_narrow_for_the_stud_still_votes_but_never_vouches_for_its_part
         bench.lattice_with(&one("3069b.dat"), narrowed),
         Some(([10, 0], -8.0))
     );
+}
+
+#[test]
+fn a_receptor_frame_refused_by_a_part_drawn_into_the_studs_reports_each_stud_that_part_reaches_into(
+) {
+    let seating = Bench::new().seating(JUMPER_ROW_BESIDE_A_LOCKING_HINGE);
+    let refused = seating
+        .refused
+        .iter()
+        .find(|refused| refused.phase == [0, 0])
+        .expect("the anti-studs' frame was tried and refused");
+    assert!(!refused.intrusions.is_empty());
+    for intrusion in &refused.intrusions {
+        assert_eq!(intrusion.instance, HINGE_INDEX, "{intrusion:?}");
+        assert!(intrusion.depth > 0.0, "{intrusion:?}");
+    }
 }

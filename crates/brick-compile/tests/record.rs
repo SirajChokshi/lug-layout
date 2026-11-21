@@ -112,9 +112,10 @@ fn every_fixture_part_decodes_to_its_compiled_mesh_studs_bounds_and_the_same_sol
             tree_order(&compiled.mesh),
             "{reference}"
         );
+        assert_eq!(decoded.rounds, compiled.rounds, "{reference}");
         let rebuilt = PartSolid::from_record(&decoded).expect("a decoded record rebuilds");
         assert!(
-            rebuilt.same_bits(&PartSolid::from_mesh(&compiled.mesh)),
+            rebuilt.same_bits(&PartSolid::from_mesh(&compiled.mesh).with_rounds(&compiled.rounds)),
             "{reference}"
         );
         assert_eq!(decoded.encode().expect("re-encode"), bytes, "{reference}");
@@ -132,7 +133,7 @@ fn a_record_carrying_another_order_is_refused_or_rebuilds_a_different_solid() {
     let compiled = compile_part(&library, "3001.dat", &CompileOptions::default()).expect("3001");
     let bounds = part_bounds(&library, "3001.dat").expect("bounds");
     let record = BakeRecord::of(&compiled, bounds);
-    let built = PartSolid::from_mesh(&compiled.mesh);
+    let built = PartSolid::from_mesh(&compiled.mesh).with_rounds(&compiled.rounds);
     let mut duplicated = record.clone();
     duplicated.tree_order[1] = duplicated.tree_order[0];
     assert!(matches!(

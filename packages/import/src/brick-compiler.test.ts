@@ -21,7 +21,7 @@ import { bakeReceptors } from "./bake-receptors.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = fileURLToPath(new URL("../../../.cache/ldraw/", import.meta.url));
-const RECORD_MAGIC = "BRRBAKE1";
+const RECORD_MAGIC = "BRRBAKE2";
 const PARTS = ["3001.dat", "3040b.dat", "3626c.dat"];
 const COMPILE_TIMEOUT_MS = 60_000;
 const STACKED_BESIDE_A_SLOPE = [

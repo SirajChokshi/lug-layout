@@ -10,6 +10,7 @@ use brick_compile::inline::InlineComparison;
 use brick_compile::lattice::{Malformation, MalformedGeometry, ModelLattice};
 use brick_compile::ldraw::Header;
 use brick_compile::model::{AuthoredColumns, RationalText};
+use brick_compile::seat::{RefusedSeat, StudIntrusion};
 use brick_compile::studio::{StudioArchive, StudioError};
 use brick_compile::vehicle::{Coupler, GuideKind, Vehicle};
 use brick_compile::CompileError;
@@ -148,6 +149,8 @@ pub enum Reply {
         lattice: Option<Lattice>,
         #[serde(skip_serializing_if = "Option::is_none")]
         lattice_issue: Option<String>,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        seat_refusals: Vec<SeatRefusal>,
         cover: Cover,
         #[serde(skip_serializing_if = "Option::is_none")]
         vehicles: Option<Vec<VehicleHeader>>,
@@ -365,6 +368,46 @@ impl InlineOutcome {
 pub struct Aabb {
     min: Vec3,
     max: Vec3,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatIntrusion {
+    at: [f64; 2],
+    depth: f64,
+    instance: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeatRefusal {
+    phase: [u32; 2],
+    floor_y: f64,
+    intrusions: Vec<SeatIntrusion>,
+}
+
+impl From<&RefusedSeat> for SeatRefusal {
+    fn from(refused: &RefusedSeat) -> Self {
+        SeatRefusal {
+            phase: refused.phase,
+            floor_y: refused.floor_y,
+            intrusions: refused
+                .intrusions
+                .iter()
+                .map(
+                    |&StudIntrusion {
+                         at,
+                         depth,
+                         instance,
+                     }| SeatIntrusion {
+                        at,
+                        depth,
+                        instance,
+                    },
+                )
+                .collect(),
+        }
+    }
 }
 
 #[derive(Serialize)]

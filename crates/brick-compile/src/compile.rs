@@ -1,15 +1,18 @@
+use rustc_hash::FxHashSet;
 use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::cover::{part_cover_fits, CellsTooLarge};
 use crate::flatten::{
-    ExactTriangle, FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle,
+    ExactTriangle, FlattenError, Flattened, Flattener, Library, Lod, RoundReference, StudReference,
+    Triangle,
 };
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
+use crate::round::{place, PlacedRound, RoundShape};
 use crate::technic::{self, TechnicPart, TechnicPrimitives};
 use crate::top_surface::{ExactCorners, TopSurface};
 use crate::voxel::VOXEL_NOTE;
@@ -118,6 +121,7 @@ pub struct CompiledPart {
     pub path: String,
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
+    pub rounds: Vec<PlacedRound>,
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
     pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
@@ -126,6 +130,37 @@ pub struct CompiledPart {
 
 fn to_y_up(p: Vec3) -> Vec3 {
     Affine::LDRAW_TO_Y_UP.apply(p).map(|v| v + 0.0)
+}
+
+fn y_up_rounds(references: &[RoundReference]) -> Vec<PlacedRound> {
+    let mut placed = FxHashSet::default();
+    references
+        .iter()
+        .filter_map(|reference| {
+            place(
+                reference.shape,
+                &Affine::LDRAW_TO_Y_UP.then(&reference.matrix),
+            )
+            .ok()
+        })
+        .map(|round| PlacedRound {
+            axis: round.axis,
+            center: round.center.map(|v| v + 0.0),
+            shape: match round.shape {
+                RoundShape::Wall { radius, from, to } => RoundShape::Wall {
+                    radius,
+                    from: from + 0.0,
+                    to: to + 0.0,
+                },
+                RoundShape::Annulus { inner, outer, at } => RoundShape::Annulus {
+                    inner,
+                    outer,
+                    at: at + 0.0,
+                },
+            },
+        })
+        .filter(|round| placed.insert(round.bits()))
+        .collect()
 }
 
 pub fn unofficial_gate(
@@ -316,6 +351,7 @@ pub fn compile_part<L: Library>(
         path,
         mesh,
         studs,
+        rounds: y_up_rounds(&flattened.rounds),
         flattened_files: flattened.files,
         technic,
         rolling,

@@ -1,42 +1,128 @@
+use std::collections::BTreeMap;
+
 use super::{corner_box, inverse, world_box, CoverInstance, PartSolid, StudShape};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area, Polygon, MAX_CLIPPED_VERTICES};
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
+use crate::seat::{SeatProbe, StudIntrusion};
 use crate::stud_fit::ReceptorSeats;
 use crate::trig::planar_length;
 
-pub fn stud_field_collides(
-    instances: &[CoverInstance],
-    solids: &[PartSolid],
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reading {
+    First,
+    Nearest,
+}
+
+pub struct StudField<'a> {
+    instances: &'a [CoverInstance<'a>],
+    solids: &'a [PartSolid],
     stud: StudShape,
-    phase: [u32; 2],
-    floor_y: f64,
-    seats: &ReceptorSeats,
-) -> bool {
-    let reach = stud.inscribed_radius - WELD_EPSILON_LDU;
-    let bottom = floor_y + WELD_EPSILON_LDU;
-    let top = floor_y + stud.height - WELD_EPSILON_LDU;
-    instances.iter().enumerate().any(|(index, instance)| {
-        let solid = &solids[instance.part];
+    seats: &'a ReceptorSeats,
+}
+
+impl<'a> StudField<'a> {
+    pub fn new(
+        instances: &'a [CoverInstance<'a>],
+        solids: &'a [PartSolid],
+        stud: StudShape,
+        seats: &'a ReceptorSeats,
+    ) -> Self {
+        StudField {
+            instances,
+            solids,
+            stud,
+            seats,
+        }
+    }
+
+    fn reach(&self) -> f64 {
+        self.stud.inscribed_radius - WELD_EPSILON_LDU
+    }
+
+    fn intruding(
+        &self,
+        index: usize,
+        instance: &'a CoverInstance<'a>,
+        phase: [u32; 2],
+        floor_y: f64,
+        reading: Reading,
+    ) -> impl Iterator<Item = ([f64; 2], f64)> + 'a {
+        let seats = self.seats;
+        let reach = self.reach();
+        let bottom = floor_y + WELD_EPSILON_LDU;
+        let top = floor_y + self.stud.height - WELD_EPSILON_LDU;
+        let solid = &self.solids[instance.part];
         let bounds = world_box(instance, solid);
         let [min, max] = bounds;
-        if !(min[1] < top && max[1] > bottom) {
-            return false;
-        }
-        let Some(to_part) = inverse(instance.matrix) else {
-            return false;
+        let to_part = if min[1] < top && max[1] > bottom {
+            inverse(instance.matrix)
+        } else {
+            None
         };
-        stud_centres(min[0] - reach, max[0] + reach, phase[0]).any(|x| {
-            stud_centres(min[2] - reach, max[2] + reach, phase[1]).any(|z| {
-                let low = [x - reach, bottom, z - reach];
-                let high = [x + reach, top, z + reach];
-                !seats.seats(index, [x, floor_y, z])
-                    && overlaps(&bounds, low, high)
-                    && solid_reaches(instance.matrix, &to_part, solid, [low, high], [x, z], reach)
+        to_part.into_iter().flat_map(move |to_part| {
+            stud_centres(min[0] - reach, max[0] + reach, phase[0]).flat_map(move |x| {
+                stud_centres(min[2] - reach, max[2] + reach, phase[1]).filter_map(move |z| {
+                    let low = [x - reach, bottom, z - reach];
+                    let high = [x + reach, top, z + reach];
+                    if seats.seats(index, [x, floor_y, z]) || !overlaps(&bounds, low, high) {
+                        return None;
+                    }
+                    let probe = [low, high];
+                    nearest_reading(
+                        instance.matrix,
+                        &to_part,
+                        solid,
+                        probe,
+                        [x, z],
+                        reach,
+                        reading,
+                    )
+                    .map(|distance| ([x, z], distance))
+                })
             })
         })
-    })
+    }
+}
+
+impl SeatProbe for StudField<'_> {
+    fn seats(&self, phase: [u32; 2], floor_y: f64) -> bool {
+        !self.instances.iter().enumerate().any(|(index, instance)| {
+            self.intruding(index, instance, phase, floor_y, Reading::First)
+                .next()
+                .is_some()
+        })
+    }
+
+    fn intrusions(&self, phase: [u32; 2], floor_y: f64) -> Vec<StudIntrusion> {
+        let reach = self.reach();
+        let mut deepest: BTreeMap<(i64, i64), StudIntrusion> = BTreeMap::new();
+        for (index, instance) in self.instances.iter().enumerate() {
+            for (at, distance) in self.intruding(index, instance, phase, floor_y, Reading::Nearest)
+            {
+                let found = StudIntrusion {
+                    at,
+                    depth: reach - distance,
+                    instance: index,
+                };
+                deepest
+                    .entry(lattice_key(at, phase))
+                    .and_modify(|kept| {
+                        if found.depth > kept.depth {
+                            *kept = found;
+                        }
+                    })
+                    .or_insert(found);
+            }
+        }
+        deepest.into_values().collect()
+    }
+}
+
+fn lattice_key(at: [f64; 2], phase: [u32; 2]) -> (i64, i64) {
+    let step = |value: f64, phase: u32| ((value - f64::from(phase)) / STUD_LDU).round() as i64;
+    (step(at[0], phase[0]), step(at[1], phase[1]))
 }
 
 pub fn inscribed_radius(mesh: &Mesh) -> Option<f64> {
@@ -85,24 +171,26 @@ fn overlaps([min, max]: &[Vec3; 2], low: Vec3, high: Vec3) -> bool {
     (0..3).all(|axis| min[axis] < high[axis] && max[axis] > low[axis])
 }
 
-fn solid_reaches(
+fn nearest_reading(
     to_world: &Affine,
     to_part: &Affine,
     solid: &PartSolid,
     [low, high]: [Vec3; 2],
     axis: [f64; 2],
     reach: f64,
-) -> bool {
+    reading: Reading,
+) -> Option<f64> {
     let [local_min, local_max] = corner_box(to_part, low, high);
-    let mut reached = false;
+    let mut closest: Option<f64> = None;
+    let settled = |closest: Option<f64>| reading == Reading::First && closest.is_some();
     solid.tree.walk(|bounds, leaf| match leaf {
         None => {
-            !reached
+            !settled(closest)
                 && (0..3).all(|k| bounds.min[k] <= local_max[k] && bounds.max[k] >= local_min[k])
         }
         Some(range) => {
             for t in range {
-                if reached {
+                if settled(closest) {
                     break;
                 }
                 let local = &solid.tree_points[t];
@@ -114,12 +202,24 @@ fn solid_reaches(
                 }
                 let triangle = local.map(|p| to_world.apply(p));
                 let clipped = clip_to_box(&triangle, low, high);
-                reached = polygon_area(&clipped) > 0.0 && plan_distance(&clipped, axis) < reach;
+                if polygon_area(&clipped) <= 0.0 {
+                    continue;
+                }
+                let drawn = plan_distance(&clipped, axis);
+                if drawn >= reach {
+                    continue;
+                }
+                let distance = solid
+                    .round_reading(t, to_world, &triangle, axis)
+                    .map_or(drawn, |ideal| ideal.max(drawn));
+                if distance < reach && closest.is_none_or(|kept| distance < kept) {
+                    closest = Some(distance);
+                }
             }
             false
         }
     });
-    reached
+    closest
 }
 
 fn plan_distance((points, len): &Polygon, axis: [f64; 2]) -> f64 {
@@ -170,6 +270,8 @@ mod tests {
     use crate::flatten::Triangle;
     use crate::lattice::{AxisPose, LatticeInstance};
     use crate::mesh;
+    use crate::round::{PlacedRound, RoundShape};
+    use crate::trig::{cos, sincos};
 
     const OPAQUE: u32 = 4;
     const HEIGHT: f64 = 4.0;
@@ -280,6 +382,87 @@ mod tests {
         assert_eq!(inscribed_radius(&mesh::build(&cone, &[])), None);
     }
 
+    const ARC_RADIUS: f64 = 20.0;
+    const ARC_HEIGHT: f64 = 24.0;
+    const STUD_SEGMENTS: f64 = 16.0;
+
+    fn standard_stud() -> StudShape {
+        StudShape {
+            height: HEIGHT,
+            radius: 6.0,
+            inscribed_radius: 6.0 * cos(std::f64::consts::PI / STUD_SEGMENTS),
+        }
+    }
+
+    fn arc_point(center: [f64; 2], step: f64, y: f64) -> Vec3 {
+        let (sin, cos) = sincos(std::f64::consts::TAU * step / STUD_SEGMENTS);
+        [
+            center[0] + ARC_RADIUS * cos,
+            y,
+            center[1] + ARC_RADIUS * sin,
+        ]
+    }
+
+    fn arc_quad(center: [f64; 2], step: f64) -> Vec<Triangle> {
+        let [a, b] = [step, step + 1.0].map(|s| arc_point(center, s, 0.0));
+        let [c, d] = [step + 1.0, step].map(|s| arc_point(center, s, ARC_HEIGHT));
+        vec![triangle([a, b, c]), triangle([a, c, d])]
+    }
+
+    fn arc_wall(center: [f64; 2]) -> PlacedRound {
+        PlacedRound {
+            axis: 1,
+            center: [center[1], center[0]],
+            shape: RoundShape::Wall {
+                radius: ARC_RADIUS,
+                from: 0.0,
+                to: ARC_HEIGHT,
+            },
+        }
+    }
+
+    fn seats_at_origin(solid: PartSolid) -> bool {
+        let instance = CoverInstance {
+            matrix: &Affine::IDENTITY,
+            color: OPAQUE,
+            part: 0,
+            studs: &[],
+        };
+        let instances = [instance];
+        let solids = [solid];
+        StudField::new(
+            &instances,
+            &solids,
+            standard_stud(),
+            &ReceptorSeats::default(),
+        )
+        .seats([0, 0], 0.0)
+    }
+
+    #[test]
+    fn a_round_wall_counts_against_a_stud_only_where_both_its_drawn_chord_and_its_ideal_circle_reach_the_stud(
+    ) {
+        let (sin, cos) = sincos(std::f64::consts::TAU * 0.5 / STUD_SEGMENTS);
+        let outside = ARC_RADIUS + 5.6;
+        let cases = [
+            ([-10.0, -10.0], 1.0, false, true),
+            ([-outside * cos, -outside * sin], 0.0, true, true),
+        ];
+        for (center, step, as_drawn, with_its_round) in cases {
+            let mesh = mesh::build(&arc_quad(center, step), &[]);
+            assert_eq!(
+                seats_at_origin(PartSolid::from_mesh(&mesh)),
+                as_drawn,
+                "{center:?} as drawn"
+            );
+            assert_eq!(
+                seats_at_origin(PartSolid::from_mesh(&mesh).with_rounds(&[arc_wall(center)])),
+                with_its_round,
+                "{center:?} with its round"
+            );
+        }
+    }
+
     #[test]
     fn a_receptor_that_takes_the_stud_vouches_for_its_own_parts_cavity_and_never_for_another_part()
     {
@@ -317,7 +500,7 @@ mod tests {
             }])
         };
         let collides = |instances: &[CoverInstance], seats: &ReceptorSeats| {
-            stud_field_collides(instances, &solids, STUD, [0, 0], 0.0, seats)
+            !StudField::new(instances, &solids, STUD, seats).seats([0, 0], 0.0)
         };
 
         assert!(collides(&[cavity()], &ReceptorSeats::default()));
