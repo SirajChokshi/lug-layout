@@ -9,7 +9,14 @@ export type {
   RebaseEvent,
   SceneBackendConfig,
 } from "@brr/render";
-export { DEFAULT_LOOK_FEATURES, LOOK_FEATURES } from "@brr/render";
+export {
+  DEFAULT_LOOK_FEATURES,
+  LOOK_FEATURES,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
+  PROJECTION_FLOATS,
+} from "@brr/render";
 export { mainThreadModules, type MainThreadConfig } from "./client.module.ts";
 export type {
   FarModelSummary,
@@ -177,6 +184,7 @@ export {
   PLAN_SERVICE,
   HOTBAR,
   SCALE_BAR,
+  STARTER_WORLDS,
 } from "./tokens.ts";
 export type {
   ITrainPlay,
@@ -185,6 +193,12 @@ export type {
   PlaySwitchView,
   PlayTrainView,
 } from "./play/train-play.ts";
+export type {
+  IStarterWorlds,
+  StarterShelfStatus,
+  StarterWorldView,
+  WelcomeView,
+} from "./starters/starter-worlds.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
 export type {
   RollingDiagnosticsPanel,
@@ -265,6 +279,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
+export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {

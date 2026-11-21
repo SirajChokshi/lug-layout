@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { startEmpty } from "./editor-page.ts";
 
 const VIEWPORTS = [
   { width: 1024, height: 768 },
@@ -44,6 +45,7 @@ async function openEditor(page: Page): Promise<void> {
     const shown = await editor.locator(".error").allTextContents();
     throw new Error(`the editor couldn't start: ${[...shown, ...pageErrors].join(" | ")}`);
   }
+  await startEmpty(page);
 }
 
 async function enterMode(page: Page, mode: Mode): Promise<void> {
@@ -88,7 +90,7 @@ function measureOverlays(stepPx: number): OverlayBox[] {
   if (!root) throw new Error("the editor is not mounted");
   const panels = [...root.children]
     .filter((element): element is HTMLElement => element instanceof HTMLElement)
-    .filter((element) => !element.matches("canvas.scene, .overlay"))
+    .filter((element) => !element.matches("canvas.scene, svg.scene-labels, .overlay"))
     .filter((element) => getComputedStyle(element).position === "fixed")
     .map((element) => ({
       element,
