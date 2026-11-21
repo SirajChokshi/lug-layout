@@ -117,6 +117,7 @@ import {
   magnetSeatReports,
   paletteTrackCatalog,
   readSources,
+  singlePartSceneReports,
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
@@ -403,6 +404,7 @@ async function factsCommand(check: boolean): Promise<void> {
       shadowLibrary,
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, studs),
+    ...singlePartSceneReports(new LdrawLibrary([ldrawRoot])),
     ...trackCatalogReports(auditLibrary, catalog),
     ...levelCrossingReports(
       new LdrawLibrary([ldrawRoot, auditRoot]),

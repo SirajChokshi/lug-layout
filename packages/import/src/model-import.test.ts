@@ -60,6 +60,12 @@ const paletteTemplate = new URL(
   import.meta.url,
 );
 const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
+const fixtureBundleRoot = new URL(
+  "../../../tools/asset-pipeline/fixture-bundle/standard/",
+  import.meta.url,
+);
+const jumperScene = new URL("../../../docs/verified-facts/scenes/jumper.ldr", import.meta.url);
+const JUMPER_FIXTURE_MODEL = "jumper";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
@@ -1522,6 +1528,96 @@ it("seats custom bricks, whatever licence they name, on a bundle baseplate and t
   expect(await matesIn(await custom(onBaseplate("nonca-brick.dat")))).toBe(official);
   expect(await matesIn(await custom(underABrick("own-stud-brick.dat")))).toBe(stacked);
 });
+
+const CUSTOM_JUMPER_BENCH = [
+  "0 Bench of two jumpers under a tile, built for the lattice test",
+  "0 Name: custom-jumper-bench.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat",
+];
+
+const CUSTOM_TABLE_ON_ROUND_PLATES = [
+  "0 Table standing on four 1 x 1 round plates, built for the lattice test",
+  "0 Name: custom-table-on-round-plates.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 -10 0 -10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 10 0 -10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 -10 0 10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 10 0 10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 15 0 -8 0 1 0 0 0 1 0 0 0 1 3022.dat",
+];
+
+const CUSTOM_JUMPER_BESIDE_A_PLATE = [
+  "0 Jumper beside a 1 x 1 plate, whose two studs tie, built for the lattice test",
+  "0 Name: custom-jumper-beside-a-plate.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 15 10 0 20 1 0 0 0 1 0 0 0 1 3024.dat",
+];
+
+async function importedPhase(name: string, lines: ReadonlyArray<string>) {
+  const { bake } = await importWith(pinnedMirror, name, [...lines, ""].join("\n"));
+  return bake?.lattice ? [bake.lattice.phaseX, bake.lattice.phaseZ] : null;
+}
+
+it(
+  "phases a model by its studs where they seat on a stud field and by the receptors it stands on where only those do: a round plate and a custom table on round plates keep their studs; a studless tile, a jumper, a custom bench of jumpers and a custom jumper beside a plate, whose studs tie, take their receptors",
+  async () => {
+    expect({
+      roundPlate: await importedPhase("round-plate.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 6141.dat"]),
+      table: await importedPhase("custom-table-on-round-plates.ldr", CUSTOM_TABLE_ON_ROUND_PLATES),
+      tile: await importedPhase("tile.ldr", ["1 15 0 0 0 1 0 0 0 1 0 0 0 1 3069b.dat"]),
+      jumper: await importedPhase("jumper.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat"]),
+      bench: await importedPhase("custom-jumper-bench.ldr", CUSTOM_JUMPER_BENCH),
+      jumperBesideAPlate: await importedPhase(
+        "custom-jumper-beside-a-plate.ldr",
+        CUSTOM_JUMPER_BESIDE_A_PLATE,
+      ),
+    }).toEqual({
+      roundPlate: [0, 0],
+      table: [10, 10],
+      tile: [10, 0],
+      jumper: [10, 0],
+      bench: [0, 0],
+      jumperBesideAPlate: [10, 0],
+    });
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "bakes a generated jumper to the lattice the pipeline baked for it, framed on both paths by the anti-studs it stands on rather than its centre stud",
+  async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("manifest.json", fixtureBundleRoot), "utf8"),
+    ) as Manifest;
+    const entry = manifest.models.find((model) => model.name === JUMPER_FIXTURE_MODEL);
+    if (!entry) throw new Error(`the fixture bundle has no ${JUMPER_FIXTURE_MODEL}`);
+    const bundled = JSON.parse(
+      await readFile(new URL(entry.file, fixtureBundleRoot), "utf8"),
+    ) as BundledModel;
+
+    const { bake } = await importWith(
+      pinnedMirror,
+      "jumper.ldr",
+      await readFile(jumperScene, "utf8"),
+    );
+
+    expect(bundled.lattice?.phase).toEqual([10, 0]);
+    expect(bake?.lattice).toEqual({
+      phaseX: bundled.lattice?.phase[0],
+      phaseZ: bundled.lattice?.phase[1],
+      aabbMin: bundled.lattice?.aabb.min,
+      aabbMax: bundled.lattice?.aabb.max,
+    });
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 it.each([0, 2])(
   "bakes an imported file to the same lattice, stud cover, footprint, columns and instance footing as the bundle's own bake of that file, with %i helper reactors",
