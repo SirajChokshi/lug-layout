@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::bands::{end_faces, outward_round_bands};
 use brick_compile::bore::{bore_sections, BoreAxis, BoreSection, BoreShape};
+use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::connect::{
     mating_faces, Caps, Connector, ConnectorExtractor, EntranceClosure, FaceSection, Gender, Grid,
     IncludeRefusal, InferredFeatures, Issue, MatingFace, MetaError, Openness, PartRecords,
@@ -644,6 +645,63 @@ fn ring_radii(library: &MemoryLibrary, reference: &str) -> (f64, f64) {
         radii.iter().copied().fold(f64::INFINITY, f64::min),
         radii.iter().copied().fold(0.0, f64::max),
     )
+}
+
+fn table_stud_files() -> HashSet<String> {
+    let table: Value =
+        serde_json::from_slice(&fs::read(table_path()).expect("table file")).expect("table json");
+    stud_primitives_from_table(&table)
+        .expect("the table names stud primitives")
+        .into_iter()
+        .map(|name| format!("p/{name}"))
+        .collect()
+}
+
+fn male_studs(connectors: Vec<Connector>) -> Vec<(Vec<Section>, [f64; 12])> {
+    connectors
+        .into_iter()
+        .filter_map(|connector| match connector.shape {
+            Shape::Cylinder {
+                gender: Gender::Male,
+                sections,
+                ..
+            } => Some((sections, connector.placement.m)),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn every_pinned_primitive_the_shadow_library_makes_a_table_stud_is_a_table_stud() {
+    let library = pinned("ldraw");
+    let shadow = pinned("ldcad-shadow-bundle");
+    let studs = table_stud_files();
+    let mut snaps = ShadowSnaps::new(&library, &shadow);
+    let stud_snaps: Vec<_> = studs
+        .iter()
+        .flat_map(|file| male_studs(snaps.snaps(file).connectors))
+        .collect();
+    assert!(!stud_snaps.is_empty());
+    let mut primitives: Vec<&String> = library
+        .0
+        .keys()
+        .filter(|path| path.starts_with("p/") && path.matches('/').count() == 1)
+        .collect();
+    primitives.sort();
+    let uncurated: Vec<&String> = primitives
+        .into_iter()
+        .filter(|path| !studs.contains(*path))
+        .filter(
+            |path| match male_studs(snaps.snaps(path).connectors).as_slice() {
+                [only] => stud_snaps.contains(only),
+                _ => false,
+            },
+        )
+        .collect();
+    assert!(
+        uncurated.is_empty(),
+        "the shadow library gives {uncurated:?} a table stud's snap, but the primitive table doesn't draw them as studs"
+    );
 }
 
 #[test]
