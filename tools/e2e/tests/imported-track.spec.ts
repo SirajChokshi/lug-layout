@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { EditorPage, nearestLattice, routeMiddle } from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
+const GEOMETRY = new URL("../../../docs/verified-facts/geometry.json", import.meta.url);
 const ZETA16_STEP_RADIANS = Math.PI / 8;
 const LDRAW_DECIMALS = 6;
 const EDITOR_DECIMALS = 3;
@@ -18,12 +19,21 @@ const RUN_OFFSET_LDU = -960;
 const RUN_HALF_SPAN_LDU = 160;
 const EAST = 0;
 const DRAWN_RUN_LDU = 640;
+const HALF_TURN_CURVES = 8;
 
 interface Reference {
   readonly color: string;
   readonly position: readonly [number, number, number];
   readonly matrix: ReadonlyArray<number>;
   readonly file: string;
+}
+
+interface Geometry {
+  readonly rails: ReadonlyArray<{
+    readonly part: string;
+    readonly railTopY: string;
+    readonly railTopAboveUndersideLdu: string;
+  }>;
 }
 
 interface Arrangement {
@@ -278,22 +288,41 @@ test("a train runs a full lap on an imported loop turned 22.5° and written with
   expect(sweptTurns(path)).toBeGreaterThanOrEqual(1);
 });
 
-test("drawn track joined to an imported model's own 9V run is lifted by undo and joined again by redo", async ({
-  page,
-}) => {
+async function undersideBelowOriginLdu(part: string): Promise<number> {
+  const geometry: Geometry = JSON.parse(await readFile(GEOMETRY, "utf8"));
+  const rail = geometry.rails.find((entry) => entry.part === part);
+  if (!rail) throw new Error(`geometry.json measures no rail for ${part}`);
+  return Number(rail.railTopY) + Number(rail.railTopAboveUndersideLdu);
+}
+
+async function nineVoltRun(
+  liftLdu = 0,
+): Promise<{ readonly file: string; readonly pieces: number }> {
   const { text, pieces } = await layout(
     "nine-volt-run",
     [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
     (references) => {
-      const run = references.filter(
-        ({ file, position: [x, , z] }) =>
-          file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
-      );
+      const run = references
+        .filter(
+          ({ file, position: [x, , z] }) =>
+            file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+        )
+        .map((reference): Reference => {
+          const [x, y, z] = reference.position;
+          return { ...reference, position: [x, y - liftLdu, z] };
+        });
       references.splice(0, references.length, ...run);
     },
   );
   const file = test.info().outputPath("nine-volt-run.ldr");
   await writeFile(file, text);
+  return { file, pieces };
+}
+
+test("drawn track joined to an imported model's own 9V run is lifted by undo and joined again by redo", async ({
+  page,
+}) => {
+  const { file, pieces } = await nineVoltRun();
   const editor = await importAndPlace(page, file);
   expect(pieces).toBe(2);
   expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
@@ -320,6 +349,58 @@ test("drawn track joined to an imported model's own 9V run is lifted by undo and
   expect(await editor.laidTrack()).toEqual(laid);
   expect(await editor.trackEnds()).toEqual(joinedEnds);
   expect(await editor.trackCounts()).toEqual(run);
+});
+
+test("an imported model's open end is extended from the keyboard into a loop that closes on its other end, and undone one step at a time", async ({
+  page,
+}) => {
+  const { file, pieces } = await nineVoltRun(
+    await undersideBelowOriginLdu(STRAIGHT_FILE.replace(".dat", "")),
+  );
+  const editor = await importAndPlace(page, file);
+  const modelEnds = await editor.trackEnds();
+  const east = modelEnds.find((end) => end.heading === EAST);
+  if (!east)
+    throw new Error(`the model's run has no end facing east: ${JSON.stringify(modelEnds)}`);
+  await editor.hoverAt(await editor.screenOf(nearestLattice(east)));
+  const offered = await editor.trackChoice();
+  const keys = [
+    ...Array<string>(HALF_TURN_CURVES).fill("a"),
+    ...Array<string>(pieces).fill("w"),
+    ...Array<string>(HALF_TURN_CURVES / 2).fill("a"),
+  ];
+
+  const counts = [];
+  for (const key of keys) {
+    await editor.press(key);
+    counts.push(await editor.trackCounts());
+  }
+  const suggested = await editor.trackChoice();
+  await editor.press("Enter");
+  const closed = await editor.trackCounts();
+
+  expect(offered).toEqual({ kind: "straight", pieces: 1, joins: false });
+  expect(counts).toEqual(
+    keys.map((_, i) => ({ lastCommit: "laid", pieces: i + 1, openEnds: 2, joins: pieces + i })),
+  );
+  expect(suggested).toEqual({ kind: "join", pieces: HALF_TURN_CURVES / 2, joins: true });
+  const loop = pieces + keys.length + HALF_TURN_CURVES / 2;
+  expect(closed).toEqual({
+    lastCommit: "joined",
+    pieces: loop - pieces,
+    openEnds: 0,
+    joins: loop,
+  });
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("extended-imported-run.png") });
+
+  await editor.undo();
+  expect(await editor.laidTrack()).toHaveLength(keys.length);
+  for (let left = keys.length - 1; left >= 0; left--) {
+    await editor.undo();
+    expect(await editor.laidTrack()).toHaveLength(left);
+  }
+  expect(await editor.trackEnds()).toEqual(modelEnds);
 });
 
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {
