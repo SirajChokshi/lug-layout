@@ -9,6 +9,7 @@ export const FIXTURES_DIRECTORY = "packages/test-fixtures";
 export const BUNDLE_DATA_FILES = {
   palette: `${PIPELINE_DIRECTORY}/palette.json`,
   fixtureModels: `${PIPELINE_DIRECTORY}/fixture-models.json`,
+  omrErrata: `${PIPELINE_DIRECTORY}/omr-errata.json`,
   primitiveConnectors: `${PIPELINE_DIRECTORY}/primitive-connectors.json`,
   inferredConnectors: `${PIPELINE_DIRECTORY}/inferred-connectors.json`,
   sectionVocabulary: `${PIPELINE_DIRECTORY}/section-vocabulary.json`,

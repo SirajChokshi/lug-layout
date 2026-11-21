@@ -1,5 +1,5 @@
 name: LDraw inputs
-description: Restores the pinned LDraw inputs from the pin-keyed Actions cache and runs restore-ldraw. Only runs that aren't pull requests save the cache.
+description: Restores the pinned LDraw inputs from the pin-keyed Actions cache, falling back to the newest entry for other pins, and runs restore-ldraw, which downloads only the files whose hash is missing or wrong and prunes the rest. Only runs that aren't pull requests save the cache.
 runs:
   using: composite
   steps:
@@ -14,6 +14,7 @@ runs:
           .cache/omr
           .cache/catalog
         key: ldraw-inputs-v3-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+        restore-keys: ldraw-inputs-v3-
     - shell: bash
       run: pnpm --filter @brr/asset-pipeline restore-ldraw
     - if: ${{ github.event_name != 'pull_request' && steps.restore.outputs.cache-hit != 'true' }}

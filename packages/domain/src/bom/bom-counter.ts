@@ -4,7 +4,19 @@ export interface BomLine {
   readonly quantity: number;
 }
 
-export class BomCounter {
+export interface PartSink {
+  add(partIndex: number, ldrawColor: number, quantity: number): void;
+}
+
+export class PartTally implements PartSink {
+  total = 0;
+
+  add(_partIndex: number, _ldrawColor: number, quantity: number): void {
+    this.total += quantity;
+  }
+}
+
+export class BomCounter implements PartSink {
   private readonly colorSlot = new Map<number, number>();
   private readonly counts: Float64Array;
   private readonly outsideTable = new Map<string, BomLine>();

@@ -177,6 +177,10 @@ interface ModelFile {
       readonly flat: ReadonlyArray<number>;
       readonly columnBottom: ReadonlyArray<number>;
       readonly columnTop: ReadonlyArray<number>;
+      readonly footing: {
+        readonly instance: ReadonlyArray<number>;
+        readonly cell: ReadonlyArray<number>;
+      };
     } | null;
   };
   readonly instances: {
@@ -356,6 +360,13 @@ for (const model of standardManifest.models) {
         mismatches.push("column bottoms");
       if (!isDeepStrictEqual([...bakedCells.columnTop], cells.columnTop))
         mismatches.push("column tops");
+      if (
+        !isDeepStrictEqual(
+          { instance: [...bakedCells.footing.instance], cell: [...bakedCells.footing.cell] },
+          cells.footing,
+        )
+      )
+        mismatches.push("instance footing");
     }
     const vehicles = baked.vehicles.map((vehicle) => ({
       ...vehicle,
