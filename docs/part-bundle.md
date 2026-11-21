@@ -214,6 +214,11 @@ It keeps verified files in the asset cache it shares with the main thread (`brr-
 **Exactness and evidence.**
 - **Exactness:** an import that bakes and draws pinned parts from records equals the import that compiles them: the same part resolutions, GLBs, lattice, cover, cells and vehicles (`model-import.test.ts`, `tests/record.rs`).
 - **CI:** the held-out workflow builds `.cache/library-bake` with `library-bake --check`, and the harness reads it from disk. The report's import-time section says how many pinned parts used records.
+- **E2e:** each `e2e` shard restores a subset of `.cache/library-bake` from the Actions cache, under `library-bake-subset-v1-<pin>-<fixtures>-<shard>-of-<shards>`. `<pin>` hashes `library-bake.json`, and `<fixtures>` hashes what decides which parts e2e imports: the specs, the Playwright config, `packages/test-fixtures`, `packages/import`'s test data and source, `palette.json` and `fixture-models.json`.
+  - **On a miss,** the shard builds the whole bake with `library-bake --check` first, so it never runs without the records it needs.
+  - **Saving:** a push or dispatched run that missed keeps only the files its own e2e asked for (`LIBRARY_BAKE_REQUEST_LOG`) and saves them. Pull requests only restore the subsets, as they do every cache but the part bundle, so a pull request stacked on another pull request's branch restores `main`'s subsets, and builds the bake while `main`'s pin or fixtures differ.
+  - **The strict check:** the e2e harness's `ServedBake` fails a test, naming the file, when a `/library-bake/` request isn't served, because that part would be compiled from the raw library. Under `CI`, an import that ends placeable must also have fetched the bake's index. Locally, with no bake built, it only warns.
+  - **The raw route:** one spec, `rolling-diagnostics`, blocks the bake (`blockLibraryBake`) for the import it compiles at import, and checks that the raw route served that import's parts.
 
 ### Publishing
 

@@ -46,6 +46,8 @@ import type { ITrackScene } from "./scene/track-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
 import type { IRailYard } from "./trains/rail-yard.ts";
+import type { ITallestTrain } from "./trains/tallest-train.ts";
+import type { ITrackPiers } from "./edit/track-piers.ts";
 import type { IVehicleIds } from "./trains/vehicle-ids.ts";
 import type { IStarterFiles } from "./starters/starter-files.ts";
 import type { IStarterWorlds } from "./starters/starter-worlds.ts";
@@ -131,6 +133,9 @@ export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.clien
 export const OWNED_PARTS: ServiceIdentifier<IOwnedParts> = Symbol.for("brr.client.OwnedParts");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
 export const RAIL_YARD: ServiceIdentifier<IRailYard> = Symbol.for("brr.client.RailYard");
+export const TALLEST_TRAIN: ServiceIdentifier<ITallestTrain> =
+  Symbol.for("brr.client.TallestTrain");
+export const TRACK_PIERS: ServiceIdentifier<ITrackPiers> = Symbol.for("brr.client.TrackPiers");
 export const VEHICLE_IDS: ServiceIdentifier<IVehicleIds> = Symbol.for("brr.client.VehicleIds");
 export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symbol.for(
   "brr.client.PaletteMemoryStore",

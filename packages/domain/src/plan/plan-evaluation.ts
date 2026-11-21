@@ -163,6 +163,20 @@ function factsOf(rows: PlanRows, row: number): PlacementFacts {
   };
 }
 
+export interface PlateHeights {
+  readonly needPlates: number;
+  readonly hasPlates: number;
+}
+
+const NO_LOW_CLEARANCE = 0;
+
+function lowClearanceOf(rows: PlanRows, row: number): Pick<PlanPlacement, "lowClearance"> {
+  const needPlates = rows.clearanceNeed[row] ?? NO_LOW_CLEARANCE;
+  if (needPlates === NO_LOW_CLEARANCE) return {};
+  const hasPlates = rows.clearanceHas[row] ?? NO_LOW_CLEARANCE;
+  return { lowClearance: { train: rows.clearanceTrain, needPlates, hasPlates } };
+}
+
 function placementOf(rows: PlanRows, row: number): PlanPlacement {
   const at = row * BOX_STRIDE;
   return {
@@ -171,6 +185,7 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
     label: rows.labelOf(row),
     unsupported: rows.unsupported[row] === NOT_HELD,
     carriedTrackUnsupported: rows.unsupported[row] === CARRIED_TRACK_NOT_HELD,
+    ...lowClearanceOf(rows, row),
     shape: rows.shapeOf(row),
     outline: rows.outline[row] ?? null,
     carried: rows.carried[row] ?? null,
@@ -183,6 +198,18 @@ function placementOf(rows: PlanRows, row: number): PlanPlacement {
       maxZ: rows.box[at + BOX_MAX_Z] ?? Number.NaN,
     },
   };
+}
+
+function sameHeights(
+  known: ReadonlyMap<number, PlateHeights> | undefined,
+  wanted: ReadonlyMap<number, PlateHeights>,
+): boolean {
+  if ((known?.size ?? 0) !== wanted.size) return false;
+  for (const [source, heights] of wanted) {
+    const was = known?.get(source);
+    if (was?.needPlates !== heights.needPlates || was.hasPlates !== heights.hasPlates) return false;
+  }
+  return true;
 }
 
 export class PlanEvaluation {
@@ -205,6 +232,8 @@ export class PlanEvaluation {
   private readonly flaggedRows = new RowList(0);
   private readonly unsupportedRows = new Set<number>();
   private readonly unsupportedSources = new Map<number, UnsupportedSources>();
+  private readonly lowClearanceRows = new Set<number>();
+  private readonly lowClearanceSources = new Map<number, ReadonlyMap<number, PlateHeights>>();
   private before = new Uint32Array(4);
   private bomBefore = new Float64Array(4 * BOM_SUMS);
   private readonly scratch = new CoverageScratch();
@@ -378,6 +407,51 @@ export class PlanEvaluation {
     return true;
   }
 
+  setLowClearance(
+    segment: number,
+    sources: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): boolean {
+    const rows = this.rows;
+    const renamed = rows.clearanceTrain !== train;
+    if (!renamed && sameHeights(this.lowClearanceSources.get(segment), sources)) return false;
+    rows.clearanceTrain = train;
+    this.lowClearanceSources.set(segment, new Map(sources));
+    const wanted = new Map<number, PlateHeights>();
+    for (const [source, heights] of sources) {
+      const row = rows.find(segment, source);
+      if (row !== NO_ROW) wanted.set(row, heights);
+    }
+    for (const row of this.lowClearanceRows) {
+      if (rows.segment[row] === segment && !wanted.has(row)) this.rewriteClearance(row, null);
+      else if (renamed && !wanted.has(row)) this.rewriteClearance(row, this.heightsOf(row));
+    }
+    for (const [row, heights] of wanted) {
+      const same =
+        rows.clearanceNeed[row] === heights.needPlates &&
+        rows.clearanceHas[row] === heights.hasPlates;
+      if (renamed || !same) this.rewriteClearance(row, heights);
+    }
+    this.version++;
+    return true;
+  }
+
+  private heightsOf(row: number): PlateHeights {
+    return {
+      needPlates: this.rows.clearanceNeed[row] ?? NO_LOW_CLEARANCE,
+      hasPlates: this.rows.clearanceHas[row] ?? NO_LOW_CLEARANCE,
+    };
+  }
+
+  private rewriteClearance(row: number, heights: PlateHeights | null): void {
+    if (heights) this.lowClearanceRows.add(row);
+    else this.lowClearanceRows.delete(row);
+    const wasUnreadable = this.beginRewrite(row);
+    this.rows.clearanceNeed[row] = heights?.needPlates ?? NO_LOW_CLEARANCE;
+    this.rows.clearanceHas[row] = heights?.hasPlates ?? NO_LOW_CLEARANCE;
+    this.endRewrite(row, wasUnreadable);
+  }
+
   private unsupportedOf(segment: number, source: number): number {
     const sources = this.unsupportedSources.get(segment);
     if (!sources) return HELD;
@@ -529,6 +603,7 @@ export class PlanEvaluation {
   private clearRows(): void {
     this.rows.clear();
     this.unsupportedRows.clear();
+    this.lowClearanceRows.clear();
     for (let r = 0; r < this.regions.length; r++) {
       const state = this.state(r);
       state.insideCount = 0;
@@ -577,6 +652,12 @@ export class PlanEvaluation {
       this.rows.unsupported[row] = held;
       this.unsupportedRows.add(row);
     }
+    const low = this.lowClearanceSources.get(segment)?.get(source);
+    if (low) {
+      this.rows.clearanceNeed[row] = low.needPlates;
+      this.rows.clearanceHas[row] = low.hasPlates;
+      this.lowClearanceRows.add(row);
+    }
     this.regionsIn[row] = 0;
     this.flagged[row] = 0;
     for (let r = 0; r < this.regions.length; r++) {
@@ -601,6 +682,7 @@ export class PlanEvaluation {
   }
 
   private removeRow(row: number): void {
+    this.lowClearanceRows.delete(row);
     if (this.rows.boxState[row] === BOX_PLAN_UNREADABLE) {
       this.planUnreadableCount--;
       this.rows.remove(row);
