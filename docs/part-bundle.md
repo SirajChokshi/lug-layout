@@ -146,17 +146,18 @@ They go to `.cache/library-bake`. The import will fetch them for pinned parts in
 
 ### Record format
 
-Every record is little-endian, versioned by its magic `BRRBAKE1`, and lossless. `BakeRecord` in `crates/brick-compile/src/record.rs` encodes and decodes it, refusing a truncated, padded or inconsistent record. The fields, in order:
+Every record is little-endian, versioned by its magic `BRRBAKE2`, and lossless. `BakeRecord` in `crates/brick-compile/src/record.rs` encodes and decodes it, refusing a truncated, padded or inconsistent record. The fields, in order:
 
 | Field | Encoding |
 |---|---|
-| Magic | `BRRBAKE1`, 8 bytes |
-| Counts | vertices V, colour groups G and stud references S, each u32 |
+| Magic | `BRRBAKE2`, 8 bytes |
+| Counts | vertices V, colour groups G, stud references S and round faces R, each u32 |
 | Whole-geometry bounds | min then max, 6 × f64 |
 | Positions | 3V × f32, the compiled mesh's positions bit for bit |
 | Group headers | G × (colour u32, index count u32) |
 | Indices | every group's indices in group order; u16 when V ≤ 65,536, otherwise u32 |
 | Stud references | S × (colour u32, primitive name as u16 length plus UTF-8, matrix as 12 × f64) |
+| Round faces | R × (axis u8, kind u8 (0 wall, 1 annulus), centre as 2 × f64, then radius, from and to for a wall, or inner, outer and at for an annulus, as 3 × f64) |
 | Tree order | T = indices / 3 entries; u16 when T ≤ 65,536, otherwise u32 |
 
 **Whole-geometry bounds** are the part's bounds with stud geometry included, in f64 from the LDraw points. Vehicle detection measures every drawn part's contact graph from exactly these (`vehicle::part_bounds`). Zeros are stored as +0.0. `f64::min` and `f64::max` leave the sign of a zero result unspecified, and native and WASM code generation pick differently: the parity gate found 1,202 parts whose bounds differed only by that sign.
@@ -164,7 +165,9 @@ Every record is little-endian, versioned by its magic `BRRBAKE1`, and lossless. 
 **Tree order** is the permutation `TriangleTree::build` produces for the part's triangles, taken in group order. `PartSolid::from_record` rebuilds the identical tree from it, without sorting, through `TriangleTree::from_order`:
 - **Speed:** 105 ms instead of 1,160 ms over the distinct parts of 89 inputs.
 - **Size cost:** 19% of the library's compressed record bytes, and 181 KB extra for 10185-1.
-- **Builder invariants** that `BRRBAKE1` depends on:
+**Round faces** are the part's round primitives, placed in the part's y-up frame: every reference whose own geometry is a unit cylinder wall or a flat unit annulus or disc (`round::unit_round`, the same recognition the inferred connector tier uses), under a circular, axis-aligned placement (`round::place`). The stud-field seat test reads a facet lying on one of them at its ideal circle where that is farther from the stud (*Seat test* in `docs/architecture.md` §M1 S5). `BRRBAKE1` had no round faces, so `BRRBAKE2` records replaced them; a reader refuses the old magic.
+
+- **Builder invariants** that `BRRBAKE2` depends on:
   - leaves hold at most 4 triangles (`LEAF_TRIANGLES`);
   - a branch splits along the widest axis of its bounds;
   - the lower child takes the first half (`len / 2`) of its triangles, stably sorted by the sum of their corners on that axis.

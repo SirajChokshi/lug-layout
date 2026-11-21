@@ -1560,6 +1560,21 @@ const CUSTOM_JUMPER_BESIDE_A_PLATE = [
   "1 15 10 0 20 1 0 0 0 1 0 0 0 1 3024.dat",
 ];
 
+const HINGE_INSTANCE = 5;
+
+const CUSTOM_JUMPER_ROW_BESIDE_A_HINGE = [
+  "0 Row of jumpers beside a locking hinge plate whose anti-studs share their frame, built for the lattice test",
+  "0 Name: custom-jumper-row-beside-a-hinge.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 -70 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 50 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 90 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 7 10 0 -60 1 0 0 0 1 0 0 0 1 44568.dat",
+];
+
 async function importedPhase(name: string, lines: ReadonlyArray<string>) {
   const { bake } = await importWith(pinnedMirror, name, [...lines, ""].join("\n"));
   return bake?.lattice ? [bake.lattice.phaseX, bake.lattice.phaseZ] : null;
@@ -1628,6 +1643,26 @@ it(
       besideACurvedWedge: [0, 0],
       besideANotchedCorner: [10, 0],
     });
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "reports each stud of the frame it refused that a part reaches into: a custom row of jumpers beside a locking hinge keeps the jumpers' stud frame, and the refusal of its anti-studs' frame names the hinge",
+  async () => {
+    const { bake } = await importWith(
+      pinnedMirror,
+      "custom-jumper-row-beside-a-hinge.ldr",
+      [...CUSTOM_JUMPER_ROW_BESIDE_A_HINGE, ""].join("\n"),
+    );
+    const refused = bake?.seatRefusals.find(({ phase }) => phase[0] === 0 && phase[1] === 0);
+
+    expect(bake?.lattice ? [bake.lattice.phaseX, bake.lattice.phaseZ] : null).toEqual([10, 0]);
+    expect(refused?.intrusions.length).toBeGreaterThan(0);
+    expect(new Set(refused?.intrusions.map(({ instance }) => instance))).toEqual(
+      new Set([HINGE_INSTANCE]),
+    );
+    expect(refused?.intrusions.every(({ depth }) => depth > 0)).toBe(true);
   },
   BAKE_TIMEOUT_MS,
 );

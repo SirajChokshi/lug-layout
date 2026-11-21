@@ -31,7 +31,7 @@ use crate::frame::{respond, split, Body, Request};
 use crate::receptors::DrawnReceptors;
 use crate::reply::{
     AuthoredIdentification, BakePhases, BogieHeader, Cover, Failure, InlineOutcome, InlinePair,
-    Lattice, LooseGeometry, PartOutcome, Reply, Section, VehicleHeader,
+    Lattice, LooseGeometry, PartOutcome, Reply, SeatRefusal, Section, VehicleHeader,
 };
 use crate::request::{InlineCheck, Operation, Range, VehicleInputs};
 use crate::tracking::TrackingLibrary;
@@ -630,6 +630,7 @@ fn bake_drawn(
             resumed_parts,
             lattice: None,
             lattice_issue: None,
+            seat_refusals: Vec::new(),
             cover: Cover::from(&cover),
             vehicles: None,
             vehicle_issue: None,
@@ -639,9 +640,13 @@ fn bake_drawn(
         return Ok((reply, baker.keep()));
     }
     let latticing = Instant::now();
-    let (lattice, lattice_issue) = match baker.lattice(drawn, &drawn_shapes) {
-        Ok(lattice) => (lattice, None),
-        Err(error) => (None, Some(error.to_string())),
+    let (lattice, lattice_issue, seat_refusals) = match baker.seating(drawn, &drawn_shapes) {
+        Ok(seating) => (
+            seating.lattice.as_ref().ok().cloned(),
+            seating.issue(),
+            seating.refused.iter().map(SeatRefusal::from).collect(),
+        ),
+        Err(error) => (None, Some(error.to_string()), Vec::new()),
     };
     phases.lattice_ms = ms(latticing.elapsed());
     let covering = Instant::now();
@@ -665,6 +670,7 @@ fn bake_drawn(
         resumed_parts,
         lattice: lattice.as_ref().map(Lattice::from),
         lattice_issue,
+        seat_refusals,
         cover: Cover::from(&cover),
         vehicles,
         vehicle_issue,

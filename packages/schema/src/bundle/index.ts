@@ -1404,6 +1404,19 @@ export const CompilerBakePhases = v.object({
 });
 export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
 
+const SeatIntrusion = v.object({
+  at: v.tuple([Finite, Finite]),
+  depth: Finite,
+  instance: Count,
+});
+
+export const SeatRefusal = v.object({
+  phase: v.tuple([StudPhase, StudPhase]),
+  floorY: Finite,
+  intrusions: v.array(SeatIntrusion),
+});
+export type SeatRefusal = v.InferOutput<typeof SeatRefusal>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
@@ -1411,6 +1424,7 @@ export const CompilerBaked = v.object({
   resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
+  seatRefusals: v.exactOptional(v.array(SeatRefusal)),
   cover: v.object({
     studs: Count,
     coveredStuds: Count,

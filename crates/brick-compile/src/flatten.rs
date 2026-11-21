@@ -7,6 +7,7 @@ use crate::exact::{Decimal, ExactAffine, ExactVec3};
 use crate::lattice::{non_finite, record, unplaceable, Malformation, MalformedGeometry};
 use crate::ldraw::{self, ExactNumbers, LdrawFile, Line, Winding};
 use crate::pieces::{PieceMap, NO_PIECE};
+use crate::round::{unit_round, UnitShape};
 
 pub const INHERIT_COLOR: u32 = 16;
 const MAX_DEPTH: usize = 64;
@@ -38,6 +39,12 @@ pub struct Triangle {
 pub struct StudReference {
     pub primitive: String,
     pub color: u32,
+    pub matrix: Affine,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RoundReference {
+    pub shape: UnitShape,
     pub matrix: Affine,
 }
 
@@ -85,6 +92,7 @@ pub struct Flattened {
     pub exact: Vec<Option<ExactTriangle>>,
     pub hard_edges: Vec<[Vec3; 2]>,
     pub studs: Vec<StudReference>,
+    pub rounds: Vec<RoundReference>,
     pub files: Vec<VisitedFile>,
     pub spans: Vec<ReferenceSpan>,
     pub pieces: Vec<PieceSpan>,
@@ -133,6 +141,7 @@ pub struct Flattener<'a, L: Library> {
     pieces: Option<&'a PieceMap>,
     exact: bool,
     parsed: HashMap<String, Rc<LdrawFile>>,
+    units: HashMap<String, Option<UnitShape>>,
     first_unresolved: Option<FlattenError>,
     root: String,
     malformed: Vec<MalformedGeometry>,
@@ -165,6 +174,7 @@ impl<'a, L: Library> Flattener<'a, L> {
             pieces: None,
             exact: false,
             parsed: HashMap::new(),
+            units: HashMap::new(),
             first_unresolved: None,
             root: String::new(),
             malformed: Vec::new(),
@@ -285,6 +295,13 @@ impl<'a, L: Library> Flattener<'a, L> {
             });
     }
 
+    fn unit_shape(&mut self, path: &str, file: &LdrawFile) -> Option<UnitShape> {
+        *self
+            .units
+            .entry(path.to_string())
+            .or_insert_with(|| unit_round(file).map(|unit| unit.shape))
+    }
+
     fn is_stud(&self, reference: &str) -> bool {
         self.stud_primitives.iter().any(|stud| stud == reference)
     }
@@ -356,6 +373,12 @@ impl<'a, L: Library> Flattener<'a, L> {
                         self.unresolved(reference, path);
                         continue;
                     };
+                    if let Some(shape) = self.unit_shape(&child_path, &child) {
+                        out.rounds.push(RoundReference {
+                            shape,
+                            matrix: child_matrix,
+                        });
+                    }
                     let child_frame = Frame {
                         matrix: child_matrix,
                         color: child_color,

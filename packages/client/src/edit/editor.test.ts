@@ -2532,6 +2532,7 @@ function importedRecord(
     bake: {
       lattice: model.lattice,
       latticeIssue: null,
+      seatRefusals: [],
       studCover: model.studCover,
       cells: model.cells,
       vehicles: model.vehicles,
@@ -3006,6 +3007,7 @@ class BakedRecordImporter implements IModelImporter {
       bake: {
         lattice: model.lattice,
         latticeIssue: null,
+        seatRefusals: [],
         studCover: model.studCover,
         cells: model.cells,
         vehicles: model.vehicles,

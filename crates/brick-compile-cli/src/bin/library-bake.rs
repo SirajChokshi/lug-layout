@@ -164,7 +164,7 @@ fn bake_part(
     let rebuilt = BakeRecord::decode(&record)
         .and_then(|decoded| PartSolid::from_record(&decoded))
         .map_err(|e| format!("{reference}: {e}"))?;
-    if !rebuilt.same_bits(&PartSolid::from_mesh(&compiled.mesh)) {
+    if !rebuilt.same_bits(&PartSolid::from_mesh(&compiled.mesh).with_rounds(&compiled.rounds)) {
         return Err(format!(
             "{reference}: its record does not rebuild its solid bit for bit"
         ));

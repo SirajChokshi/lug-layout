@@ -2,6 +2,7 @@ mod below;
 mod instance_tree;
 mod ray;
 mod reservation;
+mod round_facets;
 mod stud_field;
 mod triangle_tree;
 
@@ -14,7 +15,8 @@ use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::reservation::{axis_span, cell_span, CellColumns};
 pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
-pub use self::stud_field::{inscribed_radius, stud_field_collides};
+use self::round_facets::RoundFacets;
+pub use self::stud_field::{inscribed_radius, StudField};
 use self::triangle_tree::{TriangleHit, TriangleTree};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
@@ -22,6 +24,7 @@ use crate::flatten::INHERIT_COLOR;
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
 use crate::record::{BakeRecord, RecordError};
+use crate::round::PlacedRound;
 use crate::trig::sincos;
 
 pub const PLATE_LDU: f64 = 8.0;
@@ -94,6 +97,7 @@ pub struct PartSolid {
     tree_points: Vec<[Vec3; 3]>,
     certifiable: Vec<bool>,
     tree: TriangleTree,
+    rounds: RoundFacets,
     min: Vec3,
     max: Vec3,
 }
@@ -143,13 +147,28 @@ impl PartSolid {
             return Err(RecordError::Order);
         }
         let tree = TriangleTree::from_order(&triangles, &record.tree_order);
-        Ok(PartSolid::assemble(
-            &record.mesh,
-            triangles,
-            &colors,
-            tree,
-            &record.tree_order,
-        ))
+        Ok(
+            PartSolid::assemble(&record.mesh, triangles, &colors, tree, &record.tree_order)
+                .with_rounds(&record.rounds),
+        )
+    }
+
+    pub fn with_rounds(self, rounds: &[PlacedRound]) -> Self {
+        PartSolid {
+            rounds: RoundFacets::new(rounds),
+            ..self
+        }
+    }
+
+    fn round_reading(
+        &self,
+        facet: usize,
+        to_world: &Affine,
+        world: &[Vec3; 3],
+        axis: [f64; 2],
+    ) -> Option<f64> {
+        self.rounds
+            .reading(&self.tree_points[facet], to_world, world, axis)
     }
 
     pub fn same_bits(&self, other: &PartSolid) -> bool {
@@ -167,6 +186,7 @@ impl PartSolid {
             && self.min.map(f64::to_bits) == other.min.map(f64::to_bits)
             && self.max.map(f64::to_bits) == other.max.map(f64::to_bits)
             && self.tree.same_bits(&other.tree)
+            && self.rounds.same_bits(&other.rounds)
     }
 
     fn assemble(
@@ -187,6 +207,7 @@ impl PartSolid {
             tree_points,
             triangles,
             tree,
+            rounds: RoundFacets::default(),
             min,
             max,
         }

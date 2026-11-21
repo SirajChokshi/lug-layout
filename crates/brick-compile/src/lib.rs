@@ -24,6 +24,8 @@ pub mod occlusion;
 pub mod pieces;
 pub mod record;
 pub mod rolling;
+pub mod round;
+pub mod seat;
 pub mod stud_fit;
 pub mod studio;
 pub mod surface;

@@ -17,6 +17,7 @@ use crate::exact::{Decimal, Exact, ExactVec3};
 use crate::flatten::{ExactTriangle, Triangle};
 use crate::homogeneous::{clip_between, ray_crosses, touches_origin, Homogeneous};
 use crate::lattice::STUD_LDU;
+pub use crate::round::{plan_axes, RoundShape};
 use crate::trig::planar_length;
 
 pub use crate::identify::IDENTIFY_LDU;
@@ -72,10 +73,6 @@ pub struct Probe {
     pub radius: f64,
 }
 
-pub fn plan_axes(axis: usize) -> (usize, usize) {
-    ((axis + 1) % 3, (axis + 2) % 3)
-}
-
 impl Probe {
     fn local(&self, p: Vec3) -> Local {
         let (i, j) = plan_axes(self.axis);
@@ -94,12 +91,6 @@ impl Probe {
         let (i, j) = plan_axes(self.axis);
         [self.entrance[i], self.entrance[j]]
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RoundShape {
-    Wall { radius: f64, from: f64, to: f64 },
-    Annulus { inner: f64, outer: f64, at: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq)]

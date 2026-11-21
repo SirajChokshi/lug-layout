@@ -20,6 +20,7 @@ import {
   type CompilerVehicle,
   type CompilerVehicles,
   type ModelSection,
+  type SeatRefusal,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { WasiReactor } from "./wasi-reactor.ts";
@@ -136,6 +137,7 @@ export interface BakedModel {
   readonly phases: BakePhases;
   readonly lattice: PartModelLattice | null;
   readonly latticeIssue: string | null;
+  readonly seatRefusals: ReadonlyArray<SeatRefusal>;
   readonly studCover: ModelStudCover;
   readonly cells: ModelCells | null;
   readonly vehicles: ReadonlyArray<PartVehicle>;
@@ -262,6 +264,7 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
             aabbMax: lattice.aabb.max,
           },
     latticeIssue: header.latticeIssue ?? null,
+    seatRefusals: header.seatRefusals ?? [],
     studCover: {
       studs: cover.studs,
       covered: cover.coveredStuds,

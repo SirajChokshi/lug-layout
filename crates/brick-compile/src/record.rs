@@ -3,18 +3,25 @@ use crate::compile::CompiledPart;
 use crate::cover::tree_order;
 use crate::flatten::StudReference;
 use crate::mesh::{ColorGroup, Mesh};
+use crate::round::{PlacedRound, RoundShape};
 
-pub const RECORD_MAGIC: &[u8; 8] = b"BRRBAKE1";
+pub const RECORD_MAGIC: &[u8; 8] = b"BRRBAKE2";
 const NARROW_LIMIT: usize = 1 << 16;
 const MATRIX_VALUES: usize = 12;
 const BOUNDS_VALUES: usize = 6;
 const GROUP_HEADER_BYTES: usize = 8;
 const STUD_FIXED_BYTES: usize = 4 + 2 + MATRIX_VALUES * 8;
+const ROUND_VALUES: usize = 5;
+const ROUND_BYTES: usize = 2 + ROUND_VALUES * 8;
+const WALL: u8 = 0;
+const ANNULUS: u8 = 1;
+const AXES: u8 = 3;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BakeRecord {
     pub mesh: Mesh,
     pub studs: Vec<StudReference>,
+    pub rounds: Vec<PlacedRound>,
     pub whole_bounds: [Vec3; 2],
     pub tree_order: Vec<usize>,
 }
@@ -30,6 +37,7 @@ pub enum RecordError {
     Triangles { indices: usize },
     Order,
     Name,
+    Round { axis: u8, kind: u8 },
 }
 
 impl std::fmt::Display for RecordError {
@@ -64,6 +72,10 @@ impl std::fmt::Display for RecordError {
                 "bake record tree order is not a permutation of its triangles"
             ),
             RecordError::Name => write!(f, "bake record stud primitive name is not UTF-8"),
+            RecordError::Round { axis, kind } => write!(
+                f,
+                "bake record has a round face of kind {kind} about axis {axis}"
+            ),
         }
     }
 }
@@ -74,6 +86,39 @@ fn narrow(count: usize) -> bool {
 
 fn count_u32(value: usize, what: &'static str) -> Result<u32, RecordError> {
     u32::try_from(value).map_err(|_| RecordError::Count { what })
+}
+
+fn round_values(round: &PlacedRound) -> (u8, [f64; ROUND_VALUES]) {
+    let [u, v] = round.center;
+    match round.shape {
+        RoundShape::Wall { radius, from, to } => (WALL, [u, v, radius, from, to]),
+        RoundShape::Annulus { inner, outer, at } => (ANNULUS, [u, v, inner, outer, at]),
+    }
+}
+
+fn round_of(axis: u8, kind: u8, values: [f64; ROUND_VALUES]) -> Result<PlacedRound, RecordError> {
+    let [u, v, a, b, c] = values;
+    let shape = match kind {
+        WALL => RoundShape::Wall {
+            radius: a,
+            from: b,
+            to: c,
+        },
+        ANNULUS => RoundShape::Annulus {
+            inner: a,
+            outer: b,
+            at: c,
+        },
+        _ => return Err(RecordError::Round { axis, kind }),
+    };
+    if axis >= AXES {
+        return Err(RecordError::Round { axis, kind });
+    }
+    Ok(PlacedRound {
+        axis: usize::from(axis),
+        center: [u, v],
+        shape,
+    })
 }
 
 fn put_indices(
@@ -105,6 +150,7 @@ impl BakeRecord {
             tree_order: tree_order(&mesh),
             mesh,
             studs: part.studs.clone(),
+            rounds: part.rounds.clone(),
             whole_bounds,
         }
     }
@@ -120,6 +166,7 @@ impl BakeRecord {
         out.extend_from_slice(&count_u32(vertices, "vertices")?.to_le_bytes());
         out.extend_from_slice(&count_u32(self.mesh.groups.len(), "groups")?.to_le_bytes());
         out.extend_from_slice(&count_u32(self.studs.len(), "studs")?.to_le_bytes());
+        out.extend_from_slice(&count_u32(self.rounds.len(), "rounds")?.to_le_bytes());
         for value in self.whole_bounds.iter().flatten() {
             out.extend_from_slice(&value.to_le_bytes());
         }
@@ -152,6 +199,14 @@ impl BakeRecord {
                 out.extend_from_slice(&value.to_le_bytes());
             }
         }
+        for round in &self.rounds {
+            let (kind, values) = round_values(round);
+            let axis = u8::try_from(round.axis).map_err(|_| RecordError::Count { what: "axes" })?;
+            out.extend_from_slice(&[axis, kind]);
+            for value in values {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
         put_indices(
             &mut out,
             self.tree_order.iter().copied(),
@@ -168,6 +223,7 @@ impl BakeRecord {
         let vertices = reader.u32()? as usize;
         let group_count = reader.u32()? as usize;
         let stud_count = reader.u32()? as usize;
+        let round_count = reader.u32()? as usize;
         let mut bounds = [0.0; BOUNDS_VALUES];
         for value in &mut bounds {
             *value = reader.f64()?;
@@ -220,6 +276,16 @@ impl BakeRecord {
                 matrix: Affine { m },
             });
         }
+        reader.fits(round_count, ROUND_BYTES)?;
+        let mut rounds = Vec::with_capacity(round_count);
+        for _ in 0..round_count {
+            let [axis, kind] = reader.array()?;
+            let mut values = [0.0; ROUND_VALUES];
+            for value in &mut values {
+                *value = reader.f64()?;
+            }
+            rounds.push(round_of(axis, kind, values)?);
+        }
         let triangles = index_count / 3;
         reader.fits(triangles, if narrow(triangles) { 2 } else { 4 })?;
         let mut seen = vec![false; triangles];
@@ -243,6 +309,7 @@ impl BakeRecord {
                 groups,
             },
             studs,
+            rounds,
             whole_bounds: [
                 [bounds[0], bounds[1], bounds[2]],
                 [bounds[3], bounds[4], bounds[5]],
@@ -311,6 +378,7 @@ mod tests {
     const WIDE_VERTICES: usize = NARROW_LIMIT + 3;
     const NAN_WITH_PAYLOAD: u32 = 0x7fc0_1234;
     const MALFORMED_NAME: [u8; 2] = [0xff, 0xfe];
+    const COUNTERS: usize = 4;
 
     fn special_f32() -> [f32; 6] {
         [
@@ -321,6 +389,34 @@ mod tests {
             f32::MIN_POSITIVE / 2.0,
             1.5,
         ]
+    }
+
+    fn rounds() -> Vec<PlacedRound> {
+        vec![
+            PlacedRound {
+                axis: 1,
+                center: [-0.0, f64::from_bits(0x7ff8_0000_0000_0011)],
+                shape: RoundShape::Wall {
+                    radius: 20.0,
+                    from: f64::NEG_INFINITY,
+                    to: f64::MIN_POSITIVE / 8.0,
+                },
+            },
+            PlacedRound {
+                axis: 2,
+                center: [10.0, -10.0],
+                shape: RoundShape::Annulus {
+                    inner: 0.0,
+                    outer: f64::INFINITY,
+                    at: -0.0,
+                },
+            },
+        ]
+    }
+
+    fn round_bits(round: &PlacedRound) -> (usize, u8, [u64; ROUND_VALUES]) {
+        let (kind, values) = round_values(round);
+        (round.axis, kind, values.map(f64::to_bits))
     }
 
     fn record(vertices: usize, studs: usize) -> BakeRecord {
@@ -364,6 +460,7 @@ mod tests {
                 ],
             },
             studs,
+            rounds: rounds(),
             whole_bounds: [
                 [
                     -0.0,
@@ -389,6 +486,10 @@ mod tests {
                     && x.color == y.color
                     && x.matrix.m.map(f64::to_bits) == y.matrix.m.map(f64::to_bits)
             })
+            && a.rounds
+                .iter()
+                .map(round_bits)
+                .eq(b.rounds.iter().map(round_bits))
             && a.whole_bounds.map(|c| c.map(f64::to_bits))
                 == b.whole_bounds.map(|c| c.map(f64::to_bits))
             && a.tree_order == b.tree_order
@@ -415,7 +516,7 @@ mod tests {
     }
 
     fn header_end() -> usize {
-        RECORD_MAGIC.len() + 3 * 4 + BOUNDS_VALUES * 8
+        RECORD_MAGIC.len() + COUNTERS * 4 + BOUNDS_VALUES * 8
     }
 
     fn patched(bytes: &[u8], at: usize, with: &[u8]) -> Vec<u8> {
@@ -517,7 +618,22 @@ mod tests {
             BakeRecord::decode(&patched(&bytes, name_start, &MALFORMED_NAME)),
             Err(RecordError::Name)
         );
-        for counter in 0..3 {
+        let rounds_start = order_start - original.rounds.len() * ROUND_BYTES;
+        assert_eq!(
+            BakeRecord::decode(&patched(&bytes, rounds_start, &[AXES, WALL])),
+            Err(RecordError::Round {
+                axis: AXES,
+                kind: WALL
+            })
+        );
+        assert_eq!(
+            BakeRecord::decode(&patched(&bytes, rounds_start, &[1, ANNULUS + 1])),
+            Err(RecordError::Round {
+                axis: 1,
+                kind: ANNULUS + 1
+            })
+        );
+        for counter in 0..COUNTERS {
             let huge = patched(
                 &bytes,
                 RECORD_MAGIC.len() + counter * 4,

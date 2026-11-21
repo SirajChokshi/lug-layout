@@ -340,6 +340,7 @@ function placementBake(baked: BakedModel): PlacementBake {
   return {
     lattice: baked.lattice,
     latticeIssue: baked.latticeIssue,
+    seatRefusals: baked.seatRefusals,
     cells: baked.cells,
     vehicles: baked.vehicles,
     vehicleIssue: baked.vehicleIssue,
