@@ -119,10 +119,6 @@ function shapeOf(arms: number): RoadShape | null {
   return arms === 0 ? null : roadShape(arms);
 }
 
-function boxesMeet(a: WorldBox, b: WorldBox): boolean {
-  return a.minX < b.maxX && a.maxX > b.minX && a.minZ < b.maxZ && a.maxZ > b.minZ;
-}
-
 function touches(a: WorldBox, b: WorldBox): boolean {
   const alongZ = a.minZ < b.maxZ && a.maxZ > b.minZ;
   const alongX = a.minX < b.maxX && a.maxX > b.minX;
@@ -158,12 +154,12 @@ export class RoadDrawing {
   erasing = false;
 
   constructor(
-    private readonly placeables: ReadonlyArray<Placeable>,
+    private readonly placeablesByRef: () => ReadonlyArray<Placeable | null>,
     familyLabel: (placeable: Placeable) => string,
   ) {
     const kits = roadKits(
-      placeables.flatMap((placeable, ref) =>
-        placeable.road
+      placeablesByRef().flatMap((placeable, ref) =>
+        placeable?.road && placeable.parts.count === 1
           ? [{ ref, family: String(placeable.worldColor), surface: placeable.road }]
           : [],
       ),
@@ -314,7 +310,7 @@ export class RoadDrawing {
   }
 
   private placeable(ref: number): Placeable {
-    const placeable = this.placeables[ref];
+    const placeable = this.placeablesByRef()[ref];
     if (!placeable) throw new Error(`no catalog item has ref id ${ref}`);
     return placeable;
   }
@@ -339,7 +335,7 @@ export class RoadDrawing {
     const centredOnLattice =
       ((box.minX + box.maxX) / 2) % STUD_LDU === 0 && ((box.minZ + box.maxZ) / 2) % STUD_LDU === 0;
     if (!fitsTile || !centredOnLattice || handle.yPlates !== 0) return false;
-    return placeable.kind === "baseplate";
+    return placeable.road === null && placeable.flatTopSixteenths === kit.edgeTopSixteenths;
   }
 
   private choosePhase(x: number, z: number, models: ReadonlyArray<PlacedModel>): void {
@@ -602,7 +598,7 @@ export class RoadDrawing {
         return;
       }
       const box = this.tileBox(p.tile, top);
-      const model = standing.find((other) => boxesMeet(other.box, box));
+      const model = standing.find((other) => other.meetsInPlan(box));
       if (model) {
         issues.push({
           x,

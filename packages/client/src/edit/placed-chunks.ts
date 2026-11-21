@@ -33,6 +33,7 @@ import {
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
+import { partGridOf } from "./part-box-grid.ts";
 import { planShapeOf } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
@@ -58,6 +59,8 @@ export interface PlacedModel {
   aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
   writeWorldPartBoxes(out: Float64Array): number;
+  topOver(x: number, z: number): number;
+  meetsInPlan(box: WorldBox): boolean;
 }
 
 export interface CarriedTrackParts {
@@ -827,6 +830,102 @@ class PlacedEntry implements PlacedModel {
     return found;
   }
 
+  topOver(x: number, z: number): number {
+    const own = this.box;
+    if (x < own.minX || x > own.maxX || z < own.minZ || z > own.maxZ) {
+      return Number.NEGATIVE_INFINITY;
+    }
+    const boxes = this.placeable.partBoxes;
+    const grid = partGridOf(boxes);
+    const localX = this.localX(x, z);
+    const localZ = this.localZ(x, z);
+    const { cos, sin } = this;
+    let top = Number.NEGATIVE_INFINITY;
+    const lastRow = grid.lastRow(localZ);
+    const lastColumn = grid.lastColumn(localX);
+    for (let row = grid.firstRow(localZ); row <= lastRow; row++) {
+      for (let column = grid.firstColumn(localX); column <= lastColumn; column++) {
+        const end = grid.end(column, row);
+        for (let entry = grid.start(column, row); entry < end; entry++) {
+          const b = grid.boxAt(entry);
+          const loX = boxes[b] ?? 0;
+          const loZ = boxes[b + 2] ?? 0;
+          const hiX = boxes[b + 3] ?? 0;
+          const hiZ = boxes[b + 5] ?? 0;
+          const ax = this.x + cos * loX + sin * loZ;
+          const az = this.z - sin * loX + cos * loZ;
+          const bx = this.x + cos * hiX + sin * hiZ;
+          const bz = this.z - sin * hiX + cos * hiZ;
+          const over =
+            x >= Math.min(ax, bx) &&
+            x <= Math.max(ax, bx) &&
+            z >= Math.min(az, bz) &&
+            z <= Math.max(az, bz);
+          if (over) top = Math.max(top, this.yLdu + (boxes[b + 4] ?? 0));
+        }
+      }
+    }
+    return top;
+  }
+
+  meetsInPlan(box: WorldBox): boolean {
+    const own = this.box;
+    if (
+      own.minX >= box.maxX ||
+      own.maxX <= box.minX ||
+      own.minZ >= box.maxZ ||
+      own.maxZ <= box.minZ
+    ) {
+      return false;
+    }
+    const boxes = this.placeable.partBoxes;
+    const grid = partGridOf(boxes);
+    const cornerX = this.localX(box.minX, box.minZ);
+    const cornerZ = this.localZ(box.minX, box.minZ);
+    const oppositeX = this.localX(box.maxX, box.maxZ);
+    const oppositeZ = this.localZ(box.maxX, box.maxZ);
+    const { cos, sin } = this;
+    const lastRow = grid.lastRow(Math.max(cornerZ, oppositeZ));
+    const lastColumn = grid.lastColumn(Math.max(cornerX, oppositeX));
+    for (let row = grid.firstRow(Math.min(cornerZ, oppositeZ)); row <= lastRow; row++) {
+      for (
+        let column = grid.firstColumn(Math.min(cornerX, oppositeX));
+        column <= lastColumn;
+        column++
+      ) {
+        const end = grid.end(column, row);
+        for (let entry = grid.start(column, row); entry < end; entry++) {
+          const b = grid.boxAt(entry);
+          const loX = boxes[b] ?? 0;
+          const loZ = boxes[b + 2] ?? 0;
+          const hiX = boxes[b + 3] ?? 0;
+          const hiZ = boxes[b + 5] ?? 0;
+          const ax = this.x + cos * loX + sin * loZ;
+          const az = this.z - sin * loX + cos * loZ;
+          const bx = this.x + cos * hiX + sin * hiZ;
+          const bz = this.z - sin * hiX + cos * hiZ;
+          if (
+            Math.min(ax, bx) < box.maxX &&
+            Math.max(ax, bx) > box.minX &&
+            Math.min(az, bz) < box.maxZ &&
+            Math.max(az, bz) > box.minZ
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  private localX(x: number, z: number): number {
+    return this.cos * (x - this.x) - this.sin * (z - this.z);
+  }
+
+  private localZ(x: number, z: number): number {
+    return this.sin * (x - this.x) + this.cos * (z - this.z);
+  }
+
   private worldBox(): WorldBox {
     return this.pose.boxOf(this.placeable.box, this.yLdu);
   }
@@ -963,6 +1062,7 @@ export class PlacedChunks {
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byBoxChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private nextId = 0;
@@ -1081,6 +1181,30 @@ export class PlacedChunks {
     }
   }
 
+  over(box: WorldBox, out: PlacedModel[]): void {
+    out.length = 0;
+    const epoch = ++this.touchEpoch;
+    const x1 = chunkOf(box.maxX);
+    const z1 = chunkOf(box.maxZ);
+    for (let cz = chunkOf(box.minZ); cz <= z1; cz++) {
+      for (let cx = chunkOf(box.minX); cx <= x1; cx++) {
+        for (const entry of this.byBoxChunk.get(chunkKey(cx, cz)) ?? NO_ENTRIES) {
+          if (entry.touchedIn === epoch) continue;
+          entry.touchedIn = epoch;
+          const other = entry.box;
+          if (
+            other.minX <= box.maxX &&
+            box.minX <= other.maxX &&
+            other.minZ <= box.maxZ &&
+            box.minZ <= other.maxZ
+          ) {
+            out.push(entry);
+          }
+        }
+      }
+    }
+  }
+
   contains(model: PlacedModel): boolean {
     return model instanceof PlacedEntry && this.live.has(model);
   }
@@ -1144,6 +1268,7 @@ export class PlacedChunks {
     this.byFootprintChunk.clear();
     this.byAntiStudChunk.clear();
     this.byColumnChunk.clear();
+    this.byBoxChunk.clear();
     this.chunkStuds.clear();
     this.entries.length = 0;
     this.live.clear();
@@ -1173,7 +1298,17 @@ export class PlacedChunks {
       if (chunks.hasAntiStudFootprint(row)) addTo(this.byAntiStudChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
+    this.forBoxChunks(entry, (key) => addTo(this.byBoxChunk, key, entry));
     return entry;
+  }
+
+  private forBoxChunks(entry: PlacedEntry, visit: (key: number) => void): void {
+    const { box } = entry;
+    const x1 = chunkOf(box.maxX);
+    const z1 = chunkOf(box.maxZ);
+    for (let cz = chunkOf(box.minZ); cz <= z1; cz++) {
+      for (let cx = chunkOf(box.minX); cx <= x1; cx++) visit(chunkKey(cx, cz));
+    }
   }
 
   private detach(handle: PlacementHandle): PlacedEntry {
@@ -1191,6 +1326,11 @@ export class PlacedChunks {
       this.byAntiStudChunk.get(key)?.delete(entry);
       this.byColumnChunk.get(key)?.delete(entry);
     }
+    this.forBoxChunks(entry, (key) => {
+      const models = this.byBoxChunk.get(key);
+      models?.delete(entry);
+      if (models?.size === 0) this.byBoxChunk.delete(key);
+    });
     return entry;
   }
 

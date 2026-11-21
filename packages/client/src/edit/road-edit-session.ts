@@ -90,7 +90,7 @@ export class RoadEditSession implements IRoadEditSession {
 
   start(colors: ReadonlyArray<BundleColor>): void {
     const drawing = new RoadDrawing(
-      this.catalog.placeables().filter((placeable) => placeable !== null),
+      () => this.catalog.placeables(),
       (placeable) =>
         `${colorOf(colors, placeable.worldColor).name.replaceAll("_", " ")} road plates`,
     );
