@@ -157,6 +157,7 @@ export class TrackWorld implements ITrackWorld {
   private track: TrackDrawing | null = null;
   private pendingRestored: TrackDrawing | null = null;
   private readonly modelTracks = new Map<Placeable, ModelTrackEnds>();
+  private readonly carriedPartSets = new WeakMap<ModelTrackEnds, ReadonlySet<number>>();
   private readonly exactTrackParts = new Map<Placeable, ReadonlySet<number>>();
   private heldTrackModels: ReadonlyArray<PlacedModel> = [];
   private readonly heldRanges = new Map<PlacedModel, readonly [number, number]>();
@@ -323,9 +324,13 @@ export class TrackWorld implements ITrackWorld {
 
   carriedParts(placeable: Placeable): ReadonlySet<number> {
     const track = this.modelTrack(placeable);
-    if (!track) return NO_TRACK_PARTS;
+    if (!track || (track.pieces.length === 0 && track.runs.length === 0)) return NO_TRACK_PARTS;
+    const known = this.carriedPartSets.get(track);
+    if (known) return known;
     const pieces = [...track.pieces, ...track.runs.flatMap((run) => run.pieces)];
-    return new Set(pieces.map((piece) => piece.instance));
+    const parts = new Set(pieces.map((piece) => piece.instance));
+    this.carriedPartSets.set(track, parts);
+    return parts;
   }
 
   carriedTrackAt(placeable: Placeable, handle: PlacementHandle): CarriedTrackParts | null {

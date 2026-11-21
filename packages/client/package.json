@@ -9,14 +9,15 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
-    "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/mate-zones.bench.ts && pnpm run bench:culling && pnpm run bench:layout && pnpm run bench:frame-loop && pnpm run bench:plan-sync && pnpm run bench:fill-tool",
+    "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/mate-zones.bench.ts && pnpm run bench:culling && pnpm run bench:layout && pnpm run bench:frame-loop && pnpm run bench:plan-sync && pnpm run bench:fill-tool && pnpm run bench:road",
     "bench:culling": "node --experimental-transform-types --no-warnings --expose-gc bench/cell-window-index.bench.ts",
     "bench:layout": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/large-layout.bench.js",
     "bench:layout-memory": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/layout-memory.bench.js",
     "bench:needed-meshes": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/needed-meshes.bench.js",
     "bench:frame-loop": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/editor-frame-loop.bench.js",
     "bench:plan-sync": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/plan-sync.bench.js",
-    "bench:fill-tool": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/fill-tool.bench.js"
+    "bench:fill-tool": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/fill-tool.bench.js",
+    "bench:road": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/road-scale.bench.js"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
