@@ -2,9 +2,12 @@ import {
   BundleIndex,
   BundleLod,
   BundleManifest,
+  LevelCrossingFacts,
+  PlanOutlinesFile,
   SectionVocabularyFile,
   TablePlane,
   TrackCatalog,
+  type PlanOutline,
   type CatalogSourceUse,
   type CrosswalkFile,
   type Palette,
@@ -63,6 +66,7 @@ import {
   verifyClosure,
   verifyConnectivity,
   verifyModels,
+  verifyOmrErrata,
   type CatalogLock,
   type ConnectivityLock,
   type InputLock,
@@ -74,11 +78,18 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readFixtureModels, readPalette } from "./palette.ts";
+import {
+  readFixtureModels,
+  readOmrErrata,
+  readPalette,
+  readPrimitiveTable,
+  studPrimitives,
+} from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
   attachLibraryConnectors,
+  attachShadowLibrary,
   attachLibraryParts,
   attachRollingDiagnostics,
   attachSectionVocabulary,
@@ -101,17 +112,23 @@ import {
 } from "./remote-bundle.ts";
 import {
   geometryReports,
+  levelCrossingReports,
   licenseAuditReport,
   magnetSeatReports,
+  paletteTrackCatalog,
   readSources,
+  singlePartSceneReports,
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
+import { auditBundleStuds, summarizeStudAudit } from "./verify/stud-audit-bundle.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
+const primitiveTablePath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
+const omrErrataPath = join(repoRoot, BUNDLE_DATA_FILES.omrErrata);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
@@ -173,6 +190,7 @@ async function fetchCommand(): Promise<void> {
     ldrawRoot,
     bundleConnectivityRoot,
     modelSources,
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
     [inferred.cavityProbe, inferred.axleProbe],
   );
   const audit = await fetchAuditInputs(
@@ -191,7 +209,11 @@ async function fetchCommand(): Promise<void> {
 async function writeAttribution(lock: InputLock, palette: Palette): Promise<void> {
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
-    await renderModelAttribution(await paletteAndFixtureModels(palette), modelRoots),
+    await renderModelAttribution(
+      await paletteAndFixtureModels(palette),
+      modelRoots,
+      await readOmrErrata(omrErrataPath),
+    ),
     await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
@@ -281,6 +303,7 @@ async function verifyCommand(): Promise<void> {
       lock.files,
     )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
+    ...(await verifyOmrErrata(await readOmrErrata(omrErrataPath), palette.models, modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
@@ -291,7 +314,7 @@ async function verifyCommand(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write("LDraw inputs match ldraw.lock.json\n");
+  process.stdout.write("LDraw inputs match ldraw.lock.json and omr-errata.json\n");
 }
 
 async function sectionVocabularyCommand(check: boolean): Promise<void> {
@@ -367,6 +390,8 @@ async function factsCommand(check: boolean): Promise<void> {
   }
   const auditLibrary = new LdrawLibrary([auditRoot]);
   const shadowLibrary = new LdrawLibrary([connectivityRoot]);
+  const catalog = paletteTrackCatalog(auditLibrary, palette);
+  const studs = studPrimitives(await readPrimitiveTable(primitiveTablePath));
   const reports = [
     licenseAuditReport({
       lock,
@@ -378,8 +403,16 @@ async function factsCommand(check: boolean): Promise<void> {
       auditLibrary,
       shadowLibrary,
     }),
-    ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
-    ...trackCatalogReports(auditLibrary, palette),
+    ...geometryReports(lock.source, auditLibrary, shadowLibrary, studs),
+    ...singlePartSceneReports(new LdrawLibrary([ldrawRoot])),
+    ...trackCatalogReports(auditLibrary, catalog),
+    ...levelCrossingReports(
+      new LdrawLibrary([ldrawRoot, auditRoot]),
+      palette,
+      catalog,
+      lock.source,
+      studs,
+    ),
     ...magnetSeatReports(
       lock,
       connectivity,
@@ -493,10 +526,25 @@ async function addVerifiedFacts(directory: string): Promise<void> {
   const geometryPath = join(repoRoot, BUNDLE_DATA_FILES.geometry);
   const geometry: Record<string, unknown> = JSON.parse(await readFile(geometryPath, "utf8"));
   const tablePlane = decodedOrThrow(decode(TablePlane, geometry["tablePlane"]), geometryPath);
+  const crossingPath = join(repoRoot, BUNDLE_DATA_FILES.levelCrossing);
+  const crossing = decodedOrThrow(
+    decode(LevelCrossingFacts, JSON.parse(await readFile(crossingPath, "utf8"))),
+    crossingPath,
+  );
+  const levelCrossing = { systems: crossing.systems, ramps: crossing.ramps };
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane }, null, 2)}\n`,
+    `${JSON.stringify({ ...manifest, trackCatalog: bundledCatalog, tablePlane, levelCrossing }, null, 2)}\n`,
   );
+}
+
+async function readPlanOutlines(): Promise<ReadonlyMap<string, PlanOutline>> {
+  const path = join(repoRoot, BUNDLE_DATA_FILES.planOutlines);
+  const { outlines } = decodedOrThrow(
+    decode(PlanOutlinesFile, JSON.parse(await readFile(path, "utf8"))),
+    path,
+  );
+  return new Map(outlines.map((outline) => [outline.part, outline.rings]));
 }
 
 const BYTES_PER_KB = 1024;
@@ -550,6 +598,7 @@ interface SharedBuild {
   readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
   readonly categories: LdrawCategories;
   readonly libraryParts: DerivedLibraryParts;
+  readonly outlines: ReadonlyMap<string, PlanOutline>;
 }
 
 const LIBRARY_PARTS_LOD: BundleLod = "standard";
@@ -572,12 +621,14 @@ async function compileLod(
     fixturesRoot,
     "--omr",
     omrRoot,
+    "--omr-errata",
+    omrErrataPath,
     "--geometry",
     join(repoRoot, BUNDLE_DATA_FILES.geometry),
     "--palette",
     palette,
     "--primitives",
-    join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
+    primitiveTablePath,
     "--inferred",
     join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
     "--vocabulary",
@@ -600,9 +651,10 @@ async function compileLod(
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
   if (offersLibraryParts) await attachLibraryParts(out, shared.libraryParts.file);
-  await attachRecords(out);
+  await attachRecords(out, shared.outlines);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
   await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
+  await attachShadowLibrary(out, join(repoRoot, BUNDLE_DATA_FILES.shadowLibraryPin));
   await attachRollingDiagnostics(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
@@ -621,7 +673,7 @@ const LIBRARY_PART_SOURCES: ReadonlyArray<CatalogSourceUse> = [
 
 function reportLibraryParts({ report }: DerivedLibraryParts): void {
   process.stdout.write(
-    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.notContributorAgreement} without a CA licence, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
+    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
   );
 }
 
@@ -700,9 +752,31 @@ async function bundleCommand(): Promise<void> {
     catalogSources(catalog, LIBRARY_PART_SOURCES),
   );
   reportLibraryParts(libraryParts);
-  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts };
+  const outlines = await readPlanOutlines();
+  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts, outlines };
   for (const build of builds) await compileLod(build, shared);
+  if (!(await studAuditCommand(undefined))) {
+    throw new Error("the stud audit found the bundle's studs disagreeing with LDraw");
+  }
   await recordBundleBuild(bundleRoot, buildKey);
+}
+
+const STUD_AUDIT_LOD: BundleLod = "standard";
+
+async function studAuditCommand(out: string | undefined): Promise<boolean> {
+  const report = await auditBundleStuds(
+    join(bundleRoot, STUD_AUDIT_LOD),
+    new LdrawLibrary([ldrawRoot]),
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+  );
+  if (out !== undefined) await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
+  const summary = summarizeStudAudit(report);
+  if (report.issues.length > 0) {
+    process.stderr.write(summary);
+    return false;
+  }
+  process.stdout.write(summary);
+  return true;
 }
 
 const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
@@ -859,6 +933,12 @@ switch (command) {
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
+  case "stud-audit": {
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (!(await studAuditCommand(out))) process.exitCode = 1;
+    break;
+  }
   case "section-vocabulary":
     await sectionVocabularyCommand(process.argv.includes("--check"));
     break;
@@ -885,7 +965,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }

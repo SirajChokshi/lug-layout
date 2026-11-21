@@ -1,4 +1,12 @@
-import { BrickCompiler, type BakeRequest, type CompileLod, type CompileOutput } from "@brr/import";
+import { ConnectorRecords, type PartConnectors } from "@brr/catalog/connector-records";
+import {
+  BrickCompiler,
+  bakeReceptors,
+  type BakeRequest,
+  type CompileLod,
+  type CompileOutput,
+  type PlacementBakeRequest,
+} from "@brr/import";
 import {
   SectionVocabularyFile,
   type AuthoredIdentification,
@@ -17,6 +25,8 @@ interface ManifestFile {
 
 interface Manifest {
   readonly bundleVersion: string;
+  readonly connectivity: ManifestFile;
+  readonly connectors: ManifestFile;
   readonly models: ReadonlyArray<ManifestFile & { readonly name: string }>;
   readonly partTable: ManifestFile;
   readonly studPrimitives: ReadonlyArray<ManifestFile & { readonly name: string }>;
@@ -124,6 +134,7 @@ for (const lod of lods) {
           sectionVocabulary: { sizes, lengths },
           cavityProbe: manifest.compiler.cavityProbe,
           infer: [],
+          shadowPatchManifest: null,
         },
         parts: [...references.keys()],
         model: "",
@@ -176,6 +187,10 @@ interface ModelFile {
       readonly flat: ReadonlyArray<number>;
       readonly columnBottom: ReadonlyArray<number>;
       readonly columnTop: ReadonlyArray<number>;
+      readonly footing: {
+        readonly instance: ReadonlyArray<number>;
+        readonly cell: ReadonlyArray<number>;
+      };
     } | null;
   };
   readonly instances: {
@@ -248,6 +263,14 @@ const baker = new BrickCompiler(
   new WebAssembly.Module(await readFile(join(standard, standardManifest.compiler.file))),
 );
 const library = { key: LIBRARY_KEY, files, absent: new Set<string>() };
+const connectorRecords = new ConnectorRecords(
+  async (path) => JSON.parse(await readFile(join(standard, path), "utf8")),
+  {
+    connectivity: standardManifest.connectivity.file,
+    connectors: standardManifest.connectors.file,
+  },
+  null,
+);
 const translucentColors = standardManifest.colors
   .filter((color) => color.alpha < OPAQUE_ALPHA)
   .map((color) => color.code);
@@ -268,6 +291,17 @@ for (const model of standardManifest.models) {
     drawn[i] = 1;
     kept.push(i);
   });
+  const receptorPartOf = new Map<string, number>();
+  const instanceReceptorParts = Uint32Array.from(kept, (i) => {
+    const key = read.parts[read.instancePart[i] ?? -1] ?? "";
+    const partId = bundlePartId(officialOf.get(key) ?? key);
+    const part = receptorPartOf.get(partId) ?? receptorPartOf.size;
+    receptorPartOf.set(partId, part);
+    return part;
+  });
+  const receptorParts: ReadonlyArray<PartConnectors | null> = await Promise.all(
+    [...receptorPartOf.keys()].map((partId) => connectorRecords.load(partId)),
+  );
   let differing = 0;
   for (let n = 0; n < Math.max(kept.length, bundled.instances.part.length); n++) {
     const i = kept[n] ?? -1;
@@ -293,9 +327,10 @@ for (const model of standardManifest.models) {
     bundled.authoredIdentification,
   );
   const started = performance.now();
-  const request = {
+  const request: PlacementBakeRequest = {
     source: text,
     drawn,
+    receptors: bakeReceptors(instanceReceptorParts, receptorParts),
     studPrimitives: standardManifest.studPrimitives.map((primitive) => primitive.name),
     unofficialAllowlist: standardManifest.compiler.unofficialAllowlist,
     translucentColors,
@@ -355,6 +390,13 @@ for (const model of standardManifest.models) {
         mismatches.push("column bottoms");
       if (!isDeepStrictEqual([...bakedCells.columnTop], cells.columnTop))
         mismatches.push("column tops");
+      if (
+        !isDeepStrictEqual(
+          { instance: [...bakedCells.footing.instance], cell: [...bakedCells.footing.cell] },
+          cells.footing,
+        )
+      )
+        mismatches.push("instance footing");
     }
     const vehicles = baked.vehicles.map((vehicle) => ({
       ...vehicle,

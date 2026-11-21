@@ -323,6 +323,10 @@ impl Exact {
         }
     }
 
+    pub fn units_and_places(&self) -> (BigInt, u32) {
+        (self.coefficient.big(), self.places)
+    }
+
     pub fn small_decimal(&self) -> Option<(i128, u32)> {
         match self.coefficient {
             Coefficient::Small(units) => Some((units, self.places)),

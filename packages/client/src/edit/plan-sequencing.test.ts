@@ -224,6 +224,7 @@ class Sequence {
           const change = this.drawing.pieceChange(
             part.catalogIndex,
             this.studPose(this.int(4) * 4),
+            0,
           );
           this.drawing.applyTrack(change);
           this.lay({ laid: change.lay.length });

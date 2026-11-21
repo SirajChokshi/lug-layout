@@ -18,11 +18,10 @@ import { join } from "node:path";
 import * as v from "valibot";
 import { connectorPackageIssues } from "../connector-license.ts";
 import { contentAddressedName } from "../publish.ts";
-import { isCaLicense } from "../verify/license-audit.ts";
 
 export const LIBRARY_CONNECTORS_PIN = "tools/asset-pipeline/library-connectors.json";
 const SHADOW_AUTHORS = "Roland Melkert and the LDCad Shadow Library contributors";
-const PATCH_ATTRIBUTION =
+export const PATCH_ATTRIBUTION =
   "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
 const PACKAGES: ReadonlyArray<ConnectorPackage> = ["connectivity", "connectors"];
 const INDEX_FILES: Readonly<Record<ConnectorPackage, string>> = {
@@ -83,7 +82,6 @@ export async function assembleLibraryConnectors(
   await rm(out, { recursive: true, force: true });
   for (const pkg of PACKAGES) await mkdir(join(out, pkg), { recursive: true });
   const parts = await listings(build);
-  const refused: Array<{ part: string; license: string }> = [];
   const entries: Record<ConnectorPackage, Record<string, { file: string } | null>> = {
     connectivity: {},
     connectors: {},
@@ -96,10 +94,6 @@ export async function assembleLibraryConnectors(
   const partLicenses = new Set<string>();
   let partsWithPieces = 0;
   for (const listing of parts) {
-    if (!isCaLicense(listing.license)) {
-      refused.push({ part: listing.part, license: listing.license });
-      continue;
-    }
     let pieced = false;
     for (const pkg of PACKAGES) {
       const file = listing[pkg];
@@ -168,7 +162,6 @@ export async function assembleLibraryConnectors(
   return {
     index: { file: LIBRARY_CONNECTORS_INDEX_FILE, sha256: sha256(text) },
     parts: parts.length,
-    refused,
     records: {
       connectivity: records.connectivity.size,
       connectors: records.connectors.size,

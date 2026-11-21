@@ -93,6 +93,7 @@ export async function importThroughWorkerPath(
     bundle.records,
     now,
     NO_BAKE_HELPERS,
+    null,
   );
   const job = { ...bundle.job, fileName: input.name };
   try {
