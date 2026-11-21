@@ -11,6 +11,7 @@ import {
   type IEditor,
   type IEditorCamera,
   type IPlanService,
+  type IPlanSheetService,
   type MmRect,
   type PlanIssue,
   type PlanRegion,
@@ -18,7 +19,8 @@ import {
   type PlanTable,
   type TableTop,
 } from "@brr/client";
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
+import { downloadBlob } from "./download.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
@@ -609,6 +611,15 @@ function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly 
   );
 }
 
+const FILE_NAME_UNSAFE = /[^A-Za-z0-9-]+/gu;
+
+function savePlanSheet(svg: string, planName: string): void {
+  downloadBlob(
+    `${planName.trim().replaceAll(FILE_NAME_UNSAFE, "-")}.plan.svg`,
+    new Blob([svg], { type: "image/svg+xml" }),
+  );
+}
+
 function ActivePlan({
   camera,
   editor,
@@ -616,6 +627,7 @@ function ActivePlan({
   held,
   fillGridStuds,
   plans,
+  sheets,
   plan,
 }: {
   readonly camera: IEditorCamera;
@@ -624,6 +636,7 @@ function ActivePlan({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly plan: PlanRegion;
 }) {
   return (
@@ -662,6 +675,14 @@ function ActivePlan({
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
         </button>
+        <button
+          type="button"
+          data-action="printable-plan"
+          title="Download a true-scale top view (SVG) to print at 100%"
+          onClick={() => savePlanSheet(sheets.printable(editor, plan.id), plan.name)}
+        >
+          Printable plan (SVG)
+        </button>
         <button type="button" onClick={() => plans.removePlan(plan.id)}>
           Delete plan
         </button>
@@ -681,6 +702,68 @@ function ActivePlan({
   );
 }
 
+function PlanFiles({
+  editor,
+  plan,
+  ready,
+  readOnly,
+}: {
+  readonly editor: IEditor;
+  readonly plan: PlanRegion | null;
+  readonly ready: boolean;
+  readonly readOnly: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const onSave = (planId: string): void => {
+    void editor.exportPlan(planId).then((file) => {
+      if (file) {
+        downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: "application/zip" }));
+      }
+    });
+  };
+  const onOpen = (event: ChangeEvent<HTMLInputElement>): void => {
+    const field = event.currentTarget;
+    const file = field.files?.[0];
+    if (!file) return;
+    void file
+      .arrayBuffer()
+      .then((buffer) => editor.openPlan(new Uint8Array(buffer)))
+      .finally(() => {
+        field.value = "";
+      });
+  };
+  return (
+    <div className="plan-actions" aria-label="Plan files">
+      {plan && (
+        <button
+          type="button"
+          data-action="save-plan"
+          disabled={!ready}
+          onClick={() => onSave(plan.id)}
+        >
+          Save plan file
+        </button>
+      )}
+      <button
+        type="button"
+        data-action="open-plan"
+        disabled={!ready || readOnly}
+        onClick={() => input.current?.click()}
+      >
+        Open plan file
+      </button>
+      <input
+        ref={input}
+        className="world-import"
+        type="file"
+        accept=".zip,application/zip"
+        aria-label="Open a .brrplan.zip plan file"
+        onChange={onOpen}
+      />
+    </div>
+  );
+}
+
 export function PlanPanel({
   camera,
   editor,
@@ -688,6 +771,9 @@ export function PlanPanel({
   held,
   fillGridStuds,
   plans,
+  sheets,
+  ready,
+  readOnly,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -695,6 +781,9 @@ export function PlanPanel({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
+  readonly ready: boolean;
+  readonly readOnly: boolean;
 }) {
   usePlanVersion(plans);
   const regions = plans.plans();
@@ -739,6 +828,7 @@ export function PlanPanel({
           held={held}
           fillGridStuds={fillGridStuds}
           plans={plans}
+          sheets={sheets}
           plan={active}
         />
       ) : (
@@ -750,6 +840,7 @@ export function PlanPanel({
           <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
         </>
       )}
+      <PlanFiles editor={editor} plan={active} ready={ready} readOnly={readOnly} />
       <NewPlanForm camera={camera} plans={plans} />
     </details>
   );

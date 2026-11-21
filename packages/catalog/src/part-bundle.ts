@@ -14,6 +14,7 @@ import {
   type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
+  type LibraryPartsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
@@ -262,6 +263,7 @@ export interface IPartBundleLoader {
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null>;
 }
 
 export interface IAssetFetcher {

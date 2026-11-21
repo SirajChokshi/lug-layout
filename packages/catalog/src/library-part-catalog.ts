@@ -1,8 +1,7 @@
-import { LibraryPartsFile, type BundleColor, type BundleLod } from "@brr/schema/bundle";
-import { decode, decodedOrThrow } from "@brr/schema/decode";
+import type { BundleColor, BundleLod, LibraryPartsFile } from "@brr/schema/bundle";
 import { inject, injectable } from "inversify";
-import type { IAssetFetcher, IPartBundleLoader } from "./part-bundle.ts";
-import { ASSET_FETCHER, PART_BUNDLE_LOADER } from "./tokens.ts";
+import type { IPartBundleLoader } from "./part-bundle.ts";
+import { PART_BUNDLE_LOADER } from "./tokens.ts";
 
 const LIBRARY_PARTS_LOD: BundleLod = "standard";
 
@@ -20,8 +19,8 @@ export class HttpLibraryPartCatalog implements ILibraryPartCatalog {
   private loading: Promise<LibraryPartList | null> | null = null;
 
   constructor(
-    @inject(PART_BUNDLE_LOADER) private readonly loader: Pick<IPartBundleLoader, "loadIndex">,
-    @inject(ASSET_FETCHER) private readonly fetcher: Pick<IAssetFetcher, "text">,
+    @inject(PART_BUNDLE_LOADER)
+    private readonly loader: Pick<IPartBundleLoader, "loadIndex" | "loadLibraryParts">,
   ) {}
 
   load(): Promise<LibraryPartList | null> {
@@ -36,13 +35,10 @@ export class HttpLibraryPartCatalog implements ILibraryPartCatalog {
   }
 
   private async fetch(): Promise<LibraryPartList | null> {
-    const index = await this.loader.loadIndex(LIBRARY_PARTS_LOD);
-    if (index.libraryParts === undefined) return null;
-    const path = `${LIBRARY_PARTS_LOD}/${index.libraryParts.file}`;
-    const file = decodedOrThrow(
-      decode(LibraryPartsFile, JSON.parse(await this.fetcher.text(path))),
-      path,
-    );
-    return { file, colors: index.colors };
+    const [index, file] = await Promise.all([
+      this.loader.loadIndex(LIBRARY_PARTS_LOD),
+      this.loader.loadLibraryParts(LIBRARY_PARTS_LOD),
+    ]);
+    return file === null ? null : { file, colors: index.colors };
   }
 }

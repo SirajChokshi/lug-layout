@@ -314,6 +314,41 @@ export type ModelSet = v.InferOutput<typeof ModelSet>;
 export const ModelRole = v.picklist(["mils-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
+const LineNumber = v.pipe(Integer, v.minValue(1));
+const OmrLine = v.strictObject({ line: LineNumber, text: v.string() });
+
+export const ErratumEvidence = v.variant("kind", [
+  v.strictObject({ kind: v.literal("mirror-twin"), twin: OmrLine, summary: v.string() }),
+  v.strictObject({
+    kind: v.literal("wall-course"),
+    course: v.pipe(v.array(OmrLine), v.minLength(2)),
+    summary: v.string(),
+  }),
+]);
+export type ErratumEvidence = v.InferOutput<typeof ErratumEvidence>;
+
+export const OmrErratum = v.strictObject({
+  model: v.string(),
+  file: v.string(),
+  sha256: Sha256Hex,
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  evidence: ErratumEvidence,
+});
+export type OmrErratum = v.InferOutput<typeof OmrErratum>;
+
+export const OmrErrata = v.strictObject({ errata: v.array(OmrErratum) });
+export type OmrErrata = v.InferOutput<typeof OmrErrata>;
+
+export const ModelErratum = v.object({
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  summary: v.string(),
+});
+export type ModelErratum = v.InferOutput<typeof ModelErratum>;
+
 const IntegerVec3 = v.tuple([Integer, Integer, Integer]);
 const CountVec3 = v.tuple([Count, Count, Count]);
 
@@ -343,6 +378,7 @@ export const BundleModelEntry = v.object({
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
+  errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
@@ -703,8 +739,6 @@ export const BundleCompiler = v.object({
   shadowLibrary: v.optional(ShadowLibraryIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
-
-const LineNumber = v.pipe(Integer, v.minValue(1));
 
 export const StudioArchive = v.object({
   status: v.literal("read"),
@@ -1247,15 +1281,7 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist([
-    "unresolved",
-    "tooDeep",
-    "license",
-    "unofficial",
-    "noStudRing",
-    "malformed",
-    "tooLarge",
-  ]),
+  kind: v.picklist(["unresolved", "tooDeep", "unofficial", "noStudRing", "malformed", "tooLarge"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
@@ -1649,7 +1675,6 @@ export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex
 export const LibraryConnectorsPin = v.strictObject({
   index: LibraryConnectorsIndexRef,
   parts: Count,
-  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
   faces: v.strictObject({ connectivity: Count, connectors: Count }),
   partsWithPieces: Count,
@@ -1752,7 +1777,6 @@ export const LibraryBakePin = v.strictObject({
   parts: Count,
   records: Count,
   failed: Count,
-  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
 });
 export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 
