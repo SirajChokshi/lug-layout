@@ -1,0 +1,172 @@
+{
+  "source": {
+    "kind": "github-mirror",
+    "repo": "kulits/ldraw-parts",
+    "commit": "c70360d1c588be894997b2168c61909bc8058c4d",
+    "root": "ldraw"
+  },
+  "frame": "part frame, bundle +Y up (z = −z_LDraw), LDU",
+  "derivation": {
+    "railTopLdu": "rail head top above the underside of the system's certified straight (measureRails)",
+    "ramps": "every palette part whose highest tilted top face rises one way along a plan axis and reaches the part's downhill side; edge heights above the underside, run along the rise",
+    "antiStuds": "stud-lattice points under the underside where a cylinder of the measured stud's radius and height is free of the part's solid and touched by it"
+  },
+  "systems": [
+    {
+      "system": "lego-plastic",
+      "straight": "ldraw:53401",
+      "railTopLdu": 24
+    },
+    {
+      "system": "lego-9v",
+      "straight": "ldraw:74746",
+      "railTopLdu": 24
+    }
+  ],
+  "ramps": [
+    {
+      "part": "ldraw:4515",
+      "title": "Slope Brick 10 6 x 8",
+      "undersideY": -24,
+      "lowEdgeLdu": 5,
+      "highEdgeLdu": 24,
+      "runLdu": 120,
+      "rise": {
+        "axis": "z",
+        "toward": -1
+      },
+      "footprint": {
+        "minX": -80,
+        "minZ": -60,
+        "maxX": 80,
+        "maxZ": 60
+      },
+      "antiStuds": [
+        [
+          -70,
+          -30
+        ],
+        [
+          -70,
+          -10
+        ],
+        [
+          -70,
+          10
+        ],
+        [
+          -70,
+          30
+        ],
+        [
+          -50,
+          -30
+        ],
+        [
+          -50,
+          -10
+        ],
+        [
+          -30,
+          10
+        ],
+        [
+          -10,
+          10
+        ],
+        [
+          10,
+          10
+        ],
+        [
+          30,
+          10
+        ],
+        [
+          50,
+          -30
+        ],
+        [
+          50,
+          -10
+        ],
+        [
+          70,
+          -30
+        ],
+        [
+          70,
+          -10
+        ],
+        [
+          70,
+          10
+        ],
+        [
+          70,
+          30
+        ]
+      ]
+    },
+    {
+      "part": "ldraw:3297",
+      "title": "Slope Brick 33 3 x 4",
+      "undersideY": -24,
+      "lowEdgeLdu": 4,
+      "highEdgeLdu": 24,
+      "runLdu": 40,
+      "rise": {
+        "axis": "z",
+        "toward": -1
+      },
+      "footprint": {
+        "minX": -40,
+        "minZ": -10,
+        "maxX": 40,
+        "maxZ": 50
+      },
+      "antiStuds": [
+        [
+          -30,
+          0
+        ],
+        [
+          -30,
+          20
+        ],
+        [
+          -30,
+          40
+        ],
+        [
+          -10,
+          0
+        ],
+        [
+          -10,
+          40
+        ],
+        [
+          10,
+          0
+        ],
+        [
+          10,
+          40
+        ],
+        [
+          30,
+          0
+        ],
+        [
+          30,
+          20
+        ],
+        [
+          30,
+          40
+        ]
+      ]
+    }
+  ]
+}

@@ -1,4 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
+import { EditorPage, startEmpty } from "./editor-page.ts";
+
+const GREEN_BASEPLATE = "ldraw:3811@2";
+const FIVE_STUDS_OVER = { x: 100, z: 0 };
 
 const VIEWPORTS = [
   { width: 1024, height: 768 },
@@ -12,6 +16,7 @@ type Mode = (typeof MODES)[number];
 const READY_TIMEOUT_MS = 150_000;
 const ACTION_TIMEOUT_MS = 30_000;
 const CLICK_SAMPLE_STEP_PX = 8;
+const MIN_LIBRARY_LIST_SHARE = 0.5;
 
 interface Viewport {
   readonly width: number;
@@ -43,6 +48,7 @@ async function openEditor(page: Page): Promise<void> {
     const shown = await editor.locator(".error").allTextContents();
     throw new Error(`the editor couldn't start: ${[...shown, ...pageErrors].join(" | ")}`);
   }
+  await startEmpty(page);
 }
 
 async function enterMode(page: Page, mode: Mode): Promise<void> {
@@ -62,6 +68,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
     case "road": {
       await page.locator('.palette [data-section="road"] [data-item]').first().click();
       await expect(toolHud).toHaveAttribute("data-tone", "place");
+      await page.locator(".editor-hud > summary").click();
       const roadJoins = page.locator(".road-joins");
       await roadJoins.locator("> summary").click();
       await expect(roadJoins).toHaveAttribute("open", "");
@@ -72,6 +79,7 @@ async function enterMode(page: Page, mode: Mode): Promise<void> {
       await page.locator('[data-action="new-plan"]').click();
       await expect(page.locator(".plan-panel")).toHaveAttribute("data-active-plan", /.+/u);
       await expect(page.locator(".view-controls")).toHaveAttribute("data-view", "plan");
+      await expect(page.locator(".scale-bar")).toBeVisible();
       return;
     default: {
       const unhandled: never = mode;
@@ -85,7 +93,9 @@ function measureOverlays(stepPx: number): OverlayBox[] {
   if (!root) throw new Error("the editor is not mounted");
   const panels = [...root.children]
     .filter((element): element is HTMLElement => element instanceof HTMLElement)
-    .filter((element) => !element.matches("canvas.scene, .overlay"))
+    .filter(
+      (element) => !element.matches("canvas.scene, svg.scene-labels, .overlay, .placement-chip"),
+    )
     .filter((element) => getComputedStyle(element).position === "fixed")
     .map((element) => ({
       element,
@@ -140,10 +150,24 @@ function offScreen(boxes: ReadonlyArray<OverlayBox>, viewport: Viewport): string
     .map((box) => `${box.name} leaves the screen`);
 }
 
-async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void> {
+async function settle(page: Page): Promise<void> {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   );
+}
+
+async function expectLibraryListInView(page: Page, viewport: Viewport): Promise<void> {
+  await settle(page);
+  const list = await page.locator(".library .palette-list").boundingBox();
+  expect(list, "the library list is laid out").not.toBeNull();
+  if (!list) return;
+  expect(list.y).toBeGreaterThanOrEqual(0);
+  expect(list.y + list.height).toBeLessThanOrEqual(viewport.height);
+  expect(list.height / viewport.height).toBeGreaterThan(MIN_LIBRARY_LIST_SHARE);
+}
+
+async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void> {
+  await settle(page);
   const boxes = await page.evaluate(measureOverlays, CLICK_SAMPLE_STEP_PX);
   expect(boxes.length).toBeGreaterThan(1);
   expect(intersections(boxes)).toEqual([]);
@@ -158,19 +182,71 @@ async function expectOverlaysApart(page: Page, viewport: Viewport): Promise<void
   ).toEqual([]);
 }
 
+interface ChipPlacement {
+  readonly left: number;
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly pointerEvents: string;
+}
+
+async function expectChipOnScreen(page: Page, viewport: Viewport): Promise<void> {
+  const chip = page.locator(".placement-chip");
+  await expect(chip).toBeVisible();
+  const placed = await chip.evaluate((element): ChipPlacement => {
+    const rect = element.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      pointerEvents: getComputedStyle(element).pointerEvents,
+    };
+  });
+  expect({
+    onScreen:
+      placed.left >= 0 &&
+      placed.top >= 0 &&
+      placed.right <= viewport.width &&
+      placed.bottom <= viewport.height,
+    pointerEvents: placed.pointerEvents,
+  }).toEqual({ onScreen: true, pointerEvents: "none" });
+}
+
 for (const viewport of VIEWPORTS) {
   test.describe(`${viewport.width}×${viewport.height}`, () => {
     test.use({ viewport, actionTimeout: ACTION_TIMEOUT_MS });
     for (const mode of MODES) {
-      test(`overlays never overlap or catch each other's clicks in ${mode} mode, stats folded or open`, async ({
+      test(`overlays never overlap or catch each other's clicks in ${mode} mode, stats folded or open, library shown or folded`, async ({
         page,
       }) => {
         await openEditor(page);
         await enterMode(page, mode);
+        await expectLibraryListInView(page, viewport);
         await expectOverlaysApart(page, viewport);
         await page.locator(".editor-hud > summary").click();
         await expectOverlaysApart(page, viewport);
+        const toggle = page.locator('[data-action="toggle-library"]');
+        await toggle.click();
+        await expect(toggle).toHaveAttribute("aria-expanded", "false");
+        await expectOverlaysApart(page, viewport);
       });
     }
+
+    test("a refused hover's long tool hint, the placement chip and the mode switch held by Alt stay inside their boxes and on screen", async ({
+      page,
+    }) => {
+      const editor = await EditorPage.open(page);
+      await editor.placeAt(GREEN_BASEPLATE, { x: 0, z: 0 });
+      await editor.aim(GREEN_BASEPLATE, FIVE_STUDS_OVER);
+      await expect(page.locator(".tool-hud")).toHaveAttribute("data-tone", "warn");
+      await expectChipOnScreen(page, viewport);
+      await expectOverlaysApart(page, viewport);
+      await page.keyboard.down("Alt");
+      await expect(page.locator('[data-action="placement-mode"]')).toHaveAttribute("data-held", "");
+      await expectChipOnScreen(page, viewport);
+      await expectOverlaysApart(page, viewport);
+      await page.keyboard.up("Alt");
+    });
   });
 }

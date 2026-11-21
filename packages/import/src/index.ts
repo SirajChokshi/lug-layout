@@ -38,12 +38,14 @@ export {
   type MirrorSource,
   type MirrorStats,
 } from "./ldraw-mirror.ts";
+export { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
 export {
   bundlePartId,
   ModelImportEngine,
   type IBakeHelper,
   type ColorIssue,
   type CompiledGlb,
+  type CompiledSource,
   type ImportResult,
   type ImportJob,
   type ImportReport,
@@ -56,6 +58,7 @@ export {
   type PartConnectorSource,
   type PartResolution,
   type RecordReport,
+  type RefusedConnectorRecord,
 } from "./model-import.ts";
 export {
   LibraryBakeStore,
@@ -79,6 +82,9 @@ export {
   type LdrawTextInput,
   type LibraryBakeSource,
   type LibraryConnectorsSource,
+  type ShadowLibrarySource,
+  type RollingDiagnosticsRequest,
+  type RollingDiagnosticsRows,
   type StudioFileInput,
 } from "./worker-protocol.ts";
 export type { LooseGeometry } from "./brick-compiler.ts";

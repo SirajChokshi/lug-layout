@@ -8,6 +8,9 @@ import {
   type EdgeMarker,
   type FarModelPlacement,
   type FrameStats,
+  type GuideSegment,
+  type GroundSettings,
+  type GhostVerdict,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -97,7 +100,6 @@ const NO_LOOK: LookSettings = {
 
 const PLACED = "client: PlacedChunks";
 const WORLD = "domain: World";
-const OCCUPANCY = "domain: OccupancyGrid";
 const HISTORY = "domain: EditHistory";
 const INSTANCES = "render: instance matrices and colours";
 const SCENE = "render: scene objects";
@@ -151,7 +153,7 @@ const RULES: OwnerRules = {
     ],
     ["PlaceableCatalog", fields(PART_MESHES, ["placeablesByRefId", "palette", "slots"])],
     ["PlacedEntry", fields(PART_MESHES, ["placeable"])],
-    ["PlacedChunks", new Map([...fields(SCENE, ["backend"]), ...fields(OCCUPANCY, ["occupancy"])])],
+    ["PlacedChunks", fields(SCENE, ["backend"])],
     ["ChunkRecord", fields(INSTANCES, ["page"])],
     ["Mesh", fields(GEOMETRY, ["geometry"])],
     [
@@ -310,8 +312,11 @@ class WindowlessBackend implements ISceneBackend {
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     this.scene.placeGhost(x, yLdu, z, rot);
   }
-  setSelectionBox(box: WorldBox | null): void {
-    this.scene.setSelectionBox(box);
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.scene.setGhostVerdict(verdict);
+  }
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
+    this.scene.setSelectionBoxes(boxes);
   }
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
     this.scene.setMarkers(markers);
@@ -319,11 +324,20 @@ class WindowlessBackend implements ISceneBackend {
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
     this.scene.setTrackEnds(markers);
   }
+  setGround(ground: GroundSettings | null): void {
+    this.scene.setGround(ground);
+  }
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.scene.setPlanOverlays(overlays);
   }
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.scene.setIssueBoxes(boxes);
+  }
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    this.scene.setGuides(segments);
+  }
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
+    this.scene.projectToNdc(x, y, z, out, offset);
   }
   aim(x: number, z: number): void {
     this.aimX = x;

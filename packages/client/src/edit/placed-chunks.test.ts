@@ -1,4 +1,4 @@
-import type { PlacementHandle } from "@brr/domain";
+import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
 import type { BufferMemory, ChunkInstances, ISceneBackend, RebaseEvent } from "@brr/render";
 import { expect, it } from "vitest";
 import { ColorTable } from "../scene/viewer-scene.ts";
@@ -9,6 +9,7 @@ import { PlacedChunks } from "./placed-chunks.ts";
 const TILE_LDU = 640;
 const HALF_TILE_LDU = TILE_LDU / 2;
 const COVER_GRID_LDU = 80;
+const COVER_HEIGHTS = 4;
 const TILES = 2;
 const STEPS = 160;
 const SEEDS = [1, 2, 3, 4];
@@ -16,7 +17,6 @@ const REMOVE_CHANCE = 0.25;
 const MAX_REMOVED = 3;
 const SWAP_CHANCE = 0.1;
 const RESHAPE_CHANCE = 0.3;
-const PROBE_STEP_LDU = 320;
 const BASEPLATE_CHANCE = 0.45;
 const ROAD_PLATES_CHANCE = 0.45;
 const BASEPLATE = "ldraw:3811";
@@ -43,14 +43,18 @@ class ChunkRecorder implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -148,19 +152,8 @@ function placementHandle(
   };
 }
 
-function restingHeights(chunks: PlacedChunks, probe: Placeable): number[] {
-  const heights: number[] = [];
-  for (let x = 0; x <= TILES * TILE_LDU; x += PROBE_STEP_LDU) {
-    for (let z = 0; z <= TILES * TILE_LDU; z += PROBE_STEP_LDU) {
-      heights.push(chunks.restingHeight(probe, x, z, 0, null));
-    }
-  }
-  return heights;
-}
-
-it("keeps every chunk and every resting height equal to a fresh build of the same placements, whatever was added, removed or swapped beside it", async () => {
+it("keeps every chunk equal to a fresh build of the same placements, whatever was added, removed or swapped beside it", async () => {
   const placeables = await baseplateAndCovers();
-  const probe = placeables[1] as Placeable;
   for (const seed of SEEDS) {
     const random = seeded(seed);
     const current = [...placeables];
@@ -189,6 +182,9 @@ it("keeps every chunk and every resting height equal to a fresh build of the sam
               removed: handle,
               added: null,
             })),
+            consists: [],
+            track: NO_TRACK_CHANGE,
+            plan: null,
           },
           placeableOf,
         );
@@ -216,7 +212,7 @@ it("keeps every chunk and every resting height equal to a fresh build of the sam
         const rot = refId === 0 ? 0 : Math.floor(random() * 4);
         const occupied = live.some((h) => h.refId === 0 && refId === 0 && h.x === x && h.z === z);
         if (occupied) continue;
-        const yPlates = chunks.restingHeight(placeableOf(refId), x, z, rot, null);
+        const yPlates = refId === 0 ? 0 : Math.floor(random() * COVER_HEIGHTS);
         const handle = placementHandle(slot++, refId, x, z, yPlates, rot);
         live.push(handle);
         chunks.apply(
@@ -232,6 +228,9 @@ it("keeps every chunk and every resting height equal to a fresh build of the sam
                 added: handle,
               },
             ],
+            consists: [],
+            track: NO_TRACK_CHANGE,
+            plan: null,
           },
           placeableOf,
         );
@@ -246,9 +245,6 @@ it("keeps every chunk and every resting height equal to a fresh build of the sam
         })),
       );
       expect(recorder.chunks, `seed ${seed}, step ${step}`).toEqual(freshRecorder.chunks);
-      expect(restingHeights(chunks, probe), `seed ${seed}, step ${step}`).toEqual(
-        restingHeights(fresh, probe),
-      );
     }
   }
 }, 120_000);
