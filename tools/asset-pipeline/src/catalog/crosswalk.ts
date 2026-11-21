@@ -38,6 +38,7 @@ export interface LdrawPartFacts {
   readonly category?: string;
   readonly keywords: ReadonlyArray<string>;
   readonly ldrawOrg: string;
+  readonly license: string;
   readonly components: ReadonlyArray<LdrawComponent>;
 }
 

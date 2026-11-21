@@ -113,6 +113,42 @@
         "SNAP_CYL [gender=F] [caps=one] [secs=R 6 4] [scale=YOnly] [pos=0 -4 0] [ori=1 0 0 0 -1 0 0 0 -1] [grid=C 2 C 2 20 20]"
       ],
       "derivation": "inward 4-4cyli radius 6 and outward 4-4cyli radius 8 from y=-4 to y=0, with the 4-4ring3 rim at y=-4 (the open end) and parts scaling it along Y; the four stud-grid diagonal neighbours sit 10*sqrt(2) from the axis, so a radius-6 receptor there clears the radius-8 wall by 10*sqrt(2)-14 and runs from the rim plane to the far end; emitted only where the free-space test finds the receptor open"
+    },
+    {
+      "file": "p/stud.dat",
+      "title": "Stud",
+      "stud": true,
+      "derivation": "outward 4-4cyli radius 6 from y=0 to y=-4, closed by 4-4disc radius 6 at y=-4; drawn in colour 16 only"
+    },
+    {
+      "file": "p/stud2.dat",
+      "title": "Stud Open",
+      "stud": true,
+      "derivation": "outward 4-4cyli radius 6 and inverted 4-4cyli radius 4 from y=0 to y=-4, joined at y=-4 by 4-4ring2 scaled 2 (radius 4 to 6), with edges at y=0 and y=-4; drawn in colour 16 only"
+    },
+    {
+      "file": "p/stud2a.dat",
+      "title": "Stud Open without Base Edges",
+      "stud": true,
+      "derivation": "outward 4-4cyli radius 6 and inverted 4-4cyli radius 4 from y=0 to y=-4, joined at y=-4 by 4-4ring2 scaled 2 (radius 4 to 6), with edges at y=-4 only; drawn in colour 16 only"
+    },
+    {
+      "file": "p/stud9.dat",
+      "title": "Stud Open with Small Holes",
+      "stud": true,
+      "derivation": "outward radius-6 wall from y=0 to y=-4 (2-4cylo and two 1-8cylo scaled 6 × 4 × 6), an inverted 4-4cylo radius 2 bore and two inverted 3-8cyli radius 2 side holes at x=2, z=±6, closed at y=-4 by rings, a 2-4ndis and polygons within radius 6; drawn in colour 16 only"
+    },
+    {
+      "file": "p/stud10.dat",
+      "title": "Stud Truncated Laterally Curved 40D for Round  2 x  2 Parts",
+      "stud": true,
+      "derivation": "outward 3-4cyli radius 6 from y=0 to y=-4, closed by 3-4disc radius 6 at y=-4; the remaining quadrant is a curved truncation of quads through (5.6145, 1.9397), (4.142, 4.142) and (1.9397, 5.6145), capped by triangles at y=-4; drawn in colour 16 only"
+    },
+    {
+      "file": "p/stud15.dat",
+      "title": "Stud Truncated Laterally Straight 40D for Round  2 x  2 Parts",
+      "stud": true,
+      "derivation": "outward 3-4cylc radius 6 from y=0 to y=-4; the remaining quadrant is a straight truncation of quads from (6, 0) through (5.6145, 1.9388) and (1.9388, 5.6145) to (0, 6), capped by a triangle and a quad at y=-4; drawn in colour 16 only"
     }
   ]
 }

@@ -2,9 +2,11 @@ import {
   BOX_STRIDE,
   checkPlan,
   LABEL_NUMBERED,
+  mmRectFromWorld,
   mmRectInWorld,
   NO_ROW,
   PlanDelta,
+  regionAround,
   regionOf,
   roomRect,
   TRACK_SEGMENT,
@@ -14,11 +16,13 @@ import {
   type PlanCheck,
   type PlanPlacement,
   type PlanRegion,
+  type PlanState,
 } from "@brr/domain";
-import { chunkKey, lduFromMm } from "@brr/math";
+import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
 import { fitAllBox } from "../camera/editor-camera.ts";
 import { overviewOf } from "../camera/overview.ts";
+import { GUIDE_GRID_LDU } from "../edit/table-tool.ts";
 import {
   writeFullRebuild,
   writeTrackLay,
@@ -29,7 +33,7 @@ import {
 } from "./plan-producer.ts";
 import {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   PlanService,
   type NewPlan,
   type ObstacleInput,
@@ -177,7 +181,8 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.overlays = overlays;
   }
@@ -190,6 +195,8 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.boxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -213,9 +220,10 @@ type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 function todaysEvaluate(
   plans: ReadonlyArray<PlanRegion>,
   placed: ReadonlyArray<PlacedForPlan>,
+  unsupported: ReadonlyArray<boolean>,
 ): Evaluation {
   try {
-    const domain = placed.map(todaysToDomain);
+    const domain = placed.map((placement, i) => todaysToDomain(placement, unsupported[i] === true));
     return {
       checks: plans.map((plan) => checkPlan(plan, domain)),
       sandboxPlacements: domain
@@ -234,19 +242,28 @@ function todaysPlacementId(key: PlacementKey): string {
   return `${key.chunkKey}:${key.slot}`;
 }
 
-function todaysToDomain(placement: PlacedForPlan): PlanPlacement {
+function todaysToDomain(placement: PlacedForPlan, unsupported: boolean): PlanPlacement {
   const { box } = placement;
   return {
     key: placement.key,
     ref: placement.ref,
     label: placement.label,
     box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
+    unsupported,
   };
+}
+
+interface TodaysModel {
+  readonly id: number;
+  readonly todays: PlacedForPlan;
 }
 
 class TodaysPlanService {
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
+  private modelIds: ReadonlyArray<number> = [];
+  private unsupportedTrack: ReadonlySet<number> = new Set();
+  private unsupportedModels: ReadonlySet<number> = new Set();
   private state: PlanSnapshot = {
     plans: [],
     activePlanId: null,
@@ -361,6 +378,55 @@ class TodaysPlanService {
     }));
   }
 
+  drawTable(rect: LduRect): { planId: string; tableId: string } {
+    const planId = this.state.activePlanId ?? this.createPlanAround(rect);
+    const tableId = this.newId("table");
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const { tables } = grown.footprint;
+      const table = {
+        id: tableId,
+        name: `Table ${tables.length + 1}`,
+        rect: mmRectFromWorld(grown, rect),
+        heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+      };
+      return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+    });
+    return { planId, tableId };
+  }
+
+  placeTable(planId: string, tableId: string, rect: LduRect): void {
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const placed = mmRectFromWorld(grown, rect);
+      return {
+        ...grown,
+        footprint: {
+          ...grown.footprint,
+          tables: grown.footprint.tables.map((t) =>
+            t.id === tableId ? { ...t, rect: placed } : t,
+          ),
+        },
+      };
+    });
+  }
+
+  private createPlanAround(rect: LduRect): string {
+    const originChunkX = chunkOf(rect.minX);
+    const originChunkZ = chunkOf(rect.minZ);
+    return this.createPlan({
+      name: `Plan ${this.state.plans.length + 1}`,
+      roomWidthMm: mmFromLdu(rect.maxX - originChunkX * CHUNK_LDU),
+      roomDepthMm: mmFromLdu(rect.maxZ - originChunkZ * CHUNK_LDU),
+      originChunkX,
+      originChunkZ,
+    });
+  }
+
+  restore(state: PlanState): void {
+    this.commit({ plans: state.regions, activePlanId: state.activePlanId });
+  }
+
   addObstacle(planId: string, obstacle: ObstacleInput): string {
     const id = this.newId("obstacle");
     this.replacePlan(planId, (plan) => ({
@@ -395,8 +461,25 @@ class TodaysPlanService {
     }));
   }
 
-  setPlacements(placements: ReadonlyArray<PlacedForPlan>): void {
-    this.commit({ placements });
+  setPlacements(models: ReadonlyArray<TodaysModel>, track: ReadonlyArray<PlacedForPlan>): void {
+    this.modelIds = models.map((model) => model.id);
+    this.commit({ placements: [...models.map((model) => model.todays), ...track] });
+  }
+
+  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+    this.unsupportedTrack = new Set(track);
+    this.unsupportedModels = new Set(models);
+    this.commit({});
+  }
+
+  private unsupportedFlags(placements: ReadonlyArray<PlacedForPlan>): boolean[] {
+    const models = this.modelIds;
+    return placements.map((_, i) => {
+      const id = models[i];
+      return id === undefined
+        ? this.unsupportedTrack.has(i - models.length)
+        : this.unsupportedModels.has(id);
+    });
   }
 
   setTableTopY(y: number): void {
@@ -405,7 +488,10 @@ class TodaysPlanService {
 
   private commit(patch: Partial<PlanSnapshot>): void {
     const next = { ...this.state, ...patch };
-    this.state = { ...next, ...todaysEvaluate(next.plans, next.placements) };
+    this.state = {
+      ...next,
+      ...todaysEvaluate(next.plans, next.placements, this.unsupportedFlags(next.placements)),
+    };
     this.draw();
     for (const listener of this.listeners) listener();
   }
@@ -441,7 +527,6 @@ class TodaysPlanService {
         },
         tables,
         obstacles,
-        gridStepLdu: lduFromMm(PLAN_GRID_MM),
         active: plan.id === activePlanId,
       };
     });
@@ -461,6 +546,7 @@ const EDITS = 1_000;
 const MAX_MODELS = 24;
 const MAX_PIECES = 10;
 const MAX_REGIONS = 3;
+const SAVED_PLAN_STATES = 4;
 const CHUNK = 640;
 const MANDATORY_EVERY = 12;
 
@@ -575,6 +661,7 @@ export class Pair {
   removedLast: TestModel | null = null;
   private nextModel = 1;
   private nextSlot = 1;
+  private readonly saved: PlanState[] = [];
   readonly hit = new Set<string>();
 
   constructor(
@@ -597,7 +684,7 @@ export class Pair {
   }
 
   syncToday(): void {
-    this.today.setPlacements([...this.models.map((m) => m.todays), ...this.track.todays()]);
+    this.today.setPlacements(this.models, this.track.todays());
   }
 
   randomBox(): WorldBox {
@@ -716,6 +803,17 @@ export class Pair {
     this.syncToday();
   }
 
+  unsupportedEdit(): void {
+    const pieces = new Set<number>();
+    for (let piece = 0; piece < MAX_PIECES + 2; piece++) {
+      if (this.next() < 0.3) pieces.add(piece);
+    }
+    const models = new Set<number>();
+    for (const model of this.models) if (this.next() < 0.3) models.add(model.id);
+    if (this.next() < 0.2) models.add(this.nextModel);
+    this.both((s) => s.setUnsupported(pieces, models));
+  }
+
   load(): void {
     this.models = this.models.filter(() => this.next() < 0.8).toSorted(() => this.next() - 0.5);
     this.track.pieces.length = Math.min(this.track.pieces.length, this.int(MAX_PIECES));
@@ -795,7 +893,24 @@ export class Pair {
     );
   }
 
+  latticeRect(): LduRect {
+    const minX = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    const minZ = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    return {
+      minX,
+      minZ,
+      maxX: minX + (1 + this.int(16)) * GUIDE_GRID_LDU,
+      maxZ: minZ + (1 + this.int(10)) * GUIDE_GRID_LDU,
+    };
+  }
+
+  sutState(): PlanState {
+    return { regions: this.sut.plans(), activePlanId: this.sut.activePlanId() };
+  }
+
   regionEdit(): void {
+    this.saved.push(this.sutState());
+    if (this.saved.length > SAVED_PLAN_STATES) this.saved.shift();
     const ids = this.planIds();
     const planId = ids.length > 0 ? this.pick(ids) : null;
     const roll = this.int(12);
@@ -810,6 +925,8 @@ export class Pair {
     const table = this.table();
     const obstacle = this.obstacle();
     const name = `Renamed ${this.int(9)}`;
+    const drawn = this.latticeRect();
+    const saved = this.pick(this.saved);
     const edits: Array<(s: TodaysPlanService | PlanService) => unknown> = [
       (s) => s.updatePlan(planId, patch),
       (s) => s.updatePlan(planId, { name }),
@@ -817,11 +934,14 @@ export class Pair {
       (s) => s.addObstacle(planId, obstacle),
       (s) => s.activatePlan(planId),
       (s) => s.activatePlan(null),
+      (s) => s.drawTable(drawn),
+      (s) => s.restore(saved),
     ];
     if (tableId) {
       edits.push((s) => s.updateTable(planId, tableId, { rect: table.rect }));
       edits.push((s) => s.updateTable(planId, tableId, { name }));
       edits.push((s) => s.removeTable(planId, tableId));
+      edits.push((s) => s.placeTable(planId, tableId, drawn));
     }
     if (obstacleId) {
       edits.push((s) => s.updateObstacle(planId, obstacleId, { rect: obstacle.rect }));
@@ -848,6 +968,7 @@ export class Pair {
       return this.both((s) => s.setTableTopY(y));
     }
     if (roll < 0.91) return this.place(this.unreadableModel(this.pick(BOX_FIELDS)));
+    if (roll < 0.95) return this.unsupportedEdit();
     const unreadable = this.models.findIndex((m) => this.throwing.has(m.box));
     if (unreadable >= 0) return this.remove(unreadable);
     return this.place();
@@ -1047,6 +1168,57 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
       const rect = p.table().rect;
       p.both((s) => s.updateTable(id, tableId, { rect }));
       p.both((s) => s.removeTable(id, tableId));
+    },
+  },
+  {
+    name: "draw a table that starts a plan, then move it and draw another past the room",
+    run: (p) => {
+      p.both((s) => s.activatePlan(null));
+      const rect = p.latticeRect();
+      p.both((s) => s.drawTable(rect));
+      const planId = p.today.snapshot().activePlanId;
+      const tableId = planId === null ? null : p.firstTable(planId);
+      if (planId === null || tableId === null) return;
+      const moved = {
+        minX: rect.minX - 3 * CHUNK_LDU,
+        minZ: rect.minZ - 2 * CHUNK_LDU,
+        maxX: rect.maxX + CHUNK_LDU,
+        maxZ: rect.maxZ,
+      };
+      p.both((s) => s.placeTable(planId, tableId, moved));
+      const far = p.latticeRect();
+      p.both((s) => s.drawTable(far));
+      p.place();
+    },
+  },
+  {
+    name: "restore earlier plan states across a created and a removed plan",
+    run: (p) => {
+      const before = p.sutState();
+      const plan = p.newPlan();
+      p.both((s) => s.createPlan(plan));
+      const created = p.sutState();
+      const id = withPlan(p);
+      const table = p.table();
+      p.both((s) => s.addTable(id, table));
+      p.both((s) => s.restore(created));
+      p.both((s) => s.restore(before));
+      p.both((s) => s.restore(created));
+      p.place();
+    },
+  },
+  {
+    name: "flag laid track and a model carrying track unsupported, then lay, throw, remove and rebuild around the flags",
+    run: (p) => {
+      withPlan(p);
+      p.trackLay(3);
+      p.place();
+      const carrier = p.models.at(-1)?.id ?? -1;
+      p.both((s) => s.setUnsupported(new Set([0, 2, MAX_PIECES + 1]), new Set([carrier])));
+      p.trackLay(1);
+      p.switchThrow(0);
+      p.remove();
+      p.load();
     },
   },
   {

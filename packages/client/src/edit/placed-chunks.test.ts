@@ -1,4 +1,4 @@
-import type { PlacementHandle } from "@brr/domain";
+import { NO_TRACK_CHANGE, type PlacementHandle } from "@brr/domain";
 import type { BufferMemory, ChunkInstances, ISceneBackend, RebaseEvent } from "@brr/render";
 import { expect, it } from "vitest";
 import { ColorTable } from "../scene/viewer-scene.ts";
@@ -9,6 +9,7 @@ import { PlacedChunks } from "./placed-chunks.ts";
 const TILE_LDU = 640;
 const HALF_TILE_LDU = TILE_LDU / 2;
 const COVER_GRID_LDU = 80;
+const COVER_HEIGHTS = 4;
 const TILES = 2;
 const STEPS = 160;
 const SEEDS = [1, 2, 3, 4];
@@ -39,7 +40,8 @@ class ChunkRecorder implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -48,6 +50,8 @@ class ChunkRecorder implements ISceneBackend {
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -145,6 +149,9 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
             changes: [
               { placement: { handle: null }, from: null, to: null, removed: handle, added: null },
             ],
+            consists: [],
+            track: NO_TRACK_CHANGE,
+            plan: null,
           },
           placeableOf,
         );
@@ -163,7 +170,7 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
         const rot = refId === 0 ? 0 : Math.floor(random() * 4);
         const occupied = live.some((h) => h.refId === 0 && refId === 0 && h.x === x && h.z === z);
         if (occupied) continue;
-        const yPlates = chunks.restingHeight(placeableOf(refId), x, z, rot, null);
+        const yPlates = refId === 0 ? 0 : Math.floor(random() * COVER_HEIGHTS);
         const handle: PlacementHandle = {
           chunkKey: 0,
           slot: slot++,
@@ -190,6 +197,9 @@ it("keeps every chunk equal to a fresh build of the same placements, whatever wa
                 added: handle,
               },
             ],
+            consists: [],
+            track: NO_TRACK_CHANGE,
+            plan: null,
           },
           placeableOf,
         );
