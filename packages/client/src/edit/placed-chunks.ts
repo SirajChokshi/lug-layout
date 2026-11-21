@@ -1,6 +1,5 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
-  OccupancyGrid,
   cellChunkKey,
   type AppliedEdit,
   type PlacementHandle,
@@ -42,12 +41,15 @@ export interface PlacedModel {
   studCellX(stud: number): number;
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
-  readonly slab: Float64Array;
   rayHit(ray: Float64Array): number;
+  aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
+  writeWorldPartBoxes(out: Float64Array): number;
 }
 
 const HALF_STUD_LDU = STUD_LDU / 2;
+const THROUGH_SIDE = 0;
+export const ON_TOP_FACE = 1;
 
 function slab(
   origin: number,
@@ -82,6 +84,23 @@ export function rayBoxDistance(
     slab(ray[1] ?? 0, ray[4] ?? 0, minY, maxY, rayRange) &&
     slab(ray[2] ?? 0, ray[5] ?? 0, minZ, maxZ, rayRange);
   return hit ? (rayRange[0] ?? 0) : Number.POSITIVE_INFINITY;
+}
+
+export function rayTopFaceDistance(
+  ray: Float64Array,
+  minX: number,
+  minZ: number,
+  maxX: number,
+  maxZ: number,
+  top: number,
+): number {
+  const down = ray[4] ?? 0;
+  if (down >= 0) return Number.POSITIVE_INFINITY;
+  const t = (top - (ray[1] ?? 0)) / down;
+  if (t < 0) return Number.POSITIVE_INFINITY;
+  const x = (ray[0] ?? 0) + (ray[3] ?? 0) * t;
+  const z = (ray[2] ?? 0) + (ray[5] ?? 0) * t;
+  return x >= minX && x <= maxX && z >= minZ && z <= maxZ ? t : Number.POSITIVE_INFINITY;
 }
 
 const FOOTPRINT_FLAG = 1;
@@ -145,14 +164,6 @@ class TouchedChunks {
     const keys: number[] = [];
     for (let row = 0; row < this.rows; row++) {
       if (this.contributes(row)) keys.push(this.keyAt(row));
-    }
-    return keys;
-  }
-
-  keysWithColumns(): number[] {
-    const keys: number[] = [];
-    for (let row = 0; row < this.rows; row++) {
-      if (this.hasColumns(row)) keys.push(this.keyAt(row));
     }
     return keys;
   }
@@ -276,7 +287,7 @@ class LatticePose {
   }
 
   boxOf(box: LocalBox, yLdu: number): WorldBox {
-    const out = new Float64Array(BOX_FLOATS);
+    const out = posedBoxScratch;
     this.worldBoxOf(
       box.min[0],
       box.min[1],
@@ -317,14 +328,15 @@ class LatticePose {
   }
 }
 
-const scratchBox = new Float64Array(BOX_FLOATS);
-
 const NEIGHBOUR_DX = Int8Array.of(-1, 0, 1, -1, 1, -1, 0, 1);
 const NEIGHBOUR_DZ = Int8Array.of(-1, -1, -1, 0, 0, 1, 1, 1);
 
 const CULLING_BORDER_CELLS = 1;
 const CULLING_WINDOW_CELLS = CHUNK_STUDS + 2 * CULLING_BORDER_CELLS;
 const localRange = new Int32Array(4);
+
+const posedBoxScratch = new Float64Array(BOX_FLOATS);
+const posingScratch = new LatticePose(0, 0, 0);
 
 export function posedBox(box: LocalBox, x: number, z: number, yLdu: number, rot: number): WorldBox {
   return new LatticePose(x, z, rot).boxOf(box, yLdu);
@@ -337,11 +349,20 @@ export function posedPartBoxes(
   yLdu: number,
   rot: number,
 ): Float64Array {
-  const pose = new LatticePose(x, z, rot);
-  const boxes = new Float64Array(partBoxes.length);
-  for (let b = 0; b < partBoxes.length; b += BOX_FLOATS)
-    pose.worldBox(partBoxes, b, yLdu, boxes, b);
-  return boxes;
+  return writePosedPartBoxes(partBoxes, x, z, yLdu, rot, new Float64Array(partBoxes.length));
+}
+
+export function writePosedPartBoxes(
+  partBoxes: Float32Array,
+  x: number,
+  z: number,
+  yLdu: number,
+  rot: number,
+  out: Float64Array,
+): Float64Array {
+  const pose = posingScratch.at(x, z, rot);
+  for (let b = 0; b < partBoxes.length; b += BOX_FLOATS) pose.worldBox(partBoxes, b, yLdu, out, b);
+  return out;
 }
 
 function closedAround(
@@ -371,37 +392,9 @@ function cellIndex(
   return j * cells.width + i;
 }
 
-function boxesOverlap(a: Float64Array, ao: number, b: Float64Array, bo: number): boolean {
-  return (
-    (a[ao] ?? 0) < (b[bo + 3] ?? 0) &&
-    (b[bo] ?? 0) < (a[ao + 3] ?? 0) &&
-    (a[ao + 1] ?? 0) < (b[bo + 4] ?? 0) &&
-    (b[bo + 1] ?? 0) < (a[ao + 4] ?? 0) &&
-    (a[ao + 2] ?? 0) < (b[bo + 5] ?? 0) &&
-    (b[bo + 2] ?? 0) < (a[ao + 5] ?? 0)
-  );
-}
-
-function restingHeight(occupancy: OccupancyGrid, placeable: Placeable, pose: LatticePose): number {
-  const { cells } = placeable;
-  let yPlates = 0;
-  for (let j = 0; j < cells.depth; j++) {
-    for (let i = 0; i < cells.width; i++) {
-      const cell = j * cells.width + i;
-      if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
-      const lx = cells.cellX0 + i;
-      const lz = cells.cellZ0 + j;
-      const below = occupancy.topAt(pose.worldCellX(lx, lz), pose.worldCellZ(lx, lz));
-      yPlates = Math.max(yPlates, below - (cells.columnBottom[cell] ?? 0));
-    }
-  }
-  return yPlates;
-}
-
 class PlacedEntry implements PlacedModel {
   readonly chunks = new TouchedChunks();
   columnsIndexedIn = -1;
-  readonly slab: Float64Array;
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -426,21 +419,21 @@ class PlacedEntry implements PlacedModel {
     this.tallyParts(chunkOrigins);
     this.tallyStuds(chunkOrigins);
     this.markCells(chunkOrigins);
-    const slabs = placeable.slabBoxes;
-    this.slab = new Float64Array(slabs.length);
-    for (let b = 0; b < slabs.length; b += BOX_FLOATS) {
-      this.pose.worldBox(slabs, b, this.yLdu, this.slab, b);
-    }
     this.box = this.worldBox();
   }
 
   worldPartBoxes(): Float64Array {
-    const local = this.placeable.partBoxes;
-    const boxes = new Float64Array(local.length);
-    for (let b = 0; b < local.length; b += BOX_FLOATS) {
-      this.pose.worldBox(local, b, this.yLdu, boxes, b);
-    }
+    const boxes = new Float64Array(this.placeable.partBoxes.length);
+    this.writeWorldPartBoxes(boxes);
     return boxes;
+  }
+
+  writeWorldPartBoxes(out: Float64Array): number {
+    const local = this.placeable.partBoxes;
+    for (let b = 0; b < local.length; b += BOX_FLOATS) {
+      this.pose.worldBox(local, b, this.yLdu, out, b);
+    }
+    return local.length;
   }
 
   private markCells(chunkOrigins: Map<number, readonly [number, number]>): void {
@@ -485,45 +478,8 @@ class PlacedEntry implements PlacedModel {
     }
   }
 
-  stampColumns(occupancy: OccupancyGrid, onlyChunk: number | null): void {
-    const { cells } = this.placeable;
-    const yPlates = this.handle.yPlates;
-    for (let j = 0; j < cells.depth; j++) {
-      for (let i = 0; i < cells.width; i++) {
-        const top = cells.columnTop[j * cells.width + i] ?? EMPTY_COLUMN;
-        if (top === EMPTY_COLUMN) continue;
-        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
-        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-        if (onlyChunk !== null && cellChunkKey(wx, wz) !== onlyChunk) continue;
-        occupancy.raise(wx, wz, yPlates + top);
-      }
-    }
-  }
-
   private cellAt(worldCellX: number, worldCellZ: number): number {
     return cellIndex(this.placeable.cells, this.pose, worldCellX, worldCellZ);
-  }
-
-  private columnTopPlates(worldCellX: number, worldCellZ: number): number | null {
-    const cell = this.cellAt(worldCellX, worldCellZ);
-    if (cell < 0) return null;
-    const top = this.placeable.cells.columnTop[cell] ?? EMPTY_COLUMN;
-    return top === EMPTY_COLUMN ? null : this.handle.yPlates + top;
-  }
-
-  restsOn(base: PlacedEntry): boolean {
-    const { cells } = this.placeable;
-    for (let j = 0; j < cells.depth; j++) {
-      for (let i = 0; i < cells.width; i++) {
-        const cell = j * cells.width + i;
-        if ((cells.columnTop[cell] ?? EMPTY_COLUMN) === EMPTY_COLUMN) continue;
-        const wx = this.pose.worldCellX(cells.cellX0 + i, cells.cellZ0 + j);
-        const wz = this.pose.worldCellZ(cells.cellX0 + i, cells.cellZ0 + j);
-        const bottom = this.handle.yPlates + (cells.columnBottom[cell] ?? 0);
-        if (base.columnTopPlates(wx, wz) === bottom) return true;
-      }
-    }
-    return false;
   }
 
   private localCellsIn(index: CellWindowIndex): boolean {
@@ -751,6 +707,45 @@ class PlacedEntry implements PlacedModel {
     return nearest;
   }
 
+  aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean {
+    const box = this.box;
+    if (
+      rayBoxDistance(ray, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ) ===
+      Number.POSITIVE_INFINITY
+    ) {
+      return false;
+    }
+    const boxes = this.placeable.partBoxes;
+    const { cos, sin } = this;
+    let found = false;
+    for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
+      const loX = boxes[b] ?? 0;
+      const loZ = boxes[b + 2] ?? 0;
+      const hiX = boxes[b + 3] ?? 0;
+      const hiZ = boxes[b + 5] ?? 0;
+      const ax = this.x + cos * loX + sin * loZ;
+      const az = this.z - sin * loX + cos * loZ;
+      const bx = this.x + cos * hiX + sin * hiZ;
+      const bz = this.z - sin * hiX + cos * hiZ;
+      const minX = Math.min(ax, bx);
+      const maxX = Math.max(ax, bx);
+      const minZ = Math.min(az, bz);
+      const maxZ = Math.max(az, bz);
+      const top = this.yLdu + (boxes[b + 4] ?? 0);
+      const overGround = groundX >= minX && groundX <= maxX && groundZ >= minZ && groundZ <= maxZ;
+      const t = overGround
+        ? rayBoxDistance(ray, minX, this.yLdu + (boxes[b + 1] ?? 0), minZ, maxX, top, maxZ)
+        : rayTopFaceDistance(ray, minX, minZ, maxX, maxZ, top);
+      if (t === Number.POSITIVE_INFINITY || (found && t >= (out[0] ?? 0))) continue;
+      out[0] = t;
+      out[1] = top;
+      const entersTop = !overGround || t === (top - (ray[1] ?? 0)) / (ray[4] ?? 0);
+      out[2] = entersTop ? ON_TOP_FACE : THROUGH_SIDE;
+      found = true;
+    }
+    return found;
+  }
+
   private worldBox(): WorldBox {
     return this.pose.boxOf(this.placeable.box, this.yLdu);
   }
@@ -881,17 +876,13 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
 
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
-  private readonly live = new Set<PlacedEntry>();
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
-  private readonly occupancy = new OccupancyGrid();
   private nextId = 0;
-  private readonly slabbed: PlacedEntry[] = [];
-  private readonly probe = new LatticePose(0, 0, 0);
   private readonly farModels = new Map<Placeable, number>();
   private readonly hasAntiStudCovers = (key: number): boolean =>
     (this.byAntiStudChunk.get(key)?.size ?? 0) > 0;
@@ -940,16 +931,13 @@ export class PlacedChunks {
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
     const touched = new Set<number>();
-    const vacated = new Set<number>();
     const removed: PlacedEntry[] = [];
     for (const change of edit.changes) {
       if (!change.removed) continue;
       const entry = this.detach(change.removed);
       entry.addRebuildKeys(touched, this.hasAntiStudCovers);
-      for (const key of entry.chunks.keysWithColumns()) vacated.add(key);
       removed.push(entry);
     }
-    this.restamp(vacated, NO_MODELS);
     const added: PlacedModel[] = [];
     for (const change of edit.changes) {
       if (!change.added || !change.to) continue;
@@ -969,7 +957,6 @@ export class PlacedChunks {
     const added: PlacedModel[] = [];
     for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
       const detached = this.detach(entry.handle);
-      this.restamp(detached.chunks.keysWithColumns(), NO_MODELS);
       detached.addRebuildKeys(touched, this.hasAntiStudCovers);
       removed.push(detached);
       const replaced = this.insert(detached.placement, detached.handle, next);
@@ -977,98 +964,6 @@ export class PlacedChunks {
       added.push(replaced);
     }
     return { added, removed, report: this.rebuild(touched) };
-  }
-
-  restingHeightAt(placeable: Placeable, x: number, z: number, rot: number): number {
-    return restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot));
-  }
-
-  restingHeights(
-    probes: ReadonlyArray<RestProbe>,
-    exempt: ReadonlySet<PlacedModel>,
-  ): ReadonlyArray<number> {
-    const keys = this.columnKeysOf(exempt);
-    if (keys.size > 0) this.restamp(keys, exempt);
-    const heights = probes.map(({ placeable, x, z, rot }) =>
-      restingHeight(this.occupancy, placeable, this.probe.at(x, z, rot)),
-    );
-    if (keys.size > 0) this.restamp(keys, NO_MODELS);
-    return heights;
-  }
-
-  restsOn(rider: PlacedModel, base: PlacedModel): boolean {
-    const riding = this.entryOf(rider);
-    const carrier = this.entryOf(base);
-    return riding !== null && carrier !== null && riding !== carrier && riding.restsOn(carrier);
-  }
-
-  riderOn(model: PlacedModel, carried: ReadonlySet<PlacedModel>): PlacedModel | null {
-    const base = this.entryOf(model);
-    if (!base) return null;
-    for (const key of base.chunks.keysWithColumns()) {
-      for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (entry !== base && !carried.has(entry) && entry.restsOn(base)) return entry;
-      }
-    }
-    return null;
-  }
-
-  slabClash(
-    placeable: Placeable,
-    x: number,
-    z: number,
-    rot: number,
-    yPlates: number,
-    exempt: ReadonlySet<PlacedModel>,
-  ): PlacedModel | null {
-    const slabs = placeable.slabBoxes;
-    const pose = this.probe.at(x, z, rot);
-    const yLdu = yPlates * PLATE_LDU;
-    for (let b = 0; b < slabs.length; b += BOX_FLOATS) {
-      pose.worldBox(slabs, b, yLdu, scratchBox, 0);
-      for (let e = 0; e < this.slabbed.length; e++) {
-        const entry = this.slabbed[e];
-        if (!entry || exempt.has(entry)) continue;
-        const theirs = entry.slab;
-        for (let t = 0; t < theirs.length; t += BOX_FLOATS) {
-          if (boxesOverlap(scratchBox, 0, theirs, t)) return entry;
-        }
-      }
-    }
-    return null;
-  }
-
-  strandedRider(removed: ReadonlySet<PlacedModel>): PlacedModel | null {
-    const riders = new Set<PlacedEntry>();
-    for (const key of this.columnKeysOf(removed)) {
-      for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (!removed.has(entry) && entry.handle.yPlates > 0) riders.add(entry);
-      }
-    }
-    const vacated = this.columnKeysOf(removed);
-    for (const rider of riders) {
-      const without = new Set<PlacedModel>(removed).add(rider);
-      const keys = new Set([...vacated, ...rider.chunks.keysWithColumns()]);
-      this.restamp(keys, without);
-      const yPlates = restingHeight(this.occupancy, rider.placeable, rider.pose);
-      this.restamp(keys, NO_MODELS);
-      if (yPlates < rider.handle.yPlates) return rider;
-    }
-    return null;
-  }
-
-  private entryOf(model: PlacedModel): PlacedEntry | null {
-    return model instanceof PlacedEntry && this.live.has(model) ? model : null;
-  }
-
-  private columnKeysOf(models: ReadonlySet<PlacedModel>): ReadonlySet<number> {
-    const keys = new Set<number>();
-    for (const model of models) {
-      const entry = this.entryOf(model);
-      if (!entry) continue;
-      for (const key of entry.chunks.keysWithColumns()) keys.add(key);
-    }
-    return keys;
   }
 
   studTotals(): StudTotals {
@@ -1113,15 +1008,6 @@ export class PlacedChunks {
     }
   }
 
-  private restamp(keys: Iterable<number>, except: ReadonlySet<PlacedModel>): void {
-    for (const key of keys) {
-      this.occupancy.clearChunk(key);
-      for (const entry of this.byColumnChunk.get(key) ?? []) {
-        if (!except.has(entry)) entry.stampColumns(this.occupancy, key);
-      }
-    }
-  }
-
   addAll(placements: ReadonlyArray<PlacementSource>): RebuildReport {
     const keys = new Set<number>();
     for (const { placement, handle, placeable } of placements) {
@@ -1135,15 +1021,12 @@ export class PlacedChunks {
     for (const key of new Set([...this.byChunk.keys(), ...this.chunkStuds.keys()])) {
       this.backend.deleteChunk(key);
     }
-    for (const key of this.byColumnChunk.keys()) this.occupancy.clearChunk(key);
     this.byChunk.clear();
     this.byFootprintChunk.clear();
     this.byAntiStudChunk.clear();
     this.byColumnChunk.clear();
-    this.slabbed.length = 0;
     this.chunkStuds.clear();
     this.entries.length = 0;
-    this.live.clear();
   }
 
   private insert(
@@ -1153,7 +1036,6 @@ export class PlacedChunks {
   ): PlacedEntry {
     const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
     this.entries.push(entry);
-    this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
@@ -1163,8 +1045,6 @@ export class PlacedChunks {
       if (chunks.hasAntiStudFootprint(row)) addTo(this.byAntiStudChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
-    if (entry.slab.length > 0) this.slabbed.push(entry);
-    entry.stampColumns(this.occupancy, null);
     return entry;
   }
 
@@ -1173,7 +1053,6 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
-    this.live.delete(entry);
     this.backend.setFarModel(entry.id, null);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
@@ -1183,8 +1062,6 @@ export class PlacedChunks {
       this.byAntiStudChunk.get(key)?.delete(entry);
       this.byColumnChunk.get(key)?.delete(entry);
     }
-    const slabbed = this.slabbed.indexOf(entry);
-    if (slabbed >= 0) this.slabbed.splice(slabbed, 1);
     return entry;
   }
 
