@@ -26,6 +26,7 @@ import {
   type PlanRegion,
   type PlanState,
   type PlanTable,
+  type PlateHeights,
   type TableTop,
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
@@ -128,6 +129,11 @@ export interface IPlanService {
     track: ReadonlySet<number>,
     models: ReadonlySet<number>,
     carriers: ReadonlySet<number>,
+  ): void;
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
   ): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
@@ -448,6 +454,18 @@ export class PlanService implements IPlanService {
     evaluation.resetChanges();
     const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track, NO_CARRIERS);
     const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models, carriers);
+    if (trackChanged || modelsChanged) this.afterChange(false);
+  }
+
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): void {
+    const evaluation = this.evaluation;
+    evaluation.resetChanges();
+    const trackChanged = evaluation.setLowClearance(TRACK_SEGMENT, track, train);
+    const modelsChanged = evaluation.setLowClearance(MODEL_SEGMENT, models, train);
     if (trackChanged || modelsChanged) this.afterChange(false);
   }
 

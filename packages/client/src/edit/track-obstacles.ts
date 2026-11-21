@@ -13,6 +13,8 @@ export interface TrackObstacles {
   readonly rects: Float64Array;
   readonly owners: Int32Array;
   readonly unseated: Uint8Array;
+  readonly outlines: ReadonlyArray<Float64Array>;
+  readonly outlineOwners: Int32Array;
   readonly labels: ReadonlyArray<string>;
   readonly seats: ReadonlySet<number>;
 }
@@ -21,9 +23,30 @@ export const NO_TRACK_OBSTACLES: TrackObstacles = {
   rects: new Float64Array(0),
   owners: new Int32Array(0),
   unseated: new Uint8Array(0),
+  outlines: [],
+  outlineOwners: new Int32Array(0),
   labels: [],
   seats: new Set(),
 };
+
+export interface SolidOutline {
+  readonly outline: Float64Array;
+  readonly label: string;
+}
+
+export function withOutlines(
+  obstacles: TrackObstacles,
+  solids: ReadonlyArray<SolidOutline>,
+): TrackObstacles {
+  if (solids.length === 0) return obstacles;
+  const base = obstacles.labels.length;
+  return {
+    ...obstacles,
+    outlines: [...obstacles.outlines, ...solids.map((solid) => solid.outline)],
+    outlineOwners: Int32Array.from([...obstacles.outlineOwners, ...solids.map((_, k) => base + k)]),
+    labels: [...obstacles.labels, ...solids.map((solid) => solid.label)],
+  };
+}
 
 export function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
@@ -63,6 +86,8 @@ class ObstacleList {
       rects: Float64Array.from([...this.rects.solid, ...this.rects.unseated]),
       owners: Int32Array.from([...solid, ...unseated]),
       unseated: Uint8Array.from([...solid.map(() => 0), ...unseated.map(() => 1)]),
+      outlines: [],
+      outlineOwners: new Int32Array(0),
       labels,
       seats,
     };
