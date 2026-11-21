@@ -125,16 +125,40 @@ function basisInstancedMaterial(plastic: boolean, opacity: number, lookups: Stud
     : new BasisInstancedStandardMaterial({ ...shared, roughness: M0_ROUGHNESS }, lookups);
 }
 
+export interface MaterialTint {
+  readonly color: number;
+  readonly emissive: number;
+}
+
+export const UNTINTED: MaterialTint = { color: 0xffffff, emissive: 0x000000 };
+
 export class PlasticMaterials {
   private readonly instanced = new Map<number, MeshStandardNodeMaterial>();
   private readonly fixed = new Map<number, MeshStandardNodeMaterial>();
   private readonly basis = new Map<number, MeshStandardNodeMaterial>();
+  private shownTint: MaterialTint = UNTINTED;
 
   constructor(
     private readonly plastic: boolean,
     private readonly opacityScale: number,
     private readonly lookups: StudLookups,
   ) {}
+
+  get tint(): MaterialTint {
+    return this.shownTint;
+  }
+
+  set tint(tint: MaterialTint) {
+    this.shownTint = tint;
+    for (const cache of [this.instanced, this.fixed, this.basis]) {
+      for (const material of cache.values()) this.applyTint(material);
+    }
+  }
+
+  private applyTint(material: MeshStandardNodeMaterial): void {
+    material.color.setHex(this.shownTint.color);
+    material.emissive.setHex(this.shownTint.emissive);
+  }
 
   instanceColored(alpha: number): MeshStandardNodeMaterial {
     return this.cached(this.instanced, alpha, () =>
@@ -166,6 +190,7 @@ export class PlasticMaterials {
     let material = cache.get(alpha);
     if (!material) {
       material = create();
+      this.applyTint(material);
       cache.set(alpha, material);
     }
     return material;

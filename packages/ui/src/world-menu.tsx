@@ -1,15 +1,22 @@
-import type { EditorSnapshot, IEditor, ModelImportView, WorldFileView } from "@brr/client";
+import type {
+  EditorSnapshot,
+  IEditor,
+  IStarterWorlds,
+  ModelImportView,
+  WorldFileView,
+} from "@brr/client";
 import type { WorldIndexEntry } from "@brr/schema/world";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { downloadBlob } from "./download.ts";
 import { ImportReportDetails } from "./import-report.tsx";
 import { MODEL_FILE_ACCEPT, importModelFiles } from "./model-files.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
-const DOWNLOAD_URL_LIFETIME_MS = 60_000;
 
 interface WorldMenuProps {
   readonly editor: IEditor;
   readonly snapshot: EditorSnapshot;
+  readonly starters: IStarterWorlds;
 }
 
 function plural(count: number, one: string, many: string): string {
@@ -47,15 +54,6 @@ function saveGlance(save: WorldFileView["save"]): string {
       throw new Error(`unhandled ${String(unhandled)}`);
     }
   }
-}
-
-function downloadFile(fileName: string, bytes: Uint8Array): void {
-  const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/zip" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), DOWNLOAD_URL_LIFETIME_MS);
 }
 
 function WorldRow({
@@ -150,7 +148,7 @@ function useUnloadGuard(unsavedEdits: boolean): void {
   }, [unsavedEdits]);
 }
 
-export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
+export function WorldMenu({ editor, snapshot, starters }: WorldMenuProps) {
   const [newName, setNewName] = useState("");
   const [open, setOpen] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
@@ -181,7 +179,11 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
   };
 
   const onExport = (): void => {
-    void editor.exportWorld().then(({ fileName, bytes }) => downloadFile(fileName, bytes));
+    void editor
+      .exportWorld()
+      .then(({ fileName, bytes }) =>
+        downloadBlob(fileName, new Blob([bytes.slice()], { type: "application/zip" })),
+      );
   };
 
   const onImportModel = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -288,6 +290,14 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
           </button>
         </form>
         {nameIssue !== null && <p className="world-name-issue">The name {nameIssue}.</p>}
+        <button
+          type="button"
+          data-action="show-starters"
+          disabled={!ready}
+          onClick={() => starters.show()}
+        >
+          Starter worlds
+        </button>
         <button type="button" disabled={!ready} onClick={onExport}>
           Export .brr.zip
         </button>
