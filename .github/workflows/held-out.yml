@@ -3,7 +3,7 @@ name: Held-out models
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "siraj/queue-tail-*"]
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
@@ -46,16 +46,7 @@ jobs:
           toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - uses: actions/cache/save@v4
         if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
