@@ -185,7 +185,7 @@ export function EditorApp({
           onShellCommand={toggleOverlay}
         />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
+        <Inspector editor={editor} snapshot={snapshot} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
           editor={editor}

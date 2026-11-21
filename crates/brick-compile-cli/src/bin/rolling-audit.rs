@@ -163,6 +163,7 @@ fn run(args: &Args) -> Result<(), String> {
                     "triangles": compiled.mesh.triangle_count(),
                     "withoutMicros": without_time.as_secs_f64() * 1e6,
                     "withMicros": with_time.as_secs_f64() * 1e6,
+                    "diagnostics": compiled.rolling_diagnostics(),
                     "rolling": compiled.rolling.map(|rolling| rolling.to_json()),
                 })
             }

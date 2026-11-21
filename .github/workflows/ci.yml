@@ -238,6 +238,7 @@ jobs:
       - run: pnpm --filter @brr/import test:bundle-models
 
   library-bake:
+    needs: bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -263,6 +264,38 @@ jobs:
         run: cargo build --release --target wasm32-wasip1 -p brick-compile-wasm
       - name: Compile every pinned part in the shipped WASM compiler and compare bytes
         run: pnpm --filter @brr/e2e library-bake-parity
+      - id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          key: ${{ needs.bundle.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: part-bundle
+          path: tools/asset-pipeline
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/ldraw
+            .cache/ldraw-audit
+            .cache/ldcad-shadow
+            .cache/omr
+            .cache/catalog
+          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - name: Drive the editor against the library bake just built
+        run: pnpm turbo run e2e:library-bake
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-library-bake-report
+          path: |
+            tools/e2e/playwright-report
+            tools/e2e/test-results
+          retention-days: 7
 
   check:
     if: ${{ always() }}
