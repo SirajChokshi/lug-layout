@@ -9,6 +9,7 @@ import {
   type IEditor,
   type IEditorCamera,
   type IHotbar,
+  type IOwnedParts,
   type IPalette,
   type IPanelLayout,
   type IPlanService,
@@ -62,6 +63,7 @@ interface EditorAppProps {
   readonly plans: IPlanService;
   readonly sheets: IPlanSheetService;
   readonly bomService: IBomService;
+  readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
   readonly palette: IPalette;
   readonly panels: IPanelLayout;
@@ -144,6 +146,7 @@ export function EditorApp({
   plans,
   sheets,
   bomService,
+  ownedParts,
   play,
   palette,
   panels,
@@ -262,6 +265,7 @@ export function EditorApp({
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
+            ownedParts={ownedParts}
             source={editor}
             region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
