@@ -9,6 +9,7 @@ import {
   type IEditor,
   type IEditorCamera,
   type IHotbar,
+  type IOwnedParts,
   type IPalette,
   type IPanelLayout,
   type IPlanService,
@@ -60,6 +61,7 @@ interface EditorAppProps {
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
   readonly bomService: IBomService;
+  readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
   readonly palette: IPalette;
   readonly panels: IPanelLayout;
@@ -141,6 +143,7 @@ export function EditorApp({
   scaleBar,
   plans,
   bomService,
+  ownedParts,
   play,
   palette,
   panels,
@@ -256,9 +259,11 @@ export function EditorApp({
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
+            ownedParts={ownedParts}
             source={editor}
             region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
+            plans={plans}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />

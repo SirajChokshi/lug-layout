@@ -1,5 +1,8 @@
 export {
   NO_STUD,
+  PLACEMENT_CELL_INTS,
+  PLACEMENT_JOINED,
+  PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
   type RoadCellStatus,
@@ -154,6 +157,7 @@ export {
   BOX_MIN_Y,
   BOX_MIN_Z,
   BOX_STRIDE,
+  bomMappingIssues,
   checkPlan,
   CoverageScratch,
   coverageContext,
@@ -190,6 +194,24 @@ export {
 } from "./plan/plan-rows.ts";
 export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
 export { PlanEvaluation } from "./plan/plan-evaluation.ts";
+export { RECT_FLOATS, type PlanShape } from "./plan/plan-shape.ts";
+export {
+  FACT_CUSTOM_PARTS,
+  FACT_FLAGS,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  FACT_ROAD_MISMATCHED,
+  FACT_STRIDE,
+  FACT_UNMAPPED_BRICKLINK,
+  FACT_UNMAPPED_REBRICKABLE,
+  FLAG_UNMEASURED,
+  NO_OVERLAP_PARTNER,
+  clearFacts,
+  emptyFacts,
+  type PlacementFacts,
+} from "./plan/plan-facts.ts";
+export { disksCover } from "./plan/plan-reach.ts";
 export {
   drawingKit,
   MAX_TURN_CURVES,
@@ -267,6 +289,7 @@ export {
 } from "./bom/count-placements.ts";
 export {
   INHERITED_COLOR,
+  catalogOf,
   resolveLines,
   toCatalog,
   type CatalogBom,
@@ -286,6 +309,17 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  type OwnBuyLine,
+  type OwnedPart,
+  type OwnedParts,
+  type OwnedPartsRead,
+  type OwnVsBuy,
+  type RejectedRow,
+  type UnknownOwnedPart,
+} from "./bom/owned-parts.ts";
 export {
   AXIS_FREE,
   AXIS_NEG_X,
