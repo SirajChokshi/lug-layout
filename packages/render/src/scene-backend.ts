@@ -149,7 +149,7 @@ export interface GroundSettings {
   readonly grid: boolean;
 }
 
-export type GuideKind = "ruler" | "axis" | "draft";
+export type GuideKind = "ruler" | "axis" | "draft" | "refused";
 
 export interface GuideSegment {
   readonly kind: GuideKind;

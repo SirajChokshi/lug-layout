@@ -14,6 +14,7 @@ export type EditorActionId =
   | "draw-road"
   | "measure"
   | "draw-tables"
+  | "cycle-fill-grid"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
@@ -136,6 +137,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "b" }],
     keywords: "table board room plan size studs cm",
+  },
+  {
+    id: "cycle-fill-grid",
+    title: "Fill grid: 8, 16 or 32 studs, for dragging an area or filling the tables",
+    group: "Edit",
+    keys: [{ key: "g", shift: true }],
+    keywords: "fill area tile repeat paint grid step pitch",
   },
   {
     id: "rotate",
@@ -431,7 +439,10 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Click", action: "Place the part in hand, or select a model or track piece" },
   { gesture: "Shift-click", action: "Add a model or track piece to the selection, or take it out" },
-  { gesture: "Drag", action: "Lay a run of track or road while drawing it" },
+  {
+    gesture: "Drag",
+    action: "Lay a run of track or road while drawing it, or fill an area with the part in hand",
+  },
   {
     gesture: "Drag from outside the selection",
     action:
@@ -584,7 +595,7 @@ export function commandEnabled(
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
     case "cancel":
-      return snapshot.gesture !== null;
+      return snapshot.gesture !== null || snapshot.fillDraft !== null;
     case "rotate":
     case "rotate-back":
       return (
@@ -649,6 +660,8 @@ export function commandEnabled(
       return !snapshot.readOnly && snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "draw-road":
       return snapshot.roadKit !== null && !snapshot.readOnly;
+    case "cycle-fill-grid":
+      return snapshot.mode === "place" && !snapshot.readOnly;
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":
@@ -827,6 +840,9 @@ export function runEditorAction(
       return;
     case "draw-tables":
       editor.setTableTool(editor.snapshot().mode !== "table");
+      return;
+    case "cycle-fill-grid":
+      editor.cycleFillGrid();
       return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);

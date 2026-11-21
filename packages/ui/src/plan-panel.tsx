@@ -5,6 +5,7 @@ import {
   cmText,
   lduFromMm,
   studsText,
+  type HeldItemView,
   type IEditor,
   type IEditorCamera,
   type IPlanService,
@@ -331,15 +332,49 @@ function latticeText(tables: ReadonlyArray<TableTop>, tableId: string): string {
   return `${top.studs.studsWide} × ${top.studs.studsDeep} studs (${top.studs.studsWide * MM_PER_STUD} × ${top.studs.studsDeep * MM_PER_STUD} mm on the lattice)`;
 }
 
+function fillTablesText(held: HeldItemView | null, fillGridStuds: number): string {
+  if (held === null) return "Pick a part to fill the tables with";
+  if (held.tables === "loading") return "Loading the part in hand…";
+  return `Fill the tables with the part in hand, on the ${fillGridStuds}-stud grid`;
+}
+
+function FillTablesButton({
+  editor,
+  held,
+  fillGridStuds,
+  tables,
+}: {
+  readonly editor: IEditor;
+  readonly held: HeldItemView | null;
+  readonly fillGridStuds: number;
+  readonly tables: number;
+}) {
+  const ready = held?.tables === "ready";
+  return (
+    <button
+      type="button"
+      data-action="fill-tables"
+      disabled={!ready || tables === 0}
+      onClick={(event) => editor.fillTables(event.timeStamp)}
+    >
+      {fillTablesText(held, fillGridStuds)}
+    </button>
+  );
+}
+
 function TablesEditor({
   editor,
   drawing,
+  held,
+  fillGridStuds,
   plan,
   tops,
   plans,
 }: {
   readonly editor: IEditor;
   readonly drawing: boolean;
+  readonly held: HeldItemView | null;
+  readonly fillGridStuds: number;
   readonly plan: PlanRegion;
   readonly tops: ReadonlyArray<TableTop>;
   readonly plans: IPlanService;
@@ -352,6 +387,12 @@ function TablesEditor({
         the 8-stud grid; type any size in studs or cm below.
       </p>
       <DrawTablesButton editor={editor} drawing={drawing} label="Draw tables (B)" />
+      <FillTablesButton
+        editor={editor}
+        held={held}
+        fillGridStuds={fillGridStuds}
+        tables={plan.footprint.tables.length}
+      />
       {plan.footprint.tables.map((table) => (
         <div className="plan-item" key={table.id} data-table={table.id}>
           <div className="plan-item-head">
@@ -462,12 +503,16 @@ function ActivePlan({
   camera,
   editor,
   drawing,
+  held,
+  fillGridStuds,
   plans,
   plan,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
   readonly drawing: boolean;
+  readonly held: HeldItemView | null;
+  readonly fillGridStuds: number;
   readonly plans: IPlanService;
   readonly plan: PlanRegion;
 }) {
@@ -508,6 +553,8 @@ function ActivePlan({
       <TablesEditor
         editor={editor}
         drawing={drawing}
+        held={held}
+        fillGridStuds={fillGridStuds}
         plan={plan}
         tops={plans.regionView(plan.id).tables}
         plans={plans}
@@ -522,11 +569,15 @@ export function PlanPanel({
   camera,
   editor,
   drawing,
+  held,
+  fillGridStuds,
   plans,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
   readonly drawing: boolean;
+  readonly held: HeldItemView | null;
+  readonly fillGridStuds: number;
   readonly plans: IPlanService;
 }) {
   usePlanVersion(plans);
@@ -565,7 +616,15 @@ export function PlanPanel({
         </select>
       )}
       {active ? (
-        <ActivePlan camera={camera} editor={editor} drawing={drawing} plans={plans} plan={active} />
+        <ActivePlan
+          camera={camera}
+          editor={editor}
+          drawing={drawing}
+          held={held}
+          fillGridStuds={fillGridStuds}
+          plans={plans}
+          plan={active}
+        />
       ) : (
         <>
           <p className="plan-meta">
