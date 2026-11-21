@@ -160,3 +160,7 @@ export function refusalText(heldLabel: string, hit: HoverRefusalHit | null): str
   const part = hit.partLabel ? `${hit.partLabel} in ${hit.placed.label}` : hit.placed.label;
   return `${heldLabel} would hit ${part} at cell ${hit.cellX}, ${hit.cellZ}`;
 }
+
+export function failedLoadText(subject: string, neighbour: string, place: string): string {
+  return `${subject} can't be placed ${place}: ${neighbour}'s connector data didn't load.`;
+}

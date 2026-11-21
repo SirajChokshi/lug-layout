@@ -8,7 +8,7 @@ The pinned library is the one in `tools/asset-pipeline/ldraw.lock.json`: `source
 
 1. The archive's SHA-256 has to equal the lock's pin.
 2. Every file the lock pins (the bundle closure and the audit closure) has to be in the archive with the pinned SHA-256.
-3. It publishes only what imports can reach: every `.dat`, `.ldr` and `.mpd` file under `parts/` and `p/`, plus the license and readme texts at the library root (`CAlicense.txt`, `CAlicense4.txt`, `CAreadme.txt`, `Readme.txt`). Each published LDraw file has to carry a contributor-agreement `!LICENSE` line and can't be `Unofficial_`. `models/`, `LDConfig*.ldr`, textures and the `mklist` binaries stay out.
+3. It publishes only what imports can reach: every `.dat`, `.ldr` and `.mpd` file under `parts/` and `p/`, plus the license and readme texts at the library root (`CAlicense.txt`, `CAlicense4.txt`, `CAreadme.txt`, `Readme.txt`). Each published LDraw file can't be `Unofficial_`, whatever `!LICENSE` line it carries. `models/`, `LDConfig*.ldr`, textures and the `mklist` binaries stay out.
 4. If any of these checks fails, nothing is uploaded.
 
 For `c70360d` that's 37,155 files, about 500 MB, all of them unmodified.
