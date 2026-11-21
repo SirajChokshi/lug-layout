@@ -519,18 +519,27 @@ importers:
       '@brr/catalog':
         specifier: workspace:*
         version: link:../../packages/catalog
+      '@brr/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@brr/import':
         specifier: workspace:*
         version: link:../../packages/import
       '@brr/math':
         specifier: workspace:*
         version: link:../../packages/math
+      '@brr/render':
+        specifier: workspace:*
+        version: link:../../packages/render
       '@brr/schema':
         specifier: workspace:*
         version: link:../../packages/schema
       '@brr/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      inversify:
+        specifier: 8.3.0
+        version: 8.3.0(reflect-metadata@0.2.2)
       valibot:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)
@@ -544,6 +553,9 @@ importers:
       '@types/node':
         specifier: 22.20.5
         version: 22.20.5
+      '@webgpu/types':
+        specifier: 0.1.74
+        version: 0.1.74
       playwright-core:
         specifier: 1.58.2
         version: 1.58.2
