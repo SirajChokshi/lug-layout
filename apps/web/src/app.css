@@ -156,6 +156,11 @@ footer {
   font-variant-numeric: tabular-nums;
 }
 
+.hud-glance-warning {
+  background: #fff4d6;
+  color: #6b4a00;
+}
+
 .side-panel {
   position: fixed;
   top: var(--panel-edge);
