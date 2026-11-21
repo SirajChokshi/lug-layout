@@ -8,11 +8,15 @@ import {
   BOX_PLAN_UNREADABLE,
   BOX_STRIDE,
   BOX_Y_UNREADABLE,
+  FACT_STRIDE,
   LABEL_AT,
   MODEL_SEGMENT,
+  TRACK_SEGMENT,
   WRITE_ADD,
   WRITE_UPDATE,
   type PlanDelta,
+  type PlanShape,
+  type TrackChange,
 } from "@brr/domain";
 import type { WorldBox } from "@brr/render";
 
@@ -26,6 +30,8 @@ export interface PlanModelSource {
   };
   readonly placeable: { readonly id: string; readonly label: string };
   readonly box: WorldBox;
+  readonly shape: PlanShape | null;
+  readonly facts: Int32Array;
 }
 
 export interface PlanTrackSource {
@@ -76,6 +82,10 @@ export function writeModelRow(delta: PlanDelta, kind: number, model: PlanModelSo
   delta.chunkKey[entry] = handle.chunkKey;
   delta.labelA[entry] = handle.x;
   delta.labelB[entry] = handle.z;
+  delta.shape[entry] = model.shape;
+  const facts = model.facts;
+  const factsAt = entry * FACT_STRIDE;
+  for (let k = 0; k < FACT_STRIDE; k++) delta.facts[factsAt + k] = facts[k] ?? 0;
   const at = entry * BOX_STRIDE;
   const planFields = readPlanFields(delta, at, box);
   if (planFields !== READ) {
@@ -96,6 +106,17 @@ export function writeViewUpdate(delta: PlanDelta, view: PlanViewUpdate): void {
   for (let i = 0; i < added.length; i++) {
     const model = added[i];
     if (model) writeModelRow(delta, WRITE_ADD, model);
+  }
+}
+
+export function writeModelUpdates(
+  delta: PlanDelta,
+  models: ReadonlyArray<PlanModelSource>,
+  count: number,
+): void {
+  for (let i = 0; i < count; i++) {
+    const model = models[i];
+    if (model) writeModelRow(delta, WRITE_UPDATE, model);
   }
 }
 
@@ -124,4 +145,27 @@ export function writeTrackLay(delta: PlanDelta, track: PlanTrackSource, laid: nu
 export function writeTrackThrow(delta: PlanDelta, track: PlanTrackSource, piece: number): void {
   delta.reset();
   track.writeFootprint(piece, delta, WRITE_UPDATE);
+}
+
+export function writeTrackChange(
+  delta: PlanDelta,
+  track: PlanTrackSource,
+  change: TrackChange,
+): void {
+  const { lift, lay } = change;
+  const before = track.pieceCount - lay.length + lift.length;
+  if (lift.length === 0 && lay.every((at, i) => at.index === before + i)) {
+    writeTrackLay(delta, track, lay.length);
+    return;
+  }
+  const [lifted] = lift;
+  const [laid] = lay;
+  if (lift.length === 1 && lay.length === 1 && lifted && laid && lifted.index === laid.index) {
+    writeTrackThrow(delta, track, laid.index);
+    return;
+  }
+  delta.reset();
+  const first = Math.min(lifted?.index ?? before, laid?.index ?? before);
+  for (let p = first; p < before; p++) delta.remove(TRACK_SEGMENT, p);
+  for (let p = first; p < track.pieceCount; p++) track.writeFootprint(p, delta, WRITE_ADD);
 }

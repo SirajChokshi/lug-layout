@@ -15,29 +15,42 @@ import {
   type PlanDelta,
   NEAR_MISS_RADIUS_LDU,
   NO_OBSTACLE,
-  TrackClearance,
+  KitOutlines,
+  StrokeRouter,
   drawingKit,
   endGaps,
   FOOTPRINT_FLOATS,
   freePlacement,
   layMoves,
-  runMoves,
-  solveClosure,
-  solveDrag,
   NO_END,
+  NO_TRACK_CHANGE,
+  OUTLINE_BOX_FLOATS,
+  outlineBox,
+  rotateOutline,
   TrackGraph,
   TrackLayout,
   footprintOutline,
   regionHolds,
+  outlineContains,
+  placedOutline,
+  placedOutlineInto,
+  solveClosure,
+  studlessTopBlocker,
+  PlacedOutline,
+  type TrackClearance,
+  type MoveFrame,
+  type OutlineRing,
   type BomCounter,
-  type ClosureResult,
-  type ClosureSite,
+  type PartSink,
   type DrawingKit,
   type EndGap,
+  type PlacementPose,
   type PlacementRegion,
+  type TrackChange,
   type TrackEnd,
   type TrackFrame,
   type TrackMove,
+  type TrackPieceAt,
   type TrackPieceDef,
   type TrackPieceSpec,
   WORLD_TRACK_FRAME,
@@ -56,8 +69,6 @@ import {
   posesJoin16,
   pose16,
   pose16Equals,
-  QUARTER_TURN_16,
-  zeta16,
   zeta16Direction,
   zeta16ToStuds,
   type Pose16,
@@ -67,17 +78,64 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
+import {
+  CLOSURE_BUDGET_MS,
+  DragField,
+  TrackDrag,
+  type DragEnds,
+  type DragTargetView,
+  type DragRefusal,
+  type JoinWithheld,
+  type TrackBlockView,
+  type TrackDragView,
+} from "./track-drag.ts";
+import {
+  NO_TRACK_OBSTACLES,
+  OBSTACLE_RECT_FLOATS,
+  type TrackObstacles,
+} from "./track-obstacles.ts";
+import type { TrackSupport } from "./track-support.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import {
+  TrackExtension,
+  type ExtensionJoin,
+  type ExtensionRun,
+  type ExtensionSite,
+} from "./track-extension.ts";
+import { pieceRelativePose } from "./group-transform.ts";
+
+export type {
+  ClosureState,
+  DragRefusal,
+  DragTargetView,
+  JoinWithheld,
+  TrackBlockView,
+  TrackDragView,
+  TrackRefusal,
+} from "./track-drag.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
-const QUARTER_TURN_RADIANS = Math.PI / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
-const MIN_START_DRAG_LDU = STUD_LDU;
 const GROUND_PLATES = 0;
-const CLOSURE_BUDGET_MS = 30;
 const GHOST_SCRATCH_PIECES = 64;
+const REFUSED_PIECE_LDRAW_COLOR = 4;
+const NO_PLACEMENTS: ReadonlySet<number> = new Set();
+const NO_OWNERS: ReadonlySet<number> = new Set();
+const PIECE_BOX_FLOATS = 6;
+
+interface SkippedIds {
+  readonly field: DragField;
+  readonly moving: ReadonlySet<number>;
+  readonly movingOwners: ReadonlySet<number>;
+  readonly ids: Int32Array;
+}
+
+interface HeadingOutline {
+  readonly outline: Float64Array;
+  readonly box: Float64Array;
+}
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -91,25 +149,70 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
-const OBSTACLE_RECT_FLOATS = 4;
-
-export interface TrackDragView {
-  readonly pieces: number;
-  readonly straights: number;
-  readonly curves: number;
-  readonly missStuds: number;
-  readonly closure: ClosureState;
-  readonly fromOpenEnd: boolean;
-  readonly solveMs: number;
+interface CrossingShape {
+  readonly planOutline: ReadonlyArray<OutlineRing>;
+  readonly bedLdu: number;
+  readonly system: string;
 }
 
-export interface TrackCommit {
-  readonly laid: number;
-  readonly joined: boolean;
-  readonly refusal: TrackRefusal | null;
-  readonly chunks: ReadonlyArray<number>;
+export interface PlacedTrackPiece {
+  readonly placement: number;
+  readonly outline: PlacedOutline;
+  readonly bedLdu: number;
+  readonly system: string;
+}
+
+const NO_JOINS: ReadonlyArray<number> = [];
+const NO_POSES: ReadonlyArray<Pose16> = [];
+const RECT_OUTLINE_FLOATS = 8;
+
+function writeRectOutline(out: Float64Array, rects: Float64Array, at: number): void {
+  const minX = rects[at] ?? 0;
+  const minZ = rects[at + 1] ?? 0;
+  const maxX = rects[at + 2] ?? 0;
+  const maxZ = rects[at + 3] ?? 0;
+  out.set([minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
+}
+
+export interface SupportPart {
+  readonly catalogIndex: number;
+  readonly partIndex: number;
+}
+
+export interface UnsupportedPiece {
+  readonly piece: number;
+  readonly block: TrackBlockView | null;
+}
+
+export interface DragOutcome {
+  readonly change: TrackChange;
+  readonly goal: Pose16 | null;
+  readonly end: Pose16 | null;
+  readonly refusal: DragRefusal | null;
+  readonly blocked: TrackBlockView | null;
+  readonly withheld: JoinWithheld | null;
+}
+
+const NOTHING_LAID: DragOutcome = {
+  change: NO_TRACK_CHANGE,
+  goal: null,
+  end: null,
+  refusal: null,
+  blocked: null,
+  withheld: null,
+};
+
+export interface ExtensionPlan {
+  readonly run: ExtensionRun;
+  readonly change: TrackChange;
+  readonly goal: Pose16 | null;
+  readonly end: Pose16;
+}
+
+interface PreviewRun {
+  readonly start: Pose16;
+  readonly moves: ReadonlyArray<TrackMove>;
+  readonly refused: TrackMove | null;
 }
 
 export interface TrackFootprint {
@@ -124,6 +227,7 @@ export interface PlayTrack {
   readonly pieces: ReadonlyArray<TrackPiece>;
   readonly railPart: string;
   readonly railTopY: number;
+  readonly halfWidthLdu: number;
 }
 
 export interface TrackEndView {
@@ -146,9 +250,43 @@ export interface PieceSnap {
 }
 
 export interface SwitchThrow {
-  readonly chunk: number;
+  readonly change: TrackChange;
   readonly lever: Lever;
 }
+
+export interface TrackPieceHit {
+  readonly placement: number;
+  readonly distance: number;
+}
+
+export interface JoinEndView {
+  readonly placement: number;
+  readonly connector: number;
+  readonly pose: Pose16;
+  readonly yPlates: number;
+}
+
+export interface TrackJoinView {
+  readonly end: JoinEndView;
+  readonly partner: JoinEndView;
+}
+
+export interface LaidPieceView {
+  readonly piece: string;
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly yPlates: number;
+  readonly heading: number;
+  readonly chunkKey: number;
+  readonly box: WorldBox;
+}
+
+const RAY_ORIGIN_X = 0;
+const RAY_ORIGIN_Y = 1;
+const RAY_ORIGIN_Z = 2;
+const RAY_DIRECTION_X = 3;
+const RAY_DIRECTION_Y = 4;
+const RAY_DIRECTION_Z = 5;
 
 export interface SwitchLeverView {
   readonly placement: number;
@@ -168,31 +306,6 @@ export interface TrackGapView {
   readonly asideStuds: number;
   readonly headingErrorSteps: number;
   readonly headingErrorDegrees: number;
-}
-
-export interface DragTargetView {
-  readonly end: number;
-  readonly joins: boolean;
-}
-
-interface Drag {
-  readonly anchorX: number;
-  readonly anchorZ: number;
-  readonly fromEnd: number | null;
-  start: Pose16 | null;
-  previousKey: string | null;
-  moves: ReadonlyArray<TrackMove>;
-  closure: ClosureState;
-  goal: Pose16 | null;
-  missStuds: number;
-  target: number | null;
-  clearance: DragClearance | null;
-  readonly closures: Map<string, ClosureResult>;
-}
-
-interface DragClearance {
-  readonly field: TrackClearance;
-  readonly pieceIds: Int32Array;
 }
 
 interface Placed {
@@ -310,15 +423,36 @@ function partBox(placed: Placed): WorldBox {
   };
 }
 
+function framedOutline(outline: Float64Array, placement: Pose16, frame: TrackFrame): Float64Array {
+  return framedOutlineInto(outline, placement, frame, new Float64Array(outline.length));
+}
+
+function framedOutlineInto(
+  outline: Float64Array,
+  placement: Pose16,
+  frame: TrackFrame,
+  out: Float64Array,
+): Float64Array {
+  const placed = placedOutlineInto(outline, placement, out);
+  for (let i = 0; i < placed.length; i += 2) {
+    placed[i] = (placed[i] ?? 0) + frame.xLdu;
+    placed[i + 1] = (placed[i + 1] ?? 0) + frame.zLdu;
+  }
+  return placed;
+}
+
 export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-export class TrackDrawing {
+export class TrackDrawing implements ExtensionSite {
   readonly kit: DrawingKit;
+  readonly extension: TrackExtension;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
+  private readonly outlines = new Map<number, Float64Array>();
+  private readonly framedScratch = new Map<number, Float64Array>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
@@ -326,13 +460,29 @@ export class TrackDrawing {
   private combined: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
+  private pieceBoxes = new Float64Array(0);
+  private readonly headingOutlines = new Map<number, HeadingOutline>();
+  private readonly joinedOwners: number[] = [];
+  private readonly scratchBox = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
   private ends: Pose16[] = [];
+  private endPlates: number[] = [];
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
-  private obstacleRects: Float64Array = new Float64Array(0);
+  private obstacles: TrackObstacles = NO_TRACK_OBSTACLES;
+  private support: TrackSupport | null = null;
+  private field: DragField | null = null;
+  private skipped: SkippedIds | null = null;
+  private readonly crossingShapes = new Map<number, CrossingShape>();
+  private readonly supportPartList: SupportPart[] = [];
+  private readonly crossingOutlines = new Map<number, PlacedOutline>();
+  private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly rectOutline = new Float64Array(RECT_OUTLINE_FLOATS);
   private seatsPending = false;
   private gapList: ReadonlyArray<EndGap> = [];
-  private drag: Drag | null = null;
+  private readonly kitOutlines: KitOutlines;
+  private readonly router: StrokeRouter;
+  private readonly refusedColor: number;
+  private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
   private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
   private ghostColors = new Uint16Array(GHOST_SCRATCH_PIECES);
@@ -351,19 +501,28 @@ export class TrackDrawing {
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
-      const inKit = piece.kind === "straight" || piece.kind === "curve";
+      if (piece.status !== "certified") return;
+      const shape = kitFootprints(piece, shapes);
+      const outline = footprintOutline(shape, piece.partFrame);
+      this.outlines.set(catalogIndex, outline);
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
+      this.supportPartList.push({ catalogIndex, partIndex });
+      this.crossingShapes.set(catalogIndex, {
+        planOutline: shape.outline,
+        bedLdu: shape.minY - part.boundsMin[1],
+        system: piece.system,
+      });
+      if (piece.system !== TRACK_SYSTEM) return;
+      const inKit = piece.kind === "straight" || piece.kind === "curve";
       if (part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
-        outline: footprintOutline(shape, piece.partFrame),
+        outline,
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -381,6 +540,16 @@ export class TrackDrawing {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
+    this.kitOutlines = new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline);
+    this.router = new StrokeRouter(this.kitOutlines);
+    this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
+    this.extension = new TrackExtension(this);
+  }
+
+  private placeablePiece(id: string): KitPart {
+    const part = this.byPieceId.get(id);
+    if (!part) throw new Error(`${id} is not a placeable track piece`);
+    return part;
   }
 
   kitParts(): ReadonlyArray<KitPart> {
@@ -391,11 +560,13 @@ export class TrackDrawing {
     const straight = this.kitParts().find((k) => k.piece.kind === "straight");
     const part = straight ? this.parts[straight.partIndex] : undefined;
     if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
+    const box = straight.footprints;
     return {
       layout: this.combined,
       pieces: this.pieces,
       railPart: straight.piece.part,
       railTopY: straight.yLdu + part.boundsMax[1],
+      halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
 
@@ -429,10 +600,15 @@ export class TrackDrawing {
         const origin = partCentre(placed);
         if (!regionHolds(region, origin.x, origin.z)) continue;
       }
-      counter.add(placed.part.partIndex, this.colors.codeAt(placed.part.color), 1);
+      this.countPiece(counter, p);
       counted++;
     }
     return counted;
+  }
+
+  countPiece(counter: PartSink, placement: number): void {
+    const { part } = this.placedAt(placement);
+    counter.add(part.partIndex, this.colors.codeAt(part.color), 1);
   }
 
   coincidentEndIssues(): number {
@@ -443,6 +619,14 @@ export class TrackDrawing {
     const part = this.byCatalogIndex.get(this.layout.piece(placement));
     if (!part) throw new Error(`placement ${placement} is not a placeable track piece`);
     return { part, placement: this.layout.pose(placement) };
+  }
+
+  endPoses(): ReadonlyArray<Pose16> {
+    return this.ends;
+  }
+
+  layableEnd(end: number): boolean {
+    return this.endPlates[end] === GROUND_PLATES;
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
@@ -523,35 +707,86 @@ export class TrackDrawing {
   }
 
   beginDrag(hitX: number, hitZ: number, latticeX: number, latticeZ: number): void {
-    const fromEnd = this.endNear(hitX, hitZ, null);
-    const end = fromEnd === null ? undefined : this.ends[fromEnd];
-    this.drag = {
-      anchorX: latticeX,
-      anchorZ: latticeZ,
-      fromEnd,
-      start: end ?? null,
-      previousKey: null,
-      moves: [],
-      closure: null,
-      goal: null,
-      missStuds: 0,
-      target: null,
-      clearance: null,
-      closures: new Map(),
+    const ends: DragEnds = {
+      near: (x, z, except) => this.endNear(x, z, except),
+      pose: (end) => {
+        const pose = this.ends[end];
+        if (!pose) throw new RangeError(`open end ${end} is out of range`);
+        return pose;
+      },
+      placement: (end) => this.endOwners[end],
     };
+    this.drag = new TrackDrag(
+      this.kit,
+      this.router,
+      ends,
+      () => performance.now(),
+      { hitX, hitZ, latticeX, latticeZ },
+      this.endNear(hitX, hitZ, null),
+      this.cachedField(),
+      this.seatsPending,
+    );
   }
 
-  setObstacles(rects: Float64Array, seatsPending: boolean): void {
-    if (rects.length % OBSTACLE_RECT_FLOATS !== 0) {
-      throw new RangeError(`obstacle rects come in ${OBSTACLE_RECT_FLOATS} floats each`);
-    }
-    this.obstacleRects = rects;
+  setObstacles(obstacles: TrackObstacles, seatsPending: boolean): void {
+    this.obstacles = obstacles;
     this.seatsPending = seatsPending;
-    const drag = this.drag;
-    if (drag) {
-      drag.clearance = null;
-      drag.closures.clear();
+    this.field = null;
+    this.drag?.reseat(this.cachedField(), seatsPending);
+    this.extension.endsChanged();
+  }
+
+  private readonly supportedMove = (
+    frame: MoveFrame,
+    pose: Pose16,
+    studlessTops: TrackClearance,
+  ): boolean => {
+    const part = this.byDef.get(frame.move.piece.id);
+    if (!part || !this.support) return false;
+    const { catalogIndex, piece } = part;
+    const { seats } = this.obstacles;
+    return this.support.supported(catalogIndex, piece.partFrame, pose, seats, studlessTops);
+  };
+
+  setSupport(support: TrackSupport): void {
+    this.support = support;
+    this.field = null;
+    this.drag?.reseat(this.cachedField(), this.seatsPending);
+    this.extension.endsChanged();
+  }
+
+  unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
+    const support = this.support;
+    if (!support || this.seatsPending) return null;
+    const field = this.cachedField();
+    const box = this.collisionBox;
+    const layout = this.combined;
+    const { studlessTops } = field.support;
+    const { seats } = this.obstacles;
+    const found: UnsupportedPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.yPlates(p) !== GROUND_PLATES || layout.frame(p).id !== WORLD_TRACK_FRAME.id) {
+        continue;
+      }
+      const catalogIndex = layout.piece(p);
+      const outline = this.outlines.get(catalogIndex);
+      const piece = this.pieces[catalogIndex];
+      if (!outline || !piece) continue;
+      const placement = layout.pose(p);
+      const placed = placedOutline(outline, placement);
+      outlineBox(placed, box, 0);
+      const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
+      if (top === NO_OBSTACLE) continue;
+      if (support.supported(catalogIndex, piece.partFrame, placement, seats, studlessTops)) {
+        continue;
+      }
+      found.push({ piece: p, block: field.describe(studlessTopBlocker(top)) });
     }
+    return found;
+  }
+
+  supportParts(): ReadonlyArray<SupportPart> {
+    return this.supportPartList;
   }
 
   verticalRange(): readonly [number, number] {
@@ -564,162 +799,382 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private clearanceOf(drag: Drag): DragClearance {
-    if (drag.clearance) return drag.clearance;
-    const field = new TrackClearance();
-    const pieceIds = new Int32Array(this.layout.count).fill(NO_OBSTACLE);
+  private cachedField(): DragField {
+    this.field ??= this.buildField();
+    return this.field;
+  }
+
+  private buildField(): DragField {
     const [, top] = this.verticalRange();
-    for (let p = 0; p < this.layout.count; p++) {
-      if (this.layout.yPlates(p) * PLATE_LDU >= top) continue;
-      const placed = this.placedAt(p);
-      pieceIds[p] = field.addPiece(placed.part.outline, placed.placement);
+    const layout = this.combined;
+    const outlines: Array<Float64Array | null> = [];
+    for (let p = 0; p < layout.count; p++) {
+      const outline = this.outlines.get(layout.piece(p));
+      if (!outline || layout.yPlates(p) * PLATE_LDU >= top) {
+        outlines.push(null);
+        continue;
+      }
+      outlines.push(framedOutline(outline, layout.pose(p), layout.frame(p)));
     }
-    const rects = this.obstacleRects;
-    for (let r = 0; r < rects.length; r += OBSTACLE_RECT_FLOATS) {
-      field.addRect(rects[r] ?? 0, rects[r + 1] ?? 0, rects[r + 2] ?? 0, rects[r + 3] ?? 0);
-    }
-    drag.clearance = { field, pieceIds };
-    return drag.clearance;
+    return new DragField(outlines, this.obstacles, this.supportedMove);
   }
 
-  private closureSite(drag: Drag, target: number): ClosureSite {
-    const { field, pieceIds } = this.clearanceOf(drag);
-    const owner = (end: number | null): number => {
-      const placement = end === null ? undefined : this.endOwners[end];
-      return placement === undefined ? NO_OBSTACLE : (pieceIds[placement] ?? NO_OBSTACLE);
-    };
-    return {
-      clearance: field,
-      outlineOf: (piece) => {
-        const part = this.byPieceId.get(piece.id);
-        if (!part) throw new Error(`${piece.id} is not a placeable track piece`);
-        return part.outline;
-      },
-      startOwner: owner(drag.fromEnd),
-      goalOwner: owner(target),
-    };
+  pieceBlock(
+    catalogIndex: number,
+    placement: Pose16,
+    yPlates = GROUND_PLATES,
+    moving: ReadonlySet<number> = NO_PLACEMENTS,
+    movingOwners: ReadonlySet<number> = NO_OWNERS,
+  ): TrackBlockView | null {
+    const [, top] = this.verticalRange();
+    if (yPlates * PLATE_LDU >= top) return null;
+    const field = this.cachedField();
+    const part = this.pieceByIndex(catalogIndex);
+    const joined = this.joinedAt(field, part.def.connectors, placement, yPlates, moving);
+    const { outline, box } = this.headingOutline(part, placement.heading);
+    const at = zeta16ToStuds(placement.position);
+    const blocker = field.clearance.blockerExcept(
+      outline,
+      box,
+      at.x * STUD_LDU,
+      at.z * STUD_LDU,
+      joined,
+      this.skippedIds(field, moving, movingOwners),
+    );
+    return field.describe(blocker);
   }
 
-  private closure(drag: Drag, start: Pose16, target: number, goal: Pose16): ClosureResult {
-    const key = `${target}|${start.heading}|${start.position.join(",")}`;
-    const cached = drag.closures.get(key);
+  private joinedAt(
+    field: DragField,
+    connectors: ReadonlyArray<Pose16>,
+    placement: Pose16,
+    yPlates: number,
+    moving: ReadonlySet<number>,
+  ): ReadonlyArray<number> {
+    const joined = this.joinedOwners;
+    joined.length = 0;
+    for (const local of connectors) {
+      const end = composePose16(placement, local);
+      for (let index = 0; index < this.ends.length; index++) {
+        const open = this.ends[index];
+        const placed = this.endOwners[index];
+        if (!open || this.endPlates[index] !== yPlates || !posesJoin16(open, end)) continue;
+        if (placed !== undefined && moving.has(placed)) continue;
+        const owner = field.pieceOwner(placed);
+        if (!joined.includes(owner)) joined.push(owner);
+      }
+    }
+    return joined;
+  }
+
+  private skippedIds(
+    field: DragField,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): ArrayLike<number> {
+    if (moving.size === 0 && movingOwners.size === 0) return NO_JOINS;
+    const cached = this.skipped;
+    if (
+      cached?.field === field &&
+      cached.moving === moving &&
+      cached.movingOwners === movingOwners
+    ) {
+      return cached.ids;
+    }
+    const ids = field.ownedIds(moving, movingOwners);
+    this.skipped = { field, moving, movingOwners, ids };
+    return ids;
+  }
+
+  private headingOutline(part: KitPart, heading: number): HeadingOutline {
+    const steps = normalizeHeading16(heading);
+    const key = part.catalogIndex * ZETA16_ORDER + steps;
+    const cached = this.headingOutlines.get(key);
     if (cached) return cached;
+    const outline = rotateOutline(part.outline, steps, 0, 0);
+    const box = new Float64Array(OUTLINE_BOX_FLOATS);
+    outlineBox(outline, box, 0);
+    const turned = { outline, box };
+    this.headingOutlines.set(key, turned);
+    return turned;
+  }
+
+  placementsWithin(contains: (box: WorldBox) => boolean, out: number[]): void {
+    out.length = 0;
+    const boxes = this.pieceBoxes;
+    const box = this.scratchBox;
+    for (let p = 0; p < this.layout.count; p++) {
+      const at = p * PIECE_BOX_FLOATS;
+      box.minX = boxes[at] ?? 0;
+      box.minY = boxes[at + 1] ?? 0;
+      box.minZ = boxes[at + 2] ?? 0;
+      box.maxX = boxes[at + 3] ?? 0;
+      box.maxY = boxes[at + 4] ?? 0;
+      box.maxZ = boxes[at + 5] ?? 0;
+      if (contains(box)) out.push(p);
+    }
+  }
+
+  joinsTouching(inside: ReadonlySet<number>): ReadonlyArray<TrackJoinView> {
+    const graph = this.graph;
+    const joins: TrackJoinView[] = [];
+    for (let end = 0; end < graph.endCount; end++) {
+      const partnerEnd = graph.endPartner[end] ?? NO_END;
+      if (partnerEnd === NO_END || graph.endFrame[end] !== WORLD_TRACK_FRAME.id) continue;
+      const placement = graph.endPlacement[end] ?? 0;
+      const partner = graph.endPlacement[partnerEnd] ?? 0;
+      if (!inside.has(placement)) continue;
+      if (inside.has(partner) && partnerEnd < end) continue;
+      joins.push({ end: this.joinEnd(end), partner: this.joinEnd(partnerEnd) });
+    }
+    return joins;
+  }
+
+  private joinEnd(end: number): JoinEndView {
+    const graph = this.graph;
+    const placement = graph.endPlacement[end] ?? 0;
+    const connector = graph.endConnector[end] ?? 0;
+    return {
+      placement,
+      connector,
+      pose: this.combined.connectorPose(placement, connector),
+      yPlates: graph.endYPlates[end] ?? 0,
+    };
+  }
+
+  connectorPose(catalogIndex: number, placement: Pose16, connector: number): Pose16 {
+    const local = this.pieces[catalogIndex]?.connectors[connector]?.pose;
+    if (!local) throw new RangeError(`catalog piece ${catalogIndex} has no connector ${connector}`);
+    return composePose16(placement, local);
+  }
+
+  pieceBox(catalogIndex: number, placement: Pose16): WorldBox {
+    return partBox({ part: this.pieceByIndex(catalogIndex), placement });
+  }
+
+  piecesGhost(
+    pieces: ReadonlyArray<{ readonly piece: number; readonly pose: Pose16 }>,
+    frame: PlacementPose,
+  ): ChunkInstances {
+    const count = pieces.length;
+    const partIndex = new Uint16Array(count);
+    const colorIndex = new Uint16Array(count);
+    const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+    const lift = frame.yPlates * PLATE_LDU;
+    pieces.forEach(({ piece, pose }, slot) => {
+      const part = this.pieceByIndex(piece);
+      partIndex[slot] = part.partIndex;
+      colorIndex[slot] = part.color;
+      const local = pieceRelativePose(pose, frame);
+      writeMatrix(matrices, slot, local, part.piece.partFrame, part.yLdu - lift, 0, 0);
+    });
+    const base: ChunkPartInstances = {
+      originX: 0,
+      originZ: 0,
+      count,
+      partIndex,
+      colorIndex,
+      matrices,
+    };
+    return withStuds(base, this.parts, this.colors);
+  }
+
+  crossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    const layout = this.combined;
+    const pieces: PlacedTrackPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      const shape = this.crossingShapes.get(layout.piece(p));
+      if (!shape) continue;
+      pieces.push({
+        placement: p,
+        outline: this.worldOutline(p, shape),
+        bedLdu: layout.yPlates(p) * PLATE_LDU + shape.bedLdu,
+        system: shape.system,
+      });
+    }
+    return pieces;
+  }
+
+  laidOutline(piece: number): PlacedOutline {
+    const shape = this.crossingShapes.get(this.layout.piece(piece));
+    if (!shape) throw new Error(`placement ${piece} is not a placeable track piece`);
+    return this.worldOutline(piece, shape);
+  }
+
+  private worldOutline(p: number, shape: CrossingShape): PlacedOutline {
+    let outline = this.crossingOutlines.get(p);
+    if (!outline) {
+      outline = PlacedOutline.ofTrackPiece(shape.planOutline, this.combined.pose(p));
+      this.crossingOutlines.set(p, outline);
+    }
+    return outline;
+  }
+
+  runFrameOutlines(): ReadonlyArray<Float64Array> {
+    const layout = this.combined;
+    const outlines: Float64Array[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id === WORLD_TRACK_FRAME.id) continue;
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (part) outlines.push(framedOutline(part.outline, layout.pose(p), layout.frame(p)));
+    }
+    return outlines;
+  }
+
+  modelBlocker(
+    partRects: Float64Array,
+    rectFloats: number,
+    carried: ReadonlyArray<FramedTrackPiece>,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): TrackBlockView | null {
+    const field = this.cachedField();
+    const skipped = this.skippedIds(field, moving, movingOwners);
+    const box = this.collisionBox;
+    const rect = this.rectOutline;
+    for (let r = 0; r < rectFloats; r += OBSTACLE_RECT_FLOATS) {
+      writeRectOutline(rect, partRects, r);
+      outlineBox(rect, box, 0);
+      const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
+      if (field.isTrack(hit)) return field.describe(hit);
+    }
+    const [, top] = this.verticalRange();
+    for (const piece of carried) {
+      const pieceOutline = this.outlines.get(piece.catalogIndex);
+      if (!pieceOutline || piece.yPlates * PLATE_LDU >= top) continue;
+      const outline = framedOutlineInto(
+        pieceOutline,
+        piece.placement,
+        piece.frame,
+        this.framedScratchFor(pieceOutline.length),
+      );
+      outlineBox(outline, box, 0);
+      const joined =
+        piece.frame.id === WORLD_TRACK_FRAME.id
+          ? this.joinedAt(
+              field,
+              this.layout.pieces[piece.catalogIndex]?.connectors ?? NO_POSES,
+              piece.placement,
+              piece.yPlates,
+              moving,
+            )
+          : NO_JOINS;
+      const hit = field.clearance.blockerExcept(outline, box, 0, 0, joined, skipped);
+      if (hit !== NO_OBSTACLE) return field.describe(hit);
+    }
+    return null;
+  }
+
+  private framedScratchFor(floats: number): Float64Array {
+    let scratch = this.framedScratch.get(floats);
+    if (!scratch) {
+      scratch = new Float64Array(floats);
+      this.framedScratch.set(floats, scratch);
+    }
+    return scratch;
+  }
+
+  closure(from: number, to: number): ExtensionJoin {
+    const start = this.ends[from];
+    const goal = this.ends[to];
+    if (!start || !goal) throw new RangeError(`no open ends ${from} and ${to} to join`);
+    if (this.seatsPending) return { kind: "refused", refusal: "pending", blocked: null };
+    const field = this.cachedField();
     const result = solveClosure(
       this.kit,
       start,
       goal,
       { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
-      this.closureSite(drag, target),
+      {
+        clearance: field.clearance,
+        support: field.support,
+        outlines: this.kitOutlines,
+        startOwner: field.pieceOwner(this.endOwners[from]),
+        goalOwner: field.pieceOwner(this.endOwners[to]),
+      },
     );
-    drag.closures.set(key, result);
-    return result;
+    switch (result.kind) {
+      case "exact":
+        return result;
+      case "blocked":
+        return { kind: "refused", refusal: "blocked", blocked: field.describe(result.blocker) };
+      case "impossible":
+      case "limit":
+        return { kind: "refused", refusal: result.kind, blocked: null };
+      default: {
+        const unhandled: never = result;
+        throw new Error(`unhandled closure ${String(unhandled)}`);
+      }
+    }
   }
 
-  private newRunStart(drag: Drag, hitX: number, hitZ: number): Pose16 | null {
-    const dx = hitX - drag.anchorX;
-    const dz = hitZ - drag.anchorZ;
-    if (Math.hypot(dx, dz) < MIN_START_DRAG_LDU) return null;
-    const quarterTurns = Math.round(Math.atan2(dz, dx) / QUARTER_TURN_RADIANS);
-    const heading = normalizeHeading16(quarterTurns * QUARTER_TURN_16);
-    const position = zeta16([
-      BigInt(drag.anchorX / STUD_LDU),
-      0n,
-      0n,
-      0n,
-      BigInt(drag.anchorZ / STUD_LDU),
-      0n,
-      0n,
-      0n,
-    ]);
-    return pose16(position, heading);
+  crosses(from: number, move: TrackMove, joins: number | null): TrackBlockView | null {
+    const start = this.ends[from];
+    const placed = start ? layMoves(start, [move]).placed[0] : undefined;
+    if (!placed) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
+    const field = this.cachedField();
+    const blocker = field.clearance.pieceBlocker(
+      this.kitPart(move).outline,
+      placed.placement,
+      field.pieceOwner(this.endOwners[from]),
+      joins === null ? NO_OBSTACLE : field.pieceOwner(this.endOwners[joins]),
+    );
+    return field.describe(blocker);
   }
 
   moveDrag(hitX: number, hitZ: number): void {
     const drag = this.drag;
     if (!drag) return;
-    if (drag.fromEnd === null && drag.moves.length === 0) {
-      drag.start = this.newRunStart(drag, hitX, hitZ);
-    }
-    const start = drag.start;
-    if (!start) return;
     const began = performance.now();
-    const target = this.endNear(hitX, hitZ, drag.fromEnd);
-    const goal = target === null ? undefined : this.ends[target];
-    drag.target = target;
-    drag.goal = goal ?? null;
-    if (target !== null && goal && this.seatsPending) {
-      drag.closure = "pending";
-      drag.moves = [];
-      drag.missStuds = 0;
-      this.recordSolve(began);
-      return;
-    }
-    if (target !== null && goal) {
-      const result = this.closure(drag, start, target, goal);
-      drag.closure = result.kind;
-      drag.moves = result.kind === "exact" ? runMoves(this.kit, result.run) : [];
-      drag.missStuds = 0;
-      this.recordSolve(began);
-      return;
-    } else {
-      drag.closure = null;
-    }
-    const plan = solveDrag(
-      this.kit,
-      start,
-      { x: hitX / STUD_LDU, z: hitZ / STUD_LDU },
-      drag.previousKey,
-    );
-    drag.previousKey = plan.key;
-    drag.moves = runMoves(this.kit, plan);
-    drag.missStuds = plan.missStuds;
-    this.recordSolve(began);
-  }
-
-  private recordSolve(began: number): void {
+    drag.extend(hitX, hitZ);
     this.lastSolveMs = performance.now() - began;
     this.solveSamplesMs.push(this.lastSolveMs);
   }
 
   dragView(): TrackDragView | null {
-    const drag = this.drag;
-    if (!drag) return null;
-    const straights = drag.moves.filter((m) => m.turn === 0).length;
-    return {
-      pieces: drag.moves.length,
-      straights,
-      curves: drag.moves.length - straights,
-      missStuds: drag.missStuds,
-      closure: drag.closure,
-      fromOpenEnd: drag.fromEnd !== null,
-      solveMs: this.lastSolveMs,
-    };
+    return this.drag?.view(this.lastSolveMs) ?? null;
   }
 
   dragTarget(): DragTargetView | null {
-    const drag = this.drag;
-    if (!drag || drag.target === null) return null;
-    return { end: drag.target, joins: drag.closure === "exact" };
+    return this.drag?.targetView() ?? null;
+  }
+
+  private previewRun(): PreviewRun | null {
+    if (this.drag) {
+      const route = this.drag.route();
+      return route.start
+        ? { start: route.start, moves: route.moves, refused: route.blockedMove }
+        : null;
+    }
+    const run = this.extension.chosen();
+    if (!run) return null;
+    const { choice } = run;
+    if (choice.blocked === null) return { start: run.start, moves: choice.moves, refused: null };
+    return { start: run.start, moves: [], refused: choice.moves[0] ?? null };
   }
 
   ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
-    const drag = this.drag;
-    if (!drag?.start || drag.moves.length === 0) return null;
-    const { placed } = layMoves(drag.start, drag.moves);
+    const route = this.previewRun();
+    if (!route) return null;
+    const { start } = route;
+    const moves = route.refused ? [...route.moves, route.refused] : route.moves;
+    if (moves.length === 0) return null;
+    const { placed } = layMoves(start, moves);
     const count = placed.length;
     this.growGhostScratch(count);
     const partIndex = this.ghostParts.subarray(0, count);
     const colorIndex = this.ghostColors.subarray(0, count);
     const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
-    const origin = zeta16ToStuds(drag.start.position);
+    const origin = zeta16ToStuds(start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = moves[i];
       if (!move) return;
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
-      colorIndex[i] = part.color;
+      colorIndex[i] = i < route.moves.length ? part.color : this.refusedColor;
       writeMatrix(matrices, i, piece.placement, part.piece.partFrame, part.yLdu, originX, originZ);
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
@@ -742,47 +1197,113 @@ export class TrackDrawing {
     this.drag = null;
   }
 
-  endDrag(): TrackCommit {
-    const drag = this.drag;
+  endDrag(): DragOutcome {
+    const route = this.drag?.route();
     this.drag = null;
+    if (!route) return NOTHING_LAID;
+    const { closure, blocked, withheld } = route;
     if (
-      drag?.closure === "impossible" ||
-      drag?.closure === "blocked" ||
-      drag?.closure === "limit" ||
-      drag?.closure === "pending"
+      withheld === null &&
+      (closure === "impossible" || closure === "blocked" || closure === "limit")
     ) {
-      return { laid: 0, joined: false, refusal: drag.closure, chunks: [] };
+      return { ...NOTHING_LAID, refusal: closure, blocked };
     }
-    if (!drag?.start || drag.moves.length === 0) {
-      return { laid: 0, joined: false, refusal: null, chunks: [] };
+    if (!route.start || route.moves.length === 0) return { ...NOTHING_LAID, blocked, withheld };
+    const { change, end } = this.runChange(route.start, route.moves);
+    const goal = withheld === null ? route.goal : null;
+    return { change, goal, end, refusal: null, blocked, withheld };
+  }
+
+  extensionPlan(): ExtensionPlan | null {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return null;
+    const { change, end } = this.runChange(run.start, run.choice.moves);
+    const goal = run.choice.joins === null ? null : (this.ends[run.choice.joins] ?? null);
+    return { run, change, goal, end };
+  }
+
+  onExtension(xLdu: number, zLdu: number): boolean {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return false;
+    const at = zeta16ToStuds(run.start.position);
+    if (Math.hypot(at.x * STUD_LDU - xLdu, at.z * STUD_LDU - zLdu) <= END_PICK_RADIUS_LDU) {
+      return true;
     }
-    const { placed } = layMoves(drag.start, drag.moves);
+    return layMoves(run.start, run.choice.moves).placed.some((piece, i) => {
+      const move = run.choice.moves[i];
+      if (!move) return false;
+      const box = partBox({ part: this.kitPart(move), placement: piece.placement });
+      return xLdu >= box.minX && xLdu <= box.maxX && zLdu >= box.minZ && zLdu <= box.maxZ;
+    });
+  }
+
+  private runChange(
+    start: Pose16,
+    moves: ReadonlyArray<TrackMove>,
+  ): { readonly change: TrackChange; readonly end: Pose16 } {
+    const { placed, end } = layMoves(start, moves);
     const entries: Placed[] = [];
     placed.forEach((piece, i) => {
-      const move = drag.moves[i];
+      const move = moves[i];
       if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
     });
-    const chunks = this.commitPlaced(entries);
+    return { change: this.appended(entries), end };
+  }
+
+  private appended(entries: ReadonlyArray<Placed>): TrackChange {
     return {
-      laid: entries.length,
-      joined: drag.goal !== null && this.graphJoins(drag.goal),
-      refusal: null,
-      chunks,
+      lift: [],
+      lay: entries.map((entry, i) => ({
+        index: this.layout.count + i,
+        piece: entry.part.catalogIndex,
+        pose: entry.placement,
+        yPlates: GROUND_PLATES,
+      })),
     };
   }
 
-  private commitPlaced(entries: ReadonlyArray<Placed>): ReadonlyArray<number> {
+  applyTrack(change: TrackChange): ReadonlyArray<number> {
     const touched = new Set<number>();
-    for (const entry of entries) {
-      const index = this.layout.place(entry.part.catalogIndex, entry.placement, GROUND_PLATES);
-      const key = this.chunkOfPlaced(entry);
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
+    for (let i = change.lift.length - 1; i >= 0; i--) {
+      const at = change.lift[i];
+      if (!at) continue;
+      const laid = this.placedAt(at.index);
+      const same =
+        laid.part.catalogIndex === at.piece &&
+        this.layout.yPlates(at.index) === at.yPlates &&
+        pose16Equals(laid.placement, at.pose);
+      if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
+      touched.add(this.chunkOfPlaced(laid));
+      this.layout.remove(at.index);
     }
+    for (const at of change.lay) {
+      const part = this.pieceByIndex(at.piece);
+      this.layout.insert(at.index, at.piece, at.pose, at.yPlates);
+      touched.add(this.chunkOfPlaced({ part, placement: at.pose }));
+    }
+    this.indexChunks();
     this.recomputeEnds();
     return [...touched];
+  }
+
+  private indexChunks(): void {
+    this.chunkMembers.clear();
+    this.pieceBoxes = new Float64Array(this.layout.count * PIECE_BOX_FLOATS);
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const box = partBox(placed);
+      const at = p * PIECE_BOX_FLOATS;
+      this.pieceBoxes[at] = box.minX;
+      this.pieceBoxes[at + 1] = box.minY;
+      this.pieceBoxes[at + 2] = box.minZ;
+      this.pieceBoxes[at + 3] = box.maxX;
+      this.pieceBoxes[at + 4] = box.maxY;
+      this.pieceBoxes[at + 5] = box.maxZ;
+      const key = this.chunkOfPlaced(placed);
+      const members = this.chunkMembers.get(key);
+      if (members) members.push(p);
+      else this.chunkMembers.set(key, [p]);
+    }
   }
 
   private chunkOfPlaced(placed: Placed): number {
@@ -852,11 +1373,8 @@ export class TrackDrawing {
     };
   }
 
-  placePiece(catalogIndex: number, placement: Pose16): TrackCommit {
-    const part = this.pieceByIndex(catalogIndex);
-    const before = this.graph.joinCount;
-    const chunks = this.commitPlaced([{ part, placement }]);
-    return { laid: 1, joined: this.graph.joinCount > before, refusal: null, chunks };
+  pieceChange(catalogIndex: number, placement: Pose16): TrackChange {
+    return this.appended([{ part: this.pieceByIndex(catalogIndex), placement }]);
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
@@ -877,14 +1395,60 @@ export class TrackDrawing {
     return best;
   }
 
-  throwSwitch(placement: number): SwitchThrow | null {
+  switchThrow(placement: number): SwitchThrow | null {
     const placed = this.placedAt(placement);
     const thrown = this.pieceSet.thrown(placed.part.catalogIndex);
     if (thrown === null) return null;
-    this.layout.replace(placement, thrown);
     const lever = this.pieceSet.lever(thrown);
     if (lever === null) throw new Error(`catalog piece ${thrown} has no lever position`);
-    return { chunk: this.chunkOfPlaced(placed), lever };
+    const lifted = this.laidPiece(placement);
+    return { change: { lift: [lifted], lay: [{ ...lifted, piece: thrown }] }, lever };
+  }
+
+  removal(placement: number): TrackChange {
+    return { lift: [this.laidPiece(placement)], lay: [] };
+  }
+
+  laidPiece(placement: number): TrackPieceAt {
+    const placed = this.placedAt(placement);
+    return {
+      index: placement,
+      piece: placed.part.catalogIndex,
+      pose: placed.placement,
+      yPlates: this.layout.yPlates(placement),
+    };
+  }
+
+  pieceOnRay(ray: Float64Array): TrackPieceHit | null {
+    const dy = ray[RAY_DIRECTION_Y] ?? 0;
+    if (dy === 0) return null;
+    let best: TrackPieceHit | null = null;
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      const top = partBox(placed).maxY + this.layout.yPlates(p) * PLATE_LDU;
+      const distance = (top - (ray[RAY_ORIGIN_Y] ?? 0)) / dy;
+      if (distance < 0 || (best && distance >= best.distance)) continue;
+      const x = (ray[RAY_ORIGIN_X] ?? 0) + distance * (ray[RAY_DIRECTION_X] ?? 0);
+      const z = (ray[RAY_ORIGIN_Z] ?? 0) + distance * (ray[RAY_DIRECTION_Z] ?? 0);
+      if (outlineContains(placedOutline(placed.part.outline, placed.placement), x, z)) {
+        best = { placement: p, distance };
+      }
+    }
+    return best;
+  }
+
+  laidPieceView(placement: number): LaidPieceView {
+    const placed = this.placedAt(placement);
+    const centre = partCentre(placed);
+    return {
+      piece: placed.part.piece.id,
+      xLdu: centre.x,
+      zLdu: centre.z,
+      yPlates: this.layout.yPlates(placement),
+      heading: placed.placement.heading,
+      chunkKey: this.chunkOfPlaced(placed),
+      box: partBox(placed),
+    };
   }
 
   switchLevers(): ReadonlyArray<SwitchLeverView> {
@@ -905,7 +1469,7 @@ export class TrackDrawing {
     return levers;
   }
 
-  private graphJoins(end: Pose16): boolean {
+  joinsAt(end: Pose16): boolean {
     const graph = this.graph;
     for (let e = 0; e < graph.endCount; e++) {
       if ((graph.endPartner[e] ?? NO_END) === NO_END) continue;
@@ -937,6 +1501,8 @@ export class TrackDrawing {
 
   private recomputeEnds(): void {
     this.combined = this.combine();
+    this.field = null;
+    this.crossingOutlines.clear();
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
@@ -957,9 +1523,11 @@ export class TrackDrawing {
       world.push(open);
     }
     this.ends = world.map((end) => end.pose);
+    this.endPlates = world.map((end) => end.yPlates);
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
+    this.extension.endsChanged();
   }
 
   footprintAt(piece: number): TrackFootprint {
@@ -1013,10 +1581,18 @@ export class TrackDrawing {
   }
 
   restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
-    const issues: Issue[] = [];
     if (this.layout.count > 0) {
-      issues.push({ path: "track", message: "can only be restored into an empty drawing" });
+      return {
+        ok: false,
+        issues: [{ path: "track", message: "can only be restored into an empty drawing" }],
+      };
     }
+    const lay = this.laidPieces(records);
+    return lay.ok ? { ok: true, value: this.applyTrack({ lift: [], lay: lay.value }) } : lay;
+  }
+
+  laidPieces(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<TrackPieceAt>> {
+    const issues: Issue[] = [];
     records.forEach((record, position) => {
       if (record.index !== position) {
         issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
@@ -1029,21 +1605,13 @@ export class TrackDrawing {
       }
     });
     if (issues.length > 0) return { ok: false, issues };
-    const touched = new Set<number>();
-    for (const record of records) {
+    const lay = records.flatMap((record, index) => {
       const part = this.byPieceId.get(record.ref);
-      if (!part) continue;
-      const placement = pose16(decodeTrackPosition(record.position), record.heading);
-      const index = this.layout.place(part.catalogIndex, placement, record.yPlates);
-      const centre = partCentre({ part, placement });
-      const key = trackChunkKey(chunkOf(centre.x), chunkOf(centre.z));
-      const members = this.chunkMembers.get(key) ?? [];
-      members.push(index);
-      this.chunkMembers.set(key, members);
-      touched.add(key);
-    }
-    this.recomputeEnds();
-    return { ok: true, value: [...touched] };
+      if (!part) return [];
+      const pose = pose16(decodeTrackPosition(record.position), record.heading);
+      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates }];
+    });
+    return { ok: true, value: lay };
   }
 
   chunkKeys(): ReadonlyArray<number> {
