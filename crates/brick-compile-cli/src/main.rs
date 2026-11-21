@@ -23,6 +23,7 @@ use brick_compile::model::{
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
+use brick_compile_cli::errata::{apply_omr_errata, parse_omr_errata, OmrErratum, PinnedModel};
 use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
@@ -74,6 +75,7 @@ struct Args {
     geometry: PathBuf,
     fixtures: PathBuf,
     omr: PathBuf,
+    omr_errata: PathBuf,
     palette: PathBuf,
     primitives: PathBuf,
     inferred: PathBuf,
@@ -104,6 +106,7 @@ fn parse_args() -> Result<Args, String> {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
         omr: take("--omr")?.into(),
+        omr_errata: take("--omr-errata")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
@@ -116,6 +119,20 @@ fn parse_args() -> Result<Args, String> {
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
     })
+}
+
+fn read_errata(path: &Path) -> Result<Vec<OmrErratum>, String> {
+    let file: Value =
+        serde_json::from_slice(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_omr_errata(&file).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn errata_json(applied: &[&OmrErratum]) -> Value {
+    json!(applied
+        .iter()
+        .map(|e| json!({ "line": e.line, "from": e.from, "to": e.to, "summary": e.summary }))
+        .collect::<Vec<_>>())
 }
 
 fn rational_json(value: &Option<RationalText>) -> Value {
@@ -662,6 +679,7 @@ fn run(args: &Args) -> Result<(), String> {
         return Err("LDConfig.ldr is missing or has no !COLOUR lines".into());
     }
 
+    let errata = read_errata(&args.omr_errata)?;
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -682,7 +700,14 @@ fn run(args: &Args) -> Result<(), String> {
         };
         let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let text = String::from_utf8_lossy(&source);
+        let pinned = PinnedModel {
+            name,
+            file,
+            sha256: entry["sha256"].as_str().unwrap_or_default(),
+        };
+        let (text, applied_errata) =
+            apply_omr_errata(&errata, pinned, &String::from_utf8_lossy(&source))
+                .map_err(|e| format!("{name}: {e}"))?;
         let baked = bake_model_with(&text, options).map_err(|e| format!("{file}: {e}"))?;
         let acknowledged = acknowledged_not_drawn(&entry, file)?;
         let mut not_drawn: Vec<Value> = Vec::new();
@@ -916,6 +941,9 @@ fn run(args: &Args) -> Result<(), String> {
         });
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
+        }
+        if !applied_errata.is_empty() {
+            manifest_entry["errata"] = errata_json(&applied_errata);
         }
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();
