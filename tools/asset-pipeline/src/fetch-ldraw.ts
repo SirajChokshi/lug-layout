@@ -8,6 +8,7 @@ import {
   splitMultiPart,
   subfileReferences,
 } from "./ldraw/parse.ts";
+import { fetchWithRetry, NETWORK, type RetryingFetch } from "./fetch-retry.ts";
 import type {
   CatalogLocation,
   CatalogSource,
@@ -49,6 +50,7 @@ const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
 const LOW_RESOLUTION_DIRECTORY = "p/8/";
 const CONNECTIVITY_LICENSE = "LICENSE.md";
 const RESTORE_CONCURRENCY = 16;
+const NOT_FOUND = 404;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -63,12 +65,16 @@ function downloadUrl(source: CatalogLocation, path: string): string {
     .join("/");
 }
 
-async function download(source: CatalogLocation, path: string): Promise<Uint8Array | undefined> {
+async function download(
+  source: CatalogLocation,
+  path: string,
+  network: RetryingFetch = NETWORK,
+): Promise<Uint8Array | undefined> {
   const url = downloadUrl(source, path);
-  const response = await fetch(url);
-  if (response.status === 404) return undefined;
-  if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const { status, bytes } = await fetchWithRetry(url, network);
+  if (status === NOT_FOUND) return undefined;
+  if (bytes === null) throw new Error(`GET ${url} failed with ${status}`);
+  return bytes;
 }
 
 async function resolveReference(
@@ -353,6 +359,7 @@ export async function restoreFiles(
   source: CatalogLocation,
   files: Readonly<Record<string, string>>,
   directory: string,
+  network: RetryingFetch = NETWORK,
 ): Promise<RestoreResult> {
   const pending = Object.entries(files);
   let present = 0;
@@ -365,7 +372,7 @@ export async function restoreFiles(
         present += 1;
         continue;
       }
-      const bytes = await download(source, path);
+      const bytes = await download(source, path, network);
       if (!bytes)
         throw new Error(`pinned file ${path} is missing from ${source.repo}@${source.commit}`);
       if (sha256(bytes) !== expected) throw new Error(`hash mismatch ${path} from ${source.repo}`);
