@@ -273,6 +273,7 @@ class HeadlessBackend implements ISceneBackend {
   }
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
+  readonly farModels = new Map<number, FarModelPlacement>();
   setPalette(palette: PartPalette): void {
     this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
   }
@@ -323,7 +324,10 @@ class HeadlessBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   forceTier(): void {}
-  setFarModel(_id: number, _placement: FarModelPlacement | null): void {}
+  setFarModel(id: number, placement: FarModelPlacement | null): void {
+    if (placement) this.farModels.set(id, placement);
+    else this.farModels.delete(id);
+  }
 }
 
 afterEach(() => {
@@ -1317,14 +1321,17 @@ it("keeps a click queued while the held item's tables load through another impor
   expect(editor.snapshot().placements).toBe(2);
 }, 120_000);
 
-it("shows the stud totals of whichever world is open: none after New World, the placed ones again on reopening", async () => {
+it("shows only the world that is open: no studs or far models after New World, the placed ones again on reopening", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
-  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  container
+    .rebind(PART_BUNDLE_LOADER)
+    .toConstantValue(new ModelSubsetLoader(realLoader, [PLACEABLE_SET]));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const editor = container.get(EDITOR);
@@ -1334,20 +1341,29 @@ it("shows the stud totals of whichever world is open: none after New World, the 
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  expect((await farTierSettled(editor)).farTier).toBe("ready");
+  const set = `omr:${PLACEABLE_SET}`;
+  await loadCatalogItem(container.get(PLACEABLE_CATALOG), set);
+  const shown = () => ({
+    studs: editor.snapshot().studs,
+    farModels: [...backend.farModels.values()],
+  });
 
-  await chosen(editor, BASEPLATE);
-  editor.click(0, 0, 0);
-  const placed = editor.snapshot().studs;
-  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await place(set, 1280, 0);
+  await vi.waitFor(() => expect(backend.farModels.size).toBe(1));
+  const placed = shown();
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(2));
   const first = editor.snapshot().world?.id;
   if (!first) throw new Error("no current world");
   expect(await editor.newWorld("Second")).toBe(true);
-  const fresh = editor.snapshot().studs;
+  const fresh = shown();
   expect(await editor.openWorld(first)).toBe(true);
 
-  expect(placed?.drawn).toBeGreaterThan(0);
-  expect({ fresh, reopened: editor.snapshot().studs }).toEqual({
-    fresh: { drawn: 0, culledInsideModels: 0, culledUnderFootprints: 0 },
+  expect(placed.studs?.drawn).toBeGreaterThan(0);
+  expect({ fresh, reopened: shown() }).toEqual({
+    fresh: { studs: { drawn: 0, culledInsideModels: 0, culledUnderFootprints: 0 }, farModels: [] },
     reopened: placed,
   });
 }, 120_000);
