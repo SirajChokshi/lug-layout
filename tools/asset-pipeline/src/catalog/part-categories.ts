@@ -33,7 +33,7 @@ const ROLE_RULES: Readonly<Record<PartRole, RoleRule | null>> = {
   track: { categories: ["Train"], needsOneOf: ["track"], refusesAll: [] },
   wall: { categories: ["Brick"], needsOneOf: [], refusesAll: [] },
   roof: { categories: ["Plate"], needsOneOf: [], refusesAll: [] },
-  detail: { categories: ["Brick", "Plate", "Tile"], needsOneOf: [], refusesAll: [] },
+  detail: { categories: ["Brick", "Plate", "Tile", "Slope"], needsOneOf: [], refusesAll: [] },
   model: null,
 };
 

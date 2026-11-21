@@ -1,10 +1,10 @@
-import { MM_PER_STUD, STUD_LDU } from "@brr/math";
+import { MM_PER_STUD, PLATE_LDU, STUD_LDU, mmFromLdu } from "@brr/math";
 import type { WorldBox } from "@brr/render";
 
-const MM_PER_CM = 10;
+export const MM_PER_CM = 10;
 const TENTHS = 10;
 
-export type LabelKind = "ruler" | "draft" | "ghost" | "selection";
+export type LabelKind = "ruler" | "draft" | "ghost" | "selection" | "table" | "height";
 
 export interface LabelView {
   readonly id: string;
@@ -26,6 +26,11 @@ export function studsText(ldu: number): string {
 
 export function cmText(ldu: number): string {
   return tenths(((ldu / STUD_LDU) * MM_PER_STUD) / MM_PER_CM);
+}
+
+export function heightText(ldu: number): string {
+  const plates = tenths(ldu / PLATE_LDU);
+  return `${plates} ${plates === "1" ? "plate" : "plates"} (${tenths(mmFromLdu(ldu))} mm)`;
 }
 
 export function lengthText(ldu: number): string {

@@ -2,6 +2,7 @@ mod below;
 mod instance_tree;
 mod ray;
 mod reservation;
+mod stud_field;
 mod triangle_tree;
 
 use std::thread;
@@ -13,6 +14,7 @@ use self::instance_tree::InstanceTree;
 use self::ray::{dot, sub, unit, Bounds, Ray, HIT_EPSILON};
 use self::reservation::{axis_span, cell_span, CellColumns};
 pub use self::reservation::{part_cover_fits, AxisSpan, CellsCause, CellsTooLarge, ModelTooLarge};
+pub use self::stud_field::{inscribed_radius, stud_field_collides};
 use self::triangle_tree::{TriangleHit, TriangleTree};
 use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area};
@@ -236,6 +238,7 @@ fn enclosure_directions() -> Vec<Vec3> {
 pub struct StudShape {
     pub height: f64,
     pub radius: f64,
+    pub inscribed_radius: f64,
 }
 
 #[derive(Clone, Copy)]
@@ -346,6 +349,13 @@ pub struct ModelCells {
     pub flat: Vec<usize>,
     pub column_bottom: Vec<i32>,
     pub column_top: Vec<i32>,
+    pub footing: InstanceFooting,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct InstanceFooting {
+    pub instance: Vec<usize>,
+    pub cell: Vec<usize>,
 }
 
 impl ModelCells {
@@ -1170,17 +1180,32 @@ fn model_cells(
         let faces = faces[instance.part].get_or_insert_with(|| extreme_faces(solid));
         reach.add_solid(solid, faces, instance.matrix);
     }
-    let plates = |y: f64| (y - bottom_y) / PLATE_LDU;
-    let slack = WELD_EPSILON_LDU / PLATE_LDU;
     bottom.resize(count, EMPTY_COLUMN);
     top.resize(count, EMPTY_COLUMN);
     for (cell, (&lowest, &highest)) in reach.lowest.iter().zip(&reach.highest).enumerate() {
         if lowest > highest {
             continue;
         }
-        bottom[cell] = ((plates(lowest) + slack).floor() as i32).max(0);
-        top[cell] = (plates(highest) - slack).ceil() as i32;
+        bottom[cell] = bottom_plates(lowest, bottom_y);
+        top[cell] = ((highest - bottom_y) / PLATE_LDU - WELD_SLACK_PLATES).ceil() as i32;
     }
+    let footing = bottom
+        .iter()
+        .zip(&top)
+        .filter(|(_, &column_top)| column_top != EMPTY_COLUMN)
+        .map(|(&column_bottom, _)| column_bottom)
+        .min()
+        .map(|standing| {
+            FootingBand {
+                origin,
+                width,
+                depth,
+                bottom_y,
+                standing,
+            }
+            .of_instances(instances, boxes, solids)
+        })
+        .unwrap_or_default();
 
     Ok(ModelCells {
         origin,
@@ -1191,7 +1216,158 @@ fn model_cells(
         flat,
         column_bottom: bottom,
         column_top: top,
+        footing,
     })
+}
+
+const WELD_SLACK_PLATES: f64 = WELD_EPSILON_LDU / PLATE_LDU;
+
+fn bottom_plates(y: f64, bottom_y: f64) -> i32 {
+    (((y - bottom_y) / PLATE_LDU + WELD_SLACK_PLATES).floor() as i32).max(0)
+}
+
+struct FootingBand {
+    origin: [f64; 2],
+    width: usize,
+    depth: usize,
+    bottom_y: f64,
+    standing: i32,
+}
+
+impl FootingBand {
+    fn ceiling_y(&self) -> f64 {
+        self.bottom_y + PLATE_LDU * f64::from(self.standing + 1)
+    }
+
+    fn of_instances(
+        &self,
+        instances: &[CoverInstance],
+        boxes: &[[Vec3; 2]],
+        solids: &[PartSolid],
+    ) -> InstanceFooting {
+        let mut footing = InstanceFooting::default();
+        let mut reached = Vec::new();
+        let ceiling = self.ceiling_y();
+        for (index, (instance, &[min, max])) in instances.iter().zip(boxes).enumerate() {
+            if min[1] > ceiling {
+                continue;
+            }
+            let span = CellSpan {
+                x: overlapping_cells(
+                    min[0] - STUD_LDU,
+                    max[0] + STUD_LDU,
+                    self.origin[0],
+                    self.width,
+                ),
+                z: overlapping_cells(
+                    min[2] - STUD_LDU,
+                    max[2] + STUD_LDU,
+                    self.origin[1],
+                    self.depth,
+                ),
+            };
+            reached.clear();
+            reached.resize(span.count(), false);
+            self.mark_reached(&solids[instance.part], instance.matrix, &span, &mut reached);
+            for j in span.z.0..span.z.1 {
+                for i in span.x.0..span.x.1 {
+                    if reached[span.local(i, j)] {
+                        footing.instance.push(index);
+                        footing.cell.push(j * self.width + i);
+                    }
+                }
+            }
+        }
+        footing
+    }
+
+    fn mark_reached(
+        &self,
+        solid: &PartSolid,
+        matrix: &Affine,
+        span: &CellSpan,
+        reached: &mut [bool],
+    ) {
+        let ceiling = self.ceiling_y();
+        let mut visit = |t: usize| {
+            let triangle = solid.tree_points[t].map(|p| matrix.apply(p));
+            self.mark_triangle(&triangle, span, reached);
+        };
+        if solid.tree_points.len() < TREE_WALK_TRIANGLES {
+            (0..solid.tree_points.len()).for_each(&mut visit);
+            return;
+        }
+        solid.tree.walk(|bounds, leaf| {
+            let low = corner_box(matrix, bounds.min, bounds.max)[0][1] <= ceiling;
+            if let (Some(range), true) = (leaf, low) {
+                range.for_each(&mut visit);
+            }
+            low
+        });
+    }
+
+    fn mark_triangle(&self, triangle: &[Vec3; 3], span: &CellSpan, reached: &mut [bool]) {
+        let span_of = |axis: usize| {
+            triangle
+                .iter()
+                .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), p| {
+                    (lo.min(p[axis]), hi.max(p[axis]))
+                })
+        };
+        let ((lo_x, hi_x), (lo_y, _), (lo_z, hi_z)) = (span_of(0), span_of(1), span_of(2));
+        if lo_y > self.ceiling_y() {
+            return;
+        }
+        let (x0, x1) = overlapping_cells(lo_x, hi_x, self.origin[0], self.width);
+        let (z0, z1) = overlapping_cells(lo_z, hi_z, self.origin[1], self.depth);
+        for j in z0.max(span.z.0)..z1.min(span.z.1) {
+            for i in x0.max(span.x.0)..x1.min(span.x.1) {
+                let local = span.local(i, j);
+                if reached[local] {
+                    continue;
+                }
+                let edge_x = self.origin[0] + STUD_LDU * i as f64;
+                let edge_z = self.origin[1] + STUD_LDU * j as f64;
+                let inside = clip_to_box(
+                    triangle,
+                    [
+                        edge_x + WELD_EPSILON_LDU,
+                        f64::NEG_INFINITY,
+                        edge_z + WELD_EPSILON_LDU,
+                    ],
+                    [
+                        edge_x + STUD_LDU - WELD_EPSILON_LDU,
+                        f64::INFINITY,
+                        edge_z + STUD_LDU - WELD_EPSILON_LDU,
+                    ],
+                );
+                if polygon_area(&inside) <= 0.0 {
+                    continue;
+                }
+                let (points, len) = inside;
+                let lowest = points[..len]
+                    .iter()
+                    .map(|point| point[1])
+                    .fold(f64::INFINITY, f64::min);
+                reached[local] = bottom_plates(lowest, self.bottom_y) <= self.standing;
+            }
+        }
+    }
+}
+
+struct CellSpan {
+    x: (usize, usize),
+    z: (usize, usize),
+}
+
+impl CellSpan {
+    fn count(&self) -> usize {
+        (self.x.1 - self.x.0) * (self.z.1 - self.z.0)
+    }
+
+    fn local(&self, i: usize, j: usize) -> usize {
+        (j - self.z.0) * (self.x.1 - self.x.0) + (i - self.x.0)
+    }
 }
 
 #[cfg(test)]
@@ -1204,6 +1380,7 @@ mod tests {
     const STUD: StudShape = StudShape {
         height: 4.0,
         radius: 6.0,
+        inscribed_radius: 6.0,
     };
     const OPAQUE: u32 = 4;
     const TRANS_CLEAR: u32 = 47;
