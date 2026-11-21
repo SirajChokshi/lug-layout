@@ -1,4 +1,5 @@
 import {
+  STUD_LDU,
   commandActive,
   commandEnabled,
   type EditorActionId,
@@ -11,6 +12,7 @@ import {
   type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
+  type RollingDiagnosticsPanel,
   type UndrawnPart,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
@@ -304,9 +306,102 @@ function GoTo({ editor }: { readonly editor: IEditor }) {
   );
 }
 
-export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+type RollingDiagnosticsState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "loaded"; readonly panel: RollingDiagnosticsPanel | null }
+  | { readonly kind: "failed"; readonly message: string };
+
+function RollingDiagnostics({ editor, item }: { readonly editor: IEditor; readonly item: string }) {
+  const [state, setState] = useState<RollingDiagnosticsState>({ kind: "idle" });
+  const load = (): void => {
+    setState({ kind: "loading" });
+    editor.rollingDiagnostics(item).then(
+      (panel) => setState({ kind: "loaded", panel }),
+      (error: unknown) =>
+        setState({
+          kind: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        }),
+    );
+  };
+  switch (state.kind) {
+    case "idle":
+      return (
+        <button type="button" className="rolling-diagnostics-load" onClick={load}>
+          Show unread rolling bands
+        </button>
+      );
+    case "loading":
+      return <p>Loading unread rolling bands…</p>;
+    case "failed":
+      return <p role="alert">Unread rolling bands failed to load: {state.message}</p>;
+    case "loaded": {
+      const parts = state.panel?.parts ?? [];
+      if (parts.length === 0) return <p>No part of this model serves unread rolling bands.</p>;
+      return (
+        <div className="rolling-diagnostics" aria-label="Unread rolling bands">
+          {parts.map((part) => (
+            <div key={part.partId} className="rolling-diagnostics-part">
+              <p>{part.message}</p>
+              {part.rows.length > 0 && (
+                <ol>
+                  {part.rows.map((row, index) => (
+                    <li key={index} title={row.exact}>
+                      <strong>{row.reason}</strong>: {row.identified}
+                      <br />
+                      raw {row.raw}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    default: {
+      const unhandled: never = state;
+      throw new Error(`unhandled rolling diagnostics state ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+export function Inspector({
+  editor,
+  snapshot,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}) {
   const { selection } = snapshot;
   if (!selection) return null;
+  if (selection.kind === "train") {
+    return (
+      <section className="inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        <dl>
+          <div>
+            <dt>Train</dt>
+            <dd>{itemLabel(snapshot, selection.item)}</dd>
+          </div>
+          <div>
+            <dt>Stands</dt>
+            <dd>on the rails</dd>
+          </div>
+          <div>
+            <dt>Vehicles</dt>
+            <dd>{selection.vehicles}</dd>
+          </div>
+          <div>
+            <dt>Length (studs)</dt>
+            <dd>{Math.round(selection.lengthLdu / STUD_LDU)}</dd>
+          </div>
+        </dl>
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      </section>
+    );
+  }
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
@@ -343,6 +438,7 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           </dd>
         </div>
       </dl>
+      <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
     </section>
   );
 }

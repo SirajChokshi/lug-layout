@@ -124,6 +124,7 @@ export interface PlayTrack {
   readonly pieces: ReadonlyArray<TrackPiece>;
   readonly railPart: string;
   readonly railTopY: number;
+  readonly halfWidthLdu: number;
 }
 
 export interface TrackEndView {
@@ -391,11 +392,13 @@ export class TrackDrawing {
     const straight = this.kitParts().find((k) => k.piece.kind === "straight");
     const part = straight ? this.parts[straight.partIndex] : undefined;
     if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
+    const box = straight.footprints;
     return {
       layout: this.combined,
       pieces: this.pieces,
       railPart: straight.piece.part,
       railTopY: straight.yLdu + part.boundsMax[1],
+      halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
 

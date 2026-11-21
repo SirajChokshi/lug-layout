@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { EditorPage } from "./editor-page.ts";
+import { EditorPage, routeMiddle } from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
 const ZETA16_STEP_RADIANS = Math.PI / 8;
@@ -244,8 +244,13 @@ test("a train runs a full lap on an imported loop turned 22.5° and written with
     unanchored: 0,
   });
 
-  await editor.placeAt(TRAIN_WITHOUT_TRACK, { x: 0, z: 0 });
+  const [route] = await editor.trackRoutes();
+  if (!route) throw new Error("the imported loop has no route");
   await editor.escape();
+  await editor.goTo(routeMiddle(route));
+  await editor.placeAt(TRAIN_WITHOUT_TRACK, routeMiddle(route));
+  await editor.escape();
+  expect(await editor.trainsOnRails()).toBe(1);
   await editor.press("t");
   expect(await editor.modelTrack()).toEqual({
     pieces: 0,

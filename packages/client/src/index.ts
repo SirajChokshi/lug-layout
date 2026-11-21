@@ -69,6 +69,8 @@ export type {
   ModelBakeView,
   ModelImportStatus,
   ModelImportView,
+  ModelSelectionView,
+  RailTrainView,
   RoadIssueView,
   RoadJoinView,
   RoadStrokeResult,
@@ -79,6 +81,7 @@ export type {
   PlaceableCoverView,
   QueuedPlacement,
   SelectionView,
+  TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
@@ -170,10 +173,21 @@ export {
   TRAIN_PLAY,
   PLAN_SERVICE,
   HOTBAR,
+  SCALE_BAR,
 } from "./tokens.ts";
-export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
-export type { PlaySetup } from "./play/play-models.ts";
+export type {
+  ITrainPlay,
+  PlaySnapshot,
+  PlayStatus,
+  PlaySwitchView,
+  PlayTrainView,
+} from "./play/train-play.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export type {
+  RollingDiagnosticsPanel,
+  RollingDiagnosticsPartView,
+  RollingDiagnosticsRowView,
+} from "./inspect/rolling-diagnostics.ts";
 export {
   meshesSettled,
   type MeshCounts,
@@ -223,6 +237,7 @@ export {
   type KeyPlatform,
 } from "./commands/key-chord.ts";
 export { FOOTPRINT_FLOATS } from "./camera/editor-camera.ts";
+export type { IScaleBar, ScaleBarView } from "./camera/scale-bar.ts";
 export { overviewOf, type OverviewView } from "./camera/overview.ts";
 export {
   PANEL_GAP_PX,

@@ -20,6 +20,7 @@ import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
+import { ScaleBar } from "./camera/scale-bar.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
 import { Palette } from "./catalog/palette.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
@@ -36,6 +37,7 @@ import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { WorldSession } from "./edit/world-session.ts";
+import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
 import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
@@ -48,6 +50,8 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
+import { RailYard } from "./trains/rail-yard.ts";
+import { VehicleIds } from "./trains/vehicle-ids.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
@@ -62,6 +66,8 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  SCALE_BAR,
+  TABLE_GROUND,
   IMPORT_SCENE,
   IMPORT_BAKE_HELPERS,
   IMPORT_WORKER_FACTORY,
@@ -87,6 +93,8 @@ import {
   SIM_WORKER_PORT,
   TRACK_SCENE,
   TRAIN_PLAY,
+  RAIL_YARD,
+  VEHICLE_IDS,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -101,6 +109,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
+  bind(SCALE_BAR).to(ScaleBar).inSingletonScope();
+  bind(TABLE_GROUND).to(TableGround).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
@@ -112,6 +122,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
+  bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())
     .inSingletonScope();

@@ -12,6 +12,7 @@ import {
 } from "@brr/catalog";
 import type { PlacementTarget } from "@brr/domain";
 import type {
+  CompiledSource,
   ImportReport,
   ImportResult,
   PlacedImport,
@@ -39,6 +40,11 @@ import {
   type Placeable,
   type PlacementModel,
 } from "../edit/placeable.ts";
+import {
+  diagnosedPart,
+  type DiagnosedPart,
+  type RollingDiagnosticsView,
+} from "../inspect/rolling-diagnostics.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import { playModel, type PlayModel } from "../play/play-models.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
@@ -140,6 +146,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   load(refId: number): Promise<Placeable>;
   itemModel(itemId: string): Promise<CatalogItemModel | null>;
   addImported(file: ImportedFile): Promise<ImportOutcome>;
+  rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null>;
   playModel(placeable: Placeable): PlayModel | null;
   notDrawn(placeable: Placeable): ReadonlyArray<NotDrawnSection>;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
@@ -320,6 +327,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private readonly notDrawnSections = new Map<Placeable, ReadonlyArray<NotDrawnSection>>();
   private readonly playModels = new Map<Placeable, PlayModel>();
   private readonly bakes = new Map<Placeable, Pick<PartModel, "lattice" | "cells">>();
+  private readonly compiledSources = new Map<string, CompiledSource>();
   private readonly farModelIndex = new Map<string, number>();
   private readonly importRecords = new Map<string, ReadonlyMap<string, PartConnectorRecord>>();
   private readonly broughtRecords = new Map<string, PartConnectors>();
@@ -513,7 +521,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       null,
     );
     if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
+      const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -550,6 +559,35 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     }
     const text = new TextDecoder().decode(file.bytes);
     return this.importer.importText(file.name, text, this.lod, onPlaced);
+  }
+
+  async rollingDiagnostics(itemId: string): Promise<RollingDiagnosticsView | null> {
+    const refId = this.itemRefId(itemId);
+    if (refId === null) return null;
+    const placeable = await this.load(refId);
+    const parts = this.requirePalette().parts;
+    const diagnosed: DiagnosedPart[] = [];
+    for (const index of new Set(placeable.parts.partIndex)) {
+      const part = parts[index];
+      const served = part?.rolling?.unread ?? [];
+      if (part === undefined || served.length === 0) continue;
+      const source = this.compiledSources.get(part.id) ?? "bundle";
+      diagnosed.push({ partId: part.id, title: part.title, source, served });
+    }
+    diagnosed.sort((a, b) => (a.partId < b.partId ? -1 : a.partId > b.partId ? 1 : 0));
+    const fromBake = diagnosed.filter((part) => part.source === "library-bake");
+    const [bundle, bake] = await Promise.all([
+      diagnosed.some((part) => part.source === "bundle")
+        ? this.loader.loadRollingDiagnostics(this.lod)
+        : Promise.resolve(null),
+      fromBake.length > 0
+        ? this.importer.rollingDiagnostics(
+            fromBake.map((part) => part.partId),
+            this.lod,
+          )
+        : Promise.resolve({}),
+    ]);
+    return { item: itemId, parts: diagnosed.map((part) => diagnosedPart(part, bundle, bake)) };
   }
 
   async addImported(file: ImportedFile): Promise<ImportOutcome> {
@@ -601,6 +639,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     parts: Pick<ImportResult, "partIds" | "compiled">,
   ): Promise<AddedPlaceable> {
     const set = await this.loader.loadPartSet(this.lod, parts.partIds, parts.compiled);
+    for (const { partId, source } of parts.compiled) this.compiledSources.set(partId, source);
     const palette = this.requirePalette();
     const before = palette.parts.length;
     const remapped = palette.remap(model, set.parts);
@@ -611,6 +650,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
     for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
+    if (model.vehicles.length > 0) {
+      const identity = { name: file.name, label: file.name, sha256: file.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, set, palette, this.colors()));
+    }
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
@@ -649,6 +692,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.placeablesByRefId[refId] = checked;
     this.bakes.delete(pending);
     this.bakes.set(checked, model);
+    const train = this.playModels.get(pending);
+    if (train) {
+      this.playModels.delete(pending);
+      this.playModels.set(checked, train);
+    }
     return { ...reports, kind: "checked", placeable: checked };
   }
 

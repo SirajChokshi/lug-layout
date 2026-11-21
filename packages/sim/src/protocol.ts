@@ -1,5 +1,4 @@
-import type { TrackGraphTopology } from "./graph-track.ts";
-import type { SimPathSegment } from "./route-geometry.ts";
+import type { SimPathSegment, TrackGraphTopology } from "@brr/domain";
 import type { SimCommand, SimFrameLayout, SimTrainLoad } from "./sim-session.ts";
 import type { OpenEndRule, SimCapacity } from "./simulation.ts";
 

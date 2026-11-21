@@ -103,6 +103,20 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     case "place": {
       const held = heldItem(snapshot);
       if (held?.tables === "loading") return loadingView(snapshot, held);
+      const hover = snapshot.hover;
+      if (hover?.onRails) {
+        return {
+          tone: hover.refusal === null ? "place" : "warn",
+          title: `Setting ${itemName(snapshot, snapshot.activeItem)} on the rails`,
+          detail: hover.refusal ?? "it follows the rails under the cursor",
+          hints: [
+            gesture("Click", "set it there"),
+            key("rotate", "turn round"),
+            key("open-palette", "another part"),
+            key("select-tool", "done"),
+          ],
+        };
+      }
       return {
         tone: "place",
         title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
@@ -155,6 +169,19 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     }
     case "select": {
       const { selection } = snapshot;
+      if (selection?.kind === "train") {
+        return {
+          tone: snapshot.selectionRefusal === null ? "select" : "warn",
+          title: itemName(snapshot, selection.item),
+          detail: snapshot.selectionRefusal ?? "on the rails",
+          hints: [
+            key("delete", "delete"),
+            key("duplicate", "place more"),
+            key("focus", "frame"),
+            key("select-tool", "deselect"),
+          ],
+        };
+      }
       if (selection) {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
