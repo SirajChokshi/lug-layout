@@ -32,11 +32,11 @@ import {
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
-import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { mainThreadModules } from "../client.module.ts";
 import { TRACK_ITEM_ID, type IEditor } from "../edit/editor.ts";
+import { chosen } from "../edit/editor-choice.test-support.ts";
 import { WithFixtureModels } from "../edit/fixture-model.test-support.ts";
-import { EDITOR, PLACEABLE_CATALOG, STARTER_FILES, STARTER_WORLDS } from "../tokens.ts";
+import { EDITOR, STARTER_FILES, STARTER_WORLDS } from "../tokens.ts";
 import type { IStarterFiles } from "./starter-files.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -50,6 +50,11 @@ const NO_LOOK: LookSettings = {
 };
 const RAY_HEIGHT_LDU = 10_000;
 const GREEN_BASEPLATE = "ldraw:3811@2";
+const LOCOMOTIVE = "omr:10133-1";
+const RUN_FROM_X = -800;
+const RUN_TO_X = 800;
+const RUN_Z = 800;
+const DRAG_STEPS = 8;
 const SYNTHETIC_BRICK = "brick-2x4";
 const LOOP = "loop-and-brick";
 const MISSING_PART = "missing-part";
@@ -92,6 +97,9 @@ class HeadlessBackend implements ISceneBackend {
   setSelectionBox(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
   aim(x: number, z: number): void {
@@ -254,28 +262,34 @@ interface AuthoredWorld {
   readonly placed: ReadonlyArray<string>;
   readonly trackPieces: number;
   readonly openEnds: number;
+  readonly trains: ReadonlyArray<string>;
+}
+
+function trainsOf(editor: IEditor): ReadonlyArray<string> {
+  return editor.snapshot().trains.map((train) => `${train.item} on rails ${train.onRails}`);
 }
 
 async function authorLoopAndBrick(): Promise<AuthoredWorld> {
-  const { container, editor, backend, repository } = await startEditor(new Map());
+  const { editor, backend, repository } = await startEditor(new Map());
   expect(await editor.newWorld("Loop and brick")).toBe(true);
-  await loadCatalogItem(container.get(PLACEABLE_CATALOG), `generated:${SYNTHETIC_BRICK}`);
-  const click = (item: string, x: number, z: number) => {
-    editor.chooseItem(item);
+  const click = async (item: string, x: number, z: number) => {
+    await chosen(editor, item);
     backend.aim(x, z);
     editor.pointerMove(0, 0);
     editor.click(0, 0, 0);
   };
-  click(GREEN_BASEPLATE, 0, 0);
-  click(`generated:${SYNTHETIC_BRICK}`, 0, 0);
-  editor.chooseItem(TRACK_ITEM_ID);
-  backend.aim(-400, 800);
-  editor.pointerMove(0, 0);
+  await click(GREEN_BASEPLATE, 0, 0);
+  await click(`generated:${SYNTHETIC_BRICK}`, 0, 0);
+  await chosen(editor, TRACK_ITEM_ID);
+  backend.aim(RUN_FROM_X, RUN_Z);
   editor.dragStart(0, 0);
-  backend.aim(400, 800);
-  editor.dragMove(0, 0);
+  for (let step = 1; step <= DRAG_STEPS; step++) {
+    backend.aim(RUN_FROM_X + ((RUN_TO_X - RUN_FROM_X) * step) / DRAG_STEPS, RUN_Z);
+    editor.dragMove(0, 0);
+  }
   editor.dragEnd(0, 0, 0);
-  editor.chooseItem(null);
+  await click(LOCOMOTIVE, 0, RUN_Z);
+  await chosen(editor, null);
   const { track } = editor.snapshot();
   const archive = await repository.readArchive((await editor.exportWorld()).bytes);
   if (!archive.ok) throw new Error("the exported world can't be read back");
@@ -288,6 +302,7 @@ async function authorLoopAndBrick(): Promise<AuthoredWorld> {
     placed: placed(editor),
     trackPieces: track?.pieces ?? 0,
     openEnds: track?.openEnds ?? 0,
+    trains: trainsOf(editor),
   };
 }
 
@@ -329,7 +344,10 @@ beforeAll(async () => {
   starterFiles = shelfFiles(
     {
       starters: [
-        { world: LOOP, summary: "A run of track beside a baseplate with a brick on it." },
+        {
+          world: LOOP,
+          summary: "A train on a run of track beside a baseplate with a brick on it.",
+        },
         { world: MISSING_PART, summary: "The same world, but its baseplate isn't a real part." },
       ],
     },
@@ -345,7 +363,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("offers the shelf's starters on a fresh profile and opens one as a new world holding exactly the exported world, a synthetic brick model and drawn track included", async () => {
+it("offers the shelf's starters on a fresh profile and opens one as a new world holding exactly the exported world, a synthetic brick model, drawn track and a train standing on it included", async () => {
   const { editor, repository, starters } = await startEditor(starterFiles);
   await vi.waitFor(() => expect(starters.view().shelf).toBe("ready"));
   const offered = starters.view();
@@ -357,13 +375,14 @@ it("offers the shelf's starters on a fresh profile and opens one as a new world 
     true,
   );
   expect(authored.trackPieces).toBeGreaterThan(0);
+  expect(authored.trains).toEqual([`${LOCOMOTIVE} on rails true`]);
   expect({ open: offered.open, starters: offered.starters }).toEqual({
     open: true,
     starters: [
       {
         id: LOOP,
         name: "Loop and brick",
-        summary: "A run of track beside a baseplate with a brick on it.",
+        summary: "A train on a run of track beside a baseplate with a brick on it.",
         placements: authored.placed.length,
         track: authored.trackPieces,
       },
@@ -384,6 +403,7 @@ it("offers the shelf's starters on a fresh profile and opens one as a new world 
     placed: placed(editor),
     trackPieces: track?.pieces,
     openEnds: track?.openEnds,
+    trains: trainsOf(editor),
   }).toEqual({
     opened: true,
     welcome: false,
@@ -392,6 +412,7 @@ it("offers the shelf's starters on a fresh profile and opens one as a new world 
     placed: authored.placed,
     trackPieces: authored.trackPieces,
     openEnds: authored.openEnds,
+    trains: authored.trains,
   });
 }, 120_000);
 

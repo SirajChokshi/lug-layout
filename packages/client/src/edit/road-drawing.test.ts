@@ -16,9 +16,16 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
   type PackageAttribution,
+  type ConnectorLoad,
   type PartConnectors,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  RollingDiagnosticsFile,
+} from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
   type BackendInfo,
@@ -36,6 +43,7 @@ import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { IEditor } from "./editor.ts";
+import { chosen } from "./editor-choice.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const WORLD_PER_NDC = 10_000;
@@ -124,12 +132,20 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadBricklinkParts(lod);
   }
 
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
+  }
+
   importContext(lod: BundleLod): Promise<ImportContext> {
     return this.loader.importContext(lod);
   }
 
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return this.loader.loadPartConnectors(lod, partId);
+  }
+
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.loader.readPartConnectors(lod, partId);
   }
 
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -174,10 +190,13 @@ class TopDownBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     out.set([ndcX * WORLD_PER_NDC, EYE_HEIGHT, ndcY * WORLD_PER_NDC, 0, -1, 0]);
   }
@@ -291,6 +310,7 @@ describe("draw road", () => {
       expect(roads.overlaps).toBe(0);
       expect(roads.joinedCells).toBeGreaterThan(0);
       expect(history.undo).toBe("road");
+      expect(history.undoLabel).toBe("road stroke (6 plates)");
       editor.undo(0);
       expect(editor.snapshot().placements).toBe(0);
       editor.chooseItem(null);
@@ -355,8 +375,8 @@ describe("draw road", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("refuses a tile over a baseplate it can't replace and names the baseplate", () => {
-    editor.chooseItem("ldraw:4186@2");
+  it("refuses a tile over a baseplate it can't replace and names the baseplate", async () => {
+    await chosen(editor, "ldraw:4186@2");
     editor.click(...ndc([0, 0]), 0);
     editor.chooseItem(
       kitId(
@@ -378,16 +398,16 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
-  it("starts the road tool at the turn a snapped hold showed, and keeps the HUD and laid tiles in step", () => {
+  it("starts the road tool at the turn a snapped hold showed, and keeps the HUD and laid tiles in step", async () => {
     editor.chooseItem(null);
     expect(toolHints(editor.snapshot()).hints).toContainEqual(
       expect.objectContaining({ command: "draw-road" }),
     );
-    editor.chooseItem("ldraw:44336p04@72");
+    await chosen(editor, "ldraw:44336p04@72");
     editor.pointerMove(...ndc([6, 6]));
     while (editor.snapshot().ghostRot !== 0) editor.rotate(0);
     editor.click(...ndc([0, 0]), 0);
-    editor.chooseItem("ldraw:44342p02@72");
+    await chosen(editor, "ldraw:44342p02@72");
     editor.pointerMove(...ndc([0, 1]));
     const held = editor.snapshot();
     expect(held.snap?.state).toBe("snapped");
@@ -414,7 +434,7 @@ describe("draw road", () => {
 
   it("refuses a stroke over a placed model instead of swapping it for road", async () => {
     await loadCatalogItem(catalog, PLACED_MODEL);
-    editor.chooseItem(PLACED_MODEL);
+    await chosen(editor, PLACED_MODEL);
     editor.click(...ndc([1, 0]), 0);
     editor.chooseItem(kitId(editor, completeKits[0][1]));
     drag(editor, [
@@ -435,8 +455,8 @@ describe("draw road", () => {
 
   it.each(groundUnderRoad)(
     "draws %s across a row of %s, swapping each one under the road, and one undo puts them back",
-    (_, ground, matches) => {
-      editor.chooseItem(ground);
+    async (_, ground, matches) => {
+      await chosen(editor, ground);
       for (const ix of [0, 1, 2]) editor.click(...ndc([ix, 0]), 0);
       expect(editor.snapshot().placements).toBe(3);
       editor.chooseItem(kitId(editor, matches));
@@ -492,10 +512,10 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
-  it("erasing gives back exactly the ground a stroke replaced, in its own colour, and adds no ground anywhere else", () => {
-    editor.chooseItem("ldraw:3811@2");
+  it("erasing gives back exactly the ground a stroke replaced, in its own colour, and adds no ground anywhere else", async () => {
+    await chosen(editor, "ldraw:3811@2");
     editor.click(...ndc([0, 0]), 0);
-    editor.chooseItem("ldraw:3811@19");
+    await chosen(editor, "ldraw:3811@19");
     for (const ix of [1, 2]) editor.click(...ndc([ix, 0]), 0);
     const ground = worldPoses(editor);
     const stroke: ReadonlyArray<readonly [number, number]> = [

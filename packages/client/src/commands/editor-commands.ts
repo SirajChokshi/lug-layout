@@ -1,12 +1,14 @@
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
+import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
 export type EditorActionId =
   | "select-tool"
   | "draw-track"
   | "draw-road"
+  | "measure"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
@@ -30,6 +32,7 @@ export type EditorActionId =
   | "zoom-in"
   | "zoom-out"
   | "toggle-joins"
+  | "toggle-grid"
   | "toggle-road-snap"
   | "cycle-tier"
   | "measure-frames";
@@ -38,7 +41,7 @@ export type ShellCommandId = "show-shortcuts" | "open-palette";
 
 export type PlayCommandId = "play" | "throttle-up" | "throttle-down" | "stop-train" | "rerail";
 
-export type CommandId = EditorActionId | ShellCommandId | PlayCommandId;
+export type CommandId = EditorActionId | ShellCommandId | PlayCommandId | "pick-slot";
 
 export type CommandGroup = "Tools" | "Edit" | "View" | "Play" | "Help";
 
@@ -51,6 +54,10 @@ export interface CommandSpec {
   readonly whileTyping?: boolean;
   readonly repeats?: boolean;
 }
+
+export type CommandMatch =
+  | { readonly id: Exclude<CommandId, "pick-slot"> }
+  | { readonly id: "pick-slot"; readonly slot: number };
 
 export interface PointerGesture {
   readonly gesture: string;
@@ -76,6 +83,12 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "cancel stop escape deselect pointer",
   },
   {
+    id: "pick-slot",
+    title: "Pick up the part in a hotbar slot",
+    group: "Tools",
+    keys: KEY_FOR_SLOT,
+  },
+  {
     id: "draw-track",
     title: "Draw track",
     group: "Tools",
@@ -88,6 +101,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "g" }],
     keywords: "street lay plates",
+  },
+  {
+    id: "measure",
+    title: "Measure: drag a ruler in studs and cm",
+    group: "Tools",
+    keys: [{ key: "u" }],
+    keywords: "ruler distance length dimension tape size",
   },
   {
     id: "rotate",
@@ -238,6 +258,13 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle edges open mismatch",
   },
   {
+    id: "toggle-grid",
+    title: "Show the stud grid on the ground",
+    group: "View",
+    keys: [{ key: "#" }],
+    keywords: "toggle grid ground table floor studs lines guides",
+  },
+  {
     id: "toggle-road-snap",
     title: "Snap road pieces to matching edges",
     group: "Edit",
@@ -311,11 +338,15 @@ export function commandSpec(id: CommandId): CommandSpec {
   return spec;
 }
 
-export function commandForKey(input: KeyInput, typing: boolean): CommandId | null {
+export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | null {
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
-    const typed = spec.keys.filter((chord) => !typing || chord.mod);
-    if (typed.some((chord) => chordMatches(chord, input))) return spec.id;
+    const keyIndex = spec.keys.findIndex(
+      (chord) => (!typing || chord.mod === true) && chordMatches(chord, input),
+    );
+    if (keyIndex < 0) continue;
+    const { id } = spec;
+    return isHotbarCommand(id) ? { id, slot: keyIndex } : { id };
   }
   return null;
 }
@@ -334,11 +365,17 @@ export function isPlayCommand(id: CommandId): id is PlayCommandId {
   );
 }
 
+export function isHotbarCommand(id: CommandId): id is "pick-slot" {
+  return id === "pick-slot";
+}
+
 export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean {
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
+  if (id === "measure") return snapshot.mode === "measure";
   if (id === "toggle-joins") return snapshot.showJoins;
+  if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
   return false;
 }
@@ -362,6 +399,7 @@ const CAMERA_COMMANDS: ReadonlySet<CommandId> = new Set<CommandId>([
   "zoom-in",
   "zoom-out",
   "toggle-joins",
+  "toggle-grid",
 ]);
 
 export function runsDuringPlay(id: CommandId): boolean {
@@ -407,7 +445,7 @@ export function commandEnabled(
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
-          snapshot.selection !== null ||
+          snapshot.selection?.kind === "model" ||
           snapshot.track?.held != null)
       );
     case "flip-switch":
@@ -415,8 +453,12 @@ export function commandEnabled(
     case "next-connector":
       return snapshot.track?.held != null;
     case "delete":
+      if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
+      return snapshot.selection !== null && !snapshot.readOnly;
     case "duplicate":
       return snapshot.selection !== null && !snapshot.readOnly;
+    case "pick-slot":
+      return !snapshot.readOnly;
     case "focus":
       return snapshot.selection !== null;
     case "undo":
@@ -442,7 +484,9 @@ export function commandEnabled(
     case "tilt-up":
     case "zoom-in":
     case "zoom-out":
+    case "measure":
     case "toggle-joins":
+    case "toggle-grid":
     case "toggle-road-snap":
     case "cycle-tier":
     case "measure-frames":
@@ -458,7 +502,9 @@ function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
   const selection = editor.snapshot().selection;
   if (!selection) return;
   editor.chooseItem(selection.item);
-  const turns = (selection.rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
+  if (selection.kind === "track") return;
+  const rot = selection.kind === "model" ? selection.rot : 0;
+  const turns = (rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
   const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
   const presses = direction === 1 ? turns : QUARTER_TURNS - turns;
   for (let press = 0; press < presses; press++) editor.rotate(eventTimeMs, direction);
@@ -552,8 +598,14 @@ export function runEditorAction(
     case "zoom-out":
       camera.zoomStep(-1);
       return;
+    case "measure":
+      editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
+      return;
+    case "toggle-grid":
+      editor.setShowGrid(!editor.snapshot().showGrid);
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);
@@ -572,10 +624,9 @@ export function runEditorAction(
 }
 
 export function startPlay(editor: IEditor, play: ITrainPlay): void {
-  const setup = editor.playSetup();
-  if (!setup) return;
+  if (editor.snapshot().studChecks > 0) return;
   editor.chooseItem(null);
-  void play.start(setup);
+  void play.start();
 }
 
 export function runPlayAction(editor: IEditor, play: ITrainPlay, id: PlayCommandId): void {

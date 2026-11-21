@@ -1,4 +1,5 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
@@ -20,21 +21,30 @@ import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
 import { ContainerModule } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
+import { ScaleBar } from "./camera/scale-bar.ts";
+import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
 import { CatalogSearch } from "./catalog/catalog-search.ts";
+import { LibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import { LibraryPartSearch } from "./catalog/library-part-search.ts";
+import { Palette } from "./catalog/palette.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import { HotbarService } from "./commands/hotbar.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
+import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
 import { EditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import { WorldSession } from "./edit/world-session.ts";
+import { TableGround } from "./ground/table-ground.ts";
 import { ImportWorkerPool, type ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import { WorkerModelImporter } from "./import/worker-model-importer.ts";
+import { LocalStoragePanelLayoutStore, PanelLayoutService } from "./panels/panel-layout.ts";
 import { PlanService } from "./plan/plan-service.ts";
 import { BomService } from "./bom/bom-service.ts";
 import { ImportScene } from "./scene/import-scene.ts";
@@ -44,6 +54,8 @@ import { RunningGearEditor } from "./running-gear/running-gear-editor.ts";
 import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
+import { RailYard } from "./trains/rail-yard.ts";
+import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
 import {
@@ -52,6 +64,7 @@ import {
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
   PLACEMENT_SEARCH,
+  CONNECTOR_TABLES,
   SNAP_MATING,
   SNAP_SHAPES,
   SPARSE_CONNECTOR_FINDER,
@@ -59,26 +72,37 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  SCALE_BAR,
+  TABLE_GROUND,
   IMPORT_SCENE,
   IMPORT_BAKE_HELPERS,
   IMPORT_WORKER_FACTORY,
   LDRAW_LIBRARY_BASE_URL,
   LIBRARY_BAKE_BASE_URL,
+  LIBRARY_CONNECTORS_BASE_URL,
+  LIBRARY_PART_PLACER,
+  LIBRARY_PART_SEARCH,
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
+  PALETTE,
   PALETTE_DRAG,
+  HOTBAR,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
+  PANEL_LAYOUT,
+  PANEL_LAYOUT_STORE,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
   SIM_WORKER_PORT,
   TRACK_SCENE,
   TRAIN_PLAY,
+  RAIL_YARD,
+  VEHICLE_IDS,
   PLAN_SERVICE,
   TRADEMARK_DISCLAIMER,
   PLACEABLE_CATALOG,
@@ -90,12 +114,15 @@ import {
 } from "./tokens.ts";
 
 const clientModule = new ContainerModule(({ bind }) => {
+  bind(ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
   bind(MODEL_SCENE).to(ModelScene).inSingletonScope();
   bind(EDITOR).to(Editor).inSingletonScope();
   bind(WORLD_SESSION).to(WorldSession).inSingletonScope();
   bind(PLACEABLE_CATALOG).to(PlaceableCatalog).inSingletonScope();
   bind(EDITOR_FRAME_LOOP).to(EditorFrameLoop).inSingletonScope();
   bind(EDITOR_CAMERA).to(EditorCamera).inSingletonScope();
+  bind(SCALE_BAR).to(ScaleBar).inSingletonScope();
+  bind(TABLE_GROUND).to(TableGround).inSingletonScope();
   bind(IMPORT_WORKER_POOL).to(ImportWorkerPool).inSingletonScope();
   bind(MODEL_IMPORTER).to(WorkerModelImporter).inSingletonScope();
   bind(IMPORT_SCENE).to(ImportScene).inSingletonScope();
@@ -107,6 +134,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(RUNNING_GEAR).to(RunningGearEditor).inSingletonScope();
   bind(BOM_SERVICE).to(BomService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
+  bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())
     .inSingletonScope();
@@ -135,6 +164,7 @@ const clientModule = new ContainerModule(({ bind }) => {
     )
     .inSingletonScope();
   bind(PLACEMENT_SEARCH).to(PlacementSearch).inSingletonScope();
+  bind(CONNECTOR_TABLES).to(ConnectorTables).inSingletonScope();
   bind(CATALOG_SEARCH)
     .toDynamicValue(
       (context) =>
@@ -148,10 +178,16 @@ const clientModule = new ContainerModule(({ bind }) => {
     .inSingletonScope();
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
+  bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
+  bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
+  bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
   bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();
+  bind(PALETTE).to(Palette).inSingletonScope();
+  bind(PANEL_LAYOUT_STORE).to(LocalStoragePanelLayoutStore).inSingletonScope();
+  bind(PANEL_LAYOUT).to(PanelLayoutService).inSingletonScope();
   bind(STARTER_FILES).to(FetchedStarterFiles).inSingletonScope();
   bind(STARTER_WORLDS).to(StarterWorlds).inSingletonScope();
 });
@@ -163,6 +199,7 @@ export interface MainThreadConfig {
   readonly bundleManifestFile?: string;
   readonly ldrawLibraryBaseUrl?: string;
   readonly libraryBakeBaseUrl?: string;
+  readonly libraryConnectorsBaseUrl?: string;
   readonly catalogApiBaseUrl?: string;
   readonly startSimWorker?: () => RpcPort;
   readonly starterFileUrls?: ReadonlyMap<string, string>;
@@ -184,6 +221,7 @@ export function mainThreadModules(config: MainThreadConfig): ContainerModule[] {
     );
     bind(LDRAW_LIBRARY_BASE_URL).toConstantValue(config.ldrawLibraryBaseUrl ?? null);
     bind(LIBRARY_BAKE_BASE_URL).toConstantValue(config.libraryBakeBaseUrl ?? null);
+    bind(LIBRARY_CONNECTORS_BASE_URL).toConstantValue(config.libraryConnectorsBaseUrl ?? null);
     if (config.catalogApiBaseUrl !== undefined) {
       bind(CATALOG_API_BASE_URL).toConstantValue(config.catalogApiBaseUrl);
     }

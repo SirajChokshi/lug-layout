@@ -5,10 +5,18 @@ export interface MeshCounts {
   readonly absent: number;
 }
 
+export type UndrawnReason = "absent" | "failed";
+
+export interface UndrawnPart {
+  readonly part: string;
+  readonly reason: UndrawnReason;
+}
+
 export interface MeshProgress {
   readonly detailedPartMeshes: MeshCounts;
   readonly farPartMeshes: MeshCounts;
   readonly farModelMeshes: MeshCounts;
+  readonly undrawnParts: ReadonlyArray<UndrawnPart>;
 }
 
 export const NO_MESHES: MeshCounts = { wanted: 0, loaded: 0, failed: 0, absent: 0 };

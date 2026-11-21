@@ -28,7 +28,17 @@ import {
   type BundleBuildKey,
 } from "./built-bundle.ts";
 import { deriveCrosswalk, type LdrawPartFacts } from "./catalog/crosswalk.ts";
-import { crosswalkSources, readCrosswalkInputs } from "./catalog/inputs.ts";
+import {
+  catalogSources,
+  crosswalkSources,
+  inventoryPartsPath,
+  readCrosswalkInputs,
+} from "./catalog/inputs.ts";
+import {
+  deriveLibraryParts,
+  readInventoryColorCounts,
+  type DerivedLibraryParts,
+} from "./catalog/library-parts.ts";
 import { bomCheck } from "./catalog/bom-check.ts";
 import {
   attachPartCategories,
@@ -40,7 +50,6 @@ import {
 import {
   catalogSourceDirectory,
   fetchAuditInputs,
-  fetchConnectivity,
   fetchCatalogSources,
   fetchClosure,
   modelPath,
@@ -69,6 +78,9 @@ import { readFixtureModels, readPalette } from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
+  attachLibraryConnectors,
+  attachLibraryParts,
+  attachRollingDiagnostics,
   attachSectionVocabulary,
   MANIFEST_FILE,
   publishBundle,
@@ -156,14 +168,12 @@ async function fetchCommand(): Promise<void> {
     models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
   );
   const inferred = await inferredConnectors();
-  const closure = await fetchClosure(palette, ldrawRoot, modelSources, [
-    inferred.cavityProbe,
-    inferred.axleProbe,
-  ]);
-  const connectivity = await fetchConnectivity(
-    palette.connectivitySource,
-    Object.keys(closure.files),
+  const { closure, connectivity } = await fetchClosure(
+    palette,
+    ldrawRoot,
     bundleConnectivityRoot,
+    modelSources,
+    [inferred.cavityProbe, inferred.axleProbe],
   );
   const audit = await fetchAuditInputs(
     palette,
@@ -254,6 +264,7 @@ async function restoreCommand(): Promise<void> {
   }
   await restoreModels(await readPalette(palettePath));
   await restoreCatalog(lock, "crosswalk");
+  await restoreCatalog(lock, "inventory-check");
   await restoreCatalog(lock, "categories");
   await restoreCatalog(lock, "connectors");
 }
@@ -267,9 +278,11 @@ async function verifyCommand(): Promise<void> {
       connectivityLock(lock),
       palette.connectivitySource,
       bundleConnectivityRoot,
+      lock.files,
     )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
+    ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "connectors")),
   ];
@@ -337,7 +350,12 @@ async function factsCommand(check: boolean): Promise<void> {
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
-    ...(await verifyConnectivity(connectivity, palette.connectivitySource, bundleConnectivityRoot)),
+    ...(await verifyConnectivity(
+      connectivity,
+      palette.connectivitySource,
+      bundleConnectivityRoot,
+      lock.files,
+    )),
     ...(await verifyModels(omrModels, modelRoots)),
   ];
   if (problems.length > 0) {
@@ -522,6 +540,7 @@ interface LodBuild {
   readonly palette: string;
   readonly out: string;
   readonly lod: BundleLod;
+  readonly offersLibraryParts: boolean;
 }
 
 interface SharedBuild {
@@ -530,9 +549,15 @@ interface SharedBuild {
   readonly coverCache: string;
   readonly ldrawParts: ReadonlyMap<string, LdrawPartFacts>;
   readonly categories: LdrawCategories;
+  readonly libraryParts: DerivedLibraryParts;
 }
 
-async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild): Promise<void> {
+const LIBRARY_PARTS_LOD: BundleLod = "standard";
+
+async function compileLod(
+  { palette, out, lod, offersLibraryParts }: LodBuild,
+  shared: SharedBuild,
+): Promise<void> {
   await rm(out, { recursive: true, force: true });
   runCargo([
     "run",
@@ -574,14 +599,29 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
   await attachPartCategories(join(out, MANIFEST_FILE), shared.ldrawParts, shared.categories);
   await addVerifiedFacts(out);
   await attachCrosswalk(out, shared.crosswalk);
+  if (offersLibraryParts) await attachLibraryParts(out, shared.libraryParts.file);
   await attachRecords(out);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
+  await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
+  await attachRollingDiagnostics(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);
   const inputs = { ...shared.inputs, paletteSha256: await fileSha256(palette) };
   const { bundleVersion, files } = await publishBundle(out, inputs);
   process.stdout.write(
     `bundle ${lod} ${bundleVersion}: ${files} content-addressed files in ${out}\n`,
+  );
+}
+
+const LIBRARY_PART_SOURCES: ReadonlyArray<CatalogSourceUse> = [
+  "crosswalk",
+  "inventory-check",
+  "categories",
+];
+
+function reportLibraryParts({ report }: DerivedLibraryParts): void {
+  process.stdout.write(
+    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.notContributorAgreement} without a CA licence, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
   );
 }
 
@@ -599,8 +639,18 @@ async function bundleCommand(): Promise<void> {
   const buildKey = await bundleBuildKey(repoRoot);
   const fixturePalette = join(fixtureBundleRoot, "palette.json");
   const builds: ReadonlyArray<LodBuild> = [
-    ...BundleLod.options.map((lod) => ({ palette: palettePath, out: join(bundleRoot, lod), lod })),
-    { palette: fixturePalette, out: join(fixtureBundleRoot, FIXTURE_LOD), lod: FIXTURE_LOD },
+    ...BundleLod.options.map((lod) => ({
+      palette: palettePath,
+      out: join(bundleRoot, lod),
+      lod,
+      offersLibraryParts: lod === LIBRARY_PARTS_LOD,
+    })),
+    {
+      palette: fixturePalette,
+      out: join(fixtureBundleRoot, FIXTURE_LOD),
+      lod: FIXTURE_LOD,
+      offersLibraryParts: false,
+    },
   ];
   const outputs = builds.map((build) => build.out);
   if (await isBundleBuiltFrom(repoRoot, bundleRoot, outputs, buildKey)) {
@@ -639,7 +689,18 @@ async function bundleCommand(): Promise<void> {
     lockSha256: await fileSha256(lockPath),
   };
   const ldrawParts = crosswalkInputs.ldrawParts;
-  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories };
+  const libraryParts = deriveLibraryParts(
+    {
+      ldrawParts,
+      categories,
+      crosswalk,
+      inventoryColors: await readInventoryColorCounts(inventoryPartsPath(catalog, catalogRoot)),
+      ldrawColors: new Set(crosswalkInputs.ldrawColors.map((color) => color.code)),
+    },
+    catalogSources(catalog, LIBRARY_PART_SOURCES),
+  );
+  reportLibraryParts(libraryParts);
+  const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts };
   for (const build of builds) await compileLod(build, shared);
   await recordBundleBuild(bundleRoot, buildKey);
 }

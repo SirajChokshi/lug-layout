@@ -8,9 +8,14 @@ import {
   FarMeshGltfDocument,
   GltfDocument,
   LibraryBakePin,
+  LibraryConnectorsPin,
+  LibraryPartsFile,
   ModelFile,
   PartShape,
   PartTableFile,
+  RollingDiagnosticsFile,
+  rollingDiagnosticsFit,
+  type RollingDiagnosticsRef,
   SectionVocabularyFile,
   type SectionVocabularyRef,
 } from "@brr/schema/bundle";
@@ -24,14 +29,16 @@ import {
   sectionVocabularyIssues,
   sectionVocabularyValues,
 } from "./connector-license.ts";
+import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
 
 export const MANIFEST_FILE = "manifest.json";
 export const CROSSWALK_FILE = "crosswalk.json";
+export const LIBRARY_PARTS_FILE = "library-parts.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
+export const ROLLING_DIAGNOSTICS_FILE = "rolling-diagnostics.json";
 const LEAKED_PATHS_SHOWN = 3;
-export const CONTENT_HASH_HEX_DIGITS = 16;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
@@ -106,11 +113,11 @@ export function contentAddressedName(file: string, digest: string): string {
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
 }
 
-export async function attachLibraryBake(directory: string, pinPath: string): Promise<void> {
-  const pin = decodedOrThrow(
-    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
-    pinPath,
-  );
+async function attachCompilerPin(
+  directory: string,
+  field: "libraryBake" | "libraryConnectors",
+  index: { readonly file: string; readonly sha256: string },
+): Promise<void> {
   const manifestPath = join(directory, MANIFEST_FILE);
   const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
@@ -119,8 +126,24 @@ export async function attachLibraryBake(directory: string, pinPath: string): Pro
   if (!isRecord(compiler)) throw new Error(`${manifestPath} has no compiler section`);
   await writeFile(
     manifestPath,
-    `${JSON.stringify({ ...compiled, compiler: { ...compiler, libraryBake: pin.index } }, null, 2)}\n`,
+    `${JSON.stringify({ ...compiled, compiler: { ...compiler, [field]: index } }, null, 2)}\n`,
   );
+}
+
+export async function attachLibraryBake(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(LibraryBakePin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  await attachCompilerPin(directory, "libraryBake", pin.index);
+}
+
+export async function attachLibraryConnectors(directory: string, pinPath: string): Promise<void> {
+  const pin = decodedOrThrow(
+    decode(LibraryConnectorsPin, JSON.parse(await readFile(pinPath, "utf8"))),
+    pinPath,
+  );
+  await attachCompilerPin(directory, "libraryConnectors", pin.index);
 }
 
 export async function attachCrosswalk(directory: string, crosswalk: unknown): Promise<void> {
@@ -133,6 +156,17 @@ export async function attachCrosswalk(directory: string, crosswalk: unknown): Pr
   await writeFile(
     manifestPath,
     `${JSON.stringify({ ...compiled, crosswalk: { file: CROSSWALK_FILE } }, null, 2)}\n`,
+  );
+}
+
+export async function attachLibraryParts(directory: string, libraryParts: unknown): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
+  await writeFile(join(directory, LIBRARY_PARTS_FILE), JSON.stringify(libraryParts));
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, libraryParts: { file: LIBRARY_PARTS_FILE } }, null, 2)}\n`,
   );
 }
 
@@ -195,6 +229,43 @@ export async function attachSectionVocabulary(
   );
 }
 
+export async function attachRollingDiagnostics(directory: string): Promise<void> {
+  const manifestPath = join(directory, MANIFEST_FILE);
+  const compiled: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
+  if (!isRecord(compiled)) throw new Error(`${manifestPath} is not a compiled bundle`);
+  const rollingDiagnostics: RollingDiagnosticsRef = {
+    file: ROLLING_DIAGNOSTICS_FILE,
+    sha256: sha256(await readFile(join(directory, ROLLING_DIAGNOSTICS_FILE))),
+  };
+  await writeFile(
+    manifestPath,
+    `${JSON.stringify({ ...compiled, rollingDiagnostics }, null, 2)}\n`,
+  );
+}
+
+function rollingDiagnosticsIssues(
+  diagnostics: RollingDiagnosticsFile,
+  served: ReadonlyMap<string, v.InferOutput<typeof GltfDocument>>,
+): ReadonlyArray<string> {
+  const issues: string[] = [];
+  for (const [partId, document] of served) {
+    const bands = document.extras.rolling?.unread ?? [];
+    const rows = diagnostics.parts[partId];
+    if (rows === undefined) {
+      if (bands.length > 0)
+        issues.push(`${partId} serves ${bands.length} unread bands but has no rows`);
+    } else if (!rollingDiagnosticsFit(bands, rows)) {
+      issues.push(
+        `${partId}'s ${rows.length} rows don't match its ${bands.length} served unread bands index by index`,
+      );
+    }
+  }
+  for (const partId of Object.keys(diagnostics.parts)) {
+    if (!served.has(partId)) issues.push(`${partId} has rows but the bundle has no such part`);
+  }
+  return issues;
+}
+
 export async function publishBundle(
   directory: string,
   inputs: v.InferInput<typeof BundleIndex>["inputs"],
@@ -223,9 +294,36 @@ export async function publishBundle(
     await publish(file);
   };
   const { value: partTable } = await readJson(PartTableFile, manifest.partTable.file);
-  for (const { file } of [...manifest.studPrimitives, ...partTable.parts]) {
+  for (const { file } of manifest.studPrimitives) {
     decodeDeclared(GltfDocument, glbJson(await publish(file), file), file);
   }
+  const servedParts = new Map<string, v.InferOutput<typeof GltfDocument>>();
+  for (const { id, file } of partTable.parts) {
+    servedParts.set(id, decodeDeclared(GltfDocument, glbJson(await publish(file), file), file));
+  }
+  const diagnosticsRef = manifest.rollingDiagnostics;
+  if (diagnosticsRef === undefined) throw new Error(`${manifestPath} names no rolling diagnostics`);
+  const diagnosticsBytes = await readFile(join(directory, diagnosticsRef.file));
+  const diagnosticsIssues: string[] = [];
+  if (sha256(diagnosticsBytes) !== diagnosticsRef.sha256) {
+    diagnosticsIssues.push(
+      `its SHA-256 is ${sha256(diagnosticsBytes)}, but the manifest references ${diagnosticsRef.sha256}`,
+    );
+  }
+  diagnosticsIssues.push(
+    ...rollingDiagnosticsIssues(
+      decodeDeclared(
+        RollingDiagnosticsFile,
+        JSON.parse(diagnosticsBytes.toString("utf8")),
+        diagnosticsRef.file,
+      ),
+      servedParts,
+    ),
+  );
+  if (diagnosticsIssues.length > 0) {
+    throw new Error(`${diagnosticsRef.file}: ${diagnosticsIssues.join("; ")}`);
+  }
+  await publish(diagnosticsRef.file);
   for (const { file } of manifest.thumbnails) {
     const { width, height } = readPngHeader(await publish(file), file);
     if (width !== THUMBNAIL_PX || height !== THUMBNAIL_PX) {
@@ -266,6 +364,13 @@ export async function publishBundle(
     JSON.parse((await publish(manifest.crosswalk.file)).toString("utf8")),
     manifest.crosswalk.file,
   );
+  if (manifest.libraryParts !== undefined) {
+    decodeDeclared(
+      LibraryPartsFile,
+      JSON.parse((await publish(manifest.libraryParts.file)).toString("utf8")),
+      manifest.libraryParts.file,
+    );
+  }
   for (const { shape } of manifest.catalogParts) await publishJson(PartShape, shape.file);
   const packages: ReadonlyArray<readonly [ConnectorPackage, string]> = [
     ["connectors", manifest.connectors.file],

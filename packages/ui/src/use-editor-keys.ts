@@ -8,6 +8,7 @@ import {
   runPlayAction,
   type IEditor,
   type IEditorCamera,
+  type IHotbar,
   type ITrainPlay,
   type ShellCommandId,
 } from "@brr/client";
@@ -52,6 +53,7 @@ export function isTyping(target: EventTarget | null): boolean {
 
 export interface EditorKeyHandlers {
   readonly play: ITrainPlay;
+  readonly hotbar: IHotbar;
   readonly onShellCommand: (id: ShellCommandId) => void;
   readonly overlayOpen: boolean;
   readonly closeOverlay: () => void;
@@ -62,33 +64,34 @@ export function useEditorKeys(
   camera: IEditorCamera,
   handlers: EditorKeyHandlers,
 ): void {
-  const { play, onShellCommand, overlayOpen, closeOverlay } = handlers;
+  const { play, hotbar, onShellCommand, overlayOpen, closeOverlay } = handlers;
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.isComposing) return;
       if (controlTakesKey(event.target, event.key)) return;
-      const id = commandForKey(event, isTyping(event.target));
-      if (id === null) return;
-      if (event.repeat && commandSpec(id).repeats !== true) {
+      const match = commandForKey(event, isTyping(event.target));
+      if (match === null) return;
+      if (event.repeat && commandSpec(match.id).repeats !== true) {
         event.preventDefault();
         return;
       }
-      if (isShellCommand(id)) {
+      if (isShellCommand(match.id)) {
         event.preventDefault();
-        onShellCommand(id);
+        onShellCommand(match.id);
         return;
       }
       if (overlayOpen) {
         event.preventDefault();
-        if (id === "select-tool") closeOverlay();
+        if (match.id === "select-tool") closeOverlay();
         return;
       }
-      if (!commandEnabled(id, editor.snapshot(), play.snapshot())) return;
+      if (!commandEnabled(match.id, editor.snapshot(), play.snapshot())) return;
       event.preventDefault();
-      if (isPlayCommand(id)) runPlayAction(editor, play, id);
-      else runEditorAction(editor, camera, id, event.timeStamp);
+      if (match.id === "pick-slot") hotbar.pick(match.slot);
+      else if (isPlayCommand(match.id)) runPlayAction(editor, play, match.id);
+      else runEditorAction(editor, camera, match.id, event.timeStamp);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [editor, camera, play, onShellCommand, overlayOpen, closeOverlay]);
+  }, [editor, camera, play, hotbar, onShellCommand, overlayOpen, closeOverlay]);
 }

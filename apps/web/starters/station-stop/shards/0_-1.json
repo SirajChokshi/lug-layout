@@ -3,8 +3,7 @@
   "placements": [
     { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 0, "yPlates": 0, "z": -640 },
     { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 640, "yPlates": 0, "z": -640 },
-    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 1280, "yPlates": 0, "z": -640 },
-    { "color": 0, "ref": "omr:10205-1", "rot": 0, "x": 0, "yPlates": 0, "z": -420 }
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 1280, "yPlates": 0, "z": -640 }
   ],
   "schemaVersion": 1,
   "superChunk": [0, -1],

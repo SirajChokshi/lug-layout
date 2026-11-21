@@ -140,6 +140,28 @@ export interface TrackEndMarker {
 export const RAY_FLOATS = 6;
 export const CAMERA_FOV_DEGREES = 40;
 
+export interface GroundSettings {
+  readonly topYLdu: number;
+  readonly grid: boolean;
+}
+
+export type GuideKind = "ruler" | "axis" | "draft";
+
+export interface GuideSegment {
+  readonly kind: GuideKind;
+  readonly ax: number;
+  readonly ay: number;
+  readonly az: number;
+  readonly bx: number;
+  readonly by: number;
+  readonly bz: number;
+}
+
+export const PROJECTED_NDC_X = 0;
+export const PROJECTED_NDC_Y = 1;
+export const PROJECTED_IN_VIEW = 2;
+export const PROJECTION_FLOATS = 3;
+
 export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
@@ -174,9 +196,12 @@ export interface ISceneBackend {
   setSelectionBox(box: WorldBox | null): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;
+  setGround(ground: GroundSettings | null): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
+  setGuides(segments: ReadonlyArray<GuideSegment>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
   setVehiclePose(
     vehicle: number,

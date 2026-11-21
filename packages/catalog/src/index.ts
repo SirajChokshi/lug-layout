@@ -1,6 +1,8 @@
+export { AssetResponseError } from "./asset-response-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
+export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
 export {
   ConnectorRecords,
   partConnectors,
@@ -16,7 +18,7 @@ export {
   EMPTY_COLUMN,
   INHERIT_COLOR,
 } from "./part-bundle.ts";
-export { placeholderMesh, withPlaceholderMesh } from "./placeholder.ts";
+export { undrawnPart } from "./undrawn-part.ts";
 export type {
   BricklinkPartCandidates,
   CatalogColorIds,
@@ -55,5 +57,7 @@ export {
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
   CATALOG_API_BASE_URL,
+  LIBRARY_PART_CATALOG,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";

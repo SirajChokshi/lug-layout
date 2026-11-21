@@ -7,7 +7,9 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { expect, it } from "vitest";
+import { PlanDelta } from "@brr/domain";
 import { mainThreadModules } from "../client.module.ts";
+import { writeFullRebuild } from "./plan-producer.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
 
 class IssueBoxBackend implements ISceneBackend {
@@ -30,12 +32,15 @@ class IssueBoxBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.issueBoxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -81,18 +86,31 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
       },
     },
   );
+  const delta = new PlanDelta();
+  writeFullRebuild(
+    delta,
+    [
+      {
+        id: 1,
+        handle: { chunkKey: 5, slot: 2, x: 0, z: 0 },
+        placeable: { id: "ldraw:3811", label: "3811" },
+        box: unreadable,
+      },
+    ],
+    null,
+  );
+  plans.apply(delta);
   const placement = {
     key: { chunkKey: 5, slot: 2 },
     ref: "ldraw:3811",
-    label: "3811",
+    label: "3811 at 0, 0",
     box: unreadable,
   };
-  plans.setPlacements([placement]);
 
-  const snapshot = plans.snapshot();
-  expect(snapshot.placements).toEqual([placement]);
-  expect(snapshot.checks[0]?.tables.map((t) => t.studs.studsWide)).toEqual([300]);
-  expect(snapshot.checks[0]?.issues.map((i) => [i.rule, i.message])).toEqual([
+  const dump = plans.materialize();
+  expect(dump.placements).toEqual([placement]);
+  expect(plans.regionView(planId).tables.map((t) => t.studs.studsWide)).toEqual([300]);
+  expect(dump.checks[0]?.issues.map((i) => [i.rule, i.message])).toEqual([
     ["unchecked", 'Plan "Room" could not be checked: Error: box is gone'],
   ]);
   expect(backend.issueBoxes).toEqual([]);

@@ -103,10 +103,13 @@ class HeadlessBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   aim(x: number, z: number): void {
     this.aimX = x;
     this.aimZ = z;

@@ -28,7 +28,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
-import type { IEditedWorld, IWorldSession, WorldContents } from "./world-session.ts";
+import type {
+  IEditedWorld,
+  IWorldSession,
+  StoredContents,
+  WorldContents,
+} from "./world-session.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const BASEPLATE_LDU = 640;
@@ -52,10 +57,13 @@ class StubSceneBackend implements ISceneBackend {
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -92,19 +100,19 @@ class BaseplateWorld implements IEditedWorld {
   }
 
   contents(): WorldContents {
-    return { world: this.world, refs: [BASEPLATE], track: [] };
+    return { world: this.world, refs: [BASEPLATE], track: [], consists: [] };
   }
 
   placedCredits(): ReadonlyArray<ModelCredit> {
     return [];
   }
 
-  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue> {
+  validate({ shards }: StoredContents): ReadonlyArray<Issue> {
     const handles = addShards(new World(), shards, baseplateTarget);
     return handles.ok ? [] : handles.issues;
   }
 
-  async load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>> {
+  async load({ shards }: StoredContents): Promise<ReadonlyArray<Issue>> {
     const world = new World();
     const handles = addShards(world, shards, baseplateTarget);
     if (!handles.ok) return handles.issues;

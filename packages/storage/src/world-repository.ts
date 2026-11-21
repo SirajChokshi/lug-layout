@@ -25,7 +25,8 @@ import {
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { deleteDatabase, openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
-import { INDEXED_DB } from "./tokens.ts";
+import type { PersistentStorage } from "./persistent-storage.ts";
+import { INDEXED_DB, PERSISTENT_STORAGE } from "./tokens.ts";
 import { readZip, writeStoredZip } from "./zip.ts";
 
 export const WORLD_INDEX_DATABASE = "brr-worlds";
@@ -115,9 +116,24 @@ function indexEntries(values: ReadonlyArray<unknown>): WorldIndexEntry[] {
   });
 }
 
+function changesContent(change: WorldChange): boolean {
+  return change.put.length > 0 || change.drop.length > 0;
+}
+
 @injectable()
 export class IndexedDbWorldRepository implements IWorldRepository {
-  constructor(@inject(INDEXED_DB) private readonly factory: IDBFactory) {}
+  private persistenceRequested = false;
+
+  constructor(
+    @inject(INDEXED_DB) private readonly factory: IDBFactory,
+    @inject(PERSISTENT_STORAGE) private readonly storage: PersistentStorage | null,
+  ) {}
+
+  private requestPersistenceOnce(): void {
+    if (this.persistenceRequested || this.storage === null) return;
+    this.persistenceRequested = true;
+    this.storage.persist().catch(() => false);
+  }
 
   private openIndex(): Promise<IDBDatabase> {
     return openDatabase(this.factory, WORLD_INDEX_DATABASE, [
@@ -175,10 +191,16 @@ export class IndexedDbWorldRepository implements IWorldRepository {
   }
 
   create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
-    return this.save(crypto.randomUUID(), { header, put: shards, drop: [] });
+    return this.write(crypto.randomUUID(), { header, put: shards, drop: [] });
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
+    const summary = await this.write(id, change);
+    if (changesContent(change)) this.requestPersistenceOnce();
+    return summary;
+  }
+
+  private async write(id: string, change: WorldChange): Promise<WorldIndexEntry> {
     decodedOrThrow(decode(WorldHeader, change.header, "world header"), NOT_SAVED);
     for (const shard of change.put) {
       decodedOrThrow(
@@ -311,7 +333,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     return this.readFiles(files, readWorldFiles);
   }
 
-  private async readFiles<T extends { readonly shards: ReadonlyArray<WorldShardV1> }>(
+  private async readFiles<T extends Omit<WorldFiles, "imports">>(
     files: ReadonlyMap<string, Uint8Array>,
     readTexts: (texts: ReadonlyMap<string, string>) => Decoded<T>,
   ): Promise<Decoded<T & { readonly imports: ReadonlyArray<ImportedFile> }>> {
@@ -339,7 +361,10 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     }
     const archive = readTexts(texts);
     if (!archive.ok) return { ok: false, issues: [...issues, ...archive.issues] };
-    const referenced = referencedImports(archive.value.shards);
+    const referenced = referencedImports(
+      archive.value.shards,
+      archive.value.manifest.consists ?? [],
+    );
     const carried = new Set(imports.map((file) => file.sha256));
     for (const sha256 of referenced) {
       if (!carried.has(sha256)) {

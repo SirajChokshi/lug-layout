@@ -1,38 +1,82 @@
 import {
+  STUD_LDU,
   commandActive,
   commandEnabled,
   type EditorActionId,
   type EditorSnapshot,
   type IEditor,
+  type IPanelLayout,
   type LatencySample,
   type MeshCounts,
   type MeshProgress,
   type PlaySnapshot,
   type RoadIssueView,
   type ShellCommandId,
+  type RollingDiagnosticsPanel,
+  type UndrawnPart,
 } from "@brr/client";
 import { shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
 import { useState, type FormEvent } from "react";
+import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const DEGREES_PER_QUARTER_TURN = 90;
 
+function connectorGapsText(snapshot: EditorSnapshot): string {
+  if (snapshot.mode !== "place") return "–";
+  const gaps = snapshot.connectorGaps;
+  if (gaps.length === 0) return "every part has one";
+  return `${gaps.length} parts have none: ${gaps.map((gap) => `${gap.partId} (${gap.reason})`).join("; ")}`;
+}
+
 function countText(count: number, label: string): string {
   return count > 0 ? `, ${integer.format(count)} ${label}` : "";
 }
 
-function meshCountsText(counts: MeshCounts, meshes: string, standIn: string): string {
-  const note = counts.loaded < counts.wanted ? ` (${standIn} stand in)` : "";
+function meshCountsText(counts: MeshCounts, meshes: string, unloaded: string): string {
+  const note = counts.loaded < counts.wanted ? ` (${unloaded})` : "";
   return `${integer.format(counts.loaded)} of ${integer.format(counts.wanted)} ${meshes}loaded${countText(counts.failed, "failed")}${countText(counts.absent, "absent")}${note}`;
 }
 
 function partMeshesText(meshes: MeshProgress): string {
   return [
-    meshCountsText(meshes.detailedPartMeshes, "detailed-level meshes ", "placeholders"),
-    meshCountsText(meshes.farPartMeshes, "far-level meshes ", "detailed-level meshes"),
+    meshCountsText(
+      meshes.detailedPartMeshes,
+      "detailed-level meshes ",
+      "parts without one aren't drawn",
+    ),
+    meshCountsText(
+      meshes.farPartMeshes,
+      "far-level meshes ",
+      "detailed-level meshes are drawn instead",
+    ),
   ].join(", ");
+}
+
+function undrawnReasonText(reason: UndrawnPart["reason"]): string {
+  switch (reason) {
+    case "absent":
+      return "the bundle has no mesh for it";
+    case "failed":
+      return "its mesh failed to load";
+    default: {
+      const unhandled: never = reason;
+      throw new Error(`unhandled undrawn reason ${String(unhandled)}`);
+    }
+  }
+}
+
+function undrawnPartsText(parts: ReadonlyArray<UndrawnPart>): string {
+  if (parts.length === 0) return "none";
+  return parts
+    .map(({ part, reason }) => `${part.replace(/^[a-z]+:/u, "")} (${undrawnReasonText(reason)})`)
+    .join(", ");
+}
+
+function undrawnGlance(count: number): string {
+  return `${integer.format(count)} ${count === 1 ? "part" : "parts"} not drawn`;
 }
 
 function ldu(value: number): string {
@@ -63,12 +107,12 @@ function issueText(issue: RoadIssueView): string {
   return `${issue.item.replace(/^[a-z]+:/u, "")} ${issue.side} edge at ${axis} = ${issue.line}, ${along} ${issue.from}…${issue.to}, top ${issue.topLdu} LDU`;
 }
 
-export function RoadJoins({ editor, snapshot }: PanelProps) {
+function RoadJoins({ editor, snapshot }: PanelProps) {
   const { roads } = snapshot;
   return (
-    <details className="road-joins" aria-label="Road joins">
+    <details className="stats-section road-joins" aria-label="Road joins">
       <summary>
-        <h2>Road joins</h2>
+        <h3>Road joins</h3>
         <span className="road-joins-summary">
           {roads.joinedCells} joined · {roads.openCells} open · {roads.mismatchedCells} mismatched
         </span>
@@ -181,6 +225,20 @@ export function PlacementToolbar({
       </button>
       <button
         type="button"
+        data-action="measure"
+        aria-pressed={commandActive("measure", snapshot)}
+        disabled={!commandEnabled("measure", snapshot, play)}
+        onClick={(event) => onEditorAction("measure", event.timeStamp)}
+      >
+        Measure ({shortcutText("measure")})
+      </button>
+      {snapshot.rulers > 0 && (
+        <button type="button" data-action="clear-rulers" onClick={() => editor.clearRulers()}>
+          Clear {snapshot.rulers} {snapshot.rulers === 1 ? "ruler" : "rulers"}
+        </button>
+      )}
+      <button
+        type="button"
         disabled={!commandEnabled("rotate", snapshot, play)}
         title={`Shift-click or ${shortcutText("rotate-back")} turns the other way`}
         onClick={(event) => editor.rotate(event.timeStamp, event.shiftKey ? -1 : 1)}
@@ -200,7 +258,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
-        Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
+        Undo{history.undoLabel === null ? "" : ` ${history.undoLabel}`} ({shortcutText("undo")})
       </button>
       <button
         type="button"
@@ -208,7 +266,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
-        Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
+        Redo{history.redoLabel === null ? "" : ` ${history.redoLabel}`} ({shortcutText("redo")})
       </button>
       <button
         type="button"
@@ -262,15 +320,108 @@ function GoTo({ editor }: { readonly editor: IEditor }) {
   );
 }
 
-export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
+type RollingDiagnosticsState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "loaded"; readonly panel: RollingDiagnosticsPanel | null }
+  | { readonly kind: "failed"; readonly message: string };
+
+function RollingDiagnostics({ editor, item }: { readonly editor: IEditor; readonly item: string }) {
+  const [state, setState] = useState<RollingDiagnosticsState>({ kind: "idle" });
+  const load = (): void => {
+    setState({ kind: "loading" });
+    editor.rollingDiagnostics(item).then(
+      (panel) => setState({ kind: "loaded", panel }),
+      (error: unknown) =>
+        setState({
+          kind: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        }),
+    );
+  };
+  switch (state.kind) {
+    case "idle":
+      return (
+        <button type="button" className="rolling-diagnostics-load" onClick={load}>
+          Show unread rolling bands
+        </button>
+      );
+    case "loading":
+      return <p>Loading unread rolling bands…</p>;
+    case "failed":
+      return <p role="alert">Unread rolling bands failed to load: {state.message}</p>;
+    case "loaded": {
+      const parts = state.panel?.parts ?? [];
+      if (parts.length === 0) return <p>No part of this model serves unread rolling bands.</p>;
+      return (
+        <div className="rolling-diagnostics" aria-label="Unread rolling bands">
+          {parts.map((part) => (
+            <div key={part.partId} className="rolling-diagnostics-part">
+              <p>{part.message}</p>
+              {part.rows.length > 0 && (
+                <ol>
+                  {part.rows.map((row, index) => (
+                    <li key={index} title={row.exact}>
+                      <strong>{row.reason}</strong>: {row.identified}
+                      <br />
+                      raw {row.raw}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+          ))}
+        </div>
+      );
+    }
+    default: {
+      const unhandled: never = state;
+      throw new Error(`unhandled rolling diagnostics state ${JSON.stringify(unhandled)}`);
+    }
+  }
+}
+
+export function Inspector({
+  editor,
+  snapshot,
+}: {
+  readonly editor: IEditor;
+  readonly snapshot: EditorSnapshot;
+}) {
   const { selection } = snapshot;
   if (!selection) return null;
+  if (selection.kind === "train") {
+    return (
+      <section className="inspector" aria-label="Inspector">
+        <h2>Inspector</h2>
+        <dl>
+          <div>
+            <dt>Train</dt>
+            <dd>{itemLabel(snapshot, selection.item)}</dd>
+          </div>
+          <div>
+            <dt>Stands</dt>
+            <dd>on the rails</dd>
+          </div>
+          <div>
+            <dt>Vehicles</dt>
+            <dd>{selection.vehicles}</dd>
+          </div>
+          <div>
+            <dt>Length (studs)</dt>
+            <dd>{Math.round(selection.lengthLdu / STUD_LDU)}</dd>
+          </div>
+        </dl>
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      </section>
+    );
+  }
   return (
     <section className="inspector" aria-label="Inspector">
       <h2>Inspector</h2>
       <dl>
         <div>
-          <dt>Model</dt>
+          <dt>{selection.kind === "track" ? "Track piece" : "Model"}</dt>
           <dd>{itemLabel(snapshot, selection.item)}</dd>
         </div>
         <div>
@@ -283,10 +434,12 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           <dt>Height (plates)</dt>
           <dd>{selection.yPlates}</dd>
         </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
+        {selection.kind === "model" && (
+          <div>
+            <dt>Rotation</dt>
+            <dd>{degrees(selection.rot)}</dd>
+          </div>
+        )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>
@@ -301,6 +454,9 @@ export function Inspector({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           </dd>
         </div>
       </dl>
+      {selection.kind === "model" && (
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      )}
     </section>
   );
 }
@@ -337,27 +493,12 @@ function rebuildText(sample: LatencySample | null): string {
   return `${sample.rebuiltChunks} chunks, ${integer.format(sample.rebuiltInstances)} parts, ${integer.format(sample.rebuiltStuds)} studs`;
 }
 
-const STATS_OPEN_KEY = "brr.stats-open";
-
-function statsOpenAtStart(): boolean {
-  if (isCompactLayout()) return false;
-  try {
-    return window.localStorage.getItem(STATS_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function rememberStatsOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(STATS_OPEN_KEY, String(open));
-  } catch {
-    return;
-  }
-}
-
-export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
-  const [open, setOpen] = useState(statsOpenAtStart);
+export function EditorHud({
+  editor,
+  snapshot,
+  panels,
+}: PanelProps & { readonly panels: IPanelLayout }) {
+  const [open, setOpen] = useState(() => !isCompactLayout() && panels.snapshot().stats);
   const { backend, stats } = snapshot;
   const glance = [
     ...(stats ? [`${stats.fps.toFixed(0)} fps`] : []),
@@ -387,6 +528,7 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
         ? "select"
         : `${snapshot.mode} ${itemLabel(snapshot, snapshot.activeItem)}`,
     ],
+    ["Connector records", connectorGapsText(snapshot)],
     ["Ghost rotation", degrees(snapshot.ghostRot)],
     ["Road-edge snap", snapText(snapshot)],
     [
@@ -409,9 +551,10 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
       `${integer.format(snapshot.history.undoDepth)}, ${integer.format(snapshot.history.redoDepth)}`,
     ],
     ["Part meshes", partMeshesText(snapshot.meshes)],
+    ["Parts not drawn", undrawnPartsText(snapshot.meshes.undrawnParts)],
     [
       "Far model meshes",
-      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes"),
+      meshCountsText(snapshot.meshes.farModelMeshes, "", "far-level part meshes are drawn instead"),
     ],
     ["Last edit latency", latencyText(snapshot.lastLatency, snapshot)],
     ["Rebuilt for it", rebuildText(snapshot.lastLatency)],
@@ -455,16 +598,21 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
   }
   return (
     <details
-      className="hud editor-hud"
+      className="editor-hud"
       open={open || snapshot.error !== null}
       onToggle={(event) => {
         setOpen(event.currentTarget.open);
-        rememberStatsOpen(event.currentTarget.open);
+        panels.setOpen("stats", event.currentTarget.open);
       }}
     >
-      <summary title={open ? "Fold the stats away" : "Show the editor's stats"}>
-        <h1>Brick Railroad</h1>
+      <summary title={open ? "Fold the stats away" : "Show the editor's stats and readouts"}>
+        <h2>Stats</h2>
         <span className="hud-glance">{glance}</span>
+        {snapshot.meshes.undrawnParts.length > 0 && (
+          <span className="hud-glance hud-glance-warning">
+            {undrawnGlance(snapshot.meshes.undrawnParts.length)}
+          </span>
+        )}
       </summary>
       {snapshot.status === "loading" && <p>Loading the bundle and the 10 sets…</p>}
       {snapshot.error !== null && <p className="error">{snapshot.error}</p>}
@@ -476,6 +624,8 @@ export function EditorHud({ snapshot }: { readonly snapshot: EditorSnapshot }) {
           </div>
         ))}
       </dl>
+      <TrackPanel snapshot={snapshot} />
+      <RoadJoins editor={editor} snapshot={snapshot} />
     </details>
   );
 }

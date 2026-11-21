@@ -1,9 +1,10 @@
-import type {
-  EditorSnapshot,
-  TrackDragView,
-  TrackGapView,
-  TrackPieceView,
-  TrackView,
+import {
+  trackBlockText,
+  type EditorSnapshot,
+  type TrackDragView,
+  type TrackGapView,
+  type TrackPieceView,
+  type TrackView,
 } from "@brr/client";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -37,12 +38,15 @@ function closureText(drag: TrackDragView): string {
     case "impossible":
       return "no exact join exists with any run of 9V straights and R40 curves: release lays nothing";
     case "blocked":
-      return "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
+      return drag.blocked
+        ? `every exact join found would ${trackBlockText(drag.blocked)}: release lays nothing`
+        : "every exact join found would cross placed track, a plate, a model or itself: release lays nothing";
     case "limit":
       return "the search hit its time limit before finding an exact join: release lays nothing";
     case "pending":
       return "a model under this join is still checking its studs: release lays nothing yet";
     case null:
+      if (drag.blocked) return `stops short: the next piece would ${trackBlockText(drag.blocked)}`;
       return drag.pieces === 0
         ? "drag away from the start"
         : `ends ${drag.missStuds.toFixed(1)} studs from the cursor`;
@@ -92,11 +96,15 @@ function commitText(track: TrackView): string {
     case "joined":
       return "laid and joined exactly";
     case "laid":
-      return "laid with an open end";
+      return track.lastBlock
+        ? `laid, stopped short: the next piece would ${trackBlockText(track.lastBlock)}`
+        : "laid with an open end";
     case "refused-impossible":
       return "refused: no exact join exists";
     case "refused-blocked":
-      return "refused: every exact join would cross track, a plate, a model or itself";
+      return track.lastBlock
+        ? `refused: every exact join would ${trackBlockText(track.lastBlock)}`
+        : "refused: every exact join would cross track, a plate, a model or itself";
     case "refused-limit":
       return "refused: search hit its time limit";
     case "refused-pending":
@@ -146,7 +154,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
   }
   return (
     <section
-      className="inspector track-panel"
+      className="stats-section track-panel"
       aria-label="Track"
       data-track-pieces={track.pieces}
       data-model-pieces={track.modelPieces}
@@ -163,14 +171,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
       data-snapped={track.held?.snapped ? "1" : ""}
       data-held-misses={track.held?.misses ?? 0}
     >
-      <h2>Track</h2>
-      {snapshot.mode === "track" && !track.held && (
-        <p className="toolbar-hint">
-          Drag from an open end (or from empty ground) to lay track. Release over another open end
-          to join it exactly. Amber arrows mark open ends; red arrows mark two ends that nearly meet
-          but don't join.
-        </p>
-      )}
+      <h3>Track</h3>
       <dl>
         {rows.map(([label, value]) => (
           <div key={label}>
