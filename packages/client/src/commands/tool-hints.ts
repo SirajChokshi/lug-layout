@@ -9,6 +9,16 @@ import type {
   TrackView,
 } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
+import {
+  lineText,
+  placementFeedback,
+  queuedText,
+  showsLate,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementTone,
+} from "../edit/placement-feedback.ts";
+import { effectivePlacementMode, otherPlacementMode } from "../edit/placement-mode.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
 import type {
   JoinWithheld,
@@ -25,14 +35,32 @@ export type ToolTone = "idle" | "select" | "place" | "erase" | "track" | "play" 
 
 export type ToolHint =
   | { readonly kind: "key"; readonly command: CommandId; readonly text: string }
-  | { readonly kind: "gesture"; readonly gesture: string; readonly text: string };
+  | { readonly kind: "gesture"; readonly gesture: string; readonly text: string }
+  | { readonly kind: "hold-alt"; readonly text: string; readonly held: boolean };
 
-export interface ToolHintView {
+export interface ToolSpeech {
+  readonly verdict: string | null;
+  readonly turn: string | null;
+}
+
+interface PlaceSpeechView {
+  readonly busy: boolean;
+  readonly waiting: string | null;
+  readonly speech: ToolSpeech | null;
+}
+
+interface HintBody {
   readonly tone: ToolTone;
   readonly title: string;
   readonly detail: string | null;
   readonly hints: ReadonlyArray<ToolHint>;
 }
+
+export interface ToolHintView extends HintBody, PlaceSpeechView {}
+
+type HintView = HintBody & Partial<PlaceSpeechView>;
+
+const UNSPOKEN: PlaceSpeechView = { busy: false, waiting: null, speech: null };
 
 const DEGREES_PER_QUARTER_TURN = 90;
 
@@ -43,6 +71,12 @@ function key(command: CommandId, text: string): ToolHint {
 function gesture(name: string, text: string): ToolHint {
   return { kind: "gesture", gesture: name, text };
 }
+
+function holdAlt(text: string, held: boolean): ToolHint {
+  return { kind: "hold-alt", text, held };
+}
+
+const MODE_NAMES = { assist: "Magnetic", precise: "Precise" } as const;
 
 function itemName(snapshot: EditorSnapshot, id: string | null): string {
   const label = snapshot.catalog.find((item) => item.id === id)?.label ?? id ?? "";
@@ -62,7 +96,7 @@ export function tallyText(tally: SelectionTally): string {
   return parts.length === 0 ? counted(0, "model", "models") : parts.join(" and ");
 }
 
-function gestureView(drag: GestureView): ToolHintView {
+function gestureView(drag: GestureView): HintView {
   switch (drag.kind) {
     case "box":
       return {
@@ -125,7 +159,7 @@ function unsupportedText({ pieces: count, block }: TrackUnsupportedView): string
   return `${pieces(count)} ${rest}${where} where it has no studs, so ${count === 1 ? "it isn't" : "they aren't"} supported`;
 }
 
-function dragView(drag: TrackDragView): Omit<ToolHintView, "hints"> {
+function dragView(drag: TrackDragView): Omit<HintView, "hints"> {
   const title = `Laying ${pieces(drag.pieces)}`;
   const refused = "Nothing to lay";
   switch (drag.closure) {
@@ -173,7 +207,7 @@ function withheldDragView(
   withheld: JoinWithheld,
   title: string,
   refused: string,
-): Omit<ToolHintView, "hints"> {
+): Omit<HintView, "hints"> {
   const reason = withheldJoinText(withheld, drag.blocked);
   return drag.pieces === 0
     ? { tone: "warn", title: refused, detail: `${reason}, so release lays nothing` }
@@ -184,7 +218,7 @@ function withheldDragView(
       };
 }
 
-function releaseView(track: TrackView): Omit<ToolHintView, "hints"> | null {
+function releaseView(track: TrackView): Omit<HintView, "hints"> | null {
   const block = track.lastBlock;
   switch (track.lastCommit) {
     case "refused-impossible":
@@ -252,13 +286,10 @@ function extendDetail(choice: TrackChoiceView, extend: TrackExtendView): string 
   return choice.joinsEnd ? "joins the open end exactly" : null;
 }
 
-function extendView(
-  extend: TrackExtendView,
-  released: Omit<ToolHintView, "hints"> | null,
-): ToolHintView {
+function extendView(extend: TrackExtendView, released: Omit<HintView, "hints"> | null): HintView {
   const choice = extend.choices[extend.index];
   const blocked = choice?.blocked ?? null;
-  const shown: Omit<ToolHintView, "hints"> = choice
+  const shown: Omit<HintView, "hints"> = choice
     ? {
         tone: blocked ? "warn" : "track",
         title: `${extendTitle(choice)}${blocked ? " (blocked)" : ""}`,
@@ -280,7 +311,7 @@ function extendView(
   };
 }
 
-function heldPieceView(track: TrackView): ToolHintView | null {
+function heldPieceView(track: TrackView): HintView | null {
   const held = track.held;
   if (!held) return null;
   return {
@@ -297,7 +328,7 @@ function heldPieceView(track: TrackView): ToolHintView | null {
   };
 }
 
-function fillingView(fill: FillView, name: string): Omit<ToolHintView, "hints"> {
+function fillingView(fill: FillView, name: string): Omit<HintView, "hints"> {
   if (fill.overLimit) {
     return {
       tone: "warn",
@@ -316,7 +347,7 @@ function fillingView(fill: FillView, name: string): Omit<ToolHintView, "hints"> 
   };
 }
 
-function filledView(fill: FillResult, name: string): Omit<ToolHintView, "hints"> {
+function filledView(fill: FillResult, name: string): Omit<HintView, "hints"> {
   const why = fill.reason === null ? "" : `: ${fill.reason}`;
   const skipped = fill.refused > 0 ? `skipped ${fill.refused} refused${why}` : null;
   if (fill.placed === 0) {
@@ -329,10 +360,7 @@ function filledView(fill: FillResult, name: string): Omit<ToolHintView, "hints">
   };
 }
 
-function laidView(
-  track: TrackView,
-  block: TrackBlockView | null,
-): Omit<ToolHintView, "hints"> | null {
+function laidView(track: TrackView, block: TrackBlockView | null): Omit<HintView, "hints"> | null {
   const unsupported = track.lastUnsupported ? unsupportedText(track.lastUnsupported) : null;
   if (track.lastWithheld) {
     const withheld = withheldJoinText(track.lastWithheld, block);
@@ -351,7 +379,7 @@ function laidView(
   };
 }
 
-function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView {
+function loadingView(snapshot: EditorSnapshot, held: HeldItemView): HintView {
   const { queued } = held;
   return {
     tone: "place",
@@ -359,7 +387,7 @@ function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView
     detail:
       queued === null
         ? "loading connectors… a click places it once they load"
-        : `loading connectors… then it goes down at ${queued.x}, ${queued.z} if the pointer stays there`,
+        : `loading connectors… · ${queuedText(queued)}`,
     hints: [
       gesture("Click", "place once loaded"),
       key("open-palette", "another part"),
@@ -377,7 +405,84 @@ function measureDetail(snapshot: EditorSnapshot): string {
   return `${snapshot.rulers} ${snapshot.rulers === 1 ? "ruler" : "rulers"}, ${cursor}`;
 }
 
-function view(snapshot: EditorSnapshot): ToolHintView {
+function verdictSpeech(feedback: PlacementFeedback, heading: string): string | null {
+  if (feedback.tone === "pending") return null;
+  const said = feedback.lines.filter(unturned).map(lineText).join(" · ");
+  if (feedback.tone === "waiting") return said || null;
+  if (feedback.tone === "refused") return `${heading}. Refused: ${said}`;
+  return `${heading}. ${said || "Fits here"}`;
+}
+
+function unhoveredSpeech(snapshot: EditorSnapshot, title: string, heading: string): string {
+  if (snapshot.ghostSettled) return `Placed ${itemName(snapshot, snapshot.activeItem)}`;
+  return `${title}. ${heading}`;
+}
+
+function unturned(placementLine: PlacementLine): boolean {
+  return placementLine.kind !== "turn";
+}
+
+function clickText(tone: PlacementTone | undefined): string {
+  if (tone === "refused") return "refused here";
+  return tone === "waiting" ? "place when ready" : "place";
+}
+
+function placeHints(snapshot: EditorSnapshot, feedback: PlacementFeedback | null): ToolHint[] {
+  const click = gesture("Click", clickText(feedback?.tone));
+  const kept = MODE_NAMES[snapshot.placementMode].toLowerCase();
+  if (snapshot.placementModeOverride) return [click, holdAlt(`${kept} again`, true)];
+  const turning = feedback?.lines.some((placementLine) => !unturned(placementLine)) ?? false;
+  const other = MODE_NAMES[otherPlacementMode(snapshot.placementMode)].toLowerCase();
+  return [
+    click,
+    gesture("Drag", "fill an area"),
+    key("cycle-fill-grid", `${snapshot.fillGridStuds}-stud grid`),
+    key("rotate", turning ? "turn to snap" : "rotate"),
+    key("toggle-placement-mode", other),
+    holdAlt(`${other} while held`, false),
+    key("open-palette", "another part"),
+    key("select-tool", "done"),
+  ];
+}
+
+function filledSpeech(filled: Omit<HintView, "hints">): ToolSpeech {
+  return { verdict: [filled.title, filled.detail].filter(Boolean).join(". "), turn: null };
+}
+
+function placeView(snapshot: EditorSnapshot, name: string): HintView {
+  const feedback = placementFeedback(snapshot);
+  const hints = placeHints(snapshot, feedback);
+  const { lastFill } = snapshot;
+  if (feedback === null && lastFill?.item === snapshot.activeItem) {
+    const filled = filledView(lastFill, name);
+    return { ...filled, hints, speech: filledSpeech(filled) };
+  }
+  const pending = feedback?.tone === "pending";
+  const mode =
+    feedback?.mode ??
+    effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
+  const degrees = `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`;
+  const title = `Placing ${name}`;
+  const lines = feedback?.lines ?? [];
+  const said = lines.filter((placementLine) => !showsLate(placementLine)).map(lineText);
+  const turn = lines.find((placementLine) => !unturned(placementLine));
+  return {
+    tone: feedback?.tone === "refused" ? "warn" : "place",
+    title,
+    detail: [MODE_NAMES[mode], degrees, ...said].join(" · "),
+    hints,
+    busy: pending,
+    waiting: lines.find(showsLate)?.text ?? null,
+    speech: {
+      verdict: feedback
+        ? verdictSpeech(feedback, `${MODE_NAMES[mode]}, ${degrees}`)
+        : unhoveredSpeech(snapshot, title, `${MODE_NAMES[mode]}, ${degrees}`),
+      turn: turn ? lineText(turn) : null,
+    },
+  };
+}
+
+function view(snapshot: EditorSnapshot): HintView {
   if (snapshot.status === "loading") {
     return { tone: "idle", title: "Loading parts and sets…", detail: null, hints: [] };
   }
@@ -413,22 +518,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           ],
         };
       }
-      const hints = [
-        gesture("Click", "place"),
-        gesture("Drag", "fill an area"),
-        key("cycle-fill-grid", `${snapshot.fillGridStuds}-stud grid`),
-        key("rotate", "rotate"),
-        key("open-palette", "another part"),
-        key("select-tool", "done"),
-      ];
-      const { lastFill } = snapshot;
-      if (lastFill?.item === snapshot.activeItem) return { ...filledView(lastFill, name), hints };
-      return {
-        tone: "place",
-        title: `Placing ${name}`,
-        detail: `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
-        hints,
-      };
+      return placeView(snapshot, name);
     }
     case "track": {
       const track = snapshot.track;
@@ -576,7 +666,7 @@ function view(snapshot: EditorSnapshot): ToolHintView {
   }
 }
 
-function playView(play: PlaySnapshot): ToolHintView {
+function playView(play: PlaySnapshot): HintView {
   const derailed = play.derailSpeedLduPerS > 0;
   return {
     tone: derailed ? "warn" : "play",
@@ -597,9 +687,10 @@ export function toolHints(snapshot: EditorSnapshot, play?: PlaySnapshot): ToolHi
   const hinted =
     play?.status === "running" && snapshot.status === "ready" ? playView(play) : view(snapshot);
   return {
+    ...UNSPOKEN,
     ...hinted,
     hints: hinted.hints.filter(
-      (hint) => hint.kind === "gesture" || commandEnabled(hint.command, snapshot, play),
+      (hint) => hint.kind !== "key" || commandEnabled(hint.command, snapshot, play),
     ),
   };
 }

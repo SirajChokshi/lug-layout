@@ -442,7 +442,7 @@ describe("modelTrackEnds", () => {
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);
   });
 
-  it("joins a model's track to another model's exactly where the laid run continues", () => {
+  it("joins a model's track to another model's exactly where the laid run continues, and not a plate above it", () => {
     const mating = container.get(SNAP_MATING);
     const solver = container.get(CONNECTION_SOLVER);
     const twoStraights = [STRAIGHT_PART, STRAIGHT_PART];
@@ -474,6 +474,8 @@ describe("modelTrackEnds", () => {
       partnerEndNamesItsPiece: true,
     });
     solver.evaluate(held, { x: STUD_LDU, z: 0, yPlates: 0, rot: 0 }, report);
+    expect(report.count).toBe(0);
+    solver.evaluate(held, { x: 0, z: 0, yPlates: 1, rot: 0 }, report);
     expect(report.count).toBe(0);
   });
 });

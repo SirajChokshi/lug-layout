@@ -24,6 +24,7 @@ import type {
   BundleLod,
   BundleManifest,
   CatalogPart,
+  LibraryPartsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -136,6 +137,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.loadRollingDiagnostics(lod);
   }
 
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.loader.loadLibraryParts(lod);
+  }
+
   importContext(lod: BundleLod): Promise<ImportContext> {
     return this.loader.importContext(lod);
   }
@@ -186,6 +191,7 @@ class TopDownBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
+  setGhostVerdict(): void {}
   setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}

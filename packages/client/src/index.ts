@@ -214,6 +214,40 @@ export type {
   RollingDiagnosticsPartView,
   RollingDiagnosticsRowView,
 } from "./inspect/rolling-diagnostics.ts";
+export type {
+  AssistNeighbourhood,
+  ConnectorGender,
+  ConnectorKindView,
+  ConnectorSectionView,
+  HoverMateCount,
+  HoverRefusalHit,
+  HoverWait,
+  MagnetOffset,
+  PlacedModelView,
+  PlacementHover,
+  PlacementMode,
+  SectionProfile,
+} from "./edit/placement-hover.ts";
+export { distinctJoints } from "./edit/placement-hover.ts";
+export {
+  effectivePlacementMode,
+  holdPlacementModeOverride,
+  otherPlacementMode,
+  placementModeSwitchEnabled,
+  togglePlacementMode,
+  type PlacementModeView,
+} from "./edit/placement-mode.ts";
+export {
+  badgeText,
+  placementFeedback,
+  showsLate,
+  type BadgeCount,
+  type ConnectorBadge,
+  type PlacementFeedback,
+  type PlacementLine,
+  type PlacementLineKind,
+  type PlacementTone,
+} from "./edit/placement-feedback.ts";
 export {
   meshesSettled,
   type MeshCounts,
@@ -254,10 +288,12 @@ export {
   unjoinedText,
   type ToolHint,
   type ToolHintView,
+  type ToolSpeech,
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
 export {
+  altKeyName,
   chordKeys,
   chordText,
   keyPlatform,
