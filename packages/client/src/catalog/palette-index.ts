@@ -1,4 +1,5 @@
 import type { CatalogColorView, CatalogItemView } from "./placeable-catalog.ts";
+import { normalizedSearchText, searchWords, withSpellings } from "./search-text.ts";
 
 export type PaletteCategory = "track" | "baseplates" | "road" | "sets";
 export type PaletteFilter = PaletteCategory | "all";
@@ -57,13 +58,6 @@ const MIN_SUBSTRING = 2;
 const MIN_SUBSEQUENCE = 3;
 const ONE_TYPO_FROM = 4;
 const TWO_TYPOS_FROM = 8;
-const SIZE_PATTERN = /(\d+)\s*[x×]\s*(\d+)/gu;
-const SPELLINGS: ReadonlyMap<string, string> = new Map([
-  ["grey", "gray"],
-  ["gray", "grey"],
-  ["colour", "color"],
-  ["color", "colour"],
-]);
 
 const CATEGORY_OF: Readonly<Record<CatalogItemView["kind"], PaletteCategory>> = {
   track: "track",
@@ -160,23 +154,6 @@ function colorRanks(items: ReadonlyArray<CatalogItemView>): ReadonlyMap<number, 
 
 export function itemInColor(entry: PaletteEntry, code: number): CatalogItemView | undefined {
   return entry.items.find((item) => item.color?.code === code);
-}
-
-function normalized(text: string): string {
-  return text.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(SIZE_PATTERN, "$1x$2");
-}
-
-function wordsOf(text: string): ReadonlyArray<string> {
-  return normalized(text)
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((word) => word !== "");
-}
-
-function withSpellings(words: ReadonlyArray<string>): ReadonlyArray<string> {
-  return words.flatMap((word) => {
-    const other = SPELLINGS.get(word);
-    return other ? [word, other] : [word];
-  });
 }
 
 function partNumberOf(group: string): string | null {
@@ -306,15 +283,15 @@ const QUERY_TERM = /(-?)(?:"([^"]*)"?|#(\S+)|(\S+))/gu;
 
 function parseQuery(query: string): ReadonlyArray<QueryTerm> {
   const terms: QueryTerm[] = [];
-  for (const [, minus, phrase, number, plain] of normalized(query).matchAll(QUERY_TERM)) {
+  for (const [, minus, phrase, number, plain] of normalizedSearchText(query).matchAll(QUERY_TERM)) {
     const negated = minus === "-";
     if (phrase !== undefined) {
-      const words = wordsOf(phrase);
+      const words = searchWords(phrase);
       if (words.length > 0) terms.push({ kind: "phrase", words, negated });
     } else if (number !== undefined) {
-      for (const word of wordsOf(number)) terms.push({ kind: "number", number: word, negated });
+      for (const word of searchWords(number)) terms.push({ kind: "number", number: word, negated });
     } else if (plain !== undefined) {
-      for (const word of wordsOf(plain)) terms.push({ kind: "word", word, negated });
+      for (const word of searchWords(plain)) terms.push({ kind: "word", word, negated });
     }
   }
   return terms;
@@ -377,7 +354,7 @@ export class PaletteIndex {
     }));
     this.indexed = sorted.map((entry, order) => {
       const phrases = [entry.title, CATEGORY_LABEL[entry.category], ...(extra.get(entry.key) ?? [])]
-        .map(wordsOf)
+        .map(searchWords)
         .map(withSpellings);
       const first = entry.items[0];
       const words = [...phrases.flat(), ...(first ? sizeWords(first) : [])];
@@ -385,19 +362,19 @@ export class PaletteIndex {
         entry,
         order,
         numbers: [
-          ...(entry.partNumber === null ? [] : [normalized(entry.partNumber)]),
-          ...(first?.aliases ?? []).map(normalized),
+          ...(entry.partNumber === null ? [] : [normalizedSearchText(entry.partNumber)]),
+          ...(first?.aliases ?? []).map(normalizedSearchText),
           ...words.filter((word) => /^\d/u.test(word) && !isLatticeSize(word)),
         ],
         words,
         phrases,
-        leadWord: wordsOf(entry.title).find(
-          (word) => entry.partNumber === null || word !== normalized(entry.partNumber),
+        leadWord: searchWords(entry.title).find(
+          (word) => entry.partNumber === null || word !== normalizedSearchText(entry.partNumber),
         ),
         colorWords: entry.items.map((item) =>
-          item.color ? [...withSpellings(wordsOf(item.color.name)), ...item.elements] : [],
+          item.color ? [...withSpellings(searchWords(item.color.name)), ...item.elements] : [],
         ),
-        kindWords: wordsOf(KIND_WORDS[entry.category]),
+        kindWords: searchWords(KIND_WORDS[entry.category]),
       };
     });
     this.colorVocabulary = [
