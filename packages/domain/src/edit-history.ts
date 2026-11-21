@@ -1,4 +1,5 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
+import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
 import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
@@ -21,7 +22,8 @@ export interface TrackChange {
 export const NO_TRACK_CHANGE: TrackChange = { lift: [], lay: [] };
 
 export type EditSummary =
-  | { readonly kind: "place" | "rotate" | "remove" | "throw-switch" }
+  | { readonly kind: "place" | "rotate" | "remove" }
+  | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road"; readonly placements: number }
   | { readonly kind: "lay-track"; readonly pieces: number };
 
@@ -51,15 +53,34 @@ export interface AppliedChange {
   readonly added: PlacementHandle | null;
 }
 
+export interface ConsistRef {
+  readonly handle: ConsistHandle | null;
+}
+
+export interface AppliedConsistChange {
+  readonly consist: ConsistRef;
+  readonly from: ConsistPose | null;
+  readonly to: ConsistPose | null;
+  readonly removed: ConsistHandle | null;
+  readonly added: ConsistHandle | null;
+}
+
 export interface AppliedEdit {
   readonly kind: EditKind;
   readonly step: HistoryStep;
   readonly changes: ReadonlyArray<AppliedChange>;
+  readonly consists: ReadonlyArray<AppliedConsistChange>;
   readonly track: TrackChange;
 }
 
 class Ref implements PlacementRef {
   handle: PlacementHandle | null = null;
+
+  constructor(readonly history: EditHistory) {}
+}
+
+class TrainRef implements ConsistRef {
+  handle: ConsistHandle | null = null;
 
   constructor(readonly history: EditHistory) {}
 }
@@ -70,9 +91,16 @@ interface Change {
   readonly after: PlacementPose | null;
 }
 
+interface ConsistChange {
+  readonly ref: TrainRef;
+  readonly before: ConsistPose | null;
+  readonly after: ConsistPose | null;
+}
+
 interface Edit {
   readonly kind: EditKind;
   readonly changes: ReadonlyArray<Change>;
+  readonly consists: ReadonlyArray<ConsistChange>;
   readonly track: TrackChange;
 }
 
@@ -117,8 +145,9 @@ function summary(edit: Edit): EditSummary {
     case "place":
     case "rotate":
     case "remove":
-    case "throw-switch":
       return { kind: edit.kind };
+    case "throw-switch":
+      return { kind: edit.kind, switchAt: edit.track.lay[0]?.index ?? 0 };
     case "road":
       return { kind: edit.kind, placements: edit.changes.length };
     case "lay-track":
@@ -134,7 +163,10 @@ export class EditHistory {
   private readonly done: Edit[] = [];
   private readonly undone: Edit[] = [];
 
-  constructor(private readonly world: World) {}
+  constructor(
+    private readonly world: World,
+    private readonly trains: ConsistLayout = new ConsistLayout(),
+  ) {}
 
   get undoDepth(): number {
     return this.done.length;
@@ -161,8 +193,35 @@ export class EditHistory {
     return ref;
   }
 
+  adoptConsist(handle: ConsistHandle): ConsistRef {
+    if (!handle.live) throw new Error("only a consist on the layout can be adopted");
+    const ref = new TrainRef(this);
+    ref.handle = handle;
+    return ref;
+  }
+
   place(pose: PlacementPose): AppliedEdit {
     return this.commit("place", [{ placement: null, to: pose }]);
+  }
+
+  placeConsist(pose: ConsistPose): AppliedEdit {
+    return this.record({
+      kind: "place",
+      changes: [],
+      consists: [{ ref: new TrainRef(this), before: null, after: pose }],
+      track: NO_TRACK_CHANGE,
+    });
+  }
+
+  removeConsist(consist: ConsistRef): AppliedEdit {
+    const ref = this.ownConsist(consist);
+    if (!ref.handle?.live) throw new Error("consist is not on the layout");
+    return this.record({
+      kind: "remove",
+      changes: [],
+      consists: [{ ref, before: ref.handle.pose, after: null }],
+      track: NO_TRACK_CHANGE,
+    });
   }
 
   rotate(placement: PlacementRef): AppliedEdit {
@@ -197,7 +256,10 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    const edit: Edit = { kind, changes, track };
+    return this.record({ kind, changes, consists: [], track });
+  }
+
+  private record(edit: Edit): AppliedEdit {
     const applied = this.apply(edit, "do");
     this.done.push(edit);
     this.undone.length = 0;
@@ -223,6 +285,13 @@ export class EditHistory {
       throw new Error("placement belongs to another edit history");
     }
     return placement;
+  }
+
+  private ownConsist(consist: ConsistRef): TrainRef {
+    if (!(consist instanceof TrainRef) || consist.history !== this) {
+      throw new Error("consist belongs to another edit history");
+    }
+    return consist;
   }
 
   private liveHandle(placement: PlacementRef): PlacementHandle {
@@ -257,6 +326,25 @@ export class EditHistory {
       changes.push({ placement: change.ref, from, to, removed: removed[index] ?? null, added });
     }
     const track = backwards ? { lift: edit.track.lay, lay: edit.track.lift } : edit.track;
-    return { kind: edit.kind, step, changes, track };
+    return { kind: edit.kind, step, changes, consists: this.applyConsists(edit, step), track };
+  }
+
+  private applyConsists(edit: Edit, step: HistoryStep): AppliedConsistChange[] {
+    const backwards = step === "undo";
+    const applied: AppliedConsistChange[] = [];
+    for (const change of edit.consists) {
+      const from = backwards ? change.after : change.before;
+      const to = backwards ? change.before : change.after;
+      const removed = from === null ? null : change.ref.handle;
+      if (from !== null) {
+        if (removed === null) throw new Error("edit history is out of step with the layout");
+        this.trains.remove(removed);
+        change.ref.handle = null;
+      }
+      const added = to === null ? null : this.trains.add(to);
+      if (added) change.ref.handle = added;
+      applied.push({ consist: change.ref, from, to, removed, added });
+    }
+    return applied;
   }
 }

@@ -3,7 +3,7 @@ name: Held-out models
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "siraj/queue-tail-*"]
   schedule:
     - cron: "23 4 * * *"
   workflow_dispatch:
@@ -12,6 +12,10 @@ on:
         description: Generator seed to reproduce a run; leave blank for a fresh one
         required: false
         default: ""
+
+concurrency:
+  group: held-out-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   held-out:
@@ -42,16 +46,7 @@ jobs:
           toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - uses: actions/cache/save@v4
         if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' && hashFiles('tools/asset-pipeline/dist/bundle/build-key.json') != '' }}
@@ -62,6 +57,8 @@ jobs:
           key: ${{ steps.bundle-cache.outputs.cache-primary-key }}
       - name: Precompile the pinned library's bake records the import fetches instead of compiling
         run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - name: Precompute the pinned library's connector records the import fetches beside the bundle's
+        run: pnpm --filter @brr/asset-pipeline library-connectors --check
       - uses: actions/cache@v4
         with:
           path: |

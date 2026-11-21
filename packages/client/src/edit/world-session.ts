@@ -1,4 +1,10 @@
-import { DirtyShards, worldPlacements, type AppliedEdit, type World } from "@brr/domain";
+import {
+  DirtyShards,
+  worldPlacements,
+  type AppliedEdit,
+  type TrackPieceAt,
+  type World,
+} from "@brr/domain";
 import { CAMERA_FOV_DEGREES } from "@brr/render";
 import { decode, issueText, type Issue } from "@brr/schema/decode";
 import {
@@ -9,6 +15,7 @@ import {
   worldHeader,
   worldManifest,
   worldShards,
+  type ConsistRecordV1,
   type ImportedFile,
   type SavedViewV1,
   type TrackRecordV1,
@@ -66,13 +73,19 @@ export interface WorldContents {
   readonly world: World;
   readonly refs: ReadonlyArray<string>;
   readonly track: ReadonlyArray<TrackRecordV1>;
+  readonly consists: ReadonlyArray<ConsistRecordV1>;
+}
+
+export interface StoredContents {
+  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly consists: ReadonlyArray<ConsistRecordV1>;
 }
 
 export interface IEditedWorld {
   contents(): WorldContents;
   placedCredits(): ReadonlyArray<ModelCredit>;
-  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
-  load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>>;
+  validate(stored: StoredContents): ReadonlyArray<Issue>;
+  load(stored: StoredContents): Promise<ReadonlyArray<Issue>>;
   addImportedModel(file: ImportedFile): Promise<string | null>;
 }
 
@@ -91,7 +104,8 @@ export interface IWorldSession extends IWorldFiles {
   view(): WorldSessionView;
   subscribe(listener: () => void): () => void;
   start(edited: IEditedWorld, bundleVersion: string): Promise<void>;
-  worldEdited(edit: AppliedEdit): void;
+  placementsEdited(edit: AppliedEdit): void;
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput): Promise<string | null>;
 }
@@ -104,6 +118,11 @@ export interface ModelFileInput {
 const CAMERA_SAVE_DELAY_MS = 500;
 const UNSEEN = Number.NaN;
 const FIRST_WORLD_NAME = "World 1";
+const NOTHING_STORED: StoredContents = { shards: [], consists: [] };
+
+function storedContents(manifest: WorldManifestV1, shards: ReadonlyArray<WorldShardV1>) {
+  return { shards, consists: manifest.consists ?? [] };
+}
 
 interface OpenWorld {
   readonly id: string | null;
@@ -138,6 +157,7 @@ export class WorldSession implements IWorldSession {
   private readonly dirty = new DirtyShards();
   private current: OpenWorld | null = null;
   private cameraDirty = false;
+  private consistsDirty = false;
   private readonly lastView = new ViewRecord();
   private saveScheduled = false;
   private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -183,11 +203,13 @@ export class WorldSession implements IWorldSession {
   }
 
   private header(current: OpenWorld): WorldHeader {
+    const { consists } = this.editedWorld().contents();
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
       view: this.camera.savedView(),
       disclaimer: this.disclaimer,
+      ...(consists.length > 0 ? { consists: [...consists] } : {}),
     };
   }
 
@@ -200,16 +222,18 @@ export class WorldSession implements IWorldSession {
     return run;
   }
 
-  worldEdited(edit: AppliedEdit): void {
+  placementsEdited(edit: AppliedEdit): void {
     for (const change of edit.changes) {
       if (change.from) this.dirty.touch(change.from.x, change.from.z);
       if (change.to) this.dirty.touch(change.to.x, change.to.z);
     }
-    const { lift, lay } = edit.track;
-    if (lift.length + lay.length > 0) {
-      this.dirty.touchTrackPieces(lift);
-      this.dirty.touchTrack(this.editedWorld().contents().track);
-    }
+    if (edit.consists.length > 0) this.consistsDirty = true;
+    this.scheduleSave();
+  }
+
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void {
+    this.dirty.touchTrackPieces(lifted);
+    this.dirty.touchTrack(this.editedWorld().contents().track);
     this.scheduleSave();
   }
 
@@ -259,11 +283,13 @@ export class WorldSession implements IWorldSession {
   private async saveNow(): Promise<void> {
     const current = this.current;
     if (!current || current.id === null || !this.canSave()) return;
-    if (this.dirty.size === 0 && !this.cameraDirty) return;
+    if (this.dirty.size === 0 && !this.cameraDirty && !this.consistsDirty) return;
     const contents = this.editedWorld().contents();
     const change = this.dirty.take(contents.world, contents.refs, contents.track);
     const cameraWasDirty = this.cameraDirty;
+    const consistsWereDirty = this.consistsDirty;
     this.cameraDirty = false;
+    this.consistsDirty = false;
     this.setWorldView(current, { save: "saving" });
     try {
       const summary = await this.repository.save(current.id, {
@@ -272,7 +298,7 @@ export class WorldSession implements IWorldSession {
         drop: change.drop,
       });
       this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
-      const unsaved = this.dirty.size > 0 || this.cameraDirty;
+      const unsaved = this.dirty.size > 0 || this.cameraDirty || this.consistsDirty;
       this.setWorldView(this.current, {
         save: unsaved ? "saving" : "saved",
         placements: summary.placements,
@@ -289,6 +315,7 @@ export class WorldSession implements IWorldSession {
     } catch (error) {
       this.dirty.restore(change);
       this.cameraDirty ||= cameraWasDirty;
+      this.consistsDirty ||= consistsWereDirty;
       this.saveFailed = true;
       this.lastSaveError = errorText(error);
       this.syncUnsaved();
@@ -302,6 +329,7 @@ export class WorldSession implements IWorldSession {
   private syncUnsaved(): void {
     const unsavedEdits =
       this.dirty.size > 0 ||
+      this.consistsDirty ||
       (this.state.storageError !== null && this.editedWorld().contents().world.size > 0);
     if (unsavedEdits !== this.state.unsavedEdits) this.update({ unsavedEdits });
   }
@@ -363,7 +391,7 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: 0,
     };
-    await this.loadEditedWorld(current.name, []);
+    await this.loadEditedWorld(current.name, NOTHING_STORED);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
@@ -413,6 +441,7 @@ export class WorldSession implements IWorldSession {
     this.current = current;
     this.dirty.clear();
     this.cameraDirty = false;
+    this.consistsDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
     this.update({ fileError: null });
@@ -437,13 +466,13 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: performance.now() - started,
     };
-    await this.loadEditedWorld(name, []);
+    await this.loadEditedWorld(name, NOTHING_STORED);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
-  private async loadEditedWorld(name: string, shards: ReadonlyArray<WorldShardV1>): Promise<void> {
-    const issues = await this.editedWorld().load(shards);
+  private async loadEditedWorld(name: string, stored: StoredContents): Promise<void> {
+    const issues = await this.editedWorld().load(stored);
     if (issues.length > 0) {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
     }
@@ -455,7 +484,7 @@ export class WorldSession implements IWorldSession {
     shards: ReadonlyArray<WorldShardV1>,
     started: number,
   ): Promise<void> {
-    await this.loadEditedWorld(manifest.name, shards);
+    await this.loadEditedWorld(manifest.name, storedContents(manifest, shards));
     const opened = {
       id,
       name: manifest.name,
@@ -475,15 +504,17 @@ export class WorldSession implements IWorldSession {
     const started = performance.now();
     const stored = await this.repository.read(id);
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
-    await this.ensureImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
+    await this.ensureImports(storedContents(stored.value.manifest, stored.value.shards), (sha256) =>
+      this.repository.importedFile(sha256),
+    );
     await this.loadShards(id, stored.value.manifest, stored.value.shards, started);
   }
 
   private async ensureImports(
-    shards: ReadonlyArray<WorldShardV1>,
+    stored: StoredContents,
     fileOf: (sha256: string) => Promise<ImportedFile | undefined>,
   ): Promise<void> {
-    for (const sha256 of referencedImports(shards)) {
+    for (const sha256 of referencedImports(stored.shards, stored.consists)) {
       const file = this.importedFiles.get(sha256) ?? (await fileOf(sha256));
       if (!file) {
         throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
@@ -589,7 +620,7 @@ export class WorldSession implements IWorldSession {
       const contents = edited.contents();
       const shards = worldShards(worldPlacements(contents.world, contents.refs), contents.track);
       const manifest = worldManifest(this.header(current), shards.map(shardEntry));
-      const imports = [...referencedImports(shards)].map((sha256) => {
+      const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
         const file = this.importedFiles.get(sha256);
         if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
         return file;
@@ -607,12 +638,13 @@ export class WorldSession implements IWorldSession {
       const archive = await this.repository.readArchive(bytes);
       if (!archive.ok) throw new Error(issueText(archive.issues));
       const { manifest, shards, imports } = archive.value;
+      const stored = storedContents(manifest, shards);
       const carried = new Map(imports.map((file) => [file.sha256, file]));
-      await this.ensureImports(shards, async (sha256) => carried.get(sha256));
+      await this.ensureImports(stored, async (sha256) => carried.get(sha256));
       if (this.state.storageError === null) {
         for (const file of imports) await this.repository.putImportedFile(file);
       }
-      const issues = this.editedWorld().validate(shards);
+      const issues = this.editedWorld().validate(stored);
       if (issues.length > 0) throw new Error(issueText(issues));
       if (this.state.storageError !== null) {
         await this.loadShards(null, manifest, shards, started);

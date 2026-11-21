@@ -38,6 +38,7 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
     readOnly: false,
     mode: "place",
     selection: {
+      kind: "model",
       item: "ldraw:3811",
       x: 0,
       z: 0,

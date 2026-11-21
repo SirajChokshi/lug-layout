@@ -149,11 +149,25 @@
       "name": "workers-depend-on-rpc-and-their-engine",
       "severity": "error",
       "from": {
-        "path": "^packages/workers/"
+        "path": "^packages/workers/",
+        "pathNot": "^packages/workers/import-worker/"
       },
       "to": {
         "pathNot": [
           "^packages/(rpc|sim|import|render|math|schema|domain|catalog|compile-wasm|workers)/",
+          "(^|/)node_modules/inversify/"
+        ]
+      }
+    },
+    {
+      "name": "import-worker-depends-on-rpc-import-and-storage",
+      "severity": "error",
+      "from": {
+        "path": "^packages/workers/import-worker/"
+      },
+      "to": {
+        "pathNot": [
+          "^packages/(rpc|import|math|schema|domain|catalog|compile-wasm|storage|workers)/",
           "(^|/)node_modules/inversify/"
         ]
       }
