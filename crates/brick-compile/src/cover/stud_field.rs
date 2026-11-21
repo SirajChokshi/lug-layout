@@ -160,3 +160,84 @@ fn segment_distance(a: [f64; 2], b: [f64; 2]) -> f64 {
     };
     planar_length(a[0] + along[0] * t, a[1] + along[1] * t)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::flatten::Triangle;
+    use crate::mesh;
+
+    const OPAQUE: u32 = 4;
+    const HEIGHT: f64 = 4.0;
+    const CORNERS: [[f64; 2]; 4] = [[1.0, 1.0], [-1.0, 1.0], [-1.0, -1.0], [1.0, -1.0]];
+
+    fn triangle(points: [Vec3; 3]) -> Triangle {
+        Triangle {
+            color: OPAQUE,
+            points,
+            double_sided: false,
+        }
+    }
+
+    fn corner(half: f64, k: usize, y: f64) -> Vec3 {
+        let [x, z] = CORNERS[k % CORNERS.len()];
+        [x * half, y, z * half]
+    }
+
+    fn square_wall(triangles: &mut Vec<Triangle>, half: f64) {
+        for k in 0..CORNERS.len() {
+            let [a, b] = [corner(half, k, 0.0), corner(half, k + 1, 0.0)];
+            let [c, d] = [corner(half, k + 1, HEIGHT), corner(half, k, HEIGHT)];
+            triangles.push(triangle([a, b, c]));
+            triangles.push(triangle([a, c, d]));
+        }
+    }
+
+    fn square_annulus(triangles: &mut Vec<Triangle>, outer: f64, inner: f64) {
+        for k in 0..CORNERS.len() {
+            let [a, b] = [corner(outer, k, HEIGHT), corner(outer, k + 1, HEIGHT)];
+            let [c, d] = [corner(inner, k + 1, HEIGHT), corner(inner, k, HEIGHT)];
+            triangles.push(triangle([a, b, c]));
+            triangles.push(triangle([a, c, d]));
+        }
+    }
+
+    #[test]
+    fn a_hollow_stud_measures_the_flats_of_its_outer_wall_and_ignores_its_inner_wall_and_top() {
+        let half_width = 3.0;
+        let mut triangles = Vec::new();
+        square_wall(&mut triangles, half_width);
+        square_wall(&mut triangles, 2.0);
+        square_annulus(&mut triangles, half_width, 2.0);
+        assert_eq!(
+            inscribed_radius(&mesh::build(&triangles, &[])),
+            Some(half_width)
+        );
+    }
+
+    #[test]
+    fn a_primitive_without_an_upright_outer_wall_measures_nothing() {
+        let half_width = 3.0;
+        let centre = [0.0, HEIGHT, 0.0];
+        let disc: Vec<Triangle> = (0..CORNERS.len())
+            .map(|k| {
+                triangle([
+                    centre,
+                    corner(half_width, k, HEIGHT),
+                    corner(half_width, k + 1, HEIGHT),
+                ])
+            })
+            .collect();
+        let cone: Vec<Triangle> = (0..CORNERS.len())
+            .map(|k| {
+                triangle([
+                    centre,
+                    corner(half_width, k, 0.0),
+                    corner(half_width, k + 1, 0.0),
+                ])
+            })
+            .collect();
+        assert_eq!(inscribed_radius(&mesh::build(&disc, &[])), None);
+        assert_eq!(inscribed_radius(&mesh::build(&cone, &[])), None);
+    }
+}
