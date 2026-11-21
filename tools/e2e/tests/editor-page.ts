@@ -166,6 +166,15 @@ export async function startEmpty(page: Page): Promise<void> {
   await expect(welcome).toHaveCount(0);
 }
 
+const Z_COEFFICIENT = 4;
+
+export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz: number): string[] {
+  return position.map((coefficient, k) => {
+    const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
+    return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
+  });
+}
+
 export class EditorPage {
   readonly root: Locator;
   private readonly canvas: Locator;
@@ -499,6 +508,39 @@ export class EditorPage {
 
   async toolHint(): Promise<string> {
     return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
+  async dragFrom(from: LatticePoint, ...through: ReadonlyArray<LatticePoint>): Promise<void> {
+    const points = [await this.screenOf(from)];
+    for (const target of through) points.push(await this.screenOf(target));
+    const [start] = points;
+    if (!start) throw new Error("a drag needs a start");
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (let leg = 1; leg < points.length; leg++) {
+      const a = points[leg - 1] ?? start;
+      const b = points[leg] ?? start;
+      for (let step = 1; step <= DRAG_STEPS; step++) {
+        const t = step / DRAG_STEPS;
+        await this.page.mouse.move(a.sx + (b.sx - a.sx) * t, a.sy + (b.sy - a.sy) * t);
+      }
+    }
+    await this.settle();
+    await this.page.mouse.up();
+    await this.settle();
+  }
+
+  async shiftClickAt(target: LatticePoint): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.keyboard.down("Shift");
+    await this.page.mouse.click(point.sx, point.sy);
+    await this.page.keyboard.up("Shift");
+    await this.settle();
+  }
+
+  async selectionCount(): Promise<number> {
+    return Number(await this.root.getAttribute("data-selection-count"));
   }
 
   async trackCounts(): Promise<TrackCounts> {

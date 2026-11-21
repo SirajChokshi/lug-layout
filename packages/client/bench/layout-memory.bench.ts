@@ -312,8 +312,8 @@ class WindowlessBackend implements ISceneBackend {
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     this.scene.placeGhost(x, yLdu, z, rot);
   }
-  setSelectionBox(box: WorldBox | null): void {
-    this.scene.setSelectionBox(box);
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
+    this.scene.setSelectionBoxes(boxes);
   }
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
     this.scene.setMarkers(markers);

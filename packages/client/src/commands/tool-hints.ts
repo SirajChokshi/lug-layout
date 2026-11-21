@@ -1,7 +1,9 @@
-import type { EditorSnapshot, TrackView } from "../edit/editor.ts";
+import { STUD_LDU } from "@brr/math";
+import type { EditorSnapshot, GestureView, SelectionTally, TrackView } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
 import type { TrackBlockView, TrackDragView, TrackRefusal } from "../edit/track-drawing.ts";
+import { trackBlockText } from "../edit/track-drag.ts";
 import type { TrackChoiceView, TrackExtendView, UnjoinedEndView } from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
@@ -34,25 +36,55 @@ function itemName(snapshot: EditorSnapshot, id: string | null): string {
   return label.replaceAll("_", " ");
 }
 
-function pieces(count: number): string {
-  return `${count} ${count === 1 ? "piece" : "pieces"}`;
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
 }
 
-export function trackBlockText(block: TrackBlockView): string {
-  switch (block.kind) {
-    case "track":
-      return "cross the track laid there";
-    case "run":
-      return "cross this run";
-    case "model":
-      return block.unseated
-        ? `sit on ${block.label} where it has no studs`
-        : `run into ${block.label}`;
+export function tallyText(tally: SelectionTally): string {
+  const parts = [
+    tally.models > 0 ? counted(tally.models, "model", "models") : null,
+    tally.pieces > 0 ? counted(tally.pieces, "track piece", "track pieces") : null,
+    tally.trains > 0 ? counted(tally.trains, "train", "trains") : null,
+  ].filter((part) => part !== null);
+  return parts.length === 0 ? counted(0, "model", "models") : parts.join(" and ");
+}
+
+function gestureView(drag: GestureView): ToolHintView {
+  switch (drag.kind) {
+    case "box":
+      return {
+        tone: "select",
+        title: "Box select",
+        detail: `${tallyText(drag)} inside`,
+        hints: [gesture("Release", "select them"), key("cancel", "cancel")],
+      };
+    case "move":
+      return {
+        tone: drag.refusal === null ? "select" : "warn",
+        title: `Moving ${tallyText(drag)}`,
+        detail: drag.refusal ?? `by ${drag.dx / STUD_LDU}, ${drag.dz / STUD_LDU} studs`,
+        hints: [
+          gesture("Release", drag.refusal === null ? "drop" : "leave it"),
+          key("rotate", "rotate"),
+          key("cancel", "cancel"),
+        ],
+      };
+    case "paste":
+      return {
+        tone: drag.refusal === null ? "place" : "warn",
+        title: `Pasting ${tallyText(drag)}`,
+        detail: drag.refusal,
+        hints: [gesture("Click", "drop"), key("rotate", "rotate"), key("cancel", "cancel")],
+      };
     default: {
-      const unhandled: never = block;
-      throw new Error(`unhandled block ${String(unhandled)}`);
+      const unhandled: never = drag;
+      throw new Error(`unhandled gesture ${String(unhandled)}`);
     }
   }
+}
+
+function pieces(count: number): string {
+  return counted(count, "piece", "pieces");
 }
 
 function blockedJoinText(block: TrackBlockView | null): string {
@@ -352,10 +384,12 @@ function view(snapshot: EditorSnapshot): ToolHintView {
       };
     case "select": {
       const { selection } = snapshot;
-      if (selection?.kind === "train") {
+      if (snapshot.gesture) return gestureView(snapshot.gesture);
+      const primary = selection?.primary;
+      if (primary?.kind === "train") {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
-          title: itemName(snapshot, selection.item),
+          title: itemName(snapshot, primary.item),
           detail: snapshot.selectionRefusal ?? "on the rails",
           hints: [
             key("delete", "delete"),
@@ -365,18 +399,39 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           ],
         };
       }
-      if (selection) {
+      if (selection && selection.members.length > 1) {
         return {
           tone: snapshot.selectionRefusal === null ? "select" : "warn",
-          title: itemName(snapshot, selection.item),
+          title: `${tallyText(selection.tally)} selected`,
+          detail: snapshot.selectionRefusal,
+          hints: [
+            gesture("Drag one", "move them all"),
+            gesture("Shift-click", "add or take out"),
+            key("nudge-forward", "nudge"),
+            key("rotate", "rotate"),
+            key("copy", "copy"),
+            key("delete", "delete"),
+            key("focus", "frame"),
+            key("select-tool", "deselect"),
+          ],
+        };
+      }
+      if (primary) {
+        return {
+          tone: snapshot.selectionRefusal === null ? "select" : "warn",
+          title: itemName(snapshot, primary.item),
           detail:
             snapshot.selectionRefusal ??
-            (selection.kind === "track"
+            (primary.kind === "track"
               ? "laid track"
-              : `${selection.rot * DEGREES_PER_QUARTER_TURN}°`),
+              : `${primary.rot * DEGREES_PER_QUARTER_TURN}°`),
           hints: [
+            gesture("Drag", "move"),
+            gesture("Shift-click", "add more"),
+            key("nudge-forward", "nudge"),
             key("rotate", "rotate"),
             key("delete", "delete"),
+            key("copy", "copy"),
             key("duplicate", "place more"),
             key("focus", "frame"),
             key("select-tool", "deselect"),
@@ -388,7 +443,9 @@ function view(snapshot: EditorSnapshot): ToolHintView {
         title: "Select",
         detail: null,
         hints: [
-          gesture("Click", "select a model"),
+          gesture("Click", "select a model or track piece"),
+          gesture("Drag", "box-select"),
+          key("paste", "paste"),
           key("open-palette", "find a part"),
           key("draw-track", "draw track"),
           key("draw-road", "draw road"),

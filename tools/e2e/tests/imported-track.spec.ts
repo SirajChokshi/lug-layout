@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { EditorPage, nearestLattice, routeMiddle } from "./editor-page.ts";
+import { EditorPage, STUD, nearestLattice, routeMiddle, shiftedPosition } from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
 const GEOMETRY = new URL("../../../docs/verified-facts/geometry.json", import.meta.url);
@@ -20,6 +20,8 @@ const RUN_HALF_SPAN_LDU = 160;
 const EAST = 0;
 const DRAWN_RUN_LDU = 640;
 const HALF_TURN_CURVES = 8;
+const PLAIN_MODULE = "generated:mils-plain";
+const RAISED_OFFSET_LDU = 1600;
 
 interface Reference {
   readonly color: string;
@@ -424,4 +426,71 @@ test("a curve turned 0.1° off the field is reported and nothing joins it", asyn
     unanchored: 0,
   });
   expect(await editor.trackEnds()).toHaveLength(2);
+});
+
+test("an imported model whose own 9V run is joined to drawn track won't nudge off that join alone, and moves with the drawn run as one undo step that keeps every join", async ({
+  page,
+}) => {
+  const { text } = await layout(
+    "nine-volt-run",
+    [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
+    (references) => {
+      const run = references.filter(
+        ({ file, position: [x, , z] }) =>
+          file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+      );
+      references.splice(0, references.length, ...run);
+    },
+  );
+  const file = test.info().outputPath("nine-volt-run.ldr");
+  await writeFile(file, text);
+  const editor = await importAndPlace(page, file);
+  const model = (await editor.poses())[0];
+  const east = (await editor.trackEnds()).find((end) => end.heading === EAST);
+  if (!model || !east) throw new Error("the imported run has no end facing east");
+  const from = nearestLattice(east);
+  const run = await editor.dragTrack(from, { x: from.x + DRAWN_RUN_LDU, z: from.z });
+  expect(run).toMatchObject({ pieces: 2, joins: 3 });
+  await editor.escape();
+  const raised = { x: model.x, z: model.z + RAISED_OFFSET_LDU };
+  await editor.placeAt(PLAIN_MODULE, raised);
+  await editor.escape();
+  const laid = { poses: await editor.poses(), track: await editor.laidTrack() };
+
+  expect(await editor.select({ x: model.x, z: model.z })).toBe(model.item);
+  const refusedBefore = await editor.counter("refused");
+  await editor.press("ArrowUp");
+  await expect(page.locator(".tool-hud")).toContainText("pull that join apart");
+  expect(await editor.counter("refused")).toBe(refusedBefore + 1);
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
+
+  await editor.shiftClickAt({ x: from.x + DRAWN_RUN_LDU / 4, z: from.z });
+  await editor.shiftClickAt({ x: from.x + (DRAWN_RUN_LDU * 3) / 4, z: from.z });
+  expect(await editor.selectionCount()).toBe(3);
+  await editor.press("ArrowUp");
+  const moved = { poses: await editor.poses(), track: await editor.laidTrack() };
+  const movedModel = moved.poses.find((pose) => pose.item === model.item);
+  if (!movedModel) throw new Error("the nudge lost the imported model");
+  const dx = movedModel.x - model.x;
+  const dz = movedModel.z - model.z;
+  expect(Math.abs(dx) + Math.abs(dz)).toBe(STUD);
+  expect(movedModel).toEqual({ ...model, x: model.x + dx, z: model.z + dz });
+  expect(moved).toEqual({
+    poses: laid.poses.map((pose) => (pose.item === model.item ? movedModel : pose)),
+    track: laid.track.map((piece) => ({
+      ...piece,
+      position: shiftedPosition(piece.position, dx, dz),
+    })),
+  });
+  expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 3, openEnds: 2 });
+
+  await editor.undo();
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
+  await editor.redo();
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
+  expect(await editor.selectionCount()).toBe(3);
+
+  await editor.dragFrom({ x: movedModel.x, z: movedModel.z }, { x: raised.x, z: raised.z + dz });
+  await expect(page.locator(".tool-hud")).toContainText("different height");
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
 });

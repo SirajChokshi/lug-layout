@@ -15,6 +15,8 @@ import {
   type IScaleBar,
   type IStarterWorlds,
   type ITrainPlay,
+  tallyText,
+  type SelectionView,
   type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -43,6 +45,12 @@ import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WelcomeCard } from "./welcome-card.tsx";
 import { WorldMenu } from "./world-menu.tsx";
+
+function selectionLabel(selection: SelectionView | null): string | null {
+  if (!selection) return null;
+  const { members, primary } = selection;
+  return members.length === 1 ? primary.item : tallyText(selection.tally);
+}
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -167,7 +175,9 @@ export function EditorApp({
       data-far-tier={snapshot.farTier}
       data-meshes={meshesSettled(snapshot.meshes) ? "settled" : "loading"}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
-      data-selection={snapshot.selection?.item ?? ""}
+      data-selection={snapshot.selection?.primary.item ?? ""}
+      data-selection-count={snapshot.selection?.members.length ?? 0}
+      data-gesture={snapshot.gesture?.kind ?? ""}
       data-ghost-rot={snapshot.ghostRot}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
@@ -221,7 +231,7 @@ export function EditorApp({
             service={bomService}
             source={editor}
             region={null}
-            selectionLabel={snapshot.selection?.item ?? null}
+            selectionLabel={selectionLabel(snapshot.selection)}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
