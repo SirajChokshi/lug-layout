@@ -34,6 +34,11 @@ import {
   outlineContains,
   placedOutline,
   solveClosure,
+  studlessTopBlocker,
+  PlacedOutline,
+  type TrackClearance,
+  type MoveFrame,
+  type OutlineRing,
   type BomCounter,
   type DrawingKit,
   type EndGap,
@@ -77,11 +82,17 @@ import {
   TrackDrag,
   type DragEnds,
   type DragTargetView,
+  type DragRefusal,
+  type JoinWithheld,
   type TrackBlockView,
   type TrackDragView,
-  type TrackRefusal,
 } from "./track-drag.ts";
-import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
+import {
+  NO_TRACK_OBSTACLES,
+  OBSTACLE_RECT_FLOATS,
+  type TrackObstacles,
+} from "./track-obstacles.ts";
+import type { TrackSupport } from "./track-support.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
 import {
   TrackExtension,
@@ -93,8 +104,9 @@ import { pieceRelativePose } from "./group-transform.ts";
 
 export type {
   ClosureState,
-  DragField,
+  DragRefusal,
   DragTargetView,
+  JoinWithheld,
   TrackBlockView,
   TrackDragView,
   TrackRefusal,
@@ -108,7 +120,15 @@ const GROUND_PLATES = 0;
 const GHOST_SCRATCH_PIECES = 64;
 const REFUSED_PIECE_LDRAW_COLOR = 4;
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
+const NO_OWNERS: ReadonlySet<number> = new Set();
 const PIECE_BOX_FLOATS = 6;
+
+interface SkippedIds {
+  readonly field: DragField;
+  readonly moving: ReadonlySet<number>;
+  readonly movingOwners: ReadonlySet<number>;
+  readonly ids: Int32Array;
+}
 
 interface HeadingOutline {
   readonly outline: Float64Array;
@@ -127,12 +147,48 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
+interface CrossingShape {
+  readonly planOutline: ReadonlyArray<OutlineRing>;
+  readonly bedLdu: number;
+  readonly system: string;
+}
+
+export interface PlacedTrackPiece {
+  readonly placement: number;
+  readonly outline: PlacedOutline;
+  readonly bedLdu: number;
+  readonly system: string;
+}
+
+const NO_JOINS: ReadonlyArray<number> = [];
+const NO_POSES: ReadonlyArray<Pose16> = [];
+const RECT_OUTLINE_FLOATS = 8;
+
+function writeRectOutline(out: Float64Array, rects: Float64Array, at: number): void {
+  const minX = rects[at] ?? 0;
+  const minZ = rects[at + 1] ?? 0;
+  const maxX = rects[at + 2] ?? 0;
+  const maxZ = rects[at + 3] ?? 0;
+  out.set([minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
+}
+
+export interface SupportPart {
+  readonly catalogIndex: number;
+  readonly partIndex: number;
+}
+
+export interface UnsupportedPiece {
+  readonly piece: number;
+  readonly block: TrackBlockView | null;
+}
+
 export interface DragOutcome {
   readonly change: TrackChange;
   readonly goal: Pose16 | null;
   readonly end: Pose16 | null;
-  readonly refusal: TrackRefusal | null;
+  readonly refusal: DragRefusal | null;
   readonly blocked: TrackBlockView | null;
+  readonly withheld: JoinWithheld | null;
 }
 
 const NOTHING_LAID: DragOutcome = {
@@ -141,6 +197,7 @@ const NOTHING_LAID: DragOutcome = {
   end: null,
   refusal: null,
   blocked: null,
+  withheld: null,
 };
 
 export interface ExtensionPlan {
@@ -400,11 +457,18 @@ export class TrackDrawing implements ExtensionSite {
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
   private obstacles: TrackObstacles = NO_TRACK_OBSTACLES;
+  private support: TrackSupport | null = null;
+  private field: DragField | null = null;
+  private skipped: SkippedIds | null = null;
+  private readonly crossingShapes = new Map<number, CrossingShape>();
+  private readonly supportPartList: SupportPart[] = [];
+  private readonly crossingOutlines = new Map<number, PlacedOutline>();
+  private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly rectOutline = new Float64Array(RECT_OUTLINE_FLOATS);
   private seatsPending = false;
   private gapList: ReadonlyArray<EndGap> = [];
   private readonly kitOutlines: KitOutlines;
   private readonly router: StrokeRouter;
-  private extensionField: DragField | null = null;
   private readonly refusedColor: number;
   private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
@@ -429,11 +493,17 @@ export class TrackDrawing implements ExtensionSite {
       const shape = kitFootprints(piece, shapes);
       const outline = footprintOutline(shape, piece.partFrame);
       this.outlines.set(catalogIndex, outline);
-      if (piece.system !== TRACK_SYSTEM) return;
-      const inKit = piece.kind === "straight" || piece.kind === "curve";
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
+      this.supportPartList.push({ catalogIndex, partIndex });
+      this.crossingShapes.set(catalogIndex, {
+        planOutline: shape.outline,
+        bedLdu: shape.minY - part.boundsMin[1],
+        system: piece.system,
+      });
+      if (piece.system !== TRACK_SYSTEM) return;
+      const inKit = piece.kind === "straight" || piece.kind === "curve";
       if (part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
@@ -641,7 +711,7 @@ export class TrackDrawing implements ExtensionSite {
       () => performance.now(),
       { hitX, hitZ, latticeX, latticeZ },
       this.endNear(hitX, hitZ, null),
-      this.dragField(),
+      this.cachedField(),
       this.seatsPending,
     );
   }
@@ -649,9 +719,62 @@ export class TrackDrawing implements ExtensionSite {
   setObstacles(obstacles: TrackObstacles, seatsPending: boolean): void {
     this.obstacles = obstacles;
     this.seatsPending = seatsPending;
-    this.drag?.reseat(this.dragField(), seatsPending);
-    this.extensionField = null;
+    this.field = null;
+    this.drag?.reseat(this.cachedField(), seatsPending);
     this.extension.endsChanged();
+  }
+
+  private readonly supportedMove = (
+    frame: MoveFrame,
+    pose: Pose16,
+    studlessTops: TrackClearance,
+  ): boolean => {
+    const part = this.byDef.get(frame.move.piece.id);
+    if (!part || !this.support) return false;
+    const { catalogIndex, piece } = part;
+    const { seats } = this.obstacles;
+    return this.support.supported(catalogIndex, piece.partFrame, pose, seats, studlessTops);
+  };
+
+  setSupport(support: TrackSupport): void {
+    this.support = support;
+    this.field = null;
+    this.drag?.reseat(this.cachedField(), this.seatsPending);
+    this.extension.endsChanged();
+  }
+
+  unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
+    const support = this.support;
+    if (!support || this.seatsPending) return null;
+    const field = this.cachedField();
+    const box = this.collisionBox;
+    const layout = this.combined;
+    const { studlessTops } = field.support;
+    const { seats } = this.obstacles;
+    const found: UnsupportedPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.yPlates(p) !== GROUND_PLATES || layout.frame(p).id !== WORLD_TRACK_FRAME.id) {
+        continue;
+      }
+      const catalogIndex = layout.piece(p);
+      const outline = this.outlines.get(catalogIndex);
+      const piece = this.pieces[catalogIndex];
+      if (!outline || !piece) continue;
+      const placement = layout.pose(p);
+      const placed = placedOutline(outline, placement);
+      outlineBox(placed, box, 0);
+      const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
+      if (top === NO_OBSTACLE) continue;
+      if (support.supported(catalogIndex, piece.partFrame, placement, seats, studlessTops)) {
+        continue;
+      }
+      found.push({ piece: p, block: field.describe(studlessTopBlocker(top)) });
+    }
+    return found;
+  }
+
+  supportParts(): ReadonlyArray<SupportPart> {
+    return this.supportPartList;
   }
 
   verticalRange(): readonly [number, number] {
@@ -664,45 +787,38 @@ export class TrackDrawing implements ExtensionSite {
     return [bottom, top];
   }
 
-  private dragField(): DragField {
-    return this.clearanceField(NO_PLACEMENTS, this.obstacles);
+  private cachedField(): DragField {
+    this.field ??= this.buildField();
+    return this.field;
   }
 
-  clearanceField(moving: ReadonlySet<number>, obstacles: TrackObstacles): DragField {
+  private buildField(): DragField {
     const [, top] = this.verticalRange();
     const layout = this.combined;
     const outlines: Array<Float64Array | null> = [];
     for (let p = 0; p < layout.count; p++) {
       const outline = this.outlines.get(layout.piece(p));
-      if (!outline || moving.has(p) || layout.yPlates(p) * PLATE_LDU >= top) {
+      if (!outline || layout.yPlates(p) * PLATE_LDU >= top) {
         outlines.push(null);
         continue;
       }
       outlines.push(framedOutline(outline, layout.pose(p), layout.frame(p)));
     }
-    return new DragField(outlines, obstacles);
+    return new DragField(outlines, this.obstacles, this.supportedMove);
   }
 
-  movedPieceBlock(
-    field: DragField,
+  pieceBlock(
     catalogIndex: number,
     placement: Pose16,
-    yPlates: number,
+    yPlates = GROUND_PLATES,
+    moving: ReadonlySet<number> = NO_PLACEMENTS,
+    movingOwners: ReadonlySet<number> = NO_OWNERS,
   ): TrackBlockView | null {
     const [, top] = this.verticalRange();
     if (yPlates * PLATE_LDU >= top) return null;
+    const field = this.cachedField();
     const part = this.pieceByIndex(catalogIndex);
-    const joined = this.joinedOwners;
-    joined.length = 0;
-    for (const local of part.def.connectors) {
-      const end = composePose16(placement, local);
-      for (let index = 0; index < this.ends.length; index++) {
-        const open = this.ends[index];
-        if (!open || this.endPlates[index] !== yPlates || !posesJoin16(open, end)) continue;
-        const owner = field.pieceOwner(this.endOwners[index]);
-        if (!joined.includes(owner)) joined.push(owner);
-      }
-    }
+    const joined = this.joinedAt(field, part.def.connectors, placement, yPlates, moving);
     const { outline, box } = this.headingOutline(part, placement.heading);
     const at = zeta16ToStuds(placement.position);
     const blocker = field.clearance.blockerExcept(
@@ -711,8 +827,51 @@ export class TrackDrawing implements ExtensionSite {
       at.x * STUD_LDU,
       at.z * STUD_LDU,
       joined,
+      this.skippedIds(field, moving, movingOwners),
     );
     return field.describe(blocker);
+  }
+
+  private joinedAt(
+    field: DragField,
+    connectors: ReadonlyArray<Pose16>,
+    placement: Pose16,
+    yPlates: number,
+    moving: ReadonlySet<number>,
+  ): ReadonlyArray<number> {
+    const joined = this.joinedOwners;
+    joined.length = 0;
+    for (const local of connectors) {
+      const end = composePose16(placement, local);
+      for (let index = 0; index < this.ends.length; index++) {
+        const open = this.ends[index];
+        const placed = this.endOwners[index];
+        if (!open || this.endPlates[index] !== yPlates || !posesJoin16(open, end)) continue;
+        if (placed !== undefined && moving.has(placed)) continue;
+        const owner = field.pieceOwner(placed);
+        if (!joined.includes(owner)) joined.push(owner);
+      }
+    }
+    return joined;
+  }
+
+  private skippedIds(
+    field: DragField,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): ArrayLike<number> {
+    if (moving.size === 0 && movingOwners.size === 0) return NO_JOINS;
+    const cached = this.skipped;
+    if (
+      cached?.field === field &&
+      cached.moving === moving &&
+      cached.movingOwners === movingOwners
+    ) {
+      return cached.ids;
+    }
+    const ids = field.ownedIds(moving, movingOwners);
+    this.skipped = { field, moving, movingOwners, ids };
+    return ids;
   }
 
   private headingOutline(part: KitPart, heading: number): HeadingOutline {
@@ -808,9 +967,75 @@ export class TrackDrawing implements ExtensionSite {
     return withStuds(base, this.parts, this.colors);
   }
 
-  private fieldForExtension(): DragField {
-    this.extensionField ??= this.dragField();
-    return this.extensionField;
+  crossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    const layout = this.combined;
+    const pieces: PlacedTrackPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      const shape = this.crossingShapes.get(layout.piece(p));
+      if (!shape) continue;
+      let outline = this.crossingOutlines.get(p);
+      if (!outline) {
+        outline = PlacedOutline.ofTrackPiece(shape.planOutline, layout.pose(p));
+        this.crossingOutlines.set(p, outline);
+      }
+      pieces.push({
+        placement: p,
+        outline,
+        bedLdu: layout.yPlates(p) * PLATE_LDU + shape.bedLdu,
+        system: shape.system,
+      });
+    }
+    return pieces;
+  }
+
+  runFrameOutlines(): ReadonlyArray<Float64Array> {
+    const layout = this.combined;
+    const outlines: Float64Array[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id === WORLD_TRACK_FRAME.id) continue;
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (part) outlines.push(framedOutline(part.outline, layout.pose(p), layout.frame(p)));
+    }
+    return outlines;
+  }
+
+  modelBlocker(
+    partRects: Float64Array,
+    carried: ReadonlyArray<FramedTrackPiece>,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): TrackBlockView | null {
+    const field = this.cachedField();
+    const skipped = this.skippedIds(field, moving, movingOwners);
+    const box = this.collisionBox;
+    const rect = this.rectOutline;
+    for (let r = 0; r < partRects.length; r += OBSTACLE_RECT_FLOATS) {
+      writeRectOutline(rect, partRects, r);
+      outlineBox(rect, box, 0);
+      const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
+      if (field.isTrack(hit)) return field.describe(hit);
+    }
+    const [, top] = this.verticalRange();
+    for (const piece of carried) {
+      const pieceOutline = this.outlines.get(piece.catalogIndex);
+      if (!pieceOutline || piece.yPlates * PLATE_LDU >= top) continue;
+      const outline = framedOutline(pieceOutline, piece.placement, piece.frame);
+      outlineBox(outline, box, 0);
+      const joined =
+        piece.frame.id === WORLD_TRACK_FRAME.id
+          ? this.joinedAt(
+              field,
+              this.layout.pieces[piece.catalogIndex]?.connectors ?? NO_POSES,
+              piece.placement,
+              piece.yPlates,
+              moving,
+            )
+          : NO_JOINS;
+      const hit = field.clearance.blockerExcept(outline, box, 0, 0, joined, skipped);
+      if (hit !== NO_OBSTACLE) return field.describe(hit);
+    }
+    return null;
   }
 
   closure(from: number, to: number): ExtensionJoin {
@@ -818,7 +1043,7 @@ export class TrackDrawing implements ExtensionSite {
     const goal = this.ends[to];
     if (!start || !goal) throw new RangeError(`no open ends ${from} and ${to} to join`);
     if (this.seatsPending) return { kind: "refused", refusal: "pending", blocked: null };
-    const field = this.fieldForExtension();
+    const field = this.cachedField();
     const result = solveClosure(
       this.kit,
       start,
@@ -826,6 +1051,7 @@ export class TrackDrawing implements ExtensionSite {
       { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
       {
         clearance: field.clearance,
+        support: field.support,
         outlines: this.kitOutlines,
         startOwner: field.pieceOwner(this.endOwners[from]),
         goalOwner: field.pieceOwner(this.endOwners[to]),
@@ -850,7 +1076,7 @@ export class TrackDrawing implements ExtensionSite {
     const start = this.ends[from];
     const placed = start ? layMoves(start, [move]).placed[0] : undefined;
     if (!placed) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
-    const field = this.fieldForExtension();
+    const field = this.cachedField();
     const blocker = field.clearance.pieceBlocker(
       this.kitPart(move).outline,
       placed.placement,
@@ -938,18 +1164,17 @@ export class TrackDrawing implements ExtensionSite {
     const route = this.drag?.route();
     this.drag = null;
     if (!route) return NOTHING_LAID;
-    const { closure, blocked } = route;
+    const { closure, blocked, withheld } = route;
     if (
-      closure === "impossible" ||
-      closure === "blocked" ||
-      closure === "limit" ||
-      closure === "pending"
+      withheld === null &&
+      (closure === "impossible" || closure === "blocked" || closure === "limit")
     ) {
       return { ...NOTHING_LAID, refusal: closure, blocked };
     }
-    if (!route.start || route.moves.length === 0) return { ...NOTHING_LAID, blocked };
+    if (!route.start || route.moves.length === 0) return { ...NOTHING_LAID, blocked, withheld };
     const { change, end } = this.runChange(route.start, route.moves);
-    return { change, goal: route.goal, end, refusal: null, blocked };
+    const goal = withheld === null ? route.goal : null;
+    return { change, goal, end, refusal: null, blocked, withheld };
   }
 
   extensionPlan(): ExtensionPlan | null {
@@ -1239,6 +1464,8 @@ export class TrackDrawing implements ExtensionSite {
 
   private recomputeEnds(): void {
     this.combined = this.combine();
+    this.field = null;
+    this.crossingOutlines.clear();
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
@@ -1263,7 +1490,6 @@ export class TrackDrawing implements ExtensionSite {
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
-    this.extensionField = null;
     this.extension.endsChanged();
   }
 

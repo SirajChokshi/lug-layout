@@ -5,10 +5,12 @@ import {
   type PartAsset,
 } from "@brr/catalog";
 import {
+  ConnectorTable,
   EditHistory,
   PlanDelta,
   WORLD_TRACK_FRAME,
   World,
+  levelCrossings,
   layMoves,
   runMoves,
   solveClosure,
@@ -38,7 +40,7 @@ import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { writeFullRebuild } from "../plan/plan-producer.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
-import { PLAN_SERVICE } from "../tokens.ts";
+import { PLAN_SERVICE, SNAP_SHAPES } from "../tokens.ts";
 import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
 import { partPlaceable, type Placeable } from "./placeable.ts";
 import { PlacedChunks, type PlacedModel } from "./placed-chunks.ts";
@@ -52,8 +54,15 @@ import {
   type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
-import { seatsPending, trackObstacles, type TrackObstacles } from "./track-obstacles.ts";
+import {
+  cellKey,
+  seatsPending,
+  studSeats,
+  trackObstacles,
+  type TrackObstacles,
+} from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
+import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_TRACK_PARTS = (): ReadonlySet<number> => new Set();
@@ -149,6 +158,7 @@ function commitDrag(layout: TrackDrawing) {
     joined: outcome.goal !== null && layout.joinsAt(outcome.goal),
     refusal: outcome.refusal,
     blocked: outcome.blocked,
+    withheld: outcome.withheld,
   };
 }
 
@@ -784,6 +794,7 @@ function plateObstacles(...rects: ReadonlyArray<Rect>): TrackObstacles {
     owners: new Int32Array(rects.length),
     unseated: new Uint8Array(rects.length),
     labels: ["Road plate"],
+    seats: new Set(),
   };
 }
 
@@ -1374,20 +1385,32 @@ async function acrossTheRow(
   return {
     closure: view?.closure ?? null,
     refusal: commit.refusal,
-    laid: commit.laid,
+    withheld: commit.withheld,
+    joined: commit.joined,
+    laidSome: commit.laid > 0,
   };
 }
 
-it("never seats a join on a model's pending studs: it waits and lays nothing, pending studs are no seats at all, and the same join seats once the checked studs land", async () => {
+it("never seats a join on a model's pending studs: it lays the stroke and withholds only the join, pending studs are no seats at all, and the same join seats once the checked studs land", async () => {
   const { pending, checked } = await fixtureModelChecks(BASEPLATE_ROW_MODEL);
-  const seated = await acrossTheRow(checked);
-  expect(seated.closure).toBe("exact");
-  expect(seated.laid).toBeGreaterThan(0);
-  expect(await acrossTheRow(pending)).toEqual({ closure: "pending", refusal: "pending", laid: 0 });
+  expect(await acrossTheRow(checked)).toMatchObject({
+    closure: "exact",
+    joined: true,
+    laidSome: true,
+  });
+  expect(await acrossTheRow(pending)).toEqual({
+    closure: "pending",
+    refusal: null,
+    withheld: "pending",
+    joined: false,
+    laidSome: true,
+  });
   expect(await acrossTheRow(pending, () => false)).toEqual({
     closure: "blocked",
-    refusal: "blocked",
-    laid: 0,
+    refusal: null,
+    withheld: "unsupported",
+    joined: false,
+    laidSome: true,
   });
 });
 
@@ -1702,4 +1725,201 @@ it("closes onto the open end of track a model carries, and runs no join through 
     { carried: NINE_VOLT_STRAIGHT, offered: true, joinsThrough: false },
     { carried: PLASTIC_STRAIGHT, offered: true, joinsThrough: false },
   ]);
+});
+
+const TILED_PLAZA = "Tiled plaza";
+
+async function kitSupport(layout: TrackDrawing): Promise<TrackSupport> {
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const shapes = container.get(SNAP_SHAPES);
+  const { parts } = await trackAndRoadBundle();
+  const antiStuds = new Map<number, Int32Array>();
+  for (const kit of layout.pieceParts()) {
+    const part = parts[kit.partIndex];
+    if (!part) throw new Error(`kit part index ${kit.partIndex} is not in the bundle`);
+    const loaded = await loader.readPartConnectors("standard", part.id);
+    if (loaded.kind !== "loaded") throw new Error(`${part.id} has no connector record`);
+    const table = ConnectorTable.fromColumns(loaded.connectors, shapes, part.id);
+    antiStuds.set(kit.catalogIndex, antiStudsOf(table, part.boundsMin[1]));
+  }
+  return new TrackSupport(antiStuds);
+}
+
+async function roadPlateGround() {
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const ground = placeGround([{ placeable: road, x: 0, z: 0 }]);
+  const [plate] = ground;
+  if (!plate || !road.road) throw new Error("the road plate has no road surface");
+  return { ground, plate, surface: road.road };
+}
+
+function unsupportedOf(layout: TrackDrawing) {
+  return (layout.unsupportedPieces() ?? []).map(({ piece, block }) => ({
+    piece,
+    on: block?.kind === "model" ? block.label : null,
+  }));
+}
+
+it("counts a piece unsupported only when no anti-stud has a stud under it: half on a road plate's sidewalk is supported, wholly on its roadway is not", async () => {
+  const { ground, plate } = await roadPlateGround();
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const seats = studSeats(ground, layout.verticalRange()[0]);
+  const centreZ = studsOf((plate.box.minZ + plate.box.maxZ) / 2);
+  let roadwayEdge = Math.ceil(plate.box.minX / STUD_LDU);
+  while (seats.has(cellKey(roadwayEdge, centreZ))) roadwayEdge++;
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  layPiece(layout, straight, studPose(roadwayEdge, centreZ + halfLength, NORTH));
+  layPiece(
+    layout,
+    straight,
+    studPose(studsOf((plate.box.minX + plate.box.maxX) / 2), centreZ + halfLength, NORTH),
+  );
+
+  expect(unsupportedOf(layout)).toEqual([{ piece: 1, on: plate.placeable.label }]);
+});
+
+it("finds a level crossing only over a road surface's roadway: track on a studless plaza is reported unsupported, but is no crossing and gets no ramp", async () => {
+  const { ground, plate, surface } = await roadPlateGround();
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const range = layout.verticalRange();
+  const roadObstacles = trackObstacles(ground, range, NO_TRACK_PARTS);
+  const side = plate.box.maxX - plate.box.minX;
+  const plaza: Rect = [
+    plate.box.maxX + side,
+    plate.box.minZ,
+    plate.box.maxX + 2 * side,
+    plate.box.maxZ,
+  ];
+  layout.setObstacles(
+    {
+      ...roadObstacles,
+      rects: Float64Array.from([...roadObstacles.rects, ...plaza]),
+      owners: Int32Array.from([...roadObstacles.owners, roadObstacles.labels.length]),
+      unseated: Uint8Array.from([...roadObstacles.unseated, 1]),
+      labels: [...roadObstacles.labels, TILED_PLAZA],
+    },
+    false,
+  );
+  layout.setSupport(await kitSupport(layout));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const centreZ = studsOf((plate.box.minZ + plate.box.maxZ) / 2);
+  const acrossRoadway = studsOf((plate.box.minX + plate.box.maxX) / 2) - halfLength;
+  const acrossPlaza = studsOf((plaza[0] + plaza[2]) / 2) - halfLength;
+  layPiece(layout, straight, studPose(acrossRoadway, centreZ, 0));
+  layPiece(layout, straight, studPose(acrossPlaza, centreZ, 0));
+  const { levelCrossing } = await container.get(PART_BUNDLE_LOADER).loadIndex("standard");
+  const railTops = new Map(
+    levelCrossing.systems.map((system) => [system.system, system.railTopLdu]),
+  );
+  const road = { id: 0, x: plate.handle.x, z: plate.handle.z, yLdu: 0, rot: 0, surface };
+  const tracks = layout.crossingPieces().map((piece) => ({
+    outline: piece.outline,
+    bedLdu: piece.bedLdu,
+    railTopLdu: railTops.get(piece.system) ?? Number.NaN,
+  }));
+  const found = levelCrossings([road], tracks, []);
+
+  expect(unsupportedOf(layout)).toEqual([
+    { piece: 0, on: plate.placeable.label },
+    { piece: 1, on: TILED_PLAZA },
+  ]);
+  expect(found.map((crossing) => crossing.tracks)).toEqual([[0]]);
+});
+
+it("lays the stroke and withholds only the join when no supported closure reaches the end, reports it unsupported, and joins when a supported closure exists, half on studs included", async () => {
+  const baseplate = await loosePart(GROUND_BASEPLATE);
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const side = baseplate.box.max[0] - baseplate.box.min[0];
+  const ground = placeGround([
+    { placeable: baseplate, x: 0, z: 0 },
+    { placeable: road, x: side, z: 0 },
+  ]);
+  const seam = side / 2 / STUD_LDU;
+  const roadCentre = side / STUD_LDU;
+  const reach = side / STUD_LDU;
+  const seats = studSeats(ground, 0);
+  let roadwayEdge = seam;
+  while (seats.has(cellKey(roadwayEdge, 0))) roadwayEdge++;
+  const straights: Run = [{ kind: "straight", count: 2 }];
+  const across = async (x: number) => {
+    const layout = await trackOver(ground);
+    layout.setSupport(await kitSupport(layout));
+    layRun(layout, studPose(x, -reach, NORTH), straights);
+    layRun(layout, studPose(x, reach, SOUTH), straights);
+    const before = layout.pieceCount;
+    const { view, commit } = closeFrom(layout, endAt(layout, x, -reach), endAt(layout, x, reach));
+    return {
+      closure: view?.closure ?? null,
+      withheld: commit.withheld,
+      joined: commit.joined,
+      laidSome: commit.laid > 0,
+      unsupportedLaid: unsupportedOf(layout).filter(({ piece }) => piece >= before).length > 0,
+    };
+  };
+
+  expect(await across(seam)).toEqual({
+    closure: "exact",
+    withheld: null,
+    joined: true,
+    laidSome: true,
+    unsupportedLaid: false,
+  });
+  expect(await across(roadwayEdge)).toEqual({
+    closure: "exact",
+    withheld: null,
+    joined: true,
+    laidSome: true,
+    unsupportedLaid: false,
+  });
+  expect(await across(roadCentre)).toEqual({
+    closure: "blocked",
+    withheld: "unsupported",
+    joined: false,
+    laidSome: true,
+    unsupportedLaid: true,
+  });
+});
+
+it("reports unsupported track inside a plan as a plan issue, so the plan isn't Valid", async () => {
+  const { ground, plate } = await roadPlateGround();
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const centreZ = studsOf((plate.box.minZ + plate.box.maxZ) / 2);
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  layPiece(
+    layout,
+    straight,
+    studPose(studsOf((plate.box.minX + plate.box.maxX) / 2) - halfLength, centreZ, 0),
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const planId = plans.createPlan({
+    name: "Road table",
+    roomWidthMm: 4000,
+    roomDepthMm: 3000,
+    originChunkX: -1,
+    originChunkZ: -1,
+  });
+  plans.addTable(planId, {
+    name: "Table",
+    rect: { x: 0, z: 0, width: 4000, depth: 3000 },
+    heightMm: 750,
+  });
+  const delta = new PlanDelta();
+  writeFullRebuild(delta, ground, layout);
+  plans.apply(delta);
+  const unsupported = (layout.unsupportedPieces() ?? []).map(({ piece }) => piece);
+  plans.setUnsupported(new Set(unsupported), new Set());
+  const flagged = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
+  plans.setUnsupported(new Set(), new Set());
+  const cleared = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
+  plans.removePlan(planId);
+
+  expect(unsupported).toEqual([0]);
+  expect(flagged).toHaveLength(1);
+  expect(cleared).toEqual([]);
 });
