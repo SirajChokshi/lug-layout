@@ -1,21 +1,43 @@
-import type { IEditorCamera } from "../camera/editor-camera.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import { BRICK_LDU, PLATE_LDU, STUD_LDU } from "@brr/math";
+import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
+import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
+import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placement-mode.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
+export type NudgeId = "nudge-left" | "nudge-right" | "nudge-forward" | "nudge-back";
+
 export type EditorActionId =
+  | "cancel"
   | "select-tool"
   | "draw-track"
   | "draw-road"
+  | "measure"
+  | "draw-tables"
+  | "cycle-fill-grid"
   | "rotate"
   | "rotate-back"
   | "flip-switch"
   | "next-connector"
+  | "extend-straight"
+  | "extend-left"
+  | "extend-right"
+  | "extend-preview"
+  | "next-track-choice"
+  | "previous-track-choice"
+  | "raise-track"
+  | "lower-track"
+  | "raise-track-brick"
+  | "lower-track-brick"
   | "delete"
   | "duplicate"
+  | "copy"
+  | "paste"
   | "undo"
   | "redo"
+  | NudgeId
   | "focus"
   | "fit-all"
   | "toggle-plan-view"
@@ -33,6 +55,7 @@ export type EditorActionId =
   | "toggle-joins"
   | "toggle-grid"
   | "toggle-road-snap"
+  | "toggle-placement-mode"
   | "cycle-tier"
   | "measure-frames";
 
@@ -72,8 +95,16 @@ export const COMMAND_GROUPS: ReadonlyArray<CommandGroup> = [
 ];
 
 export const PLAY_THROTTLE_STEP_LDU_PER_S = 40;
+const PLATES_PER_BRICK = BRICK_LDU / PLATE_LDU;
 
 export const COMMANDS: ReadonlyArray<CommandSpec> = [
+  {
+    id: "cancel",
+    title: "Cancel the drag or the paste in hand",
+    group: "Tools",
+    keys: [{ key: "Escape" }],
+    keywords: "abort escape drop undo",
+  },
   {
     id: "select-tool",
     title: "Select tool: stop placing, clear the selection",
@@ -100,6 +131,27 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Tools",
     keys: [{ key: "g" }],
     keywords: "street lay plates",
+  },
+  {
+    id: "measure",
+    title: "Measure: drag a ruler in studs and cm",
+    group: "Tools",
+    keys: [{ key: "u" }],
+    keywords: "ruler distance length dimension tape size",
+  },
+  {
+    id: "draw-tables",
+    title: "Draw tables: drag to draw, drag an edge or corner to resize",
+    group: "Tools",
+    keys: [{ key: "b" }],
+    keywords: "table board room plan size studs cm",
+  },
+  {
+    id: "cycle-fill-grid",
+    title: "Fill grid: 8, 16 or 32 studs, for dragging an area or filling the tables",
+    group: "Edit",
+    keys: [{ key: "g", shift: true }],
+    keywords: "fill area tile repeat paint grid step pitch",
   },
   {
     id: "rotate",
@@ -130,6 +182,80 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "cycle swing connector reverse curve",
   },
   {
+    id: "extend-straight",
+    title: "Lay a straight on the track end",
+    group: "Edit",
+    keys: [{ key: "w" }],
+    keywords: "append extend next piece forward rail",
+  },
+  {
+    id: "extend-left",
+    title: "Lay a left curve on the track end",
+    group: "Edit",
+    keys: [{ key: "a" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-right",
+    title: "Lay a right curve on the track end",
+    group: "Edit",
+    keys: [{ key: "d" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-preview",
+    title: "Lay the piece or join previewed on the track end",
+    group: "Edit",
+    keys: [{ key: "Enter" }],
+    keywords: "append extend again repeat close loop join complete",
+  },
+  {
+    id: "next-track-choice",
+    title: "Preview the next choice on the track end",
+    group: "Edit",
+    keys: [{ key: "." }],
+    keywords: "cycle option piece join",
+  },
+  {
+    id: "previous-track-choice",
+    title: "Preview the previous choice on the track end",
+    group: "Edit",
+    keys: [{ key: "," }],
+    keywords: "cycle option piece join back",
+  },
+  {
+    id: "raise-track",
+    title: "Draw track one plate higher",
+    group: "Edit",
+    keys: [{ key: "PageUp" }],
+    keywords: "height elevation raise bridge viaduct ramp up",
+    repeats: true,
+  },
+  {
+    id: "lower-track",
+    title: "Draw track one plate lower",
+    group: "Edit",
+    keys: [{ key: "PageDown" }],
+    keywords: "height elevation lower ramp down",
+    repeats: true,
+  },
+  {
+    id: "raise-track-brick",
+    title: "Draw track one brick higher",
+    group: "Edit",
+    keys: [{ key: "PageUp", shift: true }],
+    keywords: "height elevation raise bridge viaduct",
+    repeats: true,
+  },
+  {
+    id: "lower-track-brick",
+    title: "Draw track one brick lower",
+    group: "Edit",
+    keys: [{ key: "PageDown", shift: true }],
+    keywords: "height elevation lower",
+    repeats: true,
+  },
+  {
     id: "delete",
     title: "Delete the selection",
     group: "Edit",
@@ -142,6 +268,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "d", mod: true }],
     keywords: "duplicate copy clone again pick",
+  },
+  {
+    id: "copy",
+    title: "Copy the selection",
+    group: "Edit",
+    keys: [{ key: "c", mod: true }],
+    keywords: "clipboard group duplicate",
+  },
+  {
+    id: "paste",
+    title: "Paste the copied selection on the cursor",
+    group: "Edit",
+    keys: [{ key: "v", mod: true }],
+    keywords: "clipboard group insert",
   },
   {
     id: "undo",
@@ -160,6 +300,38 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
       { key: "y", mod: true },
     ],
     keywords: "again forward",
+    repeats: true,
+  },
+  {
+    id: "nudge-left",
+    title: "Move the selection a stud left",
+    group: "Edit",
+    keys: [{ key: "ArrowLeft" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-right",
+    title: "Move the selection a stud right",
+    group: "Edit",
+    keys: [{ key: "ArrowRight" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-forward",
+    title: "Move the selection a stud up the screen",
+    group: "Edit",
+    keys: [{ key: "ArrowUp" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-back",
+    title: "Move the selection a stud down the screen",
+    group: "Edit",
+    keys: [{ key: "ArrowDown" }],
+    keywords: "nudge step shift arrow",
     repeats: true,
   },
   {
@@ -264,6 +436,14 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle magnet align",
   },
   {
+    id: "toggle-placement-mode",
+    title:
+      "Switch between magnetic and precise placement (at an open track end, A lays a left curve)",
+    group: "Edit",
+    keys: [{ key: "a" }],
+    keywords: "snap magnet magnetic assist precise exact free toggle",
+  },
+  {
     id: "cycle-tier",
     title: "Cycle the detail tier: auto, near, mid, far",
     group: "View",
@@ -305,8 +485,21 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 ];
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
-  { gesture: "Click", action: "Place the part in hand, or select a model" },
-  { gesture: "Drag", action: "Lay a run of track or road while drawing it" },
+  { gesture: "Click", action: "Place the part in hand, or select a model or track piece" },
+  { gesture: "Shift-click", action: "Add a model or track piece to the selection, or take it out" },
+  {
+    gesture: "Drag",
+    action: "Lay a run of track or road while drawing it, or fill an area with the part in hand",
+  },
+  {
+    gesture: "Drag from outside the selection",
+    action:
+      "Box-select every model and track piece inside the box (Ctrl or Cmd adds to the selection)",
+  },
+  {
+    gesture: "Drag a selected model or track piece",
+    action: "Move the whole selection (Esc cancels)",
+  },
   { gesture: "Right-drag", action: "Orbit (pan in the 2D plan)" },
   {
     gesture: "Shift-, Space- or middle-drag",
@@ -314,9 +507,21 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   },
   { gesture: "Wheel or pinch", action: "Zoom at the cursor" },
   { gesture: "Two-finger scroll", action: "Pan on a trackpad (Alt orbits)" },
+  {
+    gesture: "Hold Alt (⌥ on a Mac)",
+    action:
+      "Switch between magnetic and precise placement while held (with a two-finger scroll it still orbits)",
+  },
   { gesture: "Double-click", action: "Frame the selection" },
   { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
+
+const NUDGE_SCREEN: Readonly<Record<NudgeId, readonly [number, number]>> = {
+  "nudge-left": [-1, 0],
+  "nudge-right": [1, 0],
+  "nudge-forward": [0, -1],
+  "nudge-back": [0, 1],
+};
 
 const PAN_STEP_PX = 120;
 const ORBIT_STEP_PX = 52;
@@ -330,7 +535,8 @@ export function commandSpec(id: CommandId): CommandSpec {
   return spec;
 }
 
-export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | null {
+export function commandsForKey(input: KeyInput, typing: boolean): ReadonlyArray<CommandMatch> {
+  const bound: CommandMatch[] = [];
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
     const keyIndex = spec.keys.findIndex(
@@ -338,9 +544,18 @@ export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | 
     );
     if (keyIndex < 0) continue;
     const { id } = spec;
-    return isHotbarCommand(id) ? { id, slot: keyIndex } : { id };
+    bound.push(isHotbarCommand(id) ? { id, slot: keyIndex } : { id });
   }
-  return null;
+  return bound;
+}
+
+export function commandForKey(
+  input: KeyInput,
+  typing: boolean,
+  enabled: (id: CommandId) => boolean,
+): CommandMatch | null {
+  const bound = commandsForKey(input, typing);
+  return bound.find((match) => enabled(match.id)) ?? bound[0] ?? null;
 }
 
 export function isShellCommand(id: CommandId): id is ShellCommandId {
@@ -365,9 +580,12 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "select-tool") return snapshot.mode === "select";
   if (id === "draw-track") return snapshot.mode === "track";
   if (id === "draw-road") return snapshot.mode === "road";
+  if (id === "measure") return snapshot.mode === "measure";
+  if (id === "draw-tables") return snapshot.mode === "table";
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
+  if (id === "toggle-placement-mode") return snapshot.placementMode === "precise";
   return false;
 }
 
@@ -430,36 +648,86 @@ export function commandEnabled(
   if (isPlayCommand(id)) return playCommandEnabled(id, play);
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
+    case "cancel":
+      return snapshot.gesture !== null || snapshot.fillDraft !== null;
+    case "toggle-placement-mode":
+      return placementModeSwitchEnabled(snapshot, play);
     case "rotate":
     case "rotate-back":
       return (
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
-          snapshot.selection?.kind === "model" ||
+          snapshot.selection?.movable === true ||
+          (snapshot.gesture !== null && snapshot.gesture.kind !== "box") ||
           snapshot.track?.held != null)
       );
     case "flip-switch":
       return snapshot.track?.held?.mirror != null;
     case "next-connector":
       return snapshot.track?.held != null;
+    case "extend-straight":
+    case "extend-left":
+    case "extend-right":
+    case "extend-preview":
+    case "next-track-choice":
+    case "previous-track-choice":
+      return snapshot.track?.extend != null && !snapshot.readOnly;
     case "delete":
+      if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
+      if (snapshot.mode === "table") return snapshot.hoveredTable !== null;
+      return snapshot.selection !== null && snapshot.gesture === null && !snapshot.readOnly;
     case "duplicate":
-      return snapshot.selection !== null && !snapshot.readOnly;
+      return snapshot.selection?.members.length === 1 && !snapshot.readOnly;
     case "pick-slot":
       return !snapshot.readOnly;
+    case "copy":
+      return snapshot.selection?.movable === true;
+    case "paste":
+      return (
+        snapshot.clipboard > 0 &&
+        snapshot.mode === "select" &&
+        snapshot.gesture === null &&
+        !snapshot.readOnly
+      );
+    case "nudge-left":
+    case "nudge-right":
+    case "nudge-forward":
+    case "nudge-back":
+      return (
+        snapshot.selection?.movable === true &&
+        snapshot.mode === "select" &&
+        snapshot.gesture === null &&
+        !snapshot.readOnly
+      );
     case "focus":
       return snapshot.selection !== null;
     case "undo":
-      return snapshot.history.undo !== null && !snapshot.readOnly;
+      return (
+        snapshot.history.undo === "plan" || (snapshot.history.undo !== null && !snapshot.readOnly)
+      );
     case "redo":
-      return snapshot.history.redo !== null && !snapshot.readOnly;
+      return (
+        snapshot.history.redo === "plan" || (snapshot.history.redo !== null && !snapshot.readOnly)
+      );
     case "centre":
       return snapshot.hover !== null;
     case "draw-track":
       return !snapshot.readOnly && snapshot.catalog.some((item) => item.id === TRACK_ITEM_ID);
     case "draw-road":
       return snapshot.roadKit !== null && !snapshot.readOnly;
+    case "cycle-fill-grid":
+      return snapshot.mode === "place" && !snapshot.readOnly;
+    case "raise-track":
+    case "raise-track-brick":
+      return snapshot.mode === "track" && !snapshot.readOnly;
+    case "lower-track":
+    case "lower-track-brick":
+      return (
+        snapshot.mode === "track" &&
+        !snapshot.readOnly &&
+        (snapshot.track?.height.drawingPlates ?? 0) > 0
+      );
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":
@@ -473,6 +741,8 @@ export function commandEnabled(
     case "tilt-up":
     case "zoom-in":
     case "zoom-out":
+    case "measure":
+    case "draw-tables":
     case "toggle-joins":
     case "toggle-grid":
     case "toggle-road-snap":
@@ -487,14 +757,27 @@ export function commandEnabled(
 }
 
 function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
-  const selection = editor.snapshot().selection;
-  if (!selection) return;
-  editor.chooseItem(selection.item);
-  const rot = selection.kind === "model" ? selection.rot : 0;
+  const selected = editor.snapshot().selection?.primary;
+  if (!selected) return;
+  editor.chooseItem(selected.item);
+  if (selected.kind === "track") return;
+  const rot = selected.kind === "model" ? selected.rot : 0;
   const turns = (rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
   const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
   const presses = direction === 1 ? turns : QUARTER_TURNS - turns;
   for (let press = 0; press < presses; press++) editor.rotate(eventTimeMs, direction);
+}
+
+function studStep({ x, z }: GroundDirection): { readonly dx: number; readonly dz: number } {
+  return Math.abs(x) >= Math.abs(z)
+    ? { dx: Math.sign(x) * STUD_LDU + 0, dz: 0 }
+    : { dx: 0, dz: Math.sign(z) * STUD_LDU + 0 };
+}
+
+function nudge(editor: IEditor, camera: IEditorCamera, id: NudgeId, eventTimeMs: number): void {
+  const [rightPx, downPx] = NUDGE_SCREEN[id];
+  const { dx, dz } = studStep(camera.groundDirection(rightPx, downPx));
+  editor.moveSelectionBy(dx, dz, eventTimeMs);
 }
 
 export function runEditorAction(
@@ -504,8 +787,11 @@ export function runEditorAction(
   eventTimeMs: number,
 ): void {
   switch (id) {
+    case "cancel":
+      editor.cancelGesture();
+      return;
     case "select-tool":
-      editor.chooseItem(null);
+      if (!editor.dropTrackEnd()) editor.chooseItem(null);
       return;
     case "draw-track":
       editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
@@ -527,11 +813,53 @@ export function runEditorAction(
     case "next-connector":
       editor.cycleConnector();
       return;
+    case "extend-straight":
+      editor.extendTrack("straight", eventTimeMs);
+      return;
+    case "extend-left":
+      editor.extendTrack("left", eventTimeMs);
+      return;
+    case "extend-right":
+      editor.extendTrack("right", eventTimeMs);
+      return;
+    case "extend-preview":
+      editor.extendTrack(null, eventTimeMs);
+      return;
+    case "next-track-choice":
+      editor.cycleTrackChoice(1);
+      return;
+    case "previous-track-choice":
+      editor.cycleTrackChoice(-1);
+      return;
+    case "raise-track":
+      editor.raiseTrack(1);
+      return;
+    case "lower-track":
+      editor.raiseTrack(-1);
+      return;
+    case "raise-track-brick":
+      editor.raiseTrack(PLATES_PER_BRICK);
+      return;
+    case "lower-track-brick":
+      editor.raiseTrack(-PLATES_PER_BRICK);
+      return;
     case "delete":
       editor.deleteSelection(eventTimeMs);
       return;
     case "duplicate":
       placeMoreLikeSelection(editor, eventTimeMs);
+      return;
+    case "copy":
+      editor.copySelection();
+      return;
+    case "paste":
+      editor.pasteClipboard();
+      return;
+    case "nudge-left":
+    case "nudge-right":
+    case "nudge-forward":
+    case "nudge-back":
+      nudge(editor, camera, id, eventTimeMs);
       return;
     case "undo":
       editor.undo(eventTimeMs);
@@ -585,6 +913,15 @@ export function runEditorAction(
     case "zoom-out":
       camera.zoomStep(-1);
       return;
+    case "measure":
+      editor.setMeasuring(editor.snapshot().mode !== "measure");
+      return;
+    case "draw-tables":
+      editor.setTableTool(editor.snapshot().mode !== "table");
+      return;
+    case "cycle-fill-grid":
+      editor.cycleFillGrid();
+      return;
     case "toggle-joins":
       editor.setShowJoins(!editor.snapshot().showJoins);
       return;
@@ -593,6 +930,9 @@ export function runEditorAction(
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);
+      return;
+    case "toggle-placement-mode":
+      togglePlacementMode(editor);
       return;
     case "cycle-tier":
       editor.cycleTier();

@@ -1,4 +1,5 @@
 import { decode, decodedOrThrow, type Decoded, type Issue } from "@brr/schema/decode";
+import { planArchiveFiles, readPlanFiles, type PlanArchive } from "@brr/schema/plan";
 import {
   IMPORT_DIRECTORY,
   WorldHeader,
@@ -11,19 +12,23 @@ import {
   parseImportPath,
   parseJsonText,
   readWorldArchive,
+  readWorldFiles,
   referencedImports,
   shardEntry,
   shardName,
   worldArchiveFiles,
   worldManifest,
+  type ConsistRecordV1,
   type ImportedFile,
   type ShardEntryV1,
   type SuperChunk,
   type WorldArchive,
+  type WorldFiles,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import { deleteDatabase, openDatabase, requestResult, transactionDone } from "./indexed-db.ts";
-import { INDEXED_DB } from "./tokens.ts";
+import type { PersistentStorage } from "./persistent-storage.ts";
+import { INDEXED_DB, PERSISTENT_STORAGE } from "./tokens.ts";
 import { readZip, writeStoredZip } from "./zip.ts";
 
 export const WORLD_INDEX_DATABASE = "brr-worlds";
@@ -63,6 +68,9 @@ export interface IWorldRepository {
   shardFiles(id: string): Promise<ReadonlyArray<ShardFile>>;
   packArchive(archive: WorldArchive): Uint8Array;
   readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>>;
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>>;
+  packPlanArchive(archive: PlanArchive): Uint8Array;
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>>;
   putImportedFile(file: ImportedFile): Promise<void>;
   importedFile(sha256: string): Promise<ImportedFile | undefined>;
 }
@@ -112,9 +120,32 @@ function indexEntries(values: ReadonlyArray<unknown>): WorldIndexEntry[] {
   });
 }
 
+interface ArchiveTexts {
+  readonly manifest: {
+    readonly shards: ReadonlyArray<ShardEntryV1>;
+    readonly consists?: ReadonlyArray<ConsistRecordV1>;
+  };
+  readonly shards: ReadonlyArray<WorldShardV1>;
+}
+
+function changesContent(change: WorldChange): boolean {
+  return change.put.length > 0 || change.drop.length > 0;
+}
+
 @injectable()
 export class IndexedDbWorldRepository implements IWorldRepository {
-  constructor(@inject(INDEXED_DB) private readonly factory: IDBFactory) {}
+  private persistenceRequested = false;
+
+  constructor(
+    @inject(INDEXED_DB) private readonly factory: IDBFactory,
+    @inject(PERSISTENT_STORAGE) private readonly storage: PersistentStorage | null,
+  ) {}
+
+  private requestPersistenceOnce(): void {
+    if (this.persistenceRequested || this.storage === null) return;
+    this.persistenceRequested = true;
+    this.storage.persist().catch(() => false);
+  }
 
   private openIndex(): Promise<IDBDatabase> {
     return openDatabase(this.factory, WORLD_INDEX_DATABASE, [
@@ -172,10 +203,16 @@ export class IndexedDbWorldRepository implements IWorldRepository {
   }
 
   create(header: WorldHeader, shards: ReadonlyArray<WorldShardV1>): Promise<WorldIndexEntry> {
-    return this.save(crypto.randomUUID(), { header, put: shards, drop: [] });
+    return this.write(crypto.randomUUID(), { header, put: shards, drop: [] });
   }
 
   async save(id: string, change: WorldChange): Promise<WorldIndexEntry> {
+    const summary = await this.write(id, change);
+    if (changesContent(change)) this.requestPersistenceOnce();
+    return summary;
+  }
+
+  private async write(id: string, change: WorldChange): Promise<WorldIndexEntry> {
     decodedOrThrow(decode(WorldHeader, change.header, "world header"), NOT_SAVED);
     for (const shard of change.put) {
       decodedOrThrow(
@@ -301,12 +338,39 @@ export class IndexedDbWorldRepository implements IWorldRepository {
 
   async readArchive(bytes: Uint8Array): Promise<Decoded<WorldArchive>> {
     const zip = await readZip(bytes);
-    if (!zip.ok) return zip;
+    return zip.ok ? this.readFiles(zip.value, readWorldArchive) : zip;
+  }
+
+  readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>> {
+    return this.readFiles(files, readWorldFiles);
+  }
+
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    const imports = [...archive.imports];
+    imports.sort((a, b) => (a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0));
+    return writeStoredZip([
+      ...planArchiveFiles(archive).map((file) => ({
+        name: file.name,
+        bytes: utf8.encode(file.text),
+      })),
+      ...imports.map((file) => ({ name: importPath(file), bytes: file.bytes })),
+    ]);
+  }
+
+  async readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    const zip = await readZip(bytes);
+    return zip.ok ? this.readFiles(zip.value, readPlanFiles) : zip;
+  }
+
+  private async readFiles<T extends ArchiveTexts>(
+    files: ReadonlyMap<string, Uint8Array>,
+    readTexts: (texts: ReadonlyMap<string, string>) => Decoded<T>,
+  ): Promise<Decoded<T & { readonly imports: ReadonlyArray<ImportedFile> }>> {
     const texts = new Map<string, string>();
     const imports: ImportedFile[] = [];
     const issues: Issue[] = [];
     const decoder = new TextDecoder("utf-8", { fatal: true });
-    for (const [name, data] of zip.value) {
+    for (const [name, data] of files) {
       if (name.startsWith(IMPORT_DIRECTORY)) {
         const path = parseImportPath(name);
         if (path === null) {
@@ -324,7 +388,7 @@ export class IndexedDbWorldRepository implements IWorldRepository {
         return { ok: false, issues: [{ path: name, message: "is not UTF-8 text" }] };
       }
     }
-    const archive = readWorldArchive(texts);
+    const archive = readTexts(texts);
     if (!archive.ok) return { ok: false, issues: [...issues, ...archive.issues] };
     const referenced = referencedImports(
       archive.value.shards,

@@ -13,7 +13,13 @@ impl Library for MemoryLibrary {
 }
 
 pub fn fixture_library() -> MemoryLibrary {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.cache/ldraw");
+    restored_library("ldraw")
+}
+
+pub fn restored_library(closure: &str) -> MemoryLibrary {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.cache")
+        .join(closure);
     let mut files = HashMap::new();
     let mut stack = vec![root.clone()];
     while let Some(dir) = stack.pop() {

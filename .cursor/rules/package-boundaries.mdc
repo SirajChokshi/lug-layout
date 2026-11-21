@@ -28,10 +28,11 @@ L0 math
 | sim | math, schema, domain |
 | import | math, schema, domain, catalog, compile-wasm |
 | client | math, schema, domain, catalog, render, storage, rpc, inversify; **`import type` only** from sim and import |
-| workers/* | rpc, their engine (sim / import / later render) and its deps, inversify |
+| workers/* | rpc, their engine (sim / import / later render) and its deps, inversify. `workers/import-worker` also depends on storage, for the shared IndexedDB asset cache that holds its library-bake and connector records. |
 | ui | client (interfaces, tokens, view models), `import type` from schema |
 | apps/web | ui, client, inversify, workers (only as `new Worker(new URL(..., import.meta.url), { type: "module" })`); `import type` from schema |
 | tools/asset-pipeline | math, schema, domain, catalog, valibot, brick-compile CLI. Nothing imports it. |
+| tools/e2e | math, schema, catalog, import, client, render, storage, inversify, valibot, Playwright, Vitest. A test-tooling composition root like apps/web: builds a `Container` from `mainThreadModules` with only boundary tokens rebound. Nothing imports it. |
 | apps/catalog-api | schema and valibot only (`@brr/config`, wrangler and `@cloudflare/workers-types` as dev tooling). Nothing imports it. |
 | tools/oxlint-plugin | `@oxlint/plugins` only. Loaded by `.oxlintrc.json`, never imported by code. |
 | tools/wasi-test-runner | Node built-ins only (`@brr/config` as dev tooling). Run by `pnpm test:wasm`, never imported by code. |
