@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use num_bigint::BigInt;
 use serde_json::{json, Value};
@@ -284,6 +284,26 @@ impl Square {
         }
     }
 
+    fn probes(&self) -> [Point; 5] {
+        let point = |x: i64, z: i64, w: i64| Point {
+            x: BigInt::from(x),
+            z: BigInt::from(z),
+            w: BigInt::from(w),
+        };
+        let w = i64::from(SIXTEENTHS_PER_LDU);
+        [
+            point(self.low[0], self.low[1], w),
+            point(self.high[0], self.low[1], w),
+            point(self.high[0], self.high[1], w),
+            point(self.low[0], self.high[1], w),
+            point(
+                self.low[0] + self.high[0],
+                self.low[1] + self.high[1],
+                2 * w,
+            ),
+        ]
+    }
+
     fn meets(&self, bounds: &[i64; 4]) -> bool {
         bounds[0] < self.high[0]
             && bounds[2] > self.low[0]
@@ -368,10 +388,28 @@ fn bounds_meet(a: &[i64; 4], b: &[i64; 4]) -> bool {
     a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3]
 }
 
+type SmallLine = [i128; 3];
+
+fn small_line(line: &Line) -> Option<SmallLine> {
+    Some([
+        i128::try_from(&line.a).ok()?,
+        i128::try_from(&line.b).ok()?,
+        i128::try_from(&line.d).ok()?,
+    ])
+}
+
+fn small_value([a, b, d]: SmallLine, x: i64, z: i64, w: i64) -> Option<i128> {
+    a.checked_mul(i128::from(x))?
+        .checked_add(b.checked_mul(i128::from(z))?)?
+        .checked_add(d.checked_mul(i128::from(w))?)
+}
+
 struct Face {
+    corners: [Point; 3],
     bounds: [i64; 4],
     extent: f64,
     edges: [Line; 3],
+    small_edges: Option<[SmallLine; 3]>,
     grown: Vec<Line>,
 }
 
@@ -384,15 +422,61 @@ impl Face {
             num_bigint::Sign::Minus => [p, r, q],
         };
         let [p, q, r] = &corners;
+        let edges = [
+            Line::through(p, q),
+            Line::through(q, r),
+            Line::through(r, p),
+        ];
+        let small_edges = match (
+            small_line(&edges[0]),
+            small_line(&edges[1]),
+            small_line(&edges[2]),
+        ) {
+            (Some(first), Some(second), Some(third)) => Some([first, second, third]),
+            _ => None,
+        };
+        let grown = grown_by_identification(&corners);
         Some(Face {
+            corners,
             bounds,
             extent,
-            edges: [
-                Line::through(p, q),
-                Line::through(q, r),
-                Line::through(r, p),
-            ],
-            grown: grown_by_identification(&corners),
+            edges,
+            small_edges,
+            grown,
+        })
+    }
+
+    fn contains(&self, square: &Square) -> bool {
+        let Some(edges) = self.small_edges else {
+            return false;
+        };
+        let corners = [
+            (square.low[0], square.low[1]),
+            (square.high[0], square.low[1]),
+            (square.high[0], square.high[1]),
+            (square.low[0], square.high[1]),
+        ];
+        corners.iter().all(|&(x, z)| {
+            edges.iter().all(|&edge| {
+                small_value(edge, x, z, i64::from(SIXTEENTHS_PER_LDU))
+                    .is_some_and(|value| value >= 0)
+            })
+        })
+    }
+
+    fn grown_holds(&self, point: &Point) -> bool {
+        self.grown.iter().all(|line| line.keeps(point))
+    }
+
+    fn holds_centre(&self, square: &Square) -> bool {
+        let Some(edges) = self.small_edges else {
+            return false;
+        };
+        let x = square.low[0] + square.high[0];
+        let z = square.low[1] + square.high[1];
+        edges.iter().all(|&edge| {
+            small_value(edge, x, z, 2 * i64::from(SIXTEENTHS_PER_LDU))
+                .is_some_and(|value| value >= 0)
         })
     }
 }
@@ -467,8 +551,160 @@ fn plan_extent(points: &[Vec3; 3]) -> f64 {
     ((q[0] - p[0]) * (r[2] - p[2]) - (q[2] - p[2]) * (r[0] - p[0])).abs()
 }
 
+fn gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    let zero = BigInt::from(0);
+    let (mut a, mut b) = (a.magnitude().clone(), b.magnitude().clone());
+    while b != num_bigint::BigUint::from(0u8) {
+        let rest = &a % &b;
+        a = b;
+        b = rest;
+    }
+    BigInt::from(a).max(zero)
+}
+
+fn supporting_line(p: &Point, q: &Point) -> ((BigInt, BigInt, BigInt), i64) {
+    let line = Line::through(p, q);
+    let divisor = gcd(&gcd(&line.a, &line.b), &line.d);
+    let (a, b, d) = (&line.a / &divisor, &line.b / &divisor, &line.d / &divisor);
+    let leading = if a.sign() == num_bigint::Sign::NoSign {
+        &b
+    } else {
+        &a
+    };
+    if leading.sign() == num_bigint::Sign::Minus {
+        ((-a, -b, -d), -1)
+    } else {
+        ((a, b, d), 1)
+    }
+}
+
+fn along(point: &Point, by_x: bool) -> &BigInt {
+    if by_x {
+        &point.x
+    } else {
+        &point.z
+    }
+}
+
+fn order_along(p: &Point, q: &Point, by_x: bool) -> Ordering {
+    (along(p, by_x) * &q.w).cmp(&(along(q, by_x) * &p.w))
+}
+
+struct Seam {
+    bounds: [i64; 4],
+    ends: [[i128; 3]; 2],
+    line: SmallLine,
+}
+
+impl Seam {
+    fn between(p: &Point, q: &Point) -> Option<Seam> {
+        let small = |point: &Point| -> Option<[i128; 3]> {
+            Some([
+                i128::try_from(&point.x).ok()?,
+                i128::try_from(&point.z).ok()?,
+                i128::try_from(&point.w).ok()?,
+            ])
+        };
+        let mut bounds = [i64::MAX, i64::MAX, i64::MIN, i64::MIN];
+        for point in [p, q] {
+            for (slot, coordinate) in [(0, &point.x), (1, &point.z)] {
+                bounds[slot] = bounds[slot].min(sixteenths_of(coordinate, &point.w, false)? - 1);
+                bounds[slot + 2] =
+                    bounds[slot + 2].max(sixteenths_of(coordinate, &point.w, true)? + 1);
+            }
+        }
+        Some(Seam {
+            bounds,
+            ends: [small(p)?, small(q)?],
+            line: small_line(&Line::through(p, q))?,
+        })
+    }
+
+    fn misses(&self, square: &Square) -> Option<bool> {
+        let sixteenths = i128::from(SIXTEENTHS_PER_LDU);
+        for axis in 0..2 {
+            let mut at_or_below = true;
+            let mut at_or_above = true;
+            for end in &self.ends {
+                let scaled = sixteenths.checked_mul(end[axis])?;
+                at_or_below &= scaled <= i128::from(square.low[axis]).checked_mul(end[2])?;
+                at_or_above &= scaled >= i128::from(square.high[axis]).checked_mul(end[2])?;
+            }
+            if at_or_below || at_or_above {
+                return Some(true);
+            }
+        }
+        let mut signs = [0i128; 4];
+        for (sign, (x, z)) in signs.iter_mut().zip([
+            (square.low[0], square.low[1]),
+            (square.high[0], square.low[1]),
+            (square.high[0], square.high[1]),
+            (square.low[0], square.high[1]),
+        ]) {
+            *sign = small_value(self.line, x, z, i64::from(SIXTEENTHS_PER_LDU))?.signum();
+        }
+        Some(signs.iter().all(|&sign| sign >= 0) || signs.iter().all(|&sign| sign <= 0))
+    }
+}
+
+struct SideEdge<'a> {
+    from: &'a Point,
+    to: &'a Point,
+    side: i64,
+}
+
+fn unpaired_seams(faces: &[Face]) -> Option<Vec<Seam>> {
+    let mut lines: BTreeMap<(BigInt, BigInt, BigInt), Vec<SideEdge>> = BTreeMap::new();
+    for face in faces {
+        for i in 0..face.corners.len() {
+            let (p, q) = (
+                &face.corners[i],
+                &face.corners[(i + 1) % face.corners.len()],
+            );
+            let (key, side) = supporting_line(p, q);
+            lines.entry(key).or_default().push(SideEdge {
+                from: p,
+                to: q,
+                side,
+            });
+        }
+    }
+    let mut seams = Vec::new();
+    for ((_, b, _), edges) in &lines {
+        let by_x = b.sign() != num_bigint::Sign::NoSign;
+        let spans: Vec<(&Point, &Point, i64)> = edges
+            .iter()
+            .map(|edge| match order_along(edge.from, edge.to, by_x) {
+                Ordering::Greater => (edge.to, edge.from, edge.side),
+                _ => (edge.from, edge.to, edge.side),
+            })
+            .collect();
+        let mut stops: Vec<&Point> = spans
+            .iter()
+            .flat_map(|&(low, high, _)| [low, high])
+            .collect();
+        stops.sort_by(|p, q| order_along(p, q, by_x));
+        stops.dedup_by(|p, q| order_along(p, q, by_x) == Ordering::Equal);
+        for pair in stops.windows(2) {
+            let net: i64 = spans
+                .iter()
+                .filter(|&&(low, high, _)| {
+                    order_along(low, pair[0], by_x) != Ordering::Greater
+                        && order_along(high, pair[1], by_x) != Ordering::Less
+                })
+                .map(|&(_, _, side)| side)
+                .sum();
+            if net != 0 {
+                seams.push(Seam::between(pair[0], pair[1])?);
+            }
+        }
+    }
+    Some(seams)
+}
+
 struct Level {
     faces: Vec<Face>,
+    seams: Option<Vec<Seam>>,
     unresolved: Vec<[f64; 4]>,
 }
 
@@ -502,7 +738,12 @@ impl Level {
                 }
             }
         }
-        Level { faces, unresolved }
+        let seams = unpaired_seams(&faces);
+        Level {
+            faces,
+            seams,
+            unresolved,
+        }
     }
 
     fn coverage(&self, square: &Square) -> Coverage {
@@ -511,6 +752,16 @@ impl Level {
             .iter()
             .filter(|face| square.meets(&face.bounds))
             .collect();
+        if faces.iter().any(|face| face.contains(square)) || self.seamless(square, &faces) {
+            return Coverage::Full;
+        }
+        if square
+            .probes()
+            .iter()
+            .any(|probe| !faces.iter().any(|face| face.grown_holds(probe)))
+        {
+            return self.short_of_full(square);
+        }
         faces.sort_by(|a, b| b.extent.total_cmp(&a.extent));
         let mut uncovered = vec![square.region()];
         let passes: [fn(&Face) -> &[Line]; 2] = [|face| &face.edges, |face| &face.grown];
@@ -531,11 +782,26 @@ impl Level {
                 }
             }
         }
+        self.short_of_full(square)
+    }
+
+    fn short_of_full(&self, square: &Square) -> Coverage {
         if self.unresolved.iter().any(|reach| square.may_meet(reach)) {
             Coverage::Undecided
         } else {
             Coverage::Partial
         }
+    }
+
+    fn seamless(&self, square: &Square, faces: &[&Face]) -> bool {
+        let Some(seams) = &self.seams else {
+            return false;
+        };
+        seams
+            .iter()
+            .filter(|seam| square.meets(&seam.bounds))
+            .all(|seam| seam.misses(square) == Some(true))
+            && faces.iter().any(|face| face.holds_centre(square))
     }
 }
 
@@ -692,6 +958,7 @@ fn has_area(polygon: &[(Point, Line)]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::exact::Decimal;
     use crate::trig::{cos, sin};
 
     const STUD: f64 = 20.0;
@@ -725,11 +992,17 @@ mod tests {
         }
     }
 
+    fn parsed(value: f64) -> Exact {
+        Decimal::parse(&format!("{value}"))
+            .expect("a test coordinate prints as a decimal")
+            .exact()
+    }
+
     fn surface(triangles: &[Triangle], studs: &[StudReference]) -> Option<TopSurface> {
         let exact = |index: usize| {
             triangles
                 .get(index)
-                .map(|t| t.points.map(|p| p.map(Exact::from_f64)))
+                .map(|t| t.points.map(|p| p.map(parsed)))
         };
         TopSurface::read(triangles, &exact, studs)
     }
@@ -784,10 +1057,7 @@ mod tests {
         part.push(base(-8.0, [-20.0, -10.0, 20.0, 10.0]));
         let exact = |index: usize| {
             (index != 2)
-                .then(|| {
-                    part.get(index)
-                        .map(|t| t.points.map(|p| p.map(Exact::from_f64)))
-                })
+                .then(|| part.get(index).map(|t| t.points.map(|p| p.map(parsed))))
                 .flatten()
         };
         let surface = TopSurface::read(&part, &exact, &[]).expect("whole-stud plan");
@@ -841,6 +1111,107 @@ mod tests {
         part.extend(quad(0.0, [0.0, -10.0, 20.0, 0.0]));
         part.push(base(-8.0, [-20.0, -10.0, 20.0, 10.0]));
         assert_eq!(rows(&part, &[]), ["f."]);
+    }
+
+    #[test]
+    fn a_face_holding_three_corners_of_a_cell_leaves_it_open() {
+        let corners = [[-10.0, -10.0], [10.0, -10.0], [10.0, 10.0], [-10.0, 10.0]];
+        for missing in 0..corners.len() {
+            let [p, q, r] = [1, 2, 3].map(|k| corners[(missing + k) % corners.len()]);
+            let part = [
+                triangle([[p[0], 0.0, p[1]], [q[0], 0.0, q[1]], [r[0], 0.0, r[1]]]),
+                base(-8.0, [-10.0, -10.0, 10.0, 10.0]),
+            ];
+            assert_eq!(rows(&part, &[]), ["."], "missing corner {missing}");
+        }
+    }
+
+    #[test]
+    fn faces_touching_only_at_a_point_leave_the_cell_open() {
+        let mut part = quad(0.0, [-10.0, -10.0, 0.0, 4.0]).to_vec();
+        part.extend(quad(0.0, [0.0, 4.0, 10.0, 10.0]));
+        part.push(base(-8.0, [-10.0, -10.0, 10.0, 10.0]));
+        assert_eq!(rows(&part, &[]), ["."]);
+    }
+
+    #[test]
+    fn a_hole_away_from_the_corners_and_centre_leaves_the_cell_open() {
+        let part = [
+            quad(0.0, [-10.0, -10.0, 4.0, 10.0]).to_vec(),
+            quad(0.0, [6.0, -10.0, 10.0, 10.0]).to_vec(),
+            quad(0.0, [4.0, -10.0, 6.0, 4.0]).to_vec(),
+            quad(0.0, [4.0, 6.0, 6.0, 10.0]).to_vec(),
+            vec![base(-8.0, [-10.0, -10.0, 10.0, 10.0])],
+        ]
+        .concat();
+        assert_eq!(rows(&part, &[]), ["."]);
+    }
+
+    #[test]
+    fn a_slot_ending_at_t_junctions_leaves_the_cell_open() {
+        let part = [
+            quad(0.0, [-10.0, -10.0, 0.0, 4.0]).to_vec(),
+            quad(0.0, [-10.0, 4.0, 0.0, 6.0]).to_vec(),
+            quad(0.0, [-10.0, 6.0, 0.0, 10.0]).to_vec(),
+            quad(0.0, [0.0, -10.0, 10.0, 4.0]).to_vec(),
+            quad(0.0, [0.0, 6.0, 10.0, 10.0]).to_vec(),
+            vec![base(-8.0, [-10.0, -10.0, 10.0, 10.0])],
+        ]
+        .concat();
+        assert_eq!(rows(&part, &[]), ["."]);
+    }
+
+    #[test]
+    fn a_face_that_only_borders_a_cell_leaves_it_open() {
+        let mut part = quad(0.0, [-20.0, -10.0, 0.0, 10.0]).to_vec();
+        part.push(base(-8.0, [-20.0, -10.0, 20.0, 10.0]));
+        assert_eq!(rows(&part, &[]), ["f."]);
+    }
+
+    #[test]
+    fn a_face_short_of_the_cell_edge_covers_it_only_within_the_identification_residual() {
+        let short_by = |gap: f64| {
+            let mut part = quad(0.0, [-10.0, -10.0, 10.0 - gap, 10.0]).to_vec();
+            part.push(base(-8.0, [-10.0, -10.0, 10.0, 10.0]));
+            rows(&part, &[])
+        };
+        assert_eq!(short_by(0.0004), ["f"]);
+        assert_eq!(short_by(0.0011), ["."]);
+    }
+
+    #[test]
+    fn an_edge_whose_ends_carry_more_decimal_places_still_leaves_its_neighbour_open() {
+        let mut part = quad(0.0, [0.0, -45.0, 10.0, 45.0]).to_vec();
+        part.extend(quad(0.0, [10.0, -4.5, 30.0, 4.5]));
+        part.push(base(-8.0, [-60.0, -60.0, 60.0, 60.0]));
+        assert_eq!(rows(&part, &[]), ["......"; 6]);
+    }
+
+    #[test]
+    fn one_face_cutting_inside_a_cell_corner_covers_it_only_within_the_identification_residual() {
+        let cut_inside_by = |inset: f64| {
+            let reach = 30.0 - 2.0 * inset;
+            let part = [
+                triangle([
+                    [-10.0, 0.0, -10.0],
+                    [reach, 0.0, -10.0],
+                    [-10.0, 0.0, reach],
+                ]),
+                base(-8.0, [-10.0, -10.0, 30.0, 30.0]),
+            ];
+            rows(&part, &[])
+        };
+        assert_eq!(cut_inside_by(0.0004), ["f.", ".."]);
+        assert_eq!(cut_inside_by(0.0011), ["..", ".."]);
+    }
+
+    #[test]
+    fn faces_meeting_at_a_t_junction_cover_the_cells_they_share() {
+        let mut part = quad(0.0, [-20.0, -20.0, 20.0, 0.0]).to_vec();
+        part.extend(quad(0.0, [-20.0, 0.0, 0.0, 20.0]));
+        part.extend(quad(0.0, [0.0, 0.0, 20.0, 20.0]));
+        part.push(base(-8.0, [-20.0, -20.0, 20.0, 20.0]));
+        assert_eq!(rows(&part, &[]), ["ff", "ff"]);
     }
 
     fn edge_strip(floor: [f64; 4]) -> Vec<Triangle> {
