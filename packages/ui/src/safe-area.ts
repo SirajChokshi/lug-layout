@@ -1,15 +1,9 @@
 import { safeInsets, type IEditorCamera } from "@brr/client";
 import { useEffect } from "react";
 
-const OVERLAY_PANELS = [
-  ".editor-hud",
-  ".plan-panel",
-  ".side-panel",
-  ".minimap",
-  ".view-controls",
-  ".tool-hud",
-  "footer",
-].join(", ");
+const OVERLAY_PANELS = [".library", ".side-panel", ".view-controls", ".tool-hud", "footer"].join(
+  ", ",
+);
 
 export function useSafeArea(camera: IEditorCamera, root: HTMLElement | null): void {
   useEffect(() => {

@@ -1,5 +1,9 @@
 import { BrickCompiler, type BakeRequest, type CompileLod, type CompileOutput } from "@brr/import";
-import { SectionVocabularyFile, type PrimitiveConnectorTable } from "@brr/schema/bundle";
+import {
+  SectionVocabularyFile,
+  type AuthoredIdentification,
+  type PrimitiveConnectorTable,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { isDeepStrictEqual } from "node:util";
 import { createHash } from "node:crypto";
@@ -180,6 +184,42 @@ interface ModelFile {
     readonly matrix: ReadonlyArray<number>;
   };
   readonly partTransforms: ReadonlyArray<number>;
+  readonly authoredIdentification?: AuthoredIdentification;
+}
+
+function drawnAuthored(
+  authored: AuthoredIdentification | null,
+  drawnIndex: ReadonlyMap<number, number>,
+): AuthoredIdentification | undefined {
+  if (authored === null) return undefined;
+  const keep = (line: number, kind: string) => kind === "placement" || drawnIndex.has(line);
+  const line = (value: number, kind: string) =>
+    kind === "placement" ? value : (drawnIndex.get(value) ?? -1);
+  const rows = authored.rows;
+  const kept = rows.line.flatMap((value, row) =>
+    keep(value, rows.lineKind[row] ?? "") ? [row] : [],
+  );
+  const pick = <T>(column: ReadonlyArray<T>): T[] => kept.map((row) => column[row] as T);
+  const excluded = authored.excludedRotated;
+  const keptExcluded = excluded.line.flatMap((value, row) =>
+    keep(value, excluded.lineKind[row] ?? "") ? [row] : [],
+  );
+  return {
+    ruleVersion: authored.ruleVersion,
+    rows: {
+      line: kept.map((row) => line(rows.line[row] ?? -1, rows.lineKind[row] ?? "")),
+      lineKind: pick(rows.lineKind),
+      axis: pick(rows.axis),
+      printed: pick(rows.printed),
+      grid: pick(rows.grid),
+      identified: pick(rows.identified),
+      residual: pick(rows.residual),
+    },
+    excludedRotated: {
+      line: keptExcluded.map((row) => line(excluded.line[row] ?? -1, excluded.lineKind[row] ?? "")),
+      lineKind: keptExcluded.map((row) => excluded.lineKind[row] ?? "instance"),
+    },
+  };
 }
 
 function bundlePartId(reference: string): string {
@@ -217,7 +257,8 @@ for (const model of standardManifest.models) {
   const source = palette.models.find((entry) => entry.name === model.name);
   if (!source) throw new Error(`bundle model ${model.name} is not in the palette`);
   const text = await readFile(join(modelRoots[source.origin], source.file), "utf8");
-  const read = baker.readModel(text);
+  const omrAuthoringIdentification = source.origin === "omr";
+  const read = baker.readModel(text, { omrAuthoringIdentification });
   const officialOf = new Map(read.inlineParts.map((part) => [part.inline, part.official]));
   const acknowledged = new Set((source.notDrawn ?? []).map((entry) => entry.section.toLowerCase()));
   const drawn = new Uint8Array(read.instancePart.length);
@@ -246,6 +287,11 @@ for (const model of standardManifest.models) {
     }
     if (!samePart || !sameColor || !sameMatrix) differing++;
   }
+  const drawnIndex = new Map(kept.map((instance, n) => [instance, n]));
+  const sameAuthored = isDeepStrictEqual(
+    drawnAuthored(read.authoredIdentification, drawnIndex),
+    bundled.authoredIdentification,
+  );
   const started = performance.now();
   const request = {
     source: text,
@@ -255,6 +301,7 @@ for (const model of standardManifest.models) {
     translucentColors,
     tableDepthLdu: standardManifest.tablePlane.depthBelowTopLdu,
     vehicles: standardManifest.compiler.vehicles ?? null,
+    omrAuthoringIdentification,
   };
   let baked = baker.bake(request, library);
   while (baked.status === "need") {
@@ -265,7 +312,7 @@ for (const model of standardManifest.models) {
     baked = baker.bake(request, library);
   }
   const bakeMs = performance.now() - started;
-  const mismatches: string[] = [];
+  const mismatches: string[] = sameAuthored ? [] : ["authored identification"];
   if (baked.status !== "baked") {
     mismatches.push(`bake ${baked.status}: ${baked.message}`);
   } else {
@@ -318,7 +365,7 @@ for (const model of standardManifest.models) {
   }
   if (differing === 0 && mismatches.length === 0) bakesIdentical++;
   process.stdout.write(
-    `bake ${model.name}: ${kept.length} instances, ${differing} differing (part, colour, float32 matrix); lattice, cover, cells and vehicles ${mismatches.length === 0 ? "identical" : `differ: ${mismatches.join(", ")}`} (WASM bake ${bakeMs.toFixed(0)} ms)\n`,
+    `bake ${model.name}: ${kept.length} instances, ${differing} differing (part, colour, float32 matrix); authored identification, lattice, cover, cells and vehicles ${mismatches.length === 0 ? "identical" : `differ: ${mismatches.join(", ")}`} (WASM bake ${bakeMs.toFixed(0)} ms)\n`,
   );
   if (differing > 0 || mismatches.length > 0) process.exitCode = 1;
 }

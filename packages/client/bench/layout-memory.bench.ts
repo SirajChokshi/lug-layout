@@ -50,7 +50,7 @@ const TRACK_RUN_TILES = 2;
 const RAY_HEIGHT_LDU = 10_000;
 const SETTLE_MS = 2_000;
 const GC_PASSES = 4;
-const RUNS = 3;
+const RUNS = Number(process.env["LAYOUT_RUNS"] ?? 3);
 const MB = 1e6;
 const BASEPLATE = "ldraw:3811@2";
 const ROAD_PLATE = "ldraw:44336p01@2";
@@ -69,6 +69,7 @@ const DENSE_BRICK = `generated:${DENSE_FIXTURE}`;
 const MS_PER_SECOND = 1000;
 const P50 = 0.5;
 const P95 = 0.95;
+const FILL_END_CLICKS = 64;
 
 type Layout =
   | { readonly kind: "tiles"; readonly tiles: number }
@@ -83,8 +84,9 @@ const SCALES: Readonly<Record<string, Layout>> = {
   small: { kind: "tiles", tiles: 5 },
   medium: { kind: "tiles", tiles: 10 },
   large: { kind: "tiles", tiles: 18 },
-  dense: { kind: "dense", across: 16, deep: 16, layers: 4 },
+  dense: { kind: "dense", across: 64, deep: 128, layers: 15 },
 };
+const DEFAULT_SCALES: ReadonlyArray<string> = ["small", "medium", "large"];
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -190,6 +192,9 @@ interface PlacementTimes {
   readonly totalSeconds: number;
   readonly p50Ms: number;
   readonly p95Ms: number;
+  readonly worstMs: number;
+  readonly endP50Ms: number;
+  readonly endP95Ms: number;
 }
 
 interface RunResult {
@@ -606,14 +611,20 @@ function partsOf(editor: IEditor): number {
   return total;
 }
 
-function placementTimes(times: ReadonlyArray<number>): PlacementTimes {
+function percentileOf(times: ReadonlyArray<number>, fraction: number): number {
   const sorted = times.toSorted((a, b) => a - b);
-  const at = (fraction: number): number =>
-    sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))] ?? 0;
+  return sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))] ?? 0;
+}
+
+function placementTimes(times: ReadonlyArray<number>): PlacementTimes {
+  const end = times.slice(-FILL_END_CLICKS);
   return {
     totalSeconds: times.reduce((sum, ms) => sum + ms, 0) / MS_PER_SECOND,
-    p50Ms: at(P50),
-    p95Ms: at(P95),
+    p50Ms: percentileOf(times, P50),
+    p95Ms: percentileOf(times, P95),
+    worstMs: Math.max(0, ...times),
+    endP50Ms: percentileOf(end, P50),
+    endP95Ms: percentileOf(end, P95),
   };
 }
 
@@ -815,10 +826,10 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
     `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}`,
     `method: each run is a fresh process that starts the real IEditor (mainThreadModules, local bundle) on ThreeSceneBackend with no renderer, loads and meshes every item first (baseline), then places the layout through chooseItem/pointerMove/click and track drags (a set that brings its own baseplates, so has slab boxes, stands on its tile without a 3811, and that 3811 goes in a spare row after the track, so parts and placements match the full grid); ${GC_PASSES} forced GCs before each reading; medians of ${RUNS} runs; owners from the first run's baseline and layout V8 heap snapshots per scale (self sizes over a BFS tree from the GC roots, assigned by owning class and field); the render input digest hashes every chunk's instances and far-model placement the editor last handed the backend, and every run of a scale must hand it the same`,
     `dense layout: ${DENSE_BRICK} (one 3001 from the fixture bundle) placed across × deep per layer for each of the layers, alternate layers shifted half a brick along its width, at the pitch and layer height of its compiled cells, each through hover and click so it rests on the bricks below; the run fails unless every brick lands at the pose and layer its rule aims at`,
-    "placement cells: the occupied columns of each placed item's cells, summed over the placements; placing: the editor's pointerMove and click per placement, summed over the layout (total) and as p50 and p95, medians of the runs",
+    `placement cells: the occupied columns of each placed item's cells, summed over the placements; placing: the editor's pointerMove and click per placement, summed over the layout (total) and as p50 and p95, medians of the runs; worst: the slowest placement in any run; end of the fill: p50 and p95 over each run's last ${FILL_END_CLICKS} placements, medians of the runs`,
     "",
-    "| Scale | Layout | Parts | Placements | Placement cells per part | Placing total, p50, p95 | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
-    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+    "| Scale | Layout | Parts | Placements | Placement cells per part | Placing total, p50, p95 | Worst placement | End of the fill, p50, p95 | Studs drawn of total | Heap, layout − baseline | ArrayBuffers, layout − baseline | Bytes per part | Render input digest |",
+    "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
   ];
   const scales = [...new Set(results.map((result) => result.scale))];
   for (const scale of scales) {
@@ -832,8 +843,11 @@ function report(results: ReadonlyArray<RunResult>, splits: ReadonlyArray<OwnerSp
     const total = median(runs.map((r) => r.placing.totalSeconds));
     const p50 = median(runs.map((r) => r.placing.p50Ms));
     const p95 = median(runs.map((r) => r.placing.p95Ms));
+    const worst = Math.max(...runs.map((r) => r.placing.worstMs));
+    const endP50 = median(runs.map((r) => r.placing.endP50Ms));
+    const endP95 = median(runs.map((r) => r.placing.endP95Ms));
     lines.push(
-      `| ${scale} | ${first.arrangement} | ${first.parts.toLocaleString("en-US")} | ${first.placements.toLocaleString("en-US")} | ${(first.placementCells / first.parts).toFixed(2)} | ${total.toFixed(1)} s, ${p50.toFixed(2)} ms, ${p95.toFixed(2)} ms | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
+      `| ${scale} | ${first.arrangement} | ${first.parts.toLocaleString("en-US")} | ${first.placements.toLocaleString("en-US")} | ${(first.placementCells / first.parts).toFixed(2)} | ${total.toFixed(1)} s, ${p50.toFixed(2)} ms, ${p95.toFixed(2)} ms | ${worst.toFixed(2)} ms | ${endP50.toFixed(2)} ms, ${endP95.toFixed(2)} ms | ${first.studsDrawn.toLocaleString("en-US")} of ${first.studsTotal.toLocaleString("en-US")} | ${mb(heap)} MB | ${mb(buffers)} MB | ${perPart(heap + buffers, first.parts)} B | \`${first.renderInput}\` |`,
     );
   }
   for (const split of splits) {
@@ -883,7 +897,7 @@ async function main(): Promise<void> {
     process.send?.(result);
     process.exit(0);
   }
-  const scales = process.env["LAYOUT_SCALES"]?.split(",") ?? Object.keys(SCALES);
+  const scales = process.env["LAYOUT_SCALES"]?.split(",") ?? DEFAULT_SCALES;
   const worlds = process.env["LAYOUT_WORLDS_DIR"] ?? null;
   if (worlds) mkdirSync(worlds, { recursive: true });
   const scratch = mkdtempSync(join(tmpdir(), "layout-memory-"));
