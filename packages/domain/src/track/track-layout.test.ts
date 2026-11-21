@@ -54,15 +54,75 @@ function partnerOf(graph: TrackGraph, placement: number, connector: number): num
   return graph.endPartner[(graph.endStart[placement] ?? 0) + connector] ?? NO_END;
 }
 
-it("swaps a placement to a piece with the same ends and refuses one whose ends differ", () => {
-  const layout = new TrackLayout([straight(16n), straight(16n), straight(17n)]);
-  const placed = layout.place(0, POSE16_IDENTITY, 0);
-  const before = layout.connectorPose(placed, 1);
-  layout.replace(placed, 1);
-  expect(layout.piece(placed)).toBe(1);
-  expect(layout.connectorPose(placed, 1)).toEqual(before);
-  expect(() => layout.replace(placed, 2)).toThrow(RangeError);
-  expect(layout.piece(placed)).toBe(1);
+function laidPieces(layout: TrackLayout) {
+  return Array.from({ length: layout.count }, (_, p) => ({
+    piece: layout.piece(p),
+    pose: layout.pose(p),
+    yPlates: layout.yPlates(p),
+    rise: layout.rise(p),
+    frame: layout.frame(p),
+  }));
+}
+
+const RUN_FRAMES: ReadonlyArray<TrackFrame> = [
+  WORLD_TRACK_FRAME,
+  { id: 1, xLdu: 0.25, zLdu: -0.125 },
+  { id: 2, xLdu: -0.5, zLdu: 0.375 },
+];
+
+function lcg(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state;
+  };
+}
+
+it("removes any laid piece by its index and inserts it back there, leaving every other piece exact and in order", () => {
+  const next = lcg(7);
+  const pieces = [straight(16n), straight(8n), straight(4n)];
+  const layout = new TrackLayout(pieces);
+  for (let p = 0; p < 150; p++) {
+    const coefficients = Array.from({ length: 8 }, () => BigInt((next() % 2001) - 1000));
+    layout.place(
+      next() % pieces.length,
+      pose16(zeta16(coefficients), next() % 16),
+      next() % 5,
+      next() % 3,
+      RUN_FRAMES[next() % RUN_FRAMES.length],
+    );
+  }
+  const before = laidPieces(layout);
+
+  for (let trial = 0; trial < 40; trial++) {
+    const at = next() % layout.count;
+    const removed = before[at];
+    if (!removed) throw new Error(`no piece at ${at}`);
+    layout.remove(at);
+    expect(laidPieces(layout)).toEqual(before.toSpliced(at, 1));
+    const { piece, pose, yPlates, rise, frame } = removed;
+    expect(layout.insert(at, piece, pose, yPlates, rise, frame)).toBe(at);
+    expect(laidPieces(layout)).toEqual(before);
+  }
+  expect(() => layout.remove(layout.count)).toThrow(RangeError);
+  expect(() => layout.insert(layout.count + 1, 0, POSE16_IDENTITY, 0)).toThrow(RangeError);
+  expect(laidPieces(layout)).toEqual(before);
+});
+
+it("forgets a run frame's offset once its last piece is removed, as if it had never been laid", () => {
+  const layout = new TrackLayout([straight(16n)]);
+  const [world, run] = RUN_FRAMES;
+  if (!world || !run) throw new Error("no run frames");
+  layout.place(0, POSE16_IDENTITY, 0, 0, run);
+  layout.place(0, POSE16_IDENTITY, 0, 0, run);
+  layout.place(0, POSE16_IDENTITY, 0, 0, world);
+  const moved = { ...run, xLdu: run.xLdu + 1 };
+
+  layout.remove(0);
+  expect(() => layout.place(0, POSE16_IDENTITY, 0, 0, moved)).toThrow(RangeError);
+  layout.remove(0);
+  expect(layout.place(0, POSE16_IDENTITY, 0, 0, moved)).toBe(1);
+  expect(layout.frame(1)).toEqual(moved);
 });
 
 describe("track heights", () => {

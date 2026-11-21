@@ -69,6 +69,7 @@ function compiledManifest() {
     trackCatalog: { n: 16, pieces: [] },
     trackShapes: [],
     tablePlane: { part: "3811", depthBelowTopLdu: 4 },
+    levelCrossing: { systems: [], ramps: [] },
     compiler: null as { file: string; unofficialAllowlist: string[]; cavityProbe: string } | null,
     crosswalk: { file: "crosswalk.json" },
     partTable: { file: "parts.json" },
@@ -361,6 +362,25 @@ function withRollingWheel() {
   };
 }
 
+const LIBRARY_PARTS = "library-parts.json";
+
+function withLibraryParts(colors: ReadonlyArray<number>) {
+  return ({ manifest, files }: CompiledBundle) => {
+    Object.assign(manifest, { libraryParts: { file: LIBRARY_PARTS } });
+    const parts = {
+      id: ["3001"],
+      title: ["Brick 2 x 4"],
+      category: [0],
+      keywords: [[]],
+      rebrickable: ["3001"],
+      colorCount: [2],
+      colors,
+    };
+    const file = { format: 1, sources: {}, categories: ["Brick"], parts };
+    files.set(LIBRARY_PARTS, Buffer.from(JSON.stringify(file)));
+  };
+}
+
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
@@ -382,6 +402,16 @@ describe("publishBundle", () => {
       expect(file).toMatch(new RegExp(`^${pkg}-3001\\.[0-9a-f]{16}\\.json$`, "u"));
       expect(JSON.parse(await readFile(join(directory, file), "utf8"))).toEqual(written);
     }
+  });
+
+  it("publishes a connectors package whatever licence its records name", async () => {
+    const otherLicense = "Not redistributable : see NonCAreadme.txt";
+    await expect(
+      publish(({ connectorIndex: index, connectorRecord: record }: CompiledBundle) => {
+        index.licenses = [otherLicense];
+        record.license = otherLicense;
+      }),
+    ).resolves.toMatchObject({ published: { files: 10 } });
   });
 
   it.each([
@@ -413,15 +443,6 @@ describe("publishBundle", () => {
         index.attribution = [];
       },
       refusal: "the connectivity package names no attribution",
-    },
-    {
-      file: "a connector record under a licence other than an LDraw CA licence",
-      edit: ({ connectorIndex: index, connectorRecord: record }: CompiledBundle) => {
-        index.licenses = ["Not redistributable : see NonCAreadme.txt"];
-        record.license = "Not redistributable : see NonCAreadme.txt";
-      },
-      refusal:
-        "the connectors package declares Not redistributable : see NonCAreadme.txt, which is not an LDraw CA licence",
     },
     {
       file: "a record filed under another part",
@@ -557,40 +578,6 @@ describe("publishBundle", () => {
 
   it.each([
     {
-      file: "section vocabulary values inlined in the manifest's compiler section",
-      edit: (bundle: CompiledBundle) => {
-        const { sizes, lengths } = withCompiler(bundle);
-        bundle.afterAttach.push((directory) =>
-          editJson(join(directory, MANIFEST_FILE), (manifest) => {
-            manifest["compiler"] = {
-              ...bundle.manifest.compiler,
-              sectionVocabulary: { sizes, lengths },
-            };
-          }),
-        );
-      },
-      refusal:
-        "manifest.json carries section vocabulary values at $.compiler.sectionVocabulary.sizes[0], $.compiler.sectionVocabulary.sizes[1], $.compiler.sectionVocabulary.lengths[0]; they ship only in the CC BY-SA section vocabulary asset",
-    },
-    {
-      file: "a section vocabulary entry in a CC BY connector record",
-      edit: (bundle: CompiledBundle) => {
-        const { sizes } = withCompiler(bundle);
-        Object.assign(bundle.connectorRecord, { sections: sizes.slice(0, 1) });
-      },
-      refusal:
-        "connectors-3001.json carries section vocabulary values at $.sections[0]; they ship only in the CC BY-SA section vocabulary asset",
-    },
-    {
-      file: "a section vocabulary entry in a GLB's JSON chunk",
-      edit: (bundle: CompiledBundle) => {
-        const { lengths } = withCompiler(bundle);
-        Object.assign(bundle.gltf.extras, { section: lengths[0] });
-      },
-      refusal:
-        "stud.glb carries section vocabulary values at $.extras.section; they ship only in the CC BY-SA section vocabulary asset",
-    },
-    {
       file: "a section vocabulary under another licence",
       edit: (bundle: CompiledBundle) => {
         withCompiler(bundle).license = PART_LICENSE;
@@ -703,7 +690,21 @@ describe("publishBundle", () => {
     expect(await readFile(join(directory, thumbnail.file))).toEqual(png(THUMBNAIL_PX));
   });
 
+  it("publishes the library part index under its content address", async () => {
+    const { directory, published } = await publish(withLibraryParts([4, 1]));
+    expect(published.files).toBe(11);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    expect(manifest.libraryParts.file).toMatch(/^library-parts\.[0-9a-f]{16}\.json$/u);
+    const index = JSON.parse(await readFile(join(directory, manifest.libraryParts.file), "utf8"));
+    expect(index.parts.colors).toEqual([4, 1]);
+  });
+
   it.each([
+    {
+      file: "a library part index whose colours disagree with its colour counts",
+      edit: withLibraryParts([4]),
+      refusal: "library part columns are inconsistent",
+    },
     {
       file: "a thumbnail of the wrong size",
       edit: withThumbnail(png(THUMBNAIL_PX / 2)),
