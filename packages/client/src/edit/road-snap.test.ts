@@ -4,7 +4,7 @@ import measured from "../../../../docs/verified-facts/geometry.json" with { type
 import {
   ANY_TURN,
   cellExtent,
-  placedRoads,
+  placedRoadsOf,
   roadOverlapCells,
   snapToRoadEdge,
   type RestingHeights,
@@ -68,7 +68,7 @@ function rowsOf(surface: RoadSurface, from: number, count: number): RoadSurface 
 }
 
 function world(placements: ReadonlyArray<RoadPlacement>) {
-  return placedRoads(new RoadNetwork(placements), placements);
+  return placedRoadsOf(new RoadNetwork(placements), placements);
 }
 
 function counted(pieces: ReadonlyArray<RoadPlacement>, at: RoadPlacement): number {

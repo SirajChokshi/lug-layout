@@ -202,7 +202,7 @@ export class RoadIndex {
   }
 }
 
-export function placedRoads(
+export function placedRoadsOf(
   network: RoadNetwork,
   placements: ReadonlyArray<RoadPlacement>,
 ): PlacedRoads {

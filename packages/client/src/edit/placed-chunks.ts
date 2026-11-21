@@ -35,7 +35,7 @@ import {
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
-import { partGridOf } from "./part-box-grid.ts";
+import { partBoxGridOf } from "./part-box-grid.ts";
 import { planShapeOf } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
@@ -844,7 +844,7 @@ class PlacedEntry implements PlacedModel {
     const own = this.box;
     if (x < own.minX || x > own.maxX || z < own.minZ || z > own.maxZ) return;
     const boxes = this.placeable.partBoxes;
-    const grid = partGridOf(boxes);
+    const grid = partBoxGridOf(boxes);
     const localX = this.localX(x, z);
     const localZ = this.localZ(x, z);
     const { cos, sin } = this;
@@ -887,7 +887,7 @@ class PlacedEntry implements PlacedModel {
       return false;
     }
     const boxes = this.placeable.partBoxes;
-    const grid = partGridOf(boxes);
+    const grid = partBoxGridOf(boxes);
     const cornerX = this.localX(box.minX, box.minZ);
     const cornerZ = this.localZ(box.minX, box.minZ);
     const oppositeX = this.localX(box.maxX, box.maxZ);

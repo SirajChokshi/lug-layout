@@ -202,7 +202,7 @@ import {
   HELD_TURN,
   NO_ROAD_SURFACE,
   overlapsPlacedRoad,
-  placedRoads,
+  placedRoadsOf,
   roadOverlapCells,
   snapToRoadEdge,
   type PlacedRoads,
@@ -861,7 +861,7 @@ interface PlacedEnd {
 interface ModelCheck {
   readonly models: ReadonlyArray<ModelMember>;
   readonly exempt: ReadonlySet<PlacedModel>;
-  readonly roads: PlacedRoads;
+  readonly placedRoads: PlacedRoads;
   readonly trackSkip: TrackSkip;
 }
 
@@ -924,7 +924,7 @@ interface KeptRoadSnap {
   readonly cursorZ: number;
   readonly ghostRot: number;
   readonly revision: number;
-  readonly roads: PlacedRoads;
+  readonly placedRoads: PlacedRoads;
   readonly pose: LatticePose;
   readonly view: RoadSnapView;
 }
@@ -942,7 +942,7 @@ class RoadSnapQuery {
   cursorX = 0;
   cursorZ = 0;
   revision = -1;
-  roads: PlacedRoads | null = null;
+  placedRoads: PlacedRoads | null = null;
   snap: RoadSnap | null = null;
 
   answers(
@@ -953,7 +953,7 @@ class RoadSnapQuery {
     cursorX: number,
     cursorZ: number,
     revision: number,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
   ): boolean {
     return (
       this.surface === surface &&
@@ -963,7 +963,7 @@ class RoadSnapQuery {
       this.cursorX === cursorX &&
       this.cursorZ === cursorZ &&
       this.revision === revision &&
-      this.roads === roads
+      this.placedRoads === placedRoads
     );
   }
 
@@ -975,7 +975,7 @@ class RoadSnapQuery {
     cursorX: number,
     cursorZ: number,
     revision: number,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
     snap: RoadSnap | null,
   ): void {
     this.surface = surface;
@@ -985,7 +985,7 @@ class RoadSnapQuery {
     this.cursorX = cursorX;
     this.cursorZ = cursorZ;
     this.revision = revision;
-    this.roads = roads;
+    this.placedRoads = placedRoads;
     this.snap = snap;
   }
 }
@@ -1372,7 +1372,7 @@ export class Editor implements IEditor, IEditedWorld {
   private trackSupportLoad: Promise<void> | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadNetwork = new RoadNetwork([]);
-  private placedRoads: PlacedRoads = placedRoads(this.roadNetwork, []);
+  private placedRoads: PlacedRoads = placedRoadsOf(this.roadNetwork, []);
   private keptRoadSnap: KeptRoadSnap | null = null;
   private pendingTurns = HELD_TURN;
   private pendingTurnsAtX = 0;
@@ -1874,7 +1874,7 @@ export class Editor implements IEditor, IEditedWorld {
         const check: ModelCheck = {
           models: [member],
           exempt: NO_MODELS,
-          roads: this.placedRoads,
+          placedRoads: this.placedRoads,
           trackSkip: NO_TRACK_SKIP,
         };
         return this.modelRefusal(check, [pose]) === null;
@@ -1968,16 +1968,16 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private readonly roadNeighbourhood: RoadNeighbourhood = {
-    near: (area, roads, others) => {
+    near: (area, roadModels, otherModels) => {
       const models = this.nearModels;
       this.placed.over(area, models);
-      roads.length = 0;
-      others.length = 0;
+      roadModels.length = 0;
+      otherModels.length = 0;
       for (let m = 0; m < models.length; m++) {
         const model = models[m];
         if (!model) continue;
-        if (model.placeable.road === null) others.push(model);
-        else roads.push(model);
+        if (model.placeable.road === null) otherModels.push(model);
+        else roadModels.push(model);
       }
       models.length = 0;
     },
@@ -2492,7 +2492,7 @@ export class Editor implements IEditor, IEditedWorld {
     z: number,
     rot: number,
     aimRay: Float64Array,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
   ): PlacementCheck {
     const check = this.check;
     const train = this.activeTrain;
@@ -2526,7 +2526,7 @@ export class Editor implements IEditor, IEditedWorld {
       return check;
     }
     check.trackBlock = this.modelTrackBlock(placeable, x, z, rot, check.yPlates, NO_TRACK_SKIP);
-    check.refusal = this.roadOverlap(placeable, roads, pose)?.reason ?? null;
+    check.refusal = this.roadOverlap(placeable, placedRoads, pose)?.reason ?? null;
     return check;
   }
 
@@ -2799,7 +2799,7 @@ export class Editor implements IEditor, IEditedWorld {
     const surface = this.active?.road;
     if (!surface || !this.hovering || !this.state.snapRoads) return null;
     const pose = this.assist.placement?.pose ?? this.cursorPose();
-    const probe = this.roadProbe(surface, pose);
+    const probe = this.reusedRoadProbe(surface, pose);
     const fit = this.placedRoads.network.fit(probe, this.roadFit);
     const overlapping = roadOverlapCells(this.placedRoads, probe);
     const state = overlapping > 0 ? "refused" : fit.mismatchedCells > 0 ? "mismatched" : "free";
@@ -2875,7 +2875,7 @@ export class Editor implements IEditor, IEditedWorld {
       cursorZ,
       ghostRot: this.ghostRot,
       revision: this.search.revision(),
-      roads: this.placedRoads,
+      placedRoads: this.placedRoads,
       pose: snapped,
       view,
     };
@@ -2890,12 +2890,23 @@ export class Editor implements IEditor, IEditedWorld {
   ): RoadSnap | null {
     const query = this.snapQuery;
     const revision = this.search.revision();
-    const { ghostRot, turnDirection, placedRoads: roads } = this;
-    if (query.answers(surface, ghostRot, turnDirection, turns, cursorX, cursorZ, revision, roads)) {
+    const { ghostRot, turnDirection, placedRoads } = this;
+    if (
+      query.answers(
+        surface,
+        ghostRot,
+        turnDirection,
+        turns,
+        cursorX,
+        cursorZ,
+        revision,
+        placedRoads,
+      )
+    ) {
       return query.snap;
     }
     const snap = snapToRoadEdge(
-      roads,
+      placedRoads,
       surface,
       ghostRot,
       turnDirection,
@@ -2912,7 +2923,7 @@ export class Editor implements IEditor, IEditedWorld {
       cursorX,
       cursorZ,
       revision,
-      roads,
+      placedRoads,
       snap,
     );
     return snap;
@@ -2932,7 +2943,7 @@ export class Editor implements IEditor, IEditedWorld {
       kept.cursorZ === nearestStud(this.hitZ) &&
       kept.ghostRot === this.ghostRot &&
       kept.revision === this.search.revision() &&
-      kept.roads === this.placedRoads;
+      kept.placedRoads === this.placedRoads;
     return holds ? kept : null;
   }
 
@@ -2960,7 +2971,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.assist.aim({ placeable, connected, mode: "assist" }, this.pick, performance.now());
   }
 
-  private roadProbe(surface: RoadSurface, pose: LatticePose): RoadPlacement {
+  private reusedRoadProbe(surface: RoadSurface, pose: LatticePose): RoadPlacement {
     const probe = this.roadProbeScratch;
     probe.x = pose.x;
     probe.z = pose.z;
@@ -2972,15 +2983,15 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadOverlap(
     placeable: Placeable,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
     pose: LatticePose,
   ): RoadOverlap | null {
     const surface = this.state.snapRoads ? placeable.road : null;
     if (!surface) return null;
-    const probe = this.roadProbe(surface, pose);
-    const overlapping = roadOverlapCells(roads, probe);
+    const probe = this.reusedRoadProbe(surface, pose);
+    const overlapping = roadOverlapCells(placedRoads, probe);
     if (overlapping === 0) return null;
-    const fit = roads.network.fit(probe, this.roadFit);
+    const fit = placedRoads.network.fit(probe, this.roadFit);
     return {
       reason: roadOverlapText(placeable, overlapping),
       counts: { mismatchedCells: fit.mismatchedCells, overlappingCells: overlapping },
@@ -3535,7 +3546,7 @@ export class Editor implements IEditor, IEditedWorld {
     const placements = this.roadPlacements();
     this.trackWorld.setRoads(placements);
     this.roadNetwork = new RoadNetwork(placements);
-    this.placedRoads = placedRoads(this.roadNetwork, placements);
+    this.placedRoads = placedRoadsOf(this.roadNetwork, placements);
     this.roadReport = this.roadNetwork.report();
     this.facts.noteRoads(this.roadReport, roadModels);
     this.replanRoadStroke();
@@ -3752,11 +3763,11 @@ export class Editor implements IEditor, IEditedWorld {
     const rot = this.ghostRot;
     let reason: string | null = null;
     let waitingOn = NOT_WAITING;
-    const roads = this.placedRoads;
+    const { placedRoads } = this;
     for (let tile = 0; tile < fill.laid; tile++) {
       const x = fill.xAt(tile);
       const z = fill.zAt(tile);
-      const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), roads);
+      const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), placedRoads);
       if (waitingOn === NOT_WAITING) waitingOn = check.waitingOn;
       const refused = placementRefused(check, "refused");
       if (refused && reason === null) reason = placementRefusal(placeable, check, "refused");
@@ -4546,7 +4557,7 @@ export class Editor implements IEditor, IEditedWorld {
       models: this.modelMembers(models),
       pieces,
       exempt,
-      roads: this.roadsWithout(exempt),
+      placedRoads: this.roadsWithout(exempt),
       block: this.groupBlock(models, pieces, action),
       joins: this.groupJoins(models, indices, action),
       trackSkip: this.trackSkip(pieces, exempt),
@@ -4625,7 +4636,7 @@ export class Editor implements IEditor, IEditedWorld {
       const model = this.roadModels[id];
       return model !== undefined && !exempt.has(model);
     });
-    return placedRoads(new RoadNetwork(placements), placements);
+    return placedRoadsOf(new RoadNetwork(placements), placements);
   }
 
   private pasteEdit(
@@ -4637,7 +4648,7 @@ export class Editor implements IEditor, IEditedWorld {
       models,
       pieces,
       exempt: NO_MODELS,
-      roads: this.roadsWithout(NO_MODELS),
+      placedRoads: this.roadsWithout(NO_MODELS),
       block: this.seatsBlock(pieces, NO_MODELS),
       joins: [],
       trackSkip: this.trackSkip(pieces, NO_MODELS),
@@ -4647,7 +4658,7 @@ export class Editor implements IEditor, IEditedWorld {
   private placeGroup(edit: GroupEdit, targets: GroupTargets, snap: boolean): GroupPlacement {
     const refusal = this.groupRefusal(edit, targets);
     if (!snap || refusal !== null) return { ...targets, refusal };
-    const offset = this.roadSnapOffset(edit.models, targets.modelPoses, edit.roads);
+    const offset = this.roadSnapOffset(edit.models, targets.modelPoses, edit.placedRoads);
     if (offset === NO_OFFSET) return { ...targets, refusal };
     const snapped: GroupTargets = {
       modelPoses: targets.modelPoses.map((pose) => translated(pose, offset.dx, offset.dz)),
@@ -4712,7 +4723,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadSnapOffset(
     members: ReadonlyArray<ModelMember>,
     targets: ReadonlyArray<PlacementPose>,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
   ): { readonly dx: number; readonly dz: number } {
     let best: { readonly dx: number; readonly dz: number; readonly distance: number } | null = null;
     for (let index = 0; index < members.length; index++) {
@@ -4721,7 +4732,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!surface || !pose) continue;
       this.groupHeight.yLdu = pose.yPlates * PLATE_LDU;
       const snapped = snapToRoadEdge(
-        roads,
+        placedRoads,
         surface,
         pose.rot,
         1,
@@ -4736,7 +4747,7 @@ export class Editor implements IEditor, IEditedWorld {
       const distance = Math.hypot(dx, dz);
       if (!best || distance < best.distance) best = { dx, dz, distance };
     }
-    if (!best || !this.roadCleanShifted(members, targets, roads, best.dx, best.dz))
+    if (!best || !this.roadCleanShifted(members, targets, placedRoads, best.dx, best.dz))
       return NO_OFFSET;
     return best;
   }
@@ -4744,7 +4755,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadCleanShifted(
     members: ReadonlyArray<ModelMember>,
     targets: ReadonlyArray<PlacementPose>,
-    roads: PlacedRoads,
+    placedRoads: PlacedRoads,
     dx: number,
     dz: number,
   ): boolean {
@@ -4753,7 +4764,7 @@ export class Editor implements IEditor, IEditedWorld {
       const pose = targets[index];
       if (!surface || !pose) continue;
       const shifted = { ...pose, x: pose.x + dx, z: pose.z + dz };
-      if (overlapsPlacedRoad(roads, this.roadProbe(surface, shifted))) return false;
+      if (overlapsPlacedRoad(placedRoads, this.reusedRoadProbe(surface, shifted))) return false;
     }
     return true;
   }
@@ -4762,7 +4773,7 @@ export class Editor implements IEditor, IEditedWorld {
     check: ModelCheck,
     poses: ReadonlyArray<PlacementPose>,
   ): RefusedClick | null {
-    const { models: members, exempt, roads, trackSkip: skip } = check;
+    const { models: members, exempt, placedRoads, trackSkip: skip } = check;
     const supported = new Set<number>();
     const lowest = new Map<number, number>();
     for (let index = 0; index < poses.length; index++) {
@@ -4791,7 +4802,7 @@ export class Editor implements IEditor, IEditedWorld {
       }
       const track = this.trackPlacementRefusal(placeable, pose, exempt, skip);
       if (track !== null) return refusedAt(placeable.id, pose, track);
-      const road = this.roadOverlap(placeable, roads, pose);
+      const road = this.roadOverlap(placeable, placedRoads, pose);
       if (road) return refusedAt(placeable.id, pose, road.reason, road.counts);
     }
     for (const [component, index] of lowest) {

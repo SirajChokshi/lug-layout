@@ -27,8 +27,10 @@ import {
 import type { Placeable } from "./placeable.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 
+const NEIGHBOUR_TILES = 1;
+
 export interface RoadNeighbourhood {
-  near(area: WorldBox, roads: PlacedModel[], others: PlacedModel[]): void;
+  near(area: WorldBox, roadModels: PlacedModel[], otherModels: PlacedModel[]): void;
 }
 
 export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap";
@@ -416,7 +418,7 @@ export class RoadDrawing {
       minZ = Math.min(minZ, z);
       maxZ = Math.max(maxZ, z);
     }
-    const reach = 1.5 * tileLdu;
+    const reach = (NEIGHBOUR_TILES + 1 / 2) * tileLdu;
     return {
       minX: minX - reach,
       maxX: maxX + reach,

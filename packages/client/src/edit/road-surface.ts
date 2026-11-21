@@ -30,6 +30,8 @@ const CELL_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
 const HALF_CELL_SIXTEENTHS = CELL_SIXTEENTHS / 2;
 const IDENTIFIED_SIXTEENTHS = IDENTIFICATION_ACCEPTED_DEVIATION_LDU * SIXTEENTHS_PER_LDU;
 const HEIGHT_ONLY = ALL_COORDINATES & ~coordinatesAcross(AXIS_POS_Y);
+const OWN_TOP_ONLY = 1;
+const SHARED_TOP = 2;
 const FLAT_CELL = "f";
 const POCKET_CELL = "p";
 const NOT_ROAD = 0;
@@ -152,7 +154,7 @@ class SurfaceBuilder {
         const cellTop = this.top[cell] ?? NO_TOP;
         if (cellTop === NO_TOP) return;
         if (reach < cellTop) this.below[cell] = Math.max(this.below[cell] ?? NO_TOP, reach);
-        else this.reachingTop[cell] = Math.min(2, (this.reachingTop[cell] ?? 0) + 1);
+        else this.reachingTop[cell] = Math.min(SHARED_TOP, (this.reachingTop[cell] ?? 0) + 1);
       });
     }
   }
@@ -280,7 +282,7 @@ class SurfaceBuilder {
         y < top &&
         instanceTop === top &&
         this.kind[cell] === POCKET &&
-        this.reachingTop[cell] === 1 &&
+        this.reachingTop[cell] === OWN_TOP_ONLY &&
         (this.below[cell] ?? NO_TOP) <= y;
       if (sunk) this.stud[cell] = Math.max(this.stud[cell] ?? NO_STUD, y);
     });
