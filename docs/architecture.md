@@ -452,7 +452,7 @@ Extra plan rules:
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and IndexedDB (`brr-assets`) |
 | World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
-| Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
+| Collection (owned parts) | The CSV of what the user owns, kept as imported (columns: §11 item 22). Own vs buy matches its rows to a parts list's lines only through the crosswalk's Rebrickable part and colour ids, and reports rows no crosswalk entry maps to | IndexedDB (`brr-owned-parts`) |
 | Printable plan | SVG in the MVP, PDF in P1 | Download |
 | Imported model | Original file plus the bake (instance list, BOM, footprint, LOD meshes, badges), keyed by content hash | IndexedDB; P1 object storage |
 | Shareable package | `*.brr.zip`: the world (or `*.brrplan.zip` for a single plan) plus the original files of the models it references | File (MVP), share link (P1) |
@@ -521,7 +521,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 19. Flex track link length and maximum joint angle. *2026-11-16:* the joint angle is ±5.625° (stated and modelled); the link pitch is still open.
 20. Size of the element-existence table once compressed.
 21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed). *2026-11-16:* the published minimal module is 25 parts (§5.4). No source gives reach or overhang norms.
-22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets). *2026-11-16:* the API endpoints are documented (user token, then `/users/{user_token}/sets/`, `/parts/`, `/allparts/` and others). The collection CSV columns are still open, because the help pages sit behind a Cloudflare challenge.
+22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets). *2026-11-16:* the API endpoints are documented (user token, then `/users/{user_token}/sets/`, `/parts/`, `/allparts/` and others). The collection CSV columns are still open, because the help pages sit behind a Cloudflare challenge. Until they're verified, own vs buy reads a CSV whose first row names `Part`, `Color` and `Quantity` in Rebrickable ids (the columns the app's own Rebrickable CSV writes) and ignores other columns.
 
 **Later.**
 23. Fan-track segment angles per radius (BrickTracks R56 to R120 and others), and whether any needs 11.25° steps (D3).
