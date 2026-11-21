@@ -176,6 +176,11 @@ impl LatticeShape {
     }
 }
 
+struct PartReceptors {
+    voting: Vec<AxisPose>,
+    seating: Vec<AxisPose>,
+}
+
 pub struct ModelBaker<'a, L: Library> {
     library: &'a L,
     options: CompileOptions,
@@ -388,21 +393,37 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         shapes: &[&LatticeShape],
     ) -> Result<Option<ModelLattice>, BakeError> {
         let slots = self.slots(drawn)?;
-        let mut seated: HashMap<*const LatticeShape, Vec<AxisPose>> = HashMap::new();
+        let mut receptors: HashMap<*const LatticeShape, PartReceptors> = HashMap::new();
         for &shape in shapes {
-            seated
+            receptors
                 .entry(std::ptr::from_ref(shape))
-                .or_insert_with(|| self.stud_fit.seated(&shape.receptors));
+                .or_insert_with(|| PartReceptors {
+                    voting: shape
+                        .receptors
+                        .iter()
+                        .map(|receptor| receptor.pose)
+                        .collect(),
+                    seating: self.stud_fit.seated(&shape.receptors),
+                });
         }
+        let of = |shape: &LatticeShape| &receptors[&std::ptr::from_ref(shape)];
         let lattice_instances: Vec<LatticeInstance> = drawn
             .iter()
             .zip(shapes)
             .map(|(instance, &shape)| LatticeInstance {
                 matrix: &instance.matrix,
                 studs: &shape.studs,
-                receptors: &seated[&std::ptr::from_ref(shape)],
+                receptors: &of(shape).voting,
                 bounds_min: shape.bounds[0],
                 bounds_max: shape.bounds[1],
+            })
+            .collect();
+        let seating_instances: Vec<LatticeInstance> = lattice_instances
+            .iter()
+            .zip(shapes)
+            .map(|(instance, &shape)| LatticeInstance {
+                receptors: &of(shape).seating,
+                ..instance.clone()
             })
             .collect();
         let cover_instances: Vec<CoverInstance> = drawn
@@ -415,7 +436,7 @@ impl<'a, L: Library> ModelBaker<'a, L> {
                 studs: &self.studs[slot],
             })
             .collect();
-        let seats = ReceptorSeats::of(&lattice_instances);
+        let seats = ReceptorSeats::of(&seating_instances);
         let (solids, stud) = (&self.solids, self.stud_shape);
         let seated = model_lattice(&lattice_instances, |phase, floor_y| {
             stud_field_collides(&cover_instances, solids, stud, phase, floor_y, &seats)
