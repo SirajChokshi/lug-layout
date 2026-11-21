@@ -128,7 +128,7 @@ export type PartResolution =
   | (Counted & { readonly kind: "missingSubfile"; readonly missing: string; readonly from: string })
   | (Counted & {
       readonly kind: "rejected";
-      readonly gate: "license" | "unofficial";
+      readonly gate: "unofficial";
       readonly path: string;
       readonly message: string;
     })
@@ -1138,7 +1138,6 @@ function failureResolution(
         missing: failure.missing ?? "",
         from: failure.from,
       };
-    case "license":
     case "unofficial":
       return {
         kind: "rejected",

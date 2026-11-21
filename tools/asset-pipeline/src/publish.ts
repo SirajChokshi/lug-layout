@@ -25,11 +25,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
-import {
-  connectorPackageIssues,
-  sectionVocabularyIssues,
-  sectionVocabularyValues,
-} from "./connector-license.ts";
+import { connectorPackageIssues, sectionVocabularyIssues } from "./connector-license.ts";
 import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
@@ -39,7 +35,6 @@ export const CROSSWALK_FILE = "crosswalk.json";
 export const LIBRARY_PARTS_FILE = "library-parts.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
 export const ROLLING_DIAGNOSTICS_FILE = "rolling-diagnostics.json";
-const LEAKED_PATHS_SHOWN = 3;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
@@ -76,23 +71,11 @@ function undeclaredKeys(raw: unknown, decoded: unknown, path: string): ReadonlyA
   );
 }
 
-function refuseSectionVocabularyValues(raw: unknown, label: string): void {
-  const paths = sectionVocabularyValues(raw);
-  if (paths.length === 0) return;
-  const shown = paths.slice(0, LEAKED_PATHS_SHOWN).join(", ");
-  const more =
-    paths.length > LEAKED_PATHS_SHOWN ? ` and ${paths.length - LEAKED_PATHS_SHOWN} more` : "";
-  throw new Error(
-    `${label} carries section vocabulary values at ${shown}${more}; they ship only in the CC BY-SA section vocabulary asset`,
-  );
-}
-
 function decodeDeclared<const TSchema extends v.GenericSchema>(
   schema: TSchema,
   raw: unknown,
   label: string,
 ): v.InferOutput<TSchema> {
-  refuseSectionVocabularyValues(raw, label);
   const value = decodedOrThrow(decode(schema, raw), label);
   const undeclared = [...new Set(undeclaredKeys(raw, value, "$"))];
   if (undeclared.length > 0) {

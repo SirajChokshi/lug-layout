@@ -99,14 +99,7 @@ async function precompute(check: boolean): Promise<void> {
   });
   await rm(buildRoot, { recursive: true, force: true });
   const seconds = Math.round((performance.now() - started) / 1000);
-  const summary = `${pin.parts} parts in ${seconds} s on ${shards} shards: ${pin.records} records, ${pin.failed} failed, ${pin.refused.length} refused, index ${pin.index.sha256}`;
-  if (pin.refused.length > 0) {
-    process.stderr.write(
-      `the licence gate refused ${pin.refused.map(({ part }) => part).join(", ")}\n`,
-    );
-    process.exitCode = 1;
-    return;
-  }
+  const summary = `${pin.parts} parts in ${seconds} s on ${shards} shards: ${pin.records} records, ${pin.failed} failed, index ${pin.index.sha256}`;
   const outcome = await writeOrCheckPin(
     join(repoRoot, LIBRARY_BAKE_PIN),
     LibraryBakePin,

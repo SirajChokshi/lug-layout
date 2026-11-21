@@ -9,7 +9,6 @@ use brick_compile::compile::{stud_primitives_from_table, RollingMode};
 use brick_compile::flatten::{FlattenError, INHERIT_COLOR};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{Malformation, MalformedGeometry};
-use brick_compile::license::LicenseVerdict;
 use brick_compile::technic::{Line, Pin, TechnicPart};
 use brick_compile::trig::{atan2, planar_length};
 use brick_compile::{compile_part, CompileError, CompileOptions, Library, Lod, TechnicPrimitives};
@@ -28,24 +27,13 @@ const CA: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt";
 const NON_CA: &str = "0 !LICENSE Not redistributable : see NonCAreadme.txt";
 
 #[test]
-fn license_gate_rejects_any_non_ca_or_unlicensed_file_in_the_closure() {
+fn compiles_a_closure_whatever_licence_its_files_name_or_without_one() {
     let part =
         format!("0 Part\n{CA}\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\sub.dat\n");
-    let cases = [
-        (NON_CA, LicenseVerdict::NonContributorAgreement),
-        ("0 Author: someone", LicenseVerdict::Missing),
-    ];
-    for (license_line, expected) in cases {
+    for license_line in [NON_CA, "0 Author: someone"] {
         let sub = format!("0 Sub\n{license_line}\n3 16 0 0 0 1 0 0 0 0 1\n");
         let library = memory(&[("parts/part.dat", &part), ("parts/s/sub.dat", &sub)]);
-        let result = compile_part(&library, "part.dat", &CompileOptions::default());
-        assert_eq!(
-            result.err(),
-            Some(CompileError::License {
-                path: "parts/s/sub.dat".into(),
-                verdict: expected,
-            })
-        );
+        assert!(compile_part(&library, "part.dat", &CompileOptions::default()).is_ok());
     }
 }
 
@@ -58,7 +46,7 @@ fn first_triangle_normal_y(part: &str) -> f32 {
 }
 
 #[test]
-fn license_gate_rejects_unofficial_files_unless_allowlisted() {
+fn unofficial_gate_rejects_unofficial_files_unless_allowlisted() {
     let part =
         format!("0 Part\n{CA}\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\sub.dat\n");
     let sub = format!("0 Sub\n0 !LDRAW_ORG Unofficial_Subpart\n{CA}\n3 16 0 0 0 1 0 0 0 0 1\n");
