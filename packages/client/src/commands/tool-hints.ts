@@ -1,5 +1,12 @@
 import { STUD_LDU } from "@brr/math";
-import type { EditorSnapshot, GestureView, SelectionTally, TrackView } from "../edit/editor.ts";
+import { MAX_FILL_TILES, type FillView } from "../edit/fill-tool.ts";
+import type {
+  EditorSnapshot,
+  FillResult,
+  GestureView,
+  SelectionTally,
+  TrackView,
+} from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
 import type { TrackBlockView, TrackDragView, TrackRefusal } from "../edit/track-drawing.ts";
@@ -263,6 +270,38 @@ function heldPieceView(track: TrackView): ToolHintView | null {
   };
 }
 
+function fillingView(fill: FillView, name: string): Omit<ToolHintView, "hints"> {
+  if (fill.overLimit) {
+    return {
+      tone: "warn",
+      title: `${fill.wanted} tiles is too many`,
+      detail: `one fill places at most ${MAX_FILL_TILES}, so release places nothing`,
+    };
+  }
+  const placing = fill.wanted - fill.refused;
+  return {
+    tone: placing > 0 ? "place" : "warn",
+    title: `Filling ${fill.wanted} × ${name}`,
+    detail:
+      fill.refused > 0
+        ? `${placing} to place, ${fill.refused} refused and skipped`
+        : "release to place them all, one undo removes them",
+  };
+}
+
+function filledView(fill: FillResult, name: string): Omit<ToolHintView, "hints"> {
+  const why = fill.reason === null ? "" : `: ${fill.reason}`;
+  const skipped = fill.refused > 0 ? `skipped ${fill.refused} refused${why}` : null;
+  if (fill.placed === 0) {
+    return { tone: "warn", title: "Nothing filled", detail: skipped ?? fill.reason };
+  }
+  return {
+    tone: skipped === null ? "place" : "warn",
+    title: `Filled ${fill.placed} × ${name}`,
+    detail: skipped ?? "one undo removes them",
+  };
+}
+
 function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView {
   const { queued } = held;
   return {
@@ -300,11 +339,22 @@ function view(snapshot: EditorSnapshot): ToolHintView {
     case "place": {
       const held = heldItem(snapshot);
       if (held?.tables === "loading") return loadingView(snapshot, held);
+      const name = itemName(snapshot, snapshot.activeItem);
+      if (snapshot.fillDraft) {
+        return {
+          ...fillingView(snapshot.fillDraft, name),
+          hints: [
+            key("cycle-fill-grid", `${snapshot.fillGridStuds}-stud grid`),
+            key("rotate", "rotate"),
+            key("cancel", "cancel"),
+          ],
+        };
+      }
       const hover = snapshot.hover;
       if (hover?.onRails) {
         return {
           tone: hover.refusal === null ? "place" : "warn",
-          title: `Setting ${itemName(snapshot, snapshot.activeItem)} on the rails`,
+          title: `Setting ${name} on the rails`,
           detail: hover.refusal ?? "it follows the rails under the cursor",
           hints: [
             gesture("Click", "set it there"),
@@ -314,16 +364,21 @@ function view(snapshot: EditorSnapshot): ToolHintView {
           ],
         };
       }
+      const hints = [
+        gesture("Click", "place"),
+        gesture("Drag", "fill an area"),
+        key("cycle-fill-grid", `${snapshot.fillGridStuds}-stud grid`),
+        key("rotate", "rotate"),
+        key("open-palette", "another part"),
+        key("select-tool", "done"),
+      ];
+      const { lastFill } = snapshot;
+      if (lastFill?.item === snapshot.activeItem) return { ...filledView(lastFill, name), hints };
       return {
         tone: "place",
-        title: `Placing ${itemName(snapshot, snapshot.activeItem)}`,
+        title: `Placing ${name}`,
         detail: `${snapshot.ghostRot * DEGREES_PER_QUARTER_TURN}°`,
-        hints: [
-          gesture("Click", "place"),
-          key("rotate", "rotate"),
-          key("open-palette", "another part"),
-          key("select-tool", "done"),
-        ],
+        hints,
       };
     }
     case "track": {
