@@ -33,6 +33,7 @@ import {
   regionHolds,
   outlineContains,
   placedOutline,
+  placedOutlineInto,
   solveClosure,
   studlessTopBlocker,
   PlacedOutline,
@@ -422,7 +423,16 @@ function partBox(placed: Placed): WorldBox {
 }
 
 function framedOutline(outline: Float64Array, placement: Pose16, frame: TrackFrame): Float64Array {
-  const placed = placedOutline(outline, placement);
+  return framedOutlineInto(outline, placement, frame, new Float64Array(outline.length));
+}
+
+function framedOutlineInto(
+  outline: Float64Array,
+  placement: Pose16,
+  frame: TrackFrame,
+  out: Float64Array,
+): Float64Array {
+  const placed = placedOutlineInto(outline, placement, out);
   for (let i = 0; i < placed.length; i += 2) {
     placed[i] = (placed[i] ?? 0) + frame.xLdu;
     placed[i + 1] = (placed[i + 1] ?? 0) + frame.zLdu;
@@ -441,6 +451,7 @@ export class TrackDrawing implements ExtensionSite {
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
   private readonly outlines = new Map<number, Float64Array>();
+  private readonly framedScratch = new Map<number, Float64Array>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
@@ -1002,6 +1013,7 @@ export class TrackDrawing implements ExtensionSite {
 
   modelBlocker(
     partRects: Float64Array,
+    rectFloats: number,
     carried: ReadonlyArray<FramedTrackPiece>,
     moving: ReadonlySet<number>,
     movingOwners: ReadonlySet<number>,
@@ -1010,7 +1022,7 @@ export class TrackDrawing implements ExtensionSite {
     const skipped = this.skippedIds(field, moving, movingOwners);
     const box = this.collisionBox;
     const rect = this.rectOutline;
-    for (let r = 0; r < partRects.length; r += OBSTACLE_RECT_FLOATS) {
+    for (let r = 0; r < rectFloats; r += OBSTACLE_RECT_FLOATS) {
       writeRectOutline(rect, partRects, r);
       outlineBox(rect, box, 0);
       const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
@@ -1020,7 +1032,12 @@ export class TrackDrawing implements ExtensionSite {
     for (const piece of carried) {
       const pieceOutline = this.outlines.get(piece.catalogIndex);
       if (!pieceOutline || piece.yPlates * PLATE_LDU >= top) continue;
-      const outline = framedOutline(pieceOutline, piece.placement, piece.frame);
+      const outline = framedOutlineInto(
+        pieceOutline,
+        piece.placement,
+        piece.frame,
+        this.framedScratchFor(pieceOutline.length),
+      );
       outlineBox(outline, box, 0);
       const joined =
         piece.frame.id === WORLD_TRACK_FRAME.id
@@ -1036,6 +1053,15 @@ export class TrackDrawing implements ExtensionSite {
       if (hit !== NO_OBSTACLE) return field.describe(hit);
     }
     return null;
+  }
+
+  private framedScratchFor(floats: number): Float64Array {
+    let scratch = this.framedScratch.get(floats);
+    if (!scratch) {
+      scratch = new Float64Array(floats);
+      this.framedScratch.set(floats, scratch);
+    }
+    return scratch;
   }
 
   closure(from: number, to: number): ExtensionJoin {

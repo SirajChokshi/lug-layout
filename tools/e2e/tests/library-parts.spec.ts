@@ -1,6 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
-import { EditorPage, byPosition, type LatticePoint } from "./editor-page.ts";
+import {
+  EditorPage,
+  STUD,
+  byPosition,
+  type Box,
+  type LatticePoint,
+  type ScreenPoint,
+} from "./editor-page.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const BRICK_2_X_4 = "3001";
@@ -12,6 +19,40 @@ const PLATES_PER_BRICK = 3;
 const WALL_BRICKS = 3;
 const ORIGIN: LatticePoint = { x: 0, z: 0 };
 const IMPORT_REF = /^import:[0-9a-f]{64}$/u;
+
+interface CameraView {
+  readonly targetX: number;
+  readonly targetY: number;
+  readonly targetZ: number;
+  readonly distance: number;
+  readonly yaw: number;
+  readonly pitch: number;
+}
+
+async function cameraEye(page: Page): Promise<readonly [number, number, number]> {
+  const view: CameraView = JSON.parse((await page.locator("#camera-state").textContent()) ?? "");
+  const forwardX = -Math.cos(view.pitch) * Math.cos(view.yaw);
+  const forwardY = -Math.sin(view.pitch);
+  const forwardZ = -Math.cos(view.pitch) * Math.sin(view.yaw);
+  return [
+    view.targetX - forwardX * view.distance,
+    view.targetY - forwardY * view.distance,
+    view.targetZ - forwardZ * view.distance,
+  ];
+}
+
+async function topFaceCentre(editor: EditorPage, page: Page, box: Box): Promise<ScreenPoint> {
+  const [eyeX, eyeY, eyeZ] = await cameraEye(page);
+  const toTable = eyeY / (eyeY - box.maxY);
+  const tableX = eyeX + ((box.minX + box.maxX) / 2 - eyeX) * toTable;
+  const tableZ = eyeZ + ((box.minZ + box.maxZ) / 2 - eyeZ) * toTable;
+  const x = Math.round(tableX / STUD) * STUD;
+  const nearZ = Math.floor(tableZ / STUD) * STUD;
+  const near = await editor.screenOf({ x, z: nearZ });
+  const far = await editor.screenOf({ x, z: nearZ + STUD });
+  const along = (tableZ - nearZ) / STUD;
+  return { sx: near.sx + (far.sx - near.sx) * along, sy: near.sy + (far.sy - near.sy) * along };
+}
 
 function customGardenWall(): string {
   return [
@@ -78,10 +119,14 @@ test("a library part seats on top of an imported custom model, on the studs its 
   await editor.clickAt(ORIGIN);
   await editor.escape();
 
+  const wallBox = (await editor.footprints()).find((footprint) => footprint.ref === wall.item)?.box;
+  if (!wallBox) throw new Error("the placed wall has no footprint");
+
   await editor.searchPalette("fence spindled 1 x 4 x 2");
   const fence = await editor.pickLibraryPart(FENCE_SPINDLED_1_X_4_X_2, WHITE);
   expect(fence.status, fence.text).toBe("placeable");
-  await editor.clickAt(ORIGIN);
+  const onTheWall = await topFaceCentre(editor, page, wallBox);
+  await page.mouse.click(onTheWall.sx, onTheWall.sy);
   await editor.escape();
 
   expect(await editor.poses()).toEqual(
