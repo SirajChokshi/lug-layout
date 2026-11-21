@@ -28,6 +28,7 @@ import {
   type RebaseEvent,
 } from "@brr/render";
 import type { Decoded } from "@brr/schema/decode";
+import type { PlanArchive } from "@brr/schema/plan";
 import {
   shardEntry,
   shardName,
@@ -232,6 +233,17 @@ class MemoryWorldRepository implements IWorldRepository {
     return {
       ok: false,
       issues: [{ path: "world files", message: "aren't read by the held-out harness" }],
+    };
+  }
+
+  packPlanArchive(_archive: PlanArchive): Uint8Array {
+    return new Uint8Array();
+  }
+
+  async readPlanArchive(): Promise<Decoded<PlanArchive>> {
+    return {
+      ok: false,
+      issues: [{ path: "plan archive", message: "isn't read by the held-out harness" }],
     };
   }
 

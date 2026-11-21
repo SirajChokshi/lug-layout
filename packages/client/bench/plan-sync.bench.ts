@@ -1,14 +1,26 @@
 import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
 import {
   CoverageScratch,
+  emptyFacts,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  MODEL_SEGMENT,
+  NO_OVERLAP_PARTNER,
   PlanDelta,
   regionContext,
   TRACK_SEGMENT,
   uncoveredPieces,
   UNDECIDED,
+  WRITE_ADD,
   type PlanRegion,
+  type PlanShape,
+  type TrackChange,
+  type TrackOutline,
+  type TrackPieceAt,
 } from "@brr/domain";
-import { CHUNK_LDU, chunkKey, pose16, zeta16 } from "@brr/math";
+import { CHUNK_LDU, addZeta16, chunkKey, pose16, zeta16 } from "@brr/math";
+import type { TrackCatalog } from "@brr/schema/bundle";
 import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -21,6 +33,8 @@ import { mainThreadModules } from "../src/client.module.ts";
 import { TrackDrawing } from "../src/edit/track-drawing.ts";
 import {
   writeFullRebuild,
+  writeModelUpdates,
+  writeTrackChange,
   writeTrackLay,
   writeTrackThrow,
   writeViewUpdate,
@@ -29,6 +43,7 @@ import {
 } from "../src/plan/plan-producer.ts";
 import { PlanService, type NewPlan, type TableInput } from "../src/plan/plan-service.ts";
 import { RecordingBackend } from "../src/plan/plan-sync.test-support.ts";
+import { buildTrackPlan } from "../src/scene/track-plan.ts";
 import { ColorTable } from "../src/scene/viewer-scene.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -42,6 +57,11 @@ const BRICK_HEIGHT = 24;
 const ROAD_LDU = 640;
 const ROAD_STROKES: ReadonlyArray<number> = [8, 64];
 const ROOM_MM = 2100;
+const COVERING_REACH_MM = 1100;
+const DEFAULT_REACH_MM = 700;
+const FALLBACK_REACH_MM = 100;
+const JOINED_ROAD_CELLS = 8;
+const MID_TABLE_BRICK = 64 * 64 + 32;
 const FLAG_ROOM_DEPTH_MM = 4300;
 const FLAG_SHIFT_LDU = 5400;
 const TABLE_HEIGHT_MM = 750;
@@ -52,8 +72,20 @@ const CYCLES = 200;
 const COST_WINDOWS = 11;
 const REGION_EDITS = 21;
 const SETTLE_MS = 50;
-const SWITCH_ID = "ldraw:75541-f1";
-const TRACK_PIECES = 6;
+const PASSING_LOOP =
+  "ldraw:75541-f1, ldraw:74746*2, ldraw:75542-f1.1, ldraw:74747*8, ldraw:74746*6, ldraw:74747*8, /, ldraw:74747, ldraw:74747";
+const PASSING_LOOP_STUDS = { x: 60n, z: 20n } as const;
+const CIRCLE = "ldraw:74747*16";
+const CIRCLE_STUDS = { x: 140n, z: 150n } as const;
+const OPEN_STRAIGHT = "ldraw:74746";
+const OPEN_STRAIGHT_COUNTS: ReadonlyArray<number> = [1, 100, 1000];
+const OPEN_STRAIGHTS_PER_ROW = 32;
+const OPEN_STRAIGHT_PITCH = { x: 24n, z: 12n } as const;
+const OUTSIDE_STUDS = { x: -120n, z: 20n } as const;
+const KEPT_OPEN_STRAIGHTS = 8;
+const KEPT_L_CORNER_STUDS = { x: 60n, z: 100n } as const;
+const KEPT_L_HEADINGS: ReadonlyArray<number> = [0, 12];
+const KEPT_L_ROWS = 3;
 const TWO_53 = 2 ** 53;
 const FALLBACK_CHUNK_X = (TWO_53 - 512) / CHUNK_LDU;
 const FALLBACK_TABLES: ReadonlyArray<number> = [1, 2, 4];
@@ -67,6 +99,15 @@ const COUNTED_SPACES: ReadonlySet<string> = new Set([
 const BRICK = { id: "ldraw:3001", label: "Brick 2 x 4" };
 const ROAD = { id: "ldraw:44336", label: "Road plate" };
 const NONE: ReadonlyArray<PlanModelSource> = [];
+
+function rectShape(halfX: number, halfZ: number): PlanShape {
+  const rect = Float64Array.of(-halfX, -halfZ, halfX, halfZ);
+  return { footing: rect, occupancy: rect };
+}
+
+const BRICK_SHAPE = rectShape(BRICK_PITCH_X / 2, BRICK_PITCH_Z / 2);
+const TURNED_BRICK_SHAPE = rectShape(BRICK_PITCH_Z / 2, BRICK_PITCH_X / 2);
+const ROAD_SHAPE = rectShape(ROAD_LDU / 2, ROAD_LDU / 2);
 
 interface BenchModel extends PlanModelSource {
   id: number;
@@ -211,6 +252,8 @@ function brick(i: number, id: number, shiftZ: number): BenchModel {
       z,
     },
     placeable: BRICK,
+    shape: BRICK_SHAPE,
+    facts: emptyFacts(),
     box: {
       minX: x - BRICK_PITCH_X / 2,
       minY: y,
@@ -227,6 +270,8 @@ function turned(model: BenchModel, id: number): BenchModel {
   return {
     ...model,
     id,
+    shape: TURNED_BRICK_SHAPE,
+    facts: emptyFacts(),
     box: {
       ...model.box,
       minX: x - BRICK_PITCH_Z / 2,
@@ -249,6 +294,8 @@ function road(k: number, id: number): BenchModel {
       z,
     },
     placeable: ROAD,
+    shape: ROAD_SHAPE,
+    facts: emptyFacts(),
     box: {
       minX: x - ROAD_LDU / 2,
       minY: 0,
@@ -277,6 +324,47 @@ function tableRegion(depthMm: number): NewPlan {
   };
 }
 
+const LOOP_TABLE_DEPTH_MM = 1120;
+const CIRCLE_SEAM_X_MM = 1120;
+const CIRCLE_TABLES_FAR_MM = 1920;
+const OUTLINE_TABLES: ReadonlyArray<TableInput> = [
+  {
+    name: "Under the loop",
+    rect: { x: 0, z: 0, width: ROOM_MM, depth: LOOP_TABLE_DEPTH_MM },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+  {
+    name: "West of the seam",
+    rect: {
+      x: 0,
+      z: LOOP_TABLE_DEPTH_MM,
+      width: CIRCLE_SEAM_X_MM,
+      depth: CIRCLE_TABLES_FAR_MM - LOOP_TABLE_DEPTH_MM,
+    },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+  {
+    name: "East of the seam",
+    rect: {
+      x: CIRCLE_SEAM_X_MM,
+      z: LOOP_TABLE_DEPTH_MM,
+      width: ROOM_MM - CIRCLE_SEAM_X_MM,
+      depth: CIRCLE_TABLES_FAR_MM - LOOP_TABLE_DEPTH_MM,
+    },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+];
+const LOOP_STRAIGHT = 1;
+const CIRCLE_SECOND_CURVE = 15;
+const HALF_WIDTH_LDU = 80;
+const TAB_LDU = 9;
+
+interface OutlineQuery {
+  readonly outline: TrackOutline;
+  readonly rect: Float64Array;
+  readonly meets: boolean;
+}
+
 const fullTable: TableInput = {
   name: "Table 1",
   rect: { x: 0, z: 0, width: ROOM_MM, depth: ROOM_MM },
@@ -296,11 +384,18 @@ function build(
   if (region === null) return { plans, planId: null, delta, models };
   const planId = plans.createPlan(region);
   plans.addTable(planId, fullTable);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   return { plans, planId, delta, models };
 }
 
 function applyView(built: Built, view: PlanViewUpdate): void {
   writeViewUpdate(built.delta, view);
+  built.plans.apply(built.delta);
+}
+
+function applyUpdate(built: Built, models: ReadonlyArray<PlanModelSource>): void {
+  built.delta.reset();
+  writeModelUpdates(built.delta, models, models.length);
   built.plans.apply(built.delta);
 }
 
@@ -319,6 +414,8 @@ function viewScenarios(built: Built, ids: Ids): Scenario[] {
   const toAfter: PlanModelSource[] = [after];
   const rotateView = { removed: fromBefore, added: toAfter };
   const rotateBackView = { removed: toAfter, added: fromBefore };
+  const factTarget = built.models[Math.floor(built.models.length / 3)] ?? placedLast;
+  const factUpdate: PlanModelSource[] = [factTarget];
   return [
     {
       name: "place",
@@ -351,6 +448,22 @@ function viewScenarios(built: Built, ids: Ids): Scenario[] {
       inverse: () => {
         before.id = ids.fresh();
         applyView(built, rotateBackView);
+      },
+    },
+    {
+      name: "fact update (a mid-list model row rewritten, facts unchanged)",
+      edit: () => applyUpdate(built, factUpdate),
+      inverse: () => applyUpdate(built, factUpdate),
+    },
+    {
+      name: `fact update (a mid-list model row's joined road cells, 0 ↔ ${JOINED_ROAD_CELLS})`,
+      edit: () => {
+        factTarget.facts[FACT_ROAD_JOINED] = JOINED_ROAD_CELLS;
+        applyUpdate(built, factUpdate);
+      },
+      inverse: () => {
+        factTarget.facts[FACT_ROAD_JOINED] = 0;
+        applyUpdate(built, factUpdate);
       },
     },
     {
@@ -501,7 +614,12 @@ async function probe(
   };
 }
 
-async function loadTrack(): Promise<TrackDrawing> {
+interface LoadedTrack {
+  readonly drawing: TrackDrawing;
+  readonly catalog: TrackCatalog;
+}
+
+async function loadTrack(): Promise<LoadedTrack> {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
@@ -509,7 +627,32 @@ async function loadTrack(): Promise<TrackDrawing> {
   const bundle = await container
     .get(PART_BUNDLE_LOADER)
     .load("standard", (part) => part.role === "track");
-  return new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  return {
+    drawing: new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)),
+    catalog: bundle.trackCatalog,
+  };
+}
+
+function planLaid(
+  { drawing, catalog }: LoadedTrack,
+  plan: string,
+  at: { readonly x: bigint; readonly z: bigint },
+): TrackChange {
+  const { layout } = buildTrackPlan(plan, catalog);
+  const shift = zeta16([at.x, 0n, 0n, 0n, at.z, 0n, 0n, 0n]);
+  const first = drawing.pieceCount;
+  return {
+    lift: [],
+    lay: Array.from({ length: layout.count }, (_, p) => {
+      const pose = layout.pose(p);
+      return {
+        index: first + p,
+        piece: layout.piece(p),
+        pose: pose16(addZeta16(pose.position, shift), pose.heading),
+        yPlates: 0,
+      };
+    }),
+  };
 }
 
 async function threeBackend(): Promise<ISceneBackend> {
@@ -521,25 +664,31 @@ async function threeBackend(): Promise<ISceneBackend> {
 interface TrackDeltas {
   readonly lay: PlanDelta;
   readonly unlay: PlanDelta;
+  readonly openLay: PlanDelta;
+  readonly openUnlay: PlanDelta;
   readonly throwOver: PlanDelta;
   readonly throwBack: PlanDelta;
 }
 
-function layTrack(drawing: TrackDrawing): TrackDeltas {
-  const part = drawing.pieceParts().find((p) => p.piece.id === SWITCH_ID);
-  if (!part) throw new Error(`${SWITCH_ID} is not in the bundle`);
-  let laid = 0;
-  for (let k = 0; k < TRACK_PIECES; k++) {
-    const x = BigInt(40 + 30 * (k % 3));
-    const z = BigInt(40 + 60 * Math.floor(k / 3));
-    const change = drawing.pieceChange(
-      part.catalogIndex,
-      pose16(zeta16([x, 0n, 0n, 0n, z, 0n, 0n, 0n]), 0),
-    );
-    drawing.applyTrack(change);
-    laid = change.lay.length;
-  }
-  if (laid < 1) throw new Error("the last switch did not lay");
+function layTrack(track: LoadedTrack): TrackDeltas {
+  const { drawing } = track;
+  drawing.applyTrack(planLaid(track, PASSING_LOOP, PASSING_LOOP_STUDS));
+  const straight = track.catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+  const outside = drawing.pieceChange(
+    straight,
+    pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+  );
+  drawing.applyTrack(outside);
+  const openLay = new PlanDelta();
+  writeTrackLay(openLay, drawing, outside.lay.length);
+  const lift: TrackChange = { lift: outside.lay, lay: [] };
+  drawing.applyTrack(lift);
+  const openUnlay = new PlanDelta();
+  writeTrackChange(openUnlay, drawing, lift);
+  const circle = planLaid(track, CIRCLE, CIRCLE_STUDS);
+  drawing.applyTrack(circle);
+  const laid = circle.lay.length;
+  if (drawing.openEnds().length !== 0) throw new Error("the bench's track has open ends");
   const lay = new PlanDelta();
   writeTrackLay(lay, drawing, laid);
   const unlay = new PlanDelta();
@@ -557,7 +706,181 @@ function layTrack(drawing: TrackDrawing): TrackDeltas {
   drawing.applyTrack(back.change);
   const throwBack = new PlanDelta();
   writeTrackThrow(throwBack, drawing, lever.placement);
-  return { lay, unlay, throwOver, throwBack };
+  return { lay, unlay, openLay, openUnlay, throwOver, throwBack };
+}
+
+interface ProbeVariant {
+  readonly variant: string;
+  readonly built: Built;
+  readonly reads: PanelReads;
+  readonly scenarios: ReadonlyArray<Scenario>;
+  readonly endRows: number;
+  readonly endIssues: number | null;
+}
+
+async function keptRowsVariant(): Promise<ProbeVariant> {
+  const loaded = await loadTrack();
+  const { drawing: kept, catalog } = loaded;
+  const straight = catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+  kept.applyTrack({
+    lift: [],
+    lay: Array.from({ length: KEPT_OPEN_STRAIGHTS }, (_, slot) => openStraight(straight, slot)),
+  });
+  for (const heading of KEPT_L_HEADINGS) {
+    kept.applyTrack(
+      kept.pieceChange(
+        straight,
+        pose16(
+          zeta16([KEPT_L_CORNER_STUDS.x, 0n, 0n, 0n, KEPT_L_CORNER_STUDS.z, 0n, 0n, 0n]),
+          heading,
+        ),
+      ),
+    );
+  }
+  const built = build([], kept, tableRegion(ROOM_MM));
+  const outside = kept.pieceChange(
+    straight,
+    pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+  );
+  kept.applyTrack(outside);
+  const lay = new PlanDelta();
+  writeTrackLay(lay, kept, outside.lay.length);
+  const lift: TrackChange = { lift: outside.lay, lay: [] };
+  kept.applyTrack(lift);
+  const unlay = new PlanDelta();
+  writeTrackChange(unlay, kept, lift);
+  const reads = new PanelReads(built.plans, built.planId);
+  built.plans.subscribe(reads.read);
+  return {
+    variant: `one region keeping the rows of its ${KEPT_OPEN_STRAIGHTS} open straights and an L of two straights meeting without joining`,
+    built,
+    reads,
+    scenarios: [
+      {
+        name: "track lay of a straight with both ends open outside the region, the apply part",
+        edit: () => built.plans.apply(lay),
+        inverse: () => built.plans.apply(unlay),
+      },
+    ],
+    endRows: KEPT_OPEN_STRAIGHTS + KEPT_L_HEADINGS.length,
+    endIssues: 2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS,
+  };
+}
+
+function laidOutline(track: TrackDrawing, piece: number): TrackOutline {
+  const delta = new PlanDelta();
+  track.writeFootprint(piece, delta, WRITE_ADD);
+  const outline = delta.outline[0];
+  if (!outline) throw new Error(`laid piece ${piece} has no plan outline`);
+  return outline;
+}
+
+function outlineQueries(track: TrackDrawing): ReadonlyArray<OutlineQuery> {
+  const curve = laidOutline(track, track.pieceCount - CIRCLE_SECOND_CURVE);
+  const middle = (curve.minX + curve.maxX) / 2;
+  const straight = laidOutline(track, LOOP_STRAIGHT);
+  const { box } = track.footprintAt(LOOP_STRAIGHT);
+  const queries: OutlineQuery[] = [
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.minX, curve.minZ, curve.maxX, curve.maxZ),
+      meets: true,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.maxX, curve.minZ, curve.maxX + 10, curve.maxZ),
+      meets: false,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(middle - 1, curve.minZ, middle + 1, curve.maxZ),
+      meets: true,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.minX - 10, curve.minZ, curve.minX, curve.maxZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.minX, box.minZ - 10, box.maxX, box.minZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.minX, box.minZ - 10, box.maxX, box.minZ + 1),
+      meets: true,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.maxX, box.minZ, box.maxX + 10, box.maxZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.maxX - 1, box.minZ, box.maxX + 10, box.maxZ),
+      meets: true,
+    },
+  ];
+  if (box.maxZ - box.minZ !== 2 * HALF_WIDTH_LDU || box.maxX - box.minX !== 320 + 2 * TAB_LDU) {
+    throw new Error("the loop's second piece isn't a 9V straight at a quarter-turn heading");
+  }
+  for (const { outline, rect, meets } of queries) {
+    if (outline.meetsOpenRect(rect, 0) !== meets) {
+      throw new Error(`an outline query of the bench didn't give ${meets}`);
+    }
+  }
+  return queries;
+}
+
+let outlineHits = 0;
+
+function outlineScenario(name: string, queries: ReadonlyArray<OutlineQuery>): Scenario {
+  return {
+    name,
+    edit: () => {
+      for (let q = 0; q < queries.length; q++) {
+        const query = queries[q];
+        if (!query) continue;
+        if (query.outline.meetsOpenRect(query.rect, 0)) outlineHits++;
+      }
+    },
+    inverse: () => {
+      outlineHits = 0;
+    },
+  };
+}
+
+function outlineVariant(track: TrackDrawing, deltas: TrackDeltas): ProbeVariant {
+  const plans = new PlanService(new RecordingBackend());
+  const delta = new PlanDelta();
+  writeFullRebuild(delta, [], track);
+  plans.apply(delta);
+  const planId = plans.createPlan(tableRegion(ROOM_MM));
+  for (const table of OUTLINE_TABLES) plans.addTable(planId, table);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
+  const built: Built = { plans, planId, delta, models: [] };
+  const reads = new PanelReads(plans, planId);
+  plans.subscribe(reads.read);
+  const queries = outlineQueries(track);
+  return {
+    variant: "one region of three tables, two meeting at a seam through two joints of the circle",
+    built,
+    reads,
+    scenarios: [
+      ...trackScenarios(built, deltas),
+      outlineScenario(
+        "TrackOutline.meetsOpenRect, four rectangles against a curve at a 22.5° step: certified floats",
+        queries.slice(0, 4),
+      ),
+      outlineScenario(
+        "TrackOutline.meetsOpenRect, four rectangles flush with or 1 LDU over a straight's edges: exact integers",
+        queries.slice(4),
+      ),
+    ],
+    endRows: track.pieceCount - deltas.unlay.removalCount,
+    endIssues: 0,
+  };
 }
 
 function trackScenarios(built: Built, deltas: TrackDeltas): Scenario[] {
@@ -569,9 +892,14 @@ function trackScenarios(built: Built, deltas: TrackDeltas): Scenario[] {
       inverse: () => built.plans.apply(deltas.throwBack),
     },
     {
-      name: "track lay, the apply part",
+      name: "track lay of a closed R40 circle, the apply part",
       edit: () => built.plans.apply(deltas.lay),
       inverse: () => built.plans.apply(deltas.unlay),
+    },
+    {
+      name: "track lay of a straight with both ends open outside every region, the apply part",
+      edit: () => built.plans.apply(deltas.openLay),
+      inverse: () => built.plans.apply(deltas.openUnlay),
     },
   ];
 }
@@ -665,6 +993,27 @@ async function flaggedCosts(ids: Ids, lines: string[]): Promise<void> {
       `| ${flagged.toLocaleString("en-US")} | rotating that flagged row, null backend | ${summary(await measure(COST_WINDOWS, rotate, rotateBack))} |`,
     );
     unclick();
+    const target = built.models[Math.floor(ROWS / 2)] ?? extra;
+    const partner = built.models[ROWS - 1] ?? extra;
+    const updated: PlanModelSource[] = [target];
+    const flagByUpdate = (): void => {
+      target.facts[FACT_OVERLAP_SEGMENT] = MODEL_SEGMENT;
+      target.facts[FACT_OVERLAP_SOURCE] = partner.id;
+      applyUpdate(built, updated);
+    };
+    const clearByUpdate = (): void => {
+      target.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      target.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+      applyUpdate(built, updated);
+    };
+    flagByUpdate();
+    if (built.plans.issueCount(planId) !== flagged + 1) {
+      throw new Error(`a flagging update left ${built.plans.issueCount(planId)} issues`);
+    }
+    clearByUpdate();
+    lines.push(
+      `| ${flagged.toLocaleString("en-US")} | a fact update that newly flags a mid-list row (an overlap partner), null backend | ${summary(await measure(COST_WINDOWS, flagByUpdate, clearByUpdate))} |`,
+    );
     const boxes: WorldBox[] = [];
     for (let i = 0; i <= flagged; i++) boxes.push({ ...(built.models[i]?.box ?? extra.box) });
     lines.push(
@@ -729,13 +1078,14 @@ function fallbackRegion(tables: number): PlanRegion {
       obstacles: [],
     },
     maxOverhangMm: 1,
+    maxReachMm: FALLBACK_REACH_MM,
   };
 }
 
 async function fallbackCosts(ids: Ids, lines: string[]): Promise<void> {
   lines.push(
     "",
-    `### One fallback decision through PlanService.apply: a one-row add whose table edges sit next to 2^53, overhang 1 mm, so no grown edge certifies`,
+    `### One fallback decision through PlanService.apply: a one-row add whose table edges sit next to 2^53, overhang 1 mm and reach ${FALLBACK_REACH_MM} mm, so no grown edge or reach strip certifies`,
     "",
     `| Tables | Fallbacks per add | ${COST_HEADER.slice(2)}`,
     "|---|---|---|---|---|---|---|",
@@ -752,12 +1102,17 @@ async function fallbackCosts(ids: Ids, lines: string[]): Promise<void> {
       originChunkZ: 0,
     });
     for (const table of region.footprint.tables) plans.addTable(planId, table);
-    plans.updatePlan(planId, { maxOverhangMm: region.maxOverhangMm });
+    plans.updatePlan(planId, {
+      maxOverhangMm: region.maxOverhangMm,
+      maxReachMm: region.maxReachMm,
+    });
     const origin = FALLBACK_CHUNK_X * CHUNK_LDU;
     const model: BenchModel = {
       id: ids.fresh(),
       handle: { chunkKey: 0, slot: 0, x: origin + 15, z: 15 },
       placeable: BRICK,
+      shape: null,
+      facts: emptyFacts(),
       box: { minX: origin + 10, minY: 0, minZ: 10, maxX: origin + 20, maxY: 24, maxZ: 20 },
     };
     const box = Float64Array.of(
@@ -806,6 +1161,101 @@ async function footprintCosts(drawing: TrackDrawing, lines: string[]): Promise<v
     "|---|---|---|---|",
     `| ${writes} | ${percentile(times, 0.5).toFixed(2)} | ${clean.length > 0 ? Math.round(percentile(clean, 0.5)) : "n/a"} | ${clean.length} of ${windows.length} |`,
   );
+}
+
+function openStraight(straight: number, slot: number): TrackPieceAt {
+  const x = BigInt(slot % OPEN_STRAIGHTS_PER_ROW) * OPEN_STRAIGHT_PITCH.x;
+  const z = BigInt(Math.floor(slot / OPEN_STRAIGHTS_PER_ROW)) * OPEN_STRAIGHT_PITCH.z;
+  return {
+    index: slot,
+    piece: straight,
+    pose: pose16(zeta16([x + 4n, 0n, 0n, 0n, z + 8n, 0n, 0n, 0n]), 0),
+    yPlates: 0,
+  };
+}
+
+async function trackIssueCosts(lines: string[]): Promise<void> {
+  lines.push(
+    "",
+    "### Track issue rows, per track edit, against separate straights with both ends open",
+    "",
+    "| Open straights | Open ends in the region | writeIssues µs, p50 | writeIssues bytes, median of GC-free windows | lay one more and read issues(), p50 / p95 / worst ms | its bytes | GC-free windows |",
+    "|---|---|---|---|---|---|---|",
+  );
+  for (const count of OPEN_STRAIGHT_COUNTS) {
+    const loaded = await loadTrack();
+    const { drawing: open } = loaded;
+    const straight = loaded.catalog.pieces.findIndex((piece) => piece.id === OPEN_STRAIGHT);
+    open.applyTrack({
+      lift: [],
+      lay: Array.from({ length: count }, (_, slot) => openStraight(straight, slot)),
+    });
+    const plans = new PlanService(new RecordingBackend());
+    const rowsOfStraights = Math.ceil((count + 1) / OPEN_STRAIGHTS_PER_ROW) + 1;
+    const studMm = 8;
+    const widthMm = Number(OPEN_STRAIGHT_PITCH.x) * (OPEN_STRAIGHTS_PER_ROW + 1) * studMm;
+    const depthMm = Number(OPEN_STRAIGHT_PITCH.z) * rowsOfStraights * studMm;
+    const planId = plans.createPlan({
+      name: "Open track",
+      roomWidthMm: widthMm,
+      roomDepthMm: depthMm,
+      originChunkX: 0,
+      originChunkZ: 0,
+    });
+    plans.updatePlan(planId, { maxReachMm: depthMm });
+    plans.addTable(planId, {
+      name: "Table",
+      rect: { x: 0, z: 0, width: widthMm, depth: depthMm },
+      heightMm: TABLE_HEIGHT_MM,
+    });
+    const full = new PlanDelta();
+    writeFullRebuild(full, [], open);
+    plans.apply(full);
+    const writes = 20;
+    const scratch = new PlanDelta();
+    const write = (): void => {
+      for (let k = 0; k < writes; k++) {
+        scratch.reset();
+        open.writeIssues(scratch);
+      }
+    };
+    write();
+    const written = await measure(COST_WINDOWS, write);
+    const writtenClean = written.filter((w) => w.gcs === 0).map((w) => w.bytes / writes);
+    const extra: TrackChange = { lift: [], lay: [openStraight(straight, count)] };
+    open.applyTrack(extra);
+    const layDelta = new PlanDelta();
+    writeTrackLay(layDelta, open, 1);
+    const lift: TrackChange = { lift: extra.lay, lay: [] };
+    open.applyTrack(lift);
+    const unlayDelta = new PlanDelta();
+    writeTrackChange(unlayDelta, open, lift);
+    const layAndRead = (): void => {
+      plans.apply(layDelta);
+      plans.issues(planId);
+    };
+    const unlay = (): void => {
+      plans.apply(unlayDelta);
+      plans.issues(planId);
+    };
+    layAndRead();
+    unlay();
+    const laid = await measure(COST_WINDOWS, layAndRead, unlay);
+    const laidTimes = laid.map((w) => w.ms);
+    const laidClean = laid.filter((w) => w.gcs === 0).map((w) => w.bytes);
+    const ends = plans.issueCount(planId);
+    if (ends !== 2 * count) throw new Error(`${count} open straights gave ${ends} rows`);
+    lines.push(
+      `| ${count} | ${ends} | ${(
+        percentile(
+          written.map((w) => w.ms / writes),
+          0.5,
+        ) * 1000
+      ).toFixed(
+        1,
+      )} | ${writtenClean.length > 0 ? Math.round(percentile(writtenClean, 0.5)).toLocaleString("en-US") : "n/a"} | ${percentile(laidTimes, 0.5).toFixed(3)} / ${percentile(laidTimes, 0.95).toFixed(3)} / ${Math.max(...laidTimes).toFixed(3)} | ${laidClean.length > 0 ? Math.round(percentile(laidClean, 0.5)).toLocaleString("en-US") : "n/a"} | ${laidClean.length} of ${laid.length} |`,
+    );
+  }
 }
 
 function productionReads(plans: PlanService): void {
@@ -888,6 +1338,11 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
       cleanup: removeSparePlan,
     },
     {
+      name: `reach limit, ${COVERING_REACH_MM} → ${DEFAULT_REACH_MM} mm (at ${DEFAULT_REACH_MM} mm the rows in the table's middle band take the end-disk test)`,
+      run: () => plans.updatePlan(planId, { maxReachMm: DEFAULT_REACH_MM }),
+      after: () => plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM }),
+    },
+    {
       name: "name only",
       run: () => {
         width = width === ROOM_MM ? ROOM_MM + 1 : ROOM_MM;
@@ -935,6 +1390,22 @@ async function regionEditCosts(ids: Ids, lines: string[]): Promise<void> {
   lines.push(
     `| typing a width, four commits (2, 24, 240, 2400 mm), the whole burst | plan path | ${summary(await measure(REGION_EDITS, burst, restore))} |`,
   );
+  plans.updatePlan(planId, { maxReachMm: DEFAULT_REACH_MM });
+  const middle = brick(MID_TABLE_BRICK, ids.fresh(), 0);
+  const one: PlanModelSource[] = [middle];
+  const add = { added: one, removed: NONE };
+  const drop = { added: NONE, removed: one };
+  const click = (): void => {
+    middle.id = ids.fresh();
+    applyView(built, add);
+  };
+  const unclick = (): void => applyView(built, drop);
+  click();
+  unclick();
+  lines.push(
+    `| a click adding one brick mid-table at ${DEFAULT_REACH_MM} mm reach, so its row takes the end-disk test | plan path | ${summary(await measure(COST_WINDOWS, click, unclick))} |`,
+  );
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   lines.push(
     `| typing a width, four commits, the whole burst | plus the panel's reads and the minimap's overviewOf per commit | ${summary(
       await measure(
@@ -977,6 +1448,7 @@ async function memoryPerRow(ids: Ids, lines: string[]): Promise<void> {
   plans.apply(delta);
   const planId = plans.createPlan(tableRegion(ROOM_MM));
   plans.addTable(planId, fullTable);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
   const withPlans = await footprint();
   lines.push(
     "",
@@ -1012,8 +1484,9 @@ function probeTable(rows: ReadonlyArray<ProbeRow>): string[] {
 
 const mode = process.argv[2] ?? "all";
 const ids = new Ids();
-const drawing = await loadTrack();
-const trackDeltas = layTrack(drawing);
+const track = await loadTrack();
+const { drawing } = track;
+const trackDeltas = layTrack(track);
 const lines: string[] = [
   `cpu: ${cpus()[0]?.model ?? "unknown"} x${cpus().length}, node ${process.version}, mode ${mode}`,
   `bytes summed over ${[...COUNTED_SPACES].join(", ")}; times include any GC in the window, bytes come only from GC-free windows`,
@@ -1021,7 +1494,7 @@ const lines: string[] = [
 let failed = false;
 if (mode === "all" || mode === "probe") {
   const rows: ProbeRow[] = [];
-  const variants = [false, true].map((withRegion) => {
+  const variants: ProbeVariant[] = [false, true].map((withRegion) => {
     const built = build(bricks(ROWS, 0, ids), drawing, withRegion ? tableRegion(ROOM_MM) : null);
     const reads = new PanelReads(built.plans, built.planId);
     built.plans.subscribe(reads.read);
@@ -1030,8 +1503,11 @@ if (mode === "all" || mode === "probe") {
       built,
       reads,
       scenarios: [...viewScenarios(built, ids), ...trackScenarios(built, trackDeltas)],
+      endRows: ROWS + drawing.pieceCount - trackDeltas.unlay.removalCount,
+      endIssues: withRegion ? 0 : null,
     };
   });
+  variants.push(await keptRowsVariant(), outlineVariant(drawing, trackDeltas));
   const shortRows: ShortRow[] = [];
   for (const { variant, reads, scenarios } of variants) {
     for (const scenario of scenarios) shortRows.push(await shortProbe(variant, scenario, reads));
@@ -1041,14 +1517,13 @@ if (mode === "all" || mode === "probe") {
       for (const scenario of scenarios) warm(scenario, JIT_WARMUP_CYCLES);
     }
   }
-  for (const { variant, built, reads, scenarios } of variants) {
+  const endIssues = new Map<string, number | null>();
+  for (const { variant, built, reads, scenarios, endRows, endIssues: issues } of variants) {
     for (const scenario of scenarios) rows.push(await probe(variant, built, scenario, reads));
-    if (
-      built.plans.placementCount() !==
-      ROWS + drawing.pieceCount - trackDeltas.unlay.removalCount
-    ) {
+    if (built.plans.placementCount() !== endRows) {
       throw new Error(`the probe ended with ${built.plans.placementCount()} rows`);
     }
+    endIssues.set(variant, issues);
   }
   lines.push(
     "",
@@ -1059,15 +1534,15 @@ if (mode === "all" || mode === "probe") {
   for (const row of shortRows) if (row.mismatches !== 0) failed = true;
   lines.push(
     "",
-    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${TRACK_PIECES} track pieces`,
+    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it; and the same track in a region of three tables whose seam passes through two joints of the circle facing across it, so laying the circle runs the outline rows, the off-table cut and the exact joint test, beside direct calls of the outline predicate on a 22.5° curve (certified floats) and on a straight with rectangles flush to its edges (exact integers)`,
     "",
-    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of both variants runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
+    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. The two TrackOutline rows time the predicate calls themselves, with no apply and so no reads. First every edit of every variant runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
     "",
     ...probeTable(rows),
   );
   for (const row of rows) {
-    const regionDirty =
-      row.variant !== "no regions" && (row.endSandbox !== 0 || row.endIssues !== 0);
+    const expected = endIssues.get(row.variant) ?? null;
+    const regionDirty = expected !== null && (row.endSandbox !== 0 || row.endIssues !== expected);
     if (row.beyond !== 0 || row.gcs !== 0 || row.mismatches !== 0 || regionDirty) failed = true;
   }
 }
@@ -1076,6 +1551,7 @@ if (mode === "all" || mode === "costs") {
   await readerCosts(ids, lines);
   await fallbackCosts(ids, lines);
   await footprintCosts(drawing, lines);
+  await trackIssueCosts(lines);
   await regionEditCosts(ids, lines);
   await memoryPerRow(ids, lines);
 }
