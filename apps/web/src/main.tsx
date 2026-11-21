@@ -3,14 +3,12 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_MEMORY,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
-  PALETTE_THUMBNAILS,
+  PALETTE,
+  PANEL_LAYOUT,
   RUNNING_GEAR,
   TRACK_SCENE,
   TRAIN_PLAY,
@@ -39,6 +37,14 @@ const libraryBakeBaseUrl =
   (import.meta.env.VITE_BUNDLE_BASE_URL === undefined
     ? new URL("library-bake/", document.baseURI).href
     : null);
+const libraryConnectorsBaseUrl =
+  import.meta.env.VITE_LIBRARY_CONNECTORS_BASE_URL ??
+  new URL(
+    "library-connectors/",
+    import.meta.env.VITE_BUNDLE_BASE_URL === undefined
+      ? document.baseURI
+      : new URL(import.meta.env.VITE_BUNDLE_BASE_URL.replace(/\/?$/u, "/"), document.baseURI),
+  ).href;
 const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
 const createImportWorker = (): Worker =>
@@ -68,6 +74,7 @@ container.load(
       ? { ldrawLibraryBaseUrl: import.meta.env.VITE_LDRAW_LIBRARY_BASE_URL }
       : {}),
     ...(libraryBakeBaseUrl === null ? {} : { libraryBakeBaseUrl }),
+    libraryConnectorsBaseUrl,
     ...(import.meta.env.VITE_CATALOG_API_BASE_URL
       ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
       : {}),
@@ -130,11 +137,9 @@ function root(): ReactNode {
         plans={container.get(PLAN_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
         play={container.get(TRAIN_PLAY)}
-        paletteSearch={container.get(PALETTE_SEARCH)}
-        paletteDrag={container.get(PALETTE_DRAG)}
-        palettePrefetch={container.get(PALETTE_PREFETCH)}
-        paletteMemory={container.get(PALETTE_MEMORY)}
-        paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
+        palette={container.get(PALETTE)}
+        panels={container.get(PANEL_LAYOUT)}
+        hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
         options={{
           api: params.api,

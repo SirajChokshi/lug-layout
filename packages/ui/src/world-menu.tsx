@@ -97,8 +97,12 @@ function modelImportText(view: ModelImportView): string {
   switch (view.status) {
     case "importing":
       return `Importing ${view.file}: reading, compiling and baking its parts…`;
+    case "checking":
+      return `${view.file} is in the palette, checking studs. Click the layout to place it.`;
     case "placeable":
       return `${view.file} is in the palette. Click the layout to place it.`;
+    case "check-failed":
+      return `${view.file} is in the palette, but its ${view.reason ?? "stud check failed"}. Its studs stay unchecked.`;
     case "refused":
       return `${view.file} can't be placed: ${view.reason ?? "no stud lattice from the bake"}.`;
     default: {
@@ -116,7 +120,13 @@ function ModelImportStatus({ view }: { readonly view: ModelImportView }) {
       data-status={view.status}
       data-item={view.item ?? ""}
     >
-      <p className={view.status === "refused" ? "world-warning" : "world-note"}>
+      <p
+        className={
+          view.status === "refused" || view.status === "check-failed"
+            ? "world-warning"
+            : "world-note"
+        }
+      >
         {modelImportText(view)}
       </p>
       {view.report && (
@@ -157,6 +167,8 @@ export function WorldMenu({ editor, snapshot }: WorldMenuProps) {
     snapshot.fileError !== null ||
     snapshot.catalogError !== null ||
     modelImport?.status === "importing" ||
+    modelImport?.status === "checking" ||
+    modelImport?.status === "check-failed" ||
     modelImport?.status === "refused";
   useUnloadGuard(snapshot.unsavedEdits);
 

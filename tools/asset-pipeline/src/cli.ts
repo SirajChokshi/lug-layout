@@ -40,7 +40,6 @@ import {
 import {
   catalogSourceDirectory,
   fetchAuditInputs,
-  fetchConnectivity,
   fetchCatalogSources,
   fetchClosure,
   modelPath,
@@ -69,6 +68,7 @@ import { readFixtureModels, readPalette } from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
+  attachLibraryConnectors,
   attachRollingDiagnostics,
   attachSectionVocabulary,
   MANIFEST_FILE,
@@ -157,14 +157,12 @@ async function fetchCommand(): Promise<void> {
     models.map((model) => readFile(modelPath(model, modelRoots), "utf8")),
   );
   const inferred = await inferredConnectors();
-  const closure = await fetchClosure(palette, ldrawRoot, modelSources, [
-    inferred.cavityProbe,
-    inferred.axleProbe,
-  ]);
-  const connectivity = await fetchConnectivity(
-    palette.connectivitySource,
-    Object.keys(closure.files),
+  const { closure, connectivity } = await fetchClosure(
+    palette,
+    ldrawRoot,
     bundleConnectivityRoot,
+    modelSources,
+    [inferred.cavityProbe, inferred.axleProbe],
   );
   const audit = await fetchAuditInputs(
     palette,
@@ -268,6 +266,7 @@ async function verifyCommand(): Promise<void> {
       connectivityLock(lock),
       palette.connectivitySource,
       bundleConnectivityRoot,
+      lock.files,
     )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
@@ -338,7 +337,12 @@ async function factsCommand(check: boolean): Promise<void> {
   const problems = [
     ...(await verifyClosure(lock, ldrawRoot)),
     ...(await verifyAuditInputs(audit, auditRoot, connectivityRoot)),
-    ...(await verifyConnectivity(connectivity, palette.connectivitySource, bundleConnectivityRoot)),
+    ...(await verifyConnectivity(
+      connectivity,
+      palette.connectivitySource,
+      bundleConnectivityRoot,
+      lock.files,
+    )),
     ...(await verifyModels(omrModels, modelRoots)),
   ];
   if (problems.length > 0) {
@@ -577,6 +581,7 @@ async function compileLod({ palette, out, lod }: LodBuild, shared: SharedBuild):
   await attachCrosswalk(out, shared.crosswalk);
   await attachRecords(out);
   await attachLibraryBake(out, join(repoRoot, BUNDLE_DATA_FILES.libraryBakePin));
+  await attachLibraryConnectors(out, join(repoRoot, BUNDLE_DATA_FILES.libraryConnectorsPin));
   await attachRollingDiagnostics(out);
   const started = performance.now();
   reportThumbnails(lod, await attachThumbnails(out, lod, () => performance.now()), started);

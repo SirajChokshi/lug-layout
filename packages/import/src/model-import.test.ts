@@ -34,7 +34,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { IPartRecords, RecordOptions, RecordStats } from "./library-bake-store.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
-import { ModelImportEngine, type IBakeHelper, type ImportResult } from "./model-import.ts";
+import {
+  ModelImportEngine,
+  type IBakeHelper,
+  type ImportResult,
+  type PlacedImport,
+  type PlacementListener,
+} from "./model-import.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
@@ -224,6 +230,26 @@ function translation(
   return [matrices[at + 3], matrices[at + 7], matrices[at + 11]];
 }
 
+const OMR_WHOLE_LDU_RESIDUAL = 0.05;
+const OMR_IDENTIFICATION_REACH_LDU = Math.sqrt(3) * OMR_WHOLE_LDU_RESIDUAL;
+const ROTATION_ENTRIES = [0, 1, 2, 4, 5, 6, 8, 9, 10];
+
+function rotations(matrices: ArrayLike<number>): ReadonlyArray<number> {
+  return Array.from({ length: matrices.length / MATRIX_FLOATS }, (_, m) =>
+    ROTATION_ENTRIES.map((entry) => matrices[m * MATRIX_FLOATS + entry] ?? Number.NaN),
+  ).flat();
+}
+
+function translationShift(a: ArrayLike<number>, b: ArrayLike<number>, instance: number): number {
+  const [ax, ay, az] = translation(a, instance);
+  const [bx, by, bz] = translation(b, instance);
+  return Math.max(
+    Math.abs((ax ?? 0) - (bx ?? 0)),
+    Math.abs((ay ?? 0) - (by ?? 0)),
+    Math.abs((az ?? 0) - (bz ?? 0)),
+  );
+}
+
 const nothingFound: FetchFunction = async () => new Response(null, { status: HTTP_NOT_FOUND });
 
 const PART_ID_PREFIX = "ldraw:";
@@ -311,6 +337,7 @@ function comparable(result: ImportResult): unknown {
       bakeRounds: null,
       fetched: null,
       records: null,
+      timings: null,
     },
   };
 }
@@ -319,6 +346,7 @@ async function importOutsideTheBundle(
   fileName: string,
   text: string,
   records: IPartRecords | null,
+  onPlaced?: PlacementListener,
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const engine = new ModelImportEngine(
@@ -329,25 +357,68 @@ async function importOutsideTheBundle(
     () => 0,
     await reactorHelpers(2),
   );
-  return engine.importText({
-    fileName,
-    text,
-    lod: "standard",
-    source: manifest.source,
-    studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
-    unofficialAllowlist: [],
-    primitives: manifest.compiler.primitives ?? null,
-    sectionVocabulary: await bundleVocabulary(manifest),
-    cavityProbe: manifest.compiler.cavityProbe,
-    bundlePartIds: [],
-    ldconfigCodes: manifest.colors.map((color) => color.code),
-    translucentColors: manifest.colors
-      .filter((color) => color.alpha < OPAQUE_ALPHA)
-      .map((color) => color.code),
-    tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
-    vehicles: manifest.compiler.vehicles ?? null,
-  });
+  return engine.importText(
+    {
+      fileName,
+      text,
+      lod: "standard",
+      source: manifest.source,
+      studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+      unofficialAllowlist: [],
+      primitives: manifest.compiler.primitives ?? null,
+      sectionVocabulary: await bundleVocabulary(manifest),
+      cavityProbe: manifest.compiler.cavityProbe,
+      bundlePartIds: [],
+      ldconfigCodes: manifest.colors.map((color) => color.code),
+      translucentColors: manifest.colors
+        .filter((color) => color.alpha < OPAQUE_ALPHA)
+        .map((color) => color.code),
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+      vehicles: manifest.compiler.vehicles ?? null,
+    },
+    onPlaced,
+  );
 }
+
+it(
+  "announces placement once, before the result, with every field the result has but the stud cover, and listening changes nothing in the result",
+  async () => {
+    const text = [
+      "0 two stacked bricks beside a plate",
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 2 80 0 0 1 0 0 0 1 0 0 0 1 3023.dat",
+      "",
+    ].join("\n");
+    const announced: Array<{ readonly placed: PlacedImport; readonly afterResult: boolean }> = [];
+    let resolved = false;
+    const listened = await importOutsideTheBundle("stacked.ldr", text, null, (placed) =>
+      announced.push({ placed, afterResult: resolved }),
+    ).then((result) => {
+      resolved = true;
+      return result;
+    });
+    const quiet = await importOutsideTheBundle("stacked.ldr", text, null);
+    const { bake, report, studio: _studio, ...shape } = listened;
+    if (!bake) throw new Error("the stacked bricks did not bake");
+    const { studCover, ...placement } = bake;
+
+    expect(studCover.covered).toBeGreaterThan(0);
+    expect(comparable(listened)).toEqual(comparable(quiet));
+    expect(announced).toEqual([
+      {
+        placed: {
+          ...shape,
+          sections: report.sections,
+          refusedConnectorRecords: report.refusedConnectorRecords,
+          bake: placement,
+        },
+        afterResult: false,
+      },
+    ]);
+  },
+  BAKE_TIMEOUT_MS,
+);
 
 it(
   "a train whose pinned parts bake and draw from records imports exactly as when they compile",
@@ -585,6 +656,25 @@ it("gives each placement of a sub-file its own sub-model instance and each drawn
   expect(translation(partTransforms, 2)).toEqual([-100, 24, 20]);
 });
 
+it("keeps a user model's authored positions, because the import never applies the OMR authoring identification", async () => {
+  const text = [
+    "0 FILE dusty.ldr",
+    "0 !LDRAW_ORG Model",
+    "1 16 40.02 0 0 1 0 0 0 1 0 0 0 1 cab.ldr",
+    "1 4 10.02 0 3.13 1 0 0 0 1 0 0 0 1 3001.dat",
+    "0 FILE cab.ldr",
+    "1 4 0 -24 0.01 1 0 0 0 1 0 0 0 1 3003.dat",
+  ].join("\n");
+
+  const { submodels, partTransforms } = await importWith(nothingFound, "dusty.mpd", text);
+
+  expect(translation(submodels.matrices, 0)).toEqual([40.02, 0, 0]);
+  expect([0, 1].map((i) => translation(partTransforms, i))).toEqual([
+    [40.02, 24, -0.01],
+    [10.02, 0, -3.13],
+  ]);
+});
+
 it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin from partTransforms, which single-precision render matrices lose", async () => {
   const text = [
     "0 FILE far.ldr",
@@ -615,17 +705,15 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
     Uint8Array.of(GENDER_MALE, GENDER_FEMALE),
     Uint8Array.of(SOURCE_SHADOW, SOURCE_SHADOW),
     Uint8Array.of(STATUS_VERIFIED, STATUS_VERIFIED),
-    Float32Array.of(
-      STUD_CENTRE_LDU,
-      BRICK_LDU,
-      STUD_CENTRE_LDU,
-      STUD_CENTRE_LDU,
-      0,
-      STUD_CENTRE_LDU,
+    Int32Array.from(
+      [STUD_CENTRE_LDU, BRICK_LDU, STUD_CENTRE_LDU, STUD_CENTRE_LDU, 0, STUD_CENTRE_LDU],
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
     ),
     Int8Array.of(AXIS_POS_Y, AXIS_NEG_Y),
-    new Float32Array(6),
+    new Float64Array(6),
     new Uint16Array(2),
+    new Float64Array(6),
+    [],
   );
 
   const result = await importWith(nothingFound, "far.mpd", text);
@@ -692,29 +780,62 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       expect(named).toBeGreaterThan(0);
     });
 
-    it.each(paletteModels)(
+    async function importedAndRecorded(model: (typeof paletteModels)[number]) {
+      const manifest = await bundleManifest();
+      const entry = manifest.models.find((bundled) => bundled.name === model.name);
+      expect(entry).toBeDefined();
+      const root = model.origin === "omr" ? omrRoot : fixturesRoot;
+      const result = await importWith(
+        pinnedMirror,
+        model.file,
+        await readFile(new URL(model.file, root), "utf8"),
+        compiler,
+      );
+      const record = JSON.parse(
+        await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
+      ) as ModelFile;
+      const imported = {
+        parent: Array.from(result.submodels.parent),
+        matrices: Array.from(result.submodels.matrices),
+        ofPart: Array.from(result.submodels.ofPart),
+        partTransforms: Array.from(result.partTransforms),
+      };
+      return { imported, record };
+    }
+
+    it.each(paletteModels.filter((model) => model.origin !== "omr"))(
       "$name imports with the sub-model tree and part transforms its bake recorded",
       async (model) => {
-        const manifest = await bundleManifest();
-        const entry = manifest.models.find((bundled) => bundled.name === model.name);
-        expect(entry).toBeDefined();
-        const root = model.origin === "omr" ? omrRoot : fixturesRoot;
-        const result = await importWith(
-          pinnedMirror,
-          model.file,
-          await readFile(new URL(model.file, root), "utf8"),
-          compiler,
-        );
-        const record = JSON.parse(
-          await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
-        ) as ModelFile;
+        const { imported, record } = await importedAndRecorded(model);
 
-        expect({
-          parent: Array.from(result.submodels.parent),
-          matrices: Array.from(result.submodels.matrices),
-          ofPart: Array.from(result.submodels.ofPart),
-          partTransforms: Array.from(result.partTransforms),
-        }).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
+        expect(record.authoredIdentification).toBeUndefined();
+        expect(imported).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
+      },
+      BUNDLE_MODEL_IMPORT_TIMEOUT_MS,
+    );
+
+    it.each(paletteModels.filter((model) => model.origin === "omr"))(
+      "$name imports with its bake's sub-model tree and rotations, and positions within the OMR identification's reach of its identified record",
+      async (model) => {
+        const { imported, record } = await importedAndRecorded(model);
+        const depth = (submodel: number): number =>
+          submodel === MODEL_ROOT ? 0 : 1 + depth(record.submodels.parent[submodel] ?? MODEL_ROOT);
+
+        expect(record.authoredIdentification).toBeDefined();
+        expect({ parent: imported.parent, ofPart: imported.ofPart }).toEqual({
+          parent: record.submodels.parent,
+          ofPart: record.submodels.ofPart,
+        });
+        expect(rotations(imported.matrices)).toEqual(rotations(record.submodels.matrices));
+        expect(rotations(imported.partTransforms)).toEqual(rotations(record.partTransforms));
+        expect(
+          imported.ofPart.flatMap((holder, instance) =>
+            translationShift(imported.partTransforms, record.partTransforms, instance) >
+            (depth(holder) + 1) * OMR_IDENTIFICATION_REACH_LDU
+              ? [instance]
+              : [],
+          ),
+        ).toEqual([]);
       },
       BUNDLE_MODEL_IMPORT_TIMEOUT_MS,
     );

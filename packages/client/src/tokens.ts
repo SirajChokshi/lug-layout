@@ -10,12 +10,15 @@ import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
 import type { IPalettePrefetch } from "./catalog/palette-prefetch.ts";
 import type { IPaletteSearch } from "./catalog/palette-search.ts";
 import type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import type { IHotbar } from "./commands/hotbar.ts";
+import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
@@ -23,6 +26,7 @@ import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
+import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
@@ -63,6 +67,9 @@ export const IMPORT_WORKER_FACTORY: ServiceIdentifier<ImportWorkerFactory> = Sym
 export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LibraryBakeBaseUrl",
 );
+export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.LibraryConnectorsBaseUrl",
+);
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
 );
@@ -94,10 +101,19 @@ export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symb
 export const PALETTE_MEMORY: ServiceIdentifier<IPaletteMemory> = Symbol.for(
   "brr.client.PaletteMemory",
 );
+export const HOTBAR: ServiceIdentifier<IHotbar> = Symbol.for("brr.client.Hotbar");
 export const PALETTE_THUMBNAILS: ServiceIdentifier<IPaletteThumbnails> = Symbol.for(
   "brr.client.PaletteThumbnails",
 );
+export const PALETTE: ServiceIdentifier<IPalette> = Symbol.for("brr.client.Palette");
+export const PANEL_LAYOUT_STORE: ServiceIdentifier<IPanelLayoutStore> = Symbol.for(
+  "brr.client.PanelLayoutStore",
+);
+export const PANEL_LAYOUT: ServiceIdentifier<IPanelLayout> = Symbol.for("brr.client.PanelLayout");
 export const SNAP_SHAPES: ServiceIdentifier<SnapShapes> = Symbol.for("brr.client.SnapShapes");
+export const CONNECTOR_TABLES: ServiceIdentifier<IConnectorTables> = Symbol.for(
+  "brr.client.ConnectorTables",
+);
 export const SNAP_MATING: ServiceIdentifier<SnapMating> = Symbol.for("brr.client.SnapMating");
 export const LATTICE_STUD_FINDER: ServiceIdentifier<LatticeStudFinder> = Symbol.for(
   "brr.client.LatticeStudFinder",

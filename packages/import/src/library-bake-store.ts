@@ -1,6 +1,4 @@
 import {
-  contentAddressedFile,
-  contentDigestOf,
   LIBRARY_BAKE_INDEX_FILE,
   LibraryBakeBucket,
   LibraryBakeIndex,
@@ -12,16 +10,10 @@ import {
   type UnreadBandDiagnostic,
 } from "@brr/schema/bundle";
 import { decode } from "@brr/schema/decode";
-import type { FetchFunction, MirrorSource } from "./ldraw-mirror.ts";
+import { sameSource, type FetchFunction, type MirrorSource } from "./ldraw-mirror.ts";
+import { VerifiedFiles, type IByteCache, type RecordStats } from "./verified-files.ts";
 
-const TRAILING_SLASHES = /\/+$/u;
-const HEX_RADIX = 16;
-const HEX_PAIR = 2;
-
-export interface IByteCache {
-  get(key: string): Promise<Uint8Array | undefined>;
-  put(key: string, bytes: Uint8Array): Promise<void>;
-}
+export { NO_BYTE_CACHE, type IByteCache, type RecordStats } from "./verified-files.ts";
 
 export interface PinnedRecords {
   readonly file: string;
@@ -33,12 +25,6 @@ export interface RecordOptions {
   readonly studPrimitives: ReadonlyArray<string>;
   readonly unofficialAllowlist: ReadonlyArray<string>;
   readonly primitives: PrimitiveConnectorTable | null;
-}
-
-export interface RecordStats {
-  readonly fetched: number;
-  readonly cached: number;
-  readonly bytes: number;
 }
 
 export interface IPartRecords {
@@ -60,16 +46,6 @@ interface ListedBucket {
 }
 
 const EMPTY_BUCKET: ListedBucket = { parts: new Map(), rollingDiagnostics: null };
-
-export const NO_BYTE_CACHE: IByteCache = {
-  get: async () => undefined,
-  put: async () => undefined,
-};
-
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
-  return [...digest].map((byte) => byte.toString(HEX_RADIX).padStart(HEX_PAIR, "0")).join("");
-}
 
 function json(bytes: Uint8Array): unknown {
   return JSON.parse(new TextDecoder().decode(bytes));
@@ -93,27 +69,20 @@ function sameValue(a: unknown, b: unknown): boolean {
   );
 }
 
-function sameSource(a: MirrorSource, b: MirrorSource): boolean {
-  return a.repo === b.repo && a.commit === b.commit && a.root === b.root;
-}
-
 export class LibraryBakeStore implements IPartRecords {
   readonly key: string;
-  private readonly baseUrl: string;
+  private readonly files: VerifiedFiles;
   private index: Promise<LibraryBakeIndex | null> | null = null;
   private readonly buckets = new Map<number, Promise<ListedBucket>>();
-  private fetched = 0;
-  private cached = 0;
-  private bytesRead = 0;
 
   constructor(
     baseUrl: string,
     private readonly pinned: PinnedRecords,
-    private readonly fetchUrl: FetchFunction,
-    private readonly cache: IByteCache,
+    fetchUrl: FetchFunction,
+    cache: IByteCache,
   ) {
     this.key = pinned.sha256;
-    this.baseUrl = baseUrl.replace(TRAILING_SLASHES, "");
+    this.files = new VerifiedFiles(baseUrl, fetchUrl, cache);
   }
 
   async lookup(
@@ -140,6 +109,10 @@ export class LibraryBakeStore implements IPartRecords {
     return found;
   }
 
+  bytes(file: string): Promise<Uint8Array> {
+    return this.files.addressed(file);
+  }
+
   async rollingDiagnostics(
     partIds: ReadonlyArray<string>,
   ): Promise<ReadonlyMap<string, ReadonlyArray<UnreadBandDiagnostic>>> {
@@ -150,10 +123,7 @@ export class LibraryBakeStore implements IPartRecords {
     for (const bucket of new Set([...wanted].map(libraryBakeBucket))) {
       const { rollingDiagnostics } = await this.bucket(index, bucket);
       if (rollingDiagnostics === null) continue;
-      const bytes = await this.bytes(rollingDiagnostics.file);
-      if ((await sha256Hex(bytes)) !== rollingDiagnostics.sha256) {
-        throw new Error(`${rollingDiagnostics.file} differs from the SHA-256 its bucket names`);
-      }
+      const bytes = await this.files.referenced(rollingDiagnostics.file, rollingDiagnostics.sha256);
       const decoded = decode(RollingDiagnosticsFile, json(bytes));
       if (!decoded.ok)
         throw new Error(`${rollingDiagnostics.file} is not a rolling diagnostics file`);
@@ -164,34 +134,8 @@ export class LibraryBakeStore implements IPartRecords {
     return found;
   }
 
-  async bytes(file: string): Promise<Uint8Array> {
-    const digest = contentDigestOf(file);
-    if (digest === null) throw new Error(`${file} is not content-addressed`);
-    const hit = await this.cache.get(file);
-    if (hit !== undefined && (await sha256Hex(hit)).startsWith(digest)) {
-      this.cached++;
-      return hit;
-    }
-    const bytes = await this.download(file);
-    if (!(await sha256Hex(bytes)).startsWith(digest)) {
-      throw new Error(`${file} differs from its content address`);
-    }
-    await this.cache.put(file, bytes);
-    return bytes;
-  }
-
   stats(): RecordStats {
-    return { fetched: this.fetched, cached: this.cached, bytes: this.bytesRead };
-  }
-
-  private async download(file: string): Promise<Uint8Array> {
-    const url = `${this.baseUrl}/${file}`;
-    const response = await this.fetchUrl(url);
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    this.fetched++;
-    this.bytesRead += bytes.length;
-    return bytes;
+    return this.files.stats();
   }
 
   private async loadIndex(): Promise<LibraryBakeIndex | null> {
@@ -201,23 +145,9 @@ export class LibraryBakeStore implements IPartRecords {
     return index;
   }
 
-  private async pinnedIndexBytes(file: string): Promise<Uint8Array | null> {
-    const cached = await this.cache.get(file);
-    if (cached !== undefined && (await sha256Hex(cached)) === this.pinned.sha256) {
-      this.cached++;
-      return cached;
-    }
-    const bytes = await this.download(file);
-    if ((await sha256Hex(bytes)) !== this.pinned.sha256) return null;
-    await this.cache.put(file, bytes);
-    return bytes;
-  }
-
   private async readIndex(): Promise<LibraryBakeIndex | null> {
     if (this.pinned.file !== LIBRARY_BAKE_INDEX_FILE) return null;
-    const bytes = await this.pinnedIndexBytes(
-      contentAddressedFile(this.pinned.file, this.pinned.sha256),
-    );
+    const bytes = await this.files.pinned(this.pinned.file, this.pinned.sha256);
     if (bytes === null) return null;
     const decoded = decode(LibraryBakeIndex, json(bytes));
     return decoded.ok ? decoded.value : null;

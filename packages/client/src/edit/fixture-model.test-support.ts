@@ -4,6 +4,7 @@ import {
   type BricklinkPartCandidates,
   type CatalogCrosswalk,
   type CompiledPartGlb,
+  type ConnectorLoad,
   type FetchPriority,
   type IAssetFetcher,
   type ImportContext,
@@ -15,6 +16,7 @@ import {
   type PartConnectors,
   type PartFilter,
   type PartMesh,
+  type PartModel,
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
@@ -51,6 +53,27 @@ export function fixtureBundleLoader(): IPartBundleLoader {
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
   return container.get(PART_BUNDLE_LOADER);
+}
+
+export interface CheckedModel {
+  readonly pending: Placeable;
+  readonly checked: Placeable;
+}
+
+export async function fixtureModelChecks(name: string): Promise<CheckedModel> {
+  const { bundle, model, entry } = await fixtureBundleLoader().loadModel("standard", name);
+  const placeable = (studCover: PartModel["studCover"] | null): Placeable =>
+    modelPlaceable(
+      `${entry.origin}:${name}`,
+      name,
+      name,
+      { ...model, studCover },
+      { name, source: entry.source, sections: model.sections },
+      bundle.parts,
+      new ColorTable(bundle),
+      null,
+    );
+  return { pending: placeable(null), checked: placeable(model.studCover) };
 }
 
 export async function fixtureModel(name: string): Promise<Placeable> {
@@ -129,6 +152,10 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return this.shipped.loadPartConnectors(lod, partId);
+  }
+
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.shipped.readPartConnectors(lod, partId);
   }
 
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
