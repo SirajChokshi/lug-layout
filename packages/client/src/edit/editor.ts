@@ -19,6 +19,7 @@ import {
   TrackClearance,
   World,
   addShards,
+  shardPoses,
   ConsistLayout,
   consistPoseProblem,
   type AppliedEdit,
@@ -84,6 +85,7 @@ import type { Decoded, Issue } from "@brr/schema/decode";
 import type { ImportReport, StudioReport } from "@brr/import";
 import {
   importRef,
+  importedSha256,
   worldTrack,
   type ConsistPieceV1,
   type ConsistRecordV1,
@@ -160,6 +162,7 @@ import {
   type PieceSnap,
   type SwitchLeverView,
   type TrackBlockView,
+  type TrackCarrier,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -233,10 +236,10 @@ import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
 import {
+  appendTrackChange,
+  appendViewUpdate,
   writeFullRebuild,
   writeModelUpdates,
-  writeTrackChange,
-  writeViewUpdate,
 } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
@@ -259,7 +262,10 @@ import type {
   IWorldFiles,
   IWorldSession,
   ModelFileInput,
+  PlanContents,
+  PlanImport,
   StoredContents,
+  StoredPlan,
   WorldContents,
   WorldSessionView,
 } from "./world-session.ts";
@@ -762,6 +768,26 @@ function trackRefusal(placeable: Placeable, block: TrackBlockView): string {
   return `${placeable.label} would ${trackBlockText(block)}.`;
 }
 
+function boxAround(boxes: ReadonlyArray<WorldBox>): WorldBox | null {
+  const [first, ...rest] = boxes;
+  if (!first) return null;
+  return rest.reduce(
+    (around, box) => ({
+      minX: Math.min(around.minX, box.minX),
+      minY: Math.min(around.minY, box.minY),
+      minZ: Math.min(around.minZ, box.minZ),
+      maxX: Math.max(around.maxX, box.maxX),
+      maxY: Math.max(around.maxY, box.maxY),
+      maxZ: Math.max(around.maxZ, box.maxZ),
+    }),
+    first,
+  );
+}
+
+function standsOnTable(model: PlacedModel): boolean {
+  return model.handle.yPlates <= RESTS_ON_TABLE_Y_PLATES;
+}
+
 function boxesTouch(a: WorldBox, b: WorldBox): boolean {
   return (
     a.minX <= b.maxX &&
@@ -983,6 +1009,7 @@ const ACTION_VERBS: Readonly<Record<GroupAction, string>> = {
 };
 
 const NO_OFFSET = { dx: 0, dz: 0 } as const;
+const OPENED_PLAN_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
 const PASTE_REFUSED = "Can't paste here.";
@@ -1124,6 +1151,8 @@ function editLabel(edit: EditSummary | null): string | null {
       return "throw switch";
     case "plan":
       return "plan edit";
+    case "open-plan":
+      return `open plan (${counted(edit.placements, "placement", "placements")}, ${counted(edit.pieces, "track piece", "track pieces")})`;
     default: {
       const unhandled: never = edit;
       throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
@@ -1740,10 +1769,14 @@ export class Editor implements IEditor, IEditedWorld {
     });
     if (swapped && !this.gesture) this.showSelection();
     this.refreshRoads();
-    this.syncModelTrack();
+    const carriedTrackChanged = this.syncModelTrack();
     this.refreshTrains();
     this.placeGhost();
-    this.applyModelView(view);
+    const delta = this.planDelta;
+    delta.reset();
+    this.appendModelView(delta, view);
+    if (carriedTrackChanged) this.track?.writeIssues(delta);
+    this.plans.apply(delta);
     this.layoutVersion++;
     const drawing = this.track;
     if (drawing && this.state.mode === "track") this.ensureTrackObstacles(drawing);
@@ -3459,13 +3492,12 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
-  private applyModelView(view: ViewUpdate): void {
+  private appendModelView(delta: PlanDelta, view: ViewUpdate): void {
     this.facts.noteRemoved(view.removed);
     this.facts.noteAdded(view.added);
     const updated = this.facts.flush(this.factUpdates);
-    writeViewUpdate(this.planDelta, view);
-    writeModelUpdates(this.planDelta, this.factUpdates, updated);
-    this.plans.apply(this.planDelta);
+    appendViewUpdate(delta, view);
+    writeModelUpdates(delta, this.factUpdates, updated);
   }
 
   private queueFactFlush(): void {
@@ -3484,7 +3516,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private planEdited(change: PlanChange): void {
-    this.show(this.history.commitPlan(change), performance.now());
+    this.show(this.history.commit("plan", [], NO_TRACK_CHANGE, change), performance.now());
   }
 
   private show(
@@ -3493,7 +3525,8 @@ export class Editor implements IEditor, IEditedWorld {
     sample: EditSample | null = this.sampleOf(edit),
   ): ViewUpdate {
     if (edit.plan) this.plans.restore(edit.plan.after);
-    const planOnly = edit.plan !== null;
+    const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
+    const planOnly = edit.plan !== null && edit.changes.length === 0 && !trackChanged;
     this.applyConsists(edit);
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
@@ -3505,7 +3538,6 @@ export class Editor implements IEditor, IEditedWorld {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
-    const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
     const track = this.applyTrack(edit.track);
     const worldChanged = edit.changes.length > 0 || (!trackChanged && !planOnly);
     if (worldChanged) this.session.placementsEdited(edit);
@@ -3524,21 +3556,26 @@ export class Editor implements IEditor, IEditedWorld {
         },
       });
     }
+    let carriedTrackChanged = false;
     if (!planOnly) {
       this.refreshRoads();
-      this.syncModelTrack();
+      carriedTrackChanged = this.syncModelTrack();
       if (trackChanged) this.railsChanged();
       this.refreshTrains();
       this.placeGhost();
       if (!GROUP_EDITS.has(edit.kind)) this.followSelection(edit.track);
     }
-    if (worldChanged) this.applyModelView(view);
-    if (trackChanged && this.track) {
-      writeTrackChange(this.planDelta, this.track, edit.track);
-      this.plans.apply(this.planDelta);
+    const drawing = this.track;
+    const trackRows = trackChanged && drawing !== null;
+    if (worldChanged || trackRows) {
+      const delta = this.planDelta;
+      delta.reset();
+      if (worldChanged) this.appendModelView(delta, view);
+      if (trackRows) appendTrackChange(delta, drawing, edit.track);
+      else if (carriedTrackChanged) drawing?.writeIssues(delta);
+      this.plans.apply(delta);
     }
     if (view.added.length + view.removed.length > 0) this.layoutVersion++;
-    const drawing = this.track;
     if (!planOnly) {
       if (drawing && this.state.mode === "track") this.ensureTrackObstacles(drawing);
       this.layoutChanged();
@@ -4388,14 +4425,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!copied || this.state.readOnly || this.state.mode !== "select" || this.gesture) return;
     this.holdGroup({
       kind: "paste",
-      action: "move",
-      models: copied.models,
-      pieces: copied.pieces,
-      exempt: NO_MODELS,
-      roads: this.roadsWithout(NO_MODELS),
-      block: this.seatsBlock(copied.pieces, NO_MODELS),
-      joins: [],
-      trackSkip: this.trackSkip(copied.pieces, NO_MODELS),
+      ...this.pasteEdit(copied.models, copied.pieces),
       frameModel: copied.models.length > 0 ? 0 : null,
       frame: copied.models[0]?.pose ?? WORLD_FRAME,
       grabX: copied.pivot.x,
@@ -4736,8 +4766,24 @@ export class Editor implements IEditor, IEditedWorld {
     return { network: new RoadNetwork(placements), extents: placements.map(cellExtent) };
   }
 
+  private pasteEdit(
+    models: ReadonlyArray<ModelMember>,
+    pieces: ReadonlyArray<PieceMember>,
+  ): GroupEdit {
+    return {
+      action: "move",
+      models,
+      pieces,
+      exempt: NO_MODELS,
+      roads: this.roadsWithout(NO_MODELS),
+      block: this.seatsBlock(pieces, NO_MODELS),
+      joins: [],
+      trackSkip: this.trackSkip(pieces, NO_MODELS),
+    };
+  }
+
   private placeGroup(edit: GroupEdit, targets: GroupTargets, snap: boolean): GroupPlacement {
-    const { models, exempt, roads, block } = edit;
+    const { models, roads } = edit;
     const offset = snap ? this.roadSnapOffset(models, targets.modelPoses, roads) : NO_OFFSET;
     const shifted = targets.modelPoses.map((pose) => translated(pose, offset.dx, offset.dz));
     const piecePoses =
@@ -4745,15 +4791,25 @@ export class Editor implements IEditor, IEditedWorld {
         ? targets.piecePoses
         : targets.piecePoses.map((pose) => pieceTranslated(pose, offset.dx, offset.dz));
     const placed: GroupTargets = { modelPoses: shifted, piecePoses };
-    return this.search.withdrawn(this.searchIdsOf(exempt), () => {
-      const refusal =
-        block ??
-        this.unreadConnectors(models) ??
+    return { ...placed, refusal: this.groupRefusal(edit, placed) };
+  }
+
+  private groupRefusal(edit: GroupEdit, placed: GroupTargets): RefusedClick | null {
+    return this.search.withdrawn(
+      this.searchIdsOf(edit.exempt),
+      () =>
+        edit.block ??
+        this.unreadConnectors(edit.models) ??
         this.brokenJoin(edit, placed) ??
-        this.modelRefusal(models, placed.modelPoses, exempt, roads, edit.trackSkip) ??
-        this.pieceRefusal(edit, placed.piecePoses);
-      return { ...placed, refusal };
-    });
+        this.modelRefusal(
+          edit.models,
+          placed.modelPoses,
+          edit.exempt,
+          edit.roads,
+          edit.trackSkip,
+        ) ??
+        this.pieceRefusal(edit, placed.piecePoses),
+    );
   }
 
   private searchIdsOf(models: ReadonlySet<PlacedModel>): ReadonlySet<number> {
@@ -5158,6 +5214,153 @@ export class Editor implements IEditor, IEditedWorld {
     this.camera.lookAt(x, z, false);
   }
 
+  planContents(planId: string): Decoded<PlanContents> {
+    const region = this.plans.plans().find((plan) => plan.id === planId);
+    if (!region) return { ok: false, issues: [{ path: "plan", message: "is no longer open" }] };
+    const unchecked = this.plans.issues(planId).find((issue) => issue.rule === "unchecked");
+    if (unchecked)
+      return { ok: false, issues: [{ path: region.name, message: unchecked.message }] };
+    const { models, pieces } = this.planMembers(planId);
+    const unheld = this.unheldInPlan(region.name, models);
+    if (unheld) return { ok: false, issues: [unheld] };
+    const refs = this.catalog.refs();
+    const placements = models.map(({ handle }) => {
+      const ref = refs[handle.refId];
+      if (ref === undefined) throw new Error(`placement refId ${handle.refId} has no catalog id`);
+      const { colorId, x, z, yPlates, rot } = handle;
+      return { ref, color: colorId, x, z, yPlates, rot };
+    });
+    const laid = this.track?.records() ?? [];
+    const track = pieces.map((piece, index) => {
+      const record = laid[piece];
+      if (!record) throw new Error(`plan row for track piece ${piece} has no laid piece`);
+      return { ...record, index };
+    });
+    const placeables = new Map(models.map(({ placeable }) => [placeable.id, placeable]));
+    const imported: PlanImport[] = [];
+    const issues: Issue[] = [];
+    for (const placeable of placeables.values()) {
+      const sha256 = importedSha256(placeable.id);
+      if (sha256 === null) continue;
+      const customParts = this.catalog.customParts(placeable);
+      if (customParts === null || placeable.credit === null) {
+        const message = this.studChecks.has(placeable)
+          ? "is still being checked; save the plan once its import finishes"
+          : "has no import report, so its custom parts can't be credited; import it again";
+        issues.push({ path: placeable.label, message });
+        continue;
+      }
+      imported.push({ sha256, credit: placeable.credit, customParts });
+    }
+    if (issues.length > 0) return { ok: false, issues };
+    const placed = [...placeables.values()].flatMap(({ credit }) => (credit ? [credit] : []));
+    return { ok: true, value: { region, placements, track, placed, imported } };
+  }
+
+  private unheldInPlan(planName: string, members: ReadonlyArray<PlacedModel>): Issue | null {
+    const reading = members.find((model) => !this.connectorTables.loaded(model.placeable));
+    if (reading) {
+      return {
+        path: reading.placeable.label,
+        message: "is still reading its connectors; save the plan once it has",
+      };
+    }
+    const around = boxAround(members.map((model) => model.box));
+    if (around === null) return null;
+    const inside = new Set(members);
+    const near = new Set(
+      this.placed.models().filter((model) => !inside.has(model) && boxesTouch(model.box, around)),
+    );
+    const mated = members.filter((model) => !standsOnTable(model) && this.mateCountOf(model) > 0);
+    const leaning = this.search.withdrawn(this.searchIdsOf(near), () =>
+      mated.find((model) => this.mateCountOf(model) === 0),
+    );
+    if (leaning) {
+      return {
+        path: leaning.placeable.label,
+        message:
+          "rests only on models outside the plan, so it wouldn't be held where the plan opens. Widen the plan to take in what it rests on, or move it",
+      };
+    }
+    if (!members.some(standsOnTable)) {
+      return {
+        path: planName,
+        message:
+          "has no model standing on the table, so nothing would hold it up where it opens. Widen the plan to take in what holds its models up",
+      };
+    }
+    return null;
+  }
+
+  private planMembers(planId: string): {
+    readonly models: ReadonlyArray<PlacedModel>;
+    readonly pieces: ReadonlyArray<number>;
+  } {
+    const byId = new Map(this.placed.models().map((model) => [model.id, model]));
+    const view = this.plans.placements();
+    const models: PlacedModel[] = [];
+    const pieces: number[] = [];
+    for (let row = view.first(); row !== NO_ROW; row = view.next(row)) {
+      if (!this.plans.contains(planId, row)) continue;
+      const segment = view.segmentOf(row);
+      switch (segment) {
+        case "model": {
+          const model = byId.get(view.sourceOf(row));
+          if (!model) throw new Error(`plan row for model ${view.sourceOf(row)} has no placement`);
+          models.push(model);
+          break;
+        }
+        case "track":
+          pieces.push(view.sourceOf(row));
+          break;
+        default: {
+          const unhandled: never = segment;
+          throw new Error(`unhandled plan segment ${String(unhandled)}`);
+        }
+      }
+    }
+    return { models, pieces };
+  }
+
+  async addPlan({ plan, shards }: StoredPlan): Promise<ReadonlyArray<Issue>> {
+    await this.ensureStoredPlaceables({ shards, consists: [] });
+    const poses = shardPoses(shards, (ref, color) => this.catalog.resolveRef(ref, color));
+    if (!poses.ok) return poses.issues;
+    const records = worldTrack(shards);
+    const track = this.track;
+    if (records.length > 0 && !track) {
+      return [{ path: "track", message: "can't be laid: this app's bundle has no track pieces" }];
+    }
+    const laid = track?.laidPieces(records) ?? { ok: true, value: [] };
+    if (!laid.ok) return laid.issues;
+    const models = poses.value.map((pose) => ({
+      model: null,
+      placeable: this.placeableAt(pose.refId),
+      pose,
+      component: OPENED_PLAN_COMPONENT,
+    }));
+    const pieces = laid.value.map(({ piece, pose, yPlates }) => ({
+      index: null,
+      piece,
+      pose,
+      yPlates,
+    }));
+    const targets = { modelPoses: poses.value, piecePoses: pieces.map((piece) => piece.pose) };
+    const refusal = this.groupRefusal(this.pasteEdit(models, pieces), targets);
+    if (refusal) return [{ path: plan.name, message: refusal.reason }];
+    const change = this.plans.addition(plan);
+    const requests = poses.value.map((to) => ({ placement: null, to }));
+    const opened = this.history.commit(
+      "open-plan",
+      requests,
+      this.trackChange(pieces, targets.piecePoses),
+      change,
+    );
+    this.show(opened, performance.now());
+    if (change.after.activePlanId !== null) this.camera.viewPlan(change.after.activePlanId);
+    return [];
+  }
+
   contents(): WorldContents {
     return {
       world: this.world,
@@ -5382,38 +5585,50 @@ export class Editor implements IEditor, IEditedWorld {
     return { pieces, runFrame, offField, unanchored };
   }
 
-  private syncModelTrack(): void {
+  private syncModelTrack(): boolean {
     const drawing = this.track;
-    if (!drawing) return;
+    if (!drawing) return false;
     const carrying = this.placed.models().filter((model) => {
       const track = this.trackOf(model.placeable);
-      return (track?.pieces.length ?? 0) + (track?.runs.length ?? 0) > 0;
+      if (!track) return false;
+      const { pieces, runs, unverified, unidentified } = track;
+      return pieces.length + runs.length + unverified.length + unidentified.length > 0;
     });
     const unchanged =
       carrying.length === this.heldTrackModels.length &&
       carrying.every((model, i) => model === this.heldTrackModels[i]);
-    if (unchanged) return;
+    if (unchanged) return false;
     this.heldTrackModels = carrying;
     this.heldRanges.clear();
     const held: FramedTrackPiece[] = [];
+    const carriers: TrackCarrier[] = [];
     let nextRunFrame = WORLD_TRACK_FRAME.id + 1;
     for (const model of carrying) {
       const track = this.trackOf(model.placeable);
+      if (!track) continue;
       const { x, z, yPlates, rot } = model.handle;
       const frame = latticeFrame(x, z, rot);
-      if (!track || !frame) continue;
       const first = held.length;
-      held.push(
-        ...heldPieces(track, frame, yPlates),
-        ...heldRuns(track, frame, yPlates, nextRunFrame),
-      );
-      this.heldRanges.set(model, [first, held.length]);
-      nextRunFrame += track.runs.length;
+      if (frame) {
+        held.push(
+          ...heldPieces(track, frame, yPlates),
+          ...heldRuns(track, frame, yPlates, nextRunFrame),
+        );
+        nextRunFrame += track.runs.length;
+      }
+      if (held.length > first) this.heldRanges.set(model, [first, held.length]);
+      carriers.push({
+        model,
+        held: held.length - first,
+        unverified: track.unverified,
+        unidentified: track.unidentified,
+      });
     }
-    drawing.syncHeld(held);
+    drawing.syncHeld(held, carriers);
     this.showTrackEnds([]);
     this.railsChanged();
     this.update({ track: this.trackView() });
+    return true;
   }
 
   private trainOnTrackOf(model: PlacedModel): string | null {
@@ -5591,6 +5806,14 @@ export class Editor implements IEditor, IEditedWorld {
 
   importWorld(bytes: Uint8Array): Promise<boolean> {
     return this.session.importWorld(bytes);
+  }
+
+  exportPlan(planId: string): Promise<ExportedWorld | null> {
+    return this.session.exportPlan(planId);
+  }
+
+  openPlan(bytes: Uint8Array): Promise<boolean> {
+    return this.session.openPlan(bytes);
   }
 
   trackRoutes(): ReadonlyArray<TrackRouteView> {
