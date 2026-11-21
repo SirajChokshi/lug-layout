@@ -168,7 +168,6 @@ it("files every part under its own bucket with content-addressed records and GLB
     parts: ids.length,
     records: ids.length,
     failed: 0,
-    refused: [],
   });
   expect(
     await readFile(
@@ -206,7 +205,7 @@ it("files every part under its own bucket with content-addressed records and GLB
   }
 });
 
-it("lists failures, refuses parts whose sources are not all CA, and ships no file for either", async () => {
+it("lists failures and ships no file for them, and files a part whatever licences its sources name", async () => {
   const inputs = await build([
     [
       { id: "ldraw:3001" },
@@ -218,17 +217,17 @@ it("lists failures, refuses parts whose sources are not all CA, and ships no fil
     ],
   ]);
   const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
-  expect(pin.records).toBe(1);
+  expect(pin.records).toBe(2);
   expect(pin.failed).toBe(1);
-  expect(pin.refused).toEqual([{ part: "ldraw:9999", licenses: [CA, NOT_CA] }]);
   const index = await readIndex(inputs.out);
   expect(index.failed).toEqual({
     "ldraw:93606dyf": "unresolved reference 6177973fc01.dat in parts/93606dyf.dat",
   });
+  expect(index.licenses).toEqual([CA, NOT_CA].toSorted());
   const shipped = JSON.stringify(
     await Promise.all(index.buckets.map((file) => readFile(join(inputs.out, file), "utf8"))),
   );
-  expect(shipped).not.toContain("9999");
+  expect(shipped).toContain("ldraw:9999");
   expect(shipped).not.toContain("93606dyf");
 });
 

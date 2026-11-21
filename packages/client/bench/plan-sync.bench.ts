@@ -12,9 +12,11 @@ import {
   TRACK_SEGMENT,
   uncoveredPieces,
   UNDECIDED,
+  WRITE_ADD,
   type PlanRegion,
   type PlanShape,
   type TrackChange,
+  type TrackOutline,
   type TrackPieceAt,
 } from "@brr/domain";
 import { CHUNK_LDU, addZeta16, chunkKey, pose16, zeta16 } from "@brr/math";
@@ -320,6 +322,47 @@ function tableRegion(depthMm: number): NewPlan {
     originChunkX: 0,
     originChunkZ: 0,
   };
+}
+
+const LOOP_TABLE_DEPTH_MM = 1120;
+const CIRCLE_SEAM_X_MM = 1120;
+const CIRCLE_TABLES_FAR_MM = 1920;
+const OUTLINE_TABLES: ReadonlyArray<TableInput> = [
+  {
+    name: "Under the loop",
+    rect: { x: 0, z: 0, width: ROOM_MM, depth: LOOP_TABLE_DEPTH_MM },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+  {
+    name: "West of the seam",
+    rect: {
+      x: 0,
+      z: LOOP_TABLE_DEPTH_MM,
+      width: CIRCLE_SEAM_X_MM,
+      depth: CIRCLE_TABLES_FAR_MM - LOOP_TABLE_DEPTH_MM,
+    },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+  {
+    name: "East of the seam",
+    rect: {
+      x: CIRCLE_SEAM_X_MM,
+      z: LOOP_TABLE_DEPTH_MM,
+      width: ROOM_MM - CIRCLE_SEAM_X_MM,
+      depth: CIRCLE_TABLES_FAR_MM - LOOP_TABLE_DEPTH_MM,
+    },
+    heightMm: TABLE_HEIGHT_MM,
+  },
+];
+const LOOP_STRAIGHT = 1;
+const CIRCLE_SECOND_CURVE = 15;
+const HALF_WIDTH_LDU = 80;
+const TAB_LDU = 9;
+
+interface OutlineQuery {
+  readonly outline: TrackOutline;
+  readonly rect: Float64Array;
+  readonly meets: boolean;
 }
 
 const fullTable: TableInput = {
@@ -721,6 +764,122 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
     ],
     endRows: KEPT_OPEN_STRAIGHTS + KEPT_L_HEADINGS.length,
     endIssues: 2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS,
+  };
+}
+
+function laidOutline(track: TrackDrawing, piece: number): TrackOutline {
+  const delta = new PlanDelta();
+  track.writeFootprint(piece, delta, WRITE_ADD);
+  const outline = delta.outline[0];
+  if (!outline) throw new Error(`laid piece ${piece} has no plan outline`);
+  return outline;
+}
+
+function outlineQueries(track: TrackDrawing): ReadonlyArray<OutlineQuery> {
+  const curve = laidOutline(track, track.pieceCount - CIRCLE_SECOND_CURVE);
+  const middle = (curve.minX + curve.maxX) / 2;
+  const straight = laidOutline(track, LOOP_STRAIGHT);
+  const { box } = track.footprintAt(LOOP_STRAIGHT);
+  const queries: OutlineQuery[] = [
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.minX, curve.minZ, curve.maxX, curve.maxZ),
+      meets: true,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.maxX, curve.minZ, curve.maxX + 10, curve.maxZ),
+      meets: false,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(middle - 1, curve.minZ, middle + 1, curve.maxZ),
+      meets: true,
+    },
+    {
+      outline: curve,
+      rect: Float64Array.of(curve.minX - 10, curve.minZ, curve.minX, curve.maxZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.minX, box.minZ - 10, box.maxX, box.minZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.minX, box.minZ - 10, box.maxX, box.minZ + 1),
+      meets: true,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.maxX, box.minZ, box.maxX + 10, box.maxZ),
+      meets: false,
+    },
+    {
+      outline: straight,
+      rect: Float64Array.of(box.maxX - 1, box.minZ, box.maxX + 10, box.maxZ),
+      meets: true,
+    },
+  ];
+  if (box.maxZ - box.minZ !== 2 * HALF_WIDTH_LDU || box.maxX - box.minX !== 320 + 2 * TAB_LDU) {
+    throw new Error("the loop's second piece isn't a 9V straight at a quarter-turn heading");
+  }
+  for (const { outline, rect, meets } of queries) {
+    if (outline.meetsOpenRect(rect, 0) !== meets) {
+      throw new Error(`an outline query of the bench didn't give ${meets}`);
+    }
+  }
+  return queries;
+}
+
+let outlineHits = 0;
+
+function outlineScenario(name: string, queries: ReadonlyArray<OutlineQuery>): Scenario {
+  return {
+    name,
+    edit: () => {
+      for (let q = 0; q < queries.length; q++) {
+        const query = queries[q];
+        if (!query) continue;
+        if (query.outline.meetsOpenRect(query.rect, 0)) outlineHits++;
+      }
+    },
+    inverse: () => {
+      outlineHits = 0;
+    },
+  };
+}
+
+function outlineVariant(track: TrackDrawing, deltas: TrackDeltas): ProbeVariant {
+  const plans = new PlanService(new RecordingBackend());
+  const delta = new PlanDelta();
+  writeFullRebuild(delta, [], track);
+  plans.apply(delta);
+  const planId = plans.createPlan(tableRegion(ROOM_MM));
+  for (const table of OUTLINE_TABLES) plans.addTable(planId, table);
+  plans.updatePlan(planId, { maxReachMm: COVERING_REACH_MM });
+  const built: Built = { plans, planId, delta, models: [] };
+  const reads = new PanelReads(plans, planId);
+  plans.subscribe(reads.read);
+  const queries = outlineQueries(track);
+  return {
+    variant: "one region of three tables, two meeting at a seam through two joints of the circle",
+    built,
+    reads,
+    scenarios: [
+      ...trackScenarios(built, deltas),
+      outlineScenario(
+        "TrackOutline.meetsOpenRect, four rectangles against a curve at a 22.5° step: certified floats",
+        queries.slice(0, 4),
+      ),
+      outlineScenario(
+        "TrackOutline.meetsOpenRect, four rectangles flush with or 1 LDU over a straight's edges: exact integers",
+        queries.slice(4),
+      ),
+    ],
+    endRows: track.pieceCount - deltas.unlay.removalCount,
+    endIssues: 0,
   };
 }
 
@@ -1348,7 +1507,7 @@ if (mode === "all" || mode === "probe") {
       endIssues: withRegion ? 0 : null,
     };
   });
-  variants.push(await keptRowsVariant());
+  variants.push(await keptRowsVariant(), outlineVariant(drawing, trackDeltas));
   const shortRows: ShortRow[] = [];
   for (const { variant, reads, scenarios } of variants) {
     for (const scenario of scenarios) shortRows.push(await shortProbe(variant, scenario, reads));
@@ -1375,9 +1534,9 @@ if (mode === "all" || mode === "probe") {
   for (const row of shortRows) if (row.mismatches !== 0) failed = true;
   lines.push(
     "",
-    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it`,
+    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it; and the same track in a region of three tables whose seam passes through two joints of the circle facing across it, so laying the circle runs the outline rows, the off-table cut and the exact joint test, beside direct calls of the outline predicate on a 22.5° curve (certified floats) and on a straight with rectangles flush to its edges (exact integers)`,
     "",
-    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. First every edit of every variant runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
+    `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. The two TrackOutline rows time the predicate calls themselves, with no apply and so no reads. First every edit of every variant runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
     "",
     ...probeTable(rows),
   );
