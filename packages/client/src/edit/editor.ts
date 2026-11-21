@@ -137,6 +137,7 @@ import {
 import { heldPieces, heldRuns, latticeFrame } from "../connect/model-track-ends.ts";
 import { partBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
+import { SOLID_FLOATS, StudSolids } from "../connect/stud-solids.ts";
 import type {
   HoverRefusalHit,
   HoverWait,
@@ -1258,6 +1259,8 @@ export class Editor implements IEditor, IEditedWorld {
   private assistLdu = 0;
   private readonly assist: AssistSession;
   private namingBoxes = new Float64Array(0);
+  private namingStudBoxes = new Float64Array(0);
+  private namingStuds: StudSolids | null = null;
   private shownVerdict: GhostVerdict | null = null;
   private dropping = false;
   private readonly verdictShownFor: {
@@ -2405,9 +2408,9 @@ export class Editor implements IEditor, IEditedWorld {
     pose.z = z;
     pose.rot = rot;
     pose.yPlates = this.aimedYPlates(this.verticalRayAt(x, z), x, z);
-    const { model, volumes, boxes, technic } = connected;
+    const { model, volumes, boxes, technic, studs } = connected;
     const choice = this.tileChoice;
-    this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
+    this.search.check(model, volumes, boxes, technic, studs, pose, RESTS_ON_TABLE_Y_PLATES, choice);
     check.yPlates = pose.yPlates;
     if (choice.waitingOn !== NOT_WAITING) {
       const neighbour = this.searchModels.get(choice.waitingOn)?.placeable.label ?? "";
@@ -2596,6 +2599,7 @@ export class Editor implements IEditor, IEditedWorld {
       connected.volumes,
       connected.boxes,
       connected.technic,
+      connected.studs,
       this.pick,
       RESTS_ON_TABLE_Y_PLATES,
       moving,
@@ -2690,13 +2694,35 @@ export class Editor implements IEditor, IEditedWorld {
       Math.min(hit.topLdu, hit.candidateTopLdu),
       this.partOfInstance,
     );
+    if (this.hitPart === null) this.hitPart = this.studPartAt(model, hit);
     return this.hitPart !== null;
+  }
+
+  private studPartAt(model: PlacedModel, hit: OverlapHit): HitPart | null {
+    const studs = this.connected.get(model.placeable)?.studs;
+    if (!studs) return null;
+    this.namingStuds = studs;
+    if (this.namingStudBoxes.length < studs.count * SOLID_FLOATS) {
+      this.namingStudBoxes = new Float64Array(studs.count * SOLID_FLOATS);
+    }
+    return partAtHit(
+      this.namingStudBoxes,
+      studs.writePosed(poseOf(model), this.namingStudBoxes),
+      hit.cellX,
+      hit.cellZ,
+      Math.max(hit.bottomLdu, hit.candidateBottomLdu),
+      Math.min(hit.topLdu, hit.candidateTopLdu),
+      this.partOfStud,
+    );
   }
 
   private readonly partOfInstance = (instance: number): HitPart | null => {
     const asset = this.catalog.parts()[this.namingIndices[instance] ?? -1];
     return asset ? { part: asset.id, partLabel: asset.title } : null;
   };
+
+  private readonly partOfStud = (stud: number): HitPart | null =>
+    this.partOfInstance(this.namingStuds?.instance[stud] ?? -1);
 
   private readonly namer: OverlapNamer = { names: (hit) => this.namesPart(hit) };
 
@@ -4490,8 +4516,17 @@ export class Editor implements IEditor, IEditedWorld {
       const { x, z, yPlates, rot } = pose;
       const connected = this.connectedOf(placeable);
       const choice = this.groupChoice;
-      const { model, volumes, boxes, technic } = connected;
-      this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
+      const { model, volumes, boxes, technic, studs } = connected;
+      this.search.check(
+        model,
+        volumes,
+        boxes,
+        technic,
+        studs,
+        pose,
+        RESTS_ON_TABLE_Y_PLATES,
+        choice,
+      );
       if (choice.waitingOn !== NOT_WAITING) {
         const neighbour = this.searchModels.get(choice.waitingOn)?.placeable.label ?? "";
         const reason = choice.waitFailed
@@ -5041,12 +5076,13 @@ export class Editor implements IEditor, IEditedWorld {
       if (!tables) throw new Error(`${placeable.id} has no connector tables loaded yet`);
       const parts = this.catalog.parts();
       const boxes = partBoxes(placeable.partBoxes);
+      const model = this.search.model(
+        tables.tables,
+        placeable.partTransforms,
+        this.trackWorld.modelTrack(placeable)?.openEnds ?? [],
+      );
       connected = {
-        model: this.search.model(
-          tables.tables,
-          placeable.partTransforms,
-          this.trackWorld.modelTrack(placeable)?.openEnds ?? [],
-        ),
+        model,
         volumes: this.volumesOf(placeable),
         boxes,
         technic: FrozenTechnic.ofParts(
@@ -5054,6 +5090,13 @@ export class Editor implements IEditor, IEditedWorld {
           placeable.partTransforms,
           boxes.boxes,
         ),
+        studs: StudSolids.of({
+          instances: placeable.partTransforms,
+          parts,
+          tables: tables.tables,
+          primitiveBoxes: this.catalog.studPrimitiveBoxes(),
+          model,
+        }),
       };
       this.connected.set(placeable, connected);
     }
@@ -5104,8 +5147,8 @@ export class Editor implements IEditor, IEditedWorld {
     }
     const id = this.awaitingIds.get(model) ?? this.nextSearchId++;
     this.awaitingIds.delete(model);
-    const { model: connectors, volumes, boxes, technic } = this.connectedOf(model.placeable);
-    this.search.add(id, connectors, volumes, boxes, technic, { x, z, yPlates, rot });
+    const { model: connectors, volumes, boxes, technic, studs } = this.connectedOf(model.placeable);
+    this.search.add(id, connectors, volumes, boxes, technic, studs, { x, z, yPlates, rot });
     this.searchIds.set(model, id);
     this.searchModels.set(id, model);
   }

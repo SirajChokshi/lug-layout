@@ -8169,3 +8169,86 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
     laid,
   );
 }, 180_000);
+
+const JUMPER_STEP = [
+  "0 A jumper beside a plate, a step built for the stud intrusion test",
+  "0 Name: my-jumper-step.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 1 0 0 20 1 0 0 0 1 0 0 0 1 3023.dat",
+  "",
+].join("\n");
+
+function onePartFile(name: string, part: string): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      `0 One ${part}, a user's file built for the stud intrusion test`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout tests",
+      "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+      `1 15 0 0 0 1 0 0 0 1 0 0 0 1 ${part}.dat`,
+      "",
+    ].join("\n"),
+  );
+}
+
+it("refuses a held model where a stud off the stud lattice would push into another part, held or placed, and takes it where that stud mates or stays clear: a 2 x 2 plate over a user's jumper step, a jumper on the step's jumper, and a side-stud brick beside a brick", async () => {
+  const { editor, backend, frame } = await startImportingEditor();
+  const step = await importUserFile(
+    editor,
+    "my-jumper-step.ldr",
+    new TextEncoder().encode(JUMPER_STEP),
+  );
+  const plate = await importUserFile(editor, "my-plate.ldr", onePartFile("my-plate.ldr", "3022"));
+  const jumper = await importUserFile(
+    editor,
+    "my-jumper.ldr",
+    onePartFile("my-jumper.ldr", "15573"),
+  );
+  const sideStud = await importUserFile(
+    editor,
+    "my-side-stud.ldr",
+    onePartFile("my-side-stud.ldr", "87087"),
+  );
+  const brick = await importUserFile(editor, "my-brick.ldr", onePartFile("my-brick.ldr", "3005"));
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await place(step, 100, 100);
+  await place(brick, 300, 100);
+  editor.setPlacementMode("precise");
+  const heldAt = async (item: string, x: number, z: number) => {
+    await chosen(editor, item);
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    const placement = (await settledHover(editor, frame))?.placement;
+    return {
+      pose: [placement?.pose.x, placement?.pose.z, placement?.pose.yPlates],
+      accepted: placement?.accepted,
+      joints: placement?.joints,
+      hits: placement?.hit ? `${placement.hit.partLabel} in ${placement.hit.placed.label}` : null,
+    };
+  };
+  const theJumper = "Plate 1 x 2 with Groove with 1 Centre Stud in my-jumper-step.ldr";
+
+  expect({
+    plateOverTheJumper: await heldAt(plate, 100, 100),
+    plateOnThePlateBesideIt: await heldAt(plate, 100, 80),
+    jumperOnTheJumper: await heldAt(jumper, 100, 110),
+    jumperHalfOnTheJumper: await heldAt(jumper, 110, 110),
+    sideStudIntoTheBrick: await heldAt(sideStud, 290, 70),
+    sideStudAwayFromTheBrick: await heldAt(sideStud, 290, 110),
+  }).toEqual({
+    plateOverTheJumper: { pose: [100, 100, 1], accepted: false, joints: 2, hits: theJumper },
+    plateOnThePlateBesideIt: { pose: [100, 80, 1], accepted: true, joints: 2, hits: null },
+    jumperOnTheJumper: { pose: [100, 120, 1], accepted: true, joints: 1, hits: null },
+    jumperHalfOnTheJumper: { pose: [120, 120, 1], accepted: false, joints: 0, hits: theJumper },
+    sideStudIntoTheBrick: {
+      pose: [300, 80, 0],
+      accepted: false,
+      joints: 1,
+      hits: "Brick 1 x 1 in my-brick.ldr",
+    },
+    sideStudAwayFromTheBrick: { pose: [300, 120, 0], accepted: true, joints: 1, hits: null },
+  });
+}, 180_000);

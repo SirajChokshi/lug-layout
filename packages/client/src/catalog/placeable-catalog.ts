@@ -143,6 +143,7 @@ export interface ICatalogAssets {
 export interface IPlaceableCatalog extends ICatalogAssets {
   start(index: BundleIndex): Promise<StartedCatalog>;
   parts(): ReadonlyArray<PartAsset>;
+  studPrimitiveBoxes(): ReadonlyArray<Float64Array>;
   colors(): ColorTable;
   placeables(): ReadonlyArray<Placeable | null>;
   itemRefId(itemId: string): number | null;
@@ -466,6 +467,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   parts(): ReadonlyArray<PartAsset> {
     return this.requirePalette().parts;
+  }
+
+  studPrimitiveBoxes(): ReadonlyArray<Float64Array> {
+    return this.studBoxes;
   }
 
   colors(): ColorTable {

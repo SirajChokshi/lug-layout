@@ -108,7 +108,13 @@ export interface VolumeHit {
   topLdu: number;
 }
 
-export type OwnerFilter = (owner: number, cellX: number, cellZ: number) => boolean;
+export type OwnerFilter = (
+  owner: number,
+  cellX: number,
+  cellZ: number,
+  bottomLdu: number,
+  topLdu: number,
+) => boolean;
 
 export class VolumeIndex {
   private readonly byChunkX = new Map<number, Map<number, FootprintChunk>>();
@@ -177,7 +183,7 @@ export class VolumeIndex {
       const b = gridBottom + y;
       const t = gridTop + y;
       const owner = this.owners[row] ?? 0;
-      if (Math.max(b, bottomLdu) < Math.min(t, topLdu) && !ignore(owner, cellX, cellZ)) {
+      if (Math.max(b, bottomLdu) < Math.min(t, topLdu) && !ignore(owner, cellX, cellZ, b, t)) {
         out.owner = owner;
         out.bottomLdu = b;
         out.topLdu = t;

@@ -3,6 +3,7 @@ import { PLATE_LDU } from "@brr/math";
 import type { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type { PartBoxes } from "../connect/part-boxes.ts";
 import type { FrozenVolumes } from "../connect/placeable-volumes.ts";
+import type { StudSolids } from "../connect/stud-solids.ts";
 import {
   NOT_WAITING,
   SETTLED_AT_ONCE,
@@ -29,6 +30,7 @@ export interface Connected {
   readonly volumes: FrozenVolumes;
   readonly boxes: PartBoxes;
   readonly technic: FrozenTechnic;
+  readonly studs: StudSolids;
 }
 
 export interface AssistTarget {
@@ -179,12 +181,13 @@ export class AssistSession {
     this.pick.copy(pick);
     this.target = target;
     this.phase = "held";
-    const { model, volumes, boxes, technic } = target.connected;
+    const { model, volumes, boxes, technic, studs } = target.connected;
     this.ticket = this.search.begin(
       model,
       volumes,
       boxes,
       technic,
+      studs,
       this.pick,
       RESTS_ON_TABLE_Y_PLATES,
       null,
@@ -274,12 +277,13 @@ export class AssistSession {
     this.pick.turns = EVERY_TURN;
     this.pick.firstTurn = NEXT_TURN;
     this.phase = "turn";
-    const { model, volumes, boxes, technic } = connected;
+    const { model, volumes, boxes, technic, studs } = connected;
     this.ticket = this.search.begin(
       model,
       volumes,
       boxes,
       technic,
+      studs,
       this.pick,
       RESTS_ON_TABLE_Y_PLATES,
       null,

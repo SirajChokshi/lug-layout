@@ -1,16 +1,33 @@
-import { CERTIFIED_RESIDUAL_LIMIT_LDU, STUD_LDU } from "@brr/math";
+import type { LatticePose } from "@brr/domain";
+import {
+  CERTIFIED_RESIDUAL_LIMIT_LDU,
+  PLATE_LDU,
+  STUD_LDU,
+  isRot90,
+  rot90Cos,
+  rot90Sin,
+} from "@brr/math";
 
 export const PART_BOX_FLOATS = 6;
+export const RANGE_INTS = 4;
 const X = 0;
+const Y = 1;
 const Z = 2;
 const MAX = 3;
+const FROM_X = 0;
+const FROM_Z = 1;
+const TO_X = 2;
+const TO_Z = 3;
 
-export interface PartBoxes {
-  readonly boxes: Float64Array;
+export interface CellGrid {
   readonly cellX0: number;
   readonly cellZ0: number;
   readonly width: number;
   readonly depth: number;
+}
+
+export interface PartBoxes extends CellGrid {
+  readonly boxes: Float64Array;
   readonly cellStart: Int32Array;
   readonly cellInstance: Int32Array;
 }
@@ -26,6 +43,61 @@ function firstCell(lo: number): number {
 
 function endCell(hi: number): number {
   return Math.ceil(hi / STUD_LDU);
+}
+
+function cosOf(pose: LatticePose): number {
+  return isRot90(pose.rot) ? rot90Cos(pose.rot) : 1;
+}
+
+function sinOf(pose: LatticePose): number {
+  return isRot90(pose.rot) ? rot90Sin(pose.rot) : 0;
+}
+
+export function posedBox(
+  boxes: Float64Array,
+  instance: number,
+  pose: LatticePose,
+  out: Float64Array,
+  at = 0,
+): void {
+  const b = instance * PART_BOX_FLOATS;
+  const cos = cosOf(pose);
+  const sin = sinOf(pose);
+  const loX = boxes[b + X] ?? 0;
+  const loZ = boxes[b + Z] ?? 0;
+  const hiX = boxes[b + MAX + X] ?? 0;
+  const hiZ = boxes[b + MAX + Z] ?? 0;
+  const yLdu = pose.yPlates * PLATE_LDU;
+  out[at + X] = Math.min(cos * loX, cos * hiX) + Math.min(sin * loZ, sin * hiZ) + pose.x;
+  out[at + MAX + X] = Math.max(cos * loX, cos * hiX) + Math.max(sin * loZ, sin * hiZ) + pose.x;
+  out[at + Z] = Math.min(-sin * loX, -sin * hiX) + Math.min(cos * loZ, cos * hiZ) + pose.z;
+  out[at + MAX + Z] = Math.max(-sin * loX, -sin * hiX) + Math.max(cos * loZ, cos * hiZ) + pose.z;
+  out[at + Y] = (boxes[b + Y] ?? 0) + yLdu;
+  out[at + MAX + Y] = (boxes[b + MAX + Y] ?? 0) + yLdu;
+}
+
+export function localCellRange(
+  grid: CellGrid,
+  pose: LatticePose,
+  cellX: number,
+  cellZ: number,
+  out: Int32Array,
+): Int32Array {
+  const cos = cosOf(pose);
+  const sin = sinOf(pose);
+  const x0 = cellX * STUD_LDU - pose.x;
+  const z0 = cellZ * STUD_LDU - pose.z;
+  const x1 = x0 + STUD_LDU;
+  const z1 = z0 + STUD_LDU;
+  const loX = Math.min(cos * x0, cos * x1) + Math.min(-sin * z0, -sin * z1);
+  const hiX = Math.max(cos * x0, cos * x1) + Math.max(-sin * z0, -sin * z1);
+  const loZ = Math.min(sin * x0, sin * x1) + Math.min(cos * z0, cos * z1);
+  const hiZ = Math.max(sin * x0, sin * x1) + Math.max(cos * z0, cos * z1);
+  out[FROM_X] = Math.max(grid.cellX0, Math.floor(loX / STUD_LDU));
+  out[FROM_Z] = Math.max(grid.cellZ0, Math.floor(loZ / STUD_LDU));
+  out[TO_X] = Math.min(grid.cellX0 + grid.width, Math.ceil(hiX / STUD_LDU));
+  out[TO_Z] = Math.min(grid.cellZ0 + grid.depth, Math.ceil(hiZ / STUD_LDU));
+  return out;
 }
 
 export function partBoxes(measured: ArrayLike<number>): PartBoxes {

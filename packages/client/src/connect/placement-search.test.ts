@@ -1,6 +1,8 @@
 import {
+  AXIS_NEG_X,
   AXIS_NEG_Y,
   AXIS_NEG_Z,
+  AXIS_POS_X,
   AXIS_POS_Y,
   AXIS_POS_Z,
   CAP_FAR,
@@ -39,6 +41,7 @@ import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
 import { typedArraysConstructedDuring } from "./typed-arrays.test-support.ts";
 import { FrozenVolumes } from "./placeable-volumes.ts";
+import { StudSolids } from "./stud-solids.ts";
 import {
   SETTLED_AT_ONCE,
   placementChoice,
@@ -96,6 +99,7 @@ interface Piece {
   readonly connectors: ModelConnectors;
   readonly volumes: FrozenVolumes;
   readonly parts: Parts;
+  readonly studs?: StudSolids;
 }
 
 function fixture(): Fixture {
@@ -224,6 +228,25 @@ function partsOf(
   };
 }
 
+const NO_INSTANCES = { count: 0, partIndex: [], matrices: new Float64Array(0) };
+const studsOfModel = new WeakMap<ModelConnectors, StudSolids>();
+
+function studsOf(piece: Piece): StudSolids {
+  if (piece.studs) return piece.studs;
+  let studs = studsOfModel.get(piece.connectors);
+  if (!studs) {
+    studs = StudSolids.of({
+      instances: NO_INSTANCES,
+      parts: [],
+      tables: [],
+      primitiveBoxes: [],
+      model: piece.connectors,
+    });
+    studsOfModel.set(piece.connectors, studs);
+  }
+  return studs;
+}
+
 function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIGIN): void {
   f.search.add(
     owner,
@@ -231,6 +254,7 @@ function place(f: Fixture, owner: number, piece: Piece, pose: LatticePose = ORIG
     piece.volumes,
     piece.parts.boxes,
     piece.parts.technic,
+    studsOf(piece),
     pose,
   );
 }
@@ -247,6 +271,7 @@ function choose(
     piece.volumes,
     piece.parts.boxes,
     piece.parts.technic,
+    studsOf(piece),
     at,
     TABLE_Y_PLATES,
     moving,
@@ -269,6 +294,7 @@ function chooseInSlices(
     piece.volumes,
     piece.parts.boxes,
     piece.parts.technic,
+    studsOf(piece),
     at,
     TABLE_Y_PLATES,
     null,
@@ -994,6 +1020,81 @@ describe("PlacementSearch mate zones", () => {
     }).toEqual({
       joinedAtTheEnd: [true, length * STUD_LDU, 1],
       notTheMatedPiece: [false, OTHER],
+    });
+  });
+});
+
+const SIDE_STUD_Y = BRICK_LDU / 2;
+const STUD_PRIMITIVE = Float64Array.of(-6, 0, -6, 6, 4, 6);
+const STUD_TIP_X = STUD_LDU + 4;
+const SIXTEENTH = 1 / SIXTEENTHS_PER_LDU;
+const STUD_FACING_POS_X = Float32Array.of(0, 1, 0, STUD_LDU, -1, 0, 0, SIDE_STUD_Y, 0, 0, 1, HALF);
+const POST = 7;
+const BLOCK_BESIDE = 8;
+
+function sideStudPost(f: Fixture): Piece {
+  const studs = table([[f.stud, GENDER_MALE, STUD_LDU, SIDE_STUD_Y, HALF, AXIS_POS_X]]);
+  const connectors = f.connectors([studs]);
+  return {
+    connectors,
+    volumes: columns(1, 1, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+    studs: StudSolids.of({
+      instances: { count: 1, partIndex: [0], matrices: Float64Array.from(IDENTITY) },
+      parts: [{ studPrimitiveIndex: Uint8Array.of(0), studMatrices: STUD_FACING_POS_X }],
+      tables: [studs],
+      primitiveBoxes: [STUD_PRIMITIVE],
+      model: connectors,
+    }),
+  };
+}
+
+function blockBeside(f: Fixture, fromX: number, receptor: boolean): Piece {
+  const faces = table([[f.receptor(4), GENDER_FEMALE, STUD_LDU, SIDE_STUD_Y, HALF, AXIS_NEG_X]]);
+  return {
+    connectors: f.connectors([receptor ? faces : null]),
+    volumes: columns(1, 1, 0, BRICK_LDU, 1, 0),
+    parts: partsOf([[fromX, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU]]),
+  };
+}
+
+describe("PlacementSearch stud clearance", () => {
+  const cases = [
+    { name: "flush on the stud's face", fromX: STUD_LDU, receptor: false },
+    { name: "flush, taking the stud in a receptor", fromX: STUD_LDU, receptor: true },
+    { name: "a sixteenth into the stud's tip", fromX: STUD_TIP_X - SIXTEENTH, receptor: false },
+    { name: "touching the stud's tip", fromX: STUD_TIP_X, receptor: false },
+  ];
+
+  it("refuses a block beside a side stud wherever the stud's solid would push into it by any amount, held or placed, and takes it where the stud only touches it or mates", () => {
+    const heldBlock = Object.fromEntries(
+      cases.map(({ name, fromX, receptor }) => {
+        const f = fixture();
+        place(f, POST, sideStudPost(f));
+        return [name, verdict(choose(f, blockBeside(f, fromX, receptor), window(0, 0, 0)))];
+      }),
+    );
+    const heldPost = Object.fromEntries(
+      cases.map(({ name, fromX, receptor }) => {
+        const f = fixture();
+        place(f, BLOCK_BESIDE, blockBeside(f, fromX, receptor));
+        return [name, verdict(choose(f, sideStudPost(f), window(0, 0, 0)))];
+      }),
+    );
+
+    expect({ heldBlock, heldPost }).toEqual({
+      heldBlock: {
+        "flush on the stud's face": [false, 0, POST],
+        "flush, taking the stud in a receptor": [true, 1, -1],
+        "a sixteenth into the stud's tip": [false, 0, POST],
+        "touching the stud's tip": [true, 0, -1],
+      },
+      heldPost: {
+        "flush on the stud's face": [false, 0, BLOCK_BESIDE],
+        "flush, taking the stud in a receptor": [true, 1, -1],
+        "a sixteenth into the stud's tip": [false, 0, BLOCK_BESIDE],
+        "touching the stud's tip": [true, 0, -1],
+      },
     });
   });
 });

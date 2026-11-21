@@ -23,8 +23,14 @@ import {
   type PosedTechnic,
   type TechnicSet,
 } from "@brr/domain";
-import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
-import { PART_BOX_FLOATS, type PartBoxes } from "./part-boxes.ts";
+import { SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
+import {
+  PART_BOX_FLOATS,
+  RANGE_INTS,
+  localCellRange,
+  posedBox,
+  type PartBoxes,
+} from "./part-boxes.ts";
 
 export interface PlacedParts {
   readonly boxes: PartBoxes;
@@ -47,39 +53,8 @@ const WAIVED = 7;
 const WAIVER = 8;
 const ZONE_INTS = WAIVER + TECHNIC_WAIVER_INTS;
 const DEFERRED_INTS = 3;
-const RANGE_INTS = 4;
 const INITIAL_ZONES = 16;
 const NO_ZONE = -1;
-
-function cosOf(pose: LatticePose): number {
-  return isRot90(pose.rot) ? rot90Cos(pose.rot) : 1;
-}
-
-function sinOf(pose: LatticePose): number {
-  return isRot90(pose.rot) ? rot90Sin(pose.rot) : 0;
-}
-
-function poseBox(
-  boxes: Float64Array,
-  instance: number,
-  pose: LatticePose,
-  out: Float64Array,
-): void {
-  const b = instance * PART_BOX_FLOATS;
-  const cos = cosOf(pose);
-  const sin = sinOf(pose);
-  const loX = boxes[b + X] ?? 0;
-  const loZ = boxes[b + Z] ?? 0;
-  const hiX = boxes[b + AXES + X] ?? 0;
-  const hiZ = boxes[b + AXES + Z] ?? 0;
-  const yLdu = pose.yPlates * PLATE_LDU;
-  out[X] = Math.min(cos * loX, cos * hiX) + Math.min(sin * loZ, sin * hiZ) + pose.x;
-  out[AXES + X] = Math.max(cos * loX, cos * hiX) + Math.max(sin * loZ, sin * hiZ) + pose.x;
-  out[Z] = Math.min(-sin * loX, -sin * hiX) + Math.min(cos * loZ, cos * hiZ) + pose.z;
-  out[AXES + Z] = Math.max(-sin * loX, -sin * hiX) + Math.max(cos * loZ, cos * hiZ) + pose.z;
-  out[Y] = (boxes[b + Y] ?? 0) + yLdu;
-  out[AXES + Y] = (boxes[b + AXES + Y] ?? 0) + yLdu;
-}
 
 function intersect(a: Float64Array, b: Float64Array, out: Float64Array): boolean {
   for (let k = 0; k < AXES; k++) {
@@ -107,30 +82,6 @@ function inCell(box: Float64Array, cellX: number, cellZ: number): boolean {
     (box[Z] ?? 0) < z0 + STUD_LDU &&
     (box[AXES + Z] ?? 0) > z0
   );
-}
-
-function localCells(
-  boxes: PartBoxes,
-  pose: LatticePose,
-  cellX: number,
-  cellZ: number,
-  out: Int32Array,
-): Int32Array {
-  const cos = cosOf(pose);
-  const sin = sinOf(pose);
-  const x0 = cellX * STUD_LDU - pose.x;
-  const z0 = cellZ * STUD_LDU - pose.z;
-  const x1 = x0 + STUD_LDU;
-  const z1 = z0 + STUD_LDU;
-  const loX = Math.min(cos * x0, cos * x1) + Math.min(-sin * z0, -sin * z1);
-  const hiX = Math.max(cos * x0, cos * x1) + Math.max(-sin * z0, -sin * z1);
-  const loZ = Math.min(sin * x0, sin * x1) + Math.min(cos * z0, cos * z1);
-  const hiZ = Math.max(sin * x0, sin * x1) + Math.max(cos * z0, cos * z1);
-  out[0] = Math.max(boxes.cellX0, Math.floor(loX / STUD_LDU));
-  out[1] = Math.max(boxes.cellZ0, Math.floor(loZ / STUD_LDU));
-  out[2] = Math.min(boxes.cellX0 + boxes.width, Math.ceil(hiX / STUD_LDU));
-  out[3] = Math.min(boxes.cellZ0 + boxes.depth, Math.ceil(hiZ / STUD_LDU));
-  return out;
 }
 
 export class MateZones {
@@ -180,8 +131,8 @@ export class MateZones {
       const theirs = report.partnerInstance[k] ?? NO_INSTANCE;
       const other = partner === NO_PARTNER ? undefined : placed.get(partner);
       if (!other || own === NO_INSTANCE || theirs === NO_INSTANCE) continue;
-      poseBox(boxes.boxes, own, pose, this.ownBox);
-      poseBox(other.boxes.boxes, theirs, other.pose, this.theirBox);
+      posedBox(boxes.boxes, own, pose, this.ownBox);
+      posedBox(other.boxes.boxes, theirs, other.pose, this.theirBox);
       if (!intersect(this.ownBox, this.theirBox, this.region)) continue;
       const engaged = report.engagement[k * ENGAGEMENT_FLOATS + ENGAGED_AXIS] ?? NOT_ENGAGED;
       if (engaged !== NOT_ENGAGED && !this.cutToEngagement(report, k)) continue;
@@ -340,14 +291,14 @@ export class MateZones {
     cellZ: number,
     out: OverlapHit,
   ): boolean {
-    const own = localCells(boxes, pose, cellX, cellZ, this.ownCells);
-    const theirs = localCells(other.boxes, other.pose, cellX, cellZ, this.theirCells);
+    const own = localCellRange(boxes, pose, cellX, cellZ, this.ownCells);
+    const theirs = localCellRange(other.boxes, other.pose, cellX, cellZ, this.theirCells);
     for (let lz = own[1] ?? 0; lz < (own[3] ?? 0); lz++) {
       for (let lx = own[0] ?? 0; lx < (own[2] ?? 0); lx++) {
         const cell = (lz - boxes.cellZ0) * boxes.width + (lx - boxes.cellX0);
         for (let r = boxes.cellStart[cell] ?? 0; r < (boxes.cellStart[cell + 1] ?? 0); r++) {
           const instance = boxes.cellInstance[r] ?? 0;
-          poseBox(boxes.boxes, instance, pose, this.ownBox);
+          posedBox(boxes.boxes, instance, pose, this.ownBox);
           if (!inCell(this.ownBox, cellX, cellZ)) continue;
           if (!this.clashes(instance, other, owner, theirs, cellX, cellZ)) continue;
           out.owner = owner;
@@ -378,7 +329,7 @@ export class MateZones {
         const cell = (lz - boxes.cellZ0) * boxes.width + (lx - boxes.cellX0);
         for (let r = boxes.cellStart[cell] ?? 0; r < (boxes.cellStart[cell + 1] ?? 0); r++) {
           const theirs = boxes.cellInstance[r] ?? 0;
-          poseBox(boxes.boxes, theirs, other.pose, this.theirBox);
+          posedBox(boxes.boxes, theirs, other.pose, this.theirBox);
           if (!intersect(this.ownBox, this.theirBox, this.region)) continue;
           if (!inCell(this.region, cellX, cellZ)) continue;
           if (!this.excused(owner, own, theirs, other)) return true;
