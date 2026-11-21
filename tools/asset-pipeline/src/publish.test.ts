@@ -361,6 +361,25 @@ function withRollingWheel() {
   };
 }
 
+const LIBRARY_PARTS = "library-parts.json";
+
+function withLibraryParts(colors: ReadonlyArray<number>) {
+  return ({ manifest, files }: CompiledBundle) => {
+    Object.assign(manifest, { libraryParts: { file: LIBRARY_PARTS } });
+    const parts = {
+      id: ["3001"],
+      title: ["Brick 2 x 4"],
+      category: [0],
+      keywords: [[]],
+      rebrickable: ["3001"],
+      colorCount: [2],
+      colors,
+    };
+    const file = { format: 1, sources: {}, categories: ["Brick"], parts };
+    files.set(LIBRARY_PARTS, Buffer.from(JSON.stringify(file)));
+  };
+}
+
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
@@ -703,7 +722,21 @@ describe("publishBundle", () => {
     expect(await readFile(join(directory, thumbnail.file))).toEqual(png(THUMBNAIL_PX));
   });
 
+  it("publishes the library part index under its content address", async () => {
+    const { directory, published } = await publish(withLibraryParts([4, 1]));
+    expect(published.files).toBe(11);
+    const manifest = JSON.parse(await readFile(join(directory, MANIFEST_FILE), "utf8"));
+    expect(manifest.libraryParts.file).toMatch(/^library-parts\.[0-9a-f]{16}\.json$/u);
+    const index = JSON.parse(await readFile(join(directory, manifest.libraryParts.file), "utf8"));
+    expect(index.parts.colors).toEqual([4, 1]);
+  });
+
   it.each([
+    {
+      file: "a library part index whose colours disagree with its colour counts",
+      edit: withLibraryParts([4]),
+      refusal: "library part columns are inconsistent",
+    },
     {
       file: "a thumbnail of the wrong size",
       edit: withThumbnail(png(THUMBNAIL_PX / 2)),
