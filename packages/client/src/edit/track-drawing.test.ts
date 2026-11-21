@@ -54,6 +54,7 @@ import {
   type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
+import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
   cellKey,
   seatsPending,
@@ -376,7 +377,7 @@ function unionOf(boxes: ReadonlyArray<WorldBox>): Extent {
   return extent;
 }
 
-function fitIssues(table: { x: number; z: number; width: number; depth: number }): number {
+function offTableIssues(table: { x: number; z: number; width: number; depth: number }): number {
   const plans = container.get(PLAN_SERVICE);
   const planId = plans.createPlan({
     name: "Tight table",
@@ -391,7 +392,7 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
   plans.apply(delta);
   const issues = plans.issues(planId);
   plans.removePlan(planId);
-  return issues.filter((issue) => issue.rule === "fit").length;
+  return issues.filter((issue) => issue.rule === "trackOffTable").length;
 }
 
 it("closes an oval drawn by hand in two strokes, every piece within half a straight of the stroke", () => {
@@ -418,9 +419,11 @@ it("fits a table cut to the oval's geometry and overhangs one cut two millimetre
   const z = Math.floor(rendered.minZ * MM_PER_LDU);
   const width = Math.ceil(rendered.maxX * MM_PER_LDU) - x;
   const depth = Math.ceil(rendered.maxZ * MM_PER_LDU) - z;
-  expect(fitIssues({ x, z, width, depth })).toBe(0);
-  expect(fitIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
-  expect(fitIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x, z, width, depth })).toBe(0);
+  expect(offTableIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(
+    0,
+  );
 });
 
 it("marks a drag target as joining only when the closure solver finds an exact join", async () => {
@@ -1673,15 +1676,18 @@ it("closes onto the open end of track a model carries, and runs no join through 
   const bundle = await trackAndRoadBundle();
   const carrying = (id: string) => {
     const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-    layout.syncHeld([
-      {
-        catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
-        placement: studPose(0, 0, 0),
-        yPlates: 0,
-        instance: 0,
-        frame: WORLD_TRACK_FRAME,
-      },
-    ]);
+    layout.syncHeld(
+      [
+        {
+          catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
+          placement: studPose(0, 0, 0),
+          yPlates: 0,
+          instance: 0,
+          frame: WORLD_TRACK_FRAME,
+        },
+      ],
+      [carrierAtOrigin(1)],
+    );
     return layout;
   };
   const joining = carrying(NINE_VOLT_STRAIGHT);
@@ -1914,9 +1920,9 @@ it("reports unsupported track inside a plan as a plan issue, so the plan isn't V
   writeFullRebuild(delta, ground, layout);
   plans.apply(delta);
   const unsupported = (layout.unsupportedPieces() ?? []).map(({ piece }) => piece);
-  plans.setUnsupported(new Set(unsupported), new Set());
+  plans.setUnsupported(new Set(unsupported), new Set(), new Set());
   const flagged = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
-  plans.setUnsupported(new Set(), new Set());
+  plans.setUnsupported(new Set(), new Set(), new Set());
   const cleared = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
   plans.removePlan(planId);
 

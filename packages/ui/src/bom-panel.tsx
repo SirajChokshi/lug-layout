@@ -4,41 +4,26 @@ import type {
   CatalogBom,
   IBomService,
   IBomSource,
+  IPlanService,
+  IOwnedParts,
   PlacementRegion,
+  PlanRegion,
 } from "@brr/client";
 import { useState } from "react";
+import { usePlanVersion } from "./use-plan-version.ts";
+import { OwnVsBuy } from "./own-vs-buy.tsx";
+import { PartsListDownloads } from "./parts-list-downloads.tsx";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 interface BomPanelProps {
   readonly service: IBomService;
+  readonly ownedParts: IOwnedParts;
   readonly source: IBomSource;
   readonly region: PlacementRegion | null;
   readonly selectionLabel: string | null;
+  readonly plans: IPlanService | null;
 }
-
-interface Download {
-  readonly label: string;
-  readonly suffix: string;
-  readonly type: string;
-  readonly body: (bom: BillOfMaterials) => string;
-}
-
-const DOWNLOADS: ReadonlyArray<Download> = [
-  {
-    label: "Rebrickable CSV",
-    suffix: "rebrickable.csv",
-    type: "text/csv",
-    body: (bom) => bom.files.rebrickableCsv,
-  },
-  {
-    label: "BrickLink XML",
-    suffix: "bricklink.xml",
-    type: "application/xml",
-    body: (bom) => bom.files.brickLinkXml,
-  },
-  { label: "Plain CSV", suffix: "parts.csv", type: "text/csv", body: (bom) => bom.files.plainCsv },
-];
 
 const REGION_FIELDS = ["minX", "minZ", "maxX", "maxZ"] as const;
 type RegionField = (typeof REGION_FIELDS)[number];
@@ -74,6 +59,7 @@ function fileStem(bom: BillOfMaterials): string {
   switch (scope.kind) {
     case "world":
     case "selection":
+    case "plan":
       return bom.name;
     case "region": {
       const { minX, minZ, maxX, maxZ } = scope.region;
@@ -84,15 +70,6 @@ function fileStem(bom: BillOfMaterials): string {
       throw new Error(`unhandled scope ${String(unhandled)}`);
     }
   }
-}
-
-function save(bom: BillOfMaterials, download: Download): void {
-  const url = URL.createObjectURL(new Blob([download.body(bom)], { type: download.type }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${fileStem(bom)}.${download.suffix}`;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 
 function catalogText(catalog: CatalogBom): string {
@@ -106,22 +83,75 @@ function catalogText(catalog: CatalogBom): string {
   return `${integer.format(parts)} parts in ${integer.format(catalog.lines.length)} lots, ${integer.format(unmapped)} unmapped${keywordText}`;
 }
 
-export function BomPanel({ service, source, region, selectionLabel }: BomPanelProps) {
-  const [scopeKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
+function activePlanOf(plans: IPlanService | null): PlanRegion | null {
+  if (!plans) return null;
+  const id = plans.activePlanId();
+  return plans.plans().find((plan) => plan.id === id) ?? null;
+}
+
+function scopeOf(
+  kind: BomScope["kind"],
+  draft: RegionDraft,
+  plan: PlanRegion | null,
+): BomScope | string {
+  switch (kind) {
+    case "world":
+      return { kind: "world" };
+    case "selection":
+      return { kind: "selection" };
+    case "region": {
+      const parsed = regionOf(draft);
+      return typeof parsed === "string" ? parsed : { kind: "region", region: parsed };
+    }
+    case "plan":
+      return plan ? { kind: "plan", planId: plan.id } : { kind: "world" };
+    default: {
+      const unhandled: never = kind;
+      throw new Error(`unhandled scope ${String(unhandled)}`);
+    }
+  }
+}
+
+function UnmappedLines({ catalog, name }: { readonly catalog: CatalogBom; readonly name: string }) {
+  if (catalog.unmapped.length === 0) return null;
+  return (
+    <details>
+      <summary>
+        Not in {name}'s crosswalk ({integer.format(catalog.unmapped.length)} lines)
+      </summary>
+      <ul>
+        {catalog.unmapped.map((line) => (
+          <li key={`${line.part}-${line.ldrawColor}`}>
+            {line.quantity}× {line.part} colour {line.ldrawColor} (no {line.missing} id)
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+export function BomPanel({
+  service,
+  ownedParts,
+  source,
+  region,
+  selectionLabel,
+  plans,
+}: BomPanelProps) {
+  usePlanVersion(plans);
+  const plan = activePlanOf(plans);
+  const [chosenKind, setScopeKind] = useState<BomScope["kind"]>(region ? "region" : "world");
+  const scopeKind = chosenKind === "plan" && !plan ? "world" : chosenKind;
   const [draft, setDraft] = useState<RegionDraft>(() => draftOf(region));
   const [bom, setBom] = useState<BillOfMaterials | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const build = (): void => {
     setError(null);
-    let scope: BomScope = { kind: scopeKind === "selection" ? "selection" : "world" };
-    if (scopeKind === "region") {
-      const parsed = regionOf(draft);
-      if (typeof parsed === "string") {
-        setError(parsed);
-        return;
-      }
-      scope = { kind: "region", region: parsed };
+    const scope = scopeOf(scopeKind, draft, plan);
+    if (typeof scope === "string") {
+      setError(scope);
+      return;
     }
     service.billOfMaterials(source, scope).then(setBom, (e: unknown) => setError(String(e)));
   };
@@ -160,6 +190,18 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               onChange={() => setScopeKind("selection")}
             />
             Selection ({selectionLabel})
+          </label>
+        )}
+        {plan !== null && (
+          <label>
+            <input
+              type="radio"
+              name="bom-scope"
+              value="plan"
+              checked={scopeKind === "plan"}
+              onChange={() => setScopeKind("plan")}
+            />
+            Plan ({plan.name})
           </label>
         )}
       </div>
@@ -206,13 +248,7 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               <dd>{catalogText(bom.bricklink)}</dd>
             </div>
           </dl>
-          <div className="bom-downloads">
-            {DOWNLOADS.map((download) => (
-              <button key={download.suffix} type="button" onClick={() => save(bom, download)}>
-                {download.label}
-              </button>
-            ))}
-          </div>
+          <PartsListDownloads title="Whole list" files={bom.files} stem={fileStem(bom)} />
           {bom.rebrickable.custom.length > 0 && (
             <details data-kind="customParts" open>
               <summary>
@@ -231,21 +267,8 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
               </ul>
             </details>
           )}
-          {bom.rebrickable.unmapped.length > 0 && (
-            <details>
-              <summary>
-                Not in Rebrickable's crosswalk ({integer.format(bom.rebrickable.unmapped.length)}{" "}
-                lines)
-              </summary>
-              <ul>
-                {bom.rebrickable.unmapped.map((line) => (
-                  <li key={`${line.part}-${line.ldrawColor}`}>
-                    {line.quantity}× {line.part} colour {line.ldrawColor} (no {line.missing} id)
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
+          <UnmappedLines catalog={bom.rebrickable} name="Rebrickable" />
+          <UnmappedLines catalog={bom.bricklink} name="BrickLink" />
           {bom.uncounted.length > 0 && (
             <details>
               <summary>Not counted ({integer.format(bom.uncounted.length)} items)</summary>
@@ -263,6 +286,12 @@ export function BomPanel({ service, source, region, selectionLabel }: BomPanelPr
           )}
         </>
       )}
+      <OwnVsBuy
+        service={service}
+        ownedParts={ownedParts}
+        bom={bom}
+        stem={bom ? fileStem(bom) : ""}
+      />
     </section>
   );
 }

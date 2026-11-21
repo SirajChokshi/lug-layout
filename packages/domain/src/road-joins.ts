@@ -1,4 +1,5 @@
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import type { LduRect } from "./plan/plan-region.ts";
 
 export const NO_STUD = -0x8000_0000;
 
@@ -34,11 +35,16 @@ export interface RoadEdgeSegment {
   readonly status: RoadCellStatus;
 }
 
+export const PLACEMENT_JOINED = 0;
+export const PLACEMENT_MISMATCHED = 1;
+export const PLACEMENT_CELL_INTS = 2;
+
 export interface RoadJoinReport {
   readonly placements: number;
   readonly joinedCells: number;
   readonly openCells: number;
   readonly mismatchedCells: number;
+  readonly placementCells: Int32Array;
   readonly overlaps: ReadonlyArray<readonly [number, number]>;
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
 }
@@ -116,6 +122,20 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
     }
   }
   return cells;
+}
+
+export function roadwayCells(placement: RoadPlacement): ReadonlyArray<LduRect> {
+  const roadway: LduRect[] = [];
+  for (const cell of placedCells(placement)) {
+    if (cell.road === 0) continue;
+    roadway.push({
+      minX: cell.cellX * STUD_LDU,
+      minZ: cell.cellZ * STUD_LDU,
+      maxX: (cell.cellX + 1) * STUD_LDU,
+      maxZ: (cell.cellZ + 1) * STUD_LDU,
+    });
+  }
+  return roadway;
 }
 
 function edgeLine(side: RoadSide, cellX: number, cellZ: number): number {
@@ -417,6 +437,13 @@ class EdgeTally {
   joinedCells = 0;
   openCells = 0;
   mismatchedCells = 0;
+
+  constructor(readonly placementCells: Int32Array) {}
+
+  countPlacement(placement: number, column: number): void {
+    const at = placement * PLACEMENT_CELL_INTS + column;
+    this.placementCells[at] = (this.placementCells[at] ?? 0) + 1;
+  }
 }
 
 export class RoadNetwork {
@@ -482,7 +509,7 @@ export class RoadNetwork {
   }
 
   report(): RoadJoinReport {
-    const tally = new EdgeTally();
+    const tally = new EdgeTally(new Int32Array(this.placed.length * PLACEMENT_CELL_INTS));
     for (let p = 0; p < this.placed.length; p++) {
       const placed = this.placed[p];
       if (!placed) continue;
@@ -494,6 +521,7 @@ export class RoadNetwork {
       joinedCells: tally.joinedCells,
       openCells: tally.openCells,
       mismatchedCells: tally.mismatchedCells,
+      placementCells: tally.placementCells,
       overlaps: [...this.overlapPairs].map((pair) => {
         const [a = 0, b = 0] = pair.split(",").map(Number);
         return [a, b] as const;
@@ -547,10 +575,14 @@ export class RoadNetwork {
       topLdu = Math.max(top, grid.top);
       if (grid.top === top && grid.stud === stud && grid.road === road) {
         status = "joined";
-        if (id < neighbourId) tally.joinedCells++;
+        if (id < neighbourId) {
+          tally.joinedCells++;
+          tally.countPlacement(p, PLACEMENT_JOINED);
+        }
       } else {
         status = "mismatch";
         if (id < neighbourId) tally.mismatchedCells++;
+        tally.countPlacement(p, PLACEMENT_MISMATCHED);
       }
     }
     tally.edgeCells.push({

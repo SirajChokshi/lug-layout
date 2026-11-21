@@ -1,8 +1,10 @@
 import {
   AXIS_NEG_Y,
   AXIS_POS_Y,
+  CELL_BOX_INTS,
   CandidatePoses,
   FootprintGrid,
+  HEIGHT_BOX_INTS,
   MateReport,
   NO_OVERLAP,
   NO_PART_INSTANCE,
@@ -28,6 +30,7 @@ import {
 import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { inject, injectable } from "inversify";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
+import { TRACK_FAMILY } from "./finders.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import { BLOCKED, FREE, PoseMemo, UNKNOWN } from "./pose-memo.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
@@ -161,6 +164,10 @@ export interface IPlacementSearch {
     out: PlacementChoice,
   ): void;
   revision(): number;
+  has(placement: number): boolean;
+  holdingMates(placement: number): number;
+  overlapOf(placement: number): number;
+  standsOnTable(placement: number, tableYPlates: number): boolean;
 }
 
 interface Placed extends PlacedParts {
@@ -361,6 +368,47 @@ class VolumeBuffer implements CellVolumes {
   }
 }
 
+const CELL_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
+const BOX_X1 = 2;
+const BOX_Z1 = 3;
+const BOTTOM = 0;
+const TOP = 1;
+
+class SlabUnder implements CellVolumes {
+  readonly count = 1;
+  readonly cellX = new Int32Array(1);
+  readonly cellZ = new Int32Array(1);
+  readonly bottomLdu = new Int32Array(1);
+  readonly topLdu = new Int32Array(1);
+  readonly partsAt = new Int32Array(1);
+  readonly turn = 0;
+  readonly sixteenthsUp = 0;
+  private readonly heightBox = new Int32Array(HEIGHT_BOX_INTS);
+  readonly parts: CellParts;
+
+  constructor() {
+    const cellBox = new Int16Array(CELL_BOX_INTS);
+    cellBox[BOX_X1] = CELL_SIXTEENTHS;
+    cellBox[BOX_Z1] = CELL_SIXTEENTHS;
+    this.parts = {
+      start: Int32Array.of(0, 1),
+      instance: Int32Array.of(NO_PART_INSTANCE),
+      cellBox,
+      heightBox: this.heightBox,
+    };
+  }
+
+  under(cellX: number, cellZ: number, bottomLdu: number): this {
+    this.cellX[0] = cellX;
+    this.cellZ[0] = cellZ;
+    this.bottomLdu[0] = bottomLdu - 1;
+    this.topLdu[0] = bottomLdu;
+    this.heightBox[BOTTOM] = (bottomLdu - 1) * SIXTEENTHS_PER_LDU;
+    this.heightBox[TOP] = bottomLdu * SIXTEENTHS_PER_LDU;
+    return this;
+  }
+}
+
 function placeCell(
   local: CellVolumes,
   pose: LatticePose,
@@ -528,6 +576,7 @@ export class PlacementSearch implements IPlacementSearch {
   private edits = 0;
   private readonly countPose = new Pose();
   private readonly oneCell = new VolumeBuffer(1);
+  private readonly slab = new SlabUnder();
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
   private nextHint = 0;
   private readonly scratch = new VolumeBuffer(0);
@@ -552,11 +601,14 @@ export class PlacementSearch implements IPlacementSearch {
   private withheld = NO_PLACEMENTS;
   private lowestModel: ModelConnectors | null = null;
   private lowestY = Number.POSITIVE_INFINITY;
+  private standing = NO_PLACEMENT;
 
   constructor(
     @inject(CONNECTION_SOLVER) private readonly solver: ConnectionSolver,
     @inject(SNAP_MATING) private readonly mating: SnapMating,
   ) {}
+
+  private readonly isStanding = (owner: number): boolean => owner === this.standing;
 
   private readonly exempt = (
     owner: number,
@@ -1218,6 +1270,63 @@ export class PlacementSearch implements IPlacementSearch {
         this.solver.insert(placed.model, placed.pose, placement);
       }
     }
+  }
+
+  has(placement: number): boolean {
+    return this.placed.has(placement);
+  }
+
+  holdingMates(placement: number): number {
+    const { model, pose } = this.placedAt(placement);
+    const report = this.report;
+    this.solver.evaluate(model, pose, report);
+    let holding = 0;
+    for (let k = 0; k < report.count; k++) {
+      if (report.family[k] === TRACK_FAMILY) continue;
+      if (model.axis[report.connector[k] ?? 0] !== AXIS_POS_Y) holding++;
+    }
+    return holding;
+  }
+
+  overlapOf(placement: number): number {
+    const { model, volumes, boxes, technic, pose } = this.placedAt(placement);
+    const moving = this.moving;
+    this.moving = placement;
+    try {
+      const mated = this.solver.votes(model, pose) > 0;
+      return this.blocked(model, volumes, boxes, technic, pose, mated, false)
+        ? this.hit.owner
+        : NO_PLACEMENT;
+    } finally {
+      this.moving = moving;
+      this.zones.clear();
+    }
+  }
+
+  standsOnTable(placement: number, tableYPlates: number): boolean {
+    const placed = this.placedAt(placement);
+    const world = this.scratch.place(placed.volumes, placed.pose);
+    const table = tableYPlates * PLATE_LDU;
+    this.standing = placement;
+    try {
+      for (let c = 0; c < world.count; c++) {
+        const bottom = world.bottomLdu[c] ?? 0;
+        if (bottom > table || (world.topLdu[c] ?? 0) <= bottom) continue;
+        const x = world.cellX[c] ?? 0;
+        const z = world.cellZ[c] ?? 0;
+        const slab = this.slab.under(x, z, bottom);
+        if (!this.volumes.firstOverlap(x, z, slab, 0, this.isStanding, this.hit)) return true;
+      }
+      return false;
+    } finally {
+      this.standing = NO_PLACEMENT;
+    }
+  }
+
+  private placedAt(placement: number): Placed {
+    const placed = this.placed.get(placement);
+    if (!placed) throw new RangeError(`placement ${placement} is not placed`);
+    return placed;
   }
 
   check(

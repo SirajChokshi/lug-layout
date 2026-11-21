@@ -599,6 +599,7 @@ test("a held modular clicked within reach of a flush join before assist settles 
       magnetised: settled.magnetised,
       pose: settled.pose,
       joints: pinHoleJoints(settled.mates),
+      hoverJoints: settled.joints,
     },
     "the settled hover joins flush on the placed modular's west face with its pins in the holes",
   ).toEqual({
@@ -606,6 +607,7 @@ test("a held modular clicked within reach of a flush join before assist settles 
     magnetised: true,
     pose: { x: flushJoin.x, z: flushJoin.z, yPlates: 0, rot: 0 },
     joints: WEST_FACE_PIN_JOINTS,
+    hoverJoints: WEST_FACE_PIN_JOINTS,
   });
   expect(
     committed,

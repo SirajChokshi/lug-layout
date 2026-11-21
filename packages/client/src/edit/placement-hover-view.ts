@@ -127,3 +127,7 @@ export function refusalText(heldLabel: string, hit: HoverRefusalHit | null): str
   const model = hit.placed.label || hit.placed.item;
   return `${heldLabel} would overlap ${part}'s bounds in ${model} at cell ${hit.cellX}, ${hit.cellZ}`;
 }
+
+export function failedLoadText(subject: string, neighbour: string, place: string): string {
+  return `${subject} can't be placed ${place}: ${neighbour}'s connector data didn't load.`;
+}
