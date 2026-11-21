@@ -42,6 +42,7 @@ function facts(title: string, keywords: string[] = [], category?: string): Ldraw
     title,
     keywords,
     ldrawOrg: "Part",
+    license: "Licensed under CC BY 4.0 : see CAreadme.txt",
     components: [],
     ...(category === undefined ? {} : { category }),
   };
