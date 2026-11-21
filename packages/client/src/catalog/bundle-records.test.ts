@@ -77,6 +77,7 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
     ...(glb.document.extras.rolling ? { rolling: glb.document.extras.rolling } : {}),
+    ...(glb.document.extras.topSurface ? { topSurface: glb.document.extras.topSurface } : {}),
     ...(outlines.has(part.id) ? { outline: outlines.get(part.id) } : {}),
   };
 }
