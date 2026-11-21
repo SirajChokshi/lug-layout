@@ -52,7 +52,11 @@ export type PlanRuleId =
   | "overlap"
   | "roadJoin"
   | "bomMapping"
-  | "unchecked";
+  | "unchecked"
+  | "trackOpenEnd"
+  | "trackJoin"
+  | "trackUnverified"
+  | "trackUnidentified";
 export type IssueSeverity = "error" | "warning";
 
 export interface PlacementKey {
@@ -221,7 +225,7 @@ function offTableMessage(
   entirelyOff: boolean,
   limitMm: number,
 ): string {
-  const reach = `${label} overhangs the tables: it reaches ${shown.overhangTenthsUp} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${shown.offTableMm2Up} mm² of its footprint off the table tops.`;
+  const reach = `${label} overhangs the tables: it reaches ${shown.overhangTenthsUp} mm past the nearest table edge along x or z (limit ${limitMm} mm), with ${shown.offTableMm2Up} mm² of its footprint box off the table tops.`;
   if (!entirelyOff) return reach;
   return shown.nearestTenths === 0
     ? `${reach} It is entirely off the tables, touching the edge of the nearest one.`
