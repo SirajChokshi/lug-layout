@@ -9,13 +9,15 @@ const LEFT_BUTTON = 0;
 const MIDDLE_BUTTON = 1;
 const RIGHT_BUTTON = 2;
 
-type DragKind = "click" | "orbit" | "pan" | "tool";
+type DragKind = "click" | "extend" | "orbit" | "pan" | "tool" | "box" | "move";
 
 interface Drag {
-  readonly kind: DragKind;
+  kind: DragKind;
   readonly pointerId: number;
   readonly startX: number;
   readonly startY: number;
+  readonly startNdcX: number;
+  readonly startNdcY: number;
   lastX: number;
   lastY: number;
   lastNdcX: number;
@@ -32,8 +34,18 @@ interface Pointer {
 function dragKind(event: PointerEvent, camera: IEditorCamera, spaceHeld: boolean): DragKind {
   const plan = camera.snapshot().mode === "plan";
   if (event.button === RIGHT_BUTTON) return event.shiftKey || plan ? "pan" : "orbit";
-  if (event.button === MIDDLE_BUTTON || event.shiftKey || spaceHeld) return "pan";
+  if (event.button === MIDDLE_BUTTON || spaceHeld) return "pan";
+  if (event.shiftKey) return "extend";
   return "click";
+}
+
+function showMarquee(marquee: HTMLDivElement | null, drag: Drag, event: PointerEvent): void {
+  if (!marquee) return;
+  marquee.hidden = false;
+  marquee.style.left = `${Math.min(drag.startX, event.clientX)}px`;
+  marquee.style.top = `${Math.min(drag.startY, event.clientY)}px`;
+  marquee.style.width = `${Math.abs(event.clientX - drag.startX)}px`;
+  marquee.style.height = `${Math.abs(event.clientY - drag.startY)}px`;
 }
 
 function ndc(canvas: HTMLCanvasElement, event: MouseEvent): readonly [number, number] {
@@ -58,6 +70,7 @@ interface EditorCanvasProps {
 
 export function EditorCanvas({ editor, camera, play, paletteDrag, options }: EditorCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const marqueeRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
   const pointer = useRef<Pointer>({ ndcX: 0, ndcY: 0, spaceHeld: false });
 
@@ -73,6 +86,27 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
     if (!canvas) return;
     let drag: Drag | null = null;
     let gestureLastScale = 1;
+    const hideMarquee = (): void => {
+      if (marqueeRef.current) marqueeRef.current.hidden = true;
+    };
+    const setKind = (active: Drag, kind: DragKind): void => {
+      active.kind = kind;
+      canvas.dataset["drag"] = kind;
+    };
+    const startDragging = (active: Drag, event: PointerEvent, x: number, y: number): void => {
+      if (active.kind === "extend") {
+        setKind(active, "pan");
+        camera.pan(active.startNdcX, active.startNdcY, x, y);
+        return;
+      }
+      if (play.snapshot().status === "running") return;
+      const selectDrag = editor.selectDragStart(
+        active.startNdcX,
+        active.startNdcY,
+        event.ctrlKey || event.metaKey,
+      );
+      if (selectDrag) setKind(active, selectDrag);
+    };
     const onPointerDown = (event: PointerEvent): void => {
       if (
         event.button !== LEFT_BUTTON &&
@@ -89,6 +123,8 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
+        startNdcX: x,
+        startNdcY: y,
         lastX: event.clientX,
         lastY: event.clientY,
         lastNdcX: x,
@@ -103,21 +139,26 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
       pointer.current.ndcY = y;
       const active = drag && drag.pointerId === event.pointerId ? drag : null;
       if (active) {
-        if (active.kind === "orbit")
+        const crossing =
+          !active.moved &&
+          Math.hypot(event.clientX - active.startX, event.clientY - active.startY) > CLICK_SLOP_PX;
+        if (crossing) active.moved = true;
+        if (crossing && (active.kind === "click" || active.kind === "extend")) {
+          startDragging(active, event, x, y);
+        } else if (active.kind === "orbit") {
           camera.orbit(event.clientX - active.lastX, event.clientY - active.lastY);
-        if (active.kind === "pan") camera.pan(active.lastNdcX, active.lastNdcY, x, y);
+        } else if (active.kind === "pan") {
+          camera.pan(active.lastNdcX, active.lastNdcY, x, y);
+        }
         active.lastX = event.clientX;
         active.lastY = event.clientY;
         active.lastNdcX = x;
         active.lastNdcY = y;
-        if (
-          Math.hypot(event.clientX - active.startX, event.clientY - active.startY) > CLICK_SLOP_PX
-        ) {
-          active.moved = true;
-        }
       }
       editor.pointerMove(x, y);
       if (active?.kind === "tool") editor.dragMove(x, y);
+      if (active?.kind === "box" || active?.kind === "move") editor.selectDragMove(x, y);
+      if (active?.kind === "box") showMarquee(marqueeRef.current, active, event);
     };
     const onPointerUp = (event: PointerEvent): void => {
       if (!drag || drag.pointerId !== event.pointerId) return;
@@ -125,18 +166,24 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
       drag = null;
       delete canvas.dataset["drag"];
       canvas.releasePointerCapture(event.pointerId);
+      hideMarquee();
+      const [x, y] = ndc(canvas, event);
       if (finished.kind === "tool") {
-        const [x, y] = ndc(canvas, event);
         editor.dragEnd(x, y, event.timeStamp);
         return;
       }
-      if (finished.kind === "click" && !finished.moved) {
-        const [x, y] = ndc(canvas, event);
+      if (finished.kind === "box" || finished.kind === "move") {
+        if (event.type === "pointercancel") editor.cancelGesture();
+        else editor.selectDragEnd(x, y, event.timeStamp);
+        return;
+      }
+      if ((finished.kind === "click" || finished.kind === "extend") && !finished.moved) {
         if (play.snapshot().status === "running") {
           play.click(x, y);
           return;
         }
-        editor.click(x, y, event.timeStamp);
+        if (finished.kind === "extend") editor.toggleSelected(x, y);
+        else editor.click(x, y, event.timeStamp);
       }
     };
     const onWheel = (event: WheelEvent): void => {
@@ -258,5 +305,10 @@ export function EditorCanvas({ editor, camera, play, paletteDrag, options }: Edi
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="scene" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="scene" />
+      <div ref={marqueeRef} className="marquee" hidden />
+    </>
+  );
 }
