@@ -42,6 +42,9 @@ import { CSMShadowNode } from "three/addons/csm/CSMShadowNode.js";
 import {
   CAMERA_FOV_DEGREES,
   COLOR_CHANNELS,
+  PROJECTED_IN_VIEW,
+  PROJECTED_NDC_X,
+  PROJECTED_NDC_Y,
   type BackendInfo,
   type BufferMemory,
   type ChunkInstances,
@@ -52,6 +55,7 @@ import {
   type GeometrySet,
   type FrameStats,
   type GroundSettings,
+  type GuideSegment,
   type ISceneBackend,
   type LdrawColor,
   type LookSettings,
@@ -80,6 +84,7 @@ import { CHUNK_LDU, chunkOf } from "@brr/math";
 import { type ChunkNeeds, ChunkNeedsBuilder } from "./chunk-needs.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { GroundPlane } from "./ground-plane.ts";
+import { GuideLines } from "./guide-lines.ts";
 import {
   MATRIX4_FLOATS,
   groupRunEnd,
@@ -204,6 +209,7 @@ const OBSTACLE_OPACITY = 0.45;
 const ISSUE_COLOR = 0xe0115f;
 const FLOOR_THICKNESS_LDU = 10;
 const GRID_LIFT_LDU = 0.5;
+const NDC_DEPTH_LIMIT = 1;
 
 interface Anchored {
   readonly object: Group | LineSegments;
@@ -738,6 +744,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     depthTest: false,
   });
   private readonly rayPoint = new Vector3();
+  private readonly projected = new Vector3();
+  private readonly guides = new GuideLines();
   private detailedLevel: LevelGeometries = emptyLevel();
   private farLevel: LevelGeometries = emptyLevel();
   private paletteCounts: PaletteCounts | undefined;
@@ -829,6 +837,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.scene.add(this.markerGroup);
     this.trackEndGroup.matrixAutoUpdate = false;
     this.scene.add(this.trackEndGroup);
+    this.scene.add(this.guides.lines);
     this.resize(config.canvas.clientWidth, config.canvas.clientHeight);
     return {
       requestedApi: config.api,
@@ -1592,6 +1601,22 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     object.updateMatrixWorld(true);
   }
 
+  setGuides(segments: ReadonlyArray<GuideSegment>): void {
+    this.changed = true;
+    this.guides.set(segments);
+    this.guides.place(this.renderOriginX, this.renderOriginZ);
+  }
+
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void {
+    const point = this.projected
+      .set(x - this.renderOriginX, y, z - this.renderOriginZ)
+      .project(this.camera);
+    out[offset + PROJECTED_NDC_X] = point.x;
+    out[offset + PROJECTED_NDC_Y] = point.y;
+    out[offset + PROJECTED_IN_VIEW] =
+      point.z > -NDC_DEPTH_LIMIT && point.z < NDC_DEPTH_LIMIT ? 1 : 0;
+  }
+
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
     const camera = this.camera;
     if (camera === this.orthographic) {
@@ -2090,6 +2115,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     this.positionTrackEnds();
     for (const anchored of this.planObjects) this.positionAnchored(anchored);
     for (const anchored of this.issueObjects) this.positionAnchored(anchored);
+    this.guides.place(this.renderOriginX, this.renderOriginZ);
     if (this.rebases.length === REBASE_LOG_LIMIT) this.rebases.shift();
     this.rebaseCount++;
     this.rebases.push({

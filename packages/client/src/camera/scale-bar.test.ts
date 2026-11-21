@@ -40,6 +40,8 @@ class ViewRecordingBackend implements ISceneBackend {
   setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
