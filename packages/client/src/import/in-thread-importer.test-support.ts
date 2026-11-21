@@ -1,4 +1,5 @@
 import type { IPartBundleLoader } from "@brr/catalog";
+import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
   BrickCompiler,
   LdrawMirror,
@@ -43,7 +44,11 @@ export class InThreadModelImporter implements IModelImporter {
     const engine = new ModelImportEngine(
       new BrickCompiler(await WebAssembly.compile(wasm)),
       new LdrawMirror(context.source, pinnedMirror),
-      { read: async () => ({ kind: "unlisted" }) },
+      new ConnectorRecords(
+        async (path) => JSON.parse(await readFile(new URL(path, bundleRoot), "utf8")),
+        context.connectorIndexes,
+        context.sectionVocabulary.sha256,
+      ),
       null,
       () => 0,
       [],

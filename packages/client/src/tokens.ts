@@ -23,6 +23,7 @@ import type { IPlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import type { IHotbar } from "./commands/hotbar.ts";
 import type { IConnectorTables } from "./connect/connector-tables.ts";
 import type { IPlacementSearch } from "./connect/placement-search.ts";
+import type { IStudClearance } from "./connect/stud-clearance.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
@@ -168,6 +169,9 @@ export const TRACK_END_FINDER: ServiceIdentifier<TrackEndFinder> = Symbol.for(
 );
 export const CONNECTION_SOLVER: ServiceIdentifier<ConnectionSolver> = Symbol.for(
   "brr.client.ConnectionSolver",
+);
+export const STUD_CLEARANCE: ServiceIdentifier<IStudClearance> = Symbol.for(
+  "brr.client.StudClearance",
 );
 export const PLACEMENT_SEARCH: ServiceIdentifier<IPlacementSearch> = Symbol.for(
   "brr.client.PlacementSearch",

@@ -1,7 +1,6 @@
 import {
   AXIS_POS_Y,
   CandidatePoses,
-  FootprintGrid,
   MateReport,
   NO_OVERLAP,
   ProposalProgress,
@@ -11,6 +10,7 @@ import {
   ModelConnectors,
   type CellVolumes,
   type ConnectionSolver,
+  type FootprintGrid,
   type ConnectorTable,
   type LatticePose,
   type OverlapHit,
@@ -20,17 +20,19 @@ import {
   type TechnicSet,
   type TrackEnd,
 } from "@brr/domain";
-import { PLATE_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { inject, injectable } from "inversify";
-import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
+import { CONNECTION_SOLVER, SNAP_MATING, STUD_CLEARANCE } from "../tokens.ts";
 import { TRACK_FAMILY } from "./finders.ts";
 import { MateZones, type PlacedParts } from "./mate-zones.ts";
 import { BLOCKED, FREE, PoseMemo, UNKNOWN } from "./pose-memo.ts";
 import type { FrozenTechnic } from "./frozen-technic.ts";
 import type { PartBoxes } from "./part-boxes.ts";
 import type { FrozenVolumes } from "./placeable-volumes.ts";
+import { CellBounds, PosedCells, TurnedGrids, placeCell } from "./posed-cells.ts";
+import type { IStudClearance } from "./stud-clearance.ts";
+import type { StudSolids } from "./stud-solids.ts";
 
-const HALF_STUD_LDU = STUD_LDU / 2;
 const NO_PLACEMENT = -1;
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
 
@@ -115,6 +117,7 @@ export interface IPlacementSearch {
     volumes: FrozenVolumes,
     boxes: PartBoxes,
     technic: FrozenTechnic,
+    studs: StudSolids,
     pose: LatticePose,
   ): void;
   awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void;
@@ -126,6 +129,7 @@ export interface IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
@@ -136,6 +140,7 @@ export interface IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
@@ -152,6 +157,7 @@ export interface IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     pose: LatticePose,
     tableYPlates: number,
     out: PlacementChoice,
@@ -177,6 +183,7 @@ interface Placed extends PlacedParts {
   readonly model: ModelConnectors;
   readonly volumes: FrozenVolumes;
   readonly technic: FrozenTechnic;
+  readonly studs: StudSolids;
   readonly row: number;
   readonly grid: FootprintGrid;
 }
@@ -298,79 +305,6 @@ class Reach {
   }
 }
 
-class Bounds {
-  cellX0 = 0;
-  cellZ0 = 0;
-  width = 0;
-  depth = 0;
-
-  measure(world: CellVolumes): this {
-    let x0 = 0;
-    let z0 = 0;
-    let x1 = -1;
-    let z1 = -1;
-    for (let c = 0; c < world.count; c++) {
-      const x = world.cellX[c] ?? 0;
-      const z = world.cellZ[c] ?? 0;
-      if (c === 0 || x < x0) x0 = x;
-      if (c === 0 || z < z0) z0 = z;
-      if (c === 0 || x > x1) x1 = x;
-      if (c === 0 || z > z1) z1 = z;
-    }
-    this.cellX0 = x0;
-    this.cellZ0 = z0;
-    this.width = x1 - x0 + 1;
-    this.depth = z1 - z0 + 1;
-    return this;
-  }
-}
-
-class VolumeBuffer implements CellVolumes {
-  count = 0;
-  cellX: Int32Array;
-  cellZ: Int32Array;
-  bottomLdu: Int32Array;
-  topLdu: Int32Array;
-
-  constructor(capacity: number) {
-    this.cellX = new Int32Array(capacity);
-    this.cellZ = new Int32Array(capacity);
-    this.bottomLdu = new Int32Array(capacity);
-    this.topLdu = new Int32Array(capacity);
-  }
-
-  place(local: CellVolumes, pose: LatticePose): this {
-    if (this.cellX.length < local.count) {
-      this.cellX = new Int32Array(local.count);
-      this.cellZ = new Int32Array(local.count);
-      this.bottomLdu = new Int32Array(local.count);
-      this.topLdu = new Int32Array(local.count);
-    }
-    for (let c = 0; c < local.count; c++) placeCell(local, pose, c, this, c);
-    this.count = local.count;
-    return this;
-  }
-}
-
-function placeCell(
-  local: CellVolumes,
-  pose: LatticePose,
-  c: number,
-  out: VolumeBuffer,
-  at: number,
-): void {
-  const rot = isRot90(pose.rot) ? pose.rot : 0;
-  const cos = rot90Cos(rot);
-  const sin = rot90Sin(rot);
-  const yLdu = pose.yPlates * PLATE_LDU;
-  const cx = (local.cellX[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-  const cz = (local.cellZ[c] ?? 0) * STUD_LDU + HALF_STUD_LDU;
-  out.cellX[at] = Math.floor((cos * cx + sin * cz + pose.x) / STUD_LDU);
-  out.cellZ[at] = Math.floor((-sin * cx + cos * cz + pose.z) / STUD_LDU);
-  out.bottomLdu[at] = (local.bottomLdu[c] ?? 0) + yLdu;
-  out.topLdu[at] = (local.topLdu[c] ?? 0) + yLdu;
-}
-
 function copyHit(from: OverlapHit, to: OverlapHit): void {
   to.owner = from.owner;
   to.bottomLdu = from.bottomLdu;
@@ -422,6 +356,7 @@ class Flight implements PlacementWindow {
   volumes: CellVolumes | null = null;
   boxes: PartBoxes | null = null;
   technic: TechnicSet | null = null;
+  studs: StudSolids | null = null;
   out: PlacementChoice | null = null;
   tableYPlates = 0;
   moving = NO_PLACEMENT;
@@ -458,6 +393,7 @@ class Flight implements PlacementWindow {
     this.volumes = null;
     this.boxes = null;
     this.technic = null;
+    this.studs = null;
     this.out = null;
     this.ticket++;
   }
@@ -491,23 +427,22 @@ export class PlacementSearch implements IPlacementSearch {
   private memoMoving = NO_PLACEMENT;
   private edits = 0;
   private readonly countPose = new Pose();
-  private readonly oneCell = new VolumeBuffer(1);
+  private readonly oneCell = new PosedCells(1);
   private readonly hints = new Int32Array(HINTS).fill(NO_OVERLAP);
   private seen = new Int32Array(INITIAL_SEEN);
   private seenOwners = 0;
   private nextHint = 0;
-  private readonly scratch = new VolumeBuffer(0);
+  private readonly scratch = new PosedCells(0);
   private readonly pose = new Pose();
   private readonly hit = placementChoice().overlap;
   private readonly zones = new MateZones();
-  private readonly bounds = new Bounds();
+  private readonly bounds = new CellBounds();
   private readonly reach = new Reach();
   private readonly footprint = new Reach();
   private readonly reachPose = new Pose();
   private awaited = new Int32Array(INITIAL_AWAITED * AWAITED_INTS);
   private awaitedCount = 0;
-  private readonly grids = new Map<FrozenVolumes, Array<FootprintGrid | undefined>>();
-  private readonly gridUses = new Map<FootprintGrid, number>();
+  private readonly grids = new TurnedGrids<FrozenVolumes>();
   private moving = NO_PLACEMENT;
   private withheld = NO_PLACEMENTS;
   private standing = NO_PLACEMENT;
@@ -515,14 +450,16 @@ export class PlacementSearch implements IPlacementSearch {
   constructor(
     @inject(CONNECTION_SOLVER) private readonly solver: ConnectionSolver,
     @inject(SNAP_MATING) private readonly mating: SnapMating,
+    @inject(STUD_CLEARANCE) private readonly studClearance: IStudClearance,
   ) {}
 
   private readonly isStanding = (owner: number): boolean => owner === this.standing;
 
   private readonly exempt = (owner: number, cellX: number, cellZ: number): boolean =>
-    owner === this.moving ||
-    (this.withheld.size > 0 && this.withheld.has(owner)) ||
-    this.zones.exempts(owner, cellX, cellZ);
+    this.bystands(owner) || this.zones.exempts(owner, cellX, cellZ);
+
+  private readonly bystands = (owner: number): boolean =>
+    owner === this.moving || (this.withheld.size > 0 && this.withheld.has(owner));
 
   model(
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -538,6 +475,7 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: FrozenVolumes,
     boxes: PartBoxes,
     technic: FrozenTechnic,
+    studs: StudSolids,
     pose: LatticePose,
   ): void {
     if (this.placed.has(placement))
@@ -547,11 +485,12 @@ export class PlacementSearch implements IPlacementSearch {
     const world = this.scratch.place(volumes, at);
     const bounds = this.bounds.measure(world);
     const yLdu = at.yPlates * PLATE_LDU;
-    const grid = this.gridFor(volumes, at.rot, world, yLdu);
+    const grid = this.grids.take(volumes, at.rot, world, bounds, yLdu);
     const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
     this.edits++;
     this.solver.insert(model, at, placement);
-    this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
+    this.studClearance.add(placement, studs, at);
+    this.placed.set(placement, { model, volumes, boxes, technic, studs, pose: at, row, grid });
   }
 
   awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void {
@@ -655,7 +594,8 @@ export class PlacementSearch implements IPlacementSearch {
     if (!placed) throw new RangeError(`placement ${placement} is not placed`);
     this.volumes.remove(placed.row);
     this.edits++;
-    this.release(placed);
+    this.grids.release(placed.volumes, placed.pose.rot, placed.grid);
+    this.studClearance.remove(placement);
     this.solver.remove(placed.model, placed.pose, placement);
     this.placed.delete(placement);
   }
@@ -671,12 +611,23 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
     out: PlacementChoice,
   ): void {
-    const ticket = this.begin(model, volumes, boxes, technic, window, tableYPlates, moving, out);
+    const ticket = this.begin(
+      model,
+      volumes,
+      boxes,
+      technic,
+      studs,
+      window,
+      tableYPlates,
+      moving,
+      out,
+    );
     if (ticket !== SETTLED_AT_ONCE) this.advance(ticket, Number.POSITIVE_INFINITY);
   }
 
@@ -685,6 +636,7 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     window: PlacementWindow,
     tableYPlates: number,
     moving: number | null,
@@ -693,7 +645,7 @@ export class PlacementSearch implements IPlacementSearch {
     this.cancel();
     this.moving = moving ?? NO_PLACEMENT;
     out.walked = 0;
-    this.atCursor(model, volumes, boxes, technic, window, window, tableYPlates, out);
+    this.atCursor(model, volumes, boxes, technic, studs, window, window, tableYPlates, out);
     this.zones.clear();
     if (
       out.waitingOn !== NOT_WAITING ||
@@ -709,6 +661,7 @@ export class PlacementSearch implements IPlacementSearch {
     flight.volumes = volumes;
     flight.boxes = boxes;
     flight.technic = technic;
+    flight.studs = studs;
     flight.tableYPlates = tableYPlates;
     flight.moving = this.moving;
     flight.out = out;
@@ -754,6 +707,7 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     window: LatticePose,
     reach: SearchReach,
     tableYPlates: number,
@@ -770,7 +724,7 @@ export class PlacementSearch implements IPlacementSearch {
     this.chooseAwaited(this.awaitedWithin(volumes, pose, reach), out);
     if (out.waitingOn !== NOT_WAITING) return;
     if (pose.yPlates < tableYPlates) return;
-    if (this.blocked(model, volumes, boxes, technic, pose, out.votes > 0, false)) {
+    if (this.blocked(model, volumes, boxes, technic, studs, pose, out.votes > 0, false)) {
       copyHit(this.hit, out.overlap);
       return;
     }
@@ -876,8 +830,9 @@ export class PlacementSearch implements IPlacementSearch {
     const volumes = flight.volumes;
     const boxes = flight.boxes;
     const technic = flight.technic;
+    const studs = flight.studs;
     const out = flight.out;
-    if (!model || !volumes || !boxes || !technic || !out) {
+    if (!model || !volumes || !boxes || !technic || !studs || !out) {
       throw new Error("a placement search flight lost its held model");
     }
     const memo = this.memo;
@@ -898,7 +853,7 @@ export class PlacementSearch implements IPlacementSearch {
       const proposed = memo.proposed[slot] === 1;
       if (dense === 0 && !proposed) continue;
       if (memo.verdict[slot] === 0) {
-        const blocked = this.blocked(model, volumes, boxes, technic, pose, proposed, true);
+        const blocked = this.blocked(model, volumes, boxes, technic, studs, pose, proposed, true);
         memo.verdict[slot] = blocked ? BLOCKED : FREE;
       }
       if (memo.verdict[slot] === BLOCKED) continue;
@@ -1013,6 +968,29 @@ export class PlacementSearch implements IPlacementSearch {
   }
 
   private blocked(
+    model: ModelConnectors,
+    volumes: CellVolumes,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    studs: StudSolids,
+    pose: LatticePose,
+    exemptable: boolean,
+    hinted: boolean,
+  ): boolean {
+    if (this.bodiesMeet(model, volumes, boxes, technic, pose, exemptable, hinted)) return true;
+    return this.studClearance.pushesIn(
+      studs,
+      boxes,
+      volumes,
+      pose,
+      this.volumes,
+      this.placed,
+      this.bystands,
+      this.hit,
+    );
+  }
+
+  private bodiesMeet(
     model: ModelConnectors,
     volumes: CellVolumes,
     boxes: PartBoxes,
@@ -1230,12 +1208,12 @@ export class PlacementSearch implements IPlacementSearch {
   }
 
   overlapOf(placement: number): number {
-    const { model, volumes, boxes, technic, pose } = this.placedAt(placement);
+    const { model, volumes, boxes, technic, studs, pose } = this.placedAt(placement);
     const moving = this.moving;
     this.moving = placement;
     try {
       const mated = this.solver.votes(model, pose) > 0;
-      return this.blocked(model, volumes, boxes, technic, pose, mated, false)
+      return this.blocked(model, volumes, boxes, technic, studs, pose, mated, false)
         ? this.hit.owner
         : NO_PLACEMENT;
     } finally {
@@ -1276,12 +1254,13 @@ export class PlacementSearch implements IPlacementSearch {
     volumes: CellVolumes,
     boxes: PartBoxes,
     technic: TechnicSet,
+    studs: StudSolids,
     pose: LatticePose,
     tableYPlates: number,
     out: PlacementChoice,
   ): void {
     out.walked = 0;
-    this.atCursor(model, volumes, boxes, technic, pose, AT_POSE_ONLY, tableYPlates, out);
+    this.atCursor(model, volumes, boxes, technic, studs, pose, AT_POSE_ONLY, tableYPlates, out);
     this.zones.clear();
   }
 
@@ -1294,46 +1273,6 @@ export class PlacementSearch implements IPlacementSearch {
     out.waitingOn = NOT_WAITING;
     out.waitFailed = false;
     out.overlap.owner = NO_PLACEMENT;
-  }
-
-  private gridFor(
-    volumes: FrozenVolumes,
-    rot: number,
-    world: CellVolumes,
-    yLdu: number,
-  ): FootprintGrid {
-    const turn = isRot90(rot) ? rot : 0;
-    let byTurn = this.grids.get(volumes);
-    if (!byTurn) {
-      byTurn = Array.from<FootprintGrid | undefined>({ length: TURNS });
-      this.grids.set(volumes, byTurn);
-    }
-    const { cellX0, cellZ0, width, depth } = this.bounds;
-    let grid = byTurn[turn];
-    if (!grid) {
-      grid = FootprintGrid.of(world, cellX0, cellZ0, width, depth, yLdu);
-      byTurn[turn] = grid;
-    } else if (grid.width !== width || grid.depth !== depth) {
-      throw new RangeError(`a placed footprint changed shape under translation`);
-    }
-    this.gridUses.set(grid, (this.gridUses.get(grid) ?? 0) + 1);
-    return grid;
-  }
-
-  private release(placed: Placed): void {
-    const uses = (this.gridUses.get(placed.grid) ?? 0) - 1;
-    if (uses > 0) {
-      this.gridUses.set(placed.grid, uses);
-      return;
-    }
-    this.gridUses.delete(placed.grid);
-    const byTurn = this.grids.get(placed.volumes);
-    if (!byTurn) return;
-    byTurn[isRot90(placed.pose.rot) ? placed.pose.rot : 0] = undefined;
-    for (let turn = 0; turn < TURNS; turn++) {
-      if (byTurn[turn] !== undefined) return;
-    }
-    this.grids.delete(placed.volumes);
   }
 
   private collectZones(

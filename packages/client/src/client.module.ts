@@ -36,6 +36,7 @@ import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
 import { HotbarService } from "./commands/hotbar.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
+import { StudClearance } from "./connect/stud-clearance.ts";
 import { ConnectorTables } from "./connect/connector-tables.ts";
 import { CreditsService } from "./credits/credits-service.ts";
 import { Editor } from "./edit/editor.ts";
@@ -72,6 +73,7 @@ import {
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
   PLACEMENT_SEARCH,
+  STUD_CLEARANCE,
   CONNECTOR_TABLES,
   SNAP_MATING,
   SNAP_SHAPES,
@@ -185,6 +187,7 @@ const clientModule = new ContainerModule(({ bind }) => {
         ),
     )
     .inSingletonScope();
+  bind(STUD_CLEARANCE).to(StudClearance).inSingletonScope();
   bind(PLACEMENT_SEARCH).to(PlacementSearch).inSingletonScope();
   bind(CONNECTOR_TABLES).to(ConnectorTables).inSingletonScope();
   bind(CATALOG_SEARCH)
