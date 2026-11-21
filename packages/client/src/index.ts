@@ -239,6 +239,10 @@ export {
   type ToolTone,
 } from "./commands/tool-hints.ts";
 export type { CommandResult, ItemResult, PaletteResult } from "./commands/command-search.ts";
+export type {
+  CommandPaletteSnapshot,
+  ICommandPaletteSearch,
+} from "./commands/command-palette-search.ts";
 export {
   chordKeys,
   chordText,

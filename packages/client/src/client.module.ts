@@ -19,7 +19,7 @@ import {
 import { renderModule } from "@brr/render";
 import type { RpcPort } from "@brr/rpc";
 import { storageModule } from "@brr/storage";
-import { ContainerModule } from "inversify";
+import { ContainerModule, type ResolutionContext } from "inversify";
 import { EditorCamera } from "./camera/editor-camera.ts";
 import { ScaleBar } from "./camera/scale-bar.ts";
 import { CachingAssetFetcher } from "./catalog/caching-asset-fetcher.ts";
@@ -27,12 +27,14 @@ import { CatalogSearch } from "./catalog/catalog-search.ts";
 import { LibraryPartPlacer } from "./catalog/library-part-placer.ts";
 import { LibraryPartSearch } from "./catalog/library-part-search.ts";
 import { Palette } from "./catalog/palette.ts";
+import { PaletteCatalog } from "./catalog/palette-catalog.ts";
 import { PaletteDrag } from "./catalog/palette-drag.ts";
 import { LocalStoragePaletteMemoryStore, PaletteMemoryService } from "./catalog/palette-memory.ts";
 import { PalettePrefetch } from "./catalog/palette-prefetch.ts";
 import { PaletteSearch } from "./catalog/palette-search.ts";
 import { PaletteThumbnails } from "./catalog/palette-thumbnails.ts";
 import { PlaceableCatalog } from "./catalog/placeable-catalog.ts";
+import { CommandPaletteSearch } from "./commands/command-palette-search.ts";
 import { HotbarService } from "./commands/hotbar.ts";
 import { solverFinders } from "./connect/finders.ts";
 import { PlacementSearch } from "./connect/placement-search.ts";
@@ -59,6 +61,8 @@ import { VehicleIds } from "./trains/vehicle-ids.ts";
 import {
   BOM_SERVICE,
   CATALOG_SEARCH,
+  COMMAND_CATALOG_SEARCH,
+  COMMAND_PALETTE_SEARCH,
   CONNECTION_SOLVER,
   LATTICE_STUD_FINDER,
   PLACEMENT_SEARCH,
@@ -84,6 +88,7 @@ import {
   MODEL_IMPORTER,
   MODEL_SCENE,
   PALETTE,
+  PALETTE_CATALOG,
   PALETTE_DRAG,
   HOTBAR,
   PALETTE_MEMORY,
@@ -107,6 +112,15 @@ import {
   EDITOR_FRAME_LOOP,
   WORLD_SESSION,
 } from "./tokens.ts";
+
+function catalogSearch(context: ResolutionContext): CatalogSearch {
+  return new CatalogSearch(
+    context.get(CATALOG_API_BASE_URL, { optional: true }) === undefined
+      ? null
+      : context.get(CATALOG_API),
+    context.get(PART_BUNDLE_LOADER),
+  );
+}
 
 const clientModule = new ContainerModule(({ bind }) => {
   bind(ASSET_FETCHER).to(CachingAssetFetcher).inSingletonScope();
@@ -160,24 +174,17 @@ const clientModule = new ContainerModule(({ bind }) => {
     .inSingletonScope();
   bind(PLACEMENT_SEARCH).to(PlacementSearch).inSingletonScope();
   bind(CONNECTOR_TABLES).to(ConnectorTables).inSingletonScope();
-  bind(CATALOG_SEARCH)
-    .toDynamicValue(
-      (context) =>
-        new CatalogSearch(
-          context.get(CATALOG_API_BASE_URL, { optional: true }) === undefined
-            ? null
-            : context.get(CATALOG_API),
-          context.get(PART_BUNDLE_LOADER),
-        ),
-    )
-    .inSingletonScope();
+  bind(CATALOG_SEARCH).toDynamicValue(catalogSearch).inSingletonScope();
+  bind(COMMAND_CATALOG_SEARCH).toDynamicValue(catalogSearch).inSingletonScope();
   bind(PALETTE_MEMORY_STORE).to(LocalStoragePaletteMemoryStore).inSingletonScope();
   bind(PALETTE_MEMORY).to(PaletteMemoryService).inSingletonScope();
   bind(HOTBAR).to(HotbarService).inSingletonScope();
   bind(PALETTE_THUMBNAILS).to(PaletteThumbnails).inSingletonScope();
   bind(LIBRARY_PART_SEARCH).to(LibraryPartSearch).inSingletonScope();
   bind(LIBRARY_PART_PLACER).to(LibraryPartPlacer).inSingletonScope();
+  bind(PALETTE_CATALOG).to(PaletteCatalog).inSingletonScope();
   bind(PALETTE_SEARCH).to(PaletteSearch).inSingletonScope();
+  bind(COMMAND_PALETTE_SEARCH).to(CommandPaletteSearch).inSingletonScope();
   bind(PALETTE_DRAG).to(PaletteDrag).inSingletonScope();
   bind(PALETTE_PREFETCH).to(PalettePrefetch).inSingletonScope();
   bind(PALETTE).to(Palette).inSingletonScope();

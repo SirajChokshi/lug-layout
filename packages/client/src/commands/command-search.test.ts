@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CatalogSearchView } from "../catalog/catalog-search.ts";
 import { PaletteIndex } from "../catalog/palette-index.ts";
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
 import { searchPalette, type PaletteResult } from "./command-search.ts";
@@ -91,12 +92,32 @@ const catalog: ReadonlyArray<CatalogItemView> = [
 ];
 
 const index = new PaletteIndex(catalog);
+const SERVER_OFF: CatalogSearchView = { query: "", status: "off", hits: [] };
 
-function search(query: string, recent: ReadonlyArray<string> = []) {
+function served(query: string, ids: ReadonlyArray<string>): CatalogSearchView {
+  return {
+    query,
+    status: "ready",
+    hits: ids.map((id) => ({
+      id,
+      label: id,
+      section: "baseplates",
+      kind: "baseplate",
+      file: null,
+    })),
+  };
+}
+
+function search(
+  query: string,
+  recent: ReadonlyArray<string> = [],
+  remote: CatalogSearchView = SERVER_OFF,
+) {
   return searchPalette(query, {
     catalog,
     index,
     recent,
+    remote,
     enabled: (id: CommandId) => id !== "delete",
   });
 }
@@ -162,6 +183,27 @@ describe("palette search", () => {
         .filter((result) => result.kind === "command")
         .map(name),
     ).toEqual(expect.arrayContaining(["toggle-joins", "toggle-road-snap"]));
+  });
+
+  it("lists the server's hits on parts the catalog has after every local result, in the server's order, each part once", () => {
+    const remote = served("road", [
+      "ldraw:3811@1",
+      "ldraw:2358p02@72",
+      "ldraw:99999@4",
+      "ldraw:4186@2",
+    ]);
+
+    expect(search("road", [], remote).map(name)).toEqual([
+      ...search("road").map(name),
+      "ldraw:3811@1",
+      "ldraw:4186@2",
+    ]);
+  });
+
+  it("keeps the server's hits for an earlier query out of the results", () => {
+    expect(search("road", [], served("roa", ["ldraw:3811@1"])).map(name)).toEqual(
+      search("road").map(name),
+    );
   });
 
   it("lists every matching part once before any part's other colours", () => {
