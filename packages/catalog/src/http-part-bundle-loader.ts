@@ -163,6 +163,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<RollingDiagnosticsFile | null>
   >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
+  private readonly partConnectorReads = new Map<string, Promise<ConnectorLoad>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
     Promise<PinnedSectionVocabularyFile | null>
@@ -462,8 +463,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return (await this.records(lod)).load(partId);
   }
 
-  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
-    return (await this.records(lod)).read(partId);
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.cached(this.partConnectorReads, `${lod}/${partId}`, async () =>
+      (await this.records(lod)).read(partId),
+    );
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -667,6 +670,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    topSurface: shape.topSurface ?? null,
     outline: shape.outline ?? null,
   };
 }
@@ -726,6 +730,7 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    topSurface: glb.document.extras.topSurface ?? null,
     outline: null,
   };
 }
