@@ -175,6 +175,21 @@ describe("LDraw library publishing", () => {
     });
   });
 
+  it("publishes parts whatever licence they name, or none", async () => {
+    const { index } = await published(
+      {
+        ...LIBRARY,
+        "parts/nonca.dat": ldrawFile("nonca.dat", NON_CA_LICENSE),
+        "p/bare.dat": ldrawFile("bare.dat", "0 no license here"),
+      },
+      {},
+    );
+
+    expect(Object.keys(index.files)).toEqual(
+      expect.arrayContaining(["parts/nonca.dat", "p/bare.dat"]),
+    );
+  });
+
   it.each([
     {
       name: "a lock-pinned file differs",
@@ -187,18 +202,6 @@ describe("LDraw library publishing", () => {
       library: LIBRARY,
       pinned: { "parts/9999.dat": "" },
       problem: "ldraw.lock.json pins parts/9999.dat, the archive lacks it",
-    },
-    {
-      name: "a part is not under a contributor-agreement license",
-      library: { ...LIBRARY, "parts/nonca.dat": ldrawFile("nonca.dat", NON_CA_LICENSE) },
-      pinned: {},
-      problem: `no contributor-agreement !LICENSE in parts/nonca.dat: "Not redistributable : see NonCAreadme.txt"`,
-    },
-    {
-      name: "a part has no license",
-      library: { ...LIBRARY, "p/bare.dat": ldrawFile("bare.dat", "0 no license here") },
-      pinned: {},
-      problem: `no contributor-agreement !LICENSE in p/bare.dat: ""`,
     },
     {
       name: "a part is unofficial",

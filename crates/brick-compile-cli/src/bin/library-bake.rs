@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use brick_compile::compile::rolling_mode_from_studs;
+use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table};
 use brick_compile::cover::PartSolid;
 use brick_compile::record::BakeRecord;
 use brick_compile::vehicle::part_bounds;
@@ -196,7 +196,7 @@ fn run(args: &Args) -> Result<usize, String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let library = DirectoryLibrary::new(&args.ldraw)?;
-    let stud_primitives = strings(&palette, "studPrimitives")?;
+    let stud_primitives = stud_primitives_from_table(&primitive_table)?;
     let options = CompileOptions {
         lod: Lod::Standard,
         rolling_mode: rolling_mode_from_studs(&library, &stud_primitives),
