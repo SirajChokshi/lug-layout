@@ -2,13 +2,16 @@ use serde_json::{json, Value};
 
 use crate::affine::{Affine, Vec3};
 use crate::cover::{part_cover_fits, CellsTooLarge};
-use crate::flatten::{FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle};
+use crate::flatten::{
+    ExactTriangle, FlattenError, Flattened, Flattener, Library, Lod, StudReference, Triangle,
+};
 use crate::glb;
 use crate::lattice::{describe_malformed, MalformedGeometry};
 use crate::mesh::{self, Mesh};
 use crate::occlusion;
 use crate::rolling::{read_rolling, PartRolling, Roundness};
 use crate::technic::{self, TechnicPart, TechnicPrimitives};
+use crate::top_surface::{ExactCorners, TopSurface};
 use crate::voxel::VOXEL_NOTE;
 
 pub const MODIFIED_NOTE: &str =
@@ -118,6 +121,7 @@ pub struct CompiledPart {
     pub flattened_files: Vec<crate::flatten::VisitedFile>,
     pub technic: Option<TechnicPart>,
     pub rolling: Option<PartRolling>,
+    pub top_surface: Option<TopSurface>,
 }
 
 fn to_y_up(p: Vec3) -> Vec3 {
@@ -140,22 +144,44 @@ pub fn unofficial_gate(
     Ok(())
 }
 
-fn standard_triangles<L: Library>(
+struct StandardGeometry {
+    triangles: Vec<Triangle>,
+    exact: Vec<Option<ExactTriangle>>,
+}
+
+fn y_up_corners(exact: &[Option<ExactTriangle>], index: usize) -> Option<ExactCorners> {
+    let triangle = exact.get(index)?.as_ref()?;
+    Some(triangle.points().map(|[x, y, z]| [x, y.neg(), z.neg()]))
+}
+
+fn read_top_surface(
+    triangles: &[Triangle],
+    exact: &[Option<ExactTriangle>],
+    studs: &[StudReference],
+) -> Option<TopSurface> {
+    TopSurface::read(triangles, &|index| y_up_corners(exact, index), studs)
+}
+
+fn standard_geometry<L: Library>(
     library: &L,
     path: &str,
     stud_primitives: &[String],
-) -> Result<Vec<Triangle>, CompileError> {
+) -> Result<StandardGeometry, CompileError> {
     let flattened = Flattener::new(library, Lod::Standard, stud_primitives)
+        .exact_geometry()
         .flatten(path)
         .map_err(CompileError::Flatten)?;
-    Ok(flattened
-        .triangles
-        .into_iter()
-        .map(|triangle| Triangle {
-            points: triangle.points.map(to_y_up),
-            ..triangle
-        })
-        .collect())
+    Ok(StandardGeometry {
+        triangles: flattened
+            .triangles
+            .into_iter()
+            .map(|triangle| Triangle {
+                points: triangle.points.map(to_y_up),
+                ..triangle
+            })
+            .collect(),
+        exact: flattened.exact,
+    })
 }
 
 pub const NO_STUD_RING: &str =
@@ -215,7 +241,12 @@ pub fn compile_part<L: Library>(
     reference: &str,
     options: &CompileOptions,
 ) -> Result<CompiledPart, CompileError> {
-    let mut flattener = Flattener::new(library, options.lod, &options.stud_primitives);
+    let mut flattener = match options.lod {
+        Lod::Standard => {
+            Flattener::new(library, options.lod, &options.stud_primitives).exact_geometry()
+        }
+        Lod::Low | Lod::Far => Flattener::new(library, options.lod, &options.stud_primitives),
+    };
     let path =
         flattener
             .resolve(reference)
@@ -234,14 +265,18 @@ pub fn compile_part<L: Library>(
     for triangle in &mut flattened.triangles {
         triangle.points = triangle.points.map(to_y_up);
     }
-    let rolling = match (roundness, options.lod) {
-        (None, _) => None,
-        (Some(roundness), Lod::Standard) => Some(read_rolling(&flattened.triangles, roundness)),
-        (Some(roundness), Lod::Low | Lod::Far) => {
-            let standard = standard_triangles(library, &path, &options.stud_primitives)?;
-            Some(read_rolling(&standard, roundness))
-        }
+    let standard = match options.lod {
+        Lod::Standard => None,
+        Lod::Low | Lod::Far => Some(standard_geometry(library, &path, &options.stud_primitives)?),
     };
+    let rolling = roundness.map(|roundness| {
+        read_rolling(
+            standard
+                .as_ref()
+                .map_or(&flattened.triangles, |standard| &standard.triangles),
+            roundness,
+        )
+    });
     if options.lod == Lod::Far {
         occlusion::drop_hidden_from_above(&mut flattened.triangles);
     }
@@ -262,7 +297,7 @@ pub fn compile_part<L: Library>(
     } else {
         None
     };
-    let studs = flattened
+    let studs: Vec<StudReference> = flattened
         .studs
         .iter()
         .map(|stud| StudReference {
@@ -273,6 +308,10 @@ pub fn compile_part<L: Library>(
             },
         })
         .collect();
+    let top_surface = match &standard {
+        Some(standard) => read_top_surface(&standard.triangles, &standard.exact, &studs),
+        None => read_top_surface(&flattened.triangles, &flattened.exact, &studs),
+    };
     Ok(CompiledPart {
         path,
         mesh,
@@ -280,6 +319,7 @@ pub fn compile_part<L: Library>(
         flattened_files: flattened.files,
         technic,
         rolling,
+        top_surface,
     })
 }
 
@@ -353,6 +393,9 @@ impl CompiledPart {
         }
         if let Some(rolling) = &self.rolling {
             extras["rolling"] = rolling.to_json();
+        }
+        if let Some(top_surface) = &self.top_surface {
+            extras["topSurface"] = top_surface.to_json();
         }
         extras
     }

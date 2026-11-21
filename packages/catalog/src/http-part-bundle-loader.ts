@@ -655,6 +655,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    topSurface: shape.topSurface ?? null,
     outline: shape.outline ?? null,
   };
 }
@@ -714,6 +715,7 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    topSurface: glb.document.extras.topSurface ?? null,
     outline: null,
   };
 }
