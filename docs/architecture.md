@@ -37,7 +37,7 @@ A world is a manifest plus one JSON shard of placements and laid track per super
 | Renderer | Engine stack wants a custom WebGPU-only renderer with compute culling. Product scope and part data want three.js, instancing and `BatchedMesh`. | **Start with three.js `WebGPURenderer`, with automatic WebGL2 fallback, behind a thin `SceneBackend` interface** that takes model instances, not parts. Milestone M0 benchmarks it. A custom GPU-driven WebGPU backend becomes a P2 option, built only if the 250k/1M gates fail. Engine stack's domain techniques are kept either way: stud extraction, covered-stud culling, voxel far LOD, 32×32 chunks. |
 | Runtime asset format | Part data proposes per-part glTF with meshopt. Engine stack proposes a custom `.lpa` binary atlas. | **GLB with `KHR_mesh_quantization` and `EXT_meshopt_compression`, packed into palette bundles.** Stud positions and connectors go in `extras` and sidecar tables. three.js loads this natively. A custom atlas waits for the custom backend. The pipeline already produces renderer-agnostic data either way. |
 | Threads and isolation | Engine stack wants SharedArrayBuffer, WASM threads and COOP/COEP headers. | **Not in the MVP.** Heavy compilation happens offline. Import baking runs in single-threaded workers. That avoids cross-origin-isolation constraints on embeds and OAuth until a measured need appears. |
-| Persistence | Engine stack wants OPFS, an op log and content-addressed chunks. Product scope wants IndexedDB and a JSON file. | **IndexedDB holding a JSON world split into one shard per super-chunk.** Placements are small, but D4 makes worlds unbounded, so they load per shard and never as one document. Imported model blobs are content-addressed in IndexedDB. OPFS is used only as an asset cache. The op log arrives with multiplayer in P2. |
+| Persistence | Engine stack wants OPFS, an op log and content-addressed chunks. Product scope wants IndexedDB and a JSON file. | **IndexedDB holding a JSON world split into one shard per super-chunk.** Placements are small, but D4 makes worlds unbounded, so they load per shard and never as one document. Imported model blobs are content-addressed in IndexedDB, which also holds the asset cache (`brr-assets`). OPFS isn't used. The op log arrives with multiplayer in P2. |
 | Studio `.io` | Part data says read plain ZIP and reject encrypted files. Product scope says MVP should rely on LDraw export from Studio. | **Read plain-ZIP `.io` in the MVP**, because D2 makes import the main workflow. Encrypted legacy files are rejected with an instruction to re-save. **We never ship the password**: anti-circumvention law doesn't depend on being commercial. LDraw export stays the documented fallback. |
 | Connectivity source | Part data says generate our own data to avoid share-alike. Engine stack and product scope suggest LDCad data. | **With D1 settled, import the LDCad shadow library directly** and fill gaps by primitive inference. The connectivity dataset ships as a separate CC BY-SA 4.0 package, so the app code's license is unaffected. |
 | BrickLink | Part data says avoid it beyond crosswalks. Product scope says Wanted List XML now, API later. | **Rebrickable stays the catalog backbone.** Wanted List XML export ships in the MVP and needs no API. BrickLink's API, for the price guide only, is a P1 option once its terms have been read for non-commercial use (D1 makes this likely but not certain). |
@@ -118,7 +118,7 @@ Adding a vendor later means writing a source adapter, the vendor's connector dat
 | Layout core | main thread, pure TS module | TypeScript | World document (sparse chunks), placement poses, joins, undo/redo command stack, live validation. Headless and unit-tested. |
 | Planner | main thread, pure TS module | TypeScript | Plan regions and physical footprints (room, tables, obstacles, aisles, in mm), footprint-fit and reach rules, the BOM for each plan (models, baseplates, track, road plates, module substructure), "own vs buy", printable plan export (SVG, then PDF) |
 | Import worker | Web Worker | Rust → WASM (`brick-compile`, `import` feature) | Parse and bake models (§3.3), compute badges L1, L2 and (P1) L3 |
-| Asset loader | worker | TypeScript | Fetches CDN bundles and caches them in OPFS and the HTTP cache. Lazy element table. |
+| Asset loader | main thread and worker | TypeScript | Fetches CDN bundles and caches them in the HTTP cache and IndexedDB (`brr-assets`, `docs/part-bundle.md` *Browser cache*). Lazy element table. |
 | Sim worker | Web Worker | TypeScript | Fixed-timestep simulation of track and road graphs, consists and routing. Headless-testable. |
 | Renderer | main thread for the MVP; OffscreenCanvas worker in P1 if the main thread misses its budget | three.js `WebGPURenderer` behind `SceneBackend` | Chunked scene, model instancing, LOD, stud handling, look |
 | Persistence | main thread and worker | IndexedDB | Layouts, imported model blobs and bakes (content-addressed), settings |
@@ -438,7 +438,7 @@ Extra plan rules:
 
 | Data | Format | Location |
 |---|---|---|
-| Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and OPFS |
+| Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and IndexedDB (`brr-assets`) |
 | World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
 | Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
@@ -612,7 +612,7 @@ packages/
   import/                 import pipeline orchestration around compile-wasm: resolve, badges, bake
   compile-wasm/           generated wasm-bindgen output of crates/brick-compile (build artifact, not hand-written)
   render/                 SceneBackend interface, three.js backend, GPU buffer pools, look/post passes, plan overlay
-  storage/                IndexedDB/OPFS repositories (world shards, model blobs, collections, settings)
+  storage/                IndexedDB repositories (world shards, model blobs, collections, settings) and the asset cache
   rpc/                    typed worker message protocol, transferable typed-array envelopes, proxy helpers
   client/                 application services (OOP, Inversify): commands/undo, selection, tools, plan, BOM export, sim/import proxies; no React
   workers/
@@ -657,7 +657,7 @@ L0  math
 | `sim` | math, schema, domain (graph types) |
 | `import` | math, schema, domain, catalog, compile-wasm |
 | `client` | math, schema (`@brr/schema/decode`, bundle wire types and running-gear overrides, world files), domain, catalog, render, storage, rpc, plus *types only* from sim and import (it reaches them through worker proxies) |
-| `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify |
+| `workers/*` | rpc plus their engine (`sim`, `import`, later `render`) and its dependencies, plus inversify. `workers/import-worker` also depends on `storage`, whose IndexedDB asset cache (`brr-assets`) holds the precompiled library-bake and connector records it reads; persistence runs in the main thread and the worker (§4). |
 | `ui` | client (service interfaces, tokens, view models), schema types |
 | `apps/web` | ui, client, workers (as `new Worker(new URL(...))` entries), and *types only* from schema (owner ruling, 2026-11-17: no re-export layers, so `apps/web` names wire types where they are defined) |
 | `tools/asset-pipeline` | math, schema, domain, catalog, valibot, the brick-compile CLI; never imported by apps |
@@ -692,14 +692,14 @@ export class LayoutService implements ILayoutService {
 ```
 
 - tsconfig sets `experimentalDecorators: true` and **`emitDecoratorMetadata: false`**. Vite's esbuild can't emit decorator metadata anyway, so nothing may depend on type reflection. A lint rule rejects `@inject()` without a token and rejects class-as-identifier bindings. Classes from pure packages are bound with `toDynamicValue(ctx => new RuleEngine(ctx.get(PROFILE_REGISTRY)))`, which needs no decorators. This is also the fallback for every binding if §11 item 28 finds problems.
-- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). Composition roots load the modules they need, and tests load modules with fakes substituted.
+- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). The one exception is `storage`'s `assetCacheModule`, the asset cache alone, which the import worker loads instead of `storageModule`. Composition roots load the modules they need, and tests load modules with fakes substituted.
 - Services are singletons by default and are resolved once at startup or when a tool activates. **Nothing is resolved from a container in a hot path.**
 
 ### 14.4 Per-worker containers
 - Each thread owns **its own Inversify container**, built in its worker entry from that worker's modules. No singletons and no service instances are shared across threads.
   - **Main thread:** client, render (MVP), storage and ui-facing modules. Remote engines are bound to **proxy implementations** from `rpc`: `SIM_CLIENT → SimWorkerProxy`, `IMPORT_CLIENT → ImportWorkerProxy`.
   - **Sim worker:** `sim` engine, a track/road graph snapshot and a clock. It exposes `ISimEngine` over `rpc`.
-  - **Import worker:** `import`, `catalog` (read-only) and compile-wasm. It exposes `IImportEngine`.
+  - **Import worker:** `import`, `catalog` (read-only), compile-wasm and `storage`'s `assetCacheModule` (only the asset cache, shared with the main thread through IndexedDB; `storageModule` binds the same plus the main thread's repositories). It exposes `IImportEngine`.
   - **Render worker (P1):** `render`, `catalog` and the OffscreenCanvas. The main thread then binds `SCENE_BACKEND → RenderWorkerProxy`.
 - Cross-thread traffic only goes through `rpc` messages:
   - typed request and response unions;

@@ -1,6 +1,8 @@
 import {
+  ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
   catalogModule,
   type PartConnectors,
@@ -20,7 +22,9 @@ import {
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import type { FetchFunction, ImportWorkerRequest } from "@brr/import";
 import type { RpcPort } from "@brr/rpc";
+import { INDEXED_DB } from "@brr/storage";
 import type { CompilerVehicles, PrimitiveConnectorTable } from "@brr/schema/bundle";
+import { IDBFactory } from "fake-indexeddb";
 import { Container } from "inversify";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -33,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import type { IImportWorkerService } from "./import-worker-service.ts";
-import { importWorkerModule } from "./import-worker.module.ts";
+import { importWorkerModules } from "./import-worker.module.ts";
 import { IMPORT_CLOCK, IMPORT_FETCH, IMPORT_WORKER_SERVICE } from "./tokens.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -64,9 +68,11 @@ const runFile = promisify(execFile);
 
 const idlePort: RpcPort = { postMessage: () => undefined, addEventListener: () => undefined };
 
-function importWorker(): IImportWorkerService {
+function importWorker(indexedDb?: IDBFactory, fetchUrl?: FetchFunction): IImportWorkerService {
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
+  if (indexedDb !== undefined) container.rebind(INDEXED_DB).toConstantValue(indexedDb);
+  if (fetchUrl !== undefined) container.rebind(IMPORT_FETCH).toConstantValue(fetchUrl);
   return container.get(IMPORT_WORKER_SERVICE);
 }
 
@@ -174,6 +180,7 @@ afterAll(async () => {
 async function bundleLoader() {
   const container = new Container();
   await container.load(catalogModule);
+  container.bind(ASSET_FETCHER).toService(NETWORK_ASSET_FETCHER);
   container.bind(BUNDLE_BASE_URL).toConstantValue(base);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   return container.get(PART_BUNDLE_LOADER);
@@ -251,7 +258,7 @@ it("gives a bundle part the same connector table from the catalog loader as when
   expect(imported.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
 });
 
-it("gives a part the bundle's connector packages don't list the record a pinned library publication lists for it, fetched beside the bundle's, and still reports a part neither lists", async () => {
+it("gives a part the bundle's connector packages don't list the record a pinned library publication lists for it, fetched beside the bundle's and kept in the asset cache for a later worker that can't reach the publication, and still reports a part neither lists", async () => {
   const loader = await bundleLoader();
   const context = await loader.importContext(LOD);
   const { repo, commit, root } = context.source;
@@ -320,8 +327,14 @@ it("gives a part the bundle's connector packages don't list the record a pinned 
       },
     });
 
+    const indexedDb = new IDBFactory();
     const withoutLibrary = await importWorker().run(request(false));
-    const withLibrary = await importWorker().run(request(true));
+    const withLibrary = await importWorker(indexedDb).run(request(true));
+    const publicationUnreachable: FetchFunction = async (url) => {
+      if (new URL(url).pathname.startsWith(LIBRARY_PREFIX)) throw new TypeError("Failed to fetch");
+      return fetch(url);
+    };
+    const later = await importWorker(indexedDb, publicationUnreachable).run(request(true));
 
     const technic = withLibrary.partIds.indexOf(TECHNIC_PART);
     const unbundled = withLibrary.partIds.indexOf(UNBUNDLED_PART);
@@ -334,6 +347,8 @@ it("gives a part the bundle's connector packages don't list the record a pinned 
     expect(withLibrary.connectors[unbundled]).toBeNull();
     expect(withLibrary.report.withoutConnectorRecords).toEqual([UNBUNDLED_PART]);
     expect(withLibrary.report.refusedConnectorRecords).toEqual([]);
+    expect(later.connectors).toEqual(withLibrary.connectors);
+    expect(later.report.refusedConnectorRecords).toEqual([]);
   } finally {
     tampered.clear();
   }
@@ -595,7 +610,7 @@ it("imports with the compiler and LDraw library the request names and the worker
   const requested: string[] = [];
   let clockReads = 0;
   const container = new Container();
-  container.load(importWorkerModule(idlePort));
+  container.load(...importWorkerModules(idlePort));
   container.rebind(IMPORT_FETCH).toConstantValue(servedFrom(manifest, requested));
   container.rebind(IMPORT_CLOCK).toConstantValue(() => {
     clockReads++;
