@@ -468,6 +468,11 @@ const refusedTiles = await sampledFillBytes(
   fieldCorner.x,
   fieldCorner.z,
 );
+if (refusedTiles.checks === 0) {
+  throw new Error(
+    `the heap profile never showed allocations under ${PER_TILE_CHECK} for refused tiles, which name what they hit; the gate would pass without watching it`,
+  );
+}
 gates.push(accepted, refusedTiles);
 for (const gate of gates) {
   if (gate.gated > 0) {

@@ -1643,6 +1643,27 @@ it.each([
   120_000,
 );
 
+it("never road-snaps a dragged road plate into a user's brick standing at the flush pose: it lands where it was dropped", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const place = placer(editor, backend);
+  await place(RECESSED_ROAD_PLATE, 320, 320);
+  const brick = userRoadFile("my-brick.ldr", ["1 4 0 0 0 0 0 1 0 1 0 -1 0 0 3001.dat"]);
+  const brickItem = await importUserFile(editor, "my-brick.ldr", brick);
+  await place(brickItem, 500, 320);
+  await place(RECESSED_ROAD_PLATE, 1300, 320);
+  editor.chooseItem(null);
+  expect(posesOf(editor)).toEqual(
+    [
+      `${brickItem} 500,320 y0`,
+      `${RECESSED_ROAD_PLATE} 320,320 y0`,
+      `${RECESSED_ROAD_PLATE} 1300,320 y0`,
+    ].toSorted(),
+  );
+  expect(selectAt(editor, backend, 1300, 320)?.item).toBe(RECESSED_ROAD_PLATE);
+  dragGroup(editor, backend, [1300, 320], [680, 320]);
+  expect(placedXs(editor)).toEqual([320, 500, 680]);
+}, 120_000);
+
 it.each([
   { baseplateZ: 320, landsAt: 160 },
   { baseplateZ: -20, landsAt: 140 },
@@ -1958,20 +1979,41 @@ it("draws road into the level-crossing set's road end with the road tool, joinin
   });
 }, 240_000);
 
-it("never road-snaps a road plate off a refusal: aimed into the level-crossing set, the hover and the click stay refused at the cursor, naming the set's baseplate", async () => {
-  const { editor, backend, frame } = await besideTheLevelCrossing();
-  expect(await settledAt(editor, backend, frame, -300, 300)).toEqual({
-    pose: [-300, 300],
-    snap: "refused",
-  });
-  const hitsTheSet = expect.stringMatching(/would hit Baseplate 32 x 32 Road .* in 10128-1 /u);
-  expect(editor.snapshot().hover?.refusal).toEqual(hitsTheSet);
+const HITS_THE_SET = /would hit Baseplate 32 x 32 Road .* in 10128-1 /u;
+
+it.each([-300, -400])(
+  "never road-snaps a road plate off a refusal: aimed at x %i into the level-crossing set, the hover and the click stay refused at the cursor, naming the set's baseplate",
+  async (x) => {
+    const { editor, backend, frame } = await besideTheLevelCrossing();
+    expect(await settledAt(editor, backend, frame, x, 300)).toEqual({
+      pose: [x, 300],
+      snap: "refused",
+    });
+    expect(editor.snapshot().hover?.refusal).toMatch(HITS_THE_SET);
+    editor.click(0, 0, 0);
+    expect(editor.snapshot()).toMatchObject({
+      placements: 1,
+      refusedClicks: 1,
+      lastRefusal: { reason: expect.stringMatching(HITS_THE_SET) },
+    });
+  },
+  240_000,
+);
+
+it("never road-snaps a dragged road plate off a refusal: dragged into the level-crossing set, it stays where it was", async () => {
+  const { editor, backend } = await besideTheLevelCrossing();
+  backend.aim(-1600, 300);
+  editor.pointerMove(0, 0);
   editor.click(0, 0, 0);
-  expect(editor.snapshot()).toMatchObject({
-    placements: 1,
-    refusedClicks: 1,
-    lastRefusal: { reason: hitsTheSet },
+  editor.chooseItem(null);
+  const laid = posesOf(editor);
+  expect(selectAt(editor, backend, -1600, 300)?.item).toBe("ldraw:44336p04@72");
+  const dragged = dragGroup(editor, backend, [-1600, 300], [-400, 300]);
+  expect(dragged.gesture).toMatchObject({
+    kind: "move",
+    refusal: expect.stringMatching(HITS_THE_SET),
   });
+  expect(posesOf(editor)).toEqual(laid);
 }, 240_000);
 
 it("reads a road plate held over a placed road plate of another thickness as refused, as the click is", async () => {
