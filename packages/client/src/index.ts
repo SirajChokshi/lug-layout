@@ -100,11 +100,12 @@ export type {
   CrossingView,
   TrackBomLine,
   TrackCommitResult,
+  TrackHeightView,
   TrackPieceView,
   TrackSolveStats,
   TrackView,
 } from "./edit/track-edit-session.ts";
-export type { TrackUnsupportedView } from "./edit/track-world.ts";
+export type { TrackLowClearanceView, TrackUnsupportedView } from "./edit/track-world.ts";
 export type { RoadStrokeResult } from "./edit/road-edit-session.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type { FillView } from "./edit/fill-tool.ts";
@@ -299,7 +300,10 @@ export {
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export { trackBlockText } from "./edit/track-drag.ts";
+export type { TallestTrain } from "./trains/tallest-train.ts";
 export {
+  TOO_STEEP,
+  lowClearanceText,
   tallyText,
   toolHints,
   unjoinedText,
@@ -343,7 +347,7 @@ export type {
   TrackGapView,
   TrackRouteView,
 } from "./edit/track-drawing.ts";
-export { MM_PER_CM, cmText, studsText } from "./edit/size-labels.ts";
+export { MM_PER_CM, cmText, heightText, studsText } from "./edit/size-labels.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";
 export type {
   ExtensionKind,
