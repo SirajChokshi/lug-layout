@@ -11,6 +11,8 @@ import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
 import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
+import type { ILibraryPartPlacer } from "./catalog/library-part-placer.ts";
+import type { ILibraryPartSearch } from "./catalog/library-part-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
 import type { IPaletteMemory, IPaletteMemoryStore } from "./catalog/palette-memory.ts";
@@ -31,6 +33,7 @@ import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
 import type { IPlanService } from "./plan/plan-service.ts";
 import type { IBomService } from "./bom/bom-service.ts";
+import type { IOwnedParts } from "./bom/owned-parts-service.ts";
 import type { IRunningGearOverrideStore } from "./running-gear/override-store.ts";
 import type { IRunningGear } from "./running-gear/running-gear-editor.ts";
 import type { IImportScene } from "./scene/import-scene.ts";
@@ -38,6 +41,10 @@ import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
+import type { IRailYard } from "./trains/rail-yard.ts";
+import type { IVehicleIds } from "./trains/vehicle-ids.ts";
+import type { IStarterFiles } from "./starters/starter-files.ts";
+import type { IStarterWorlds } from "./starters/starter-worlds.ts";
 
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
@@ -61,6 +68,12 @@ export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
 export const PALETTE_SEARCH: ServiceIdentifier<IPaletteSearch> = Symbol.for(
   "brr.client.PaletteSearch",
 );
+export const LIBRARY_PART_SEARCH: ServiceIdentifier<ILibraryPartSearch> = Symbol.for(
+  "brr.client.LibraryPartSearch",
+);
+export const LIBRARY_PART_PLACER: ServiceIdentifier<ILibraryPartPlacer> = Symbol.for(
+  "brr.client.LibraryPartPlacer",
+);
 export const PALETTE_DRAG: ServiceIdentifier<IPaletteDrag> = Symbol.for("brr.client.PaletteDrag");
 export const PALETTE_PREFETCH: ServiceIdentifier<IPalettePrefetch> = Symbol.for(
   "brr.client.PalettePrefetch",
@@ -73,6 +86,9 @@ export const LIBRARY_BAKE_BASE_URL: ServiceIdentifier<string | null> = Symbol.fo
 );
 export const LIBRARY_CONNECTORS_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LibraryConnectorsBaseUrl",
+);
+export const SHADOW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
+  "brr.client.ShadowLibraryBaseUrl",
 );
 export const LDRAW_LIBRARY_BASE_URL: ServiceIdentifier<string | null> = Symbol.for(
   "brr.client.LdrawLibraryBaseUrl",
@@ -98,7 +114,10 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
   "brr.client.TrademarkDisclaimer",
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
+export const OWNED_PARTS: ServiceIdentifier<IOwnedParts> = Symbol.for("brr.client.OwnedParts");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
+export const RAIL_YARD: ServiceIdentifier<IRailYard> = Symbol.for("brr.client.RailYard");
+export const VEHICLE_IDS: ServiceIdentifier<IVehicleIds> = Symbol.for("brr.client.VehicleIds");
 export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symbol.for(
   "brr.client.PaletteMemoryStore",
 );
@@ -133,4 +152,12 @@ export const CONNECTION_SOLVER: ServiceIdentifier<ConnectionSolver> = Symbol.for
 );
 export const PLACEMENT_SEARCH: ServiceIdentifier<IPlacementSearch> = Symbol.for(
   "brr.client.PlacementSearch",
+);
+export const STARTER_FILE_URLS: ServiceIdentifier<ReadonlyMap<string, string>> = Symbol.for(
+  "brr.client.StarterFileUrls",
+);
+export const STARTER_FILES: ServiceIdentifier<IStarterFiles> =
+  Symbol.for("brr.client.StarterFiles");
+export const STARTER_WORLDS: ServiceIdentifier<IStarterWorlds> = Symbol.for(
+  "brr.client.StarterWorlds",
 );
