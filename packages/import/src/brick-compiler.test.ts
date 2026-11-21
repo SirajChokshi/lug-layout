@@ -7,13 +7,17 @@ import { expect, it } from "vitest";
 import {
   BrickCompiler,
   type BakedModel,
+  type BakeInputs,
   type BakeRequest,
   type CompileLod,
   type CompileOutput,
   type CompileRequest,
   type LibraryFiles,
+  type PlacementBakeRequest,
   type RecordFiles,
+  type VisibilityBakeRequest,
 } from "./brick-compiler.ts";
+import { bakeReceptors } from "./bake-receptors.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = fileURLToPath(new URL("../../../.cache/ldraw/", import.meta.url));
@@ -192,7 +196,7 @@ it(
     const { manifest, compiler } = await bundleCompiler();
     const paths = await libraryPaths();
     const library: HeldLibrary = { key: "split", files: new Map(), absent: new Set() };
-    const request: BakeRequest = {
+    const inputs: BakeInputs = {
       source: STACKED_BESIDE_A_SLOPE,
       drawn: new Uint8Array([1, 1, 1]),
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
@@ -201,13 +205,17 @@ it(
       tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
       vehicles: null,
     };
-    const placementRequest: BakeRequest = {
+    const request: PlacementBakeRequest = {
+      ...inputs,
+      receptors: bakeReceptors(new Uint32Array(3), [null]),
+    };
+    const placementRequest: PlacementBakeRequest = {
       ...request,
       shard: { from: 0, to: 0, of: 1, visibilityOnly: false },
       keepParts: true,
     };
-    const coverRequest: BakeRequest = {
-      ...request,
+    const coverRequest: VisibilityBakeRequest = {
+      ...inputs,
       shard: { from: 0, to: 1, of: 1, visibilityOnly: true },
     };
 
@@ -229,6 +237,42 @@ it(
       ...whole,
       phases: placement.phases,
     });
+  },
+  COMPILE_TIMEOUT_MS,
+);
+
+it(
+  "bakes a placement request that carries no receptor segments, as an app from before receptors sends it, exactly like one whose parts have no receptors",
+  async () => {
+    const { manifest, compiler } = await bundleCompiler();
+    const paths = await libraryPaths();
+    const library: HeldLibrary = { key: "earlier-app", files: new Map(), absent: new Set() };
+    const inputs: BakeInputs = {
+      source: STACKED_BESIDE_A_SLOPE,
+      drawn: new Uint8Array([1, 1, 1]),
+      studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
+      unofficialAllowlist: [],
+      translucentColors: [],
+      tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
+      vehicles: null,
+    };
+    const fromAnEarlierApp: Omit<PlacementBakeRequest, "receptors"> = inputs;
+    const withoutReceptors: PlacementBakeRequest = {
+      ...inputs,
+      receptors: bakeReceptors(new Uint32Array(3), [null]),
+    };
+
+    const sent = await baked(compiler, withoutReceptors, library, paths, null);
+    const unsent = await baked(
+      compiler,
+      fromAnEarlierApp as PlacementBakeRequest,
+      library,
+      paths,
+      null,
+    );
+
+    expect(sent.lattice).not.toBeNull();
+    expect({ ...unsent, phases: sent.phases }).toEqual(sent);
   },
   COMPILE_TIMEOUT_MS,
 );
@@ -261,6 +305,7 @@ it(
     const request: BakeRequest = {
       source: BRICK_ON_SLOPE,
       drawn: new Uint8Array([1, 1]),
+      receptors: bakeReceptors(new Uint32Array(2), [null]),
       studPrimitives: manifest.studPrimitives.map((primitive) => primitive.name),
       unofficialAllowlist: [],
       translucentColors: [],

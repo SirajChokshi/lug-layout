@@ -47,31 +47,38 @@ fn far_voxels_of_a_brick_raised_by(height: f64) -> FarVoxels {
         },
         submodel: None,
     };
-    baker.voxels(&[brick]).expect("the far bake runs")
+    let drawn = [brick];
+    let shape = baker.lattice_shape(BRICK_2X4).expect("the brick compiles");
+    let lattice = baker
+        .lattice(&drawn, &[&shape])
+        .expect("the brick has one stud phase");
+    baker
+        .voxels(&drawn, lattice.as_ref())
+        .expect("the far bake runs")
 }
 
 #[test]
-fn a_model_whose_lowest_stud_layer_is_off_a_whole_ldu_gets_no_far_mesh_and_says_why() {
+fn a_model_whose_phase_layer_is_off_a_whole_ldu_gets_no_far_mesh_and_says_why() {
     match far_voxels_of_a_brick_raised_by(THIRD_LDU) {
-        FarVoxels::Omitted(reason @ VoxelError::FractionalStudLayer(layer_y)) => {
+        FarVoxels::Omitted(reason @ VoxelError::FractionalPhaseLayer(layer_y)) => {
             assert_ne!(layer_y.fract(), 0.0);
             assert_eq!(
                 reason.to_string(),
-                format!("lowest stud layer at y = {layer_y} is not on a whole LDU")
+                format!("phase layer at y = {layer_y} is not on a whole LDU")
             );
         }
-        other => panic!("a fractional lowest stud layer omits the far mesh, but got {other:?}"),
+        other => panic!("a fractional phase layer omits the far mesh, but got {other:?}"),
     }
 }
 
 #[test]
-fn a_model_whose_lowest_stud_layer_is_on_a_whole_ldu_keeps_its_voxel_far_mesh() {
+fn a_model_whose_phase_layer_is_on_a_whole_ldu_keeps_its_voxel_far_mesh() {
     match far_voxels_of_a_brick_raised_by(0.0) {
         FarVoxels::Grid(grid) => {
             assert_eq!(grid.dims, BRICK_2X4_CELLS);
             assert_eq!(grid.count(), BRICK_2X4_CELLS.iter().product::<usize>());
             assert!(grid.colors.iter().all(|&color| color == RED));
         }
-        other => panic!("a brick on a whole-LDU stud layer keeps its far mesh, but got {other:?}"),
+        other => panic!("a brick on a whole-LDU phase layer keeps its far mesh, but got {other:?}"),
     }
 }

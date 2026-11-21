@@ -1,7 +1,9 @@
+export { bakeReceptors, type BakeReceptors } from "./bake-receptors.ts";
 export {
   BrickCompiler,
   type BakedModel,
   type BakeOutcome,
+  type BakeInputs,
   type BakePhases,
   type BakeRequest,
   type CompileLod,
@@ -12,7 +14,9 @@ export {
   type LibraryFiles,
   type ModelRead,
   type PartOutcome,
+  type PlacementBakeRequest,
   type RecordFiles,
+  type VisibilityBakeRequest,
 } from "./brick-compiler.ts";
 export {
   BricklinkPartsCrosswalk,
