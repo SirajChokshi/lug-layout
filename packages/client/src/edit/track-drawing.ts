@@ -107,8 +107,9 @@ import {
   type TrackBlockView,
   type TrackDragView,
 } from "./track-drag.ts";
-import { OBSTACLE_RECT_FLOATS, cellKey } from "./track-obstacles.ts";
+import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles.ts";
 import type { TrackSupport } from "./track-support.ts";
+import { writeChunkSquares } from "./plan-reach.ts";
 import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
 import { heightText, type LabelView } from "./size-labels.ts";
 import type { TallestTrain } from "../trains/tallest-train.ts";
@@ -158,6 +159,10 @@ interface SkippedIds {
 interface HeadingOutline {
   readonly outline: Float64Array;
   readonly box: Float64Array;
+}
+
+function crossingOutlineKey(catalogIndex: number, pose: Pose16): string {
+  return `${catalogIndex}:${pose.heading}:${pose.position.join(",")}`;
 }
 
 export interface KitPart {
@@ -622,8 +627,11 @@ export class TrackDrawing implements ExtensionSite {
   private readonly crossingShapes = new Map<number, CrossingShape>();
   private readonly planEdges = new Map<number, OutlineEdges>();
   private readonly supportPartList: SupportPart[] = [];
-  private readonly crossingOutlines = new Map<number, PlacedOutline>();
+  private crossingOutlines = new Map<string, PlacedOutline>();
+  private previousCrossingOutlines = new Map<string, PlacedOutline>();
+  private crossingPieceList: ReadonlyArray<PlacedTrackPiece> | null = null;
   private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly chunkSquareScratch = new Float64Array(OUTLINE_BOX_FLOATS);
   private readonly rectOutline = new Float64Array(RECT_OUTLINE_FLOATS);
   private gapList: ReadonlyArray<EndGap> = [];
   private readonly kitOutlines: KitOutlines;
@@ -992,7 +1000,7 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private readonly supportedOn =
-    (seats: ReadonlySet<number>) =>
+    (seats: StudSeats) =>
     (frame: MoveFrame, pose: Pose16, studlessTops: TrackClearance): boolean => {
       const part = this.byDef.get(frame.move.piece.id);
       if (!part || !this.support) return false;
@@ -1013,6 +1021,7 @@ export class TrackDrawing implements ExtensionSite {
     if (!support) return null;
     const box = this.collisionBox;
     const layout = this.combined;
+    const bands = this.supportBands(support);
     const found: UnsupportedPiece[] = [];
     for (let p = 0; p < layout.count; p++) {
       const catalogIndex = layout.piece(p);
@@ -1020,7 +1029,8 @@ export class TrackDrawing implements ExtensionSite {
       const piece = this.pieces[catalogIndex];
       if (!outline || !piece) continue;
       const yPlates = layout.yPlates(p);
-      const band = this.bands.laying(yPlates, yPlates);
+      const band = bands.get(yPlates);
+      if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
       if (band.pending) return null;
       if (layout.rise(p) !== 0) {
         found.push({ piece: p, block: null, tilted: true });
@@ -1050,6 +1060,38 @@ export class TrackDrawing implements ExtensionSite {
       found.push({ piece: p, block, tilted: false });
     }
     return found;
+  }
+
+  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
+    const box = this.collisionBox;
+    const layout = this.combined;
+    const reachAt = new Map<number, number[]>();
+    for (let p = 0; p < layout.count; p++) {
+      const catalogIndex = layout.piece(p);
+      const outline = this.outlines.get(catalogIndex);
+      const piece = this.pieces[catalogIndex];
+      if (!outline || !piece) continue;
+      const yPlates = layout.yPlates(p);
+      const reach = reachAt.get(yPlates) ?? [];
+      reachAt.set(yPlates, reach);
+      const placement = layout.pose(p);
+      const frame = layout.frame(p);
+      outlineBox(
+        framedOutlineInto(outline, placement, frame, this.framedScratchFor(outline.length)),
+        box,
+        0,
+      );
+      reach.push(...box);
+      const antiStuds = support.antiStudPoints(catalogIndex, piece.partFrame, placement, frame);
+      if (antiStuds.length === 0) continue;
+      outlineBox(antiStuds, box, 0);
+      reach.push(...box);
+    }
+    const bands = new Map<number, LayingBand>();
+    for (const [yPlates, reach] of reachAt) {
+      bands.set(yPlates, this.bands.reaching(yPlates, yPlates, Float64Array.from(reach)));
+    }
+    return bands;
   }
 
   supportParts(): ReadonlyArray<SupportPart> {
@@ -1227,6 +1269,11 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   crossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    this.crossingPieceList ??= this.worldCrossingPieces();
+    return this.crossingPieceList;
+  }
+
+  private worldCrossingPieces(): ReadonlyArray<PlacedTrackPiece> {
     const layout = this.combined;
     const pieces: PlacedTrackPiece[] = [];
     for (let p = 0; p < layout.count; p++) {
@@ -1250,11 +1297,11 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   private worldOutline(p: number, shape: CrossingShape): PlacedOutline {
-    let outline = this.crossingOutlines.get(p);
-    if (!outline) {
-      outline = PlacedOutline.ofTrackPiece(shape.planOutline, this.combined.pose(p));
-      this.crossingOutlines.set(p, outline);
-    }
+    const pose = this.combined.pose(p);
+    const key = crossingOutlineKey(this.combined.piece(p), pose);
+    let outline = this.crossingOutlines.get(key) ?? this.previousCrossingOutlines.get(key);
+    if (!outline) outline = PlacedOutline.ofTrackPiece(shape.planOutline, pose);
+    this.crossingOutlines.set(key, outline);
     return outline;
   }
 
@@ -1292,8 +1339,6 @@ export class TrackDrawing implements ExtensionSite {
     for (const piece of carried) {
       const pieceOutline = this.outlines.get(piece.catalogIndex);
       if (!pieceOutline) continue;
-      const { field } = this.bands.laying(piece.yPlates, piece.yPlates);
-      const skipped = this.skippedIds(field, moving, movingOwners);
       const outline = framedOutlineInto(
         pieceOutline,
         piece.placement,
@@ -1301,6 +1346,9 @@ export class TrackDrawing implements ExtensionSite {
         this.framedScratchFor(pieceOutline.length),
       );
       outlineBox(outline, box, 0);
+      const squares = writeChunkSquares(box, this.chunkSquareScratch);
+      const { field } = this.bands.reaching(piece.yPlates, piece.yPlates, squares);
+      const skipped = this.skippedIds(field, moving, movingOwners);
       const joined =
         piece.frame.id === WORLD_TRACK_FRAME.id
           ? this.joinedAt(
@@ -1904,7 +1952,9 @@ export class TrackDrawing implements ExtensionSite {
   private recomputeEnds(): void {
     this.combined = this.combine();
     this.indexBands();
-    this.crossingOutlines.clear();
+    this.previousCrossingOutlines = this.crossingOutlines;
+    this.crossingOutlines = new Map();
+    this.crossingPieceList = null;
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
