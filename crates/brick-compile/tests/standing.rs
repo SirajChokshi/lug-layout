@@ -275,7 +275,7 @@ fn a_receptor_that_takes_the_stud_seats_it_by_its_connector_data_where_the_drawn
 }
 
 #[test]
-fn receptors_too_narrow_for_the_stud_neither_frame_a_part_nor_seat_it() {
+fn a_receptor_too_narrow_for_the_stud_still_votes_but_never_vouches_for_its_parts_mesh() {
     let bench = Bench::new();
     let bar_holder = SnapShape::new(
         CAP_FAR,
@@ -298,6 +298,10 @@ fn receptors_too_narrow_for_the_stud_neither_frame_a_part_nor_seat_it() {
             .collect()
     };
 
-    assert_eq!(bench.lattice(&one("3069b.dat")), Some(([10, 0], -8.0)));
-    assert_eq!(bench.lattice_with(&one("3069b.dat"), narrowed), None);
+    assert_eq!(bench.lattice(&one("91501.dat")), Some(([0, 0], -24.0)));
+    assert_eq!(bench.lattice_with(&one("91501.dat"), narrowed), None);
+    assert_eq!(
+        bench.lattice_with(&one("3069b.dat"), narrowed),
+        Some(([10, 0], -8.0))
+    );
 }
