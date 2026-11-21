@@ -22,7 +22,7 @@
       "name": "inversify-only-in-di-packages",
       "severity": "error",
       "from": {
-        "pathNot": "^(packages/(client|workers|storage|render|catalog|rpc)|apps/web)/"
+        "pathNot": "^(packages/(client|workers|storage|render|catalog|rpc)|apps/web|tools/e2e)/"
       },
       "to": {
         "path": "(^|/)node_modules/inversify/"
@@ -146,14 +146,48 @@
       }
     },
     {
+      "name": "placement-hover-takes-only-types",
+      "severity": "error",
+      "from": {
+        "path": "^packages/client/src/edit/placement-hover\\.ts$"
+      },
+      "to": {
+        "dependencyTypesNot": ["type-only"]
+      }
+    },
+    {
+      "name": "track-world-never-imports-the-edit-tools",
+      "severity": "error",
+      "from": {
+        "path": "^packages/client/src/edit/track-world\\.ts$"
+      },
+      "to": {
+        "path": "^packages/client/src/edit/(track-edit-session|road-edit-session|editor)\\.ts$"
+      }
+    },
+    {
       "name": "workers-depend-on-rpc-and-their-engine",
       "severity": "error",
       "from": {
-        "path": "^packages/workers/"
+        "path": "^packages/workers/",
+        "pathNot": "^packages/workers/import-worker/"
       },
       "to": {
         "pathNot": [
           "^packages/(rpc|sim|import|render|math|schema|domain|catalog|compile-wasm|workers)/",
+          "(^|/)node_modules/inversify/"
+        ]
+      }
+    },
+    {
+      "name": "import-worker-depends-on-rpc-import-and-storage",
+      "severity": "error",
+      "from": {
+        "path": "^packages/workers/import-worker/"
+      },
+      "to": {
+        "pathNot": [
+          "^packages/(rpc|import|math|schema|domain|catalog|compile-wasm|storage|workers)/",
           "(^|/)node_modules/inversify/"
         ]
       }
@@ -224,6 +258,28 @@
       "to": {
         "path": "(^|/)node_modules/",
         "pathNot": "(^|/)node_modules/valibot/"
+      }
+    },
+    {
+      "name": "e2e-composes-only-its-approved-packages",
+      "severity": "error",
+      "from": {
+        "path": "^tools/e2e/"
+      },
+      "to": {
+        "path": "^(packages|apps|tools/asset-pipeline)/",
+        "pathNot": "^packages/(math|schema|catalog|import|client|render|storage)/"
+      }
+    },
+    {
+      "name": "e2e-imports-only-its-tooling-from-npm",
+      "severity": "error",
+      "from": {
+        "path": "^tools/e2e/"
+      },
+      "to": {
+        "path": "(^|/)node_modules/",
+        "pathNot": "(^|/)node_modules/(valibot|inversify|vitest|playwright-core|@playwright/test)/"
       }
     },
     {
