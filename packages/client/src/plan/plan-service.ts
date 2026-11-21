@@ -20,6 +20,7 @@ import {
   type PlanChange,
   type PlanCheck,
   type PlanDelta,
+  type PlanFootprint,
   type PlanIssue,
   type PlanObstacle,
   type PlanRegion,
@@ -91,6 +92,13 @@ export type PlanPatch = Partial<
 export type TableInput = Omit<PlanTable, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
 
+export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
+  readonly footprint: Omit<PlanFootprint, "tables" | "obstacles"> & {
+    readonly tables: ReadonlyArray<TableInput>;
+    readonly obstacles: ReadonlyArray<ObstacleInput>;
+  };
+}
+
 export interface DrawnTable {
   readonly planId: string;
   readonly tableId: string;
@@ -136,6 +144,7 @@ export interface IPlanService {
   setTableTopY(y: number): void;
   onEdit(listener: (change: PlanChange) => void): () => void;
   restore(state: PlanState): void;
+  addition(plan: PlanInput): PlanChange;
 }
 
 interface UnreadableBox {
@@ -555,6 +564,31 @@ export class PlanService implements IPlanService {
     this.regions = target;
     this.active = state.activePlanId;
     this.afterChange(true);
+  }
+
+  addition(plan: PlanInput): PlanChange {
+    const { footprint } = plan;
+    const region: PlanRegion = {
+      id: this.newId("plan"),
+      name: plan.name,
+      originChunkX: plan.originChunkX,
+      originChunkZ: plan.originChunkZ,
+      footprint: {
+        roomWidthMm: footprint.roomWidthMm,
+        roomDepthMm: footprint.roomDepthMm,
+        tables: footprint.tables.map((table) => ({ id: this.newId("table"), ...table })),
+        obstacles: footprint.obstacles.map((obstacle) => ({
+          id: this.newId("obstacle"),
+          ...obstacle,
+        })),
+      },
+      maxOverhangMm: plan.maxOverhangMm,
+      maxReachMm: plan.maxReachMm,
+    };
+    return {
+      before: this.planState(),
+      after: { regions: [...this.regions, region], activePlanId: region.id },
+    };
   }
 
   createPlan(plan: NewPlan): string {

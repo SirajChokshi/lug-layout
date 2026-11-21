@@ -47,6 +47,7 @@ import {
   type MoveFrame,
   type OutlineRing,
   type BomCounter,
+  type PartSink,
   type DrawingKit,
   type EndGap,
   type PlacementPose,
@@ -635,7 +636,7 @@ export class TrackDrawing implements ExtensionSite {
     return counted;
   }
 
-  countPiece(counter: BomCounter, placement: number): void {
+  countPiece(counter: PartSink, placement: number): void {
     const { part } = this.placedAt(placement);
     counter.add(part.partIndex, this.colors.codeAt(part.color), 1);
   }
@@ -1026,19 +1027,29 @@ export class TrackDrawing implements ExtensionSite {
       if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
       const shape = this.crossingShapes.get(layout.piece(p));
       if (!shape) continue;
-      let outline = this.crossingOutlines.get(p);
-      if (!outline) {
-        outline = PlacedOutline.ofTrackPiece(shape.planOutline, layout.pose(p));
-        this.crossingOutlines.set(p, outline);
-      }
       pieces.push({
         placement: p,
-        outline,
+        outline: this.worldOutline(p, shape),
         bedLdu: layout.yPlates(p) * PLATE_LDU + shape.bedLdu,
         system: shape.system,
       });
     }
     return pieces;
+  }
+
+  laidOutline(piece: number): PlacedOutline {
+    const shape = this.crossingShapes.get(this.layout.piece(piece));
+    if (!shape) throw new Error(`placement ${piece} is not a placeable track piece`);
+    return this.worldOutline(piece, shape);
+  }
+
+  private worldOutline(p: number, shape: CrossingShape): PlacedOutline {
+    let outline = this.crossingOutlines.get(p);
+    if (!outline) {
+      outline = PlacedOutline.ofTrackPiece(shape.planOutline, this.combined.pose(p));
+      this.crossingOutlines.set(p, outline);
+    }
+    return outline;
   }
 
   runFrameOutlines(): ReadonlyArray<Float64Array> {
@@ -1743,10 +1754,18 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
-    const issues: Issue[] = [];
     if (this.layout.count > 0) {
-      issues.push({ path: "track", message: "can only be restored into an empty drawing" });
+      return {
+        ok: false,
+        issues: [{ path: "track", message: "can only be restored into an empty drawing" }],
+      };
     }
+    const lay = this.laidPieces(records);
+    return lay.ok ? { ok: true, value: this.applyTrack({ lift: [], lay: lay.value }) } : lay;
+  }
+
+  laidPieces(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<TrackPieceAt>> {
+    const issues: Issue[] = [];
     records.forEach((record, position) => {
       if (record.index !== position) {
         issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
@@ -1765,7 +1784,7 @@ export class TrackDrawing implements ExtensionSite {
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
       return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates }];
     });
-    return { ok: true, value: this.applyTrack({ lift: [], lay }) };
+    return { ok: true, value: lay };
   }
 
   chunkKeys(): ReadonlyArray<number> {

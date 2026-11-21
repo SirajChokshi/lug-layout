@@ -1,4 +1,5 @@
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import type { LduRect } from "./plan/plan-region.ts";
 
 export const NO_STUD = -0x8000_0000;
 
@@ -121,6 +122,20 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
     }
   }
   return cells;
+}
+
+export function roadwayCells(placement: RoadPlacement): ReadonlyArray<LduRect> {
+  const roadway: LduRect[] = [];
+  for (const cell of placedCells(placement)) {
+    if (cell.road === 0) continue;
+    roadway.push({
+      minX: cell.cellX * STUD_LDU,
+      minZ: cell.cellZ * STUD_LDU,
+      maxX: (cell.cellX + 1) * STUD_LDU,
+      maxZ: (cell.cellZ + 1) * STUD_LDU,
+    });
+  }
+  return roadway;
 }
 
 function edgeLine(side: RoadSide, cellX: number, cellZ: number): number {

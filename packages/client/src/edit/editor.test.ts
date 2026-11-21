@@ -27,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  LibraryPartsFile,
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
@@ -53,10 +54,12 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
+import type { PlanArchive } from "@brr/schema/plan";
 import {
   shardEntry,
   shardName,
   worldManifest,
+  type ImportedFile,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
@@ -93,6 +96,7 @@ import {
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   RAIL_YARD,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
@@ -114,6 +118,7 @@ import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
@@ -142,6 +147,8 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 const BASEPLATE = "ldraw:3811@2";
+const USER_BRICK = "brick-2x4";
+const HELD_BRICK = `omr:${USER_BRICK}`;
 const ROAD_T_JUNCTION = "ldraw:44341p02@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
@@ -301,6 +308,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
     return this.loader.loadRollingDiagnostics(lod);
+  }
+
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.loader.loadLibraryParts(lod);
   }
 }
 
@@ -787,6 +798,226 @@ it("runs every train on the rails, an imported one included, from exactly where 
   expect(sameStanding(standingPoses(backend), parked)).toBe(true);
 }, 240_000);
 
+const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
+
+function userFileWithOwnPart(name: string, partLicense: string | null): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      `0 FILE ${name}`,
+      `0 ${name}, a user's own model`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout test",
+      `0 !LICENSE ${CC_BY_4}`,
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 my-brick.dat",
+      "0 NOFILE",
+      "0 FILE my-brick.dat",
+      "0 My brick, the user's own part",
+      "0 Name: my-brick.dat",
+      "0 Author: lug-layout test [James Jessiman]",
+      "0 !LDRAW_ORG Unofficial_Part",
+      ...(partLicense === null ? [] : [`0 !LICENSE ${partLicense}`]),
+      "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "0 NOFILE",
+      "",
+    ].join("\n"),
+  );
+}
+
+async function importUserFile(editor: IEditor, name: string, bytes: Uint8Array): Promise<string> {
+  expect(await editor.importModelFile({ name, bytes })).toBe(true);
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
+  const item = editor.snapshot().modelImport?.item;
+  if (!item) throw new Error(`${name} didn't import`);
+  return item;
+}
+
+function planWithoutIds(plans: IPlanService) {
+  return plans.plans().map(({ id: _plan, footprint, ...region }) => ({
+    ...region,
+    tables: footprint.tables.map(({ id: _table, ...table }) => table),
+    obstacles: footprint.obstacles.map(({ id: _obstacle, ...obstacle }) => obstacle),
+    room: [footprint.roomWidthMm, footprint.roomDepthMm],
+  }));
+}
+
+function startImportingEditor(
+  repository: (archives: IWorldRepository) => IWorldRepository = (archives) =>
+    new MemoryRepository(archives),
+) {
+  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    const archives = bound.get(WORLD_REPOSITORY);
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository(archives));
+  });
+}
+
+it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
+  const saving = await startImportingEditor();
+  const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
+  const shedFile = userFileWithOwnPart("my-shed.mpd", null);
+  const cottage = await importUserFile(saving.editor, "my-cottage.mpd", cottageFile);
+  const shed = await importUserFile(saving.editor, "my-shed.mpd", shedFile);
+  drawOval(saving.editor, saving.backend);
+  const place = placer(saving.editor, saving.backend);
+  await place(BASEPLATE, 1600, 1600);
+  await place(cottage, 1600, 1600);
+  await place(shed, -1600, 1600);
+  const inPlan = { poses: posesOf(saving.editor), track: saving.editor.dump().laidTrack };
+  await place(BASEPLATE, 19_200, 19_200);
+  saving.editor.chooseItem(null);
+  const savingPlans = saving.container.get(PLAN_SERVICE);
+  const { planId } = savingPlans.drawTable({ minX: -2560, minZ: -2560, maxX: 2560, maxZ: 2560 });
+  savingPlans.updatePlan(planId, { maxOverhangMm: 16 });
+  const savedPlan = planWithoutIds(savingPlans);
+  await vi.waitFor(() => expect(savingPlans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const saved = await saving.editor.exportPlan(planId);
+  if (!saved) throw new Error(`the plan wasn't saved: ${saving.editor.snapshot().fileError}`);
+  const archive = await saving.container.get(WORLD_REPOSITORY).readPlanArchive(saved.bytes);
+  const printable = saving.container.get(PLAN_SHEET_SERVICE).printable(saving.editor, planId);
+  const partsList = await saving.container
+    .get(BOM_SERVICE)
+    .billOfMaterials(saving.editor, { kind: "plan", planId });
+  const reopenedOnItself = await saving.editor.openPlan(saved.bytes);
+
+  const fresh = await startImportingEditor();
+  const opened = await fresh.editor.openPlan(saved.bytes);
+  const errorAfterOpen = fresh.editor.snapshot().fileError;
+  const freshPlans = fresh.container.get(PLAN_SERVICE);
+  const reopened = {
+    poses: posesOf(fresh.editor),
+    track: fresh.editor.dump().laidTrack,
+    plan: planWithoutIds(freshPlans),
+  };
+  const freshPlanId = freshPlans.activePlanId() ?? "";
+  await vi.waitFor(() => expect(freshPlans.unmeasuredCount(freshPlanId)).toBe(0), {
+    timeout: 60_000,
+  });
+  const resaved = await fresh.editor.exportPlan(freshPlanId);
+  const reread =
+    resaved && (await fresh.container.get(WORLD_REPOSITORY).readPlanArchive(resaved.bytes));
+  const undoLabel = fresh.editor.snapshot().history.undoLabel;
+  fresh.editor.undo(0);
+  const undone = { poses: posesOf(fresh.editor), track: fresh.editor.dump().laidTrack };
+  const undonePlans = freshPlans.plans().length;
+  fresh.editor.redo(0);
+
+  expect(saved.fileName).toBe("Plan-1.brrplan.zip");
+  expect(
+    archive.ok && new Map(archive.value.imports.map((file) => [file.name, file.bytes])),
+  ).toEqual(
+    new Map([
+      ["my-cottage.mpd", cottageFile],
+      ["my-shed.mpd", shedFile],
+    ]),
+  );
+  expect(archive.ok && archive.value.outputs).toEqual({
+    "plan.svg": printable,
+    "parts.csv": partsList.files.plainCsv,
+    "bricklink.xml": partsList.files.brickLinkXml,
+    "rebrickable.csv": partsList.files.rebrickableCsv,
+  });
+  expect(archive.ok && archive.value.credits).toContain(
+    `my-brick.dat: My brick, the user's own part, by lug-layout test [James Jessiman], ${CC_BY_4}`,
+  );
+  expect(reopenedOnItself).toBe(false);
+  expect(saving.editor.snapshot().fileError).toContain(OVERLAP);
+  expect(opened).toBe(true);
+  expect(errorAfterOpen).toBeNull();
+  expect(reopened).toEqual({ ...inPlan, plan: savedPlan });
+  const { outputs: savedOutputs, ...savedData } = archive.ok ? archive.value : { outputs: null };
+  const { outputs: resavedOutputs, ...resavedData } = reread?.ok ? reread.value : { outputs: null };
+  expect(resavedData).toEqual(savedData);
+  expect(resavedOutputs?.["parts.csv"]).toBe(savedOutputs?.["parts.csv"]);
+  expect(undoLabel).toBe(
+    `open plan (${inPlan.poses.length} placements, ${inPlan.track.length} track pieces)`,
+  );
+  expect({ ...undone, plans: undonePlans }).toEqual({ poses: [], track: [], plans: 0 });
+  expect({ poses: posesOf(fresh.editor), track: fresh.editor.dump().laidTrack }).toEqual(inPlan);
+}, 240_000);
+
+it.each([
+  {
+    held: "a brick on top resting on bricks outside the plan",
+    clicks: [
+      [580, 300],
+      [580, 300],
+      [620, 300],
+    ],
+    poses: [`${HELD_BRICK} 580,300 y0`, `${HELD_BRICK} 580,300 y3`, `${HELD_BRICK} 620,300 y6`],
+    refusal:
+      "brick-2x4: rests only on models outside the plan, so it wouldn't be held where the plan opens",
+  },
+  {
+    held: "two bricks holding each other up off the table on a brick outside the plan",
+    clicks: [
+      [580, 300],
+      [620, 300],
+      [620, 300],
+    ],
+    poses: [`${HELD_BRICK} 580,300 y0`, `${HELD_BRICK} 620,300 y3`, `${HELD_BRICK} 620,300 y6`],
+    refusal:
+      "Plan 1: has no model standing on the table, so nothing would hold it up where it opens",
+  },
+])(
+  "refuses to save a plan its own models and the table don't hold up, with $held, and saves it once the plan takes in what holds them",
+  async ({ clicks, poses, refusal }) => {
+    const { editor, backend, catalog, container } = await startEditor(
+      [],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    editor.setPlacementMode("precise");
+    const place = placer(editor, backend);
+    for (const [x, z] of clicks) await place(HELD_BRICK, x ?? 0, z ?? 0);
+    editor.chooseItem(null);
+    const plans = container.get(PLAN_SERVICE);
+    const { planId, tableId } = plans.drawTable({ minX: 640, minZ: 0, maxX: 1280, maxZ: 640 });
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const refused = await editor.exportPlan(planId);
+    const refusalText = editor.snapshot().fileError;
+    plans.placeTable(planId, tableId, { minX: 0, minZ: 0, maxX: 1280, maxZ: 640 });
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const saved = await editor.exportPlan(planId);
+
+    expect(posesOf(editor)).toEqual(poses);
+    expect(refused).toBeNull();
+    expect(refusalText).toContain(refusal);
+    expect(saved?.fileName).toBe("Plan-1.brrplan.zip");
+    expect(editor.snapshot().fileError).toBeNull();
+  },
+  240_000,
+);
+
+it("keeps an opened plan open, and says so, when its carried model files can't be stored afterwards", async () => {
+  const saving = await startImportingEditor();
+  const cottage = await importUserFile(
+    saving.editor,
+    "my-cottage.mpd",
+    userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+  );
+  await placer(saving.editor, saving.backend)(cottage, 0, 0);
+  saving.editor.chooseItem(null);
+  const plans = saving.container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -640, minZ: -640, maxX: 640, maxZ: 640 });
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const saved = await saving.editor.exportPlan(planId);
+  if (!saved) throw new Error(`the plan wasn't saved: ${saving.editor.snapshot().fileError}`);
+
+  const opening = await startImportingEditor((archives) => new FileRefusingRepository(archives));
+  const opened = await opening.editor.openPlan(saved.bytes);
+
+  expect(opened).toBe(true);
+  expect(opening.editor.snapshot().fileError).toMatch(
+    /^the plan opened, but its model files couldn't be stored on this device \(QuotaExceededError\)/u,
+  );
+  expect(posesOf(opening.editor)).toEqual(posesOf(saving.editor));
+  expect(opening.editor.snapshot().history.undo).toBe("open-plan");
+}, 240_000);
+
 it("keeps the trains on the rails in the one undo history and in the saved world: delete, undo and redo a train, and reopen the world", async () => {
   const repository = new MemoryRepository();
   const { editor, backend, catalog } = await startEditor(
@@ -959,7 +1190,15 @@ interface MemoryWorld {
 
 class MemoryRepository implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
+  private readonly imports = new Map<string, ImportedFile>();
   private nextId = 1;
+
+  constructor(private readonly archives: IWorldRepository | null = null) {}
+
+  private planArchives(): IWorldRepository {
+    if (!this.archives) throw new Error("this test packs and reads no plan files");
+    return this.archives;
+  }
 
   storedPlacements(): number {
     let count = 0;
@@ -1044,10 +1283,26 @@ class MemoryRepository implements IWorldRepository {
     return this.readArchive();
   }
 
-  async putImportedFile(): Promise<void> {}
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    return this.planArchives().packPlanArchive(archive);
+  }
 
-  async importedFile(): Promise<undefined> {
-    return undefined;
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    return this.planArchives().readPlanArchive(bytes);
+  }
+
+  async putImportedFile(file: ImportedFile): Promise<void> {
+    this.imports.set(file.sha256, file);
+  }
+
+  async importedFile(sha256: string): Promise<ImportedFile | undefined> {
+    return this.imports.get(sha256);
+  }
+}
+
+class FileRefusingRepository extends MemoryRepository {
+  override async putImportedFile(): Promise<void> {
+    throw new Error("QuotaExceededError");
   }
 }
 
@@ -3990,8 +4245,6 @@ it.each([
 
 const USER_ROW = "baseplate-row";
 const HELD_ROW = `omr:${USER_ROW}`;
-const USER_BRICK = "brick-2x4";
-const HELD_BRICK = `omr:${USER_BRICK}`;
 
 type Ground = readonly [number, number];
 
@@ -6349,6 +6602,8 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
   "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
   "throw-switch": "throws a switch without placing a model",
   plan: "edits plan regions only",
+  "open-plan":
+    "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
 };
 
 it.each(
@@ -6943,4 +7198,96 @@ it("fills a user's track container across a road plate's roadway as track the pl
   });
   expect(acrossTrack?.refused).toBeGreaterThan(0);
   expect(acrossTrack?.placed).toBeGreaterThan(0);
+}, 120_000);
+
+const MY_COTTAGE = [
+  "0 Custom cottage built from official parts",
+  "0 Name: my-cottage.ldr",
+  "0 Author: lug-layout tests, after the experience audit's custom cottage",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3867.dat",
+  "1 15 -40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 15 60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 4 -40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 -40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "",
+].join("\n");
+
+function sheetTexts(svg: string): string[] {
+  return [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map((match) =>
+    (match[1] ?? "").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"),
+  );
+}
+
+function sheetPaths(svg: string, kind: string): string[] {
+  return [...svg.matchAll(/<path class="([^"]*)" d="([^"]*)"\/>/gu)]
+    .filter((match) => (match[1] ?? "").split(" ")[0] === kind)
+    .map((match) => match[2] ?? "");
+}
+
+it("prints a plan of tables drawn on the canvas, a road plate with track laid across it and a user's own cottage: tables dimensioned in studs and cm, every placement numbered in plan order, track by its outline, and a key that totals the parts list", async () => {
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) =>
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER))),
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -640, minZ: -640, maxX: 640, maxZ: 640 });
+  plans.drawTable({ minX: 640, minZ: -640, maxX: 1280, maxZ: 640 });
+  const place = placer(editor, backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  await editor.importModelFile({
+    name: "my-cottage.ldr",
+    bytes: new TextEncoder().encode(MY_COTTAGE),
+  });
+  const cottage = editor.snapshot().modelImport?.item ?? "";
+  await place(cottage, 960, 320);
+  editor.chooseItem(null);
+  await supportChecked(editor);
+
+  const svg = container.get(PLAN_SHEET_SERVICE).printable(editor, planId);
+  const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "plan", planId });
+  const texts = sheetTexts(svg);
+  const key = texts.slice(texts.indexOf("Key: numbers on the plan") + 4);
+  const rows = Array.from({ length: 5 }, (_, i) => key.slice(i * 3, i * 3 + 3));
+
+  expect(texts).toEqual(
+    expect.arrayContaining([
+      "64 studs · 51.2 cm",
+      "32 studs · 25.6 cm",
+      "room 96 studs · 76.8 cm",
+      "Parts list: 15 parts in 5 part and colour lines, from 5 placements",
+      expect.stringMatching(/^Not buildable as planned yet: /u),
+    ]),
+  );
+  expect(rows).toEqual([
+    ["1", "1", expect.stringMatching(/^44336p04 .* at 0, 0$/u)],
+    ["2", "11", expect.stringMatching(/^my-cottage\.ldr.* at 960, 320$/u)],
+    ["3", "1", expect.stringMatching(/^Train Track 9V Straight #1/u)],
+    ["4", "1", expect.stringMatching(/^Train Track 9V Straight #2/u)],
+    ["5", "1", expect.stringMatching(/^Train Track 9V Straight #3/u)],
+  ]);
+  expect(key.slice(15, 17)).toEqual(["15", "Total: 5 placements"]);
+  expect({ parts: bom.parts, placements: bom.placements, lines: bom.ldraw.length }).toEqual({
+    parts: 15,
+    placements: 5,
+    lines: 5,
+  });
+
+  expect(sheetPaths(svg, "model")).toHaveLength(2);
+  expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
+  expect(svg).toContain('class="roadway"');
+  expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 }, 120_000);
