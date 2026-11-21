@@ -30,6 +30,7 @@ import type {
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
+  CAMERA_FOV_DEGREES,
   SCENE_BACKEND,
   INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
@@ -37,6 +38,7 @@ import {
   type ChunkInstances,
   type ChunkTier,
   type FarModelPlacement,
+  type GhostVerdict,
   type ISceneBackend,
   type LookSettings,
   type NeededMeshListener,
@@ -45,14 +47,18 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
+import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { STUD_LDU } from "@brr/math";
+import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
+import type { PlanArchive } from "@brr/schema/plan";
 import {
   shardEntry,
   shardName,
   worldManifest,
+  type ImportedFile,
   type WorldArchive,
   type WorldHeader,
   type WorldIndexEntry,
@@ -69,31 +75,67 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
+import {
+  commandEnabled,
+  commandForKey,
+  runEditorAction,
+  startPlay,
+  type CommandId,
+} from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
   BOM_SERVICE,
+  CONNECTION_SOLVER,
   CONNECTOR_TABLES,
   EDITOR,
+  EDITOR_CAMERA,
   MODEL_IMPORTER,
-  PLACEMENT_SEARCH,
-  TRAIN_PLAY,
   PLACEABLE_CATALOG,
+  PLACEMENT_SEARCH,
+  PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
+  RAIL_YARD,
+  RUNNING_GEAR,
+  RUNNING_GEAR_OVERRIDES,
+  SIM_CLIENT,
+  SNAP_SHAPES,
+  SPARSE_CONNECTOR_FINDER,
+  TRAIN_PLAY,
+  WORLD_SESSION,
 } from "../tokens.ts";
+import { MemoryOverrideStore } from "../running-gear/memory-override-store.test-support.ts";
+import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
+import {
+  InThreadModelImporter,
+  pinnedOmrModel,
+} from "../import/in-thread-importer.test-support.ts";
+import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
+import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
+import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
+import { typedArraysConstructedDuring } from "../connect/typed-arrays.test-support.ts";
+import { mateCounts } from "./placement-hover-view.ts";
+import type { PlacementHover } from "./placement-hover.ts";
+import { placementModeSwitchEnabled } from "./placement-mode.ts";
+import type { PlaySnapshot } from "../play/train-play.ts";
+import { ViewCamera } from "../camera/view-camera.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
-const SET_WITHOUT_TRACK = "10185-1";
+const PLAIN_MODULE_MODEL = "mils-plain";
+const OPEN_TABLE_X = 2_560;
 const RAY_HEIGHT_LDU = 10_000;
+const NDC_SPAN_LDU = 4_000;
+const STUD = 20;
 const STUDLESS_SET = "10016-1";
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -104,6 +146,9 @@ const NO_LOOK: LookSettings = {
   oit: false,
 };
 const BASEPLATE = "ldraw:3811@2";
+const USER_BRICK = "brick-2x4";
+const HELD_BRICK = `omr:${USER_BRICK}`;
+const ROAD_T_JUNCTION = "ldraw:44341p02@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -266,7 +311,7 @@ class ModelSubsetLoader implements IPartBundleLoader {
 }
 
 interface AimedBackend {
-  aim(x: number, z: number): void;
+  aim(x: number, z: number, slope?: number): void;
 }
 
 class HeadlessBackend implements ISceneBackend {
@@ -314,29 +359,73 @@ class HeadlessBackend implements ISceneBackend {
     this.chunks.delete(key);
   }
   setNeededMeshListener(): void {}
-  setGhost(): void {}
-  placeGhost(): void {}
-  setSelectionBox(): void {}
+  ghostInstances = 0;
+  ghost: { readonly x: number; readonly z: number; readonly rot: number } | null = null;
+  readonly ghostPose: number[] = [];
+  setGhost(model: ChunkInstances | null): void {
+    this.ghostInstances = model?.count ?? 0;
+    this.ghost = null;
+  }
+  placeGhost(x: number, yLdu: number, z: number, rot: number): void {
+    this.ghost = { x, z, rot };
+    this.ghostPose.splice(0, this.ghostPose.length, x, yLdu, z, rot);
+  }
+  selectionBoxes = 0;
+  setSelectionBoxes(boxes: ReadonlyArray<unknown>): void {
+    this.selectionBoxes = boxes.length;
+  }
+  verdict: GhostVerdict | null = null;
+  setGhostVerdict(verdict: GhostVerdict | null): void {
+    this.verdict = verdict;
+  }
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
   setGround(): void {}
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  deleteVehicle(): void {}
+  readonly vehicles = new Map<number, ReadonlyArray<number>>();
+  setVehicle(vehicle: number): void {
+    this.vehicles.set(vehicle, []);
+  }
+  setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
+    this.vehicles.set(vehicle, [x, y, z, yaw]);
+  }
+  deleteVehicle(vehicle: number): void {
+    this.vehicles.delete(vehicle);
+  }
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
-  aim(x: number, z: number): void {
+  private aimSlope = 0;
+  viewHalfWidthLdu = NDC_SPAN_LDU;
+  aim(x: number, z: number, slope = 0): void {
     this.aimX = x;
     this.aimZ = z;
+    this.aimSlope = slope;
   }
-  rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
-    out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
+  camera: ViewCamera | null = null;
+  rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    if (this.camera) {
+      this.camera.rayThrough(ndcX, ndcY, out);
+      return;
+    }
+    const back = this.aimSlope * RAY_HEIGHT_LDU;
+    out.set([
+      this.aimX + ndcX * this.viewHalfWidthLdu,
+      RAY_HEIGHT_LDU,
+      this.aimZ - ndcY * NDC_SPAN_LDU + back,
+      0,
+      -1,
+      -this.aimSlope,
+    ]);
   }
   setView(): void {}
   resize(): void {}
-  renderFrame(): void {}
+  onRender: (() => void) | null = null;
+  renderFrame(): void {
+    this.onRender?.();
+  }
   needsFrame(): boolean {
     return true;
   }
@@ -363,7 +452,7 @@ async function startEditor(
   models: ReadonlyArray<string> | null = [PLACEABLE_SET, STUDLESS_SET],
   fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
   userModels: ReadonlyArray<string> = [],
-  importer: IModelImporter | null = null,
+  rebind: (container: Container) => void = () => undefined,
 ) {
   const backend = new HeadlessBackend();
   let scheduled: FrameRequestCallback | null = null;
@@ -394,7 +483,7 @@ async function startEditor(
       );
   }
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
-  if (importer !== null) container.rebind(MODEL_IMPORTER).toConstantValue(importer);
+  rebind(container);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -529,84 +618,493 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
   expect(snapshot.credits?.models.map((credit) => credit.name)).toContain(STUDLESS_SET);
 }, 120_000);
 
-it("offers exactly the placed models with running gear as trains under their palette labels, after every place, delete and undo, and Play takes its train from them when it opens", async () => {
-  const { editor, backend, container, catalog } = await startEditor([
-    SET_WITHOUT_TRACK,
-    "10205-1",
-    "10133-1",
-  ]);
-  const play = container.get(TRAIN_PLAY);
-  const place = placer(editor, backend);
-  const set = `omr:${SET_WITHOUT_TRACK}`;
-  const myOwnTrain = "omr:10205-1";
-  const locomotive = "omr:10133-1";
-  const trains = () => editor.playSetup()?.models.map((model) => model.name);
-  const openPlay = async () => {
-    startPlay(editor, play);
-    await vi.waitFor(() => expect(play.snapshot().status).toBe("error"));
-    return play.snapshot().error;
+const LOCOMOTIVE = "omr:10133-1";
+const LOCOMOTIVE_LABEL = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
+const CABOOSE = "omr:10014-1";
+const MY_OWN_TRAIN = "omr:10205-1";
+const DRAG_STEPS = 8;
+const TRAIN_SPEED_LDU_PER_S = 200;
+const RUN_TICKS = 180;
+const SAME_POSE_LDU = 1e-9;
+const PIVOT_SHIFT_LDU = 8;
+
+function onLattice(ldu: number): number {
+  return Math.round(ldu / STUD_LDU) * STUD_LDU;
+}
+
+function drawOval(editor: IEditor, backend: AimedBackend): void {
+  editor.chooseItem(TRACK_ITEM_ID);
+  const drag = (from: { x: number; z: number }, to: { x: number; z: number }) => {
+    backend.aim(from.x, from.z);
+    editor.dragStart(0, 0);
+    for (let step = 1; step <= DRAG_STEPS; step++) {
+      const t = step / DRAG_STEPS;
+      backend.aim(from.x + (to.x - from.x) * t, from.z + (to.z - from.z) * t);
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
   };
-  const noTrack = expect.stringContaining("Lay some track first");
+  drag({ x: -400, z: 0 }, { x: 400, z: 0 });
+  const ends = editor.dump().trackEnds;
+  const east = ends.find((end) => end.heading === 0);
+  const west = ends.find((end) => end.heading === ZETA16_ORDER / 2);
+  if (!east || !west) throw new Error(`a straight run has two ends: ${JSON.stringify(ends)}`);
+  drag(
+    { x: onLattice(east.xLdu), z: onLattice(east.zLdu) },
+    { x: onLattice(west.xLdu), z: onLattice(west.zLdu) },
+  );
+  if (editor.dump().trackEnds.length > 0) throw new Error("the oval did not close");
+  editor.chooseItem(null);
+}
 
-  const nothingPlaced = { trains: trains(), play: await openPlay() };
-  for (const item of [set, myOwnTrain, locomotive]) await loadCatalogItem(catalog, item);
-  await place(set, 0, 0);
-  const setPlaced = trains();
-  await place(myOwnTrain, 1600, 0);
-  const myOwnTrainPlaced = trains();
-  await place(locomotive, 0, 1600);
-  await place(myOwnTrain, 1600, 1600);
-  const allPlaced = trains();
-  const locomotiveLabel = editor.playSetup()?.models[0]?.label;
-  play.chooseTrain("10133-1");
-  selectAt(editor, backend, 0, 1600);
-  editor.deleteSelection(0);
-  const locomotiveDeleted = trains();
-  const playAfterDelete = await openPlay();
-  editor.undo(0);
-  const deleteUndone = trains();
+async function myBlueCaboose(): Promise<Uint8Array> {
+  const official = await pinnedOmrModel("10014-1.mpd");
+  const custom = official
+    .replaceAll("10014 - ", "my blue caboose - ")
+    .split("\n")
+    .map((line) => line.replace(/^1 0 /u, "1 1 "))
+    .join("\n");
+  return new TextEncoder().encode(custom);
+}
 
-  expect({
-    nothingPlaced,
-    setPlaced,
-    myOwnTrainPlaced,
-    allPlaced,
-    locomotiveLabel,
-    locomotiveDeleted,
-    playAfterDelete,
-    deleteUndone,
-  }).toEqual({
-    nothingPlaced: { trains: [], play: "No train is placed on the layout." },
-    setPlaced: [],
-    myOwnTrainPlaced: ["10205-1"],
-    allPlaced: ["10133-1", "10205-1"],
-    locomotiveLabel: "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
-    locomotiveDeleted: ["10205-1"],
-    playAfterDelete: noTrack,
-    deleteUndone: ["10133-1", "10205-1"],
+function trainsOf(editor: IEditor) {
+  return editor.snapshot().trains.map((train) => [train.item, train.onRails]);
+}
+
+function standingPoses(backend: HeadlessBackend): ReadonlyArray<ReadonlyArray<number>> {
+  return [...backend.vehicles.values()].toSorted(
+    (a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0),
+  );
+}
+
+function sameStanding(
+  a: ReadonlyArray<ReadonlyArray<number>>,
+  b: ReadonlyArray<ReadonlyArray<number>>,
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((pose, i) =>
+      pose.every((value, k) => Math.abs(value - (b[i]?.[k] ?? NaN)) < SAME_POSE_LDU),
+    )
+  );
+}
+
+it("seats a held train on the rails of a hand-drawn oval where the cursor points at them, places it as a model away from them, and refuses a second train on track a train already stands on", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    [LOCOMOTIVE, CABOOSE].map((id) => id.slice(4)),
+  );
+  drawOval(editor, backend);
+  for (const item of [LOCOMOTIVE, CABOOSE]) await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+
+  const onRails = await place(LOCOMOTIVE, 0, 0);
+  const onRailsVehicles = backend.vehicles.size;
+  const sameTrack = await place(CABOOSE, 100, 0);
+  const farSide = await place(CABOOSE, -100, 1600);
+  const awayFromRails = await place(LOCOMOTIVE, 0, 4000);
+
+  expect(onRails).toMatchObject({ placements: 0, refusedClicks: 0 });
+  expect(onRailsVehicles).toBeGreaterThan(0);
+  expect(sameTrack).toMatchObject({
+    placements: 0,
+    refusedClicks: 1,
+    reason: expect.stringContaining("already stands on"),
   });
+  expect(farSide).toMatchObject({ placements: 0, refusedClicks: 1 });
+  expect(awayFromRails).toMatchObject({ placements: 1, refusedClicks: 1 });
+  expect(trainsOf(editor)).toEqual([
+    [LOCOMOTIVE, true],
+    [CABOOSE, true],
+  ]);
 }, 120_000);
 
-it("runs Play on the track inside a placed set, with the placed train", async () => {
-  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET, "10205-1"]);
-  const play = container.get(TRAIN_PLAY);
-  const place = placer(editor, backend);
-  for (const item of [`omr:${PLACEABLE_SET}`, "omr:10205-1"]) {
-    await loadCatalogItem(catalog, item);
-  }
-  await place(`omr:${PLACEABLE_SET}`, 0, 0);
-  await place("omr:10205-1", 1600, 0);
-  const setTrack = editor.snapshot().track?.modelPieces ?? 0;
+async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<string | null> {
+  gear.select(model, 0);
+  const pivot = gear.snapshot().view?.pivots[0];
+  if (!pivot) throw new Error(`${model} has no bogie pivot`);
+  gear.setPivot(0, pivot[0] + PIVOT_SHIFT_LDU, pivot[2]);
+  await gear.save();
+  return gear.snapshot().error;
+}
 
-  startPlay(editor, play);
-  await new Promise((resolve) => setTimeout(resolve, 0));
+it("runs every train on the rails, an imported one included, from exactly where each stands on its saved running gear, and stands them back there when Play stops", async () => {
+  const sim = new InThreadSim();
+  const overrides = new MemoryOverrideStore();
+  const { editor, backend, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+      bound.rebind(RUNNING_GEAR_OVERRIDES).toConstantValue(overrides);
+    },
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const imported = await editor.importModelFile({
+    name: "my-blue-caboose.mpd",
+    bytes: await myBlueCaboose(),
+  });
+  const custom = editor.snapshot().modelImport?.item ?? "";
+  const place = placer(editor, backend);
+  await place(LOCOMOTIVE, 0, 0);
+  await place(custom, -100, 1600);
+  editor.chooseItem(null);
+  const gear = container.get(RUNNING_GEAR);
+  await vi.waitFor(() => expect(gear.snapshot().models).toHaveLength(2));
+  const detected = standingPoses(backend);
+  const saveError = await saveShiftedPivot(gear, LOCOMOTIVE.slice(4));
+  await vi.waitFor(() => expect(sameStanding(standingPoses(backend), detected)).toBe(false));
+  const parked = standingPoses(backend);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
   const started = play.snapshot();
+  const playing = standingPoses(backend);
+  const trainAt = () => {
+    const data = sim.latestFrame()?.data ?? new Float64Array(0);
+    const { trainEdgeStart, trainOffsetStart } = sim.frameLayout();
+    return [0, 1].map((t) => [data[trainEdgeStart + t], data[trainOffsetStart + t]]);
+  };
+  const before = trainAt();
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  play.chooseDriven(1);
+  play.drive(-TRAIN_SPEED_LDU_PER_S);
+  sim.advance(RUN_TICKS);
+  const after = trainAt();
   play.stop();
 
-  expect(setTrack).toBeGreaterThan(0);
-  expect(editor.playSetup()?.track.layout.count).toBe(setTrack);
-  expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
-  expect(started).toMatchObject({ status: "loading", error: null });
+  expect(saveError).toBeNull();
+  expect(imported).toBe(true);
+  expect(custom).toMatch(/^import:/u);
+  expect(started).toMatchObject({ status: "running", error: null });
+  expect(started.trains.map((train) => train.label)).toEqual([
+    "10133-1 Burlington Northern Santa Fe Locomotive (2004)",
+    "my-blue-caboose.mpd",
+  ]);
+  expect(parked.length).toBeGreaterThan(0);
+  expect(sameStanding(playing, parked)).toBe(true);
+  expect(after.every((position, t) => JSON.stringify(position) !== JSON.stringify(before[t]))).toBe(
+    true,
+  );
+  expect(sameStanding(standingPoses(backend), parked)).toBe(true);
+}, 240_000);
+
+const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
+
+function userFileWithOwnPart(name: string, partLicense: string | null): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      `0 FILE ${name}`,
+      `0 ${name}, a user's own model`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout test",
+      `0 !LICENSE ${CC_BY_4}`,
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 my-brick.dat",
+      "0 NOFILE",
+      "0 FILE my-brick.dat",
+      "0 My brick, the user's own part",
+      "0 Name: my-brick.dat",
+      "0 Author: lug-layout test [James Jessiman]",
+      "0 !LDRAW_ORG Unofficial_Part",
+      ...(partLicense === null ? [] : [`0 !LICENSE ${partLicense}`]),
+      "1 16 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "0 NOFILE",
+      "",
+    ].join("\n"),
+  );
+}
+
+async function importUserFile(editor: IEditor, name: string, bytes: Uint8Array): Promise<string> {
+  expect(await editor.importModelFile({ name, bytes })).toBe(true);
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0), { timeout: 60_000 });
+  const item = editor.snapshot().modelImport?.item;
+  if (!item) throw new Error(`${name} didn't import`);
+  return item;
+}
+
+function planWithoutIds(plans: IPlanService) {
+  return plans.plans().map(({ id: _plan, footprint, ...region }) => ({
+    ...region,
+    tables: footprint.tables.map(({ id: _table, ...table }) => table),
+    obstacles: footprint.obstacles.map(({ id: _obstacle, ...obstacle }) => obstacle),
+    room: [footprint.roomWidthMm, footprint.roomDepthMm],
+  }));
+}
+
+function startImportingEditor(
+  repository: (archives: IWorldRepository) => IWorldRepository = (archives) =>
+    new MemoryRepository(archives),
+) {
+  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    const archives = bound.get(WORLD_REPOSITORY);
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository(archives));
+  });
+}
+
+it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
+  const saving = await startImportingEditor();
+  const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
+  const shedFile = userFileWithOwnPart("my-shed.mpd", null);
+  const cottage = await importUserFile(saving.editor, "my-cottage.mpd", cottageFile);
+  const shed = await importUserFile(saving.editor, "my-shed.mpd", shedFile);
+  drawOval(saving.editor, saving.backend);
+  const place = placer(saving.editor, saving.backend);
+  await place(BASEPLATE, 1600, 1600);
+  await place(cottage, 1600, 1600);
+  await place(shed, -1600, 1600);
+  const inPlan = { poses: posesOf(saving.editor), track: saving.editor.dump().laidTrack };
+  await place(BASEPLATE, 19_200, 19_200);
+  saving.editor.chooseItem(null);
+  const savingPlans = saving.container.get(PLAN_SERVICE);
+  const { planId } = savingPlans.drawTable({ minX: -2560, minZ: -2560, maxX: 2560, maxZ: 2560 });
+  savingPlans.updatePlan(planId, { maxOverhangMm: 16 });
+  const savedPlan = planWithoutIds(savingPlans);
+  await vi.waitFor(() => expect(savingPlans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const saved = await saving.editor.exportPlan(planId);
+  if (!saved) throw new Error(`the plan wasn't saved: ${saving.editor.snapshot().fileError}`);
+  const archive = await saving.container.get(WORLD_REPOSITORY).readPlanArchive(saved.bytes);
+  const printable = saving.container.get(PLAN_SHEET_SERVICE).printable(saving.editor, planId);
+  const partsList = await saving.container
+    .get(BOM_SERVICE)
+    .billOfMaterials(saving.editor, { kind: "plan", planId });
+  const reopenedOnItself = await saving.editor.openPlan(saved.bytes);
+
+  const fresh = await startImportingEditor();
+  const opened = await fresh.editor.openPlan(saved.bytes);
+  const errorAfterOpen = fresh.editor.snapshot().fileError;
+  const freshPlans = fresh.container.get(PLAN_SERVICE);
+  const reopened = {
+    poses: posesOf(fresh.editor),
+    track: fresh.editor.dump().laidTrack,
+    plan: planWithoutIds(freshPlans),
+  };
+  const freshPlanId = freshPlans.activePlanId() ?? "";
+  await vi.waitFor(() => expect(freshPlans.unmeasuredCount(freshPlanId)).toBe(0), {
+    timeout: 60_000,
+  });
+  const resaved = await fresh.editor.exportPlan(freshPlanId);
+  const reread =
+    resaved && (await fresh.container.get(WORLD_REPOSITORY).readPlanArchive(resaved.bytes));
+  const undoLabel = fresh.editor.snapshot().history.undoLabel;
+  fresh.editor.undo(0);
+  const undone = { poses: posesOf(fresh.editor), track: fresh.editor.dump().laidTrack };
+  const undonePlans = freshPlans.plans().length;
+  fresh.editor.redo(0);
+
+  expect(saved.fileName).toBe("Plan-1.brrplan.zip");
+  expect(
+    archive.ok && new Map(archive.value.imports.map((file) => [file.name, file.bytes])),
+  ).toEqual(
+    new Map([
+      ["my-cottage.mpd", cottageFile],
+      ["my-shed.mpd", shedFile],
+    ]),
+  );
+  expect(archive.ok && archive.value.outputs).toEqual({
+    "plan.svg": printable,
+    "parts.csv": partsList.files.plainCsv,
+    "bricklink.xml": partsList.files.brickLinkXml,
+    "rebrickable.csv": partsList.files.rebrickableCsv,
+  });
+  expect(archive.ok && archive.value.credits).toContain(
+    `my-brick.dat: My brick, the user's own part, by lug-layout test [James Jessiman], ${CC_BY_4}`,
+  );
+  expect(reopenedOnItself).toBe(false);
+  expect(saving.editor.snapshot().fileError).toContain(OVERLAP);
+  expect(opened).toBe(true);
+  expect(errorAfterOpen).toBeNull();
+  expect(reopened).toEqual({ ...inPlan, plan: savedPlan });
+  const { outputs: savedOutputs, ...savedData } = archive.ok ? archive.value : { outputs: null };
+  const { outputs: resavedOutputs, ...resavedData } = reread?.ok ? reread.value : { outputs: null };
+  expect(resavedData).toEqual(savedData);
+  expect(resavedOutputs?.["parts.csv"]).toBe(savedOutputs?.["parts.csv"]);
+  expect(undoLabel).toBe(
+    `open plan (${inPlan.poses.length} placements, ${inPlan.track.length} track pieces)`,
+  );
+  expect({ ...undone, plans: undonePlans }).toEqual({ poses: [], track: [], plans: 0 });
+  expect({ poses: posesOf(fresh.editor), track: fresh.editor.dump().laidTrack }).toEqual(inPlan);
+}, 240_000);
+
+it.each([
+  {
+    held: "a brick on top resting on bricks outside the plan",
+    clicks: [
+      [580, 300],
+      [580, 300],
+      [620, 300],
+    ],
+    poses: [`${HELD_BRICK} 580,300 y0`, `${HELD_BRICK} 580,300 y3`, `${HELD_BRICK} 620,300 y6`],
+    refusal:
+      "brick-2x4: rests only on models outside the plan, so it wouldn't be held where the plan opens",
+  },
+  {
+    held: "two bricks holding each other up off the table on a brick outside the plan",
+    clicks: [
+      [580, 300],
+      [620, 300],
+      [620, 300],
+    ],
+    poses: [`${HELD_BRICK} 580,300 y0`, `${HELD_BRICK} 620,300 y3`, `${HELD_BRICK} 620,300 y6`],
+    refusal:
+      "Plan 1: has no model standing on the table, so nothing would hold it up where it opens",
+  },
+])(
+  "refuses to save a plan its own models and the table don't hold up, with $held, and saves it once the plan takes in what holds them",
+  async ({ clicks, poses, refusal }) => {
+    const { editor, backend, catalog, container } = await startEditor(
+      [],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    editor.setPlacementMode("precise");
+    const place = placer(editor, backend);
+    for (const [x, z] of clicks) await place(HELD_BRICK, x ?? 0, z ?? 0);
+    editor.chooseItem(null);
+    const plans = container.get(PLAN_SERVICE);
+    const { planId, tableId } = plans.drawTable({ minX: 640, minZ: 0, maxX: 1280, maxZ: 640 });
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const refused = await editor.exportPlan(planId);
+    const refusalText = editor.snapshot().fileError;
+    plans.placeTable(planId, tableId, { minX: 0, minZ: 0, maxX: 1280, maxZ: 640 });
+    await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+    const saved = await editor.exportPlan(planId);
+
+    expect(posesOf(editor)).toEqual(poses);
+    expect(refused).toBeNull();
+    expect(refusalText).toContain(refusal);
+    expect(saved?.fileName).toBe("Plan-1.brrplan.zip");
+    expect(editor.snapshot().fileError).toBeNull();
+  },
+  240_000,
+);
+
+it("keeps an opened plan open, and says so, when its carried model files can't be stored afterwards", async () => {
+  const saving = await startImportingEditor();
+  const cottage = await importUserFile(
+    saving.editor,
+    "my-cottage.mpd",
+    userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+  );
+  await placer(saving.editor, saving.backend)(cottage, 0, 0);
+  saving.editor.chooseItem(null);
+  const plans = saving.container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -640, minZ: -640, maxX: 640, maxZ: 640 });
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const saved = await saving.editor.exportPlan(planId);
+  if (!saved) throw new Error(`the plan wasn't saved: ${saving.editor.snapshot().fileError}`);
+
+  const opening = await startImportingEditor((archives) => new FileRefusingRepository(archives));
+  const opened = await opening.editor.openPlan(saved.bytes);
+
+  expect(opened).toBe(true);
+  expect(opening.editor.snapshot().fileError).toMatch(
+    /^the plan opened, but its model files couldn't be stored on this device \(QuotaExceededError\)/u,
+  );
+  expect(posesOf(opening.editor)).toEqual(posesOf(saving.editor));
+  expect(opening.editor.snapshot().history.undo).toBe("open-plan");
+}, 240_000);
+
+it("keeps the trains on the rails in the one undo history and in the saved world: delete, undo and redo a train, and reopen the world", async () => {
+  const repository = new MemoryRepository();
+  const { editor, backend, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => bound.rebind(WORLD_REPOSITORY).toConstantValue(repository),
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const selected = selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = trainsOf(editor);
+  const undoLabel = editor.snapshot().history.undo;
+  editor.undo(0);
+  const undone = trainsOf(editor);
+  editor.redo(0);
+  const redone = trainsOf(editor);
+  editor.undo(0);
+  await vi.waitFor(() => expect(repository.storedConsists()).toBe(1));
+  const first = editor.snapshot().world?.id ?? "";
+  await editor.newWorld("Second");
+  const fresh = trainsOf(editor);
+  await editor.openWorld(first);
+
+  expect(selected?.kind).toBe("train");
+  expect({ deleted, undoLabel, undone, redone, fresh }).toEqual({
+    deleted: [],
+    undoLabel: "remove",
+    undone: [[LOCOMOTIVE, true]],
+    redone: [],
+    fresh: [],
+  });
+  expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
+  expect(backend.vehicles.size).toBeGreaterThan(0);
+}, 120_000);
+
+it("selects a train rather than the track it stands on, and refuses to delete a track piece a train stands on", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const laid = editor.snapshot().track?.pieces;
+  const train = selectAt(editor, backend, 0, 0);
+  let refusal: string | null = null;
+  for (let x = -600; x <= 600 && refusal === null; x += STUD_LDU) {
+    if (selectAt(editor, backend, x, 0)?.kind !== "track") continue;
+    editor.deleteSelection(0);
+    refusal = editor.snapshot().selectionRefusal;
+    if (refusal === null) editor.undo(0);
+  }
+
+  expect(train?.kind).toBe("train");
+  expect(refusal).toContain("stands on this track piece");
+  expect(editor.snapshot().track?.pieces).toBe(laid);
+  expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
+}, 120_000);
+
+it("sets a train on the track inside a placed set, and refuses to delete or turn the set while the train stands on that track", async () => {
+  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET, MY_OWN_TRAIN.slice(4)]);
+  const set = `omr:${PLACEABLE_SET}`;
+  for (const item of [set, MY_OWN_TRAIN]) await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+  await place(set, 0, 0);
+  const route = editor.trackRoutes()[0];
+  if (!route) throw new Error(`${set} carries no track`);
+  const along = {
+    x: (route.from.xLdu + route.to.xLdu) / 2,
+    z: (route.from.zLdu + route.to.zLdu) / 2,
+  };
+  const train = await place(MY_OWN_TRAIN, along.x, along.z);
+  const box = editor.dump().placements;
+  const setAt = { x: (box.x[0] ?? 0) + 20, z: (box.z[0] ?? 0) + 20 };
+  editor.chooseItem(null);
+  const candidates = [-300, -100, 100, 300].flatMap((dx) =>
+    [-300, -100, 100, 300].map((dz) => ({ x: setAt.x + dx, z: setAt.z + dz })),
+  );
+  const onSet = candidates.find(
+    (point) => selectAt(editor, backend, point.x, point.z)?.item === set,
+  );
+  if (!onSet) throw new Error("no point selects the set");
+  editor.deleteSelection(0);
+  const deleteRefusal = editor.snapshot().selectionRefusal;
+  editor.rotate(0);
+  const turnRefusal = editor.snapshot().selectionRefusal;
+
+  expect(train).toMatchObject({ placements: 1, refusedClicks: 0 });
+  expect(trainsOf(editor)).toEqual([[MY_OWN_TRAIN, true]]);
+  expect(deleteRefusal).toContain("stands on its track");
+  expect(turnRefusal).toContain("stands on its track");
+  expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
 
 const TRACK_STRAIGHT = "ldraw:74746";
@@ -687,12 +1185,34 @@ interface MemoryWorld {
 
 class MemoryRepository implements IWorldRepository {
   private readonly worlds = new Map<string, MemoryWorld>();
+  private readonly imports = new Map<string, ImportedFile>();
   private nextId = 1;
+
+  constructor(private readonly archives: IWorldRepository | null = null) {}
+
+  private planArchives(): IWorldRepository {
+    if (!this.archives) throw new Error("this test packs and reads no plan files");
+    return this.archives;
+  }
 
   storedPlacements(): number {
     let count = 0;
     for (const world of this.worlds.values()) {
       for (const shard of world.shards.values()) count += shard.placements.length;
+    }
+    return count;
+  }
+
+  storedConsists(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) count += world.header.consists?.length ?? 0;
+    return count;
+  }
+
+  storedTrack(): number {
+    let count = 0;
+    for (const world of this.worlds.values()) {
+      for (const shard of world.shards.values()) count += shard.track.length;
     }
     return count;
   }
@@ -754,10 +1274,30 @@ class MemoryRepository implements IWorldRepository {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
 
-  async putImportedFile(): Promise<void> {}
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
+  }
 
-  async importedFile(): Promise<undefined> {
-    return undefined;
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    return this.planArchives().packPlanArchive(archive);
+  }
+
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    return this.planArchives().readPlanArchive(bytes);
+  }
+
+  async putImportedFile(file: ImportedFile): Promise<void> {
+    this.imports.set(file.sha256, file);
+  }
+
+  async importedFile(sha256: string): Promise<ImportedFile | undefined> {
+    return this.imports.get(sha256);
+  }
+}
+
+class FileRefusingRepository extends MemoryRepository {
+  override async putImportedFile(): Promise<void> {
+    throw new Error("QuotaExceededError");
   }
 }
 
@@ -774,6 +1314,22 @@ function placerNow(editor: IEditor, backend: AimedBackend) {
 
 function queuedOf(editor: IEditor) {
   return { queuedPlacement: editor.snapshot().queuedPlacement };
+}
+
+const SETTLE_FRAMES = 10_000;
+
+function unsettled(placement: PlacementHover | null | undefined): boolean {
+  return placement?.settled === false || placement?.turnSettled === false;
+}
+
+async function settledHover(editor: IEditor, frame: () => Promise<void>) {
+  for (let frames = 0; unsettled(editor.snapshot().hover?.placement); frames++) {
+    if (frames >= SETTLE_FRAMES) {
+      throw new Error(`the hover is still unsettled after ${SETTLE_FRAMES} frames`);
+    }
+    await frame();
+  }
+  return editor.snapshot().hover;
 }
 
 function placer(editor: IEditor, backend: AimedBackend) {
@@ -821,49 +1377,52 @@ function selectAt(editor: IEditor, backend: AimedBackend, x: number, z: number) 
   editor.chooseItem(null);
   backend.aim(x, z);
   editor.click(0, 0, 0);
-  return editor.snapshot().selection;
+  return editor.snapshot().selection?.primary ?? null;
 }
 
 function turnOutcome(editor: IEditor, direction: 1 | -1) {
   editor.rotate(0, direction);
   const { selection, selectionRefusal, lastRefusal } = editor.snapshot();
   return {
-    rot: selection?.rot ?? null,
-    yPlates: selection?.yPlates ?? null,
+    rot: selection?.primary.kind === "model" ? selection.primary.rot : null,
+    yPlates: selection?.primary.kind === "model" ? selection.primary.yPlates : null,
     refusal: selectionRefusal,
     roadCells: lastRefusal ? lastRefusal.mismatchedCells + lastRefusal.overlappingCells : null,
   };
 }
 
-it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET]);
+it("refuses to turn a module while a set lifted onto it rests on it, turns the set itself, and turns the module once the set is gone", async () => {
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
-  const set = `omr:${PLACEABLE_SET}`;
-  await loadCatalogItem(catalog, set);
-  await place(BASEPLATE, 0, 0);
-  await place(set, 0, 0);
-  const corner = 300;
+  await place(PLAIN_MODULE, 320, 320);
+  await place(SET, 320, 320);
+  const corner = 20;
 
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const baseplateUnderSet = turnOutcome(editor, 1);
-  const baseplateUnderSetBack = turnOutcome(editor, -1);
-  expect(selectAt(editor, backend, 0, 0)?.item).toBe(set);
-  const setOnBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const moduleUnderSet = turnOutcome(editor, 1);
+  const moduleUnderSetBack = turnOutcome(editor, -1);
+  const setSelection = selectAt(editor, backend, 320, 320);
+  expect(setSelection?.item).toBe(SET);
+  const setYPlates = setSelection?.kind === "model" ? setSelection.yPlates : null;
+  const setOnModule = turnOutcome(editor, -1);
   editor.deleteSelection(0);
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const bareBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const bareModule = turnOutcome(editor, -1);
 
   const refused = {
     rot: 0,
     yPlates: 0,
-    refusal: expect.stringContaining(`rests on it`),
+    refusal: expect.stringContaining(`${PLACEABLE_SET} Level Crossing (2010) rests on it`),
     roadCells: 0,
   };
-  expect({ baseplateUnderSet, baseplateUnderSetBack, setOnBaseplate, bareBaseplate }).toEqual({
-    baseplateUnderSet: refused,
-    baseplateUnderSetBack: refused,
-    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
-    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+  expect(setYPlates).toBeGreaterThan(0);
+  expect({ moduleUnderSet, moduleUnderSetBack, setOnModule, bareModule }).toEqual({
+    moduleUnderSet: refused,
+    moduleUnderSetBack: refused,
+    setOnModule: { rot: 3, yPlates: setYPlates, refusal: null, roadCells: 0 },
+    bareModule: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
   });
 }, 120_000);
 
@@ -967,6 +1526,7 @@ it("leaves road mode when the world turns read-only, and refuses road draw and e
 
 const READ_ONLY_REFUSED: ReadonlyArray<CommandId> = [
   "rotate",
+  "nudge-right",
   "delete",
   "duplicate",
   "draw-track",
@@ -992,14 +1552,15 @@ class HeldElsewhereLocks implements IWorldLocks {
   }
 }
 
-it("offers none of the editing commands on a selection in a world another tab holds", async () => {
+it("offers none of the world's editing commands in a world another tab holds, but draws a table and undoes it, as plans aren't in the world", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
   const realLoader = container.get(PART_BUNDLE_LOADER);
   container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
-  container.rebind(SCENE_BACKEND).toConstantValue(new HeadlessBackend());
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
   const repository = new MemoryRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
   const locks = new HeldElsewhereLocks();
@@ -1030,6 +1591,647 @@ it("offers none of the editing commands on a selection in a world another tab ho
   const readOnly = selectBaseplate();
   expect(readOnly.readOnly).toBe(true);
   expect(editsOffered(readOnly)).toEqual({ selected: true, offered: [] });
+  const held = { poses: posesOf(editor), turns: turnsOf(editor) };
+  editor.moveSelectionTo(40, 0, 0);
+  editor.turnSelectedModelTo(2, 0);
+  expect({ poses: posesOf(editor), turns: turnsOf(editor) }).toEqual(held);
+
+  const plans = container.get(PLAN_SERVICE);
+  const tablesAndUndo = () => ({
+    tables: plans.plans().flatMap((plan) => plan.footprint.tables).length,
+    undo: commandEnabled("undo", editor.snapshot()),
+  });
+  editor.setTableTool(true);
+  backend.aim(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(640, 640);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const drawn = tablesAndUndo();
+  editor.undo(0);
+  expect({ drawn, undone: tablesAndUndo() }).toEqual({
+    drawn: { tables: 1, undo: true },
+    undone: { tables: 0, undo: false },
+  });
+}, 120_000);
+
+function dragTrack(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(...from);
+  editor.pointerMove(0, 0);
+  expect(editor.dragStart(0, 0)).toBe(true);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function layoutState(editor: IEditor) {
+  const { refs, placements, laidTrack } = editor.dump();
+  const poses = placements.refId
+    .map(
+      (ref, i) =>
+        `${refs[ref]} ${placements.x[i]} ${placements.z[i]} ${placements.yPlates[i]} ${placements.rot[i]}`,
+    )
+    .toSorted();
+  const track = editor.snapshot().track;
+  return { poses, laidTrack, openEnds: track?.openEnds, joins: track?.joins };
+}
+
+const HALF_TURN_CURVES = 8;
+const ROAD_STRAIGHT = "ldraw:44336p04@72";
+const RIGHT_SWITCH = "ldraw:75541-f1";
+const NINE_VOLT_CURVE = "ldraw:74747";
+
+const NINE_VOLT_STRAIGHT = "ldraw:74746";
+
+it("selects a laid track piece by clicking it and deletes it as one step that undo restores and re-selects", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  const laid = layoutState(editor);
+
+  const picked = selectAt(editor, backend, 0, 0);
+  const cleared = selectAt(editor, backend, 0, 40 * STUD);
+  selectAt(editor, backend, 0, 0);
+  editor.deleteSelection(0);
+  const deleted = layoutState(editor);
+  const afterDelete = editor.snapshot();
+  editor.undo(0);
+  const restored = layoutState(editor);
+  const reselected = editor.snapshot().selection?.primary ?? null;
+  editor.redo(0);
+
+  expect(picked).toMatchObject({
+    kind: "track",
+    item: `${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`,
+  });
+  expect(cleared).toBeNull();
+  expect({
+    pieces: deleted.laidTrack.length,
+    openEnds: deleted.openEnds,
+    joins: deleted.joins,
+    selection: afterDelete.selection,
+    undo: afterDelete.history.undoLabel,
+  }).toEqual({
+    pieces: laid.laidTrack.length - 1,
+    openEnds: (laid.openEnds ?? 0) + 2,
+    joins: (laid.joins ?? 0) - 2,
+    selection: null,
+    undo: "delete",
+  });
+  expect(restored).toEqual(laid);
+  expect(reselected).toEqual(picked);
+  expect(layoutState(editor)).toEqual(deleted);
+});
+
+it("undoes and redoes model and track edits in the order they happened, each track gesture one step named by what it laid", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const states = [layoutState(editor)];
+  const labels: Array<string | null> = [];
+  const record = () => {
+    states.push(layoutState(editor));
+    labels.push(editor.snapshot().history.undoLabel);
+  };
+
+  await place(BASEPLATE, 0, 0);
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const heldCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [51 * STUD, 100 * STUD], [99 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [163 * STUD, 100 * STUD], [211 * STUD, 100 * STUD]);
+  record();
+  dragTrack(editor, backend, [99 * STUD, 100 * STUD], [163 * STUD, 100 * STUD]);
+  const closureCommit = editor.snapshot().track?.lastCommit;
+  record();
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 200 * STUD);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  record();
+  const lever = editor.snapshot().track?.switches[0];
+  if (!lever) throw new Error("the laid switch has no lever");
+  selectAt(editor, backend, lever.xLdu, lever.zLdu);
+  record();
+  await place(BASEPLATE, 64 * STUD, 0);
+  record();
+
+  expect({ heldCommit, closureCommit }).toEqual({ heldCommit: "joined", closureCommit: "joined" });
+  expect(labels).toEqual([
+    "place",
+    "lay 2 pieces",
+    "lay 1 piece",
+    "lay 3 pieces",
+    "lay 3 pieces",
+    "lay 4 pieces",
+    "lay 1 piece",
+    "throw switch",
+    "place",
+  ]);
+  expect(states.map((state) => [state.poses.length, state.laidTrack.length])).toEqual([
+    [0, 0],
+    [1, 0],
+    [1, 2],
+    [1, 3],
+    [1, 6],
+    [1, 9],
+    [1, 13],
+    [1, 14],
+    [1, 14],
+    [2, 14],
+  ]);
+  expect(states[8]?.laidTrack).not.toEqual(states[7]?.laidTrack);
+
+  for (let step = states.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(layoutState(editor), `after undoing edit ${step}`).toEqual(states[step - 1]);
+  }
+  expect(editor.snapshot().history.undo).toBeNull();
+  for (let step = 1; step < states.length; step++) {
+    expect(editor.snapshot().history.redoLabel).toBe(labels[step - 1]);
+    editor.redo(0);
+    expect(layoutState(editor), `after redoing edit ${step}`).toEqual(states[step]);
+  }
+  expect(editor.snapshot().history.redo).toBeNull();
+}, 120_000);
+
+function trackRowsOf(delta: PlanDelta) {
+  const removed: number[] = [];
+  const added: number[] = [];
+  const updated: number[] = [];
+  for (let k = 0; k < delta.removalCount; k++) {
+    if (delta.removalSegment[k] === TRACK_SEGMENT) removed.push(delta.removalSource[k] ?? -1);
+  }
+  for (let e = 0; e < delta.writeCount; e++) {
+    if (delta.writeSegment[e] !== TRACK_SEGMENT) continue;
+    (delta.writeKind[e] === WRITE_ADD ? added : updated).push(delta.writeSource[e] ?? -1);
+  }
+  return { removed, added, updated };
+}
+
+function pieceRange(from: number, to: number): number[] {
+  return Array.from({ length: to - from }, (_, i) => from + i);
+}
+
+function trackRows(added: number[], removed: number[] = [], updated: number[] = []) {
+  return { deltas: [{ removed, added, updated }] };
+}
+
+it("sends the plan each track step's rows and saves its lifted pieces, on commit, undo and redo alike", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const plans = container.get(PLAN_SERVICE);
+  const session = container.get(WORLD_SESSION);
+  const apply = plans.apply.bind(plans);
+  let applied: Array<ReturnType<typeof trackRowsOf>> = [];
+  vi.spyOn(plans, "apply").mockImplementation((delta) => {
+    applied.push(trackRowsOf(delta));
+    apply(delta);
+  });
+  const trackEdited = vi.spyOn(session, "trackEdited");
+  const setTrack = vi.spyOn(container.get(RAIL_YARD), "setTrack");
+  const step = (act: () => void) => {
+    applied = [];
+    trackEdited.mockClear();
+    setTrack.mockClear();
+    act();
+    return {
+      deltas: applied,
+      lifted: trackEdited.mock.calls.map(([lifted]) => lifted.map((piece) => piece.index)),
+      railsSet: setTrack.mock.calls.length,
+    };
+  };
+
+  await placer(editor, backend)(BASEPLATE, 0, 0);
+  plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
+  const plansAt = [plans.materialize()];
+  const gestures: Array<() => void> = [
+    () => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+    },
+    () => {
+      editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_CURVE}`);
+      backend.aim(16 * STUD, 0);
+      editor.pointerMove(0, 0);
+      editor.click(0, 0, 0);
+    },
+    () => {
+      editor.chooseItem(TRACK_ITEM_ID);
+      dragTrack(editor, backend, [51 * STUD, 100 * STUD], [99 * STUD, 100 * STUD]);
+    },
+    () => dragTrack(editor, backend, [163 * STUD, 100 * STUD], [211 * STUD, 100 * STUD]),
+    () => dragTrack(editor, backend, [99 * STUD, 100 * STUD], [163 * STUD, 100 * STUD]),
+    () => {
+      editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+      backend.aim(0, 200 * STUD);
+      editor.pointerMove(0, 0);
+      editor.click(0, 0, 0);
+    },
+    () => {
+      const lever = editor.snapshot().track?.switches[0];
+      if (!lever) throw new Error("the laid switch has no lever");
+      selectAt(editor, backend, lever.xLdu, lever.zLdu);
+    },
+  ];
+  const committed = gestures.map((gesture) => {
+    const seen = step(gesture);
+    plansAt.push(plans.materialize());
+    return seen;
+  });
+  const undone = gestures.map((_, i) => {
+    const seen = step(() => editor.undo(0));
+    expect(plans.materialize(), `plan after undoing step ${gestures.length - i}`).toEqual(
+      plansAt[gestures.length - i - 1],
+    );
+    return seen;
+  });
+  const redone = gestures.map((_, i) => {
+    const seen = step(() => editor.redo(0));
+    expect(plans.materialize(), `plan after redoing step ${i + 1}`).toEqual(plansAt[i + 1]);
+    return seen;
+  });
+
+  const laidRows = [
+    pieceRange(0, 2),
+    [2],
+    pieceRange(3, 6),
+    pieceRange(6, 9),
+    pieceRange(9, 13),
+    [13],
+  ];
+  expect(committed).toEqual([
+    ...laidRows.map((added) => ({ ...trackRows(added), lifted: [[]], railsSet: 1 })),
+    { ...trackRows([], [], [13]), lifted: [[13]], railsSet: 1 },
+  ]);
+  expect(undone).toEqual([
+    { ...trackRows([], [], [13]), lifted: [[13]], railsSet: 1 },
+    ...laidRows
+      .toReversed()
+      .map((removed) => ({ ...trackRows([], removed), lifted: [removed], railsSet: 1 })),
+  ]);
+  expect(redone).toEqual(committed);
+  expect(plansAt.at(-1)?.placements).toHaveLength(15);
+  expect(
+    plansAt.map(
+      (plan) => plan.checks[0]?.issues.filter((issue) => issue.rule === "trackOpenEnd").length,
+    ),
+  ).toEqual([0, 2, 2, 4, 6, 4, 7, 7]);
+}, 120_000);
+
+const STRAIGHT_53401_LDU = 320;
+const CROSSING_RUN_LDU = 3 * STRAIGHT_53401_LDU;
+const LONE_STRAIGHT_AT_LDU = { x: 320, z: 300 } as const;
+const LDU_PER_MM = 5 / 2;
+const PLAN_POSITION = /\((-?\d+) mm, (-?\d+) mm\)/u;
+
+function endPositionsLdu(
+  messages: ReadonlyArray<string>,
+): ReadonlyArray<readonly [number, number]> {
+  return messages.map((message) => {
+    const match = PLAN_POSITION.exec(message);
+    if (!match) throw new Error(`no plan position in "${message}"`);
+    return [Number(match[1]) * LDU_PER_MM, Number(match[2]) * LDU_PER_MM] as const;
+  });
+}
+
+function runsAlongZ(ends: ReadonlyArray<readonly [number, number]>) {
+  const byX = Map.groupBy(ends, ([x]) => x);
+  return [...byX]
+    .map(([x, run]) => {
+      const zs = run.map(([, z]) => z);
+      return {
+        x,
+        ends: run.length,
+        lengthLdu: Math.max(...zs) - Math.min(...zs),
+        midZ: (Math.max(...zs) + Math.min(...zs)) / 2,
+      };
+    })
+    .toSorted((a, b) => a.lengthLdu - b.lengthLdu);
+}
+
+it("lists a placed set's own open track ends in the plan where its file puts them, telling listeners once per place, undo and redo", async () => {
+  const { editor, backend, container, catalog } = await startEditor([PLACEABLE_SET]);
+  const plans = container.get(PLAN_SERVICE);
+  const set = `omr:${PLACEABLE_SET}`;
+  await loadCatalogItem(catalog, set);
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
+  const rows = () =>
+    plans
+      .issues(planId)
+      .filter((issue) => issue.rule === "trackOpenEnd")
+      .map((issue) => issue.message);
+  const seen: Array<ReadonlyArray<string>> = [];
+  plans.subscribe(() => seen.push(rows()));
+  await placer(editor, backend)(set, 0, 0);
+  const placed = rows();
+  editor.undo(0);
+  editor.redo(0);
+  const [lone, crossing] = runsAlongZ(endPositionsLdu(placed));
+
+  expect([lone, crossing].map((run) => [run?.ends, run?.lengthLdu])).toEqual([
+    [2, STRAIGHT_53401_LDU],
+    [2, CROSSING_RUN_LDU],
+  ]);
+  expect(Math.abs((lone?.x ?? 0) - (crossing?.x ?? 0))).toBe(LONE_STRAIGHT_AT_LDU.x);
+  expect(Math.abs((lone?.midZ ?? 0) - (crossing?.midZ ?? 0))).toBe(LONE_STRAIGHT_AT_LDU.z);
+  for (const message of placed) expect(message).toContain(` on ${PLACEABLE_SET} `);
+  expect(seen).toEqual([placed, [], placed]);
+}, 120_000);
+
+it("refuses to throw a switch a train stands on, whether the throw comes from a click, an undo or a redo", async () => {
+  const { editor, backend, container, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  const yard = container.get(RAIL_YARD);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  for (const heading of [0, ZETA16_ORDER / 2]) {
+    const end = editor.dump().trackEnds.find((open) => open.heading === heading);
+    if (!end) throw new Error(`the switch has no end at heading ${heading}`);
+    const from = [onLattice(end.xLdu), onLattice(end.zLdu)] as const;
+    const away = heading === 0 ? 1 : -1;
+    dragTrack(editor, backend, from, [from[0] + away * 128 * STUD, from[1]]);
+  }
+  const lever = () => editor.snapshot().track?.switches[0];
+  const at = lever();
+  if (!at) throw new Error("the laid switch has no lever");
+  const outcome = () => ({
+    lever: lever()?.lever,
+    undoDepth: editor.snapshot().history.undoDepth,
+    redoDepth: editor.snapshot().history.redoDepth,
+    refusal: editor.snapshot().lastRefusal?.reason ?? null,
+    refusals: editor.snapshot().refusedClicks,
+  });
+  const clickSwitch = () => {
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(at.xLdu, at.zLdu);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  clickSwitch();
+  const thrown = outcome();
+  await placer(editor, backend)(LOCOMOTIVE, Math.round(at.xLdu), Math.round(at.zLdu));
+  const train = yard.trains()[0]?.handle;
+  if (!train || yard.standingOn(at.placement) !== train) {
+    throw new Error("the locomotive does not stand on the switch");
+  }
+  clickSwitch();
+  const clicked = outcome();
+  editor.undo(0);
+  const trainLifted = outcome();
+  const standingOn = yard.standingOn.bind(yard);
+  const stillStanding = vi
+    .spyOn(yard, "standingOn")
+    .mockImplementation((placement) =>
+      placement === at.placement ? train : standingOn(placement),
+    );
+  editor.undo(0);
+  const undoRefused = outcome();
+  stillStanding.mockRestore();
+  editor.undo(0);
+  const undone = outcome();
+  vi.spyOn(yard, "standingOn").mockImplementation((placement) =>
+    placement === at.placement ? train : standingOn(placement),
+  );
+  editor.redo(0);
+  const redoRefused = outcome();
+
+  const refusal = expect.stringContaining("stands on this switch, so it can't be thrown under it");
+  expect({ thrown, clicked, trainLifted, undoRefused, undone, redoRefused }).toEqual({
+    thrown: { lever: "branching", undoDepth: 4, redoDepth: 0, refusal: null, refusals: 0 },
+    clicked: { lever: "branching", undoDepth: 5, redoDepth: 0, refusal, refusals: 1 },
+    trainLifted: { lever: "branching", undoDepth: 4, redoDepth: 1, refusal, refusals: 1 },
+    undoRefused: { lever: "branching", undoDepth: 4, redoDepth: 1, refusal, refusals: 2 },
+    undone: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 2 },
+    redoRefused: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 3 },
+  });
+}, 120_000);
+
+it("lays each piece added to an open end, and the join that closes the loop, as one undo step each", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  const pieces = () => editor.dump().laidTrack.length;
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
+  const continuing = editor.snapshot().track?.extend?.continuing;
+  const turns: ReadonlyArray<ExtensionTurn> = [
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES).fill("left"),
+    ...Array<ExtensionTurn>(4).fill("straight"),
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES / 2).fill("left"),
+  ];
+  const laid = [pieces()];
+  const labels: Array<string | null> = [];
+  for (const turn of [...turns, null]) {
+    editor.extendTrack(turn, 0);
+    laid.push(pieces());
+    labels.push(editor.snapshot().history.undoLabel);
+  }
+  const closed = editor.snapshot().track;
+
+  expect(continuing).toBe(true);
+  expect(laid).toEqual([...turns.map((_, i) => 4 + i), 4 + turns.length, 8 + turns.length]);
+  expect(labels).toEqual([...turns.map(() => "lay 1 piece"), "lay 4 pieces"]);
+  expect(closed).toMatchObject({ lastCommit: "joined", openEnds: 0, extend: null });
+  expect(closed?.joins).toBe(laid.at(-1));
+  for (let step = laid.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(pieces(), `after undoing step ${step}`).toBe(laid[step - 1]);
+  }
+
+  backend.aim(32 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const hovered = editor.snapshot().track?.extend?.continuing;
+  editor.extendTrack("straight", 0);
+  runEditorAction(editor, camera, "select-tool", 0);
+  const afterFirstEscape = editor.snapshot();
+  runEditorAction(editor, camera, "select-tool", 0);
+  expect(hovered).toBe(false);
+  expect(afterFirstEscape.mode).toBe("track");
+  expect(afterFirstEscape.track?.extend).toBeNull();
+  expect(editor.snapshot().mode).toBe("select");
+}, 120_000);
+
+it("keeps the end pointed at while a choice is picked off the canvas, and lays the choice picked", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const dropped = editor.dropTrackEnd();
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.pointerLeave();
+  const offered = editor.snapshot().track?.extend?.choices ?? [];
+  const right = offered.findIndex((choice) => choice.kind === "right");
+  editor.selectTrackChoice(right);
+  const picked = editor.snapshot().track?.extend?.index;
+  editor.extendTrack(null, 0);
+
+  expect(dropped).toBe(true);
+  expect(picked).toBe(right);
+  expect(editor.dump().laidTrack.at(-1)?.ref).toBe(NINE_VOLT_CURVE);
+  expect(editor.snapshot().track?.extend?.continuing).toBe(true);
+}, 120_000);
+
+const A_KEY = { key: "a", ctrlKey: false, metaKey: false, shiftKey: false, altKey: false };
+
+function aState(editor: IEditor, play?: PlaySnapshot) {
+  const acts = (id: CommandId): boolean => commandEnabled(id, editor.snapshot(), play);
+  const match = commandForKey(A_KEY, false, acts);
+  return {
+    does: match && acts(match.id) ? match.id : null,
+    switchEnabled: placementModeSwitchEnabled(editor.snapshot(), play),
+    extends: acts("extend-left"),
+  };
+}
+
+it("gives A to the placement mode wherever its switch is enabled, except at an open track end, where it lays a left curve, and to nothing while a train runs", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const running: PlaySnapshot = { ...container.get(TRAIN_PLAY).snapshot(), status: "running" };
+  const selecting = aState(editor);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
+  backend.aim(0, 40 * STUD);
+  editor.pointerMove(0, 0);
+  const awayFromEnd = aState(editor);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const atOpenEnd = aState(editor);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const pieceAtEnd = aState(editor);
+  await chosen(editor, BASEPLATE);
+  const placing = aState(editor);
+  const trainRunning = aState(editor, running);
+
+  const toggles = { does: "toggle-placement-mode", switchEnabled: true, extends: false };
+  expect({ selecting, awayFromEnd, atOpenEnd, pieceAtEnd, placing, trainRunning }).toEqual({
+    selecting: toggles,
+    awayFromEnd: toggles,
+    atOpenEnd: { does: "extend-left", switchEnabled: true, extends: true },
+    pieceAtEnd: toggles,
+    placing: toggles,
+    trainRunning: { does: null, switchEnabled: false, extends: false },
+  });
+}, 120_000);
+
+it("selects nothing on a laid piece clicked in the track tool, leaves the tool on one Esc with nothing to let go of, and extends an open end clicked there", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
+  const clickAt = (x: number, z: number) => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  clickAt(-8 * STUD, 0);
+  const clickedLaid = { mode: editor.snapshot().mode, selection: editor.snapshot().selection };
+  runEditorAction(editor, camera, "select-tool", 0);
+  const escaped = { mode: editor.snapshot().mode, selection: editor.snapshot().selection };
+  editor.chooseItem(TRACK_ITEM_ID);
+  const laidBefore = editor.dump().laidTrack.length;
+  clickAt(16 * STUD, 0);
+
+  expect(clickedLaid).toEqual({ mode: "track", selection: null });
+  expect(escaped).toEqual({ mode: "select", selection: null });
+  expect(editor.dump().laidTrack).toHaveLength(laidBefore + 1);
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+}, 120_000);
+
+it("lays a piece onto a road plate's roadway, reports it unsupported, and says why", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [0, -48 * STUD], [0, -16 * STUD]);
+  const laid = editor.dump().laidTrack.length;
+
+  editor.extendTrack("straight", 0);
+  const onRoadway = {
+    laid: editor.dump().laidTrack.length,
+    hud: toolHints(editor.snapshot()),
+    unsupported: editor.snapshot().track?.unsupported,
+  };
+  backend.aim(0, -48 * STUD);
+  editor.pointerMove(0, 0);
+  editor.extendTrack("straight", 0);
+
+  expect(onRoadway).toEqual({
+    laid: laid + 1,
+    hud: expect.objectContaining({
+      tone: "warn",
+      title: "Laid unsupported",
+      detail: expect.stringMatching(
+        /^1 piece rests on .+ where it has no studs, so it isn't supported$/u,
+      ),
+    }),
+    unsupported: 1,
+  });
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+  expect(editor.dump().laidTrack).toHaveLength(laid + 2);
+}, 120_000);
+
+it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  const repository = new MemoryRepository();
+  container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+
+  await placer(editor, backend)(BASEPLATE, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const laid = editor.dump().laidTrack.length;
+  expect(laid).toBe(2);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
+  editor.undo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(0));
+  expect(repository.storedPlacements()).toBe(1);
+  editor.redo(0);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBe(laid));
 }, 120_000);
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
@@ -1059,6 +2261,7 @@ function importReport(
     bakeHelpersFailed: 0,
     fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
     records: null,
+    shadowLibrary: null,
     timings: {
       readMs: 0,
       resolveMs: 0,
@@ -1068,6 +2271,7 @@ function importReport(
       recordFetchMs: 0,
       compileMs: 0,
       ldrawFetchMs: 0,
+      shadowFetchMs: 0,
       bakePhases: null,
       coverPhases: null,
     },
@@ -1149,7 +2353,11 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
   });
 }, 120_000);
 
-function importedRecord(fileName: string, record: ModelRecord): ImportResult {
+function importedRecord(
+  fileName: string,
+  record: ModelRecord,
+  connectors: ReadonlyArray<PartConnectors | null> = record.parts.map(() => null),
+): ImportResult {
   const { model, parts } = record;
   const refused = refusedBake(fileName);
   const partIds = parts.map((part) => part.id);
@@ -1163,7 +2371,7 @@ function importedRecord(fileName: string, record: ModelRecord): ImportResult {
     matrices: model.matrices,
     partTransforms: model.partTransforms,
     submodels: model.submodels,
-    connectors: partIds.map(() => null),
+    connectors: [...connectors],
     bake: {
       lattice: model.lattice,
       latticeIssue: null,
@@ -1230,7 +2438,7 @@ it("places an import while its studs are checked, offers none of them to the sta
     [],
     new BundleDirectoryFetcher(),
     [],
-    importer,
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
   const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
   const { covered } = record.model.studCover;
@@ -1243,6 +2451,11 @@ it("places an import while its studs are checked, offers none of them to the sta
   const place = placer(editor, backend);
   const copies = [await place(item, 0, 0), await place(item, 2_000, 0)];
   const coverOf = () => editor.dump().covers.find((cover) => cover.id === item);
+  const play = container.get(TRAIN_PLAY);
+  const playAttempt = () => {
+    startPlay(editor, play);
+    return play.snapshot().status === "idle" ? "waits" : "starts";
+  };
   const readiness = () => {
     const { modelImport, studChecks, studs, placements } = editor.snapshot();
     const cover = coverOf();
@@ -1254,7 +2467,7 @@ it("places an import while its studs are checked, offers none of them to the sta
       culledInsideModels: studs?.culledInsideModels,
       pending: cover?.studsPending,
       culledAtBake: cover?.studsCulledAtBake,
-      play: editor.playSetup() === null ? "waits" : "runs",
+      play: playAttempt(),
     };
   };
   const pending = readiness();
@@ -1287,18 +2500,29 @@ it("places an import while its studs are checked, offers none of them to the sta
     culledInsideModels: 2 * covered,
     pending: false,
     culledAtBake: covered,
-    play: "runs",
+    play: "starts",
   });
   expect(drawnPending - (editor.snapshot().studs?.drawn ?? 0)).toBe(2 * covered);
   expect(posesOf(editor)).toEqual(posesPending);
 }, 120_000);
 
-async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+async function checkingImport(
+  fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+  served = PLACEABLE_SET,
+  models: ReadonlyArray<string> = [],
+  bringsRecords = false,
+) {
   const importer = new GatedModelImporter();
-  const started = await startEditor([], fetcher, [], importer);
+  const started = await startEditor(models, fetcher, [], (bound) =>
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
+  );
   const { container, editor } = started;
-  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
-  importer.serve(importedRecord("checking.mpd", record));
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const record = await loader.loadModelRecord("standard", served);
+  const connectors = bringsRecords
+    ? await Promise.all(record.parts.map((part) => loader.loadPartConnectors("standard", part.id)))
+    : undefined;
+  importer.serve(importedRecord("checking.mpd", record, connectors));
   const catalog = container.get(PLACEABLE_CATALOG);
   const importedPlaceable = () => {
     const item = editor.snapshot().modelImport?.item ?? null;
@@ -1357,18 +2581,18 @@ it("resolves clicks queued while the held item's tables load, over an import who
     const { editor, backend } = await checkingImport(baseplateGate);
     const item = await importChecking(editor);
     await placer(editor, backend)(item, 0, 0);
-    const clicks: Array<[string, HeldText]> = [
-      [BASEPLATE, baseplateGate],
-      [ROAD_PLATE, roadPlateGate],
+    const clicks: Array<[string, HeldText, number]> = [
+      [BASEPLATE, baseplateGate, OPEN_TABLE_X],
+      [ROAD_PLATE, roadPlateGate, 0],
     ];
-    for (const [held, gate] of clicks) {
+    for (const [held, gate, x] of clicks) {
       if (queued) {
-        placerNow(editor, backend)(held, 0, 0);
+        placerNow(editor, backend)(held, x, 0);
         gate.open();
         await settledChoice(editor);
       } else {
         gate.open();
-        await placer(editor, backend)(held, 0, 0);
+        await placer(editor, backend)(held, x, 0);
       }
     }
     const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
@@ -1392,7 +2616,81 @@ it("resolves clicks queued while the held item's tables load, over an import who
     studChecks: 1,
     queuedPlacement: null,
   });
-  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+  expect(queued.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
+}, 120_000);
+
+it("keeps the stud mates of a module loaded after an import that brought no record for the parts they share", async () => {
+  const { editor, backend, importer, catalog, frame } = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+  );
+  await importChecking(editor);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  await placer(editor, backend)(PLAIN_MODULE, 2_000, 320);
+  await chosen(editor, SET);
+  backend.aim(2_000, 320);
+  editor.pointerMove(0, 0);
+  const hover = hoverOutcome((await settledHover(editor, frame))?.placement);
+  importer.release();
+
+  expect(hover).toMatchObject({ accepted: true, restsOn: [PLAIN_MODULE] });
+  expect(hover.mates).toBeGreaterThan(0);
+}, 120_000);
+
+function hoverOutcome(placement: PlacementHover | null | undefined) {
+  return {
+    pose: placement?.pose,
+    accepted: placement?.accepted,
+    magnetised: placement?.magnetised,
+    magnet: placement?.magnet,
+    restsOn: [...new Set(placement?.restsOn.map((model) => model.item))],
+    mates: placement?.mates.length,
+  };
+}
+
+async function setOneStudIntoPendingImport() {
+  const started = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLACEABLE_SET],
+    true,
+  );
+  const { editor, backend } = started;
+  const item = await importChecking(editor);
+  const place = placer(editor, backend);
+  await place(item, 320, 320);
+  await place(item, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((entry) => entry.id === SET)?.studsWide ?? 0;
+  await chosen(editor, SET);
+  backend.aim(320 + wide * 20 - 20, 320);
+  return { ...started, item };
+}
+
+it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
+  const { editor, importer, importedPlaceable, frame, item } = await setOneStudIntoPendingImport();
+  const hover = async () => {
+    editor.pointerMove(0, 0);
+    return hoverOutcome((await settledHover(editor, frame))?.placement);
+  };
+  const offersStuds = () => importedPlaceable()?.studLattice.onLattice.includes(1) ?? null;
+  const pending = { studChecks: editor.snapshot().studChecks, offersStuds: offersStuds() };
+  const pendingHover = await hover();
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const republished = hoverOutcome((await settledHover(editor, frame))?.placement);
+  const moved = await hover();
+
+  expect(pending).toEqual({ studChecks: 1, offersStuds: false });
+  expect(offersStuds()).toBe(true);
+  expect(pendingHover).toMatchObject({ accepted: true, magnetised: true, restsOn: [item] });
+  expect({ republished, moved }).toEqual({
+    republished: pendingHover,
+    moved: pendingHover,
+  });
 }, 120_000);
 
 it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
@@ -1561,7 +2859,18 @@ it("shows only the world that is open: no studs or far models after New World, t
 
 const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
-const OVERLAP = "would overlap";
+const OVERLAP = "would hit";
+
+function latticeKeys(poses: CandidatePoses, x: number, z: number): Set<string> {
+  const found = new Set<string>();
+  for (let q = 0; q < poses.count; q++) {
+    const px = poses.x[q] ?? 0;
+    const pz = poses.z[q] ?? 0;
+    if ((px - x) % 20 !== 0 || (pz - z) % 20 !== 0) continue;
+    found.add(`${px},${pz},${poses.yPlates[q]},${poses.rot[q]}`);
+  }
+  return found;
+}
 
 function posesOf(editor: IEditor) {
   const { refs, placements } = editor.dump();
@@ -1574,13 +2883,28 @@ const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
     refusedClicks: 1,
-    reason: expect.stringContaining(`${OVERLAP} 3811 Baseplate 32 x 32`),
+    reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
+  ghostTone: "refused",
+  hint: {
+    tone: "warn",
+    detail: expect.stringContaining("Hits Baseplate 32 x 32 in 3811 Baseplate 32 x 32"),
+  },
 };
 const PLACED_BESIDE = {
   outcome: { placements: 2, refusedClicks: 0, reason: null },
   ghostRefusal: null,
+  ghostTone: "fits",
+  hint: { tone: "place", detail: "Magnetic · 0°" },
+};
+const SEATED_ON_STUDS = {
+  ...PLACED_BESIDE,
+  ghostTone: "mates",
+  hint: {
+    tone: "place",
+    detail: expect.stringMatching(/^Magnetic · 0° · \d+ round sockets take \d+ round pegs/u),
+  },
 };
 
 it.each([
@@ -1603,11 +2927,14 @@ it.each([
     expected: OVERLAP_REFUSED,
   },
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
-  { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
+  { name: "a set on the 3811", held: SET, at: [0, 0], expected: SEATED_ON_STUDS },
 ] as const)(
-  "with a 3811 placed, $name is refused only where two baseplates would share space",
+  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits, and the ghost and tool hint say so before the click",
   async ({ held, at, expected }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog, frame } = await startEditor([
+      PLAIN_MODULE_MODEL,
+      PLACEABLE_SET,
+    ]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -1615,13 +2942,168 @@ it.each([
     await chosen(editor, held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
-    const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const ghostRefusal = (await settledHover(editor, frame))?.refusal ?? null;
+    const ghostTone = backend.verdict?.tone ?? null;
+    const { tone, detail } = toolHints(editor.snapshot());
     const outcome = await place(held, at[0], at[1]);
 
-    expect({ outcome, ghostRefusal }).toEqual(expected);
+    expect({ outcome, ghostRefusal, ghostTone, hint: { tone, detail } }).toEqual(expected);
   },
   120_000,
 );
+
+it("says what mates when a set is held over a user's own baseplate file, which isn't a palette item", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    ["baseplate-row", PLACEABLE_SET],
+    new BundleDirectoryFetcher(),
+    ["baseplate-row"],
+  );
+  const row = "omr:baseplate-row";
+  await loadCatalogItem(catalog, row);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(row, 0, 0);
+  await chosen(editor, SET);
+  backend.aim(0, -320);
+  editor.pointerMove(0, 0);
+  const { tone, detail } = toolHints(editor.snapshot());
+
+  expect({ ghost: backend.verdict?.tone, hint: { tone, detail } }).toEqual({
+    ghost: "mates",
+    hint: {
+      tone: "place",
+      detail: expect.stringMatching(
+        /^Magnetic · 0° · (?:Snapped [^·]+ · )?\d+ round sockets take \d+ round pegs/u,
+      ),
+    },
+  });
+}, 120_000);
+
+it("A switches to precise placement and back, the hold override flips the mode while it is set, and the ghost and tool hint follow the effective mode", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  await chosen(editor, BASEPLATE);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  const shown = () => ({
+    hover: editor.snapshot().hover?.placement?.mode ?? null,
+    outlined: backend.verdict?.precise ?? null,
+    hint: toolHints(editor.snapshot()).detail?.split(" · ")[0] ?? null,
+  });
+  const start = shown();
+  runEditorAction(editor, camera, "toggle-placement-mode", 0);
+  const precise = shown();
+  editor.setPlacementModeOverride(true);
+  const held = shown();
+  editor.setPlacementModeOverride(false);
+  const released = shown();
+  runEditorAction(editor, camera, "toggle-placement-mode", 0);
+
+  expect({ start, precise, held, released, back: shown() }).toEqual({
+    start: { hover: "assist", outlined: false, hint: "Magnetic" },
+    precise: { hover: "precise", outlined: true, hint: "Precise" },
+    held: { hover: "assist", outlined: false, hint: "Magnetic" },
+    released: { hover: "precise", outlined: true, hint: "Precise" },
+    back: { hover: "assist", outlined: false, hint: "Magnetic" },
+  });
+}, 120_000);
+
+it("settles the ghost to neutral after a click's drop until the pointer leaves the cell, a click there is refused or the mode changes, never after a redo, while the hover keeps the solver's verdict", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  const shown = () => ({
+    accepted: editor.snapshot().hover?.placement?.accepted ?? null,
+    ghost: backend.verdict?.tone ?? null,
+    hint: toolHints(editor.snapshot()).tone,
+  });
+  const dropped = shown();
+  const droppedSaid = toolHints(editor.snapshot()).speech?.verdict;
+  backend.aim(5, 5);
+  editor.pointerMove(0, 0);
+  const sameCell = shown();
+  editor.click(0, 0, 0);
+  const clickedAgain = shown();
+  backend.aim(100, 0);
+  editor.pointerMove(0, 0);
+  const moved = shown();
+  editor.undo(0);
+  const undone = shown();
+  editor.redo(0);
+  const redone = shown();
+  await place(BASEPLATE, 640, 0);
+  const droppedBeside = shown();
+  editor.setPlacementModeOverride(true);
+  const heldPrecise = shown();
+
+  expect({
+    dropped,
+    droppedSaid,
+    sameCell,
+    clickedAgain,
+    moved,
+    undone,
+    redone,
+    droppedBeside,
+    heldPrecise,
+  }).toEqual({
+    dropped: { accepted: false, ghost: null, hint: "place" },
+    droppedSaid: expect.stringMatching(/^Placed .*3811/u),
+    sameCell: { accepted: false, ghost: null, hint: "place" },
+    clickedAgain: { accepted: false, ghost: "refused", hint: "warn" },
+    moved: { accepted: false, ghost: "refused", hint: "warn" },
+    undone: { accepted: true, ghost: "fits", hint: "place" },
+    redone: { accepted: false, ghost: "refused", hint: "warn" },
+    droppedBeside: { accepted: false, ghost: null, hint: "place" },
+    heldPrecise: { accepted: false, ghost: "refused", hint: "warn" },
+  });
+}, 120_000);
+
+it("claims nothing while an assist search is unsettled, though precise's provisional verdict is a refusal, and states the settled verdict", async () => {
+  const sliced = await setOneStudIntoSet();
+  const clock = slowClock();
+  const shown = () => {
+    const { tone, detail, busy, waiting, speech } = toolHints(sliced.editor.snapshot());
+    return {
+      settled: sliced.editor.snapshot().hover?.placement?.settled,
+      ghost: sliced.backend.verdict,
+      hint: { tone, detail, busy, waiting, verdict: speech?.verdict },
+    };
+  };
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const searching = shown();
+    await framesToSettle(sliced.editor, sliced.frame);
+    const settled = shown();
+
+    expect({ searching, settled }).toEqual({
+      searching: {
+        settled: false,
+        ghost: { tone: null, hit: null, precise: false },
+        hint: {
+          tone: "place",
+          detail: "Magnetic · 0°",
+          busy: true,
+          waiting: "Finding a fit…",
+          verdict: null,
+        },
+      },
+      settled: {
+        settled: true,
+        ghost: { tone: "mates", hit: null, precise: false },
+        hint: {
+          tone: "place",
+          detail: expect.stringMatching(/^Magnetic · 0° · Snapped 1 stud /u),
+          busy: false,
+          waiting: null,
+          verdict: expect.stringMatching(/^Magnetic, 0°\. Snapped 1 stud /u),
+        },
+      },
+    });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
 
 it.each([
   {
@@ -1665,6 +3147,267 @@ it.each([
   },
   120_000,
 );
+
+it("measures in studs and cm: a user's model reads its size held and selected, a drag lays a ruler, a click lays none, and Delete or Escape drops a ruler mid-drag before lifting a laid one", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    ["baseplate-row"],
+    new BundleDirectoryFetcher(),
+    ["baseplate-row"],
+  );
+  const held = "omr:baseplate-row";
+  await loadCatalogItem(catalog, held);
+  const labels = () => editor.snapshot().labels.map((label) => `${label.kind}: ${label.text}`);
+  await placer(editor, backend)(held, 0, 0);
+  const whileHeld = labels();
+  const ghost = editor.snapshot().labels.find((label) => label.kind === "ghost");
+  editor.chooseItem(null);
+  backend.aim(ghost?.x ?? Number.NaN, ghost?.z ?? Number.NaN);
+  editor.click(0, 0, 0);
+  const whileSelected = labels();
+  editor.setMeasuring(true);
+  const ruler = (from: readonly [number, number], to: readonly [number, number]): void => {
+    backend.aim(...from);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const startDraft = (to: readonly [number, number]): void => {
+    backend.aim(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+  };
+  startDraft([200, 0]);
+  const firstDraftDeletable = commandEnabled("delete", editor.snapshot());
+  editor.deleteSelection(0);
+  const firstDraftDeleted = labels();
+  ruler([0, 0], [60, 80]);
+  ruler([100, 100], [100, 100]);
+  ruler([-320, -200], [320, -200]);
+  const measured = labels();
+  startDraft([200, 0]);
+  const drafting = labels();
+  editor.deleteSelection(0);
+  const deletedMidDrag = labels();
+  editor.deleteSelection(0);
+  const afterDelete = { rulers: editor.snapshot().rulers, labels: labels() };
+  startDraft([0, 200]);
+  editor.chooseItem(null);
+  const escapedMidDrag = { mode: editor.snapshot().mode, labels: labels() };
+  editor.chooseItem(held);
+
+  expect({
+    whileHeld,
+    whileSelected,
+    firstDraftDeletable,
+    firstDraftDeleted,
+    measured,
+    drafting,
+    deletedMidDrag,
+    afterDelete,
+    escapedMidDrag,
+    after: { mode: editor.snapshot().mode, rulers: editor.snapshot().rulers },
+  }).toEqual({
+    whileHeld: ["ghost: 32 × 64 studs · 25.6 × 51.2 cm"],
+    whileSelected: ["selection: 32 × 64 studs · 25.6 × 51.2 cm"],
+    firstDraftDeletable: true,
+    firstDraftDeleted: [],
+    measured: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    drafting: [
+      "ruler: 5 studs · 4 cm (3 × 4)",
+      "ruler: 32 studs · 25.6 cm",
+      "draft: 10 studs · 8 cm",
+    ],
+    deletedMidDrag: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    afterDelete: { rulers: 1, labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    escapedMidDrag: { mode: "select", labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    after: { mode: "place", rulers: 1 },
+  });
+}, 120_000);
+
+it("clears the rulers when another world opens", async () => {
+  const { editor, backend } = await startStreamingEditor({ models: [], tier: null });
+  editor.setMeasuring(true);
+  backend.aim(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(640, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const laid = editor.snapshot().rulers;
+  expect(await editor.newWorld("Second")).toBe(true);
+
+  expect({ laid, rulers: editor.snapshot().rulers, labels: editor.snapshot().labels }).toEqual({
+    laid: 1,
+    rulers: 0,
+    labels: [],
+  });
+}, 120_000);
+
+it("draws and resizes a table on the 8-stud grid, checks a user's model against it, and undo and redo walk table, plan-field and placement edits in one order", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const drag = (from: readonly [number, number], to: readonly [number, number]): void => {
+    backend.aim(...from);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const state = () => {
+    const planId = plans.activePlanId();
+    const view = planId === null ? null : plans.regionView(planId);
+    return {
+      placements: editor.snapshot().placements,
+      tables: (view?.tables ?? []).map(({ surface, heightMm }) => ({ ...surface, heightMm })),
+      issues: planId === null ? [] : plans.issues(planId).map((issue) => issue.rule),
+    };
+  };
+
+  await place(brick, 1600, 1600);
+  editor.setTableTool(true);
+  drag([1290, 1300], [2250, 2090]);
+  const drawn = {
+    ...state(),
+    labels: editor.snapshot().labels.map((label) => `${label.kind}: ${label.text}`),
+  };
+  drag([1285, 1700], [1700, 1700]);
+  const resized = state();
+  const planId = plans.activePlanId() ?? "";
+  plans.updateTable(planId, plans.regionView(planId).tables[0]?.id ?? "", { heightMm: 900 });
+  await place(brick, 2000, 1600);
+  editor.setTableTool(true);
+  backend.aim(2100, 1500);
+  editor.pointerMove(0, 0);
+  editor.pointerLeave();
+  const deletableOffCanvas = commandEnabled("delete", editor.snapshot());
+  editor.pointerMove(0, 0);
+  plans.activatePlan(null);
+  const deletableInNoPlan = commandEnabled("delete", editor.snapshot());
+  plans.activatePlan(planId);
+  editor.pointerMove(0, 0);
+  const deletable = commandEnabled("delete", editor.snapshot());
+  editor.deleteSelection(0);
+  const removed = state();
+  const undone = [];
+  for (let step = 0; step < 6; step++) {
+    undone.push({ undo: editor.snapshot().history.undo, ...state() });
+    editor.undo(0);
+  }
+  const start = { ...state(), plans: plans.plans().length };
+  for (let step = 0; step < 6; step++) editor.redo(0);
+
+  const table = { minX: 1280, minZ: 1280, maxX: 2240, maxZ: 2080, heightMm: 750 };
+  const narrowed = { ...table, minX: 1760 };
+  const raised = { ...narrowed, heightMm: 900 };
+  expect({ drawn, resized, deletableOffCanvas, deletableInNoPlan, deletable, removed }).toEqual({
+    drawn: {
+      placements: 1,
+      tables: [table],
+      issues: [],
+      labels: ["table: 48 studs · 38.4 cm", "table: 40 studs · 32 cm"],
+    },
+    resized: { placements: 1, tables: [narrowed], issues: ["fit"] },
+    deletableOffCanvas: false,
+    deletableInNoPlan: false,
+    deletable: true,
+    removed: { placements: 2, tables: [], issues: ["fit", "fit"] },
+  });
+  expect(undone).toEqual([
+    { undo: "plan", placements: 2, tables: [], issues: ["fit", "fit"] },
+    { undo: "place", placements: 2, tables: [raised], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [raised], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [narrowed], issues: ["fit"] },
+    { undo: "plan", placements: 1, tables: [table], issues: [] },
+    { undo: "place", placements: 1, tables: [], issues: [] },
+  ]);
+  expect(start).toEqual({ placements: 0, tables: [], issues: [], plans: 0 });
+  expect({ ...state(), redo: editor.snapshot().history.redo }).toEqual({ ...removed, redo: null });
+}, 120_000);
+
+it("checks a user's model in a two-table plan on plan sync: across the seam, out of reach, loose on a roadway and without catalog ids, and counts only the plan's rows in its parts list", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [userModel],
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const planId = plans.createPlan({
+    name: "Two tables",
+    roomWidthMm: 3000,
+    roomDepthMm: 3000,
+    originChunkX: 0,
+    originChunkZ: 0,
+  });
+  plans.addTable(planId, {
+    name: "A",
+    rect: { x: 0, z: 0, width: 1000, depth: 2000 },
+    heightMm: 750,
+  });
+  plans.addTable(planId, {
+    name: "B",
+    rect: { x: 1000, z: 0, width: 1000, depth: 2000 },
+    heightMm: 750,
+  });
+
+  await place(brick, 2500, 1000);
+  await place(brick, 300, 300);
+  await place(brick, 2250, 2500);
+  await place(ROAD_STRAIGHT, 960, 4360);
+  await place(brick, 960, 4360);
+  await place(brick, -2000, 0);
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0), { timeout: 60_000 });
+  const planBom = editor.bomInput({ kind: "plan", planId });
+  const worldBom = editor.bomInput({ kind: "world" });
+
+  expect({
+    placements: editor.snapshot().placements,
+    inside: plans.insideCount(planId),
+    issues: plans.issues(planId).map((issue) => [issue.rule, issue.message]),
+    plan: [planBom.name, planBom.placements, planBom.counter.total()],
+    world: [worldBom.placements, worldBom.counter.total()],
+  }).toEqual({
+    placements: 6,
+    inside: 5,
+    issues: [
+      [
+        "bomMapping",
+        "4 parts in this plan have no Rebrickable part or colour id; the parts list names them.",
+      ],
+      [
+        "bomMapping",
+        "4 parts in this plan have no BrickLink part or colour id; the parts list names them.",
+      ],
+      [
+        "seam",
+        'brick-2x4 at 2500, 1000 stands across the seam between tables "A" and "B"; a seam must fall between placements.',
+      ],
+      [
+        "reach",
+        "brick-2x4 at 2260, 2500 is out of reach: part of it is more than 700 mm from every table edge you can stand at.",
+      ],
+      [
+        "unsupported",
+        "brick-2x4 at 960, 4360 isn't held: none of its anti-studs sits on a stud, and it doesn't stand on the bare table.",
+      ],
+    ],
+    plan: ["plan-Two_tables", 5, 5],
+    world: [6, 6],
+  });
+}, 120_000);
 
 function placedHeights(backend: HeadlessBackend, partId: string) {
   const heights = new Set<number>();
@@ -1743,8 +3486,690 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   });
 }, 120_000);
 
+it("seats a set on a module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const justInsideTheFrontEdge = 620;
+  backend.aim(320, justInsideTheFrontEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
+it("seats a set on a module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const tablePastTheFarEdge = -12;
+  backend.aim(320, tablePastTheFarEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
+it("seats a user's brick on a stack of three where a low camera's ray meets the stack's top face, though that ray reaches the table beyond assist's reach", async () => {
+  const { editor, backend, catalog, frame } = await startEditor(
+    [USER_BRICK],
+    new BundleDirectoryFetcher(),
+    [USER_BRICK],
+  );
+  await loadCatalogItem(catalog, HELD_BRICK);
+  const place = placer(editor, backend);
+  for (let level = 0; level < 3; level++) await place(HELD_BRICK, 0, 0);
+  await chosen(editor, HELD_BRICK);
+  const stackTopLdu = 9 * PLATE_LDU;
+  const lowCamera = 2;
+  backend.aim(0, -stackTopLdu * lowCamera, lowCamera);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({ accepted: hover?.accepted, pose: hover?.pose }).toEqual({
+    accepted: true,
+    pose: { x: 0, z: 0, yPlates: 9, rot: 0 },
+  });
+}, 120_000);
+
+it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
+  const [x = Number.NaN, yLdu = Number.NaN, z = Number.NaN] = backend.ghostPose;
+  editor.click(0, 0, 0);
+
+  expect({ poses: posesOf(editor), onTheModule: yLdu > 0 }).toEqual({
+    poses: [`${PLAIN_MODULE} 320,320 y0`, `${SET} ${x},${z} y${yLdu / PLATE_LDU}`].toSorted(),
+    onTheModule: true,
+  });
+}, 120_000);
+
+it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  const hover = async () => {
+    editor.pointerMove(0, 0);
+    const placement = (await settledHover(editor, frame))?.placement;
+    return {
+      mode: placement?.mode,
+      accepted: placement?.accepted,
+      magnetised: placement?.magnetised,
+      atCursor: placement?.pose.x === oneStudIn && placement.pose.z === 320,
+      hits: placement?.hit?.placed.item ?? null,
+    };
+  };
+  const assist = await hover();
+  editor.setPlacementModeOverride(true);
+  const held = await hover();
+  editor.setPlacementModeOverride(false);
+  const released = await hover();
+  editor.setPlacementMode("precise");
+  const chosenPrecise = await hover();
+
+  const snapped = { mode: "assist", accepted: true, magnetised: true, atCursor: false, hits: null };
+  const refused = {
+    mode: "precise",
+    accepted: false,
+    magnetised: false,
+    atCursor: true,
+    hits: SET,
+  };
+  expect({ assist, held, released, chosenPrecise }).toEqual({
+    assist: snapped,
+    held: refused,
+    released: snapped,
+    chosenPrecise: refused,
+  });
+}, 120_000);
+
+const SLOW_CLOCK_STEP_MS = 1;
+const FRAMES_FOR_AN_ABANDONED_SEARCH = 200;
+
+function slowClock() {
+  let now = performance.now();
+  return vi.spyOn(performance, "now").mockImplementation(() => (now += SLOW_CLOCK_STEP_MS));
+}
+
+async function setOneStudIntoSet(gate: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const started = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET], gate);
+  const { editor, backend, catalog } = started;
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  return { ...started, oneStudIn };
+}
+
+function publishedHovers(editor: IEditor): Array<PlacementHover | null> {
+  const published: Array<PlacementHover | null> = [];
+  editor.subscribe(() => published.push(editor.snapshot().hover?.placement ?? null));
+  return published;
+}
+
+async function framesToSettle(editor: IEditor, frame: () => Promise<void>): Promise<number> {
+  let frames = 0;
+  while (unsettled(editor.snapshot().hover?.placement)) {
+    if (frames >= SETTLE_FRAMES) throw new Error("the hover never settled");
+    await frame();
+    frames++;
+  }
+  return frames;
+}
+
+it("shows precise's verdict at the cursor at once, then settles assist over later frames on exactly the hover a whole search gives", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const sliced = await setOneStudIntoSet();
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const provisional = sliced.editor.snapshot().hover?.placement;
+    const ghostAtOnce = [...sliced.backend.ghostPose];
+    const frames = await framesToSettle(sliced.editor, sliced.frame);
+    const settled = sliced.editor.snapshot().hover?.placement;
+
+    expect({
+      settled: provisional?.settled,
+      mode: provisional?.mode,
+      accepted: provisional?.accepted,
+      magnetised: provisional?.magnetised,
+      pose: provisional?.pose,
+      hits: provisional?.hit?.placed.item,
+      ghost: ghostAtOnce.slice(0, 3),
+    }).toEqual({
+      settled: false,
+      mode: "assist",
+      accepted: false,
+      magnetised: false,
+      pose: { x: sliced.oneStudIn, z: 320, yPlates: provisional?.pose.yPlates, rot: 0 },
+      hits: SET,
+      ghost: [sliced.oneStudIn, (provisional?.pose.yPlates ?? 0) * PLATE_LDU, 320],
+    });
+    expect({ settled, multiFrame: frames > 1 }).toEqual({ settled: wholeHover, multiFrame: true });
+    expect(wholeHover).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
+
+const FINE_CLOCK_STEP_MS = 0.25;
+const NO_RENDER_MS = 0;
+const HEAVY_RENDER_MS = 10;
+const OVER_BUDGET_RENDER_MS = 14;
+const THREE_STUDS_IN_FROM_ONE_IN = 2 * STUD_LDU;
+
+async function settleBehindRender(renderMs: number) {
+  const scene = await setOneStudIntoSet();
+  let now = performance.now();
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += FINE_CLOCK_STEP_MS));
+  scene.backend.onRender = () => {
+    now += renderMs;
+  };
+  try {
+    scene.backend.aim(scene.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+    scene.editor.pointerMove(0, 0);
+    const frameMs: number[] = [];
+    while (unsettled(scene.editor.snapshot().hover?.placement)) {
+      if (frameMs.length >= SETTLE_FRAMES) throw new Error("the hover never settled");
+      const before = now;
+      await scene.frame();
+      frameMs.push(now - before);
+    }
+    return { frameMs, hover: scene.editor.snapshot().hover?.placement };
+  } finally {
+    clock.mockRestore();
+  }
+}
+
+it("slices assist around the frame's render: a slow render shrinks the slice, never below its floor, and the hover settles as a whole search does", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.backend.aim(whole.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const light = await settleBehindRender(NO_RENDER_MS);
+  const heavy = await settleBehindRender(HEAVY_RENDER_MS);
+  const overBudget = await settleBehindRender(OVER_BUDGET_RENDER_MS);
+
+  expect({ light: light.hover, heavy: heavy.hover, overBudget: overBudget.hover }).toEqual({
+    light: wholeHover,
+    heavy: wholeHover,
+    overBudget: wholeHover,
+  });
+  expect({
+    lightSpansFrames: light.frameMs.length > 2,
+    heavySlicesShrink: heavy.frameMs.length > light.frameMs.length,
+    heavyFramesWithin16Ms: heavy.frameMs.every((ms) => ms <= 16),
+    overBudgetAtMostTwiceTheFrames: overBudget.frameMs.length <= 2 * light.frameMs.length + 2,
+  }).toEqual({
+    lightSpansFrames: true,
+    heavySlicesShrink: true,
+    heavyFramesWithin16Ms: true,
+    overBudgetAtMostTwiceTheFrames: true,
+  });
+}, 240_000);
+
+it("commits the settled assist pose for a click made before the search settles, made at once or queued while the held set's tables load", async () => {
+  const setPoses = (editor: IEditor) => posesOf(editor).filter((pose) => pose.startsWith(SET));
+  const atOnce = async (sliced: boolean) => {
+    const scene = await setOneStudIntoSet();
+    const clock = sliced ? slowClock() : null;
+    try {
+      scene.editor.pointerMove(0, 0);
+      const settledAtClick = scene.editor.snapshot().hover?.placement?.settled;
+      scene.editor.click(0, 0, 0);
+      return { settledAtClick, poses: setPoses(scene.editor), oneStudIn: scene.oneStudIn };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const queuedBesideModule = async (sliced: boolean) => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    const clock = sliced ? slowClock() : null;
+    try {
+      placerNow(editor, backend)(SET, clearOfModule, 320);
+      const queued = editor.snapshot().queuedPlacement !== null;
+      gate.open();
+      await settledChoice(editor);
+      return { queued, poses: setPoses(editor), clearOfModule };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const [wholeAtOnce, slicedAtOnce] = [await atOnce(false), await atOnce(true)];
+  const [wholeQueued, slicedQueued] = [
+    await queuedBesideModule(false),
+    await queuedBesideModule(true),
+  ];
+
+  expect({ settledAtClick: slicedAtOnce.settledAtClick, queued: slicedQueued.queued }).toEqual({
+    settledAtClick: false,
+    queued: true,
+  });
+  expect({ atOnce: slicedAtOnce.poses, queued: slicedQueued.poses }).toEqual({
+    atOnce: wholeAtOnce.poses,
+    queued: wholeQueued.poses,
+  });
+  expect({
+    atOnceMoved: !slicedAtOnce.poses.includes(`${SET} ${slicedAtOnce.oneStudIn},320 y4`),
+    queuedOnTheModule: slicedQueued.poses.every(
+      (pose) => pose.endsWith(" y4") && !pose.includes(` ${slicedQueued.clearOfModule},`),
+    ),
+  }).toEqual({ atOnceMoved: true, queuedOnTheModule: true });
+}, 240_000);
+
+it("drops an unsettled assist search when the pointer moves to another stud, the held set turns, the mode toggles or the pointer leaves, and never shows its result", async () => {
+  const outcome = async (
+    trigger: (scene: Awaited<ReturnType<typeof setOneStudIntoSet>>) => void,
+  ) => {
+    const scene = await setOneStudIntoSet();
+    const clock = slowClock();
+    try {
+      scene.editor.pointerMove(0, 0);
+      const startedUnsettled = scene.editor.snapshot().hover?.placement?.settled === false;
+      await scene.frame();
+      const published = publishedHovers(scene.editor);
+      trigger(scene);
+      await framesToSettle(scene.editor, scene.frame);
+      for (let frame = 0; frame < 4; frame++) await scene.frame();
+      return { startedUnsettled, published, scene };
+    } finally {
+      clock.mockRestore();
+    }
+  };
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const abandoned = (await settledHover(whole.editor, whole.frame))?.placement;
+  const isAbandoned = (hover: PlacementHover | null) =>
+    hover !== null &&
+    hover.pose.x === abandoned?.pose.x &&
+    hover.pose.z === abandoned.pose.z &&
+    hover.pose.rot === abandoned.pose.rot &&
+    hover.mode === "assist";
+  const awayX = 2_400;
+  whole.backend.aim(awayX, 320);
+  whole.editor.pointerMove(0, 0);
+  const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const moved = await outcome(({ editor, backend }) => {
+    backend.aim(awayX, 320);
+    editor.pointerMove(0, 0);
+  });
+  const turned = await outcome(({ editor }) => editor.rotate(0));
+  const toggled = await outcome(({ editor }) => editor.setPlacementModeOverride(true));
+  const leaving = await setOneStudIntoSet();
+  const leaveClock = slowClock();
+  let left: { startedUnsettled: boolean; hover: unknown; ghostMoved: boolean };
+  try {
+    leaving.editor.pointerMove(0, 0);
+    const startedUnsettled = leaving.editor.snapshot().hover?.placement?.settled === false;
+    await leaving.frame();
+    leaving.editor.pointerLeave();
+    const ghostAtLeave = [...leaving.backend.ghostPose];
+    for (let frame = 0; frame < FRAMES_FOR_AN_ABANDONED_SEARCH; frame++) await leaving.frame();
+    left = {
+      startedUnsettled,
+      hover: leaving.editor.snapshot().hover,
+      ghostMoved: leaving.backend.ghostPose.some((value, index) => value !== ghostAtLeave[index]),
+    };
+  } finally {
+    leaveClock.mockRestore();
+  }
+
+  expect([moved, turned, toggled].map(({ startedUnsettled }) => startedUnsettled)).toEqual([
+    true,
+    true,
+    true,
+  ]);
+  expect({
+    moved: moved.published.some(isAbandoned),
+    turned: turned.published.some(isAbandoned),
+    toggled: toggled.published.some(isAbandoned),
+  }).toEqual({ moved: false, turned: false, toggled: false });
+  expect({
+    moved: moved.scene.editor.snapshot().hover?.placement,
+    turnedRot: turned.scene.editor.snapshot().hover?.placement?.pose.rot,
+    toggled: toggled.published
+      .slice(toggled.published.findIndex((hover) => hover?.mode === "precise"))
+      .every((hover) => hover?.mode === "precise" && hover.settled),
+  }).toEqual({ moved: awayHover, turnedRot: 1, toggled: true });
+  expect(left).toEqual({ startedUnsettled: true, hover: null, ghostMoved: false });
+}, 240_000);
+
+it("restarts an unsettled assist search when an import's studs land under it, and settles on the hover it had before they landed", async () => {
+  const whole = await setOneStudIntoPendingImport();
+  whole.editor.pointerMove(0, 0);
+  const before = (await settledHover(whole.editor, whole.frame))?.placement;
+  whole.importer.release();
+  const sliced = await setOneStudIntoPendingImport();
+  const atLanding: Array<boolean | undefined> = [];
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const startedUnsettled = sliced.editor.snapshot().hover?.placement?.settled === false;
+    sliced.editor.subscribe(() => {
+      const { studChecks, hover } = sliced.editor.snapshot();
+      if (studChecks === 0) atLanding.push(hover?.placement?.settled);
+    });
+    sliced.importer.release();
+    while (sliced.editor.snapshot().studChecks > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await framesToSettle(sliced.editor, sliced.frame);
+    const after = sliced.editor.snapshot().hover?.placement;
+
+    expect({ startedUnsettled, restarted: atLanding[0] }).toEqual({
+      startedUnsettled: true,
+      restarted: false,
+    });
+    expect(after).toEqual(before);
+    expect(before).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
+
+it("constructs no typed array once warm while hovers slice, settle and publish, refusals named included", async () => {
+  const { editor, backend, frame } = await setOneStudIntoSet();
+  const sweep = async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+    }
+  };
+  await sweep();
+  const refusals = () => (editor.snapshot().hover?.refusal ? 1 : 0);
+  let refused = 0;
+  const constructed = await typedArraysConstructedDuring(async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+      refused += refusals();
+    }
+  });
+
+  expect({ constructed, refused: refused > 0 }).toEqual({ constructed: 0, refused: true });
+}, 240_000);
+
+it("publishes the assist radius as the farthest lattice pose within 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  const viewWidthPx = 640;
+  const thirtyTwoPxIn = (ldu: number) => (ldu * viewWidthPx) / 2 / 32;
+  const radius = (lduPer32Px: number) => {
+    backend.viewHalfWidthLdu = thirtyTwoPxIn(lduPer32Px);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    return editor.snapshot().hover?.placement?.assistNeighbourhood;
+  };
+
+  const [capped, within, floored] = [radius(100), radius(44), radius(5)];
+
+  expect({ capped, floored, withinCells: within?.cells, withinPlates: within?.plates }).toEqual({
+    capped: { ldu: 60, cells: 3, plates: 7 },
+    floored: { ldu: 20, cells: 1, plates: 2 },
+    withinCells: 3,
+    withinPlates: 5,
+  });
+  expect(within?.ldu).toBeCloseTo(Math.hypot(2 * STUD_LDU, 2 * PLATE_LDU), 12);
+}, 120_000);
+
+const ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG = -1.2;
+const SUB_CELL_OFFSETS_PX: ReadonlyArray<readonly [number, number]> = [
+  [0, 2],
+  [0, -2],
+  [2, 0],
+  [-2, 0],
+  [2, 2],
+  [-2, -2],
+];
+const NDC_PER_PX_X = 2 / 640;
+const NDC_PER_PX_Y = 2 / 480;
+
+function orbitCameraAt(x: number, z: number, zoomLog: number): ViewCamera {
+  const camera = new ViewCamera(CAMERA_FOV_DEGREES);
+  camera.resize(640, 480);
+  camera.step(0);
+  camera.setMode("orbit");
+  camera.step(1);
+  camera.step(5_000);
+  camera.zoomAtSafeCentre(zoomLog);
+  camera.step(10_000);
+  camera.jumpTo(x, z);
+  camera.step(15_000);
+  return camera;
+}
+
+it("keeps the hover and never restarts its search while the pointer moves within one stud cell at a fixed zoom", async () => {
+  const scene = await setOneStudIntoSet();
+  const { editor, backend, frame } = scene;
+  backend.camera = orbitCameraAt(scene.oneStudIn, 320, ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG);
+  editor.pointerMove(0, 0);
+  await framesToSettle(editor, frame);
+  const start = editor.snapshot().hover;
+  const settled = start?.placement ?? null;
+  const published = publishedHovers(editor);
+  const cells = new Set<string>([`${start?.x},${start?.z}`]);
+  const clock = slowClock();
+  try {
+    for (const [rightPx, upPx] of SUB_CELL_OFFSETS_PX) {
+      editor.pointerMove(rightPx * NDC_PER_PX_X, upPx * NDC_PER_PX_Y);
+      const hover = editor.snapshot().hover;
+      cells.add(`${hover?.x},${hover?.z}`);
+      await frame();
+    }
+  } finally {
+    clock.mockRestore();
+  }
+  const reach = settled?.assistNeighbourhood.ldu ?? 0;
+
+  expect({ cells: cells.size, insideTheClamp: reach > STUD_LDU && reach < 3 * STUD_LDU }).toEqual({
+    cells: 1,
+    insideTheClamp: true,
+  });
+  expect({
+    published: published.length > 0,
+    allTheSettledHover: published.every((hover) => hover === settled),
+  }).toEqual({ published: true, allTheSettledHover: true });
+}, 240_000);
+
+it("counts Technic, side-stud and track votes only where those finders propose a pose, over real modulars, a module and a set with track", async () => {
+  const fireBrigade = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+    "10190-1",
+    "10218-1",
+  ]);
+  for (const item of [PLAIN_MODULE, SET, fireBrigade, petShop])
+    await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(fireBrigade, 960, 320);
+  await place(SET, 320, 1600);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const tables = container.get(CONNECTOR_TABLES);
+  const proposals = new CandidatePoses();
+  const reach = { cells: 3, plates: 7, turns: 4 };
+  const missed: string[] = [];
+  let voted = 0;
+  const held: ReadonlyArray<readonly [string, number, number, number]> = [
+    [petShop, 1600, 320, 0],
+    [petShop, 1300, 320, 0],
+    [SET, 320, 320, 4],
+    [SET, 320, 1600 + 980, 0],
+  ];
+  for (const [item, x, z, yPlates] of held) {
+    const placeable = await loadCatalogItem(catalog, item);
+    const loaded = await tables.load(placeable);
+    const model = search.model(loaded.tables, placeable.partTransforms, []);
+    solver.proposeMates(model, { x, z, yPlates, rot: 0, ...reach }, proposals);
+    const proposed = new Set<string>();
+    for (let q = 0; q < proposals.count; q++) {
+      proposed.add(
+        `${proposals.x[q]},${proposals.z[q]},${proposals.yPlates[q]},${proposals.rot[q]}`,
+      );
+    }
+    for (let rot = 0; rot < reach.turns; rot++) {
+      for (let dy = -reach.plates; dy <= reach.plates; dy++) {
+        if (yPlates + dy < 0) continue;
+        for (let i = -reach.cells; i <= reach.cells; i++) {
+          for (let j = -reach.cells; j <= reach.cells; j++) {
+            const pose = { x: x + i * 20, z: z + j * 20, yPlates: yPlates + dy, rot };
+            if (solver.proposalVotes(model, pose) === 0) continue;
+            voted++;
+            const key = `${pose.x},${pose.z},${pose.yPlates},${pose.rot}`;
+            if (!proposed.has(key)) missed.push(`${item} ${key}`);
+          }
+        }
+      }
+    }
+  }
+
+  expect({ missed, votedSomewhere: voted > 0 }).toEqual({ missed: [], votedSomewhere: true });
+}, 600_000);
+
+it("proposes on the stud lattice exactly the lattice poses of the full slot walk, one slot per slice, a held Technic hole's facade pin among the side studs and bars included", async () => {
+  const marketStreet = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor(["10190-1", "10218-1"]);
+  for (const item of [marketStreet, petShop]) await loadCatalogItem(catalog, item);
+  await placer(editor, backend)(marketStreet, 0, 0);
+  const sparse = container.get(SPARSE_CONNECTOR_FINDER);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const shapes = container.get(SNAP_SHAPES);
+  const placeable = await loadCatalogItem(catalog, petShop);
+  const loaded = await container.get(CONNECTOR_TABLES).load(placeable);
+  const model = search.model(loaded.tables, placeable.partTransforms, []);
+  const full = new CandidatePoses();
+  const lattice = new CandidatePoses();
+  const report = new MateReport();
+  const progress = new ProposalProgress();
+  const differing: string[] = [];
+  let technicMates = 0;
+  let slices = 0;
+  for (const x of [600, 640, 680]) {
+    const window = { x, z: 0, yPlates: 0, rot: 0, cells: 3, plates: 7, turns: 4 };
+    sparse.propose(model, window, full);
+    progress.restart();
+    while (!sparse.proposeOnLattice(model, window, lattice, progress, 1)) slices++;
+    const walked = latticeKeys(full, x, 0);
+    const indexed = latticeKeys(lattice, x, 0);
+    for (const key of walked) if (!indexed.has(key)) differing.push(`missing ${key}`);
+    for (const key of indexed) if (!walked.has(key)) differing.push(`extra ${key}`);
+    for (const key of indexed) {
+      const [px = 0, pz = 0, yPlates = 0, rot = 0] = key.split(",").map(Number);
+      solver.partneredMates(model, { x: px, z: pz, yPlates, rot }, report);
+      for (const mate of mateCounts(report, shapes, () => null)) {
+        const flaredPartner = mate.partnerKinds.some((kind) =>
+          kind.sections.some((section) => section.profile === "flare"),
+        );
+        if (mate.kind.gender === "female" && flaredPartner) technicMates += mate.connectors;
+      }
+    }
+  }
+
+  expect({ differing, technicMates: technicMates > 0, sliced: slices > 0 }).toEqual({
+    differing: [],
+    technicMates: true,
+    sliced: true,
+  });
+}, 600_000);
+
+it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await chosen(editor, BASEPLATE);
+  backend.aim(160, 0);
+  editor.pointerMove(0, 0);
+  const held = editor.snapshot().hover;
+  const kit = editor.snapshot().roadKits[0];
+  if (!kit) throw new Error("no road kit");
+  editor.chooseItem(kit.id);
+  editor.pointerMove(0, 0);
+  const { mode, hover } = editor.snapshot();
+
+  expect({
+    heldRefused: held?.placement?.accepted === false && held.refusal !== null,
+    mode,
+    placement: hover?.placement ?? null,
+    refusal: hover?.refusal ?? null,
+  }).toEqual({ heldRefused: true, mode: "road", placement: null, refusal: null });
+}, 120_000);
+
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -1795,7 +4220,7 @@ it.each([
 ] as const)(
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -1812,6 +4237,1105 @@ it.each([
   },
   120_000,
 );
+
+const USER_ROW = "baseplate-row";
+const HELD_ROW = `omr:${USER_ROW}`;
+
+type Ground = readonly [number, number];
+
+function ndcOf([x, z]: Ground): Ground {
+  return [x / NDC_SPAN_LDU, -z / NDC_SPAN_LDU];
+}
+
+function dragGroup(editor: IEditor, backend: HeadlessBackend, from: Ground, to: Ground) {
+  backend.aim(...from);
+  const kind = editor.selectDragStart(0, 0, false);
+  backend.aim(...to);
+  editor.pointerMove(0, 0);
+  editor.selectDragMove(0, 0);
+  const shown = { gesture: editor.snapshot().gesture, ghost: backend.ghost };
+  editor.selectDragEnd(0, 0, 0);
+  return { kind, ...shown };
+}
+
+function boxSelect(
+  editor: IEditor,
+  backend: HeadlessBackend,
+  corner: Ground,
+  opposite: Ground,
+  additive = false,
+) {
+  editor.chooseItem(null);
+  backend.aim(0, 0);
+  const kind = editor.selectDragStart(...ndcOf(corner), additive);
+  editor.selectDragMove(...ndcOf(opposite));
+  const inside = editor.snapshot().gesture;
+  editor.selectDragEnd(...ndcOf(opposite), 0);
+  return { kind, inside, selected: selectedItems(editor), outlined: backend.selectionBoxes };
+}
+
+function toggleAt(editor: IEditor, backend: HeadlessBackend, at: Ground) {
+  backend.aim(...at);
+  editor.toggleSelected(0, 0);
+  return selectedItems(editor);
+}
+
+function selectedItems(editor: IEditor): ReadonlyArray<string> {
+  return (editor.snapshot().selection?.members ?? []).map((member) => member.item).toSorted();
+}
+
+function groupMoveOutcome(editor: IEditor) {
+  const { lastRefusal } = editor.snapshot();
+  return { ...editOutcome(editor), refusedAt: lastRefusal ? [lastRefusal.x, lastRefusal.z] : null };
+}
+
+function editOutcome(editor: IEditor) {
+  const { selectionRefusal, history } = editor.snapshot();
+  return { poses: posesOf(editor), refusal: selectionRefusal, undoDepth: history.undoDepth };
+}
+
+async function rowBesideBaseplate() {
+  const started = await startEditor([USER_ROW], new BundleDirectoryFetcher(), [USER_ROW]);
+  await loadCatalogItem(started.catalog, HELD_ROW);
+  return started;
+}
+
+function rowBetweenPlates(poses: ReadonlyArray<string>, refusal: unknown = null) {
+  return { poses, refusal, undoDepth: 4, turns: [0, 0, 0], pivotStuds: { x: 32, z: 0 } };
+}
+
+describe("selection groups", () => {
+  it("sets a user's model's position in studs and its rotation from the properties panel through placement, refusing a collision, each edit one undo step, and moves a group by the pivot it turns about, kept through a turn, a typed move and a drag", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(BASEPLATE, 1300, 0);
+    await place(HELD_ROW, 640, 2000);
+    expect(selectAt(editor, backend, 640, 2000)?.item).toBe(HELD_ROW);
+    const outcome = () => ({
+      ...editOutcome(editor),
+      turns: turnsOf(editor),
+      pivotStuds: editor.snapshot().selection?.pivotStuds,
+    });
+    const start = outcome();
+
+    editor.moveSelectionTo(32, 0, 0);
+    const between = outcome();
+    editor.moveSelectionTo(31.5, 0, 0);
+    editor.moveSelectionTo(2 ** 27, 0, 0);
+    const offLatticeOrWorld = outcome();
+    editor.moveSelectionTo(31, 0, 0);
+    const oneIn = outcome();
+    editor.turnSelectedModelTo(1, 0);
+    const quarter = outcome();
+    editor.turnSelectedModelTo(3, 0);
+    const threeQuarters = outcome();
+    editor.turnSelectedModelTo(2, 0);
+    const half = outcome();
+    editor.turnSelectedModelTo(0, 0);
+    const back = outcome();
+    const undone = [0, 1, 2].map(() => {
+      editor.undo(0);
+      return { poses: posesOf(editor), turns: turnsOf(editor) };
+    });
+    boxSelect(editor, backend, [-400, -400], [1700, 400]);
+    editor.turnSelectedModelTo(1, 0);
+    const group = outcome();
+    editor.rotate(0, 1);
+    const groupTurned = outcome();
+    editor.moveSelectionTo(33, 10, 0);
+    const groupMoved = outcome();
+    dragGroup(editor, backend, [660, 860], [860, 860]);
+    const groupDragged = outcome();
+
+    const plates = [`${BASEPLATE} 0,0 y0`, `${BASEPLATE} 1300,0 y0`];
+    const betweenPoses = [...plates, `${HELD_ROW} 640,0 y0`].toSorted();
+    expect({
+      start,
+      between,
+      oneIn,
+      offLatticeOrWorld,
+      quarter,
+      threeQuarters,
+      half,
+      back,
+      undone,
+      group,
+      groupTurned,
+      groupMoved,
+      groupDragged,
+    }).toEqual({
+      start: {
+        poses: [...plates, `${HELD_ROW} 640,2000 y0`].toSorted(),
+        refusal: null,
+        undoDepth: 3,
+        turns: [0, 0, 0],
+        pivotStuds: { x: 32, z: 100 },
+      },
+      between: rowBetweenPlates(betweenPoses),
+      oneIn: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't move it there\\. .*${OVERLAP}`, "u")),
+      ),
+      offLatticeOrWorld: rowBetweenPlates(betweenPoses),
+      quarter: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't turn to 90°\\. .*${OVERLAP}`, "u")),
+      ),
+      threeQuarters: rowBetweenPlates(
+        betweenPoses,
+        expect.stringMatching(new RegExp(`^Can't turn to 270°\\. .*${OVERLAP}`, "u")),
+      ),
+      half: { ...rowBetweenPlates(betweenPoses), undoDepth: 5, turns: [0, 0, 2] },
+      back: { ...rowBetweenPlates(betweenPoses), undoDepth: 6 },
+      undone: [
+        { poses: betweenPoses, turns: [0, 0, 2] },
+        { poses: betweenPoses, turns: [0, 0, 0] },
+        { poses: start.poses, turns: [0, 0, 0] },
+      ],
+      group: { ...start, pivotStuds: { x: 33, z: 0 } },
+      groupTurned: {
+        poses: [
+          `${BASEPLATE} 660,660 y0`,
+          `${BASEPLATE} 660,-640 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 4,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 33, z: 0 },
+      },
+      groupMoved: {
+        poses: [
+          `${BASEPLATE} 660,860 y0`,
+          `${BASEPLATE} 660,-440 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 5,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 33, z: 10 },
+      },
+      groupDragged: {
+        poses: [
+          `${BASEPLATE} 860,860 y0`,
+          `${BASEPLATE} 860,-440 y0`,
+          `${HELD_ROW} 640,2000 y0`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 6,
+        turns: [0, 1, 1],
+        pivotStuds: { x: 43, z: 10 },
+      },
+    });
+  }, 120_000);
+
+  it("turns a model from the properties panel about the origin R turns it on, where 10190-1's overhang puts its footprint's lattice centre a stud away", async () => {
+    const overhanging = "10190-1";
+    const held = `omr:${overhanging}`;
+    const { editor, backend, catalog } = await startEditor(
+      [overhanging],
+      new BundleDirectoryFetcher(),
+      [],
+    );
+    await loadCatalogItem(catalog, held);
+    await placer(editor, backend)(held, 0, 0);
+    const selected = selectAt(editor, backend, 0, 0);
+    if (!selected) throw new Error(`${held} was not selected`);
+    const centre = [
+      nearestStud((selected.box.minX + selected.box.maxX) / 2),
+      nearestStud((selected.box.minZ + selected.box.maxZ) / 2),
+    ];
+
+    const turned = [1, 3, 2, 0].map((rot) => {
+      editor.turnSelectedModelTo(rot, 0);
+      return { ...editOutcome(editor), turns: turnsOf(editor) };
+    });
+
+    expect(centre).not.toEqual([0, 0]);
+    expect(turned).toEqual(
+      [1, 3, 2, 0].map((rot, step) => ({
+        poses: [`${held} 0,0 y0`],
+        refusal: null,
+        undoDepth: step + 2,
+        turns: [rot],
+      })),
+    );
+  }, 120_000);
+
+  it("drags a user's model through placement: it lands flush beside a 3811, is refused one stud in, shows each pose as it goes, and Esc leaves it where it was", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(HELD_ROW, 1280, 0);
+    expect(selectAt(editor, backend, 1280, 0)?.item).toBe(HELD_ROW);
+    const before = editOutcome(editor);
+
+    const flush = dragGroup(editor, backend, [1280, 0], [640, 0]);
+    const landed = { ...editOutcome(editor), undo: editor.snapshot().history.undo };
+    const oneIn = dragGroup(editor, backend, [640, 0], [620, 0]);
+    const refused = editOutcome(editor);
+    backend.aim(640, 0);
+    editor.selectDragStart(0, 0, false);
+    backend.aim(1600, 0);
+    editor.selectDragMove(0, 0);
+    editor.cancelGesture();
+    editor.selectDragEnd(0, 0, 0);
+    const cancelled = { ...editOutcome(editor), gesture: editor.snapshot().gesture };
+    editor.undo(0);
+
+    expect({ flush, landed, oneIn, refused, cancelled, undone: posesOf(editor) }).toEqual({
+      flush: {
+        kind: "move",
+        gesture: { kind: "move", models: 1, pieces: 0, trains: 0, dx: -640, dz: 0, refusal: null },
+        ghost: { x: 640, z: 0, rot: 0 },
+      },
+      landed: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 640,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+        undo: "move",
+      },
+      oneIn: {
+        kind: "move",
+        gesture: expect.objectContaining({ dx: -20, refusal: expect.stringContaining(OVERLAP) }),
+        ghost: { x: 620, z: 0, rot: 0 },
+      },
+      refused: {
+        poses: landed.poses,
+        refusal: expect.stringMatching(new RegExp(`^Can't move it there\\. .*${OVERLAP}`, "u")),
+        undoDepth: before.undoDepth + 1,
+      },
+      cancelled: {
+        poses: landed.poses,
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+        gesture: null,
+      },
+      undone: before.poses,
+    });
+  }, 120_000);
+
+  it("nudges the selection one stud per press through placement, each its own undo step, and leaves the arrows to the camera with nothing selected", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(HELD_ROW, 680, 0);
+    expect(selectAt(editor, backend, 680, 0)?.item).toBe(HELD_ROW);
+    const nudgeOffered = commandEnabled("nudge-left", editor.snapshot());
+    const before = editOutcome(editor);
+
+    editor.moveSelectionBy(-20, 0, 0);
+    const oneStud = editOutcome(editor);
+    editor.moveSelectionBy(-20, 0, 0);
+    const flush = editOutcome(editor);
+    editor.moveSelectionBy(-20, 0, 0);
+    const oneIn = editOutcome(editor);
+    editor.undo(0);
+    const undoneOnce = posesOf(editor);
+    editor.chooseItem(null);
+
+    expect({ nudgeOffered, oneStud, flush, oneIn, undoneOnce }).toEqual({
+      nudgeOffered: true,
+      oneStud: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 660,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 1,
+      },
+      flush: {
+        poses: [`${BASEPLATE} 0,0 y0`, `${HELD_ROW} 640,0 y0`],
+        refusal: null,
+        undoDepth: before.undoDepth + 2,
+      },
+      oneIn: {
+        poses: flush.poses,
+        refusal: expect.stringContaining(OVERLAP),
+        undoDepth: before.undoDepth + 2,
+      },
+      undoneOnce: oneStud.poses,
+    });
+    expect([
+      commandEnabled("nudge-left", editor.snapshot()),
+      commandEnabled("pan-left", editor.snapshot()),
+    ]).toEqual([false, true]);
+  }, 120_000);
+
+  it("box-selects whole models, Shift toggles one, and a group drag carries a set riding a selected module but won't leave it behind", async () => {
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    const place = placer(editor, backend);
+    await place(PLAIN_MODULE, 320, 320);
+    await place(SET, 320, 320);
+    await place(BASEPLATE, -1280, 320);
+    const raised = posesOf(editor);
+    const setHeight = raised.find((pose) => pose.startsWith(SET))?.split(" y")[1];
+
+    const boxed = boxSelect(editor, backend, [-700, -700], [1340, 1340]);
+    const setOut = toggleAt(editor, backend, [320, 320]);
+    const alone = dragGroup(editor, backend, [20, 20], [20, 1300]);
+    const leftBehind = editOutcome(editor);
+    const setBackIn = toggleAt(editor, backend, [320, 320]);
+    dragGroup(editor, backend, [20, 20], [20, 1300]);
+    const carried = editOutcome(editor);
+    editor.undo(0);
+
+    expect({
+      boxed,
+      setOut,
+      alone,
+      leftBehind,
+      setBackIn,
+      carried,
+      undone: posesOf(editor),
+    }).toEqual({
+      boxed: {
+        kind: "box",
+        inside: { kind: "box", models: 2, pieces: 0, trains: 0 },
+        selected: [PLAIN_MODULE, SET],
+        outlined: 2,
+      },
+      setOut: [PLAIN_MODULE],
+      alone: expect.objectContaining({
+        kind: "move",
+        gesture: expect.objectContaining({ refusal: expect.stringContaining("rests on it") }),
+      }),
+      leftBehind: {
+        poses: raised,
+        refusal: expect.stringMatching(/^Can't move it there\. .*rests on it/u),
+        undoDepth: 3,
+      },
+      setBackIn: [PLAIN_MODULE, SET],
+      carried: {
+        poses: [
+          `${BASEPLATE} -1280,320 y0`,
+          `${PLAIN_MODULE} 320,1600 y0`,
+          `${SET} 320,1600 y${setHeight}`,
+        ].toSorted(),
+        refusal: null,
+        undoDepth: 4,
+      },
+      undone: raised,
+    });
+    expect(setHeight).not.toBe("0");
+  }, 120_000);
+
+  it("won't delete or move a group out from under a user's brick stacked on it, until the brick is selected too, then deletes all of it in one undo step", async () => {
+    const { editor, backend, catalog } = await startEditor(
+      [USER_BRICK],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    const place = placer(editor, backend);
+    await place(HELD_BRICK, 0, 0);
+    await place(HELD_BRICK, 0, 0);
+    await place(HELD_BRICK, 400, 0);
+    const laid = posesOf(editor);
+    const stacked = laid.filter((pose) => pose.endsWith(" y0")).length;
+
+    const boxed = boxSelect(editor, backend, [-300, -300], [700, 300]).selected.length;
+    const underneath = toggleAt(editor, backend, [0, 0]).length;
+    editor.deleteSelection(0);
+    const deleteRefused = { ...editOutcome(editor), tone: toolHints(editor.snapshot()).tone };
+    const moveRefused = dragGroup(editor, backend, [400, 0], [400, 400]).gesture;
+    const withRider = toggleAt(editor, backend, [0, 0]).length;
+    editor.deleteSelection(0);
+    const deleted = editOutcome(editor);
+    editor.undo(0);
+
+    expect({ stacked, boxed, underneath, deleteRefused, moveRefused, withRider, deleted }).toEqual({
+      stacked: 2,
+      boxed: 3,
+      underneath: 2,
+      deleteRefused: {
+        poses: laid,
+        refusal: expect.stringMatching(/^Can't delete\. .*rests on it.*select it too\.$/u),
+        undoDepth: 3,
+        tone: "warn",
+      },
+      moveRefused: expect.objectContaining({
+        kind: "move",
+        refusal: expect.stringContaining("rests on it"),
+      }),
+      withRider: 3,
+      deleted: { poses: [], refusal: null, undoDepth: 4 },
+    });
+    expect({ undone: posesOf(editor), reselected: selectedItems(editor).length }).toEqual({
+      undone: laid,
+      reselected: 3,
+    });
+  }, 120_000);
+
+  it("turns a group of user's bricks about its lattice centre and back exactly, each turn one undo step, and won't turn one out from under a brick stacked on it", async () => {
+    const { editor, backend, catalog } = await startEditor(
+      [USER_BRICK],
+      new BundleDirectoryFetcher(),
+      [USER_BRICK],
+    );
+    await loadCatalogItem(catalog, HELD_BRICK);
+    editor.setPlacementMode("precise");
+    const place = placer(editor, backend);
+    await place(HELD_BRICK, 0, 0);
+    await place(HELD_BRICK, 100, 0);
+    const laid = { poses: posesOf(editor), turns: turnsOf(editor) };
+
+    boxSelect(editor, backend, [-300, -300], [400, 300]);
+    const pivot = selectionPivot(editor);
+    editor.rotate(0, 1);
+    const turned = { ...editOutcome(editor), turns: turnsOf(editor) };
+    editor.rotate(0, -1);
+    const back = { ...editOutcome(editor), turns: turnsOf(editor) };
+    editor.undo(0);
+    editor.undo(0);
+    const undone = posesOf(editor);
+    await place(HELD_BRICK, 100, 0);
+    boxSelect(editor, backend, [-300, -300], [400, 300]);
+    toggleAt(editor, backend, [100, 0]);
+    editor.rotate(0, 1);
+    const underRider = editOutcome(editor);
+
+    expect({ turned, back, undone, underRider }).toEqual({
+      turned: {
+        poses: laid.poses.map((pose) => turnedPose(pose, pivot)).toSorted(),
+        refusal: null,
+        undoDepth: 3,
+        turns: [1, 1],
+      },
+      back: { poses: laid.poses, refusal: null, undoDepth: 4, turns: laid.turns },
+      undone: laid.poses,
+      underRider: {
+        poses: [...laid.poses, `${HELD_BRICK} 100,0 y3`].toSorted(),
+        refusal: expect.stringMatching(/^Can't turn the group\. .*rests on it/u),
+        undoDepth: 3,
+      },
+    });
+  }, 120_000);
+
+  it("moves a group rigidly at its exact poses, each joined part of it held up only by its own mate outside the group or the table, and names a hit rather than lift it", async () => {
+    const raisedPair = async (secondAt: readonly [number, number]) => {
+      const started = await startEditor(
+        [CABOOSE.slice("omr:".length)],
+        new BundleDirectoryFetcher(),
+        [USER_BRICK],
+      );
+      const { editor, backend, catalog } = started;
+      await loadCatalogItem(catalog, HELD_BRICK);
+      await loadCatalogItem(catalog, CABOOSE);
+      editor.setPlacementMode("precise");
+      const place = placer(editor, backend);
+      for (const [x, z] of [[0, 0], [200, 0], [0, 400], [0, 0], secondAt] as const) {
+        await place(HELD_BRICK, x, z);
+      }
+      await place(CABOOSE, 0, 1200);
+      return { ...started, laid: posesOf(editor) };
+    };
+    const apart = await raisedPair([200, 0]);
+    selectAt(apart.editor, apart.backend, 0, 0);
+    toggleAt(apart.editor, apart.backend, [200, 0]);
+    apart.editor.moveSelectionBy(0, 400, 0);
+    const oneOverAir = groupMoveOutcome(apart.editor);
+
+    const overCaboose = await raisedPair([200, 0]);
+    selectAt(overCaboose.editor, overCaboose.backend, 0, 0);
+    toggleAt(overCaboose.editor, overCaboose.backend, [200, 0]);
+    overCaboose.editor.moveSelectionBy(0, 1_200, 0);
+    const overTheCaboose = groupMoveOutcome(overCaboose.editor);
+    const caboose = overCaboose.editor
+      .snapshot()
+      .catalog.find((item) => item.id === CABOOSE)?.label;
+
+    const joined = await raisedPair([20, 0]);
+    selectAt(joined.editor, joined.backend, 50, 0);
+    toggleAt(joined.editor, joined.backend, [-30, 0]);
+    joined.editor.moveSelectionBy(0, 400, 0);
+    const carried = groupMoveOutcome(joined.editor);
+
+    expect({
+      apart: apart.laid.filter((pose) => !pose.endsWith(" y0")),
+      joined: joined.laid.filter((pose) => !pose.endsWith(" y0")),
+    }).toEqual({
+      apart: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 200,0 y3`],
+      joined: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 20,0 y6`],
+    });
+    expect({ oneOverAir, overTheCaboose, carried }).toEqual({
+      oneOverAir: {
+        poses: apart.laid,
+        refusal: expect.stringMatching(/^Can't move them there\. .*has nothing to rest on here/u),
+        undoDepth: apart.laid.length,
+        refusedAt: [200, 400],
+      },
+      overTheCaboose: {
+        poses: overCaboose.laid,
+        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8 in ${caboose ?? ""}`),
+        undoDepth: overCaboose.laid.length,
+        refusedAt: [0, 1200],
+      },
+      carried: {
+        poses: joined.laid
+          .map((pose) => pose.replace(" 0,0 y3", " 0,400 y3").replace(" 20,0 y6", " 20,400 y6"))
+          .toSorted(),
+        refusal: null,
+        undoDepth: joined.laid.length + 1,
+        refusedAt: null,
+      },
+    });
+  }, 120_000);
+
+  it("copies a group with a user's model and pastes it on the cursor in one undo step, refusing a drop where it would overlap", async () => {
+    const { editor, backend } = await rowBesideBaseplate();
+    const place = placer(editor, backend);
+    await place(BASEPLATE, 0, 0);
+    await place(HELD_ROW, 640, 0);
+    const laid = posesOf(editor);
+    boxSelect(editor, backend, [-400, -1800], [1000, 1800]);
+    const box = editor.snapshot().selection?.box;
+    if (!box) throw new Error("the box selected nothing");
+    const pivot: Ground = [
+      nearestStud((box.minX + box.maxX) / 2),
+      nearestStud((box.minZ + box.maxZ) / 2),
+    ];
+    const depth = nearestStud(box.maxZ - box.minZ);
+    editor.copySelection();
+    const copied = editor.snapshot().clipboard;
+
+    editor.pasteClipboard();
+    const ghostParts = backend.ghostInstances;
+    backend.aim(pivot[0] + 20, pivot[1]);
+    editor.pointerMove(0, 0);
+    const overlapping = editor.snapshot().gesture;
+    editor.click(0, 0, 0);
+    const refusedDrop = { ...editOutcome(editor), gesture: editor.snapshot().gesture?.kind };
+    backend.aim(pivot[0], pivot[1] + depth);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const dropped = { ...editOutcome(editor), selected: selectedItems(editor) };
+    editor.undo(0);
+
+    expect(ghostParts).toBeGreaterThan(0);
+    expect({ copied, overlapping, refusedDrop, dropped, undone: posesOf(editor) }).toEqual({
+      copied: 2,
+      overlapping: expect.objectContaining({
+        kind: "paste",
+        models: 2,
+        refusal: expect.stringContaining(OVERLAP),
+      }),
+      refusedDrop: {
+        poses: laid,
+        refusal: expect.stringContaining("Can't paste here."),
+        undoDepth: 2,
+        gesture: "paste",
+      },
+      dropped: {
+        poses: [...laid, ...shiftedPoses(laid, depth)].toSorted(),
+        refusal: null,
+        undoDepth: 3,
+        selected: [BASEPLATE, HELD_ROW].toSorted(),
+      },
+      undone: laid,
+    });
+  }, 120_000);
+});
+
+const STRAIGHT_PIECE = `${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`;
+
+function pieceCentres(editor: IEditor): ReadonlyArray<string> {
+  return (editor.snapshot().selection?.members ?? [])
+    .flatMap((member) => (member.kind === "track" ? [`${member.centreX},${member.centreZ}`] : []))
+    .toSorted();
+}
+
+function groupOutcome(editor: IEditor) {
+  const { selectionRefusal, history } = editor.snapshot();
+  const { poses, laidTrack, openEnds, joins } = layoutState(editor);
+  return {
+    poses,
+    headings: laidTrack.map((record) => record.heading),
+    openEnds,
+    joins,
+    refusal: selectionRefusal,
+    undo: history.undoLabel,
+    undoDepth: history.undoDepth,
+    selected: selectedItems(editor),
+    pieces: pieceCentres(editor),
+  };
+}
+
+function turnedCentre([x, z]: Ground, [px, pz]: Ground): string {
+  return `${px + (z - pz)},${pz - (x - px)}`;
+}
+
+function shiftedLayoutPose(pose: string, dx: number, dz: number): string {
+  const [ref = "", x = "0", z = "0", yPlates = "0", rot = "0"] = pose.split(" ");
+  return `${ref} ${Number(x) + dx} ${Number(z) + dz} ${yPlates} ${rot}`;
+}
+
+function turnedLayoutPose(pose: string, pivot: Ground): string {
+  const [ref = "", x = "0", z = "0", yPlates = "0", rot = "0"] = pose.split(" ");
+  const [turnedX, turnedZ] = turnedCentre([Number(x), Number(z)], pivot).split(",");
+  return `${ref} ${turnedX} ${turnedZ} ${yPlates} ${(Number(rot) + 1) % 4}`;
+}
+
+function centreOf(at: string): Ground {
+  const [x = 0, z = 0] = at.split(",").map(Number);
+  return [x, z];
+}
+
+async function brickBesideRun() {
+  const started = await startEditor([USER_BRICK], new BundleDirectoryFetcher(), [USER_BRICK]);
+  await loadCatalogItem(started.catalog, HELD_BRICK);
+  started.editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(started.editor, started.backend, [-24 * STUD, 0], [24 * STUD, 0]);
+  await placer(started.editor, started.backend)(HELD_BRICK, -320, 400);
+  started.editor.chooseItem(null);
+  return started;
+}
+
+const RUN_PLAN_ORIGIN_CHUNK = -2;
+
+function runPlanMm(ldu: number): number {
+  return (ldu - RUN_PLAN_ORIGIN_CHUNK * CHUNK_LDU) / LDU_PER_MM;
+}
+
+describe("selection groups with laid track", () => {
+  it("shows plan listeners only the track rows a group nudge or delete of a user's brick and laid track leaves", async () => {
+    const { editor, backend, container } = await brickBesideRun();
+    const plans = container.get(PLAN_SERVICE);
+    const planId = plans.createPlan({
+      name: "Room",
+      roomWidthMm: 4000,
+      roomDepthMm: 4000,
+      originChunkX: RUN_PLAN_ORIGIN_CHUNK,
+      originChunkZ: RUN_PLAN_ORIGIN_CHUNK,
+    });
+    const openEnds = () =>
+      plans
+        .issues(planId)
+        .filter((issue) => issue.rule === "trackOpenEnd")
+        .map((issue) => issue.message);
+    let seen: Array<ReadonlyArray<string>> = [];
+    plans.subscribe(() => seen.push(openEnds()));
+    boxSelect(editor, backend, [-520, -200], [520, 500]);
+    const before = openEnds();
+    seen = [];
+    editor.moveSelectionBy(0, STUD, 0);
+    const nudged = { seen, rows: openEnds() };
+    seen = [];
+    editor.deleteSelection(0);
+
+    const runEnds = (zLdu: number) => [
+      `Open track end at (${runPlanMm(-24 * STUD)} mm, ${runPlanMm(zLdu)} mm) on Train Track 9V Straight #1: nothing joins it.`,
+      `Open track end at (${runPlanMm(24 * STUD)} mm, ${runPlanMm(zLdu)} mm) on Train Track 9V Straight #3: nothing joins it.`,
+    ];
+
+    expect(before).toEqual(runEnds(0));
+    expect(nudged.seen).toEqual([runEnds(STUD)]);
+    expect(nudged.rows).toEqual(runEnds(STUD));
+    expect(seen).toEqual([[]]);
+  }, 120_000);
+
+  it("box-selects a user's brick with laid track, nudges, turns and deletes them as one undo step each that redo repeats, and won't pull a piece off its join", async () => {
+    const { editor, backend } = await brickBesideRun();
+    const laid = groupOutcome(editor);
+
+    const partial = boxSelect(editor, backend, [-520, -200], [-140, 500]);
+    const partialPieces = pieceCentres(editor);
+    editor.moveSelectionBy(STUD, 0, 0);
+    const nudgeOff = groupOutcome(editor);
+    editor.rotate(0, 1);
+    const turnOff = groupOutcome(editor);
+
+    const whole = boxSelect(editor, backend, [-520, -200], [520, 500]);
+    const wholeTitle = toolHints(editor.snapshot()).title;
+    const before = groupOutcome(editor);
+    editor.moveSelectionBy(0, STUD, 0);
+    const nudged = groupOutcome(editor);
+    editor.undo(0);
+    const nudgeUndone = groupOutcome(editor);
+    editor.redo(0);
+    const nudgeRedone = groupOutcome(editor);
+    const pivot = selectionPivot(editor);
+    editor.rotate(0, 1);
+    const turned = groupOutcome(editor);
+    editor.undo(0);
+    const turnUndone = groupOutcome(editor);
+    editor.redo(0);
+    const turnRedone = groupOutcome(editor);
+    editor.rotate(0, -1);
+    const turnedBack = groupOutcome(editor);
+    editor.deleteSelection(0);
+    const deleted = groupOutcome(editor);
+    editor.undo(0);
+    const deleteUndone = groupOutcome(editor);
+    editor.redo(0);
+    const deleteRedone = groupOutcome(editor);
+
+    const offJoin = { ...laid, selected: partial.selected, pieces: partialPieces };
+    expect({ partial, nudgeOff, turnOff }).toEqual({
+      partial: {
+        kind: "box",
+        inside: { kind: "box", models: 1, pieces: 1, trains: 0 },
+        selected: [HELD_BRICK, STRAIGHT_PIECE].toSorted(),
+        outlined: 2,
+      },
+      nudgeOff: {
+        ...offJoin,
+        refusal: expect.stringMatching(
+          /^Can't move them there\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+      turnOff: {
+        ...offJoin,
+        refusal: expect.stringMatching(
+          /^Can't turn the group\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+    });
+    expect(whole.selected).toEqual([HELD_BRICK, STRAIGHT_PIECE, STRAIGHT_PIECE, STRAIGHT_PIECE]);
+    expect(wholeTitle).toBe("1 model and 3 track pieces selected");
+    expect(laid.joins).toBe(2);
+    expect({ nudged, nudgeUndone, nudgeRedone }).toEqual({
+      nudged: {
+        ...before,
+        poses: before.poses.map((pose) => pose.replace(" -320 400 ", " -320 420 ")),
+        undo: "move",
+        undoDepth: before.undoDepth + 1,
+        pieces: before.pieces.map((at) => {
+          const [x, z] = centreOf(at);
+          return `${x},${z + STUD}`;
+        }),
+      },
+      nudgeUndone: before,
+      nudgeRedone: nudged,
+    });
+    expect({ turned, turnUndone, turnRedone }).toEqual({
+      turned: {
+        ...nudged,
+        poses: nudged.poses.map((pose) => turnedLayoutPose(pose, pivot)).toSorted(),
+        headings: nudged.headings.map((heading) => (heading + ZETA16_ORDER - 4) % ZETA16_ORDER),
+        undo: "rotate",
+        undoDepth: nudged.undoDepth + 1,
+        pieces: nudged.pieces.map((at) => turnedCentre(centreOf(at), pivot)).toSorted(),
+      },
+      turnUndone: nudged,
+      turnRedone: turned,
+    });
+    expect(turnedBack).toEqual({
+      ...nudged,
+      undo: "rotate",
+      undoDepth: turned.undoDepth + 1,
+    });
+    expect({ deleted, deleteUndone, deleteRedone }).toEqual({
+      deleted: {
+        poses: [],
+        headings: [],
+        openEnds: 0,
+        joins: 0,
+        refusal: null,
+        undo: "delete",
+        undoDepth: turnedBack.undoDepth + 1,
+        selected: [],
+        pieces: [],
+      },
+      deleteUndone: turnedBack,
+      deleteRedone: deleted,
+    });
+  }, 120_000);
+
+  it("undoes a group's delete, turn and nudge one after another back to where it was laid, the group selected at each step", async () => {
+    const { editor, backend } = await brickBesideRun();
+    boxSelect(editor, backend, [-520, -200], [520, 500]);
+    const laid = groupOutcome(editor);
+    editor.moveSelectionBy(0, STUD, 0);
+    const nudged = groupOutcome(editor);
+    editor.rotate(0, 1);
+    const turned = groupOutcome(editor);
+    editor.deleteSelection(0);
+    const undone = [1, 2, 3].map(() => {
+      editor.undo(0);
+      return groupOutcome(editor);
+    });
+
+    expect(undone).toEqual([turned, nudged, laid]);
+  }, 120_000);
+
+  it("drags a lone laid piece along its line until it joins the open end exactly, won't nudge it off that join, and pastes a copy of it on the cursor in one undo step", async () => {
+    const { editor, backend } = await startEditor([]);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [-8 * STUD, 0]);
+    dragTrack(editor, backend, [8 * STUD, 0], [24 * STUD, 0]);
+    editor.chooseItem(null);
+    const apart = groupOutcome(editor);
+    expect(selectAt(editor, backend, 16 * STUD, 0)?.item).toBe(STRAIGHT_PIECE);
+
+    const slid = dragGroup(editor, backend, [16 * STUD, 0], [0, 0]);
+    const joined = groupOutcome(editor);
+    editor.moveSelectionBy(STUD, 0, 0);
+    const nudgeOff = groupOutcome(editor);
+    editor.copySelection();
+    editor.pasteClipboard();
+    backend.aim(0, 40 * STUD);
+    editor.pointerMove(0, 0);
+    const pasting = editor.snapshot().gesture;
+    editor.click(0, 0, 0);
+    const pasted = groupOutcome(editor);
+    editor.undo(0);
+    const pasteUndone = groupOutcome(editor);
+
+    expect({ apart: { joins: apart.joins, openEnds: apart.openEnds }, slid }).toEqual({
+      apart: { joins: 0, openEnds: 4 },
+      slid: {
+        kind: "move",
+        gesture: {
+          kind: "move",
+          models: 0,
+          pieces: 1,
+          trains: 0,
+          dx: -16 * STUD,
+          dz: 0,
+          refusal: null,
+        },
+        ghost: { x: -16 * STUD, z: 0, rot: 0 },
+      },
+    });
+    expect({ joined, nudgeOff, pasting, pasted, pasteUndone }).toEqual({
+      joined: {
+        ...apart,
+        joins: 1,
+        openEnds: 2,
+        undo: "move",
+        undoDepth: apart.undoDepth + 1,
+        selected: [STRAIGHT_PIECE],
+        pieces: ["0,0"],
+      },
+      nudgeOff: {
+        ...joined,
+        refusal: expect.stringMatching(
+          /^Can't move it there\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+      pasting: expect.objectContaining({ kind: "paste", models: 0, pieces: 1, refusal: null }),
+      pasted: {
+        ...joined,
+        headings: [...joined.headings, ...joined.headings.slice(1)],
+        openEnds: 4,
+        undo: "place",
+        undoDepth: joined.undoDepth + 1,
+        pieces: [`0,${40 * STUD}`],
+      },
+      pasteUndone: { ...joined, selected: [], pieces: [] },
+    });
+  }, 120_000);
+
+  it("moves a lone laid piece from the properties panel by its centre in studs until it joins the open end, refuses pulling it off that join, and offers it no model rotation", async () => {
+    const { editor, backend } = await startEditor([]);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [-8 * STUD, 0]);
+    dragTrack(editor, backend, [8 * STUD, 0], [24 * STUD, 0]);
+    editor.chooseItem(null);
+    expect(selectAt(editor, backend, 16 * STUD, 0)?.item).toBe(STRAIGHT_PIECE);
+    const pivot = () => editor.snapshot().selection?.pivotStuds;
+    const apart = { ...groupOutcome(editor), pivotStuds: pivot() };
+
+    editor.moveSelectionTo(0, 0, 0);
+    const joined = { ...groupOutcome(editor), pivotStuds: pivot() };
+    editor.turnSelectedModelTo(1, 0);
+    const turned = { ...groupOutcome(editor), pivotStuds: pivot() };
+    editor.moveSelectionTo(1, 0, 0);
+    const pulled = { ...groupOutcome(editor), pivotStuds: pivot() };
+
+    expect({ apart: apart.pivotStuds, joined, pulled, turned }).toEqual({
+      apart: { x: 16, z: 0 },
+      joined: {
+        ...apart,
+        joins: 1,
+        openEnds: 2,
+        undo: "move",
+        undoDepth: apart.undoDepth + 1,
+        pieces: ["0,0"],
+        pivotStuds: { x: 0, z: 0 },
+      },
+      pulled: {
+        ...joined,
+        refusal: expect.stringMatching(
+          /^Can't move it there\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+      turned: joined,
+    });
+  }, 120_000);
+
+  it("keeps a selected piece selected through a redo that lifts a piece laid before it", async () => {
+    const { editor, backend } = await startEditor([]);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 0], [24 * STUD, 0]);
+    selectAt(editor, backend, -16 * STUD, 0);
+    editor.deleteSelection(0);
+    editor.undo(0);
+    selectAt(editor, backend, 16 * STUD, 0);
+    editor.redo(0);
+
+    expect(editor.snapshot().selection?.members).toEqual([
+      expect.objectContaining({
+        kind: "track",
+        item: STRAIGHT_PIECE,
+        centreX: 16 * STUD,
+        centreZ: 0,
+      }),
+    ]);
+    expect(editor.snapshot().track?.pieces).toBe(2);
+  }, 120_000);
+
+  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't drag them into the module beside them", async () => {
+    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    const place = placer(editor, backend);
+    await place(PLAIN_MODULE, 0, 1600);
+    await place(SET, 0, 0);
+    const [end] = editor.dump().trackEnds;
+    if (!end) throw new Error(`${SET} carries no open track end`);
+    const from: Ground = [nearestStud(end.xLdu), nearestStud(end.zLdu)];
+    const outward: Ground = [
+      Math.round(Math.cos(end.headingRadians)),
+      Math.round(Math.sin(end.headingRadians)),
+    ];
+    const reach = 16 * STUD;
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, from, [from[0] + outward[0] * reach, from[1] + outward[1] * reach]);
+    editor.chooseItem(null);
+    const joined = groupOutcome(editor);
+
+    expect(selectAt(editor, backend, 0, 0)?.item).toBe(SET);
+    editor.moveSelectionBy(outward[1] * STUD, outward[0] * STUD, 0);
+    const setAlone = groupOutcome(editor);
+    toggleAt(editor, backend, [
+      from[0] + (outward[0] * reach) / 2,
+      from[1] + (outward[1] * reach) / 2,
+    ]);
+    const pair = groupOutcome(editor);
+    const [dx, dz] = [outward[1] * STUD, outward[0] * STUD];
+    editor.moveSelectionBy(dx, dz, 0);
+    const together = groupOutcome(editor);
+    const ontoModule = dragGroup(editor, backend, [0, 0], [0, 1600]).gesture;
+    const left = groupOutcome(editor);
+
+    expect(joined.joins).toBeGreaterThan(0);
+    expect({ setAlone, together }).toEqual({
+      setAlone: {
+        ...joined,
+        selected: [SET],
+        refusal: expect.stringMatching(
+          /^Can't move it there\. .* is joined to .*pull that join apart/u,
+        ),
+      },
+      together: {
+        ...pair,
+        poses: pair.poses.map((pose) =>
+          pose.startsWith(`${SET} `) ? shiftedLayoutPose(pose, dx, dz) : pose,
+        ),
+        undo: "move",
+        undoDepth: pair.undoDepth + 1,
+        pieces: pair.pieces.map((at) => {
+          const [x, z] = centreOf(at);
+          return `${x + dx},${z + dz}`;
+        }),
+      },
+    });
+    expect(pair.selected).toEqual([SET, STRAIGHT_PIECE].toSorted());
+    expect(ontoModule).toMatchObject({
+      kind: "move",
+      refusal: expect.stringContaining(OVERLAP),
+    });
+    expect({ ...left, refusal: null }).toEqual({ ...together, refusal: null });
+  }, 120_000);
+
+  it("won't drag laid track into a user's brick, names the brick, and leaves the track where it was", async () => {
+    const { editor, backend } = await brickBesideRun();
+    const laid = groupOutcome(editor);
+    boxSelect(editor, backend, [-520, -200], [520, 200]);
+
+    const intoBrick = dragGroup(editor, backend, [0, 0], [-320, 400]);
+    const left = groupOutcome(editor);
+
+    expect(intoBrick.gesture).toMatchObject({
+      kind: "move",
+      models: 0,
+      pieces: 3,
+      refusal: expect.stringMatching(/ would run into .*brick/u),
+    });
+    expect({ ...left, refusal: null, selected: [], pieces: [] }).toEqual({
+      ...laid,
+      selected: [],
+      pieces: [],
+    });
+    expect(left.refusal).toMatch(/^Can't move them there\. /u);
+  }, 120_000);
+
+  it("drags laid track onto a road plate's roadway as a level crossing reported unsupported, as a stroke lays it, and won't drag it across track it doesn't join", async () => {
+    const { editor, backend } = await startEditor([]);
+    await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+    await supportChecked(editor);
+    editor.chooseItem(TRACK_ITEM_ID);
+    dragTrack(editor, backend, [-24 * STUD, 40 * STUD], [24 * STUD, 40 * STUD]);
+    dragTrack(editor, backend, [-24 * STUD, 70 * STUD], [24 * STUD, 70 * STUD]);
+    const crossingOf = () => ({
+      unsupported: editor.snapshot().track?.unsupported,
+      crossings: editor.dump().crossings.length,
+    });
+    const laid = crossingOf();
+
+    boxSelect(editor, backend, [-26 * STUD, 35 * STUD], [26 * STUD, 45 * STUD]);
+    const ontoRoadway = dragGroup(editor, backend, [0, 40 * STUD], [0, 0]);
+    const onRoadway = { ...groupOutcome(editor), ...crossingOf() };
+    const acrossTrack = dragGroup(editor, backend, [0, 0], [0, 70 * STUD]);
+    const left = { ...groupOutcome(editor), ...crossingOf() };
+
+    expect(laid).toEqual({ unsupported: 0, crossings: 0 });
+    expect(ontoRoadway.gesture).toMatchObject({ kind: "move", pieces: 3, refusal: null });
+    expect(onRoadway).toMatchObject({
+      undo: "move",
+      refusal: null,
+      unsupported: expect.any(Number),
+      crossings: 1,
+    });
+    expect(onRoadway.unsupported).toBeGreaterThan(0);
+    expect(acrossTrack.gesture).toMatchObject({
+      kind: "move",
+      pieces: 3,
+      refusal: expect.stringMatching(/ would cross the track laid there\.$/u),
+    });
+    expect({ ...left, refusal: null }).toEqual({ ...onRoadway, refusal: null });
+  }, 120_000);
+});
+
+function nearestStud(ldu: number): number {
+  return Math.round(ldu / STUD) * STUD;
+}
+
+function selectionPivot(editor: IEditor): Ground {
+  const box = editor.snapshot().selection?.box;
+  if (!box) throw new Error("nothing is selected");
+  return [nearestStud((box.minX + box.maxX) / 2), nearestStud((box.minZ + box.maxZ) / 2)];
+}
+
+function turnedPose(pose: string, [px, pz]: Ground): string {
+  const [ref = "", at = "", height = ""] = pose.split(" ");
+  const [x = 0, z = 0] = at.split(",").map(Number);
+  return `${ref} ${px + (z - pz)},${pz - (x - px)} ${height}`;
+}
+
+function shiftedPoses(poses: ReadonlyArray<string>, dz: number): ReadonlyArray<string> {
+  return poses.map((pose) => {
+    const [ref = "", at = "", height = ""] = pose.split(" ");
+    const [x = "", z = ""] = at.split(",");
+    return `${ref} ${x},${Number(z) + dz} ${height}`;
+  });
+}
+
+function turnsOf(editor: IEditor): ReadonlyArray<number> {
+  return editor.dump().placements.rot.toSorted();
+}
 
 const STREAMED_SET = "10185-1";
 const ROAD_PLATE = "ldraw:44336p01@2";
@@ -1998,8 +5522,11 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   placeGhost(...args: Parameters<ISceneBackend["placeGhost"]>): void {
     this.three.placeGhost(...args);
   }
-  setSelectionBox(...args: Parameters<ISceneBackend["setSelectionBox"]>): void {
-    this.three.setSelectionBox(...args);
+  setGhostVerdict(...args: Parameters<ISceneBackend["setGhostVerdict"]>): void {
+    this.three.setGhostVerdict(...args);
+  }
+  setSelectionBoxes(...args: Parameters<ISceneBackend["setSelectionBoxes"]>): void {
+    this.three.setSelectionBoxes(...args);
   }
   setMarkers(...args: Parameters<ISceneBackend["setMarkers"]>): void {
     this.three.setMarkers(...args);
@@ -2015,6 +5542,12 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setIssueBoxes(...args: Parameters<ISceneBackend["setIssueBoxes"]>): void {
     this.three.setIssueBoxes(...args);
+  }
+  setGuides(...args: Parameters<ISceneBackend["setGuides"]>): void {
+    this.three.setGuides(...args);
+  }
+  projectToNdc(...args: Parameters<ISceneBackend["projectToNdc"]>): void {
+    this.three.projectToNdc(...args);
   }
   setVehicle(...args: Parameters<ISceneBackend["setVehicle"]>): void {
     this.three.setVehicle(...args);
@@ -2598,6 +6131,7 @@ class HeldText implements IAssetFetcher {
   private readonly released = new Promise<void>((resolve) => {
     this.release = resolve;
   });
+  private failure: Error | null = null;
   held = 0;
 
   constructor(
@@ -2613,11 +6147,17 @@ class HeldText implements IAssetFetcher {
     if (this.holds(path)) {
       this.held++;
       await this.released;
+      if (this.failure) throw this.failure;
     }
     return this.files.text(path);
   }
 
   open(): void {
+    this.release();
+  }
+
+  fail(reason: string): void {
+    this.failure = new Error(reason);
     this.release();
   }
 }
@@ -2652,7 +6192,47 @@ it("places nothing while an item's connector tables load, and places a click mad
   );
 }, 120_000);
 
-it("lets go of a click made while an item loads once the pointer leaves that stud", async () => {
+it("decides a click queued while a set's tables load in the mode in effect when they load: assist magnetises it onto the module beside it, precise takes the cursor pose", async () => {
+  const queuedBesideModule = async (mode: "assist" | "precise") => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    editor.setPlacementMode(mode);
+    placerNow(editor, backend)(SET, clearOfModule, 320);
+    const queued = editor.snapshot().queuedPlacement !== null;
+    gate.open();
+    await settledChoice(editor);
+    const set = posesOf(editor).find((pose) => pose.startsWith(SET)) ?? "";
+    return { queued, set, clearOfModule };
+  };
+  const assist = await queuedBesideModule("assist");
+  const precise = await queuedBesideModule("precise");
+
+  expect({
+    queued: [assist.queued, precise.queued],
+    assistOnTheModule:
+      assist.set.endsWith(" y4") && !assist.set.includes(` ${assist.clearOfModule},`),
+    precise: precise.set,
+  }).toEqual({
+    queued: [true, true],
+    assistOnTheModule: true,
+    precise: `${SET} ${precise.clearOfModule},320 y0`,
+  });
+}, 240_000);
+
+it("keeps a click made while an item loads through the pointer leaving that stud and the canvas, and places it at the clicked pose once the tables load", async () => {
   const gate = heldConnectivity();
   const { editor, backend } = await startEditor([], gate);
 
@@ -2660,16 +6240,391 @@ it("lets go of a click made while an item loads once the pointer leaves that stu
   const queued = editor.snapshot().queuedPlacement;
   backend.aim(1280, 640);
   editor.pointerMove(0, 0);
+  editor.pointerLeave();
   const afterMove = editor.snapshot().queuedPlacement;
   gate.open();
   await settledChoice(editor);
+  await vi.waitFor(() => expect(editor.snapshot().queuedPlacement).toBeNull());
 
-  expect({ queued: queued !== null, afterMove, placements: editor.snapshot().placements }).toEqual({
-    queued: true,
-    afterMove: null,
-    placements: 0,
+  expect({ queued, afterMove, placed: posesOf(editor) }).toEqual({
+    queued: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+    afterMove: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+    placed: [`${BASEPLATE} 640,640 y0`],
   });
 }, 120_000);
+
+const ROAD_TILE_LDU = 640;
+const BASEPLATE_SPAN_LDU = 640;
+const WAITING_NOTE = "is still reading its connectors";
+
+function roadPlatesReading(): HeldText {
+  return new HeldText(new BundleDirectoryFetcher(), (path) =>
+    /\/connectivity-(?!index\.|3811\.)/u.test(path),
+  );
+}
+
+function strokeRoad(editor: IEditor, backend: AimedBackend): void {
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  editor.chooseItem(kit.id);
+  backend.aim(ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2);
+  editor.dragStart(0, 0);
+  for (const column of [1, 2]) {
+    backend.aim(column * ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2);
+    editor.dragMove(0, 0);
+  }
+  editor.dragEnd(0, 0, 0);
+}
+
+function baseplatesOnRoad(editor: IEditor): number {
+  const { refs, placements } = editor.dump();
+  const at = placements.refId.map((ref, i) => ({
+    item: refs[ref] ?? "",
+    x: placements.x[i] ?? 0,
+    z: placements.z[i] ?? 0,
+    y: placements.yPlates[i] ?? 0,
+  }));
+  const roads = at.filter(({ item }) => item.startsWith("ldraw:44336"));
+  return at.filter(
+    (base) =>
+      base.item === BASEPLATE &&
+      roads.some(
+        (road) =>
+          road.y === base.y &&
+          Math.abs(road.x - base.x) < BASEPLATE_SPAN_LDU &&
+          Math.abs(road.z - base.z) < BASEPLATE_SPAN_LDU,
+      ),
+  ).length;
+}
+
+const OVER_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+const LAST_ROAD_TILE: Ground = [2 * ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+const BESIDE_THE_ROAD_EDGE: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
+const GREY_ROAD_PLATE = "ldraw:44336p04@72";
+
+function clickHeldAt(editor: IEditor, backend: AimedBackend, [x, z]: Ground): void {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+}
+
+function waitingView(editor: IEditor) {
+  const placement = editor.snapshot().hover?.placement;
+  const waiting = placement?.waitingOn;
+  return {
+    waitingOn: waiting
+      ? {
+          item: waiting.placed.item,
+          at: [waiting.placed.pose.x, waiting.placed.pose.z],
+          failed: waiting.failed,
+        }
+      : null,
+    accepted: placement?.accepted ?? null,
+    settled: placement?.settled ?? null,
+  };
+}
+
+it.each([
+  {
+    gesture: "a click over a plate, refused once they load",
+    act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
+    whileReading: {
+      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: expect.stringContaining("would hit Baseplate 32 x 32 Road"),
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture:
+      "a click beside the plates, replayed at the clicked pose after the pointer moves over a plate and off the canvas",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      clickHeldAt(editor, backend, BESIDE_THE_ROAD_EDGE);
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+      editor.pointerLeave();
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().placements > 3,
+    whileReading: {
+      queued: {
+        item: BASEPLATE,
+        x: BESIDE_THE_ROAD_EDGE[0],
+        z: BESIDE_THE_ROAD_EDGE[1],
+        rot: 0,
+      },
+      hover: { waitingOn: null, accepted: null, settled: null },
+    },
+    decision: {
+      placed: [`${BASEPLATE} ${BESIDE_THE_ROAD_EDGE[0]},${BESIDE_THE_ROAD_EDGE[1]} y0`],
+      refusal: null,
+      hover: { waitingOn: null, accepted: null, settled: null },
+    },
+  },
+  {
+    gesture: "a click over a plate, cancelled by Esc before they load",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      clickHeldAt(editor, backend, OVER_THE_ROAD);
+      editor.chooseItem(null);
+      editor.chooseItem(BASEPLATE);
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
+    whileReading: {
+      queued: null,
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: null,
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture: "a click over a plate whose tables fail to load, refused for that",
+    act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
+    release: (gate: HeldText) => gate.fail("503"),
+    decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
+    whileReading: {
+      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: expect.stringContaining("connector data didn't load"),
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: true },
+        accepted: false,
+        settled: true,
+      },
+    },
+  },
+  {
+    gesture:
+      "a hover over the last plate laid, naming that plate rather than the earlier one beside it",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      backend.aim(...LAST_ROAD_TILE);
+      editor.pointerMove(0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
+    whileReading: {
+      queued: null,
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: LAST_ROAD_TILE, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: null,
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture: "a fill across the plates",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+      editor.dragStart(0, 0);
+      backend.aim(3 * ROAD_TILE_LDU, ROAD_TILE_LDU / 2);
+      editor.dragMove(0, 0);
+      editor.dragEnd(0, 0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => (editor.snapshot().lastFill?.refused ?? 0) > 0,
+    whileReading: { queued: null, hover: expect.anything() },
+    decision: { placed: [], refusal: null, hover: expect.anything() },
+  },
+])(
+  "waits on $gesture while a road stroke's plates read their connector tables, never committing a 3811 onto a plate",
+  async ({ act, release, decided, whileReading, decision }) => {
+    const gate = roadPlatesReading();
+    const { editor, backend, frame } = await startEditor([], gate);
+    strokeRoad(editor, backend);
+    const laid = posesOf(editor);
+    await chosen(editor, BASEPLATE);
+    act(editor, backend);
+    const reading = {
+      placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
+      queued: editor.snapshot().queuedPlacement,
+      hover: waitingView(editor),
+    };
+    expect({ laid: laid.length, heldRecords: gate.held > 0, reading }).toEqual({
+      laid: 3,
+      heldRecords: true,
+      reading: { placed: [], ...whileReading },
+    });
+    release(gate);
+    await vi.waitFor(() => expect(decided(editor)).toBe(true), { timeout: 60_000 });
+    await settledHover(editor, frame);
+
+    expect({
+      placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
+      onRoad: baseplatesOnRoad(editor),
+      queued: editor.snapshot().queuedPlacement,
+      refusal: editor.snapshot().lastRefusal?.reason ?? null,
+      hover: waitingView(editor),
+    }).toEqual({ ...decision, onRoad: 0, queued: null });
+  },
+  240_000,
+);
+
+it("leaves nothing of a world it switched away from while that world's plates read their connector tables: their arrival places no ghost to collide with", async () => {
+  const gate = roadPlatesReading();
+  const { editor, backend } = await streamingEditor({ models: [], tier: null, fetcher: gate });
+  strokeRoad(editor, backend);
+  expect(posesOf(editor)).toHaveLength(3);
+  await vi.waitFor(() => expect(gate.held).toBeGreaterThan(0));
+  expect(await editor.newWorld("Second")).toBe(true);
+  gate.open();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const [x, z] = OVER_THE_ROAD;
+  expect((await placer(editor, backend)(BASEPLATE, x, z)).placements).toBe(1);
+  expect(posesOf(editor)).toEqual([`${BASEPLATE} ${x},${z} y0`]);
+}, 120_000);
+
+type PendingNeighbourCommit = (editor: IEditor, backend: AimedBackend) => Promise<void>;
+
+const BESIDE_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
+const CLEAR_OF_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (5 * ROAD_TILE_LDU) / 2];
+const ON_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+
+const clickOnRoad =
+  (mode: "assist" | "precise"): PendingNeighbourCommit =>
+  async (editor, backend) => {
+    editor.setPlacementMode(mode);
+    await chosen(editor, BASEPLATE);
+    backend.aim(...ON_THE_ROAD);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+  };
+
+const COMMITS_THAT_READ_A_VERDICT: Readonly<
+  Record<
+    EditKind,
+    | ReadonlyArray<{
+        readonly path: string;
+        readonly first: Ground | null;
+        readonly commit: PendingNeighbourCommit;
+      }>
+    | string
+  >
+> = {
+  place: [
+    { path: "an assist click", first: null, commit: clickOnRoad("assist") },
+    { path: "a precise click", first: null, commit: clickOnRoad("precise") },
+    {
+      path: "a paste",
+      first: CLEAR_OF_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...CLEAR_OF_THE_ROAD);
+        editor.copySelection();
+        editor.pasteClipboard();
+        backend.aim(...ON_THE_ROAD);
+        editor.pointerMove(0, 0);
+        editor.click(0, 0, 0);
+      },
+    },
+  ],
+  fill: [
+    {
+      path: "a fill",
+      first: null,
+      commit: async (editor, backend) => {
+        await chosen(editor, BASEPLATE);
+        backend.aim(...ON_THE_ROAD);
+        editor.pointerMove(0, 0);
+        editor.dragStart(0, 0);
+        backend.aim(3 * ROAD_TILE_LDU, ROAD_TILE_LDU / 2);
+        editor.dragMove(0, 0);
+        editor.dragEnd(0, 0, 0);
+      },
+    },
+  ],
+  move: [
+    {
+      path: "a move onto the road",
+      first: CLEAR_OF_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...CLEAR_OF_THE_ROAD);
+        editor.moveSelectionBy(0, ON_THE_ROAD[1] - CLEAR_OF_THE_ROAD[1], 0);
+      },
+    },
+  ],
+  rotate: [
+    {
+      path: "a turn beside the road",
+      first: BESIDE_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...BESIDE_THE_ROAD);
+        editor.turnSelectedModelTo(1, 0);
+      },
+    },
+  ],
+  remove: [
+    {
+      path: "a delete beside the road",
+      first: BESIDE_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...BESIDE_THE_ROAD);
+        editor.deleteSelection(0);
+      },
+    },
+  ],
+  road: "lays road plates by road joins, not by the placement search",
+  "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
+  "throw-switch": "throws a switch without placing a model",
+  plan: "edits plan regions only",
+  "open-plan":
+    "opens a plan file through the paste path's checks, and a neighbour still reading its connectors refuses the open as a file error",
+};
+
+it.each(
+  Object.entries(COMMITS_THAT_READ_A_VERDICT).flatMap(([kind, paths]) =>
+    typeof paths === "string" ? [] : paths.map((row) => ({ kind, ...row })),
+  ),
+)(
+  "$kind: $path beside a road plate still reading its connector tables waits and commits nothing",
+  async ({ first, commit }) => {
+    const gate = roadPlatesReading();
+    const { editor, backend } = await startEditor([], gate);
+    if (first) await placer(editor, backend)(BASEPLATE, ...first);
+    strokeRoad(editor, backend);
+    const before = layoutState(editor).poses;
+    await commit(editor, backend);
+    const { queuedPlacement, lastFill, selectionRefusal } = editor.snapshot();
+    const waits =
+      queuedPlacement !== null ||
+      (lastFill?.reason ?? "").includes(WAITING_NOTE) ||
+      (selectionRefusal ?? "").includes(WAITING_NOTE);
+    gate.open();
+
+    expect({ poses: layoutState(editor).poses, waits }).toEqual({ poses: before, waits: true });
+  },
+  240_000,
+);
 
 it("lists the held item's parts that have no connector record, and why, and still places it", async () => {
   const { editor, backend } = await startEditor(
@@ -2702,7 +6657,7 @@ async function bundleSetAfterAnImport(withImport: boolean) {
     [PLACEABLE_SET],
     new BundleDirectoryFetcher(),
     [],
-    importer,
+    (bound) => bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
   const tables = container.get(CONNECTOR_TABLES);
   let imported: PlaceableConnectorTables | null = null;
@@ -2781,11 +6736,8 @@ it("gives a part the bundle's packages don't list the record an import brought f
   const shipped = new BundleDirectoryFetcher();
   const { container: reader } = await startEditor([], shipped);
   const record = await reader.get(PART_BUNDLE_LOADER).loadPartConnectors("standard", "ldraw:3811");
-  const { editor, container } = await startEditor(
-    [],
-    hidden,
-    [],
-    new ImporterBringing(["ldraw:3811"], [record]),
+  const { editor, container } = await startEditor([], hidden, [], (bound) =>
+    bound.rebind(MODEL_IMPORTER).toConstantValue(new ImporterBringing(["ldraw:3811"], [record])),
   );
 
   await editor.importModelFile({
@@ -2803,4 +6755,534 @@ it("gives a part the bundle's packages don't list the record an import brought f
     gaps: editor.snapshot().connectorGaps,
     tabled: tables?.tables.filter((table) => table !== null).length,
   }).toEqual({ gaps: [], tabled: 1 });
+}, 120_000);
+
+function dragFill(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: readonly [number, number],
+  to: readonly [number, number],
+): void {
+  backend.aim(from[0], from[1]);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(to[0], to[1]);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+function placedPoses(editor: IEditor, refId: number) {
+  const { x, z, yPlates, refId: refs } = editor.dump().placements;
+  return x
+    .map((at, i) => ({ x: at, z: z[i] ?? 0, yPlates: yPlates[i] ?? 0, refId: refs[i] }))
+    .filter((pose) => pose.refId === refId)
+    .map(({ x: px, z: pz, yPlates: py }) => [px, pz, py] as const)
+    .toSorted((a, b) => a[1] - b[1] || a[0] - b[0]);
+}
+
+it("fills a dragged row with a user's model at its own size rounded up to the 8-, 16- or 32-stud grid, each tile resting where a click there would put it", async () => {
+  const userModel = "brick-2x4";
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const refId = catalog.itemRefId(brick) ?? -1;
+  await chosen(editor, brick);
+  const steps: number[][] = [];
+  for (const _ of [8, 16, 32]) {
+    dragFill(editor, backend, [0, 0], [1300, 10]);
+    const xs = placedPoses(editor, refId).map(([x]) => x);
+    steps.push(xs.slice(1).map((x, i) => x - (xs[i] ?? 0)));
+    editor.undo(0);
+    editor.cycleFillGrid();
+  }
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+  const row = placedPoses(editor, refId);
+  editor.undo(0);
+  const under = row[2] ?? [0, 0, 0];
+  backend.aim(under[0], under[1]);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  dragFill(editor, backend, [0, 0], [1300, 10]);
+
+  expect(steps).toEqual([Array(8).fill(160), Array(4).fill(320), Array(2).fill(640)]);
+  expect(placedPoses(editor, refId).filter(([, , y]) => y > 0)).toEqual([[under[0], under[1], 3]]);
+  expect(editor.snapshot().lastFill).toEqual({
+    item: brick,
+    placed: row.length,
+    refused: 0,
+    reason: null,
+  });
+}, 120_000);
+
+it("skips and reports the tiles a click would refuse, places the rest, and one undo takes the whole fill back", async () => {
+  const { editor, backend, catalog } = await startEditor([]);
+  const refId = catalog.itemRefId(BASEPLATE) ?? -1;
+  expect((await placer(editor, backend)(BASEPLATE, 960, 320)).placements).toBe(1);
+  editor.cycleFillGrid();
+  editor.cycleFillGrid();
+  const seen = () => {
+    const { placements, lastFill, history } = editor.snapshot();
+    return {
+      placements,
+      placed: lastFill?.placed ?? null,
+      refused: lastFill?.refused ?? null,
+      overlap:
+        lastFill?.reason?.includes("would hit Baseplate 32 x 32 in 3811 Baseplate 32 x 32") ?? null,
+      undo: history.undoLabel,
+    };
+  };
+
+  dragFill(editor, backend, [0, 0], [1900, 10]);
+  const filled = seen();
+  editor.undo(0);
+  const undone = seen();
+  editor.redo(0);
+
+  expect(filled).toEqual({
+    placements: 3,
+    placed: 2,
+    refused: 1,
+    overlap: true,
+    undo: "fill (2 placements)",
+  });
+  expect(undone).toEqual({
+    placements: 1,
+    placed: null,
+    refused: null,
+    overlap: null,
+    undo: "place",
+  });
+  expect(placedPoses(editor, refId)).toEqual([
+    [320, 320, 0],
+    [960, 320, 0],
+    [1600, 320, 0],
+  ]);
+}, 120_000);
+
+it("fills the active plan's tables with a user's model, inside the tables, and the plan counts every tile", async () => {
+  const userModel = "brick-2x4";
+  const { editor, catalog, container } = await startEditor([], new BundleDirectoryFetcher(), [
+    userModel,
+  ]);
+  const brick = `omr:${userModel}`;
+  await loadCatalogItem(catalog, brick);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -160, minZ: 0, maxX: 1440, maxZ: 640 });
+  await chosen(editor, brick);
+
+  editor.fillTables(0);
+  const filled = {
+    placements: editor.snapshot().placements,
+    inside: plans.insideCount(planId),
+    issues: plans.issues(planId).length,
+  };
+  editor.undo(0);
+
+  expect(filled).toEqual({ placements: 40, inside: 40, issues: 0 });
+  expect({ placements: editor.snapshot().placements, inside: plans.insideCount(planId) }).toEqual({
+    placements: 0,
+    inside: 0,
+  });
+}, 120_000);
+
+it.each([
+  { snapRoads: true, mismatched: false },
+  { snapRoads: false, mismatched: true },
+] as const)(
+  "with road snapping $snapRoads, fills T-junctions so that their own edges mismatch only where a click would allow it",
+  async ({ snapRoads, mismatched }) => {
+    const { editor, backend } = await startEditor([]);
+    editor.setSnapRoads(snapRoads);
+    await chosen(editor, ROAD_T_JUNCTION);
+    editor.cycleFillGrid();
+    editor.cycleFillGrid();
+
+    dragFill(editor, backend, [0, 0], [1900, 1900]);
+    const { lastFill, roads, placements } = editor.snapshot();
+
+    expect({
+      refusedSome: (lastFill?.refused ?? 0) > 0,
+      mismatched: roads.mismatchedCells > 0,
+      placements: placements + (lastFill?.refused ?? 0),
+    }).toEqual({ refusedSome: !mismatched, mismatched, placements: 9 });
+  },
+  120_000,
+);
+
+it("refuses a fill tile where a held train would stand on the rails, and places the rest on the ground", async () => {
+  const { editor, backend, catalog } = await startEditor([LOCOMOTIVE.slice(4)]);
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await chosen(editor, LOCOMOTIVE);
+
+  dragFill(editor, backend, [-640, -640], [640, 640]);
+  const { lastFill, placements } = editor.snapshot();
+
+  expect({
+    placed: lastFill?.placed,
+    refusedSome: (lastFill?.refused ?? 0) > 0,
+    reason: lastFill?.reason,
+    placements,
+    trains: trainsOf(editor),
+  }).toEqual({
+    placed: placements,
+    refusedSome: true,
+    reason: `${LOCOMOTIVE_LABEL} would stand on the rails there. Set it on the rails with a click.`,
+    placements: expect.any(Number),
+    trains: [],
+  });
+  expect(placements).toBeGreaterThan(0);
+}, 120_000);
+
+it("offers the fill grid key only while a part is in hand, and leaves selecting and the camera live everywhere", async () => {
+  const { editor } = await startEditor([]);
+  const live = (id: CommandId) => commandEnabled(id, editor.snapshot());
+  const selecting = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+  await chosen(editor, BASEPLATE);
+  const placing = (["cycle-fill-grid", "select-tool", "fit-all", "zoom-in"] as const).map(live);
+
+  expect({ selecting, placing }).toEqual({
+    selecting: [false, true, true, true],
+    placing: [true, true, true, true],
+  });
+}, 120_000);
+
+it("cancels a fill mid-drag with the part kept in hand, so its release places nothing and the next drag starts afresh", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(1900, 1900);
+  editor.pointerMove(0, 0);
+  editor.dragMove(0, 0);
+  const drafted = editor.snapshot().fillDraft?.wanted ?? 0;
+  const cancellable = commandEnabled("cancel", editor.snapshot());
+  editor.cancelGesture();
+  editor.dragEnd(0, 0, 0);
+  const released = {
+    placements: editor.snapshot().placements,
+    fillDraft: editor.snapshot().fillDraft,
+    lastFill: editor.snapshot().lastFill,
+    held: editor.snapshot().activeItem,
+    cancellable: commandEnabled("cancel", editor.snapshot()),
+  };
+  dragFill(editor, backend, [0, 0], [1260, 10]);
+
+  expect({ drafted: drafted > 1, cancellable }).toEqual({ drafted: true, cancellable: true });
+  expect(released).toEqual({
+    placements: 0,
+    fillDraft: null,
+    lastFill: null,
+    held: BASEPLATE,
+    cancellable: false,
+  });
+  expect(editor.snapshot().lastFill?.placed).toBe(editor.snapshot().placements);
+  expect(editor.snapshot().placements).toBe(2);
+}, 120_000);
+
+const RAISED_ROAD = "ldraw:69958@72";
+const USER_TRACK = "switch-then-reversed-curve";
+const DRAG_STEP_LDU = 40;
+const QUARTER_TURN_STEPS = 4;
+const REACH_LDU = 400;
+const ONE_STRAIGHT_LDU = 320;
+
+type PlanPoint = readonly [number, number];
+
+function trackDrawer(editor: IEditor, backend: AimedBackend) {
+  return (from: PlanPoint, to: PlanPoint) => {
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(from[0], from[1]);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    const steps = Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / DRAG_STEP_LDU);
+    for (let step = 1; step <= steps; step++) {
+      backend.aim(
+        from[0] + ((to[0] - from[0]) * step) / steps,
+        from[1] + ((to[1] - from[1]) * step) / steps,
+      );
+      editor.dragMove(0, 0);
+    }
+    editor.dragEnd(0, 0, 0);
+    const { track } = editor.snapshot();
+    return {
+      pieces: track?.pieces ?? 0,
+      lastCommit: track?.lastCommit ?? null,
+      lastBlock: track?.lastBlock ?? null,
+      lastWithheld: track?.lastWithheld ?? null,
+      lastUnsupported: track?.lastUnsupported ?? null,
+    };
+  };
+}
+
+async function supportChecked(editor: IEditor): Promise<void> {
+  await vi.waitFor(() => {
+    expect(editor.dump().studChecks).toBe(0);
+    expect(editor.snapshot().track?.unsupported).not.toBeNull();
+  });
+}
+
+function holdAndClick(editor: IEditor, backend: AimedBackend, piece: string, at: PlanPoint) {
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${piece}`);
+  backend.aim(at[0], at[1]);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const { refusedClicks, lastRefusal, track } = editor.snapshot();
+  return { refusedClicks, reason: lastRefusal?.reason ?? null, pieces: track?.pieces ?? 0 };
+}
+
+it("lays a run across a road plate's roadway as a level crossing reported unsupported, with ramps on the verge studs; a raised plate stops a run short and can't be dropped onto track", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+
+  const across = draw([-480, 0], [480, 0]);
+  const hud = toolHints(editor.snapshot());
+  const [crossing, ...others] = editor.dump().crossings;
+  expect(across).toMatchObject({
+    lastCommit: "laid",
+    lastBlock: null,
+    lastWithheld: null,
+    lastUnsupported: {
+      pieces: expect.any(Number),
+      block: { kind: "model", label: expect.stringContaining("44336p04"), unseated: true },
+    },
+  });
+  expect(hud).toMatchObject({
+    title: "Laid unsupported",
+    detail: expect.stringContaining("where it has no studs"),
+  });
+  expect(editor.snapshot().track?.unsupported).toBeGreaterThan(0);
+  expect(others).toEqual([]);
+  expect(crossing?.ramps.length).toBeGreaterThan(0);
+  for (const ramp of crossing?.ramps ?? []) expect(ramp.studMates).toBeGreaterThan(0);
+
+  await place(RAISED_ROAD, 0, 1600);
+  const through = draw([-800, 1600], [480, 1600]);
+  expect(through.lastBlock).toEqual({
+    kind: "model",
+    label: expect.stringContaining("69958"),
+    unseated: false,
+  });
+
+  editor.setSnapRoads(false);
+  const onto = await place(RAISED_ROAD, -500, 0);
+  expect(onto.reason).toMatch(/69958 .* would cross the track laid there\./u);
+}, 120_000);
+
+it("stops a run short at a user's brick model or track it doesn't join and names it, refuses a held piece or the model dropped onto track, and lays a run that joins an open end", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_BRICK,
+  ]);
+  const brick = `omr:${USER_BRICK}`;
+  await loadCatalogItem(catalog, brick);
+  const place = placer(editor, backend);
+  const draw = trackDrawer(editor, backend);
+  await place(brick, 0, 0);
+  const label = editor.snapshot().catalog.find((item) => item.id === brick)?.label ?? brick;
+
+  const throughBrick = draw([-480, 0], [480, 0]);
+  const beside = draw([-480, 400], [480, 400]);
+  const acrossTrack = draw([440, -300], [440, 700]);
+  const fromOpenEnd = draw([480, 400], [800, 400]);
+  const heldOntoBrick = holdAndClick(editor, backend, TRACK_STRAIGHT, [0, 0]);
+  editor.chooseItem(null);
+  const brickOntoTrack = await place(brick, 0, 400);
+
+  expect(throughBrick.lastBlock).toEqual({ kind: "model", label, unseated: false });
+  expect(beside).toMatchObject({ lastCommit: "laid", lastBlock: null });
+  expect(acrossTrack.lastBlock).toEqual({ kind: "track" });
+  expect(fromOpenEnd.pieces).toBeGreaterThan(acrossTrack.pieces);
+  expect(fromOpenEnd).toMatchObject({ lastCommit: "laid", lastBlock: null });
+  expect(heldOntoBrick).toMatchObject({
+    pieces: fromOpenEnd.pieces,
+    reason: `Train Track 9V Straight would run into ${label}.`,
+  });
+  expect(brickOntoTrack.reason).toBe(`${label} would cross the track laid there.`);
+}, 120_000);
+
+function outwardFrom(
+  end: { readonly xLdu: number; readonly zLdu: number; readonly heading: number },
+  reach: number,
+) {
+  const radians = (end.heading * Math.PI) / (2 * QUARTER_TURN_STEPS);
+  return [end.xLdu + reach * Math.cos(radians), end.zLdu + reach * Math.sin(radians)] as const;
+}
+
+it("lets a run start from or close onto the open end of a user's track model and stops one short at its track", async () => {
+  const { editor, backend, catalog } = await startEditor([], new BundleDirectoryFetcher(), [
+    USER_TRACK,
+  ]);
+  const container = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, container);
+  await placer(editor, backend)(container, 0, 0);
+  const draw = trackDrawer(editor, backend);
+  const [from, onto] = editor
+    .dump()
+    .trackEnds.filter(
+      (open) =>
+        open.heading % QUARTER_TURN_STEPS === 0 &&
+        Number.isInteger(open.xLdu / 20) &&
+        Number.isInteger(open.zLdu / 20),
+    );
+  if (!from || !onto) {
+    throw new Error(`${USER_TRACK} has no two open ends on the stud grid facing a quarter turn`);
+  }
+
+  const joined = draw([from.xLdu, from.zLdu], outwardFrom(from, REACH_LDU));
+  const closed = draw(outwardFrom(onto, ONE_STRAIGHT_LDU), [onto.xLdu, onto.zLdu]);
+  const stillOpen = editor.dump().trackEnds;
+  const crossing = draw([-160, -600], [-160, 400]);
+
+  expect(joined).toMatchObject({ pieces: 1, lastCommit: "laid", lastBlock: null });
+  expect(closed).toMatchObject({ pieces: 2, lastCommit: "joined", lastBlock: null });
+  expect(stillOpen).not.toContainEqual(
+    expect.objectContaining({ xLdu: onto.xLdu, zLdu: onto.zLdu }),
+  );
+  expect(crossing.lastBlock).toEqual({ kind: "track" });
+}, 120_000);
+
+it("fills a user's track container across a road plate's roadway as track the plan reports unsupported, and skips the tiles whose track would cross laid track", async () => {
+  const { editor, backend, catalog, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [USER_TRACK],
+  );
+  const carrier = `omr:${USER_TRACK}`;
+  await loadCatalogItem(catalog, carrier);
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -1920, minZ: -1920, maxX: 1920, maxZ: 1920 });
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  const label = editor.snapshot().catalog.find((item) => item.id === carrier)?.label ?? carrier;
+  const outcome = () => {
+    const unsupported = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
+    return {
+      lastFill: editor.snapshot().lastFill,
+      unsupportedTrack: editor.snapshot().track?.unsupported ?? 0,
+      carriersFlagged: unsupported.filter((issue) => issue.message.startsWith(label)).length,
+    };
+  };
+
+  await chosen(editor, carrier);
+  dragFill(editor, backend, [-1140, 0], [1420, 10]);
+  await supportChecked(editor);
+  const acrossRoadway = outcome();
+  editor.undo(0);
+  const undone = outcome();
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [0, 2000], [0, 2960]);
+  await chosen(editor, carrier);
+  dragFill(editor, backend, [-1280, 2480], [1280, 2490]);
+  const acrossTrack = editor.snapshot().lastFill;
+
+  expect(acrossRoadway.lastFill).toMatchObject({ item: carrier, refused: 0, reason: null });
+  expect(acrossRoadway.lastFill?.placed).toBeGreaterThan(1);
+  expect(acrossRoadway.unsupportedTrack).toBeGreaterThan(0);
+  expect(acrossRoadway.carriersFlagged).toBeGreaterThan(0);
+  expect(undone).toMatchObject({ unsupportedTrack: 0, carriersFlagged: 0 });
+  expect(acrossTrack).toMatchObject({
+    item: carrier,
+    reason: `${label} would cross the track laid there.`,
+  });
+  expect(acrossTrack?.refused).toBeGreaterThan(0);
+  expect(acrossTrack?.placed).toBeGreaterThan(0);
+}, 120_000);
+
+const MY_COTTAGE = [
+  "0 Custom cottage built from official parts",
+  "0 Name: my-cottage.ldr",
+  "0 Author: lug-layout tests, after the experience audit's custom cottage",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3867.dat",
+  "1 15 -40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 40 -24 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 15 -60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 15 60 -24 0 0 0 1 0 1 0 -1 0 0 3001.dat",
+  "1 4 -40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 -40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 -60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "1 4 40 -48 60 1 0 0 0 1 0 0 0 1 3001.dat",
+  "",
+].join("\n");
+
+function sheetTexts(svg: string): string[] {
+  return [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/gu)].map((match) =>
+    (match[1] ?? "").replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"),
+  );
+}
+
+function sheetPaths(svg: string, kind: string): string[] {
+  return [...svg.matchAll(/<path class="([^"]*)" d="([^"]*)"\/>/gu)]
+    .filter((match) => (match[1] ?? "").split(" ")[0] === kind)
+    .map((match) => match[2] ?? "");
+}
+
+it("prints a plan of tables drawn on the canvas, a road plate with track laid across it and a user's own cottage: tables dimensioned in studs and cm, every placement numbered in plan order, track by its outline, and a key that totals the parts list", async () => {
+  const { editor, backend, container } = await startEditor(
+    [],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) =>
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER))),
+  );
+  const plans = container.get(PLAN_SERVICE);
+  const { planId } = plans.drawTable({ minX: -640, minZ: -640, maxX: 640, maxZ: 640 });
+  plans.drawTable({ minX: 640, minZ: -640, maxX: 1280, maxZ: 640 });
+  const place = placer(editor, backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await supportChecked(editor);
+  trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  await editor.importModelFile({
+    name: "my-cottage.ldr",
+    bytes: new TextEncoder().encode(MY_COTTAGE),
+  });
+  const cottage = editor.snapshot().modelImport?.item ?? "";
+  await place(cottage, 960, 320);
+  editor.chooseItem(null);
+  await supportChecked(editor);
+
+  const svg = container.get(PLAN_SHEET_SERVICE).printable(editor, planId);
+  const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, { kind: "plan", planId });
+  const texts = sheetTexts(svg);
+  const key = texts.slice(texts.indexOf("Key: numbers on the plan") + 4);
+  const rows = Array.from({ length: 5 }, (_, i) => key.slice(i * 3, i * 3 + 3));
+
+  expect(texts).toEqual(
+    expect.arrayContaining([
+      "64 studs · 51.2 cm",
+      "32 studs · 25.6 cm",
+      "room 96 studs · 76.8 cm",
+      "Parts list: 15 parts in 5 part and colour lines, from 5 placements",
+      expect.stringMatching(/^Not buildable as planned yet: /u),
+    ]),
+  );
+  expect(rows).toEqual([
+    ["1", "1", expect.stringMatching(/^44336p04 .* at 0, 0$/u)],
+    ["2", "11", expect.stringMatching(/^my-cottage\.ldr.* at 960, 320$/u)],
+    ["3", "1", expect.stringMatching(/^Train Track 9V Straight #1/u)],
+    ["4", "1", expect.stringMatching(/^Train Track 9V Straight #2/u)],
+    ["5", "1", expect.stringMatching(/^Train Track 9V Straight #3/u)],
+  ]);
+  expect(key.slice(15, 17)).toEqual(["15", "Total: 5 placements"]);
+  expect({ parts: bom.parts, placements: bom.placements, lines: bom.ldraw.length }).toEqual({
+    parts: 15,
+    placements: 5,
+    lines: 5,
+  });
+
+  expect(sheetPaths(svg, "model")).toHaveLength(2);
+  expect(sheetPaths(svg, "track").map((d) => d.split("M").length - 1)).toEqual([8, 8, 8]);
+  expect(svg).toContain('class="roadway"');
+  expect(sheetPaths(svg, "ramp")).toHaveLength(4);
 }, 120_000);

@@ -1,10 +1,9 @@
+import { RunningGearPoser, type SimTrack } from "@brr/domain";
 import { Autopilot } from "./blocks/autopilot.ts";
 import { BlockKeeper } from "./blocks/block-keeper.ts";
 import { BlockMap, type BlockTopology } from "./blocks/block-map.ts";
 import { RoutePlanner } from "./routing/route-planner.ts";
-import { RunningGearPoser } from "./running-gear.ts";
 import { SimSession, type SimScenario } from "./sim-session.ts";
-import type { SimTrack } from "./sim-track.ts";
 import { SIM_TICK_HZ, Simulation, type SimCapacity } from "./simulation.ts";
 
 const AUTOPILOT_DWELL_SECONDS = 3;
