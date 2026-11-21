@@ -74,7 +74,7 @@ export interface DragRoute {
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
-const CLOSURE_BUDGET_MS = 30;
+export const CLOSURE_BUDGET_MS = 30;
 
 export class DragField {
   readonly clearance = new TrackClearance();

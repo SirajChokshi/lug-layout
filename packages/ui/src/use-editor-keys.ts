@@ -25,19 +25,28 @@ const NON_TEXT_INPUTS = new Set([
 ]);
 
 const ACTIVATED_BY_SPACE = new Set(["checkbox", "radio", "button", "submit", "reset", "color"]);
+const ACTIVATED_BY_ENTER = new Set(["button", "submit", "reset", "color"]);
 const STEPPED_BY_ARROWS = new Set(["range", "radio"]);
+
+function activatedByKey(target: HTMLElement): boolean {
+  return (
+    target instanceof HTMLButtonElement ||
+    target instanceof HTMLAnchorElement ||
+    target.tagName === "SUMMARY" ||
+    target.getAttribute("role") === "button" ||
+    target.getAttribute("role") === "checkbox"
+  );
+}
 
 export function controlTakesKey(target: EventTarget | null, key: string): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (key === " ") {
     if (target instanceof HTMLInputElement) return ACTIVATED_BY_SPACE.has(target.type);
-    return (
-      target instanceof HTMLButtonElement ||
-      target instanceof HTMLAnchorElement ||
-      target.tagName === "SUMMARY" ||
-      target.getAttribute("role") === "button" ||
-      target.getAttribute("role") === "checkbox"
-    );
+    return activatedByKey(target);
+  }
+  if (key === "Enter") {
+    if (target instanceof HTMLInputElement) return ACTIVATED_BY_ENTER.has(target.type);
+    return activatedByKey(target);
   }
   if (key.startsWith("Arrow") && target instanceof HTMLInputElement) {
     return STEPPED_BY_ARROWS.has(target.type);
