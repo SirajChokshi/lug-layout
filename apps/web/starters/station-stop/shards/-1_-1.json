@@ -1,0 +1,46 @@
+{
+  "format": "brr.shard",
+  "placements": [
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -1280, "yPlates": 0, "z": -640 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": -640, "yPlates": 0, "z": -640 }
+  ],
+  "schemaVersion": 1,
+  "superChunk": [-1, -1],
+  "track": [
+    {
+      "heading": 0,
+      "index": 0,
+      "position": ["-32", "0", "0", "0", "-40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    },
+    {
+      "heading": 0,
+      "index": 1,
+      "position": ["-16", "0", "0", "0", "-40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    },
+    {
+      "heading": 13,
+      "index": 21,
+      "position": ["-32", "-40", "0", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 14,
+      "index": 22,
+      "position": ["-32", "0", "-40", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 15,
+      "index": 23,
+      "position": ["-32", "0", "0", "-40", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    }
+  ]
+}
