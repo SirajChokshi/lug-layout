@@ -10,6 +10,7 @@ import {
   type Zeta16,
 } from "@brr/math";
 import * as v from "valibot";
+import { LevelCrossingFacts, PlanOutline } from "./level-crossing.ts";
 
 const MATRIX_FLOATS = 12;
 const STUD_PHASES = 20;
@@ -62,6 +63,12 @@ export const Vec3 = v.tuple([Finite, Finite, Finite]);
 export type Vec3 = v.InferOutput<typeof Vec3>;
 
 const Bounds = v.object({ min: Vec3, max: Vec3 });
+
+export const CUSTOM_PART_NAMESPACE = "custom:";
+
+export function isCustomPartId(partId: string): boolean {
+  return partId.startsWith(CUSTOM_PART_NAMESPACE);
+}
 
 export const PartRole = v.picklist(["ground", "road", "track", "wall", "roof", "detail", "model"]);
 export type PartRole = v.InferOutput<typeof PartRole>;
@@ -279,6 +286,41 @@ export type ModelSet = v.InferOutput<typeof ModelSet>;
 export const ModelRole = v.picklist(["mils-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
+const LineNumber = v.pipe(Integer, v.minValue(1));
+const OmrLine = v.strictObject({ line: LineNumber, text: v.string() });
+
+export const ErratumEvidence = v.variant("kind", [
+  v.strictObject({ kind: v.literal("mirror-twin"), twin: OmrLine, summary: v.string() }),
+  v.strictObject({
+    kind: v.literal("wall-course"),
+    course: v.pipe(v.array(OmrLine), v.minLength(2)),
+    summary: v.string(),
+  }),
+]);
+export type ErratumEvidence = v.InferOutput<typeof ErratumEvidence>;
+
+export const OmrErratum = v.strictObject({
+  model: v.string(),
+  file: v.string(),
+  sha256: Sha256Hex,
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  evidence: ErratumEvidence,
+});
+export type OmrErratum = v.InferOutput<typeof OmrErratum>;
+
+export const OmrErrata = v.strictObject({ errata: v.array(OmrErratum) });
+export type OmrErrata = v.InferOutput<typeof OmrErrata>;
+
+export const ModelErratum = v.object({
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  summary: v.string(),
+});
+export type ModelErratum = v.InferOutput<typeof ModelErratum>;
+
 const IntegerVec3 = v.tuple([Integer, Integer, Integer]);
 const CountVec3 = v.tuple([Count, Count, Count]);
 
@@ -308,6 +350,7 @@ export const BundleModelEntry = v.object({
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
+  errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
@@ -557,6 +600,7 @@ export const PartShape = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
 
@@ -579,6 +623,7 @@ export const TrackShape = v.object({
   ),
   minY: Finite,
   maxY: Finite,
+  outline: PlanOutline,
 });
 export type TrackShape = v.InferOutput<typeof TrackShape>;
 
@@ -622,6 +667,7 @@ export const PrimitiveConnectorTable = v.strictObject({
         }),
       ),
       technic: v.optional(v.picklist(TECHNIC_ROLES)),
+      stud: v.optional(v.literal(true)),
     }),
   ),
 });
@@ -650,6 +696,9 @@ export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
 export const LibraryConnectorsIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type LibraryConnectorsIndexRef = v.InferOutput<typeof LibraryConnectorsIndexRef>;
 
+export const ShadowLibraryIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type ShadowLibraryIndexRef = v.InferOutput<typeof ShadowLibraryIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -659,10 +708,9 @@ export const BundleCompiler = v.object({
   cavityProbe: v.string(),
   libraryBake: v.optional(LibraryBakeIndexRef),
   libraryConnectors: v.optional(LibraryConnectorsIndexRef),
+  shadowLibrary: v.optional(ShadowLibraryIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
-
-const LineNumber = v.pipe(Integer, v.minValue(1));
 
 export const StudioArchive = v.object({
   status: v.literal("read"),
@@ -673,6 +721,7 @@ export const StudioArchive = v.object({
   unconvertedLines: v.array(LineNumber),
   bricklinkIds: v.record(v.string(), v.string()),
   customParts: v.array(v.string()),
+  customFiles: v.array(v.object({ name: v.string(), text: v.string() })),
 });
 export type StudioArchive = v.InferOutput<typeof StudioArchive>;
 
@@ -713,6 +762,7 @@ export type BundleLod = v.InferOutput<typeof BundleLod>;
 
 export const CONNECTIVITY_LICENSE = "CC BY-SA 4.0";
 export const CONNECTOR_SOURCE = { shadow: 1, primitive: 2, inferred: 4, patch: 8 } as const;
+export const CONNECTOR_STATUS = { verified: 0, unverified: 1 } as const;
 export const CONNECTIVITY_SOURCES: ReadonlyArray<number> = [
   CONNECTOR_SOURCE.shadow,
   CONNECTOR_SOURCE.patch,
@@ -728,7 +778,7 @@ export type ConnectorPackage = v.InferOutput<typeof ConnectorPackage>;
 const ConnectorFaces = v.object({
   gender: v.array(v.picklist([0, 1])),
   source: v.array(v.picklist(Object.values(CONNECTOR_SOURCE))),
-  status: v.array(v.picklist([0, 1])),
+  status: v.array(v.picklist(Object.values(CONNECTOR_STATUS))),
   caps: v.array(Count),
   slide: v.array(v.boolean()),
   group: v.array(v.string()),
@@ -825,6 +875,7 @@ export const BundleIndex = v.object({
   trackCatalog: TrackCatalog,
   trackShapes: v.array(TrackShape),
   tablePlane: TablePlane,
+  levelCrossing: LevelCrossingFacts,
   compiler: v.nullable(BundleCompiler),
   connectors: FileRef,
   connectivity: FileRef,
@@ -833,6 +884,7 @@ export const BundleIndex = v.object({
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),
   rollingDiagnostics: v.optional(RollingDiagnosticsRef),
+  libraryParts: v.optional(FileRef),
 });
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
@@ -913,6 +965,45 @@ export const CrosswalkFile = v.object({
 });
 export type CrosswalkFile = v.InferOutput<typeof CrosswalkFile>;
 
+export const LIBRARY_PARTS_FORMAT = 1;
+
+export const LibraryPartColumns = v.strictObject({
+  id: v.array(v.string()),
+  title: v.array(v.string()),
+  category: v.array(Count),
+  keywords: v.array(v.array(v.string())),
+  rebrickable: v.array(v.string()),
+  colorCount: v.array(v.pipe(Count, v.minValue(1))),
+  colors: v.array(Integer),
+});
+export type LibraryPartColumns = v.InferOutput<typeof LibraryPartColumns>;
+
+export const LibraryPartsFile = v.pipe(
+  v.strictObject({
+    format: v.literal(LIBRARY_PARTS_FORMAT),
+    sources: v.record(v.string(), CrosswalkSourcePin),
+    categories: v.array(v.string()),
+    parts: LibraryPartColumns,
+  }),
+  v.check(({ categories, parts }) => {
+    const count = parts.id.length;
+    const perPart = [
+      parts.title,
+      parts.category,
+      parts.keywords,
+      parts.rebrickable,
+      parts.colorCount,
+    ];
+    const colors = parts.colorCount.reduce((sum, colorCount) => sum + colorCount, 0);
+    return (
+      perPart.every((column) => column.length === count) &&
+      parts.colors.length === colors &&
+      parts.category.every((category) => category < categories.length)
+    );
+  }, "library part columns are inconsistent"),
+);
+export type LibraryPartsFile = v.InferOutput<typeof LibraryPartsFile>;
+
 export const VehicleGuideKind = v.picklist(["bogiePivot", "fixedAxle"]);
 export type VehicleGuideKind = v.InferOutput<typeof VehicleGuideKind>;
 
@@ -970,11 +1061,26 @@ const IndexRange = v.tuple([Count, Count]);
 
 const StringList = v.pipe(v.array(v.string()), v.readonly());
 
+export const SHADOW_NAMESPACE = "shadow:";
+export const SHADOW_PATCH_NAMESPACE = "shadow-patch:";
+
+export const InferredConnectorRecords = v.strictObject({
+  connectivity: v.nullable(ConnectorRecordFile),
+  connectors: v.nullable(ConnectorRecordFile),
+});
+export type InferredConnectorRecords = v.InferOutput<typeof InferredConnectorRecords>;
+
+export const ShadowPatchManifest = v.looseObject({
+  patches: v.array(v.looseObject({ part: v.string(), status: v.string() })),
+});
+export type ShadowPatchManifest = v.InferOutput<typeof ShadowPatchManifest>;
+
 export const CompilerConnectorInputs = v.strictObject({
   primitives: v.nullable(PrimitiveConnectorTable),
   sectionVocabulary: SectionVocabulary,
   cavityProbe: v.string(),
   infer: StringList,
+  shadowPatchManifest: v.nullable(ShadowPatchManifest),
 });
 export type CompilerConnectorInputs = v.InferOutput<typeof CompilerConnectorInputs>;
 
@@ -1147,15 +1253,7 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist([
-    "unresolved",
-    "tooDeep",
-    "license",
-    "unofficial",
-    "noStudRing",
-    "malformed",
-    "tooLarge",
-  ]),
+  kind: v.picklist(["unresolved", "tooDeep", "unofficial", "noStudRing", "malformed", "tooLarge"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
@@ -1180,7 +1278,7 @@ export const CompilerCompile = v.object({
         file: v.string(),
         header: ModelSection,
         files: Count,
-        connectors: v.nullable(ConnectorRecordFile),
+        connectors: v.nullable(InferredConnectorRecords),
       }),
       v.object({ ...CompilerNeed.entries, ...Reference }),
       v.object({ ...CompilerFailure.entries, ...Reference }),
@@ -1544,12 +1642,36 @@ export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex
 export const LibraryConnectorsPin = v.strictObject({
   index: LibraryConnectorsIndexRef,
   parts: Count,
-  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
   faces: v.strictObject({ connectivity: Count, connectors: Count }),
   partsWithPieces: Count,
 });
 export type LibraryConnectorsPin = v.InferOutput<typeof LibraryConnectorsPin>;
+
+export const SHADOW_LIBRARY_FORMAT = 1;
+export const SHADOW_LIBRARY_INDEX_FILE = "shadow-library.json";
+
+const AddressedFiles = v.record(v.string(), v.string());
+
+export const ShadowLibraryIndex = v.strictObject({
+  format: v.literal(SHADOW_LIBRARY_FORMAT),
+  source: GithubArchive,
+  license: v.literal(CONNECTIVITY_LICENSE),
+  attribution: v.array(v.string()),
+  shadow: AddressedFiles,
+  patches: AddressedFiles,
+  patchManifest: v.strictObject({ file: v.string() }),
+  licenseText: v.strictObject({ file: v.string() }),
+});
+export type ShadowLibraryIndex = v.InferOutput<typeof ShadowLibraryIndex>;
+
+export const ShadowLibraryPin = v.strictObject({
+  index: ShadowLibraryIndexRef,
+  archive: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  patchManifest: Sha256Hex,
+  files: v.strictObject({ shadow: Count, patches: Count }),
+});
+export type ShadowLibraryPin = v.InferOutput<typeof ShadowLibraryPin>;
 
 export const CatalogLocation = v.variant("kind", [GithubMirror, GithubArchive]);
 export type CatalogLocation = v.InferOutput<typeof CatalogLocation>;
@@ -1622,7 +1744,6 @@ export const LibraryBakePin = v.strictObject({
   parts: Count,
   records: Count,
   failed: Count,
-  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
 });
 export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 
@@ -1646,7 +1767,6 @@ export type CatalogSource = v.InferOutput<typeof CatalogSource>;
 export const Palette = v.strictObject({
   source: BundleSource,
   config: v.array(v.string()),
-  studPrimitives: v.array(v.string()),
   unofficialAllowlist: v.array(v.string()),
   parts: v.array(
     v.strictObject({
@@ -1679,6 +1799,21 @@ export type Palette = v.InferOutput<typeof Palette>;
 
 export const FixtureModels = v.strictObject({ models: v.array(PaletteModel) });
 export type FixtureModels = v.InferOutput<typeof FixtureModels>;
+
+export {
+  CrossingRamp,
+  CrossingTrackSystem,
+  LevelCrossingFacts,
+  OUTLINE_UNITS_PER_LDU,
+  PartOutline,
+  PlanAxis,
+  PlanBox,
+  PlanOutline,
+  PlanOutlinesFile,
+  PlanPoint,
+  PlanRing,
+  RampRise,
+} from "./level-crossing.ts";
 
 export {
   MilsBuild,
