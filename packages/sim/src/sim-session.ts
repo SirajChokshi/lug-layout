@@ -1,5 +1,5 @@
 import type { BlockTopology } from "./blocks/block-map.ts";
-import type { SimTrack } from "./sim-track.ts";
+import { VEHICLE_POSE_FLOATS, type SimTrack } from "@brr/domain";
 import {
   POSE_FLOATS_PER_VEHICLE,
   type OpenEndRule,
@@ -8,7 +8,6 @@ import {
   type TrainPlacement,
   type TrainSpec,
 } from "./simulation.ts";
-import { VEHICLE_POSE_FLOATS } from "./running-gear.ts";
 
 export type SimCommand =
   | { readonly kind: "throttle"; readonly train: number; readonly speedLduPerS: number }

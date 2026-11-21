@@ -1,8 +1,15 @@
 import { Container } from "inversify";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { AssetResponseError } from "./asset-response-error.ts";
 import { catalogModule } from "./catalog.module.ts";
 import type { IAssetFetcher } from "./part-bundle.ts";
-import { ASSET_FETCHER, BUNDLE_MANIFEST_FILE, PART_BUNDLE_LOADER } from "./tokens.ts";
+import {
+  ASSET_FETCHER,
+  BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  NETWORK_ASSET_FETCHER,
+  PART_BUNDLE_LOADER,
+} from "./tokens.ts";
 
 class FailingFetcher implements IAssetFetcher {
   readonly requested: string[] = [];
@@ -90,7 +97,7 @@ it.each([
   await container.load(catalogModule);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue(FALLBACK);
   const fetcher = new BucketFetcher(objects);
-  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  container.bind(ASSET_FETCHER).toConstantValue(fetcher);
 
   await expect(container.get(PART_BUNDLE_LOADER).loadManifest("standard")).rejects.toThrow(
     `The part bundle is unreachable: ${error}, failed`,
@@ -104,7 +111,7 @@ it("moves a waiting part mesh load to the end of the queue of its new priority",
   await container.load(catalogModule);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   const fetcher = new GatedFetcher();
-  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  container.bind(ASSET_FETCHER).toConstantValue(fetcher);
   const loader = container.get(PART_BUNDLE_LOADER);
   const load = (file: string, priority: "high" | "low"): Promise<unknown> =>
     loader.loadPartMesh("far", file, priority).catch(() => undefined);
@@ -140,7 +147,7 @@ it("starts a waiting JSON load before the part mesh loads waiting ahead of it", 
   await container.load(catalogModule);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   const fetcher = new GatedFetcher();
-  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  container.bind(ASSET_FETCHER).toConstantValue(fetcher);
   const loader = container.get(PART_BUNDLE_LOADER);
   const inFlight = Array.from({ length: POOL_SLOTS }, (_, i) => `busy-${i}.glb`);
   const loads = inFlight.map((file) => settled(loader.loadPartMesh("far", file, "high")));
@@ -163,7 +170,7 @@ it("fetches the manifest again after a failed load instead of replaying the fail
   await container.load(catalogModule);
   container.bind(BUNDLE_MANIFEST_FILE).toConstantValue("manifest.json");
   const fetcher = new FailingFetcher();
-  container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
+  container.bind(ASSET_FETCHER).toConstantValue(fetcher);
   const loader = container.get(PART_BUNDLE_LOADER);
 
   await expect(loader.loadManifest("standard")).rejects.toThrow("attempt 3");
@@ -174,4 +181,28 @@ it("fetches the manifest again after a failed load instead of replaying the fail
     "standard/manifest.json",
     "standard/manifest.json",
   ]);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+it("tells an HTTP error status apart from a request that got no response", async () => {
+  const container = new Container();
+  await container.load(catalogModule);
+  container.bind(BUNDLE_BASE_URL).toConstantValue("https://bucket.test/");
+  const network = container.get(NETWORK_ASSET_FETCHER);
+  vi.stubGlobal("fetch", async () => new Response(null, { status: 503 }));
+  const answered = network.text(POINTER);
+  await expect(answered).rejects.toBeInstanceOf(AssetResponseError);
+  await expect(answered).rejects.toMatchObject({
+    status: 503,
+    message: `GET https://bucket.test/${POINTER} failed with 503`,
+  });
+  vi.stubGlobal("fetch", async () => {
+    throw new TypeError("Failed to fetch");
+  });
+  const unanswered = network.bytes(POINTER);
+  await expect(unanswered).rejects.toThrow("Failed to fetch");
+  await expect(unanswered).rejects.not.toBeInstanceOf(AssetResponseError);
 });
