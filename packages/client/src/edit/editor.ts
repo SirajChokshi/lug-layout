@@ -116,6 +116,7 @@ import {
   type TrackGapView,
   type TrackRouteView,
 } from "./track-drawing.ts";
+import type { ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import {
   PlacedChunks,
   posedBox,
@@ -343,6 +344,7 @@ export interface TrackView {
   readonly switches: ReadonlyArray<SwitchLeverView>;
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
+  readonly extend: TrackExtendView | null;
   readonly lastCommit: TrackCommitResult | null;
   readonly lastBlock: TrackBlockView | null;
   readonly solve: TrackSolveStats | null;
@@ -487,6 +489,10 @@ export interface IEditor extends IBomSource, IWorldFiles {
   rotate(eventTimeMs: number, direction?: TurnDirection): void;
   mirrorPiece(): void;
   cycleConnector(): void;
+  extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void;
+  cycleTrackChoice(step: 1 | -1): void;
+  selectTrackChoice(index: number): void;
+  dropTrackEnd(): boolean;
   deleteSelection(eventTimeMs: number): void;
   removeTrain(index: number, eventTimeMs: number): void;
   undo(eventTimeMs: number): void;
@@ -808,6 +814,8 @@ export class Editor implements IEditor, IEditedWorld {
   private lastTrackCommit: TrackCommitResult | null = null;
   private lastTrackBlock: TrackBlockView | null = null;
   private trackEndTarget = "";
+  private previewVersion: number | null = null;
+  private trackPress: { readonly x: number; readonly z: number } | null = null;
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private roadExtents: ReadonlyArray<CellExtent> = [];
@@ -1082,10 +1090,11 @@ export class Editor implements IEditor, IEditedWorld {
     writeViewUpdate(this.planDelta, view);
     this.plans.apply(this.planDelta);
     const drawing = this.track;
-    if (drawing?.dragView()) {
+    if (drawing && this.state.mode === "track") {
       this.setTrackObstacles(drawing);
-      drawing.moveDrag(this.hitX, this.hitZ);
+      if (drawing.dragView()) drawing.moveDrag(this.hitX, this.hitZ);
       this.update({ track: this.trackView() });
+      this.repaintTrackPreview();
     }
   }
 
@@ -1276,6 +1285,7 @@ export class Editor implements IEditor, IEditedWorld {
       switches: track.switchLevers(),
       held: this.heldView(track),
       drag: track.dragView(),
+      extend: this.held ? null : track.extension.view(),
       lastCommit: this.lastTrackCommit,
       lastBlock: this.lastTrackBlock,
       solve:
@@ -1290,10 +1300,10 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private showTrackEnds(target: number | null, misses: ReadonlyArray<number> = []): void {
+  private showTrackEnds(targets: ReadonlyArray<number>, misses: ReadonlyArray<number> = []): void {
     const track = this.track;
     if (!track) return;
-    this.trackEndTarget = `${target}|${misses.join(",")}`;
+    this.trackEndTarget = `${targets.join(",")}|${misses.join(",")}`;
     const gapped = track.gappedEnds();
     this.backend.setTrackEnds(
       track.openEnds().map((end, index) => ({
@@ -1301,18 +1311,46 @@ export class Editor implements IEditor, IEditedWorld {
         yLdu: 0,
         zLdu: end.zLdu,
         headingRadians: end.heading * TRACK_HEADING_RADIANS,
-        kind:
-          index === target
-            ? "target"
-            : gapped.has(index) || misses.includes(index)
-              ? "gap"
-              : "open",
+        kind: targets.includes(index)
+          ? "target"
+          : gapped.has(index) || misses.includes(index)
+            ? "gap"
+            : "open",
       })),
     );
   }
 
-  private targetTrackEnd(target: number | null, misses: ReadonlyArray<number> = []): void {
-    if (`${target}|${misses.join(",")}` !== this.trackEndTarget) this.showTrackEnds(target, misses);
+  private targetTrackEnds(
+    targets: ReadonlyArray<number>,
+    misses: ReadonlyArray<number> = [],
+  ): void {
+    if (`${targets.join(",")}|${misses.join(",")}` !== this.trackEndTarget) {
+      this.showTrackEnds(targets, misses);
+    }
+  }
+
+  private refreshTrackPreview(): void {
+    const track = this.track;
+    if (!track || this.state.mode !== "track" || this.held || track.dragView()) return;
+    const { extension } = track;
+    if (this.state.readOnly) extension.drop();
+    const hovered = this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null;
+    extension.focusOn(this.state.readOnly ? null : hovered);
+    this.paintTrackPreview(track);
+  }
+
+  private paintTrackPreview(track: TrackDrawing): void {
+    const { extension } = track;
+    if (extension.version === this.previewVersion) return;
+    this.previewVersion = extension.version;
+    this.showTrackGhost(track);
+    this.targetTrackEnds(extension.highlighted());
+    this.update({ track: this.trackView() });
+  }
+
+  private repaintTrackPreview(): void {
+    this.previewVersion = null;
+    this.refreshTrackPreview();
   }
 
   private showTrackGhost(track: TrackDrawing): void {
@@ -1379,8 +1417,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (!this.groundHit(ndcX, ndcY)) return false;
     this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    this.trackPress = { x: this.hoverX, z: this.hoverZ };
     this.lastTrackCommit = null;
     this.lastTrackBlock = null;
+    this.backend.setGhost(null);
+    this.showTrackEnds([]);
     this.update({ track: this.trackView() });
     return true;
   }
@@ -1399,12 +1440,12 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const track = this.track;
-    if (!track || !this.groundHit(ndcX, ndcY)) return;
+    if (!track?.dragView() || !this.groundHit(ndcX, ndcY)) return;
     track.moveDrag(this.hitX, this.hitZ);
     this.showTrackGhost(track);
     const target = track.dragTarget();
-    this.targetTrackEnd(
-      target?.joins ? target.end : null,
+    this.targetTrackEnds(
+      target?.joins ? [target.end] : [],
       target && !target.joins ? [target.end] : [],
     );
     this.update({ track: this.trackView() });
@@ -1423,14 +1464,24 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     const track = this.track;
-    if (!track) return;
+    const press = this.trackPress;
+    this.trackPress = null;
+    if (!track?.dragView()) {
+      this.repaintTrackPreview();
+      return;
+    }
     const hit = this.groundHit(ndcX, ndcY);
     if (hit) track.moveDrag(this.hitX, this.hitZ);
     const stayed = (track.dragView()?.pieces ?? 0) === 0;
+    const unmoved = press !== null && press.x === this.hoverX && press.z === this.hoverZ;
     const outcome = track.endDrag();
     this.backend.setGhost(null);
-    this.showTrackEnds(null);
-    if (hit && stayed && this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) return;
+    this.showTrackEnds([]);
+    if (hit && stayed && (unmoved || outcome.refusal === null)) {
+      this.hovering = true;
+      this.trackClick(ndcX, ndcY, eventTimeMs);
+      return;
+    }
     if (outcome.refusal) {
       this.lastTrackCommit = `refused-${outcome.refusal}`;
     } else if (outcome.change.lay.length > 0) {
@@ -1442,9 +1493,69 @@ export class Editor implements IEditor, IEditedWorld {
       });
       this.lastTrackCommit =
         outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
+      track.extension.continueFrom(outcome.end);
     }
     this.lastTrackBlock = outcome.blocked;
     this.update({ track: this.trackView() });
+    this.repaintTrackPreview();
+  }
+
+  private trackClick(ndcX: number, ndcY: number, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track) return;
+    this.repaintTrackPreview();
+    if (track.onExtension(this.hitX, this.hitZ)) {
+      this.extendTrack(null, eventTimeMs);
+      return;
+    }
+    this.backend.rayThrough(ndcX, ndcY, this.ray);
+    const laid = track.pieceOnRay(this.ray);
+    if (laid) {
+      this.clickTrack(laid.placement, ndcX, ndcY, eventTimeMs);
+      return;
+    }
+    if (this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) return;
+    if (this.selectedTrack !== null) this.select(null);
+    if (track.extension.drop()) this.refreshTrackPreview();
+  }
+
+  extendTrack(turn: ExtensionTurn | null, eventTimeMs: number): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || this.state.readOnly || this.held) return;
+    if (track.dragView()) return;
+    if (turn !== null && !track.extension.choose(turn)) return;
+    const plan = track.extensionPlan();
+    if (!plan) return;
+    if (plan.run.choice.blocked !== null) {
+      this.lastTrackCommit = null;
+      this.lastTrackBlock = plan.run.choice.blocked;
+      this.update({ track: this.trackView() });
+      return;
+    }
+    this.lastTrackBlock = null;
+    this.show(this.history.commit("lay-track", [], plan.change), eventTimeMs);
+    this.lastTrackCommit = plan.goal !== null && track.joinsAt(plan.goal) ? "joined" : "laid";
+    track.extension.laid(plan.run, plan.end);
+    this.repaintTrackPreview();
+  }
+
+  cycleTrackChoice(step: 1 | -1): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || this.held || track.dragView()) return;
+    if (track.extension.cycle(step)) this.paintTrackPreview(track);
+  }
+
+  selectTrackChoice(index: number): void {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || this.held || track.dragView()) return;
+    if (track.extension.select(index)) this.paintTrackPreview(track);
+  }
+
+  dropTrackEnd(): boolean {
+    const track = this.track;
+    if (this.state.mode !== "track" || !track || !track.extension.drop()) return false;
+    this.repaintTrackPreview();
+    return true;
   }
 
   private requestKitMeshes(kitId: string): void {
@@ -1463,7 +1574,8 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "track") {
       this.held = null;
       this.track?.cancelDrag();
-      this.targetTrackEnd(null);
+      this.track?.extension.drop();
+      this.targetTrackEnds([]);
     }
     this.active = null;
     this.backend.setGhost(null);
@@ -1510,6 +1622,7 @@ export class Editor implements IEditor, IEditedWorld {
     if ((id === TRACK_ITEM_ID || pieceIndex !== null) && track) {
       this.active = null;
       track.cancelDrag();
+      track.extension.drop();
       this.held =
         pieceIndex === null
           ? null
@@ -1517,15 +1630,20 @@ export class Editor implements IEditor, IEditedWorld {
       this.backend.setGhost(null);
       this.select(null);
       this.requestTrackMeshes(track);
+      if (this.state.mode !== "track") this.setTrackObstacles(track);
+      this.lastTrackCommit = null;
+      this.lastTrackBlock = null;
       this.update({ mode: "track", activeItem: id, pendingItem: null, track: this.trackView() });
       this.showHeldPiece();
+      this.repaintTrackPreview();
       return;
     }
     if (this.state.mode === "track") {
       this.held = null;
       this.track?.cancelDrag();
+      this.track?.extension.drop();
       this.backend.setGhost(null);
-      this.targetTrackEnd(null);
+      this.targetTrackEnds([]);
       this.update({ mode: "select", activeItem: null, track: this.trackView() });
       if (id === null) return;
     }
@@ -1636,7 +1754,7 @@ export class Editor implements IEditor, IEditedWorld {
     const ghost = track.pieceGhost(held.catalogIndex, snap.placement);
     this.backend.setGhost(ghost.instances);
     this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
-    this.targetTrackEnd(snap.end, snap.misses);
+    this.targetTrackEnds(snap.end === null ? [] : [snap.end], snap.misses);
     this.update({ track: this.trackView() });
   }
 
@@ -1674,7 +1792,7 @@ export class Editor implements IEditor, IEditedWorld {
       instances += chunk.count;
       studs += chunk.studs.count;
     }
-    this.showTrackEnds(null);
+    this.showTrackEnds([]);
     return { chunks: chunks.length, instances, studs };
   }
 
@@ -1859,11 +1977,8 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "road" && this.roadDrawing && this.hovering) {
       this.showRoadPreview(this.roadDrawing.hover(this.hitX, this.hitZ, ...this.roadNeighbours()));
     }
-    const track = this.track;
     if (this.held) this.showHeldPiece();
-    else if (this.state.mode === "track" && track && !track.dragView()) {
-      this.targetTrackEnd(this.hovering ? track.endNear(this.hitX, this.hitZ, null) : null);
-    }
+    else this.refreshTrackPreview();
     this.placeGhost();
     this.update({
       hover: this.hoverView(),
@@ -2133,6 +2248,10 @@ export class Editor implements IEditor, IEditedWorld {
       writeTrackChange(this.planDelta, this.track, edit.track);
       this.plans.apply(this.planDelta);
     }
+    const drawing = this.track;
+    const modelsChanged = view.added.length + view.removed.length > 0;
+    if (drawing && modelsChanged && this.state.mode === "track") this.setTrackObstacles(drawing);
+    this.repaintTrackPreview();
     return view;
   }
 
@@ -2898,7 +3017,7 @@ export class Editor implements IEditor, IEditedWorld {
       nextRunFrame += track.runs.length;
     }
     drawing.syncHeld(held);
-    this.showTrackEnds(null);
+    this.showTrackEnds([]);
     this.railsChanged();
     this.update({ track: this.trackView() });
   }
@@ -3015,7 +3134,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.search.clear();
     this.searchIds.clear();
     this.searchModels.clear();
-    this.showTrackEnds(null);
+    this.showTrackEnds([]);
     this.world = world;
     this.consists = new ConsistLayout();
     this.history = new EditHistory(world, this.consists);
@@ -3026,6 +3145,7 @@ export class Editor implements IEditor, IEditedWorld {
       }),
     );
     for (const model of this.placed.models()) this.searchable(model);
+    if (track && this.state.mode === "track") this.setTrackObstacles(track);
     this.update({
       placements: world.size,
       history: this.historyView(),
@@ -3033,6 +3153,7 @@ export class Editor implements IEditor, IEditedWorld {
       studs: this.placed.studTotals(),
       catalogError: null,
     });
+    this.repaintTrackPreview();
   }
 
   get worldNameMaxLength(): number {

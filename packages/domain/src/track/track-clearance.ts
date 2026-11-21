@@ -235,6 +235,7 @@ export class TrackClearance {
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
   private readonly cells = new Map<number, number[]>();
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
   private visit = new Uint32Array(64);
   private generation = 0;
 
@@ -278,6 +279,12 @@ export class TrackClearance {
 
   addRect(minX: number, minZ: number, maxX: number, maxZ: number): number {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
+  }
+
+  pieceBlocker(outline: Float64Array, placement: Pose16, exceptA: number, exceptB: number): number {
+    const placed = placedOutline(outline, placement);
+    outlineBox(placed, this.pieceBox, 0);
+    return this.blocker(placed, this.pieceBox, 0, 0, 0, exceptA, exceptB);
   }
 
   blocker(

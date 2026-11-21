@@ -69,6 +69,12 @@ export interface LaidTrackPiece {
   readonly yPlates: number;
 }
 
+export interface TrackChoice {
+  readonly kind: string;
+  readonly pieces: number;
+  readonly joins: boolean;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -153,6 +159,13 @@ export function byPosition(a: Pose, b: Pose): number {
   return a.x - b.x || a.z - b.z || a.yPlates - b.yPlates;
 }
 
+export async function startEmpty(page: Page): Promise<void> {
+  const welcome = page.locator(".welcome");
+  if ((await welcome.count()) === 0) return;
+  await welcome.locator('[data-action="start-empty"]').click();
+  await expect(welcome).toHaveCount(0);
+}
+
 export class EditorPage {
   readonly root: Locator;
   private readonly canvas: Locator;
@@ -178,6 +191,7 @@ export class EditorPage {
     expect(await editor.root.getAttribute("data-status"), [...shown, ...errors].join("\n")).toBe(
       "ready",
     );
+    await startEmpty(page);
     return editor;
   }
 
@@ -496,6 +510,16 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async trackChoice(): Promise<TrackChoice | null> {
+    const strip = this.page.locator("section.track-extend-panel .track-extend");
+    if ((await strip.count()) === 0) return null;
+    return {
+      kind: (await strip.getAttribute("data-choice")) ?? "",
+      pieces: Number(await strip.getAttribute("data-choice-pieces")),
+      joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
   }
 

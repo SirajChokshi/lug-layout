@@ -13,6 +13,12 @@ export type EditorActionId =
   | "rotate-back"
   | "flip-switch"
   | "next-connector"
+  | "extend-straight"
+  | "extend-left"
+  | "extend-right"
+  | "extend-preview"
+  | "next-track-choice"
+  | "previous-track-choice"
   | "delete"
   | "duplicate"
   | "undo"
@@ -136,6 +142,48 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "q" }],
     keywords: "cycle swing connector reverse curve",
+  },
+  {
+    id: "extend-straight",
+    title: "Lay a straight on the track end",
+    group: "Edit",
+    keys: [{ key: "w" }],
+    keywords: "append extend next piece forward rail",
+  },
+  {
+    id: "extend-left",
+    title: "Lay a left curve on the track end",
+    group: "Edit",
+    keys: [{ key: "a" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-right",
+    title: "Lay a right curve on the track end",
+    group: "Edit",
+    keys: [{ key: "d" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-preview",
+    title: "Lay the piece or join previewed on the track end",
+    group: "Edit",
+    keys: [{ key: "Enter" }],
+    keywords: "append extend again repeat close loop join complete",
+  },
+  {
+    id: "next-track-choice",
+    title: "Preview the next choice on the track end",
+    group: "Edit",
+    keys: [{ key: "." }],
+    keywords: "cycle option piece join",
+  },
+  {
+    id: "previous-track-choice",
+    title: "Preview the previous choice on the track end",
+    group: "Edit",
+    keys: [{ key: "," }],
+    keywords: "cycle option piece join back",
   },
   {
     id: "delete",
@@ -452,6 +500,13 @@ export function commandEnabled(
       return snapshot.track?.held?.mirror != null;
     case "next-connector":
       return snapshot.track?.held != null;
+    case "extend-straight":
+    case "extend-left":
+    case "extend-right":
+    case "extend-preview":
+    case "next-track-choice":
+    case "previous-track-choice":
+      return snapshot.track?.extend != null && !snapshot.readOnly;
     case "delete":
       if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
       return snapshot.selection !== null && !snapshot.readOnly;
@@ -518,7 +573,7 @@ export function runEditorAction(
 ): void {
   switch (id) {
     case "select-tool":
-      editor.chooseItem(null);
+      if (!editor.dropTrackEnd()) editor.chooseItem(null);
       return;
     case "draw-track":
       editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
@@ -539,6 +594,24 @@ export function runEditorAction(
       return;
     case "next-connector":
       editor.cycleConnector();
+      return;
+    case "extend-straight":
+      editor.extendTrack("straight", eventTimeMs);
+      return;
+    case "extend-left":
+      editor.extendTrack("left", eventTimeMs);
+      return;
+    case "extend-right":
+      editor.extendTrack("right", eventTimeMs);
+      return;
+    case "extend-preview":
+      editor.extendTrack(null, eventTimeMs);
+      return;
+    case "next-track-choice":
+      editor.cycleTrackChoice(1);
+      return;
+    case "previous-track-choice":
+      editor.cycleTrackChoice(-1);
       return;
     case "delete":
       editor.deleteSelection(eventTimeMs);

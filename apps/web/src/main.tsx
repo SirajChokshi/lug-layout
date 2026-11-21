@@ -11,6 +11,7 @@ import {
   PANEL_LAYOUT,
   RUNNING_GEAR,
   SCALE_BAR,
+  STARTER_WORLDS,
   TRACK_SCENE,
   TRAIN_PLAY,
   type IBomSource,
@@ -62,6 +63,12 @@ const importBakeHelpers = Math.min(
   Math.max(0, navigator.hardwareConcurrency - THREADS_KEPT_FOR_EDITOR),
   Math.floor(deviceMemoryGib() / DEVICE_GIB_PER_BAKE_HELPER),
 );
+const STARTERS_DIRECTORY = "../starters/";
+const starterFileUrls = new Map(
+  Object.entries(
+    import.meta.glob<string>("../starters/**/*", { query: "?url", import: "default", eager: true }),
+  ).map(([path, url]) => [path.slice(STARTERS_DIRECTORY.length), url]),
+);
 container.load(
   ...mainThreadModules({
     bundleBaseUrl,
@@ -79,6 +86,7 @@ container.load(
     ...(import.meta.env.VITE_CATALOG_API_BASE_URL
       ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
       : {}),
+    starterFileUrls,
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );
@@ -143,6 +151,7 @@ function root(): ReactNode {
         panels={container.get(PANEL_LAYOUT)}
         hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
+        starters={container.get(STARTER_WORLDS)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,

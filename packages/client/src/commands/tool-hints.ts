@@ -1,7 +1,8 @@
 import type { EditorSnapshot, TrackView } from "../edit/editor.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
 import { cmText, studsText } from "../edit/size-labels.ts";
-import type { TrackBlockView, TrackDragView } from "../edit/track-drawing.ts";
+import type { TrackBlockView, TrackDragView, TrackRefusal } from "../edit/track-drawing.ts";
+import type { TrackChoiceView, TrackExtendView, UnjoinedEndView } from "../edit/track-extension.ts";
 import type { PlaySnapshot } from "../play/train-play.ts";
 import { commandEnabled, type CommandId } from "./editor-commands.ts";
 
@@ -140,6 +141,96 @@ function releaseView(track: TrackView): Omit<ToolHintView, "hints"> | null {
   }
 }
 
+function joinRefusalText(refusal: TrackRefusal, blocked: TrackBlockView | null): string {
+  switch (refusal) {
+    case "impossible":
+      return "no exact join reaches it";
+    case "blocked":
+      return blockedJoinText(blocked);
+    case "limit":
+      return "the join search ran out of time";
+    case "pending":
+      return "a model under it is still checking its studs";
+    default: {
+      const unhandled: never = refusal;
+      throw new Error(`unhandled refusal ${String(unhandled)}`);
+    }
+  }
+}
+
+export function unjoinedText(unjoined: UnjoinedEndView): string {
+  const studs = Math.round(unjoined.studs);
+  return `the open end ${studs} studs ahead can't be joined: ${joinRefusalText(unjoined.refusal, unjoined.blocked)}`;
+}
+
+function extendTitle(choice: TrackChoiceView): string {
+  switch (choice.kind) {
+    case "straight":
+      return "Next piece: straight";
+    case "left":
+      return "Next piece: curve left";
+    case "right":
+      return "Next piece: curve right";
+    case "join":
+      return `Next: join, ${pieces(choice.straights + choice.curves)}`;
+    default: {
+      const unhandled: never = choice.kind;
+      throw new Error(`unhandled choice ${String(unhandled)}`);
+    }
+  }
+}
+
+function extendDetail(choice: TrackChoiceView, extend: TrackExtendView): string | null {
+  if (extend.unjoined) return unjoinedText(extend.unjoined);
+  if (choice.blocked) return `the piece would ${trackBlockText(choice.blocked)}`;
+  return choice.joinsEnd ? "joins the open end exactly" : null;
+}
+
+function extendView(
+  extend: TrackExtendView,
+  released: Omit<ToolHintView, "hints"> | null,
+): ToolHintView {
+  const choice = extend.choices[extend.index];
+  const blocked = choice?.blocked ?? null;
+  const shown: Omit<ToolHintView, "hints"> = choice
+    ? {
+        tone: blocked ? "warn" : "track",
+        title: `${extendTitle(choice)}${blocked ? " (blocked)" : ""}`,
+        detail: extendDetail(choice, extend),
+      }
+    : { tone: "track", title: "Next piece", detail: null };
+  return {
+    ...(released ?? shown),
+    hints: [
+      gesture("Click", "lay it"),
+      key("extend-straight", "straight"),
+      key("extend-left", "left"),
+      key("extend-right", "right"),
+      key("extend-preview", choice?.joinsEnd ? "join" : "lay it"),
+      key("next-track-choice", "other choices"),
+      key("undo", "undo"),
+      key("select-tool", extend.continuing ? "let go of the end" : "done"),
+    ],
+  };
+}
+
+function heldPieceView(track: TrackView): ToolHintView | null {
+  const held = track.held;
+  if (!held) return null;
+  return {
+    tone: "place",
+    title: `Holding ${held.label}`,
+    detail: held.snapped ? "attaches to the open end exactly" : "free on the stud grid",
+    hints: [
+      gesture("Click", "lay it"),
+      key("next-connector", "next end"),
+      key("flip-switch", "other hand"),
+      key("rotate", "turn"),
+      key("select-tool", "done"),
+    ],
+  };
+}
+
 function loadingView(snapshot: EditorSnapshot, held: HeldItemView): ToolHintView {
   const { queued } = held;
   return {
@@ -204,15 +295,19 @@ function view(snapshot: EditorSnapshot): ToolHintView {
       };
     }
     case "track": {
-      const drag = snapshot.track?.drag ?? null;
+      const track = snapshot.track;
+      const drag = track?.drag ?? null;
       if (drag) return { ...dragView(drag), hints: [key("select-tool", "stop drawing")] };
+      const holding = track ? heldPieceView(track) : null;
+      if (holding) return holding;
+      const released = track ? releaseView(track) : null;
+      if (track?.extend) return extendView(track.extend, released);
       const hints = [gesture("Drag", "lay track"), key("undo", "undo"), key("draw-track", "done")];
-      const released = snapshot.track ? releaseView(snapshot.track) : null;
       if (released) return { ...released, hints };
       return {
         tone: "track",
         title: "Drawing track",
-        detail: "start on an open end to continue a line",
+        detail: "point at an open end to add the next piece, or drag to lay a run",
         hints,
       };
     }

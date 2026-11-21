@@ -69,7 +69,12 @@ import {
 } from "@brr/storage";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
+import {
+  commandEnabled,
+  runEditorAction,
+  startPlay,
+  type CommandId,
+} from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
 import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
@@ -77,6 +82,7 @@ import {
   BOM_SERVICE,
   CONNECTOR_TABLES,
   EDITOR,
+  EDITOR_CAMERA,
   MODEL_IMPORTER,
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
@@ -101,6 +107,7 @@ import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
+import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
 
@@ -978,6 +985,10 @@ class MemoryRepository implements IWorldRepository {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
   }
 
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
+  }
+
   async putImportedFile(): Promise<void> {}
 
   async importedFile(): Promise<undefined> {
@@ -1283,6 +1294,8 @@ function layoutState(editor: IEditor) {
 }
 
 const STUD = 20;
+const HALF_TURN_CURVES = 8;
+const ROAD_STRAIGHT = "ldraw:44336p04@72";
 const RIGHT_SWITCH = "ldraw:75541-f1";
 const NINE_VOLT_CURVE = "ldraw:74747";
 
@@ -1595,6 +1608,114 @@ it("refuses to throw a switch a train stands on, whether the throw comes from a 
     undone: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 2 },
     redoRefused: { lever: "straight", undoDepth: 3, redoDepth: 2, refusal, refusals: 3 },
   });
+}, 120_000);
+
+it("lays each piece added to an open end, and the join that closes the loop, as one undo step each", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  const pieces = () => editor.dump().laidTrack.length;
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
+  const continuing = editor.snapshot().track?.extend?.continuing;
+  const turns: ReadonlyArray<ExtensionTurn> = [
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES).fill("left"),
+    ...Array<ExtensionTurn>(4).fill("straight"),
+    ...Array<ExtensionTurn>(HALF_TURN_CURVES / 2).fill("left"),
+  ];
+  const laid = [pieces()];
+  const labels: Array<string | null> = [];
+  for (const turn of [...turns, null]) {
+    editor.extendTrack(turn, 0);
+    laid.push(pieces());
+    labels.push(editor.snapshot().history.undoLabel);
+  }
+  const closed = editor.snapshot().track;
+
+  expect(continuing).toBe(true);
+  expect(laid).toEqual([...turns.map((_, i) => 4 + i), 4 + turns.length, 8 + turns.length]);
+  expect(labels).toEqual([...turns.map(() => "lay 1 piece"), "lay 4 pieces"]);
+  expect(closed).toMatchObject({ lastCommit: "joined", openEnds: 0, extend: null });
+  expect(closed?.joins).toBe(laid.at(-1));
+  for (let step = laid.length - 1; step > 0; step--) {
+    editor.undo(0);
+    expect(pieces(), `after undoing step ${step}`).toBe(laid[step - 1]);
+  }
+
+  backend.aim(32 * STUD, 0);
+  editor.pointerMove(0, 0);
+  const hovered = editor.snapshot().track?.extend?.continuing;
+  editor.extendTrack("straight", 0);
+  runEditorAction(editor, camera, "select-tool", 0);
+  const afterFirstEscape = editor.snapshot();
+  runEditorAction(editor, camera, "select-tool", 0);
+  expect(hovered).toBe(false);
+  expect(afterFirstEscape.mode).toBe("track");
+  expect(afterFirstEscape.track?.extend).toBeNull();
+  expect(editor.snapshot().mode).toBe("select");
+}, 120_000);
+
+it("keeps the end pointed at while a choice is picked off the canvas, and lays the choice picked", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  const dropped = editor.dropTrackEnd();
+  backend.aim(16 * STUD, 0);
+  editor.pointerMove(0, 0);
+  editor.pointerLeave();
+  const offered = editor.snapshot().track?.extend?.choices ?? [];
+  const right = offered.findIndex((choice) => choice.kind === "right");
+  editor.selectTrackChoice(right);
+  const picked = editor.snapshot().track?.extend?.index;
+  editor.extendTrack(null, 0);
+
+  expect(dropped).toBe(true);
+  expect(picked).toBe(right);
+  expect(editor.dump().laidTrack.at(-1)?.ref).toBe(NINE_VOLT_CURVE);
+  expect(editor.snapshot().track?.extend?.continuing).toBe(true);
+}, 120_000);
+
+it("selects a laid piece clicked in the track tool, and extends an open end clicked there", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.dropTrackEnd();
+  const clickAt = (x: number, z: number) => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  clickAt(-8 * STUD, 0);
+  const selected = editor.snapshot().selection;
+  const laidBefore = editor.dump().laidTrack.length;
+  clickAt(16 * STUD, 0);
+
+  expect(selected).toMatchObject({ kind: "track", slot: 0 });
+  expect(editor.dump().laidTrack).toHaveLength(laidBefore + 1);
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+}, 120_000);
+
+it("lays no piece that would run onto a road plate's roadway, and says why", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [0, -48 * STUD], [0, -16 * STUD]);
+  const laid = editor.dump().laidTrack.length;
+
+  editor.extendTrack("straight", 0);
+  const refused = { laid: editor.dump().laidTrack.length, hud: toolHints(editor.snapshot()) };
+  backend.aim(0, -48 * STUD);
+  editor.pointerMove(0, 0);
+  editor.extendTrack("straight", 0);
+
+  expect(refused.laid).toBe(laid);
+  expect(editor.snapshot().history.undoLabel).toBe("lay 1 piece");
+  expect(refused.hud).toMatchObject({
+    tone: "warn",
+    title: "Nothing laid",
+    detail: expect.stringMatching(/^the next piece would sit on .+ where it has no studs$/u),
+  });
+  expect(editor.dump().laidTrack).toHaveLength(laid + 1);
 }, 120_000);
 
 it("saves the world without a track run once it is undone, and with it again once it is redone", async () => {
