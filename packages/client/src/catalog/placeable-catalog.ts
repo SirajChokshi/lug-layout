@@ -521,7 +521,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       null,
     );
     if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
+      const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -649,6 +650,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
     for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
+    if (model.vehicles.length > 0) {
+      const identity = { name: file.name, label: file.name, sha256: file.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, set, palette, this.colors()));
+    }
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
@@ -687,6 +692,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.placeablesByRefId[refId] = checked;
     this.bakes.delete(pending);
     this.bakes.set(checked, model);
+    const train = this.playModels.get(pending);
+    if (train) {
+      this.playModels.delete(pending);
+      this.playModels.set(checked, train);
+    }
     return { ...reports, kind: "checked", placeable: checked };
   }
 

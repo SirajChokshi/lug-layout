@@ -9,6 +9,7 @@ import type {
 import type { RpcPort } from "@brr/rpc";
 import type { ServiceIdentifier } from "inversify";
 import type { IEditorCamera } from "./camera/editor-camera.ts";
+import type { IScaleBar } from "./camera/scale-bar.ts";
 import type { ICatalogSearch } from "./catalog/catalog-search.ts";
 import type { IPalette } from "./catalog/palette.ts";
 import type { IPaletteDrag } from "./catalog/palette-drag.ts";
@@ -24,6 +25,7 @@ import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
+import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
 import type { IModelImporter } from "./import/worker-model-importer.ts";
 import type { IPanelLayout, IPanelLayoutStore } from "./panels/panel-layout.ts";
@@ -36,6 +38,8 @@ import type { IModelScene } from "./scene/model-scene.ts";
 import type { ITrackScene } from "./scene/track-scene.ts";
 import type { ISimClient } from "./sim/sim-client.ts";
 import type { ITrainPlay } from "./play/train-play.ts";
+import type { IRailYard } from "./trains/rail-yard.ts";
+import type { IVehicleIds } from "./trains/vehicle-ids.ts";
 
 export const MODEL_SCENE: ServiceIdentifier<IModelScene> = Symbol.for("brr.client.ModelScene");
 export const TRACK_SCENE: ServiceIdentifier<ITrackScene> = Symbol.for("brr.client.TrackScene");
@@ -50,6 +54,8 @@ export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for
 );
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
+export const SCALE_BAR: ServiceIdentifier<IScaleBar> = Symbol.for("brr.client.ScaleBar");
+export const TABLE_GROUND: ServiceIdentifier<ITableGround> = Symbol.for("brr.client.TableGround");
 export const CREDITS: ServiceIdentifier<ICredits> = Symbol.for("brr.client.Credits");
 export const CATALOG_SEARCH: ServiceIdentifier<ICatalogSearch> = Symbol.for(
   "brr.client.CatalogSearch",
@@ -95,6 +101,8 @@ export const TRADEMARK_DISCLAIMER: ServiceIdentifier<string> = Symbol.for(
 );
 export const BOM_SERVICE: ServiceIdentifier<IBomService> = Symbol.for("brr.client.BomService");
 export const TRAIN_PLAY: ServiceIdentifier<ITrainPlay> = Symbol.for("brr.client.TrainPlay");
+export const RAIL_YARD: ServiceIdentifier<IRailYard> = Symbol.for("brr.client.RailYard");
+export const VEHICLE_IDS: ServiceIdentifier<IVehicleIds> = Symbol.for("brr.client.VehicleIds");
 export const PALETTE_MEMORY_STORE: ServiceIdentifier<IPaletteMemoryStore> = Symbol.for(
   "brr.client.PaletteMemoryStore",
 );
