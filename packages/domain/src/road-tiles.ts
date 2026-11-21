@@ -1,5 +1,5 @@
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
-import type { RoadSide, RoadSurface } from "./road-joins.ts";
+import { NO_TOP, type RoadSide, type RoadSurface } from "./road-joins.ts";
 
 export type RoadShape = "dead-end" | "straight" | "curve" | "t-junction" | "crossroads";
 export type RoadTileRefusal = "no-piece" | "other-family";
@@ -25,6 +25,7 @@ export interface RoadKit {
   readonly family: string;
   readonly profile: string;
   readonly tileLdu: number;
+  readonly edgeTopSixteenths: number;
   readonly edgeRuns: ReadonlyArray<RoadEdgeRun>;
   readonly pieces: ReadonlyArray<RoadKitPiece>;
   readonly shapes: ReadonlyArray<RoadShape>;
@@ -160,9 +161,17 @@ function edgeProfile(surface: RoadSurface, side: RoadSide): ReadonlyArray<number
   return cells;
 }
 
+function roadTopOf(surface: RoadSurface, cells: ReadonlyArray<number>): number {
+  for (const cell of cells) {
+    if ((surface.road[cell] ?? 0) !== 0) return surface.topSixteenths[cell] ?? NO_TOP;
+  }
+  return NO_TOP;
+}
+
 function profileKey(surface: RoadSurface, cells: ReadonlyArray<number>): string {
   const keys = cells.map(
-    (cell) => `${surface.top[cell] ?? 0}:${surface.stud[cell] ?? 0}:${surface.road[cell] ?? 0}`,
+    (cell) =>
+      `${surface.topSixteenths[cell] ?? 0}:${surface.studSixteenths[cell] ?? 0}:${surface.road[cell] ?? 0}`,
   );
   const forward = keys.join(",");
   const backward = keys.map((_, index) => keys[keys.length - 1 - index] ?? "").join(",");
@@ -192,6 +201,7 @@ interface KitDraft {
   readonly family: string;
   readonly profile: string;
   readonly tileLdu: number;
+  readonly edgeTopSixteenths: number;
   readonly edgeRuns: ReadonlyArray<RoadEdgeRun>;
   readonly pieces: RoadKitPiece[];
 }
@@ -203,6 +213,7 @@ export function roadKits(candidates: ReadonlyArray<RoadKitCandidate>): ReadonlyA
     let arms = 0;
     let profile: string | null = null;
     let runs: ReadonlyArray<RoadEdgeRun> = [];
+    let edgeTop = NO_TOP;
     let uniform = true;
     for (const [side] of SIDES) {
       const cells = edgeProfile(surface, side);
@@ -212,13 +223,14 @@ export function roadKits(candidates: ReadonlyArray<RoadKitCandidate>): ReadonlyA
       if (profile !== null && key !== profile) uniform = false;
       profile = key;
       runs = edgeRuns(surface, cells);
+      edgeTop = roadTopOf(surface, cells);
     }
     if (profile === null || !uniform) continue;
     const tileLdu = surface.columns * STUD_LDU;
     const key = `${family}|${tileLdu}|${profile}`;
     let draft = drafts.get(key);
     if (!draft) {
-      draft = { family, profile, tileLdu, edgeRuns: runs, pieces: [] };
+      draft = { family, profile, tileLdu, edgeTopSixteenths: edgeTop, edgeRuns: runs, pieces: [] };
       drafts.set(key, draft);
     }
     draft.pieces.push({ ref, arms, shape: roadShape(arms) });

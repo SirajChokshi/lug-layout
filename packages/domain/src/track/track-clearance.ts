@@ -73,17 +73,32 @@ export function rotateOutline(
   offsetX: number,
   offsetZ: number,
 ): Float64Array {
+  return rotateOutlineInto(
+    outline,
+    headingSteps,
+    offsetX,
+    offsetZ,
+    new Float64Array(outline.length),
+  );
+}
+
+export function rotateOutlineInto(
+  outline: Float64Array,
+  headingSteps: number,
+  offsetX: number,
+  offsetZ: number,
+  out: Float64Array,
+): Float64Array {
   const theta = headingSteps * HEADING_RADIANS;
   const c = Math.cos(theta);
   const s = Math.sin(theta);
-  const rotated = new Float64Array(outline.length);
   for (let p = 0; p < outline.length; p += 2) {
     const x = outline[p] ?? 0;
     const z = outline[p + 1] ?? 0;
-    rotated[p] = offsetX + c * x - s * z;
-    rotated[p + 1] = offsetZ + s * x + c * z;
+    out[p] = offsetX + c * x - s * z;
+    out[p + 1] = offsetZ + s * x + c * z;
   }
-  return rotated;
+  return out;
 }
 
 export function outlineBox(outline: Float64Array, out: Float64Array, at: number): void {
@@ -111,8 +126,16 @@ export function poseLdu(pose: Pose16): { readonly x: number; readonly z: number 
 }
 
 export function placedOutline(outline: Float64Array, placement: Pose16): Float64Array {
+  return placedOutlineInto(outline, placement, new Float64Array(outline.length));
+}
+
+export function placedOutlineInto(
+  outline: Float64Array,
+  placement: Pose16,
+  out: Float64Array,
+): Float64Array {
   const at = poseLdu(placement);
-  return rotateOutline(outline, placement.heading, at.x, at.z);
+  return rotateOutlineInto(outline, placement.heading, at.x, at.z, out);
 }
 
 export function outlineContains(outline: Float64Array, x: number, z: number): boolean {
@@ -196,6 +219,15 @@ export function boxesOverlap(
 
 export const NO_OBSTACLE = -1;
 export const RUN_CROSSING = -2;
+const FIRST_STUDLESS_TOP = -3;
+
+export function studlessTopBlocker(id: number): number {
+  return FIRST_STUDLESS_TOP - id;
+}
+
+export function studlessTopOf(blocker: number): number {
+  return blocker <= FIRST_STUDLESS_TOP ? FIRST_STUDLESS_TOP - blocker : NO_OBSTACLE;
+}
 
 function signedArea(polygon: ArrayLike<number>): number {
   const count = polygon.length / OUTLINE_POINT_FLOATS;
@@ -230,13 +262,18 @@ function overlapsOutside(piece: Float64Array, other: Float64Array, joined: Float
   return false;
 }
 
+const NO_IDS: ArrayLike<number> = [];
+
 export class TrackClearance {
   private readonly outlines: Float64Array[] = [];
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
   private readonly cells = new Map<number, number[]>();
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly joinedPair = [NO_OBSTACLE, NO_OBSTACLE];
   private visit = new Uint32Array(64);
   private generation = 0;
+  private readonly pointBox = new Float64Array(OUTLINE_BOX_FLOATS);
 
   get count(): number {
     return this.outlines.length;
@@ -280,6 +317,12 @@ export class TrackClearance {
     return this.add(Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ));
   }
 
+  pieceBlocker(outline: Float64Array, placement: Pose16, exceptA: number, exceptB: number): number {
+    const placed = placedOutline(outline, placement);
+    outlineBox(placed, this.pieceBox, 0);
+    return this.blocker(placed, this.pieceBox, 0, 0, 0, exceptA, exceptB);
+  }
+
   blocker(
     outline: Float64Array,
     box: Float64Array,
@@ -289,24 +332,80 @@ export class TrackClearance {
     exceptA: number,
     exceptB: number,
   ): number {
+    const pair = this.joinedPair;
+    pair[0] = exceptA;
+    pair[1] = exceptB;
+    return this.firstOverlap(outline, box, boxAt, x, z, this, pair, NO_IDS);
+  }
+
+  blockerExcept(
+    outline: Float64Array,
+    box: Float64Array,
+    x: number,
+    z: number,
+    except: ArrayLike<number>,
+    skipped: ArrayLike<number> = NO_IDS,
+  ): number {
+    return this.firstOverlap(outline, box, 0, x, z, this, except, skipped);
+  }
+
+  blockerBesideJoins(
+    outline: Float64Array,
+    box: Float64Array,
+    boxAt: number,
+    x: number,
+    z: number,
+    joinedIn: TrackClearance,
+    exceptA: number,
+    exceptB: number,
+  ): number {
+    const pair = this.joinedPair;
+    pair[0] = exceptA;
+    pair[1] = exceptB;
+    return this.firstOverlap(outline, box, boxAt, x, z, joinedIn, pair, NO_IDS);
+  }
+
+  private nextGeneration(): number {
     this.generation++;
     if (this.generation === 0xffffffff) {
       this.visit.fill(0);
       this.generation = 1;
     }
-    const generation = this.generation;
+    return this.generation;
+  }
+
+  private markVisited(ids: ArrayLike<number>, generation: number): void {
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i] ?? NO_OBSTACLE;
+      if (id >= 0 && id < this.outlines.length) this.visit[id] = generation;
+    }
+  }
+
+  private firstOverlap(
+    outline: Float64Array,
+    box: Float64Array,
+    boxAt: number,
+    x: number,
+    z: number,
+    joinedIn: TrackClearance,
+    joined: ArrayLike<number>,
+    skipped: ArrayLike<number>,
+  ): number {
+    const generation = this.nextGeneration();
+    if (joinedIn === this) this.markVisited(joined, generation);
+    this.markVisited(skipped, generation);
     let found = NO_OBSTACLE;
     this.forCells(box, boxAt, x, z, (key) => {
       const members = this.cells.get(key);
       if (!members) return false;
       for (const id of members) {
         if (found !== NO_OBSTACLE && id >= found) break;
-        if (id === exceptA || id === exceptB || this.visit[id] === generation) continue;
+        if (this.visit[id] === generation) continue;
         this.visit[id] = generation;
         if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
         const other = this.outlines[id];
         if (!other || !outlinesOverlap(outline, x, z, other, 0, 0)) continue;
-        if (!this.insideJoined(outline, x, z, other, exceptA, exceptB)) found = id;
+        if (!joinedIn.insideJoined(outline, x, z, other, joined)) found = id;
       }
       return found === 0;
     });
@@ -318,16 +417,32 @@ export class TrackClearance {
     x: number,
     z: number,
     other: Float64Array,
-    exceptA: number,
-    exceptB: number,
+    joined: ArrayLike<number>,
   ): boolean {
-    const joined = [exceptA, exceptB].flatMap((id) => {
+    let piece: Float64Array | null = null;
+    for (let i = 0; i < joined.length; i++) {
+      const id = joined[i] ?? NO_OBSTACLE;
       const shape = id < 0 ? undefined : this.outlines[id];
-      return shape ? [shape] : [];
+      if (!shape) continue;
+      piece ??= translated(outline, { xLdu: x, zLdu: z });
+      if (!overlapsOutside(piece, other, shape)) return true;
+    }
+    return false;
+  }
+
+  covers(x: number, z: number): boolean {
+    const box = this.pointBox;
+    box[0] = x;
+    box[1] = z;
+    box[2] = x;
+    box[3] = z;
+    return this.forCells(box, 0, 0, 0, (key) => {
+      for (const id of this.cells.get(key) ?? []) {
+        const outline = this.outlines[id];
+        if (outline && outlineContains(outline, x, z)) return true;
+      }
+      return false;
     });
-    if (joined.length === 0) return false;
-    const piece = translated(outline, { xLdu: x, zLdu: z });
-    return joined.some((shape) => !overlapsOutside(piece, other, shape));
   }
 
   private forCells(

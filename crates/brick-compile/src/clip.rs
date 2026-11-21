@@ -1,6 +1,6 @@
 use crate::affine::Vec3;
 
-const MAX_CLIPPED_VERTICES: usize = 12;
+pub const MAX_CLIPPED_VERTICES: usize = 12;
 
 pub type Polygon = ([Vec3; MAX_CLIPPED_VERTICES], usize);
 

@@ -5,7 +5,7 @@ import {
   type StudPrimitiveAsset,
 } from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
-import { Mesh, type Object3D } from "three/webgpu";
+import { Mesh, type MeshStandardNodeMaterial, type Object3D } from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChunkInstances,
@@ -57,6 +57,8 @@ function part(id: string, size: number): PartAsset {
     studMatrices: new Float32Array(0),
     technic: null,
     rolling: null,
+    topSurface: null,
+    outline: null,
   };
 }
 
@@ -432,7 +434,6 @@ function room(minX: number): PlanOverlay {
     room: worldBox(minX, 0, 1280),
     tables: [worldBox(minX, 0, 640)],
     obstacles: [],
-    gridStepLdu: 20,
     active: true,
   };
 }
@@ -478,6 +479,8 @@ it("keeps every holder under its own container, and the scene's direct children 
   backend.setPlanOverlays([room(1280), room(0)]);
   backend.setIssueBoxes([worldBox(0, 0, 20), worldBox(100, 0, 20), worldBox(200, 0, 20)]);
   backend.setIssueBoxes([worldBox(200, 0, 20), worldBox(0, 0, 20)]);
+  backend.setSelectionBoxes([worldBox(300, 0, 20)]);
+  backend.setSelectionBoxes([worldBox(400, 0, 20), worldBox(500, 0, 20)]);
   const beforePalette = containerContents(backend);
   backend.setPalette(palette([part("a", 20)]));
 
@@ -490,8 +493,18 @@ it("keeps every holder under its own container, and the scene's direct children 
       ["at x 1280", "at x 0"],
       ["at x 210", "at x 10"],
       ["ground"],
+      ["at x 410", "at x 510"],
     ],
-    [[], [], [], [], ["at x 1280", "at x 0"], ["at x 210", "at x 10"], ["ground"]],
+    [
+      [],
+      [],
+      [],
+      [],
+      ["at x 1280", "at x 0"],
+      ["at x 210", "at x 10"],
+      ["ground"],
+      ["at x 410", "at x 510"],
+    ],
   ]);
 });
 
@@ -526,5 +539,124 @@ describe("the render origin", () => {
       eyeX: nextChunkX,
       eyeZ: z,
     });
+  });
+});
+
+function ghostLooks(backend: ThreeSceneBackend): string[] {
+  const ghost: Object3D | undefined = backend["ghost"];
+  const looks = new Set<string>();
+  ghost?.traverse((object) => {
+    if (!(object instanceof Mesh)) return;
+    const materials: ReadonlyArray<MeshStandardNodeMaterial> = [object.material].flat();
+    for (const material of materials) {
+      looks.add(`${material.color.getHexString()} ${material.emissive.getHexString()}`);
+    }
+  });
+  return [...looks];
+}
+
+function ghostHitShown(backend: ThreeSceneBackend) {
+  const hit: Mesh = backend["ghostHit"];
+  if (!hit.visible) return null;
+  return {
+    x: hit.position.x,
+    y: hit.position.y,
+    z: hit.position.z,
+    size: [hit.scale.x, hit.scale.y, hit.scale.z],
+  };
+}
+
+const HIT_CELL: WorldBox = { minX: 320, minY: 8, minZ: -140, maxX: 340, maxY: 24, maxZ: -120 };
+
+function ghostBackend(): ThreeSceneBackend {
+  const backend = new ThreeSceneBackend();
+  backend.setPalette(palette([part("a", 20)]));
+  return backend;
+}
+
+function ghostLooksAfter(steps: (backend: ThreeSceneBackend) => void): string[] {
+  const backend = ghostBackend();
+  steps(backend);
+  return ghostLooks(backend);
+}
+
+it("tints the ghost by its verdict, whether the verdict or the ghost came first, and untints it when the verdict clears", () => {
+  const untinted = ghostLooksAfter((backend) => backend.setGhost(chunkOf(0)));
+  const fits = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "fits", hit: null, precise: false });
+  });
+  const mates = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "mates", hit: null, precise: false });
+  });
+  const refusedAfter = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: false });
+  });
+  const refusedBefore = ghostLooksAfter((backend) => {
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: false });
+    backend.setGhost(chunkOf(0));
+  });
+  const cleared = ghostLooksAfter((backend) => {
+    backend.setGhost(chunkOf(0));
+    backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: false });
+    backend.setGhostVerdict(null);
+  });
+
+  expect(refusedBefore).toEqual(refusedAfter);
+  expect(cleared).toEqual(untinted);
+  expect(
+    new Set([untinted, fits, mates, refusedAfter].map((looks) => looks.join())),
+  ).toHaveProperty("size", 4);
+});
+
+it("boxes a refused ghost's hit cell only while the ghost is placed", () => {
+  const backend = ghostBackend();
+  backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: false });
+  backend.setGhost(chunkOf(0));
+  const beforePlaced = ghostHitShown(backend);
+  backend.placeGhost(320, 0, -140, 0);
+  const placed = ghostHitShown(backend);
+  backend.setGhostVerdict({ tone: "fits", hit: null, precise: false });
+  const fits = ghostHitShown(backend);
+  backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: false });
+  backend.setGhost(null);
+
+  expect({ beforePlaced, placed, fits, cleared: ghostHitShown(backend) }).toEqual({
+    beforePlaced: null,
+    placed: { x: 330, y: 16, z: -130, size: [20, 16, 20] },
+    fits: null,
+    cleared: null,
+  });
+});
+
+function ghostOutlineShown(backend: ThreeSceneBackend) {
+  const outline: Object3D = backend["ghostOutline"];
+  const ghost: Object3D | undefined = backend["ghost"];
+  if (!outline.visible || outline.parent !== ghost) return null;
+  return {
+    centre: [outline.position.x, outline.position.y, outline.position.z],
+    size: [outline.scale.x, outline.scale.y, outline.scale.z],
+  };
+}
+
+it("outlines the ghost's bounds in precise mode only, whatever its tone, and keeps the outline on a rebuilt ghost", () => {
+  const backend = ghostBackend();
+  backend.setGhost(chunkOf(0));
+  const magnetic = ghostOutlineShown(backend);
+  backend.setGhostVerdict({ tone: "refused", hit: HIT_CELL, precise: true });
+  const refused = ghostOutlineShown(backend);
+  backend.setGhostVerdict({ tone: null, hit: null, precise: true });
+  backend.setGhost(chunkOf(0));
+  const rebuilt = ghostOutlineShown(backend);
+  backend.setGhostVerdict({ tone: "fits", hit: null, precise: false });
+
+  const outlined = { centre: [10, 10, 0], size: [20, 20, 0] };
+  expect({ magnetic, refused, rebuilt, back: ghostOutlineShown(backend) }).toEqual({
+    magnetic: null,
+    refused: outlined,
+    rebuilt: outlined,
+    back: null,
   });
 });
