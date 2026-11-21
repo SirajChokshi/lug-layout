@@ -222,6 +222,8 @@ export {
   NO_OBSTACLE,
   TrackClearance,
   footprintOutline,
+  outlineContains,
+  placedOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";

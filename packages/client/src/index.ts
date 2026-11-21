@@ -81,6 +81,7 @@ export type {
   PlaceableCoverView,
   QueuedPlacement,
   SelectionView,
+  TrackSelectionView,
   TrainSelectionView,
   TrackBomLine,
   TrackCommitResult,

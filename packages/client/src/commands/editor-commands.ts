@@ -490,6 +490,7 @@ function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
   const selection = editor.snapshot().selection;
   if (!selection) return;
   editor.chooseItem(selection.item);
+  if (selection.kind === "track") return;
   const rot = selection.kind === "model" ? selection.rot : 0;
   const turns = (rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
   const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
