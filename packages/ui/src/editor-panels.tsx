@@ -1,8 +1,12 @@
 import {
   STUD_LDU,
   ZETA16_ORDER,
+  altKeyName,
+  effectivePlacementMode,
   commandActive,
   commandEnabled,
+  commandSpec,
+  placementModeSwitchEnabled,
   tallyText,
   type EditorActionId,
   type EditorSnapshot,
@@ -20,9 +24,9 @@ import {
   type TrainSelectionView,
   type UndrawnPart,
 } from "@brr/client";
-import { shortcutText } from "./keys.tsx";
+import { PLATFORM, shortcutText } from "./keys.tsx";
 import { CreditLinks } from "./site-chrome.tsx";
-import { useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent } from "react";
 import { TrackPanel } from "./track-panel.tsx";
 import { isCompactLayout } from "./use-compact-layout.ts";
 
@@ -247,6 +251,11 @@ export function PlacementToolbar({
       >
         Rotate ({shortcutText("rotate")})
       </button>
+      <PlacementModeSwitch
+        snapshot={snapshot}
+        enabled={placementModeSwitchEnabled(snapshot, play)}
+        onEditorAction={onEditorAction}
+      />
       <button
         type="button"
         disabled={!commandEnabled("delete", snapshot, play)}
@@ -291,6 +300,56 @@ export function PlacementToolbar({
         pan; Shift-arrows orbit, double-click frames the selection.
       </p>
     </div>
+  );
+}
+
+function switchState(precise: boolean, held: boolean, alt: string): string {
+  if (held) return `${precise ? "On" : "Off"} while ${alt} held`;
+  return precise ? "On" : "Off, magnetic";
+}
+
+function PlacementModeSwitch({
+  snapshot,
+  enabled,
+  onEditorAction,
+}: {
+  readonly snapshot: EditorSnapshot;
+  readonly enabled: boolean;
+  readonly onEditorAction: (id: EditorActionId, eventTimeMs: number) => void;
+}) {
+  const precise = snapshot.placementMode === "precise";
+  const effective = effectivePlacementMode(snapshot.placementMode, snapshot.placementModeOverride);
+  const held = effective !== snapshot.placementMode;
+  const heldId = useId();
+  const alt = altKeyName(PLATFORM);
+  const [chord] = commandSpec("toggle-placement-mode").keys;
+  return (
+    <button
+      type="button"
+      role="switch"
+      className="placement-mode"
+      aria-checked={precise}
+      aria-describedby={held ? heldId : undefined}
+      aria-keyshortcuts={chord?.key}
+      disabled={!enabled}
+      data-action="placement-mode"
+      data-placement-mode={snapshot.placementMode}
+      data-effective-mode={effective}
+      data-held={held ? "" : undefined}
+      title={`Press ${shortcutText("toggle-placement-mode")} or click to switch. Magnetic placement snaps a held model onto connectors near the cursor; precise placement puts it exactly at the cursor. Hold ${alt} to switch while held (${alt} with a two-finger scroll still orbits).`}
+      onClick={(event) => onEditorAction("toggle-placement-mode", event.timeStamp)}
+    >
+      Precise placement
+      <span className="placement-mode-state" aria-hidden="true">
+        {switchState(effective === "precise", held, alt)} ({shortcutText("toggle-placement-mode")})
+      </span>
+      {held && (
+        <span id={heldId} hidden>
+          {effective === "precise" ? "Temporarily on" : "Temporarily off, magnetic"} while {alt} is
+          held
+        </span>
+      )}
+    </button>
   );
 }
 
