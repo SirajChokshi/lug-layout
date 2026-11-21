@@ -60,3 +60,30 @@ it("credits the license and every attribution line of each level of detail's con
     }
   }
 });
+
+it("credits every OMR erratum each level of detail bakes in as modified from OMR, on the page and in the exported text", async () => {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
+  const credits = container.get(CREDITS);
+  const view = await credits.load();
+  const text = credits.exportText(view);
+  const baked: string[] = [];
+  for (const lod of BUNDLE_LODS) {
+    const manifestPath = `${lod}/manifest.json`;
+    const manifest = decodedOrThrow(
+      decode(BundleIndex, await bundleJson(manifestPath)),
+      manifestPath,
+    );
+    for (const model of manifest.models) {
+      for (const erratum of model.errata ?? []) {
+        baked.push(`${lod} ${model.name} ${erratum.line}`);
+        expect(view.sets.find((set) => set.name === model.name)?.errata).toContainEqual(erratum);
+        expect(text).toContain(
+          `Modified from OMR, line ${erratum.line}: ${erratum.from} → ${erratum.to}. ${erratum.summary}`,
+        );
+      }
+    }
+  }
+  expect(baked.length, "the bundle bakes at least one OMR erratum").toBeGreaterThan(0);
+});

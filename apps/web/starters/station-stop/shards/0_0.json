@@ -1,0 +1,65 @@
+{
+  "format": "brr.shard",
+  "placements": [
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 0, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 0, "yPlates": 0, "z": 640 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 640, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 640, "yPlates": 0, "z": 640 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 1280, "yPlates": 0, "z": 0 },
+    { "color": 2, "ref": "ldraw:3811", "rot": 0, "x": 1280, "yPlates": 0, "z": 640 },
+    { "color": 0, "ref": "omr:2150-1", "rot": 0, "x": 0, "yPlates": 0, "z": 420 }
+  ],
+  "schemaVersion": 1,
+  "superChunk": [0, 0],
+  "track": [
+    {
+      "heading": 4,
+      "index": 8,
+      "position": ["72", "0", "0", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 5,
+      "index": 9,
+      "position": ["32", "40", "0", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 6,
+      "index": 10,
+      "position": ["32", "0", "40", "0", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 7,
+      "index": 11,
+      "position": ["32", "0", "0", "40", "0", "0", "0", "0"],
+      "ref": "ldraw:74747",
+      "yPlates": 0
+    },
+    {
+      "heading": 8,
+      "index": 12,
+      "position": ["32", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    },
+    {
+      "heading": 8,
+      "index": 13,
+      "position": ["16", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    },
+    {
+      "heading": 8,
+      "index": 14,
+      "position": ["0", "0", "0", "0", "40", "0", "0", "0"],
+      "ref": "ldraw:74746",
+      "yPlates": 0
+    }
+  ]
+}

@@ -1,10 +1,24 @@
 import {
   BOX_STRIDE,
   checkPlan,
+  emptyFacts,
+  FACT_CUSTOM_PARTS,
+  FACT_FLAGS,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  FACT_ROAD_MISMATCHED,
+  FACT_UNMAPPED_BRICKLINK,
+  FACT_UNMAPPED_REBRICKABLE,
+  FLAG_UNMEASURED,
   LABEL_NUMBERED,
+  MODEL_SEGMENT,
+  mmRectFromWorld,
   mmRectInWorld,
+  NO_OVERLAP_PARTNER,
   NO_ROW,
   PlanDelta,
+  regionAround,
   regionOf,
   roomRect,
   TRACK_SEGMENT,
@@ -14,13 +28,18 @@ import {
   type PlanCheck,
   type PlanPlacement,
   type PlanRegion,
+  type PlanShape,
+  type PlanState,
+  type PlacementFacts,
 } from "@brr/domain";
-import { chunkKey, lduFromMm } from "@brr/math";
+import { CHUNK_LDU, chunkKey, chunkOf, lduFromMm, mmFromLdu } from "@brr/math";
 import type { BufferMemory, ISceneBackend, PlanOverlay, RebaseEvent, WorldBox } from "@brr/render";
 import { fitAllBox } from "../camera/editor-camera.ts";
 import { overviewOf } from "../camera/overview.ts";
+import { GUIDE_GRID_LDU } from "../edit/table-tool.ts";
 import {
   writeFullRebuild,
+  writeModelUpdates,
   writeTrackLay,
   writeTrackThrow,
   writeViewUpdate,
@@ -29,7 +48,8 @@ import {
 } from "./plan-producer.ts";
 import {
   DEFAULT_MAX_OVERHANG_MM,
-  PLAN_GRID_MM,
+  DEFAULT_MAX_REACH_MM,
+  DEFAULT_TABLE_HEIGHT_MM,
   PlanService,
   type NewPlan,
   type ObstacleInput,
@@ -177,7 +197,8 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.overlays = overlays;
   }
@@ -190,6 +211,8 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.boxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -210,12 +233,32 @@ export class RecordingBackend implements ISceneBackend, Recorder {
 
 type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 
+interface DomainExtras {
+  readonly unsupported: boolean;
+  readonly carriedTrackUnsupported: boolean;
+  readonly shape: PlanShape | null;
+  readonly anchor: { readonly x: number; readonly z: number };
+  readonly facts: PlacementFacts | undefined;
+}
+
+function todaysFacts(facts: Int32Array, overlapWith: string | null): PlacementFacts {
+  return {
+    unmeasured: ((facts[FACT_FLAGS] ?? 0) & FLAG_UNMEASURED) !== 0,
+    overlapWith,
+    roadJoinedCells: facts[FACT_ROAD_JOINED] ?? 0,
+    roadMismatchedCells: facts[FACT_ROAD_MISMATCHED] ?? 0,
+    unmappedRebrickable: facts[FACT_UNMAPPED_REBRICKABLE] ?? 0,
+    unmappedBrickLink: facts[FACT_UNMAPPED_BRICKLINK] ?? 0,
+  };
+}
+
 function todaysEvaluate(
   plans: ReadonlyArray<PlanRegion>,
   placed: ReadonlyArray<PlacedForPlan>,
+  extras: ReadonlyArray<DomainExtras>,
 ): Evaluation {
   try {
-    const domain = placed.map(todaysToDomain);
+    const domain = placed.map((placement, i) => todaysToDomain(placement, extras[i]));
     return {
       checks: plans.map((plan) => checkPlan(plan, domain)),
       sandboxPlacements: domain
@@ -234,19 +277,36 @@ function todaysPlacementId(key: PlacementKey): string {
   return `${key.chunkKey}:${key.slot}`;
 }
 
-function todaysToDomain(placement: PlacedForPlan): PlanPlacement {
+function todaysToDomain(placement: PlacedForPlan, extras: DomainExtras | undefined): PlanPlacement {
   const { box } = placement;
   return {
     key: placement.key,
     ref: placement.ref,
     label: placement.label,
     box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
+    unsupported: extras?.unsupported ?? false,
+    carriedTrackUnsupported: extras?.carriedTrackUnsupported ?? false,
+    shape: extras?.shape ?? null,
+    anchor: extras?.anchor ?? { x: 0, z: 0 },
+    ...(extras?.facts ? { facts: extras.facts } : {}),
   };
+}
+
+interface TodaysModel {
+  readonly id: number;
+  readonly todays: PlacedForPlan;
+  readonly handle: { readonly x: number; readonly z: number };
+  readonly shape: PlanShape | null;
+  readonly facts: Int32Array;
 }
 
 class TodaysPlanService {
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
+  private models: ReadonlyArray<TodaysModel> = [];
+  private unsupportedTrack: ReadonlySet<number> = new Set();
+  private unsupportedModels: ReadonlySet<number> = new Set();
+  private unsupportedCarriers: ReadonlySet<number> = new Set();
   private state: PlanSnapshot = {
     plans: [],
     activePlanId: null,
@@ -297,6 +357,7 @@ class TodaysPlanService {
         obstacles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
+      maxReachMm: DEFAULT_MAX_REACH_MM,
     };
     this.commit({ plans: [...this.state.plans, region], activePlanId: id });
     return id;
@@ -309,6 +370,7 @@ class TodaysPlanService {
       originChunkX: patch.originChunkX ?? plan.originChunkX,
       originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
       maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
+      maxReachMm: patch.maxReachMm ?? plan.maxReachMm,
       footprint: {
         ...plan.footprint,
         roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,
@@ -361,6 +423,55 @@ class TodaysPlanService {
     }));
   }
 
+  drawTable(rect: LduRect): { planId: string; tableId: string } {
+    const planId = this.state.activePlanId ?? this.createPlanAround(rect);
+    const tableId = this.newId("table");
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const { tables } = grown.footprint;
+      const table = {
+        id: tableId,
+        name: `Table ${tables.length + 1}`,
+        rect: mmRectFromWorld(grown, rect),
+        heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
+      };
+      return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+    });
+    return { planId, tableId };
+  }
+
+  placeTable(planId: string, tableId: string, rect: LduRect): void {
+    this.replacePlan(planId, (plan) => {
+      const grown = regionAround(plan, rect);
+      const placed = mmRectFromWorld(grown, rect);
+      return {
+        ...grown,
+        footprint: {
+          ...grown.footprint,
+          tables: grown.footprint.tables.map((t) =>
+            t.id === tableId ? { ...t, rect: placed } : t,
+          ),
+        },
+      };
+    });
+  }
+
+  private createPlanAround(rect: LduRect): string {
+    const originChunkX = chunkOf(rect.minX);
+    const originChunkZ = chunkOf(rect.minZ);
+    return this.createPlan({
+      name: `Plan ${this.state.plans.length + 1}`,
+      roomWidthMm: mmFromLdu(rect.maxX - originChunkX * CHUNK_LDU),
+      roomDepthMm: mmFromLdu(rect.maxZ - originChunkZ * CHUNK_LDU),
+      originChunkX,
+      originChunkZ,
+    });
+  }
+
+  restore(state: PlanState): void {
+    this.commit({ plans: state.regions, activePlanId: state.activePlanId });
+  }
+
   addObstacle(planId: string, obstacle: ObstacleInput): string {
     const id = this.newId("obstacle");
     this.replacePlan(planId, (plan) => ({
@@ -395,8 +506,58 @@ class TodaysPlanService {
     }));
   }
 
-  setPlacements(placements: ReadonlyArray<PlacedForPlan>): void {
-    this.commit({ placements });
+  setPlacements(models: ReadonlyArray<TodaysModel>, track: ReadonlyArray<PlacedForPlan>): void {
+    this.models = models;
+    this.commit({ placements: [...models.map((model) => model.todays), ...track] });
+  }
+
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
+    this.unsupportedTrack = new Set(track);
+    this.unsupportedModels = new Set(models);
+    this.unsupportedCarriers = new Set(carriers);
+    this.commit({});
+  }
+
+  private domainExtras(placements: ReadonlyArray<PlacedForPlan>): DomainExtras[] {
+    const models = this.models;
+    return placements.map((_, i) => {
+      const model = models[i];
+      if (model === undefined) {
+        return {
+          unsupported: this.unsupportedTrack.has(i - models.length),
+          carriedTrackUnsupported: false,
+          shape: null,
+          anchor: { x: 0, z: 0 },
+          facts: undefined,
+        };
+      }
+      return {
+        unsupported: this.unsupportedModels.has(model.id),
+        carriedTrackUnsupported:
+          !this.unsupportedModels.has(model.id) && this.unsupportedCarriers.has(model.id),
+        shape: model.shape,
+        anchor: { x: model.handle.x, z: model.handle.z },
+        facts: todaysFacts(model.facts, this.partnerLabel(placements, model.facts)),
+      };
+    });
+  }
+
+  private partnerLabel(placements: ReadonlyArray<PlacedForPlan>, facts: Int32Array): string | null {
+    const segment = facts[FACT_OVERLAP_SEGMENT] ?? NO_OVERLAP_PARTNER;
+    if (segment < 0) return null;
+    const source = facts[FACT_OVERLAP_SOURCE] ?? NO_OVERLAP_PARTNER;
+    const models = this.models;
+    const partner =
+      segment === MODEL_SEGMENT
+        ? models.find((model) => model.id === source)?.todays
+        : source >= 0
+          ? placements[models.length + source]
+          : undefined;
+    return partner?.label ?? "another placement";
   }
 
   setTableTopY(y: number): void {
@@ -405,7 +566,10 @@ class TodaysPlanService {
 
   private commit(patch: Partial<PlanSnapshot>): void {
     const next = { ...this.state, ...patch };
-    this.state = { ...next, ...todaysEvaluate(next.plans, next.placements) };
+    this.state = {
+      ...next,
+      ...todaysEvaluate(next.plans, next.placements, this.domainExtras(next.placements)),
+    };
     this.draw();
     for (const listener of this.listeners) listener();
   }
@@ -441,7 +605,6 @@ class TodaysPlanService {
         },
         tables,
         obstacles,
-        gridStepLdu: lduFromMm(PLAN_GRID_MM),
         active: plan.id === activePlanId,
       };
     });
@@ -460,7 +623,16 @@ class TodaysPlanService {
 const EDITS = 1_000;
 const MAX_MODELS = 24;
 const MAX_PIECES = 10;
+const TEST_SHAPES: ReadonlyArray<PlanShape> = [
+  {
+    footing: Float64Array.of(0, 0, 40, 40, 80, 0, 120, 40),
+    occupancy: Float64Array.of(0, 0, 120, 60),
+  },
+  { footing: Float64Array.of(0, 0, 640, 640), occupancy: Float64Array.of(-20, 0, 660, 640) },
+  { footing: Float64Array.of(-40, -40, 40, 40), occupancy: Float64Array.of(-40, -40, 40, 40) },
+];
 const MAX_REGIONS = 3;
+const SAVED_PLAN_STATES = 4;
 const CHUNK = 640;
 const MANDATORY_EVERY = 12;
 
@@ -521,6 +693,10 @@ class TestTrack implements PlanTrackSource {
     });
   }
 
+  writeIssues(delta: PlanDelta): void {
+    delta.writeTrackIssues();
+  }
+
   todays(): PlacedForPlan[] {
     return this.pieces.map((p, i) => ({
       key: { chunkKey: p.chunkKey, slot: i },
@@ -575,6 +751,7 @@ export class Pair {
   removedLast: TestModel | null = null;
   private nextModel = 1;
   private nextSlot = 1;
+  private readonly saved: PlanState[] = [];
   readonly hit = new Set<string>();
 
   constructor(
@@ -597,7 +774,7 @@ export class Pair {
   }
 
   syncToday(): void {
-    this.today.setPlacements([...this.models.map((m) => m.todays), ...this.track.todays()]);
+    this.today.setPlacements(this.models, this.track.todays());
   }
 
   randomBox(): WorldBox {
@@ -628,8 +805,34 @@ export class Pair {
       },
       placeable: { id: `ref-${this.int(5)}`, label: `Item ${this.int(5)}` },
       box,
+      shape: this.next() < 0.5 ? this.pick(TEST_SHAPES) : null,
+      carried: null,
+      facts: this.randomFacts(),
     };
     return { ...source, todays: todaysEntry(source) };
+  }
+
+  randomFacts(): Int32Array {
+    const facts = emptyFacts();
+    if (this.next() < 0.1) facts[FACT_FLAGS] = FLAG_UNMEASURED;
+    if (this.next() < 0.15) facts[FACT_ROAD_JOINED] = this.int(20);
+    if (this.next() < 0.1) facts[FACT_ROAD_MISMATCHED] = 1 + this.int(4);
+    if (this.next() < 0.1) facts[FACT_UNMAPPED_REBRICKABLE] = 1 + this.int(5);
+    if (this.next() < 0.1) facts[FACT_UNMAPPED_BRICKLINK] = 1 + this.int(5);
+    if (this.next() < 0.1) facts[FACT_CUSTOM_PARTS] = 1 + this.int(5);
+    const partner = this.next();
+    if (partner < 0.08 && this.models.length > 0) {
+      facts[FACT_OVERLAP_SEGMENT] = MODEL_SEGMENT;
+      facts[FACT_OVERLAP_SOURCE] = this.pick(this.models).id;
+    } else if (partner < 0.12 && this.track.pieces.length > 0) {
+      facts[FACT_OVERLAP_SEGMENT] = TRACK_SEGMENT;
+      facts[FACT_OVERLAP_SOURCE] = this.int(this.track.pieces.length);
+    }
+    return facts;
+  }
+
+  renumbered(model: TestModel): TestModel {
+    return { ...model, id: this.nextModel++ };
   }
 
   unreadableModel(field: BoxField): TestModel {
@@ -641,6 +844,33 @@ export class Pair {
 
   view(removed: ReadonlyArray<TestModel>, added: ReadonlyArray<TestModel>): void {
     writeViewUpdate(this.delta, { removed, added });
+    const gone = new Set(removed.map((model) => model.id));
+    const partnersGone = this.models.filter(
+      (model) =>
+        !added.includes(model) &&
+        model.facts[FACT_OVERLAP_SEGMENT] === MODEL_SEGMENT &&
+        gone.has(model.facts[FACT_OVERLAP_SOURCE] ?? NO_OVERLAP_PARTNER),
+    );
+    for (const model of partnersGone) {
+      model.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      model.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+    }
+    writeModelUpdates(this.delta, partnersGone, partnersGone.length);
+    this.sut.apply(this.delta);
+    this.syncToday();
+  }
+
+  factUpdate(): void {
+    if (this.models.length === 0) return this.place();
+    const updated: TestModel[] = [];
+    for (let k = 1 + this.int(3); k > 0; k--) {
+      const model = this.pick(this.models);
+      if (updated.includes(model)) continue;
+      model.facts.set(this.randomFacts());
+      updated.push(model);
+    }
+    this.delta.reset();
+    writeModelUpdates(this.delta, updated, updated.length);
     this.sut.apply(this.delta);
     this.syncToday();
   }
@@ -680,6 +910,30 @@ export class Pair {
     this.view(removed, added);
   }
 
+  replaceInPlace(): void {
+    const refs = [...new Set(this.models.map((m) => m.placeable.id))];
+    if (refs.length === 0) return this.place();
+    const ref = this.pick(refs);
+    const removed = this.models.filter((m) => m.placeable.id === ref);
+    this.models = this.models.filter((m) => m.placeable.id !== ref);
+    const added = removed.map((model) => this.copyInPlace(model));
+    this.models.push(...added);
+    this.view(removed, added);
+  }
+
+  copyInPlace(model: TestModel): TestModel {
+    const source: PlanModelSource = {
+      id: this.nextModel++,
+      handle: model.handle,
+      placeable: { ...model.placeable },
+      box: this.throwing.has(model.box) ? model.box : { ...model.box },
+      shape: model.shape,
+      carried: model.carried,
+      facts: model.facts.slice(),
+    };
+    return { ...source, todays: todaysEntry(source) };
+  }
+
   undo(): void {
     const model = this.removedLast;
     if (!model) return this.place();
@@ -716,8 +970,28 @@ export class Pair {
     this.syncToday();
   }
 
+  unsupportedEdit(): void {
+    const pieces = new Set<number>();
+    for (let piece = 0; piece < MAX_PIECES + 2; piece++) {
+      if (this.next() < 0.3) pieces.add(piece);
+    }
+    const models = new Set<number>();
+    for (const model of this.models) if (this.next() < 0.3) models.add(model.id);
+    if (this.next() < 0.2) models.add(this.nextModel);
+    const carriers = new Set<number>();
+    for (const model of this.models) if (this.next() < 0.2) carriers.add(model.id);
+    this.both((s) => s.setUnsupported(pieces, models, carriers));
+  }
+
   load(): void {
-    this.models = this.models.filter(() => this.next() < 0.8).toSorted(() => this.next() - 0.5);
+    this.models = this.models
+      .filter(() => this.next() < 0.8)
+      .toSorted(() => this.next() - 0.5)
+      .map((model) => this.renumbered(model));
+    for (const model of this.models) {
+      model.facts[FACT_OVERLAP_SEGMENT] = NO_OVERLAP_PARTNER;
+      model.facts[FACT_OVERLAP_SOURCE] = NO_OVERLAP_PARTNER;
+    }
     this.track.pieces.length = Math.min(this.track.pieces.length, this.int(MAX_PIECES));
     writeFullRebuild(this.delta, this.models, this.track);
     this.sut.apply(this.delta);
@@ -779,6 +1053,7 @@ export class Pair {
       { roomWidthMm: 1000 + this.int(3000) },
       { originChunkX: this.int(3) - 2 },
       { maxOverhangMm: this.int(60) },
+      { maxReachMm: this.int(1500) },
       { name: `Renamed ${this.int(9)}`, roomDepthMm: 1000 + this.int(3000) },
     ]);
   }
@@ -795,7 +1070,24 @@ export class Pair {
     );
   }
 
+  latticeRect(): LduRect {
+    const minX = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    const minZ = (this.int(48) - 24) * GUIDE_GRID_LDU;
+    return {
+      minX,
+      minZ,
+      maxX: minX + (1 + this.int(16)) * GUIDE_GRID_LDU,
+      maxZ: minZ + (1 + this.int(10)) * GUIDE_GRID_LDU,
+    };
+  }
+
+  sutState(): PlanState {
+    return { regions: this.sut.plans(), activePlanId: this.sut.activePlanId() };
+  }
+
   regionEdit(): void {
+    this.saved.push(this.sutState());
+    if (this.saved.length > SAVED_PLAN_STATES) this.saved.shift();
     const ids = this.planIds();
     const planId = ids.length > 0 ? this.pick(ids) : null;
     const roll = this.int(12);
@@ -810,6 +1102,8 @@ export class Pair {
     const table = this.table();
     const obstacle = this.obstacle();
     const name = `Renamed ${this.int(9)}`;
+    const drawn = this.latticeRect();
+    const saved = this.pick(this.saved);
     const edits: Array<(s: TodaysPlanService | PlanService) => unknown> = [
       (s) => s.updatePlan(planId, patch),
       (s) => s.updatePlan(planId, { name }),
@@ -817,11 +1111,14 @@ export class Pair {
       (s) => s.addObstacle(planId, obstacle),
       (s) => s.activatePlan(planId),
       (s) => s.activatePlan(null),
+      (s) => s.drawTable(drawn),
+      (s) => s.restore(saved),
     ];
     if (tableId) {
       edits.push((s) => s.updateTable(planId, tableId, { rect: table.rect }));
       edits.push((s) => s.updateTable(planId, tableId, { name }));
       edits.push((s) => s.removeTable(planId, tableId));
+      edits.push((s) => s.placeTable(planId, tableId, drawn));
     }
     if (obstacleId) {
       edits.push((s) => s.updateObstacle(planId, obstacleId, { rect: obstacle.rect }));
@@ -848,6 +1145,9 @@ export class Pair {
       return this.both((s) => s.setTableTopY(y));
     }
     if (roll < 0.91) return this.place(this.unreadableModel(this.pick(BOX_FIELDS)));
+    if (roll < 0.93) return this.unsupportedEdit();
+    if (roll < 0.97) return this.factUpdate();
+    if (roll < 0.99) return this.replaceInPlace();
     const unreadable = this.models.findIndex((m) => this.throwing.has(m.box));
     if (unreadable >= 0) return this.remove(unreadable);
     return this.place();
@@ -871,6 +1171,9 @@ export class Pair {
     sameObject(sut.tableTopY(), todaySnap.tableTopY, "tableTopY");
     sameObject(sut.placementCount(), todaySnap.placements.length, "placementCount");
     sameObject(sut.sandboxCount(), todaySnap.sandboxPlacements.length, "sandboxCount");
+    const factsByKey = new Map(
+      this.models.map((model) => [todaysPlacementId(model.todays.key), model.facts]),
+    );
     todaySnap.checks.forEach((check: PlanCheck) => {
       const id = check.regionId;
       const view = sut.regionView(id);
@@ -882,6 +1185,23 @@ export class Pair {
       sameObject(sut.insideCount(id), check.inside.length, `insideCount ${id}`);
       sameObject(sut.issueCount(id), check.issues.length, `issueCount ${id}`);
       sameObject(sut.issues(id), check.issues, `issues ${id}`);
+      const notChecked = check.issues.some((issue) => issue.rule === "unchecked");
+      const tally = (count: (facts: Int32Array) => number): number =>
+        notChecked
+          ? 0
+          : check.inside.reduce((sum, key) => {
+              const facts = factsByKey.get(todaysPlacementId(key));
+              return sum + (facts ? count(facts) : 0);
+            }, 0);
+      sameObject(
+        [sut.joinedRoadCells(id), sut.unmeasuredCount(id), sut.customParts(id)],
+        [
+          tally((facts) => facts[FACT_ROAD_JOINED] ?? 0),
+          tally((facts) => (facts[FACT_FLAGS] ?? 0) & FLAG_UNMEASURED),
+          tally((facts) => facts[FACT_CUSTOM_PARTS] ?? 0),
+        ],
+        `region tallies ${id}`,
+      );
     });
     sameObject(this.sutBackend.overlays, this.todayBackend.overlays, "overlays sent");
     sameObject(
@@ -956,6 +1276,10 @@ function recover(pair: Pair): void {
 
 const MANDATORY: ReadonlyArray<MandatoryCase> = [
   { name: "place", run: (p) => p.place() },
+  {
+    name: "replace in place: every copy of one ref rejoins the tail with a fresh id",
+    run: (p) => p.replaceInPlace(),
+  },
   { name: "remove", run: (p) => (p.models.length > 0 ? p.remove() : p.place()) },
   {
     name: "rotate moves the row to the tail",
@@ -1047,6 +1371,59 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
       const rect = p.table().rect;
       p.both((s) => s.updateTable(id, tableId, { rect }));
       p.both((s) => s.removeTable(id, tableId));
+    },
+  },
+  {
+    name: "draw a table that starts a plan, then move it and draw another past the room",
+    run: (p) => {
+      p.both((s) => s.activatePlan(null));
+      const rect = p.latticeRect();
+      p.both((s) => s.drawTable(rect));
+      const planId = p.today.snapshot().activePlanId;
+      const tableId = planId === null ? null : p.firstTable(planId);
+      if (planId === null || tableId === null) return;
+      const moved = {
+        minX: rect.minX - 3 * CHUNK_LDU,
+        minZ: rect.minZ - 2 * CHUNK_LDU,
+        maxX: rect.maxX + CHUNK_LDU,
+        maxZ: rect.maxZ,
+      };
+      p.both((s) => s.placeTable(planId, tableId, moved));
+      const far = p.latticeRect();
+      p.both((s) => s.drawTable(far));
+      p.place();
+    },
+  },
+  {
+    name: "restore earlier plan states across a created and a removed plan",
+    run: (p) => {
+      const before = p.sutState();
+      const plan = p.newPlan();
+      p.both((s) => s.createPlan(plan));
+      const created = p.sutState();
+      const id = withPlan(p);
+      const table = p.table();
+      p.both((s) => s.addTable(id, table));
+      p.both((s) => s.restore(created));
+      p.both((s) => s.restore(before));
+      p.both((s) => s.restore(created));
+      p.place();
+    },
+  },
+  {
+    name: "flag laid track and a model carrying track unsupported, then lay, throw, remove and rebuild around the flags",
+    run: (p) => {
+      withPlan(p);
+      p.trackLay(3);
+      p.place();
+      const carrier = p.models.at(-1)?.id ?? -1;
+      p.both((s) =>
+        s.setUnsupported(new Set([0, 2, MAX_PIECES + 1]), new Set(), new Set([carrier])),
+      );
+      p.trackLay(1);
+      p.switchThrow(0);
+      p.remove();
+      p.load();
     },
   },
   {

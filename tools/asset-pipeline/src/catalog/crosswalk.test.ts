@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { deriveCrosswalk, type CrosswalkInputs, type LdrawPartFacts } from "./crosswalk.ts";
 
+const CA_LICENSE = "Licensed under CC BY 4.0 : see CAreadme.txt";
+
 function facts(title: string, ...keywords: string[]): LdrawPartFacts {
-  return { title, keywords, ldrawOrg: "Part", components: [] };
+  return { title, keywords, ldrawOrg: "Part", license: CA_LICENSE, components: [] };
 }
 
 function shortcut(title: string, ...components: Array<[string, number]>): LdrawPartFacts {
@@ -10,6 +12,7 @@ function shortcut(title: string, ...components: Array<[string, number]>): LdrawP
     title,
     keywords: [],
     ldrawOrg: "Shortcut",
+    license: CA_LICENSE,
     components: components.map(([id, color]) => ({ id, color })),
   };
 }
@@ -40,6 +43,7 @@ const inputs: CrosswalkInputs = {
         title: "=Cone  1 x  1 with Stop",
         keywords: ["BrickLink 4589"],
         ldrawOrg: "Part Alias",
+        license: CA_LICENSE,
         components: [{ id: "59900", color: 16 }],
       },
     ],
@@ -61,6 +65,7 @@ const inputs: CrosswalkInputs = {
         title: "Minifig Hips and Legs Medium with Pattern",
         keywords: ["Rebrickable 37364c04pr0001"],
         ldrawOrg: "Part",
+        license: CA_LICENSE,
         components: [
           { id: "3815b", color: 16 },
           { id: "37366p01", color: 16 },
