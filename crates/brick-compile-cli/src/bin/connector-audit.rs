@@ -7,9 +7,9 @@ use std::time::Instant;
 
 use brick_compile::affine::{Affine, Vec3};
 use brick_compile::connect::{
-    mating_faces, published_faces, Connector, ConnectorExtractor, Gender, InferredFeatures, Issue,
-    MatingFace, PrimitiveConnectors, PrimitiveTable, SectionShape, ShadowSnaps, Shape, Source,
-    Uninferred, Withholding,
+    mating_faces, published_faces, Connector, ConnectorExtractor, CoveredFloor, Gender,
+    InferredFeatures, Issue, MatingFace, PrimitiveConnectors, PrimitiveTable, SectionShape,
+    ShadowSnaps, Shape, Source, Uninferred, Withholding,
 };
 use brick_compile::flatten::{resolve_reference, Library, Lod};
 use brick_compile::identify::{self, identifies, SIXTEENTHS_PER_LDU};
@@ -322,6 +322,14 @@ fn issue_key(issue: &Issue) -> String {
                 Withholding::ClosedByGeometry => "closed by geometry",
                 Withholding::SourcesDisagree => "where the shadow and the mesh disagree",
                 Withholding::NotProvenOpen => "not proven open",
+            }
+        ),
+        Issue::CoveredInference { cover, floor, .. } => format!(
+            "tier 4: dropped, covered exactly by a verified {} face{}",
+            source_key(cover.source),
+            match floor {
+                CoveredFloor::NoFloor | CoveredFloor::SameFloor => "",
+                CoveredFloor::CoverOpenThere => " that stays open past its floor",
             }
         ),
     }
