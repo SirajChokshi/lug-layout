@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
 import { randomInt } from "node:crypto";
-import { LdrawMirror, type FetchFunction } from "@brr/import";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,23 +7,20 @@ import { STUD_LDU } from "@brr/math";
 import { expect, it } from "vitest";
 import { acceptanceMarkdown, runAcceptance } from "./acceptance.ts";
 import { collisions } from "./assembly.ts";
-import { bundlePartGlb, openBundle, type Bundle } from "./bundle.ts";
+import { openBundle } from "./bundle.ts";
 import { checkInput, type ConnectorMemo, type InputChecks } from "./checks.ts";
 import { fetchPinned, formatOf, readCorpus } from "./corpus.ts";
 import {
   blockPools,
   generateBuilds,
-  isPoolCandidate,
   modulePair,
-  needsLdrawText,
   type BlockPools,
   type GeneratedKind,
-  type PoolCandidate,
 } from "./generator.ts";
 import { importsWithinLimit } from "./import-limit.ts";
 import { cachingFetch, type HeldOutInput } from "./import-path.ts";
 import { runTrains, trainsMarkdown } from "./trains/train-harness.ts";
-import { partExtras } from "./part-connectors.ts";
+import { poolCandidates } from "./pool-candidates.ts";
 import { markdownReport, partCoverage, type CheckedInput, type InputSet } from "./report.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -40,7 +36,6 @@ const DEFAULT_TRAINS_PER_KIND = 1;
 const DEFAULT_IMPORT_LIMIT_SECONDS = 60;
 const HARNESS_TIMEOUT_MS = 3_600_000;
 const MS_PER_SECOND = 1000;
-const STUD_TOP_Y = 7;
 const PALETTE_TEMPLATE = "docs/verified-facts/scenes/mils-plain.ldr";
 const SQUARE_MODULE_LDU = 640;
 
@@ -72,21 +67,6 @@ function revision(): string {
   return execFileSync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: REPO_ROOT })
     .toString()
     .trim();
-}
-
-async function poolCandidates(bundle: Bundle, fetchUrl: FetchFunction): Promise<PoolCandidate[]> {
-  const mirror = new LdrawMirror(bundle.source, fetchUrl);
-  const candidates: PoolCandidate[] = [];
-  for (const part of bundle.parts.values()) {
-    if (!isPoolCandidate(part.title)) continue;
-    const extras = partExtras(await bundlePartGlb(bundle, part), part.id);
-    candidates.push({
-      part,
-      studTopsY: extras.studs.map((stud) => stud.matrix[STUD_TOP_Y] ?? 0),
-      ldrawText: needsLdrawText(part.title) ? ((await mirror.file(part.path)) ?? null) : null,
-    });
-  }
-  return candidates;
 }
 
 function bareBaseplate(pools: BlockPools): string {

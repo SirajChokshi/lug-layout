@@ -1,6 +1,22 @@
-import { DirtyShards, worldPlacements, type AppliedEdit, type World } from "@brr/domain";
+import {
+  DirtyShards,
+  worldPlacements,
+  type AppliedEdit,
+  type PlanRegion,
+  type TrackPieceAt,
+  type World,
+} from "@brr/domain";
 import { CAMERA_FOV_DEGREES } from "@brr/render";
-import { decode, issueText, type Issue } from "@brr/schema/decode";
+import { decode, issueText, type Decoded, type Issue } from "@brr/schema/decode";
+import {
+  BRICKLINK_XML_FILE,
+  PARTS_CSV_FILE,
+  PLAN_SHEET_FILE,
+  REBRICKABLE_CSV_FILE,
+  planManifest,
+  type PlanOutputs,
+  type PlanRecordV1,
+} from "@brr/schema/plan";
 import {
   WORLD_NAME_MAX_LENGTH,
   WorldName,
@@ -9,9 +25,12 @@ import {
   worldHeader,
   worldManifest,
   worldShards,
+  type ConsistRecordV1,
   type ImportedFile,
+  type PlacementRecordV1,
   type SavedViewV1,
   type TrackRecordV1,
+  type WorldFiles,
   type WorldHeader,
   type WorldIndexEntry,
   type WorldManifestV1,
@@ -29,11 +48,23 @@ import { inject, injectable } from "inversify";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import { ViewCamera } from "../camera/view-camera.ts";
 import type { ICredits } from "../credits/credits-service.ts";
-import type { CreditsView } from "../credits/credits-view.ts";
+import type {
+  CreditsView,
+  CustomPartCredit,
+  ImportedModelCredit,
+} from "../credits/credits-view.ts";
+import type { IBomService } from "../bom/bom-service.ts";
+import type { IPlanSheetService, IPlanSheetSource } from "../plan/plan-sheet-service.ts";
 import type { ModelCredit } from "../scene/viewer-scene.ts";
-import { CREDITS, EDITOR_CAMERA, TRADEMARK_DISCLAIMER } from "../tokens.ts";
+import {
+  BOM_SERVICE,
+  CREDITS,
+  EDITOR_CAMERA,
+  PLAN_SHEET_SERVICE,
+  TRADEMARK_DISCLAIMER,
+} from "../tokens.ts";
 import { errorText } from "./error-text.ts";
-import { creditsForWorld, exportFileName } from "./world-credits.ts";
+import { creditsForPlan, creditsForWorld, exportFileName, planFileName } from "./world-credits.ts";
 
 export type SaveState = "saved" | "saving" | "failed" | "off";
 
@@ -66,14 +97,41 @@ export interface WorldContents {
   readonly world: World;
   readonly refs: ReadonlyArray<string>;
   readonly track: ReadonlyArray<TrackRecordV1>;
+  readonly consists: ReadonlyArray<ConsistRecordV1>;
 }
 
-export interface IEditedWorld {
+export interface StoredContents {
+  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly consists: ReadonlyArray<ConsistRecordV1>;
+}
+
+export interface PlanImport {
+  readonly sha256: string;
+  readonly credit: ModelCredit;
+  readonly customParts: ReadonlyArray<CustomPartCredit>;
+}
+
+export interface PlanContents {
+  readonly region: PlanRegion;
+  readonly placements: ReadonlyArray<PlacementRecordV1>;
+  readonly track: ReadonlyArray<TrackRecordV1>;
+  readonly placed: ReadonlyArray<ModelCredit>;
+  readonly imported: ReadonlyArray<PlanImport>;
+}
+
+export interface StoredPlan {
+  readonly plan: PlanRecordV1;
+  readonly shards: ReadonlyArray<WorldShardV1>;
+}
+
+export interface IEditedWorld extends IPlanSheetSource {
   contents(): WorldContents;
   placedCredits(): ReadonlyArray<ModelCredit>;
-  validate(shards: ReadonlyArray<WorldShardV1>): ReadonlyArray<Issue>;
-  load(shards: ReadonlyArray<WorldShardV1>): Promise<ReadonlyArray<Issue>>;
+  validate(stored: StoredContents): ReadonlyArray<Issue>;
+  load(stored: StoredContents): Promise<ReadonlyArray<Issue>>;
   addImportedModel(file: ImportedFile): Promise<string | null>;
+  planContents(planId: string): Decoded<PlanContents>;
+  addPlan(plan: StoredPlan): Promise<ReadonlyArray<Issue>>;
 }
 
 export interface IWorldFiles {
@@ -85,6 +143,8 @@ export interface IWorldFiles {
   retrySave(): Promise<void>;
   exportWorld(): Promise<ExportedWorld>;
   importWorld(bytes: Uint8Array): Promise<boolean>;
+  exportPlan(planId: string): Promise<ExportedWorld | null>;
+  openPlan(bytes: Uint8Array): Promise<boolean>;
 }
 
 export interface IWorldSession extends IWorldFiles {
@@ -92,9 +152,10 @@ export interface IWorldSession extends IWorldFiles {
   subscribe(listener: () => void): () => void;
   start(edited: IEditedWorld, bundleVersion: string): Promise<void>;
   placementsEdited(edit: AppliedEdit): void;
-  trackEdited(): void;
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   pollCamera(): void;
   addModelFile(file: ModelFileInput): Promise<string | null>;
+  importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
 }
 
 export interface ModelFileInput {
@@ -105,6 +166,40 @@ export interface ModelFileInput {
 const CAMERA_SAVE_DELAY_MS = 500;
 const UNSEEN = Number.NaN;
 const FIRST_WORLD_NAME = "World 1";
+const NOTHING_STORED: StoredContents = { shards: [], consists: [] };
+
+function storedContents(manifest: WorldManifestV1, shards: ReadonlyArray<WorldShardV1>) {
+  return { shards, consists: manifest.consists ?? [] };
+}
+
+function planRecord(region: PlanRegion): PlanRecordV1 {
+  const { footprint } = region;
+  return {
+    name: region.name,
+    originChunkX: region.originChunkX,
+    originChunkZ: region.originChunkZ,
+    maxOverhangMm: region.maxOverhangMm,
+    maxReachMm: region.maxReachMm,
+    footprint: {
+      roomWidthMm: footprint.roomWidthMm,
+      roomDepthMm: footprint.roomDepthMm,
+      tables: footprint.tables.map(({ name, rect, heightMm }) => ({ name, rect, heightMm })),
+      obstacles: footprint.obstacles.map(({ name, rect }) => ({ name, rect })),
+    },
+  };
+}
+
+function bySha256(models: ReadonlyArray<PlanImport>): PlanImport[] {
+  const sorted = [...models];
+  sorted.sort((a, b) => (a.sha256 < b.sha256 ? -1 : a.sha256 > b.sha256 ? 1 : 0));
+  return sorted;
+}
+
+function byReference(parts: ReadonlyArray<CustomPartCredit>): CustomPartCredit[] {
+  const sorted = [...parts];
+  sorted.sort((a, b) => (a.reference < b.reference ? -1 : a.reference > b.reference ? 1 : 0));
+  return sorted;
+}
 
 interface OpenWorld {
   readonly id: string | null;
@@ -139,6 +234,7 @@ export class WorldSession implements IWorldSession {
   private readonly dirty = new DirtyShards();
   private current: OpenWorld | null = null;
   private cameraDirty = false;
+  private consistsDirty = false;
   private readonly lastView = new ViewRecord();
   private saveScheduled = false;
   private cameraSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -156,6 +252,8 @@ export class WorldSession implements IWorldSession {
     @inject(EDITOR_CAMERA) private readonly camera: IEditorCamera,
     @inject(CREDITS) private readonly credits: ICredits,
     @inject(TRADEMARK_DISCLAIMER) private readonly disclaimer: string,
+    @inject(PLAN_SHEET_SERVICE) private readonly sheets: IPlanSheetService,
+    @inject(BOM_SERVICE) private readonly boms: IBomService,
   ) {}
 
   view(): WorldSessionView {
@@ -184,11 +282,13 @@ export class WorldSession implements IWorldSession {
   }
 
   private header(current: OpenWorld): WorldHeader {
+    const { consists } = this.editedWorld().contents();
     return {
       name: current.name,
       bundleVersion: this.bundleVersion,
       view: this.camera.savedView(),
       disclaimer: this.disclaimer,
+      ...(consists.length > 0 ? { consists: [...consists] } : {}),
     };
   }
 
@@ -206,10 +306,12 @@ export class WorldSession implements IWorldSession {
       if (change.from) this.dirty.touch(change.from.x, change.from.z);
       if (change.to) this.dirty.touch(change.to.x, change.to.z);
     }
+    if (edit.consists.length > 0) this.consistsDirty = true;
     this.scheduleSave();
   }
 
-  trackEdited(): void {
+  trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void {
+    this.dirty.touchTrackPieces(lifted);
     this.dirty.touchTrack(this.editedWorld().contents().track);
     this.scheduleSave();
   }
@@ -260,11 +362,13 @@ export class WorldSession implements IWorldSession {
   private async saveNow(): Promise<void> {
     const current = this.current;
     if (!current || current.id === null || !this.canSave()) return;
-    if (this.dirty.size === 0 && !this.cameraDirty) return;
+    if (this.dirty.size === 0 && !this.cameraDirty && !this.consistsDirty) return;
     const contents = this.editedWorld().contents();
     const change = this.dirty.take(contents.world, contents.refs, contents.track);
     const cameraWasDirty = this.cameraDirty;
+    const consistsWereDirty = this.consistsDirty;
     this.cameraDirty = false;
+    this.consistsDirty = false;
     this.setWorldView(current, { save: "saving" });
     try {
       const summary = await this.repository.save(current.id, {
@@ -273,7 +377,7 @@ export class WorldSession implements IWorldSession {
         drop: change.drop,
       });
       this.current = { ...current, pinnedBundleVersion: this.bundleVersion };
-      const unsaved = this.dirty.size > 0 || this.cameraDirty;
+      const unsaved = this.dirty.size > 0 || this.cameraDirty || this.consistsDirty;
       this.setWorldView(this.current, {
         save: unsaved ? "saving" : "saved",
         placements: summary.placements,
@@ -290,6 +394,7 @@ export class WorldSession implements IWorldSession {
     } catch (error) {
       this.dirty.restore(change);
       this.cameraDirty ||= cameraWasDirty;
+      this.consistsDirty ||= consistsWereDirty;
       this.saveFailed = true;
       this.lastSaveError = errorText(error);
       this.syncUnsaved();
@@ -303,6 +408,7 @@ export class WorldSession implements IWorldSession {
   private syncUnsaved(): void {
     const unsavedEdits =
       this.dirty.size > 0 ||
+      this.consistsDirty ||
       (this.state.storageError !== null && this.editedWorld().contents().world.size > 0);
     if (unsavedEdits !== this.state.unsavedEdits) this.update({ unsavedEdits });
   }
@@ -364,7 +470,7 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: 0,
     };
-    await this.loadEditedWorld(current.name, []);
+    await this.loadEditedWorld(current.name, NOTHING_STORED);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "off" });
     this.update({ storageError: reason, worlds: [] });
@@ -414,6 +520,7 @@ export class WorldSession implements IWorldSession {
     this.current = current;
     this.dirty.clear();
     this.cameraDirty = false;
+    this.consistsDirty = false;
     this.saveFailed = false;
     this.lastSaveError = null;
     this.update({ fileError: null });
@@ -438,13 +545,13 @@ export class WorldSession implements IWorldSession {
       pinnedBundleVersion: this.bundleVersion,
       openMs: performance.now() - started,
     };
-    await this.loadEditedWorld(name, []);
+    await this.loadEditedWorld(name, NOTHING_STORED);
     this.finishOpen(null, current);
     this.setWorldView(current, { placements: 0, shards: 0, save: "saved" });
   }
 
-  private async loadEditedWorld(name: string, shards: ReadonlyArray<WorldShardV1>): Promise<void> {
-    const issues = await this.editedWorld().load(shards);
+  private async loadEditedWorld(name: string, stored: StoredContents): Promise<void> {
+    const issues = await this.editedWorld().load(stored);
     if (issues.length > 0) {
       throw new Error(`world "${name}" can't be opened: ${issueText(issues)}`);
     }
@@ -456,7 +563,7 @@ export class WorldSession implements IWorldSession {
     shards: ReadonlyArray<WorldShardV1>,
     started: number,
   ): Promise<void> {
-    await this.loadEditedWorld(manifest.name, shards);
+    await this.loadEditedWorld(manifest.name, storedContents(manifest, shards));
     const opened = {
       id,
       name: manifest.name,
@@ -476,15 +583,17 @@ export class WorldSession implements IWorldSession {
     const started = performance.now();
     const stored = await this.repository.read(id);
     if (!stored.ok) throw new Error(`world ${id} can't be read: ${issueText(stored.issues)}`);
-    await this.ensureImports(stored.value.shards, (sha256) => this.repository.importedFile(sha256));
+    await this.ensureImports(storedContents(stored.value.manifest, stored.value.shards), (sha256) =>
+      this.repository.importedFile(sha256),
+    );
     await this.loadShards(id, stored.value.manifest, stored.value.shards, started);
   }
 
   private async ensureImports(
-    shards: ReadonlyArray<WorldShardV1>,
+    stored: StoredContents,
     fileOf: (sha256: string) => Promise<ImportedFile | undefined>,
   ): Promise<void> {
-    for (const sha256 of referencedImports(shards)) {
+    for (const sha256 of referencedImports(stored.shards, stored.consists)) {
       const file = this.importedFiles.get(sha256) ?? (await fileOf(sha256));
       if (!file) {
         throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
@@ -579,18 +688,14 @@ export class WorldSession implements IWorldSession {
       await this.saveNow();
       const current = this.current;
       if (!current) throw new Error("no world is open");
-      this.creditsView ??= this.credits.load().catch((error: unknown) => {
-        this.creditsView = null;
-        throw error;
-      });
       const edited = this.editedWorld();
       const credits = this.credits.exportText(
-        creditsForWorld(await this.creditsView, edited.placedCredits()),
+        creditsForWorld(await this.loadCredits(), edited.placedCredits()),
       );
       const contents = edited.contents();
       const shards = worldShards(worldPlacements(contents.world, contents.refs), contents.track);
       const manifest = worldManifest(this.header(current), shards.map(shardEntry));
-      const imports = [...referencedImports(shards)].map((sha256) => {
+      const imports = [...referencedImports(shards, contents.consists)].map((sha256) => {
         const file = this.importedFiles.get(sha256);
         if (!file) throw new Error(`the imported file with sha256 ${sha256} isn't loaded`);
         return file;
@@ -603,17 +708,138 @@ export class WorldSession implements IWorldSession {
   }
 
   importWorld(bytes: Uint8Array): Promise<boolean> {
+    return this.importArchive(() => this.repository.readArchive(bytes));
+  }
+
+  importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean> {
+    return this.importArchive(() => this.repository.readWorldFiles(files));
+  }
+
+  async exportPlan(planId: string): Promise<ExportedWorld | null> {
+    let exported: ExportedWorld | null = null;
+    await this.fileAction(
+      "saving the plan",
+      async () => {
+        exported = await this.packPlan(planId);
+        this.update({ fileError: null });
+      },
+      true,
+    );
+    return exported;
+  }
+
+  private async planOutputs(planId: string): Promise<PlanOutputs> {
+    const edited = this.editedWorld();
+    const sheet = this.sheets.printable(edited, planId);
+    const { files } = await this.boms.billOfMaterials(edited, { kind: "plan", planId });
+    return {
+      [PLAN_SHEET_FILE]: sheet,
+      [PARTS_CSV_FILE]: files.plainCsv,
+      [BRICKLINK_XML_FILE]: files.brickLinkXml,
+      [REBRICKABLE_CSV_FILE]: files.rebrickableCsv,
+    };
+  }
+
+  private async packPlan(planId: string): Promise<ExportedWorld> {
+    const read = this.editedWorld().planContents(planId);
+    if (!read.ok) throw new Error(issueText(read.issues));
+    const { region, placements, track, placed, imported } = read.value;
+    const files = bySha256(imported).map((model) => {
+      const file = this.importedFiles.get(model.sha256);
+      if (!file) throw new Error(`the imported file with sha256 ${model.sha256} isn't loaded`);
+      return { model, file };
+    });
+    const credited: ImportedModelCredit[] = files.map(({ model, file }) => ({
+      name: file.name,
+      sha256: file.sha256,
+      authors: [...new Set(model.credit.sections.map((section) => section.author))],
+      licenses: [...new Set(model.credit.sections.flatMap((section) => section.license ?? []))],
+      customParts: byReference(model.customParts),
+    }));
+    const credits = this.credits.exportText(
+      creditsForPlan(await this.loadCredits(), placed, credited),
+    );
+    const shards = worldShards(placements, track);
+    const manifest = planManifest(
+      {
+        bundleVersion: this.bundleVersion,
+        plan: planRecord(region),
+        disclaimer: this.disclaimer,
+      },
+      shards.map(shardEntry),
+    );
+    const outputs = await this.planOutputs(planId);
+    return {
+      fileName: planFileName(region.name),
+      bytes: this.repository.packPlanArchive({
+        manifest,
+        shards,
+        credits,
+        outputs,
+        imports: files.map(({ file }) => file),
+      }),
+    };
+  }
+
+  openPlan(bytes: Uint8Array): Promise<boolean> {
+    return this.fileAction(
+      "opening the plan",
+      async () => {
+        if (this.state.readOnly) {
+          throw new Error("this world is open in another tab, so it's read-only here");
+        }
+        const archive = await this.repository.readPlanArchive(bytes);
+        if (!archive.ok) throw new Error(issueText(archive.issues));
+        const { manifest, shards, imports } = archive.value;
+        const carried = new Map(imports.map((file) => [file.sha256, file]));
+        await this.ensureImports({ shards, consists: [] }, async (sha256) => carried.get(sha256));
+        const issues = await this.editedWorld().addPlan({ plan: manifest.plan, shards });
+        if (issues.length > 0) {
+          const pinned =
+            manifest.bundleVersion === this.bundleVersion
+              ? ""
+              : ` (saved with bundle ${manifest.bundleVersion}; this app has bundle ${this.bundleVersion})`;
+          throw new Error(`${issueText(issues)}${pinned}`);
+        }
+        this.update({ fileError: null });
+        await this.storeOpenedImports(imports);
+      },
+      true,
+    );
+  }
+
+  private async storeOpenedImports(imports: ReadonlyArray<ImportedFile>): Promise<void> {
+    if (this.state.storageError !== null) return;
+    try {
+      for (const file of imports) await this.repository.putImportedFile(file);
+    } catch (error) {
+      this.update({
+        fileError: `the plan opened, but its model files couldn't be stored on this device (${errorText(error)}), so this world can't reopen with them after a reload. Export the world while this tab holds them.`,
+      });
+    }
+  }
+
+  private loadCredits(): Promise<CreditsView> {
+    this.creditsView ??= this.credits.load().catch((error: unknown) => {
+      this.creditsView = null;
+      throw error;
+    });
+    return this.creditsView;
+  }
+
+  private importArchive(read: () => Promise<Decoded<WorldFiles>>): Promise<boolean> {
     return this.fileAction("import", async () => {
       const started = performance.now();
-      const archive = await this.repository.readArchive(bytes);
+      const archive = await read();
       if (!archive.ok) throw new Error(issueText(archive.issues));
       const { manifest, shards, imports } = archive.value;
+      const stored = storedContents(manifest, shards);
       const carried = new Map(imports.map((file) => [file.sha256, file]));
-      await this.ensureImports(shards, async (sha256) => carried.get(sha256));
+      await this.ensureImports(stored, async (sha256) => carried.get(sha256));
       if (this.state.storageError === null) {
         for (const file of imports) await this.repository.putImportedFile(file);
       }
-      const issues = this.editedWorld().validate(shards);
+      const issues = this.editedWorld().validate(stored);
       if (issues.length > 0) throw new Error(issueText(issues));
       if (this.state.storageError !== null) {
         await this.loadShards(null, manifest, shards, started);

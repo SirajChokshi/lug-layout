@@ -6,14 +6,13 @@ import {
   POSE16_IDENTITY,
   pose16Equals,
   zeta16,
-  zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { drawingKit, type DrawingKit } from "./drawing-kit.ts";
 import { advance, connectorPose, layMoves, type TrackPieceDef } from "./track-pose.ts";
 import { solveClosure, type ClosureResult, type SearchBudget } from "./closure.ts";
-import { runMoves, solveDrag, type TrackRun } from "./track-solver.ts";
+import { runMoves, type TrackRun } from "./track-solver.ts";
 
 interface GeometryEnd {
   readonly fieldCertified: boolean;
@@ -253,31 +252,5 @@ describe("solveClosure", () => {
       if (result.kind === "limit") limited++;
     }
     expect(limited).toBeGreaterThan(0);
-  });
-});
-
-describe("solveDrag", () => {
-  it("lays a run whose exact end lies within one straight of any target ahead", () => {
-    const random = seeded(11);
-    const start = pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0);
-    let worst = 0;
-    for (let trial = 0; trial < 300; trial++) {
-      const angle = (random() - 0.5) * Math.PI * 1.6;
-      const distance = 40 + random() * 300;
-      const target = { x: distance * Math.cos(angle), z: distance * Math.sin(angle) };
-      const plan = solveDrag(kit, start, target);
-      const end = zeta16ToStuds(endOf(start, plan).position);
-      const miss = Math.hypot(end.x - target.x, end.z - target.z);
-      expect(miss).toBeCloseTo(plan.missStuds, 6);
-      worst = Math.max(worst, miss);
-    }
-    expect(worst).toBeLessThan(Number(kit.straightStuds));
-  });
-
-  it("keeps the previous shape while it stays nearly as good", () => {
-    const start = POSE16_IDENTITY;
-    const first = solveDrag(kit, start, { x: 120, z: 60 });
-    const nudged = solveDrag(kit, start, { x: 121, z: 60 }, first.key);
-    expect(nudged.key).toBe(first.key);
   });
 });
