@@ -506,6 +506,7 @@ const PLAN_CHECKS = {
   crossesRegion: "Placements stay inside the plan",
   fit: "Placements stand on the tables, clear of obstacles",
   unsupported: "Placements are held: on studs or on the table",
+  clearance: "Bridges leave room for the tallest train",
   seam: "No placement stands across a table seam",
   reach: "Every part is within reach of a table edge",
   overlap: "Placements don't overlap",

@@ -800,6 +800,10 @@ footer {
   fill: rgb(107 79 46);
 }
 
+.scene-label[data-kind="height"] .scene-label-pill {
+  fill: rgb(38 88 140);
+}
+
 .toolbar-hint {
   grid-column: 1 / -1;
   margin: 0;
@@ -1037,6 +1041,43 @@ footer a {
 .track-extend button.blocked[aria-pressed="true"] {
   border-color: #b02a2a;
   background: #d64545;
+}
+
+.track-height-panel {
+  font-size: 12px;
+}
+
+.track-height-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.track-height-row output {
+  min-width: 9em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.track-height-row button {
+  padding: 3px 8px;
+  border: 1px solid #c9ccd6;
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.track-height-row button[aria-pressed="true"] {
+  border-color: #26588c;
+  background: #26588c;
+  color: #fff;
+}
+
+.track-height-panel .unverified {
+  color: #8a5a00;
 }
 
 .gear-panel select {

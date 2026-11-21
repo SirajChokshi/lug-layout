@@ -555,6 +555,7 @@ export class RoadDrawing {
       ...placements.flatMap((p) => (p.replaces ? [p.replaces] : [])),
     ]);
     const kept = roads.filter((model) => !replaced.has(model) && near(model.box));
+    const standing = [...kept, ...others.filter((model) => !replaced.has(model))];
     const network: RoadPlacement[] = kept.flatMap((model, id) =>
       model.placeable.road
         ? [
@@ -601,7 +602,7 @@ export class RoadDrawing {
         return;
       }
       const box = this.tileBox(p.tile, top);
-      const model = others.find((other) => !replaced.has(other) && boxesMeet(other.box, box));
+      const model = standing.find((other) => boxesMeet(other.box, box));
       if (model) {
         issues.push({
           x,
