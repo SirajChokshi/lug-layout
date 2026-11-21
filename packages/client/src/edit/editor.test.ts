@@ -345,6 +345,8 @@ class HeadlessBackend implements ISceneBackend {
     this.vehicles.delete(vehicle);
   }
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
   aim(x: number, z: number): void {
@@ -974,6 +976,10 @@ class MemoryRepository implements IWorldRepository {
 
   async readArchive(): Promise<Decoded<WorldArchive>> {
     return { ok: false, issues: [{ path: "archive", message: "is not read in this test" }] };
+  }
+
+  async readWorldFiles(): Promise<Decoded<WorldArchive>> {
+    return this.readArchive();
   }
 
   async putImportedFile(): Promise<void> {}
@@ -2268,6 +2274,102 @@ it.each([
   120_000,
 );
 
+it("measures in studs and cm: a user's model reads its size held and selected, a drag lays a ruler, a click lays none, and Delete or Escape drops a ruler mid-drag before lifting a laid one", async () => {
+  const { editor, backend, catalog } = await startEditor(
+    ["baseplate-row"],
+    new BundleDirectoryFetcher(),
+    ["baseplate-row"],
+  );
+  const held = "omr:baseplate-row";
+  await loadCatalogItem(catalog, held);
+  const labels = () => editor.snapshot().labels.map((label) => `${label.kind}: ${label.text}`);
+  await placer(editor, backend)(held, 0, 0);
+  const whileHeld = labels();
+  const ghost = editor.snapshot().labels.find((label) => label.kind === "ghost");
+  editor.chooseItem(null);
+  backend.aim(ghost?.x ?? Number.NaN, ghost?.z ?? Number.NaN);
+  editor.click(0, 0, 0);
+  const whileSelected = labels();
+  editor.setMeasuring(true);
+  const ruler = (from: readonly [number, number], to: readonly [number, number]): void => {
+    backend.aim(...from);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+  };
+  const startDraft = (to: readonly [number, number]): void => {
+    backend.aim(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+  };
+  startDraft([200, 0]);
+  const firstDraftDeletable = commandEnabled("delete", editor.snapshot());
+  editor.deleteSelection(0);
+  const firstDraftDeleted = labels();
+  ruler([0, 0], [60, 80]);
+  ruler([100, 100], [100, 100]);
+  ruler([-320, -200], [320, -200]);
+  const measured = labels();
+  startDraft([200, 0]);
+  const drafting = labels();
+  editor.deleteSelection(0);
+  const deletedMidDrag = labels();
+  editor.deleteSelection(0);
+  const afterDelete = { rulers: editor.snapshot().rulers, labels: labels() };
+  startDraft([0, 200]);
+  editor.chooseItem(null);
+  const escapedMidDrag = { mode: editor.snapshot().mode, labels: labels() };
+  editor.chooseItem(held);
+
+  expect({
+    whileHeld,
+    whileSelected,
+    firstDraftDeletable,
+    firstDraftDeleted,
+    measured,
+    drafting,
+    deletedMidDrag,
+    afterDelete,
+    escapedMidDrag,
+    after: { mode: editor.snapshot().mode, rulers: editor.snapshot().rulers },
+  }).toEqual({
+    whileHeld: ["ghost: 32 × 64 studs · 25.6 × 51.2 cm"],
+    whileSelected: ["selection: 32 × 64 studs · 25.6 × 51.2 cm"],
+    firstDraftDeletable: true,
+    firstDraftDeleted: [],
+    measured: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    drafting: [
+      "ruler: 5 studs · 4 cm (3 × 4)",
+      "ruler: 32 studs · 25.6 cm",
+      "draft: 10 studs · 8 cm",
+    ],
+    deletedMidDrag: ["ruler: 5 studs · 4 cm (3 × 4)", "ruler: 32 studs · 25.6 cm"],
+    afterDelete: { rulers: 1, labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    escapedMidDrag: { mode: "select", labels: ["ruler: 5 studs · 4 cm (3 × 4)"] },
+    after: { mode: "place", rulers: 1 },
+  });
+}, 120_000);
+
+it("clears the rulers when another world opens", async () => {
+  const { editor, backend } = await startStreamingEditor({ models: [], tier: null });
+  editor.setMeasuring(true);
+  backend.aim(0, 0);
+  editor.dragStart(0, 0);
+  backend.aim(640, 0);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const laid = editor.snapshot().rulers;
+  expect(await editor.newWorld("Second")).toBe(true);
+
+  expect({ laid, rulers: editor.snapshot().rulers, labels: editor.snapshot().labels }).toEqual({
+    laid: 1,
+    rulers: 0,
+    labels: [],
+  });
+}, 120_000);
+
 function placedHeights(backend: HeadlessBackend, partId: string) {
   const heights = new Set<number>();
   let instances = 0;
@@ -2617,6 +2719,12 @@ class StreamingBackend implements ISceneBackend, AimedBackend {
   }
   setIssueBoxes(...args: Parameters<ISceneBackend["setIssueBoxes"]>): void {
     this.three.setIssueBoxes(...args);
+  }
+  setGuides(...args: Parameters<ISceneBackend["setGuides"]>): void {
+    this.three.setGuides(...args);
+  }
+  projectToNdc(...args: Parameters<ISceneBackend["projectToNdc"]>): void {
+    this.three.projectToNdc(...args);
   }
   setVehicle(...args: Parameters<ISceneBackend["setVehicle"]>): void {
     this.three.setVehicle(...args);

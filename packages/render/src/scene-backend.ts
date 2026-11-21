@@ -145,6 +145,23 @@ export interface GroundSettings {
   readonly grid: boolean;
 }
 
+export type GuideKind = "ruler" | "axis" | "draft";
+
+export interface GuideSegment {
+  readonly kind: GuideKind;
+  readonly ax: number;
+  readonly ay: number;
+  readonly az: number;
+  readonly bx: number;
+  readonly by: number;
+  readonly bz: number;
+}
+
+export const PROJECTED_NDC_X = 0;
+export const PROJECTED_NDC_Y = 1;
+export const PROJECTED_IN_VIEW = 2;
+export const PROJECTION_FLOATS = 3;
+
 export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
@@ -182,7 +199,9 @@ export interface ISceneBackend {
   setGround(ground: GroundSettings | null): void;
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void;
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void;
+  setGuides(segments: ReadonlyArray<GuideSegment>): void;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void;
+  projectToNdc(x: number, y: number, z: number, out: Float64Array, offset: number): void;
   setVehicle(vehicle: number, model: ChunkInstances): void;
   setVehiclePose(
     vehicle: number,
