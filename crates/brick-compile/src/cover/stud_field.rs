@@ -1,7 +1,6 @@
-use super::ray::Bounds;
 use super::{corner_box, inverse, world_box, CoverInstance, PartSolid, StudShape};
-use crate::affine::Vec3;
-use crate::clip::{clip_to_box, polygon_area, Polygon};
+use crate::affine::{Affine, Vec3};
+use crate::clip::{clip_to_box, polygon_area, Polygon, MAX_CLIPPED_VERTICES};
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
 use crate::trig::planar_length;
@@ -16,32 +15,25 @@ pub fn stud_field_collides(
     let reach = stud.inscribed_radius - WELD_EPSILON_LDU;
     let bottom = floor_y + WELD_EPSILON_LDU;
     let top = floor_y + stud.height - WELD_EPSILON_LDU;
-    let in_band: Vec<(&CoverInstance, [Vec3; 2])> = instances
-        .iter()
-        .map(|instance| (instance, world_box(instance, &solids[instance.part])))
-        .filter(|(_, [min, max])| min[1] < top && max[1] > bottom)
-        .collect();
-    let mut plan = Bounds::EMPTY;
-    for (_, [min, max]) in &in_band {
-        plan = plan.grow(*min).grow(*max);
-    }
-    if plan.min[0] > plan.max[0] {
-        return false;
-    }
-    for x in stud_centres(plan.min[0] - reach, plan.max[0] + reach, phase[0]) {
-        for z in stud_centres(plan.min[2] - reach, plan.max[2] + reach, phase[1]) {
-            let low = [x - reach, bottom, z - reach];
-            let high = [x + reach, top, z + reach];
-            let reached = in_band.iter().any(|(instance, bounds)| {
-                overlaps(bounds, low, high)
-                    && solid_reaches(instance, &solids[instance.part], [low, high], [x, z], reach)
-            });
-            if reached {
-                return true;
-            }
+    instances.iter().any(|instance| {
+        let solid = &solids[instance.part];
+        let bounds = world_box(instance, solid);
+        let [min, max] = bounds;
+        if !(min[1] < top && max[1] > bottom) {
+            return false;
         }
-    }
-    false
+        let Some(to_part) = inverse(instance.matrix) else {
+            return false;
+        };
+        stud_centres(min[0] - reach, max[0] + reach, phase[0]).any(|x| {
+            stud_centres(min[2] - reach, max[2] + reach, phase[1]).any(|z| {
+                let low = [x - reach, bottom, z - reach];
+                let high = [x + reach, top, z + reach];
+                overlaps(&bounds, low, high)
+                    && solid_reaches(instance.matrix, &to_part, solid, [low, high], [x, z], reach)
+            })
+        })
+    })
 }
 
 pub fn inscribed_radius(mesh: &Mesh) -> Option<f64> {
@@ -91,16 +83,14 @@ fn overlaps([min, max]: &[Vec3; 2], low: Vec3, high: Vec3) -> bool {
 }
 
 fn solid_reaches(
-    instance: &CoverInstance,
+    to_world: &Affine,
+    to_part: &Affine,
     solid: &PartSolid,
     [low, high]: [Vec3; 2],
     axis: [f64; 2],
     reach: f64,
 ) -> bool {
-    let Some(to_part) = inverse(instance.matrix) else {
-        return false;
-    };
-    let [local_min, local_max] = corner_box(&to_part, low, high);
+    let [local_min, local_max] = corner_box(to_part, low, high);
     let mut reached = false;
     solid.tree.walk(|bounds, leaf| match leaf {
         None => {
@@ -112,7 +102,14 @@ fn solid_reaches(
                 if reached {
                     break;
                 }
-                let triangle = solid.tree_points[t].map(|p| instance.matrix.apply(p));
+                let local = &solid.tree_points[t];
+                if (0..3).any(|k| {
+                    local.iter().all(|p| p[k] > local_max[k])
+                        || local.iter().all(|p| p[k] < local_min[k])
+                }) {
+                    continue;
+                }
+                let triangle = local.map(|p| to_world.apply(p));
                 let clipped = clip_to_box(&triangle, low, high);
                 reached = polygon_area(&clipped) > 0.0 && plan_distance(&clipped, axis) < reach;
             }
@@ -123,11 +120,12 @@ fn solid_reaches(
 }
 
 fn plan_distance((points, len): &Polygon, axis: [f64; 2]) -> f64 {
-    let plan: Vec<[f64; 2]> = points[..*len]
-        .iter()
-        .map(|p| [p[0] - axis[0], p[2] - axis[1]])
-        .collect();
-    if surrounds_axis(&plan) {
+    let mut plan = [[0.0; 2]; MAX_CLIPPED_VERTICES];
+    for (to, p) in plan.iter_mut().zip(&points[..*len]) {
+        *to = [p[0] - axis[0], p[2] - axis[1]];
+    }
+    let plan = &plan[..*len];
+    if surrounds_axis(plan) {
         return 0.0;
     }
     (0..plan.len())
