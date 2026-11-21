@@ -1,12 +1,12 @@
 import {
   CONNECTIVITY_LICENSE,
-  CONNECTIVITY_SOURCES,
   SECTION_SHAPE_CODES,
   type ConnectorIndexFile,
   type ConnectorPackage,
   type ConnectorRecordFile,
   type SectionVocabularyFile,
 } from "@brr/schema/bundle";
+import { connectorRecordIssues, connectorVocabularyIssues } from "@brr/catalog/connector-license";
 import { isCaLicense } from "./verify/license-audit.ts";
 
 const SECTION_SHAPES: ReadonlySet<unknown> = new Set(SECTION_SHAPE_CODES);
@@ -89,10 +89,6 @@ export function sectionVocabularyIssues(
   return issues;
 }
 
-function isConnectivity(source: number): boolean {
-  return CONNECTIVITY_SOURCES.includes(source);
-}
-
 function packageLicenseIssues(expected: ConnectorPackage, index: ConnectorIndexFile): string[] {
   if (expected === "connectivity") {
     const issues: string[] = [];
@@ -112,56 +108,6 @@ function packageLicenseIssues(expected: ConnectorPackage, index: ConnectorIndexF
     );
 }
 
-function vocabularyIssues(
-  expected: ConnectorPackage,
-  label: string,
-  found: string | undefined,
-  sectionVocabulary: string | null,
-): string[] {
-  if (expected === "connectivity") {
-    return found === undefined
-      ? []
-      : [`${label} names a section vocabulary, but tier 1 is not inferred`];
-  }
-  if (sectionVocabulary === null || found === sectionVocabulary) return [];
-  return [
-    `${label} was inferred with section vocabulary ${found ?? "(none)"}, not the manifest's ${sectionVocabulary}`,
-  ];
-}
-
-function recordIssues(
-  expected: ConnectorPackage,
-  index: ConnectorIndexFile,
-  partId: string,
-  record: ConnectorRecordFile,
-  sectionVocabulary: string | null,
-): string[] {
-  const issues = vocabularyIssues(
-    expected,
-    `${partId}'s ${expected} record`,
-    record.sectionVocabulary,
-    sectionVocabulary,
-  );
-  if (record.part !== partId)
-    issues.push(`the ${expected} index files ${record.part} under ${partId}`);
-  if (!index.licenses.includes(record.license)) {
-    issues.push(
-      `${partId}'s ${expected} record is licensed ${record.license}, which its index does not declare`,
-    );
-  }
-  const misplaced = record.faces.source.filter((source) =>
-    expected === "connectivity" ? !isConnectivity(source) : isConnectivity(source),
-  ).length;
-  if (misplaced > 0) {
-    issues.push(
-      expected === "connectivity"
-        ? `${partId}'s connectivity record carries ${misplaced} faces from outside tier 1`
-        : `${partId}'s connector record carries ${misplaced} tier 1 faces, which belong only in the ${CONNECTIVITY_LICENSE} connectivity package`,
-    );
-  }
-  return issues;
-}
-
 export function connectorPackageIssues(
   expected: ConnectorPackage,
   index: ConnectorIndexFile,
@@ -172,7 +118,7 @@ export function connectorPackageIssues(
     index.package === expected ? [] : [`the ${expected} index declares package ${index.package}`];
   issues.push(...packageLicenseIssues(expected, index));
   issues.push(
-    ...vocabularyIssues(
+    ...connectorVocabularyIssues(
       expected,
       `the ${expected} index`,
       index.sectionVocabulary,
@@ -180,6 +126,8 @@ export function connectorPackageIssues(
     ),
   );
   for (const [partId, record] of records)
-    issues.push(...recordIssues(expected, index, partId, record, sectionVocabulary));
+    issues.push(
+      ...connectorRecordIssues(expected, index.licenses, partId, record, sectionVocabulary),
+    );
   return issues;
 }

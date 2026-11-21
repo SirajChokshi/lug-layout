@@ -1,15 +1,18 @@
-import { NO_SWITCH } from "@brr/domain";
-import { describe, expect, it } from "vitest";
 import {
+  NO_SWITCH,
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
   placeSegments,
   segmentsEnd,
   type PlanPose,
   type SimPathSegment,
-} from "./route-geometry.ts";
+  type SimRoute,
+  type VehicleGeometry,
+} from "@brr/domain";
+import { describe, expect, it } from "vitest";
 import { createSimSession } from "./create-sim-session.ts";
 import type { SimCommand, SimScenario, SimSession } from "./sim-session.ts";
-import type { VehicleGeometry } from "./running-gear.ts";
-import { backwardEdge, buildSimTrack, forwardEdge, type SimRoute } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,

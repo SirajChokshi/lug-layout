@@ -1,4 +1,4 @@
-import { simTrackFromGraph } from "./graph-track.ts";
+import { simTrackFromGraph } from "@brr/domain";
 import type { SimLoad, SimLoaded } from "./protocol.ts";
 import type { SimScenario, SimSession, SimSessionFactory } from "./sim-session.ts";
 import { SIM_TICK_HZ } from "./simulation.ts";

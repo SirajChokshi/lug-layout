@@ -30,6 +30,7 @@ function catalogItem(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
