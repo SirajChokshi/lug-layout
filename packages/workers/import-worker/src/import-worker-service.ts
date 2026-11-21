@@ -1,11 +1,15 @@
 import { ConnectorRecords } from "@brr/catalog/connector-records";
 import {
+  BundleThenLibraryConnectors,
+  IGNORE_PLACEMENT,
   importStudioFile,
   LibraryBakeStore,
+  LibraryConnectorStore,
   type BrickCompiler,
   type FetchFunction,
   type IBakeHelper,
   type ImportResult,
+  type PlacementListener,
   type ImportWorkerRequest,
   type IPartRecords,
   type LdrawMirror,
@@ -13,6 +17,8 @@ import {
   type MirrorSource,
   type ModelImportEngine,
   type PartConnectorSource,
+  type RollingDiagnosticsRequest,
+  type RollingDiagnosticsRows,
 } from "@brr/import";
 import { ASSET_CACHE, type IAssetCache } from "@brr/storage";
 import { inject, injectable } from "inversify";
@@ -27,7 +33,8 @@ import {
 } from "./tokens.ts";
 
 export interface IImportWorkerService {
-  run(request: ImportWorkerRequest): Promise<ImportResult>;
+  run(request: ImportWorkerRequest, onPlaced?: PlacementListener): Promise<ImportResult>;
+  rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows>;
 }
 
 export type LdrawMirrorFactory = (source: MirrorSource, baseUrl: string | undefined) => LdrawMirror;
@@ -43,6 +50,7 @@ export type ModelImportEngineFactory = (
 @injectable()
 export class ImportWorkerService implements IImportWorkerService {
   private readonly connectorStores = new Map<string, ConnectorRecords>();
+  private readonly libraryConnectorStores = new Map<string, LibraryConnectorStore>();
   private readonly recordStores = new Map<string, IPartRecords>();
 
   constructor(
@@ -74,6 +82,23 @@ export class ImportWorkerService implements IImportWorkerService {
     return records;
   }
 
+  private partConnectors(request: ImportWorkerRequest): PartConnectorSource {
+    const bundle = this.connectorRecords(request);
+    const source = request.libraryConnectors;
+    if (source === undefined) return bundle;
+    const key = `${source.url} ${source.pin.sha256}`;
+    let store = this.libraryConnectorStores.get(key);
+    if (store === undefined) {
+      store = new LibraryConnectorStore(source.url, source.pin, this.fetchUrl, this.assetCache);
+      this.libraryConnectorStores.set(key, store);
+    }
+    const library = store.source({
+      source: request.input.job.source,
+      sectionVocabulary: request.connectorVocabulary,
+    });
+    return new BundleThenLibraryConnectors(bundle, library);
+  }
+
   private partRecords(source: LibraryBakeSource | undefined): IPartRecords | null {
     if (source === undefined) return null;
     const key = `${source.url} ${source.pin.sha256}`;
@@ -85,19 +110,28 @@ export class ImportWorkerService implements IImportWorkerService {
     return store;
   }
 
-  async run(request: ImportWorkerRequest): Promise<ImportResult> {
+  async rollingDiagnostics(request: RollingDiagnosticsRequest): Promise<RollingDiagnosticsRows> {
+    const records = this.partRecords(request.libraryBake);
+    if (records === null) return {};
+    return Object.fromEntries(await records.rollingDiagnostics(request.partIds));
+  }
+
+  async run(
+    request: ImportWorkerRequest,
+    onPlaced: PlacementListener = IGNORE_PLACEMENT,
+  ): Promise<ImportResult> {
     const compiler = await this.compilers.load(request.compilerUrl);
     const helpers = this.bakeHelpers.helpers(request.compilerUrl);
-    const connectors = this.connectorRecords(request);
+    const connectors = this.partConnectors(request);
     const records = this.partRecords(request.libraryBake);
     const { input } = request;
     const mirror = this.createMirror(input.job.source, request.ldrawLibraryUrl);
     const engine = this.createEngine(compiler, mirror, connectors, records, helpers);
     switch (input.kind) {
       case "ldraw":
-        return engine.importText(input.job);
+        return engine.importText(input.job, onPlaced);
       case "studio":
-        return importStudioFile(engine, compiler, mirror, input);
+        return importStudioFile(engine, compiler, mirror, input, onPlaced);
       default: {
         const unhandled: never = input;
         throw new Error(`unhandled import input ${JSON.stringify(unhandled)}`);

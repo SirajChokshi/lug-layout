@@ -1,6 +1,8 @@
 import {
+  compareExactRational,
   isCanonicalExactDecimalText,
   isCanonicalExactRationalText,
+  parseExactRational,
   pose16,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
@@ -395,7 +397,7 @@ export const RollingSurface = v.pipe(
   }),
   v.check(({ from, to }) => from < to, "a rolling surface runs from below `to`"),
   v.description(
-    "an outward round band of the part's own triangles, identified to the sixteenth grid; the bands on one axis line together give its whole outward profile, and neighbours share their end sixteenths",
+    "an outward round band of the part's own triangles, with its ends in sixteenths: an end that identifies to the grid is published there, and a cylinder's end that doesn't is published at the nearest sixteenth inside the band, so a band never extends past its triangles; neighbours on one axis line share the end sixteenths that identify",
   ),
 );
 export type RollingSurface = v.InferOutput<typeof RollingSurface>;
@@ -405,19 +407,36 @@ const EndRadii = v.pipe(
   v.description("the radius at `from` and at `to` in sixteenths, null where it didn't identify"),
 );
 
+export const UnreadRaw = v.pipe(
+  v.object({
+    from: ExactRationalText,
+    to: ExactRationalText,
+    radii: v.optional(v.tuple([v.nullable(ExactRationalText), v.nullable(ExactRationalText)])),
+  }),
+  v.check(
+    ({ from, to }) => compareExactRational(parseExactRational(from), parseExactRational(to)) <= 0,
+    "a raw band runs from no higher than `to`",
+  ),
+  v.description(
+    "the band as the reader measured it, never rounded or identified: each value the exact rational of its Float64. `from` and `to` are its ends in LDU along its axis (an unoriented band's along its own fitted line); `radii`, the radius at `from` and then at `to`, null where none was measured, appears wherever a radius was measured",
+  ),
+);
+export type UnreadRaw = v.InferOutput<typeof UnreadRaw>;
+
 const UnreadEnds = {
   from: v.optional(RollingAlong),
   to: v.optional(RollingAlong),
 };
 
-export const UnreadBand = v.pipe(
+export const UnreadBandDiagnostic = v.pipe(
   v.variant("reason", [
-    v.object({ reason: v.literal("unoriented") }),
+    v.object({ reason: v.literal("unoriented"), raw: UnreadRaw }),
     v.object({
       reason: v.literal("centre"),
       axis: RollingAxis,
       radii: v.optional(EndRadii),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
       reason: v.literal("radius"),
@@ -425,6 +444,7 @@ export const UnreadBand = v.pipe(
       at: RollingAt,
       radii: EndRadii,
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
       reason: v.literal("width"),
@@ -432,13 +452,15 @@ export const UnreadBand = v.pipe(
       at: RollingAt,
       radii: v.tuple([Count, Count]),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
     v.object({
-      reason: v.picklist(["faceted", "partial", "facing", "irregular"]),
+      reason: v.picklist(["faceted", "partial", "facing", "irregular", "arcs"]),
       axis: RollingAxis,
       at: v.optional(RollingAt),
       radii: v.optional(EndRadii),
       ...UnreadEnds,
+      raw: UnreadRaw,
     }),
   ]),
   v.check(
@@ -447,10 +469,57 @@ export const UnreadBand = v.pipe(
     "an unread band runs from no higher than `to`",
   ),
   v.description(
-    "round geometry the part compile measured but could not read as a rolling surface, one entry per band, carrying only what identified. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not. faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify",
+    "the whole row of a band the part compile found round evidence for (a ring fitting a circle with at least the coarse stud's facet count, or a revolution axis) but could not read as an outward rolling surface, as the rolling diagnostics file carries it. unoriented: round about a line that is not a part axis. centre: closed about a part axis, but no axis line identified. radius: axis line identified, a radius not. width: axis line and both radii identified, an end not (a cone; a cylinder's end is read inside the band). faceted: closed with fewer facets than the Standard-LOD stud. partial: round about the line but not a closed band. facing: outward can't be told from the winding. irregular: smooth and round about a part axis but not one complete band (oblique cuts, patches between holes), or curved about a part axis with no circle fitted. arcs: its ring fits a circle but its arcs don't go round (a band broken by prints or cut-outs). `at`, `from` and `to` appear wherever they identified; `radii` appears wherever a radius was measured, with null for an end whose radius didn't identify. `raw` carries the band as measured",
+  ),
+);
+export type UnreadBandDiagnostic = v.InferOutput<typeof UnreadBandDiagnostic>;
+
+const AXIAL_UNREAD_REASONS = [
+  "centre",
+  "radius",
+  "width",
+  "faceted",
+  "partial",
+  "facing",
+  "irregular",
+  "arcs",
+] as const;
+
+export const UnreadBand = v.pipe(
+  v.variant("reason", [
+    v.object({ reason: v.literal("unoriented") }),
+    v.object({ reason: v.picklist(AXIAL_UNREAD_REASONS), axis: RollingAxis }),
+  ]),
+  v.description(
+    "one entry per band the part compile found round evidence for but could not read as an outward rolling surface, in the order of the part's rows in the rolling diagnostics file: only the row's reason and, for every reason but unoriented, the part axis it turns about. The rest of each row, and what each reason means, is in the diagnostics file, which only inspection loads",
   ),
 );
 export type UnreadBand = v.InferOutput<typeof UnreadBand>;
+
+export function servedUnreadBand(row: UnreadBandDiagnostic): UnreadBand {
+  return row.reason === "unoriented"
+    ? { reason: row.reason }
+    : { reason: row.reason, axis: row.axis };
+}
+
+function unreadAxis(band: UnreadBand): number | null {
+  return band.reason === "unoriented" ? null : band.axis;
+}
+
+export function rollingDiagnosticsFit(
+  served: ReadonlyArray<UnreadBand>,
+  rows: ReadonlyArray<UnreadBandDiagnostic>,
+): boolean {
+  return (
+    served.length === rows.length &&
+    served.every((band, index) => {
+      const row = rows[index];
+      if (row === undefined) return false;
+      const expected = servedUnreadBand(row);
+      return band.reason === expected.reason && unreadAxis(band) === unreadAxis(expected);
+    })
+  );
+}
 
 export const PartRolling = v.object({
   stepsPerLdu: v.literal(ROLLING_STEPS_PER_LDU),
@@ -458,6 +527,20 @@ export const PartRolling = v.object({
   unread: v.array(UnreadBand),
 });
 export type PartRolling = v.InferOutput<typeof PartRolling>;
+
+export const RollingDiagnosticsFile = v.strictObject({
+  stepsPerLdu: v.literal(ROLLING_STEPS_PER_LDU),
+  parts: v.pipe(
+    v.record(v.string(), v.pipe(v.array(UnreadBandDiagnostic), v.minLength(1))),
+    v.description(
+      "every part with unread bands, by part id: its whole rows, in the order its served rolling lists them, so a served entry's index names its row here",
+    ),
+  ),
+});
+export type RollingDiagnosticsFile = v.InferOutput<typeof RollingDiagnosticsFile>;
+
+export const RollingDiagnosticsRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type RollingDiagnosticsRef = v.InferOutput<typeof RollingDiagnosticsRef>;
 
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
@@ -564,6 +647,9 @@ export type SectionVocabularyRef = v.InferOutput<typeof SectionVocabularyRef>;
 export const LibraryBakeIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type LibraryBakeIndexRef = v.InferOutput<typeof LibraryBakeIndexRef>;
 
+export const LibraryConnectorsIndexRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
+export type LibraryConnectorsIndexRef = v.InferOutput<typeof LibraryConnectorsIndexRef>;
+
 export const BundleCompiler = v.object({
   file: v.string(),
   unofficialAllowlist: v.array(v.string()),
@@ -572,6 +658,7 @@ export const BundleCompiler = v.object({
   sectionVocabulary: SectionVocabularyRef,
   cavityProbe: v.string(),
   libraryBake: v.optional(LibraryBakeIndexRef),
+  libraryConnectors: v.optional(LibraryConnectorsIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
 
@@ -745,6 +832,7 @@ export const BundleIndex = v.object({
   partTable: FileRef,
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),
+  rollingDiagnostics: v.optional(RollingDiagnosticsRef),
 });
 export type BundleIndex = v.InferOutput<typeof BundleIndex>;
 
@@ -900,8 +988,78 @@ export const BakeShard = v.pipe(
 );
 export type BakeShard = v.InferOutput<typeof BakeShard>;
 
+export const AUTHORED_LINE_KINDS = ["instance", "placement"] as const;
+export const AUTHORED_GRIDS = [
+  "whole",
+  "half",
+  "quarter",
+  "eighth",
+  "sixteenth",
+  "unidentified",
+] as const;
+const AUTHORED_AXES = [0, 1, 2] as const;
+const AuthoredLineKind = v.picklist(AUTHORED_LINE_KINDS);
+
+export const AuthoredLines = v.pipe(
+  v.object({ line: v.array(Count), lineKind: v.array(AuthoredLineKind) }),
+  v.check(
+    ({ line, lineKind }) => line.length === lineKind.length,
+    "authored line columns must have equal lengths",
+  ),
+);
+export type AuthoredLines = v.InferOutput<typeof AuthoredLines>;
+
+export const AuthoredRows = v.pipe(
+  v.object({
+    line: v.array(Count),
+    lineKind: v.array(AuthoredLineKind),
+    axis: v.array(v.picklist(AUTHORED_AXES)),
+    printed: v.array(v.string()),
+    grid: v.array(v.picklist(AUTHORED_GRIDS)),
+    identified: v.array(v.nullable(ExactRationalText)),
+    residual: v.array(v.nullable(ExactRationalText)),
+  }),
+  v.check(
+    (rows) =>
+      [rows.lineKind, rows.axis, rows.printed, rows.grid, rows.identified, rows.residual].every(
+        (column) => column.length === rows.line.length,
+      ),
+    "authored row columns must have equal lengths",
+  ),
+  v.check(
+    ({ grid, identified, residual }) =>
+      grid.every(
+        (name, row) =>
+          (name === "unidentified") === (identified[row] === null) &&
+          (identified[row] === null) === (residual[row] === null),
+      ),
+    "an authored row has an identified value and residual exactly when its grid isn't unidentified",
+  ),
+);
+export type AuthoredRows = v.InferOutput<typeof AuthoredRows>;
+
+export const AuthoredIdentification = v.object({
+  ruleVersion: v.pipe(Integer, v.minValue(1)),
+  rows: AuthoredRows,
+  excludedRotated: AuthoredLines,
+});
+export type AuthoredIdentification = v.InferOutput<typeof AuthoredIdentification>;
+
+export function authoredLinesFit(
+  lines: AuthoredLines,
+  instanceCount: number,
+  placementCount: number,
+): boolean {
+  return lines.line.every((line, row) =>
+    lines.lineKind[row] === "instance" ? line < instanceCount : line < placementCount,
+  );
+}
+
 export const CompilerRequest = v.variant("op", [
-  v.strictObject({ op: v.literal("readModel") }),
+  v.strictObject({
+    op: v.literal("readModel"),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
+  }),
   v.strictObject({ op: v.literal("readStudio") }),
   v.strictObject({
     op: v.literal("compile"),
@@ -929,6 +1087,8 @@ export const CompilerRequest = v.variant("op", [
     tableDepthLdu: v.pipe(Finite, v.gtValue(0)),
     vehicles: v.nullable(CompilerVehicles),
     shard: v.exactOptional(BakeShard),
+    keepParts: v.exactOptional(v.boolean()),
+    omrAuthoringIdentification: v.exactOptional(v.boolean()),
   }),
 ]);
 export type CompilerRequest = v.InferOutput<typeof CompilerRequest>;
@@ -967,6 +1127,7 @@ export const CompilerModelRead = v.object({
     v.object({ section: v.string(), triangles: Count, quads: Count, occurrences: Count }),
   ),
   instances: Count,
+  authoredIdentification: v.optional(AuthoredIdentification),
   blobs: CompilerBlobs,
 });
 export type CompilerModelRead = v.InferOutput<typeof CompilerModelRead>;
@@ -1060,10 +1221,22 @@ export const CompilerVehicle = v.object({
 });
 export type CompilerVehicle = v.InferOutput<typeof CompilerVehicle>;
 
+const Duration = v.pipe(Finite, v.minValue(0));
+
+export const CompilerBakePhases = v.object({
+  decodeMs: Duration,
+  compileMs: Duration,
+  latticeMs: Duration,
+  coverMs: Duration,
+  vehiclesMs: Duration,
+});
+export type CompilerBakePhases = v.InferOutput<typeof CompilerBakePhases>;
+
 export const CompilerBaked = v.object({
   status: v.literal("baked"),
   instances: Count,
   recordedParts: Count,
+  resumedParts: Count,
   lattice: v.nullable(ModelLattice),
   latticeIssue: v.exactOptional(v.string()),
   cover: v.object({
@@ -1076,6 +1249,7 @@ export const CompilerBaked = v.object({
   }),
   vehicles: v.exactOptional(v.array(CompilerVehicle)),
   vehicleIssue: v.exactOptional(v.string()),
+  phases: CompilerBakePhases,
   blobs: CompilerBlobs,
 });
 export type CompilerBaked = v.InferOutput<typeof CompilerBaked>;
@@ -1160,6 +1334,7 @@ export const ModelFile = v.pipe(
     }),
     partTransforms: v.array(Finite),
     submodels: SubmodelTree,
+    authoredIdentification: v.optional(AuthoredIdentification),
   }),
   v.check(
     ({ parts, instances, partTransforms }) =>
@@ -1172,6 +1347,14 @@ export const ModelFile = v.pipe(
   v.check(
     ({ instances, submodels }) => submodelTreeFits(submodels, instances.part.length),
     "model sub-model tree is inconsistent",
+  ),
+  v.check(
+    ({ instances, submodels, authoredIdentification }) =>
+      authoredIdentification === undefined ||
+      [authoredIdentification.rows, authoredIdentification.excludedRotated].every((lines) =>
+        authoredLinesFit(lines, instances.part.length, submodels.parent.length),
+      ),
+    "authored identification names an instance or placement the model doesn't have",
   ),
   v.check(
     ({ parts, shapes }) =>
@@ -1346,6 +1529,7 @@ export const SectionVocabularyFile = v.strictObject({
 export type SectionVocabularyFile = v.InferOutput<typeof SectionVocabularyFile>;
 
 export const LIBRARY_CONNECTORS_FORMAT = 1;
+export const LIBRARY_CONNECTORS_INDEX_FILE = "library-connectors.json";
 
 export const LibraryConnectorsIndex = v.strictObject({
   format: v.literal(LIBRARY_CONNECTORS_FORMAT),
@@ -1358,7 +1542,7 @@ export const LibraryConnectorsIndex = v.strictObject({
 export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex>;
 
 export const LibraryConnectorsPin = v.strictObject({
-  index: v.strictObject({ file: v.string(), sha256: Sha256Hex }),
+  index: LibraryConnectorsIndexRef,
   parts: Count,
   refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
@@ -1419,6 +1603,7 @@ export function libraryBakeBucket(partId: string): number {
 export const LibraryBakeBucket = v.strictObject({
   bucket: v.pipe(Count, v.maxValue(LIBRARY_BAKE_BUCKETS - 1)),
   parts: v.record(v.string(), LibraryBakePart),
+  rollingDiagnostics: v.optional(RollingDiagnosticsRef),
 });
 export type LibraryBakeBucket = v.InferOutput<typeof LibraryBakeBucket>;
 

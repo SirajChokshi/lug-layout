@@ -348,7 +348,10 @@ export class IndexedDbWorldRepository implements IWorldRepository {
     }
     const archive = readWorldArchive(texts);
     if (!archive.ok) return { ok: false, issues: [...issues, ...archive.issues] };
-    const referenced = referencedImports(archive.value.shards);
+    const referenced = referencedImports(
+      archive.value.shards,
+      archive.value.manifest.consists ?? [],
+    );
     const carried = new Set(imports.map((file) => file.sha256));
     for (const sha256 of referenced) {
       if (!carried.has(sha256)) {

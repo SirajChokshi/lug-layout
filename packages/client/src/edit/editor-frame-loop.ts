@@ -1,7 +1,8 @@
 import { SCENE_BACKEND, type ChunkTier, type FrameStats, type ISceneBackend } from "@brr/render";
 import { inject, injectable } from "inversify";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
-import { EDITOR_CAMERA, WORLD_SESSION } from "../tokens.ts";
+import type { IScaleBar } from "../camera/scale-bar.ts";
+import { EDITOR_CAMERA, SCALE_BAR, WORLD_SESSION } from "../tokens.ts";
 import type { IWorldSession } from "./world-session.ts";
 
 export interface EditorStats {
@@ -106,6 +107,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
     >,
     @inject(EDITOR_CAMERA) private readonly camera: Pick<IEditorCamera, "frame" | "resize">,
     @inject(WORLD_SESSION) private readonly session: Pick<IWorldSession, "pollCamera">,
+    @inject(SCALE_BAR) private readonly scaleBar: Pick<IScaleBar, "refresh">,
   ) {}
 
   view(): FrameLoopView {
@@ -157,6 +159,7 @@ export class EditorFrameLoop implements IEditorFrameLoop {
       this.resizeToCanvas();
       const startMs = performance.now();
       this.camera.frame(startMs);
+      this.scaleBar.refresh();
       this.session.pollCamera();
       const onPresented = this.onPresented;
       const awaitsGpu = onPresented !== null || this.measureIndex >= 0 || this.firstFrame;

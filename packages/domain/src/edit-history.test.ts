@@ -1,6 +1,7 @@
-import { STUD_LDU } from "@brr/math";
+import { POSE16_IDENTITY, STUD_LDU } from "@brr/math";
 import { describe, expect, it } from "vitest";
-import { EditHistory, type PlacementRef } from "./edit-history.ts";
+import { EditHistory, type ConsistRef, type PlacementRef } from "./edit-history.ts";
+import { ConsistLayout } from "./rail/consist-layout.ts";
 import { SLOT_LIVE, World } from "./world.ts";
 
 function livePlacements(world: World): string[] {
@@ -24,6 +25,15 @@ function livePlacements(world: World): string[] {
   return rows;
 }
 
+function liveConsists(layout: ConsistLayout): string[] {
+  return layout
+    .consists()
+    .map(({ pose: { refId, anchor } }) =>
+      [refId, anchor.track.piece, anchor.route, anchor.reversed, anchor.offsetLdu].join(","),
+    )
+    .toSorted();
+}
+
 function lcg(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -37,17 +47,36 @@ const LONG_SESSION_TIMEOUT_MS = 30_000;
 
 describe("EditHistory", () => {
   it(
-    "undoes a long session back to an empty world and redoes it state by state",
+    "undoes a long session of model and train edits back to an empty world and redoes it state by state",
     () => {
       const world = new World();
-      const history = new EditHistory(world);
+      const trains = new ConsistLayout();
+      const history = new EditHistory(world, trains);
       const next = lcg(23);
       const placements: PlacementRef[] = [];
-      const states: string[][] = [livePlacements(world)];
+      const consists: ConsistRef[] = [];
+      const snapshot = () => [...livePlacements(world), ...liveConsists(trains)];
+      const states: string[][] = [snapshot()];
       for (let step = 0; step < 400; step++) {
-        const choice = next() % 4;
+        const choice = next() % 6;
         const target = placements[next() % Math.max(1, placements.length)];
-        if (choice === 0 || !target) {
+        const train = consists[next() % Math.max(1, consists.length)];
+        if (choice === 4) {
+          const consist = history.placeConsist({
+            refId: next() % 7,
+            colorId: 0,
+            anchor: {
+              track: { kind: "laid", piece: next() % 5, placement: POSE16_IDENTITY, yPlates: 0 },
+              route: next() % 2,
+              reversed: next() % 2 === 0,
+              offsetLdu: next() % 320,
+            },
+          }).consists[0]?.consist;
+          if (consist) consists.push(consist);
+        } else if (choice === 5 && train) {
+          history.removeConsist(train);
+          consists.splice(consists.indexOf(train), 1);
+        } else if (choice === 0 || !target) {
           const edit = history.place({
             refId: next() % 11,
             colorId: next() % 16,
@@ -64,19 +93,20 @@ describe("EditHistory", () => {
         } else {
           history.rotate(target);
         }
-        states.push(livePlacements(world));
+        states.push(snapshot());
       }
 
+      expect(trains.size).toBeGreaterThan(0);
       for (let depth = states.length - 2; depth >= 0; depth--) {
         expect(history.undo()?.step).toBe("undo");
-        expect(livePlacements(world)).toEqual(states[depth]);
+        expect(snapshot()).toEqual(states[depth]);
       }
-      expect(world.size).toBe(0);
+      expect(world.size + trains.size).toBe(0);
       expect(history.undo()).toBeNull();
 
       for (let depth = 1; depth < states.length; depth++) {
         expect(history.redo()?.step).toBe("redo");
-        expect(livePlacements(world)).toEqual(states[depth]);
+        expect(snapshot()).toEqual(states[depth]);
       }
       expect(history.redo()).toBeNull();
       expect(history.undoDepth).toBe(states.length - 1);

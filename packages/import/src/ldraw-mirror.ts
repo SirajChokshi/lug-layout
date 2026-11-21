@@ -6,6 +6,10 @@ export interface MirrorSource {
 
 export type FetchFunction = (url: string) => Promise<Response>;
 
+export function sameSource(a: MirrorSource, b: MirrorSource): boolean {
+  return a.repo === b.repo && a.commit === b.commit && a.root === b.root;
+}
+
 export interface MirrorStats {
   readonly requests: number;
   readonly found: number;
