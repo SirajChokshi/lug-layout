@@ -1,12 +1,28 @@
 import type { PlanRegion } from "./plan-region.ts";
 import { WRITE_ADD, WRITE_UPDATE, type PlanDelta } from "./plan-delta.ts";
 import {
+  FACT_CUSTOM_PARTS,
+  FACT_FLAGS,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  FACT_ROAD_MISMATCHED,
+  FACT_STRIDE,
+  FACT_UNMAPPED_BRICKLINK,
+  FACT_UNMAPPED_REBRICKABLE,
+  FLAG_UNMEASURED,
+  copyFacts,
+  type PlacementFacts,
+} from "./plan-facts.ts";
+import {
   BOX_MAX_X,
   BOX_MAX_Z,
   BOX_MIN_X,
   BOX_MIN_Z,
   BOX_STRIDE,
   CoverageScratch,
+  bomMappingIssueCount,
+  bomMappingIssues,
   placementInside,
   placementIssueCount,
   placementIssues,
@@ -15,7 +31,29 @@ import {
   type PlanPlacement,
   type PlanRegionContext,
 } from "./plan-rules.ts";
-import { BOX_PLAN_UNREADABLE, NO_ROW, PlanRows, RowList } from "./plan-rows.ts";
+import {
+  BOX_PLAN_UNREADABLE,
+  CARRIED_TRACK_NOT_HELD,
+  HELD,
+  NOT_HELD,
+  NO_ROW,
+  PlanRows,
+  RowList,
+} from "./plan-rows.ts";
+
+const BOM_SUMS = 2;
+const NO_SOURCES: ReadonlySet<number> = new Set();
+
+interface UnsupportedSources {
+  readonly itself: ReadonlySet<number>;
+  readonly carriedTrack: ReadonlySet<number>;
+}
+
+function sameMembers(a: ReadonlySet<number>, b: ReadonlySet<number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const member of b) if (!a.has(member)) return false;
+  return true;
+}
 
 function grownUint32(array: Uint32Array<ArrayBuffer>, length: number): Uint32Array<ArrayBuffer> {
   const grown = new Uint32Array(length);
@@ -36,6 +74,12 @@ class RegionState {
   insideCount = 0;
   rowIssueCount = 0;
   issueVersion = 0;
+  roadJoined = 0;
+  roadMismatched = 0;
+  unmeasured = 0;
+  unmappedRebrickable = 0;
+  unmappedBrickLink = 0;
+  customParts = 0;
   ctx: PlanRegionContext;
   private cached: ReadonlyArray<PlanIssue> = [];
   private cachedAt = -1;
@@ -54,9 +98,33 @@ class RegionState {
     this.flagged.grow(capacity);
   }
 
+  clearSums(): void {
+    this.roadJoined = 0;
+    this.roadMismatched = 0;
+    this.unmeasured = 0;
+    this.unmappedRebrickable = 0;
+    this.unmappedBrickLink = 0;
+    this.customParts = 0;
+  }
+
+  addSums(facts: Int32Array, row: number, sign: number): void {
+    const at = row * FACT_STRIDE;
+    this.roadJoined += sign * (facts[at + FACT_ROAD_JOINED] ?? 0);
+    this.roadMismatched += sign * (facts[at + FACT_ROAD_MISMATCHED] ?? 0);
+    this.unmeasured += sign * ((facts[at + FACT_FLAGS] ?? 0) & FLAG_UNMEASURED);
+    this.unmappedRebrickable += sign * (facts[at + FACT_UNMAPPED_REBRICKABLE] ?? 0);
+    this.unmappedBrickLink += sign * (facts[at + FACT_UNMAPPED_BRICKLINK] ?? 0);
+    this.customParts += sign * (facts[at + FACT_CUSTOM_PARTS] ?? 0);
+  }
+
+  bomIssueCount(): number {
+    return bomMappingIssueCount(this.unmappedRebrickable, this.unmappedBrickLink);
+  }
+
   issueList(rows: PlanRows): ReadonlyArray<PlanIssue> {
     if (this.cachedAt === this.issueVersion) return this.cached;
     const issues = [...this.ctx.footprintIssues];
+    bomMappingIssues(this.unmappedRebrickable, this.unmappedBrickLink, issues);
     for (let row = this.flagged.first(); row !== NO_ROW; row = this.flagged.after(rows, row)) {
       placementIssues(this.ctx, placementOf(rows, row), issues);
     }
@@ -66,12 +134,33 @@ class RegionState {
   }
 }
 
+function factsOf(rows: PlanRows, row: number): PlacementFacts {
+  const { facts } = rows;
+  const at = row * FACT_STRIDE;
+  const segment = facts[at + FACT_OVERLAP_SEGMENT] ?? -1;
+  const partner = segment < 0 ? NO_ROW : rows.find(segment, facts[at + FACT_OVERLAP_SOURCE] ?? -1);
+  return {
+    unmeasured: ((facts[at + FACT_FLAGS] ?? 0) & FLAG_UNMEASURED) !== 0,
+    overlapWith:
+      segment < 0 ? null : partner === NO_ROW ? "another placement" : rows.labelOf(partner),
+    roadJoinedCells: facts[at + FACT_ROAD_JOINED] ?? 0,
+    roadMismatchedCells: facts[at + FACT_ROAD_MISMATCHED] ?? 0,
+    unmappedRebrickable: facts[at + FACT_UNMAPPED_REBRICKABLE] ?? 0,
+    unmappedBrickLink: facts[at + FACT_UNMAPPED_BRICKLINK] ?? 0,
+  };
+}
+
 function placementOf(rows: PlanRows, row: number): PlanPlacement {
   const at = row * BOX_STRIDE;
   return {
     key: rows.keyOf(row),
     ref: rows.refOf(row),
     label: rows.labelOf(row),
+    unsupported: rows.unsupported[row] === NOT_HELD,
+    carriedTrackUnsupported: rows.unsupported[row] === CARRIED_TRACK_NOT_HELD,
+    shape: rows.shapeOf(row),
+    anchor: { x: rows.labelA[row] ?? 0, z: rows.labelB[row] ?? 0 },
+    facts: factsOf(rows, row),
     box: {
       minX: rows.box[at + BOX_MIN_X] ?? Number.NaN,
       minZ: rows.box[at + BOX_MIN_Z] ?? Number.NaN,
@@ -95,8 +184,12 @@ export class PlanEvaluation {
   private regionsIn = new Uint32Array(0);
   private flagged = new Uint32Array(0);
   private readonly flaggedRows = new RowList(0);
+  private readonly unsupportedRows = new Set<number>();
+  private readonly unsupportedSources = new Map<number, UnsupportedSources>();
   private before = new Uint32Array(4);
+  private bomBefore = new Float64Array(4 * BOM_SUMS);
   private readonly scratch = new CoverageScratch();
+  private flaggedBefore = 0;
 
   constructor() {
     this.fit();
@@ -120,7 +213,19 @@ export class PlanEvaluation {
 
   issueCount(region: number): number {
     const state = this.state(region);
-    return state.ctx.footprintIssues.length + state.rowIssueCount;
+    return state.ctx.footprintIssues.length + state.bomIssueCount() + state.rowIssueCount;
+  }
+
+  joinedRoadCells(region: number): number {
+    return this.state(region).roadJoined;
+  }
+
+  unmeasuredCount(region: number): number {
+    return this.state(region).unmeasured;
+  }
+
+  customParts(region: number): number {
+    return this.state(region).customParts;
   }
 
   issueVersion(region: number): number {
@@ -158,6 +263,7 @@ export class PlanEvaluation {
   }
 
   apply(delta: PlanDelta): void {
+    this.recordBomSums();
     if (delta.cleared) this.clearRows();
     for (let k = 0; k < delta.removalCount; k++) {
       const row = this.rows.find(delta.removalSegment[k] ?? 0, delta.removalSource[k] ?? 0);
@@ -170,7 +276,86 @@ export class PlanEvaluation {
     for (let e = 0; e < delta.writeCount; e++) {
       if (delta.writeKind[e] === WRITE_UPDATE) this.updateRow(delta, e);
     }
+    this.bumpChangedBomSums();
     this.version++;
+  }
+
+  private recordBomSums(): void {
+    const regions = this.regions;
+    if (this.bomBefore.length < regions.length * BOM_SUMS) {
+      this.bomBefore = new Float64Array(regions.length * BOM_SUMS * 2);
+    }
+    for (let r = 0; r < regions.length; r++) {
+      const state = regions[r];
+      this.bomBefore[r * BOM_SUMS] = state?.unmappedRebrickable ?? 0;
+      this.bomBefore[r * BOM_SUMS + 1] = state?.unmappedBrickLink ?? 0;
+    }
+  }
+
+  private bumpChangedBomSums(): void {
+    const regions = this.regions;
+    for (let r = 0; r < regions.length; r++) {
+      const state = regions[r];
+      if (!state) continue;
+      if (
+        this.bomBefore[r * BOM_SUMS] !== state.unmappedRebrickable ||
+        this.bomBefore[r * BOM_SUMS + 1] !== state.unmappedBrickLink
+      ) {
+        state.issueVersion++;
+      }
+    }
+  }
+
+  setUnsupported(
+    segment: number,
+    itself: ReadonlySet<number>,
+    carriedTrack: ReadonlySet<number>,
+  ): boolean {
+    const known = this.unsupportedSources.get(segment);
+    if (
+      sameMembers(known?.itself ?? NO_SOURCES, itself) &&
+      sameMembers(known?.carriedTrack ?? NO_SOURCES, carriedTrack)
+    ) {
+      return false;
+    }
+    this.unsupportedSources.set(segment, {
+      itself: new Set(itself),
+      carriedTrack: new Set(carriedTrack),
+    });
+    const rows = this.rows;
+    const wanted = new Map<number, number>();
+    for (const source of carriedTrack) {
+      const row = rows.find(segment, source);
+      if (row !== NO_ROW) wanted.set(row, CARRIED_TRACK_NOT_HELD);
+    }
+    for (const source of itself) {
+      const row = rows.find(segment, source);
+      if (row !== NO_ROW) wanted.set(row, NOT_HELD);
+    }
+    for (const row of this.unsupportedRows) {
+      if (rows.segment[row] !== segment || wanted.has(row)) continue;
+      this.reflag(row, HELD);
+    }
+    for (const [row, held] of wanted) {
+      if (rows.unsupported[row] !== held) this.reflag(row, held);
+    }
+    this.version++;
+    return true;
+  }
+
+  private unsupportedOf(segment: number, source: number): number {
+    const sources = this.unsupportedSources.get(segment);
+    if (!sources) return HELD;
+    if (sources.itself.has(source)) return NOT_HELD;
+    return sources.carriedTrack.has(source) ? CARRIED_TRACK_NOT_HELD : HELD;
+  }
+
+  private reflag(row: number, unsupported: number): void {
+    if (unsupported === HELD) this.unsupportedRows.delete(row);
+    else this.unsupportedRows.add(row);
+    const wasUnreadable = this.beginRewrite(row);
+    this.rows.unsupported[row] = unsupported;
+    this.endRewrite(row, wasUnreadable);
   }
 
   addRegion(region: PlanRegion): void {
@@ -227,10 +412,12 @@ export class PlanEvaluation {
 
   private clearRows(): void {
     this.rows.clear();
+    this.unsupportedRows.clear();
     for (let r = 0; r < this.regions.length; r++) {
       const state = this.state(r);
       state.insideCount = 0;
       state.rowIssueCount = 0;
+      state.clearSums();
       state.flagged.clear();
       state.issueVersion++;
     }
@@ -257,12 +444,21 @@ export class PlanEvaluation {
     const to = row * BOX_STRIDE;
     for (let k = 0; k < BOX_STRIDE; k++) rows.box[to + k] = delta.box[from + k] ?? 0;
     rows.boxState[row] = delta.boxState[entry] ?? 0;
+    rows.shape[row] = rows.shapes.intern(delta.shape[entry] ?? null);
+    copyFacts(delta.facts, entry * FACT_STRIDE, rows.facts, row * FACT_STRIDE);
   }
 
   private addRow(delta: PlanDelta, entry: number): void {
-    const row = this.rows.add(delta.writeSegment[entry] ?? 0, delta.writeSource[entry] ?? 0);
+    const segment = delta.writeSegment[entry] ?? 0;
+    const source = delta.writeSource[entry] ?? 0;
+    const row = this.rows.add(segment, source);
     this.fit();
     this.copyRow(delta, entry, row);
+    const held = this.unsupportedOf(segment, source);
+    if (held !== HELD) {
+      this.rows.unsupported[row] = held;
+      this.unsupportedRows.add(row);
+    }
     this.regionsIn[row] = 0;
     this.flagged[row] = 0;
     for (let r = 0; r < this.regions.length; r++) {
@@ -302,20 +498,31 @@ export class PlanEvaluation {
       this.flaggedMembershipChanged = true;
     }
     this.withdraw(row);
+    this.unsupportedRows.delete(row);
     this.rows.remove(row);
   }
 
   private updateRow(delta: PlanDelta, entry: number): void {
     const row = this.rows.find(delta.writeSegment[entry] ?? 0, delta.writeSource[entry] ?? 0);
     if (row === NO_ROW) throw new Error("plan delta updates a row that isn't there");
+    const wasUnreadable = this.beginRewrite(row);
+    this.copyRow(delta, entry, row);
+    this.endRewrite(row, wasUnreadable);
+  }
+
+  private beginRewrite(row: number): boolean {
     const wasUnreadable = this.rows.boxState[row] === BOX_PLAN_UNREADABLE;
     for (let r = 0; r < this.regions.length; r++) {
       this.before[r] = this.regions[r]?.issues[row] ?? 0;
     }
-    const flaggedBefore = this.flagged[row] ?? 0;
+    this.flaggedBefore = this.flagged[row] ?? 0;
     if (wasUnreadable) this.planUnreadableCount--;
     else this.withdraw(row);
-    this.copyRow(delta, entry, row);
+    return wasUnreadable;
+  }
+
+  private endRewrite(row: number, wasUnreadable: boolean): void {
+    const flaggedBefore = this.flaggedBefore;
     const isUnreadable = this.rows.boxState[row] === BOX_PLAN_UNREADABLE;
     if (isUnreadable) this.planUnreadableCount++;
     else this.contribute(row);
@@ -324,7 +531,7 @@ export class PlanEvaluation {
       const was = this.before[r] ?? 0;
       const now = state.issues[row] ?? 0;
       if (was > 0 && now === 0) state.flagged.unlink(this.rows, row);
-      else if (was === 0 && now > 0) state.flagged.link(this.rows, row);
+      else if (was === 0 && now > 0) state.flagged.linkInOrder(this.rows, row);
       if (was > 0 || now > 0) state.issueVersion++;
     }
     const flaggedNow = this.flagged[row] ?? 0;
@@ -332,7 +539,7 @@ export class PlanEvaluation {
       this.flaggedRows.unlink(this.rows, row);
       this.flaggedMembershipChanged = true;
     } else if (flaggedBefore === 0 && flaggedNow > 0) {
-      this.flaggedRows.link(this.rows, row);
+      this.flaggedRows.linkInOrder(this.rows, row);
       this.flaggedMembershipChanged = true;
     } else if (flaggedBefore > 0) {
       this.flaggedBoxChanged = true;
@@ -350,8 +557,9 @@ export class PlanEvaluation {
       if (!placementInside(state.ctx, box, at)) continue;
       state.inside[row] = 1;
       state.insideCount++;
+      state.addSums(this.rows.facts, row, 1);
       regionsIn++;
-      const count = placementIssueCount(state.ctx, box, at, this.scratch);
+      const count = this.issueCountOf(state, row);
       if (count === 0) continue;
       state.issues[row] = count;
       state.rowIssueCount += count;
@@ -363,12 +571,17 @@ export class PlanEvaluation {
     if (regionsIn === 0) this.sandboxCount++;
   }
 
+  private issueCountOf(state: RegionState, row: number): number {
+    return placementIssueCount(state.ctx, this.rows, row, this.scratch);
+  }
+
   private withdraw(row: number): void {
     for (let r = 0; r < this.regions.length; r++) {
       const state = this.state(r);
       if (state.inside[row] === 1) {
         state.inside[row] = 0;
         state.insideCount--;
+        state.addSums(this.rows.facts, row, -1);
       }
       const count = state.issues[row] ?? 0;
       if (count > 0) {
@@ -391,10 +604,11 @@ export class PlanEvaluation {
       if (!placementInside(state.ctx, box, at)) continue;
       state.inside[row] = 1;
       state.insideCount++;
+      state.addSums(rows.facts, row, 1);
       const regionsIn = this.regionsIn[row] ?? 0;
       if (regionsIn === 0) this.sandboxCount--;
       this.regionsIn[row] = regionsIn + 1;
-      const count = placementIssueCount(state.ctx, box, at, this.scratch);
+      const count = this.issueCountOf(state, row);
       if (count === 0) continue;
       state.issues[row] = count;
       state.rowIssueCount += count;
@@ -420,6 +634,7 @@ export class PlanEvaluation {
     }
     state.insideCount = 0;
     state.rowIssueCount = 0;
+    state.clearSums();
   }
 
   private rebuildLists(state: RegionState | null): void {

@@ -22,12 +22,13 @@ import type {
 } from "@brr/import";
 import { STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
-import type {
-  BundleColor,
-  BundleIndex,
-  BundleLod,
-  BundleModelEntry,
-  NotDrawnSection,
+import {
+  isCustomPartId,
+  type BundleColor,
+  type BundleIndex,
+  type BundleLod,
+  type BundleModelEntry,
+  type NotDrawnSection,
 } from "@brr/schema/bundle";
 import { importRef, type ImportedFile } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
@@ -76,6 +77,7 @@ export interface CatalogItemView {
   readonly draggable: boolean;
   readonly toggleable: boolean;
   readonly listedUnder: string | null;
+  readonly customParts: number;
 }
 
 export interface SkippedCatalogModel {
@@ -254,6 +256,7 @@ function catalogItem(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -299,6 +302,7 @@ function lazySlot(entry: BundleModelEntry, thumbnails: ReadonlyMap<string, strin
       draggable: true,
       toggleable: false,
       listedUnder: null,
+      customParts: 0,
     },
     model: entry.name,
     credit: { name: entry.name, source: entry.source, sections: entry.sections },
@@ -521,7 +525,8 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       null,
     );
     if (model.vehicles.length > 0) {
-      this.playModels.set(placeable, playModel(entry, model, { parts }, palette, colors));
+      const identity = { name: entry.name, label: modelLabel(entry), sha256: entry.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, { parts }, palette, colors));
     }
     this.installMerged(palette, before);
     this.notDrawnSections.set(placeable, entry.notDrawn ?? []);
@@ -649,10 +654,18 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     };
     for (let index = before; index < palette.parts.length; index++) this.meshes?.provide(index);
     const placeable = this.importedPlaceable(importRef(file.sha256), file.name, remapped, credit);
+    if (model.vehicles.length > 0) {
+      const identity = { name: file.name, label: file.name, sha256: file.sha256 };
+      this.playModels.set(placeable, playModel(identity, model, set, palette, this.colors()));
+    }
     this.installMerged(palette, before);
     this.bakes.set(placeable, remapped);
     this.placeablesByRefId.push(placeable);
-    const slot = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const plain = placeableSlot(placeable, this.bundleColors, new Map(), undefined);
+    const slot = {
+      ...plain,
+      view: { ...plain.view, customParts: parts.partIds.filter(isCustomPartId).length },
+    };
     this.slots.push(slot);
     return { placeable, model: remapped, credit, slot };
   }
@@ -687,6 +700,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
     this.placeablesByRefId[refId] = checked;
     this.bakes.delete(pending);
     this.bakes.set(checked, model);
+    const train = this.playModels.get(pending);
+    if (train) {
+      this.playModels.delete(pending);
+      this.playModels.set(checked, train);
+    }
     return { ...reports, kind: "checked", placeable: checked };
   }
 
