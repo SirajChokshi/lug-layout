@@ -154,12 +154,37 @@ fn the_baked_pockets_of_each_recessed_road_plate_are_its_measured_recessed_studs
     }
 }
 
+fn pinned_library() -> MemoryLibrary {
+    let MemoryLibrary(mut files) = fixture_library();
+    files.extend(restored_library("ldraw-audit").0);
+    MemoryLibrary(files)
+}
+
 #[test]
 fn a_printed_road_baseplate_has_the_same_top_surface_as_the_plain_one() {
-    let library = fixture_library();
-    let plain = compiled(&library, "44336.dat").top_surface;
-    for printed in ["44336p01.dat", "44336p04.dat"] {
-        assert_eq!(compiled(&library, printed).top_surface, plain, "{printed}");
+    let library = pinned_library();
+    let printed_variants: [(&str, &[&str]); 11] = [
+        ("44336", &["44336p01", "44336p02", "44336p03", "44336p04"]),
+        ("44341", &["44341p01", "44341p02"]),
+        ("44342", &["44342p01", "44342p02"]),
+        ("44343", &["44343p01", "44343p02", "44343p03"]),
+        ("2358", &["2358p02"]),
+        ("2359", &["2359p02", "2359p03"]),
+        ("51595", &["51595p01", "51595p02", "51595p03"]),
+        ("608", &["608p02"]),
+        ("611", &["611p01"]),
+        ("612", &["612p01"]),
+        ("613", &["613p01"]),
+    ];
+    for (plain, printed) in printed_variants {
+        let plain_surface = compiled(&library, &format!("{plain}.dat")).top_surface;
+        for printed in printed {
+            assert_eq!(
+                compiled(&library, &format!("{printed}.dat")).top_surface,
+                plain_surface,
+                "{printed}"
+            );
+        }
     }
 }
 
@@ -238,4 +263,24 @@ fn custom_parts_from_official_primitives_read_flat_tops_pockets_and_round_tops()
     assert_eq!(rows("custom-walled.dat"), ["fff", "fpf", "fff"]);
     assert_eq!(rows("custom-ramped.dat"), ["fff", "f..", "fff"]);
     assert_eq!(rows("custom-round.dat"), ["..", ".."]);
+}
+
+#[test]
+fn a_custom_print_whose_rings_are_rounded_apart_reads_as_flat_as_the_plain_plate() {
+    let body = "1 16 30 0 30 30 0 0 0 8 0 0 0 30 box5.dat\n";
+    let plain =
+        format!("0 Custom plate 3 x 3\n{HEADER}{body}1 16 30 0 30 30 0 0 0 1 0 0 0 30 rect.dat\n");
+    let printed = format!(
+        "0 Custom plate 3 x 3 with a printed ring\n{HEADER}{body}\
+         1 16 0 0 0 56 0 0 0 1 0 0 0 56 48\\1-4disc.dat\n\
+         1 15 0 0 0 4 0 0 0 1 0 0 0 4 48\\1-4ring14.dat\n\
+         1 16 0 0 0 60 0 0 0 1 0 0 0 60 48\\1-4ndis.dat\n"
+    );
+    let library = custom_library(&[
+        ("custom-plate.dat", &plain),
+        ("custom-printed-plate.dat", &printed),
+    ]);
+    let rows = |part: &str| surface_of(&compiled(&library, part)).rows_text();
+    assert_eq!(rows("custom-plate.dat"), ["fff"; 3]);
+    assert_eq!(rows("custom-printed-plate.dat"), rows("custom-plate.dat"));
 }
