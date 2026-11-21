@@ -17,7 +17,7 @@ import {
 } from "@brr/domain";
 import { IDENTIFICATION_ACCEPTED_DEVIATION_LDU, SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
 import { ConnectorLines, acrossU, acrossV } from "./connector-lines.ts";
-import { posedBox } from "./part-boxes.ts";
+import { posedBox, type CellGrid } from "./part-boxes.ts";
 
 export const SOLID_FLOATS = 6;
 export const NO_REACH_ENTRY = -1;
@@ -284,22 +284,47 @@ class ReachIndex {
     return entry;
   }
 
-  cells(): ReachCells {
-    return new ReachCells(
-      this.members.length,
-      Int32Array.from(this.cellX),
-      Int32Array.from(this.cellZ),
-      Int32Array.from(this.bottom),
-      Int32Array.from(this.top),
+  frozen(): StudCells {
+    const entryStart = new Int32Array(this.members.length + 1);
+    for (let e = 0; e < this.members.length; e++) {
+      entryStart[e + 1] = (entryStart[e] ?? 0) + (this.members[e]?.length ?? 0);
+    }
+    return new StudCells(
+      new ReachCells(
+        this.members.length,
+        Int32Array.from(this.cellX),
+        Int32Array.from(this.cellZ),
+        Int32Array.from(this.bottom),
+        Int32Array.from(this.top),
+      ),
+      entryStart,
+      Int32Array.from(this.members.flat()),
+      this.cellX0,
+      this.cellZ0,
+      this.width,
+      this.depth,
+      this.entryOfCell,
     );
   }
+}
 
-  entryStart(): Int32Array {
-    const start = new Int32Array(this.members.length + 1);
-    for (let e = 0; e < this.members.length; e++) {
-      start[e + 1] = (start[e] ?? 0) + (this.members[e]?.length ?? 0);
-    }
-    return start;
+export class StudCells implements CellGrid {
+  constructor(
+    readonly reach: CellVolumes,
+    readonly entryStart: Int32Array,
+    readonly entryStud: Int32Array,
+    readonly cellX0: number,
+    readonly cellZ0: number,
+    readonly width: number,
+    readonly depth: number,
+    private readonly entryOfCell: Int32Array,
+  ) {}
+
+  entryAt(cellX: number, cellZ: number): number {
+    const i = cellX - this.cellX0;
+    const j = cellZ - this.cellZ0;
+    if (i < 0 || j < 0 || i >= this.width || j >= this.depth) return NO_REACH_ENTRY;
+    return this.entryOfCell[j * this.width + i] ?? NO_REACH_ENTRY;
   }
 }
 
@@ -314,14 +339,7 @@ export class StudSolids {
     readonly axis: Int8Array,
     readonly lineStart: Int32Array,
     readonly lineConnector: Int32Array,
-    readonly reach: CellVolumes,
-    readonly entryStart: Int32Array,
-    readonly entryStud: Int32Array,
-    readonly cellX0: number,
-    readonly cellZ0: number,
-    readonly width: number,
-    readonly depth: number,
-    private readonly entryOfCell: Int32Array,
+    readonly cells: StudCells,
   ) {}
 
   get lines(): ConnectorLines {
@@ -332,13 +350,6 @@ export class StudSolids {
   writePosed(pose: LatticePose, out: Float64Array): number {
     for (let s = 0; s < this.count; s++) posedBox(this.solid, s, pose, out, s * SOLID_FLOATS);
     return this.count * SOLID_FLOATS;
-  }
-
-  entryAt(cellX: number, cellZ: number): number {
-    const i = cellX - this.cellX0;
-    const j = cellZ - this.cellZ0;
-    if (i < 0 || j < 0 || i >= this.width || j >= this.depth) return NO_REACH_ENTRY;
-    return this.entryOfCell[j * this.width + i] ?? NO_REACH_ENTRY;
   }
 
   static of(sources: StudSources): StudSolids {
@@ -385,7 +396,6 @@ export class StudSolids {
 
   private static indexed(model: ModelConnectors, list: StudList): StudSolids {
     const solid = Float64Array.from(list.solid);
-    const reach = new ReachIndex(solid, list.count);
     return new StudSolids(
       model,
       list.count,
@@ -394,14 +404,7 @@ export class StudSolids {
       Int8Array.from(list.axis),
       Int32Array.from(list.lineStart),
       Int32Array.from(list.lineConnector),
-      reach.cells(),
-      reach.entryStart(),
-      Int32Array.from(reach.members.flat()),
-      reach.cellX0,
-      reach.cellZ0,
-      reach.width,
-      reach.depth,
-      reach.entryOfCell,
+      new ReachIndex(solid, list.count).frozen(),
     );
   }
 }

@@ -163,8 +163,8 @@ export class StudClearance implements IStudClearance {
 
   add(placement: number, studs: StudSolids, pose: LatticePose): void {
     if (this.rows.has(placement)) throw new RangeError(`placement ${placement} already has studs`);
-    if (studs.reach.count === 0) return;
-    const world = this.cells.place(studs.reach, pose);
+    if (studs.cells.reach.count === 0) return;
+    const world = this.cells.place(studs.cells.reach, pose);
     const bounds = this.bounds.measure(world);
     const yLdu = pose.yPlates * PLATE_LDU;
     const grid = this.grids.take(studs, pose.rot, world, bounds, yLdu);
@@ -216,7 +216,7 @@ export class StudClearance implements IStudClearance {
     bodies: VolumeIndex,
     out: OverlapHit,
   ): boolean {
-    const world = this.cells.place(studs.reach, pose);
+    const world = this.cells.place(studs.cells.reach, pose);
     for (let e = 0; e < world.count; e++) {
       this.entry = e;
       const bottom = world.bottomLdu[e] ?? 0;
@@ -290,12 +290,13 @@ export class StudClearance implements IStudClearance {
     const studs = this.heldStuds;
     const pose = this.heldPose;
     if (!other || !studs || !pose) return false;
+    const cells = studs.cells;
     for (
-      let k = studs.entryStart[this.entry] ?? 0;
-      k < (studs.entryStart[this.entry + 1] ?? 0);
+      let k = cells.entryStart[this.entry] ?? 0;
+      k < (cells.entryStart[this.entry + 1] ?? 0);
       k++
     ) {
-      const stud = studs.entryStud[k] ?? 0;
+      const stud = cells.entryStud[k] ?? 0;
       posedBox(studs.solid, stud, pose, this.solid);
       const axis = worldAxis(studs.axis[stud] ?? AXIS_FREE, pose.rot);
       if (!this.meetsParts(axis, other.boxes, other.pose, cellX, cellZ, bottom, top)) continue;
@@ -313,13 +314,14 @@ export class StudClearance implements IStudClearance {
     const pose = this.heldPose;
     if (!other || !held || !boxes || !pose) return false;
     const studs = other.studs;
-    const range = localCellRange(studs, other.pose, cellX, cellZ, this.studRange);
+    const cells = studs.cells;
+    const range = localCellRange(cells, other.pose, cellX, cellZ, this.studRange);
     for (let lz = range[FROM_Z] ?? 0; lz < (range[TO_Z] ?? 0); lz++) {
       for (let lx = range[FROM_X] ?? 0; lx < (range[TO_X] ?? 0); lx++) {
-        const entry = studs.entryAt(lx, lz);
+        const entry = cells.entryAt(lx, lz);
         if (entry === NO_REACH_ENTRY) continue;
-        for (let k = studs.entryStart[entry] ?? 0; k < (studs.entryStart[entry + 1] ?? 0); k++) {
-          const stud = studs.entryStud[k] ?? 0;
+        for (let k = cells.entryStart[entry] ?? 0; k < (cells.entryStart[entry + 1] ?? 0); k++) {
+          const stud = cells.entryStud[k] ?? 0;
           posedBox(studs.solid, stud, other.pose, this.solid);
           const axis = worldAxis(studs.axis[stud] ?? AXIS_FREE, other.pose.rot);
           if (
