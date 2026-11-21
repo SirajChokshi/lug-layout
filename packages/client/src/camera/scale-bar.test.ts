@@ -34,12 +34,15 @@ class ViewRecordingBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
   setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
