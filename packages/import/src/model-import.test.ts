@@ -33,7 +33,7 @@ import {
   SnapMating,
   SnapShapes,
 } from "@brr/domain";
-import type { ModelFile, NotDrawnSection } from "@brr/schema/bundle";
+import type { ModelErratum, ModelFile, NotDrawnSection } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { CustomSource } from "./custom-parts.ts";
@@ -117,6 +117,7 @@ interface Manifest {
     readonly name: string;
     readonly file: string;
     readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+    readonly errata?: ReadonlyArray<ModelErratum>;
   }>;
   readonly connectors: { readonly file: string };
   readonly connectivity: { readonly file: string };
@@ -139,8 +140,23 @@ interface BundledModel {
       readonly flat: ReadonlyArray<number>;
       readonly columnBottom: ReadonlyArray<number>;
       readonly columnTop: ReadonlyArray<number>;
+      readonly footing: {
+        readonly instance: ReadonlyArray<number>;
+        readonly cell: ReadonlyArray<number>;
+      };
     } | null;
   };
+}
+
+function withBakedErrata(pinned: string, errata: ReadonlyArray<ModelErratum>): string {
+  const lines = pinned.split(/(?<=\n)/u);
+  for (const { line, from, to } of errata) {
+    const original = lines[line - 1] ?? "";
+    const content = original.replace(/\r?\n$/u, "");
+    expect(content, `the pinned line ${line} the bake corrected`).toBe(from);
+    lines[line - 1] = `${to}${original.slice(content.length)}`;
+  }
+  return lines.join("");
 }
 
 async function bundleManifest(): Promise<Manifest> {
@@ -846,7 +862,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       const result = await importWith(
         pinnedMirror,
         model.file,
-        await readFile(new URL(model.file, root), "utf8"),
+        withBakedErrata(await readFile(new URL(model.file, root), "utf8"), entry?.errata ?? []),
         { compiler },
       );
       const record = JSON.parse(
@@ -1491,7 +1507,7 @@ it("seats custom bricks, whatever licence they name, on a bundle baseplate and t
 });
 
 it.each([0, 2])(
-  "bakes an imported file to the same lattice, stud cover, footprint and columns as the bundle's own bake of that file, with %i helper reactors",
+  "bakes an imported file to the same lattice, stud cover, footprint, columns and instance footing as the bundle's own bake of that file, with %i helper reactors",
   async (helperReactors) => {
     const manifest = await bundleManifest();
     const entry = manifest.models.find((model) => model.name === PALETTE_TEMPLATE_MODEL);
@@ -1528,6 +1544,10 @@ it.each([0, 2])(
         flat: [...bake.cells.flat],
         columnBottom: [...bake.cells.columnBottom],
         columnTop: [...bake.cells.columnTop],
+        footing: {
+          instance: [...bake.cells.footing.instance],
+          cell: [...bake.cells.footing.cell],
+        },
       },
     ).toEqual(cells);
   },
@@ -1548,6 +1568,46 @@ it(
     expect(alone.report.bakeHelpersFailed).toBe(0);
     expect(failing.report.bakeHelpersFailed).toBe(3);
     expect(failing.bake).toEqual(alone.bake);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "bakes footing for each of an imported file's own instances, so a wall keeps the cell a track end's joiner also reaches",
+  async () => {
+    const result = await importWith(
+      pinnedMirror,
+      "custom-run-and-wall.ldr",
+      [
+        "0 Custom run with a wall at its far end",
+        "0 Name: custom-run-and-wall.ldr",
+        "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+        "1 16 320 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+        "1 4 490 -16 50 1 0 0 0 1 0 0 0 1 3005.dat",
+        "1 4 580 -16 0 1 0 0 0 1 0 0 0 1 3001.dat",
+        "1 4 580 -40 0 1 0 0 0 1 0 0 0 1 3001.dat",
+        "",
+      ].join("\n"),
+    );
+    const footing = result.bake?.cells?.footing;
+    if (!footing) throw new Error("the run and wall bake no cells");
+    const cellsOf = (instance: number) =>
+      [...footing.cell].filter((_, k) => footing.instance[k] === instance);
+    const partOf = (instance: number) => result.partIds[result.partIndex[instance] ?? -1];
+
+    expect([0, 1, 2, 3, 4].map(partOf)).toEqual([
+      "ldraw:74746",
+      "ldraw:74746",
+      "ldraw:3005",
+      "ldraw:3001",
+      "ldraw:3001",
+    ]);
+    const [wall] = cellsOf(2);
+    expect(cellsOf(2)).toHaveLength(1);
+    expect(cellsOf(1)).toContain(wall);
+    expect(cellsOf(3)).toHaveLength(8);
+    expect(cellsOf(4)).toEqual([]);
   },
   BAKE_TIMEOUT_MS,
 );

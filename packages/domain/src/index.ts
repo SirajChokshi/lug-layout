@@ -177,6 +177,7 @@ export {
   type PlanCheck,
   type PlanIssue,
   type PlanPlacement,
+  type CarriedTrack,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,

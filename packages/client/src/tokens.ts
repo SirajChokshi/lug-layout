@@ -26,6 +26,9 @@ import type { IPlacementSearch } from "./connect/placement-search.ts";
 import type { ICredits } from "./credits/credits-service.ts";
 import type { IEditor } from "./edit/editor.ts";
 import type { IEditorFrameLoop } from "./edit/editor-frame-loop.ts";
+import type { IRoadEditSession } from "./edit/road-edit-session.ts";
+import type { ITrackEditSession } from "./edit/track-edit-session.ts";
+import type { ITrackWorld } from "./edit/track-world.ts";
 import type { IWorldSession } from "./edit/world-session.ts";
 import type { ITableGround } from "./ground/table-ground.ts";
 import type { IImportWorkerPool, ImportWorkerFactory } from "./import/import-worker-pool.ts";
@@ -57,6 +60,13 @@ export const PLACEABLE_CATALOG: ServiceIdentifier<IPlaceableCatalog> = Symbol.fo
 );
 export const EDITOR_FRAME_LOOP: ServiceIdentifier<IEditorFrameLoop> = Symbol.for(
   "brr.client.EditorFrameLoop",
+);
+export const TRACK_WORLD: ServiceIdentifier<ITrackWorld> = Symbol.for("brr.client.TrackWorld");
+export const TRACK_EDIT_SESSION: ServiceIdentifier<ITrackEditSession> = Symbol.for(
+  "brr.client.TrackEditSession",
+);
+export const ROAD_EDIT_SESSION: ServiceIdentifier<IRoadEditSession> = Symbol.for(
+  "brr.client.RoadEditSession",
 );
 export const EDITOR_CAMERA: ServiceIdentifier<IEditorCamera> =
   Symbol.for("brr.client.EditorCamera");
