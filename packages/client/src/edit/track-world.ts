@@ -3,6 +3,7 @@ import {
   WORLD_TRACK_FRAME,
   type PlacementHandle,
   type PlanDelta,
+  type PlateHeights,
   type PlacedOutline,
   type RoadPlacement,
   type TrackChange,
@@ -24,8 +25,9 @@ import {
   type ModelTrackEnds,
 } from "../connect/model-track-ends.ts";
 import type { PlanTrackSource } from "../plan/plan-producer.ts";
-import { CONNECTOR_TABLES, PLACEABLE_CATALOG } from "../tokens.ts";
+import { CONNECTOR_TABLES, PLACEABLE_CATALOG, RAIL_YARD } from "../tokens.ts";
 import type { RailCarrier } from "../trains/rail-track.ts";
+import type { IRailYard } from "../trains/rail-yard.ts";
 import { CrossingRamps, type SuggestedCrossing } from "./crossing-ramps.ts";
 import type { Placeable } from "./placeable.ts";
 import type {
@@ -36,25 +38,40 @@ import type {
 } from "./placed-chunks.ts";
 import {
   TrackDrawing,
+  type LowClearance,
   type PlayTrack,
-  type SupportBand,
   type TrackBlockView,
   type TrackCarrier,
   type TrackEndView,
   type TrackRouteView,
   type UnsupportedPiece,
 } from "./track-drawing.ts";
+import type { SupportBand } from "./track-bands.ts";
 import {
   OBSTACLE_RECT_FLOATS,
   seatsPending,
   solidRectsIn,
   trackObstacles,
+  withOutlines,
 } from "./track-obstacles.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 export interface TrackUnsupportedView {
   readonly pieces: number;
   readonly block: TrackBlockView | null;
+  readonly tilted: number;
+}
+
+export interface TrackLowClearanceView {
+  readonly pieces: number;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+  readonly train: string;
+}
+
+export interface LowClearanceRows {
+  readonly laid: ReadonlyMap<number, PlateHeights>;
+  readonly carriers: ReadonlyMap<number, PlateHeights>;
 }
 
 export interface ModelTrackCounts {
@@ -81,7 +98,7 @@ export type RoadPlacements = () => ReadonlyArray<RoadPlacement>;
 export interface ITrackWorld extends PlanTrackSource {
   start(bundle: TrackBundle, placed: PlacedModels, roads: RoadPlacements): void;
   loadSupport(): Promise<void> | null;
-  supported(): boolean;
+  support(): TrackSupport | null;
   drawing(): TrackDrawing | null;
   pieceCatalog(): TrackCatalog["pieces"];
   requestPieceMeshes(): void;
@@ -102,6 +119,9 @@ export interface ITrackWorld extends PlanTrackSource {
   unsupported(): UnsupportedTrack;
   unsupportedCount(): number | null;
   unsupportedSince(firstPiece: number): TrackUnsupportedView | null;
+  measureClearance(): LowClearanceRows | null;
+  lowClearanceCount(): number | null;
+  lowClearanceSince(firstPiece: number): TrackLowClearanceView | null;
   refreshCrossings(): void;
   crossings(): ReadonlyArray<SuggestedCrossing>;
   crossingOutlines(): ReadonlyArray<PlacedOutline>;
@@ -138,6 +158,7 @@ export class TrackWorld implements ITrackWorld {
   private unsupportedTrack: ReadonlyArray<UnsupportedPiece> | null = null;
   private unsupportedLaid: ReadonlySet<number> = NO_IDS;
   private unsupportedCarriers: ReadonlySet<number> = NO_IDS;
+  private lowTrack: ReadonlyArray<LowClearance> | null = null;
   private crossingRamps: CrossingRamps | null = null;
   private suggested: ReadonlyArray<SuggestedCrossing> = [];
   private rampChunks: ReadonlyArray<number> = [];
@@ -148,6 +169,7 @@ export class TrackWorld implements ITrackWorld {
     @inject(PLACEABLE_CATALOG)
     private readonly catalog: Pick<IPlaceableCatalog, "parts" | "colors" | "requestMeshes">,
     @inject(CONNECTOR_TABLES) private readonly connectorTables: Pick<IConnectorTables, "load">,
+    @inject(RAIL_YARD) private readonly railYard: Pick<IRailYard, "standingFootprints">,
   ) {}
 
   start(bundle: TrackBundle, placed: PlacedModels, roads: RoadPlacements): void {
@@ -196,8 +218,8 @@ export class TrackWorld implements ITrackWorld {
     );
   }
 
-  supported(): boolean {
-    return this.trackSupport !== null;
+  support(): TrackSupport | null {
+    return this.trackSupport;
   }
 
   drawing(): TrackDrawing | null {
@@ -364,12 +386,7 @@ export class TrackWorld implements ITrackWorld {
   setObstacles(): void {
     const drawing = this.track;
     if (!drawing) return;
-    const models = this.placed.models();
-    const range = drawing.verticalRange();
-    drawing.setObstacles(
-      trackObstacles(models, range, (model) => this.carriedParts(model.placeable)),
-      seatsPending(models, range),
-    );
+    drawing.setBands((low, high) => this.supportBand(drawing, low, high));
     this.obstaclesVersion = this.layoutVersion;
   }
 
@@ -381,7 +398,7 @@ export class TrackWorld implements ITrackWorld {
     const track = this.track;
     if (!track) return;
     if (track.pieceCount + this.heldTrackModels.length > 0) this.ensureObstacles();
-    const unsupported = track.unsupportedPieces((yPlates) => this.supportBand(track, yPlates));
+    const unsupported = track.unsupportedPieces();
     this.unsupportedTrack = unsupported;
     if (!unsupported) {
       this.unsupportedLaid = NO_IDS;
@@ -414,8 +431,48 @@ export class TrackWorld implements ITrackWorld {
     const laid = (this.unsupportedTrack ?? []).filter(
       ({ piece }) => piece >= firstPiece && piece < pieceCount,
     );
-    const [first] = laid;
-    return first ? { pieces: laid.length, block: first.block } : null;
+    const flat = laid.find((piece) => !piece.tilted);
+    const tilted = laid.filter((piece) => piece.tilted).length;
+    return laid.length > 0 ? { pieces: laid.length, block: flat?.block ?? null, tilted } : null;
+  }
+
+  measureClearance(): LowClearanceRows | null {
+    const track = this.track;
+    if (!track) return null;
+    const low = track.lowClearances();
+    this.lowTrack = low;
+    if (!low) return null;
+    const laid = new Map<number, PlateHeights>();
+    const carriers = new Map<number, PlateHeights>();
+    for (const { piece, needPlates, hasPlates } of low) {
+      const heights = { needPlates, hasPlates };
+      if (piece < track.pieceCount) {
+        laid.set(piece, heights);
+        continue;
+      }
+      const carrier = this.carrierOf(piece);
+      const known = carrier ? carriers.get(carrier.id) : undefined;
+      if (carrier && (!known || known.needPlates < needPlates)) carriers.set(carrier.id, heights);
+    }
+    return { laid, carriers };
+  }
+
+  lowClearanceCount(): number | null {
+    return this.lowTrack?.length ?? null;
+  }
+
+  lowClearanceSince(firstPiece: number): TrackLowClearanceView | null {
+    const pieceCount = this.track?.pieceCount ?? 0;
+    const laid = (this.lowTrack ?? []).filter(
+      ({ piece }) => piece >= firstPiece && piece < pieceCount,
+    );
+    const worst = laid.reduce<LowClearance | null>(
+      (most, low) => (most === null || low.needPlates > most.needPlates ? low : most),
+      null,
+    );
+    if (!worst) return null;
+    const { needPlates, hasPlates, train } = worst;
+    return { pieces: laid.length, needPlates, hasPlates, train: train.model };
   }
 
   refreshCrossings(): void {
@@ -494,15 +551,15 @@ export class TrackWorld implements ITrackWorld {
     return new TrackDrawing(bundle, this.catalog.parts(), this.catalog.colors());
   }
 
-  private supportBand(track: TrackDrawing, yPlates: number): SupportBand {
-    const lift = yPlates * PLATE_LDU;
+  private supportBand(track: TrackDrawing, lowPlates: number, highPlates: number): SupportBand {
     const [bottom, top] = track.verticalRange();
-    const band = [bottom + lift, top + lift] as const;
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
     const models = this.placed.models();
-    return {
-      obstacles: trackObstacles(models, band, (model) => this.carriedParts(model.placeable)),
-      pending: seatsPending(models, band),
-    };
+    const placed = trackObstacles(models, band, (model) => this.carriedParts(model.placeable));
+    const trains = this.railYard
+      .standingFootprints()
+      .filter((vehicle) => vehicle.railTopLdu < band[1] && band[0] < vehicle.topLdu);
+    return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, band) };
   }
 
   private rampClearance(

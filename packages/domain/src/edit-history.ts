@@ -1,6 +1,7 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
+import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
 import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
@@ -23,6 +24,7 @@ export interface TrackPieceAt {
   readonly piece: number;
   readonly pose: Pose16;
   readonly yPlates: number;
+  readonly rise: number;
 }
 
 export interface TrackChange {
@@ -145,7 +147,7 @@ function checkPose(pose: PlacementPose): void {
 
 function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof TrackChange): void {
   let previous = -1;
-  for (const { index, piece, yPlates } of pieces) {
+  for (const { index, piece, yPlates, rise } of pieces) {
     if (!Number.isInteger(index) || index <= previous) {
       throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
     }
@@ -154,6 +156,12 @@ function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof Track
     }
     if (!isLatticePose(0, 0, yPlates)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
+    }
+    if (!Number.isInteger(rise) || rise < INT8_MIN || rise > INT8_MAX) {
+      throw new RangeError(`track rise ${rise} plates is not an int8`);
+    }
+    if (!isLatticePose(0, 0, yPlates + rise)) {
+      throw new RangeError(`track end height ${yPlates + rise} plates is not an int16`);
     }
     previous = index;
   }

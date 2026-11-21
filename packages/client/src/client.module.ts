@@ -60,6 +60,8 @@ import { TrackScene } from "./scene/track-scene.ts";
 import { SimWorkerProxy } from "./sim/sim-client.ts";
 import { TrainPlay } from "./play/train-play.ts";
 import { RailYard } from "./trains/rail-yard.ts";
+import { TallestTrainMeter } from "./trains/tallest-train.ts";
+import { TrackPiers } from "./edit/track-piers.ts";
 import { VehicleIds } from "./trains/vehicle-ids.ts";
 import { FetchedStarterFiles } from "./starters/starter-files.ts";
 import { StarterWorlds } from "./starters/starter-worlds.ts";
@@ -109,6 +111,8 @@ import {
   TRACK_SCENE,
   TRAIN_PLAY,
   RAIL_YARD,
+  TALLEST_TRAIN,
+  TRACK_PIERS,
   VEHICLE_IDS,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
@@ -151,6 +155,8 @@ const clientModule = new ContainerModule(({ bind }) => {
   bind(OWNED_PARTS).to(OwnedPartsService).inSingletonScope();
   bind(TRAIN_PLAY).to(TrainPlay).inSingletonScope();
   bind(RAIL_YARD).to(RailYard).inSingletonScope();
+  bind(TALLEST_TRAIN).to(TallestTrainMeter).inSingletonScope();
+  bind(TRACK_PIERS).to(TrackPiers).inSingletonScope();
   bind(VEHICLE_IDS).to(VehicleIds).inSingletonScope();
   bind(SNAP_SHAPES)
     .toDynamicValue(() => new SnapShapes())
