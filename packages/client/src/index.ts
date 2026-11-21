@@ -61,7 +61,6 @@ export type {
   IEditorFrameLoop,
 } from "./edit/editor-frame-loop.ts";
 export type {
-  CatalogPartView,
   EditAction,
   EditorCredits,
   EditorDump,
@@ -82,7 +81,6 @@ export type {
   RailTrainView,
   RoadIssueView,
   RoadJoinView,
-  RoadStrokeResult,
   RoadPlacementDump,
   RefusedClick,
   RoadSnapState,
@@ -95,15 +93,19 @@ export type {
   SelectionView,
   TrackSelectionView,
   TrainSelectionView,
+} from "./edit/editor.ts";
+export type {
+  CatalogPartView,
+  CrossingRampView,
+  CrossingView,
   TrackBomLine,
   TrackCommitResult,
   TrackPieceView,
   TrackSolveStats,
-  TrackUnsupportedView,
   TrackView,
-  CrossingView,
-  CrossingRampView,
-} from "./edit/editor.ts";
+} from "./edit/track-edit-session.ts";
+export type { TrackUnsupportedView } from "./edit/track-world.ts";
+export type { RoadStrokeResult } from "./edit/road-edit-session.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type { FillView } from "./edit/fill-tool.ts";
 export type {
@@ -150,14 +152,27 @@ export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER, lduFromMm } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
+  DEFAULT_MAX_REACH_MM,
   DEFAULT_TABLE_HEIGHT_MM,
   type IPlanService,
   type NewPlan,
   type ObstacleInput,
   type PlanPatch,
   type PlanPlacementsView,
+  type PlanRowSegment,
   type TableInput,
 } from "./plan/plan-service.ts";
+export {
+  NOT_YET_ASSIGNED,
+  UNCHECKED_PLAN_RULES,
+  buildableAsPlanned,
+  type UncheckedPlanRule,
+} from "./plan/plan-verdict.ts";
+export type {
+  IPlanSheetService,
+  IPlanSheetSource,
+  PlanSheetShapes,
+} from "./plan/plan-sheet-service.ts";
 export type {
   IssueSeverity,
   LduRect,
@@ -175,6 +190,7 @@ export type {
 export {
   RUNNING_GEAR,
   BOM_SERVICE,
+  OWNED_PARTS,
   CATALOG_SEARCH,
   CREDITS,
   EDITOR,
@@ -191,6 +207,7 @@ export {
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   HOTBAR,
   SCALE_BAR,
   STARTER_WORLDS,
@@ -208,7 +225,7 @@ export type {
   StarterWorldView,
   WelcomeView,
 } from "./starters/starter-worlds.ts";
-export { TRACK_ITEM_ID } from "./edit/editor.ts";
+export { TRACK_ITEM_ID } from "./edit/track-edit-session.ts";
 export type {
   RollingDiagnosticsPanel,
   RollingDiagnosticsPartView,
@@ -367,8 +384,17 @@ export type {
   BomScope,
   IBomService,
   IBomSource,
+  OwnVsBuyReport,
 } from "./bom/bom-service.ts";
-export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
+export type { IOwnedParts, OwnedPartsView, TextFile } from "./bom/owned-parts-service.ts";
+export type {
+  CatalogBom,
+  CatalogLine,
+  OwnedParts,
+  PlacementRegion,
+  UnknownOwnedPart,
+  UnmappedLine,
+} from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { LibraryPartHit, LibraryPartView } from "./catalog/library-part-index.ts";
 export type {

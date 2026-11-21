@@ -1,3 +1,4 @@
+import { planManifest, type PlanArchive } from "@brr/schema/plan";
 import {
   importRef,
   shardEntry,
@@ -96,6 +97,64 @@ it("carries each placed model file under its content hash, and refuses one that 
   );
   expect(unplaced.ok ? [] : unplaced.issues.map((issue) => issue.message)).toEqual([
     "is not used by any placement",
+  ]);
+});
+
+function planPlacing(
+  placed: ReadonlyArray<ImportedFile>,
+  carried: ReadonlyArray<ImportedFile>,
+): PlanArchive {
+  const { shards } = archivePlacing(placed, []);
+  const plan = {
+    name: "Table",
+    originChunkX: 0,
+    originChunkZ: 0,
+    maxOverhangMm: 0,
+    maxReachMm: 700,
+    footprint: { roomWidthMm: 1000, roomDepthMm: 1000, tables: [], obstacles: [] },
+  };
+  return {
+    manifest: planManifest(
+      { bundleVersion: "test", plan, disclaimer: "disclaimer" },
+      shards.map(shardEntry),
+    ),
+    shards,
+    credits: "credits",
+    outputs: {
+      "plan.svg": "<svg/>",
+      "parts.csv": "",
+      "bricklink.xml": "",
+      "rebrickable.csv": "",
+    },
+    imports: carried,
+  };
+}
+
+it("carries every model file a plan places in the same bytes whichever order they come in, and refuses one that is missing", async () => {
+  const repository = new IndexedDbWorldRepository(NO_DATABASE, null);
+  const cottage = await modelFile(
+    "my-cottage.ldr",
+    "0 Cottage\n1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n",
+  );
+  const shed = await modelFile(
+    "my-shed.mpd",
+    "0 FILE a.ldr\n1 4 0 0 0 1 0 0 0 1 0 0 0 1 roof.dat\n0 FILE roof.dat\n3 4 0 0 0 1 0 0 0 0 1\n",
+  );
+  const placed = [cottage, shed];
+
+  const packed = repository.packPlanArchive(planPlacing(placed, [cottage, shed]));
+  const read = await repository.readPlanArchive(packed);
+  expect(read.ok && read.value.imports.toSorted((a, b) => a.name.localeCompare(b.name))).toEqual([
+    cottage,
+    shed,
+  ]);
+  expect(repository.packPlanArchive(planPlacing(placed, [shed, cottage]))).toEqual(packed);
+
+  const missing = await repository.readPlanArchive(
+    repository.packPlanArchive(planPlacing(placed, [cottage])),
+  );
+  expect(missing.ok ? [] : missing.issues.map((issue) => issue.message)).toEqual([
+    "is used by a placement but missing",
   ]);
 });
 

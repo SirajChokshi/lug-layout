@@ -1,9 +1,17 @@
 import { EMPTY_COLUMN } from "@brr/catalog";
 import {
+  BOX_MAX_X,
+  BOX_MIN_X,
+  BOX_STRIDE,
+  FACT_STRIDE,
   cellChunkKey,
+  clearFacts,
   type AppliedEdit,
+  type CarriedTrack,
   type PlacementHandle,
   type PlacementRef,
+  type PlanShape,
+  type TrackOutline,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
@@ -25,6 +33,7 @@ import {
 } from "@brr/render";
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
+import { planShapeOf } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
   FOOTPRINT_FLAT,
@@ -41,11 +50,28 @@ export interface PlacedModel {
   studCellX(stud: number): number;
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
+  readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
+  readonly facts: Int32Array;
   rayHit(ray: Float64Array): number;
   aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
   writeWorldPartBoxes(out: Float64Array): number;
 }
+
+export interface CarriedTrackParts {
+  readonly instances: ReadonlySet<number>;
+  readonly outlines: ReadonlyArray<TrackOutline>;
+}
+
+export type CarriedTrackSource = (
+  placeable: Placeable,
+  handle: PlacementHandle,
+) => CarriedTrackParts | null;
+
+const NO_CARRIED_TRACK: CarriedTrackSource = () => null;
+const NO_INSTANCES: ReadonlySet<number> = new Set();
+const AXES = 3;
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const THROUGH_SIDE = 0;
@@ -395,6 +421,10 @@ function cellIndex(
 class PlacedEntry implements PlacedModel {
   readonly chunks = new TouchedChunks();
   columnsIndexedIn = -1;
+  touchedIn = -1;
+  readonly shape: PlanShape | null;
+  readonly carried: CarriedTrack | null;
+  readonly facts = new Int32Array(FACT_STRIDE);
   readonly box: WorldBox;
   readonly pose: LatticePose;
   readonly x: number;
@@ -409,6 +439,7 @@ class PlacedEntry implements PlacedModel {
     readonly handle: PlacementHandle,
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
+    carriedTrack: CarriedTrackSource,
   ) {
     this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
@@ -420,6 +451,34 @@ class PlacedEntry implements PlacedModel {
     this.tallyStuds(chunkOrigins);
     this.markCells(chunkOrigins);
     this.box = this.worldBox();
+    const carried = carriedTrack(placeable, handle);
+    this.shape = planShapeOf(placeable, handle.rot, carried?.instances ?? NO_INSTANCES);
+    this.carried =
+      carried === null
+        ? null
+        : { outlines: carried.outlines, bodyBox: this.bodyBox(carried.instances) };
+    clearFacts(this.facts, 0);
+  }
+
+  private bodyBox(without: ReadonlySet<number>): Float64Array | null {
+    const local = this.placeable.partBoxes;
+    const part = new Float64Array(BOX_STRIDE);
+    const body = new Float64Array(BOX_STRIDE);
+    let found = false;
+    for (let b = 0, instance = 0; b < local.length; b += BOX_FLOATS, instance++) {
+      if (without.has(instance)) continue;
+      this.pose.worldBox(local, b, this.yLdu, part, 0);
+      if (!found) {
+        body.set(part);
+        found = true;
+        continue;
+      }
+      for (let axis = 0; axis < AXES; axis++) {
+        body[BOX_MIN_X + axis] = Math.min(body[BOX_MIN_X + axis] ?? 0, part[BOX_MIN_X + axis] ?? 0);
+        body[BOX_MAX_X + axis] = Math.max(body[BOX_MAX_X + axis] ?? 0, part[BOX_MAX_X + axis] ?? 0);
+      }
+    }
+    return found ? body : null;
   }
 
   worldPartBoxes(): Float64Array {
@@ -812,6 +871,7 @@ class PlacedEntry implements PlacedModel {
 }
 
 export const NO_MODELS: ReadonlySet<PlacedModel> = new Set();
+const NO_ENTRIES: ReadonlyArray<PlacedEntry> = [];
 
 export interface RebuildReport {
   readonly chunks: number;
@@ -876,6 +936,7 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
 
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
+  private readonly live = new Set<PlacedEntry>();
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
@@ -883,6 +944,7 @@ export class PlacedChunks {
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private nextId = 0;
+  private touchEpoch = 0;
   private readonly farModels = new Map<Placeable, number>();
   private readonly hasAntiStudCovers = (key: number): boolean =>
     (this.byAntiStudChunk.get(key)?.size ?? 0) > 0;
@@ -897,7 +959,10 @@ export class PlacedChunks {
     entry.indexColumns(this.columns);
   };
 
-  constructor(private readonly backend: ISceneBackend) {}
+  constructor(
+    private readonly backend: ISceneBackend,
+    private readonly carriedTrack: CarriedTrackSource = NO_CARRIED_TRACK,
+  ) {}
 
   private farModelOf(placeable: Placeable): number | null {
     return this.farModels.get(placeable) ?? placeable.farModel;
@@ -966,6 +1031,38 @@ export class PlacedChunks {
     return { added, removed, report: this.rebuild(touched) };
   }
 
+  touching(box: WorldBox, out: PlacedModel[]): void {
+    out.length = 0;
+    const epoch = ++this.touchEpoch;
+    const x0 = chunkOf(box.minX - STUD_LDU);
+    const x1 = chunkOf(box.maxX + STUD_LDU);
+    const z0 = chunkOf(box.minZ - STUD_LDU);
+    const z1 = chunkOf(box.maxZ + STUD_LDU);
+    for (let cz = z0; cz <= z1; cz++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        for (const entry of this.byColumnChunk.get(chunkKey(cx, cz)) ?? NO_ENTRIES) {
+          if (entry.touchedIn === epoch) continue;
+          entry.touchedIn = epoch;
+          const other = entry.box;
+          if (
+            other.minX <= box.maxX &&
+            box.minX <= other.maxX &&
+            other.minZ <= box.maxZ &&
+            box.minZ <= other.maxZ &&
+            other.minY <= box.maxY &&
+            box.minY <= other.maxY
+          ) {
+            out.push(entry);
+          }
+        }
+      }
+    }
+  }
+
+  contains(model: PlacedModel): boolean {
+    return model instanceof PlacedEntry && this.live.has(model);
+  }
+
   studTotals(): StudTotals {
     let drawn = 0;
     let culledUnderFootprints = 0;
@@ -1027,6 +1124,7 @@ export class PlacedChunks {
     this.byColumnChunk.clear();
     this.chunkStuds.clear();
     this.entries.length = 0;
+    this.live.clear();
   }
 
   private insert(
@@ -1034,8 +1132,16 @@ export class PlacedChunks {
     handle: PlacementHandle,
     placeable: Placeable,
   ): PlacedEntry {
-    const entry = new PlacedEntry(this.nextId++, placement, handle, placeable, this.chunkOrigins);
+    const entry = new PlacedEntry(
+      this.nextId++,
+      placement,
+      handle,
+      placeable,
+      this.chunkOrigins,
+      this.carriedTrack,
+    );
     this.entries.push(entry);
+    this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
@@ -1053,6 +1159,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.live.delete(entry);
     this.backend.setFarModel(entry.id, null);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {

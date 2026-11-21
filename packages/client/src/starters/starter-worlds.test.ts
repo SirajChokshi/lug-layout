@@ -8,6 +8,7 @@ import {
   type RebaseEvent,
 } from "@brr/render";
 import { decode, decodedOrThrow, type Decoded } from "@brr/schema/decode";
+import type { PlanArchive } from "@brr/schema/plan";
 import { STARTER_SHELF_FILE, starterFilePath, type StarterShelfV1 } from "@brr/schema/starters";
 import {
   CREDITS_FILE,
@@ -33,7 +34,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { TRACK_ITEM_ID, type IEditor } from "../edit/editor.ts";
+import type { IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
 import { chosen } from "../edit/editor-choice.test-support.ts";
 import { WithFixtureModels } from "../edit/fixture-model.test-support.ts";
 import { EDITOR, STARTER_FILES, STARTER_WORLDS } from "../tokens.ts";
@@ -200,6 +202,14 @@ class MemoryRepository implements IWorldRepository {
 
   readWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<Decoded<WorldFiles>> {
     return this.archives.readWorldFiles(files);
+  }
+
+  packPlanArchive(archive: PlanArchive): Uint8Array {
+    return this.archives.packPlanArchive(archive);
+  }
+
+  readPlanArchive(bytes: Uint8Array): Promise<Decoded<PlanArchive>> {
+    return this.archives.readPlanArchive(bytes);
   }
 
   async putImportedFile(): Promise<void> {}

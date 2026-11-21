@@ -123,13 +123,12 @@ function listedPart(id: string) {
 }
 
 describe("library part index", () => {
-  it("lists only canonical, contributor-agreement parts in an active category that have a produced colour", () => {
-    expect(derived.file.parts.id).toEqual(["3001", "3471", "3633"]);
+  it("lists only canonical official parts in an active category that have a produced colour, whatever licence they name", () => {
+    expect(derived.file.parts.id).toEqual(["3001", "3010", "3471", "3633"]);
     expect(derived.report).toEqual({
       scanned: 11,
-      listed: 3,
+      listed: 4,
       unlisted: 4,
-      notContributorAgreement: 1,
       unofficial: 1,
       withoutRebrickable: 1,
       withoutProducedColor: 1,

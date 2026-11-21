@@ -20,7 +20,6 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { dirname, join } from "node:path";
 import * as v from "valibot";
 import { contentAddressedName } from "../publish.ts";
-import { isCaLicense } from "../verify/license-audit.ts";
 
 export const LIBRARY_BAKE_INDEX = "library-bake.json";
 export const LIBRARY_BAKE_PIN = "tools/asset-pipeline/library-bake.json";
@@ -142,16 +141,11 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
   const parts: Record<string, LibraryBakePart> = {};
   const diagnostics: DiagnosticsRows = {};
   const failed: Record<string, string> = {};
-  const refused: Array<{ part: string; licenses: ReadonlyArray<string> }> = [];
   const licenses = new Set<string>();
   const listed = await listings(build);
   for (const listing of listed) {
     if ("failed" in listing) {
       failed[listing.id] = listing.failed;
-      continue;
-    }
-    if (!listing.licenses.every(isCaLicense)) {
-      refused.push({ part: listing.id, licenses: listing.licenses });
       continue;
     }
     for (const license of listing.licenses) licenses.add(license);
@@ -184,6 +178,5 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
     parts: listed.length,
     records: Object.keys(parts).length,
     failed: Object.keys(failed).length,
-    refused,
   };
 }

@@ -14,6 +14,7 @@ import {
   type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
+  type LibraryPartsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
@@ -121,6 +122,12 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly footing: InstanceFooting;
+}
+
+export interface InstanceFooting {
+  readonly instance: Uint32Array;
+  readonly cell: Uint32Array;
 }
 
 export interface ModelStudCover {
@@ -256,6 +263,7 @@ export interface IPartBundleLoader {
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null>;
 }
 
 export interface IAssetFetcher {

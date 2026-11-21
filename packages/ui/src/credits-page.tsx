@@ -6,6 +6,7 @@ import {
   type ICredits,
   type LicenseGroup,
 } from "@brr/client";
+import { downloadBlob } from "./download.ts";
 import { LoadingOrError, SitePage } from "./site-chrome.tsx";
 import { useCredits } from "./use-credits.ts";
 
@@ -23,12 +24,7 @@ interface CreditsPageProps {
 
 function downloadCreditsText(credits: ICredits, view: CreditsView): void {
   const blob = new Blob([credits.exportText(view)], { type: "text/plain;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = CREDITS_FILE_NAME;
-  link.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(CREDITS_FILE_NAME, blob);
 }
 
 function CountsTable({ view }: { readonly view: CreditsView }) {
@@ -156,6 +152,7 @@ function Credits({ credits, view }: { readonly credits: ICredits; readonly view:
             <th>Submodels</th>
             <th>Part instances</th>
             <th>Inline part copies replaced by the official part</th>
+            <th>Modified from OMR</th>
           </tr>
         </thead>
         <tbody>
@@ -169,6 +166,16 @@ function Credits({ credits, view }: { readonly credits: ICredits; readonly view:
               <td>{integer.format(set.sections)}</td>
               <td>{integer.format(set.instances)}</td>
               <td>{integer.format(set.inlinePartsResolved)}</td>
+              <td>
+                {set.errata.map((erratum) => (
+                  <details key={erratum.line}>
+                    <summary>
+                      Line {erratum.line}: <code>{erratum.from}</code> → <code>{erratum.to}</code>
+                    </summary>
+                    {erratum.summary}
+                  </details>
+                ))}
+              </td>
             </tr>
           ))}
         </tbody>
