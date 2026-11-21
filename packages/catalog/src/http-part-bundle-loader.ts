@@ -1,13 +1,17 @@
+import { AssetResponseError } from "./asset-response-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
   type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
+  type ReadJson,
 } from "./connector-records.ts";
 import {
   ALPHA_OPAQUE,
   BundleIndex,
+  ConnectorPackage,
+  ConnectorPackFile,
   CreditTableFile,
   CrosswalkFile,
   ModelFile,
@@ -19,6 +23,7 @@ import {
   type BundleLod,
   type BundleManifest,
   type CatalogPart,
+  type ConnectorPacks,
   type ManifestPart,
   type StudRecord,
 } from "@brr/schema/bundle";
@@ -104,6 +109,10 @@ function modelCells(cells: ModelFile["cover"]["cells"]): ModelCells | null {
     flat: Uint32Array.from(cells.flat),
     columnBottom: Int16Array.from(cells.columnBottom),
     columnTop: Int16Array.from(cells.columnTop),
+    footing: {
+      instance: Uint32Array.from(cells.footing.instance),
+      cell: Uint32Array.from(cells.footing.cell),
+    },
   };
 }
 
@@ -124,7 +133,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
   private async get(path: string): Promise<Response> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
+    if (!response.ok) throw new AssetResponseError(url, response.status);
     return response;
   }
 
@@ -154,6 +163,8 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     Promise<RollingDiagnosticsFile | null>
   >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
+  private readonly partConnectorReads = new Map<string, Promise<ConnectorLoad>>();
+  private readonly connectorPackFiles = new Map<BundleLod, Promise<ReadonlyMap<string, unknown>>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
     Promise<PinnedSectionVocabularyFile | null>
@@ -424,6 +435,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
+      shadowLibrary: manifest.compiler.shadowLibrary ?? null,
     };
   }
 
@@ -433,7 +445,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       records = this.loadIndex(lod).then(
         (index) =>
           new ConnectorRecords(
-            async (path) => JSON.parse(await this.fetcher.text(path)),
+            this.connectorJson(lod, index.connectorPacks),
             connectorIndexPaths(lod, index),
             index.compiler?.sectionVocabulary.sha256 ?? null,
           ),
@@ -443,12 +455,44 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     return records;
   }
 
+  private connectorJson(lod: BundleLod, packs: ConnectorPacks | undefined): ReadJson {
+    if (packs === undefined) return async (path) => JSON.parse(await this.fetcher.text(path));
+    return async (path) => {
+      const file = (await this.packedConnectorFiles(lod, packs)).get(path);
+      if (file === undefined) throw new Error(`neither connector pack holds ${path}`);
+      return file;
+    };
+  }
+
+  private packedConnectorFiles(
+    lod: BundleLod,
+    packs: ConnectorPacks,
+  ): Promise<ReadonlyMap<string, unknown>> {
+    return this.cached(this.connectorPackFiles, lod, async () => {
+      const loaded = await Promise.all(
+        ConnectorPackage.options.map(async (pkg) => {
+          const path = `${lod}/${packs[pkg].file}`;
+          const pack = await this.json(ConnectorPackFile, path);
+          if (pack.package !== pkg) throw new Error(`${path} packs ${pack.package}, not ${pkg}`);
+          return Object.entries(pack.files);
+        }),
+      );
+      return new Map(loaded.flat().map(([file, json]) => [`${lod}/${file}`, json]));
+    });
+  }
+
+  async prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    await (await this.records(lod)).prepare();
+  }
+
   async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return (await this.records(lod)).load(partId);
   }
 
-  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
-    return (await this.records(lod)).read(partId);
+  readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return this.cached(this.partConnectorReads, `${lod}/${partId}`, async () =>
+      (await this.records(lod)).read(partId),
+    );
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -646,6 +690,8 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    topSurface: shape.topSurface ?? null,
+    outline: shape.outline ?? null,
   };
 }
 
@@ -704,5 +750,7 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    topSurface: glb.document.extras.topSurface ?? null,
+    outline: null,
   };
 }

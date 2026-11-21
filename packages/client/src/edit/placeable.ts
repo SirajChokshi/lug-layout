@@ -1,5 +1,6 @@
 import {
   EMPTY_COLUMN,
+  type InstanceFooting,
   type ModelCells,
   type ModelStudCover,
   type PartShapeAsset,
@@ -13,6 +14,7 @@ import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { bakedVisible, withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
+import { LatticeSeats } from "./lattice-seats.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { roadSurface } from "./road-surface.ts";
 
@@ -26,6 +28,7 @@ export interface PlaceableCells {
   readonly footprint: Uint8Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly footing: InstanceFooting;
   readonly footprintCells: number;
   readonly flatCells: number;
   readonly heightPlates: number;
@@ -36,6 +39,7 @@ export interface StudLattice {
   readonly cellX: Int32Array;
   readonly cellZ: Int32Array;
   readonly baseLdu: Int32Array;
+  readonly seats: LatticeSeats;
 }
 
 export interface Placeable {
@@ -54,6 +58,7 @@ export interface Placeable {
   readonly cells: PlaceableCells;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
+  readonly seatedTops: Uint8Array;
   readonly frameShift: Vec3;
   readonly farModel: number | null;
   readonly credit: ModelCredit | null;
@@ -167,15 +172,26 @@ function studLattice(
       `the part transforms give ${visible} visible studs but the render has ${count}`,
     );
   }
-  return { onLattice, cellX, cellZ, baseLdu };
+  return {
+    onLattice,
+    cellX,
+    cellZ,
+    baseLdu,
+    seats: new LatticeSeats(onLattice, cellX, cellZ, baseLdu),
+  };
 }
 
 function noStudsOffered(count: number): StudLattice {
+  const onLattice = new Uint8Array(count);
+  const cellX = new Int32Array(count);
+  const cellZ = new Int32Array(count);
+  const baseLdu = new Int32Array(count);
   return {
-    onLattice: new Uint8Array(count),
-    cellX: new Int32Array(count),
-    cellZ: new Int32Array(count),
-    baseLdu: new Int32Array(count),
+    onLattice,
+    cellX,
+    cellZ,
+    baseLdu,
+    seats: new LatticeSeats(onLattice, cellX, cellZ, baseLdu),
   };
 }
 
@@ -213,10 +229,17 @@ function modelCells(cells: ModelCells, shift: Vec3, label: string): PlaceableCel
     footprint,
     columnBottom,
     columnTop,
+    footing: cells.footing,
     footprintCells: cells.footprint.length,
     flatCells: cells.flat.length,
     heightPlates,
   };
+}
+
+function everyCellOfOneInstance(cells: number): InstanceFooting {
+  const cell = new Uint32Array(cells);
+  for (let c = 0; c < cells; c++) cell[c] = c;
+  return { instance: new Uint32Array(cells), cell };
 }
 
 function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
@@ -233,6 +256,7 @@ function partCells(part: PartShapeAsset, shift: Vec3): PlaceableCells {
     footprint: new Uint8Array(width * depth),
     columnBottom: new Int16Array(width * depth),
     columnTop: new Int16Array(width * depth).fill(heightPlates),
+    footing: everyCellOfOneInstance(width * depth),
     footprintCells: 0,
     flatCells: 0,
     heightPlates,
@@ -391,6 +415,10 @@ export function modelPlaceable(
     matrices: shiftedTransforms(model.partTransforms, model.instanceCount, shift),
     submodels: shiftedSubmodels(model.submodels, shift),
   };
+  const offeredStuds =
+    cover === undefined
+      ? noStudsOffered(studs.count)
+      : studLattice(partTransforms, parts, cover, studs.count);
   return {
     id,
     label,
@@ -401,15 +429,13 @@ export function modelPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice:
-      cover === undefined
-        ? noStudsOffered(studs.count)
-        : studLattice(partTransforms, parts, cover, studs.count),
+    studLattice: offeredStuds,
     studsPending: cover === undefined,
     bakedCoveredStuds: cover?.covered ?? null,
     cells: modelCells(cells, shift, name),
     box,
     partBoxes,
+    seatedTops: offeredStuds.seats.seatedTops(partBoxes),
     frameShift: shift,
     farModel,
     credit,
@@ -465,6 +491,7 @@ export function partPlaceable(
     partIndex: local.partIndex,
     matrices: shiftedTransforms(IDENTITY_TRANSFORM, 1, shift),
   };
+  const offeredStuds = studLattice(partTransforms, parts, undefined, studs.count);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
@@ -475,12 +502,13 @@ export function partPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice: studLattice(partTransforms, parts, undefined, studs.count),
+    studLattice: offeredStuds,
     studsPending: false,
     bakedCoveredStuds: 0,
     cells: partCells(part, shift),
     box,
     partBoxes,
+    seatedTops: offeredStuds.seats.seatedTops(partBoxes),
     frameShift: shift,
     farModel: null,
     credit: null,
