@@ -163,21 +163,28 @@ export {
   IMPORT_WORKER_POOL,
   MODEL_IMPORTER,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
+  PALETTE,
+  PANEL_LAYOUT,
   SIM_CLIENT,
   TRACK_SCENE,
   TRAIN_PLAY,
   PLAN_SERVICE,
-  PALETTE_MEMORY,
-  PALETTE_THUMBNAILS,
   HOTBAR,
 } from "./tokens.ts";
 export type { ITrainPlay, PlaySnapshot, PlayStatus, PlaySwitchView } from "./play/train-play.ts";
 export type { PlaySetup } from "./play/play-models.ts";
 export { TRACK_ITEM_ID } from "./edit/editor.ts";
-export { meshesSettled, type MeshCounts, type MeshProgress } from "./edit/mesh-progress.ts";
+export type {
+  RollingDiagnosticsPanel,
+  RollingDiagnosticsPartView,
+  RollingDiagnosticsRowView,
+} from "./inspect/rolling-diagnostics.ts";
+export {
+  meshesSettled,
+  type MeshCounts,
+  type MeshProgress,
+  type UndrawnPart,
+} from "./edit/mesh-progress.ts";
 export {
   COMMAND_GROUPS,
   COMMANDS,
@@ -279,3 +286,5 @@ export type {
 export type { CatalogBom, CatalogLine, PlacementRegion, UnmappedLine } from "@brr/domain";
 export type { IPaletteMemory } from "./catalog/palette-memory.ts";
 export type { IPaletteThumbnails } from "./catalog/palette-thumbnails.ts";
+export type { IPalette } from "./catalog/palette.ts";
+export type { IPanelLayout, PanelId } from "./panels/panel-layout.ts";

@@ -28,10 +28,13 @@ import {
   TrackGraph,
   TrackLayout,
   footprintOutline,
+  regionHolds,
+  type BomCounter,
   type ClosureResult,
   type ClosureSite,
   type DrawingKit,
   type EndGap,
+  type PlacementRegion,
   type TrackEnd,
   type TrackFrame,
   type TrackMove,
@@ -416,6 +419,20 @@ export class TrackDrawing {
       if (this.layout.piece(p) === catalogIndex) count++;
     }
     return count;
+  }
+
+  countParts(counter: BomCounter, region: PlacementRegion | null): number {
+    let counted = 0;
+    for (let p = 0; p < this.layout.count; p++) {
+      const placed = this.placedAt(p);
+      if (region !== null) {
+        const origin = partCentre(placed);
+        if (!regionHolds(region, origin.x, origin.z)) continue;
+      }
+      counter.add(placed.part.partIndex, this.colors.codeAt(placed.part.color), 1);
+      counted++;
+    }
+    return counted;
   }
 
   coincidentEndIssues(): number {

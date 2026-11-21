@@ -135,6 +135,10 @@ import type {
   WorldContents,
   WorldSessionView,
 } from "./world-session.ts";
+import {
+  rollingDiagnosticsPanel,
+  type RollingDiagnosticsPanel,
+} from "../inspect/rolling-diagnostics.ts";
 
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
@@ -437,6 +441,7 @@ export interface IEditor extends IBomSource, IWorldFiles {
   trackRoutes(): ReadonlyArray<TrackRouteView>;
   setRoadErase(erase: boolean): void;
   playSetup(): PlaySetup | null;
+  rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null>;
   dump(): EditorDump;
 }
 
@@ -603,7 +608,12 @@ export class Editor implements IEditor, IEditedWorld {
     farTier: "loading",
     farTierError: null,
     pendingItem: null,
-    meshes: { detailedPartMeshes: NO_MESHES, farPartMeshes: NO_MESHES, farModelMeshes: NO_MESHES },
+    meshes: {
+      detailedPartMeshes: NO_MESHES,
+      farPartMeshes: NO_MESHES,
+      farModelMeshes: NO_MESHES,
+      undrawnParts: [],
+    },
     measuring: false,
     measurement: null,
     credits: null,
@@ -1032,7 +1042,7 @@ export class Editor implements IEditor, IEditedWorld {
       return {
         id: `${TRACK_PIECE_PREFIX}${kit.piece.id}`,
         label: `${element.replace(/^[a-z]+:/u, "")} ${title}`,
-        shortLabel: TRACK_SHORT_LABEL,
+        shortLabel: title,
         group: TRACK_PIECE_GROUP,
         groupLabel: TRACK_PIECE_GROUP_LABEL,
         color: null,
@@ -2016,12 +2026,10 @@ export class Editor implements IEditor, IEditedWorld {
         return notDrawnItems(placeable.id, this.catalog.notDrawn(placeable), count);
       });
     if (scope.kind !== "selection") {
-      const placements = countPlacements(
-        this.world,
-        contents,
-        counter,
-        scope.kind === "region" ? scope.region : null,
-      );
+      const region = scope.kind === "region" ? scope.region : null;
+      const placements =
+        countPlacements(this.world, contents, counter, region) +
+        (this.track?.countParts(counter, region) ?? 0);
       return {
         name: EDITOR_WORLD_NAME,
         lod: "standard",
@@ -2464,6 +2472,11 @@ export class Editor implements IEditor, IEditedWorld {
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };
+  }
+
+  async rollingDiagnostics(item: string): Promise<RollingDiagnosticsPanel | null> {
+    const view = await this.catalog.rollingDiagnostics(item);
+    return view === null ? null : rollingDiagnosticsPanel(view);
   }
 
   dump(): EditorDump {

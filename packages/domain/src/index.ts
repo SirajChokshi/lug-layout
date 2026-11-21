@@ -183,6 +183,7 @@ export {
 export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
 export {
   countPlacements,
+  regionHolds,
   type PlacementContents,
   type PlacementRegion,
 } from "./bom/count-placements.ts";

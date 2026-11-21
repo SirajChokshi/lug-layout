@@ -27,6 +27,7 @@ import type {
   BundleManifest,
   BundleModelEntry,
   CatalogPart,
+  RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
   SCENE_BACKEND,
@@ -46,6 +47,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
+import { STUD_LDU } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -69,9 +71,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { commandEnabled, startPlay, type CommandId } from "../commands/editor-commands.ts";
 import { toolHints } from "../commands/tool-hints.ts";
-import type { ImportResult, PlacementListener } from "@brr/import";
+import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@brr/import";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
+  BOM_SERVICE,
   CONNECTOR_TABLES,
   EDITOR,
   MODEL_IMPORTER,
@@ -79,9 +82,10 @@ import {
   TRAIN_PLAY,
   PLACEABLE_CATALOG,
 } from "../tokens.ts";
+import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
-import type { EditorSnapshot, IEditor } from "./editor.ts";
+import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "./editor.ts";
 import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
@@ -255,6 +259,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.loader.loadBricklinkParts(lod);
   }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.loader.loadRollingDiagnostics(lod);
+  }
 }
 
 interface AimedBackend {
@@ -274,13 +282,28 @@ class HeadlessBackend implements ISceneBackend {
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
   readonly farModels = new Map<number, FarModelPlacement>();
+  private readonly detailedMeshes: PartMesh[] = [];
   setPalette(palette: PartPalette): void {
     this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+    this.detailedMeshes.splice(
+      0,
+      this.detailedMeshes.length,
+      ...palette.detailed.parts.map((part) => part.mesh),
+    );
   }
   addParts(parts: ReadonlyArray<PartAsset>): void {
     this.partIds.push(...parts.map((part) => part.id));
+    this.detailedMeshes.push(...parts.map((part) => part.mesh));
   }
-  setPartMeshes(): void {}
+  setPartMeshes(updates: ReadonlyArray<PartMeshUpdate>): void {
+    for (const { index, level, part } of updates) {
+      if (level === "detailed") this.detailedMeshes[index] = part.mesh;
+    }
+  }
+  trianglesOf(partId: string): number {
+    const mesh = this.detailedMeshes[this.partIds.indexOf(partId)];
+    return mesh?.groups.reduce((sum, group) => sum + group.indices.length / 3, 0) ?? 0;
+  }
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
@@ -584,6 +607,60 @@ it("runs Play on the track inside a placed set, with the placed train", async ()
   expect(editor.playSetup()?.models.map((model) => model.name)).toEqual(["10205-1"]);
   expect(started).toMatchObject({ status: "loading", error: null });
 }, 120_000);
+
+const TRACK_STRAIGHT = "ldraw:74746";
+const STRAIGHTS_IN_RUN = 4;
+
+it.each([
+  { scope: "world", regionStraights: null, straights: STRAIGHTS_IN_RUN, brick: 1 },
+  { scope: "region", regionStraights: 2, straights: 2, brick: 0 },
+] as const)(
+  "counts each drawn track piece once in the $scope parts list, beside a user's model, by its part origin",
+  async ({ regionStraights, straights, brick }) => {
+    const userModel = "brick-2x4";
+    const { editor, backend, container, catalog, manifest } = await startEditor(
+      [],
+      new BundleDirectoryFetcher(),
+      [userModel],
+    );
+    const straight = manifest.catalogParts.find((part) => part.id === TRACK_STRAIGHT);
+    const straightLdu = (straight?.trackEnds?.[1]?.xStuds ?? 0) * STUD_LDU;
+    await loadCatalogItem(catalog, `omr:${userModel}`);
+    expect((await placer(editor, backend)(`omr:${userModel}`, 1600, 1600)).placements).toBe(1);
+    editor.chooseItem(TRACK_ITEM_ID);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(STRAIGHTS_IN_RUN * straightLdu, 0);
+    editor.dragMove(0, 0);
+    editor.dragEnd(0, 0, 0);
+    const scope: BomScope =
+      regionStraights === null
+        ? { kind: "world" }
+        : {
+            kind: "region",
+            region: {
+              minX: 0,
+              minZ: -straightLdu,
+              maxX: regionStraights * straightLdu,
+              maxZ: straightLdu,
+            },
+          };
+
+    const bom = await container.get(BOM_SERVICE).billOfMaterials(editor, scope);
+
+    expect(editor.snapshot().track?.pieces).toBe(STRAIGHTS_IN_RUN);
+    expect({ placements: bom.placements, parts: bom.parts, ldraw: bom.ldraw }).toEqual({
+      placements: straights + brick,
+      parts: straights + brick,
+      ldraw: [
+        ...(brick > 0 ? [{ part: "ldraw:3001", ldrawColor: 16, quantity: brick }] : []),
+        { part: TRACK_STRAIGHT, ldrawColor: straight?.displayColor?.ldraw, quantity: straights },
+      ],
+    });
+  },
+  120_000,
+);
 
 it("offers every baseplate and road plate in exactly the produced colours the bundle lists", async () => {
   const { editor, manifest } = await startEditor();
@@ -956,41 +1033,49 @@ it("offers none of the editing commands on a selection in a world another tab ho
 
 const NO_LATTICE_REASON = "no stud lattice from the bake";
 
+function importReport(
+  fileName: string,
+  instanceCount: number,
+  bakeIssue: string | null,
+): ImportResult["report"] {
+  return {
+    fileName,
+    mirror: { repo: "", commit: "", root: "" },
+    lod: "standard",
+    sections: [],
+    instanceCount,
+    drawnInstanceCount: instanceCount,
+    parts: [],
+    inlineParts: [],
+    looseGeometry: [],
+    unknownColors: [],
+    directColors: [],
+    compileRounds: 0,
+    withoutConnectorRecords: [],
+    refusedConnectorRecords: [],
+    bakeRounds: 1,
+    bakeIssue,
+    bakeHelpersFailed: 0,
+    fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
+    records: null,
+    timings: {
+      readMs: 0,
+      resolveMs: 0,
+      bakeMs: 0,
+      totalMs: 0,
+      placementMs: 0,
+      recordFetchMs: 0,
+      compileMs: 0,
+      ldrawFetchMs: 0,
+      bakePhases: null,
+      coverPhases: null,
+    },
+  };
+}
+
 function refusedBake(fileName: string): ImportResult {
   return {
-    report: {
-      fileName,
-      mirror: { repo: "", commit: "", root: "" },
-      lod: "standard",
-      sections: [],
-      instanceCount: 0,
-      drawnInstanceCount: 0,
-      parts: [],
-      inlineParts: [],
-      looseGeometry: [],
-      unknownColors: [],
-      directColors: [],
-      compileRounds: 0,
-      withoutConnectorRecords: [],
-      refusedConnectorRecords: [],
-      bakeRounds: 1,
-      bakeIssue: NO_LATTICE_REASON,
-      bakeHelpersFailed: 0,
-      fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
-      records: null,
-      timings: {
-        readMs: 0,
-        resolveMs: 0,
-        bakeMs: 0,
-        totalMs: 0,
-        placementMs: 0,
-        recordFetchMs: 0,
-        compileMs: 0,
-        ldrawFetchMs: 0,
-        bakePhases: null,
-        coverPhases: null,
-      },
-    },
+    report: importReport(fileName, 0, NO_LATTICE_REASON),
     partIds: [],
     instanceCount: 0,
     partIndex: new Uint32Array(),
@@ -1016,6 +1101,10 @@ class RefusingModelImporter implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return refusedBake(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
@@ -1127,6 +1216,10 @@ class GatedModelImporter implements IModelImporter {
     onPlaced?: PlacementListener,
   ): Promise<ImportResult> {
     return this.importText(fileName, "", lod, onPlaced);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
@@ -1319,6 +1412,103 @@ it("keeps a click queued while the held item's tables load through another impor
     placed: expect.arrayContaining([`${BASEPLATE} 2560,0 y0`]),
   });
   expect(editor.snapshot().placements).toBe(2);
+}, 120_000);
+
+class BakedRecordImporter implements IModelImporter {
+  constructor(private readonly record: ModelRecord) {}
+
+  private imported(fileName: string): ImportResult {
+    const { model, parts } = this.record;
+    return {
+      report: importReport(fileName, model.instanceCount, null),
+      partIds: parts.map((part) => part.id),
+      instanceCount: model.instanceCount,
+      partIndex: Uint32Array.from(model.partIndex),
+      ldrawColor: model.ldrawColor,
+      matrices: model.matrices,
+      partTransforms: model.partTransforms,
+      submodels: model.submodels,
+      compiled: [],
+      connectors: [],
+      bake: {
+        lattice: model.lattice,
+        latticeIssue: null,
+        studCover: model.studCover,
+        cells: model.cells,
+        vehicles: model.vehicles,
+        vehicleIssue: null,
+      },
+    };
+  }
+
+  async importText(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+
+  async importStudio(fileName: string): Promise<ImportResult> {
+    return this.imported(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
+  }
+}
+
+it("draws nothing in place of a part whose mesh fails to load and names it, and counts a part an import brings with its mesh as loaded", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  const baseplatePart = BASEPLATE.split("@")[0] ?? "";
+  const baseplateMesh = (await partMeshPaths("standard")).get(baseplatePart);
+  const userModel = "brick-2x4";
+  const record = await fixtureBundleLoader().loadModelRecord("standard", userModel);
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container
+    .rebind(ASSET_FETCHER)
+    .toConstantValue(
+      new InFlightFetcher(new BundleDirectoryFetcher(), (path) => path === baseplateMesh),
+    );
+  const realLoader = container.get(PART_BUNDLE_LOADER);
+  container.rebind(PART_BUNDLE_LOADER).toConstantValue(new ModelSubsetLoader(realLoader, []));
+  const backend = new HeadlessBackend();
+  container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  container.rebind(WORLD_REPOSITORY).toConstantValue(new MemoryRepository());
+  container.rebind(MODEL_IMPORTER).toConstantValue(new BakedRecordImporter(record));
+  const editor = container.get(EDITOR);
+  const canvas = {
+    clientWidth: 640,
+    clientHeight: 480,
+    dataset: {},
+  } as unknown as HTMLCanvasElement;
+  await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
+  const imported = await editor.importModelFile({
+    name: `${userModel}.ldr`,
+    bytes: new TextEncoder().encode(`0 ${userModel}\n`),
+  });
+  const brick = editor.snapshot().modelImport?.item;
+  if (!imported || !brick) throw new Error(`${userModel} was not imported`);
+  const place = placer(editor, backend);
+
+  expect((await place(BASEPLATE, 0, 0)).placements).toBe(1);
+  expect((await place(brick, 1600, 1600)).placements).toBe(2);
+  await vi.waitFor(() => expect(meshesSettled(editor.snapshot().meshes)).toBe(true));
+
+  const { detailedPartMeshes, undrawnParts } = editor.snapshot().meshes;
+  expect({
+    detailedPartMeshes,
+    undrawnParts,
+    baseplateTriangles: backend.trianglesOf(baseplatePart),
+    brickDrawn: record.parts.map((part) => backend.trianglesOf(part.id) > 0),
+  }).toEqual({
+    detailedPartMeshes: {
+      wanted: 1 + record.parts.length,
+      loaded: record.parts.length,
+      failed: 1,
+      absent: 0,
+    },
+    undrawnParts: [{ part: baseplatePart, reason: "failed" }],
+    baseplateTriangles: 0,
+    brickDrawn: record.parts.map(() => true),
+  });
 }, 120_000);
 
 it("shows only the world that is open: no studs or far models after New World, the placed ones again on reopening", async () => {
@@ -2575,6 +2765,10 @@ class ImporterBringing implements IModelImporter {
 
   async importStudio(fileName: string): Promise<ImportResult> {
     return this.importText(fileName);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    return {};
   }
 }
 
