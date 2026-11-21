@@ -151,7 +151,7 @@ const NO_LOOK: LookSettings = {
 const BASEPLATE = "ldraw:3811@2";
 const USER_BRICK = "brick-2x4";
 const HELD_BRICK = `omr:${USER_BRICK}`;
-const ROAD_T_JUNCTION = "ldraw:44341p02@72";
+const DUAL_CARRIAGEWAY = "ldraw:30225b@72";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -1408,6 +1408,60 @@ function placer(editor: IEditor, backend: AimedBackend) {
   };
 }
 
+it("reads a road plate held over a placed road plate of another thickness as refused, as the click is", async () => {
+  const { editor, backend } = await startEditor([]);
+  await placer(editor, backend)("ldraw:69958@72", 320, 320);
+  await chosen(editor, "ldraw:44336p04@72");
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  expect(editor.snapshot().snap).toMatchObject({ state: "refused", overlappingCells: 256 });
+  editor.click(0, 0, 0);
+  expect(editor.snapshot().placements).toBe(1);
+}, 120_000);
+
+it("refuses a road plate on another road plate's footprint alike by click, fill and move, whatever their tops", async () => {
+  const baseplate = "ldraw:44336p04@72";
+  const plate = "ldraw:69958@72";
+  const withBaseplate = async () => {
+    const started = await startEditor([]);
+    await placer(started.editor, started.backend)(baseplate, 320, 320);
+    return started;
+  };
+
+  const clicking = await withBaseplate();
+  const clicked = await placer(clicking.editor, clicking.backend)(plate, 320, 320);
+
+  const hovering = await withBaseplate();
+  await chosen(hovering.editor, plate);
+  hovering.backend.aim(320, 320);
+  hovering.editor.pointerMove(0, 0);
+  expect(hovering.editor.snapshot().hover).toMatchObject({
+    refusal: expect.stringContaining("road edges"),
+    placement: { accepted: false },
+  });
+
+  const filling = await withBaseplate();
+  await chosen(filling.editor, plate);
+  filling.editor.cycleFillGrid();
+  filling.editor.cycleFillGrid();
+  dragFill(filling.editor, filling.backend, [160, 160], [480, 480]);
+
+  const moving = await withBaseplate();
+  await placer(moving.editor, moving.backend)(plate, 1600, 320);
+  expect(selectAt(moving.editor, moving.backend, 1600, 320)?.item).toBe(plate);
+  moving.editor.moveSelectionTo(16, 16, 0);
+
+  expect({
+    clicked: clicked.placements,
+    filled: filling.editor.snapshot().placements,
+    moved: placedXs(moving.editor),
+  }).toEqual({ clicked: 1, filled: 1, moved: [320, 1600] });
+}, 120_000);
+
+function placedXs(editor: IEditor): ReadonlyArray<number> {
+  return Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
+}
+
 it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
   const { editor, backend } = await startEditor([]);
   await chosen(editor, "ldraw:44336p04@72");
@@ -1496,11 +1550,14 @@ it("refuses to turn a module while a set lifted onto it rests on it, turns the s
 
 it("refuses to turn a placed road plate into a mismatch with its neighbour, the same as placing it there, unless road snap is off", async () => {
   const { editor, backend } = await startEditor([]);
-  const place = placer(editor, backend);
   const straight = "ldraw:44336p04@72";
-  await place(straight, 320, 320);
-  await place(straight, 320, 960);
-  expect(editor.snapshot().roads.mismatchedCells).toBe(0);
+  await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, 320);
+  await chosen(editor, straight);
+  editor.rotate(0, 1);
+  backend.aim(320, 960);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  expect(editor.snapshot()).toMatchObject({ placements: 2, roads: { mismatchedCells: 0 } });
 
   expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
   const turned = turnOutcome(editor, 1);
@@ -1509,18 +1566,20 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   editor.setSnapRoads(false);
   const unsnapped = turnOutcome(editor, 1);
 
+  const refused = {
+    rot: 1,
+    yPlates: 0,
+    refusal: expect.stringContaining("road edges would mismatch"),
+    roadCells: expect.any(Number),
+  };
   expect({ turned, turnedBack, mismatchedWhileRefused, unsnapped }).toEqual({
-    turned: {
-      rot: 0,
-      yPlates: 0,
-      refusal: expect.stringContaining("road edges would mismatch"),
-      roadCells: expect.any(Number),
-    },
-    turnedBack: expect.objectContaining({ rot: 0 }),
+    turned: refused,
+    turnedBack: refused,
     mismatchedWhileRefused: 0,
-    unsnapped: expect.objectContaining({ rot: 1, refusal: null }),
+    unsnapped: expect.objectContaining({ rot: 2, refusal: null }),
   });
   expect(turned.roadCells).toBeGreaterThan(0);
+  expect(editor.snapshot().roads.mismatchedCells).toBeGreaterThan(0);
 }, 120_000);
 
 class OtherTabLocks implements IWorldLocks {
@@ -7110,11 +7169,12 @@ it.each([
   { snapRoads: true, mismatched: false },
   { snapRoads: false, mismatched: true },
 ] as const)(
-  "with road snapping $snapRoads, fills T-junctions so that their own edges mismatch only where a click would allow it",
+  "with road snapping $snapRoads, fills road straights so that their ends mismatch a dual carriageway's end only where a click would allow it",
   async ({ snapRoads, mismatched }) => {
     const { editor, backend } = await startEditor([]);
+    await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, -320);
     editor.setSnapRoads(snapRoads);
-    await chosen(editor, ROAD_T_JUNCTION);
+    await chosen(editor, ROAD_STRAIGHT);
     editor.cycleFillGrid();
     editor.cycleFillGrid();
 
@@ -7122,10 +7182,10 @@ it.each([
     const { lastFill, roads, placements } = editor.snapshot();
 
     expect({
-      refusedSome: (lastFill?.refused ?? 0) > 0,
+      refused: lastFill?.refused ?? 0,
       mismatched: roads.mismatchedCells > 0,
       placements: placements + (lastFill?.refused ?? 0),
-    }).toEqual({ refusedSome: !mismatched, mismatched, placements: 9 });
+    }).toEqual({ refused: mismatched ? 0 : 1, mismatched, placements: 1 + 9 });
   },
   120_000,
 );

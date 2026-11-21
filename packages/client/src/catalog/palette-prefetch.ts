@@ -1,5 +1,6 @@
 import { inject, injectable } from "inversify";
-import { PLACEABLE_CATALOG } from "../tokens.ts";
+import type { IConnectorTables } from "../connect/connector-tables.ts";
+import { CONNECTOR_TABLES, PLACEABLE_CATALOG } from "../tokens.ts";
 import type { IPlaceableCatalog } from "./placeable-catalog.ts";
 
 export interface IPalettePrefetch {
@@ -17,6 +18,7 @@ export class PalettePrefetch implements IPalettePrefetch {
   constructor(
     @inject(PLACEABLE_CATALOG)
     private readonly catalog: Pick<IPlaceableCatalog, "itemRefId" | "load">,
+    @inject(CONNECTOR_TABLES) private readonly tables: Pick<IConnectorTables, "load">,
   ) {}
 
   pointerEnter(id: string): void {
@@ -38,6 +40,10 @@ export class PalettePrefetch implements IPalettePrefetch {
 
   private prefetch(id: string): void {
     const refId = this.catalog.itemRefId(id);
-    if (refId !== null) void this.catalog.load(refId).catch(() => null);
+    if (refId === null) return;
+    void this.catalog
+      .load(refId)
+      .then((placeable) => this.tables.load(placeable))
+      .catch(() => null);
   }
 }
