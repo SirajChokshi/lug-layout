@@ -116,13 +116,91 @@ describe("editor keys and focused controls", () => {
     expect(opened).toEqual(["show-shortcuts", "open-palette"]);
   });
 
-  it("leaves Space to buttons, checkboxes and summaries, and arrows to sliders", () => {
+  it("leaves Space and Enter to buttons, checkboxes and summaries, and arrows to sliders", () => {
     expect(controlTakesKey(element('<input type="checkbox">'), " ")).toBe(true);
     expect(controlTakesKey(element("<button>Go</button>"), " ")).toBe(true);
     expect(controlTakesKey(element("<summary>Road joins</summary>"), " ")).toBe(true);
+    expect(controlTakesKey(element("<button>Go</button>"), "Enter")).toBe(true);
+    expect(controlTakesKey(element('<a href="#about">About</a>'), "Enter")).toBe(true);
     expect(controlTakesKey(element('<input type="range">'), "ArrowLeft")).toBe(true);
     expect(controlTakesKey(element("<button>Go</button>"), "ArrowLeft")).toBe(false);
     expect(controlTakesKey(element("<canvas></canvas>"), " ")).toBe(false);
+    expect(controlTakesKey(element("<canvas></canvas>"), "Enter")).toBe(false);
     expect(controlTakesKey(document.body, " ")).toBe(false);
+    expect(controlTakesKey(document.body, "Enter")).toBe(false);
+  });
+});
+
+function KeysOnly() {
+  const { editor, camera, play, hotbar } = services();
+  function Keys() {
+    useEditorKeys(editor, camera, {
+      play,
+      hotbar,
+      onShellCommand: () => {},
+      overlayOpen: false,
+      closeOverlay: () => {},
+    });
+    return createElement("span", {
+      "data-override": String(editor.snapshot().placementModeOverride),
+    });
+  }
+  return { editor, keys: createElement(Keys) };
+}
+
+function send(type: string, init: KeyboardEventInit): void {
+  document.body.dispatchEvent(
+    new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }),
+  );
+}
+
+function movePointer(init: MouseEventInit): void {
+  document.body.dispatchEvent(new MouseEvent("pointermove", { bubbles: true, ...init }));
+}
+
+describe("holding Alt for the other placement mode", () => {
+  it("flips the mode while Alt is held, never for AltGr, follows the pointer's Alt when a key event was missed, and releases on keyup, blur or unmount", () => {
+    const { editor, keys } = KeysOnly();
+    const { unmount } = render(keys);
+    const held = (): boolean => editor.snapshot().placementModeOverride;
+    send("keydown", { key: "Alt", altKey: true });
+    const altDown = held();
+    movePointer({ altKey: true });
+    const pointerStillAlt = held();
+    send("keyup", { key: "Alt" });
+    const released = held();
+    send("keydown", { key: "AltGraph", altKey: true, ctrlKey: true });
+    movePointer({ altKey: true, ctrlKey: true });
+    const altGraph = held();
+    send("keyup", { key: "AltGraph" });
+    movePointer({ altKey: true });
+    const pointerWithAlt = held();
+    movePointer({ altKey: false });
+    const pointerWithoutAlt = held();
+    send("keydown", { key: "Alt", altKey: true });
+    window.dispatchEvent(new Event("blur"));
+    const blurred = held();
+    send("keydown", { key: "Alt", altKey: true });
+    unmount();
+
+    expect({
+      altDown,
+      pointerStillAlt,
+      released,
+      altGraph,
+      pointerWithAlt,
+      pointerWithoutAlt,
+      blurred,
+      unmounted: held(),
+    }).toEqual({
+      altDown: true,
+      pointerStillAlt: true,
+      released: false,
+      altGraph: false,
+      pointerWithAlt: true,
+      pointerWithoutAlt: false,
+      blurred: false,
+      unmounted: false,
+    });
   });
 });

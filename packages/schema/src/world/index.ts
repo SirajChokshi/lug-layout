@@ -152,58 +152,6 @@ export const WorldName = v.pipe(
 );
 export type WorldName = v.InferOutput<typeof WorldName>;
 
-const WorldManifestFields = v.strictObject(
-  {
-    format: v.literal(WORLD_FORMAT, `must be "${WORLD_FORMAT}"`),
-    schemaVersion: SchemaVersion,
-    name: WorldName,
-    bundleVersion: v.string(),
-    placements: Count,
-    track: Count,
-    shards: v.pipe(
-      v.array(ShardEntryV1),
-      v.check(
-        (entries) => ascendingSuperChunks(entries),
-        "must list super-chunks in strictly ascending order",
-      ),
-    ),
-    view: SavedViewV1,
-    credits: v.literal(CREDITS_FILE, `must be "${CREDITS_FILE}"`),
-    disclaimer: v.pipe(v.string(), v.minLength(1, "is empty")),
-  },
-  strictMessage,
-);
-
-export const WorldManifestV1 = v.pipe(
-  WorldManifestFields,
-  v.forward(
-    v.partialCheck(
-      [["placements"], ["shards"]],
-      (manifest) =>
-        manifest.placements === manifest.shards.reduce((sum, entry) => sum + entry.placements, 0),
-      "must equal the sum of the shards' placements",
-    ),
-    ["placements"],
-  ),
-  v.forward(
-    v.partialCheck(
-      [["track"], ["shards"]],
-      (manifest) => manifest.track === manifest.shards.reduce((sum, entry) => sum + entry.track, 0),
-      "must equal the sum of the shards' track pieces",
-    ),
-    ["track"],
-  ),
-);
-export type WorldManifestV1 = v.InferOutput<typeof WorldManifestV1>;
-
-export const WorldHeader = v.pick(WorldManifestFields, [
-  "name",
-  "bundleVersion",
-  "view",
-  "disclaimer",
-]);
-export type WorldHeader = v.InferOutput<typeof WorldHeader>;
-
 export const PlacementRecordV1 = v.strictObject(
   {
     ref: v.pipe(v.string(), v.regex(CATALOG_REF, "is not a namespaced catalog id")),
@@ -273,6 +221,98 @@ export const TrackRecordV1 = v.strictObject(
 );
 export type TrackRecordV1 = v.InferOutput<typeof TrackRecordV1>;
 
+export const LaidPieceV1 = v.strictObject(
+  {
+    on: v.literal("track"),
+    ref: TrackRecordV1.entries.ref,
+    heading: TrackRecordV1.entries.heading,
+    position: TrackRecordV1.entries.position,
+    yPlates: TrackRecordV1.entries.yPlates,
+  },
+  strictMessage,
+);
+export type LaidPieceV1 = v.InferOutput<typeof LaidPieceV1>;
+
+export const CarriedPieceV1 = v.strictObject(
+  { on: v.literal("model"), ...PlacementRecordV1.entries, piece: Count },
+  strictMessage,
+);
+export type CarriedPieceV1 = v.InferOutput<typeof CarriedPieceV1>;
+
+export const ConsistPieceV1 = v.variant("on", [LaidPieceV1, CarriedPieceV1], (issue) =>
+  issue.received === "undefined" ? "is missing" : `must be "track" or "model"`,
+);
+export type ConsistPieceV1 = v.InferOutput<typeof ConsistPieceV1>;
+
+export const ConsistRecordV1 = v.strictObject(
+  {
+    ref: PlacementRecordV1.entries.ref,
+    color: Count,
+    track: ConsistPieceV1,
+    route: Count,
+    reversed: v.boolean(),
+    offsetLdu: Count,
+  },
+  strictMessage,
+);
+export type ConsistRecordV1 = v.InferOutput<typeof ConsistRecordV1>;
+
+const WorldManifestFields = v.strictObject(
+  {
+    format: v.literal(WORLD_FORMAT, `must be "${WORLD_FORMAT}"`),
+    schemaVersion: SchemaVersion,
+    name: WorldName,
+    bundleVersion: v.string(),
+    placements: Count,
+    track: Count,
+    shards: v.pipe(
+      v.array(ShardEntryV1),
+      v.check(
+        (entries) => ascendingSuperChunks(entries),
+        "must list super-chunks in strictly ascending order",
+      ),
+    ),
+    view: SavedViewV1,
+    credits: v.literal(CREDITS_FILE, `must be "${CREDITS_FILE}"`),
+    disclaimer: v.pipe(v.string(), v.minLength(1, "is empty")),
+    consists: v.exactOptional(
+      v.pipe(v.array(ConsistRecordV1), v.minLength(1, "is empty: leave it out instead")),
+    ),
+  },
+  strictMessage,
+);
+
+export const WorldManifestV1 = v.pipe(
+  WorldManifestFields,
+  v.forward(
+    v.partialCheck(
+      [["placements"], ["shards"]],
+      (manifest) =>
+        manifest.placements === manifest.shards.reduce((sum, entry) => sum + entry.placements, 0),
+      "must equal the sum of the shards' placements",
+    ),
+    ["placements"],
+  ),
+  v.forward(
+    v.partialCheck(
+      [["track"], ["shards"]],
+      (manifest) => manifest.track === manifest.shards.reduce((sum, entry) => sum + entry.track, 0),
+      "must equal the sum of the shards' track pieces",
+    ),
+    ["track"],
+  ),
+);
+export type WorldManifestV1 = v.InferOutput<typeof WorldManifestV1>;
+
+export const WorldHeader = v.pick(WorldManifestFields, [
+  "name",
+  "bundleVersion",
+  "view",
+  "disclaimer",
+  "consists",
+]);
+export type WorldHeader = v.InferOutput<typeof WorldHeader>;
+
 export const WorldShardV1 = v.pipe(
   v.strictObject(
     {
@@ -335,11 +375,14 @@ export interface ImportedFile {
   readonly bytes: Uint8Array;
 }
 
-export type WorldArchive = {
+export type WorldFiles = {
   readonly manifest: WorldManifestV1;
   readonly shards: ReadonlyArray<WorldShardV1>;
-  readonly credits: string;
   readonly imports: ReadonlyArray<ImportedFile>;
+};
+
+export type WorldArchive = WorldFiles & {
+  readonly credits: string;
 };
 
 const SHA256_HEX = /^[0-9a-f]{64}$/u;
@@ -368,13 +411,18 @@ export function parseImportPath(path: string): Pick<ImportedFile, "sha256" | "na
   return sha256 === undefined || name === undefined ? null : { sha256, name };
 }
 
-export function referencedImports(shards: ReadonlyArray<WorldShardV1>): ReadonlySet<string> {
+export function referencedImports(
+  shards: ReadonlyArray<WorldShardV1>,
+  consists: ReadonlyArray<ConsistRecordV1>,
+): ReadonlySet<string> {
   const referenced = new Set<string>();
-  for (const shard of shards) {
-    for (const placement of shard.placements) {
-      const sha256 = importedSha256(placement.ref);
-      if (sha256 !== null) referenced.add(sha256);
-    }
+  const refs = [
+    ...shards.flatMap((shard) => shard.placements.map((placement) => placement.ref)),
+    ...consists.map((consist) => consist.ref),
+  ];
+  for (const ref of refs) {
+    const sha256 = importedSha256(ref);
+    if (sha256 !== null) referenced.add(sha256);
   }
   return referenced;
 }
@@ -501,6 +549,7 @@ export function worldHeader(manifest: WorldManifestV1): WorldHeader {
     bundleVersion: manifest.bundleVersion,
     view: manifest.view,
     disclaimer: manifest.disclaimer,
+    ...(manifest.consists ? { consists: manifest.consists } : {}),
   };
 }
 
@@ -521,6 +570,7 @@ export function worldManifest(
     view: header.view,
     credits: CREDITS_FILE,
     disclaimer: header.disclaimer,
+    ...(header.consists ? { consists: header.consists } : {}),
   };
 }
 
@@ -545,6 +595,17 @@ export function parseJsonText(text: string, path: string): Decoded<unknown> {
 export function readWorldArchive(
   files: ReadonlyMap<string, string>,
 ): Decoded<Omit<WorldArchive, "imports">> {
+  const credits = files.get(CREDITS_FILE);
+  const world = readWorldFiles(new Map([...files].filter(([name]) => name !== CREDITS_FILE)));
+  if (world.ok && credits !== undefined) return { ok: true, value: { ...world.value, credits } };
+  const missingCredits: Issue[] =
+    credits === undefined ? [{ path: CREDITS_FILE, message: "is missing" }] : [];
+  return { ok: false, issues: [...missingCredits, ...(world.ok ? [] : world.issues)] };
+}
+
+export function readWorldFiles(
+  files: ReadonlyMap<string, string>,
+): Decoded<Omit<WorldFiles, "imports">> {
   const manifestText = files.get(MANIFEST_FILE);
   if (manifestText === undefined) {
     return { ok: false, issues: [{ path: MANIFEST_FILE, message: "is missing from the archive" }] };
@@ -553,10 +614,8 @@ export function readWorldArchive(
   if (!manifestJson.ok) return manifestJson;
   const manifest = decode(WorldManifestV1, manifestJson.value, MANIFEST_FILE);
   if (!manifest.ok) return manifest;
-  const credits = files.get(CREDITS_FILE);
   const issues: Issue[] = [];
-  if (credits === undefined) issues.push({ path: CREDITS_FILE, message: "is missing" });
-  const expected = new Set([MANIFEST_FILE, CREDITS_FILE]);
+  const expected = new Set([MANIFEST_FILE]);
   const shards: WorldShardV1[] = [];
   for (const entry of manifest.value.shards) {
     const path = shardPath(entry.superChunk);
@@ -597,8 +656,8 @@ export function readWorldArchive(
     });
   }
   for (const name of files.keys()) {
-    if (!expected.has(name)) issues.push({ path: name, message: "is not part of a world archive" });
+    if (!expected.has(name)) issues.push({ path: name, message: "is not part of a world" });
   }
   if (issues.length > 0) return { ok: false, issues };
-  return { ok: true, value: { manifest: manifest.value, shards, credits: credits ?? "" } };
+  return { ok: true, value: { manifest: manifest.value, shards } };
 }

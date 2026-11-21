@@ -9,6 +9,7 @@ pub const MODEL_ENTRIES: [&str; 2] = ["modelv2.ldr", "model.ldr"];
 const METADATA_ENTRY: &str = "model2.ldr";
 const INFO_ENTRY: &str = ".info";
 const CUSTOM_PARTS_DIRECTORY: &str = "customparts/";
+const CUSTOM_LIBRARY_DIRECTORIES: [&str; 2] = ["parts/", "p/"];
 const PART_FILE_EXTENSION: &str = ".dat";
 const STUDIO_PART_LINE: &str = "11";
 const STUDIO_ONLY_FIELDS: usize = 3;
@@ -26,6 +27,13 @@ pub struct StudioArchive {
     pub unconverted_lines: Vec<usize>,
     pub bricklink_ids: BTreeMap<String, String>,
     pub custom_parts: Vec<String>,
+    pub custom_files: Vec<CustomFile>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CustomFile {
+    pub name: String,
+    pub text: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -126,6 +134,33 @@ fn custom_parts(archive: &ZipArchive) -> Vec<String> {
     parts
 }
 
+fn custom_reference(entry_name: &str) -> Option<String> {
+    let name = entry_name.to_lowercase();
+    let file = name.strip_prefix(CUSTOM_PARTS_DIRECTORY)?;
+    if !file.ends_with(PART_FILE_EXTENSION) {
+        return None;
+    }
+    let reference = CUSTOM_LIBRARY_DIRECTORIES
+        .iter()
+        .find_map(|directory| file.strip_prefix(directory))
+        .unwrap_or(file);
+    Some(normalize_reference(reference))
+}
+
+fn custom_files(archive: &ZipArchive) -> Result<Vec<CustomFile>, StudioError> {
+    let mut files: BTreeMap<String, CustomFile> = BTreeMap::new();
+    for entry in archive.entries() {
+        let Some(name) = custom_reference(&entry.name) else {
+            continue;
+        };
+        let text = text(&archive.read(&entry.name).map_err(StudioError::NotZip)?);
+        files
+            .entry(name.clone())
+            .or_insert(CustomFile { name, text });
+    }
+    Ok(files.into_values().collect())
+}
+
 fn studio_version(archive: &ZipArchive) -> Option<String> {
     let info: Value = serde_json::from_str(&text(&archive.read(INFO_ENTRY).ok()?)).ok()?;
     info["version"].as_str().map(str::to_string)
@@ -156,6 +191,7 @@ pub fn read_io(bytes: &[u8]) -> Result<StudioArchive, StudioError> {
         unconverted_lines,
         bricklink_ids: bricklink_ids(&metadata),
         custom_parts: custom_parts(&archive),
+        custom_files: custom_files(&archive)?,
     })
 }
 
@@ -249,6 +285,19 @@ mod tests {
         assert_eq!(read.entry, "model.ldr");
         assert_eq!(read.converted_lines, 0);
         assert_eq!(read.custom_parts, vec!["legleft.dat".to_string()]);
+        assert_eq!(
+            read.custom_files,
+            vec![
+                CustomFile {
+                    name: "legleft.dat".to_string(),
+                    text: "0 custom\n".to_string()
+                },
+                CustomFile {
+                    name: "s/legs01.dat".to_string(),
+                    text: "0 sub\n".to_string()
+                },
+            ]
+        );
     }
 
     #[test]

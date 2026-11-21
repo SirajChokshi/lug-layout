@@ -28,7 +28,8 @@ class IssueBoxBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
@@ -39,6 +40,8 @@ class IssueBoxBackend implements ISceneBackend {
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.issueBoxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}

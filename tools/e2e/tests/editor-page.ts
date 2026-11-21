@@ -61,6 +61,20 @@ export interface TrackEnd {
   readonly heading: number;
 }
 
+export interface LaidTrackPiece {
+  readonly index: number;
+  readonly ref: string;
+  readonly heading: number;
+  readonly position: ReadonlyArray<string>;
+  readonly yPlates: number;
+}
+
+export interface TrackChoice {
+  readonly kind: string;
+  readonly pieces: number;
+  readonly joins: boolean;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -109,14 +123,38 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface TrackRoute {
+  readonly from: TrackEnd;
+  readonly to: TrackEnd;
+}
+
+export interface CrossingRamp {
+  readonly part: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly studMates: number;
+}
+
+export interface LevelCrossing {
+  readonly tracks: ReadonlyArray<number>;
+  readonly roads: ReadonlyArray<number>;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRamp>;
+}
+
 interface EditState {
   readonly world: {
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
+    readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
     readonly studChecks: number;
+    readonly crossings: ReadonlyArray<LevelCrossing>;
   };
+  readonly routes: ReadonlyArray<TrackRoute>;
 }
 
 interface PlanState {
@@ -136,6 +174,22 @@ export function isStudAligned(ldu: number): boolean {
 
 export function byPosition(a: Pose, b: Pose): number {
   return a.x - b.x || a.z - b.z || a.yPlates - b.yPlates;
+}
+
+export async function startEmpty(page: Page): Promise<void> {
+  const welcome = page.locator(".welcome");
+  if ((await welcome.count()) === 0) return;
+  await welcome.locator('[data-action="start-empty"]').click();
+  await expect(welcome).toHaveCount(0);
+}
+
+const Z_COEFFICIENT = 4;
+
+export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz: number): string[] {
+  return position.map((coefficient, k) => {
+    const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
+    return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
+  });
 }
 
 export class EditorPage {
@@ -163,6 +217,7 @@ export class EditorPage {
     expect(await editor.root.getAttribute("data-status"), [...shown, ...errors].join("\n")).toBe(
       "ready",
     );
+    await startEmpty(page);
     return editor;
   }
 
@@ -293,6 +348,14 @@ export class EditorPage {
         { message: "the camera's view holds still across consecutive frames" },
       )
       .toBe(true);
+  }
+
+  async goTo(target: LatticePoint): Promise<void> {
+    await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
+    await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
+    await this.page.getByRole("button", { name: "Go to x, z" }).click();
+    await this.settle();
+    this.forgetView();
   }
 
   async zoom(wheelDelta: number): Promise<void> {
@@ -443,6 +506,60 @@ export class EditorPage {
     return this.trackCounts();
   }
 
+  async strokeTrack(points: ReadonlyArray<LatticePoint>): Promise<TrackCounts> {
+    const [first, ...rest] = points;
+    if (!first) throw new Error("a stroke has at least one point");
+    const start = await this.screenOf(first);
+    const map = await this.groundMap();
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (const point of rest) {
+      const at = map.screenOf(point.x, point.z);
+      await this.page.mouse.move(at.sx, at.sy);
+    }
+    await this.page.mouse.up();
+    await this.settle();
+    return this.trackCounts();
+  }
+
+  async toolHint(): Promise<string> {
+    return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
+  async dragFrom(from: LatticePoint, ...through: ReadonlyArray<LatticePoint>): Promise<void> {
+    const points = [await this.screenOf(from)];
+    for (const target of through) points.push(await this.screenOf(target));
+    const [start] = points;
+    if (!start) throw new Error("a drag needs a start");
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (let leg = 1; leg < points.length; leg++) {
+      const a = points[leg - 1] ?? start;
+      const b = points[leg] ?? start;
+      for (let step = 1; step <= DRAG_STEPS; step++) {
+        const t = step / DRAG_STEPS;
+        await this.page.mouse.move(a.sx + (b.sx - a.sx) * t, a.sy + (b.sy - a.sy) * t);
+      }
+    }
+    await this.settle();
+    await this.page.mouse.up();
+    await this.settle();
+  }
+
+  async shiftClickAt(target: LatticePoint): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.keyboard.down("Shift");
+    await this.page.mouse.click(point.sx, point.sy);
+    await this.page.keyboard.up("Shift");
+    await this.settle();
+  }
+
+  async selectionCount(): Promise<number> {
+    return Number(await this.root.getAttribute("data-selection-count"));
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>
@@ -452,6 +569,16 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async trackChoice(): Promise<TrackChoice | null> {
+    const strip = this.page.locator("section.track-extend-panel .track-extend");
+    if ((await strip.count()) === 0) return null;
+    return {
+      kind: (await strip.getAttribute("data-choice")) ?? "",
+      pieces: Number(await strip.getAttribute("data-choice-pieces")),
+      joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
   }
 
@@ -513,7 +640,10 @@ export class EditorPage {
 
   async importModel(file: string): Promise<ModelImport> {
     await this.page.locator("input.model-file-import").setInputFiles(file);
-    const name = basename(file);
+    return this.importOutcome(basename(file));
+  }
+
+  private async importOutcome(name: string): Promise<ModelImport> {
     const status = this.page.locator(
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
@@ -523,6 +653,33 @@ export class EditorPage {
       item: (await status.getAttribute("data-item")) ?? "",
       text: (await status.locator("p").first().textContent()) ?? "",
     };
+  }
+
+  async searchPalette(query: string): Promise<void> {
+    await this.page.locator(".palette-search").fill(query);
+    await expect(this.page.locator(".palette-library")).toHaveAttribute(
+      "data-library-status",
+      "ready",
+      { timeout: READY_TIMEOUT_MS },
+    );
+  }
+
+  async libraryParts(): Promise<ReadonlyArray<string>> {
+    return this.page
+      .locator(".palette-library [data-library-part]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-library-part") ?? ""));
+  }
+
+  async pickLibraryPart(part: string, color: number): Promise<ModelImport> {
+    const swatch = this.page.locator(`.palette-library [data-library-item="${part}@${color}"]`);
+    const partInColor = await swatch.getAttribute("aria-label");
+    if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
+    await swatch.click();
+    return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async refs(): Promise<ReadonlyArray<string>> {
+    return (await this.editState()).world.refs;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {
@@ -543,8 +700,30 @@ export class EditorPage {
       .toSorted(byPosition);
   }
 
+  async crossings(): Promise<ReadonlyArray<LevelCrossing>> {
+    return (await this.editState()).world.crossings;
+  }
+
+  async unsupportedTrack(): Promise<number> {
+    const panel = this.page.locator("section.track-panel");
+    await expect(panel).not.toHaveAttribute("data-unsupported", "");
+    return Number(await panel.getAttribute("data-unsupported"));
+  }
+
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
+  }
+
+  async trackRoutes(): Promise<ReadonlyArray<TrackRoute>> {
+    return (await this.editState()).routes;
+  }
+
+  async trainsOnRails(): Promise<number> {
+    return Number(await this.page.locator("section.play-panel").getAttribute("data-trains"));
+  }
+
+  async laidTrack(): Promise<ReadonlyArray<LaidTrackPiece>> {
+    return (await this.editState()).world.laidTrack;
   }
 
   private async planState(): Promise<PlanState> {
@@ -574,6 +753,13 @@ export class EditorPage {
   ): Promise<number> {
     return Number(await this.root.getAttribute(`data-${name}`));
   }
+}
+
+export function routeMiddle(route: TrackRoute): LatticePoint {
+  return {
+    x: Math.round((route.from.xLdu + route.to.xLdu) / 2 / STUD) * STUD,
+    z: Math.round((route.from.zLdu + route.to.zLdu) / 2 / STUD) * STUD,
+  };
 }
 
 export function nearestLattice(end: TrackEnd): LatticePoint {

@@ -9,6 +9,8 @@ use super::{
 
 const FREE_AXIS: i64 = -1;
 
+pub const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TierRecord {
     pub faces: Vec<MatingFace>,
