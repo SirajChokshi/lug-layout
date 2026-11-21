@@ -13,6 +13,7 @@ import {
   UNDECIDED,
   type PlanIssue,
 } from "./plan-rules.ts";
+import { MODEL_SEGMENT, PlanRows } from "./plan-rows.ts";
 
 const CLASS_FLOOR = 500;
 const WITNESS_FAMILY = 50;
@@ -502,6 +503,7 @@ function region(next: () => number): PlanRegion {
       })),
     },
     maxOverhangMm: next() < 0.1 ? -int(50) : int(200),
+    maxReachMm: next() < 0.1 ? -int(50) + 0.5 : int(1500),
   };
 }
 
@@ -528,15 +530,16 @@ describe("placementIssueCount", () => {
         const ctx = regionContext(plan);
         for (let b = 0; b < 40; b++) {
           const box = placementBox(next, plan);
-          const row = new Float64Array(BOX_STRIDE * 2);
-          row.set(boxRow(box), BOX_STRIDE);
+          const rows = new PlanRows();
+          const row = rows.add(MODEL_SEGMENT, b);
+          rows.box.set(boxRow(box), row * BOX_STRIDE);
           const issues: PlanIssue[] = [];
           placementIssues(
             ctx,
             { key: { chunkKey: 0, slot: b }, ref: "ref", label: "box", box: rect(box) },
             issues,
           );
-          expect(placementIssueCount(ctx, row, BOX_STRIDE, scratch)).toBe(issues.length);
+          expect(placementIssueCount(ctx, rows, row, scratch)).toBe(issues.length);
           if (issues.length > 0) flagged++;
         }
       }

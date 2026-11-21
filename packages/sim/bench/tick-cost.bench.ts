@@ -1,4 +1,16 @@
-import { NO_SWITCH, TrackGraph, TrackLayout } from "@brr/domain";
+import {
+  NO_SWITCH,
+  TrackGraph,
+  TrackLayout,
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  simTrackFromGraph,
+  type SimPathSegment,
+  type SimRoute,
+  type SimTrack,
+  type VehicleGeometry,
+} from "@brr/domain";
 import { HALF_TURN_16, pose16, POSE16_IDENTITY, STUD_LDU, ZETA16_ORDER, zeta16 } from "@brr/math";
 import { spawnSync } from "node:child_process";
 import { cpus } from "node:os";
@@ -6,17 +18,7 @@ import { PerformanceObserver, performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { getHeapSpaceStatistics } from "node:v8";
 import { createSimSession } from "../src/create-sim-session.ts";
-import { simTrackFromGraph } from "../src/graph-track.ts";
-import type { SimPathSegment } from "../src/route-geometry.ts";
-import type { VehicleGeometry } from "../src/running-gear.ts";
 import type { SimTrainLoad } from "../src/sim-session.ts";
-import {
-  buildSimTrack,
-  forwardEdge,
-  backwardEdge,
-  type SimRoute,
-  type SimTrack,
-} from "../src/sim-track.ts";
 import { SIM_TICK_HZ, type Simulation, type TrainSpec } from "../src/simulation.ts";
 
 const RING_PIECES = 64;
