@@ -27,6 +27,10 @@ import {
 import type { Placeable } from "./placeable.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 
+export interface RoadNeighbourhood {
+  near(area: WorldBox, roads: PlacedModel[], others: PlacedModel[]): void;
+}
+
 export type RoadTileProblem = "no-piece" | "other-family" | "mismatch" | "overlap";
 
 export interface RoadKitView {
@@ -150,6 +154,8 @@ export class RoadDrawing {
   private dragging = false;
   private evaluated: Evaluated | null = null;
   private readonly groundUnder = new Map<PlacementRef, PlacementPose>();
+  private readonly nearRoads: PlacedModel[] = [];
+  private readonly nearOthers: PlacedModel[] = [];
   preferredRot = 0;
   erasing = false;
 
@@ -215,16 +221,11 @@ export class RoadDrawing {
     this.evaluated = null;
   }
 
-  hover(
-    x: number,
-    z: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadPreview | null {
+  hover(x: number, z: number, neighbours: RoadNeighbourhood): RoadPreview | null {
     if (this.dragging) return null;
     const { phaseX, phaseZ } = this;
     const previous = this.path[0];
-    this.choosePhase(x, z, [...roads, ...others]);
+    this.choosePhase(x, z, neighbours);
     const tile = this.tileAt(x, z);
     const unchanged =
       this.evaluated !== null &&
@@ -235,36 +236,26 @@ export class RoadDrawing {
       phaseZ === this.phaseZ;
     if (unchanged) return null;
     this.path = [tile];
-    return this.evaluate(roads, others);
+    return this.evaluate(neighbours);
   }
 
   worldChanged(): void {
     this.evaluated = null;
   }
 
-  begin(
-    x: number,
-    z: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadPreview | null {
-    this.choosePhase(x, z, [...roads, ...others]);
+  begin(x: number, z: number, neighbours: RoadNeighbourhood): RoadPreview | null {
+    this.choosePhase(x, z, neighbours);
     this.dragging = true;
     this.path = [this.tileAt(x, z)];
-    return this.evaluate(roads, others);
+    return this.evaluate(neighbours);
   }
 
-  move(
-    x: number,
-    z: number,
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadPreview | null {
+  move(x: number, z: number, neighbours: RoadNeighbourhood): RoadPreview | null {
     if (!this.dragging) return null;
     const before = this.path;
     this.extend(x, z);
     if (this.path === before && this.evaluated) return null;
-    return this.evaluate(roads, others);
+    return this.evaluate(neighbours);
   }
 
   extend(x: number, z: number): void {
@@ -273,15 +264,12 @@ export class RoadDrawing {
     this.path = extendRoadPath(this.path, tile.ix, tile.iz);
   }
 
-  rerun(roads: ReadonlyArray<PlacedModel>, others: ReadonlyArray<PlacedModel>): RoadPreview | null {
+  rerun(neighbours: RoadNeighbourhood): RoadPreview | null {
     if (this.path.length === 0) return null;
-    return this.evaluate(roads, others);
+    return this.evaluate(neighbours);
   }
 
-  end(
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): {
+  end(neighbours: RoadNeighbourhood): {
     readonly requests: ReadonlyArray<PlacementRequest>;
     readonly view: RoadStrokeView;
   } | null {
@@ -289,7 +277,7 @@ export class RoadDrawing {
       this.cancel();
       return null;
     }
-    this.evaluate(roads, others);
+    this.evaluate(neighbours);
     const evaluated = this.evaluated;
     this.cancel();
     if (!evaluated) return null;
@@ -338,9 +326,11 @@ export class RoadDrawing {
     return placeable.road === null && placeable.flatTopSixteenths === kit.edgeTopSixteenths;
   }
 
-  private choosePhase(x: number, z: number, models: ReadonlyArray<PlacedModel>): void {
+  private choosePhase(x: number, z: number, neighbours: RoadNeighbourhood): void {
     const tileLdu = this.entry().kit.tileLdu;
-    const under = models.find(
+    const point = { minX: x, maxX: x, minY: 0, maxY: 0, minZ: z, maxZ: z };
+    neighbours.near(point, this.nearRoads, this.nearOthers);
+    const under = [...this.nearRoads, ...this.nearOthers].find(
       (model) =>
         (this.compatible(model) || this.isGround(model)) &&
         x >= model.box.minX &&
@@ -413,10 +403,34 @@ export class RoadDrawing {
     return tiles;
   }
 
-  private evaluate(
-    roads: ReadonlyArray<PlacedModel>,
-    others: ReadonlyArray<PlacedModel>,
-  ): RoadPreview {
+  private strokeReach(): WorldBox {
+    const tileLdu = this.entry().kit.tileLdu;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minZ = Number.POSITIVE_INFINITY;
+    let maxZ = Number.NEGATIVE_INFINITY;
+    for (const tile of this.path) {
+      const [x, z] = this.centre(tile);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    const reach = 1.5 * tileLdu;
+    return {
+      minX: minX - reach,
+      maxX: maxX + reach,
+      minY: 0,
+      maxY: 0,
+      minZ: minZ - reach,
+      maxZ: maxZ + reach,
+    };
+  }
+
+  private evaluate(neighbours: RoadNeighbourhood): RoadPreview {
+    const roads = this.nearRoads;
+    const others = this.nearOthers;
+    neighbours.near(this.strokeReach(), roads, others);
     const { kit, view } = this.entry();
     const existing = this.existingTiles(roads);
     const ground = this.groundTiles([...roads, ...others]);

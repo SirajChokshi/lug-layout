@@ -322,7 +322,9 @@ it("finds the highest part top over a point, the parts meeting a plan rectangle 
         }
       }
       const at = `model ${model.id} at ${x}, ${z} ± ${span}`;
-      expect({ at, top: model.topOver(x, z), meets: model.meetsInPlan(rect) }).toEqual({
+      const highest = Float64Array.of(Number.NEGATIVE_INFINITY);
+      model.raiseToTopOver(x, z, highest);
+      expect({ at, top: highest[0], meets: model.meetsInPlan(rect) }).toEqual({
         at,
         top,
         meets,

@@ -59,7 +59,7 @@ export interface PlacedModel {
   aimedTop(ray: Float64Array, groundX: number, groundZ: number, out: Float64Array): boolean;
   worldPartBoxes(): Float64Array;
   writeWorldPartBoxes(out: Float64Array): number;
-  topOver(x: number, z: number): number;
+  raiseToTopOver(x: number, z: number, highest: Float64Array): void;
   meetsInPlan(box: WorldBox): boolean;
 }
 
@@ -830,17 +830,15 @@ class PlacedEntry implements PlacedModel {
     return found;
   }
 
-  topOver(x: number, z: number): number {
+  raiseToTopOver(x: number, z: number, highest: Float64Array): void {
     const own = this.box;
-    if (x < own.minX || x > own.maxX || z < own.minZ || z > own.maxZ) {
-      return Number.NEGATIVE_INFINITY;
-    }
+    if (x < own.minX || x > own.maxX || z < own.minZ || z > own.maxZ) return;
     const boxes = this.placeable.partBoxes;
     const grid = partGridOf(boxes);
     const localX = this.localX(x, z);
     const localZ = this.localZ(x, z);
     const { cos, sin } = this;
-    let top = Number.NEGATIVE_INFINITY;
+    let top = highest[0] ?? Number.NEGATIVE_INFINITY;
     const lastRow = grid.lastRow(localZ);
     const lastColumn = grid.lastColumn(localX);
     for (let row = grid.firstRow(localZ); row <= lastRow; row++) {
@@ -865,7 +863,7 @@ class PlacedEntry implements PlacedModel {
         }
       }
     }
-    return top;
+    highest[0] = top;
   }
 
   meetsInPlan(box: WorldBox): boolean {
@@ -1062,7 +1060,7 @@ export class PlacedChunks {
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byAntiStudChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
-  private readonly byBoxChunk = new Map<number, Set<PlacedEntry>>();
+  private readonly byBoxChunk = new Map<number, Map<number, PlacedEntry[]>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private nextId = 0;
@@ -1188,8 +1186,10 @@ export class PlacedChunks {
     const z1 = chunkOf(box.maxZ);
     for (let cz = chunkOf(box.minZ); cz <= z1; cz++) {
       for (let cx = chunkOf(box.minX); cx <= x1; cx++) {
-        for (const entry of this.byBoxChunk.get(chunkKey(cx, cz)) ?? NO_ENTRIES) {
-          if (entry.touchedIn === epoch) continue;
+        const entries = this.byBoxChunk.get(cx)?.get(cz) ?? NO_ENTRIES;
+        for (let e = 0; e < entries.length; e++) {
+          const entry = entries[e];
+          if (!entry || entry.touchedIn === epoch) continue;
           entry.touchedIn = epoch;
           const other = entry.box;
           if (
@@ -1298,16 +1298,25 @@ export class PlacedChunks {
       if (chunks.hasAntiStudFootprint(row)) addTo(this.byAntiStudChunk, key, entry);
       if (chunks.hasColumns(row)) addTo(this.byColumnChunk, key, entry);
     }
-    this.forBoxChunks(entry, (key) => addTo(this.byBoxChunk, key, entry));
+    this.forBoxChunks(entry, (cx, cz) => {
+      let column = this.byBoxChunk.get(cx);
+      if (!column) {
+        column = new Map();
+        this.byBoxChunk.set(cx, column);
+      }
+      const models = column.get(cz);
+      if (models) models.push(entry);
+      else column.set(cz, [entry]);
+    });
     return entry;
   }
 
-  private forBoxChunks(entry: PlacedEntry, visit: (key: number) => void): void {
+  private forBoxChunks(entry: PlacedEntry, visit: (chunkX: number, chunkZ: number) => void): void {
     const { box } = entry;
     const x1 = chunkOf(box.maxX);
     const z1 = chunkOf(box.maxZ);
     for (let cz = chunkOf(box.minZ); cz <= z1; cz++) {
-      for (let cx = chunkOf(box.minX); cx <= x1; cx++) visit(chunkKey(cx, cz));
+      for (let cx = chunkOf(box.minX); cx <= x1; cx++) visit(cx, cz);
     }
   }
 
@@ -1326,10 +1335,15 @@ export class PlacedChunks {
       this.byAntiStudChunk.get(key)?.delete(entry);
       this.byColumnChunk.get(key)?.delete(entry);
     }
-    this.forBoxChunks(entry, (key) => {
-      const models = this.byBoxChunk.get(key);
-      models?.delete(entry);
-      if (models?.size === 0) this.byBoxChunk.delete(key);
+    this.forBoxChunks(entry, (cx, cz) => {
+      const column = this.byBoxChunk.get(cx);
+      const models = column?.get(cz);
+      const at = models?.indexOf(entry) ?? -1;
+      if (!column || !models || at < 0) return;
+      models.splice(at, 1);
+      if (models.length > 0) return;
+      column.delete(cz);
+      if (column.size === 0) this.byBoxChunk.delete(cx);
     });
     return entry;
   }

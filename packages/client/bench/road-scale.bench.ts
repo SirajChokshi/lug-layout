@@ -10,6 +10,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
+import { Session } from "node:inspector/promises";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
@@ -28,6 +29,16 @@ const HOVER_CALLS = Number(process.env["HOVER_CALLS"] ?? 400);
 const SETS = Number(process.env["SETS"] ?? 4);
 const SET_ITEM = "omr:10185-1";
 const STROKE_CALLS = 120;
+const GATE_WARMUP = 400;
+const GATE_MOVES = 100;
+const GATE_WINDOWS = 3;
+const SAMPLING_BYTES = 64;
+const PER_TILE_CHECK = "checkPlacement";
+const ROAD_AND_TRACK_CHECKS: ReadonlyArray<string> = [
+  "restingYPlatesAt",
+  "roadOverlap",
+  "modelTrackBlock",
+];
 const WARMUP = 40;
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -316,6 +327,112 @@ async function fill(
   editor.cancelGesture();
 }
 
+interface ProfileNode {
+  readonly id: number;
+  readonly callFrame: { readonly functionName: string };
+  readonly children: ReadonlyArray<ProfileNode>;
+}
+
+interface Sample {
+  readonly size: number;
+  readonly nodeId: number;
+}
+
+function nodesUnder(
+  node: ProfileNode,
+  frames: ReadonlyArray<string>,
+  inside: boolean,
+  out: Set<number>,
+): void {
+  const within = inside || frames.includes(node.callFrame.functionName);
+  if (within) out.add(node.id);
+  for (const child of node.children) nodesUnder(child, frames, within, out);
+}
+
+function nodesWithin(node: ProfileNode, outer: string, out: Set<number>): void {
+  if (node.callFrame.functionName === outer) {
+    nodesUnder(node, ROAD_AND_TRACK_CHECKS, false, out);
+    return;
+  }
+  for (const child of node.children) nodesWithin(child, outer, out);
+}
+
+interface Gate {
+  readonly name: string;
+  readonly gated: number;
+  readonly checks: number;
+  readonly wholeMove: number;
+}
+const gates: Gate[] = [];
+
+const editorMethods: object = Object.getPrototypeOf(editor);
+for (const frame of [PER_TILE_CHECK, ...ROAD_AND_TRACK_CHECKS]) {
+  if (typeof Reflect.get(editorMethods, frame) !== "function") {
+    throw new Error(`the allocation gate watches ${frame}, which the editor no longer has`);
+  }
+}
+
+async function sampledWindow(name: string, flip: (i: number) => void): Promise<Gate> {
+  const session = new Session();
+  session.connect();
+  await session.post("HeapProfiler.enable");
+  await session.post("HeapProfiler.startSampling", {
+    samplingInterval: SAMPLING_BYTES,
+    includeObjectsCollectedByMajorGC: true,
+    includeObjectsCollectedByMinorGC: true,
+  });
+  for (let i = 0; i < GATE_MOVES; i++) flip(i);
+  const stopped: unknown = await session.post("HeapProfiler.stopSampling");
+  const { profile } = stopped as {
+    readonly profile: { readonly head: ProfileNode; readonly samples: ReadonlyArray<Sample> };
+  };
+  session.disconnect();
+  const gatedNodes = new Set<number>();
+  nodesWithin(profile.head, PER_TILE_CHECK, gatedNodes);
+  const checkNodes = new Set<number>();
+  nodesUnder(profile.head, [PER_TILE_CHECK], false, checkNodes);
+  let gated = 0;
+  let checks = 0;
+  let whole = 0;
+  for (const sample of profile.samples) {
+    whole += sample.size;
+    if (gatedNodes.has(sample.nodeId)) gated += sample.size;
+    if (checkNodes.has(sample.nodeId)) checks += sample.size;
+  }
+  return {
+    name,
+    gated: gated / GATE_MOVES,
+    checks: checks / GATE_MOVES,
+    wholeMove: whole / GATE_MOVES,
+  };
+}
+
+async function sampledFillBytes(
+  name: string,
+  side: number,
+  pressX: number,
+  pressZ: number,
+): Promise<Gate> {
+  await hold(ITEM);
+  const reach = grid * STUD_LDU * side - STUD_LDU;
+  move(pressX, pressZ);
+  editor.dragStart(0, 0);
+  const flip = (i: number) => {
+    const sign = i % 2 === 0 ? 1 : -1;
+    move(pressX + sign * reach, pressZ + sign * reach);
+    editor.dragMove(0, 0);
+  };
+  for (let i = 0; i < GATE_WARMUP; i++) flip(i);
+  let cleanest: Gate | null = null;
+  for (let window = 0; window < GATE_WINDOWS; window++) {
+    const sampled = await sampledWindow(name, flip);
+    if (!cleanest || sampled.gated < cleanest.gated) cleanest = sampled;
+  }
+  editor.cancelGesture();
+  if (!cleanest) throw new Error(`${name}: no window was sampled`);
+  return cleanest;
+}
+
 const fieldCorner = { x: minX - TILE / 2 + half * TILE, z: minZ - TILE / 2 + half * TILE };
 await fill(
   "fill preview: 4 x 4 road plates inside the field (16 tiles)",
@@ -338,6 +455,27 @@ await fill(
   minZ - TILE / 2 + half * TILE,
   60,
 );
+
+const accepted = await sampledFillBytes(
+  "fill move: 8 x 8 road plates on empty ground",
+  8,
+  minX - TILE / 2 - 9 * TILE,
+  minZ - TILE / 2 + half * TILE,
+);
+const refusedTiles = await sampledFillBytes(
+  "fill move: 4 x 4 road plates inside the field, every tile refused",
+  4,
+  fieldCorner.x,
+  fieldCorner.z,
+);
+gates.push(accepted, refusedTiles);
+for (const gate of gates) {
+  if (gate.gated > 0) {
+    throw new Error(
+      `${gate.name}: the per-tile road and track checks allocate ${gate.gated} bytes per move; the gate is 0`,
+    );
+  }
+}
 
 async function groupMove(
   name: string,
@@ -424,6 +562,15 @@ process.stdout.write(
     ...rows.map(
       (r) =>
         `| ${r.name} | ${r.calls} | ${r.medianUs.toFixed(0)} | ${r.p95Us.toFixed(0)} | ${r.meanUs.toFixed(0)} | ${Number.isNaN(r.bytesPerCall) ? "NaN" : Math.round(r.bytesPerCall)} | ${r.gcs} | ${r.note} |`,
+    ),
+    "",
+    `Allocation gate, sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves; the cleanest of ${GATE_WINDOWS} windows, so a deoptimisation inside one window doesn't fail it, while an allocation made on every move shows in all of them. Road and track checks: ${ROAD_AND_TRACK_CHECKS.join(", ")} inside ${PER_TILE_CHECK}, gated at 0. Per-tile checks: everything under ${PER_TILE_CHECK}, the placement solver included.`,
+    "",
+    "| Row | Bytes per move, road and track checks (gate 0) | Bytes per move, per-tile checks | Bytes per move, whole move |",
+    "|---|---:|---:|---:|",
+    ...gates.map(
+      (g) =>
+        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.checks)} | ${Math.round(g.wholeMove)} |`,
     ),
     "",
   ].join("\n"),

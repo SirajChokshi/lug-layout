@@ -32,7 +32,7 @@ export interface RoadSnap {
 }
 
 const QUARTER_TURNS = 4;
-const NO_SURFACE: RoadSurface = {
+export const NO_ROAD_SURFACE: RoadSurface = {
   minX: 0,
   minZ: 0,
   columns: 0,
@@ -49,7 +49,20 @@ function cornerStep(count: number): number {
   return Math.max(1, count - 1);
 }
 
+interface MutableExtent {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+}
+
+const heldExtent: MutableExtent = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+
 export function cellExtent(placement: RoadPlacement): CellExtent {
+  return cellExtentInto(placement, { minX: 0, maxX: 0, minZ: 0, maxZ: 0 });
+}
+
+function cellExtentInto(placement: RoadPlacement, out: MutableExtent): CellExtent {
   const { surface, rot } = placement;
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
   const cos = rot90Cos(rot);
@@ -70,7 +83,11 @@ export function cellExtent(placement: RoadPlacement): CellExtent {
       maxZ = Math.max(maxZ, centreZ + HALF_STUD_LDU);
     }
   }
-  return { minX, maxX, minZ, maxZ };
+  out.minX = minX;
+  out.maxX = maxX;
+  out.minZ = minZ;
+  out.maxZ = maxZ;
+  return out;
 }
 
 function stepsBetween(from: number, to: number): number {
@@ -301,7 +318,7 @@ export function overlapsPlacedRoad(roads: PlacedRoads, held: RoadPlacement): boo
 function overlappingRoadCells(roads: PlacedRoads, held: RoadPlacement, enough: number): number {
   const { surface, rot } = held;
   if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
-  const candidates = reachablePlacements(roads, cellExtent(held));
+  const candidates = reachablePlacements(roads, cellExtentInto(held, heldExtent));
   if (candidates === 0) return 0;
   const cos = rot90Cos(rot);
   const sin = rot90Sin(rot);
@@ -324,28 +341,11 @@ function overlappingRoadCells(roads: PlacedRoads, held: RoadPlacement, enough: n
   return overlapping;
 }
 
-export function roadsWithin(roads: PlacedRoads, area: CellExtent): PlacedRoads {
-  const placements: RoadPlacement[] = [];
-  const count = roads.index.near(area.minX, area.maxX, area.minZ, area.maxZ, nearScratch);
-  const seen = new Set<number>();
-  for (let n = 0; n < count; n++) {
-    const p = nearScratch[n] ?? 0;
-    const placement = roads.placements[p];
-    const extent = roads.extents[p];
-    if (!placement || !extent || seen.has(p)) continue;
-    seen.add(p);
-    if (extentsOverlap(extent, area.minX, area.maxX, area.minZ, area.maxZ)) {
-      placements.push(placement);
-    }
-  }
-  return placedRoads(roads.network, placements);
-}
-
 export interface RestingHeights {
   restingYLdu(x: number, z: number, rot: number): number;
 }
 
-interface ProbePlacement {
+export interface ProbedRoad {
   id: number;
   x: number;
   z: number;
@@ -472,7 +472,7 @@ function worldRun(placed: RoadPlacement, run: OpenRun, out: WorldRun): void {
   out.to = out.acrossX ? Math.max(fromZ, toZ) : Math.max(fromX, toX);
 }
 
-const snapProbe: ProbePlacement = { id: -1, x: 0, z: 0, yLdu: 0, rot: 0, surface: NO_SURFACE };
+const snapProbe: ProbedRoad = { id: -1, x: 0, z: 0, yLdu: 0, rot: 0, surface: NO_ROAD_SURFACE };
 const snapFit = new RoadFit();
 const nearbyPlacements: number[] = [];
 const cleanCandidates: Array<Ranked & { readonly yLdu: number }> = [];
@@ -615,7 +615,7 @@ export function snapToRoadEdge(
     probe.yLdu = candidate.yLdu;
     if (roadOverlapCells(roads, probe) === 0) chosen = candidate.snap;
   }
-  probe.surface = NO_SURFACE;
+  probe.surface = NO_ROAD_SURFACE;
   cleanCandidates.length = 0;
   return chosen;
 }

@@ -122,6 +122,7 @@ import {
   type TrackLayRequest,
   type TrackClickRefusal,
 } from "./track-edit-session.ts";
+import type { RoadNeighbourhood } from "./road-drawing.ts";
 import type { IRoadEditSession, RoadEditView } from "./road-edit-session.ts";
 import type { ITrackPiers, PierPiece } from "./track-piers.ts";
 import type { ITallestTrain } from "../trains/tallest-train.ts";
@@ -134,7 +135,12 @@ import {
   type IPlaceableCatalog,
   type SkippedCatalogModel,
 } from "../catalog/placeable-catalog.ts";
-import { heldPieces, heldRuns, latticeFrame } from "../connect/model-track-ends.ts";
+import {
+  heldPieces,
+  heldRuns,
+  latticeFrame,
+  type FramedTrackPiece,
+} from "../connect/model-track-ends.ts";
 import { partBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type {
@@ -194,14 +200,13 @@ import { OBSTACLE_RECT_FLOATS, seatsPending } from "./track-obstacles.ts";
 import {
   ANY_TURN,
   HELD_TURN,
-  cellExtent,
-  placedRoads,
+  NO_ROAD_SURFACE,
   overlapsPlacedRoad,
+  placedRoads,
   roadOverlapCells,
-  roadsWithin,
   snapToRoadEdge,
-  type CellExtent,
   type PlacedRoads,
+  type ProbedRoad,
   type RestingHeights,
   type RoadSnap,
 } from "./road-snap.ts";
@@ -650,23 +655,6 @@ function sameLatticePose(a: LatticePose, b: LatticePose): boolean {
   return a.x === b.x && a.z === b.z && a.rot === b.rot && a.yPlates === b.yPlates;
 }
 
-function fillArea(fill: FillTool, placeable: Placeable, rot: number): CellExtent | null {
-  const surface = placeable.road;
-  if (!surface || fill.laid === 0) return null;
-  const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface });
-  let minX = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let minZ = Number.POSITIVE_INFINITY;
-  let maxZ = Number.NEGATIVE_INFINITY;
-  for (let tile = 0; tile < fill.laid; tile++) {
-    minX = Math.min(minX, fill.xAt(tile) + ghost.minX);
-    maxX = Math.max(maxX, fill.xAt(tile) + ghost.maxX);
-    minZ = Math.min(minZ, fill.zAt(tile) + ghost.minZ);
-    maxZ = Math.max(maxZ, fill.zAt(tile) + ghost.maxZ);
-  }
-  return { minX, maxX, minZ, maxZ };
-}
-
 function roadOverlapText(placeable: Placeable, overlapping: number): string {
   return `${placeable.label}'s road would lie in ${overlapping} cells of placed road there, at the same height.`;
 }
@@ -804,6 +792,7 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   }
 }
 const REFUSED_SEAT_LIFT_LDU = BRICK_LDU;
+const NO_HELD_TRACK: ReadonlyArray<FramedTrackPiece> = [];
 const HANDLE_TOLERANCE_PX = 8;
 
 interface ModelMember {
@@ -1395,8 +1384,17 @@ export class Editor implements IEditor, IEditedWorld {
     restingYLdu: (x, z) => this.restingYPlatesAt(x, z) * PLATE_LDU,
   };
   private readonly roadFit = new RoadFit();
-  private readonly nonRoadModels: PlacedModel[] = [];
+  private readonly nearModels: PlacedModel[] = [];
   private readonly restingModels: PlacedModel[] = [];
+  private readonly restingTop = new Float64Array(1);
+  private readonly roadProbeScratch: ProbedRoad = {
+    id: -1,
+    x: 0,
+    z: 0,
+    yLdu: 0,
+    rot: 0,
+    surface: NO_ROAD_SURFACE,
+  };
   private readonly restingPoint = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private readonly planDelta = new PlanDelta();
@@ -1969,16 +1967,21 @@ export class Editor implements IEditor, IEditedWorld {
     if (view) this.update(view);
   }
 
-  private roadNeighbours(): readonly [ReadonlyArray<PlacedModel>, ReadonlyArray<PlacedModel>] {
-    const models = this.placed.models();
-    const others = this.nonRoadModels;
-    others.length = 0;
-    for (let m = 0; m < models.length; m++) {
-      const model = models[m];
-      if (model && model.placeable.road === null) others.push(model);
-    }
-    return [this.roadModels, others];
-  }
+  private readonly roadNeighbourhood: RoadNeighbourhood = {
+    near: (area, roads, others) => {
+      const models = this.nearModels;
+      this.placed.over(area, models);
+      roads.length = 0;
+      others.length = 0;
+      for (let m = 0; m < models.length; m++) {
+        const model = models[m];
+        if (!model) continue;
+        if (model.placeable.road === null) others.push(model);
+        else roads.push(model);
+      }
+      models.length = 0;
+    },
+  };
 
   dragStart(ndcX: number, ndcY: number): boolean {
     this.cancelFill();
@@ -1998,7 +2001,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return false;
-    this.roads.beginStroke(this.hitX, this.hitZ, ...this.roadNeighbours());
+    this.roads.beginStroke(this.hitX, this.hitZ, this.roadNeighbourhood);
     this.update(this.roads.view());
     return true;
   }
@@ -2009,7 +2012,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     if (this.groundHit(ndcX, ndcY)) this.roads.extendStroke(this.hitX, this.hitZ);
-    const requests = this.roads.endStroke(...this.roadNeighbours());
+    const requests = this.roads.endStroke(this.roadNeighbourhood);
     if (requests === null) return;
     if (requests.length > 0) this.show(this.history.commit("road", requests), eventTimeMs);
     this.update(this.roads.view());
@@ -2036,7 +2039,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (this.state.mode === "road") {
       if (this.groundHit(ndcX, ndcY)) {
-        const view = this.roads.moveStroke(this.hitX, this.hitZ, ...this.roadNeighbours());
+        const view = this.roads.moveStroke(this.hitX, this.hitZ, this.roadNeighbourhood);
         if (view) this.update(view);
       }
       return;
@@ -2820,9 +2823,11 @@ export class Editor implements IEditor, IEditedWorld {
     point.maxZ = z;
     const models = this.restingModels;
     this.placed.over(point, models);
-    let top = Number.NEGATIVE_INFINITY;
-    for (let m = 0; m < models.length; m++) top = Math.max(top, models[m]?.topOver(x, z) ?? top);
+    const highest = this.restingTop;
+    highest[0] = Number.NEGATIVE_INFINITY;
+    for (let m = 0; m < models.length; m++) models[m]?.raiseToTopOver(x, z, highest);
     models.length = 0;
+    const top = highest[0] ?? Number.NEGATIVE_INFINITY;
     if (!Number.isFinite(top)) return RESTS_ON_TABLE_Y_PLATES;
     return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
   }
@@ -2956,7 +2961,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private roadProbe(surface: RoadSurface, pose: LatticePose): RoadPlacement {
-    return { id: -1, x: pose.x, z: pose.z, yLdu: pose.yPlates * PLATE_LDU, rot: pose.rot, surface };
+    const probe = this.roadProbeScratch;
+    probe.x = pose.x;
+    probe.z = pose.z;
+    probe.yLdu = pose.yPlates * PLATE_LDU;
+    probe.rot = pose.rot;
+    probe.surface = surface;
+    return probe;
   }
 
   private roadOverlap(
@@ -2982,7 +2993,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!kept) this.keptRoadSnap = null;
     this.forgetPendingTurnsAway();
     if (this.state.mode === "road" && this.hovering) {
-      const view = this.roads.hover(this.hitX, this.hitZ, ...this.roadNeighbours());
+      const view = this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood);
       if (view) this.update(view);
     }
     const tables = this.tables;
@@ -3005,6 +3016,7 @@ export class Editor implements IEditor, IEditedWorld {
   private settleGhostHere(): RoadSnapView | null {
     this.placeRot = this.ghostRot;
     this.placeGhost();
+    if (this.fillTool?.previewing) return null;
     return this.roadFallback(this.pendingTurns) ?? this.roadReadout();
   }
 
@@ -3242,15 +3254,16 @@ export class Editor implements IEditor, IEditedWorld {
   ): TrackBlockView | null {
     const drawing = this.trackWorld.drawing();
     if (!drawing) return null;
-    const carried = this.trackWorld.modelTrack(placeable);
-    const frame = latticeFrame(x, z, rot);
+    const track = this.trackWorld.modelTrack(placeable);
+    const carried = track && (track.pieces.length > 0 || track.runs.length > 0) ? track : null;
+    const frame = carried ? latticeFrame(x, z, rot) : null;
     const pieces =
       carried && frame
         ? [
             ...heldPieces(carried, frame, yPlates),
             ...heldRuns(carried, frame, yPlates, WORLD_TRACK_FRAME.id + 1),
           ]
-        : [];
+        : NO_HELD_TRACK;
     if (pieces.length === 0 && drawing.pieceCount + this.trackWorld.carriedModels().length === 0) {
       return null;
     }
@@ -3506,7 +3519,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private replanRoadStroke(): void {
-    const view = this.roads.replanStroke(() => this.roadNeighbours());
+    const view = this.roads.replanStroke(this.roadNeighbourhood);
     if (view) this.update(view);
   }
 
@@ -3737,8 +3750,7 @@ export class Editor implements IEditor, IEditedWorld {
     const rot = this.ghostRot;
     let reason: string | null = null;
     let waitingOn = NOT_WAITING;
-    const area = fillArea(fill, placeable, rot);
-    const roads = area ? roadsWithin(this.placedRoads, area) : this.placedRoads;
+    const roads = this.placedRoads;
     for (let tile = 0; tile < fill.laid; tile++) {
       const x = fill.xAt(tile);
       const z = fill.zAt(tile);
@@ -3833,7 +3845,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   setRoadErase(erase: boolean): void {
-    this.roads.setErase(erase, ...this.roadNeighbours());
+    this.roads.setErase(erase, this.roadNeighbourhood);
     this.update(this.roads.view());
   }
 
@@ -4110,7 +4122,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "road") {
       this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
-      this.roads.turn(this.ghostRot, ...this.roadNeighbours());
+      this.roads.turn(this.ghostRot, this.roadNeighbourhood);
       this.update({ ghostRot: this.ghostRot, ...this.roads.view() });
       return;
     }
