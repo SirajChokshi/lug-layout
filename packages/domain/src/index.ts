@@ -5,6 +5,7 @@ export {
   PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
+  roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
   type RoadFit,
@@ -276,11 +277,18 @@ export { cellChunkKey } from "./cell-chunk-key.ts";
 export {
   DirtyShards,
   addShards,
+  shardPoses,
   worldPlacements,
   type PlacementTarget,
   type ShardChange,
 } from "./world-shards.ts";
-export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
+export {
+  BomCounter,
+  byPartThenColor,
+  PartTally,
+  type BomLine,
+  type PartSink,
+} from "./bom/bom-counter.ts";
 export {
   countPlacements,
   regionHolds,

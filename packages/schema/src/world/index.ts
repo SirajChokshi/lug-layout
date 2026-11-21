@@ -25,8 +25,8 @@ export const IMPORT_REF_PREFIX = "import:";
 
 const CATALOG_REF = /^[a-z][a-z0-9]*:[A-Za-z0-9._-]+$/;
 
-const SafeInteger = v.pipe(v.number(), v.safeInteger("must be an integer"));
-const Count = v.pipe(SafeInteger, v.minValue(0, "must not be negative"));
+export const SafeInteger = v.pipe(v.number(), v.safeInteger("must be an integer"));
+export const Count = v.pipe(SafeInteger, v.minValue(0, "must not be negative"));
 const INT64_MIN = -(2n ** 63n);
 const INT64_MAX = 2n ** 63n - 1n;
 
@@ -48,7 +48,7 @@ const LatticeLdu = v.config(
 
 const FiniteNumber = v.pipe(v.number(), v.finite("must be a finite number"));
 
-function strictMessage(issue: v.StrictObjectIssue | v.StrictTupleIssue): string {
+export function strictMessage(issue: v.StrictObjectIssue | v.StrictTupleIssue): string {
   if (issue.expected === "never") return "is not part of this format";
   if (issue.received === "undefined" && issue.expected?.startsWith('"')) return "is missing";
   return issue.type === "strict_tuple" ? "must be a pair [x, z]" : "must be an object";
@@ -140,6 +140,14 @@ function ascendingSuperChunks(entries: ReadonlyArray<ShardEntryV1>): boolean {
   }
   return true;
 }
+
+export const ShardListV1 = v.pipe(
+  v.array(ShardEntryV1),
+  v.check(
+    (entries) => ascendingSuperChunks(entries),
+    "must list super-chunks in strictly ascending order",
+  ),
+);
 
 export const WORLD_NAME_MAX_LENGTH = 200;
 
@@ -265,13 +273,7 @@ const WorldManifestFields = v.strictObject(
     bundleVersion: v.string(),
     placements: Count,
     track: Count,
-    shards: v.pipe(
-      v.array(ShardEntryV1),
-      v.check(
-        (entries) => ascendingSuperChunks(entries),
-        "must list super-chunks in strictly ascending order",
-      ),
-    ),
+    shards: ShardListV1,
     view: SavedViewV1,
     credits: v.literal(CREDITS_FILE, `must be "${CREDITS_FILE}"`),
     disclaimer: v.pipe(v.string(), v.minLength(1, "is empty")),
@@ -427,7 +429,7 @@ export function referencedImports(
   return referenced;
 }
 
-type ArchiveText = {
+export type ArchiveText = {
   readonly name: string;
   readonly text: string;
 };
@@ -603,23 +605,30 @@ export function readWorldArchive(
   return { ok: false, issues: [...missingCredits, ...(world.ok ? [] : world.issues)] };
 }
 
-export function readWorldFiles(
-  files: ReadonlyMap<string, string>,
-): Decoded<Omit<WorldFiles, "imports">> {
+export function manifestJson(files: ReadonlyMap<string, string>): Decoded<unknown> {
   const manifestText = files.get(MANIFEST_FILE);
   if (manifestText === undefined) {
     return { ok: false, issues: [{ path: MANIFEST_FILE, message: "is missing from the archive" }] };
   }
-  const manifestJson = parseJsonText(manifestText, MANIFEST_FILE);
-  if (!manifestJson.ok) return manifestJson;
-  const manifest = decode(WorldManifestV1, manifestJson.value, MANIFEST_FILE);
-  if (!manifest.ok) return manifest;
+  return parseJsonText(manifestText, MANIFEST_FILE);
+}
+
+export interface ShardFiles {
+  readonly shards: ReadonlyArray<WorldShardV1>;
+  readonly paths: ReadonlyArray<string>;
+  readonly issues: ReadonlyArray<Issue>;
+}
+
+export function readShardFiles(
+  files: ReadonlyMap<string, string>,
+  entries: ReadonlyArray<ShardEntryV1>,
+): ShardFiles {
   const issues: Issue[] = [];
-  const expected = new Set([MANIFEST_FILE]);
+  const paths: string[] = [];
   const shards: WorldShardV1[] = [];
-  for (const entry of manifest.value.shards) {
+  for (const entry of entries) {
     const path = shardPath(entry.superChunk);
-    expected.add(path);
+    paths.push(path);
     const text = files.get(path);
     if (text === undefined) {
       issues.push({ path, message: "is listed in the manifest but missing" });
@@ -648,16 +657,36 @@ export function readWorldFiles(
     }
     shards.push(shard.value);
   }
-  const everyShardRead = shards.length === manifest.value.shards.length;
+  const everyShardRead = shards.length === entries.length;
   if (everyShardRead && worldTrack(shards).some((piece, position) => piece.index !== position)) {
     issues.push({
       path: MANIFEST_FILE,
       message: "the shards' track indices must run 0, 1, 2, … once each",
     });
   }
-  for (const name of files.keys()) {
-    if (!expected.has(name)) issues.push({ path: name, message: "is not part of a world" });
-  }
+  return { shards, paths, issues };
+}
+
+export function unexpectedFiles(
+  files: ReadonlyMap<string, string>,
+  expected: ReadonlySet<string>,
+  message: string,
+): ReadonlyArray<Issue> {
+  return [...files.keys()].flatMap((name) => (expected.has(name) ? [] : [{ path: name, message }]));
+}
+
+export function readWorldFiles(
+  files: ReadonlyMap<string, string>,
+): Decoded<Omit<WorldFiles, "imports">> {
+  const json = manifestJson(files);
+  if (!json.ok) return json;
+  const manifest = decode(WorldManifestV1, json.value, MANIFEST_FILE);
+  if (!manifest.ok) return manifest;
+  const read = readShardFiles(files, manifest.value.shards);
+  const issues = [
+    ...read.issues,
+    ...unexpectedFiles(files, new Set([MANIFEST_FILE, ...read.paths]), "is not part of a world"),
+  ];
   if (issues.length > 0) return { ok: false, issues };
-  return { ok: true, value: { manifest: manifest.value, shards } };
+  return { ok: true, value: { manifest: manifest.value, shards: read.shards } };
 }
