@@ -1,6 +1,10 @@
-import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { STUD_LDU, isLatticePose, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import type { LduRect } from "./plan/plan-region.ts";
+import { RoadCellGrid, int32, type RoadCellRect } from "./road-cell-grid.ts";
+import { CLASHED_FIT, COMPLETE_FIT, RoadFitMemo, type FitKey, type RoadFit } from "./road-fit.ts";
 
-export const NO_STUD = -0x8000_0000;
+export const NO_STUD = -0x4000_0000;
+export const NO_TOP = -0x4000_0000;
 
 export interface RoadSurface {
   readonly minX: number;
@@ -34,61 +38,51 @@ export interface RoadEdgeSegment {
   readonly status: RoadCellStatus;
 }
 
+export const PLACEMENT_JOINED = 0;
+export const PLACEMENT_MISMATCHED = 1;
+export const PLACEMENT_CELL_INTS = 2;
+
 export interface RoadJoinReport {
   readonly placements: number;
   readonly joinedCells: number;
   readonly openCells: number;
   readonly mismatchedCells: number;
+  readonly placementCells: Int32Array;
   readonly overlaps: ReadonlyArray<readonly [number, number]>;
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
 }
 
-export interface RoadFit {
-  readonly joinedCells: number;
-  readonly joinedRoadCells: number;
-  readonly mismatchedCells: number;
-  readonly overlappingCells: number;
-}
-
-interface Cell {
+interface PlacedCell {
   readonly placement: number;
+  readonly centreX: number;
+  readonly centreZ: number;
+  readonly cellX: number;
+  readonly cellZ: number;
   readonly top: number;
   readonly stud: number;
   readonly road: number;
 }
 
-interface PlacedCell extends Cell {
-  readonly cellX: number;
-  readonly cellZ: number;
-}
-
-const SIDES: ReadonlyArray<readonly [RoadSide, number, number]> = [
-  ["minX", -1, 0],
-  ["maxX", 1, 0],
-  ["minZ", 0, -1],
-  ["maxZ", 0, 1],
-];
+const SIDE_NAMES: ReadonlyArray<RoadSide> = ["minX", "maxX", "minZ", "maxZ"];
+const SIDE_DX = Int8Array.of(-1, 1, 0, 0);
+const SIDE_DZ = Int8Array.of(0, 0, -1, 1);
+const SIDE_LINE_OFFSET = Int8Array.of(0, 1, 0, 1);
 const HALF_STUD = STUD_LDU / 2;
 
-class CellMap<T> {
-  private readonly columns = new Map<number, Map<number, T>>();
+const NO_PARTNER = -1;
+const OWN_ROAD = 1;
+const PARTNER_ROAD = 2;
+const BOTH_ROAD = OWN_ROAD | PARTNER_ROAD;
+const UNEQUAL = 4;
+const CERTAIN_MISMATCH = BOTH_ROAD | UNEQUAL;
+const NO_STATUS = 0;
+const JOINED = 1;
+const MISMATCHED = 2;
+const OPEN = 3;
+const FIRST_SEAM_CAPACITY = 64;
 
-  get(cellX: number, cellZ: number): T | undefined {
-    return this.columns.get(cellX)?.get(cellZ);
-  }
-
-  has(cellX: number, cellZ: number): boolean {
-    return this.columns.get(cellX)?.has(cellZ) ?? false;
-  }
-
-  set(cellX: number, cellZ: number, value: T): void {
-    let column = this.columns.get(cellX);
-    if (!column) {
-      column = new Map();
-      this.columns.set(cellX, column);
-    }
-    column.set(cellZ, value);
-  }
+function raisedStud(stud: number, yLdu: number): number {
+  return stud === NO_STUD ? NO_STUD : stud + yLdu;
 }
 
 export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell> {
@@ -100,17 +94,20 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
   for (let row = 0; row < surface.rows; row++) {
     for (let column = 0; column < surface.columns; column++) {
       const index = row * surface.columns + column;
+      const top = surface.top[index] ?? NO_TOP;
+      if (top === NO_TOP) continue;
       const localX = surface.minX + column * STUD_LDU + HALF_STUD;
       const localZ = surface.minZ + row * STUD_LDU + HALF_STUD;
-      const worldX = placement.x + cos * localX + sin * localZ;
-      const worldZ = placement.z - sin * localX + cos * localZ;
-      const stud = surface.stud[index] ?? NO_STUD;
+      const centreX = placement.x + cos * localX + sin * localZ;
+      const centreZ = placement.z - sin * localX + cos * localZ;
       cells.push({
         placement: placement.id,
-        cellX: Math.floor(worldX / STUD_LDU),
-        cellZ: Math.floor(worldZ / STUD_LDU),
-        top: (surface.top[index] ?? 0) + placement.yLdu,
-        stud: stud === NO_STUD ? NO_STUD : stud + placement.yLdu,
+        centreX,
+        centreZ,
+        cellX: Math.floor(centreX / STUD_LDU),
+        cellZ: Math.floor(centreZ / STUD_LDU),
+        top: top + placement.yLdu,
+        stud: raisedStud(surface.stud[index] ?? NO_STUD, placement.yLdu),
         road: surface.road[index] ?? 0,
       });
     }
@@ -118,25 +115,363 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
   return cells;
 }
 
-function edgeLine(side: RoadSide, cellX: number, cellZ: number): number {
-  switch (side) {
-    case "minX":
-      return cellX * STUD_LDU;
-    case "maxX":
-      return (cellX + 1) * STUD_LDU;
-    case "minZ":
-      return cellZ * STUD_LDU;
-    case "maxZ":
-      return (cellZ + 1) * STUD_LDU;
-    default: {
-      const unhandled: never = side;
-      throw new Error(`unhandled side ${String(unhandled)}`);
+export function roadwayCells(placement: RoadPlacement): ReadonlyArray<LduRect> {
+  const roadway: LduRect[] = [];
+  for (const cell of placedCells(placement)) {
+    if (cell.road === 0) continue;
+    roadway.push({
+      minX: cell.centreX - HALF_STUD,
+      minZ: cell.centreZ - HALF_STUD,
+      maxX: cell.centreX + HALF_STUD,
+      maxZ: cell.centreZ + HALF_STUD,
+    });
+  }
+  return roadway;
+}
+
+function acrossX(side: number): boolean {
+  return side < 2;
+}
+
+function isInt32(value: number): boolean {
+  return (value | 0) === value;
+}
+
+function latticeCell(ldu: number): number {
+  return Math.floor(ldu / STUD_LDU);
+}
+
+interface StampCell {
+  readonly column: number;
+  readonly row: number;
+  readonly top: number;
+  readonly present: boolean;
+  readonly stud: number;
+  readonly road: number;
+}
+
+interface SeamEdge {
+  readonly cell: number;
+  readonly side: number;
+  readonly line: number;
+  readonly along: number;
+}
+
+class RoadStamp implements RoadCellRect {
+  readonly anchorX: number;
+  readonly anchorZ: number;
+  readonly width: number;
+  readonly depth: number;
+  readonly column: Int32Array;
+  readonly row: Int32Array;
+  readonly top: Float64Array;
+  readonly present: Uint8Array;
+  readonly stud: Float64Array;
+  readonly road: Uint8Array;
+  readonly levels: Float64Array;
+  readonly seamCell: Int32Array;
+  readonly seamSide: Uint8Array;
+  readonly seamLineEnd: Int32Array;
+
+  constructor(
+    surface: RoadSurface,
+    readonly turn: number,
+  ) {
+    if (!isRot90(turn)) throw new Error(`rotation ${turn} is not a quarter turn 0-3`);
+    if (!Number.isInteger(surface.minX) || !Number.isInteger(surface.minZ)) {
+      throw new RangeError(`surface origin ${surface.minX}, ${surface.minZ} is not whole LDU`);
     }
+    const cos = rot90Cos(turn);
+    const sin = rot90Sin(turn);
+    const cornersX: number[] = [];
+    const cornersZ: number[] = [];
+    for (let row = 0; row < surface.rows; row++) {
+      for (let column = 0; column < surface.columns; column++) {
+        const localX = surface.minX + column * STUD_LDU + HALF_STUD;
+        const localZ = surface.minZ + row * STUD_LDU + HALF_STUD;
+        cornersX.push(cos * localX + sin * localZ - HALF_STUD);
+        cornersZ.push(-sin * localX + cos * localZ - HALF_STUD);
+      }
+    }
+    this.anchorX = cornersX.reduce((low, corner) => Math.min(low, corner), cornersX[0] ?? 0);
+    this.anchorZ = cornersZ.reduce((low, corner) => Math.min(low, corner), cornersZ[0] ?? 0);
+    const cells = cornersX
+      .map((cornerX, index): StampCell => {
+        const top = surface.top[index] ?? NO_TOP;
+        return {
+          column: (cornerX - this.anchorX) / STUD_LDU,
+          row: ((cornersZ[index] ?? 0) - this.anchorZ) / STUD_LDU,
+          top,
+          present: top !== NO_TOP,
+          stud: surface.stud[index] ?? NO_STUD,
+          road: surface.road[index] ?? 0,
+        };
+      })
+      .toSorted((a, b) => a.row - b.row || a.column - b.column);
+    this.width = turn % 2 === 0 ? surface.columns : surface.rows;
+    this.depth = turn % 2 === 0 ? surface.rows : surface.columns;
+    this.column = Int32Array.from(cells, (cell) => cell.column);
+    this.row = Int32Array.from(cells, (cell) => cell.row);
+    this.top = Float64Array.from(cells, (cell) => cell.top);
+    this.present = Uint8Array.from(cells, (cell) => (cell.present ? 1 : 0));
+    this.stud = Float64Array.from(cells, (cell) => cell.stud);
+    this.road = Uint8Array.from(cells, (cell) => cell.road);
+    this.levels = Float64Array.from(new Set(cells.filter((c) => c.present).map((c) => c.top)));
+    const edges = this.seamEdges(cells);
+    this.seamCell = Int32Array.from(edges, (edge) => edge.cell);
+    this.seamSide = Uint8Array.from(edges, (edge) => edge.side);
+    this.seamLineEnd = Int32Array.from(
+      edges.flatMap((edge, e) => {
+        const next = edges[e + 1];
+        const sameLine =
+          next && acrossX(next.side) === acrossX(edge.side) && next.line === edge.line;
+        return sameLine ? [] : [e + 1];
+      }),
+    );
+  }
+
+  private seamEdges(cells: ReadonlyArray<StampCell>): ReadonlyArray<SeamEdge> {
+    const at = (column: number, row: number): StampCell | undefined => {
+      const inside = column >= 0 && column < this.width && row >= 0 && row < this.depth;
+      const cell = inside ? cells[row * this.width + column] : undefined;
+      return cell?.present ? cell : undefined;
+    };
+    const edges: SeamEdge[] = [];
+    cells.forEach((cell, c) => {
+      if (!cell.present) return;
+      for (let side = 0; side < SIDE_NAMES.length; side++) {
+        const own = at(cell.column + (SIDE_DX[side] ?? 0), cell.row + (SIDE_DZ[side] ?? 0));
+        if (own?.top === cell.top) continue;
+        const across = acrossX(side);
+        edges.push({
+          cell: c,
+          side,
+          line: (across ? cell.column : cell.row) + (SIDE_LINE_OFFSET[side] ?? 0),
+          along: across ? cell.row : cell.column,
+        });
+      }
+    });
+    return edges.toSorted(
+      (a, b) =>
+        Number(acrossX(b.side)) - Number(acrossX(a.side)) || a.line - b.line || a.along - b.along,
+    );
   }
 }
 
-function alongEdge(side: RoadSide, cellX: number, cellZ: number): number {
-  return side === "minX" || side === "maxX" ? cellZ : cellX;
+const stamps = new WeakMap<RoadSurface, Array<RoadStamp | undefined>>();
+
+function stampOf(surface: RoadSurface, rot: number): RoadStamp {
+  let byRot = stamps.get(surface);
+  if (!byRot) {
+    byRot = [];
+    stamps.set(surface, byRot);
+  }
+  const cached = byRot[rot];
+  if (cached) return cached;
+  const stamp = new RoadStamp(surface, rot);
+  byRot[rot] = stamp;
+  return stamp;
+}
+
+const NO_SURFACE: RoadSurface = {
+  minX: 0,
+  minZ: 0,
+  columns: 0,
+  rows: 0,
+  top: new Int32Array(0),
+  stud: new Int32Array(0),
+  road: new Uint8Array(0),
+};
+
+class PlacedStamp implements FitKey {
+  id = NO_PARTNER;
+  stamp = stampOf(NO_SURFACE, 0);
+  offsetX = 0;
+  offsetZ = 0;
+  phaseX = 0;
+  phaseZ = 0;
+  yLdu = 0;
+  overlapping = false;
+
+  get turn(): number {
+    return this.stamp.turn;
+  }
+
+  get phase(): number {
+    return this.phaseX * STUD_LDU + this.phaseZ;
+  }
+
+  at(placement: RoadPlacement): this {
+    const { x, z, yLdu } = placement;
+    if (!isLatticePose(x, z, 0) || !isInt32(yLdu)) {
+      throw new RangeError(`road pose ${x}, ${yLdu}, ${z} is not whole LDU`);
+    }
+    this.id = placement.id;
+    this.stamp = stampOf(placement.surface, placement.rot);
+    const cornerX = x + this.stamp.anchorX;
+    const cornerZ = z + this.stamp.anchorZ;
+    this.offsetX = int32(latticeCell(cornerX));
+    this.offsetZ = int32(latticeCell(cornerZ));
+    this.phaseX = int32(cornerX - this.offsetX * STUD_LDU);
+    this.phaseZ = int32(cornerZ - this.offsetZ * STUD_LDU);
+    this.yLdu = int32(yLdu);
+    this.overlapping = false;
+    return this;
+  }
+}
+
+class SeamLine {
+  private pairs = 0;
+  private openEdges = 0;
+  private open = new Int32Array(FIRST_SEAM_CAPACITY);
+  private edge = new Int32Array(FIRST_SEAM_CAPACITY);
+  private along = new Int32Array(FIRST_SEAM_CAPACITY);
+  private partner = new Int32Array(FIRST_SEAM_CAPACITY);
+  private ownRoad = new Uint8Array(FIRST_SEAM_CAPACITY);
+  private ownStud = new Float64Array(FIRST_SEAM_CAPACITY);
+  private partnerRoad = new Uint8Array(FIRST_SEAM_CAPACITY);
+  private partnerStud = new Float64Array(FIRST_SEAM_CAPACITY);
+  private equal = new Uint8Array(FIRST_SEAM_CAPACITY);
+  private run = new Int32Array(FIRST_SEAM_CAPACITY);
+  private carries = new Uint8Array(FIRST_SEAM_CAPACITY);
+  private status = new Uint8Array(FIRST_SEAM_CAPACITY);
+  private stretchPartner = NO_PARTNER;
+  private stretchAlong = 0;
+  private stretch = 0;
+
+  get pairCount(): number {
+    return this.pairs;
+  }
+
+  get openCount(): number {
+    return this.openEdges;
+  }
+
+  get mismatchCertain(): boolean {
+    return this.stretch === CERTAIN_MISMATCH;
+  }
+
+  reset(): void {
+    this.pairs = 0;
+    this.openEdges = 0;
+    this.stretchPartner = NO_PARTNER;
+    this.stretch = 0;
+  }
+
+  pushOpen(edge: number): void {
+    if (this.openEdges === this.open.length) {
+      this.open = grown(this.open, new Int32Array(2 * this.open.length));
+    }
+    this.open[this.openEdges++] = edge;
+  }
+
+  push(
+    edge: number,
+    along: number,
+    partner: number,
+    ownRoad: number,
+    ownStud: number,
+    partnerRoad: number,
+    partnerStud: number,
+  ): void {
+    if (this.pairs === this.edge.length) this.grow();
+    const i = this.pairs++;
+    this.edge[i] = edge;
+    this.along[i] = along;
+    this.partner[i] = partner;
+    this.ownRoad[i] = ownRoad;
+    this.ownStud[i] = ownStud;
+    this.partnerRoad[i] = partnerRoad;
+    this.partnerStud[i] = partnerStud;
+    const equal = ownRoad === partnerRoad && ownStud === partnerStud;
+    this.equal[i] = equal ? 1 : 0;
+    if (partner !== this.stretchPartner || along > this.stretchAlong + 1) this.stretch = 0;
+    this.stretchPartner = partner;
+    this.stretchAlong = along;
+    const carried = (ownRoad === 0 ? 0 : OWN_ROAD) | (partnerRoad === 0 ? 0 : PARTNER_ROAD);
+    this.stretch |= carried | (equal ? 0 : UNEQUAL);
+  }
+
+  classify(): void {
+    const runs = this.groupRuns();
+    this.carries.fill(0, 0, runs);
+    for (let i = 0; i < this.pairs; i++) {
+      const run = this.run[i] ?? 0;
+      const carried =
+        (this.ownRoad[i] === 0 ? 0 : OWN_ROAD) | (this.partnerRoad[i] === 0 ? 0 : PARTNER_ROAD);
+      this.carries[run] = (this.carries[run] ?? 0) | carried;
+    }
+    for (let i = 0; i < this.pairs; i++) {
+      if (this.carries[this.run[i] ?? 0] === BOTH_ROAD) {
+        this.status[i] = this.equalAt(i) ? JOINED : MISMATCHED;
+      } else {
+        this.status[i] = this.ownRoad[i] === 0 ? NO_STATUS : OPEN;
+      }
+    }
+  }
+
+  edgeOf(i: number): number {
+    return this.edge[i] ?? 0;
+  }
+
+  openEdgeOf(i: number): number {
+    return this.open[i] ?? 0;
+  }
+
+  partnerOf(i: number): number {
+    return this.partner[i] ?? NO_PARTNER;
+  }
+
+  ownRoadOf(i: number): number {
+    return this.ownRoad[i] ?? 0;
+  }
+
+  statusOf(i: number): number {
+    return this.status[i] ?? NO_STATUS;
+  }
+
+  equalAt(i: number): boolean {
+    return this.equal[i] === 1;
+  }
+
+  private groupRuns(): number {
+    const pairs = this.pairs;
+    this.run.fill(-1, 0, pairs);
+    let runs = 0;
+    for (let i = 0; i < pairs; i++) {
+      if (this.run[i] !== -1) continue;
+      const partner = this.partner[i] ?? NO_PARTNER;
+      const run = runs++;
+      this.run[i] = run;
+      let last = this.along[i] ?? 0;
+      for (let j = i + 1; j < pairs && (this.along[j] ?? 0) <= last + 1; j++) {
+        if (this.run[j] !== -1 || this.partner[j] !== partner) continue;
+        this.run[j] = run;
+        last = this.along[j] ?? 0;
+      }
+    }
+    return runs;
+  }
+
+  private grow(): void {
+    const capacity = 2 * this.edge.length;
+    this.edge = grown(this.edge, new Int32Array(capacity));
+    this.along = grown(this.along, new Int32Array(capacity));
+    this.partner = grown(this.partner, new Int32Array(capacity));
+    this.ownRoad = grown(this.ownRoad, new Uint8Array(capacity));
+    this.ownStud = grown(this.ownStud, new Float64Array(capacity));
+    this.partnerRoad = grown(this.partnerRoad, new Uint8Array(capacity));
+    this.partnerStud = grown(this.partnerStud, new Float64Array(capacity));
+    this.equal = grown(this.equal, new Uint8Array(capacity));
+    this.run = new Int32Array(capacity);
+    this.carries = new Uint8Array(capacity);
+    this.status = new Uint8Array(capacity);
+  }
+}
+
+function grown<T extends Int32Array | Uint8Array | Float64Array>(from: T, to: T): T {
+  to.set(from);
+  return to;
 }
 
 interface EdgeCell {
@@ -144,6 +479,7 @@ interface EdgeCell {
   readonly side: RoadSide;
   readonly line: number;
   readonly along: number;
+  readonly alongPhase: number;
   readonly topLdu: number;
   readonly status: RoadCellStatus;
 }
@@ -158,6 +494,7 @@ function continuesRun(run: EdgeRun, cell: EdgeCell): boolean {
   return (
     first.side === cell.side &&
     first.line === cell.line &&
+    first.alongPhase === cell.alongPhase &&
     first.status === cell.status &&
     first.topLdu === cell.topLdu
   );
@@ -201,8 +538,8 @@ function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSe
         placement: first.placement,
         side: first.side,
         line: first.line,
-        from: from * STUD_LDU,
-        to: (previous + 1) * STUD_LDU,
+        from: from * STUD_LDU + first.alongPhase,
+        to: (previous + 1) * STUD_LDU + first.alongPhase,
         topLdu: first.topLdu,
         status: first.status,
       });
@@ -212,447 +549,263 @@ function mergeSegments(cells: ReadonlyArray<EdgeCell>): ReadonlyArray<RoadEdgeSe
   return segments;
 }
 
-const STAMP_CELL_INTS = 5;
-const STAMP_EDGE_INTS = 4;
-const BLOCK_SHIFT = 5;
-const BLOCK_SIZE = 1 << BLOCK_SHIFT;
-const BLOCK_MASK = BLOCK_SIZE - 1;
-const NO_OWNER = -1;
-
-interface RoadStamp {
-  readonly cells: Float64Array;
-  readonly edges: Int32Array;
-  readonly rect: CellRect | null;
-}
-
-interface CellRect {
-  readonly minX: number;
-  readonly minZ: number;
-  readonly maxX: number;
-  readonly maxZ: number;
-}
-
-interface PlacedStamp {
-  readonly stamp: RoadStamp;
-  readonly offsetX: number;
-  readonly offsetZ: number;
-  readonly yLdu: number;
-}
-
-const stamps = new WeakMap<RoadSurface, Array<RoadStamp | undefined>>();
-
-function filledRect(cells: ReadonlyArray<PlacedCell>, distinct: number): CellRect | null {
-  let minX = Number.POSITIVE_INFINITY;
-  let minZ = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxZ = Number.NEGATIVE_INFINITY;
-  for (const cell of cells) {
-    minX = Math.min(minX, cell.cellX);
-    minZ = Math.min(minZ, cell.cellZ);
-    maxX = Math.max(maxX, cell.cellX);
-    maxZ = Math.max(maxZ, cell.cellZ);
-  }
-  const area = (maxX - minX + 1) * (maxZ - minZ + 1);
-  return cells.length > 0 && distinct === cells.length && area === distinct
-    ? { minX, minZ, maxX, maxZ }
-    : null;
-}
-
-function stampFrom(cells: ReadonlyArray<PlacedCell>): RoadStamp {
-  const own = new CellMap<boolean>();
-  let distinct = 0;
-  for (const cell of cells) {
-    if (!own.has(cell.cellX, cell.cellZ)) distinct++;
-    own.set(cell.cellX, cell.cellZ, true);
-  }
-  const packed = new Float64Array(cells.length * STAMP_CELL_INTS);
-  const edges: number[] = [];
-  cells.forEach((cell, index) => {
-    packed.set([cell.cellX, cell.cellZ, cell.top, cell.stud, cell.road], index * STAMP_CELL_INTS);
-    SIDES.forEach(([, dx, dz], side) => {
-      if (!own.has(cell.cellX + dx, cell.cellZ + dz)) edges.push(index, dx, dz, side);
-    });
-  });
-  return { cells: packed, edges: Int32Array.from(edges), rect: filledRect(cells, distinct) };
-}
-
-function stampOf(surface: RoadSurface, rot: number): RoadStamp {
-  let byRot = stamps.get(surface);
-  if (!byRot) {
-    byRot = [];
-    stamps.set(surface, byRot);
-  }
-  const cached = byRot[rot];
-  if (cached) return cached;
-  const stamp = stampFrom(placedCells({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface }));
-  byRot[rot] = stamp;
-  return stamp;
-}
-
-function onLattice(placement: RoadPlacement): boolean {
-  return placement.x % STUD_LDU === 0 && placement.z % STUD_LDU === 0 && isRot90(placement.rot);
-}
-
-function placedStamp(placement: RoadPlacement): PlacedStamp {
-  if (!onLattice(placement)) {
-    return { stamp: stampFrom(placedCells(placement)), offsetX: 0, offsetZ: 0, yLdu: 0 };
-  }
-  return {
-    stamp: stampOf(placement.surface, placement.rot),
-    offsetX: placement.x / STUD_LDU,
-    offsetZ: placement.z / STUD_LDU,
-    yLdu: placement.yLdu,
-  };
-}
-
-function raisedStud(stud: number, yLdu: number): number {
-  return stud === NO_STUD ? NO_STUD : stud + yLdu;
-}
-
-class CellBlock {
-  claimed = 0;
-  readonly owner = new Int32Array(BLOCK_SIZE * BLOCK_SIZE).fill(NO_OWNER);
-  readonly top = new Float64Array(BLOCK_SIZE * BLOCK_SIZE);
-  readonly stud = new Float64Array(BLOCK_SIZE * BLOCK_SIZE);
-  readonly road = new Uint8Array(BLOCK_SIZE * BLOCK_SIZE);
-}
-
-class CellGrid {
-  private readonly blocks = new Map<number, Map<number, CellBlock>>();
-  private cachedX = 0;
-  private cachedZ = 0;
-  private cached: CellBlock | undefined = undefined;
-  private cacheValid = false;
-  top = 0;
-  stud = 0;
-  road = 0;
-
-  private blockAt(blockX: number, blockZ: number): CellBlock | undefined {
-    if (!this.cacheValid || blockX !== this.cachedX || blockZ !== this.cachedZ) {
-      this.cached = this.blocks.get(blockX)?.get(blockZ);
-      this.cachedX = blockX;
-      this.cachedZ = blockZ;
-      this.cacheValid = true;
-    }
-    return this.cached;
-  }
-
-  find(cellX: number, cellZ: number): number {
-    const block = this.blockAt(cellX >> BLOCK_SHIFT, cellZ >> BLOCK_SHIFT);
-    if (!block) return NO_OWNER;
-    const slot = ((cellZ & BLOCK_MASK) << BLOCK_SHIFT) | (cellX & BLOCK_MASK);
-    const owner = block.owner[slot] ?? NO_OWNER;
-    if (owner === NO_OWNER) return NO_OWNER;
-    this.top = block.top[slot] ?? 0;
-    this.stud = block.stud[slot] ?? 0;
-    this.road = block.road[slot] ?? 0;
-    return owner;
-  }
-
-  claimedIn(minX: number, minZ: number, maxX: number, maxZ: number, stopAtFirst: boolean): number {
-    let claimed = 0;
-    for (let blockZ = minZ >> BLOCK_SHIFT; blockZ <= maxZ >> BLOCK_SHIFT; blockZ++) {
-      for (let blockX = minX >> BLOCK_SHIFT; blockX <= maxX >> BLOCK_SHIFT; blockX++) {
-        const block = this.blockAt(blockX, blockZ);
-        if (!block || block.claimed === 0) continue;
-        const fromX = Math.max(minX, blockX << BLOCK_SHIFT) & BLOCK_MASK;
-        const toX = Math.min(maxX, (blockX << BLOCK_SHIFT) | BLOCK_MASK) & BLOCK_MASK;
-        const fromZ = Math.max(minZ, blockZ << BLOCK_SHIFT) & BLOCK_MASK;
-        const toZ = Math.min(maxZ, (blockZ << BLOCK_SHIFT) | BLOCK_MASK) & BLOCK_MASK;
-        const owner = block.owner;
-        for (let z = fromZ; z <= toZ; z++) {
-          const row = z << BLOCK_SHIFT;
-          for (let x = fromX; x <= toX; x++) {
-            if (owner[row | x] === NO_OWNER) continue;
-            claimed++;
-            if (stopAtFirst) return claimed;
-          }
-        }
-      }
-    }
-    return claimed;
-  }
-
-  claim(cellX: number, cellZ: number, owner: number, top: number, stud: number, road: number) {
-    const blockX = cellX >> BLOCK_SHIFT;
-    const blockZ = cellZ >> BLOCK_SHIFT;
-    let block = this.blockAt(blockX, blockZ);
-    if (!block) {
-      let row = this.blocks.get(blockX);
-      if (!row) {
-        row = new Map();
-        this.blocks.set(blockX, row);
-      }
-      block = new CellBlock();
-      row.set(blockZ, block);
-      this.cached = block;
-    }
-    const slot = ((cellZ & BLOCK_MASK) << BLOCK_SHIFT) | (cellX & BLOCK_MASK);
-    if (block.owner[slot] === NO_OWNER) block.claimed++;
-    block.owner[slot] = owner;
-    block.top[slot] = top;
-    block.stud[slot] = stud;
-    block.road[slot] = road;
-  }
-}
-
-interface EdgeFit {
-  joinedCells: number;
-  joinedRoadCells: number;
-  mismatchedCells: number;
-}
-
 class EdgeTally {
   readonly edgeCells: EdgeCell[] = [];
   joinedCells = 0;
   openCells = 0;
   mismatchedCells = 0;
+
+  constructor(readonly placementCells: Int32Array) {}
+
+  countPlacement(placement: number, column: number): void {
+    const at = placement * PLACEMENT_CELL_INTS + column;
+    this.placementCells[at] = (this.placementCells[at] ?? 0) + 1;
+  }
+}
+
+function edgeCellOf(pose: PlacedStamp, edge: number, status: RoadCellStatus): EdgeCell {
+  const stamp = pose.stamp;
+  const cell = stamp.seamCell[edge] ?? 0;
+  const side = stamp.seamSide[edge] ?? 0;
+  const x = (stamp.column[cell] ?? 0) + pose.offsetX;
+  const z = (stamp.row[cell] ?? 0) + pose.offsetZ;
+  const across = acrossX(side);
+  const lineCell = (across ? x : z) + (SIDE_LINE_OFFSET[side] ?? 0);
+  return {
+    placement: pose.id,
+    side: SIDE_NAMES[side] ?? "minX",
+    line: lineCell * STUD_LDU + (across ? pose.phaseX : pose.phaseZ),
+    along: across ? z : x,
+    alongPhase: across ? pose.phaseZ : pose.phaseX,
+    topLdu: (stamp.top[cell] ?? 0) + pose.yLdu,
+    status,
+  };
+}
+
+function byPair(a: readonly [number, number], b: readonly [number, number]): number {
+  return a[0] - b[0] || a[1] - b[1];
 }
 
 export class RoadNetwork {
-  private readonly grid = new CellGrid();
-  private readonly ids: ReadonlyArray<number>;
-  private readonly placed: ReadonlyArray<PlacedStamp>;
-  private readonly lostCells: Uint8Array;
-  private readonly overlapPairs = new Set<string>();
-  private readonly scratchFit: EdgeFit = { joinedCells: 0, joinedRoadCells: 0, mismatchedCells: 0 };
+  private readonly grid = new RoadCellGrid();
+  private readonly cursor = this.grid.cursor();
+  private readonly seams = new SeamLine();
+  private readonly probe = new PlacedStamp();
+  private readonly poses: PlacedStamp[] = [];
+  private readonly overlapPairs = new Map<string, readonly [number, number]>();
+  private memo: RoadFitMemo | null = null;
 
   constructor(placements: ReadonlyArray<RoadPlacement>) {
-    this.ids = placements.map((placement) => placement.id);
-    this.placed = placements.map(placedStamp);
-    this.lostCells = new Uint8Array(placements.length);
-    for (let p = 0; p < this.placed.length; p++) this.claimCells(p);
+    for (const placement of placements) this.add(placement);
   }
 
-  private claimCells(p: number): void {
-    const placed = this.placed[p];
-    if (!placed) return;
-    const { stamp, offsetX, offsetZ, yLdu } = placed;
-    const id = this.ids[p] ?? 0;
-    const cells = stamp.cells;
-    for (let c = 0; c < cells.length; c += STAMP_CELL_INTS) {
-      const cellX = (cells[c] ?? 0) + offsetX;
-      const cellZ = (cells[c + 1] ?? 0) + offsetZ;
-      const existing = this.grid.find(cellX, cellZ);
-      if (existing !== NO_OWNER && this.ids[existing] !== id) {
-        const other = this.ids[existing] ?? 0;
-        this.overlapPairs.add(`${Math.min(other, id)},${Math.max(other, id)}`);
-        this.lostCells[p] = 1;
-        continue;
+  add(placement: RoadPlacement): void {
+    this.memo?.forget();
+    const owner = this.poses.length;
+    const pose = new PlacedStamp().at(placement);
+    this.poses.push(pose);
+    const stamp = pose.stamp;
+    const phase = pose.phase;
+    for (let c = 0; c < stamp.column.length; c++) {
+      if (stamp.present[c] === 0) continue;
+      const x = (stamp.column[c] ?? 0) + pose.offsetX;
+      const z = (stamp.row[c] ?? 0) + pose.offsetZ;
+      const top = (stamp.top[c] ?? 0) + pose.yLdu;
+      for (let found = this.cursor.seek(x, z, top, phase); found; found = this.cursor.advance()) {
+        this.recordOverlap(this.cursor.owner, pose);
       }
-      this.grid.claim(
-        cellX,
-        cellZ,
-        p,
-        (cells[c + 2] ?? 0) + yLdu,
-        raisedStud(cells[c + 3] ?? NO_STUD, yLdu),
-        cells[c + 4] ?? 0,
-      );
+      const stud = raisedStud(stamp.stud[c] ?? NO_STUD, pose.yLdu);
+      this.grid.claim(x, z, owner, top, phase, stud, stamp.road[c] ?? 0);
     }
+  }
+
+  clear(): void {
+    this.memo?.forget();
+    this.poses.length = 0;
+    this.overlapPairs.clear();
+    this.grid.clear();
   }
 
   report(): RoadJoinReport {
-    const tally = new EdgeTally();
-    for (let p = 0; p < this.placed.length; p++) {
-      const placed = this.placed[p];
-      if (!placed) continue;
-      if (this.lostCells[p] === 1) this.tallyEverySide(p, placed, tally);
-      else this.tallyBoundary(p, placed, tally);
-    }
+    const tally = new EdgeTally(new Int32Array(this.poses.length * PLACEMENT_CELL_INTS));
+    for (let owner = 0; owner < this.poses.length; owner++) this.tallyPlacement(owner, tally);
     return {
-      placements: this.placed.length,
+      placements: this.poses.length,
       joinedCells: tally.joinedCells,
       openCells: tally.openCells,
       mismatchedCells: tally.mismatchedCells,
-      overlaps: [...this.overlapPairs].map((pair) => {
-        const [a = 0, b = 0] = pair.split(",").map(Number);
-        return [a, b] as const;
-      }),
+      placementCells: tally.placementCells,
+      overlaps: [...this.overlapPairs.values()].toSorted(byPair),
       segments: mergeSegments(tally.edgeCells),
     };
   }
 
-  private tallyBoundary(p: number, placed: PlacedStamp, tally: EdgeTally): void {
-    const { cells, edges } = placed.stamp;
-    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
-      this.tallySide(p, placed, (edges[e] ?? 0) * STAMP_CELL_INTS, edges[e + 3] ?? 0, cells, tally);
+  fit(candidate: RoadPlacement, into: RoadFit): RoadFit {
+    const pose = this.probe.at(candidate);
+    const memo = this.memoed();
+    if (memo.recall(pose, into) === COMPLETE_FIT) return into;
+    into.reset();
+    if (this.reaches(pose)) {
+      into.overlappingCells = this.occupiedCells(pose, false);
+      pose.overlapping = into.overlappingCells > 0;
+      this.countSeams(pose, into, false);
     }
+    memo.remember(pose, COMPLETE_FIT, into);
+    return into;
   }
 
-  private tallyEverySide(p: number, placed: PlacedStamp, tally: EdgeTally): void {
-    const { cells } = placed.stamp;
-    for (let c = 0; c < cells.length; c += STAMP_CELL_INTS) {
-      for (let side = 0; side < SIDES.length; side++) {
-        this.tallySide(p, placed, c, side, cells, tally);
-      }
-    }
+  cleanFit(candidate: RoadPlacement, into: RoadFit): RoadFit | null {
+    if (this.fitsCleanly(candidate, into) && into.joinedCells > 0) return into;
+    into.reset();
+    return null;
   }
 
-  private tallySide(
-    p: number,
-    placed: PlacedStamp,
-    c: number,
-    sideIndex: number,
-    cells: Float64Array,
-    tally: EdgeTally,
-  ): void {
-    const [side, dx, dz] = SIDES[sideIndex] ?? ["minX", -1, 0];
-    const id = this.ids[p] ?? 0;
-    const cellX = (cells[c] ?? 0) + placed.offsetX;
-    const cellZ = (cells[c + 1] ?? 0) + placed.offsetZ;
-    const top = (cells[c + 2] ?? 0) + placed.yLdu;
-    const stud = raisedStud(cells[c + 3] ?? NO_STUD, placed.yLdu);
-    const road = cells[c + 4] ?? 0;
-    const neighbour = this.grid.find(cellX + dx, cellZ + dz);
-    const neighbourId = neighbour === NO_OWNER ? null : (this.ids[neighbour] ?? 0);
-    if (neighbourId === id) return;
-    let status: RoadCellStatus;
-    let topLdu = top;
-    if (neighbourId === null) {
-      if (road === 0) return;
-      status = "open";
-      tally.openCells++;
-    } else {
-      const grid = this.grid;
-      topLdu = Math.max(top, grid.top);
-      if (grid.top === top && grid.stud === stud && grid.road === road) {
-        status = "joined";
-        if (id < neighbourId) tally.joinedCells++;
-      } else {
-        status = "mismatch";
-        if (id < neighbourId) tally.mismatchedCells++;
-      }
-    }
-    tally.edgeCells.push({
-      placement: id,
-      side,
-      line: edgeLine(side, cellX, cellZ),
-      along: alongEdge(side, cellX, cellZ),
-      topLdu,
-      status,
-    });
+  cleanContact(candidate: RoadPlacement, into: RoadFit): RoadFit | null {
+    const clean = this.fitsCleanly(candidate, into);
+    if (clean && into.metCells > 0 && into.equalCells === into.metCells) return into;
+    into.reset();
+    return null;
   }
 
-  fit(candidate: RoadPlacement): RoadFit {
-    if (!onLattice(candidate)) return this.fitCells(candidate);
-    const stamp = stampOf(candidate.surface, candidate.rot);
-    const offsetX = candidate.x / STUD_LDU;
-    const offsetZ = candidate.z / STUD_LDU;
-    const edges = this.edgeFit(stamp, offsetX, offsetZ, candidate.yLdu, false);
-    return {
-      joinedCells: edges.joinedCells,
-      joinedRoadCells: edges.joinedRoadCells,
-      mismatchedCells: edges.mismatchedCells,
-      overlappingCells: this.overlappingCells(stamp, offsetX, offsetZ, false),
-    };
+  private fitsCleanly(candidate: RoadPlacement, into: RoadFit): boolean {
+    const pose = this.probe.at(candidate);
+    const memo = this.memoed();
+    const known = memo.recall(pose, into);
+    if (known === COMPLETE_FIT) return into.mismatchedCells === 0 && into.overlappingCells === 0;
+    if (known === CLASHED_FIT) return false;
+    into.reset();
+    const clean = this.judgeCleanly(pose, into);
+    memo.remember(pose, clean ? COMPLETE_FIT : CLASHED_FIT, into);
+    return clean;
   }
 
-  cleanFit(candidate: RoadPlacement): RoadFit | null {
-    if (!onLattice(candidate)) {
-      const fit = this.fitCells(candidate);
-      const clean = fit.joinedCells > 0 && fit.mismatchedCells === 0 && fit.overlappingCells === 0;
-      return clean ? fit : null;
-    }
-    const stamp = stampOf(candidate.surface, candidate.rot);
-    const offsetX = candidate.x / STUD_LDU;
-    const offsetZ = candidate.z / STUD_LDU;
-    if (this.overlappingCells(stamp, offsetX, offsetZ, true) > 0) return null;
-    const edges = this.edgeFit(stamp, offsetX, offsetZ, candidate.yLdu, true);
-    if (edges.joinedCells === 0 || edges.mismatchedCells > 0) return null;
-    return {
-      joinedCells: edges.joinedCells,
-      joinedRoadCells: edges.joinedRoadCells,
-      mismatchedCells: 0,
-      overlappingCells: 0,
-    };
+  private judgeCleanly(pose: PlacedStamp, into: RoadFit): boolean {
+    if (!this.reaches(pose)) return true;
+    into.overlappingCells = this.occupiedCells(pose, true);
+    if (into.overlappingCells > 0) return false;
+    return this.countSeams(pose, into, true);
   }
 
-  private overlappingCells(
-    stamp: RoadStamp,
-    offsetX: number,
-    offsetZ: number,
-    stopAtFirst: boolean,
-  ): number {
-    const { cells, rect } = stamp;
-    const grid = this.grid;
-    if (rect) {
-      return grid.claimedIn(
-        rect.minX + offsetX,
-        rect.minZ + offsetZ,
-        rect.maxX + offsetX,
-        rect.maxZ + offsetZ,
-        stopAtFirst,
-      );
-    }
-    let overlapping = 0;
-    for (let c = 0; c < cells.length; c += STAMP_CELL_INTS) {
-      if (grid.find((cells[c] ?? 0) + offsetX, (cells[c + 1] ?? 0) + offsetZ) === NO_OWNER) {
-        continue;
-      }
-      overlapping++;
-      if (stopAtFirst) break;
-    }
-    return overlapping;
+  private memoed(): RoadFitMemo {
+    this.memo ??= new RoadFitMemo();
+    return this.memo;
   }
 
-  private edgeFit(
-    stamp: RoadStamp,
-    offsetX: number,
-    offsetZ: number,
-    y: number,
-    stopAtMismatch: boolean,
-  ): EdgeFit {
-    const { cells, edges } = stamp;
-    const grid = this.grid;
-    const fit = this.scratchFit;
-    fit.joinedCells = 0;
-    fit.joinedRoadCells = 0;
-    fit.mismatchedCells = 0;
-    for (let e = 0; e < edges.length; e += STAMP_EDGE_INTS) {
-      const c = (edges[e] ?? 0) * STAMP_CELL_INTS;
-      const neighbour = grid.find(
-        (cells[c] ?? 0) + offsetX + (edges[e + 1] ?? 0),
-        (cells[c + 1] ?? 0) + offsetZ + (edges[e + 2] ?? 0),
-      );
-      if (neighbour === NO_OWNER) continue;
-      const road = cells[c + 4] ?? 0;
-      const same =
-        grid.top === (cells[c + 2] ?? 0) + y &&
-        grid.stud === raisedStud(cells[c + 3] ?? NO_STUD, y) &&
-        grid.road === road;
-      if (!same) {
-        fit.mismatchedCells++;
-        if (stopAtMismatch) break;
-        continue;
-      }
-      fit.joinedCells++;
-      if (road !== 0) fit.joinedRoadCells++;
-    }
-    return fit;
+  private reaches(pose: PlacedStamp): boolean {
+    return this.grid.reachesLevels(pose.stamp, pose.offsetX, pose.offsetZ, pose.yLdu);
   }
 
-  private fitCells(candidate: RoadPlacement): RoadFit {
-    const cells = placedCells(candidate);
-    const own = new CellMap<boolean>();
-    for (const cell of cells) own.set(cell.cellX, cell.cellZ, true);
-    const grid = this.grid;
-    let joinedCells = 0;
-    let joinedRoadCells = 0;
-    let mismatchedCells = 0;
-    let overlappingCells = 0;
-    for (const cell of cells) {
-      if (grid.find(cell.cellX, cell.cellZ) !== NO_OWNER) overlappingCells++;
-      for (const [, dx, dz] of SIDES) {
-        if (own.has(cell.cellX + dx, cell.cellZ + dz)) continue;
-        if (grid.find(cell.cellX + dx, cell.cellZ + dz) === NO_OWNER) continue;
-        if (grid.top !== cell.top || grid.stud !== cell.stud || grid.road !== cell.road) {
-          mismatchedCells++;
+  private occupiedCells(pose: PlacedStamp, stopAtFirst: boolean): number {
+    const { stamp, offsetX, offsetZ, yLdu } = pose;
+    return this.grid.occupiedCells(stamp, offsetX, offsetZ, yLdu, pose.phase, stopAtFirst);
+  }
+
+  private countsPair(owner: number, partner: number): boolean {
+    const own = this.poses[owner];
+    const other = this.poses[partner];
+    if (!own || !other) throw new Error(`road pair ${owner}, ${partner} has no placement`);
+    return own.id < other.id || (own.id === other.id && owner < partner);
+  }
+
+  private recordOverlap(owner: number, pose: PlacedStamp): void {
+    const other = this.poses[owner];
+    if (!other) throw new Error(`road cell owner ${owner} has no placement`);
+    other.overlapping = true;
+    pose.overlapping = true;
+    const pair = [Math.min(other.id, pose.id), Math.max(other.id, pose.id)] as const;
+    const key = `${pair[0]},${pair[1]}`;
+    if (!this.overlapPairs.has(key)) this.overlapPairs.set(key, pair);
+  }
+
+  private tallyPlacement(owner: number, tally: EdgeTally): void {
+    const pose = this.poses[owner];
+    if (!pose) return;
+    const seams = this.seams;
+    for (let line = 0; line < pose.stamp.seamLineEnd.length; line++) {
+      this.collectLine(pose, line, false);
+      seams.classify();
+      for (let i = 0; i < seams.pairCount; i++) {
+        const status = seams.statusOf(i);
+        if (status === NO_STATUS) continue;
+        if (status === OPEN) {
+          tally.openCells++;
+          tally.edgeCells.push(edgeCellOf(pose, seams.edgeOf(i), "open"));
           continue;
         }
-        joinedCells++;
-        if (cell.road !== 0) joinedRoadCells++;
+        const joined = status === JOINED;
+        const counted = this.countsPair(owner, seams.partnerOf(i));
+        if (joined && counted) {
+          tally.joinedCells++;
+          tally.countPlacement(owner, PLACEMENT_JOINED);
+        }
+        if (!joined) {
+          if (counted) tally.mismatchedCells++;
+          tally.countPlacement(owner, PLACEMENT_MISMATCHED);
+        }
+        tally.edgeCells.push(edgeCellOf(pose, seams.edgeOf(i), joined ? "joined" : "mismatch"));
+      }
+      for (let i = 0; i < seams.openCount; i++) {
+        tally.openCells++;
+        tally.edgeCells.push(edgeCellOf(pose, seams.openEdgeOf(i), "open"));
       }
     }
-    return { joinedCells, joinedRoadCells, mismatchedCells, overlappingCells };
+  }
+
+  private countSeams(pose: PlacedStamp, into: RoadFit, stopAtMismatch: boolean): boolean {
+    const seams = this.seams;
+    for (let line = 0; line < pose.stamp.seamLineEnd.length; line++) {
+      this.collectLine(pose, line, stopAtMismatch);
+      if (stopAtMismatch && seams.mismatchCertain) return false;
+      seams.classify();
+      into.metCells += seams.pairCount;
+      for (let i = 0; i < seams.pairCount; i++) {
+        if (seams.equalAt(i)) into.equalCells++;
+        const status = seams.statusOf(i);
+        if (status === MISMATCHED) into.mismatchedCells++;
+        if (status !== JOINED) continue;
+        into.joinedCells++;
+        if (seams.ownRoadOf(i) !== 0) into.joinedRoadCells++;
+      }
+      if (stopAtMismatch && into.mismatchedCells > 0) return false;
+    }
+    return into.mismatchedCells === 0;
+  }
+
+  private collectLine(pose: PlacedStamp, line: number, stopAtMismatch: boolean): void {
+    const stamp = pose.stamp;
+    const offsetX = pose.offsetX;
+    const offsetZ = pose.offsetZ;
+    const yLdu = pose.yLdu;
+    const phase = pose.phase;
+    const seams = this.seams;
+    const cursor = this.cursor;
+    const from = line === 0 ? 0 : (stamp.seamLineEnd[line - 1] ?? 0);
+    const to = stamp.seamLineEnd[line] ?? from;
+    seams.reset();
+    for (let e = from; e < to; e++) {
+      const cell = stamp.seamCell[e] ?? 0;
+      const side = stamp.seamSide[e] ?? 0;
+      const x = (stamp.column[cell] ?? 0) + offsetX;
+      const z = (stamp.row[cell] ?? 0) + offsetZ;
+      const top = (stamp.top[cell] ?? 0) + yLdu;
+      const road = stamp.road[cell] ?? 0;
+      const along = acrossX(side) ? z : x;
+      const neighbourX = x + (SIDE_DX[side] ?? 0);
+      const neighbourZ = z + (SIDE_DZ[side] ?? 0);
+      let met = false;
+      for (
+        let found = cursor.seek(neighbourX, neighbourZ, top, phase);
+        found;
+        found = cursor.advance()
+      ) {
+        const partner = cursor.owner;
+        if (pose.overlapping && this.grid.holds(x, z, top, partner)) continue;
+        const stud = raisedStud(stamp.stud[cell] ?? NO_STUD, yLdu);
+        seams.push(e, along, partner, road, stud, cursor.road, cursor.stud);
+        if (stopAtMismatch && seams.mismatchCertain) return;
+        met = true;
+      }
+      if (!met && road !== 0) seams.pushOpen(e);
+    }
   }
 }
