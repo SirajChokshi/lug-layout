@@ -30,6 +30,7 @@ import type {
   RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import {
+  CAMERA_FOV_DEGREES,
   SCENE_BACKEND,
   INSTANCE_MATRIX_FLOATS,
   type BackendInfo,
@@ -45,9 +46,11 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
+import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { STUD_LDU, ZETA16_ORDER } from "@brr/math";
+import { ZETA16_ORDER } from "@brr/math";
 import type { Decoded } from "@brr/schema/decode";
 import {
   shardEntry,
@@ -80,18 +83,21 @@ import type { ImportResult, PlacementListener, RollingDiagnosticsRows } from "@b
 import type { IModelImporter } from "../import/worker-model-importer.ts";
 import {
   BOM_SERVICE,
+  CONNECTION_SOLVER,
   CONNECTOR_TABLES,
   EDITOR,
   EDITOR_CAMERA,
   MODEL_IMPORTER,
+  PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
   RAIL_YARD,
   RUNNING_GEAR,
   RUNNING_GEAR_OVERRIDES,
   SIM_CLIENT,
+  SNAP_SHAPES,
+  SPARSE_CONNECTOR_FINDER,
   TRAIN_PLAY,
-  PLACEABLE_CATALOG,
   WORLD_SESSION,
 } from "../tokens.ts";
 import { MemoryOverrideStore } from "../running-gear/memory-override-store.test-support.ts";
@@ -101,7 +107,7 @@ import {
   pinnedOmrModel,
 } from "../import/in-thread-importer.test-support.ts";
 import { InThreadSim } from "../sim/in-thread-sim.test-support.ts";
-import { TRACK_SEGMENT, WRITE_ADD, type PlanDelta } from "@brr/domain";
+import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/domain";
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
@@ -110,9 +116,15 @@ import { fixtureBundleLoader } from "./fixture-model.test-support.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import { meshesSettled } from "./mesh-progress.ts";
 import { chosen, settledChoice } from "./editor-choice.test-support.ts";
+import { typedArraysConstructedDuring } from "../connect/typed-arrays.test-support.ts";
+import { mateCounts } from "./placement-hover-view.ts";
+import type { PlacementHover } from "./placement-hover.ts";
+import { ViewCamera } from "../camera/view-camera.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const PLACEABLE_SET = "7936-1";
+const PLAIN_MODULE_MODEL = "mils-plain";
+const OPEN_TABLE_X = 2_560;
 const RAY_HEIGHT_LDU = 10_000;
 const NDC_SPAN_LDU = 4_000;
 const STUD = 20;
@@ -289,7 +301,7 @@ class ModelSubsetLoader implements IPartBundleLoader {
 }
 
 interface AimedBackend {
-  aim(x: number, z: number): void;
+  aim(x: number, z: number, slope?: number): void;
 }
 
 class HeadlessBackend implements ISceneBackend {
@@ -339,12 +351,14 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   ghostInstances = 0;
   ghost: { readonly x: number; readonly z: number; readonly rot: number } | null = null;
+  readonly ghostPose: number[] = [];
   setGhost(model: ChunkInstances | null): void {
     this.ghostInstances = model?.count ?? 0;
     this.ghost = null;
   }
-  placeGhost(x: number, _yLdu: number, z: number, rot: number): void {
+  placeGhost(x: number, yLdu: number, z: number, rot: number): void {
     this.ghost = { x, z, rot };
+    this.ghostPose.splice(0, this.ghostPose.length, x, yLdu, z, rot);
   }
   selectionBoxes = 0;
   setSelectionBoxes(boxes: ReadonlyArray<unknown>): void {
@@ -369,23 +383,35 @@ class HeadlessBackend implements ISceneBackend {
   projectToNdc(): void {}
   private aimX = 0;
   private aimZ = 0;
-  aim(x: number, z: number): void {
+  private aimSlope = 0;
+  viewHalfWidthLdu = NDC_SPAN_LDU;
+  aim(x: number, z: number, slope = 0): void {
     this.aimX = x;
     this.aimZ = z;
+    this.aimSlope = slope;
   }
+  camera: ViewCamera | null = null;
   rayThrough(ndcX: number, ndcY: number, out: Float64Array): void {
+    if (this.camera) {
+      this.camera.rayThrough(ndcX, ndcY, out);
+      return;
+    }
+    const back = this.aimSlope * RAY_HEIGHT_LDU;
     out.set([
-      this.aimX + ndcX * NDC_SPAN_LDU,
+      this.aimX + ndcX * this.viewHalfWidthLdu,
       RAY_HEIGHT_LDU,
-      this.aimZ - ndcY * NDC_SPAN_LDU,
+      this.aimZ - ndcY * NDC_SPAN_LDU + back,
       0,
       -1,
-      0,
+      -this.aimSlope,
     ]);
   }
   setView(): void {}
   resize(): void {}
-  renderFrame(): void {}
+  onRender: (() => void) | null = null;
+  renderFrame(): void {
+    this.onRender?.();
+  }
   needsFrame(): boolean {
     return true;
   }
@@ -1032,6 +1058,22 @@ function queuedOf(editor: IEditor) {
   return { queuedPlacement: editor.snapshot().queuedPlacement };
 }
 
+const SETTLE_FRAMES = 10_000;
+
+function unsettled(placement: PlacementHover | null | undefined): boolean {
+  return placement?.settled === false || placement?.turnSettled === false;
+}
+
+async function settledHover(editor: IEditor, frame: () => Promise<void>) {
+  for (let frames = 0; unsettled(editor.snapshot().hover?.placement); frames++) {
+    if (frames >= SETTLE_FRAMES) {
+      throw new Error(`the hover is still unsettled after ${SETTLE_FRAMES} frames`);
+    }
+    await frame();
+  }
+  return editor.snapshot().hover;
+}
+
 function placer(editor: IEditor, backend: AimedBackend) {
   const now = placerNow(editor, backend);
   return async (item: string, x: number, z: number) => {
@@ -1091,35 +1133,38 @@ function turnOutcome(editor: IEditor, direction: 1 | -1) {
   };
 }
 
-it("refuses to turn a baseplate while a set rests on it, turns the set itself, and turns the baseplate once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET]);
+it("refuses to turn a module while a set lifted onto it rests on it, turns the set itself, and turns the module once the set is gone", async () => {
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
-  const set = `omr:${PLACEABLE_SET}`;
-  await loadCatalogItem(catalog, set);
-  await place(BASEPLATE, 0, 0);
-  await place(set, 0, 0);
-  const corner = 300;
+  await place(PLAIN_MODULE, 320, 320);
+  await place(SET, 320, 320);
+  const corner = 20;
 
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const baseplateUnderSet = turnOutcome(editor, 1);
-  const baseplateUnderSetBack = turnOutcome(editor, -1);
-  expect(selectAt(editor, backend, 0, 0)?.item).toBe(set);
-  const setOnBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const moduleUnderSet = turnOutcome(editor, 1);
+  const moduleUnderSetBack = turnOutcome(editor, -1);
+  const setSelection = selectAt(editor, backend, 320, 320);
+  expect(setSelection?.item).toBe(SET);
+  const setYPlates = setSelection?.kind === "model" ? setSelection.yPlates : null;
+  const setOnModule = turnOutcome(editor, -1);
   editor.deleteSelection(0);
-  expect(selectAt(editor, backend, corner, corner)?.item).toBe(BASEPLATE);
-  const bareBaseplate = turnOutcome(editor, -1);
+  expect(selectAt(editor, backend, corner, corner)?.item).toBe(PLAIN_MODULE);
+  const bareModule = turnOutcome(editor, -1);
 
   const refused = {
     rot: 0,
     yPlates: 0,
-    refusal: expect.stringContaining(`rests on it`),
+    refusal: expect.stringContaining(`${PLACEABLE_SET} Level Crossing (2010) rests on it`),
     roadCells: 0,
   };
-  expect({ baseplateUnderSet, baseplateUnderSetBack, setOnBaseplate, bareBaseplate }).toEqual({
-    baseplateUnderSet: refused,
-    baseplateUnderSetBack: refused,
-    setOnBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
-    bareBaseplate: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
+  expect(setYPlates).toBeGreaterThan(0);
+  expect({ moduleUnderSet, moduleUnderSetBack, setOnModule, bareModule }).toEqual({
+    moduleUnderSet: refused,
+    moduleUnderSetBack: refused,
+    setOnModule: { rot: 3, yPlates: setYPlates, refusal: null, roadCells: 0 },
+    bareModule: { rot: 3, yPlates: 0, refusal: null, roadCells: 0 },
   });
 }, 120_000);
 
@@ -1836,6 +1881,7 @@ function importReport(
     bakeHelpersFailed: 0,
     fetched: { requests: 0, found: 0, notFound: 0, bytes: 0 },
     records: null,
+    shadowLibrary: null,
     timings: {
       readMs: 0,
       resolveMs: 0,
@@ -1845,6 +1891,7 @@ function importReport(
       recordFetchMs: 0,
       compileMs: 0,
       ldrawFetchMs: 0,
+      shadowFetchMs: 0,
       bakePhases: null,
       coverPhases: null,
     },
@@ -1926,7 +1973,11 @@ it("resolves a model file the bake refuses as not imported and keeps the chosen 
   });
 }, 120_000);
 
-function importedRecord(fileName: string, record: ModelRecord): ImportResult {
+function importedRecord(
+  fileName: string,
+  record: ModelRecord,
+  connectors: ReadonlyArray<PartConnectors | null> = record.parts.map(() => null),
+): ImportResult {
   const { model, parts } = record;
   const refused = refusedBake(fileName);
   const partIds = parts.map((part) => part.id);
@@ -1940,7 +1991,7 @@ function importedRecord(fileName: string, record: ModelRecord): ImportResult {
     matrices: model.matrices,
     partTransforms: model.partTransforms,
     submodels: model.submodels,
-    connectors: partIds.map(() => null),
+    connectors: [...connectors],
     bake: {
       lattice: model.lattice,
       latticeIssue: null,
@@ -2075,14 +2126,23 @@ it("places an import while its studs are checked, offers none of them to the sta
   expect(posesOf(editor)).toEqual(posesPending);
 }, 120_000);
 
-async function checkingImport(fetcher: IAssetFetcher = new BundleDirectoryFetcher()) {
+async function checkingImport(
+  fetcher: IAssetFetcher = new BundleDirectoryFetcher(),
+  served = PLACEABLE_SET,
+  models: ReadonlyArray<string> = [],
+  bringsRecords = false,
+) {
   const importer = new GatedModelImporter();
-  const started = await startEditor([], fetcher, [], (bound) =>
+  const started = await startEditor(models, fetcher, [], (bound) =>
     bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
   );
   const { container, editor } = started;
-  const record = await container.get(PART_BUNDLE_LOADER).loadModelRecord("standard", PLACEABLE_SET);
-  importer.serve(importedRecord("checking.mpd", record));
+  const loader = container.get(PART_BUNDLE_LOADER);
+  const record = await loader.loadModelRecord("standard", served);
+  const connectors = bringsRecords
+    ? await Promise.all(record.parts.map((part) => loader.loadPartConnectors("standard", part.id)))
+    : undefined;
+  importer.serve(importedRecord("checking.mpd", record, connectors));
   const catalog = container.get(PLACEABLE_CATALOG);
   const importedPlaceable = () => {
     const item = editor.snapshot().modelImport?.item ?? null;
@@ -2141,18 +2201,18 @@ it("resolves clicks queued while the held item's tables load, over an import who
     const { editor, backend } = await checkingImport(baseplateGate);
     const item = await importChecking(editor);
     await placer(editor, backend)(item, 0, 0);
-    const clicks: Array<[string, HeldText]> = [
-      [BASEPLATE, baseplateGate],
-      [ROAD_PLATE, roadPlateGate],
+    const clicks: Array<[string, HeldText, number]> = [
+      [BASEPLATE, baseplateGate, OPEN_TABLE_X],
+      [ROAD_PLATE, roadPlateGate, 0],
     ];
-    for (const [held, gate] of clicks) {
+    for (const [held, gate, x] of clicks) {
       if (queued) {
-        placerNow(editor, backend)(held, 0, 0);
+        placerNow(editor, backend)(held, x, 0);
         gate.open();
         await settledChoice(editor);
       } else {
         gate.open();
-        await placer(editor, backend)(held, 0, 0);
+        await placer(editor, backend)(held, x, 0);
       }
     }
     const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
@@ -2176,7 +2236,81 @@ it("resolves clicks queued while the held item's tables load, over an import who
     studChecks: 1,
     queuedPlacement: null,
   });
-  expect(queued.poses).toContain(`${BASEPLATE} 0,0 y32`);
+  expect(queued.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
+}, 120_000);
+
+it("keeps the stud mates of a module loaded after an import that brought no record for the parts they share", async () => {
+  const { editor, backend, importer, catalog, frame } = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+  );
+  await importChecking(editor);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  await placer(editor, backend)(PLAIN_MODULE, 2_000, 320);
+  await chosen(editor, SET);
+  backend.aim(2_000, 320);
+  editor.pointerMove(0, 0);
+  const hover = hoverOutcome((await settledHover(editor, frame))?.placement);
+  importer.release();
+
+  expect(hover).toMatchObject({ accepted: true, restsOn: [PLAIN_MODULE] });
+  expect(hover.mates).toBeGreaterThan(0);
+}, 120_000);
+
+function hoverOutcome(placement: PlacementHover | null | undefined) {
+  return {
+    pose: placement?.pose,
+    accepted: placement?.accepted,
+    magnetised: placement?.magnetised,
+    magnet: placement?.magnet,
+    restsOn: [...new Set(placement?.restsOn.map((model) => model.item))],
+    mates: placement?.mates.length,
+  };
+}
+
+async function setOneStudIntoPendingImport() {
+  const started = await checkingImport(
+    new BundleDirectoryFetcher(),
+    PLAIN_MODULE_MODEL,
+    [PLACEABLE_SET],
+    true,
+  );
+  const { editor, backend } = started;
+  const item = await importChecking(editor);
+  const place = placer(editor, backend);
+  await place(item, 320, 320);
+  await place(item, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((entry) => entry.id === SET)?.studsWide ?? 0;
+  await chosen(editor, SET);
+  backend.aim(320 + wide * 20 - 20, 320);
+  return { ...started, item };
+}
+
+it("decides assist over an import whose studs are being checked from its connectors alone: it offers no stud meanwhile, and the hover that magnetises a held set onto it is the same before and after its studs land", async () => {
+  const { editor, importer, importedPlaceable, frame, item } = await setOneStudIntoPendingImport();
+  const hover = async () => {
+    editor.pointerMove(0, 0);
+    return hoverOutcome((await settledHover(editor, frame))?.placement);
+  };
+  const offersStuds = () => importedPlaceable()?.studLattice.onLattice.includes(1) ?? null;
+  const pending = { studChecks: editor.snapshot().studChecks, offersStuds: offersStuds() };
+  const pendingHover = await hover();
+
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  const republished = hoverOutcome((await settledHover(editor, frame))?.placement);
+  const moved = await hover();
+
+  expect(pending).toEqual({ studChecks: 1, offersStuds: false });
+  expect(offersStuds()).toBe(true);
+  expect(pendingHover).toMatchObject({ accepted: true, magnetised: true, restsOn: [item] });
+  expect({ republished, moved }).toEqual({
+    republished: pendingHover,
+    moved: pendingHover,
+  });
 }, 120_000);
 
 it("keeps a click queued while the held item's tables load through another import's studs landing, then places it", async () => {
@@ -2345,7 +2479,18 @@ it("shows only the world that is open: no studs or far models after New World, t
 
 const SET = `omr:${PLACEABLE_SET}`;
 const PLAIN_MODULE = "generated:mils-plain";
-const OVERLAP = "would overlap";
+const OVERLAP = "would hit";
+
+function latticeKeys(poses: CandidatePoses, x: number, z: number): Set<string> {
+  const found = new Set<string>();
+  for (let q = 0; q < poses.count; q++) {
+    const px = poses.x[q] ?? 0;
+    const pz = poses.z[q] ?? 0;
+    if ((px - x) % 20 !== 0 || (pz - z) % 20 !== 0) continue;
+    found.add(`${px},${pz},${poses.yPlates[q]},${poses.rot[q]}`);
+  }
+  return found;
+}
 
 function posesOf(editor: IEditor) {
   const { refs, placements } = editor.dump();
@@ -2358,7 +2503,7 @@ const OVERLAP_REFUSED = {
   outcome: {
     placements: 1,
     refusedClicks: 1,
-    reason: expect.stringContaining(`${OVERLAP} 3811 Baseplate 32 x 32`),
+    reason: expect.stringContaining(`${OVERLAP} Baseplate 32 x 32 in 3811 Baseplate 32 x 32`),
   },
   ghostRefusal: expect.stringContaining(OVERLAP),
 };
@@ -2389,9 +2534,12 @@ it.each([
   { name: "a 3811 flush beside the first", held: BASEPLATE, at: [640, 0], expected: PLACED_BESIDE },
   { name: "a set on the 3811", held: SET, at: [0, 0], expected: PLACED_BESIDE },
 ] as const)(
-  "with a 3811 placed, $name is refused only where two baseplates would share space",
+  "with a 3811 placed, $name is refused only where it would overlap the 3811, naming the part it hits",
   async ({ held, at, expected }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog, frame } = await startEditor([
+      PLAIN_MODULE_MODEL,
+      PLACEABLE_SET,
+    ]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -2399,7 +2547,7 @@ it.each([
     await chosen(editor, held);
     backend.aim(at[0], at[1]);
     editor.pointerMove(0, 0);
-    const ghostRefusal = editor.snapshot().hover?.refusal ?? null;
+    const ghostRefusal = (await settledHover(editor, frame))?.refusal ?? null;
     const outcome = await place(held, at[0], at[1]);
 
     expect({ outcome, ghostRefusal }).toEqual(expected);
@@ -2713,8 +2861,690 @@ it("refuses to turn a 16 x 32 baseplate into the 3811 beside it", async () => {
   });
 }, 120_000);
 
+it("seats a set on a module's surface where the cursor's ray reaches the module through its side, as a tilted camera's does", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const justInsideTheFrontEdge = 620;
+  backend.aim(320, justInsideTheFrontEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
+it("seats a set on a module's surface where the cursor's ray enters the module's top face by its far edge, though the ray reaches the table past the module", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  const cameraAt45Degrees = 1;
+  const tablePastTheFarEdge = -12;
+  backend.aim(320, tablePastTheFarEdge, cameraAt45Degrees);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({
+    accepted: hover?.accepted,
+    lifted: hover?.lifted,
+    restsOn: hover?.restsOn.map((model) => model.item),
+    studMates: (hover?.mates.length ?? 0) > 0,
+  }).toEqual({ accepted: true, lifted: true, restsOn: [PLAIN_MODULE], studMates: true });
+}, 120_000);
+
+it("seats a user's brick on a stack of three where a low camera's ray meets the stack's top face, though that ray reaches the table beyond assist's reach", async () => {
+  const { editor, backend, catalog, frame } = await startEditor(
+    [USER_BRICK],
+    new BundleDirectoryFetcher(),
+    [USER_BRICK],
+  );
+  await loadCatalogItem(catalog, HELD_BRICK);
+  const place = placer(editor, backend);
+  for (let level = 0; level < 3; level++) await place(HELD_BRICK, 0, 0);
+  await chosen(editor, HELD_BRICK);
+  const stackTopLdu = 9 * PLATE_LDU;
+  const lowCamera = 2;
+  backend.aim(0, -stackTopLdu * lowCamera, lowCamera);
+  editor.pointerMove(0, 0);
+  const hover = (await settledHover(editor, frame))?.placement;
+
+  expect({ accepted: hover?.accepted, pose: hover?.pose }).toEqual({
+    accepted: true,
+    pose: { x: 0, z: 0, yPlates: 9, rot: 0 },
+  });
+}, 120_000);
+
+it("draws the held model's ghost exactly where a click commits it, seated on the module it rests on", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await chosen(editor, SET);
+  backend.aim(320, 320);
+  editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
+  const [x = Number.NaN, yLdu = Number.NaN, z = Number.NaN] = backend.ghostPose;
+  editor.click(0, 0, 0);
+
+  expect({ poses: posesOf(editor), onTheModule: yLdu > 0 }).toEqual({
+    poses: [`${PLAIN_MODULE} 320,320 y0`, `${SET} ${x},${z} y${yLdu / PLATE_LDU}`].toSorted(),
+    onTheModule: true,
+  });
+}, 120_000);
+
+it("assist moves a held set that would cut one stud into a placed set to a mated pose; precise, chosen or held, refuses it at the cursor naming the set", async () => {
+  const { editor, backend, catalog, frame } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+  ]);
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  const hover = async () => {
+    editor.pointerMove(0, 0);
+    const placement = (await settledHover(editor, frame))?.placement;
+    return {
+      mode: placement?.mode,
+      accepted: placement?.accepted,
+      magnetised: placement?.magnetised,
+      atCursor: placement?.pose.x === oneStudIn && placement.pose.z === 320,
+      hits: placement?.hit?.placed.item ?? null,
+    };
+  };
+  const assist = await hover();
+  editor.setPlacementModeOverride(true);
+  const held = await hover();
+  editor.setPlacementModeOverride(false);
+  const released = await hover();
+  editor.setPlacementMode("precise");
+  const chosenPrecise = await hover();
+
+  const snapped = { mode: "assist", accepted: true, magnetised: true, atCursor: false, hits: null };
+  const refused = {
+    mode: "precise",
+    accepted: false,
+    magnetised: false,
+    atCursor: true,
+    hits: SET,
+  };
+  expect({ assist, held, released, chosenPrecise }).toEqual({
+    assist: snapped,
+    held: refused,
+    released: snapped,
+    chosenPrecise: refused,
+  });
+}, 120_000);
+
+const SLOW_CLOCK_STEP_MS = 1;
+const FRAMES_FOR_AN_ABANDONED_SEARCH = 200;
+
+function slowClock() {
+  let now = performance.now();
+  return vi.spyOn(performance, "now").mockImplementation(() => (now += SLOW_CLOCK_STEP_MS));
+}
+
+async function setOneStudIntoSet(gate: IAssetFetcher = new BundleDirectoryFetcher()) {
+  const started = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET], gate);
+  const { editor, backend, catalog } = started;
+  await loadCatalogItem(catalog, PLAIN_MODULE);
+  await loadCatalogItem(catalog, SET);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(PLAIN_MODULE, 960, 320);
+  await place(SET, 320, 320);
+  const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+  const oneStudIn = 320 + wide * 20 - 20;
+  await chosen(editor, SET);
+  backend.aim(oneStudIn, 320);
+  return { ...started, oneStudIn };
+}
+
+function publishedHovers(editor: IEditor): Array<PlacementHover | null> {
+  const published: Array<PlacementHover | null> = [];
+  editor.subscribe(() => published.push(editor.snapshot().hover?.placement ?? null));
+  return published;
+}
+
+async function framesToSettle(editor: IEditor, frame: () => Promise<void>): Promise<number> {
+  let frames = 0;
+  while (unsettled(editor.snapshot().hover?.placement)) {
+    if (frames >= SETTLE_FRAMES) throw new Error("the hover never settled");
+    await frame();
+    frames++;
+  }
+  return frames;
+}
+
+it("shows precise's verdict at the cursor at once, then settles assist over later frames on exactly the hover a whole search gives", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const sliced = await setOneStudIntoSet();
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const provisional = sliced.editor.snapshot().hover?.placement;
+    const ghostAtOnce = [...sliced.backend.ghostPose];
+    const frames = await framesToSettle(sliced.editor, sliced.frame);
+    const settled = sliced.editor.snapshot().hover?.placement;
+
+    expect({
+      settled: provisional?.settled,
+      mode: provisional?.mode,
+      accepted: provisional?.accepted,
+      magnetised: provisional?.magnetised,
+      pose: provisional?.pose,
+      hits: provisional?.hit?.placed.item,
+      ghost: ghostAtOnce.slice(0, 3),
+    }).toEqual({
+      settled: false,
+      mode: "assist",
+      accepted: false,
+      magnetised: false,
+      pose: { x: sliced.oneStudIn, z: 320, yPlates: provisional?.pose.yPlates, rot: 0 },
+      hits: SET,
+      ghost: [sliced.oneStudIn, (provisional?.pose.yPlates ?? 0) * PLATE_LDU, 320],
+    });
+    expect({ settled, multiFrame: frames > 1 }).toEqual({ settled: wholeHover, multiFrame: true });
+    expect(wholeHover).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
+
+const FINE_CLOCK_STEP_MS = 0.25;
+const NO_RENDER_MS = 0;
+const HEAVY_RENDER_MS = 10;
+const OVER_BUDGET_RENDER_MS = 14;
+const THREE_STUDS_IN_FROM_ONE_IN = 2 * STUD_LDU;
+
+async function settleBehindRender(renderMs: number) {
+  const scene = await setOneStudIntoSet();
+  let now = performance.now();
+  const clock = vi.spyOn(performance, "now").mockImplementation(() => (now += FINE_CLOCK_STEP_MS));
+  scene.backend.onRender = () => {
+    now += renderMs;
+  };
+  try {
+    scene.backend.aim(scene.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+    scene.editor.pointerMove(0, 0);
+    const frameMs: number[] = [];
+    while (unsettled(scene.editor.snapshot().hover?.placement)) {
+      if (frameMs.length >= SETTLE_FRAMES) throw new Error("the hover never settled");
+      const before = now;
+      await scene.frame();
+      frameMs.push(now - before);
+    }
+    return { frameMs, hover: scene.editor.snapshot().hover?.placement };
+  } finally {
+    clock.mockRestore();
+  }
+}
+
+it("slices assist around the frame's render: a slow render shrinks the slice, never below its floor, and the hover settles as a whole search does", async () => {
+  const whole = await setOneStudIntoSet();
+  whole.backend.aim(whole.oneStudIn - THREE_STUDS_IN_FROM_ONE_IN, 320);
+  whole.editor.pointerMove(0, 0);
+  const wholeHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const light = await settleBehindRender(NO_RENDER_MS);
+  const heavy = await settleBehindRender(HEAVY_RENDER_MS);
+  const overBudget = await settleBehindRender(OVER_BUDGET_RENDER_MS);
+
+  expect({ light: light.hover, heavy: heavy.hover, overBudget: overBudget.hover }).toEqual({
+    light: wholeHover,
+    heavy: wholeHover,
+    overBudget: wholeHover,
+  });
+  expect({
+    lightSpansFrames: light.frameMs.length > 2,
+    heavySlicesShrink: heavy.frameMs.length > light.frameMs.length,
+    heavyFramesWithin16Ms: heavy.frameMs.every((ms) => ms <= 16),
+    overBudgetAtMostTwiceTheFrames: overBudget.frameMs.length <= 2 * light.frameMs.length + 2,
+  }).toEqual({
+    lightSpansFrames: true,
+    heavySlicesShrink: true,
+    heavyFramesWithin16Ms: true,
+    overBudgetAtMostTwiceTheFrames: true,
+  });
+}, 240_000);
+
+it("commits the settled assist pose for a click made before the search settles, made at once or queued while the held set's tables load", async () => {
+  const setPoses = (editor: IEditor) => posesOf(editor).filter((pose) => pose.startsWith(SET));
+  const atOnce = async (sliced: boolean) => {
+    const scene = await setOneStudIntoSet();
+    const clock = sliced ? slowClock() : null;
+    try {
+      scene.editor.pointerMove(0, 0);
+      const settledAtClick = scene.editor.snapshot().hover?.placement?.settled;
+      scene.editor.click(0, 0, 0);
+      return { settledAtClick, poses: setPoses(scene.editor), oneStudIn: scene.oneStudIn };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const queuedBesideModule = async (sliced: boolean) => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    const clock = sliced ? slowClock() : null;
+    try {
+      placerNow(editor, backend)(SET, clearOfModule, 320);
+      const queued = editor.snapshot().queuedPlacement !== null;
+      gate.open();
+      await settledChoice(editor);
+      return { queued, poses: setPoses(editor), clearOfModule };
+    } finally {
+      clock?.mockRestore();
+    }
+  };
+  const [wholeAtOnce, slicedAtOnce] = [await atOnce(false), await atOnce(true)];
+  const [wholeQueued, slicedQueued] = [
+    await queuedBesideModule(false),
+    await queuedBesideModule(true),
+  ];
+
+  expect({ settledAtClick: slicedAtOnce.settledAtClick, queued: slicedQueued.queued }).toEqual({
+    settledAtClick: false,
+    queued: true,
+  });
+  expect({ atOnce: slicedAtOnce.poses, queued: slicedQueued.poses }).toEqual({
+    atOnce: wholeAtOnce.poses,
+    queued: wholeQueued.poses,
+  });
+  expect({
+    atOnceMoved: !slicedAtOnce.poses.includes(`${SET} ${slicedAtOnce.oneStudIn},320 y4`),
+    queuedOnTheModule: slicedQueued.poses.every(
+      (pose) => pose.endsWith(" y4") && !pose.includes(` ${slicedQueued.clearOfModule},`),
+    ),
+  }).toEqual({ atOnceMoved: true, queuedOnTheModule: true });
+}, 240_000);
+
+it("drops an unsettled assist search when the pointer moves to another stud, the held set turns, the mode toggles or the pointer leaves, and never shows its result", async () => {
+  const outcome = async (
+    trigger: (scene: Awaited<ReturnType<typeof setOneStudIntoSet>>) => void,
+  ) => {
+    const scene = await setOneStudIntoSet();
+    const clock = slowClock();
+    try {
+      scene.editor.pointerMove(0, 0);
+      const startedUnsettled = scene.editor.snapshot().hover?.placement?.settled === false;
+      await scene.frame();
+      const published = publishedHovers(scene.editor);
+      trigger(scene);
+      await framesToSettle(scene.editor, scene.frame);
+      for (let frame = 0; frame < 4; frame++) await scene.frame();
+      return { startedUnsettled, published, scene };
+    } finally {
+      clock.mockRestore();
+    }
+  };
+  const whole = await setOneStudIntoSet();
+  whole.editor.pointerMove(0, 0);
+  const abandoned = (await settledHover(whole.editor, whole.frame))?.placement;
+  const isAbandoned = (hover: PlacementHover | null) =>
+    hover !== null &&
+    hover.pose.x === abandoned?.pose.x &&
+    hover.pose.z === abandoned.pose.z &&
+    hover.pose.rot === abandoned.pose.rot &&
+    hover.mode === "assist";
+  const awayX = 2_400;
+  whole.backend.aim(awayX, 320);
+  whole.editor.pointerMove(0, 0);
+  const awayHover = (await settledHover(whole.editor, whole.frame))?.placement;
+  const moved = await outcome(({ editor, backend }) => {
+    backend.aim(awayX, 320);
+    editor.pointerMove(0, 0);
+  });
+  const turned = await outcome(({ editor }) => editor.rotate(0));
+  const toggled = await outcome(({ editor }) => editor.setPlacementModeOverride(true));
+  const leaving = await setOneStudIntoSet();
+  const leaveClock = slowClock();
+  let left: { startedUnsettled: boolean; hover: unknown; ghostMoved: boolean };
+  try {
+    leaving.editor.pointerMove(0, 0);
+    const startedUnsettled = leaving.editor.snapshot().hover?.placement?.settled === false;
+    await leaving.frame();
+    leaving.editor.pointerLeave();
+    const ghostAtLeave = [...leaving.backend.ghostPose];
+    for (let frame = 0; frame < FRAMES_FOR_AN_ABANDONED_SEARCH; frame++) await leaving.frame();
+    left = {
+      startedUnsettled,
+      hover: leaving.editor.snapshot().hover,
+      ghostMoved: leaving.backend.ghostPose.some((value, index) => value !== ghostAtLeave[index]),
+    };
+  } finally {
+    leaveClock.mockRestore();
+  }
+
+  expect([moved, turned, toggled].map(({ startedUnsettled }) => startedUnsettled)).toEqual([
+    true,
+    true,
+    true,
+  ]);
+  expect({
+    moved: moved.published.some(isAbandoned),
+    turned: turned.published.some(isAbandoned),
+    toggled: toggled.published.some(isAbandoned),
+  }).toEqual({ moved: false, turned: false, toggled: false });
+  expect({
+    moved: moved.scene.editor.snapshot().hover?.placement,
+    turnedRot: turned.scene.editor.snapshot().hover?.placement?.pose.rot,
+    toggled: toggled.published
+      .slice(toggled.published.findIndex((hover) => hover?.mode === "precise"))
+      .every((hover) => hover?.mode === "precise" && hover.settled),
+  }).toEqual({ moved: awayHover, turnedRot: 1, toggled: true });
+  expect(left).toEqual({ startedUnsettled: true, hover: null, ghostMoved: false });
+}, 240_000);
+
+it("restarts an unsettled assist search when an import's studs land under it, and settles on the hover it had before they landed", async () => {
+  const whole = await setOneStudIntoPendingImport();
+  whole.editor.pointerMove(0, 0);
+  const before = (await settledHover(whole.editor, whole.frame))?.placement;
+  whole.importer.release();
+  const sliced = await setOneStudIntoPendingImport();
+  const atLanding: Array<boolean | undefined> = [];
+  const clock = slowClock();
+  try {
+    sliced.editor.pointerMove(0, 0);
+    const startedUnsettled = sliced.editor.snapshot().hover?.placement?.settled === false;
+    sliced.editor.subscribe(() => {
+      const { studChecks, hover } = sliced.editor.snapshot();
+      if (studChecks === 0) atLanding.push(hover?.placement?.settled);
+    });
+    sliced.importer.release();
+    while (sliced.editor.snapshot().studChecks > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    await framesToSettle(sliced.editor, sliced.frame);
+    const after = sliced.editor.snapshot().hover?.placement;
+
+    expect({ startedUnsettled, restarted: atLanding[0] }).toEqual({
+      startedUnsettled: true,
+      restarted: false,
+    });
+    expect(after).toEqual(before);
+    expect(before).toMatchObject({ settled: true, accepted: true, magnetised: true });
+  } finally {
+    clock.mockRestore();
+  }
+}, 240_000);
+
+it("constructs no typed array once warm while hovers slice, settle and publish, refusals named included", async () => {
+  const { editor, backend, frame } = await setOneStudIntoSet();
+  const sweep = async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+    }
+  };
+  await sweep();
+  const refusals = () => (editor.snapshot().hover?.refusal ? 1 : 0);
+  let refused = 0;
+  const constructed = await typedArraysConstructedDuring(async () => {
+    for (let x = 0; x <= 1_400; x += 20) {
+      backend.aim(x, 320);
+      editor.pointerMove(0, 0);
+      await settledHover(editor, frame);
+      refused += refusals();
+    }
+  });
+
+  expect({ constructed, refused: refused > 0 }).toEqual({ constructed: 0, refused: true });
+}, 240_000);
+
+it("publishes the assist radius as the farthest lattice pose within 32 px at the cursor, never under one stud nor over the custom pair's 60 LDU basin", async () => {
+  const { editor, backend } = await startEditor([]);
+  await chosen(editor, BASEPLATE);
+  const viewWidthPx = 640;
+  const thirtyTwoPxIn = (ldu: number) => (ldu * viewWidthPx) / 2 / 32;
+  const radius = (lduPer32Px: number) => {
+    backend.viewHalfWidthLdu = thirtyTwoPxIn(lduPer32Px);
+    backend.aim(0, 0);
+    editor.pointerMove(0, 0);
+    return editor.snapshot().hover?.placement?.assistNeighbourhood;
+  };
+
+  const [capped, within, floored] = [radius(100), radius(44), radius(5)];
+
+  expect({ capped, floored, withinCells: within?.cells, withinPlates: within?.plates }).toEqual({
+    capped: { ldu: 60, cells: 3, plates: 7 },
+    floored: { ldu: 20, cells: 1, plates: 2 },
+    withinCells: 3,
+    withinPlates: 5,
+  });
+  expect(within?.ldu).toBeCloseTo(Math.hypot(2 * STUD_LDU, 2 * PLATE_LDU), 12);
+}, 120_000);
+
+const ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG = -1.2;
+const SUB_CELL_OFFSETS_PX: ReadonlyArray<readonly [number, number]> = [
+  [0, 2],
+  [0, -2],
+  [2, 0],
+  [-2, 0],
+  [2, 2],
+  [-2, -2],
+];
+const NDC_PER_PX_X = 2 / 640;
+const NDC_PER_PX_Y = 2 / 480;
+
+function orbitCameraAt(x: number, z: number, zoomLog: number): ViewCamera {
+  const camera = new ViewCamera(CAMERA_FOV_DEGREES);
+  camera.resize(640, 480);
+  camera.step(0);
+  camera.setMode("orbit");
+  camera.step(1);
+  camera.step(5_000);
+  camera.zoomAtSafeCentre(zoomLog);
+  camera.step(10_000);
+  camera.jumpTo(x, z);
+  camera.step(15_000);
+  return camera;
+}
+
+it("keeps the hover and never restarts its search while the pointer moves within one stud cell at a fixed zoom", async () => {
+  const scene = await setOneStudIntoSet();
+  const { editor, backend, frame } = scene;
+  backend.camera = orbitCameraAt(scene.oneStudIn, 320, ZOOM_INSIDE_THE_ASSIST_CLAMP_LOG);
+  editor.pointerMove(0, 0);
+  await framesToSettle(editor, frame);
+  const start = editor.snapshot().hover;
+  const settled = start?.placement ?? null;
+  const published = publishedHovers(editor);
+  const cells = new Set<string>([`${start?.x},${start?.z}`]);
+  const clock = slowClock();
+  try {
+    for (const [rightPx, upPx] of SUB_CELL_OFFSETS_PX) {
+      editor.pointerMove(rightPx * NDC_PER_PX_X, upPx * NDC_PER_PX_Y);
+      const hover = editor.snapshot().hover;
+      cells.add(`${hover?.x},${hover?.z}`);
+      await frame();
+    }
+  } finally {
+    clock.mockRestore();
+  }
+  const reach = settled?.assistNeighbourhood.ldu ?? 0;
+
+  expect({ cells: cells.size, insideTheClamp: reach > STUD_LDU && reach < 3 * STUD_LDU }).toEqual({
+    cells: 1,
+    insideTheClamp: true,
+  });
+  expect({
+    published: published.length > 0,
+    allTheSettledHover: published.every((hover) => hover === settled),
+  }).toEqual({ published: true, allTheSettledHover: true });
+}, 240_000);
+
+it("counts Technic, side-stud and track votes only where those finders propose a pose, over real modulars, a module and a set with track", async () => {
+  const fireBrigade = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor([
+    PLAIN_MODULE_MODEL,
+    PLACEABLE_SET,
+    "10190-1",
+    "10218-1",
+  ]);
+  for (const item of [PLAIN_MODULE, SET, fireBrigade, petShop])
+    await loadCatalogItem(catalog, item);
+  const place = placer(editor, backend);
+  await place(PLAIN_MODULE, 320, 320);
+  await place(fireBrigade, 960, 320);
+  await place(SET, 320, 1600);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const tables = container.get(CONNECTOR_TABLES);
+  const proposals = new CandidatePoses();
+  const reach = { cells: 3, plates: 7, turns: 4 };
+  const missed: string[] = [];
+  let voted = 0;
+  const held: ReadonlyArray<readonly [string, number, number, number]> = [
+    [petShop, 1600, 320, 0],
+    [petShop, 1300, 320, 0],
+    [SET, 320, 320, 4],
+    [SET, 320, 1600 + 980, 0],
+  ];
+  for (const [item, x, z, yPlates] of held) {
+    const placeable = await loadCatalogItem(catalog, item);
+    const loaded = await tables.load(placeable);
+    const model = search.model(loaded.tables, placeable.partTransforms, []);
+    solver.proposeMates(model, { x, z, yPlates, rot: 0, ...reach }, proposals);
+    const proposed = new Set<string>();
+    for (let q = 0; q < proposals.count; q++) {
+      proposed.add(
+        `${proposals.x[q]},${proposals.z[q]},${proposals.yPlates[q]},${proposals.rot[q]}`,
+      );
+    }
+    for (let rot = 0; rot < reach.turns; rot++) {
+      for (let dy = -reach.plates; dy <= reach.plates; dy++) {
+        if (yPlates + dy < 0) continue;
+        for (let i = -reach.cells; i <= reach.cells; i++) {
+          for (let j = -reach.cells; j <= reach.cells; j++) {
+            const pose = { x: x + i * 20, z: z + j * 20, yPlates: yPlates + dy, rot };
+            if (solver.proposalVotes(model, pose) === 0) continue;
+            voted++;
+            const key = `${pose.x},${pose.z},${pose.yPlates},${pose.rot}`;
+            if (!proposed.has(key)) missed.push(`${item} ${key}`);
+          }
+        }
+      }
+    }
+  }
+
+  expect({ missed, votedSomewhere: voted > 0 }).toEqual({ missed: [], votedSomewhere: true });
+}, 600_000);
+
+it("proposes on the stud lattice exactly the lattice poses of the full slot walk, one slot per slice, a held Technic hole's facade pin among the side studs and bars included", async () => {
+  const marketStreet = "omr:10190-1";
+  const petShop = "omr:10218-1";
+  const { editor, backend, catalog, container } = await startEditor(["10190-1", "10218-1"]);
+  for (const item of [marketStreet, petShop]) await loadCatalogItem(catalog, item);
+  await placer(editor, backend)(marketStreet, 0, 0);
+  const sparse = container.get(SPARSE_CONNECTOR_FINDER);
+  const solver = container.get(CONNECTION_SOLVER);
+  const search = container.get(PLACEMENT_SEARCH);
+  const shapes = container.get(SNAP_SHAPES);
+  const placeable = await loadCatalogItem(catalog, petShop);
+  const loaded = await container.get(CONNECTOR_TABLES).load(placeable);
+  const model = search.model(loaded.tables, placeable.partTransforms, []);
+  const full = new CandidatePoses();
+  const lattice = new CandidatePoses();
+  const report = new MateReport();
+  const progress = new ProposalProgress();
+  const differing: string[] = [];
+  let technicMates = 0;
+  let slices = 0;
+  for (const x of [600, 640, 680]) {
+    const window = { x, z: 0, yPlates: 0, rot: 0, cells: 3, plates: 7, turns: 4 };
+    sparse.propose(model, window, full);
+    progress.restart();
+    while (!sparse.proposeOnLattice(model, window, lattice, progress, 1)) slices++;
+    const walked = latticeKeys(full, x, 0);
+    const indexed = latticeKeys(lattice, x, 0);
+    for (const key of walked) if (!indexed.has(key)) differing.push(`missing ${key}`);
+    for (const key of indexed) if (!walked.has(key)) differing.push(`extra ${key}`);
+    for (const key of indexed) {
+      const [px = 0, pz = 0, yPlates = 0, rot = 0] = key.split(",").map(Number);
+      solver.partneredMates(model, { x: px, z: pz, yPlates, rot }, report);
+      for (const mate of mateCounts(report, shapes, () => null)) {
+        const flaredPartner = mate.partnerKinds.some((kind) =>
+          kind.sections.some((section) => section.profile === "flare"),
+        );
+        if (mate.kind.gender === "female" && flaredPartner) technicMates += mate.connectors;
+      }
+    }
+  }
+
+  expect({ differing, technicMates: technicMates > 0, sliced: slices > 0 }).toEqual({
+    differing: [],
+    technicMates: true,
+    sliced: true,
+  });
+}, 600_000);
+
+it("leaves no placement verdict on the hover once road mode replaces a held model that was refused", async () => {
+  const { editor, backend } = await startEditor([]);
+  const place = placer(editor, backend);
+  await place(BASEPLATE, 0, 0);
+  await chosen(editor, BASEPLATE);
+  backend.aim(160, 0);
+  editor.pointerMove(0, 0);
+  const held = editor.snapshot().hover;
+  const kit = editor.snapshot().roadKits[0];
+  if (!kit) throw new Error("no road kit");
+  editor.chooseItem(kit.id);
+  editor.pointerMove(0, 0);
+  const { mode, hover } = editor.snapshot();
+
+  expect({
+    heldRefused: held?.placement?.accepted === false && held.refusal !== null,
+    mode,
+    placement: hover?.placement ?? null,
+    refusal: hover?.refusal ?? null,
+  }).toEqual({ heldRefused: true, mode: "road", placement: null, refusal: null });
+}, 120_000);
+
 it("refuses to delete a MILS module while a set rests on it, names the set, and deletes it once the set is gone", async () => {
-  const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+  const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
   await loadCatalogItem(catalog, PLAIN_MODULE);
   await loadCatalogItem(catalog, SET);
   const place = placer(editor, backend);
@@ -2765,7 +3595,7 @@ it.each([
 ] as const)(
   "deletes the support when $name, since the set keeps its resting height",
   async ({ lay, remove }) => {
-    const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
+    const { editor, backend, catalog } = await startEditor([PLAIN_MODULE_MODEL, PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
     const place = placer(editor, backend);
@@ -2829,6 +3659,11 @@ function toggleAt(editor: IEditor, backend: HeadlessBackend, at: Ground) {
 
 function selectedItems(editor: IEditor): ReadonlyArray<string> {
   return (editor.snapshot().selection?.members ?? []).map((member) => member.item).toSorted();
+}
+
+function groupMoveOutcome(editor: IEditor) {
+  const { lastRefusal } = editor.snapshot();
+  return { ...editOutcome(editor), refusedAt: lastRefusal ? [lastRefusal.x, lastRefusal.z] : null };
 }
 
 function editOutcome(editor: IEditor) {
@@ -3216,6 +4051,7 @@ describe("selection groups", () => {
       [USER_BRICK],
     );
     await loadCatalogItem(catalog, HELD_BRICK);
+    editor.setPlacementMode("precise");
     const place = placer(editor, backend);
     await place(HELD_BRICK, 0, 0);
     await place(HELD_BRICK, 100, 0);
@@ -3249,6 +4085,76 @@ describe("selection groups", () => {
         poses: [...laid.poses, `${HELD_BRICK} 100,0 y3`].toSorted(),
         refusal: expect.stringMatching(/^Can't turn the group\. .*rests on it/u),
         undoDepth: 3,
+      },
+    });
+  }, 120_000);
+
+  it("moves a group rigidly at its exact poses, each joined part of it held up only by its own mate outside the group or the table, and names a hit rather than lift it", async () => {
+    const raisedPair = async (secondAt: readonly [number, number]) => {
+      const started = await startEditor(
+        [CABOOSE.slice("omr:".length)],
+        new BundleDirectoryFetcher(),
+        [USER_BRICK],
+      );
+      const { editor, backend, catalog } = started;
+      await loadCatalogItem(catalog, HELD_BRICK);
+      await loadCatalogItem(catalog, CABOOSE);
+      editor.setPlacementMode("precise");
+      const place = placer(editor, backend);
+      for (const [x, z] of [[0, 0], [200, 0], [0, 400], [0, 0], secondAt] as const) {
+        await place(HELD_BRICK, x, z);
+      }
+      await place(CABOOSE, 0, 1200);
+      return { ...started, laid: posesOf(editor) };
+    };
+    const apart = await raisedPair([200, 0]);
+    selectAt(apart.editor, apart.backend, 0, 0);
+    toggleAt(apart.editor, apart.backend, [200, 0]);
+    apart.editor.moveSelectionBy(0, 400, 0);
+    const oneOverAir = groupMoveOutcome(apart.editor);
+
+    const overCaboose = await raisedPair([200, 0]);
+    selectAt(overCaboose.editor, overCaboose.backend, 0, 0);
+    toggleAt(overCaboose.editor, overCaboose.backend, [200, 0]);
+    overCaboose.editor.moveSelectionBy(0, 1_200, 0);
+    const overTheCaboose = groupMoveOutcome(overCaboose.editor);
+    const caboose = overCaboose.editor
+      .snapshot()
+      .catalog.find((item) => item.id === CABOOSE)?.label;
+
+    const joined = await raisedPair([20, 0]);
+    selectAt(joined.editor, joined.backend, 50, 0);
+    toggleAt(joined.editor, joined.backend, [-30, 0]);
+    joined.editor.moveSelectionBy(0, 400, 0);
+    const carried = groupMoveOutcome(joined.editor);
+
+    expect({
+      apart: apart.laid.filter((pose) => !pose.endsWith(" y0")),
+      joined: joined.laid.filter((pose) => !pose.endsWith(" y0")),
+    }).toEqual({
+      apart: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 200,0 y3`],
+      joined: [`${HELD_BRICK} 0,0 y3`, `${HELD_BRICK} 20,0 y6`],
+    });
+    expect({ oneOverAir, overTheCaboose, carried }).toEqual({
+      oneOverAir: {
+        poses: apart.laid,
+        refusal: expect.stringMatching(/^Can't move them there\. .*has nothing to rest on here/u),
+        undoDepth: apart.laid.length,
+        refusedAt: [200, 400],
+      },
+      overTheCaboose: {
+        poses: overCaboose.laid,
+        refusal: expect.stringContaining(`${OVERLAP} Plate 2 x 8 in ${caboose ?? ""}`),
+        undoDepth: overCaboose.laid.length,
+        refusedAt: [0, 1200],
+      },
+      carried: {
+        poses: joined.laid
+          .map((pose) => pose.replace(" 0,0 y3", " 0,400 y3").replace(" 20,0 y6", " 20,400 y6"))
+          .toSorted(),
+        refusal: null,
+        undoDepth: joined.laid.length + 1,
+        refusedAt: null,
       },
     });
   }, 120_000);
@@ -3615,7 +4521,7 @@ describe("selection groups with laid track", () => {
     expect(editor.snapshot().track?.pieces).toBe(2);
   }, 120_000);
 
-  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't rest them at two heights", async () => {
+  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't drag them into the module beside them", async () => {
     const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
@@ -3674,7 +4580,7 @@ describe("selection groups with laid track", () => {
     expect(pair.selected).toEqual([SET, STRAIGHT_PIECE].toSorted());
     expect(ontoModule).toMatchObject({
       kind: "move",
-      refusal: expect.stringMatching(/ is joined to .*different heights/u),
+      refusal: expect.stringContaining(OVERLAP),
     });
     expect({ ...left, refusal: null }).toEqual({ ...together, refusal: null });
   }, 120_000);
@@ -4557,6 +5463,7 @@ class HeldText implements IAssetFetcher {
   private readonly released = new Promise<void>((resolve) => {
     this.release = resolve;
   });
+  private failure: Error | null = null;
   held = 0;
 
   constructor(
@@ -4572,11 +5479,17 @@ class HeldText implements IAssetFetcher {
     if (this.holds(path)) {
       this.held++;
       await this.released;
+      if (this.failure) throw this.failure;
     }
     return this.files.text(path);
   }
 
   open(): void {
+    this.release();
+  }
+
+  fail(reason: string): void {
+    this.failure = new Error(reason);
     this.release();
   }
 }
@@ -4611,7 +5524,47 @@ it("places nothing while an item's connector tables load, and places a click mad
   );
 }, 120_000);
 
-it("lets go of a click made while an item loads once the pointer leaves that stud", async () => {
+it("decides a click queued while a set's tables load in the mode in effect when they load: assist magnetises it onto the module beside it, precise takes the cursor pose", async () => {
+  const queuedBesideModule = async (mode: "assist" | "precise") => {
+    let holding = false;
+    const gate = new HeldText(
+      new BundleDirectoryFetcher(),
+      (path) => holding && path.includes("/connectivity-"),
+    );
+    const { editor, backend, catalog } = await startEditor(
+      [PLAIN_MODULE_MODEL, PLACEABLE_SET],
+      gate,
+    );
+    await loadCatalogItem(catalog, PLAIN_MODULE);
+    await loadCatalogItem(catalog, SET);
+    await placer(editor, backend)(PLAIN_MODULE, 320, 320);
+    const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
+    const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
+    holding = true;
+    editor.setPlacementMode(mode);
+    placerNow(editor, backend)(SET, clearOfModule, 320);
+    const queued = editor.snapshot().queuedPlacement !== null;
+    gate.open();
+    await settledChoice(editor);
+    const set = posesOf(editor).find((pose) => pose.startsWith(SET)) ?? "";
+    return { queued, set, clearOfModule };
+  };
+  const assist = await queuedBesideModule("assist");
+  const precise = await queuedBesideModule("precise");
+
+  expect({
+    queued: [assist.queued, precise.queued],
+    assistOnTheModule:
+      assist.set.endsWith(" y4") && !assist.set.includes(` ${assist.clearOfModule},`),
+    precise: precise.set,
+  }).toEqual({
+    queued: [true, true],
+    assistOnTheModule: true,
+    precise: `${SET} ${precise.clearOfModule},320 y0`,
+  });
+}, 240_000);
+
+it("keeps a click made while an item loads through the pointer leaving that stud and the canvas, and places it at the clicked pose once the tables load", async () => {
   const gate = heldConnectivity();
   const { editor, backend } = await startEditor([], gate);
 
@@ -4619,16 +5572,374 @@ it("lets go of a click made while an item loads once the pointer leaves that stu
   const queued = editor.snapshot().queuedPlacement;
   backend.aim(1280, 640);
   editor.pointerMove(0, 0);
+  editor.pointerLeave();
   const afterMove = editor.snapshot().queuedPlacement;
   gate.open();
   await settledChoice(editor);
+  await vi.waitFor(() => expect(editor.snapshot().queuedPlacement).toBeNull());
 
-  expect({ queued: queued !== null, afterMove, placements: editor.snapshot().placements }).toEqual({
-    queued: true,
-    afterMove: null,
-    placements: 0,
+  expect({ queued, afterMove, placed: posesOf(editor) }).toEqual({
+    queued: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+    afterMove: { item: BASEPLATE, x: 640, z: 640, rot: 0 },
+    placed: [`${BASEPLATE} 640,640 y0`],
   });
 }, 120_000);
+
+const ROAD_TILE_LDU = 640;
+const BASEPLATE_SPAN_LDU = 640;
+const WAITING_NOTE = "is still reading its connectors";
+
+function roadPlatesReading(): HeldText {
+  return new HeldText(new BundleDirectoryFetcher(), (path) =>
+    /\/connectivity-(?!index\.|3811\.)/u.test(path),
+  );
+}
+
+function strokeRoad(editor: IEditor, backend: AimedBackend): void {
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  editor.chooseItem(kit.id);
+  backend.aim(ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2);
+  editor.dragStart(0, 0);
+  for (const column of [1, 2]) {
+    backend.aim(column * ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2);
+    editor.dragMove(0, 0);
+  }
+  editor.dragEnd(0, 0, 0);
+}
+
+function baseplatesOnRoad(editor: IEditor): number {
+  const { refs, placements } = editor.dump();
+  const at = placements.refId.map((ref, i) => ({
+    item: refs[ref] ?? "",
+    x: placements.x[i] ?? 0,
+    z: placements.z[i] ?? 0,
+    y: placements.yPlates[i] ?? 0,
+  }));
+  const roads = at.filter(({ item }) => item.startsWith("ldraw:44336"));
+  return at.filter(
+    (base) =>
+      base.item === BASEPLATE &&
+      roads.some(
+        (road) =>
+          road.y === base.y &&
+          Math.abs(road.x - base.x) < BASEPLATE_SPAN_LDU &&
+          Math.abs(road.z - base.z) < BASEPLATE_SPAN_LDU,
+      ),
+  ).length;
+}
+
+const OVER_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+const LAST_ROAD_TILE: Ground = [2 * ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+const BESIDE_THE_ROAD_EDGE: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
+const GREY_ROAD_PLATE = "ldraw:44336p04@72";
+
+function clickHeldAt(editor: IEditor, backend: AimedBackend, [x, z]: Ground): void {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+}
+
+function waitingView(editor: IEditor) {
+  const placement = editor.snapshot().hover?.placement;
+  const waiting = placement?.waitingOn;
+  return {
+    waitingOn: waiting
+      ? {
+          item: waiting.placed.item,
+          at: [waiting.placed.pose.x, waiting.placed.pose.z],
+          failed: waiting.failed,
+        }
+      : null,
+    accepted: placement?.accepted ?? null,
+    settled: placement?.settled ?? null,
+  };
+}
+
+it.each([
+  {
+    gesture: "a click over a plate, refused once they load",
+    act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
+    whileReading: {
+      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: expect.stringContaining("would hit Baseplate 32 x 32 Road"),
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture:
+      "a click beside the plates, replayed at the clicked pose after the pointer moves over a plate and off the canvas",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      clickHeldAt(editor, backend, BESIDE_THE_ROAD_EDGE);
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+      editor.pointerLeave();
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().placements > 3,
+    whileReading: {
+      queued: {
+        item: BASEPLATE,
+        x: BESIDE_THE_ROAD_EDGE[0],
+        z: BESIDE_THE_ROAD_EDGE[1],
+        rot: 0,
+      },
+      hover: { waitingOn: null, accepted: null, settled: null },
+    },
+    decision: {
+      placed: [`${BASEPLATE} ${BESIDE_THE_ROAD_EDGE[0]},${BESIDE_THE_ROAD_EDGE[1]} y0`],
+      refusal: null,
+      hover: { waitingOn: null, accepted: null, settled: null },
+    },
+  },
+  {
+    gesture: "a click over a plate, cancelled by Esc before they load",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      clickHeldAt(editor, backend, OVER_THE_ROAD);
+      editor.chooseItem(null);
+      editor.chooseItem(BASEPLATE);
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
+    whileReading: {
+      queued: null,
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: null,
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture: "a click over a plate whose tables fail to load, refused for that",
+    act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
+    release: (gate: HeldText) => gate.fail("503"),
+    decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
+    whileReading: {
+      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: expect.stringContaining("connector data didn't load"),
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: true },
+        accepted: false,
+        settled: true,
+      },
+    },
+  },
+  {
+    gesture:
+      "a hover over the last plate laid, naming that plate rather than the earlier one beside it",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      backend.aim(...LAST_ROAD_TILE);
+      editor.pointerMove(0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
+    whileReading: {
+      queued: null,
+      hover: {
+        waitingOn: { item: GREY_ROAD_PLATE, at: LAST_ROAD_TILE, failed: false },
+        accepted: false,
+        settled: false,
+      },
+    },
+    decision: {
+      placed: [],
+      refusal: null,
+      hover: { waitingOn: null, accepted: false, settled: true },
+    },
+  },
+  {
+    gesture: "a fill across the plates",
+    act: (editor: IEditor, backend: AimedBackend) => {
+      backend.aim(...OVER_THE_ROAD);
+      editor.pointerMove(0, 0);
+      editor.dragStart(0, 0);
+      backend.aim(3 * ROAD_TILE_LDU, ROAD_TILE_LDU / 2);
+      editor.dragMove(0, 0);
+      editor.dragEnd(0, 0, 0);
+    },
+    release: (gate: HeldText) => gate.open(),
+    decided: (editor: IEditor) => (editor.snapshot().lastFill?.refused ?? 0) > 0,
+    whileReading: { queued: null, hover: expect.anything() },
+    decision: { placed: [], refusal: null, hover: expect.anything() },
+  },
+])(
+  "waits on $gesture while a road stroke's plates read their connector tables, never committing a 3811 onto a plate",
+  async ({ act, release, decided, whileReading, decision }) => {
+    const gate = roadPlatesReading();
+    const { editor, backend, frame } = await startEditor([], gate);
+    strokeRoad(editor, backend);
+    const laid = posesOf(editor);
+    await chosen(editor, BASEPLATE);
+    act(editor, backend);
+    const reading = {
+      placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
+      queued: editor.snapshot().queuedPlacement,
+      hover: waitingView(editor),
+    };
+    expect({ laid: laid.length, heldRecords: gate.held > 0, reading }).toEqual({
+      laid: 3,
+      heldRecords: true,
+      reading: { placed: [], ...whileReading },
+    });
+    release(gate);
+    await vi.waitFor(() => expect(decided(editor)).toBe(true), { timeout: 60_000 });
+    await settledHover(editor, frame);
+
+    expect({
+      placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
+      onRoad: baseplatesOnRoad(editor),
+      queued: editor.snapshot().queuedPlacement,
+      refusal: editor.snapshot().lastRefusal?.reason ?? null,
+      hover: waitingView(editor),
+    }).toEqual({ ...decision, onRoad: 0, queued: null });
+  },
+  240_000,
+);
+
+type PendingNeighbourCommit = (editor: IEditor, backend: AimedBackend) => Promise<void>;
+
+const BESIDE_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
+const CLEAR_OF_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (5 * ROAD_TILE_LDU) / 2];
+const ON_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 2];
+
+const clickOnRoad =
+  (mode: "assist" | "precise"): PendingNeighbourCommit =>
+  async (editor, backend) => {
+    editor.setPlacementMode(mode);
+    await chosen(editor, BASEPLATE);
+    backend.aim(...ON_THE_ROAD);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+  };
+
+const COMMITS_THAT_READ_A_VERDICT: Readonly<
+  Record<
+    EditKind,
+    | ReadonlyArray<{
+        readonly path: string;
+        readonly first: Ground | null;
+        readonly commit: PendingNeighbourCommit;
+      }>
+    | string
+  >
+> = {
+  place: [
+    { path: "an assist click", first: null, commit: clickOnRoad("assist") },
+    { path: "a precise click", first: null, commit: clickOnRoad("precise") },
+    {
+      path: "a paste",
+      first: CLEAR_OF_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...CLEAR_OF_THE_ROAD);
+        editor.copySelection();
+        editor.pasteClipboard();
+        backend.aim(...ON_THE_ROAD);
+        editor.pointerMove(0, 0);
+        editor.click(0, 0, 0);
+      },
+    },
+  ],
+  fill: [
+    {
+      path: "a fill",
+      first: null,
+      commit: async (editor, backend) => {
+        await chosen(editor, BASEPLATE);
+        backend.aim(...ON_THE_ROAD);
+        editor.pointerMove(0, 0);
+        editor.dragStart(0, 0);
+        backend.aim(3 * ROAD_TILE_LDU, ROAD_TILE_LDU / 2);
+        editor.dragMove(0, 0);
+        editor.dragEnd(0, 0, 0);
+      },
+    },
+  ],
+  move: [
+    {
+      path: "a move onto the road",
+      first: CLEAR_OF_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...CLEAR_OF_THE_ROAD);
+        editor.moveSelectionBy(0, ON_THE_ROAD[1] - CLEAR_OF_THE_ROAD[1], 0);
+      },
+    },
+  ],
+  rotate: [
+    {
+      path: "a turn beside the road",
+      first: BESIDE_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...BESIDE_THE_ROAD);
+        editor.turnSelectedModelTo(1, 0);
+      },
+    },
+  ],
+  remove: [
+    {
+      path: "a delete beside the road",
+      first: BESIDE_THE_ROAD,
+      commit: async (editor, backend) => {
+        selectAt(editor, backend, ...BESIDE_THE_ROAD);
+        editor.deleteSelection(0);
+      },
+    },
+  ],
+  road: "lays road plates by road joins, not by the placement search",
+  "lay-track": "lays track against the drawing's own obstacles, which wait on seats",
+  "throw-switch": "throws a switch without placing a model",
+  plan: "edits plan regions only",
+};
+
+it.each(
+  Object.entries(COMMITS_THAT_READ_A_VERDICT).flatMap(([kind, paths]) =>
+    typeof paths === "string" ? [] : paths.map((row) => ({ kind, ...row })),
+  ),
+)(
+  "$kind: $path beside a road plate still reading its connector tables waits and commits nothing",
+  async ({ first, commit }) => {
+    const gate = roadPlatesReading();
+    const { editor, backend } = await startEditor([], gate);
+    if (first) await placer(editor, backend)(BASEPLATE, ...first);
+    strokeRoad(editor, backend);
+    const before = layoutState(editor).poses;
+    await commit(editor, backend);
+    const { queuedPlacement, lastFill, selectionRefusal } = editor.snapshot();
+    const waits =
+      queuedPlacement !== null ||
+      (lastFill?.reason ?? "").includes(WAITING_NOTE) ||
+      (selectionRefusal ?? "").includes(WAITING_NOTE);
+    gate.open();
+
+    expect({ poses: layoutState(editor).poses, waits }).toEqual({ poses: before, waits: true });
+  },
+  240_000,
+);
 
 it("lists the held item's parts that have no connector record, and why, and still places it", async () => {
   const { editor, backend } = await startEditor(
@@ -4833,7 +6144,8 @@ it("skips and reports the tiles a click would refuse, places the rest, and one u
       placements,
       placed: lastFill?.placed ?? null,
       refused: lastFill?.refused ?? null,
-      overlap: lastFill?.reason?.includes("would overlap 3811 Baseplate 32 x 32") ?? null,
+      overlap:
+        lastFill?.reason?.includes("would hit Baseplate 32 x 32 in 3811 Baseplate 32 x 32") ?? null,
       undo: history.undoLabel,
     };
   };

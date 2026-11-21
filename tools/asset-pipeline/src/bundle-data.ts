@@ -15,6 +15,7 @@ export const BUNDLE_DATA_FILES = {
   lock: `${PIPELINE_DIRECTORY}/ldraw.lock.json`,
   libraryBakePin: `${PIPELINE_DIRECTORY}/library-bake.json`,
   libraryConnectorsPin: `${PIPELINE_DIRECTORY}/library-connectors.json`,
+  shadowLibraryPin: `${PIPELINE_DIRECTORY}/shadow-library.json`,
   geometry: `${VERIFIED_FACTS_DIRECTORY}/geometry.json`,
   trackCatalog: `${VERIFIED_FACTS_DIRECTORY}/${TRACK_CATALOG_FILE}`,
   levelCrossing: `${VERIFIED_FACTS_DIRECTORY}/${LEVEL_CROSSING_FILE}`,

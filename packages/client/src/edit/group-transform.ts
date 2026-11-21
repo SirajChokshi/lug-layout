@@ -116,46 +116,6 @@ export function relativePose(pose: PlacementPose, frame: PlacementPose): Placeme
   };
 }
 
-export function stacksOf(
-  count: number,
-  restsOn: (rider: number, base: number) => boolean,
-): ReadonlyArray<number> {
-  const parent = Array.from({ length: count }, (_, index) => index);
-  const root = (index: number): number => {
-    let at = index;
-    while (parent[at] !== at) at = parent[at] ?? at;
-    return at;
-  };
-  for (let rider = 0; rider < count; rider++) {
-    for (let base = 0; base < count; base++) {
-      if (rider !== base && restsOn(rider, base)) parent[root(rider)] = root(base);
-    }
-  }
-  return parent.map((_, index) => root(index));
-}
-
-export function restStacks(
-  poses: ReadonlyArray<PlacementPose>,
-  stacks: ReadonlyArray<number>,
-  restingHeights: ReadonlyArray<number>,
-): ReadonlyArray<PlacementPose> {
-  const lowest = new Map<number, number>();
-  poses.forEach((pose, index) => {
-    const stack = stacks[index] ?? index;
-    lowest.set(stack, Math.min(lowest.get(stack) ?? Number.POSITIVE_INFINITY, pose.yPlates));
-  });
-  const base = new Map<number, number>();
-  poses.forEach((pose, index) => {
-    const stack = stacks[index] ?? index;
-    const lift = pose.yPlates - (lowest.get(stack) ?? 0);
-    base.set(stack, Math.max(base.get(stack) ?? 0, (restingHeights[index] ?? 0) - lift));
-  });
-  return poses.map((pose, index) => {
-    const stack = stacks[index] ?? index;
-    return { ...pose, yPlates: (base.get(stack) ?? 0) + pose.yPlates - (lowest.get(stack) ?? 0) };
-  });
-}
-
 function sideOf(quad: Float64Array, corner: number, x: number, z: number): number {
   const next = (corner + 1) % QUAD_CORNERS;
   const ax = quad[corner * 2] ?? 0;
