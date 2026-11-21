@@ -219,9 +219,10 @@ type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
 function todaysEvaluate(
   plans: ReadonlyArray<PlanRegion>,
   placed: ReadonlyArray<PlacedForPlan>,
+  unsupported: ReadonlyArray<boolean>,
 ): Evaluation {
   try {
-    const domain = placed.map(todaysToDomain);
+    const domain = placed.map((placement, i) => todaysToDomain(placement, unsupported[i] === true));
     return {
       checks: plans.map((plan) => checkPlan(plan, domain)),
       sandboxPlacements: domain
@@ -240,19 +241,28 @@ function todaysPlacementId(key: PlacementKey): string {
   return `${key.chunkKey}:${key.slot}`;
 }
 
-function todaysToDomain(placement: PlacedForPlan): PlanPlacement {
+function todaysToDomain(placement: PlacedForPlan, unsupported: boolean): PlanPlacement {
   const { box } = placement;
   return {
     key: placement.key,
     ref: placement.ref,
     label: placement.label,
     box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
+    unsupported,
   };
+}
+
+interface TodaysModel {
+  readonly id: number;
+  readonly todays: PlacedForPlan;
 }
 
 class TodaysPlanService {
   private readonly listeners = new Set<() => void>();
   private nextId = 1;
+  private modelIds: ReadonlyArray<number> = [];
+  private unsupportedTrack: ReadonlySet<number> = new Set();
+  private unsupportedModels: ReadonlySet<number> = new Set();
   private state: PlanSnapshot = {
     plans: [],
     activePlanId: null,
@@ -450,8 +460,25 @@ class TodaysPlanService {
     }));
   }
 
-  setPlacements(placements: ReadonlyArray<PlacedForPlan>): void {
-    this.commit({ placements });
+  setPlacements(models: ReadonlyArray<TodaysModel>, track: ReadonlyArray<PlacedForPlan>): void {
+    this.modelIds = models.map((model) => model.id);
+    this.commit({ placements: [...models.map((model) => model.todays), ...track] });
+  }
+
+  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+    this.unsupportedTrack = new Set(track);
+    this.unsupportedModels = new Set(models);
+    this.commit({});
+  }
+
+  private unsupportedFlags(placements: ReadonlyArray<PlacedForPlan>): boolean[] {
+    const models = this.modelIds;
+    return placements.map((_, i) => {
+      const id = models[i];
+      return id === undefined
+        ? this.unsupportedTrack.has(i - models.length)
+        : this.unsupportedModels.has(id);
+    });
   }
 
   setTableTopY(y: number): void {
@@ -460,7 +487,10 @@ class TodaysPlanService {
 
   private commit(patch: Partial<PlanSnapshot>): void {
     const next = { ...this.state, ...patch };
-    this.state = { ...next, ...todaysEvaluate(next.plans, next.placements) };
+    this.state = {
+      ...next,
+      ...todaysEvaluate(next.plans, next.placements, this.unsupportedFlags(next.placements)),
+    };
     this.draw();
     for (const listener of this.listeners) listener();
   }
@@ -653,7 +683,7 @@ export class Pair {
   }
 
   syncToday(): void {
-    this.today.setPlacements([...this.models.map((m) => m.todays), ...this.track.todays()]);
+    this.today.setPlacements(this.models, this.track.todays());
   }
 
   randomBox(): WorldBox {
@@ -770,6 +800,17 @@ export class Pair {
     writeTrackThrow(this.delta, this.track, piece);
     this.sut.apply(this.delta);
     this.syncToday();
+  }
+
+  unsupportedEdit(): void {
+    const pieces = new Set<number>();
+    for (let piece = 0; piece < MAX_PIECES + 2; piece++) {
+      if (this.next() < 0.3) pieces.add(piece);
+    }
+    const models = new Set<number>();
+    for (const model of this.models) if (this.next() < 0.3) models.add(model.id);
+    if (this.next() < 0.2) models.add(this.nextModel);
+    this.both((s) => s.setUnsupported(pieces, models));
   }
 
   load(): void {
@@ -926,6 +967,7 @@ export class Pair {
       return this.both((s) => s.setTableTopY(y));
     }
     if (roll < 0.91) return this.place(this.unreadableModel(this.pick(BOX_FIELDS)));
+    if (roll < 0.95) return this.unsupportedEdit();
     const unreadable = this.models.findIndex((m) => this.throwing.has(m.box));
     if (unreadable >= 0) return this.remove(unreadable);
     return this.place();
@@ -1162,6 +1204,20 @@ const MANDATORY: ReadonlyArray<MandatoryCase> = [
       p.both((s) => s.restore(before));
       p.both((s) => s.restore(created));
       p.place();
+    },
+  },
+  {
+    name: "flag laid track and a model carrying track unsupported, then lay, throw, remove and rebuild around the flags",
+    run: (p) => {
+      withPlan(p);
+      p.trackLay(3);
+      p.place();
+      const carrier = p.models.at(-1)?.id ?? -1;
+      p.both((s) => s.setUnsupported(new Set([0, 2, MAX_PIECES + 1]), new Set([carrier])));
+      p.trackLay(1);
+      p.switchThrow(0);
+      p.remove();
+      p.load();
     },
   },
   {
