@@ -177,7 +177,7 @@ export class RecordingBackend implements ISceneBackend, Recorder {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(overlays: ReadonlyArray<PlanOverlay>): void {
     this.overlays = overlays;
   }

@@ -223,11 +223,14 @@ export {
 } from "./track/stroke-router.ts";
 export {
   NO_OBSTACLE,
+  OUTLINE_BOX_FLOATS,
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  outlineBox,
   outlineContains,
   placedOutline,
+  rotateOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";

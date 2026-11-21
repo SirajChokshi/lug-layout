@@ -7,6 +7,7 @@ import {
   type EditorSnapshot,
   type IEditor,
   type PlaySnapshot,
+  type ModelSelectionView,
 } from "@brr/client";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { Container } from "inversify";
@@ -18,6 +19,16 @@ afterEach(cleanup);
 
 const EDITING_BUTTONS = [/^Draw track/u, /^Draw road/u, /^Rotate/u, /^Delete/u, /^Undo/u, /^Redo/u];
 const PLAY_SAFE_BUTTONS = [/^Select/u, /^Find/u, /^Shortcuts/u];
+
+const SELECTED: ModelSelectionView = {
+  kind: "model",
+  item: "ldraw:3811",
+  x: 0,
+  z: 0,
+  yPlates: 0,
+  rot: 0,
+  box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
+};
 
 function services(): { readonly editor: IEditor; readonly play: PlaySnapshot } {
   const container = new Container();
@@ -38,15 +49,11 @@ function editableSnapshot(editor: IEditor): EditorSnapshot {
     readOnly: false,
     mode: "place",
     selection: {
-      kind: "model",
-      item: "ldraw:3811",
-      x: 0,
-      z: 0,
-      yPlates: 0,
-      rot: 0,
-      chunkKey: 0,
-      slot: 0,
-      box: { minX: 0, minY: 0, minZ: 0, maxX: 640, maxY: 8, maxZ: 640 },
+      primary: SELECTED,
+      members: [SELECTED],
+      box: SELECTED.box,
+      tally: { models: 1, pieces: 0, trains: 0 },
+      movable: true,
     },
     history: {
       undo: "place",

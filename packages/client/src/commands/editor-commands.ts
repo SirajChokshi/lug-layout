@@ -1,10 +1,14 @@
-import type { IEditorCamera } from "../camera/editor-camera.ts";
+import { STUD_LDU } from "@brr/math";
+import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
 
+export type NudgeId = "nudge-left" | "nudge-right" | "nudge-forward" | "nudge-back";
+
 export type EditorActionId =
+  | "cancel"
   | "select-tool"
   | "draw-track"
   | "draw-road"
@@ -13,10 +17,19 @@ export type EditorActionId =
   | "rotate-back"
   | "flip-switch"
   | "next-connector"
+  | "extend-straight"
+  | "extend-left"
+  | "extend-right"
+  | "extend-preview"
+  | "next-track-choice"
+  | "previous-track-choice"
   | "delete"
   | "duplicate"
+  | "copy"
+  | "paste"
   | "undo"
   | "redo"
+  | NudgeId
   | "focus"
   | "fit-all"
   | "toggle-plan-view"
@@ -75,6 +88,13 @@ export const COMMAND_GROUPS: ReadonlyArray<CommandGroup> = [
 export const PLAY_THROTTLE_STEP_LDU_PER_S = 40;
 
 export const COMMANDS: ReadonlyArray<CommandSpec> = [
+  {
+    id: "cancel",
+    title: "Cancel the drag or the paste in hand",
+    group: "Tools",
+    keys: [{ key: "Escape" }],
+    keywords: "abort escape drop undo",
+  },
   {
     id: "select-tool",
     title: "Select tool: stop placing, clear the selection",
@@ -138,6 +158,48 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "cycle swing connector reverse curve",
   },
   {
+    id: "extend-straight",
+    title: "Lay a straight on the track end",
+    group: "Edit",
+    keys: [{ key: "w" }],
+    keywords: "append extend next piece forward rail",
+  },
+  {
+    id: "extend-left",
+    title: "Lay a left curve on the track end",
+    group: "Edit",
+    keys: [{ key: "a" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-right",
+    title: "Lay a right curve on the track end",
+    group: "Edit",
+    keys: [{ key: "d" }],
+    keywords: "append extend next piece turn bend rail",
+  },
+  {
+    id: "extend-preview",
+    title: "Lay the piece or join previewed on the track end",
+    group: "Edit",
+    keys: [{ key: "Enter" }],
+    keywords: "append extend again repeat close loop join complete",
+  },
+  {
+    id: "next-track-choice",
+    title: "Preview the next choice on the track end",
+    group: "Edit",
+    keys: [{ key: "." }],
+    keywords: "cycle option piece join",
+  },
+  {
+    id: "previous-track-choice",
+    title: "Preview the previous choice on the track end",
+    group: "Edit",
+    keys: [{ key: "," }],
+    keywords: "cycle option piece join back",
+  },
+  {
     id: "delete",
     title: "Delete the selection",
     group: "Edit",
@@ -150,6 +212,20 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "d", mod: true }],
     keywords: "duplicate copy clone again pick",
+  },
+  {
+    id: "copy",
+    title: "Copy the selection",
+    group: "Edit",
+    keys: [{ key: "c", mod: true }],
+    keywords: "clipboard group duplicate",
+  },
+  {
+    id: "paste",
+    title: "Paste the copied selection on the cursor",
+    group: "Edit",
+    keys: [{ key: "v", mod: true }],
+    keywords: "clipboard group insert",
   },
   {
     id: "undo",
@@ -168,6 +244,38 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
       { key: "y", mod: true },
     ],
     keywords: "again forward",
+    repeats: true,
+  },
+  {
+    id: "nudge-left",
+    title: "Move the selection a stud left",
+    group: "Edit",
+    keys: [{ key: "ArrowLeft" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-right",
+    title: "Move the selection a stud right",
+    group: "Edit",
+    keys: [{ key: "ArrowRight" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-forward",
+    title: "Move the selection a stud up the screen",
+    group: "Edit",
+    keys: [{ key: "ArrowUp" }],
+    keywords: "nudge step shift arrow",
+    repeats: true,
+  },
+  {
+    id: "nudge-back",
+    title: "Move the selection a stud down the screen",
+    group: "Edit",
+    keys: [{ key: "ArrowDown" }],
+    keywords: "nudge step shift arrow",
     repeats: true,
   },
   {
@@ -313,8 +421,18 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
 ];
 
 export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
-  { gesture: "Click", action: "Place the part in hand, or select a model" },
+  { gesture: "Click", action: "Place the part in hand, or select a model or track piece" },
+  { gesture: "Shift-click", action: "Add a model or track piece to the selection, or take it out" },
   { gesture: "Drag", action: "Lay a run of track or road while drawing it" },
+  {
+    gesture: "Drag from outside the selection",
+    action:
+      "Box-select every model and track piece inside the box (Ctrl or Cmd adds to the selection)",
+  },
+  {
+    gesture: "Drag a selected model or track piece",
+    action: "Move the whole selection (Esc cancels)",
+  },
   { gesture: "Right-drag", action: "Orbit (pan in the 2D plan)" },
   {
     gesture: "Shift-, Space- or middle-drag",
@@ -325,6 +443,13 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   { gesture: "Double-click", action: "Frame the selection" },
   { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
+
+const NUDGE_SCREEN: Readonly<Record<NudgeId, readonly [number, number]>> = {
+  "nudge-left": [-1, 0],
+  "nudge-right": [1, 0],
+  "nudge-forward": [0, -1],
+  "nudge-back": [0, 1],
+};
 
 const PAN_STEP_PX = 120;
 const ORBIT_STEP_PX = 52;
@@ -338,7 +463,8 @@ export function commandSpec(id: CommandId): CommandSpec {
   return spec;
 }
 
-export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | null {
+export function commandsForKey(input: KeyInput, typing: boolean): ReadonlyArray<CommandMatch> {
+  const bound: CommandMatch[] = [];
   for (const spec of COMMANDS) {
     if (typing && !spec.whileTyping) continue;
     const keyIndex = spec.keys.findIndex(
@@ -346,9 +472,18 @@ export function commandForKey(input: KeyInput, typing: boolean): CommandMatch | 
     );
     if (keyIndex < 0) continue;
     const { id } = spec;
-    return isHotbarCommand(id) ? { id, slot: keyIndex } : { id };
+    bound.push(isHotbarCommand(id) ? { id, slot: keyIndex } : { id });
   }
-  return null;
+  return bound;
+}
+
+export function commandForKey(
+  input: KeyInput,
+  typing: boolean,
+  enabled: (id: CommandId) => boolean,
+): CommandMatch | null {
+  const bound = commandsForKey(input, typing);
+  return bound.find((match) => enabled(match.id)) ?? bound[0] ?? null;
 }
 
 export function isShellCommand(id: CommandId): id is ShellCommandId {
@@ -439,26 +574,55 @@ export function commandEnabled(
   if (isPlayCommand(id)) return playCommandEnabled(id, play);
   if (play?.status === "running" && !runsDuringPlay(id)) return false;
   switch (id) {
+    case "cancel":
+      return snapshot.gesture !== null;
     case "rotate":
     case "rotate-back":
       return (
         !snapshot.readOnly &&
         (snapshot.mode === "place" ||
           snapshot.mode === "road" ||
-          snapshot.selection?.kind === "model" ||
+          snapshot.selection?.movable === true ||
+          (snapshot.gesture !== null && snapshot.gesture.kind !== "box") ||
           snapshot.track?.held != null)
       );
     case "flip-switch":
       return snapshot.track?.held?.mirror != null;
     case "next-connector":
       return snapshot.track?.held != null;
+    case "extend-straight":
+    case "extend-left":
+    case "extend-right":
+    case "extend-preview":
+    case "next-track-choice":
+    case "previous-track-choice":
+      return snapshot.track?.extend != null && !snapshot.readOnly;
     case "delete":
       if (snapshot.mode === "measure") return snapshot.rulers > 0 || snapshot.rulerDraft;
-      return snapshot.selection !== null && !snapshot.readOnly;
+      return snapshot.selection !== null && snapshot.gesture === null && !snapshot.readOnly;
     case "duplicate":
-      return snapshot.selection !== null && !snapshot.readOnly;
+      return snapshot.selection?.members.length === 1 && !snapshot.readOnly;
     case "pick-slot":
       return !snapshot.readOnly;
+    case "copy":
+      return snapshot.selection?.movable === true;
+    case "paste":
+      return (
+        snapshot.clipboard > 0 &&
+        snapshot.mode === "select" &&
+        snapshot.gesture === null &&
+        !snapshot.readOnly
+      );
+    case "nudge-left":
+    case "nudge-right":
+    case "nudge-forward":
+    case "nudge-back":
+      return (
+        snapshot.selection?.movable === true &&
+        snapshot.mode === "select" &&
+        snapshot.gesture === null &&
+        !snapshot.readOnly
+      );
     case "focus":
       return snapshot.selection !== null;
     case "undo":
@@ -499,15 +663,27 @@ export function commandEnabled(
 }
 
 function placeMoreLikeSelection(editor: IEditor, eventTimeMs: number): void {
-  const selection = editor.snapshot().selection;
-  if (!selection) return;
-  editor.chooseItem(selection.item);
-  if (selection.kind === "track") return;
-  const rot = selection.kind === "model" ? selection.rot : 0;
+  const selected = editor.snapshot().selection?.primary;
+  if (!selected) return;
+  editor.chooseItem(selected.item);
+  if (selected.kind === "track") return;
+  const rot = selected.kind === "model" ? selected.rot : 0;
   const turns = (rot - editor.snapshot().ghostRot + QUARTER_TURNS) % QUARTER_TURNS;
   const direction = turns > QUARTER_TURNS / 2 ? -1 : 1;
   const presses = direction === 1 ? turns : QUARTER_TURNS - turns;
   for (let press = 0; press < presses; press++) editor.rotate(eventTimeMs, direction);
+}
+
+function studStep({ x, z }: GroundDirection): { readonly dx: number; readonly dz: number } {
+  return Math.abs(x) >= Math.abs(z)
+    ? { dx: Math.sign(x) * STUD_LDU + 0, dz: 0 }
+    : { dx: 0, dz: Math.sign(z) * STUD_LDU + 0 };
+}
+
+function nudge(editor: IEditor, camera: IEditorCamera, id: NudgeId, eventTimeMs: number): void {
+  const [rightPx, downPx] = NUDGE_SCREEN[id];
+  const { dx, dz } = studStep(camera.groundDirection(rightPx, downPx));
+  editor.nudgeSelection(dx, dz, eventTimeMs);
 }
 
 export function runEditorAction(
@@ -517,8 +693,11 @@ export function runEditorAction(
   eventTimeMs: number,
 ): void {
   switch (id) {
+    case "cancel":
+      editor.cancelGesture();
+      return;
     case "select-tool":
-      editor.chooseItem(null);
+      if (!editor.dropTrackEnd()) editor.chooseItem(null);
       return;
     case "draw-track":
       editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
@@ -540,11 +719,41 @@ export function runEditorAction(
     case "next-connector":
       editor.cycleConnector();
       return;
+    case "extend-straight":
+      editor.extendTrack("straight", eventTimeMs);
+      return;
+    case "extend-left":
+      editor.extendTrack("left", eventTimeMs);
+      return;
+    case "extend-right":
+      editor.extendTrack("right", eventTimeMs);
+      return;
+    case "extend-preview":
+      editor.extendTrack(null, eventTimeMs);
+      return;
+    case "next-track-choice":
+      editor.cycleTrackChoice(1);
+      return;
+    case "previous-track-choice":
+      editor.cycleTrackChoice(-1);
+      return;
     case "delete":
       editor.deleteSelection(eventTimeMs);
       return;
     case "duplicate":
       placeMoreLikeSelection(editor, eventTimeMs);
+      return;
+    case "copy":
+      editor.copySelection();
+      return;
+    case "paste":
+      editor.pasteClipboard();
+      return;
+    case "nudge-left":
+    case "nudge-right":
+    case "nudge-forward":
+    case "nudge-back":
+      nudge(editor, camera, id, eventTimeMs);
       return;
     case "undo":
       editor.undo(eventTimeMs);

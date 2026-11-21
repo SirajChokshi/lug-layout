@@ -94,7 +94,7 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setSelectionBoxes(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
   setGround(): void {}

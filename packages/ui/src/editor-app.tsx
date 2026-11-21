@@ -15,6 +15,8 @@ import {
   type IScaleBar,
   type IStarterWorlds,
   type ITrainPlay,
+  tallyText,
+  type SelectionView,
   type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,6 +32,7 @@ import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
+import { TrackExtendPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
@@ -42,6 +45,12 @@ import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
 import { WelcomeCard } from "./welcome-card.tsx";
 import { WorldMenu } from "./world-menu.tsx";
+
+function selectionLabel(selection: SelectionView | null): string | null {
+  if (!selection) return null;
+  const { members, primary } = selection;
+  return members.length === 1 ? primary.item : tallyText(selection.tally);
+}
 
 interface EditorAppProps {
   readonly editor: IEditor;
@@ -166,7 +175,9 @@ export function EditorApp({
       data-far-tier={snapshot.farTier}
       data-meshes={meshesSettled(snapshot.meshes) ? "settled" : "loading"}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
-      data-selection={snapshot.selection?.item ?? ""}
+      data-selection={snapshot.selection?.primary.item ?? ""}
+      data-selection-count={snapshot.selection?.members.length ?? 0}
+      data-gesture={snapshot.gesture?.kind ?? ""}
       data-ghost-rot={snapshot.ghostRot}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
@@ -203,6 +214,7 @@ export function EditorApp({
           onShellCommand={toggleOverlay}
         />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <TrackExtendPanel editor={editor} snapshot={snapshot} />
         <Inspector editor={editor} snapshot={snapshot} />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
@@ -219,7 +231,7 @@ export function EditorApp({
             service={bomService}
             source={editor}
             region={null}
-            selectionLabel={snapshot.selection?.item ?? null}
+            selectionLabel={selectionLabel(snapshot.selection)}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />

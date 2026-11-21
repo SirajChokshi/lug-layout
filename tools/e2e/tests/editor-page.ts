@@ -69,6 +69,12 @@ export interface LaidTrackPiece {
   readonly yPlates: number;
 }
 
+export interface TrackChoice {
+  readonly kind: string;
+  readonly pieces: number;
+  readonly joins: boolean;
+}
+
 export interface ModelTrack {
   readonly pieces: number;
   readonly runFrame: number;
@@ -158,6 +164,15 @@ export async function startEmpty(page: Page): Promise<void> {
   if ((await welcome.count()) === 0) return;
   await welcome.locator('[data-action="start-empty"]').click();
   await expect(welcome).toHaveCount(0);
+}
+
+const Z_COEFFICIENT = 4;
+
+export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz: number): string[] {
+  return position.map((coefficient, k) => {
+    const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
+    return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
+  });
 }
 
 export class EditorPage {
@@ -495,6 +510,39 @@ export class EditorPage {
     return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
   }
 
+  async dragFrom(from: LatticePoint, ...through: ReadonlyArray<LatticePoint>): Promise<void> {
+    const points = [await this.screenOf(from)];
+    for (const target of through) points.push(await this.screenOf(target));
+    const [start] = points;
+    if (!start) throw new Error("a drag needs a start");
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (let leg = 1; leg < points.length; leg++) {
+      const a = points[leg - 1] ?? start;
+      const b = points[leg] ?? start;
+      for (let step = 1; step <= DRAG_STEPS; step++) {
+        const t = step / DRAG_STEPS;
+        await this.page.mouse.move(a.sx + (b.sx - a.sx) * t, a.sy + (b.sy - a.sy) * t);
+      }
+    }
+    await this.settle();
+    await this.page.mouse.up();
+    await this.settle();
+  }
+
+  async shiftClickAt(target: LatticePoint): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.keyboard.down("Shift");
+    await this.page.mouse.click(point.sx, point.sy);
+    await this.page.keyboard.up("Shift");
+    await this.settle();
+  }
+
+  async selectionCount(): Promise<number> {
+    return Number(await this.root.getAttribute("data-selection-count"));
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>
@@ -504,6 +552,16 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async trackChoice(): Promise<TrackChoice | null> {
+    const strip = this.page.locator("section.track-extend-panel .track-extend");
+    if ((await strip.count()) === 0) return null;
+    return {
+      kind: (await strip.getAttribute("data-choice")) ?? "",
+      pieces: Number(await strip.getAttribute("data-choice-pieces")),
+      joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
   }
 

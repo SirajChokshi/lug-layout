@@ -69,6 +69,7 @@ export type {
   EditorOptions,
   EditorSnapshot,
   EditorStatus,
+  GestureView,
   HistoryView,
   HoverView,
   IEditor,
@@ -87,6 +88,9 @@ export type {
   RoadSnapView,
   PlaceableCoverView,
   QueuedPlacement,
+  SelectDragKind,
+  SelectionItemView,
+  SelectionTally,
   SelectionView,
   TrackSelectionView,
   TrainSelectionView,
@@ -137,7 +141,7 @@ export type {
 export { exactLduText } from "./running-gear/running-gear-editor.ts";
 export type { ISimClient } from "./sim/sim-client.ts";
 export type { RpcPort } from "@brr/rpc";
-export { MM_PER_STUD, STUD_LDU } from "@brr/math";
+export { MM_PER_STUD, STUD_LDU, ZETA16_ORDER } from "@brr/math";
 export { NO_ROW } from "@brr/domain";
 export {
   DEFAULT_MAX_OVERHANG_MM,
@@ -238,9 +242,11 @@ export {
 } from "./commands/editor-commands.ts";
 export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
+export { trackBlockText } from "./edit/track-drag.ts";
 export {
+  tallyText,
   toolHints,
-  trackBlockText,
+  unjoinedText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -280,6 +286,13 @@ export type {
   TrackRouteView,
 } from "./edit/track-drawing.ts";
 export type { LabelKind, LabelView } from "./edit/size-labels.ts";
+export type {
+  ExtensionKind,
+  ExtensionTurn,
+  TrackChoiceView,
+  TrackExtendView,
+  UnjoinedEndView,
+} from "./edit/track-extension.ts";
 export type { StudTotals } from "./edit/placed-chunks.ts";
 export { CATEGORY_LABEL, PALETTE_CATEGORIES, colorDisplayName } from "./catalog/palette-index.ts";
 export type {

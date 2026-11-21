@@ -33,6 +33,23 @@ export type TrackBlockView =
   | { readonly kind: "run" }
   | { readonly kind: "model"; readonly label: string; readonly unseated: boolean };
 
+export function trackBlockText(block: TrackBlockView): string {
+  switch (block.kind) {
+    case "track":
+      return "cross the track laid there";
+    case "run":
+      return "cross this run";
+    case "model":
+      return block.unseated
+        ? `sit on ${block.label} where it has no studs`
+        : `run into ${block.label}`;
+    default: {
+      const unhandled: never = block;
+      throw new Error(`unhandled block ${String(unhandled)}`);
+    }
+  }
+}
+
 export interface TrackDragView {
   readonly pieces: number;
   readonly straights: number;
@@ -74,7 +91,7 @@ export interface DragRoute {
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
-const CLOSURE_BUDGET_MS = 30;
+export const CLOSURE_BUDGET_MS = 30;
 
 export class DragField {
   readonly clearance = new TrackClearance();
