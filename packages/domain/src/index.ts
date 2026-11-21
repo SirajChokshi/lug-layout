@@ -5,6 +5,7 @@ export {
   PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
+  roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
   type RoadFit,
@@ -280,7 +281,13 @@ export {
   type PlacementTarget,
   type ShardChange,
 } from "./world-shards.ts";
-export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
+export {
+  BomCounter,
+  byPartThenColor,
+  PartTally,
+  type BomLine,
+  type PartSink,
+} from "./bom/bom-counter.ts";
 export {
   countPlacements,
   regionHolds,
@@ -289,6 +296,7 @@ export {
 } from "./bom/count-placements.ts";
 export {
   INHERITED_COLOR,
+  catalogOf,
   resolveLines,
   toCatalog,
   type CatalogBom,
@@ -308,6 +316,17 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  type OwnBuyLine,
+  type OwnedPart,
+  type OwnedParts,
+  type OwnedPartsRead,
+  type OwnVsBuy,
+  type RejectedRow,
+  type UnknownOwnedPart,
+} from "./bom/owned-parts.ts";
 export {
   AXIS_FREE,
   AXIS_NEG_X,

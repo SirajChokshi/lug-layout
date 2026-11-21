@@ -422,6 +422,8 @@ Extra plan rules:
 - a printable plan: a dimensioned top view on the tables, module numbering, track piece positions, switch ids, and one sheet per module listing its pieces and models;
 - the plan exported as an LDraw `.mpd`.
 
+The printable plan (Plan panel, "Printable plan (SVG)") is an SVG drawn at 1:1: its width and height are in millimetres, so it prints at actual size at 100%, and a check bar on the sheet is 8 studs, 64 mm, long. Geometry is written in LDU relative to the plan's origin inside one 0.4 scale, so lattice placements keep their integer coordinates and a track piece's ℤ[ζ₁₆] outline is converted to floats once, at export. It draws the room, each table with its width and depth in studs and cm, obstacles, every placement inside the plan (a model by its footprint box, a laid track piece by its plan outline from the bundle), roadway cells from road surfaces, and suggested crossing ramps by their outlines (dashed: they aren't in the parts list). Placements are numbered in the plan's own order (models as placed, then track pieces by index), whatever they are, so a switch is numbered like any other track piece; the key lists each number with its label and its part count, counted by the same code the plan's parts list counts with, and totals them. The header gives the plan's parts list totals and its verdict from `buildableAsPlanned`, and the checks not made yet are listed under the key. Switch ids and per-module part sheets come later.
+
 ## 8. Simulation
 
 - **Where it runs.** A fixed timestep of 60 Hz in a worker. Simulation state is kept separate from render state, so it can run headless in tests.
@@ -452,7 +454,7 @@ Extra plan rules:
 | Asset bundle | GLB palette bundles, JSON or binary tables, manifest | CDN; cached in the HTTP cache and IndexedDB (`brr-assets`) |
 | World | A manifest (schema and bundle versions, profiles, flags, plan regions with their footprints, consists on the rails as catalog ref, colour and anchor (piece pose, route, direction, whole-LDU offset), vehicle sidecars) plus one shard per super-chunk (placements as catalog ref plus LDraw colour code, so a palette id like `ldraw:3811@2` saves as ref `ldraw:3811` and colour 2; laid track as exact ℤ[ζ₁₆] poses with their global order, filed by the exact floor of their stud position; switch states) | IndexedDB, loaded per shard; exported as a `*.brr.zip` |
 | Plan export | `*.brrplan.zip`: the region's placements, its footprint and the models it references, so it reopens on its own | File |
-| Collection | An imported Rebrickable collection or CSV of what the user owns | IndexedDB |
+| Collection (owned parts) | The CSV of what the user owns, kept as imported (columns: §11 item 22). Own vs buy matches its rows to a parts list's lines only through the crosswalk's Rebrickable part and colour ids, and reports rows no crosswalk entry maps to | IndexedDB (`brr-owned-parts`) |
 | Printable plan | SVG in the MVP, PDF in P1 | Download |
 | Imported model | Original file plus the bake (instance list, BOM, footprint, LOD meshes, badges), keyed by content hash | IndexedDB; P1 object storage |
 | Shareable package | `*.brr.zip`: the world (or `*.brrplan.zip` for a single plan) plus the original files of the models it references | File (MVP), share link (P1) |
@@ -521,7 +523,7 @@ Layouts reference catalog items by namespaced id and imported models by hash, an
 19. Flex track link length and maximum joint angle. *2026-11-16:* the joint angle is ±5.625° (stated and modelled); the link pitch is still open.
 20. Size of the element-existence table once compressed.
 21. The MILS substructure part list per module (needed for the plan BOM), and the overhang and reach norms clubs use for layout tables (reach is often quoted as 60 to 80 cm, unconfirmed). *2026-11-16:* the published minimal module is 25 parts (§5.4). No source gives reach or overhang norms.
-22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets). *2026-11-16:* the API endpoints are documented (user token, then `/users/{user_token}/sets/`, `/parts/`, `/allparts/` and others). The collection CSV columns are still open, because the help pages sit behind a Cloudflare challenge.
+22. The Rebrickable collection export format (CSV columns and the API endpoints for a user's parts and sets). *2026-11-16:* the API endpoints are documented (user token, then `/users/{user_token}/sets/`, `/parts/`, `/allparts/` and others). The collection CSV columns are still open, because the help pages sit behind a Cloudflare challenge. Until they're verified, own vs buy reads a CSV whose first row names `Part`, `Color` and `Quantity` in Rebrickable ids (the columns the app's own Rebrickable CSV writes) and ignores other columns.
 
 **Later.**
 23. Fan-track segment angles per radius (BrickTracks R56 to R120 and others), and whether any needs 11.25° steps (D3).
