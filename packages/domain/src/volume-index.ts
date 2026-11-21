@@ -253,23 +253,48 @@ export interface OverlapHit extends VolumeHit {
   candidateTopLdu: number;
 }
 
+export const NO_OVERLAP = -1;
+
+function overlapsAt(
+  volumes: CellVolumes,
+  index: VolumeIndex,
+  ignore: OwnerFilter,
+  out: OverlapHit,
+  c: number,
+): boolean {
+  const x = volumes.cellX[c] ?? 0;
+  const z = volumes.cellZ[c] ?? 0;
+  const bottom = volumes.bottomLdu[c] ?? 0;
+  const top = volumes.topLdu[c] ?? 0;
+  if (top <= bottom || !index.firstOverlap(x, z, bottom, top, ignore, out)) return false;
+  out.cellX = x;
+  out.cellZ = z;
+  out.candidateBottomLdu = bottom;
+  out.candidateTopLdu = top;
+  return true;
+}
+
+export function firstOverlapFrom(
+  volumes: CellVolumes,
+  index: VolumeIndex,
+  ignore: OwnerFilter,
+  out: OverlapHit,
+  hint: number,
+): number {
+  if (hint >= 0 && hint < volumes.count && overlapsAt(volumes, index, ignore, out, hint)) {
+    return hint;
+  }
+  for (let c = 0; c < volumes.count; c++) {
+    if (c !== hint && overlapsAt(volumes, index, ignore, out, c)) return c;
+  }
+  return NO_OVERLAP;
+}
+
 export function firstOverlap(
   volumes: CellVolumes,
   index: VolumeIndex,
   ignore: OwnerFilter,
   out: OverlapHit,
 ): boolean {
-  for (let c = 0; c < volumes.count; c++) {
-    const x = volumes.cellX[c] ?? 0;
-    const z = volumes.cellZ[c] ?? 0;
-    const bottom = volumes.bottomLdu[c] ?? 0;
-    const top = volumes.topLdu[c] ?? 0;
-    if (top <= bottom || !index.firstOverlap(x, z, bottom, top, ignore, out)) continue;
-    out.cellX = x;
-    out.cellZ = z;
-    out.candidateBottomLdu = bottom;
-    out.candidateTopLdu = top;
-    return true;
-  }
-  return false;
+  return firstOverlapFrom(volumes, index, ignore, out, NO_OVERLAP) !== NO_OVERLAP;
 }

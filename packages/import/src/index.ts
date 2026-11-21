@@ -38,6 +38,7 @@ export {
   type MirrorSource,
   type MirrorStats,
 } from "./ldraw-mirror.ts";
+export { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
 export {
   bundlePartId,
   ModelImportEngine,
@@ -81,6 +82,7 @@ export {
   type LdrawTextInput,
   type LibraryBakeSource,
   type LibraryConnectorsSource,
+  type ShadowLibrarySource,
   type RollingDiagnosticsRequest,
   type RollingDiagnosticsRows,
   type StudioFileInput,
