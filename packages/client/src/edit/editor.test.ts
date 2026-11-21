@@ -1984,7 +1984,7 @@ it("draws road into the level-crossing set's road end with the road tool, joinin
   });
 }, 240_000);
 
-const HITS_THE_SET = /would hit Baseplate 32 x 32 Road .* in 10128-1 /u;
+const HITS_THE_SET = /would overlap Baseplate 32 x 32 Road .*'s bounds in 10128-1 /u;
 
 it.each([-300, -400])(
   "never road-snaps a road plate off a refusal: aimed at x %i into the level-crossing set, the hover and the click stay refused at the cursor, naming the set's baseplate",

@@ -40,6 +40,9 @@ import type { FrozenVolumes } from "./placeable-volumes.ts";
 const HALF_STUD_LDU = STUD_LDU / 2;
 const ORIGIN_INTS = 3;
 const Y = 1;
+const HANGS = 0;
+const RESTS = 1;
+const RESTS_PRESSING_UP = 2;
 const NO_PLACEMENT = -1;
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
 
@@ -795,7 +798,7 @@ export class PlacementSearch implements IPlacementSearch {
     if (
       out.waitingOn !== NOT_WAITING ||
       !reachesBeyondCursor(window) ||
-      (matedAtCursor && this.rests(model, this.pose, tableYPlates))
+      (matedAtCursor && this.support(model, this.pose, tableYPlates) !== HANGS)
     ) {
       this.moving = NO_PLACEMENT;
       return SETTLED_AT_ONCE;
@@ -1002,7 +1005,7 @@ export class PlacementSearch implements IPlacementSearch {
       const votes = dense + this.proposalAt(model, pose, slot);
       if (votes === 0) continue;
       out.walked++;
-      if (!this.rests(model, pose, flight.tableYPlates)) continue;
+      if (this.support(model, pose, flight.tableYPlates) !== RESTS) continue;
       flight.resting.consider(key, reach, this.tieReport.jointCount, votes);
     }
     return true;
@@ -1081,21 +1084,23 @@ export class PlacementSearch implements IPlacementSearch {
     return count;
   }
 
-  private rests(model: ModelConnectors, pose: LatticePose, tableYPlates: number): boolean {
+  private support(model: ModelConnectors, pose: LatticePose, tableYPlates: number): number {
     const report = this.tieReport;
     this.solver.evaluate(model, pose, report);
     const lowest = this.lowestFacingDown(model);
     let heldFromBelow = pose.yPlates === tableYPlates;
+    let pressesUp = false;
     for (let k = 0; k < report.count; k++) {
       if (report.shape[k] === NO_SHAPE) continue;
       const connector = report.connector[k] ?? 0;
       const axis = model.axis[connector];
-      if (axis === AXIS_POS_Y) return false;
+      if (axis === AXIS_POS_Y) pressesUp = true;
       if (axis === AXIS_NEG_Y && model.origin[connector * ORIGIN_INTS + Y] === lowest) {
         heldFromBelow = true;
       }
     }
-    return heldFromBelow;
+    if (!heldFromBelow) return HANGS;
+    return pressesUp ? RESTS_PRESSING_UP : RESTS;
   }
 
   private lowestFacingDown(model: ModelConnectors): number {
