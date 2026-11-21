@@ -20,6 +20,7 @@ const outlines = decodedOrThrow(decode(PlanOutlinesFile, outlinesJson), "plan-ou
 const catalog = decodedOrThrow(decode(TrackCatalog, catalogJson), "track-catalog.json");
 
 const STUD = 20;
+const SIXTEENTHS = 16;
 const PLATE_STUDS = 32;
 const ALONG_Z = 4;
 const SLEEPER_END = 80;
@@ -59,8 +60,8 @@ function at(xStuds: number, zStuds: number, heading: number): Pose16 {
 
 function road(roadwayStuds: number, topLdu = 0): RoadPlacement {
   const cells = PLATE_STUDS * PLATE_STUDS;
-  const top = new Int32Array(cells).fill(topLdu);
-  const stud = new Int32Array(cells).fill(topLdu);
+  const top = new Int32Array(cells).fill(topLdu * SIXTEENTHS);
+  const stud = new Int32Array(cells).fill(topLdu * SIXTEENTHS);
   const roadway = new Uint8Array(cells);
   const firstRow = (PLATE_STUDS - roadwayStuds) / 2;
   for (let row = firstRow; row < firstRow + roadwayStuds; row++) {
@@ -81,8 +82,8 @@ function road(roadwayStuds: number, topLdu = 0): RoadPlacement {
       minZ: -half,
       columns: PLATE_STUDS,
       rows: PLATE_STUDS,
-      top,
-      stud,
+      topSixteenths: top,
+      studSixteenths: stud,
       road: roadway,
     },
   };
@@ -177,6 +178,45 @@ describe("levelCrossings", () => {
       for (const candidate of crossing.candidates)
         expect(clearOf(candidate, parts, tracks)).toBe(true);
     }
+  });
+
+  it("crosses a one-stud road strip where its own square lies under the track's ends and not a stud beyond them, whatever stands higher beside it in the same stud cell", () => {
+    const strip = (centreX: number): RoadPlacement => {
+      const rows = PLATE_STUDS;
+      const half = (rows * STUD) / 2;
+      return {
+        id: 0,
+        x: centreX,
+        z: 0,
+        yLdu: 0,
+        rot: 0,
+        surface: {
+          minX: -STUD / 2,
+          minZ: -half,
+          columns: 1,
+          rows,
+          topSixteenths: new Int32Array(rows),
+          studSixteenths: new Int32Array(rows).fill(NO_STUD),
+          road: new Uint8Array(rows).fill(1),
+        },
+      };
+    };
+    const parts = [rampPart("ldraw:4515")];
+    const underSleeperEnds = levelCrossings([strip(SLEEPER_END)], straightRunAcross(), parts);
+    const besideSleeperEnds = levelCrossings(
+      [strip(SLEEPER_END + STUD)],
+      straightRunAcross(),
+      parts,
+    );
+    const besideARaisedSurface = levelCrossings(
+      [strip(SLEEPER_END), { ...strip(SLEEPER_END + 15), id: 1, yLdu: 48 }],
+      straightRunAcross(),
+      parts,
+    );
+    expect(underSleeperEnds.length).toBeGreaterThan(0);
+    expect(underSleeperEnds.every((crossing) => crossing.roadwayCells > 0)).toBe(true);
+    expect(besideSleeperEnds).toEqual([]);
+    expect(besideARaisedSurface).toEqual(underSleeperEnds);
   });
 
   it("is no crossing where the road's surface stands above the track's bed", () => {

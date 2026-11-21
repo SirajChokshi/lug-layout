@@ -137,7 +137,8 @@ function RoadJoins({ editor, snapshot }: PanelProps) {
           checked={snapshot.snapRoads}
           onChange={(event) => editor.setSnapRoads(event.target.checked)}
         />
-        Snap road pieces to matching road edges and refuse clicks that would mismatch
+        Snap road pieces to matching road edges and refuse clicks that would put road in placed road
+        at the same height
       </label>
       <dl>
         <div>
@@ -681,7 +682,9 @@ function snapText(snapshot: EditorSnapshot): string {
         ? `exact here, ${snap.metCells} edge cells meet`
         : "free, touches no road";
     case "refused":
-      return `click refused: ${snap.mismatchedCells} mismatched, ${snap.overlappingCells} overlapping cells`;
+      return `click refused: ${snap.overlappingCells} road cells would lie in placed road at the same height`;
+    case "mismatched":
+      return `${snap.mismatchedCells} edge cells would mismatch; the plan reports them`;
     default: {
       const unhandled: never = snap.state;
       throw new Error(`unhandled snap state ${String(unhandled)}`);
