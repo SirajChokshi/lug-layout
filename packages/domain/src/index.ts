@@ -35,14 +35,70 @@ export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.
 export {
   EditHistory,
   type AppliedChange,
+  type AppliedConsistChange,
   type AppliedEdit,
+  type ConsistRef,
   type EditKind,
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
 } from "./edit-history.ts";
+export {
+  ConsistHandle,
+  ConsistLayout,
+  consistPoseProblem,
+  sameCarrier,
+  type CarriedPieceRef,
+  type CarrierPose,
+  type ConsistAnchor,
+  type ConsistPose,
+  type LaidPieceRef,
+  type TrackPieceRef,
+} from "./rail/consist-layout.ts";
+export {
+  RAIL_SPOT_FLOATS,
+  RailNetwork,
+  RailRun,
+  SPOT_DISTANCE,
+  SPOT_EDGE,
+  SPOT_OFFSET,
+} from "./rail/rail-network.ts";
 export { runningGearSpanProblem, type RunningGearSpan } from "./running-gear-span.ts";
+export {
+  pointOnSegment,
+  placeSegments,
+  reversedSegments,
+  segmentsEnd,
+  wrapAngle,
+  type PlacedSegment,
+  type PlanPose,
+  type SimPathSegment,
+} from "./rail/route-geometry.ts";
+export {
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
+  trackPoint,
+  type BuiltSimTrack,
+  type SimRoute,
+  type SimTrack,
+  type SimTrackInput,
+} from "./rail/sim-track.ts";
+export { simTrackFromGraph, type TrackGraphTopology } from "./rail/graph-track.ts";
+export {
+  GEOMETRY_FIELDS,
+  PIVOT_POINT_FLOATS,
+  RunningGearPoser,
+  VEHICLE_POSE_FLOATS,
+  packGeometry,
+  packSpecOnlyGeometry,
+  type CouplerGeometry,
+  type CouplerMount,
+  type GuideGeometry,
+  type PathSampler,
+  type VehicleGeometry,
+} from "./rail/running-gear.ts";
 export {
   TrackLayout,
   type TrackEndRef,
