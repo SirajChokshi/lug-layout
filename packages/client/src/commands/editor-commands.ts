@@ -1,6 +1,7 @@
 import { STUD_LDU } from "@brr/math";
 import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
 import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placement-mode.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
 import { chordMatches, type KeyChord, type KeyInput } from "./key-chord.ts";
@@ -49,6 +50,7 @@ export type EditorActionId =
   | "toggle-joins"
   | "toggle-grid"
   | "toggle-road-snap"
+  | "toggle-placement-mode"
   | "cycle-tier"
   | "measure-frames";
 
@@ -396,6 +398,14 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     keywords: "toggle magnet align",
   },
   {
+    id: "toggle-placement-mode",
+    title:
+      "Switch between magnetic and precise placement (at an open track end, A lays a left curve)",
+    group: "Edit",
+    keys: [{ key: "a" }],
+    keywords: "snap magnet magnetic assist precise exact free toggle",
+  },
+  {
     id: "cycle-tier",
     title: "Cycle the detail tier: auto, near, mid, far",
     group: "View",
@@ -459,6 +469,11 @@ export const POINTER_GESTURES: ReadonlyArray<PointerGesture> = [
   },
   { gesture: "Wheel or pinch", action: "Zoom at the cursor" },
   { gesture: "Two-finger scroll", action: "Pan on a trackpad (Alt orbits)" },
+  {
+    gesture: "Hold Alt (⌥ on a Mac)",
+    action:
+      "Switch between magnetic and precise placement while held (with a two-finger scroll it still orbits)",
+  },
   { gesture: "Double-click", action: "Frame the selection" },
   { gesture: "Click a switch", action: "Throw it while a train runs" },
 ];
@@ -532,6 +547,7 @@ export function commandActive(id: CommandId, snapshot: EditorSnapshot): boolean 
   if (id === "toggle-joins") return snapshot.showJoins;
   if (id === "toggle-grid") return snapshot.showGrid;
   if (id === "toggle-road-snap") return snapshot.snapRoads;
+  if (id === "toggle-placement-mode") return snapshot.placementMode === "precise";
   return false;
 }
 
@@ -596,6 +612,8 @@ export function commandEnabled(
   switch (id) {
     case "cancel":
       return snapshot.gesture !== null || snapshot.fillDraft !== null;
+    case "toggle-placement-mode":
+      return placementModeSwitchEnabled(snapshot, play);
     case "rotate":
     case "rotate-back":
       return (
@@ -852,6 +870,9 @@ export function runEditorAction(
       return;
     case "toggle-road-snap":
       editor.setSnapRoads(!editor.snapshot().snapRoads);
+      return;
+    case "toggle-placement-mode":
+      togglePlacementMode(editor);
       return;
     case "cycle-tier":
       editor.cycleTier();
