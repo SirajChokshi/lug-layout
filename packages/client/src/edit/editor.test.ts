@@ -1578,6 +1578,43 @@ it.each([
   120_000,
 );
 
+it("a road-snapped plate whose pointer leaves the canvas and comes back to the same stud snaps again, and the click places it there", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.pointerLeave();
+  expect(await settledAt(editor, backend, frame, 662, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.click(0, 0, 0);
+  expect({ placed: placedXs(editor), refused: editor.snapshot().refusedClicks }).toEqual({
+    placed: [320, 640],
+    refused: 0,
+  });
+}, 120_000);
+
+it("turning road snap off after a snap shows the cursor's pose, and the click takes it", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.setSnapRoads(false);
+  const pose = (await settledHover(editor, frame))?.placement?.pose;
+  editor.click(0, 0, 0);
+  expect({ shown: pose && [pose.x, pose.z], placed: placedXs(editor) }).toEqual({
+    shown: [660, 320],
+    placed: [320, 660],
+  });
+}, 120_000);
+
 it("never pulls or turns a road plate in precise mode: a hover just clear of a road end stays at the cursor", async () => {
   const { editor, backend, frame } = await startEditor([]);
   await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);

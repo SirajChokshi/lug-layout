@@ -3036,6 +3036,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   pointerLeave(): void {
     this.hovering = false;
+    this.keptRoadSnap = null;
     this.assist.leave();
     this.update({ hover: null });
     if (this.state.mode === "table" && this.tables?.unhover()) this.showGuides();
@@ -3675,7 +3676,8 @@ export class Editor implements IEditor, IEditedWorld {
     this.backend.setGhost({ ...placeable.parts, studs: placeable.studs });
     this.commitFill(fill, placeable, eventTimeMs);
     this.showGuides();
-    this.placeGhost();
+    if (this.hovering) this.resettleAtCursor();
+    else this.placeGhost();
   }
 
   private commitFill(fill: FillTool, placeable: Placeable, eventTimeMs: number): void {
@@ -3851,6 +3853,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   setSnapRoads(snap: boolean): void {
     this.update({ snapRoads: snap, snap: null });
+    this.rehover();
   }
 
   setPlacementMode(mode: PlacementMode): void {
