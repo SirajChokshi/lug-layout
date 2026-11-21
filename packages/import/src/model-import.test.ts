@@ -1,11 +1,21 @@
-import { ConnectorRecords } from "@brr/catalog/connector-records";
+import { ConnectorRecords, type PartConnectors } from "@brr/catalog/connector-records";
 import { parseGlb } from "@brr/catalog/glb";
 import {
+  BundleIndex,
+  CONNECTOR_SOURCE,
+  CONNECTOR_STATUS,
+  ModelFile as ModelFileSchema,
+  RollingDiagnosticsFile,
+  rollingDiagnosticsFit,
   SectionVocabularyFile,
+  ShadowLibraryPin,
+  isCustomPartId,
   type CompilerVehicles,
   type LibraryBakePart,
+  type UnreadBandDiagnostic,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
   AXIS_NEG_Y,
@@ -23,18 +33,22 @@ import {
   SnapMating,
   SnapShapes,
 } from "@brr/domain";
-import type { ModelFile } from "@brr/schema/bundle";
+import type { ModelFile, NotDrawnSection } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
+import type { CustomSource } from "./custom-parts.ts";
 import type { IPartRecords, RecordOptions, RecordStats } from "./library-bake-store.ts";
 import { LdrawMirror, type FetchFunction } from "./ldraw-mirror.ts";
 import {
   ModelImportEngine,
   type IBakeHelper,
   type ImportResult,
+  type PartResolution,
   type PlacedImport,
   type PlacementListener,
 } from "./model-import.ts";
+import { ShadowMirror, type IShadowLibrary } from "./shadow-mirror.ts";
+import { NO_BYTE_CACHE } from "./verified-files.ts";
 
 const bundleRoot = new URL("../../../tools/asset-pipeline/dist/bundle/standard/", import.meta.url);
 const pinnedLibrary = new URL("../../../.cache/ldraw/", import.meta.url);
@@ -49,8 +63,21 @@ const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
+
+function bySection(a: { readonly section: string }, b: { readonly section: string }): number {
+  return a.section < b.section ? -1 : a.section > b.section ? 1 : 0;
+}
 const OPAQUE_ALPHA = 255;
 const paletteFile = new URL("../../../tools/asset-pipeline/palette.json", import.meta.url);
+const shadowLibraryDist = new URL(
+  "../../../tools/asset-pipeline/dist/shadow-library/",
+  import.meta.url,
+);
+const shadowLibraryPin = new URL(
+  "../../../tools/asset-pipeline/shadow-library.json",
+  import.meta.url,
+);
+const SHADOW_LIBRARY_URL = "https://shadow-library.test/shadow-library";
 const omrRoot = new URL("../../../.cache/omr/", import.meta.url);
 const fixturesRoot = new URL("../../test-fixtures/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
@@ -86,7 +113,11 @@ interface Manifest {
     readonly cavityProbe: string;
   };
   readonly tablePlane: { readonly depthBelowTopLdu: number };
-  readonly models: ReadonlyArray<{ readonly name: string; readonly file: string }>;
+  readonly models: ReadonlyArray<{
+    readonly name: string;
+    readonly file: string;
+    readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+  }>;
   readonly connectors: { readonly file: string };
   readonly connectivity: { readonly file: string };
 }
@@ -169,13 +200,29 @@ const outOfSyncHelper: IBakeHelper = {
   bake: async (_, library) => ({ status: "need", paths: [...library.files.keys()].slice(0, 1) }),
 };
 
+interface ImportOptions {
+  readonly compiler?: BrickCompiler | undefined;
+  readonly helpers?: ReadonlyArray<IBakeHelper>;
+  readonly studPrimitives?: ReadonlyArray<string>;
+  readonly unofficialAllowlist?: ReadonlyArray<string>;
+  readonly shadowLibrary?: IShadowLibrary;
+  readonly customFiles?: ReadonlyArray<CustomSource>;
+  readonly withoutPrimitiveTable?: boolean;
+}
+
 async function importWith(
   fetchUrl: FetchFunction,
   fileName: string,
   text: string,
-  compiler?: BrickCompiler,
-  helpers: ReadonlyArray<IBakeHelper> = [],
-  studPrimitives?: ReadonlyArray<string>,
+  {
+    compiler,
+    helpers = [],
+    studPrimitives,
+    unofficialAllowlist = [],
+    shadowLibrary,
+    customFiles = [],
+    withoutPrimitiveTable = false,
+  }: ImportOptions = {},
 ): Promise<ImportResult> {
   const manifest = await bundleManifest();
   const partTable = JSON.parse(
@@ -189,15 +236,16 @@ async function importWith(
     null,
     () => 0,
     helpers,
+    shadowLibrary ?? null,
   );
-  return engine.importText({
+  const job = {
     fileName,
     text,
-    lod: "standard",
+    lod: "standard" as const,
     source: manifest.source,
     studPrimitives: studPrimitives ?? manifest.studPrimitives.map((primitive) => primitive.name),
-    unofficialAllowlist: [],
-    primitives: manifest.compiler.primitives ?? null,
+    unofficialAllowlist,
+    primitives: withoutPrimitiveTable ? null : (manifest.compiler.primitives ?? null),
     sectionVocabulary,
     cavityProbe: manifest.compiler.cavityProbe,
     bundlePartIds: partTable.parts.map((part) => part.id),
@@ -207,7 +255,21 @@ async function importWith(
       .map((color) => color.code),
     tableDepthLdu: manifest.tablePlane.depthBelowTopLdu,
     vehicles: manifest.compiler.vehicles ?? null,
-  });
+  };
+  return engine.importText(job, undefined, customFiles);
+}
+
+async function pinnedShadowLibrary(): Promise<ShadowMirror> {
+  const pin = decodedOrThrow(
+    decode(ShadowLibraryPin, JSON.parse(await readFile(shadowLibraryPin, "utf8"))),
+    shadowLibraryPin.pathname,
+  );
+  const served: FetchFunction = (url) =>
+    readFile(new URL(url.slice(SHADOW_LIBRARY_URL.length + 1), shadowLibraryDist)).then(
+      (bytes) => new Response(bytes),
+      () => new Response(null, { status: HTTP_NOT_FOUND }),
+    );
+  return new ShadowMirror(SHADOW_LIBRARY_URL, pin.index, served, NO_BYTE_CACHE);
 }
 
 const MATRIX_FLOATS = 12;
@@ -254,6 +316,10 @@ class CompiledRecords implements IPartRecords {
   private readonly held = new Map<string, Uint8Array>();
   private served = 0;
 
+  async rollingDiagnostics(): Promise<ReadonlyMap<string, ReadonlyArray<UnreadBandDiagnostic>>> {
+    return new Map();
+  }
+
   constructor(
     private readonly compiler: BrickCompiler,
     private readonly sectionVocabulary: SectionVocabulary,
@@ -274,6 +340,7 @@ class CompiledRecords implements IPartRecords {
         sectionVocabulary: this.sectionVocabulary,
         cavityProbe: this.cavityProbe,
         infer: [],
+        shadowPatchManifest: null,
       },
       parts: partIds.map((id) => `${id.slice(PART_ID_PREFIX.length)}${PART_EXTENSION}`),
       model: "",
@@ -320,6 +387,7 @@ class CompiledRecords implements IPartRecords {
 function comparable(result: ImportResult): unknown {
   return {
     ...result,
+    compiled: result.compiled.map((part) => ({ partId: part.partId, glb: part.glb })),
     report: {
       ...result.report,
       compileRounds: null,
@@ -345,6 +413,7 @@ async function importOutsideTheBundle(
     records,
     () => 0,
     await reactorHelpers(2),
+    null,
   );
   return engine.importText(
     {
@@ -395,7 +464,15 @@ it(
     expect(studCover.covered).toBeGreaterThan(0);
     expect(comparable(listened)).toEqual(comparable(quiet));
     expect(announced).toEqual([
-      { placed: { ...shape, sections: report.sections, bake: placement }, afterResult: false },
+      {
+        placed: {
+          ...shape,
+          sections: report.sections,
+          refusedConnectorRecords: report.refusedConnectorRecords,
+          bake: placement,
+        },
+        afterResult: false,
+      },
     ]);
   },
   BAKE_TIMEOUT_MS,
@@ -423,6 +500,8 @@ it(
     expect(compiled.compiled.length).toBeGreaterThan(0);
     expect(compiled.bake?.vehicles.length).toBeGreaterThan(0);
     expect(recorded.report.records?.bakedFromRecords).toBeGreaterThan(0);
+    expect(new Set(compiled.compiled.map((part) => part.source))).toEqual(new Set(["import"]));
+    expect(recorded.compiled.some((part) => part.source === "library-bake")).toBe(true);
     expect(recorded.report.fetched.requests).toBeLessThan(compiled.report.fetched.requests);
     expect(recorded.report.compileRounds).toBeLessThan(compiled.report.compileRounds);
     expect(recorded.report.compileRounds + recorded.report.bakeRounds).toBeLessThanOrEqual(
@@ -684,17 +763,15 @@ it("identifies a turned sub-model's own stud mate 20,000 LDU from the origin fro
     Uint8Array.of(GENDER_MALE, GENDER_FEMALE),
     Uint8Array.of(SOURCE_SHADOW, SOURCE_SHADOW),
     Uint8Array.of(STATUS_VERIFIED, STATUS_VERIFIED),
-    Float32Array.of(
-      STUD_CENTRE_LDU,
-      BRICK_LDU,
-      STUD_CENTRE_LDU,
-      STUD_CENTRE_LDU,
-      0,
-      STUD_CENTRE_LDU,
+    Int32Array.from(
+      [STUD_CENTRE_LDU, BRICK_LDU, STUD_CENTRE_LDU, STUD_CENTRE_LDU, 0, STUD_CENTRE_LDU],
+      (ldu) => ldu * SIXTEENTHS_PER_LDU,
     ),
     Int8Array.of(AXIS_POS_Y, AXIS_NEG_Y),
-    new Float32Array(6),
+    new Float64Array(6),
     new Uint16Array(2),
+    new Float64Array(6),
+    [],
   );
 
   const result = await importWith(nothingFound, "far.mpd", text);
@@ -732,6 +809,35 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       compiler = await bundleCompiler();
     });
 
+    it("decodes every served model file, whose shapes' unread bands each name the rolling diagnostics row at their index for the same part", async () => {
+      const raw: unknown = JSON.parse(await readFile(new URL("manifest.json", bundleRoot), "utf8"));
+      const manifest = decodedOrThrow(decode(BundleIndex, raw), "manifest.json");
+      const ref = manifest.rollingDiagnostics;
+      if (ref === undefined) throw new Error("the bundle names no rolling diagnostics");
+      const bytes = await readFile(new URL(ref.file, bundleRoot));
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(ref.sha256);
+      const diagnostics = decodedOrThrow(
+        decode(RollingDiagnosticsFile, JSON.parse(bytes.toString("utf8"))),
+        ref.file,
+      );
+      let named = 0;
+      const mismatched: string[] = [];
+      for (const entry of manifest.models) {
+        const text = await readFile(new URL(entry.file, bundleRoot), "utf8");
+        const model = decodedOrThrow(decode(ModelFileSchema, JSON.parse(text)), entry.file);
+        for (const shape of model.shapes) {
+          const bands = shape.rolling?.unread ?? [];
+          if (bands.length === 0) continue;
+          if (!rollingDiagnosticsFit(bands, diagnostics.parts[shape.id] ?? [])) {
+            mismatched.push(shape.id);
+          }
+          named += bands.length;
+        }
+      }
+      expect(mismatched).toEqual([]);
+      expect(named).toBeGreaterThan(0);
+    });
+
     async function importedAndRecorded(model: (typeof paletteModels)[number]) {
       const manifest = await bundleManifest();
       const entry = manifest.models.find((bundled) => bundled.name === model.name);
@@ -741,25 +847,75 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         pinnedMirror,
         model.file,
         await readFile(new URL(model.file, root), "utf8"),
-        compiler,
+        { compiler },
       );
       const record = JSON.parse(
         await readFile(new URL(entry?.file ?? "", bundleRoot), "utf8"),
       ) as ModelFile;
+      const shipped = Array.from(
+        result.partIndex,
+        (part) => !isCustomPartId(result.partIds[part] ?? ""),
+      );
+      const added = Array.from(result.partIndex).flatMap((part, instance) =>
+        shipped[instance]
+          ? []
+          : [{ partId: result.partIds[part] ?? "", color: result.ldrawColor[instance] ?? 0 }],
+      );
       const imported = {
         parent: Array.from(result.submodels.parent),
         matrices: Array.from(result.submodels.matrices),
-        ofPart: Array.from(result.submodels.ofPart),
-        partTransforms: Array.from(result.partTransforms),
+        ofPart: Array.from(result.submodels.ofPart).filter((_, instance) => shipped[instance]),
+        partTransforms: Array.from(result.partTransforms).filter(
+          (_, at) => shipped[Math.floor(at / MATRIX_FLOATS)],
+        ),
       };
-      return { imported, record };
+      return { imported, record, added, custom: drawnCustomParts(result), entry };
+    }
+
+    function expectOnlyTheFilesCustomPartsAdded({
+      added,
+      custom,
+      entry,
+    }: Awaited<ReturnType<typeof importedAndRecorded>>): void {
+      const notDrawn = (entry?.notDrawn ?? []).flatMap((section) =>
+        section.kind === "customPart"
+          ? [
+              {
+                section: section.section.toLowerCase(),
+                instances: section.instances ?? 0,
+                colors: (section.colors ?? [])
+                  .flatMap(({ color, instances }) => Array.from({ length: instances }, () => color))
+                  .toSorted(),
+              },
+            ]
+          : [],
+      );
+      const drawn = custom.map((part) => {
+        const colors = added
+          .filter(({ partId }) => partId === part.partId)
+          .map(({ color }) => color)
+          .toSorted();
+        return { section: part.reference, instances: colors.length, colors };
+      });
+
+      expect(drawn.toSorted(bySection)).toEqual(notDrawn.toSorted(bySection));
+      expect(added).toHaveLength(notDrawn.reduce((sum, { instances }) => sum + instances, 0));
+      for (const part of custom) {
+        expect(part.partId).toMatch(customIdPattern(part.reference));
+        expect(["mpd", "inlineDiffers"]).toContain(part.origin);
+        expect(drawn.find(({ section }) => section === part.reference)?.instances).toBe(
+          part.instances,
+        );
+      }
     }
 
     it.each(paletteModels.filter((model) => model.origin !== "omr"))(
       "$name imports with the sub-model tree and part transforms its bake recorded",
       async (model) => {
-        const { imported, record } = await importedAndRecorded(model);
+        const imports = await importedAndRecorded(model);
+        const { imported, record } = imports;
 
+        expectOnlyTheFilesCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeUndefined();
         expect(imported).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
       },
@@ -769,10 +925,12 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
     it.each(paletteModels.filter((model) => model.origin === "omr"))(
       "$name imports with its bake's sub-model tree and rotations, and positions within the OMR identification's reach of its identified record",
       async (model) => {
-        const { imported, record } = await importedAndRecorded(model);
+        const imports = await importedAndRecorded(model);
+        const { imported, record } = imports;
         const depth = (submodel: number): number =>
           submodel === MODEL_ROOT ? 0 : 1 + depth(record.submodels.parent[submodel] ?? MODEL_ROOT);
 
+        expectOnlyTheFilesCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeDefined();
         expect({ parent: imported.parent, ofPart: imported.ofPart }).toEqual({
           parent: record.submodels.parent,
@@ -794,7 +952,63 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
   },
 );
 
-it("reports a headerless custom part, loose model geometry and a recoloured inline copy, and draws a copy whose quads only start elsewhere", async () => {
+const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
+const NON_CA = "Not redistributable : see NonCAreadme.txt";
+const UNOFFICIAL_PART = "0 !LDRAW_ORG Unofficial_Part";
+const TRIANGLE = "3 16 0 0 0 20 0 0 0 0 20";
+const OTHER_TRIANGLE = "3 16 0 0 0 40 0 0 0 0 40";
+const LIBRARY_UNOFFICIAL = "parts/library-unofficial.dat";
+const STUD_PITCH_LDU = 20;
+const CUSTOM_SPACING_LDU = 4 * STUD_PITCH_LDU;
+const GEOMETRY_LINE = /^(?:[1-5] |0 BFC (?!CERTIFY))/u;
+const STUD_REFERENCE = / stud\.dat$/u;
+
+type CustomPart = Extract<PartResolution, { kind: "custom" }>;
+
+function customIdPattern(name: string): RegExp {
+  return new RegExp(`^custom:[0-9a-f]{12}/${name.replaceAll(".", "\\.")}$`, "u");
+}
+
+function customHeader(name: string, license: string | null): string[] {
+  return [
+    `0 ${name} written for the import tests`,
+    `0 Name: ${name}`,
+    "0 Author: lug-layout tests [James Jessiman]",
+    ...(license === null ? [] : [`0 !LICENSE ${license}`]),
+    "0 BFC CERTIFY CCW",
+  ];
+}
+
+function customFile(name: string, license: string | null, body: ReadonlyArray<string>): string[] {
+  return [`0 FILE ${name}`, ...customHeader(name, license), ...body, "0 NOFILE"];
+}
+
+function modelOf(references: ReadonlyArray<string>, files: ReadonlyArray<string[]>): string {
+  return [
+    "0 FILE custom-parts.ldr",
+    "0 Custom parts import test",
+    "0 Name: custom-parts.ldr",
+    "0 Author: lug-layout tests",
+    "0 !LDRAW_ORG Model",
+    ...references.map(
+      (reference, i) => `1 4 ${i * CUSTOM_SPACING_LDU} 0 0 1 0 0 0 1 0 0 0 1 ${reference}`,
+    ),
+    "0 NOFILE",
+    ...files.flat(),
+    "",
+  ].join("\n");
+}
+
+function drawnCustomParts(result: ImportResult): ReadonlyArray<CustomPart> {
+  return result.report.parts.flatMap((part) => (part.kind === "custom" ? [part] : []));
+}
+
+async function pinnedGeometry(path: string): Promise<ReadonlyArray<string>> {
+  const text = await readFile(new URL(path, pinnedLibrary), "utf8");
+  return text.split(/\r?\n/u).filter((line) => GEOMETRY_LINE.test(line));
+}
+
+it("draws custom parts from the file as custom whatever their LDRAW_ORG, keeps an inline copy's measured difference, reports loose model geometry, and draws a copy whose quads only start elsewhere", async () => {
   const result = await importWith(
     pinnedMirror,
     "critic-gap.mpd",
@@ -804,27 +1018,36 @@ it("reports a headerless custom part, loose model geometry and a recoloured inli
 
   expect(parts.map((part) => [part.reference, part.kind, part.instances])).toEqual([
     ["3001.dat", "bundle", 1],
-    ["mycustom.dat", "notInLibrary", 1],
-    ["mycustom2.dat", "notInLibrary", 1],
-    ["9999-1 - 3001.dat", "inlineDiffers", 1],
+    ["mycustom.dat", "custom", 1],
+    ["mycustom2.dat", "custom", 1],
+    ["9999-1 - 3001.dat", "custom", 1],
     ["9998-1 - 3001.dat", "bundle", 1],
   ]);
-  expect(parts[3]).toMatchObject({
+  const custom = drawnCustomParts(result);
+  const customIds = ["mycustom.dat", "mycustom2.dat", "9999-1 - 3001.dat"].map((name) =>
+    expect.stringMatching(customIdPattern(name)),
+  );
+  expect(custom.map((part) => part.partId)).toEqual(customIds);
+  expect(custom.map((part) => [part.origin, part.header.ldrawOrg, part.header.license])).toEqual([
+    ["mpd", null, CC_BY_4],
+    ["mpd", "Unofficial_Part", CC_BY_4],
+    ["inlineDiffers", "Unofficial_Part", CC_BY_4],
+  ]);
+  expect(custom[2]).toMatchObject({
     official: "3001.dat",
-    colorsMatch: false,
-    inlineColors: [RED, YELLOW],
-    officialColors: [MAIN_COLOUR],
+    difference: { colorsMatch: false, inlineColors: [RED, YELLOW], officialColors: [MAIN_COLOUR] },
   });
   expect(parts[4]).toMatchObject({ official: "3001.dat", partId: "ldraw:3001" });
   expect(result.report.looseGeometry).toEqual([
     { section: "critic-gap.ldr", triangles: 0, quads: 1, occurrences: 1 },
   ]);
-  expect(result.instanceCount).toBe(2);
-  expect(result.partIds).toEqual(["ldraw:3001"]);
-  expect(result.compiled).toEqual([]);
+  expect(result.instanceCount).toBe(5);
+  expect(result.partIds).toEqual(["ldraw:3001", ...customIds]);
+  expect(result.compiled.map((part) => part.partId)).toEqual(customIds);
+  expect(result.report.bakeIssue).toBeNull();
 });
 
-it("reports an inline copy with a hole in a large face, and draws only the file's own official part", async () => {
+it("draws an inline copy with a hole in a large face as custom, keeping the measured hole", async () => {
   const result = await importWith(
     pinnedMirror,
     "critic-gap-3.mpd",
@@ -833,15 +1056,438 @@ it("reports an inline copy with a hole in a large face, and draws only the file'
   const parts = result.report.parts;
 
   expect(parts.map((part) => [part.reference, part.kind, part.instances])).toEqual([
-    ["9996-1 - 3001.dat", "inlineDiffers", 1],
+    ["9996-1 - 3001.dat", "custom", 1],
     ["3001.dat", "bundle", 1],
   ]);
-  const hole = parts[0];
-  expect(hole?.kind === "inlineDiffers" && hole.colorsMatch && !hole.surfaceWithinWeld).toBe(true);
-  expect(hole?.kind === "inlineDiffers" && hole.maxMeasuredDistanceLdu > hole.weldEpsilonLdu).toBe(
-    true,
+  const hole = parts[0]?.kind === "custom" ? parts[0].difference : null;
+  expect(hole?.colorsMatch && !hole.surfaceWithinWeld).toBe(true);
+  expect(hole && hole.maxMeasuredDistanceLdu > hole.weldEpsilonLdu).toBe(true);
+  expect(result.instanceCount).toBe(2);
+});
+
+const mirrorWithAnUnofficialPart: FetchFunction = async (url) =>
+  url.endsWith(`/${LIBRARY_UNOFFICIAL}`)
+    ? new Response(
+        [...customHeader("library-unofficial.dat", CC_BY_4), UNOFFICIAL_PART, TRIANGLE].join("\n"),
+      )
+    : pinnedMirror(url);
+
+it("keeps the unofficial allowlist for a part reached through the library, used directly or from a custom part", async () => {
+  const text = modelOf(
+    ["library-unofficial.dat", "reaches-library.dat"],
+    [
+      customFile("reaches-library.dat", CC_BY_4, [
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 library-unofficial.dat",
+      ]),
+    ],
   );
-  expect(result.instanceCount).toBe(1);
+
+  const refused = await importWith(mirrorWithAnUnofficialPart, "custom-parts.mpd", text);
+  const allowed = await importWith(mirrorWithAnUnofficialPart, "custom-parts.mpd", text, {
+    unofficialAllowlist: [LIBRARY_UNOFFICIAL],
+  });
+
+  expect(refused.report.parts).toMatchObject([
+    { reference: "library-unofficial.dat", kind: "rejected", gate: "unofficial" },
+    {
+      reference: "reaches-library.dat",
+      kind: "customRefused",
+      gate: "unofficial",
+      path: LIBRARY_UNOFFICIAL,
+    },
+  ]);
+  expect(allowed.report.parts.map((part) => part.kind)).toEqual(["compiled", "custom"]);
+});
+
+it("draws a custom part whatever licence it names, or none, and whatever licence its own sub-file names", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "custom-parts.mpd",
+    modelOf(
+      ["unlicensed.dat", "unofficial-nonca.dat", "licensed-top.dat"],
+      [
+        customFile("unlicensed.dat", null, [TRIANGLE]),
+        customFile("unofficial-nonca.dat", NON_CA, [UNOFFICIAL_PART, TRIANGLE]),
+        customFile("licensed-top.dat", CC_BY_4, ["1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\inner.dat"]),
+        customFile("s/inner.dat", NON_CA, [TRIANGLE]),
+      ],
+    ),
+  );
+
+  expect(result.report.parts.map((part) => [part.reference, part.kind])).toEqual([
+    ["unlicensed.dat", "custom"],
+    ["unofficial-nonca.dat", "custom"],
+    ["licensed-top.dat", "custom"],
+  ]);
+  expect(drawnCustomParts(result).map((part) => part.header.license)).toEqual([
+    null,
+    NON_CA,
+    CC_BY_4,
+  ]);
+  expect(result.instanceCount).toBe(3);
+  expect(result.compiled).toHaveLength(3);
+});
+
+function shadowingSubfile(triangle: string): string {
+  return modelOf(
+    ["shadowing.dat"],
+    [
+      customFile("shadowing.dat", CC_BY_4, ["1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\3001s01.dat"]),
+      customFile("s/3001s01.dat", CC_BY_4, [triangle]),
+    ],
+  );
+}
+
+it("compiles a custom part from the file's own sub-file over the library file of that name, and names it after every file it reaches", async () => {
+  const first = await importWith(pinnedMirror, "custom-parts.mpd", shadowingSubfile(TRIANGLE));
+  const second = await importWith(
+    pinnedMirror,
+    "custom-parts.mpd",
+    shadowingSubfile(OTHER_TRIANGLE),
+  );
+
+  const [one] = drawnCustomParts(first);
+  const [other] = drawnCustomParts(second);
+  expect(first.bake?.studCover.studs).toBe(0);
+  expect(one?.partId).toMatch(customIdPattern("shadowing.dat"));
+  expect(other?.partId).toMatch(customIdPattern("shadowing.dat"));
+  expect(other?.partId).not.toBe(one?.partId);
+});
+
+function studioPart(
+  name: string,
+  license: string | null,
+  body: ReadonlyArray<string>,
+): CustomSource {
+  return { name, text: [...customHeader(name, license), ...body].join("\n") };
+}
+
+it("draws a Studio CustomParts file from its own sub-part as custom, under its Studio name even where the library has a part of that name, whatever licence it names", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "custom-parts.io",
+    [
+      "1 4 0 0 0 1 0 0 0 1 0 0 0 1 studiobrick.dat",
+      "1 2 80 0 0 1 0 0 0 1 0 0 0 1 unlicensed.dat",
+      "1 14 160 0 0 1 0 0 0 1 0 0 0 1 3003.dat",
+      "1 1 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+      "",
+    ].join("\n"),
+    {
+      customFiles: [
+        studioPart("studiobrick.dat", CC_BY_4, [
+          "1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\studiobricks01.dat",
+        ]),
+        studioPart("s/studiobricks01.dat", CC_BY_4, [TRIANGLE]),
+        studioPart("unlicensed.dat", null, [TRIANGLE]),
+        studioPart("3003.dat", CC_BY_4, [OTHER_TRIANGLE]),
+      ],
+    },
+  );
+
+  expect(result.report.parts).toMatchObject([
+    { reference: "studiobrick.dat", kind: "custom", origin: "studio" },
+    { reference: "unlicensed.dat", kind: "custom", origin: "studio" },
+    { reference: "3003.dat", kind: "custom", origin: "studio" },
+    { reference: "3001.dat", kind: "bundle" },
+  ]);
+  expect(result.instanceCount).toBe(4);
+});
+
+it("refuses a Studio custom part whose own files refer to each other in a loop, rather than closing the loop with the library part of that name", async () => {
+  const result = await importWith(
+    pinnedMirror,
+    "loop.io",
+    "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat\n",
+    {
+      customFiles: [
+        studioPart("3003.dat", CC_BY_4, ["1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\loop.dat"]),
+        studioPart("s/loop.dat", CC_BY_4, [TRIANGLE, "1 16 0 -24 0 1 0 0 0 1 0 0 0 1 3003.dat"]),
+      ],
+    },
+  );
+
+  expect(result.report.parts).toMatchObject([
+    { reference: "3003.dat", kind: "customRefused", origin: "studio", gate: "tooDeep" },
+  ]);
+  expect(result.instanceCount).toBe(0);
+});
+
+async function ownStudBrick(): Promise<ReadonlyArray<string[]>> {
+  const [brick, lower, stud] = await Promise.all([
+    pinnedGeometry("parts/3001.dat"),
+    pinnedGeometry("parts/s/3001s01.dat"),
+    pinnedGeometry("p/stud.dat"),
+  ]);
+  const walls = brick.filter((line) => !line.startsWith("1 "));
+  const studs = lower.map((line) => line.replace(STUD_REFERENCE, " own-stud.dat"));
+  return [
+    customFile("own-stud-brick.dat", CC_BY_4, [...walls, ...studs]),
+    customFile("own-stud.dat", CC_BY_4, stud),
+  ];
+}
+
+const MIXED_STUDS = [
+  "stud.dat",
+  "stud2a.dat",
+  "stud3a.dat",
+  "stud10.dat",
+  "stud15.dat",
+  "stud.dat",
+  "stud.dat",
+  "stud.dat",
+];
+const BRICK_STUD_X_LDU = [-30, -10, 10, 30];
+const BRICK_STUD_Z_LDU = [-10, 10];
+const PLACED_X_TOKEN = 2;
+const PLACED_Z_TOKEN = 4;
+
+interface MixedStudBrick {
+  readonly file: string[];
+  readonly studs: ReadonlyArray<{ readonly primitive: string; readonly slot: string }>;
+}
+
+async function mixedStudBrick(): Promise<MixedStudBrick> {
+  const [brick, lower] = await Promise.all([
+    pinnedGeometry("parts/3001.dat"),
+    pinnedGeometry("parts/s/3001s01.dat"),
+  ]);
+  const walls = brick.filter((line) => !line.startsWith("1 "));
+  const studs: Array<{ readonly primitive: string; readonly slot: string }> = [];
+  const body = lower.map((line) => {
+    if (!STUD_REFERENCE.test(line)) return line;
+    const primitive = MIXED_STUDS[studs.length] ?? "stud.dat";
+    const tokens = line.split(" ");
+    studs.push({
+      primitive,
+      slot: upwardStud(Number(tokens[PLACED_X_TOKEN]), Number(tokens[PLACED_Z_TOKEN])),
+    });
+    return line.replace(STUD_REFERENCE, ` ${primitive}`);
+  });
+  return { file: customFile("mixed-stud-brick.dat", CC_BY_4, [...walls, ...body]), studs };
+}
+
+async function customBricks(): Promise<string> {
+  return modelOf(
+    ["stud-brick.dat", "own-stud-brick.dat", "mixed-stud-brick.dat", "nonca-brick.dat"],
+    [
+      customFile("stud-brick.dat", CC_BY_4, await pinnedGeometry("parts/3001.dat")),
+      ...(await ownStudBrick()),
+      (await mixedStudBrick()).file,
+      customFile("nonca-brick.dat", NON_CA, await pinnedGeometry("parts/3001.dat")),
+    ],
+  );
+}
+
+function upwardStud(ldrawX: number, ldrawZ: number): string {
+  return `${ldrawX * SIXTEENTHS_PER_LDU} 0 ${-ldrawZ * SIXTEENTHS_PER_LDU} ${AXIS_POS_Y}`;
+}
+
+const BRICK_STUDS = BRICK_STUD_X_LDU.flatMap((x) =>
+  BRICK_STUD_Z_LDU.map((z) => upwardStud(x, z)),
+).toSorted();
+
+function maleSlots(connectors: PartConnectors, source: number): ReadonlyArray<string> {
+  const slots: string[] = [];
+  for (let face = 0; face < connectors.count; face++) {
+    if (connectors.gender[face] !== GENDER_MALE || connectors.source[face] !== source) continue;
+    const at = face * 3;
+    slots.push(
+      `${[0, 1, 2].map((k) => connectors.origin[at + k]).join(" ")} ${connectors.axis[face]}`,
+    );
+  }
+  return slots.toSorted();
+}
+
+function connectorsOf(result: ImportResult, part: CustomPart | undefined): PartConnectors {
+  const connectors = part && result.connectors[result.partIds.indexOf(part.partId)];
+  if (!connectors) throw new Error(`${part?.reference ?? "a custom part"} has no connector table`);
+  return connectors;
+}
+
+const STUD_SOURCE: Readonly<Record<string, number>> = {
+  "stud.dat": CONNECTOR_SOURCE.shadow,
+  "stud2a.dat": CONNECTOR_SOURCE.shadow,
+  "stud10.dat": CONNECTOR_SOURCE.shadow,
+  "stud15.dat": CONNECTOR_SOURCE.shadow,
+  "stud3a.dat": CONNECTOR_SOURCE.primitive,
+};
+
+it("reads custom parts' connectors at import in tier order, each stud from the shadow library where it has a snap, else the primitive table, else geometry, all flagged unverified, whatever licence the part names", async () => {
+  const result = await importWith(pinnedMirror, "custom-bricks.mpd", await customBricks(), {
+    shadowLibrary: await pinnedShadowLibrary(),
+  });
+  const [studBrick, ownStuds, mixedStuds, nonCaBrick] = drawnCustomParts(result);
+  const shadow = connectorsOf(result, studBrick);
+  const nonCa = connectorsOf(result, nonCaBrick);
+  const inferred = connectorsOf(result, ownStuds);
+  const mixed = connectorsOf(result, mixedStuds);
+  const { studs } = await mixedStudBrick();
+  const mixedFrom = (source: number) =>
+    studs
+      .filter(({ primitive }) => STUD_SOURCE[primitive] === source)
+      .map(({ slot }) => slot)
+      .toSorted();
+
+  expect(result.report.parts.map((part) => [part.reference, part.kind])).toEqual([
+    ["stud-brick.dat", "custom"],
+    ["own-stud-brick.dat", "custom"],
+    ["mixed-stud-brick.dat", "custom"],
+    ["nonca-brick.dat", "custom"],
+  ]);
+  expect(maleSlots(shadow, CONNECTOR_SOURCE.shadow)).toEqual(BRICK_STUDS);
+  expect(maleSlots(nonCa, CONNECTOR_SOURCE.shadow)).toEqual(BRICK_STUDS);
+  expect(maleSlots(inferred, CONNECTOR_SOURCE.shadow)).toEqual([]);
+  expect(maleSlots(inferred, CONNECTOR_SOURCE.inferred)).toEqual(BRICK_STUDS);
+  for (const source of [
+    CONNECTOR_SOURCE.shadow,
+    CONNECTOR_SOURCE.primitive,
+    CONNECTOR_SOURCE.inferred,
+  ]) {
+    expect(maleSlots(mixed, source)).toEqual(mixedFrom(source));
+  }
+  expect(mixedStuds?.connectors?.bySource.primitive).toBe(
+    mixedFrom(CONNECTOR_SOURCE.primitive).length,
+  );
+  for (const table of [shadow, inferred, mixed, nonCa]) {
+    expect(new Set(table.status)).toEqual(new Set([CONNECTOR_STATUS.unverified]));
+  }
+  expect(result.report.refusedConnectorRecords).toEqual([]);
+  expect(result.report.withoutConnectorRecords).toEqual([]);
+});
+
+const UNREADABLE_SHADOW_LIBRARY: IShadowLibrary = {
+  manifest: async () => {
+    throw new Error("GET shadow-library.json failed with 503");
+  },
+  probe: async () => {
+    throw new Error("the import probed an unreadable shadow library");
+  },
+  stats: () => ({ fetched: 0, cached: 0, bytes: 0 }),
+};
+const UNREADABLE_REASON =
+  "the pinned shadow library could not be read: GET shadow-library.json failed with 503";
+
+const CUSTOM_BRICK_IDS = [
+  "stud-brick.dat",
+  "own-stud-brick.dat",
+  "mixed-stud-brick.dat",
+  "nonca-brick.dat",
+].map((name) => expect.stringMatching(customIdPattern(name)));
+
+interface WithoutTables {
+  readonly when: string;
+  readonly shadowLibrary: "none" | "pinned" | "unreadable";
+  readonly withoutPrimitiveTable: boolean;
+  readonly refused: boolean;
+}
+
+it.each<WithoutTables>([
+  {
+    when: "without a shadow library, listing them as without records",
+    shadowLibrary: "none",
+    withoutPrimitiveTable: false,
+    refused: false,
+  },
+  {
+    when: "without a primitive table, listing them as without records",
+    shadowLibrary: "pinned",
+    withoutPrimitiveTable: true,
+    refused: false,
+  },
+  {
+    when: "when the shadow library cannot be read, saying why",
+    shadowLibrary: "unreadable",
+    withoutPrimitiveTable: false,
+    refused: true,
+  },
+])("draws custom parts with no connector table $when", async (setup) => {
+  const shadowLibrary = {
+    none: undefined,
+    pinned: await pinnedShadowLibrary(),
+    unreadable: UNREADABLE_SHADOW_LIBRARY,
+  }[setup.shadowLibrary];
+  const result = await importWith(pinnedMirror, "custom-bricks.mpd", await customBricks(), {
+    ...(shadowLibrary === undefined ? {} : { shadowLibrary }),
+    withoutPrimitiveTable: setup.withoutPrimitiveTable,
+  });
+
+  expect(drawnCustomParts(result).map((part) => part.connectors)).toEqual([null, null, null, null]);
+  expect(result.partIds).toEqual(CUSTOM_BRICK_IDS);
+  expect(result.connectors).toEqual([null, null, null, null]);
+  expect(result.report.withoutConnectorRecords).toEqual(setup.refused ? [] : CUSTOM_BRICK_IDS);
+  expect(result.report.refusedConnectorRecords).toEqual(
+    setup.refused ? CUSTOM_BRICK_IDS.map((partId) => ({ partId, reason: UNREADABLE_REASON })) : [],
+  );
+});
+
+type Layout = ReadonlyArray<readonly [string, number, number]>;
+
+function seatedOn(references: Layout): string {
+  return references
+    .map(([reference, x, y]) => `1 4 ${x} ${y} 0 1 0 0 0 1 0 0 0 1 ${reference}`)
+    .join("\n");
+}
+
+async function matesIn(result: ImportResult): Promise<number> {
+  const shapes = new SnapShapes();
+  const tables = result.connectors.map((connectors, index) =>
+    connectors === null
+      ? null
+      : ConnectorTable.fromColumns(connectors, shapes, result.partIds[index] ?? ""),
+  );
+  return ModelConnectors.fromParts(
+    tables,
+    {
+      count: result.instanceCount,
+      partIndex: result.partIndex,
+      matrices: result.partTransforms,
+      submodels: result.submodels,
+    },
+    new SnapMating(shapes),
+  ).internalMates;
+}
+
+function onBaseplate(brick: string): Layout {
+  return [
+    ["3867.dat", 0, 0],
+    [brick, 0, -BRICK_LDU],
+  ];
+}
+
+function underABrick(brick: string): Layout {
+  return [
+    [brick, 0, 0],
+    ["3001.dat", 0, -BRICK_LDU],
+  ];
+}
+
+it("seats custom bricks, whatever licence they name, on a bundle baseplate and takes a brick on their inferred studs exactly as official 3001 does", async () => {
+  const shadowLibrary = await pinnedShadowLibrary();
+  const custom = async (layout: Layout) =>
+    importWith(
+      pinnedMirror,
+      "seated.mpd",
+      [
+        "0 FILE seated.ldr",
+        "0 !LDRAW_ORG Model",
+        seatedOn(layout),
+        "0 NOFILE",
+        ...customFile("stud-brick.dat", CC_BY_4, await pinnedGeometry("parts/3001.dat")),
+        ...customFile("nonca-brick.dat", NON_CA, await pinnedGeometry("parts/3001.dat")),
+        ...(await ownStudBrick()).flat(),
+        "",
+      ].join("\n"),
+      { shadowLibrary },
+    );
+  const official = await matesIn(await custom(onBaseplate("3001.dat")));
+  const stacked = await matesIn(await custom(underABrick("3001.dat")));
+
+  expect(official).toBeGreaterThan(0);
+  expect(stacked).toBeGreaterThan(0);
+  expect(await matesIn(await custom(onBaseplate("stud-brick.dat")))).toBe(official);
+  expect(await matesIn(await custom(onBaseplate("nonca-brick.dat")))).toBe(official);
+  expect(await matesIn(await custom(underABrick("own-stud-brick.dat")))).toBe(stacked);
 });
 
 it.each([0, 2])(
@@ -858,8 +1504,7 @@ it.each([0, 2])(
       pinnedMirror,
       "mils-road-straight.ldr",
       await readFile(paletteTemplate, "utf8"),
-      undefined,
-      await reactorHelpers(helperReactors),
+      { helpers: await reactorHelpers(helperReactors) },
     );
 
     const cells = bundled.cover.cells;
@@ -894,12 +1539,9 @@ it(
   async () => {
     const text = await readFile(customPileFile, "utf8");
     const alone = await importWith(pinnedMirror, "custom-pile.ldr", text);
-    const failing = await importWith(pinnedMirror, "custom-pile.ldr", text, undefined, [
-      ...(await reactorHelpers(1)),
-      crashingHelper,
-      silentHelper,
-      outOfSyncHelper,
-    ]);
+    const failing = await importWith(pinnedMirror, "custom-pile.ldr", text, {
+      helpers: [...(await reactorHelpers(1)), crashingHelper, silentHelper, outOfSyncHelper],
+    });
 
     expect(alone.bake?.studCover.covered).toBeGreaterThan(0);
     expect(alone.bake?.studCover.covered).toBeLessThan(alone.bake?.studCover.studs ?? 0);
@@ -962,9 +1604,7 @@ it("reports, without drawing, a part when the stud primitives draw no ring to me
     pinnedMirror,
     "wheelset.ldr",
     "1 0 0 0 0 1 0 0 0 1 0 0 0 1 70720c01.dat\n",
-    undefined,
-    [],
-    ["not-a-stud.dat"],
+    { studPrimitives: ["not-a-stud.dat"] },
   );
 
   expect(result.report.parts).toEqual([

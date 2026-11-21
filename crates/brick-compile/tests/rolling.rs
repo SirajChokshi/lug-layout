@@ -2,12 +2,12 @@ mod common;
 
 use std::f64::consts::TAU;
 
-use brick_compile::compile::rolling_mode_from_studs;
+use brick_compile::compile::{rolling_mode_from_studs, stud_primitives_from_table, stud_roundness};
 use brick_compile::rolling::RollingSurface;
 use brick_compile::trig::{cos, sin};
 use brick_compile::{compile_part, CompileOptions, Library, Lod, TechnicPrimitives};
 use common::{fixture_library, MemoryLibrary};
-use serde_json::json;
+use serde_json::{json, Value};
 
 const LICENSE: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt\n";
 const WOUND: &str = "0 BFC CERTIFY CCW\n";
@@ -208,6 +208,11 @@ fn custom_wheel() -> String {
     let off_grid_radius = Band::along(1, at(-60.0, 0.0, 60.0), -8.0, 0.0, [10.01, 10.01]);
     let off_grid_centre = Band::along(1, at(60.01, 0.0, -60.0), -8.0, 0.0, [10.0, 10.0]);
     let off_grid_end = Band::along(1, at(60.0, 0.0, 60.0), -10.003, 0.0, [10.0, 10.0]);
+    let off_grid_cone_end = Band::along(1, at(-100.0, 0.0, 60.0), -10.003, 0.0, [10.0, 12.0]);
+    let split_by_prints = Band {
+        missing: &[2, 3, 4, 5, 10, 11, 12, 13],
+        ..Band::along(1, at(140.0, 0.0, 0.0), -8.0, 0.0, [10.0, 10.0])
+    };
     let notched = Band {
         drawn: 15,
         ..Band::along(0, at(0.0, -12.0, 60.0), 20.0, 30.0, [10.0, 10.0])
@@ -301,6 +306,8 @@ fn custom_wheel() -> String {
         off_grid_radius,
         off_grid_centre,
         off_grid_end,
+        off_grid_cone_end,
+        split_by_prints,
         notched,
         cut_on_every_meridian,
         cut_obliquely,
@@ -398,12 +405,46 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
             surface(0, [160.0, 0.0], 60.0, 70.0, [8.0, 8.0]),
             surface(1, [-60.0, 0.0], 0.0, 8.0, [10.0, 10.0]),
             surface(1, [0.0, -60.0], 0.0, 24.0, [8.0, 8.0]),
+            surface(1, [60.0, -60.0], 0.0, 10.0, [10.0, 10.0]),
         ]
     );
     let extras = compiled.extras();
     assert_eq!(extras["rolling"]["surfaces"][0]["source"], "measured");
+    let unread = compiled.rolling_diagnostics();
+    let served: Vec<Value> = unread
+        .iter()
+        .map(|row| {
+            let mut entry = json!({ "reason": row["reason"] });
+            if let Some(axis) = row.get("axis") {
+                entry["axis"] = axis.clone();
+            }
+            entry
+        })
+        .collect();
+    assert_eq!(extras["rolling"]["unread"], Value::Array(served));
+    for row in &unread {
+        assert!(
+            exact(&row["raw"]["from"]) <= exact(&row["raw"]["to"]),
+            "{row}"
+        );
+    }
+    let width = unread
+        .iter()
+        .find(|row| row["reason"] == "width")
+        .expect("the cone's row");
+    assert_eq!(exact(&width["raw"]["to"]).to_bits(), 10.003_f64.to_bits());
+    let without_raw: Vec<Value> = unread
+        .iter()
+        .map(|row| {
+            let mut row = row.clone();
+            row.as_object_mut()
+                .expect("a row is an object")
+                .remove("raw");
+            row
+        })
+        .collect();
     assert_eq!(
-        extras["rolling"]["unread"],
+        Value::Array(without_raw),
         json!([
             { "reason": "unoriented" },
             { "reason": "centre", "axis": 1, "radii": [160, 160], "from": 0, "to": 128 },
@@ -416,7 +457,7 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "from": 0,
                 "to": 128
             },
-            { "reason": "width", "axis": 1, "at": [960, -960], "radii": [160, 160], "from": 0 },
+            { "reason": "width", "axis": 1, "at": [-1600, -960], "radii": [192, 160], "from": 0 },
             {
                 "reason": "faceted",
                 "axis": 2,
@@ -507,8 +548,54 @@ fn a_custom_part_drawn_from_plain_quads_reads_its_bands_and_reports_the_rest() {
                 "from": 0,
                 "to": 128
             },
+            {
+                "reason": "arcs",
+                "axis": 1,
+                "at": [2240, 0],
+                "radii": [160, 160],
+                "from": 0,
+                "to": 128
+            },
         ])
     );
+}
+
+fn exact(text: &Value) -> f64 {
+    let numerator: i64 = text["numerator"]
+        .as_str()
+        .expect("numerator")
+        .parse()
+        .expect("integer");
+    let denominator: f64 = text["denominator"]
+        .as_str()
+        .expect("denominator")
+        .parse()
+        .expect("integer");
+    assert!(numerator.unsigned_abs() < 1 << 53, "{text}");
+    assert_eq!(
+        denominator.to_bits() & ((1 << 52) - 1),
+        0,
+        "the denominator is a power of two: {text}"
+    );
+    assert!(denominator == 1.0 || numerator % 2 != 0, "reduced: {text}");
+    numerator as f64 / denominator
+}
+
+#[test]
+fn the_table_studs_measure_the_roundness_a_full_stud_does() {
+    let library = fixture_library();
+    let table: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/primitive-connectors.json"),
+        )
+        .expect("the primitive table is readable"),
+    )
+    .expect("the primitive table is JSON");
+    let studs = stud_primitives_from_table(&table).expect("the table names stud primitives");
+    let full = stud_roundness(&library, &["stud.dat".to_string()]);
+    assert!(full.is_some());
+    assert_eq!(stud_roundness(&library, &studs), full);
 }
 
 #[test]

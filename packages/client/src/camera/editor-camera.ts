@@ -5,11 +5,11 @@ import type { SavedViewV1 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import type { IPlanService } from "../plan/plan-service.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
-import { ViewCamera, type ViewMode } from "./view-camera.ts";
+import { ViewCamera, type GroundDirection, type ViewMode } from "./view-camera.ts";
 
 export { FOOTPRINT_FLOATS } from "./view-camera.ts";
 
-export type { ViewMode } from "./view-camera.ts";
+export type { GroundDirection, ViewMode } from "./view-camera.ts";
 export type ScrollGesture = "zoom" | "pan";
 
 export interface CameraSnapshot {
@@ -38,6 +38,7 @@ export interface IEditorCamera {
   orbit(dxPx: number, dyPx: number): void;
   pan(fromNdcX: number, fromNdcY: number, toNdcX: number, toNdcY: number): void;
   panBy(dxPx: number, dyPx: number): void;
+  groundDirection(rightPx: number, downPx: number): GroundDirection;
   wheel(input: WheelInput): void;
   pinch(scaleRatio: number, ndcX: number, ndcY: number): void;
   zoomStep(steps: number): void;
@@ -49,6 +50,7 @@ export interface IEditorCamera {
   lookAt(x: number, z: number, animate: boolean): void;
   viewPlan(planId: string): void;
   viewFootprint(out: Float64Array): boolean;
+  planLduPerPx(): number | null;
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number };
   savedView(): SavedViewV1;
   matchesView(view: SavedViewV1): boolean;
@@ -192,6 +194,10 @@ export class EditorCamera implements IEditorCamera {
     this.view.apply(this.backend);
   }
 
+  groundDirection(rightPx: number, downPx: number): GroundDirection {
+    return this.view.groundDirection(rightPx, downPx);
+  }
+
   wheel(input: WheelInput): void {
     this.applyWheel(input);
     this.view.apply(this.backend);
@@ -265,6 +271,10 @@ export class EditorCamera implements IEditorCamera {
 
   viewFootprint(out: Float64Array): boolean {
     return this.view.footprint(out);
+  }
+
+  planLduPerPx(): number | null {
+    return this.view.planLduPerPx();
   }
 
   targetChunk(): { readonly chunkX: number; readonly chunkZ: number } {

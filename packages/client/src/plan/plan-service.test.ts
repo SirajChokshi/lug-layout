@@ -7,7 +7,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { expect, it } from "vitest";
-import { PlanDelta } from "@brr/domain";
+import { emptyFacts, PlanDelta } from "@brr/domain";
 import { mainThreadModules } from "../client.module.ts";
 import { writeFullRebuild } from "./plan-producer.ts";
 import { PLAN_SERVICE } from "../tokens.ts";
@@ -28,16 +28,20 @@ class IssueBoxBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(boxes: ReadonlyArray<WorldBox>): void {
     this.issueBoxes = boxes;
   }
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -92,6 +96,8 @@ it("commits an unchecked plan, tables kept, when a placement box cannot be read"
         handle: { chunkKey: 5, slot: 2, x: 0, z: 0 },
         placeable: { id: "ldraw:3811", label: "3811" },
         box: unreadable,
+        shape: null,
+        facts: emptyFacts(),
       },
     ],
     null,

@@ -1,81 +1,110 @@
 import {
+  heldItem,
   meshesSettled,
+  placementFeedback,
   runEditorAction,
   type EditorActionId,
   type EditorOptions,
   type IBomService,
   type IEditor,
   type IEditorCamera,
-  type IPaletteDrag,
-  type IPaletteMemory,
-  type IPalettePrefetch,
-  type IPaletteSearch,
-  type IPaletteThumbnails,
+  type IHotbar,
+  type IOwnedParts,
+  type IPalette,
+  type IPanelLayout,
   type IPlanService,
+  type IPlanSheetService,
   type IRunningGear,
+  type IScaleBar,
+  type IStarterWorlds,
   type ITrainPlay,
+  tallyText,
+  type SelectionView,
   type ShellCommandId,
 } from "@brr/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BomPanel } from "./bom-panel.tsx";
 import { CommandPalette } from "./command-palette.tsx";
 import { EditorCanvas } from "./editor-canvas.tsx";
-import {
-  EditorFooter,
-  EditorHud,
-  Inspector,
-  PlacementToolbar,
-  RoadJoins,
-} from "./editor-panels.tsx";
+import { EditorFooter, EditorHud, PlacementToolbar, SelectionPanel } from "./editor-panels.tsx";
+import { LibraryColumn } from "./library-column.tsx";
 import { Minimap } from "./minimap.tsx";
 import { PalettePanel } from "./palette-panel.tsx";
+import { PlacementChip } from "./placement-chip.tsx";
 import { PlanPanel } from "./plan-panel.tsx";
+import { PlanScaleBar } from "./plan-scale-bar.tsx";
+import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
+import { TrackExtendPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
-import { TrackPanel } from "./track-panel.tsx";
 import { useSafeArea } from "./safe-area.ts";
 import { useCompactLayout } from "./use-compact-layout.ts";
 import { useEditorSnapshot } from "./use-editor.ts";
 import { useEditorKeys } from "./use-editor-keys.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
+import { useWelcome } from "./use-welcome.ts";
 import { ViewControls } from "./view-controls.tsx";
+import { WelcomeCard } from "./welcome-card.tsx";
 import { WorldMenu } from "./world-menu.tsx";
+
+function selectionLabel(selection: SelectionView | null): string | null {
+  if (!selection) return null;
+  const { members, primary } = selection;
+  return members.length === 1 ? primary.item : tallyText(selection.tally);
+}
 
 interface EditorAppProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
+  readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly bomService: IBomService;
+  readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
-  readonly paletteSearch: IPaletteSearch;
-  readonly paletteDrag: IPaletteDrag;
-  readonly palettePrefetch: IPalettePrefetch;
-  readonly paletteMemory: IPaletteMemory;
-  readonly paletteThumbnails: IPaletteThumbnails;
+  readonly palette: IPalette;
+  readonly panels: IPanelLayout;
+  readonly hotbar: IHotbar;
   readonly runningGear: IRunningGear;
+  readonly starters: IStarterWorlds;
   readonly options: EditorOptions;
   readonly disclaimer: string;
   readonly showState: boolean;
 }
 
+function setsAsArrays(_key: string, value: unknown): unknown {
+  return value instanceof Set ? [...value] : value;
+}
+
 function EditorState({ editor }: { readonly editor: IEditor }) {
   const snapshot = useEditorSnapshot(editor);
+  const held = heldItem(snapshot);
   return (
     <pre
       id="edit-state"
       data-placements={snapshot.placements}
       data-samples={snapshot.latencies.length}
       data-measuring={snapshot.measuring ? "1" : "0"}
+      data-held-item={held?.item}
+      data-held-tables={held?.tables}
     >
-      {JSON.stringify({
-        latencies: snapshot.latencies,
-        stats: snapshot.stats,
-        measurement: snapshot.measurement,
-        world: editor.dump(),
-      })}
+      {JSON.stringify(
+        {
+          held,
+          hover: snapshot.hover,
+          placementMode: snapshot.placementMode,
+          placementModeOverride: snapshot.placementModeOverride,
+          latencies: snapshot.latencies,
+          stats: snapshot.stats,
+          measurement: snapshot.measurement,
+          world: editor.dump(),
+          routes: editor.trackRoutes(),
+        },
+        setsAsArrays,
+      )}
     </pre>
   );
 }
@@ -113,23 +142,30 @@ function PlanState({ plans }: { readonly plans: IPlanService }) {
 export function EditorApp({
   editor,
   camera,
+  scaleBar,
   plans,
+  sheets,
   bomService,
+  ownedParts,
   play,
-  paletteSearch,
-  paletteDrag,
-  palettePrefetch,
-  paletteMemory,
-  paletteThumbnails,
+  palette,
+  panels,
+  hotbar,
   runningGear,
+  starters,
   options,
   disclaimer,
   showState,
 }: EditorAppProps) {
   const snapshot = useEditorSnapshot(editor);
   const playSnapshot = usePlaySnapshot(play);
+  const welcome = useWelcome(starters);
   const [overlay, setOverlay] = useState<ShellCommandId | null>(null);
   const closeOverlay = useCallback(() => setOverlay(null), []);
+  const closeTopOverlay = useCallback(() => {
+    if (overlay !== null) setOverlay(null);
+    else starters.dismiss();
+  }, [overlay, starters]);
   const toggleOverlay = useCallback(
     (id: ShellCommandId) => setOverlay((open) => (open === id ? null : id)),
     [],
@@ -141,12 +177,14 @@ export function EditorApp({
   useEditorKeys(editor, camera, {
     play,
     onShellCommand: toggleOverlay,
-    overlayOpen: overlay !== null,
-    closeOverlay,
+    hotbar,
+    overlayOpen: overlay !== null || welcome.open,
+    closeOverlay: closeTopOverlay,
   });
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   useSafeArea(camera, root);
   const compact = useCompactLayout();
+  const ghostTone = placementFeedback(snapshot)?.tone ?? "";
   return (
     <div
       ref={setRoot}
@@ -156,8 +194,11 @@ export function EditorApp({
       data-far-tier={snapshot.farTier}
       data-meshes={meshesSettled(snapshot.meshes) ? "settled" : "loading"}
       data-hover={snapshot.hover ? `${snapshot.hover.x},${snapshot.hover.z}` : ""}
-      data-selection={snapshot.selection?.item ?? ""}
+      data-selection={snapshot.selection?.primary.item ?? ""}
+      data-selection-count={snapshot.selection?.members.length ?? 0}
+      data-gesture={snapshot.gesture?.kind ?? ""}
       data-ghost-rot={snapshot.ghostRot}
+      data-ghost={ghostTone}
       data-snap={snapshot.snap?.state === "snapped" ? snapshot.snap.joinedCells : ""}
       data-snap-state={snapshot.snap?.state ?? ""}
       data-refused={snapshot.refusedClicks}
@@ -173,21 +214,33 @@ export function EditorApp({
         editor={editor}
         camera={camera}
         play={play}
-        paletteDrag={paletteDrag}
+        paletteDrag={palette.drag}
         options={options}
       />
-      <ToolHud snapshot={snapshot} play={playSnapshot} />
-      <EditorHud snapshot={snapshot} />
+      <SceneLabels editor={editor} snapshot={snapshot} />
+      <ToolHud snapshot={snapshot} play={playSnapshot} hotbar={hotbar} />
+      <PlacementChip snapshot={snapshot} />
       <ViewControls camera={camera} snapshot={snapshot} compact={compact} />
-      <PlanPanel camera={camera} plans={plans} />
+      <LibraryColumn panels={panels}>
+        <PalettePanel editor={editor} snapshot={snapshot} palette={palette} />
+      </LibraryColumn>
+      <PlanScaleBar scaleBar={scaleBar} />
       <div className="side-panel">
-        <WorldMenu editor={editor} snapshot={snapshot} />
+        <WorldMenu editor={editor} snapshot={snapshot} starters={starters} />
         <PlacementToolbar
           editor={editor}
           snapshot={snapshot}
           play={playSnapshot}
           onEditorAction={runAction}
           onShellCommand={toggleOverlay}
+        />
+        <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <TrackExtendPanel editor={editor} snapshot={snapshot} />
+        <SelectionPanel
+          editor={editor}
+          snapshot={snapshot}
+          play={playSnapshot}
+          onEditorAction={runAction}
         />
         <Minimap editor={editor} camera={camera} plans={plans} snapshot={snapshot} />
         <PlayPanel
@@ -198,39 +251,41 @@ export function EditorApp({
           ready={snapshot.status === "ready"}
           checkingStuds={snapshot.studChecks > 0}
         />
-        <PalettePanel
+        <PlanPanel
+          camera={camera}
           editor={editor}
-          snapshot={snapshot}
-          search={paletteSearch}
-          drag={paletteDrag}
-          prefetch={palettePrefetch}
-          memory={paletteMemory}
-          thumbnails={paletteThumbnails}
+          drawing={snapshot.mode === "table"}
+          held={heldItem(snapshot)}
+          fillGridStuds={snapshot.fillGridStuds}
+          plans={plans}
+          sheets={sheets}
+          ready={snapshot.status === "ready"}
+          readOnly={snapshot.readOnly}
         />
-        <TrackPanel snapshot={snapshot} />
-        <RoadDrawPanel editor={editor} snapshot={snapshot} />
-        <Inspector snapshot={snapshot} />
-        <RoadJoins editor={editor} snapshot={snapshot} />
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
+            ownedParts={ownedParts}
             source={editor}
             region={null}
-            selectionLabel={snapshot.selection?.item ?? null}
+            selectionLabel={selectionLabel(snapshot.selection)}
+            plans={plans}
           />
         )}
+        <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
       </div>
       {showState && <EditorState editor={editor} />}
       {showState && <PlanState plans={plans} />}
       {showState && <CameraState camera={camera} />}
       <EditorFooter disclaimer={disclaimer} />
+      {welcome.open && <WelcomeCard starters={starters} view={welcome} />}
       {overlay === "show-shortcuts" && <ShortcutSheet onClose={closeOverlay} />}
       {overlay === "open-palette" && (
         <CommandPalette
           editor={editor}
           camera={camera}
           play={play}
-          search={paletteSearch}
+          search={palette.search}
           snapshot={snapshot}
           onClose={closeOverlay}
           onShellCommand={toggleOverlay}

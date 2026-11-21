@@ -67,13 +67,16 @@ class RecordingBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   rayThrough(): void {}
   setView(): void {}
   resize(): void {}
@@ -89,6 +92,7 @@ class RecordingBackend implements ISceneBackend {
     return { vertexIndexBytes: 0, otherBytes: 0 };
   }
   setTrackEnds(): void {}
+  setGround(): void {}
   forceTier(): void {}
   setFarModel(_id: number, placement: FarModelPlacement | null): void {
     this.farModels.push(placement);

@@ -82,7 +82,7 @@ export function ViewControls({ camera, snapshot, compact }: ViewControlsProps) {
         className="view-scroll"
         title="What two-finger scroll or the mouse wheel does: zooms suits a mouse, pans suits a trackpad. Pinch and Ctrl+wheel always zoom."
       >
-        Scroll
+        <span className={compact ? "visually-hidden" : undefined}>Scroll</span>
         <select
           value={view.scroll}
           onChange={(event) => camera.setScroll(event.target.value === "pan" ? "pan" : "zoom")}

@@ -6,10 +6,12 @@ use std::process::ExitCode;
 use brick_compile::authored::AUTHORED_RULE_VERSION;
 use brick_compile::bake::{drawn_lattice, FarVoxels, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
+use brick_compile::compile::{
+    modified_note, required_stud_roundness, stud_primitives_from_table, RollingMode, MODIFIED_NOTE,
+};
 use brick_compile::connect::{
     record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
+    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord, CONNECTIVITY_LICENSE,
 };
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
@@ -30,8 +32,8 @@ const LDCONFIG: &str = "ldconfig.ldr";
 const COMPILER_FILE: &str = "brick-compile.wasm";
 const CONNECTOR_INDEX_FILE: &str = "connector-index.json";
 const CONNECTIVITY_INDEX_FILE: &str = "connectivity-index.json";
+const ROLLING_DIAGNOSTICS_FILE: &str = "rolling-diagnostics.json";
 const PATCH_MANIFEST: &str = "manifest.json";
-const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 const SHADOW_AUTHORS: &str = "Roland Melkert and the LDCad Shadow Library contributors";
 const PATCH_ATTRIBUTION: &str =
     "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
@@ -230,12 +232,17 @@ fn compile_entry(
     options: &CompileOptions,
     out: &Path,
     credits: &mut BTreeMap<String, Value>,
+    diagnostics: &mut BTreeMap<String, Value>,
 ) -> Result<(Value, LatticeShape), String> {
     let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
     let id = stem(reference);
     let file = format!("{id}.glb");
     fs::write(out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
     record_credits(credits, &compiled);
+    let rows = compiled.rolling_diagnostics();
+    if !rows.is_empty() {
+        diagnostics.insert(format!("ldraw:{id}"), json!(rows));
+    }
     let header = &compiled.flattened_files[0].header;
     let mut summary = part_summary(&compiled);
     summary["id"] = json!(format!("ldraw:{id}"));
@@ -498,12 +505,6 @@ fn run(args: &Args) -> Result<(), String> {
         &fs::read(&args.palette).map_err(|e| format!("{}: {e}", args.palette.display()))?,
     )
     .map_err(|e| e.to_string())?;
-    let stud_primitives: Vec<String> = palette["studPrimitives"]
-        .as_array()
-        .ok_or("palette.studPrimitives must be an array")?
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
     let unofficial_allowlist: Vec<String> = palette["unofficialAllowlist"]
         .as_array()
         .map(|list| {
@@ -517,6 +518,7 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
+    let stud_primitives = stud_primitives_from_table(&primitive_table)?;
     let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
     let inferred: Value = serde_json::from_slice(
         &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
@@ -575,6 +577,7 @@ fn run(args: &Args) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     let mut credits: BTreeMap<String, Value> = BTreeMap::new();
+    let mut diagnostics: BTreeMap<String, Value> = BTreeMap::new();
 
     let mut primitives = Vec::new();
     for name in &stud_primitives {
@@ -606,6 +609,7 @@ fn run(args: &Args) -> Result<(), String> {
             &part_options,
             &args.out,
             &mut credits,
+            &mut diagnostics,
         )?;
         if !entry["displayColor"].is_null() {
             summary["displayColor"] = entry["displayColor"].clone();
@@ -779,6 +783,7 @@ fn run(args: &Args) -> Result<(), String> {
                         &part_options,
                         &args.out,
                         &mut credits,
+                        &mut diagnostics,
                     )
                     .map_err(|e| format!("{file}: {e}"))?;
                     part_index.insert(instance.part.clone(), parts.len());
@@ -978,9 +983,14 @@ fn run(args: &Args) -> Result<(), String> {
         "source": palette["source"],
         "parts": indexes.connectors,
     });
+    let rolling_diagnostics = json!({
+        "stepsPerLdu": brick_compile::identify::SIXTEENTHS_PER_LDU,
+        "parts": diagnostics,
+    });
     for (file, index) in [
         (CONNECTIVITY_INDEX_FILE, &connectivity_index),
         (CONNECTOR_INDEX_FILE, &connector_index),
+        (ROLLING_DIAGNOSTICS_FILE, &rolling_diagnostics),
     ] {
         let text = serde_json::to_string(index).map_err(|e| e.to_string())?;
         fs::write(args.out.join(file), text).map_err(|e| format!("{file}: {e}"))?;
@@ -1018,6 +1028,7 @@ fn run(args: &Args) -> Result<(), String> {
         "compiler": compiler,
         "connectors": { "file": CONNECTOR_INDEX_FILE },
         "connectivity": { "file": CONNECTIVITY_INDEX_FILE },
+        "rollingDiagnostics": { "file": ROLLING_DIAGNOSTICS_FILE },
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(args.out.join("manifest.json"), text + "\n").map_err(|e| e.to_string())?;

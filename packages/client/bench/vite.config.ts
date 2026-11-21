@@ -14,6 +14,7 @@ export default defineConfig({
         "bench/needed-meshes.bench.ts",
         "bench/editor-frame-loop.bench.ts",
         "bench/plan-sync.bench.ts",
+        "bench/fill-tool.bench.ts",
       ],
     },
   },

@@ -1,6 +1,8 @@
+import { AssetResponseError } from "./asset-response-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
+  type ConnectorLoad,
   type PackageAttribution,
   type PartConnectors,
 } from "./connector-records.ts";
@@ -9,9 +11,11 @@ import {
   BundleIndex,
   CreditTableFile,
   CrosswalkFile,
+  LibraryPartsFile,
   ModelFile,
   PartShape,
   PartTableFile,
+  RollingDiagnosticsFile,
   SectionVocabularyFile,
   type BundleCredit,
   type BundleLod,
@@ -54,12 +58,16 @@ import type {
   PinnedSectionVocabulary,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
-import { FetchPool, type FetchLane } from "./fetch-pool.ts";
-import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
+import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
+import {
+  ASSET_FETCHER,
+  BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  FETCH_POOL_POLICY,
+} from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
-const MAX_CONCURRENT_FETCHES = 16;
 const HEX_RADIX = 16;
 const BYTE_HEX_DIGITS = 2;
 
@@ -122,7 +130,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
   private async get(path: string): Promise<Response> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
+    if (!response.ok) throw new AssetResponseError(url, response.status);
     return response;
   }
 
@@ -140,13 +148,16 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly indices = new Map<BundleLod, Promise<BundleIndex>>();
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
   private readonly meshes = new Map<string, Promise<PartMesh>>();
-  private readonly pool = new FetchPool(MAX_CONCURRENT_FETCHES);
   private readonly partAssets = new Map<string, Promise<PartAsset>>();
   private readonly studPrimitiveAssets = new Map<
     BundleLod,
     Promise<ReadonlyArray<StudPrimitiveAsset>>
   >();
   private readonly crosswalks = new Map<BundleLod, Promise<CrosswalkFile>>();
+  private readonly rollingDiagnosticsFiles = new Map<
+    BundleLod,
+    Promise<RollingDiagnosticsFile | null>
+  >();
   private readonly connectorRecords = new Map<BundleLod, Promise<ConnectorRecords>>();
   private readonly sectionVocabularies = new Map<
     BundleLod,
@@ -154,10 +165,15 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   >();
   private resolvedManifest: Promise<ResolvedManifest> | undefined;
 
+  private readonly pool: FetchPool;
+
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
     @inject(BUNDLE_MANIFEST_FILE) private readonly fallbackManifestFile: string,
-  ) {}
+    @inject(FETCH_POOL_POLICY) poolPolicy: FetchPoolPolicy,
+  ) {
+    this.pool = new FetchPool(poolPolicy);
+  }
 
   async loadManifestFile(): Promise<string> {
     return (await this.manifestFile()).file;
@@ -367,7 +383,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         if (!compiler) return null;
         const { file, sha256 } = compiler.sectionVocabulary;
         const path = `${lod}/${file}`;
-        const bytes = await this.fetcher.bytes(path);
+        const bytes = await this.bytes(path, "structural");
         const digest = await sha256Hex(bytes);
         if (digest !== sha256) {
           throw new Error(`${path} has SHA-256 ${digest}, but the manifest references ${sha256}`);
@@ -418,6 +434,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
+      shadowLibrary: manifest.compiler.shadowLibrary ?? null,
     };
   }
 
@@ -427,7 +444,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       records = this.loadIndex(lod).then(
         (index) =>
           new ConnectorRecords(
-            async (path) => JSON.parse(await this.fetcher.text(path)),
+            async (path) => JSON.parse(await this.text(path)),
             connectorIndexPaths(lod, index),
             index.compiler?.sectionVocabulary.sha256 ?? null,
           ),
@@ -439,6 +456,10 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
 
   async loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null> {
     return (await this.records(lod)).load(partId);
+  }
+
+  async readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
+    return (await this.records(lod)).read(partId);
   }
 
   async loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -501,6 +522,28 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     this.crosswalks.set(lod, loading);
     loading.catch(() => this.crosswalks.delete(lod));
     return loading;
+  }
+
+  async loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    const { libraryParts } = await this.loadIndex(lod);
+    if (libraryParts === undefined) return null;
+    return this.json(LibraryPartsFile, `${lod}/${libraryParts.file}`);
+  }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.cached(this.rollingDiagnosticsFiles, lod, async () => {
+      const { rollingDiagnostics } = await this.loadIndex(lod);
+      if (rollingDiagnostics === undefined) return null;
+      const path = `${lod}/${rollingDiagnostics.file}`;
+      const bytes = await this.bytes(path, "structural");
+      if ((await sha256Hex(bytes)) !== rollingDiagnostics.sha256) {
+        throw new Error(`${path} differs from the SHA-256 the manifest names`);
+      }
+      return decodedOrThrow(
+        decode(RollingDiagnosticsFile, JSON.parse(new TextDecoder().decode(bytes))),
+        path,
+      );
+    });
   }
 
   async loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk> {
@@ -620,6 +663,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    outline: shape.outline ?? null,
   };
 }
 
@@ -678,5 +722,6 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    outline: null,
   };
 }
