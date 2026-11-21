@@ -1,6 +1,6 @@
 ---
 name: add-part-or-profile
-description: Add a city-palette part (track, road plate, baseplate, module join), a TrackProfile, a ModuleProfile, or a PartSource, entirely from source data with license and field checks. Use when extending the catalog, track systems, module standards, or (later) third-party packs.
+description: Add a city-palette part (track, road plate, baseplate, module join), a TrackProfile, a ModuleProfile, or a PartSource, entirely from source data with attribution and field checks. Use when extending the catalog, track systems, module standards, or (later) third-party packs.
 ---
 
 # Add a part, profile or part source
@@ -8,7 +8,7 @@ description: Add a city-palette part (track, road plate, baseplate, module join)
 Geometry and connectors always come from data. If you find yourself typing a pose or a dimension, stop.
 
 ## City-palette part
-1. **Check the license first.** Use the `verify-ldraw-facts` skill to confirm the part's `!LICENSE` is CA. If it's `OfficialNonCA`, stop and report back; it can't ship.
+1. **Record the attribution.** Use the `verify-ldraw-facts` skill to read the part's `!LICENSE` and `Author:` lines for the credits. Any licence, or none, can ship.
 2. **Add the id** to the curated palette list in `tools/asset-pipeline` using a namespaced id (`ldraw:<num>`) and a `cityRole`. Don't touch app code.
 3. **Get the connectors** from the LDCad shadow `SNAP_*` data, plus inference from primitives. A part with no data source is a blocker to report, not something to hand-author.
 4. **Track parts:** the pipeline's field-membership test must pass, meaning every `trackEnd` pose is in ℤ[ζ_N] for the profile's N. Out-of-field parts need an exact algebraic pose and get the ε = 1e-6 treatment, and the reason is documented.
@@ -22,7 +22,6 @@ Geometry and connectors always come from data. If you find yourself typing a pos
 4. Write rule tests for the profile in sandbox mode (warnings) and plan mode (errors).
 
 ## PartSource (for example, a future `thirdparty-<vendor>`)
-1. Add an adapter in `tools/asset-pipeline` that declares id, `provenance`, a license per item, redistribution rights and priority.
+1. Add an adapter in `tools/asset-pipeline` that declares id, `provenance`, a licence per item (for attribution) and priority.
 2. Use the vendor namespace for ids (`bt:...`). `thirdParty` stays gated by `allowThirdParty` and flagged in the BOM.
 3. Core code must not change. If it seems to need a change, the extension point is wrong, so raise it instead of special-casing.
-4. Don't ship vendor geometry without written license clearance.
