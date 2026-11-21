@@ -7,6 +7,7 @@ import {
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
+  OWNED_PARTS,
   PALETTE,
   PANEL_LAYOUT,
   RUNNING_GEAR,
@@ -17,6 +18,7 @@ import {
   type IBomSource,
   type IImportScene,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   type IViewerScene,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
@@ -39,14 +41,15 @@ const libraryBakeBaseUrl =
   (import.meta.env.VITE_BUNDLE_BASE_URL === undefined
     ? new URL("library-bake/", document.baseURI).href
     : null);
+const bundleBucketUrl =
+  import.meta.env.VITE_BUNDLE_BASE_URL === undefined
+    ? document.baseURI
+    : new URL(import.meta.env.VITE_BUNDLE_BASE_URL.replace(/\/?$/u, "/"), document.baseURI).href;
 const libraryConnectorsBaseUrl =
   import.meta.env.VITE_LIBRARY_CONNECTORS_BASE_URL ??
-  new URL(
-    "library-connectors/",
-    import.meta.env.VITE_BUNDLE_BASE_URL === undefined
-      ? document.baseURI
-      : new URL(import.meta.env.VITE_BUNDLE_BASE_URL.replace(/\/?$/u, "/"), document.baseURI),
-  ).href;
+  new URL("library-connectors/", bundleBucketUrl).href;
+const shadowLibraryBaseUrl =
+  import.meta.env.VITE_SHADOW_LIBRARY_BASE_URL ?? new URL("shadow-library/", bundleBucketUrl).href;
 const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
 const createImportWorker = (): Worker =>
@@ -83,6 +86,7 @@ container.load(
       : {}),
     ...(libraryBakeBaseUrl === null ? {} : { libraryBakeBaseUrl }),
     libraryConnectorsBaseUrl,
+    shadowLibraryBaseUrl,
     ...(import.meta.env.VITE_CATALOG_API_BASE_URL
       ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
       : {}),
@@ -145,7 +149,9 @@ function root(): ReactNode {
         camera={container.get(EDITOR_CAMERA)}
         scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
+        sheets={container.get(PLAN_SHEET_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
+        ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}
         palette={container.get(PALETTE)}
         panels={container.get(PANEL_LAYOUT)}
@@ -164,7 +170,13 @@ function root(): ReactNode {
     );
   }
   const { scene, importScene, bomSource } = viewerScene(params);
-  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
+  const bom = bomSource
+    ? {
+        service: container.get(BOM_SERVICE),
+        ownedParts: container.get(OWNED_PARTS),
+        source: bomSource,
+      }
+    : null;
   return <App scene={scene} params={params} importScene={importScene ?? null} bom={bom} />;
 }
 

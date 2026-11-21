@@ -119,11 +119,20 @@ export class ConnectorRecords {
   ) {}
 
   private loadIndexes(): Promise<readonly [ConnectorIndexFile, ConnectorIndexFile]> {
-    this.indexes ??= Promise.all([
+    if (this.indexes !== null) return this.indexes;
+    const loading = Promise.all([
       this.index(this.paths.connectivity),
       this.index(this.paths.connectors),
-    ]);
-    return this.indexes;
+    ] as const);
+    this.indexes = loading;
+    loading.catch(() => {
+      if (this.indexes === loading) this.indexes = null;
+    });
+    return loading;
+  }
+
+  async prepare(): Promise<void> {
+    await this.loadIndexes();
   }
 
   private async index(path: string): Promise<ConnectorIndexFile> {

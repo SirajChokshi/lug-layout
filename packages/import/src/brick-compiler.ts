@@ -1,4 +1,5 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
+import type { BakeReceptors } from "./bake-receptors.ts";
 import {
   type AuthoredIdentification,
   CompilerBake,
@@ -102,7 +103,7 @@ export interface CompileOutput {
   readonly weldEpsilonLdu: number;
 }
 
-export interface BakeRequest {
+export interface BakeInputs {
   readonly source: string;
   readonly drawn: Uint8Array;
   readonly studPrimitives: ReadonlyArray<string>;
@@ -110,10 +111,21 @@ export interface BakeRequest {
   readonly translucentColors: ReadonlyArray<number>;
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
-  readonly shard?: BakeShard;
   readonly keepParts?: boolean;
   readonly omrAuthoringIdentification?: boolean;
 }
+
+export interface VisibilityBakeRequest extends BakeInputs {
+  readonly shard: BakeShard & { readonly visibilityOnly: true };
+  readonly receptors?: never;
+}
+
+export interface PlacementBakeRequest extends BakeInputs {
+  readonly shard?: BakeShard & { readonly visibilityOnly: false };
+  readonly receptors: BakeReceptors;
+}
+
+export type BakeRequest = VisibilityBakeRequest | PlacementBakeRequest;
 
 export type BakePhases = CompilerBakePhases;
 
@@ -137,10 +149,7 @@ export interface BakeFailure {
 
 export type BakeOutcome = BakedModel | Need | BakeFailure;
 
-export type BakeNeedsRequest = Pick<
-  BakeRequest,
-  "source" | "drawn" | "studPrimitives" | "vehicles"
->;
+export type BakeNeedsRequest = Pick<BakeInputs, "source" | "drawn" | "studPrimitives" | "vehicles">;
 
 export type BakeNeeds = { readonly status: "complete" } | Need;
 
@@ -152,6 +161,19 @@ interface Response {
 type Range = readonly [number, number];
 
 type Segments = Readonly<Record<string, Uint8Array>>;
+
+function wordBytes(values: Uint32Array | Int32Array): Uint8Array {
+  return new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
+}
+
+function receptorSegments(receptors: BakeReceptors): Segments {
+  return {
+    receptorParts: wordBytes(receptors.instanceParts),
+    receptorStarts: wordBytes(receptors.partStarts),
+    receptorSixteenths: wordBytes(receptors.sixteenths),
+    receptorDirections: receptors.directions,
+  };
+}
 
 const HEADER_LENGTH_BYTES = 4;
 const utf8 = new TextEncoder();
@@ -251,6 +273,10 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
             flat: new Uint32Array(bytesOf(body, blobs, "flat")),
             columnBottom: new Int16Array(bytesOf(body, blobs, "columnBottom")),
             columnTop: new Int16Array(bytesOf(body, blobs, "columnTop")),
+            footing: {
+              instance: new Uint32Array(bytesOf(body, blobs, "footingInstance")),
+              cell: new Uint32Array(bytesOf(body, blobs, "footingCell")),
+            },
           },
     vehicles: bakedVehicles(header, body),
     vehicleIssue: header.vehicleIssue ?? null,
@@ -420,10 +446,14 @@ export class BrickCompiler {
     library: LibraryFiles,
     records: RecordFiles | null = null,
   ): BakeOutcome {
-    const { drawn, source, ...rest } = request;
+    const { drawn, source, receptors, ...rest } = request;
     const { header, body } = this.call(
       { op: "bake", ...rest },
-      { source: utf8.encode(source), drawn },
+      {
+        source: utf8.encode(source),
+        drawn,
+        ...(receptors === undefined ? {} : receptorSegments(receptors)),
+      },
       library,
       records,
     );

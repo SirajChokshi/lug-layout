@@ -6,7 +6,7 @@ alwaysApply: false
 
 # Dependency injection (§14.3–14.4)
 
-- **Who may import `inversify`:** `client`, `workers/*`, `apps/web` and the L2 adapters `storage`, `render`, `catalog`, `rpc`. Each of these owns its `tokens.ts` and `<name>.module.ts`. Pure packages (`math`, `schema`, `domain`, `sim`) never import it.
+- **Who may import `inversify`:** `client`, `workers/*`, `apps/web` and the L2 adapters `storage`, `render`, `catalog`, `rpc`. Each of these owns its `tokens.ts` and `<name>.module.ts`. `tools/e2e` imports it too, as a test-tooling composition root, and owns no tokens or modules. Pure packages (`math`, `schema`, `domain`, `sim`) never import it.
 - **Tokens.** Every binding uses a typed symbol token from a `tokens.ts`:
   ```ts
   import type { ServiceIdentifier } from "inversify";
@@ -17,7 +17,7 @@ alwaysApply: false
 - **tsconfig:** `experimentalDecorators: true`, `emitDecoratorMetadata: false`. Nothing may rely on type reflection.
 - **Plain classes** from pure packages are bound with factories, with no decorators:
   `bind(RULE_ENGINE).toDynamicValue(ctx => new RuleEngine(ctx.get(PROFILE_REGISTRY))).inSingletonScope();`
-- **Modules.** Each package's bindings go in one `ContainerModule` (`clientModule`, `storageModule`, …) in `<name>.module.ts`. The one exception is `storage`'s `assetCacheModule`, which binds only the asset cache for the import worker. `storageModule` binds the same through `bindAssetCache`, so a thread loads one or the other, never both. Only `apps/web/src/main.tsx` and each `workers/*/src/entry.ts` create a `Container`.
+- **Modules.** Each package's bindings go in one `ContainerModule` (`clientModule`, `storageModule`, …) in `<name>.module.ts`. The one exception is `storage`'s `assetCacheModule`, which binds only the asset cache for the import worker. `storageModule` binds the same through `bindAssetCache`, so a thread loads one or the other, never both. Only `apps/web/src/main.tsx`, each `workers/*/src/entry.ts` and the test-tooling composition root `tools/e2e/src/held-out/headless-editor.ts` create a `Container`; the last loads `mainThreadModules` and rebinds only boundary tokens.
 - **Scope and resolution.** Services are singletons by default and are resolved at startup or when a tool activates. Never resolve in a frame, tick or per-part loop. Never pass the container around (no service locator).
 - **Threads.** Each thread has its own container, and nothing is shared across threads. A remote engine is a proxy bound to the same token (`SIM_CLIENT → SimWorkerProxy`), so moving an engine between threads only changes bindings.
 - **Tests** load the real modules, then override tokens with fakes. Don't hand-construct services in a way that skips the bindings you're testing.
