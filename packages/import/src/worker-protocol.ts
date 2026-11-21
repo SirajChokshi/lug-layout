@@ -1,7 +1,7 @@
 import type { BricklinkPartCandidates } from "@brr/catalog";
 import type { UnreadBandDiagnostic } from "@brr/schema/bundle";
 import type { ConnectorIndexPaths, PartConnectors } from "@brr/catalog/connector-records";
-import type { LibraryConnectorsIndexRef } from "@brr/schema/bundle";
+import type { LibraryConnectorsIndexRef, ShadowLibraryIndexRef } from "@brr/schema/bundle";
 import type { PinnedRecords } from "./library-bake-store.ts";
 import type { ImportResult, ImportJob, ModelBake, PlacedImport } from "./model-import.ts";
 
@@ -29,6 +29,11 @@ export interface LibraryConnectorsSource {
   readonly pin: LibraryConnectorsIndexRef;
 }
 
+export interface ShadowLibrarySource {
+  readonly url: string;
+  readonly pin: ShadowLibraryIndexRef;
+}
+
 export interface ImportWorkerRequest {
   readonly kind: "import";
   readonly ticket: number;
@@ -39,6 +44,7 @@ export interface ImportWorkerRequest {
   readonly ldrawLibraryUrl?: string;
   readonly libraryBake?: LibraryBakeSource;
   readonly libraryConnectors?: LibraryConnectorsSource;
+  readonly shadowLibrary?: ShadowLibrarySource;
   readonly input: ImportInput;
 }
 

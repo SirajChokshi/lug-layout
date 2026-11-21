@@ -125,8 +125,11 @@ function reportedReason(part: PartResolution): string | null {
   switch (part.kind) {
     case "bundle":
     case "compiled":
+    case "custom":
     case "failed":
       return null;
+    case "customRefused":
+      return `custom part refused by the ${part.gate} gate (not drawn)`;
     case "notInLibrary":
       return part.definedInline
         ? "custom part defined inline in the file (not drawn)"
