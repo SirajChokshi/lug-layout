@@ -207,7 +207,18 @@ export interface TrainSelectionView {
   readonly box: WorldBox;
 }
 
-export type SelectionView = ModelSelectionView | TrainSelectionView;
+export interface TrackSelectionView {
+  readonly kind: "track";
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly chunkKey: number;
+  readonly slot: number;
+  readonly box: WorldBox;
+}
+
+export type SelectionView = ModelSelectionView | TrainSelectionView | TrackSelectionView;
 
 export interface RailTrainView {
   readonly item: string;
@@ -738,6 +749,7 @@ export class Editor implements IEditor, IEditedWorld {
   private active: Placeable | null = null;
   private activeRefId = -1;
   private selected: PlacedModel | null = null;
+  private selectedTrack: number | null = null;
   private ghostRot = 0;
   private placeRot = 0;
   private turnDirection: TurnDirection = 1;
@@ -1606,10 +1618,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
+    const placement = this.track?.switchAt(xLdu, zLdu) ?? null;
+    return placement !== null && this.throwSwitch(placement, xLdu, zLdu, eventTimeMs);
+  }
+
+  private throwSwitch(placement: number, xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
     if (!track || this.state.readOnly) return false;
-    const placement = track.switchAt(xLdu, zLdu);
-    if (placement === null) return false;
     const holder = this.switchHolder(placement);
     if (holder !== null) {
       this.refuseThrow(holder, Math.round(xLdu), Math.round(zLdu));
@@ -1878,8 +1893,15 @@ export class Editor implements IEditor, IEditedWorld {
       }
     }
     const train = this.railYard.pick(this.ray);
-    if (train && train.t < bestT) {
+    const trackHit = this.track?.pieceOnRay(this.ray) ?? null;
+    const trainT = train?.t ?? Number.POSITIVE_INFINITY;
+    const trackT = trackHit?.distance ?? Number.POSITIVE_INFINITY;
+    if (train && trainT < bestT && trainT <= trackT) {
       this.selectTrain(train.handle);
+      return;
+    }
+    if (trackHit && trackT < bestT) {
+      this.clickTrack(trackHit.placement, ndcX, ndcY, eventTimeMs);
       return;
     }
     if (
@@ -1890,6 +1912,11 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     this.select(best);
+  }
+
+  private clickTrack(placement: number, ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.groundHit(ndcX, ndcY)) this.throwSwitch(placement, this.hitX, this.hitZ, eventTimeMs);
+    this.selectTrack(placement);
   }
 
   private refuse(
@@ -2236,6 +2263,17 @@ export class Editor implements IEditor, IEditedWorld {
         uncounted: uncounted(),
       };
     }
+    const piece = this.selectedTrack;
+    if (piece !== null && this.track) {
+      this.track.countPiece(counter, piece);
+      return {
+        name: `selection-${this.track.laidPieceView(piece).piece.replace(FILE_NAME_UNSAFE, "_")}`,
+        lod: "standard",
+        placements: 1,
+        counter,
+        uncounted: [],
+      };
+    }
     const train = this.selectedTrain;
     const selected = this.selected;
     const chosen = train?.live
@@ -2254,9 +2292,33 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
+  private selectTrack(placement: number): void {
+    const track = this.track;
+    if (!track) return;
+    const piece = track.laidPieceView(placement);
+    this.selected = null;
+    this.selectedTrain = null;
+    this.selectedTrack = placement;
+    this.backend.setSelectionBox(piece.box);
+    this.update({
+      selectionRefusal: null,
+      selection: {
+        kind: "track",
+        item: `${TRACK_PIECE_PREFIX}${piece.piece}`,
+        x: Math.round(piece.xLdu),
+        z: Math.round(piece.zLdu),
+        yPlates: piece.yPlates,
+        chunkKey: piece.chunkKey,
+        slot: placement,
+        box: piece.box,
+      },
+    });
+  }
+
   private select(model: PlacedModel | null): void {
     this.selected = model;
     this.selectedTrain = null;
+    this.selectedTrack = null;
     this.backend.setSelectionBox(model ? model.box : null);
     this.update({
       selectionRefusal: null,
@@ -2285,6 +2347,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     this.selected = null;
+    this.selectedTrack = null;
     this.selectedTrain = handle;
     this.backend.setSelectionBox(box);
     this.update({
@@ -2418,6 +2481,11 @@ export class Editor implements IEditor, IEditedWorld {
       this.select(null);
       return;
     }
+    const piece = this.selectedTrack;
+    if (piece !== null) {
+      this.deleteTrackPiece(piece, eventTimeMs);
+      return;
+    }
     const model = this.selected;
     if (!model) return;
     const rider = this.placed.strandedRider(model);
@@ -2452,6 +2520,28 @@ export class Editor implements IEditor, IEditedWorld {
     this.select(null);
   }
 
+  private deleteTrackPiece(placement: number, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track || this.state.readOnly) return;
+    const standing = this.railYard.standingOn(placement);
+    if (standing) {
+      const train = this.placeableAt(standing.pose.refId).label;
+      const piece = track.laidPieceView(placement);
+      const reason = `${train} stands on this track piece, so deleting it would leave the train off the rails. Delete ${train} first.`;
+      this.refuse(
+        `${TRACK_PIECE_PREFIX}${piece.piece}`,
+        Math.round(piece.xLdu),
+        Math.round(piece.zLdu),
+        0,
+        reason,
+      );
+      this.update({ selectionRefusal: `Can't delete. ${reason}` });
+      return;
+    }
+    this.show(this.history.commit("remove", [], track.removal(placement)), eventTimeMs);
+    this.select(null);
+  }
+
   undo(eventTimeMs: number): void {
     if (this.state.readOnly || this.throwRefused(this.history.nextUndo())) return;
     this.replay(this.history.undo(), eventTimeMs);
@@ -2470,10 +2560,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.held) this.showHeldPiece();
     if (this.active) return;
     const restoredTrain = edit.consists.at(-1)?.added;
+    const [restoredPiece, ...more] = edit.track.lay;
+    const restoredTrack = edit.kind === "remove" && restoredPiece && more.length === 0;
     if (restored) this.select(restored);
     else if (restoredTrain) this.selectTrain(restoredTrain);
+    else if (restoredTrack) this.selectTrack(restoredPiece.index);
     else if (selected && !selected.handle.live) this.select(null);
     else if (selectedTrain && !selectedTrain.live) this.select(null);
+    else if (this.selectedTrack !== null && edit.track.lift.length > 0) this.select(null);
   }
 
   goTo(x: number, z: number): void {
