@@ -224,6 +224,7 @@ export type { Hotbar, IHotbar } from "./commands/hotbar.ts";
 export { hotbarView, type HotbarFootprint, type HotbarSlotView } from "./commands/hotbar-view.ts";
 export {
   toolHints,
+  trackBlockText,
   type ToolHint,
   type ToolHintView,
   type ToolTone,
@@ -255,6 +256,7 @@ export type {
 } from "./camera/editor-camera.ts";
 export type {
   ClosureState,
+  TrackBlockView,
   TrackDragView,
   SwitchLeverView,
   TrackEndView,

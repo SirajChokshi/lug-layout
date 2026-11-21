@@ -110,6 +110,7 @@ import {
   TrackDrawing,
   type PieceSnap,
   type SwitchLeverView,
+  type TrackBlockView,
   type TrackDragView,
   type TrackGapView,
   type TrackRouteView,
@@ -122,7 +123,7 @@ import {
   type ViewUpdate,
 } from "./placed-chunks.ts";
 import type { Placeable } from "./placeable.ts";
-import { seatsPending, trackObstacleRects } from "./track-obstacles.ts";
+import { seatsPending, trackObstacles } from "./track-obstacles.ts";
 import { cellExtent, snapToRoadEdge, type CellExtent } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -339,6 +340,7 @@ export interface TrackView {
   readonly held: TrackPieceView | null;
   readonly drag: TrackDragView | null;
   readonly lastCommit: TrackCommitResult | null;
+  readonly lastBlock: TrackBlockView | null;
   readonly solve: TrackSolveStats | null;
 }
 
@@ -589,6 +591,7 @@ interface HeldPiece {
 }
 
 const EDITOR_WORLD_NAME = "editor-world";
+const NO_TRACK_PARTS: ReadonlySet<number> = new Set();
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
 interface EditSample {
@@ -775,6 +778,7 @@ export class Editor implements IEditor, IEditedWorld {
   private roadDrawing: RoadDrawing | null = null;
   private roadPreviewMarkers: ReadonlyArray<EdgeMarker> = [];
   private lastTrackCommit: TrackCommitResult | null = null;
+  private lastTrackBlock: TrackBlockView | null = null;
   private trackEndTarget = "";
   private held: HeldPiece | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
@@ -1041,7 +1045,17 @@ export class Editor implements IEditor, IEditedWorld {
   private setTrackObstacles(drawing: TrackDrawing): void {
     const models = this.placed.models();
     const range = drawing.verticalRange();
-    drawing.setObstacles(trackObstacleRects(models, range), seatsPending(models, range));
+    drawing.setObstacles(
+      trackObstacles(models, range, (model) => this.trackPartsOf(model.placeable)),
+      seatsPending(models, range),
+    );
+  }
+
+  private trackPartsOf(placeable: Placeable): ReadonlySet<number> {
+    const track = this.trackOf(placeable);
+    if (!track) return NO_TRACK_PARTS;
+    const pieces = [...track.pieces, ...track.runs.flatMap((run) => run.pieces)];
+    return new Set(pieces.map((piece) => piece.instance));
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
@@ -1216,6 +1230,7 @@ export class Editor implements IEditor, IEditedWorld {
       held: this.heldView(track),
       drag: track.dragView(),
       lastCommit: this.lastTrackCommit,
+      lastBlock: this.lastTrackBlock,
       solve:
         samples.length === 0
           ? null
@@ -1316,6 +1331,8 @@ export class Editor implements IEditor, IEditedWorld {
     if (!this.groundHit(ndcX, ndcY)) return false;
     this.setTrackObstacles(track);
     track.beginDrag(this.hitX, this.hitZ, this.hoverX, this.hoverZ);
+    this.lastTrackCommit = null;
+    this.lastTrackBlock = null;
     this.update({ track: this.trackView() });
     return true;
   }
@@ -1365,6 +1382,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.lastTrackCommit =
         outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
     }
+    this.lastTrackBlock = outcome.blocked;
     this.update({ track: this.trackView() });
   }
 
