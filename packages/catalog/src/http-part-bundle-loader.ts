@@ -1,3 +1,4 @@
+import { AssetResponseError } from "./asset-response-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
@@ -124,7 +125,7 @@ export class HttpAssetFetcher implements IAssetFetcher {
   private async get(path: string): Promise<Response> {
     const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
     const response = await fetch(url);
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
+    if (!response.ok) throw new AssetResponseError(url, response.status);
     return response;
   }
 
@@ -424,6 +425,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
       vehicles: manifest.compiler.vehicles ?? null,
       libraryBake: manifest.compiler.libraryBake ?? null,
       libraryConnectors: manifest.compiler.libraryConnectors ?? null,
+      shadowLibrary: manifest.compiler.shadowLibrary ?? null,
     };
   }
 
@@ -646,6 +648,7 @@ function shapeRecord(shape: PartShape, studPrimitiveNames: ReadonlyArray<string>
     ...studArrays(shape.id, shape.studs, studPrimitiveNames),
     technic: shape.technic ?? null,
     rolling: shape.rolling ?? null,
+    outline: shape.outline ?? null,
   };
 }
 
@@ -704,5 +707,6 @@ function toPartAsset(
     ...studArrays(part.id, glb.document.extras.studs, studPrimitiveNames),
     technic: glb.document.extras.technic ?? null,
     rolling: glb.document.extras.rolling ?? null,
+    outline: null,
   };
 }

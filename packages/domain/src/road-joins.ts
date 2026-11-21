@@ -34,11 +34,16 @@ export interface RoadEdgeSegment {
   readonly status: RoadCellStatus;
 }
 
+export const PLACEMENT_JOINED = 0;
+export const PLACEMENT_MISMATCHED = 1;
+export const PLACEMENT_CELL_INTS = 2;
+
 export interface RoadJoinReport {
   readonly placements: number;
   readonly joinedCells: number;
   readonly openCells: number;
   readonly mismatchedCells: number;
+  readonly placementCells: Int32Array;
   readonly overlaps: ReadonlyArray<readonly [number, number]>;
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
 }
@@ -373,6 +378,16 @@ class CellGrid {
     return claimed;
   }
 
+  clear(): void {
+    for (const row of this.blocks.values()) {
+      for (const block of row.values()) {
+        if (block.claimed === 0) continue;
+        block.owner.fill(NO_OWNER);
+        block.claimed = 0;
+      }
+    }
+  }
+
   claim(cellX: number, cellZ: number, owner: number, top: number, stud: number, road: number) {
     const blockX = cellX >> BLOCK_SHIFT;
     const blockZ = cellZ >> BLOCK_SHIFT;
@@ -407,13 +422,20 @@ class EdgeTally {
   joinedCells = 0;
   openCells = 0;
   mismatchedCells = 0;
+
+  constructor(readonly placementCells: Int32Array) {}
+
+  countPlacement(placement: number, column: number): void {
+    const at = placement * PLACEMENT_CELL_INTS + column;
+    this.placementCells[at] = (this.placementCells[at] ?? 0) + 1;
+  }
 }
 
 export class RoadNetwork {
   private readonly grid = new CellGrid();
-  private readonly ids: ReadonlyArray<number>;
-  private readonly placed: ReadonlyArray<PlacedStamp>;
-  private readonly lostCells: Uint8Array;
+  private readonly ids: number[];
+  private readonly placed: PlacedStamp[];
+  private lostCells: Uint8Array;
   private readonly overlapPairs = new Set<string>();
   private readonly scratchFit: EdgeFit = { joinedCells: 0, joinedRoadCells: 0, mismatchedCells: 0 };
 
@@ -422,6 +444,26 @@ export class RoadNetwork {
     this.placed = placements.map(placedStamp);
     this.lostCells = new Uint8Array(placements.length);
     for (let p = 0; p < this.placed.length; p++) this.claimCells(p);
+  }
+
+  add(placement: RoadPlacement): void {
+    const p = this.placed.length;
+    this.ids.push(placement.id);
+    this.placed.push(placedStamp(placement));
+    if (p >= this.lostCells.length) {
+      const grown = new Uint8Array(Math.max(1, 2 * this.lostCells.length));
+      grown.set(this.lostCells);
+      this.lostCells = grown;
+    }
+    this.claimCells(p);
+  }
+
+  clear(): void {
+    this.ids.length = 0;
+    this.placed.length = 0;
+    this.lostCells.fill(0);
+    this.overlapPairs.clear();
+    this.grid.clear();
   }
 
   private claimCells(p: number): void {
@@ -452,7 +494,7 @@ export class RoadNetwork {
   }
 
   report(): RoadJoinReport {
-    const tally = new EdgeTally();
+    const tally = new EdgeTally(new Int32Array(this.placed.length * PLACEMENT_CELL_INTS));
     for (let p = 0; p < this.placed.length; p++) {
       const placed = this.placed[p];
       if (!placed) continue;
@@ -464,6 +506,7 @@ export class RoadNetwork {
       joinedCells: tally.joinedCells,
       openCells: tally.openCells,
       mismatchedCells: tally.mismatchedCells,
+      placementCells: tally.placementCells,
       overlaps: [...this.overlapPairs].map((pair) => {
         const [a = 0, b = 0] = pair.split(",").map(Number);
         return [a, b] as const;
@@ -517,10 +560,14 @@ export class RoadNetwork {
       topLdu = Math.max(top, grid.top);
       if (grid.top === top && grid.stud === stud && grid.road === road) {
         status = "joined";
-        if (id < neighbourId) tally.joinedCells++;
+        if (id < neighbourId) {
+          tally.joinedCells++;
+          tally.countPlacement(p, PLACEMENT_JOINED);
+        }
       } else {
         status = "mismatch";
         if (id < neighbourId) tally.mismatchedCells++;
+        tally.countPlacement(p, PLACEMENT_MISMATCHED);
       }
     }
     tally.edgeCells.push({

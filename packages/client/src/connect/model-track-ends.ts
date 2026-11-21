@@ -1,6 +1,7 @@
 import type { PartShapeAsset } from "@brr/catalog";
 import {
   NEAR_MISS_RADIUS_LDU,
+  NO_INSTANCE,
   WORLD_TRACK_FRAME,
   type TrackEnd,
   type TrackFrame,
@@ -53,6 +54,7 @@ export interface HeldTrackPiece {
   readonly catalogIndex: number;
   readonly placement: Pose16;
   readonly yPlates: number;
+  readonly instance: number;
 }
 
 export interface FramedTrackPiece extends HeldTrackPiece {
@@ -613,6 +615,7 @@ export function modelTrackEnds(
       catalogIndex: candidate.piece.catalogIndex,
       placement,
       yPlates: candidate.plates,
+      instance: candidate.instance,
     });
     for (const connector of candidate.piece.connectors) {
       ends.push({
@@ -641,6 +644,7 @@ export function modelTrackEnds(
       catalogIndex: candidates[i]?.piece.catalogIndex ?? 0,
       placement: run.relative[k] ?? pose16(latticePoint(0, 0), 0),
       yPlates: candidates[i]?.plates ?? 0,
+      instance: candidates[i]?.instance ?? NO_INSTANCE,
     })),
   }));
   return { pieces, openEnds, runs: trackRuns, uncertified };
@@ -655,6 +659,7 @@ export function heldPieces(
     catalogIndex: piece.catalogIndex,
     placement: composePose16(frame, piece.placement),
     yPlates: yPlates + piece.yPlates,
+    instance: piece.instance,
     frame: WORLD_TRACK_FRAME,
   }));
 }
@@ -677,6 +682,7 @@ export function heldRuns(
       catalogIndex: piece.catalogIndex,
       placement: composePose16(frame, piece.placement),
       yPlates: yPlates + piece.yPlates,
+      instance: piece.instance,
       frame: runFrame,
     }));
   });
