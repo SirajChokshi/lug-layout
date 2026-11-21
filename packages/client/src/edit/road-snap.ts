@@ -18,6 +18,8 @@ export interface RoadSnap {
 }
 
 const QUARTER_TURNS = 4;
+export const ANY_TURN = QUARTER_TURNS;
+export const HELD_TURN = 1;
 const HALF_STUD_LDU = STUD_LDU / 2;
 
 function cornerStep(count: number): number {
@@ -114,10 +116,11 @@ export function snapToRoadEdge(
   yLdu: number,
   cursorX: number,
   cursorZ: number,
+  turns: number,
 ): RoadSnap | null {
   let best: Ranked | null = null;
   const probe = { id: -1, x: 0, z: 0, yLdu, rot: 0, surface };
-  for (let turn = 0; turn < QUARTER_TURNS; turn++) {
+  for (let turn = 0; turn < turns; turn++) {
     const rot = quarterTurned(preferredRot, direction * turn);
     const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu, rot, surface });
     probe.rot = rot;

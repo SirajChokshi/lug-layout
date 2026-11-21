@@ -1,8 +1,9 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { EditorPage } from "./editor-page.ts";
+import { EditorPage, STUD, nearestLattice, routeMiddle, shiftedPosition } from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
+const GEOMETRY = new URL("../../../docs/verified-facts/geometry.json", import.meta.url);
 const ZETA16_STEP_RADIANS = Math.PI / 8;
 const LDRAW_DECIMALS = 6;
 const EDITOR_DECIMALS = 3;
@@ -13,12 +14,28 @@ const FULL_THROTTLE_PRESSES = 10;
 const TRAIN_WITHOUT_TRACK = "omr:10014-1";
 const LAP_DEADLINE_MS = 90_000;
 const SAMPLE_MS = 150;
+const STRAIGHT_FILE = "74746.dat";
+const RUN_OFFSET_LDU = -960;
+const RUN_HALF_SPAN_LDU = 160;
+const EAST = 0;
+const DRAWN_RUN_LDU = 640;
+const HALF_TURN_CURVES = 8;
+const PLAIN_MODULE = "generated:mils-plain";
+const RAISED_OFFSET_LDU = 1600;
 
 interface Reference {
   readonly color: string;
   readonly position: readonly [number, number, number];
   readonly matrix: ReadonlyArray<number>;
   readonly file: string;
+}
+
+interface Geometry {
+  readonly rails: ReadonlyArray<{
+    readonly part: string;
+    readonly railTopY: string;
+    readonly railTopAboveUndersideLdu: string;
+  }>;
 }
 
 interface Arrangement {
@@ -244,8 +261,13 @@ test("a train runs a full lap on an imported loop turned 22.5° and written with
     unanchored: 0,
   });
 
-  await editor.placeAt(TRAIN_WITHOUT_TRACK, { x: 0, z: 0 });
+  const [route] = await editor.trackRoutes();
+  if (!route) throw new Error("the imported loop has no route");
   await editor.escape();
+  await editor.goTo(routeMiddle(route));
+  await editor.placeAt(TRAIN_WITHOUT_TRACK, routeMiddle(route));
+  await editor.escape();
+  expect(await editor.trainsOnRails()).toBe(1);
   await editor.press("t");
   expect(await editor.modelTrack()).toEqual({
     pieces: 0,
@@ -266,6 +288,121 @@ test("a train runs a full lap on an imported loop turned 22.5° and written with
     await page.waitForTimeout(SAMPLE_MS);
   }
   expect(sweptTurns(path)).toBeGreaterThanOrEqual(1);
+});
+
+async function undersideBelowOriginLdu(part: string): Promise<number> {
+  const geometry: Geometry = JSON.parse(await readFile(GEOMETRY, "utf8"));
+  const rail = geometry.rails.find((entry) => entry.part === part);
+  if (!rail) throw new Error(`geometry.json measures no rail for ${part}`);
+  return Number(rail.railTopY) + Number(rail.railTopAboveUndersideLdu);
+}
+
+async function nineVoltRun(
+  liftLdu = 0,
+): Promise<{ readonly file: string; readonly pieces: number }> {
+  const { text, pieces } = await layout(
+    "nine-volt-run",
+    [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
+    (references) => {
+      const run = references
+        .filter(
+          ({ file, position: [x, , z] }) =>
+            file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+        )
+        .map((reference): Reference => {
+          const [x, y, z] = reference.position;
+          return { ...reference, position: [x, y - liftLdu, z] };
+        });
+      references.splice(0, references.length, ...run);
+    },
+  );
+  const file = test.info().outputPath("nine-volt-run.ldr");
+  await writeFile(file, text);
+  return { file, pieces };
+}
+
+test("drawn track joined to an imported model's own 9V run is lifted by undo and joined again by redo", async ({
+  page,
+}) => {
+  const { file, pieces } = await nineVoltRun();
+  const editor = await importAndPlace(page, file);
+  expect(pieces).toBe(2);
+  expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
+  const placed = await editor.poses();
+  const modelEnds = await editor.trackEnds();
+  const east = modelEnds.find((end) => end.heading === EAST);
+  if (!east)
+    throw new Error(`the model's run has no end facing east: ${JSON.stringify(modelEnds)}`);
+
+  const from = nearestLattice(east);
+  const run = await editor.dragTrack(from, { x: from.x + DRAWN_RUN_LDU, z: from.z });
+  const laid = await editor.laidTrack();
+  const joinedEnds = await editor.trackEnds();
+  expect(run).toEqual({ lastCommit: "laid", pieces: 2, openEnds: 2, joins: 3 });
+  expect(laid).toHaveLength(2);
+  expect(joinedEnds).not.toContainEqual(east);
+
+  await editor.undo();
+  expect(await editor.laidTrack()).toEqual([]);
+  expect(await editor.trackEnds()).toEqual(modelEnds);
+  expect(await editor.poses()).toEqual(placed);
+
+  await editor.redo();
+  expect(await editor.laidTrack()).toEqual(laid);
+  expect(await editor.trackEnds()).toEqual(joinedEnds);
+  expect(await editor.trackCounts()).toEqual(run);
+});
+
+test("an imported model's open end is extended from the keyboard into a loop that closes on its other end, and undone one step at a time", async ({
+  page,
+}) => {
+  const { file, pieces } = await nineVoltRun(
+    await undersideBelowOriginLdu(STRAIGHT_FILE.replace(".dat", "")),
+  );
+  const editor = await importAndPlace(page, file);
+  const modelEnds = await editor.trackEnds();
+  const east = modelEnds.find((end) => end.heading === EAST);
+  if (!east)
+    throw new Error(`the model's run has no end facing east: ${JSON.stringify(modelEnds)}`);
+  await editor.hoverAt(await editor.screenOf(nearestLattice(east)));
+  const offered = await editor.trackChoice();
+  const keys = [
+    ...Array<string>(HALF_TURN_CURVES).fill("a"),
+    ...Array<string>(pieces).fill("w"),
+    ...Array<string>(HALF_TURN_CURVES / 2).fill("a"),
+  ];
+
+  const counts = [];
+  for (const key of keys) {
+    await editor.press(key);
+    counts.push(await editor.trackCounts());
+  }
+  const suggested = await editor.trackChoice();
+  await editor.press("Enter");
+  const closed = await editor.trackCounts();
+
+  expect(offered).toEqual({ kind: "straight", pieces: 1, joins: false });
+  expect(counts).toEqual(
+    keys.map((_, i) => ({ lastCommit: "laid", pieces: i + 1, openEnds: 2, joins: pieces + i })),
+  );
+  expect(suggested).toEqual({ kind: "join", pieces: HALF_TURN_CURVES / 2, joins: true });
+  const loop = pieces + keys.length + HALF_TURN_CURVES / 2;
+  expect(closed).toEqual({
+    lastCommit: "joined",
+    pieces: loop - pieces,
+    openEnds: 0,
+    joins: loop,
+  });
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("extended-imported-run.png") });
+
+  await editor.undo();
+  expect(await editor.laidTrack()).toHaveLength(keys.length);
+  for (let left = keys.length - 1; left >= 0; left--) {
+    await editor.undo();
+    expect(await editor.laidTrack()).toHaveLength(left);
+  }
+  expect(await editor.trackEnds()).toEqual(modelEnds);
 });
 
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {
@@ -289,4 +426,73 @@ test("a curve turned 0.1° off the field is reported and nothing joins it", asyn
     unanchored: 0,
   });
   expect(await editor.trackEnds()).toHaveLength(2);
+});
+
+test("an imported model whose own 9V run is joined to drawn track won't nudge off that join alone, and moves with the drawn run as one undo step that keeps every join", async ({
+  page,
+}) => {
+  const { text } = await layout(
+    "nine-volt-run",
+    [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
+    (references) => {
+      const run = references.filter(
+        ({ file, position: [x, , z] }) =>
+          file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+      );
+      references.splice(0, references.length, ...run);
+    },
+  );
+  const file = test.info().outputPath("nine-volt-run.ldr");
+  await writeFile(file, text);
+  const editor = await importAndPlace(page, file);
+  const model = (await editor.poses())[0];
+  const east = (await editor.trackEnds()).find((end) => end.heading === EAST);
+  if (!model || !east) throw new Error("the imported run has no end facing east");
+  const from = nearestLattice(east);
+  const run = await editor.dragTrack(from, { x: from.x + DRAWN_RUN_LDU, z: from.z });
+  expect(run).toMatchObject({ pieces: 2, joins: 3 });
+  await editor.escape();
+  const raised = { x: model.x, z: model.z + RAISED_OFFSET_LDU };
+  await editor.placeAt(PLAIN_MODULE, raised);
+  await editor.escape();
+  const laid = { poses: await editor.poses(), track: await editor.laidTrack() };
+
+  expect(await editor.select({ x: model.x, z: model.z })).toBe(model.item);
+  const refusedBefore = await editor.counter("refused");
+  await editor.press("ArrowUp");
+  await expect(page.locator(".tool-hud")).toContainText("pull that join apart");
+  expect(await editor.counter("refused")).toBe(refusedBefore + 1);
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
+
+  await editor.shiftClickAt({ x: from.x + DRAWN_RUN_LDU / 4, z: from.z });
+  await editor.shiftClickAt({ x: from.x + (DRAWN_RUN_LDU * 3) / 4, z: from.z });
+  expect(await editor.selectionCount()).toBe(3);
+  await editor.press("ArrowUp");
+  const moved = { poses: await editor.poses(), track: await editor.laidTrack() };
+  const movedModel = moved.poses.find((pose) => pose.item === model.item);
+  if (!movedModel) throw new Error("the nudge lost the imported model");
+  const dx = movedModel.x - model.x;
+  const dz = movedModel.z - model.z;
+  expect(Math.abs(dx) + Math.abs(dz)).toBe(STUD);
+  expect(movedModel).toEqual({ ...model, x: model.x + dx, z: model.z + dz });
+  expect(moved).toEqual({
+    poses: laid.poses.map((pose) => (pose.item === model.item ? movedModel : pose)),
+    track: laid.track.map((piece) => ({
+      ...piece,
+      position: shiftedPosition(piece.position, dx, dz),
+    })),
+  });
+  expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 3, openEnds: 2 });
+
+  await editor.undo();
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
+  await editor.redo();
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
+  expect(await editor.selectionCount()).toBe(3);
+
+  await editor.dragFrom({ x: movedModel.x, z: movedModel.z }, { x: raised.x, z: raised.z + dz });
+  await expect(page.locator(".tool-hud")).toContainText(
+    "would hit Brick 2 x 2 in MILS Basic Terrain Module",
+  );
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(moved);
 });

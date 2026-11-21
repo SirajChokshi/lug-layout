@@ -156,6 +156,23 @@ export async function openBundle(
   };
 }
 
-export async function bundlePartGlb(bundle: Bundle, part: ManifestPart): Promise<Uint8Array> {
+export type BundleParts = Pick<Bundle, "directory" | "source" | "parts" | "colors">;
+
+export async function openBundleParts(root: string): Promise<BundleParts> {
+  const directory = join(root, LOD);
+  const index = await decodedFile(BundleIndex, join(directory, "manifest.json"));
+  const table = await decodedFile(PartTableFile, join(directory, index.partTable.file));
+  return {
+    directory,
+    source: index.source,
+    parts: new Map(table.parts.map((part) => [part.id, part])),
+    colors: index.colors,
+  };
+}
+
+export async function bundlePartGlb(
+  bundle: Pick<Bundle, "directory">,
+  part: ManifestPart,
+): Promise<Uint8Array> {
   return new Uint8Array(await readFile(join(bundle.directory, part.file)));
 }
