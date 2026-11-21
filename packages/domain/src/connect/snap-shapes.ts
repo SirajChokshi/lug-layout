@@ -17,6 +17,7 @@ export class SnapShapes {
   private shapes = 0;
   private sections = 0;
   private longestLength = 0;
+  private foundSectionEnd = 0;
   private capsOf = new Uint8Array(INITIAL_SHAPES);
   private slideOf = new Uint8Array(INITIAL_SHAPES);
   private firstOf = new Int32Array(INITIAL_SHAPES);
@@ -32,6 +33,7 @@ export class SnapShapes {
   private femaleSizeOf = new Float64Array(INITIAL_SECTIONS);
   private readonly ids = new Map<string, number>();
   private readonly groups = new Map<string, number>([[NO_GROUP, NO_GROUP_TOKEN]]);
+  private readonly groupNames: string[] = [NO_GROUP];
 
   get count(): number {
     return this.shapes;
@@ -83,6 +85,53 @@ export class SnapShapes {
     return shape;
   }
 
+  clipped(shape: number, from: number, to: number, closes: number): number {
+    const codes: number[] = [];
+    const sizes: number[] = [];
+    const lengths: number[] = [];
+    let at = 0;
+    const first = this.firstSection(shape);
+    for (let s = first; s < first + this.sectionCount(shape); s++) {
+      const end = at + this.span(s);
+      const kept = Math.min(end, to) - Math.max(at, from);
+      if (kept > 0) {
+        codes.push(this.codeOf[s] ?? 0);
+        sizes.push(this.sizeOf[s] ?? 0);
+        lengths.push(kept);
+      }
+      at = end;
+    }
+    return this.intern(
+      this.caps(shape) | closes,
+      this.slides(shape),
+      codes,
+      sizes,
+      lengths,
+      this.groupName(shape),
+    );
+  }
+
+  sameSectionsOver(a: number, aFrom: number, b: number, bFrom: number, length: number): boolean {
+    if (this.group(a) !== this.group(b)) return false;
+    let at = 0;
+    while (at < length) {
+      const sa = this.sectionAt(a, aFrom + at);
+      const aEnd = this.foundSectionEnd - aFrom;
+      const sb = this.sectionAt(b, bFrom + at);
+      const bEnd = this.foundSectionEnd - bFrom;
+      if (sa === NO_SECTION || sb === NO_SECTION) return true;
+      if (this.codeOf[sa] !== this.codeOf[sb] || this.sizeOf[sa] !== this.sizeOf[sb]) return false;
+      const next = Math.min(aEnd, bEnd, length);
+      if (!(next > at)) return false;
+      at = next;
+    }
+    return true;
+  }
+
+  groupName(shape: number): string {
+    return this.groupNames[this.group(shape)] ?? NO_GROUP;
+  }
+
   caps(shape: number): number {
     return this.capsOf[shape] ?? 0;
   }
@@ -115,6 +164,14 @@ export class SnapShapes {
     return this.spanOf[section] ?? 0;
   }
 
+  internedCode(section: number): number {
+    return this.codeOf[section] ?? 0;
+  }
+
+  internedSize(section: number): number {
+    return this.sizeOf[section] ?? 0;
+  }
+
   maleCode(section: number): number {
     return this.maleCodeOf[section] ?? 0;
   }
@@ -133,6 +190,19 @@ export class SnapShapes {
 
   femaleSize(section: number): number {
     return this.femaleSizeOf[section] ?? 0;
+  }
+
+  private sectionAt(shape: number, at: number): number {
+    let end = 0;
+    const first = this.firstSection(shape);
+    for (let s = first; s < first + this.sectionCount(shape); s++) {
+      end += this.span(s);
+      if (at < end) {
+        this.foundSectionEnd = end;
+        return s;
+      }
+    }
+    return NO_SECTION;
   }
 
   private readRoles(first: number, count: number): void {
@@ -154,6 +224,7 @@ export class SnapShapes {
     if (token === undefined) {
       token = this.groups.size;
       this.groups.set(group, token);
+      this.groupNames.push(group);
     }
     return token;
   }
@@ -182,6 +253,7 @@ export class SnapShapes {
 
 const NOT_A_FLARE = -2;
 const NO_PARTNER = -1;
+const NO_SECTION = -1;
 
 function flarePartner(code: number, section: number, first: number, count: number): number {
   const neighbour =

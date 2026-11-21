@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 use crate::affine::Vec3;
 use crate::flatten::Triangle;
 use crate::identify::{self, identifies, SIXTEENTHS_PER_LDU};
+use crate::trig::acos;
 
 const AXES: [usize; 3] = [0, 1, 2];
 
@@ -323,6 +324,9 @@ fn coarsest_closed_ring(studs: &[Vec<Triangle>]) -> Option<StudRing> {
                         continue;
                     };
                     let facets = strip.facets();
+                    if !closes_one_turn(facets, turn_cosine) {
+                        continue;
+                    }
                     if coarsest.as_ref().is_none_or(|c| facets < c.facets) {
                         coarsest = Some(StudRing {
                             facets,
@@ -334,6 +338,11 @@ fn coarsest_closed_ring(studs: &[Vec<Triangle>]) -> Option<StudRing> {
         }
     }
     coarsest
+}
+
+fn closes_one_turn(facets: usize, sharpest_turn_cosine: f64) -> bool {
+    let turns = std::f64::consts::TAU / acos(sharpest_turn_cosine);
+    turns.round() == facets as f64
 }
 
 pub fn read_rolling(triangles: &[Triangle], roundness: Roundness) -> PartRolling {
