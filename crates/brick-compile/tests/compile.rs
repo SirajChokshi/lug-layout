@@ -5,14 +5,13 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 
-use brick_compile::compile::RollingMode;
-use brick_compile::flatten::FlattenError;
+use brick_compile::compile::{stud_primitives_from_table, RollingMode};
+use brick_compile::flatten::{FlattenError, INHERIT_COLOR};
 use brick_compile::inline::compare_inline_part;
 use brick_compile::lattice::{Malformation, MalformedGeometry};
-use brick_compile::license::LicenseVerdict;
 use brick_compile::technic::{Line, Pin, TechnicPart};
 use brick_compile::trig::{atan2, planar_length};
-use brick_compile::{compile_part, CompileError, CompileOptions, Library, TechnicPrimitives};
+use brick_compile::{compile_part, CompileError, CompileOptions, Library, Lod, TechnicPrimitives};
 use common::{fixture_library, MemoryLibrary};
 
 fn memory(files: &[(&str, &str)]) -> MemoryLibrary {
@@ -28,24 +27,13 @@ const CA: &str = "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt";
 const NON_CA: &str = "0 !LICENSE Not redistributable : see NonCAreadme.txt";
 
 #[test]
-fn license_gate_rejects_any_non_ca_or_unlicensed_file_in_the_closure() {
+fn compiles_a_closure_whatever_licence_its_files_name_or_without_one() {
     let part =
         format!("0 Part\n{CA}\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\sub.dat\n");
-    let cases = [
-        (NON_CA, LicenseVerdict::NonContributorAgreement),
-        ("0 Author: someone", LicenseVerdict::Missing),
-    ];
-    for (license_line, expected) in cases {
+    for license_line in [NON_CA, "0 Author: someone"] {
         let sub = format!("0 Sub\n{license_line}\n3 16 0 0 0 1 0 0 0 0 1\n");
         let library = memory(&[("parts/part.dat", &part), ("parts/s/sub.dat", &sub)]);
-        let result = compile_part(&library, "part.dat", &CompileOptions::default());
-        assert_eq!(
-            result.err(),
-            Some(CompileError::License {
-                path: "parts/s/sub.dat".into(),
-                verdict: expected,
-            })
-        );
+        assert!(compile_part(&library, "part.dat", &CompileOptions::default()).is_ok());
     }
 }
 
@@ -58,7 +46,7 @@ fn first_triangle_normal_y(part: &str) -> f32 {
 }
 
 #[test]
-fn license_gate_rejects_unofficial_files_unless_allowlisted() {
+fn unofficial_gate_rejects_unofficial_files_unless_allowlisted() {
     let part =
         format!("0 Part\n{CA}\n0 BFC CERTIFY CCW\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\sub.dat\n");
     let sub = format!("0 Sub\n0 !LDRAW_ORG Unofficial_Subpart\n{CA}\n3 16 0 0 0 1 0 0 0 0 1\n");
@@ -137,6 +125,99 @@ fn bfc_keeps_the_front_face_under_mirroring_and_flips_it_on_invertnext() {
     assert_eq!(first_triangle_normal_y(&mirrored), reference);
     assert_eq!(first_triangle_normal_y(&inverted), -reference);
     assert_eq!(first_triangle_normal_y(&both), -reference);
+}
+
+fn table_studs() -> Vec<String> {
+    let table: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/asset-pipeline/primitive-connectors.json"),
+        )
+        .expect("the primitive table is readable"),
+    )
+    .expect("the primitive table is JSON");
+    stud_primitives_from_table(&table).expect("the table names stud primitives")
+}
+
+#[test]
+fn a_custom_part_carries_its_hollow_and_truncated_studs_as_studs_at_their_poses() {
+    let mut library = fixture_library();
+    library.0.insert(
+        "parts/custom-round-plate.dat".to_string(),
+        format!(
+            "0 Custom Round Plate\n{CA}\n0 BFC CERTIFY CCW\n\
+             4 16 -10 0 -10 10 0 -10 10 0 10 -10 0 10\n\
+             1 16 0 0 0 1 0 0 0 1 0 0 0 1 stud2a.dat\n\
+             1 16 20 -8 0 0 -1 0 1 0 0 0 0 1 stud9.dat\n\
+             1 16 0 0 20 -1 0 0 0 1 0 0 0 -1 stud10.dat\n\
+             1 16 0 -24 -20 1 0 0 0 1 0 0 0 1 stud15.dat\n"
+        ),
+    );
+    let options = CompileOptions {
+        stud_primitives: table_studs(),
+        ..CompileOptions::default()
+    };
+    let part = compile_part(&library, "custom-round-plate.dat", &options).expect("compiles");
+    let mut studs: Vec<(String, [f64; 12])> = part
+        .studs
+        .iter()
+        .map(|stud| (stud.primitive.clone(), stud.matrix.m))
+        .collect();
+    studs.sort_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(
+        studs,
+        vec![
+            (
+                "stud10.dat".to_string(),
+                [-1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, -1.0, -20.0]
+            ),
+            (
+                "stud15.dat".to_string(),
+                [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 24.0, 0.0, 0.0, 1.0, 20.0]
+            ),
+            (
+                "stud2a.dat".to_string(),
+                [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+            ),
+            (
+                "stud9.dat".to_string(),
+                [0.0, 1.0, 0.0, 20.0, -1.0, 0.0, 0.0, 8.0, 0.0, 0.0, 1.0, 0.0]
+            ),
+        ]
+    );
+    assert_eq!(
+        part.mesh.bounds(),
+        Some([[-10.0, 0.0, -10.0], [10.0, 0.0, 10.0]])
+    );
+}
+
+const STUD_ENVELOPE: [[f32; 3]; 2] = [[-6.0, 0.0, -6.0], [6.0, 4.0, 6.0]];
+
+#[test]
+fn every_table_stud_draws_the_stud_envelope_in_the_inherited_colour() {
+    let library = fixture_library();
+    for lod in [Lod::Standard, Lod::Low] {
+        let options = CompileOptions {
+            lod,
+            ..CompileOptions::default()
+        };
+        for name in table_studs() {
+            let compiled =
+                compile_part(&library, &name, &options).expect("a stud primitive compiles");
+            let colours: Vec<u32> = compiled
+                .mesh
+                .groups
+                .iter()
+                .map(|group| group.color)
+                .collect();
+            assert_eq!(
+                compiled.mesh.bounds(),
+                Some(STUD_ENVELOPE),
+                "{name} at {lod:?}"
+            );
+            assert_eq!(colours, vec![INHERIT_COLOR], "{name} at {lod:?}");
+        }
+    }
 }
 
 #[test]
