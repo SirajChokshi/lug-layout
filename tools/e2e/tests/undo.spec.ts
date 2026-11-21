@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { EditorPage, type Pose } from "./editor-page.ts";
+import { EditorPage, TRACK_ITEM, type Pose } from "./editor-page.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const PLAIN_MODULE = "generated:mils-plain";
@@ -49,4 +49,37 @@ test("undo walks every edit back to the exact earlier poses and redo replays the
 
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("undo-redo.png") });
+});
+
+test("Ctrl+Z straight after drawing track lifts the track and keeps the baseplate placed before it, and Ctrl+Shift+Z lays it again", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  await editor.zoom(400);
+  const undoButton = page.locator('[data-action="undo"]');
+  await editor.placeAt(BASEPLATE, { x: 0, z: 0 });
+  const placed = await editor.poses();
+  await editor.escape();
+  await editor.choose(TRACK_ITEM);
+
+  const run = await editor.dragTrack({ x: -320, z: 0 }, { x: 320, z: 0 });
+  const laid = await editor.laidTrack();
+  const ends = await editor.trackEnds();
+  expect(run).toMatchObject({ lastCommit: "laid", pieces: 2, openEnds: 2 });
+  expect(laid).toHaveLength(2);
+  await expect(undoButton).toContainText("Undo lay 2 pieces");
+
+  await editor.undo();
+  expect(await editor.poses()).toEqual(placed);
+  expect(await editor.laidTrack()).toEqual([]);
+  expect(await editor.trackEnds()).toEqual([]);
+  await expect(undoButton).toContainText("Undo place");
+
+  await editor.redo();
+  expect(await editor.poses()).toEqual(placed);
+  expect(await editor.laidTrack()).toEqual(laid);
+  expect(await editor.trackEnds()).toEqual(ends);
+
+  await editor.waitForFarTierAndMeshesSettled();
+  await page.screenshot({ path: test.info().outputPath("undo-track-redone.png") });
 });

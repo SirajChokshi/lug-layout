@@ -2,6 +2,7 @@ import { CHUNK_LDU } from "@brr/math";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import {
   compareSuperChunks,
+  encodeTrackPosition,
   shardName,
   superChunkOf,
   superChunkOfChunk,
@@ -12,6 +13,7 @@ import {
   type TrackRecordV1,
   type WorldShardV1,
 } from "@brr/schema/world";
+import type { PlacementPose, TrackPieceAt } from "./edit-history.ts";
 import { SLOT_LIVE, type PlacementHandle, type World } from "./world.ts";
 
 export interface PlacementTarget {
@@ -80,6 +82,13 @@ export class DirtyShards {
     }
   }
 
+  touchTrackPieces(pieces: ReadonlyArray<TrackPieceAt>): void {
+    for (const piece of pieces) {
+      const superChunk = superChunkOfTrack(encodeTrackPosition(piece.pose.position));
+      this.dirty.set(shardName(superChunk), superChunk);
+    }
+  }
+
   take(
     world: World,
     refs: ReadonlyArray<string>,
@@ -100,11 +109,10 @@ export class DirtyShards {
   }
 }
 
-export function addShards(
-  world: World,
+export function shardPoses(
   shards: ReadonlyArray<WorldShardV1>,
   resolve: (ref: string, color: number) => PlacementTarget | null,
-): Decoded<PlacementHandle[]> {
+): Decoded<PlacementPose[]> {
   const issues: Issue[] = [];
   const unknown = new Set<string>();
   for (const shard of shards) {
@@ -120,24 +128,37 @@ export function addShards(
     }
   }
   if (issues.length > 0) return { ok: false, issues };
-  const handles: PlacementHandle[] = [];
+  const poses: PlacementPose[] = [];
   const ordered = [...shards];
   ordered.sort((a, b) => compareSuperChunks(a.superChunk, b.superChunk));
   for (const shard of ordered) {
     for (const placement of shard.placements) {
       const target = resolve(placement.ref, placement.color);
       if (!target) continue;
-      handles.push(
-        world.add(
-          target.refId,
-          target.colorId,
-          placement.x,
-          placement.z,
-          placement.yPlates,
-          placement.rot,
-        ),
-      );
+      poses.push({
+        refId: target.refId,
+        colorId: target.colorId,
+        x: placement.x,
+        z: placement.z,
+        yPlates: placement.yPlates,
+        rot: placement.rot,
+      });
     }
   }
-  return { ok: true, value: handles };
+  return { ok: true, value: poses };
+}
+
+export function addShards(
+  world: World,
+  shards: ReadonlyArray<WorldShardV1>,
+  resolve: (ref: string, color: number) => PlacementTarget | null,
+): Decoded<PlacementHandle[]> {
+  const poses = shardPoses(shards, resolve);
+  if (!poses.ok) return poses;
+  return {
+    ok: true,
+    value: poses.value.map((pose) =>
+      world.add(pose.refId, pose.colorId, pose.x, pose.z, pose.yPlates, pose.rot),
+    ),
+  };
 }

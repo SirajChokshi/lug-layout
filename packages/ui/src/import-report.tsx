@@ -9,25 +9,67 @@ function commitOf(report: ImportReport): string {
   return `${report.mirror.repo}@${report.mirror.commit.slice(0, SHORT_COMMIT)}`;
 }
 
+type CustomPart = Extract<PartResolution, { kind: "custom" }>;
+type InlineDifference = NonNullable<CustomPart["difference"]>;
+
+function differenceText(difference: InlineDifference, official: string): string {
+  if (!difference.colorsMatch) {
+    return `The file's inline copy uses colours ${difference.inlineColors.join(", ")} where official ${official} uses ${difference.officialColors.join(", ")}.`;
+  }
+  if (difference.maxMeasuredDistanceLdu > difference.weldEpsilonLdu) {
+    return `The file's inline copy differs from official ${official}: a point on one surface is ${difference.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${difference.weldEpsilonLdu} LDU).`;
+  }
+  return `The file's inline copy could not be proven to lie within the ${difference.weldEpsilonLdu} LDU weld of official ${official}.`;
+}
+type RefusedCustomPart = Extract<PartResolution, { kind: "customRefused" }>;
+
+const CUSTOM_ORIGIN_TEXT: Readonly<Record<CustomPart["origin"], string>> = {
+  mpd: "defined inside the file",
+  inlineDiffers: "the file's own version of an official part number",
+  studio: "a Studio CustomParts file",
+};
+
+function refusedCustomReason(part: RefusedCustomPart): string {
+  const difference = part.difference ? `${differenceText(part.difference, part.official)} ` : "";
+  return `${difference}${refusalText(part)}`;
+}
+
+function refusalText(part: RefusedCustomPart): string {
+  const origin = `Custom part, ${CUSTOM_ORIGIN_TEXT[part.origin]}`;
+  switch (part.gate) {
+    case "unofficial":
+      return `${origin}: it reaches ${part.path} in the LDraw library, which declares an Unofficial LDraw org, and library parts that do are drawn only from the allowlist.`;
+    case "malformed":
+      return `${origin}: refused before drawing: ${part.message}.`;
+    case "tooLarge":
+      return `${origin}: not drawn: ${part.message}.`;
+    case "unresolved":
+    case "tooDeep":
+    case "noStudRing":
+      return `${origin}: it does not compile. ${part.message}`;
+    default: {
+      const unhandled: never = part.gate;
+      throw new Error(`unhandled custom part gate ${String(unhandled)}`);
+    }
+  }
+}
+
 function notDrawnReason(part: PartResolution, report: ImportReport): string | null {
   switch (part.kind) {
     case "bundle":
     case "compiled":
+    case "custom":
       return null;
+    case "customRefused":
+      return refusedCustomReason(part);
     case "notInLibrary":
       return `Not in the official LDraw library at ${commitOf(report)}: unofficial, custom or unknown part${part.definedInline ? ". The file defines it inline, and nothing inside it is drawn" : ""}.`;
     case "missingSubfile":
       return `LDraw part found, but its sub-file ${part.missing} (used by ${part.from}) is not in the library.`;
     case "rejected":
-      return `Rejected by the ${part.gate === "license" ? "license" : "unofficial-part"} gate: ${part.path}.`;
+      return `Rejected by the unofficial-part gate: ${part.path}.`;
     case "inlineDiffers":
-      if (!part.colorsMatch) {
-        return `The file's inline copy uses colours ${part.inlineColors.join(", ")} where official ${part.official} uses ${part.officialColors.join(", ")}.`;
-      }
-      if (part.maxMeasuredDistanceLdu > part.weldEpsilonLdu) {
-        return `The file's inline copy differs from official ${part.official}: a point on one surface is ${part.maxMeasuredDistanceLdu.toFixed(3)} LDU from the other (weld tolerance ${part.weldEpsilonLdu} LDU).`;
-      }
-      return `The file's inline copy could not be proven to lie within the ${part.weldEpsilonLdu} LDU weld of official ${part.official}.`;
+      return differenceText(part, part.official);
     case "malformed":
       return `Refused before drawing: ${part.message}.`;
     case "tooLarge":
@@ -56,7 +98,7 @@ function studioReason(part: StudioPart): string {
     case "ambiguous":
       return `${id} has ${part.outcome.candidates.length} LDraw candidates (${part.outcome.candidates.join(", ")}), so nothing is substituted.`;
     case "custom":
-      return "A Studio CustomParts file: custom geometry stays in the user's file and is never drawn.";
+      return "A Studio CustomParts file, drawn as a custom part.";
     default: {
       const unhandled: never = part.outcome;
       throw new Error(`unhandled Studio outcome ${JSON.stringify(unhandled)}`);
@@ -109,6 +151,62 @@ function StudioSummary({ studio }: { readonly studio: StudioReport }) {
   );
 }
 
+type ConnectorCounts = NonNullable<CustomPart["connectors"]>;
+
+const SOURCE_ORDER = ["shadow", "patch", "primitive", "inferred"] as const;
+
+const SOURCE_TEXT: Readonly<Record<(typeof SOURCE_ORDER)[number], string>> = {
+  shadow: "from the LDCad shadow library",
+  patch: "from the project's shadow patches",
+  primitive: "from LDraw primitives",
+  inferred: "inferred from geometry",
+};
+
+function connectorText(connectors: ConnectorCounts | null): string {
+  if (connectors === null) return "no connector table, for the reason listed above";
+  if (connectors.total === 0) return "no connectors found at import";
+  const tiers = SOURCE_ORDER.map(
+    (source) => `${integer.format(connectors.bySource[source])} ${SOURCE_TEXT[source]}`,
+  );
+  return `${integer.format(connectors.total)} connectors read at import (${tiers.join(", ")}), ${integer.format(connectors.unverified)} unverified`;
+}
+
+function CustomParts({ parts }: { readonly parts: ReadonlyArray<CustomPart> }) {
+  return (
+    <>
+      <h3 className="custom-heading">
+        Custom parts: {integer.format(parts.reduce((sum, part) => sum + part.instances, 0))}{" "}
+        instances of {parts.length} parts
+      </h3>
+      <ul className="custom-parts">
+        {parts.map((part) => (
+          <li key={part.partId} data-kind="custom" data-part={part.partId}>
+            <span className="part-badge" data-badge="custom">
+              custom
+            </span>{" "}
+            <code>{part.reference}</code> ×{part.instances}: {part.header.title || part.file}, by{" "}
+            {part.header.author || "no author given"}, {part.header.license ?? "no licence"}
+            {part.header.ldrawOrg ? `, ${part.header.ldrawOrg}` : ""};{" "}
+            {CUSTOM_ORIGIN_TEXT[part.origin]}.{" "}
+            {part.difference ? `${differenceText(part.difference, part.official)} ` : ""}Drawn on
+            this device only; the parts list shows it as custom, never as a buyable part.{" "}
+            <span
+              data-kind="inferredConnectors"
+              data-total={part.connectors?.total ?? 0}
+              data-shadow={part.connectors?.bySource.shadow ?? 0}
+              data-primitive={part.connectors?.bySource.primitive ?? 0}
+              data-inferred={part.connectors?.bySource.inferred ?? 0}
+              data-unverified={part.connectors?.unverified ?? 0}
+            >
+              {connectorText(part.connectors)}.
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function uniqueText(values: ReadonlyArray<string | null>): string {
   return [...new Set(values.filter((v): v is string => v !== null && v !== ""))].join("; ");
 }
@@ -124,6 +222,7 @@ export function ImportReportDetails({
 }) {
   const bundled = report.parts.filter((p) => p.kind === "bundle");
   const compiled = report.parts.filter((p) => p.kind === "compiled");
+  const custom = report.parts.filter((p): p is CustomPart => p.kind === "custom");
   const notDrawn = report.parts.flatMap((part) => {
     const reason = notDrawnReason(part, report);
     if (reason === null) return [];
@@ -158,7 +257,7 @@ export function ImportReportDetails({
           <dt>Unique parts</dt>
           <dd>
             {report.parts.length}: {bundled.length} from the bundle, {compiled.length} compiled from
-            LDraw {commitOf(report)}, {notDrawn.length} not drawn
+            LDraw {commitOf(report)}, {custom.length} custom, {notDrawn.length} not drawn
           </dd>
         </div>
         {report.refusedConnectorRecords.length > 0 && (
@@ -198,6 +297,7 @@ export function ImportReportDetails({
           </dd>
         </div>
       </dl>
+      {custom.length > 0 && <CustomParts parts={custom} />}
       {(notDrawn.length > 0 || report.unknownColors.length > 0 || hasLooseGeometry) && (
         <>
           <h3>

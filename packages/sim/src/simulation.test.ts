@@ -1,15 +1,18 @@
-import { NO_SWITCH } from "@brr/domain";
-import { describe, expect, it } from "vitest";
 import {
+  NO_SWITCH,
+  backwardEdge,
+  buildSimTrack,
+  forwardEdge,
   placeSegments,
   segmentsEnd,
   type PlanPose,
   type SimPathSegment,
-} from "./route-geometry.ts";
+  type SimRoute,
+  type VehicleGeometry,
+} from "@brr/domain";
+import { describe, expect, it } from "vitest";
 import { createSimSession } from "./create-sim-session.ts";
 import type { SimCommand, SimScenario, SimSession } from "./sim-session.ts";
-import type { VehicleGeometry } from "./running-gear.ts";
-import { backwardEdge, buildSimTrack, forwardEdge, type SimRoute } from "./sim-track.ts";
 import {
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,
@@ -300,7 +303,7 @@ describe("Coupled running gear on a circle", () => {
     sim.setThrottle(0, 500);
     run(sim, 6);
     const forward = runningGearErrors(session);
-    expect(forward.axle).toBeLessThan(0.01);
+    expect(forward.axle).toBeLessThan(1e-9);
     expect(forward.coupling).toBeLessThan(1e-6);
     sim.setThrottle(0, 0);
     run(sim, 4);
@@ -308,7 +311,7 @@ describe("Coupled running gear on a circle", () => {
     sim.setThrottle(0, 500);
     run(sim, 6);
     const backward = runningGearErrors(session);
-    expect(backward.axle).toBeLessThan(0.01);
+    expect(backward.axle).toBeLessThan(1e-9);
     expect(backward.coupling).toBeLessThan(1e-6);
   });
 
