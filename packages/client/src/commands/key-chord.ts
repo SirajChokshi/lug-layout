@@ -50,6 +50,10 @@ export function chordMatches(chord: KeyChord, input: KeyInput): boolean {
   return !shiftCounts(key) || input.shiftKey === (chord.shift ?? false);
 }
 
+export function altKeyName(platform: KeyPlatform): string {
+  return MODIFIER_NAMES[platform][2];
+}
+
 export function chordKeys(chord: KeyChord, platform: KeyPlatform): ReadonlyArray<string> {
   const [mod, shift, alt] = MODIFIER_NAMES[platform];
   const keys: string[] = [];
