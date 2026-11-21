@@ -244,7 +244,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("undo", snapshot, play)}
         onClick={(event) => editor.undo(event.timeStamp)}
       >
-        Undo{history.undo === null ? "" : ` ${history.undo}`} ({shortcutText("undo")})
+        Undo{history.undoLabel === null ? "" : ` ${history.undoLabel}`} ({shortcutText("undo")})
       </button>
       <button
         type="button"
@@ -252,7 +252,7 @@ export function PlacementToolbar({
         disabled={!commandEnabled("redo", snapshot, play)}
         onClick={(event) => editor.redo(event.timeStamp)}
       >
-        Redo{history.redo === null ? "" : ` ${history.redo}`} ({shortcutText("redo")})
+        Redo{history.redoLabel === null ? "" : ` ${history.redoLabel}`} ({shortcutText("redo")})
       </button>
       <button
         type="button"
@@ -407,7 +407,7 @@ export function Inspector({
       <h2>Inspector</h2>
       <dl>
         <div>
-          <dt>Model</dt>
+          <dt>{selection.kind === "track" ? "Track piece" : "Model"}</dt>
           <dd>{itemLabel(snapshot, selection.item)}</dd>
         </div>
         <div>
@@ -420,10 +420,12 @@ export function Inspector({
           <dt>Height (plates)</dt>
           <dd>{selection.yPlates}</dd>
         </div>
-        <div>
-          <dt>Rotation</dt>
-          <dd>{degrees(selection.rot)}</dd>
-        </div>
+        {selection.kind === "model" && (
+          <div>
+            <dt>Rotation</dt>
+            <dd>{degrees(selection.rot)}</dd>
+          </div>
+        )}
         <div>
           <dt>Footprint x, z (LDU)</dt>
           <dd>
@@ -438,7 +440,9 @@ export function Inspector({
           </dd>
         </div>
       </dl>
-      <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      {selection.kind === "model" && (
+        <RollingDiagnostics key={selection.item} editor={editor} item={selection.item} />
+      )}
     </section>
   );
 }

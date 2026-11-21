@@ -25,6 +25,7 @@ import {
   type ConsistRef,
   type TrackPieceRef,
   type EditKind,
+  type EditSummary,
   type HistoryStep,
   type PlacementHandle,
   type PlacementContents,
@@ -32,6 +33,7 @@ import {
   type RoadJoinReport,
   type RoadPlacement,
   type ModelConnectors,
+  type TrackChange,
 } from "@brr/domain";
 import {
   BRICK_LDU,
@@ -42,6 +44,7 @@ import {
   ZETA16_ORDER,
   pose16,
   zeta16,
+  zeta16ToStuds,
 } from "@brr/math";
 import {
   RAY_FLOATS,
@@ -62,6 +65,7 @@ import {
   type ConsistPieceV1,
   type ConsistRecordV1,
   type ImportedFile,
+  type TrackRecordV1,
 } from "@brr/schema/world";
 import { inject, injectable } from "inversify";
 import {
@@ -131,12 +135,7 @@ import {
 import { EDITOR_CAMERA, PLAN_SERVICE, TABLE_GROUND } from "../tokens.ts";
 import type { GroundView, ITableGround } from "../ground/table-ground.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
-import {
-  writeFullRebuild,
-  writeTrackLay,
-  writeTrackThrow,
-  writeViewUpdate,
-} from "../plan/plan-producer.ts";
+import { writeFullRebuild, writeTrackChange, writeViewUpdate } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
 import type { IRailYard, RailAim } from "../trains/rail-yard.ts";
@@ -159,7 +158,7 @@ import {
 
 export type { TurnDirection } from "./turn.ts";
 export type EditorStatus = "loading" | "ready" | "error";
-export type EditAction = EditKind | "track";
+export type EditAction = EditKind;
 export type EditorMode = "place" | "select" | "track" | "road";
 export interface RoadStrokeResult {
   readonly result: "laid" | "refused";
@@ -208,7 +207,18 @@ export interface TrainSelectionView {
   readonly box: WorldBox;
 }
 
-export type SelectionView = ModelSelectionView | TrainSelectionView;
+export interface TrackSelectionView {
+  readonly kind: "track";
+  readonly item: string;
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly chunkKey: number;
+  readonly slot: number;
+  readonly box: WorldBox;
+}
+
+export type SelectionView = ModelSelectionView | TrainSelectionView | TrackSelectionView;
 
 export interface RailTrainView {
   readonly item: string;
@@ -219,6 +229,8 @@ export interface RailTrainView {
 export interface HistoryView {
   readonly undo: EditAction | null;
   readonly redo: EditAction | null;
+  readonly undoLabel: string | null;
+  readonly redoLabel: string | null;
   readonly undoDepth: number;
   readonly redoDepth: number;
 }
@@ -433,6 +445,7 @@ export interface ModelBakeView {
 export interface EditorDump {
   readonly refs: ReadonlyArray<string>;
   readonly chunkCounts: ReadonlyArray<readonly [number, number, number]>;
+  readonly laidTrack: ReadonlyArray<TrackRecordV1>;
   readonly trackEnds: ReturnType<TrackDrawing["openEnds"]>;
   readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
   readonly covers: ReadonlyArray<PlaceableCoverView>;
@@ -578,16 +591,47 @@ interface HeldPiece {
 const EDITOR_WORLD_NAME = "editor-world";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
-interface PendingAction {
-  readonly step: HistoryStep;
-  readonly action: EditAction;
+interface EditSample {
   readonly item: string;
   readonly rot: number;
   readonly x: number;
   readonly z: number;
+}
+
+interface PendingAction extends EditSample {
+  readonly step: HistoryStep;
+  readonly action: EditAction;
   readonly startMs: number;
   readonly rebuiltMs: number;
   readonly report: RebuildReport;
+}
+
+const NOTHING_REBUILT: RebuildReport = { chunks: 0, instances: 0, studs: 0 };
+
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function editLabel(edit: EditSummary | null): string | null {
+  if (edit === null) return null;
+  switch (edit.kind) {
+    case "place":
+      return "place";
+    case "rotate":
+      return "rotate";
+    case "remove":
+      return "delete";
+    case "road":
+      return `road stroke (${counted(edit.placements, "plate", "plates")})`;
+    case "lay-track":
+      return `lay ${counted(edit.pieces, "piece", "pieces")}`;
+    case "throw-switch":
+      return "throw switch";
+    default: {
+      const unhandled: never = edit;
+      throw new Error(`unhandled edit ${JSON.stringify(unhandled)}`);
+    }
+  }
 }
 
 interface RestoredWorld {
@@ -637,7 +681,14 @@ export class Editor implements IEditor, IEditedWorld {
     selection: null,
     selectionRefusal: null,
     placements: 0,
-    history: { undo: null, redo: null, undoDepth: 0, redoDepth: 0 },
+    history: {
+      undo: null,
+      redo: null,
+      undoLabel: null,
+      redoLabel: null,
+      undoDepth: 0,
+      redoDepth: 0,
+    },
     lastLatency: null,
     latencies: [],
     stats: null,
@@ -698,6 +749,7 @@ export class Editor implements IEditor, IEditedWorld {
   private active: Placeable | null = null;
   private activeRefId = -1;
   private selected: PlacedModel | null = null;
+  private selectedTrack: number | null = null;
   private ghostRot = 0;
   private placeRot = 0;
   private turnDirection: TurnDirection = 1;
@@ -1297,44 +1349,22 @@ export class Editor implements IEditor, IEditedWorld {
     const hit = this.groundHit(ndcX, ndcY);
     if (hit) track.moveDrag(this.hitX, this.hitZ);
     const stayed = (track.dragView()?.pieces ?? 0) === 0;
-    const commit = track.endDrag();
-    if (hit && stayed && this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) {
-      this.backend.setGhost(null);
-      this.showTrackEnds(null);
-      return;
-    }
+    const outcome = track.endDrag();
     this.backend.setGhost(null);
     this.showTrackEnds(null);
-    let instances = 0;
-    let studs = 0;
-    for (const key of commit.chunks) {
-      const chunk = track.chunkInstances(key);
-      if (!chunk) continue;
-      this.backend.setChunk(key, chunk);
-      instances += chunk.count;
-      studs += chunk.studs.count;
-    }
-    if (commit.laid > 0) {
-      this.timeEdit({
-        step: "do",
-        action: "track",
+    if (hit && stayed && this.throwSwitchAt(this.hitX, this.hitZ, eventTimeMs)) return;
+    if (outcome.refusal) {
+      this.lastTrackCommit = `refused-${outcome.refusal}`;
+    } else if (outcome.change.lay.length > 0) {
+      this.show(this.history.commit("lay-track", [], outcome.change), eventTimeMs, {
         item: TRACK_ITEM_ID,
         rot: 0,
         x: this.hoverX,
         z: this.hoverZ,
-        startMs: eventTimeMs,
-        rebuiltMs: performance.now(),
-        report: { chunks: commit.chunks.length, instances, studs },
       });
+      this.lastTrackCommit =
+        outcome.goal !== null && track.joinsAt(outcome.goal) ? "joined" : "laid";
     }
-    if (commit.laid > 0) {
-      writeTrackLay(this.planDelta, track, commit.laid);
-      this.plans.apply(this.planDelta);
-      this.session.trackEdited();
-      this.railsChanged();
-    }
-    if (commit.refusal) this.lastTrackCommit = `refused-${commit.refusal}`;
-    else if (commit.laid > 0) this.lastTrackCommit = commit.joined ? "joined" : "laid";
     this.update({ track: this.trackView() });
   }
 
@@ -1535,72 +1565,79 @@ export class Editor implements IEditor, IEditedWorld {
     const held = this.held;
     const snap = held?.snap;
     if (!track || !held || !snap) return;
-    const commit = track.placePiece(held.catalogIndex, snap.placement);
-    const report = this.rebuildTrackChunks(track, commit.chunks);
-    this.timeEdit({
-      step: "do",
-      action: "track",
-      item: `${TRACK_PIECE_PREFIX}${track.pieceByIndex(held.catalogIndex).piece.id}`,
-      rot: held.heading,
-      x: this.hoverX,
-      z: this.hoverZ,
-      startMs: eventTimeMs,
-      rebuiltMs: performance.now(),
-      report,
-    });
-    writeTrackLay(this.planDelta, track, commit.laid);
-    this.plans.apply(this.planDelta);
-    this.session.trackEdited();
-    this.railsChanged();
-    this.lastTrackCommit = commit.joined ? "joined" : "laid";
+    const joins = track.joinedPairs();
+    const change = track.pieceChange(held.catalogIndex, snap.placement);
+    this.show(this.history.commit("lay-track", [], change), eventTimeMs);
+    this.lastTrackCommit = track.joinedPairs() > joins ? "joined" : "laid";
     this.held = { ...held, snap: null };
-    this.showTrackEnds(null);
     this.showHeldPiece();
     this.update({ track: this.trackView() });
   }
 
-  private rebuildTrackChunks(track: TrackDrawing, chunks: ReadonlyArray<number>): RebuildReport {
+  private applyTrack(change: TrackChange): RebuildReport {
+    const track = this.track;
+    if (!track || change.lift.length + change.lay.length === 0) return NOTHING_REBUILT;
+    if (track.dragView()) {
+      track.cancelDrag();
+      this.backend.setGhost(null);
+    }
     let instances = 0;
     let studs = 0;
+    const chunks = track.applyTrack(change);
     for (const key of chunks) {
       const chunk = track.chunkInstances(key);
-      if (!chunk) continue;
+      if (!chunk) {
+        this.backend.deleteChunk(key);
+        continue;
+      }
       this.backend.setChunk(key, chunk);
       instances += chunk.count;
       studs += chunk.studs.count;
     }
+    this.showTrackEnds(null);
     return { chunks: chunks.length, instances, studs };
   }
 
+  private switchHolder(placement: number): string | null {
+    const standing = this.railYard.standingOn(placement);
+    return standing ? this.placeableAt(standing.pose.refId).label : null;
+  }
+
+  private refuseThrow(holder: string, x: number, z: number): void {
+    const reason = `${holder} stands on this switch, so it can't be thrown under it.`;
+    this.refuse(TRACK_ITEM_ID, x, z, 0, reason);
+  }
+
+  private throwRefused(next: EditSummary | null): boolean {
+    if (next?.kind !== "throw-switch") return false;
+    const holder = this.switchHolder(next.switchAt);
+    if (holder === null) return false;
+    const lever = this.track?.switchLevers().find((view) => view.placement === next.switchAt);
+    this.refuseThrow(holder, Math.round(lever?.xLdu ?? 0), Math.round(lever?.zLdu ?? 0));
+    return true;
+  }
+
   private throwSwitchAt(xLdu: number, zLdu: number, eventTimeMs: number): boolean {
+    const placement = this.track?.switchAt(xLdu, zLdu) ?? null;
+    return placement !== null && this.throwSwitch(placement, xLdu, zLdu, eventTimeMs);
+  }
+
+  private throwSwitch(placement: number, xLdu: number, zLdu: number, eventTimeMs: number): boolean {
     const track = this.track;
     if (!track || this.state.readOnly) return false;
-    const placement = track.switchAt(xLdu, zLdu);
-    if (placement === null) return false;
-    const standing = this.railYard.standingOn(placement);
-    if (standing) {
-      const reason = `${this.placeableAt(standing.pose.refId).label} stands on this switch, so it can't be thrown under it.`;
-      this.refuse(TRACK_ITEM_ID, Math.round(xLdu), Math.round(zLdu), 0, reason);
+    const holder = this.switchHolder(placement);
+    if (holder !== null) {
+      this.refuseThrow(holder, Math.round(xLdu), Math.round(zLdu));
       return true;
     }
-    const thrown = track.throwSwitch(placement);
+    const thrown = track.switchThrow(placement);
     if (!thrown) return false;
-    const report = this.rebuildTrackChunks(track, [thrown.chunk]);
-    this.timeEdit({
-      step: "do",
-      action: "track",
+    this.show(this.history.commit("throw-switch", [], thrown.change), eventTimeMs, {
       item: `switch #${placement + 1}`,
       rot: 0,
       x: Math.round(xLdu),
       z: Math.round(zLdu),
-      startMs: eventTimeMs,
-      rebuiltMs: performance.now(),
-      report,
     });
-    writeTrackThrow(this.planDelta, track, placement);
-    this.plans.apply(this.planDelta);
-    this.session.trackEdited();
-    this.railsChanged();
     this.lastTrackCommit = thrown.lever === "straight" ? "switch-straight" : "switch-branching";
     this.update({ track: this.trackView() });
     return true;
@@ -1856,8 +1893,15 @@ export class Editor implements IEditor, IEditedWorld {
       }
     }
     const train = this.railYard.pick(this.ray);
-    if (train && train.t < bestT) {
+    const trackHit = this.track?.pieceOnRay(this.ray) ?? null;
+    const trainT = train?.t ?? Number.POSITIVE_INFINITY;
+    const trackT = trackHit?.distance ?? Number.POSITIVE_INFINITY;
+    if (train && trainT < bestT && trainT <= trackT) {
       this.selectTrain(train.handle);
+      return;
+    }
+    if (trackHit && trackT < bestT) {
+      this.clickTrack(trackHit.placement, ndcX, ndcY, eventTimeMs);
       return;
     }
     if (
@@ -1868,6 +1912,11 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     this.select(best);
+  }
+
+  private clickTrack(placement: number, ndcX: number, ndcY: number, eventTimeMs: number): void {
+    if (this.groundHit(ndcX, ndcY)) this.throwSwitch(placement, this.hitX, this.hitZ, eventTimeMs);
+    this.selectTrack(placement);
   }
 
   private refuse(
@@ -1930,9 +1979,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private historyView(): HistoryView {
+    const undo = this.history.nextUndo();
+    const redo = this.history.nextRedo();
     return {
-      undo: this.history.nextUndo(),
-      redo: this.history.nextRedo(),
+      undo: undo?.kind ?? null,
+      redo: redo?.kind ?? null,
+      undoLabel: editLabel(undo),
+      redoLabel: editLabel(redo),
       undoDepth: this.history.undoDepth,
       redoDepth: this.history.redoDepth,
     };
@@ -1944,7 +1997,11 @@ export class Editor implements IEditor, IEditedWorld {
     return placeable;
   }
 
-  private show(edit: AppliedEdit, eventTimeMs: number): ViewUpdate {
+  private show(
+    edit: AppliedEdit,
+    eventTimeMs: number,
+    sample: EditSample | null = this.sampleOf(edit),
+  ): ViewUpdate {
     this.applyConsists(edit);
     const view = this.placed.apply(edit, (refId) => this.placeableAt(refId));
     for (const model of view.removed) this.unsearchable(model);
@@ -1956,24 +2013,28 @@ export class Editor implements IEditor, IEditedWorld {
       this.requestMeshes(placeable);
       this.requestFarModel(placeable);
     }
-    this.session.placementsEdited(edit);
-    const primary = edit.changes[0];
-    const pose = primary?.to ?? primary?.from ?? null;
-    if (pose) {
+    const trackChanged = edit.track.lift.length + edit.track.lay.length > 0;
+    const track = this.applyTrack(edit.track);
+    const worldChanged = edit.changes.length > 0 || !trackChanged;
+    if (worldChanged) this.session.placementsEdited(edit);
+    if (trackChanged) this.session.trackEdited(edit.track.lift);
+    if (sample) {
       this.timeEdit({
+        ...sample,
         step: edit.step,
         action: edit.kind,
-        item: this.placeableAt(pose.refId).id,
-        rot: pose.rot,
-        x: pose.x,
-        z: pose.z,
         startMs: eventTimeMs,
         rebuiltMs: performance.now(),
-        report: view.report,
+        report: {
+          chunks: view.report.chunks + track.chunks,
+          instances: view.report.instances + track.instances,
+          studs: view.report.studs + track.studs,
+        },
       });
     }
     this.refreshRoads();
     this.syncModelTrack();
+    if (trackChanged) this.railsChanged();
     this.refreshTrains();
     this.placeGhost();
     this.update({
@@ -1982,9 +2043,16 @@ export class Editor implements IEditor, IEditedWorld {
       hover: this.hoverView(),
       studs: this.placed.studTotals(),
       history: this.historyView(),
+      track: this.trackView(),
     });
-    writeViewUpdate(this.planDelta, view);
-    this.plans.apply(this.planDelta);
+    if (worldChanged) {
+      writeViewUpdate(this.planDelta, view);
+      this.plans.apply(this.planDelta);
+    }
+    if (trackChanged && this.track) {
+      writeTrackChange(this.planDelta, this.track, edit.track);
+      this.plans.apply(this.planDelta);
+    }
     return view;
   }
 
@@ -2018,6 +2086,22 @@ export class Editor implements IEditor, IEditedWorld {
     if (!model) return;
     this.requestMeshes(placeable);
     this.railYard.add(handle, model);
+  }
+
+  private sampleOf(edit: AppliedEdit): EditSample | null {
+    const primary = edit.changes[0];
+    const pose = primary?.to ?? primary?.from ?? null;
+    if (pose) return { item: this.placeableAt(pose.refId).id, rot: pose.rot, x: pose.x, z: pose.z };
+    const piece = edit.track.lay[0] ?? edit.track.lift[0];
+    const track = this.track;
+    if (!piece || !track) return null;
+    const studs = zeta16ToStuds(piece.pose.position);
+    return {
+      item: `${TRACK_PIECE_PREFIX}${track.pieceByIndex(piece.piece).piece.id}`,
+      rot: piece.pose.heading,
+      x: Math.round(studs.x * STUD_LDU),
+      z: Math.round(studs.z * STUD_LDU),
+    };
   }
 
   private roadPlacements(): ReadonlyArray<RoadPlacement> {
@@ -2179,6 +2263,17 @@ export class Editor implements IEditor, IEditedWorld {
         uncounted: uncounted(),
       };
     }
+    const piece = this.selectedTrack;
+    if (piece !== null && this.track) {
+      this.track.countPiece(counter, piece);
+      return {
+        name: `selection-${this.track.laidPieceView(piece).piece.replace(FILE_NAME_UNSAFE, "_")}`,
+        lod: "standard",
+        placements: 1,
+        counter,
+        uncounted: [],
+      };
+    }
     const train = this.selectedTrain;
     const selected = this.selected;
     const chosen = train?.live
@@ -2197,9 +2292,33 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
+  private selectTrack(placement: number): void {
+    const track = this.track;
+    if (!track) return;
+    const piece = track.laidPieceView(placement);
+    this.selected = null;
+    this.selectedTrain = null;
+    this.selectedTrack = placement;
+    this.backend.setSelectionBox(piece.box);
+    this.update({
+      selectionRefusal: null,
+      selection: {
+        kind: "track",
+        item: `${TRACK_PIECE_PREFIX}${piece.piece}`,
+        x: Math.round(piece.xLdu),
+        z: Math.round(piece.zLdu),
+        yPlates: piece.yPlates,
+        chunkKey: piece.chunkKey,
+        slot: placement,
+        box: piece.box,
+      },
+    });
+  }
+
   private select(model: PlacedModel | null): void {
     this.selected = model;
     this.selectedTrain = null;
+    this.selectedTrack = null;
     this.backend.setSelectionBox(model ? model.box : null);
     this.update({
       selectionRefusal: null,
@@ -2228,6 +2347,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     this.selected = null;
+    this.selectedTrack = null;
     this.selectedTrain = handle;
     this.backend.setSelectionBox(box);
     this.update({
@@ -2361,6 +2481,11 @@ export class Editor implements IEditor, IEditedWorld {
       this.select(null);
       return;
     }
+    const piece = this.selectedTrack;
+    if (piece !== null) {
+      this.deleteTrackPiece(piece, eventTimeMs);
+      return;
+    }
     const model = this.selected;
     if (!model) return;
     const rider = this.placed.strandedRider(model);
@@ -2395,13 +2520,35 @@ export class Editor implements IEditor, IEditedWorld {
     this.select(null);
   }
 
+  private deleteTrackPiece(placement: number, eventTimeMs: number): void {
+    const track = this.track;
+    if (!track || this.state.readOnly) return;
+    const standing = this.railYard.standingOn(placement);
+    if (standing) {
+      const train = this.placeableAt(standing.pose.refId).label;
+      const piece = track.laidPieceView(placement);
+      const reason = `${train} stands on this track piece, so deleting it would leave the train off the rails. Delete ${train} first.`;
+      this.refuse(
+        `${TRACK_PIECE_PREFIX}${piece.piece}`,
+        Math.round(piece.xLdu),
+        Math.round(piece.zLdu),
+        0,
+        reason,
+      );
+      this.update({ selectionRefusal: `Can't delete. ${reason}` });
+      return;
+    }
+    this.show(this.history.commit("remove", [], track.removal(placement)), eventTimeMs);
+    this.select(null);
+  }
+
   undo(eventTimeMs: number): void {
-    if (this.state.readOnly) return;
+    if (this.state.readOnly || this.throwRefused(this.history.nextUndo())) return;
     this.replay(this.history.undo(), eventTimeMs);
   }
 
   redo(eventTimeMs: number): void {
-    if (this.state.readOnly) return;
+    if (this.state.readOnly || this.throwRefused(this.history.nextRedo())) return;
     this.replay(this.history.redo(), eventTimeMs);
   }
 
@@ -2410,12 +2557,17 @@ export class Editor implements IEditor, IEditedWorld {
     const selected = this.selected;
     const selectedTrain = this.selectedTrain;
     const restored = this.show(edit, eventTimeMs).added.at(-1);
+    if (this.held) this.showHeldPiece();
     if (this.active) return;
     const restoredTrain = edit.consists.at(-1)?.added;
+    const [restoredPiece, ...more] = edit.track.lay;
+    const restoredTrack = edit.kind === "remove" && restoredPiece && more.length === 0;
     if (restored) this.select(restored);
     else if (restoredTrain) this.selectTrain(restoredTrain);
+    else if (restoredTrack) this.selectTrack(restoredPiece.index);
     else if (selected && !selected.handle.live) this.select(null);
     else if (selectedTrain && !selectedTrain.live) this.select(null);
+    else if (this.selectedTrack !== null && edit.track.lift.length > 0) this.select(null);
   }
 
   goTo(x: number, z: number): void {
@@ -2801,6 +2953,7 @@ export class Editor implements IEditor, IEditedWorld {
             [chunk.originX / CHUNK_LDU, chunk.originZ / CHUNK_LDU, chunk.liveCount] as const,
         )
         .toSorted((a, b) => a[0] - b[0] || a[1] - b[1]),
+      laidTrack: this.track?.records() ?? [],
       trackEnds: this.track?.openEnds() ?? [],
       frameShifts: this.loadedPlaceables().map((p) => p.frameShift),
       covers: this.loadedPlaceables().map((p) => ({

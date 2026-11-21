@@ -34,15 +34,19 @@ export {
 export { SLOT_LIVE, World, type ChunkView, type PlacementHandle } from "./world.ts";
 export {
   EditHistory,
+  NO_TRACK_CHANGE,
   type AppliedChange,
   type AppliedConsistChange,
   type AppliedEdit,
   type ConsistRef,
   type EditKind,
+  type EditSummary,
   type HistoryStep,
   type PlacementPose,
   type PlacementRef,
   type PlacementRequest,
+  type TrackChange,
+  type TrackPieceAt,
 } from "./edit-history.ts";
 export {
   ConsistHandle,
@@ -218,6 +222,8 @@ export {
   NO_OBSTACLE,
   TrackClearance,
   footprintOutline,
+  outlineContains,
+  placedOutline,
   type PlacementFrame,
   type TrackOutlineSource,
 } from "./track/track-clearance.ts";

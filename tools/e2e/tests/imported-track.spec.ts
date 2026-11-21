@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
-import { EditorPage, routeMiddle } from "./editor-page.ts";
+import { EditorPage, nearestLattice, routeMiddle } from "./editor-page.ts";
 
 const SCENES = new URL("../../../docs/verified-facts/scenes/", import.meta.url);
 const ZETA16_STEP_RADIANS = Math.PI / 8;
@@ -13,6 +13,11 @@ const FULL_THROTTLE_PRESSES = 10;
 const TRAIN_WITHOUT_TRACK = "omr:10014-1";
 const LAP_DEADLINE_MS = 90_000;
 const SAMPLE_MS = 150;
+const STRAIGHT_FILE = "74746.dat";
+const RUN_OFFSET_LDU = -960;
+const RUN_HALF_SPAN_LDU = 160;
+const EAST = 0;
+const DRAWN_RUN_LDU = 640;
 
 interface Reference {
   readonly color: string;
@@ -271,6 +276,50 @@ test("a train runs a full lap on an imported loop turned 22.5° and written with
     await page.waitForTimeout(SAMPLE_MS);
   }
   expect(sweptTurns(path)).toBeGreaterThanOrEqual(1);
+});
+
+test("drawn track joined to an imported model's own 9V run is lifted by undo and joined again by redo", async ({
+  page,
+}) => {
+  const { text, pieces } = await layout(
+    "nine-volt-run",
+    [{ scene: "passing-loop", turns: 0, offset: [RUN_OFFSET_LDU, 0] }],
+    (references) => {
+      const run = references.filter(
+        ({ file, position: [x, , z] }) =>
+          file === STRAIGHT_FILE && z === 0 && Math.abs(x) <= RUN_HALF_SPAN_LDU,
+      );
+      references.splice(0, references.length, ...run);
+    },
+  );
+  const file = test.info().outputPath("nine-volt-run.ldr");
+  await writeFile(file, text);
+  const editor = await importAndPlace(page, file);
+  expect(pieces).toBe(2);
+  expect(await editor.modelTrack()).toEqual({ pieces, runFrame: 0, offField: 0, unanchored: 0 });
+  const placed = await editor.poses();
+  const modelEnds = await editor.trackEnds();
+  const east = modelEnds.find((end) => end.heading === EAST);
+  if (!east)
+    throw new Error(`the model's run has no end facing east: ${JSON.stringify(modelEnds)}`);
+
+  const from = nearestLattice(east);
+  const run = await editor.dragTrack(from, { x: from.x + DRAWN_RUN_LDU, z: from.z });
+  const laid = await editor.laidTrack();
+  const joinedEnds = await editor.trackEnds();
+  expect(run).toEqual({ lastCommit: "laid", pieces: 2, openEnds: 2, joins: 3 });
+  expect(laid).toHaveLength(2);
+  expect(joinedEnds).not.toContainEqual(east);
+
+  await editor.undo();
+  expect(await editor.laidTrack()).toEqual([]);
+  expect(await editor.trackEnds()).toEqual(modelEnds);
+  expect(await editor.poses()).toEqual(placed);
+
+  await editor.redo();
+  expect(await editor.laidTrack()).toEqual(laid);
+  expect(await editor.trackEnds()).toEqual(joinedEnds);
+  expect(await editor.trackCounts()).toEqual(run);
 });
 
 test("a curve turned 0.1° off the field is reported and nothing joins it", async ({ page }) => {
