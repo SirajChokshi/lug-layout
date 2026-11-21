@@ -1,5 +1,6 @@
 import type { ModelCells, ModelStudCover, PartModelLattice, PartVehicle } from "@brr/catalog";
 import {
+  type AuthoredIdentification,
   CompilerBake,
   CompilerBakeNeeds,
   CompilerCompile,
@@ -8,6 +9,7 @@ import {
   CompilerModelRead,
   StudioRead,
   type CompilerBaked,
+  type CompilerBakePhases,
   type CompilerBlobs,
   type CompilerConnectorInputs,
   type CompilerEnvelope,
@@ -48,6 +50,11 @@ export interface ModelRead {
   readonly instanceSubmodel: Int32Array;
   readonly submodelParent: Int32Array;
   readonly submodelMatrix: Float64Array;
+  readonly authoredIdentification: AuthoredIdentification | null;
+}
+
+export interface ModelBakeOptions {
+  readonly omrAuthoringIdentification?: boolean;
 }
 
 export interface LibraryFiles {
@@ -104,11 +111,17 @@ export interface BakeRequest {
   readonly tableDepthLdu: number;
   readonly vehicles: CompilerVehicles | null;
   readonly shard?: BakeShard;
+  readonly keepParts?: boolean;
+  readonly omrAuthoringIdentification?: boolean;
 }
+
+export type BakePhases = CompilerBakePhases;
 
 export interface BakedModel {
   readonly status: "baked";
   readonly recordedParts: number;
+  readonly resumedParts: number;
+  readonly phases: BakePhases;
   readonly lattice: PartModelLattice | null;
   readonly latticeIssue: string | null;
   readonly studCover: ModelStudCover;
@@ -208,6 +221,8 @@ function bakedModel(header: CompilerBaked, body: Uint8Array): BakedModel {
   return {
     status: "baked",
     recordedParts: header.recordedParts,
+    resumedParts: header.resumedParts,
+    phases: header.phases,
     lattice:
       lattice === null
         ? null
@@ -337,8 +352,11 @@ export class BrickCompiler {
     return { header: { key: library.key, files: entries, absent }, files, absent };
   }
 
-  readModel(source: string): ModelRead {
-    const { header, body } = this.call({ op: "readModel" }, { source: utf8.encode(source) });
+  readModel(source: string, options: ModelBakeOptions = {}): ModelRead {
+    const { header, body } = this.call(
+      { op: "readModel", omrAuthoringIdentification: options.omrAuthoringIdentification ?? false },
+      { source: utf8.encode(source) },
+    );
     const read = decodedOrThrow(decode(CompilerModelRead, header), "brick-compile readModel");
     return {
       sections: read.sections,
@@ -351,6 +369,7 @@ export class BrickCompiler {
       instanceSubmodel: new Int32Array(bytesOf(body, read.blobs, "instanceSubmodel")),
       submodelParent: new Int32Array(bytesOf(body, read.blobs, "submodelParent")),
       submodelMatrix: new Float64Array(bytesOf(body, read.blobs, "submodelMatrix")),
+      authoredIdentification: read.authoredIdentification ?? null,
     };
   }
 

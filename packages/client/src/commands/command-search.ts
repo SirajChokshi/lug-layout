@@ -1,10 +1,14 @@
 import type { PaletteIndex } from "../catalog/palette-index.ts";
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
-import { COMMANDS, type CommandId, type CommandSpec } from "./editor-commands.ts";
+import { COMMANDS, isHotbarCommand, type CommandId, type CommandSpec } from "./editor-commands.ts";
+
+export interface PaletteCommandSpec extends CommandSpec {
+  readonly id: Exclude<CommandId, "pick-slot">;
+}
 
 export interface CommandResult {
   readonly kind: "command";
-  readonly spec: CommandSpec;
+  readonly spec: PaletteCommandSpec;
   readonly enabled: boolean;
 }
 
@@ -31,6 +35,7 @@ const RECENT_BONUS = 20;
 const DISABLED_PENALTY = 30;
 const OTHER_COLOR_PENALTY = 5;
 const RESULT_LIMIT = 60;
+const LISTED = COMMANDS.filter((spec): spec is PaletteCommandSpec => !isHotbarCommand(spec.id));
 const DIMENSION = /(\d)\s*[x×]\s*(\d)/gu;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
 
@@ -103,7 +108,7 @@ function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
     const item = sources.catalog.find((entry) => entry.id === id);
     return item ? [{ kind: "item", item, recent: true }] : [];
   });
-  const commands = COMMANDS.map((spec): CommandResult => ({
+  const commands = LISTED.map((spec): CommandResult => ({
     kind: "command",
     spec,
     enabled: sources.enabled(spec.id),
@@ -124,7 +129,7 @@ export function searchPalette(
     .filter((word) => word !== "");
   if (words.length === 0) return browse(sources);
   const scored: Scored[] = [];
-  for (const spec of COMMANDS) {
+  for (const spec of LISTED) {
     const score = matchScore(words, spec.title, commandExtra(spec));
     if (score === 0) continue;
     const enabled = sources.enabled(spec.id);
