@@ -74,7 +74,7 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readFixtureModels, readPalette } from "./palette.ts";
+import { readFixtureModels, readPalette, readPrimitiveTable, studPrimitives } from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
@@ -107,10 +107,12 @@ import {
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
+import { auditBundleStuds, summarizeStudAudit } from "./verify/stud-audit-bundle.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
+const primitiveTablePath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
@@ -173,6 +175,7 @@ async function fetchCommand(): Promise<void> {
     ldrawRoot,
     bundleConnectivityRoot,
     modelSources,
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
     [inferred.cavityProbe, inferred.axleProbe],
   );
   const audit = await fetchAuditInputs(
@@ -378,7 +381,12 @@ async function factsCommand(check: boolean): Promise<void> {
       auditLibrary,
       shadowLibrary,
     }),
-    ...geometryReports(lock.source, auditLibrary, shadowLibrary, palette.studPrimitives),
+    ...geometryReports(
+      lock.source,
+      auditLibrary,
+      shadowLibrary,
+      studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+    ),
     ...trackCatalogReports(auditLibrary, palette),
     ...magnetSeatReports(
       lock,
@@ -577,7 +585,7 @@ async function compileLod(
     "--palette",
     palette,
     "--primitives",
-    join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors),
+    primitiveTablePath,
     "--inferred",
     join(repoRoot, BUNDLE_DATA_FILES.inferredConnectors),
     "--vocabulary",
@@ -702,7 +710,28 @@ async function bundleCommand(): Promise<void> {
   reportLibraryParts(libraryParts);
   const shared = { inputs, crosswalk, coverCache, ldrawParts, categories, libraryParts };
   for (const build of builds) await compileLod(build, shared);
+  if (!(await studAuditCommand(undefined))) {
+    throw new Error("the stud audit found the bundle's studs disagreeing with LDraw");
+  }
   await recordBundleBuild(bundleRoot, buildKey);
+}
+
+const STUD_AUDIT_LOD: BundleLod = "standard";
+
+async function studAuditCommand(out: string | undefined): Promise<boolean> {
+  const report = await auditBundleStuds(
+    join(bundleRoot, STUD_AUDIT_LOD),
+    new LdrawLibrary([ldrawRoot]),
+    studPrimitives(await readPrimitiveTable(primitiveTablePath)),
+  );
+  if (out !== undefined) await writeFile(out, `${JSON.stringify(report, null, 2)}\n`);
+  const summary = summarizeStudAudit(report);
+  if (report.issues.length > 0) {
+    process.stderr.write(summary);
+    return false;
+  }
+  process.stdout.write(summary);
+  return true;
 }
 
 const partBundleStorePath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
@@ -859,6 +888,12 @@ switch (command) {
   case "facts":
     await factsCommand(process.argv.includes("--check"));
     break;
+  case "stud-audit": {
+    const outIndex = process.argv.indexOf("--out");
+    const out = outIndex > 0 ? process.argv[outIndex + 1] : undefined;
+    if (!(await studAuditCommand(out))) process.exitCode = 1;
+    break;
+  }
   case "section-vocabulary":
     await sectionVocabularyCommand(process.argv.includes("--check"));
     break;
@@ -885,7 +920,7 @@ switch (command) {
     break;
   default:
     process.stderr.write(
-      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
+      "usage: cli.ts fetch|restore|attribution|verify|bundle|facts|colors [--check]|stud-audit [--out <file>]|manifest-file|served|published|upload|await-served|bom-check <dir> --out <file>\n",
     );
     process.exitCode = 2;
 }

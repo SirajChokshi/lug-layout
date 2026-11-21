@@ -1,4 +1,5 @@
 import type { ConsistHandle, TrackChange, TrackPieceAt } from "@brr/domain";
+import { STUD_LDU } from "@brr/math";
 import type { WorldBox } from "@brr/render";
 import { latticeCentre, unionBox, type LatticePoint } from "./group-transform.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
@@ -6,8 +7,6 @@ import type { PlacedModel } from "./placed-chunks.ts";
 export interface ModelSelectionView {
   readonly kind: "model";
   readonly item: string;
-  readonly x: number;
-  readonly z: number;
   readonly yPlates: number;
   readonly rot: number;
   readonly box: WorldBox;
@@ -45,6 +44,7 @@ export interface SelectionView {
   readonly box: WorldBox;
   readonly tally: SelectionTally;
   readonly movable: boolean;
+  readonly pivotStuds: { readonly x: number; readonly z: number } | null;
 }
 
 export type SelectionMember =
@@ -62,8 +62,6 @@ function modelView(model: PlacedModel): ModelSelectionView {
   return {
     kind: "model",
     item: model.placeable.id,
-    x: handle.x,
-    z: handle.z,
     yPlates: handle.yPlates,
     rot: handle.rot,
     box: model.box,
@@ -263,12 +261,14 @@ export class Selection {
     const members = itemViewsOf(this.picked, views);
     const primary = members.at(-1);
     if (!primary) return null;
+    const pivot = this.turnPivot(views);
     return {
       primary,
       members,
       box: unionBox(members.map((member) => member.box)),
       tally: tallyOf(this.picked),
       movable: isMovable(this.picked),
+      pivotStuds: pivot && { x: pivot.x / STUD_LDU + 0, z: pivot.z / STUD_LDU + 0 },
     };
   }
 }

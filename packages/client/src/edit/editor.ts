@@ -47,6 +47,7 @@ import {
   STUD_LDU,
   ZETA16_ORDER,
   composePose16,
+  isLatticePose,
   pose16,
   pose16Equals,
   posesJoin16,
@@ -515,7 +516,9 @@ export interface IEditor extends IBomSource, IWorldFiles {
   selectDragMove(ndcX: number, ndcY: number): void;
   selectDragEnd(ndcX: number, ndcY: number, eventTimeMs: number): void;
   cancelGesture(): void;
-  nudgeSelection(dx: number, dz: number, eventTimeMs: number): void;
+  moveSelectionBy(dx: number, dz: number, eventTimeMs: number): void;
+  moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void;
+  turnSelectedModelTo(rot: number, eventTimeMs: number): void;
   copySelection(): void;
   pasteClipboard(): void;
   dragStart(ndcX: number, ndcY: number): boolean;
@@ -2880,27 +2883,35 @@ export class Editor implements IEditor, IEditedWorld {
     this.turnSelection(pivot, direction, eventTimeMs);
   }
 
-  private turnSelection(pivot: LatticePoint, direction: TurnDirection, eventTimeMs: number): void {
+  private turnSelection(pivot: LatticePoint, turns: number, eventTimeMs: number): void {
     const edit = this.groupEdit(this.selection.members, "turn");
     const placement = this.placeGroup(
       edit,
       {
-        modelPoses: edit.models.map((member) => turnedAbout(member.pose, pivot, direction)),
-        piecePoses: edit.pieces.map((piece) => pieceTurnedAbout(piece.pose, pivot, direction)),
+        modelPoses: edit.models.map((member) => turnedAbout(member.pose, pivot, turns)),
+        piecePoses: edit.pieces.map((piece) => pieceTurnedAbout(piece.pose, pivot, turns)),
       },
       false,
     );
-    const refused = this.turnRefused(edit, direction);
+    const refused = this.turnRefused(edit, turns);
     this.commitGroup("rotate", edit, placement, eventTimeMs, refused, pivot);
   }
 
-  private turnRefused(edit: GroupEdit, direction: TurnDirection): string {
+  private turnRefused(edit: GroupEdit, turns: number): string {
     const [only, second] = edit.models;
     const pieces = edit.pieces.length;
     if (only && !second && pieces === 0) {
-      return `Can't turn to ${quarterTurned(only.pose.rot, direction) * DEGREES_PER_QUARTER_TURN}°.`;
+      return `Can't turn to ${quarterTurned(only.pose.rot, turns) * DEGREES_PER_QUARTER_TURN}°.`;
     }
     return !only && pieces === 1 ? PIECE_TURN_REFUSED : GROUP_TURN_REFUSED;
+  }
+
+  turnSelectedModelTo(rot: number, eventTimeMs: number): void {
+    const [only, second] = this.selection.members;
+    const pivot = this.selection.turnPivot(this.views);
+    if (only?.kind !== "model" || second || !pivot || this.state.readOnly || this.gesture) return;
+    const turns = quarterTurned(rot, -only.model.handle.rot);
+    if (turns !== 0) this.turnSelection(pivot, turns, eventTimeMs);
   }
 
   removeTrain(index: number, eventTimeMs: number): void {
@@ -2942,8 +2953,9 @@ export class Editor implements IEditor, IEditedWorld {
     this.select([]);
   }
 
-  nudgeSelection(dx: number, dz: number, eventTimeMs: number): void {
-    if (!this.selection.movable || this.state.readOnly || this.gesture) return;
+  moveSelectionBy(dx: number, dz: number, eventTimeMs: number): void {
+    const pivot = this.selection.turnPivot(this.views);
+    if (!pivot || this.state.readOnly || this.gesture) return;
     const edit = this.groupEdit(this.selection.members, "move");
     const placement = this.placeGroup(
       edit,
@@ -2953,7 +2965,20 @@ export class Editor implements IEditor, IEditedWorld {
       },
       false,
     );
-    this.commitGroup("move", edit, placement, eventTimeMs, moveRefused(edit), null);
+    const moved = { x: pivot.x + dx, z: pivot.z + dz };
+    this.commitGroup("move", edit, placement, eventTimeMs, moveRefused(edit), moved);
+  }
+
+  moveSelectionTo(xStuds: number, zStuds: number, eventTimeMs: number): void {
+    const pivot = this.selection.turnPivot(this.views);
+    if (!pivot || !Number.isSafeInteger(xStuds) || !Number.isSafeInteger(zStuds)) return;
+    const dx = nearestStud(xStuds * STUD_LDU - pivot.x);
+    const dz = nearestStud(zStuds * STUD_LDU - pivot.z);
+    const box = unionBox(this.selection.boxes(this.views));
+    const inWorld =
+      isLatticePose(Math.floor(box.minX) + dx, Math.floor(box.minZ) + dz, 0) &&
+      isLatticePose(Math.ceil(box.maxX) + dx, Math.ceil(box.maxZ) + dz, 0);
+    if (inWorld && (dx !== 0 || dz !== 0)) this.moveSelectionBy(dx, dz, eventTimeMs);
   }
 
   copySelection(): void {
@@ -3047,7 +3072,10 @@ export class Editor implements IEditor, IEditedWorld {
     const placement = this.groundHit(ndcX, ndcY) ? this.aimHeld(gesture) : gesture.placement;
     this.endGesture();
     if (!placement || this.state.readOnly || !this.moves(gesture, placement)) return;
-    this.commitGroup("move", gesture, placement, eventTimeMs, moveRefused(gesture), null);
+    const pivot = this.selection.turnPivot(this.views);
+    const { dx, dz } = this.heldShift(gesture, placement, this.cursorShift(gesture));
+    const moved = pivot && { x: pivot.x + dx, z: pivot.z + dz };
+    this.commitGroup("move", gesture, placement, eventTimeMs, moveRefused(gesture), moved);
   }
 
   cancelGesture(): void {
@@ -3100,9 +3128,12 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
+  private cursorShift(held: HeldGroup): { readonly dx: number; readonly dz: number } {
+    return { dx: nearestStud(this.hitX - held.grabX), dz: nearestStud(this.hitZ - held.grabZ) };
+  }
+
   private aimHeld(held: HeldGroup): GroupPlacement {
-    const dx = nearestStud(this.hitX - held.grabX);
-    const dz = nearestStud(this.hitZ - held.grabZ);
+    const { dx, dz } = this.cursorShift(held);
     const placement = this.placeGroup(
       held,
       {
@@ -3144,25 +3175,28 @@ export class Editor implements IEditor, IEditedWorld {
     return boxes;
   }
 
+  private heldShift(
+    held: HeldGroup,
+    placement: GroupPlacement | null,
+    cursor: { readonly dx: number; readonly dz: number },
+  ): { readonly dx: number; readonly dz: number } {
+    const source = held.frameModel === null ? null : held.models[held.frameModel]?.model;
+    const target = held.frameModel === null ? null : placement?.modelPoses[held.frameModel];
+    if (source && target) return { dx: target.x - source.handle.x, dz: target.z - source.handle.z };
+    return held.kind === "move" ? cursor : NO_OFFSET;
+  }
+
   private heldGroupView(
     held: HeldGroup,
     placement: GroupPlacement | null,
     cursor: { readonly dx: number; readonly dz: number },
   ): GestureView {
-    const source = held.frameModel === null ? null : held.models[held.frameModel]?.model;
-    const target = held.frameModel === null ? null : placement?.modelPoses[held.frameModel];
-    const moved =
-      source && target
-        ? { dx: target.x - source.handle.x, dz: target.z - source.handle.z }
-        : held.kind === "move"
-          ? cursor
-          : NO_OFFSET;
     return {
       kind: held.kind,
       models: held.models.length,
       pieces: held.pieces.length,
       trains: 0,
-      ...moved,
+      ...this.heldShift(held, placement, cursor),
       refusal: placement?.refusal?.reason ?? null,
     };
   }

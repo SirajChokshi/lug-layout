@@ -120,7 +120,7 @@ The app keeps what it reads from the bucket through `ASSET_FETCHER`, and the lib
 
 They go to `.cache/library-bake`. The import will fetch them for pinned parts instead of compiling those parts. Parts outside the pinned library, such as MPD-embedded and Studio custom parts, keep compiling at import.
 
-**Compile options.** The records use the palette's `studPrimitives` and `unofficialAllowlist` and the Technic primitive table `primitive-connectors.json`, the same options the bundle manifest gives the import compiler. The index records all three, so a reader with other options can tell the records don't apply.
+**Compile options.** The records use the stud primitives and Technic primitives of the primitive table `primitive-connectors.json` (its `stud` and `technic` entries) and the palette's `unofficialAllowlist`, the same options the bundle manifest gives the import compiler. The index records all three, so a reader with other options can tell the records don't apply.
 
 **Failures.** A part that doesn't compile, or whose geometry bounds can't be read, is listed under `failed` with the compiler's own message and gets no record or GLB. Bounds fail only the way the part's geometry does: an unresolved reference, or malformed geometry with its findings. They are never defaulted.
 
