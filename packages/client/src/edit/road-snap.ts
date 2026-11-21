@@ -175,7 +175,8 @@ export class RoadIndex {
     );
   }
 
-  private find(key: number): number {
+  private find(bucketX: number, bucketZ: number): number {
+    const key = bucketKey(bucketX, bucketZ);
     let low = 0;
     let high = this.keys.length - 1;
     while (low <= high) {
@@ -189,16 +190,16 @@ export class RoadIndex {
   }
 
   near(minX: number, maxX: number, minZ: number, maxZ: number, out: number[]): number {
-    out.length = 0;
+    let count = 0;
     for (let bx = bucketOf(minX); bx <= bucketOf(maxX); bx++) {
       for (let bz = bucketOf(minZ); bz <= bucketOf(maxZ); bz++) {
-        const bucket = this.find(bucketKey(bx, bz));
+        const bucket = this.find(bx, bz);
         if (bucket < 0) continue;
         const to = this.starts[bucket + 1] ?? 0;
-        for (let m = this.starts[bucket] ?? 0; m < to; m++) out.push(this.members[m] ?? 0);
+        for (let m = this.starts[bucket] ?? 0; m < to; m++) out[count++] = this.members[m] ?? 0;
       }
     }
-    return out.length;
+    return count;
   }
 }
 
@@ -275,15 +276,16 @@ function reachablePlacements(roads: PlacedRoads, reach: CellExtent): number {
     stamp = 0;
   }
   stamp++;
-  reachable.length = 0;
+  let found = 0;
   for (let n = 0; n < count; n++) {
     const p = nearScratch[n] ?? 0;
     const extent = roads.extents[p];
     if (seenStamp[p] === stamp || !extent) continue;
     seenStamp[p] = stamp;
-    if (extentsOverlap(extent, reach.minX, reach.maxX, reach.minZ, reach.maxZ)) reachable.push(p);
+    if (extentsOverlap(extent, reach.minX, reach.maxX, reach.minZ, reach.maxZ))
+      reachable[found++] = p;
   }
-  return reachable.length;
+  return found;
 }
 
 function roadUnder(

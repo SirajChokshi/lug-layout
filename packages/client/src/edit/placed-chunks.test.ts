@@ -305,7 +305,7 @@ it("finds the highest part top over a point, the parts meeting a plan rectangle 
       maxZ: z + span,
     };
     for (const box of [rect, { ...rect, minX: x, maxX: x, minZ: z, maxZ: z }]) {
-      chunks.over(box, found);
+      found.length = chunks.over(box, found);
       const overByScan = models.filter(
         (m) =>
           m.box.minX <= box.maxX &&

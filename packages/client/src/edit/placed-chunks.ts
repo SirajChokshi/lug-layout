@@ -1189,8 +1189,8 @@ export class PlacedChunks {
     }
   }
 
-  over(box: WorldBox, out: PlacedModel[]): void {
-    out.length = 0;
+  over(box: WorldBox, out: PlacedModel[]): number {
+    let count = 0;
     const epoch = ++this.touchEpoch;
     const x1 = chunkOf(box.maxX);
     const z1 = chunkOf(box.maxZ);
@@ -1208,11 +1208,12 @@ export class PlacedChunks {
             other.minZ <= box.maxZ &&
             box.minZ <= other.maxZ
           ) {
-            out.push(entry);
+            out[count++] = entry;
           }
         }
       }
     }
+    return count;
   }
 
   contains(model: PlacedModel): boolean {

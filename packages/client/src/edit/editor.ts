@@ -170,6 +170,7 @@ import {
 import type {
   JoinEndView,
   RaisedPiece,
+  SolidRects,
   TrackBlockView,
   TrackDrawing,
   TrackRouteView,
@@ -793,6 +794,14 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
 }
 const REFUSED_SEAT_LIFT_LDU = BRICK_LDU;
 const NO_HELD_TRACK: ReadonlyArray<FramedTrackPiece> = [];
+
+interface SolidProbe {
+  placeable: Placeable | null;
+  x: number;
+  z: number;
+  rot: number;
+  yPlates: number;
+}
 const HANDLE_TOLERANCE_PX = 8;
 
 interface ModelMember {
@@ -1387,6 +1396,22 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly nearModels: PlacedModel[] = [];
   private readonly restingModels: PlacedModel[] = [];
   private readonly restingTop = new Float64Array(1);
+  private readonly solidProbe: SolidProbe = { placeable: null, x: 0, z: 0, rot: 0, yPlates: 0 };
+  private readonly solidSpan: [number, number] = [0, 0];
+  private readonly solidHit = { rects: new Float64Array(0), floats: 0 };
+  private readonly solidRectsIn: SolidRects = (bottomLdu, topLdu) => {
+    const { placeable, x, z, rot, yPlates } = this.solidProbe;
+    const hit = this.solidHit;
+    if (!placeable) {
+      hit.floats = 0;
+      return hit;
+    }
+    this.solidSpan[0] = bottomLdu;
+    this.solidSpan[1] = topLdu;
+    hit.floats = this.solidRectsAt(placeable, x, z, rot, yPlates, this.solidSpan);
+    hit.rects = this.solidRects;
+    return hit;
+  };
   private readonly roadProbeScratch: ProbedRoad = {
     id: -1,
     x: 0,
@@ -1970,16 +1995,15 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly roadNeighbourhood: RoadNeighbourhood = {
     near: (area, roadModels, otherModels) => {
       const models = this.nearModels;
-      this.placed.over(area, models);
+      const count = this.placed.over(area, models);
       roadModels.length = 0;
       otherModels.length = 0;
-      for (let m = 0; m < models.length; m++) {
+      for (let m = 0; m < count; m++) {
         const model = models[m];
         if (!model) continue;
         if (model.placeable.road === null) otherModels.push(model);
         else roadModels.push(model);
       }
-      models.length = 0;
     },
   };
 
@@ -2822,11 +2846,10 @@ export class Editor implements IEditor, IEditedWorld {
     point.minZ = z;
     point.maxZ = z;
     const models = this.restingModels;
-    this.placed.over(point, models);
+    const count = this.placed.over(point, models);
     const highest = this.restingTop;
     highest[0] = Number.NEGATIVE_INFINITY;
-    for (let m = 0; m < models.length; m++) models[m]?.raiseToTopOver(x, z, highest);
-    models.length = 0;
+    for (let m = 0; m < count; m++) models[m]?.raiseToTopOver(x, z, highest);
     const top = highest[0] ?? Number.NEGATIVE_INFINITY;
     if (!Number.isFinite(top)) return RESTS_ON_TABLE_Y_PLATES;
     return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
@@ -3280,11 +3303,13 @@ export class Editor implements IEditor, IEditedWorld {
       return null;
     }
     this.trackWorld.ensureObstacles();
-    const rectsIn = (bottomLdu: number, topLdu: number) => {
-      const floats = this.solidRectsAt(placeable, x, z, rot, yPlates, [bottomLdu, topLdu]);
-      return { rects: this.solidRects, floats };
-    };
-    return drawing.modelBlocker(rectsIn, pieces, skip.moving, skip.owners);
+    const probe = this.solidProbe;
+    probe.placeable = placeable;
+    probe.x = x;
+    probe.z = z;
+    probe.rot = rot;
+    probe.yPlates = yPlates;
+    return drawing.modelBlocker(this.solidRectsIn, pieces, skip.moving, skip.owners);
   }
 
   private trackSkip(

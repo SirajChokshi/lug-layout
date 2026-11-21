@@ -16,6 +16,7 @@ import { PerformanceObserver, performance } from "node:perf_hooks";
 import { getHeapSpaceStatistics } from "node:v8";
 import { mainThreadModules } from "../src/client.module.ts";
 import { EDITOR } from "../src/tokens.ts";
+import { TRACK_ITEM_ID } from "../src/edit/track-edit-session.ts";
 import { MAX_FILL_TILES } from "../src/edit/fill-tool.ts";
 import type { IEditor } from "../src/edit/editor.ts";
 
@@ -33,12 +34,14 @@ const GATE_WARMUP = 400;
 const GATE_MOVES = 100;
 const GATE_WINDOWS = 3;
 const SAMPLING_BYTES = 64;
+const COVERAGE_MOVES = 20;
 const PER_TILE_CHECK = "checkPlacement";
-const ROAD_AND_TRACK_CHECKS: ReadonlyArray<string> = [
-  "restingYPlatesAt",
-  "roadOverlap",
-  "modelTrackBlock",
-];
+const GATED_CHECKS: ReadonlyArray<string> = ["restingYPlatesAt", "roadOverlap", "modelTrackBlock"];
+const SOLVER = "check";
+const REFUSAL_TEXT: ReadonlyArray<string> = ["refusalText", "refusalHit"];
+const TRACK_DRAWING = "modelBlocker";
+const RECESSED_ITEM = "ldraw:69958@72";
+const TRACK_PIECES_LDU = 4 * 320;
 const WARMUP = 40;
 const NO_LOOK: LookSettings = {
   plastic: false,
@@ -327,112 +330,6 @@ async function fill(
   editor.cancelGesture();
 }
 
-interface ProfileNode {
-  readonly id: number;
-  readonly callFrame: { readonly functionName: string };
-  readonly children: ReadonlyArray<ProfileNode>;
-}
-
-interface Sample {
-  readonly size: number;
-  readonly nodeId: number;
-}
-
-function nodesUnder(
-  node: ProfileNode,
-  frames: ReadonlyArray<string>,
-  inside: boolean,
-  out: Set<number>,
-): void {
-  const within = inside || frames.includes(node.callFrame.functionName);
-  if (within) out.add(node.id);
-  for (const child of node.children) nodesUnder(child, frames, within, out);
-}
-
-function nodesWithin(node: ProfileNode, outer: string, out: Set<number>): void {
-  if (node.callFrame.functionName === outer) {
-    nodesUnder(node, ROAD_AND_TRACK_CHECKS, false, out);
-    return;
-  }
-  for (const child of node.children) nodesWithin(child, outer, out);
-}
-
-interface Gate {
-  readonly name: string;
-  readonly gated: number;
-  readonly checks: number;
-  readonly wholeMove: number;
-}
-const gates: Gate[] = [];
-
-const editorMethods: object = Object.getPrototypeOf(editor);
-for (const frame of [PER_TILE_CHECK, ...ROAD_AND_TRACK_CHECKS]) {
-  if (typeof Reflect.get(editorMethods, frame) !== "function") {
-    throw new Error(`the allocation gate watches ${frame}, which the editor no longer has`);
-  }
-}
-
-async function sampledWindow(name: string, flip: (i: number) => void): Promise<Gate> {
-  const session = new Session();
-  session.connect();
-  await session.post("HeapProfiler.enable");
-  await session.post("HeapProfiler.startSampling", {
-    samplingInterval: SAMPLING_BYTES,
-    includeObjectsCollectedByMajorGC: true,
-    includeObjectsCollectedByMinorGC: true,
-  });
-  for (let i = 0; i < GATE_MOVES; i++) flip(i);
-  const stopped: unknown = await session.post("HeapProfiler.stopSampling");
-  const { profile } = stopped as {
-    readonly profile: { readonly head: ProfileNode; readonly samples: ReadonlyArray<Sample> };
-  };
-  session.disconnect();
-  const gatedNodes = new Set<number>();
-  nodesWithin(profile.head, PER_TILE_CHECK, gatedNodes);
-  const checkNodes = new Set<number>();
-  nodesUnder(profile.head, [PER_TILE_CHECK], false, checkNodes);
-  let gated = 0;
-  let checks = 0;
-  let whole = 0;
-  for (const sample of profile.samples) {
-    whole += sample.size;
-    if (gatedNodes.has(sample.nodeId)) gated += sample.size;
-    if (checkNodes.has(sample.nodeId)) checks += sample.size;
-  }
-  return {
-    name,
-    gated: gated / GATE_MOVES,
-    checks: checks / GATE_MOVES,
-    wholeMove: whole / GATE_MOVES,
-  };
-}
-
-async function sampledFillBytes(
-  name: string,
-  side: number,
-  pressX: number,
-  pressZ: number,
-): Promise<Gate> {
-  await hold(ITEM);
-  const reach = grid * STUD_LDU * side - STUD_LDU;
-  move(pressX, pressZ);
-  editor.dragStart(0, 0);
-  const flip = (i: number) => {
-    const sign = i % 2 === 0 ? 1 : -1;
-    move(pressX + sign * reach, pressZ + sign * reach);
-    editor.dragMove(0, 0);
-  };
-  for (let i = 0; i < GATE_WARMUP; i++) flip(i);
-  let cleanest: Gate | null = null;
-  for (let window = 0; window < GATE_WINDOWS; window++) {
-    const sampled = await sampledWindow(name, flip);
-    if (!cleanest || sampled.gated < cleanest.gated) cleanest = sampled;
-  }
-  editor.cancelGesture();
-  if (!cleanest) throw new Error(`${name}: no window was sampled`);
-  return cleanest;
-}
-
 const fieldCorner = { x: minX - TILE / 2 + half * TILE, z: minZ - TILE / 2 + half * TILE };
 await fill(
   "fill preview: 4 x 4 road plates inside the field (16 tiles)",
@@ -455,32 +352,6 @@ await fill(
   minZ - TILE / 2 + half * TILE,
   60,
 );
-
-const accepted = await sampledFillBytes(
-  "fill move: 8 x 8 road plates on empty ground",
-  8,
-  minX - TILE / 2 - 9 * TILE,
-  minZ - TILE / 2 + half * TILE,
-);
-const refusedTiles = await sampledFillBytes(
-  "fill move: 4 x 4 road plates inside the field, every tile refused",
-  4,
-  fieldCorner.x,
-  fieldCorner.z,
-);
-if (refusedTiles.checks === 0) {
-  throw new Error(
-    `the heap profile never showed allocations under ${PER_TILE_CHECK} for refused tiles, which name what they hit; the gate would pass without watching it`,
-  );
-}
-gates.push(accepted, refusedTiles);
-for (const gate of gates) {
-  if (gate.gated > 0) {
-    throw new Error(
-      `${gate.name}: the per-tile road and track checks allocate ${gate.gated} bytes per move; the gate is 0`,
-    );
-  }
-}
 
 async function groupMove(
   name: string,
@@ -557,6 +428,180 @@ await time(
 );
 editor.cancelGesture();
 
+interface ProfileNode {
+  readonly id: number;
+  readonly callFrame: { readonly functionName: string };
+  readonly children: ReadonlyArray<ProfileNode>;
+}
+
+interface HeapSample {
+  readonly size: number;
+  readonly nodeId: number;
+}
+
+interface Coverage {
+  readonly result: ReadonlyArray<{
+    readonly functions: ReadonlyArray<{
+      readonly functionName: string;
+      readonly ranges: ReadonlyArray<{ readonly count: number }>;
+    }>;
+  }>;
+}
+
+type Charge = "outside" | "gated" | "solver" | "refusal" | "track";
+
+function charges(node: ProfileNode, charge: Charge, out: Map<number, Charge>): void {
+  const name = node.callFrame.functionName;
+  let here = charge;
+  if (charge === "outside" && name === PER_TILE_CHECK) here = "gated";
+  else if (charge === "gated" && name === SOLVER) here = "solver";
+  else if (charge === "gated" && REFUSAL_TEXT.includes(name)) here = "refusal";
+  else if (charge === "gated" && name === TRACK_DRAWING) here = "track";
+  out.set(node.id, here);
+  for (const child of node.children) charges(child, here, out);
+}
+
+interface Gate {
+  readonly name: string;
+  readonly gated: number;
+  readonly solver: number;
+  readonly refusal: number;
+  readonly track: number;
+  readonly wholeMove: number;
+}
+const gates: Gate[] = [];
+
+const editorMethods: object = Object.getPrototypeOf(editor);
+for (const frame of [PER_TILE_CHECK, ...GATED_CHECKS]) {
+  if (typeof Reflect.get(editorMethods, frame) !== "function") {
+    throw new Error(`the allocation gate watches ${frame}, which the editor no longer has`);
+  }
+}
+
+async function sampledWindow(name: string, flip: (i: number) => void): Promise<Gate> {
+  const session = new Session();
+  session.connect();
+  await session.post("HeapProfiler.enable");
+  await session.post("HeapProfiler.startSampling", {
+    samplingInterval: SAMPLING_BYTES,
+    includeObjectsCollectedByMajorGC: true,
+    includeObjectsCollectedByMinorGC: true,
+  });
+  for (let i = 0; i < GATE_MOVES; i++) flip(i);
+  const heap: unknown = await session.post("HeapProfiler.stopSampling");
+  session.disconnect();
+  const { profile } = heap as {
+    readonly profile: { readonly head: ProfileNode; readonly samples: ReadonlyArray<HeapSample> };
+  };
+  const charged = new Map<number, Charge>();
+  charges(profile.head, "outside", charged);
+  const bytes: Record<Charge, number> = { outside: 0, gated: 0, solver: 0, refusal: 0, track: 0 };
+  for (const sample of profile.samples) {
+    bytes[charged.get(sample.nodeId) ?? "outside"] += sample.size;
+  }
+  let whole = 0;
+  for (const charge of Object.values(bytes)) whole += charge;
+  return {
+    name,
+    gated: bytes.gated / GATE_MOVES,
+    solver: bytes.solver / GATE_MOVES,
+    refusal: bytes.refusal / GATE_MOVES,
+    track: bytes.track / GATE_MOVES,
+    wholeMove: whole / GATE_MOVES,
+  };
+}
+
+async function calledIn(flip: (i: number) => void): Promise<ReadonlySet<string>> {
+  const session = new Session();
+  session.connect();
+  await session.post("Profiler.enable");
+  await session.post("Profiler.startPreciseCoverage", { callCount: true, detailed: false });
+  for (let i = 0; i < COVERAGE_MOVES; i++) flip(i);
+  const taken: unknown = await session.post("Profiler.takePreciseCoverage");
+  await session.post("Profiler.stopPreciseCoverage");
+  session.disconnect();
+  const called = new Set<string>();
+  for (const script of (taken as Coverage).result) {
+    for (const fn of script.functions) {
+      if ((fn.ranges[0]?.count ?? 0) > 0) called.add(fn.functionName);
+    }
+  }
+  return called;
+}
+
+async function gatedFill(
+  name: string,
+  item: string,
+  side: number,
+  pressX: number,
+  pressZ: number,
+  mustRun: ReadonlyArray<string>,
+): Promise<void> {
+  await hold(item);
+  const reach = grid * STUD_LDU * side - STUD_LDU;
+  move(pressX, pressZ);
+  editor.dragStart(0, 0);
+  const flip = (i: number) => {
+    const sign = i % 2 === 0 ? 1 : -1;
+    move(pressX + sign * reach, pressZ + sign * reach);
+    editor.dragMove(0, 0);
+  };
+  for (let i = 0; i < GATE_WARMUP; i++) flip(i);
+  let cleanest: Gate | null = null;
+  for (let window = 0; window < GATE_WINDOWS; window++) {
+    const sampled = await sampledWindow(name, flip);
+    if (!cleanest || sampled.gated < cleanest.gated) cleanest = sampled;
+  }
+  const ran = await calledIn(flip);
+  editor.cancelGesture();
+  if (!cleanest) throw new Error(`${name}: no window was sampled`);
+  const missing = [PER_TILE_CHECK, ...GATED_CHECKS, ...mustRun].filter((frame) => !ran.has(frame));
+  if (missing.length > 0) {
+    throw new Error(`${name}: ${missing.join(", ")} never ran, so the gate wouldn't watch them`);
+  }
+  if (cleanest.gated > 0) {
+    throw new Error(
+      `${name}: the per-tile checks outside the solver, refusal text and track drawing allocate ${cleanest.gated} bytes per move; the gate is 0`,
+    );
+  }
+  gates.push(cleanest);
+}
+
+await gatedFill(
+  "fill move: 8 x 8 road plates on empty ground",
+  ITEM,
+  8,
+  minX - TILE / 2 - 9 * TILE,
+  minZ - TILE / 2 + half * TILE,
+  [],
+);
+await gatedFill(
+  "fill move: 4 x 4 69958 plates onto the road field, road at another top",
+  RECESSED_ITEM,
+  4,
+  fieldCorner.x,
+  fieldCorner.z,
+  ["roadUnder"],
+);
+editor.chooseItem(TRACK_ITEM_ID);
+const trackZ = minZ - 12 * TILE;
+backend.aim(minX, trackZ);
+editor.pointerMove(0, 0);
+editor.dragStart(0, 0);
+backend.aim(minX + TRACK_PIECES_LDU, trackZ);
+editor.pointerMove(0, 0);
+editor.dragMove(0, 0);
+editor.dragEnd(0, 0, 0);
+if ((editor.snapshot().track?.pieces ?? 0) === 0) throw new Error("no track was laid");
+await gatedFill(
+  "fill move: 8 x 8 road plates on empty ground, with track laid",
+  ITEM,
+  8,
+  minX - TILE / 2 - 9 * TILE,
+  minZ - TILE / 2 + half * TILE,
+  [TRACK_DRAWING],
+);
+
 observer.disconnect();
 process.stdout.write(
   [
@@ -569,13 +614,13 @@ process.stdout.write(
         `| ${r.name} | ${r.calls} | ${r.medianUs.toFixed(0)} | ${r.p95Us.toFixed(0)} | ${r.meanUs.toFixed(0)} | ${Number.isNaN(r.bytesPerCall) ? "NaN" : Math.round(r.bytesPerCall)} | ${r.gcs} | ${r.note} |`,
     ),
     "",
-    `Allocation gate, sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves; the cleanest of ${GATE_WINDOWS} windows, so a deoptimisation inside one window doesn't fail it, while an allocation made on every move shows in all of them. Road and track checks: ${ROAD_AND_TRACK_CHECKS.join(", ")} inside ${PER_TILE_CHECK}, gated at 0. Per-tile checks: everything under ${PER_TILE_CHECK}, the placement solver included.`,
+    `Allocation gate: heap sampled every ${SAMPLING_BYTES} bytes over ${GATE_MOVES} moves after ${GATE_WARMUP} warm-up moves, the cleanest of ${GATE_WINDOWS} windows. Gated at 0: everything allocated under ${PER_TILE_CHECK}, inlined helpers included, except the placement solver (${SOLVER}), refusal text (${REFUSAL_TEXT.join(", ")}) and the track drawing's ${TRACK_DRAWING}, reported beside it. Each row fails if precise coverage over ${COVERAGE_MOVES} further moves shows ${[PER_TILE_CHECK, ...GATED_CHECKS].join(", ")} or its own named functions never called.`,
     "",
-    "| Row | Bytes per move, road and track checks (gate 0) | Bytes per move, per-tile checks | Bytes per move, whole move |",
-    "|---|---:|---:|---:|",
+    "| Row | Gated (0) | Placement solver | Refusal text | Track drawing | Whole move |",
+    "|---|---:|---:|---:|---:|---:|",
     ...gates.map(
       (g) =>
-        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.checks)} | ${Math.round(g.wholeMove)} |`,
+        `| ${g.name} | ${Math.round(g.gated)} | ${Math.round(g.solver)} | ${Math.round(g.refusal)} | ${Math.round(g.track)} | ${Math.round(g.wholeMove)} |`,
     ),
     "",
   ].join("\n"),
