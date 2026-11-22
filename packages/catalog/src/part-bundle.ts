@@ -14,14 +14,19 @@ import {
   type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
+  type LibraryPartsFile,
+  type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
   type ModelVehicle,
   type PartRole,
   type PartRolling,
   type PartTechnic,
+  type PartTopSurface,
+  type PlanOutline,
   type ProducedColors,
   type PrimitiveConnectorTable,
+  type RollingDiagnosticsFile,
   type SectionVocabulary,
   type TrackEnd,
   type Vec3,
@@ -63,6 +68,8 @@ export interface PartShapeAsset {
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
   readonly rolling: PartRolling | null;
+  readonly topSurface: PartTopSurface | null;
+  readonly outline: PlanOutline | null;
 }
 
 export interface PartAsset extends PartShapeAsset {
@@ -117,6 +124,12 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly footing: InstanceFooting;
+}
+
+export interface InstanceFooting {
+  readonly instance: Uint32Array;
+  readonly cell: Uint32Array;
 }
 
 export interface ModelStudCover {
@@ -194,6 +207,7 @@ export interface ImportContext {
   readonly vehicles: CompilerVehicles | null;
   readonly libraryBake: LibraryBakeIndexRef | null;
   readonly libraryConnectors: LibraryConnectorsIndexRef | null;
+  readonly shadowLibrary: ShadowLibraryIndexRef | null;
 }
 
 export interface CompiledPartGlb {
@@ -250,6 +264,8 @@ export interface IPartBundleLoader {
   ): Promise<PartBundle>;
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null>;
 }
 
 export interface IAssetFetcher {

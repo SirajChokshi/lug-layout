@@ -104,6 +104,7 @@ async function compileAll(lod: CompileLod, records: boolean): Promise<CompileOut
       sectionVocabulary: { sizes: vocabulary.sizes, lengths: vocabulary.lengths },
       cavityProbe: manifest.compiler.cavityProbe,
       infer: [],
+      shadowPatchManifest: null,
     },
     parts: PARTS,
     model: "",

@@ -3,7 +3,8 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, "siraj/queue-tail-*"]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
@@ -41,18 +42,12 @@ jobs:
           targets: wasm32-wasip1
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm install --frozen-lockfile --filter "@brr/asset-pipeline..."
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
+        uses: ./.github/actions/ldraw-inputs
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
         run: pnpm --filter @brr/asset-pipeline build
       - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
@@ -78,22 +73,19 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.100.0
           components: clippy, rustfmt
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.17.2
           terraform_wrapper: false
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pnpm-install
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
@@ -106,16 +98,7 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm lint
       - run: pnpm lint:boundaries
       - run: pnpm lint:rust
@@ -126,6 +109,7 @@ jobs:
       - run: pnpm --filter @brr/asset-pipeline verify-ldraw
       - run: pnpm --filter @brr/asset-pipeline facts --check
       - run: pnpm --filter @brr/asset-pipeline section-vocabulary --check
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run typecheck build
       - run: cargo build --release -p brick-compile-cli --bin library-connectors
       - run: pnpm turbo run test --concurrency=1
@@ -140,12 +124,7 @@ jobs:
         shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pnpm-install
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
@@ -158,17 +137,39 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
+      - uses: ./.github/actions/ldraw-inputs
+      - id: bake-subset
+        uses: actions/cache/restore@v4
         with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+          path: .cache/library-bake
+          key: library-bake-subset-v1-${{ hashFiles('tools/asset-pipeline/library-bake.json') }}-${{ hashFiles('tools/e2e/tests/**', 'tools/e2e/playwright.config.ts', 'packages/test-fixtures/**', 'packages/import/test-data/**', 'packages/import/src/**', 'tools/asset-pipeline/palette.json', 'tools/asset-pipeline/fixture-models.json') }}-${{ matrix.shard }}-of-${{ strategy.job-total }}
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.100.0
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - if: ${{ steps.bake-subset.outputs.cache-hit != 'true' }}
+        name: Build the whole library bake, since no subset is cached for this pin, fixture set and shard
+        run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - run: pnpm --filter @brr/asset-pipeline shadow-library --check
       - run: pnpm turbo run e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        env:
+          LIBRARY_BAKE_REQUEST_LOG: ${{ runner.temp }}/library-bake-requests.txt
+      - if: ${{ github.event_name != 'pull_request' && steps.bake-subset.outputs.cache-hit != 'true' }}
+        name: Keep only the library bake files this shard's e2e asked for
+        run: |
+          sort -u "$RUNNER_TEMP/library-bake-requests.txt" > "$RUNNER_TEMP/library-bake-kept.txt"
+          before=$(find .cache/library-bake -type f | wc -l)
+          (cd .cache/library-bake && find . -type f -printf '%P\n' | grep -vxFf "$RUNNER_TEMP/library-bake-kept.txt" | xargs -r rm -f)
+          echo "library bake subset: kept $(find .cache/library-bake -type f | wc -l) of ${before} files, $(du -sh .cache/library-bake | cut -f1)"
+      - if: ${{ github.event_name != 'pull_request' && steps.bake-subset.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/library-bake
+          key: ${{ steps.bake-subset.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -183,22 +184,26 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.100.0
       - uses: Swatinem/rust-cache@v2
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - uses: ./.github/actions/pnpm-install
+      - id: catalog-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/catalog
           key: library-connector-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-connector-inputs-
       - run: pnpm --filter @brr/asset-pipeline ldraw-library shadow-patches --check
       - run: pnpm --filter @brr/asset-pipeline library-connectors --check
+      - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/catalog
+          key: ${{ steps.catalog-cache.outputs.cache-primary-key }}
 
   import-bundle-models:
     needs: bundle
@@ -206,12 +211,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/pnpm-install
       - id: bundle-cache
         uses: actions/cache/restore@v4
         with:
@@ -224,45 +224,64 @@ jobs:
         with:
           name: part-bundle
           path: tools/asset-pipeline
-      - uses: actions/cache@v4
-        with:
-          path: |
-            .cache/ldraw
-            .cache/ldraw-audit
-            .cache/ldcad-shadow
-            .cache/omr
-            .cache/catalog
-          key: ldraw-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json', 'tools/asset-pipeline/palette.json') }}
-      - run: pnpm --filter @brr/asset-pipeline restore-ldraw
+      - uses: ./.github/actions/ldraw-inputs
       - run: pnpm turbo run build --filter=@brr/asset-pipeline
       - run: pnpm --filter @brr/import test:bundle-models
 
   library-bake:
+    needs: bundle
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.100.0
           targets: wasm32-wasip1
       - uses: Swatinem/rust-cache@v2
-      - run: pnpm install --frozen-lockfile
-      - uses: actions/cache@v4
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - uses: ./.github/actions/pnpm-install
+      - id: catalog-cache
+        uses: actions/cache/restore@v4
         with:
           path: .cache/catalog
           key: library-bake-inputs-${{ hashFiles('tools/asset-pipeline/ldraw.lock.json') }}
+          restore-keys: library-bake-inputs-
       - name: Recompute every pinned part's bake record and standard GLB and check them against the pin
         run: pnpm --filter @brr/asset-pipeline library-bake --check
+      - if: ${{ github.event_name != 'pull_request' && steps.catalog-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/catalog
+          key: ${{ steps.catalog-cache.outputs.cache-primary-key }}
       - name: Build the shipped WASM compiler
         run: cargo build --release --target wasm32-wasip1 -p brick-compile-wasm
       - name: Compile every pinned part in the shipped WASM compiler and compare bytes
         run: pnpm --filter @brr/e2e library-bake-parity
+      - id: bundle-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            tools/asset-pipeline/dist/bundle
+            tools/asset-pipeline/fixture-bundle
+          key: ${{ needs.bundle.outputs.key }}
+      - if: ${{ steps.bundle-cache.outputs.cache-hit != 'true' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: part-bundle
+          path: tools/asset-pipeline
+      - uses: ./.github/actions/ldraw-inputs
+      - name: Drive the editor against the library bake just built
+        run: pnpm turbo run e2e:library-bake
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: e2e-library-bake-report
+          path: |
+            tools/e2e/playwright-report
+            tools/e2e/test-results
+          retention-days: 7
 
   check:
     if: ${{ always() }}

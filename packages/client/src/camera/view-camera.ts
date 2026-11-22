@@ -66,6 +66,11 @@ class Pose {
   }
 }
 
+export interface GroundDirection {
+  readonly x: number;
+  readonly z: number;
+}
+
 export class ViewCamera {
   private readonly tanHalfFov: number;
   private readonly pose = new Pose();
@@ -136,6 +141,10 @@ export class ViewCamera {
     return this.pose.distance * this.tanHalfFov;
   }
 
+  planLduPerPx(): number | null {
+    return this.orthographic ? (2 * this.halfHeight) / this.heightPx : null;
+  }
+
   orbit(dxPx: number, dyPx: number): void {
     if (this.mode === "plan") return;
     this.settle();
@@ -171,6 +180,12 @@ export class ViewCamera {
     const cosYaw = Math.cos(this.pose.yaw);
     this.pose.targetX += sinYaw * dxPx * lduPerPx + cosYaw * dyPx * along;
     this.pose.targetZ += -cosYaw * dxPx * lduPerPx + sinYaw * dyPx * along;
+  }
+
+  groundDirection(rightPx: number, downPx: number): GroundDirection {
+    const sinYaw = Math.sin(this.pose.yaw);
+    const cosYaw = Math.cos(this.pose.yaw);
+    return { x: sinYaw * rightPx + cosYaw * downPx, z: -cosYaw * rightPx + sinYaw * downPx };
   }
 
   zoomAt(ndcX: number, ndcY: number, logScale: number): void {

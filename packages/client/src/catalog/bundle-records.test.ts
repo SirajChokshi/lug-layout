@@ -7,11 +7,19 @@ import {
 } from "@brr/catalog";
 import { parseGlb, readPartMesh } from "@brr/catalog/glb";
 import { headingFootprints, planHull, verticalRange } from "@brr/domain";
-import { ModelFile, PartShape, type BundleManifest, type ManifestPart } from "@brr/schema/bundle";
+import { pieceFrameOutline } from "@brr/domain/piece-outline";
+import {
+  ModelFile,
+  PartShape,
+  PlanOutlinesFile,
+  type BundleManifest,
+  type ManifestPart,
+} from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
+import outlinesJson from "../../../../docs/verified-facts/plan-outlines.json" with { type: "json" };
 import { mainThreadModules } from "../client.module.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -29,6 +37,11 @@ class BundleDirectoryFetcher implements IAssetFetcher {
 }
 
 const fetcher = new BundleDirectoryFetcher();
+const outlines = new Map(
+  decodedOrThrow(decode(PlanOutlinesFile, outlinesJson), "plan-outlines.json").outlines.map(
+    (outline) => [outline.part, outline.rings],
+  ),
+);
 const manifests = new Map<string, BundleManifest>();
 let loader: IPartBundleLoader;
 
@@ -64,6 +77,8 @@ async function shapeInBundle(lod: string, part: ManifestPart): Promise<PartShape
     ...(part.trackEnds ? { trackEnds: part.trackEnds } : {}),
     ...(glb.document.extras.technic ? { technic: glb.document.extras.technic } : {}),
     ...(glb.document.extras.rolling ? { rolling: glb.document.extras.rolling } : {}),
+    ...(glb.document.extras.topSurface ? { topSurface: glb.document.extras.topSurface } : {}),
+    ...(outlines.has(part.id) ? { outline: outlines.get(part.id) } : {}),
   };
 }
 
@@ -102,12 +117,19 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     throw new Error(`no model in the ${lod} bundle places a part with a rolling surface`);
   });
 
-  it("give every ground, road and track part a shape file of its own", async () => {
+  it("give every ground, road, track and ramp part a shape file of its own", async () => {
     const manifest = manifestOf(lod);
+    const ramps = new Set(manifest.levelCrossing.ramps.map((ramp) => ramp.part));
     const ids = manifest.catalogParts.map((part) => part.id).toSorted();
     expect(ids).toEqual(
       manifest.parts
-        .filter((part) => part.role === "ground" || part.role === "road" || part.role === "track")
+        .filter(
+          (part) =>
+            part.role === "ground" ||
+            part.role === "road" ||
+            part.role === "track" ||
+            ramps.has(part.id),
+        )
         .map((part) => part.id)
         .toSorted(),
     );
@@ -120,7 +142,7 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
     }
   });
 
-  it("hold each track piece's footprints at all 16 headings, its plan hull and its height range, as its mesh gives them", async () => {
+  it("hold each track piece's footprints at all 16 headings, its plan hull, its height range and its exact outline in its own frame", async () => {
     const manifest = manifestOf(lod);
     const parts = new Map(manifest.parts.map((part) => [part.id, part]));
     expect(manifest.trackShapes.map((shape) => shape.piece)).toEqual(
@@ -131,12 +153,15 @@ describe.each(BUNDLE_LODS)("the %s bundle's records", (lod) => {
       if (!part) throw new Error(`track piece ${piece.id} has no part`);
       const { positions } = readPartMesh(await glbOf(lod, part), part.file);
       const [minY, maxY] = verticalRange(positions);
+      const outline = outlines.get(piece.part);
+      if (!outline) throw new Error(`track part ${piece.part} has no plan outline`);
       expect(manifest.trackShapes.find((shape) => shape.piece === piece.id)).toEqual({
         piece: piece.id,
         footprints: Array.from(headingFootprints(positions, piece.partFrame.headingHalfSteps)),
         hull: Array.from(planHull(positions, piece.partFrame.headingHalfSteps)),
         minY,
         maxY,
+        outline: pieceFrameOutline(outline, piece.partFrame),
       });
     }
   });

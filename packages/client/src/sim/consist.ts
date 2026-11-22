@@ -1,13 +1,8 @@
 import type { PartModel, PartVehicle } from "@brr/catalog";
 import type { VehicleCoupler } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
-import type {
-  CouplerGeometry,
-  CouplerMount,
-  GuideGeometry,
-  VehicleGeometry,
-  VehicleSpec,
-} from "@brr/sim";
+import type { CouplerGeometry, CouplerMount, GuideGeometry, VehicleGeometry } from "@brr/domain";
+import type { VehicleSpec } from "@brr/sim";
 
 export interface RigidBodyInstances {
   readonly instances: Uint32Array;
@@ -125,7 +120,7 @@ export function vehicleSpec(vehicle: PartVehicle, reversed: boolean): VehicleSpe
 }
 
 function localMatrices(
-  model: PartModel,
+  model: Omit<PartModel, "studCover">,
   instances: Uint32Array,
   vehicle: PartVehicle,
   sign: number,
@@ -160,7 +155,7 @@ function railTopFor(vehicle: PartVehicle, railPart: string): number {
 }
 
 export function consistVehicles(
-  model: PartModel,
+  model: Omit<PartModel, "studCover">,
   name: string,
   reversed: boolean,
   railPart: string,
