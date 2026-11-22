@@ -27,6 +27,7 @@ pub mod rolling;
 pub mod studio;
 pub mod surface;
 pub mod technic;
+pub mod top_surface;
 pub mod trig;
 pub mod vehicle;
 pub mod voxel;
