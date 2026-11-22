@@ -3,8 +3,8 @@ pub const IDENTIFY_LDU: f64 = 0.0005;
 pub const JOIN_REPRESENTATION_EPSILON_LDU: f64 = 1e-6;
 pub const IDENTIFY_REPRESENTATION_GUARD_LDU: f64 = 1e-9;
 
-const IDENTIFY_TEN_THOUSANDTHS: i128 = 5;
-const TEN_THOUSANDTHS_PER_LDU: i128 = 10_000;
+pub const IDENTIFY_TEN_THOUSANDTHS: i128 = 5;
+pub const TEN_THOUSANDTHS_PER_LDU: i128 = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BeyondExactRange;

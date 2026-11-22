@@ -9,9 +9,11 @@ import {
   type IEditor,
   type IEditorCamera,
   type IHotbar,
+  type IOwnedParts,
   type IPalette,
   type IPanelLayout,
   type IPlanService,
+  type IPlanSheetService,
   type IRunningGear,
   type IScaleBar,
   type IStarterWorlds,
@@ -34,7 +36,7 @@ import { PlanScaleBar } from "./plan-scale-bar.tsx";
 import { SceneLabels } from "./scene-labels.tsx";
 import { PlayPanel } from "./play-panel.tsx";
 import { RoadDrawPanel } from "./road-draw-panel.tsx";
-import { TrackExtendPanel } from "./track-panel.tsx";
+import { TrackExtendPanel, TrackHeightPanel } from "./track-panel.tsx";
 import { usePlaySnapshot } from "./use-play.ts";
 import { ShortcutSheet } from "./shortcut-sheet.tsx";
 import { ToolHud } from "./tool-hud.tsx";
@@ -59,7 +61,9 @@ interface EditorAppProps {
   readonly camera: IEditorCamera;
   readonly scaleBar: IScaleBar;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly bomService: IBomService;
+  readonly ownedParts: IOwnedParts;
   readonly play: ITrainPlay;
   readonly palette: IPalette;
   readonly panels: IPanelLayout;
@@ -140,7 +144,9 @@ export function EditorApp({
   camera,
   scaleBar,
   plans,
+  sheets,
   bomService,
+  ownedParts,
   play,
   palette,
   panels,
@@ -229,6 +235,7 @@ export function EditorApp({
           onShellCommand={toggleOverlay}
         />
         <RoadDrawPanel editor={editor} snapshot={snapshot} />
+        <TrackHeightPanel editor={editor} snapshot={snapshot} />
         <TrackExtendPanel editor={editor} snapshot={snapshot} />
         <SelectionPanel
           editor={editor}
@@ -252,13 +259,18 @@ export function EditorApp({
           held={heldItem(snapshot)}
           fillGridStuds={snapshot.fillGridStuds}
           plans={plans}
+          sheets={sheets}
+          ready={snapshot.status === "ready"}
+          readOnly={snapshot.readOnly}
         />
         {snapshot.status === "ready" && (
           <BomPanel
             service={bomService}
+            ownedParts={ownedParts}
             source={editor}
             region={null}
             selectionLabel={selectionLabel(snapshot.selection)}
+            plans={plans}
           />
         )}
         <EditorHud editor={editor} snapshot={snapshot} panels={panels} />
@@ -274,7 +286,7 @@ export function EditorApp({
           editor={editor}
           camera={camera}
           play={play}
-          search={palette.search}
+          search={palette.commandSearch}
           snapshot={snapshot}
           onClose={closeOverlay}
           onShellCommand={toggleOverlay}

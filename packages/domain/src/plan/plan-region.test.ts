@@ -22,6 +22,7 @@ const region: PlanRegion = {
     obstacles: [{ id: "o", name: "O", rect: { x: 1500, z: 1000, width: 200, depth: 200 } }],
   },
   maxOverhangMm: 0,
+  maxReachMm: 700,
 };
 
 it.each<[string, LduRect, LduRect]>([

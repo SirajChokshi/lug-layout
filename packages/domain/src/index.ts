@@ -1,15 +1,20 @@
 export {
   NO_STUD,
+  NO_TOP,
+  PLACEMENT_CELL_INTS,
+  PLACEMENT_JOINED,
+  PLACEMENT_MISMATCHED,
   RoadNetwork,
   placedCells,
+  roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
-  type RoadFit,
   type RoadJoinReport,
   type RoadPlacement,
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+export { RoadFit } from "./road-fit.ts";
 export {
   ARM_BITS,
   armToward,
@@ -104,7 +109,10 @@ export {
   type PathSampler,
   type VehicleGeometry,
 } from "./rail/running-gear.ts";
+export { pierCourses, type PierCourses } from "./track/pier-courses.ts";
+export { rampRises, reachablePlates, runHeights, type RunHeights } from "./track/ramp-heights.ts";
 export {
+  INT8_MAX,
   TrackLayout,
   type TrackEndRef,
   type TrackPieceSpec,
@@ -154,6 +162,7 @@ export {
   BOX_MIN_Y,
   BOX_MIN_Z,
   BOX_STRIDE,
+  bomMappingIssues,
   checkPlan,
   CoverageScratch,
   coverageContext,
@@ -172,6 +181,8 @@ export {
   type PlanCheck,
   type PlanIssue,
   type PlanPlacement,
+  type CarriedTrack,
+  type PlateClearance,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
@@ -189,7 +200,32 @@ export {
   TRACK_SEGMENT,
 } from "./plan/plan-rows.ts";
 export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
-export { PlanEvaluation } from "./plan/plan-evaluation.ts";
+export { PlanEvaluation, type PlateHeights } from "./plan/plan-evaluation.ts";
+export { RECT_FLOATS, type PlanShape } from "./plan/plan-shape.ts";
+export {
+  FACT_CUSTOM_PARTS,
+  FACT_FLAGS,
+  FACT_OVERLAP_SEGMENT,
+  FACT_OVERLAP_SOURCE,
+  FACT_ROAD_JOINED,
+  FACT_ROAD_MISMATCHED,
+  FACT_STRIDE,
+  FACT_UNMAPPED_BRICKLINK,
+  FACT_UNMAPPED_REBRICKABLE,
+  FLAG_UNMEASURED,
+  NO_OVERLAP_PARTNER,
+  clearFacts,
+  emptyFacts,
+  type PlacementFacts,
+} from "./plan/plan-facts.ts";
+export { disksCover } from "./plan/plan-reach.ts";
+export {
+  TRACK_OPEN_END,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
+  TrackIssueRows,
+} from "./plan/track-issue-rows.ts";
 export {
   drawingKit,
   MAX_TURN_CURVES,
@@ -232,8 +268,10 @@ export {
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  boxesOverlap,
   outlineBox,
   outlineContains,
+  outlinesOverlap,
   placedOutline,
   placedOutlineInto,
   rotateOutline,
@@ -254,11 +292,18 @@ export { cellChunkKey } from "./cell-chunk-key.ts";
 export {
   DirtyShards,
   addShards,
+  shardPoses,
   worldPlacements,
   type PlacementTarget,
   type ShardChange,
 } from "./world-shards.ts";
-export { BomCounter, byPartThenColor, type BomLine } from "./bom/bom-counter.ts";
+export {
+  BomCounter,
+  byPartThenColor,
+  PartTally,
+  type BomLine,
+  type PartSink,
+} from "./bom/bom-counter.ts";
 export {
   countPlacements,
   regionHolds,
@@ -267,6 +312,7 @@ export {
 } from "./bom/count-placements.ts";
 export {
   INHERITED_COLOR,
+  catalogOf,
   resolveLines,
   toCatalog,
   type CatalogBom,
@@ -286,6 +332,17 @@ export {
   rebrickableCsv,
   type UncountedItem,
 } from "./bom/export-formats.ts";
+export {
+  ownVsBuy,
+  readOwnedPartsCsv,
+  type OwnBuyLine,
+  type OwnedPart,
+  type OwnedParts,
+  type OwnedPartsRead,
+  type OwnVsBuy,
+  type RejectedRow,
+  type UnknownOwnedPart,
+} from "./bom/owned-parts.ts";
 export {
   AXIS_FREE,
   AXIS_NEG_X,
@@ -398,7 +455,9 @@ export {
   type OutlinePoint,
   type OutlineRing,
 } from "./plan/placed-outline.ts";
+export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
+  RoadSurfaceCells,
   levelCrossings,
   type CrossingTrack,
   type LevelCrossing,

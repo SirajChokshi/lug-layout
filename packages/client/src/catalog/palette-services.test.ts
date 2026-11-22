@@ -1,4 +1,10 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  CATALOG_API_BASE_URL,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+} from "@brr/catalog";
+import { BUNDLE_POINTER_FILE } from "@brr/schema/bundle-pointer";
 import {
   SCENE_BACKEND,
   THUMBNAIL_RENDERER,
@@ -14,10 +20,15 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type IEditor } from "../edit/editor.ts";
+import type { IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
+import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
+import { loadCatalogItem } from "./catalog-item.test-support.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
+  COMMAND_PALETTE_SEARCH,
+  CONNECTOR_TABLES,
   EDITOR,
   HOTBAR,
   LIBRARY_PART_PLACER,
@@ -28,11 +39,13 @@ import {
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
+  PLACEABLE_CATALOG,
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
 import { chosen } from "../edit/editor-choice.test-support.ts";
 import type { IModelImporter } from "../import/worker-model-importer.ts";
+import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
 import type { ImportResult, RollingDiagnosticsRows } from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -63,6 +76,9 @@ const NOT_MADE_IN_WHITE = ["ldraw:3334", "ldraw:3497"];
 const RED = 4;
 const BRICK_2_X_4 = "3001";
 const WORKER_UNREACHABLE = "the import worker is unreachable";
+const PUBLISHED_KEY = "0123456789abcdef";
+const PUBLISHED_MANIFEST = `manifest.${PUBLISHED_KEY}.json`;
+const CATALOG_WORKER = "https://catalog.test";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   readonly paths: string[] = [];
@@ -76,6 +92,13 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   async text(path: string): Promise<string> {
     this.paths.push(path);
     return readFile(new URL(path, bundleRoot), "utf8");
+  }
+}
+
+class PublishedBundleFetcher extends BundleDirectoryFetcher {
+  override async text(path: string): Promise<string> {
+    if (path === BUNDLE_POINTER_FILE) return JSON.stringify({ manifestFile: PUBLISHED_MANIFEST });
+    return super.text(path.replace(PUBLISHED_MANIFEST, "manifest.json"));
   }
 }
 
@@ -190,6 +213,13 @@ function capabilities({ draggable, toggleable, listedUnder }: CatalogItemView) {
   return { draggable, toggleable, listedUnder };
 }
 
+function foundItems(search: ICommandPaletteSearch, query: string): ReadonlyArray<string> {
+  return search
+    .snapshot()
+    .find(query, () => true)
+    .flatMap((result) => (result.kind === "item" ? [result.item.id] : []));
+}
+
 function libraryIds(search: IPaletteSearch): ReadonlyArray<string> {
   return search.snapshot().library?.hits.map((hit) => hit.part.id) ?? [];
 }
@@ -266,17 +296,52 @@ describe("find palette", () => {
       load: () => ({ ...EMPTY_PALETTE_MEMORY, recents: [CROSSROADS, GREEN_BASEPLATE] }),
       save: () => {},
     });
-    const search = container.get(PALETTE_SEARCH);
-    const foundItems = (query: string): ReadonlyArray<string> =>
-      search
-        .snapshot()
-        .find(query, () => true)
-        .flatMap((result) => (result.kind === "item" ? [result.item.id] : []));
+    const search = container.get(COMMAND_PALETTE_SEARCH);
 
-    expect(foundItems("")).toEqual([CROSSROADS, GREEN_BASEPLATE]);
-    expect(foundItems(STRAIGHT_9V)).toContain(TRACK_ITEM_ID);
+    expect(foundItems(search, "")).toEqual([CROSSROADS, GREEN_BASEPLATE]);
+    expect(foundItems(search, STRAIGHT_9V)).toContain(TRACK_ITEM_ID);
     container.get(PALETTE_MEMORY).forgetRecents();
-    expect(foundItems("")).toEqual([]);
+    expect(foundItems(search, "")).toEqual([]);
+  }, 120_000);
+
+  it("asks the catalog Worker for its own query beside the library's, and lists the Worker's hits after its own matches once they arrive", async () => {
+    const asked: Array<string | null> = [];
+    vi.stubGlobal("fetch", async (input: string) => {
+      const url = new URL(input);
+      if (url.origin !== CATALOG_WORKER || url.pathname !== `/v1/bundles/${PUBLISHED_KEY}/search`) {
+        throw new Error(`unexpected request ${input}`);
+      }
+      const query = url.searchParams.get("q");
+      asked.push(query);
+      const results = [
+        {
+          id: GREEN_BASEPLATE,
+          label: "3811",
+          section: "baseplates",
+          kind: "baseplate",
+          file: null,
+        },
+      ];
+      return new Response(JSON.stringify({ manifest: PUBLISHED_KEY, query, results }));
+    });
+    const { container } = await startEditor((loading) => {
+      loading.rebind(ASSET_FETCHER).toConstantValue(new PublishedBundleFetcher());
+      loading.bind(CATALOG_API_BASE_URL).toConstantValue(CATALOG_WORKER);
+    });
+    const library = container.get(PALETTE_SEARCH);
+    const find = container.get(COMMAND_PALETTE_SEARCH);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    library.setQuery(BASEPLATE_32);
+    find.search("crossroads");
+    const local = foundItems(find, "crossroads");
+    await vi.waitFor(() => expect(library.snapshot().status).toBe("ready"));
+    await vi.waitFor(() => expect(foundItems(find, "crossroads")).toContain(GREEN_BASEPLATE));
+
+    expect(asked).toEqual([BASEPLATE_32, "crossroads"]);
+    expect(local).toContain(CROSSROADS);
+    expect(local).not.toContain(GREEN_BASEPLATE);
+    expect(foundItems(find, "crossroads")).toEqual([...local, GREEN_BASEPLATE]);
   }, 120_000);
 });
 
@@ -348,6 +413,40 @@ describe("palette prefetch", () => {
     prefetch.focus("omr:4554-1");
     await vi.waitFor(() => expect(fetcher.paths).toContain(focused));
     expect(fetcher.paths).not.toContain(passed);
+  }, 120_000);
+
+  it("reads a set's connectors while it holds focus, so picking it places it without waiting", async () => {
+    const { container, editor } = await startEditor();
+    const tables = container.get(CONNECTOR_TABLES);
+
+    container.get(PALETTE_PREFETCH).focus(SET);
+    const set = await loadCatalogItem(container.get(PLACEABLE_CATALOG), SET);
+    await vi.waitFor(() => expect(tables.loaded(set)).not.toBeNull(), { timeout: 60_000 });
+    editor.chooseItem(SET);
+
+    expect(heldItem(editor.snapshot())).toEqual({ item: SET, tables: "ready", queued: null });
+  }, 120_000);
+
+  it("asks for the bundle's two connector packs as the editor starts, so picking a set fetches no other connector file", async () => {
+    const connectorFile = /\/(?:connectivity|connectors?)-[^/]+\.json$/u;
+    const { editor, fetcher, manifest } = await startEditor();
+    const { connectorPacks } = manifest;
+    const packs = [connectorPacks?.connectivity.file, connectorPacks?.connectors.file].map(
+      (file) => `standard/${file}`,
+    );
+
+    await vi.waitFor(() => expect(fetcher.paths).toEqual(expect.arrayContaining(packs)), {
+      timeout: 60_000,
+    });
+    await chosen(editor, SET);
+
+    expect({
+      connectorFiles: fetcher.paths.filter((path) => connectorFile.test(path)).toSorted(),
+      held: heldItem(editor.snapshot()),
+    }).toEqual({
+      connectorFiles: packs.toSorted(),
+      held: { item: SET, tables: "ready", queued: null },
+    });
   }, 120_000);
 });
 

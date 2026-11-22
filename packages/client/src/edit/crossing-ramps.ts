@@ -2,15 +2,15 @@ import type { PartShapeAsset } from "@brr/catalog";
 import {
   NO_OBSTACLE,
   OUTLINE_BOX_FLOATS,
+  PlacedOutline,
   convexHull,
-  levelCrossings,
   outlineBox,
+  type RoadSurfaceCells,
   type CrossingTrack,
   type LduRect,
   type LevelCrossing,
   type RampCandidate,
   type RampPart,
-  type RoadPlacement,
   type TrackClearance,
 } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf, rot90Cos, rot90Sin } from "@brr/math";
@@ -21,7 +21,7 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 import type { PlacedTrackPiece } from "./track-drawing.ts";
-import { cellKey, studSeats } from "./track-obstacles.ts";
+import { cellKey, studSeats, type StudSeats } from "./track-obstacles.ts";
 
 export interface SeatedRamp extends RampCandidate {
   readonly studMates: number;
@@ -62,7 +62,7 @@ function planHullOf(outline: RampPart["outline"]): Float64Array {
 }
 
 class LayoutProbe {
-  private readonly seats = new Map<number, ReadonlySet<number>>();
+  private readonly seats = new Map<number, StudSeats>();
   private readonly fields = new Map<string, TrackClearance>();
   private readonly box = new Float64Array(OUTLINE_BOX_FLOATS);
 
@@ -141,12 +141,12 @@ export class CrossingRamps {
   }
 
   suggest(
-    roads: ReadonlyArray<RoadPlacement>,
+    roads: RoadSurfaceCells,
     pieces: ReadonlyArray<PlacedTrackPiece>,
     models: ReadonlyArray<PlacedModel>,
     clearanceIn: ClearanceInBand,
   ): ReadonlyArray<SuggestedCrossing> {
-    if (roads.length === 0 || pieces.length === 0) return [];
+    if (roads.empty || pieces.length === 0) return [];
     const tracks = pieces.map((piece): CrossingTrack => {
       const railTopLdu = this.railTops.get(piece.system);
       if (railTopLdu === undefined) {
@@ -154,8 +154,7 @@ export class CrossingRamps {
       }
       return { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu };
     });
-    const crossings = levelCrossings(
-      roads,
+    const crossings = roads.crossings(
       tracks,
       this.ramps.map((ramp) => ramp.part),
     );
@@ -190,6 +189,20 @@ export class CrossingRamps {
     return best;
   }
 
+  outlines(crossings: ReadonlyArray<SuggestedCrossing>): ReadonlyArray<PlacedOutline> {
+    return crossings.flatMap((crossing) =>
+      crossing.ramps.map((ramp) =>
+        PlacedOutline.onLattice(this.assetOf(ramp.part).part.outline, ramp.x, ramp.z, ramp.rot),
+      ),
+    );
+  }
+
+  private assetOf(part: string): RampAsset {
+    const asset = this.ramps.find((candidate) => candidate.part.facts.part === part);
+    if (!asset) throw new Error(`ramp part ${part} is not in the bundle`);
+    return asset;
+  }
+
   instances(crossings: ReadonlyArray<SuggestedCrossing>): ReadonlyMap<number, ChunkInstances> {
     const byChunk = new Map<number, SeatedRamp[]>();
     for (const ramp of crossings.flatMap((crossing) => crossing.ramps)) {
@@ -212,8 +225,7 @@ export class CrossingRamps {
     const colorIndex = new Uint16Array(count);
     const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
     ramps.forEach((ramp, i) => {
-      const asset = this.ramps.find((candidate) => candidate.part.facts.part === ramp.part);
-      if (!asset) throw new Error(`ramp part ${ramp.part} is not in the bundle`);
+      const asset = this.assetOf(ramp.part);
       partIndex[i] = asset.index;
       colorIndex[i] = asset.color;
       const cos = rot90Cos(ramp.rot);

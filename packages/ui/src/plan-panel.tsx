@@ -2,6 +2,8 @@ import {
   DEFAULT_TABLE_HEIGHT_MM,
   MM_PER_CM,
   MM_PER_STUD,
+  UNCHECKED_PLAN_RULES,
+  buildableAsPlanned,
   cmText,
   lduFromMm,
   studsText,
@@ -9,13 +11,16 @@ import {
   type IEditor,
   type IEditorCamera,
   type IPlanService,
+  type IPlanSheetService,
   type MmRect,
   type PlanIssue,
   type PlanRegion,
+  type PlanRuleId,
   type PlanTable,
   type TableTop,
 } from "@brr/client";
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
+import { downloadBlob } from "./download.ts";
 import { usePlanVersion } from "./use-plan-version.ts";
 
 const DEFAULT_ROOM_MM = { width: 4000, depth: 3000 } as const;
@@ -285,11 +290,35 @@ function RectFields({
   );
 }
 
+interface IssueTally {
+  readonly errors: number;
+  readonly warnings: number;
+}
+
+function tallyOf(issues: ReadonlyArray<PlanIssue>): IssueTally {
+  let warnings = 0;
+  for (const issue of issues) if (issue.severity === "warning") warnings++;
+  return { errors: issues.length - warnings, warnings };
+}
+
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+function tallyText({ errors, warnings }: IssueTally): string {
+  if (warnings === 0) return errors === 0 ? "ok" : counted(errors, "error", "errors");
+  const warned = counted(warnings, "warning", "warnings");
+  return errors === 0 ? warned : `${counted(errors, "error", "errors")}, ${warned}`;
+}
+
+function tallyClass({ errors, warnings }: IssueTally): string {
+  if (errors > 0) return "plan-errors";
+  return warnings > 0 ? "plan-warnings" : "plan-ok";
+}
+
 function planGlance(active: PlanRegion | null, plans: IPlanService): string {
   if (!active) return "No plan yet";
-  const issues = plans.issues(active.id).length;
-  const verdict = issues === 0 ? "no errors" : `${issues} ${issues === 1 ? "error" : "errors"}`;
-  return `${active.name} · ${verdict}`;
+  return `${active.name} · ${verdictText(plans, active.id, tallyOf(plans.issues(active.id)))}`;
 }
 
 function NewPlanForm({
@@ -470,32 +499,125 @@ function ObstaclesEditor({
   );
 }
 
-function IssueList({ issues }: { readonly issues: ReadonlyArray<PlanIssue> }) {
+type CheckedRule = Exclude<PlanRuleId, "unchecked">;
+
+const PLAN_CHECKS = {
+  footprint: "Room, tables and obstacles are well formed",
+  crossesRegion: "Placements stay inside the plan",
+  fit: "Placements stand on the tables, clear of obstacles",
+  unsupported: "Placements are held: on studs or on the table",
+  clearance: "Bridges leave room for the tallest train",
+  seam: "No placement stands across a table seam",
+  reach: "Every part is within reach of a table edge",
+  overlap: "Placements don't overlap",
+  roadJoin: "Roads continue into their neighbours",
+  bomMapping: "Every part has a Rebrickable and BrickLink id",
+  trackOpenEnd: "Every track end joins another",
+  trackJoin: "Track ends that meet join exactly",
+  trackUnverified: "Every track part's connector poses are verified",
+  trackUnidentified: "Every model's track sits on exact track poses",
+  trackOffTable: "Track, laid or a model's own, stands on the tables, by its outline",
+  trackSeam:
+    "No track piece's body, laid or a model's own, spans a table seam; a joint may sit on one",
+} satisfies Record<CheckedRule, string>;
+
+function isCheckedRule(rule: string): rule is CheckedRule {
+  return rule in PLAN_CHECKS;
+}
+
+const CHECKED_RULES: ReadonlyArray<CheckedRule> = Object.keys(PLAN_CHECKS).filter(isCheckedRule);
+
+const NO_ISSUES: IssueTally = { errors: 0, warnings: 0 };
+
+function talliesByRule(issues: ReadonlyArray<PlanIssue>): ReadonlyMap<PlanRuleId, IssueTally> {
+  const byRule = new Map<PlanRuleId, IssueTally>();
+  for (const issue of issues) {
+    const { errors, warnings } = byRule.get(issue.rule) ?? NO_ISSUES;
+    const warning = issue.severity === "warning" ? 1 : 0;
+    byRule.set(issue.rule, { errors: errors + 1 - warning, warnings: warnings + warning });
+  }
+  return byRule;
+}
+
+function verdictText(plans: IPlanService, planId: string, tally: IssueTally): string {
+  if (buildableAsPlanned(plans, planId)) return "Buildable as planned";
+  if (tally.errors + tally.warnings === 0) return "No errors in the checks so far";
+  return tallyText(tally);
+}
+
+function PlanChecks({ plans, planId }: { readonly plans: IPlanService; readonly planId: string }) {
+  const issues = plans.issues(planId);
+  const tally = tallyOf(issues);
+  const unmeasured = plans.unmeasuredCount(planId);
+  const customParts = plans.customParts(planId);
+  const byRule = talliesByRule(issues);
   return (
     <section className="plan-section" aria-label="Plan issues">
       <h3>
         Plan rules:{" "}
         <span
-          className={issues.length === 0 ? "plan-ok" : "plan-errors"}
-          data-plan-errors={issues.length}
+          className={tallyClass(tally)}
+          data-plan-errors={tally.errors}
+          data-plan-warnings={tally.warnings}
         >
-          {issues.length === 0
-            ? "no errors"
-            : `${issues.length} ${issues.length === 1 ? "error" : "errors"}`}
+          {verdictText(plans, planId, tally)}
         </span>
       </h3>
-      <p className="plan-meta">
-        Checked: footprint, fits the tables, inside the plan. Not checked yet: reach, seams,
-        complete BOM, so "Buildable as planned" is not shown.
+      <ul className="plan-checks">
+        {CHECKED_RULES.map((rule) => {
+          const counts = byRule.get(rule) ?? NO_ISSUES;
+          return (
+            <li
+              key={rule}
+              data-check={rule}
+              data-check-errors={counts.errors}
+              data-check-warnings={counts.warnings}
+            >
+              <span className={tallyClass(counts)}>{tallyText(counts)}</span> {PLAN_CHECKS[rule]}
+            </li>
+          );
+        })}
+        <li className="plan-note" data-custom-parts={customParts}>
+          {customParts} custom {customParts === 1 ? "part isn't" : "parts aren't"} buyable; that's
+          not an error
+        </li>
+      </ul>
+      <p className="plan-meta" data-joined-road-cells={plans.joinedRoadCells(planId)}>
+        {plans.joinedRoadCells(planId)} road edge cells join their neighbours.
       </p>
+      {unmeasured > 0 && (
+        <p className="plan-errors" data-unmeasured={unmeasured}>
+          {unmeasured} {unmeasured === 1 ? "placement isn't" : "placements aren't"} fully checked
+          yet: their connector records or part mappings are loading or didn't load.
+        </p>
+      )}
       <ul className="plan-issues">
         {issues.map((issue, i) => (
-          <li key={i} data-rule={issue.rule}>
+          <li key={i} data-rule={issue.rule} data-severity={issue.severity}>
             {issue.message}
           </li>
         ))}
       </ul>
+      <details className="plan-unchecked">
+        <summary>Not checked yet ({UNCHECKED_PLAN_RULES.length})</summary>
+        <ul>
+          {UNCHECKED_PLAN_RULES.map((rule) => (
+            <li key={rule.id} data-unchecked={rule.id}>
+              {rule.text} ({rule.owner})
+            </li>
+          ))}
+        </ul>
+      </details>
     </section>
+  );
+}
+
+const FILE_NAME_UNSAFE = /[^A-Za-z0-9-]+/gu;
+
+function savePlanSheet(svg: string, planName: string): void {
+  downloadBlob(
+    `${planName.trim().replaceAll(FILE_NAME_UNSAFE, "-")}.plan.svg`,
+    new Blob([svg], { type: "image/svg+xml" }),
   );
 }
 
@@ -506,6 +628,7 @@ function ActivePlan({
   held,
   fillGridStuds,
   plans,
+  sheets,
   plan,
 }: {
   readonly camera: IEditorCamera;
@@ -514,6 +637,7 @@ function ActivePlan({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
   readonly plan: PlanRegion;
 }) {
   return (
@@ -537,6 +661,12 @@ function ActivePlan({
           value={plan.maxOverhangMm}
           onCommit={(maxOverhangMm) => plans.updatePlan(plan.id, { maxOverhangMm })}
         />
+        <MmField
+          name="max-reach"
+          label="Reach limit mm"
+          value={plan.maxReachMm}
+          onCommit={(maxReachMm) => plans.updatePlan(plan.id, { maxReachMm })}
+        />
       </div>
       <p className="plan-meta">
         Origin chunk {plan.originChunkX}, {plan.originChunkZ} · {plans.insideCount(plan.id)}{" "}
@@ -545,6 +675,14 @@ function ActivePlan({
       <div className="plan-actions">
         <button type="button" data-action="view-plan" onClick={() => camera.viewPlan(plan.id)}>
           View from above
+        </button>
+        <button
+          type="button"
+          data-action="printable-plan"
+          title="Download a true-scale top view (SVG) to print at 100%"
+          onClick={() => savePlanSheet(sheets.printable(editor, plan.id), plan.name)}
+        >
+          Printable plan (SVG)
         </button>
         <button type="button" onClick={() => plans.removePlan(plan.id)}>
           Delete plan
@@ -560,8 +698,70 @@ function ActivePlan({
         plans={plans}
       />
       <ObstaclesEditor plan={plan} plans={plans} />
-      <IssueList issues={plans.issues(plan.id)} />
+      <PlanChecks plans={plans} planId={plan.id} />
     </>
+  );
+}
+
+function PlanFiles({
+  editor,
+  plan,
+  ready,
+  readOnly,
+}: {
+  readonly editor: IEditor;
+  readonly plan: PlanRegion | null;
+  readonly ready: boolean;
+  readonly readOnly: boolean;
+}) {
+  const input = useRef<HTMLInputElement>(null);
+  const onSave = (planId: string): void => {
+    void editor.exportPlan(planId).then((file) => {
+      if (file) {
+        downloadBlob(file.fileName, new Blob([file.bytes.slice()], { type: "application/zip" }));
+      }
+    });
+  };
+  const onOpen = (event: ChangeEvent<HTMLInputElement>): void => {
+    const field = event.currentTarget;
+    const file = field.files?.[0];
+    if (!file) return;
+    void file
+      .arrayBuffer()
+      .then((buffer) => editor.openPlan(new Uint8Array(buffer)))
+      .finally(() => {
+        field.value = "";
+      });
+  };
+  return (
+    <div className="plan-actions" aria-label="Plan files">
+      {plan && (
+        <button
+          type="button"
+          data-action="save-plan"
+          disabled={!ready}
+          onClick={() => onSave(plan.id)}
+        >
+          Save plan file
+        </button>
+      )}
+      <button
+        type="button"
+        data-action="open-plan"
+        disabled={!ready || readOnly}
+        onClick={() => input.current?.click()}
+      >
+        Open plan file
+      </button>
+      <input
+        ref={input}
+        className="world-import"
+        type="file"
+        accept=".zip,application/zip"
+        aria-label="Open a .brrplan.zip plan file"
+        onChange={onOpen}
+      />
+    </div>
   );
 }
 
@@ -572,6 +772,9 @@ export function PlanPanel({
   held,
   fillGridStuds,
   plans,
+  sheets,
+  ready,
+  readOnly,
 }: {
   readonly camera: IEditorCamera;
   readonly editor: IEditor;
@@ -579,6 +782,9 @@ export function PlanPanel({
   readonly held: HeldItemView | null;
   readonly fillGridStuds: number;
   readonly plans: IPlanService;
+  readonly sheets: IPlanSheetService;
+  readonly ready: boolean;
+  readonly readOnly: boolean;
 }) {
   usePlanVersion(plans);
   const regions = plans.plans();
@@ -623,6 +829,7 @@ export function PlanPanel({
           held={held}
           fillGridStuds={fillGridStuds}
           plans={plans}
+          sheets={sheets}
           plan={active}
         />
       ) : (
@@ -634,6 +841,7 @@ export function PlanPanel({
           <DrawTablesButton editor={editor} drawing={drawing} label="Draw a table (B)" />
         </>
       )}
+      <PlanFiles editor={editor} plan={active} ready={ready} readOnly={readOnly} />
       <NewPlanForm camera={camera} plans={plans} />
     </details>
   );

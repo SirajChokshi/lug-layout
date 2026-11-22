@@ -8,6 +8,7 @@ import {
   ConnectorTable,
   EditHistory,
   PlanDelta,
+  NO_STUD,
   WORLD_TRACK_FRAME,
   World,
   levelCrossings,
@@ -19,6 +20,7 @@ import {
 import {
   addZeta16,
   lduFromMm,
+  PLATE_LDU,
   pose16,
   STUD_LDU,
   zeta16,
@@ -38,7 +40,8 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { writeFullRebuild } from "../plan/plan-producer.ts";
+import { writeFullRebuild, writeTrackChange, writeTrackLay } from "../plan/plan-producer.ts";
+import type { IPlanService } from "../plan/plan-service.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { PLAN_SERVICE, SNAP_SHAPES } from "../tokens.ts";
 import { fixtureModel, fixtureModelChecks } from "./fixture-model.test-support.ts";
@@ -54,7 +57,9 @@ import {
   type TrackRefusal,
   type TrackRouteView,
 } from "./track-drawing.ts";
+import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
+  EVERY_MODEL,
   cellKey,
   seatsPending,
   studSeats,
@@ -62,6 +67,8 @@ import {
   type TrackObstacles,
 } from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
+import type { SupportBandAt } from "./track-bands.ts";
+import { heightText } from "./size-labels.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
@@ -164,7 +171,7 @@ function commitDrag(layout: TrackDrawing) {
 }
 
 function layPiece(layout: TrackDrawing, catalogIndex: number, placement: Pose16): void {
-  layout.applyTrack(layout.pieceChange(catalogIndex, placement));
+  layout.applyTrack(layout.pieceChange(catalogIndex, placement, 0));
 }
 
 const container = new Container();
@@ -376,7 +383,7 @@ function unionOf(boxes: ReadonlyArray<WorldBox>): Extent {
   return extent;
 }
 
-function fitIssues(table: { x: number; z: number; width: number; depth: number }): number {
+function offTableIssues(table: { x: number; z: number; width: number; depth: number }): number {
   const plans = container.get(PLAN_SERVICE);
   const planId = plans.createPlan({
     name: "Tight table",
@@ -391,7 +398,7 @@ function fitIssues(table: { x: number; z: number; width: number; depth: number }
   plans.apply(delta);
   const issues = plans.issues(planId);
   plans.removePlan(planId);
-  return issues.filter((issue) => issue.rule === "fit").length;
+  return issues.filter((issue) => issue.rule === "trackOffTable").length;
 }
 
 it("closes an oval drawn by hand in two strokes, every piece within half a straight of the stroke", () => {
@@ -418,9 +425,11 @@ it("fits a table cut to the oval's geometry and overhangs one cut two millimetre
   const z = Math.floor(rendered.minZ * MM_PER_LDU);
   const width = Math.ceil(rendered.maxX * MM_PER_LDU) - x;
   const depth = Math.ceil(rendered.maxZ * MM_PER_LDU) - z;
-  expect(fitIssues({ x, z, width, depth })).toBe(0);
-  expect(fitIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
-  expect(fitIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x, z, width, depth })).toBe(0);
+  expect(offTableIssues({ x, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(0);
+  expect(offTableIssues({ x: x + SHRINK_MM, z, width: width - SHRINK_MM, depth })).toBeGreaterThan(
+    0,
+  );
 });
 
 it("marks a drag target as joining only when the closure solver finds an exact join", async () => {
@@ -794,6 +803,8 @@ function plateObstacles(...rects: ReadonlyArray<Rect>): TrackObstacles {
     rects: Float64Array.from(rects.flat()),
     owners: new Int32Array(rects.length),
     unseated: new Uint8Array(rects.length),
+    outlines: [],
+    outlineOwners: new Int32Array(0),
     labels: ["Road plate"],
     seats: new Set(),
   };
@@ -873,7 +884,7 @@ it("routes a closure around a road plate in its way with no extra loop", async (
     { kind: "straight", count: 4 },
   ]);
   const plate = plateRect(bundle.parts, "ldraw:69958", -40, 40);
-  layout.setObstacles(plateObstacles(plate), false);
+  layout.setBands(everyBand(plateObstacles(plate)));
   const top = endAt(layout, 0, 80);
   const bottom = endAt(layout, 0, 0);
   const fewest = unobstructedFewest(layout, top, bottom);
@@ -895,7 +906,7 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   const straights: Run = [{ kind: "straight", count: 3 }];
   layRun(layout, studPose(0, 0, 0), straights);
   layRun(layout, studPose(128, 0, 0), straights);
-  layout.setObstacles(plateObstacles(plateRect(bundle.parts, "ldraw:44336p04", 112, 0)), false);
+  layout.setBands(everyBand(plateObstacles(plateRect(bundle.parts, "ldraw:44336p04", 112, 0))));
   const before = layout.pieceCount;
 
   const { view, target, ghost, commit } = closeFrom(
@@ -981,7 +992,7 @@ it("offers each single piece that would run into an obstacle as blocked, and non
   for (const layout of [clear, walled]) {
     layRun(layout, studPose(56, 0, 0), [{ kind: "straight", count: 2 }]);
   }
-  walled.setObstacles(plateObstacles(plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0)), false);
+  walled.setBands(everyBand(plateObstacles(plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0))));
   expect(singlesAt(clear, 88, 0)).toEqual([
     ["straight", null],
     ["left", null],
@@ -1032,7 +1043,7 @@ it.each<
     for (const [x, z] of starts)
       layRun(layout, studPose(x, z, 0), [{ kind: "straight", count: 3 }]);
     const rect = obstacle(bundle.parts);
-    if (rect) layout.setObstacles(plateObstacles(rect), false);
+    if (rect) layout.setBands(everyBand(plateObstacles(rect)));
     focusEnd(layout, endAt(layout, 48, 0));
 
     const view = layout.extension.view();
@@ -1193,7 +1204,7 @@ it("closes straights flush along a road plate's edge", async () => {
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, centreOffset),
     plateRect(bundle.parts, ROAD_BASEPLATE_32, gapEnd / 2, -centreOffset),
   ];
-  layout.setObstacles(plateObstacles(...plates), false);
+  layout.setBands(everyBand(plateObstacles(...plates)));
 
   closesWithFewest(layout, endAt(layout, straightStuds, 0), endAt(layout, gapEnd, 0));
   expect(crossings(layout, bundle.parts, plates)).toEqual([]);
@@ -1254,7 +1265,7 @@ it(
       }
       if (!rect) throw new Error(`no clear plate position at step ${step}`);
       const layout = base();
-      layout.setObstacles(plateObstacles(rect), false);
+      layout.setBands(everyBand(plateObstacles(rect)));
       closesWithFewest(layout, endAt(layout, 0, diameter), endAt(layout, 0, 0));
       expect(crossings(layout, bundle.parts, [rect]), `plate at sweep step ${step}`).toEqual([]);
     }
@@ -1273,6 +1284,7 @@ interface GroundItem {
   readonly placeable: Placeable;
   readonly x: number;
   readonly z: number;
+  readonly yPlates?: number;
 }
 
 function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedModel> {
@@ -1290,7 +1302,7 @@ function placeGround(items: ReadonlyArray<GroundItem>): ReadonlyArray<PlacedMode
       colorId: item.placeable.worldColor,
       x: item.x,
       z: item.z,
-      yPlates: 0,
+      yPlates: item.yPlates ?? 0,
       rot: 0,
     });
     placed.apply(edit, refOf);
@@ -1315,15 +1327,30 @@ async function loosePart(id: string): Promise<Placeable> {
   );
 }
 
-async function trackOver(
+function bandsOver(
   ground: ReadonlyArray<PlacedModel>,
+  layout: TrackDrawing,
   pendingSeats: (range: readonly [number, number]) => boolean = (range) =>
     seatsPending(ground, range),
+): SupportBandAt {
+  return (lowPlates, highPlates) => {
+    const [bottom, top] = layout.verticalRange();
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
+    return { obstacles: trackObstacles(ground, band, NO_TRACK_PARTS), pending: pendingSeats(band) };
+  };
+}
+
+function everyBand(obstacles: TrackObstacles): SupportBandAt {
+  return () => ({ obstacles, pending: false });
+}
+
+async function trackOver(
+  ground: ReadonlyArray<PlacedModel>,
+  pendingSeats?: (range: readonly [number, number]) => boolean,
 ): Promise<TrackDrawing> {
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-  const range = layout.verticalRange();
-  layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), pendingSeats(range));
+  layout.setBands(bandsOver(ground, layout, pendingSeats));
   return layout;
 }
 
@@ -1628,8 +1655,7 @@ it("stops a stroke before the first piece that would cross track, a custom build
     const colors = new ColorTable(bundle);
     const layout = new TrackDrawing(bundle, bundle.parts, colors);
     const ground = await crossing.ground();
-    const range = layout.verticalRange();
-    layout.setObstacles(trackObstacles(ground, range, NO_TRACK_PARTS), seatsPending(ground, range));
+    layout.setBands(bandsOver(ground, layout));
     crossing.track(layout);
     const before = layout.pieceCount;
     const { view, ghost, commit } = drawStroke(layout, crossing.stroke(layout));
@@ -1673,15 +1699,18 @@ it("closes onto the open end of track a model carries, and runs no join through 
   const bundle = await trackAndRoadBundle();
   const carrying = (id: string) => {
     const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
-    layout.syncHeld([
-      {
-        catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
-        placement: studPose(0, 0, 0),
-        yPlates: 0,
-        instance: 0,
-        frame: WORLD_TRACK_FRAME,
-      },
-    ]);
+    layout.syncHeld(
+      [
+        {
+          catalogIndex: bundle.trackCatalog.pieces.findIndex((piece) => piece.id === id),
+          placement: studPose(0, 0, 0),
+          yPlates: 0,
+          instance: 0,
+          frame: WORLD_TRACK_FRAME,
+        },
+      ],
+      [carrierAtOrigin(1)],
+    );
     return layout;
   };
   const joining = carrying(NINE_VOLT_STRAIGHT);
@@ -1781,7 +1810,173 @@ it("counts a piece unsupported only when no anti-stud has a stud under it: half 
   expect(unsupportedOf(layout)).toEqual([{ piece: 1, on: plate.placeable.label }]);
 });
 
-it("finds a level crossing only over a road surface's roadway: track on a studless plaza is reported unsupported, but is no crossing and gets no ramp", async () => {
+it("judges raised track by the band at its own height, with no table under it: a carried straight half on a raised road plate's roadway and half over air is unsupported, and so is one wholly over air", async () => {
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const raisedPlates = 3;
+  const ground = placeGround([{ placeable: road, x: 0, z: 0, yPlates: raisedPlates }]);
+  const [plate] = ground;
+  if (!plate) throw new Error("the road plate wasn't placed");
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const roadwayX = studsOf((plate.box.minX + plate.box.maxX) / 2);
+  const plateEdgeZ = studsOf(plate.box.maxZ);
+  layout.syncHeld(
+    [plateEdgeZ - halfLength, plateEdgeZ + 4 * halfLength].map((z, instance) => ({
+      catalogIndex: straight,
+      placement: studPose(roadwayX, z, SOUTH),
+      yPlates: raisedPlates,
+      instance,
+      frame: WORLD_TRACK_FRAME,
+    })),
+    [carrierAtOrigin(2)],
+  );
+
+  expect(unsupportedOf(layout)).toEqual([
+    { piece: 0, on: plate.placeable.label },
+    { piece: 1, on: null },
+  ]);
+});
+
+it("judges track carried in a run frame at its framed pose: the frame's offset puts one straight across the roadway, which is unsupported, and moves the other off the plate onto bare ground", async () => {
+  const { ground, plate } = await roadPlateGround();
+  const layout = await trackOver(ground);
+  layout.setSupport(await kitSupport(layout));
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const centreZ = studsOf((plate.box.minZ + plate.box.maxZ) / 2);
+  const acrossRoadway = studsOf((plate.box.minX + plate.box.maxX) / 2) - halfLength;
+  const shiftStuds = studsOf(plate.box.maxX - plate.box.minX) + 4 * halfLength;
+  const runFrame = { id: WORLD_TRACK_FRAME.id + 1, xLdu: -shiftStuds * STUD_LDU + 0.3, zLdu: 0 };
+  layout.syncHeld(
+    [acrossRoadway + shiftStuds, acrossRoadway].map((x, instance) => ({
+      catalogIndex: straight,
+      placement: studPose(x, centreZ, 0),
+      yPlates: 0,
+      instance,
+      frame: runFrame,
+    })),
+    [carrierAtOrigin(2)],
+  );
+
+  expect(unsupportedOf(layout)).toEqual([{ piece: 0, on: plate.placeable.label }]);
+});
+
+const REACH_SEED = 581;
+const REACH_LAYOUTS = 160;
+const REACH_TILES = 4;
+const REACH_PLATES = 9;
+const REACH_PIECES = 2;
+const REACH_RAISED_PLATES = 3;
+const REACH_EDGE_STUDS = 4;
+const HEADINGS = 16;
+const TILE_STUDS = 32;
+
+interface PieceSpot {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+}
+
+function pieceSpot(
+  ground: ReadonlyArray<PlacedModel>,
+  random: () => number,
+  spanStuds: number,
+): PieceSpot {
+  const plate = ground[Math.floor(random() * ground.length)];
+  if (!plate || random() < 0.5) {
+    return {
+      x: Math.floor(random() * spanStuds),
+      z: Math.floor(random() * spanStuds),
+      yPlates: random() < 0.25 ? REACH_RAISED_PLATES : 0,
+    };
+  }
+  const { box } = plate;
+  const across = Math.floor(random() * (2 * REACH_EDGE_STUDS + 1)) - REACH_EDGE_STUDS;
+  const minEdge = random() < 0.5;
+  const alongX = studsOf(box.minX) + Math.floor(random() * studsOf(box.maxX - box.minX));
+  const alongZ = studsOf(box.minZ) + Math.floor(random() * studsOf(box.maxZ - box.minZ));
+  const edgeX = studsOf(minEdge ? box.minX : box.maxX) + across;
+  const edgeZ = studsOf(minEdge ? box.minZ : box.maxZ) + across;
+  const acrossX = random() < 0.5;
+  return {
+    x: acrossX ? edgeX : alongX,
+    z: acrossX ? alongZ : edgeZ,
+    yPlates: plate.handle.yPlates,
+  };
+}
+
+function bandsReaching(ground: ReadonlyArray<PlacedModel>, layout: TrackDrawing): SupportBandAt {
+  return (lowPlates, highPlates, reach) => {
+    const [bottom, top] = layout.verticalRange();
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
+    const reaches = reach === null ? EVERY_MODEL : (model: PlacedModel) => reach.reaches(model.box);
+    return {
+      obstacles: trackObstacles(ground, band, NO_TRACK_PARTS, reaches),
+      pending: seatsPending(ground, band),
+    };
+  };
+}
+
+it(
+  "judges support from only the models its track reaches exactly as from the whole layout, over random plates, heights, headings, plate edges and run frames",
+  async () => {
+    const random = seeded(REACH_SEED);
+    const bundle = await trackAndRoadBundle();
+    const [road, baseplate] = await Promise.all([
+      loosePart(ROAD_BASEPLATE_32),
+      loosePart(GROUND_BASEPLATE),
+    ]);
+    const whole = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const near = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const support = await kitSupport(whole);
+    whole.setSupport(support);
+    near.setSupport(support);
+    const pieces = [NINE_VOLT_STRAIGHT, NINE_VOLT_CURVE].map((id) => placeableIndex(whole, id));
+    const span = REACH_TILES * TILE_STUDS;
+    const kinds = new Set<string>();
+    for (let l = 0; l < REACH_LAYOUTS; l++) {
+      const tiles = Array.from({ length: REACH_TILES * REACH_TILES }, (_, tile) => tile)
+        .map((tile) => ({ tile, order: random() }))
+        .toSorted((a, b) => a.order - b.order)
+        .slice(0, REACH_PLATES);
+      const ground = placeGround(
+        tiles.map(({ tile }) => ({
+          placeable: random() < 0.5 ? road : baseplate,
+          x: ((tile % REACH_TILES) * TILE_STUDS + TILE_STUDS / 2) * STUD_LDU,
+          z: (Math.floor(tile / REACH_TILES) * TILE_STUDS + TILE_STUDS / 2) * STUD_LDU,
+          yPlates: random() < 0.25 ? REACH_RAISED_PLATES : 0,
+        })),
+      );
+      whole.setBands(bandsOver(ground, whole));
+      near.setBands(bandsReaching(ground, near));
+      const held = Array.from({ length: REACH_PIECES }, (_, instance) => {
+        const spot = pieceSpot(ground, random, span);
+        return {
+          catalogIndex: pieces[Math.floor(random() * pieces.length)] ?? 0,
+          placement: studPose(spot.x, spot.z, Math.floor(random() * HEADINGS)),
+          yPlates: spot.yPlates,
+          instance,
+          frame:
+            random() < 0.25
+              ? { id: WORLD_TRACK_FRAME.id + 1 + instance, xLdu: random() * STUD_LDU, zLdu: 0.3 }
+              : WORLD_TRACK_FRAME,
+        };
+      });
+      whole.syncHeld(held, [carrierAtOrigin(held.length)]);
+      near.syncHeld(held, [carrierAtOrigin(held.length)]);
+      const verdicts = unsupportedOf(whole);
+      expect(unsupportedOf(near)).toEqual(verdicts);
+      for (const { on } of verdicts) kinds.add(on ?? "over air");
+      if (verdicts.length < held.length) kinds.add("supported");
+    }
+    expect([...kinds].toSorted()).toEqual(["supported", "over air", road.label].toSorted());
+  },
+  SWEEP_TIMEOUT_MS,
+);
+
+it("finds a level crossing over any road cell at the bed, a tiled plaza's as much as a roadway's, and reports track on either unsupported unless it's seated", async () => {
   const { ground, plate, surface } = await roadPlateGround();
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
@@ -1794,15 +1989,14 @@ it("finds a level crossing only over a road surface's roadway: track on a studle
     plate.box.maxX + 2 * side,
     plate.box.maxZ,
   ];
-  layout.setObstacles(
-    {
+  layout.setBands(
+    everyBand({
       ...roadObstacles,
       rects: Float64Array.from([...roadObstacles.rects, ...plaza]),
       owners: Int32Array.from([...roadObstacles.owners, roadObstacles.labels.length]),
       unseated: Uint8Array.from([...roadObstacles.unseated, 1]),
       labels: [...roadObstacles.labels, TILED_PLAZA],
-    },
-    false,
+    }),
   );
   layout.setSupport(await kitSupport(layout));
   const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
@@ -1817,18 +2011,32 @@ it("finds a level crossing only over a road surface's roadway: track on a studle
     levelCrossing.systems.map((system) => [system.system, system.railTopLdu]),
   );
   const road = { id: 0, x: plate.handle.x, z: plate.handle.z, yLdu: 0, rot: 0, surface };
+  const roadwayTop = surface.topSixteenths[surface.road.indexOf(1)] ?? 0;
+  const tiledPlaza = {
+    id: 1,
+    x: (plaza[0] + plaza[2]) / 2,
+    z: (plaza[1] + plaza[3]) / 2,
+    yLdu: 0,
+    rot: 0,
+    surface: {
+      ...surface,
+      topSixteenths: new Int32Array(surface.topSixteenths.length).fill(roadwayTop),
+      studSixteenths: new Int32Array(surface.studSixteenths.length).fill(NO_STUD),
+      road: new Uint8Array(surface.road.length).fill(1),
+    },
+  };
   const tracks = layout.crossingPieces().map((piece) => ({
     outline: piece.outline,
     bedLdu: piece.bedLdu,
     railTopLdu: railTops.get(piece.system) ?? Number.NaN,
   }));
-  const found = levelCrossings([road], tracks, []);
+  const found = levelCrossings([road, tiledPlaza], tracks, []);
 
   expect(unsupportedOf(layout)).toEqual([
     { piece: 0, on: plate.placeable.label },
     { piece: 1, on: TILED_PLAZA },
   ]);
-  expect(found.map((crossing) => crossing.tracks)).toEqual([[0]]);
+  expect(found.map((crossing) => crossing.tracks).toSorted()).toEqual([[0], [1]]);
 });
 
 it("lays the stroke and withholds only the join when no supported closure reaches the end, reports it unsupported, and joins when a supported closure exists, half on studs included", async () => {
@@ -1913,14 +2121,180 @@ it("reports unsupported track inside a plan as a plan issue, so the plan isn't V
   const delta = new PlanDelta();
   writeFullRebuild(delta, ground, layout);
   plans.apply(delta);
+  layout.setBands(bandsOver(ground, layout));
   const unsupported = (layout.unsupportedPieces() ?? []).map(({ piece }) => piece);
-  plans.setUnsupported(new Set(unsupported), new Set());
+  plans.setUnsupported(new Set(unsupported), new Set(), new Set());
   const flagged = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
-  plans.setUnsupported(new Set(), new Set());
+  plans.setUnsupported(new Set(), new Set(), new Set());
   const cleared = plans.issues(planId).filter((issue) => issue.rule === "unsupported");
   plans.removePlan(planId);
 
   expect(unsupported).toEqual([0]);
   expect(flagged).toHaveLength(1);
   expect(cleared).toEqual([]);
+});
+
+const MY_TRAIN = { heightLdu: 100, model: "my tall train" };
+const COLUMN_RECT = Float64Array.of(-STUD_LDU, -STUD_LDU, STUD_LDU, STUD_LDU);
+
+function column(topLdu: number) {
+  return (bottomLdu: number, bandTopLdu: number) => {
+    const meets = 0 < bandTopLdu && bottomLdu < topLdu;
+    return { rects: COLUMN_RECT, floats: meets ? COLUMN_RECT.length : 0 };
+  };
+}
+const ACROSS = 4;
+
+async function bareDrawing(): Promise<TrackDrawing> {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  layout.setBands(bandsOver([], layout));
+  return layout;
+}
+
+function layAt(layout: TrackDrawing, pose: Pose16, yPlates: number, rise = 0): number {
+  const index = layout.pieceCount;
+  const piece = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  layout.applyTrack({ lift: [], lay: [{ index, piece, pose, yPlates, rise }] });
+  return index;
+}
+
+it("refuses track across laid track only where their heights meet, and reports each crossing lower than the measured train with the plates it needs, from whichever end of the stack it was laid", async () => {
+  const layout = await bareDrawing();
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const along = studPose(-halfLength, 0, 0);
+  const across = studPose(0, -halfLength, ACROSS);
+  layAt(layout, along, 0);
+  const [, railTop] = layout.verticalRange();
+  const clearPlates = Math.ceil((railTop + MY_TRAIN.heightLdu) / PLATE_LDU);
+  const touching = layout.pieceBlock(straight, across, 1);
+  const low = layout.pieceBlock(straight, across, clearPlates - 1);
+  const bridge = layAt(layout, across, clearPlates - 1);
+  const unmeasured = layout.lowClearances();
+  layout.setTallestTrain(MY_TRAIN);
+  const reported = layout.lowClearances();
+  const below = await bareDrawing();
+  below.setTallestTrain(MY_TRAIN);
+  layAt(below, across, clearPlates - 1);
+  layAt(below, along, 0);
+  const clear = await bareDrawing();
+  clear.setTallestTrain(MY_TRAIN);
+  layAt(clear, along, 0);
+  layAt(clear, across, clearPlates);
+  const finding = {
+    needPlates: clearPlates,
+    hasPlates: clearPlates - 1,
+    train: MY_TRAIN,
+  };
+
+  expect(touching).toEqual({ kind: "track" });
+  expect(low).toBeNull();
+  expect(unmeasured).toBeNull();
+  expect(reported).toEqual([{ piece: bridge, ...finding }]);
+  expect(below.lowClearances()).toEqual([{ piece: 0, ...finding }]);
+  expect(clear.lowClearances()).toEqual([]);
+  expect(layout.heightLabels().map((label) => label.text)).toContain(
+    `${heightText((clearPlates - 1) * PLATE_LDU - railTop)} clear: too low for ${MY_TRAIN.model}`,
+  );
+});
+
+it("refuses a model that reaches into raised track's own band and passes one that stops at its underside", async () => {
+  const layout = await bareDrawing();
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const raised = 5;
+  layAt(layout, studPose(-halfLength, 0, 0), raised);
+  const underside = layout.bandBottomLdu(raised);
+
+  expect(layout.modelBlocker(column(underside), [], new Set(), new Set())).toBeNull();
+  expect(layout.modelBlocker(column(underside + PLATE_LDU), [], new Set(), new Set())).toEqual({
+    kind: "track",
+  });
+});
+
+it("draws a ramp piece sheared between its two end heights, and keeps both heights through a save and reload", async () => {
+  const layout = await bareDrawing();
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+  const start = studPose(-halfLength, 0, 0);
+  const ramp = layAt(layout, start, 3, 2);
+  const [chunk] = layout.chunkKeys();
+  const instances = chunk === undefined ? null : layout.chunkInstances(chunk);
+  const m = instances?.matrices ?? new Float32Array(INSTANCE_MATRIX_FLOATS);
+  const yAt = (connector: number): number => {
+    const end = zeta16ToStuds(layout.connectorPose(straight, start, connector).position);
+    const wx = end.x * STUD_LDU - (instances?.originX ?? 0) - (m[3] ?? 0);
+    const wz = end.z * STUD_LDU - (instances?.originZ ?? 0) - (m[11] ?? 0);
+    const lx = (m[0] ?? 0) * wx + (m[8] ?? 0) * wz;
+    const lz = (m[2] ?? 0) * wx + (m[10] ?? 0) * wz;
+    return (m[4] ?? 0) * lx + (m[6] ?? 0) * lz + (m[7] ?? 0);
+  };
+  const records = layout.records();
+  const reloaded = await bareDrawing();
+  const restored = reloaded.restore(records);
+
+  expect(yAt(1) - yAt(0)).toBeCloseTo(2 * PLATE_LDU, 3);
+  expect(records[ramp]).toMatchObject({ yPlates: 3, rise: 2 });
+  expect(restored.ok).toBe(true);
+  expect(reloaded.records()).toEqual(records);
+  expect(reloaded.laidPiece(ramp)).toMatchObject({ yPlates: 3, rise: 2 });
+});
+
+function clearanceIssues(plans: IPlanService, planId: string): ReadonlyArray<string> {
+  return plans
+    .issues(planId)
+    .filter((issue) => issue.rule === "clearance")
+    .map((issue) => issue.message);
+}
+
+it("lists a bridge lower than the measured train as a plan clearance issue that follows the bridge's own row: absent until the row is written, renamed with the train, gone once the bridge is lifted", async () => {
+  const layout = await bareDrawing();
+  layout.setTallestTrain(MY_TRAIN);
+  const halfLength = Number(layout.kit.straightStuds) / 2;
+  layAt(layout, studPose(-halfLength, 0, 0), 0);
+  const plans = container.get(PLAN_SERVICE);
+  const planId = plans.createPlan({
+    name: "Bridge table",
+    roomWidthMm: 4000,
+    roomDepthMm: 3000,
+    originChunkX: -1,
+    originChunkZ: -1,
+  });
+  plans.addTable(planId, {
+    name: "Table",
+    rect: { x: 0, z: 0, width: 4000, depth: 3000 },
+    heightMm: 750,
+  });
+  const delta = new PlanDelta();
+  writeFullRebuild(delta, [], layout);
+  plans.apply(delta);
+  const [, railTop] = layout.verticalRange();
+  const lowPlates = Math.ceil((railTop + MY_TRAIN.heightLdu) / PLATE_LDU) - 1;
+  const bridge = layAt(layout, studPose(0, -halfLength, ACROSS), lowPlates);
+  const low = new Map(
+    (layout.lowClearances() ?? []).map(({ piece, needPlates, hasPlates }) => [
+      piece,
+      { needPlates, hasPlates },
+    ]),
+  );
+  plans.setLowClearance(low, new Map(), MY_TRAIN.model);
+  const beforeRow = clearanceIssues(plans, planId);
+  writeTrackLay(delta, layout, 1);
+  plans.apply(delta);
+  const withRow = clearanceIssues(plans, planId);
+  plans.setLowClearance(low, new Map(), "my other train");
+  const renamed = clearanceIssues(plans, planId);
+  const lift = { lift: [layout.laidPiece(bridge)], lay: [] };
+  layout.applyTrack(lift);
+  writeTrackChange(delta, layout, lift);
+  plans.apply(delta);
+  const lifted = clearanceIssues(plans, planId);
+  plans.removePlan(planId);
+  const finding = `needs ${lowPlates + 1} plates, this bridge has ${lowPlates}.`;
+
+  expect([...low.keys()]).toEqual([bridge]);
+  expect(beforeRow).toEqual([]);
+  expect(withRow).toEqual([expect.stringContaining(`${MY_TRAIN.model} ${finding}`)]);
+  expect(renamed).toEqual([expect.stringContaining(`my other train ${finding}`)]);
+  expect(lifted).toEqual([]);
 });

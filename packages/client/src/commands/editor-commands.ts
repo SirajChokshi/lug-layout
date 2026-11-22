@@ -1,6 +1,7 @@
-import { STUD_LDU } from "@brr/math";
+import { BRICK_LDU, PLATE_LDU, STUD_LDU } from "@brr/math";
 import type { GroundDirection, IEditorCamera } from "../camera/editor-camera.ts";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
 import { placementModeSwitchEnabled, togglePlacementMode } from "../edit/placement-mode.ts";
 import type { ITrainPlay, PlaySnapshot } from "../play/train-play.ts";
 import { KEY_FOR_SLOT } from "./hotbar.ts";
@@ -26,6 +27,10 @@ export type EditorActionId =
   | "extend-preview"
   | "next-track-choice"
   | "previous-track-choice"
+  | "raise-track"
+  | "lower-track"
+  | "raise-track-brick"
+  | "lower-track-brick"
   | "delete"
   | "duplicate"
   | "copy"
@@ -90,6 +95,7 @@ export const COMMAND_GROUPS: ReadonlyArray<CommandGroup> = [
 ];
 
 export const PLAY_THROTTLE_STEP_LDU_PER_S = 40;
+const PLATES_PER_BRICK = BRICK_LDU / PLATE_LDU;
 
 export const COMMANDS: ReadonlyArray<CommandSpec> = [
   {
@@ -216,6 +222,38 @@ export const COMMANDS: ReadonlyArray<CommandSpec> = [
     group: "Edit",
     keys: [{ key: "," }],
     keywords: "cycle option piece join back",
+  },
+  {
+    id: "raise-track",
+    title: "Draw track one plate higher",
+    group: "Edit",
+    keys: [{ key: "PageUp" }],
+    keywords: "height elevation raise bridge viaduct ramp up",
+    repeats: true,
+  },
+  {
+    id: "lower-track",
+    title: "Draw track one plate lower",
+    group: "Edit",
+    keys: [{ key: "PageDown" }],
+    keywords: "height elevation lower ramp down",
+    repeats: true,
+  },
+  {
+    id: "raise-track-brick",
+    title: "Draw track one brick higher",
+    group: "Edit",
+    keys: [{ key: "PageUp", shift: true }],
+    keywords: "height elevation raise bridge viaduct",
+    repeats: true,
+  },
+  {
+    id: "lower-track-brick",
+    title: "Draw track one brick lower",
+    group: "Edit",
+    keys: [{ key: "PageDown", shift: true }],
+    keywords: "height elevation lower",
+    repeats: true,
   },
   {
     id: "delete",
@@ -680,6 +718,16 @@ export function commandEnabled(
       return snapshot.roadKit !== null && !snapshot.readOnly;
     case "cycle-fill-grid":
       return snapshot.mode === "place" && !snapshot.readOnly;
+    case "raise-track":
+    case "raise-track-brick":
+      return snapshot.mode === "track" && !snapshot.readOnly;
+    case "lower-track":
+    case "lower-track-brick":
+      return (
+        snapshot.mode === "track" &&
+        !snapshot.readOnly &&
+        (snapshot.track?.height.drawingPlates ?? 0) > 0
+      );
     case "select-tool":
     case "fit-all":
     case "toggle-plan-view":
@@ -782,6 +830,18 @@ export function runEditorAction(
       return;
     case "previous-track-choice":
       editor.cycleTrackChoice(-1);
+      return;
+    case "raise-track":
+      editor.raiseTrack(1);
+      return;
+    case "lower-track":
+      editor.raiseTrack(-1);
+      return;
+    case "raise-track-brick":
+      editor.raiseTrack(PLATES_PER_BRICK);
+      return;
+    case "lower-track-brick":
+      editor.raiseTrack(-PLATES_PER_BRICK);
       return;
     case "delete":
       editor.deleteSelection(eventTimeMs);

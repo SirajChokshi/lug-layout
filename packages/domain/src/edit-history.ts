@@ -1,6 +1,7 @@
 import { isLatticePose, isRot90, type Pose16 } from "@brr/math";
 import type { PlanState } from "./plan/plan-region.ts";
 import { ConsistLayout, type ConsistHandle, type ConsistPose } from "./rail/consist-layout.ts";
+import { INT8_MAX, INT8_MIN } from "./track/track-layout.ts";
 import type { PlacementHandle, World } from "./world.ts";
 
 const QUARTER_TURNS = 4;
@@ -14,7 +15,8 @@ export type EditKind =
   | "road"
   | "lay-track"
   | "throw-switch"
-  | "plan";
+  | "plan"
+  | "open-plan";
 export type HistoryStep = "do" | "undo" | "redo";
 
 export interface TrackPieceAt {
@@ -22,6 +24,7 @@ export interface TrackPieceAt {
   readonly piece: number;
   readonly pose: Pose16;
   readonly yPlates: number;
+  readonly rise: number;
 }
 
 export interface TrackChange {
@@ -40,7 +43,8 @@ export type EditSummary =
   | { readonly kind: "place" | "rotate" | "move" | "remove" | "plan" }
   | { readonly kind: "throw-switch"; readonly switchAt: number }
   | { readonly kind: "road" | "fill"; readonly placements: number }
-  | { readonly kind: "lay-track"; readonly pieces: number };
+  | { readonly kind: "lay-track"; readonly pieces: number }
+  | { readonly kind: "open-plan"; readonly placements: number; readonly pieces: number };
 
 export interface PlacementPose {
   readonly refId: number;
@@ -143,7 +147,7 @@ function checkPose(pose: PlacementPose): void {
 
 function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof TrackChange): void {
   let previous = -1;
-  for (const { index, piece, yPlates } of pieces) {
+  for (const { index, piece, yPlates, rise } of pieces) {
     if (!Number.isInteger(index) || index <= previous) {
       throw new RangeError(`track ${role} indices must be ascending non-negative integers`);
     }
@@ -152,6 +156,12 @@ function checkTrackPieces(pieces: ReadonlyArray<TrackPieceAt>, role: keyof Track
     }
     if (!isLatticePose(0, 0, yPlates)) {
       throw new RangeError(`track height ${yPlates} plates is not an int16`);
+    }
+    if (!Number.isInteger(rise) || rise < INT8_MIN || rise > INT8_MAX) {
+      throw new RangeError(`track rise ${rise} plates is not an int8`);
+    }
+    if (!isLatticePose(0, 0, yPlates + rise)) {
+      throw new RangeError(`track end height ${yPlates + rise} plates is not an int16`);
     }
     previous = index;
   }
@@ -172,6 +182,8 @@ function summary(edit: Edit): EditSummary {
       return { kind: edit.kind, placements: edit.changes.length };
     case "lay-track":
       return { kind: edit.kind, pieces: edit.track.lay.length };
+    case "open-plan":
+      return { kind: edit.kind, placements: edit.changes.length, pieces: edit.track.lay.length };
     default: {
       const unhandled: never = edit.kind;
       throw new Error(`unhandled edit ${String(unhandled)}`);
@@ -261,6 +273,7 @@ export class EditHistory {
     kind: EditKind,
     requests: ReadonlyArray<PlacementRequest>,
     track: TrackChange = NO_TRACK_CHANGE,
+    plan: PlanChange | null = null,
   ): AppliedEdit {
     checkTrackPieces(track.lift, "lift");
     checkTrackPieces(track.lay, "lay");
@@ -278,17 +291,7 @@ export class EditHistory {
       seen.add(ref);
       changes.push({ ref, before: poseOf(this.liveHandle(ref)), after: request.to });
     }
-    return this.record({ kind, changes, consists: [], track, plan: null });
-  }
-
-  commitPlan(change: PlanChange): AppliedEdit {
-    return this.record({
-      kind: "plan",
-      changes: [],
-      consists: [],
-      track: NO_TRACK_CHANGE,
-      plan: change,
-    });
+    return this.record({ kind, changes, consists: [], track, plan });
   }
 
   private record(edit: Edit): AppliedEdit {

@@ -8,14 +8,12 @@ import { MateReport, ModelConnectors, NO_INSTANCE } from "@brr/domain";
 import {
   CERTIFIED_RESIDUAL_LIMIT_LDU,
   STUD_LDU,
-  ZETA16_STEP_RADIANS,
   addZeta16,
   attachPose16,
   composePose16,
   pose16,
   pose16Equals,
   zeta16,
-  zeta16Direction,
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
@@ -24,6 +22,7 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { beforeAll, describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { carrierAtOrigin } from "../edit/track-carrier.test-support.ts";
 import { TrackDrawing } from "../edit/track-drawing.ts";
 import { ColorTable } from "../scene/viewer-scene.ts";
 import { CONNECTION_SOLVER, SNAP_MATING } from "../tokens.ts";
@@ -35,6 +34,7 @@ import {
   type ModelTrackEnds,
   type TrackInstances,
 } from "./model-track-ends.ts";
+import { catalogPieceOf, chainedPoses, instancesAt } from "./track-instances.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const FLOAT_LDU = 1e-6;
@@ -74,7 +74,7 @@ function laid(partIds: ReadonlyArray<string>, start = pose16(STUD_POINT, 0)): Tr
   const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   for (const [partId, placement] of chain(start, partIds)) {
     drawing.applyTrack(
-      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement),
+      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(catalogPiece(partId)), placement, 0),
     );
   }
   return drawing;
@@ -114,53 +114,15 @@ function cornerRun(): TrackDrawing {
 }
 
 function catalogPiece(partId: string): PartBundle["trackCatalog"]["pieces"][number] {
-  const piece = bundle.trackCatalog.pieces.find((candidate) => candidate.part === partId);
-  if (!piece) throw new Error(`${partId} is not in the track catalog`);
-  return piece;
+  return catalogPieceOf(bundle, partId);
 }
 
 function writtenAt(pieces: ReadonlyArray<readonly [string, Pose16]>): TrackInstances {
-  const partIndex: number[] = [];
-  const matrices: number[] = [];
-  for (const [partId, placement] of pieces) {
-    const part = bundle.parts.findIndex((candidate) => candidate.id === partId);
-    const frame = catalogPiece(partId).partFrame;
-    const turn = (placement.heading + frame.headingHalfSteps / 2) * ZETA16_STEP_RADIANS;
-    const at = zeta16ToStuds(placement.position);
-    const facing = zeta16Direction(placement.heading);
-    const offsetX = frame.xLdu / STUD_LDU;
-    const offsetZ = frame.zLdu / STUD_LDU;
-    partIndex.push(part);
-    matrices.push(
-      Math.cos(turn),
-      0,
-      -Math.sin(turn),
-      STUD_LDU * (at.x + facing.x * offsetX - facing.z * offsetZ),
-      0,
-      1,
-      0,
-      -(bundle.parts[part]?.boundsMin[1] ?? 0),
-      Math.sin(turn),
-      0,
-      Math.cos(turn),
-      STUD_LDU * (at.z + facing.z * offsetX + facing.x * offsetZ),
-    );
-  }
-  return { count: pieces.length, partIndex, matrices: Float64Array.from(matrices) };
+  return instancesAt(bundle, pieces);
 }
 
 function chain(start: Pose16, partIds: ReadonlyArray<string>): Array<readonly [string, Pose16]> {
-  const pieces: Array<readonly [string, Pose16]> = [];
-  for (const partId of partIds) {
-    const previous = pieces.at(-1);
-    const entry = catalogPiece(partId).connectors[0]?.pose;
-    const exit = previous ? catalogPiece(previous[0]).connectors[1]?.pose : undefined;
-    pieces.push([
-      partId,
-      previous && entry && exit ? attachPose16(entry, composePose16(previous[1], exit)) : start,
-    ]);
-  }
-  return pieces;
+  return chainedPoses(bundle, start, partIds);
 }
 
 function printed(instances: TrackInstances): TrackInstances {
@@ -181,7 +143,8 @@ function inRunFrames(ends: ModelTrackEnds): TrackDrawing {
   const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
   const identity = latticeFrame(0, 0, 0);
   if (!identity) throw new Error("the origin is not a lattice frame");
-  drawing.syncHeld(heldRuns(ends, identity, 0, 1));
+  const held = heldRuns(ends, identity, 0, 1);
+  drawing.syncHeld(held, [carrierAtOrigin(held.length)]);
   return drawing;
 }
 
@@ -425,7 +388,8 @@ describe("modelTrackEnds", () => {
     const drawing = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
     const identity = latticeFrame(0, 0, 0);
     if (!identity) throw new Error("the origin is not a lattice frame");
-    drawing.syncHeld([...heldRuns(ends, identity, 0, 1), ...heldRuns(ends, identity, 0, 2)]);
+    const held = [...heldRuns(ends, identity, 0, 1), ...heldRuns(ends, identity, 0, 2)];
+    drawing.syncHeld(held, [carrierAtOrigin(held.length)]);
     const internalJoins = 2 * (run.pieces.length - 1);
     expect(drawing.joinedPairs()).toBe(internalJoins);
     const straight = catalogPiece(STRAIGHT_PART);
@@ -436,7 +400,11 @@ describe("modelTrackEnds", () => {
     const exit = straight.connectors[1]?.pose;
     if (!exit) throw new Error("the straight has no exit");
     drawing.applyTrack(
-      drawing.pieceChange(bundle.trackCatalog.pieces.indexOf(straight), attachPose16(exit, runEnd)),
+      drawing.pieceChange(
+        bundle.trackCatalog.pieces.indexOf(straight),
+        attachPose16(exit, runEnd),
+        0,
+      ),
     );
     expect(drawing.joinedPairs()).toBe(internalJoins);
     expect(drawing.openEnds()).toHaveLength(2 * 2 + 2);

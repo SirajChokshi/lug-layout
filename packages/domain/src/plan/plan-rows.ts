@@ -1,8 +1,15 @@
+import { FACT_STRIDE, clearFacts } from "./plan-facts.ts";
 import { BOX_STRIDE, type PlacementKey } from "./plan-rules.ts";
+import { NO_PLAN_SHAPE, ShapeTable, type PlanShape } from "./plan-shape.ts";
+import type { TrackOutline } from "./track-outline.ts";
+import type { CarriedTrack } from "./plan-rules.ts";
 
 export const MODEL_SEGMENT = 0;
 export const TRACK_SEGMENT = 1;
 export const NO_ROW = -1;
+export const HELD = 0;
+export const NOT_HELD = 1;
+export const CARRIED_TRACK_NOT_HELD = 2;
 export const BOX_READ = 0;
 export const BOX_Y_UNREADABLE = 1;
 export const BOX_PLAN_UNREADABLE = 2;
@@ -17,12 +24,23 @@ const LIVE_LIMIT = 0.5;
 const SLOT_EMPTY = 0;
 const SLOT_LIVE = 1;
 
+export function placementLabel(kind: number, base: string, a: number, b: number): string {
+  if (kind === LABEL_NUMBERED) return `${base} #${a}`;
+  return `${base} at ${a}, ${b}`;
+}
+
 function grownInt32(
   array: Int32Array<ArrayBuffer>,
   length: number,
   fill = 0,
 ): Int32Array<ArrayBuffer> {
   const grown = new Int32Array(length).fill(fill);
+  grown.set(array);
+  return grown;
+}
+
+function grownInt16(array: Int16Array<ArrayBuffer>, length: number): Int16Array<ArrayBuffer> {
+  const grown = new Int16Array(length);
   grown.set(array);
   return grown;
 }
@@ -182,11 +200,19 @@ export class RowList {
   }
 
   link(rows: PlanRows, row: number): void {
+    this.linkAfter(rows, row, rows.segment[row] === TRACK_SEGMENT);
+  }
+
+  linkInOrder(rows: PlanRows, row: number): void {
+    this.linkAfter(rows, row, true);
+  }
+
+  private linkAfter(rows: PlanRows, row: number, bySource: boolean): void {
     const segment = rows.segment[row] ?? MODEL_SEGMENT;
     let before = this.tails[segment] ?? NO_ROW;
-    if (segment === TRACK_SEGMENT) {
-      const index = rows.source[row] ?? 0;
-      while (before !== NO_ROW && (rows.source[before] ?? 0) > index) {
+    if (bySource) {
+      const source = rows.source[row] ?? 0;
+      while (before !== NO_ROW && (rows.source[before] ?? 0) > source) {
         before = this.prev[before] ?? NO_ROW;
       }
     }
@@ -228,6 +254,14 @@ export class PlanRows {
   source = new Int32Array(INITIAL_ROWS);
   boxState = new Uint8Array(INITIAL_ROWS);
   unsupported = new Uint8Array(INITIAL_ROWS);
+  clearanceNeed = new Int16Array(INITIAL_ROWS);
+  clearanceHas = new Int16Array(INITIAL_ROWS);
+  clearanceTrain = "";
+  shape = new Int32Array(INITIAL_ROWS).fill(NO_PLAN_SHAPE);
+  facts = new Int32Array(INITIAL_ROWS * FACT_STRIDE);
+  readonly outline: Array<TrackOutline | null> = Array.from({ length: INITIAL_ROWS }, () => null);
+  readonly carried: Array<CarriedTrack | null> = Array.from({ length: INITIAL_ROWS }, () => null);
+  readonly shapes = new ShapeTable();
   readonly order = new RowList(INITIAL_ROWS);
   private free = new Int32Array(INITIAL_ROWS);
   private freeCount = 0;
@@ -241,6 +275,12 @@ export class PlanRows {
     this.segment[row] = segment;
     this.source[row] = source;
     this.unsupported[row] = 0;
+    this.clearanceNeed[row] = 0;
+    this.clearanceHas[row] = 0;
+    this.shape[row] = NO_PLAN_SHAPE;
+    this.outline[row] = null;
+    this.carried[row] = null;
+    clearFacts(this.facts, row * FACT_STRIDE);
     if (segment === TRACK_SEGMENT) this.setTrackRow(source, row);
     else this.models.set(source, row);
     this.order.link(this, row);
@@ -253,6 +293,8 @@ export class PlanRows {
     const source = this.source[row] ?? 0;
     if (this.segment[row] === TRACK_SEGMENT) this.trackRows[source] = NO_ROW;
     else this.models.delete(source);
+    this.outline[row] = null;
+    this.carried[row] = null;
     this.free[this.freeCount++] = row;
     this.count--;
   }
@@ -261,6 +303,8 @@ export class PlanRows {
     this.order.clear();
     this.models.clear();
     this.trackRows.fill(NO_ROW);
+    this.outline.fill(null);
+    this.carried.fill(null);
     this.freeCount = 0;
     this.allocated = 0;
     this.count = 0;
@@ -286,15 +330,21 @@ export class PlanRows {
     this.labelBase[row] = this.strings.intern(labelBase);
   }
 
+  shapeOf(row: number): PlanShape | null {
+    return this.shapes.at(this.shape[row] ?? NO_PLAN_SHAPE);
+  }
+
   refOf(row: number): string {
     return this.strings.value(this.ref[row] ?? 0);
   }
 
   labelOf(row: number): string {
-    const base = this.strings.value(this.labelBase[row] ?? 0);
-    const a = this.labelA[row] ?? 0;
-    if (this.labelKind[row] === LABEL_NUMBERED) return `${base} #${a}`;
-    return `${base} at ${a}, ${this.labelB[row] ?? 0}`;
+    return placementLabel(
+      this.labelKind[row] ?? LABEL_AT,
+      this.strings.value(this.labelBase[row] ?? 0),
+      this.labelA[row] ?? 0,
+      this.labelB[row] ?? 0,
+    );
   }
 
   keyOf(row: number): PlacementKey {
@@ -320,6 +370,12 @@ export class PlanRows {
     this.source = grownInt32(this.source, capacity);
     this.boxState = grownUint8(this.boxState, capacity);
     this.unsupported = grownUint8(this.unsupported, capacity);
+    this.clearanceNeed = grownInt16(this.clearanceNeed, capacity);
+    this.clearanceHas = grownInt16(this.clearanceHas, capacity);
+    this.shape = grownInt32(this.shape, capacity, NO_PLAN_SHAPE);
+    this.facts = grownInt32(this.facts, capacity * FACT_STRIDE);
+    for (let row = this.outline.length; row < capacity; row++) this.outline.push(null);
+    for (let row = this.carried.length; row < capacity; row++) this.carried.push(null);
     this.free = grownInt32(this.free, capacity);
     this.order.grow(capacity);
     this.capacity = capacity;

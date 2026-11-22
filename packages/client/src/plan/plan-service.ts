@@ -20,11 +20,13 @@ import {
   type PlanChange,
   type PlanCheck,
   type PlanDelta,
+  type PlanFootprint,
   type PlanIssue,
   type PlanObstacle,
   type PlanRegion,
   type PlanState,
   type PlanTable,
+  type PlateHeights,
   type TableTop,
 } from "@brr/domain";
 import { chunkOf, lduFromMm } from "@brr/math";
@@ -32,7 +34,9 @@ import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } fr
 import { inject, injectable } from "inversify";
 
 export const DEFAULT_MAX_OVERHANG_MM = 0;
+export const DEFAULT_MAX_REACH_MM = 700;
 export const DEFAULT_TABLE_HEIGHT_MM = 750;
+const NO_CARRIERS: ReadonlySet<number> = new Set();
 
 export interface PlacedForPlan {
   readonly key: PlacementKey;
@@ -55,9 +59,13 @@ export interface PlanView {
   readonly obstacles: ReadonlyArray<LduRect>;
 }
 
+export type PlanRowSegment = "model" | "track";
+
 export interface PlanPlacementsView {
   first(): number;
   next(row: number): number;
+  segmentOf(row: number): PlanRowSegment;
+  sourceOf(row: number): number;
   refOf(row: number): string;
   labelOf(row: number): string;
   keyOf(row: number): PlacementKey;
@@ -78,12 +86,19 @@ export interface NewPlan {
 }
 
 export type PlanPatch = Partial<
-  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm">
+  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm" | "maxReachMm">
 > &
   Partial<Pick<PlanRegion["footprint"], "roomWidthMm" | "roomDepthMm">>;
 
 export type TableInput = Omit<PlanTable, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
+
+export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
+  readonly footprint: Omit<PlanFootprint, "tables" | "obstacles"> & {
+    readonly tables: ReadonlyArray<TableInput>;
+    readonly obstacles: ReadonlyArray<ObstacleInput>;
+  };
+}
 
 export interface DrawnTable {
   readonly planId: string;
@@ -99,6 +114,10 @@ export interface IPlanService {
   regionView(planId: string): PlanView;
   insideCount(planId: string): number;
   issueCount(planId: string): number;
+  joinedRoadCells(planId: string): number;
+  unmeasuredCount(planId: string): number;
+  customParts(planId: string): number;
+  contains(planId: string, row: number): boolean;
   issueVersion(planId: string): number;
   issues(planId: string): ReadonlyArray<PlanIssue>;
   sandboxCount(): number;
@@ -106,7 +125,16 @@ export interface IPlanService {
   placements(): PlanPlacementsView;
   materialize(): PlanStateDump;
   apply(delta: PlanDelta): void;
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void;
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void;
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
@@ -122,6 +150,7 @@ export interface IPlanService {
   setTableTopY(y: number): void;
   onEdit(listener: (change: PlanChange) => void): () => void;
   restore(state: PlanState): void;
+  addition(plan: PlanInput): PlanChange;
 }
 
 interface UnreadableBox {
@@ -172,6 +201,12 @@ function planOverlays(
       active: plan.id === activePlanId,
     };
   });
+}
+
+function segmentName(segment: number): PlanRowSegment {
+  if (segment === MODEL_SEGMENT) return "model";
+  if (segment === TRACK_SEGMENT) return "track";
+  throw new Error(`unknown plan row segment ${segment}`);
 }
 
 function onlyName(patch: object): boolean {
@@ -233,6 +268,8 @@ export class PlanService implements IPlanService {
     this.view = {
       first: () => rows.first(),
       next: (row) => rows.after(row),
+      segmentOf: (row) => segmentName(rows.segment[row] ?? -1),
+      sourceOf: (row) => rows.source[row] ?? -1,
       refOf: (row) => rows.refOf(row),
       labelOf: (row) => rows.labelOf(row),
       keyOf: (row) => rows.keyOf(row),
@@ -285,6 +322,26 @@ export class PlanService implements IPlanService {
   issueCount(planId: string): number {
     const index = this.indexOf(planId);
     return this.evaluation.unchecked() ? 1 : this.evaluation.issueCount(index);
+  }
+
+  joinedRoadCells(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.joinedRoadCells(index);
+  }
+
+  unmeasuredCount(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.unmeasuredCount(index);
+  }
+
+  customParts(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.customParts(index);
+  }
+
+  contains(planId: string, row: number): boolean {
+    const index = this.indexOf(planId);
+    return !this.evaluation.unchecked() && this.evaluation.isInside(index, row);
   }
 
   issueVersion(planId: string): number {
@@ -388,12 +445,28 @@ export class PlanService implements IPlanService {
     this.afterChange(false);
   }
 
-  setUnsupported(track: ReadonlySet<number>, models: ReadonlySet<number>): void {
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
     const evaluation = this.evaluation;
     evaluation.resetChanges();
-    evaluation.setUnsupported(TRACK_SEGMENT, track);
-    evaluation.setUnsupported(MODEL_SEGMENT, models);
-    this.afterChange(false);
+    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track, NO_CARRIERS);
+    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models, carriers);
+    if (trackChanged || modelsChanged) this.afterChange(false);
+  }
+
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): void {
+    const evaluation = this.evaluation;
+    evaluation.resetChanges();
+    const trackChanged = evaluation.setLowClearance(TRACK_SEGMENT, track, train);
+    const modelsChanged = evaluation.setLowClearance(MODEL_SEGMENT, models, train);
+    if (trackChanged || modelsChanged) this.afterChange(false);
   }
 
   private newId(prefix: string): string {
@@ -461,6 +534,7 @@ export class PlanService implements IPlanService {
         obstacles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
+      maxReachMm: DEFAULT_MAX_REACH_MM,
     };
   }
 
@@ -510,6 +584,31 @@ export class PlanService implements IPlanService {
     this.afterChange(true);
   }
 
+  addition(plan: PlanInput): PlanChange {
+    const { footprint } = plan;
+    const region: PlanRegion = {
+      id: this.newId("plan"),
+      name: plan.name,
+      originChunkX: plan.originChunkX,
+      originChunkZ: plan.originChunkZ,
+      footprint: {
+        roomWidthMm: footprint.roomWidthMm,
+        roomDepthMm: footprint.roomDepthMm,
+        tables: footprint.tables.map((table) => ({ id: this.newId("table"), ...table })),
+        obstacles: footprint.obstacles.map((obstacle) => ({
+          id: this.newId("obstacle"),
+          ...obstacle,
+        })),
+      },
+      maxOverhangMm: plan.maxOverhangMm,
+      maxReachMm: plan.maxReachMm,
+    };
+    return {
+      before: this.planState(),
+      after: { regions: [...this.regions, region], activePlanId: region.id },
+    };
+  }
+
   createPlan(plan: NewPlan): string {
     const region = this.newRegion(plan);
     this.insertRegion(region);
@@ -525,6 +624,7 @@ export class PlanService implements IPlanService {
         originChunkX: patch.originChunkX ?? plan.originChunkX,
         originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
         maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
+        maxReachMm: patch.maxReachMm ?? plan.maxReachMm,
         footprint: {
           ...plan.footprint,
           roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,
@@ -693,11 +793,28 @@ export class PlanService implements IPlanService {
     const changed =
       evaluation.uncheckedChanged ||
       evaluation.flaggedMembershipChanged ||
-      evaluation.flaggedBoxChanged;
+      evaluation.flaggedBoxChanged ||
+      evaluation.trackIssuesChanged;
     if (!changed) return;
     const boxes: WorldBox[] = [];
     for (let row = evaluation.firstFlagged(); row !== NO_ROW; row = evaluation.nextFlagged(row)) {
       boxes.push(this.boxOf(row));
+    }
+    const track = evaluation.trackIssues;
+    for (let issue = 0; issue < track.count; issue++) {
+      if (!evaluation.trackIssueInRegions(issue)) continue;
+      const last = track.ownerStart[issue + 1] ?? 0;
+      for (let owner = track.ownerStart[issue] ?? 0; owner < last; owner++) {
+        const at = owner * BOX_STRIDE;
+        boxes.push({
+          minX: track.ownerBox[at + BOX_MIN_X] ?? Number.NaN,
+          minY: track.ownerBox[at + BOX_MIN_Y] ?? Number.NaN,
+          minZ: track.ownerBox[at + BOX_MIN_Z] ?? Number.NaN,
+          maxX: track.ownerBox[at + BOX_MAX_X] ?? Number.NaN,
+          maxY: track.ownerBox[at + BOX_MAX_Y] ?? Number.NaN,
+          maxZ: track.ownerBox[at + BOX_MAX_Z] ?? Number.NaN,
+        });
+      }
     }
     this.backend.setIssueBoxes(boxes);
   }

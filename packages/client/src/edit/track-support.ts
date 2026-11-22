@@ -1,4 +1,11 @@
-import { AXIS_NEG_Y, GENDER_FEMALE, type ConnectorTable, type TrackClearance } from "@brr/domain";
+import {
+  AXIS_NEG_Y,
+  GENDER_FEMALE,
+  WORLD_TRACK_FRAME,
+  type ConnectorTable,
+  type PlacementFrame,
+  type TrackClearance,
+} from "@brr/domain";
 import {
   QUARTER_TURN_16,
   STUD_LDU,
@@ -9,7 +16,7 @@ import {
   type Pose16,
 } from "@brr/math";
 import type { TrackPartFrame } from "@brr/schema/bundle";
-import { cellKey } from "./track-obstacles.ts";
+import { cellKey, type StudSeats } from "./track-obstacles.ts";
 
 const SIXTEENTHS_PER_LDU = 16;
 const STUD_SIXTEENTHS = STUD_LDU * SIXTEENTHS_PER_LDU;
@@ -65,6 +72,22 @@ function exactPartPose(frame: TrackPartFrame, placement: Pose16): PartPose | nul
   };
 }
 
+function framedPartPose(
+  frame: TrackPartFrame,
+  placement: Pose16,
+  runFrame: PlacementFrame,
+): PartPose {
+  const part = placedPartPose(frame, placement);
+  const offsetX = runFrame.xLdu * SIXTEENTHS_PER_LDU;
+  const offsetZ = runFrame.zLdu * SIXTEENTHS_PER_LDU;
+  return {
+    ...part,
+    x: part.x + offsetX,
+    z: part.z + offsetZ,
+    exact: part.exact && Number.isInteger(offsetX) && Number.isInteger(offsetZ),
+  };
+}
+
 function placedPartPose(frame: TrackPartFrame, placement: Pose16): PartPose {
   const exact = exactPartPose(frame, placement);
   if (exact) return exact;
@@ -80,26 +103,68 @@ function placedPartPose(frame: TrackPartFrame, placement: Pose16): PartPose {
   };
 }
 
+const NO_CELLS = new Int32Array(0);
+const NO_POINTS = new Float64Array(0);
+
 export class TrackSupport {
   constructor(private readonly antiStuds: ReadonlyMap<number, Int32Array>) {}
+
+  antiStudCells(catalogIndex: number, frame: TrackPartFrame, placement: Pose16): Int32Array {
+    const origins = this.antiStuds.get(catalogIndex);
+    const part = exactPartPose(frame, placement);
+    if (!origins || !part) return NO_CELLS;
+    const cells: number[] = [];
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      const cellX = studCell(part.x + part.cos * ox - part.sin * oz);
+      const cellZ = studCell(part.z + part.sin * ox + part.cos * oz);
+      if (Number.isInteger(cellX) && Number.isInteger(cellZ)) cells.push(cellX, cellZ);
+    }
+    return Int32Array.from(cells);
+  }
+
+  antiStudPoints(
+    catalogIndex: number,
+    frame: TrackPartFrame,
+    placement: Pose16,
+    runFrame: PlacementFrame,
+  ): Float64Array {
+    const origins = this.antiStuds.get(catalogIndex);
+    if (!origins) return NO_POINTS;
+    const part = framedPartPose(frame, placement, runFrame);
+    const points = new Float64Array(origins.length);
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      points[i] = (part.x + part.cos * ox - part.sin * oz) / SIXTEENTHS_PER_LDU;
+      points[i + 1] = (part.z + part.sin * ox + part.cos * oz) / SIXTEENTHS_PER_LDU;
+    }
+    return points;
+  }
 
   supported(
     catalogIndex: number,
     frame: TrackPartFrame,
     placement: Pose16,
-    seats: ReadonlySet<number>,
+    seats: StudSeats,
     studlessTops: TrackClearance,
+    runFrame: PlacementFrame = WORLD_TRACK_FRAME,
+    onTable = true,
   ): boolean {
     const origins = this.antiStuds.get(catalogIndex);
     if (!origins) return false;
-    const part = placedPartPose(frame, placement);
+    const part = framedPartPose(frame, placement, runFrame);
     for (let i = 0; i < origins.length; i += 2) {
       const ox = origins[i] ?? 0;
       const oz = origins[i + 1] ?? 0;
       const x = part.x + part.cos * ox - part.sin * oz;
       const z = part.z + part.sin * ox + part.cos * oz;
       if (part.exact && onStud(x, z, seats)) return true;
-      if (overBareGround(x / SIXTEENTHS_PER_LDU, z / SIXTEENTHS_PER_LDU, seats, studlessTops)) {
+      if (
+        onTable &&
+        overBareGround(x / SIXTEENTHS_PER_LDU, z / SIXTEENTHS_PER_LDU, seats, studlessTops)
+      ) {
         return true;
       }
     }
@@ -107,16 +172,20 @@ export class TrackSupport {
   }
 }
 
-function onStud(x: number, z: number, seats: ReadonlySet<number>): boolean {
-  const cellX = (x - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
-  const cellZ = (z - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+function studCell(sixteenths: number): number {
+  return (sixteenths - STUD_CENTRE_SIXTEENTHS) / STUD_SIXTEENTHS;
+}
+
+function onStud(x: number, z: number, seats: StudSeats): boolean {
+  const cellX = studCell(x);
+  const cellZ = studCell(z);
   return Number.isInteger(cellX) && Number.isInteger(cellZ) && seats.has(cellKey(cellX, cellZ));
 }
 
 function overBareGround(
   xLdu: number,
   zLdu: number,
-  seats: ReadonlySet<number>,
+  seats: StudSeats,
   studlessTops: TrackClearance,
 ): boolean {
   if (studlessTops.covers(xLdu, zLdu)) return false;

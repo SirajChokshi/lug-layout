@@ -13,6 +13,7 @@ use common::fixture_library;
 const STUD: StudShape = StudShape {
     height: 4.0,
     radius: 6.0,
+    inscribed_radius: 6.0,
 };
 const OPAQUE: u32 = 4;
 const CLEAR: u32 = 47;

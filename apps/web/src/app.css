@@ -104,8 +104,8 @@ footer {
   --library-reach: var(--library-chip-width);
 }
 
-.editor[data-layout="compact"]:has(> .library[data-open="false"]) .tool-hud {
-  left: var(--panel-edge);
+.editor[data-layout="compact"]:has(> .library[data-open="false"]) {
+  --centre-left: var(--panel-edge);
 }
 
 .editor-hud > summary {
@@ -405,10 +405,38 @@ footer {
   color: #c0115f;
 }
 
+.plan-warnings {
+  color: var(--status-warn);
+}
+
 .plan-issues {
   margin: 0;
   padding-left: 16px;
   color: #8a1043;
+}
+
+.plan-issues li[data-severity="warning"] {
+  color: var(--status-warn);
+}
+
+.plan-checks {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-note {
+  color: #556;
+}
+
+.plan-unchecked {
+  margin-top: 6px;
+  color: #556;
+}
+
+.plan-unchecked ul {
+  margin: 4px 0 0;
+  padding-left: 16px;
 }
 
 .inspector dl {
@@ -772,6 +800,10 @@ footer {
   fill: rgb(107 79 46);
 }
 
+.scene-label[data-kind="height"] .scene-label-pill {
+  fill: rgb(38 88 140);
+}
+
 .toolbar-hint {
   grid-column: 1 / -1;
   margin: 0;
@@ -1009,6 +1041,43 @@ footer a {
 .track-extend button.blocked[aria-pressed="true"] {
   border-color: #b02a2a;
   background: #d64545;
+}
+
+.track-height-panel {
+  font-size: 12px;
+}
+
+.track-height-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+.track-height-row output {
+  min-width: 9em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.track-height-row button {
+  padding: 3px 8px;
+  border: 1px solid #c9ccd6;
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.track-height-row button[aria-pressed="true"] {
+  border-color: #26588c;
+  background: #26588c;
+  color: #fff;
+}
+
+.track-height-panel .unverified {
+  color: #8a5a00;
 }
 
 .gear-panel select {
@@ -1480,6 +1549,43 @@ footer a {
 .bom ul {
   margin: 4px 0 0;
   padding-left: 18px;
+}
+
+.own-vs-buy {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgb(0 0 0 / 0.12);
+}
+
+.own-vs-buy h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.own-vs-buy label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #556;
+}
+
+.own-buy-lines {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.own-buy-lines th,
+.own-buy-lines td {
+  padding: 1px 4px;
+  text-align: left;
+}
+
+.own-buy-lines tr[data-buy]:not([data-buy="0"]) td:last-child {
+  font-weight: 600;
 }
 
 .bom-region {

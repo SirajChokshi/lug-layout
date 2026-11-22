@@ -13,7 +13,6 @@ import { readTarGz } from "../catalog/tar.ts";
 import type { InputLock } from "../fetch-ldraw.ts";
 import { parseLdraw } from "../ldraw/parse.ts";
 import { encodeObjectPath, sha256Hex, type ObjectStore } from "../r2.ts";
-import { isCaLicense } from "../verify/license-audit.ts";
 
 const LIBRARY_DIRECTORIES = ["parts/", "p/"] as const;
 const LDRAW_EXTENSIONS: ReadonlySet<string> = new Set([".dat", ".ldr", ".mpd"]);
@@ -113,14 +112,10 @@ function libraryPath(entryPath: string, root: string): string | undefined {
   return inRepository.startsWith(prefix) ? inRepository.slice(prefix.length) : undefined;
 }
 
-function licenseProblem(path: string, bytes: Buffer): string | undefined {
+function unofficialProblem(path: string, bytes: Buffer): string | undefined {
   if (!LDRAW_EXTENSIONS.has(extname(path).toLowerCase())) return undefined;
   const { header } = parseLdraw(bytes.toString("utf8"));
-  if (header.ldrawOrg.startsWith(UNOFFICIAL_PREFIX)) return `unofficial file ${path}`;
-  if (!isCaLicense(header.license)) {
-    return `no contributor-agreement !LICENSE in ${path}: "${header.license}"`;
-  }
-  return undefined;
+  return header.ldrawOrg.startsWith(UNOFFICIAL_PREFIX) ? `unofficial file ${path}` : undefined;
 }
 
 export async function extractLibrary(
@@ -150,7 +145,7 @@ export async function extractLibrary(
       const sha256 = sha256Hex(bytes);
       hashes.set(path, sha256);
       if (!isPublishedPath(path)) return;
-      const problem = licenseProblem(path, bytes);
+      const problem = unofficialProblem(path, bytes);
       if (problem !== undefined) problems.push(problem);
       published[path] = sha256;
       const target = join(directory, path);
