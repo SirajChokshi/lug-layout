@@ -8,6 +8,7 @@ import {
   ConnectorTable,
   EditHistory,
   PlanDelta,
+  NO_STUD,
   WORLD_TRACK_FRAME,
   World,
   levelCrossings,
@@ -1975,7 +1976,7 @@ it(
   SWEEP_TIMEOUT_MS,
 );
 
-it("finds a level crossing only over a road surface's roadway: track on a studless plaza is reported unsupported, but is no crossing and gets no ramp", async () => {
+it("finds a level crossing over any road cell at the bed, a tiled plaza's as much as a roadway's, and reports track on either unsupported unless it's seated", async () => {
   const { ground, plate, surface } = await roadPlateGround();
   const bundle = await trackAndRoadBundle();
   const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
@@ -2010,18 +2011,32 @@ it("finds a level crossing only over a road surface's roadway: track on a studle
     levelCrossing.systems.map((system) => [system.system, system.railTopLdu]),
   );
   const road = { id: 0, x: plate.handle.x, z: plate.handle.z, yLdu: 0, rot: 0, surface };
+  const roadwayTop = surface.topSixteenths[surface.road.indexOf(1)] ?? 0;
+  const tiledPlaza = {
+    id: 1,
+    x: (plaza[0] + plaza[2]) / 2,
+    z: (plaza[1] + plaza[3]) / 2,
+    yLdu: 0,
+    rot: 0,
+    surface: {
+      ...surface,
+      topSixteenths: new Int32Array(surface.topSixteenths.length).fill(roadwayTop),
+      studSixteenths: new Int32Array(surface.studSixteenths.length).fill(NO_STUD),
+      road: new Uint8Array(surface.road.length).fill(1),
+    },
+  };
   const tracks = layout.crossingPieces().map((piece) => ({
     outline: piece.outline,
     bedLdu: piece.bedLdu,
     railTopLdu: railTops.get(piece.system) ?? Number.NaN,
   }));
-  const found = levelCrossings([road], tracks, []);
+  const found = levelCrossings([road, tiledPlaza], tracks, []);
 
   expect(unsupportedOf(layout)).toEqual([
     { piece: 0, on: plate.placeable.label },
     { piece: 1, on: TILED_PLAZA },
   ]);
-  expect(found.map((crossing) => crossing.tracks)).toEqual([[0]]);
+  expect(found.map((crossing) => crossing.tracks).toSorted()).toEqual([[0], [1]]);
 });
 
 it("lays the stroke and withholds only the join when no supported closure reaches the end, reports it unsupported, and joins when a supported closure exists, half on studs included", async () => {
