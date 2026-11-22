@@ -14,6 +14,7 @@ import {
   type CompilerVehicles,
   type LibraryBakeIndexRef,
   type LibraryConnectorsIndexRef,
+  type LibraryPartsFile,
   type ShadowLibraryIndexRef,
   type ManifestPart,
   type ModelSection,
@@ -254,6 +255,7 @@ export interface IPartBundleLoader {
   importContext(lod: BundleLod): Promise<ImportContext>;
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
   readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad>;
+  prefetchPartConnectors(lod: BundleLod): Promise<void>;
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
   loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(
@@ -264,6 +266,7 @@ export interface IPartBundleLoader {
   loadCrosswalk(lod: BundleLod): Promise<CatalogCrosswalk>;
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates>;
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null>;
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null>;
 }
 
 export interface IAssetFetcher {
