@@ -29,7 +29,15 @@ function roadBaseplate(part: string): RoadSurface {
       road[row * columns + column] = 0;
     }
   });
-  return { minX: (-columns * STUD) / 2, minZ: (-rows * STUD) / 2, columns, rows, top, stud, road };
+  return {
+    minX: (-columns * STUD) / 2,
+    minZ: (-rows * STUD) / 2,
+    columns,
+    rows,
+    topSixteenths: top,
+    studSixteenths: stud,
+    road,
+  };
 }
 
 const PARTS = ["44336", "44342", "44341", "44343", "30225b", "2358"] as const;

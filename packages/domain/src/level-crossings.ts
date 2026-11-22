@@ -1,4 +1,12 @@
-import { STUD_LDU, rot90Cos, rot90Sin, type Rot90 } from "@brr/math";
+import {
+  CHUNK_LDU,
+  SIXTEENTHS_PER_LDU,
+  STUD_LDU,
+  isRot90,
+  rot90Cos,
+  rot90Sin,
+  type Rot90,
+} from "@brr/math";
 import type { CrossingRamp } from "@brr/schema/bundle";
 import { PlacedOutline, type AxisEdge, type OutlineRing } from "./plan/placed-outline.ts";
 import type { LduRect } from "./plan/plan-region.ts";
@@ -36,8 +44,9 @@ export interface LevelCrossing {
 
 interface SurfaceCell {
   readonly placement: number;
-  readonly top: number;
+  readonly topSixteenths: number;
   readonly road: boolean;
+  readonly square: LduRect;
 }
 
 interface Candidate {
@@ -56,22 +65,6 @@ const ROTATIONS: ReadonlyArray<Rot90> = [0, 1, 2, 3];
 
 function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_SPAN / 2) * CELL_KEY_SPAN + (cellZ + CELL_KEY_SPAN / 2);
-}
-
-function cellOfKey(key: number): readonly [number, number] {
-  return [
-    Math.floor(key / CELL_KEY_SPAN) - CELL_KEY_SPAN / 2,
-    (key % CELL_KEY_SPAN) - CELL_KEY_SPAN / 2,
-  ];
-}
-
-function cellRect(cellX: number, cellZ: number): LduRect {
-  return {
-    minX: cellX * STUD_LDU,
-    minZ: cellZ * STUD_LDU,
-    maxX: (cellX + 1) * STUD_LDU,
-    maxZ: (cellZ + 1) * STUD_LDU,
-  };
 }
 
 function rotated(rot: Rot90, x: number, z: number): readonly [number, number] {
@@ -113,57 +106,142 @@ function cellsUnder(rect: LduRect): Array<readonly [number, number]> {
   return cells;
 }
 
-function surfaceCells(roads: ReadonlyArray<RoadPlacement>): ReadonlyMap<number, SurfaceCell> {
-  const cells = new Map<number, SurfaceCell>();
-  for (const road of roads) {
-    for (const cell of placedCells(road)) {
-      const key = cellKey(cell.cellX, cell.cellZ);
-      const existing = cells.get(key);
-      if (existing && existing.top >= cell.top) continue;
-      cells.set(key, { placement: cell.placement, top: cell.top, road: cell.road === 1 });
-    }
+class SurfaceIndex {
+  readonly cells: SurfaceCell[] = [];
+  readonly cellsOf = new Map<number, readonly [number, number]>();
+  private readonly buckets = new Map<number, number[]>();
+
+  add(cell: SurfaceCell): void {
+    const index = this.cells.length;
+    this.cells.push(cell);
+    const key = cellKey(
+      Math.floor((cell.square.minX + HALF_STUD_LDU) / STUD_LDU),
+      Math.floor((cell.square.minZ + HALF_STUD_LDU) / STUD_LDU),
+    );
+    const bucket = this.buckets.get(key);
+    if (bucket) bucket.push(index);
+    else this.buckets.set(key, [index]);
   }
-  return cells;
+
+  overlapping(rect: LduRect): ReadonlyArray<number> {
+    const found: number[] = [];
+    for (const [x, z] of cellsUnder(grown(rect))) {
+      for (const index of this.buckets.get(cellKey(x, z)) ?? []) {
+        const cell = this.cells[index];
+        if (cell && squaresOverlap(cell.square, rect)) found.push(index);
+      }
+    }
+    return found;
+  }
 }
 
-function coveredRoadway(
-  track: CrossingTrack,
-  cells: ReadonlyMap<number, SurfaceCell>,
-): ReadonlyArray<number> {
+function surfaceIndex(roads: ReadonlyArray<RoadPlacement>): SurfaceIndex {
+  const index = new SurfaceIndex();
+  for (const road of roads) {
+    const first = index.cells.length;
+    for (const cell of placedCells(road)) {
+      index.add({
+        placement: cell.placement,
+        topSixteenths: cell.topSixteenths,
+        road: cell.road === 1,
+        square: {
+          minX: cell.centreX - HALF_STUD_LDU,
+          minZ: cell.centreZ - HALF_STUD_LDU,
+          maxX: cell.centreX + HALF_STUD_LDU,
+          maxZ: cell.centreZ + HALF_STUD_LDU,
+        },
+      });
+    }
+    index.cellsOf.set(road.id, [first, index.cells.length]);
+  }
+  return index;
+}
+
+function placementRect(road: RoadPlacement): LduRect {
+  const { surface, rot } = road;
+  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn 0-3`);
+  const local = {
+    minX: surface.minX,
+    minZ: surface.minZ,
+    maxX: surface.minX + surface.columns * STUD_LDU,
+    maxZ: surface.minZ + surface.rows * STUD_LDU,
+  };
+  return shifted(rotatedBox(rot, local), road.x, road.z);
+}
+
+function chunkSpan(from: number, to: number): readonly [number, number] {
+  return [Math.floor(from / CHUNK_LDU), Math.floor(to / CHUNK_LDU)];
+}
+
+function rectsMeet(a: LduRect, b: LduRect): boolean {
+  return a.minX <= b.maxX && b.minX <= a.maxX && a.minZ <= b.maxZ && b.minZ <= a.maxZ;
+}
+
+function grown(rect: LduRect): LduRect {
+  return {
+    minX: rect.minX - HALF_STUD_LDU,
+    minZ: rect.minZ - HALF_STUD_LDU,
+    maxX: rect.maxX + HALF_STUD_LDU,
+    maxZ: rect.maxZ + HALF_STUD_LDU,
+  };
+}
+
+function squaresOverlap(a: LduRect, b: LduRect): boolean {
+  return a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+}
+
+function shareAnEdge(a: LduRect, b: LduRect): boolean {
+  const alongX = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX);
+  const alongZ = Math.min(a.maxZ, b.maxZ) - Math.max(a.minZ, b.minZ);
+  return (alongX > 0 && alongZ >= 0) || (alongZ > 0 && alongX >= 0);
+}
+
+function touchingReach(square: LduRect): LduRect {
+  return {
+    minX: square.minX - 1,
+    minZ: square.minZ - 1,
+    maxX: square.maxX + 1,
+    maxZ: square.maxZ + 1,
+  };
+}
+
+function bedSixteenths(track: CrossingTrack): number {
+  return track.bedLdu * SIXTEENTHS_PER_LDU;
+}
+
+function coveredRoadway(track: CrossingTrack, index: SurfaceIndex): ReadonlyArray<number> {
   const covered: number[] = [];
-  for (const [x, z] of cellsUnder(track.outline.bounds)) {
-    const key = cellKey(x, z);
-    const cell = cells.get(key);
-    if (!cell?.road || cell.top !== track.bedLdu) continue;
-    if (track.outline.overlaps(PlacedOutline.ofRect(cellRect(x, z)))) covered.push(key);
+  const bed = bedSixteenths(track);
+  for (const at of index.overlapping(track.outline.bounds)) {
+    const cell = index.cells[at];
+    if (!cell?.road || cell.topSixteenths !== bed) continue;
+    if (track.outline.overlaps(PlacedOutline.ofRect(cell.square))) covered.push(at);
   }
   return covered;
 }
 
-function components(keys: ReadonlySet<number>): ReadonlyArray<ReadonlyArray<number>> {
+function components(
+  members: ReadonlySet<number>,
+  index: SurfaceIndex,
+): ReadonlyArray<ReadonlyArray<number>> {
   const seen = new Set<number>();
   const groups: number[][] = [];
-  for (const start of [...keys].toSorted((a, b) => a - b)) {
+  for (const start of [...members].toSorted((a, b) => a - b)) {
     if (seen.has(start)) continue;
     const group: number[] = [];
     const stack = [start];
     seen.add(start);
     while (stack.length > 0) {
-      const key = stack.pop();
-      if (key === undefined) break;
-      group.push(key);
-      const [x, z] = cellOfKey(key);
-      for (const [dx, dz] of [
-        [1, 0],
-        [-1, 0],
-        [0, 1],
-        [0, -1],
-      ] as const) {
-        const next = cellKey(x + dx, z + dz);
-        if (keys.has(next) && !seen.has(next)) {
-          seen.add(next);
-          stack.push(next);
-        }
+      const at = stack.pop();
+      if (at === undefined) break;
+      group.push(at);
+      const square = index.cells[at]?.square;
+      if (!square) continue;
+      for (const next of index.overlapping(touchingReach(square))) {
+        const other = index.cells[next]?.square;
+        if (!members.has(next) || seen.has(next) || !other || !shareAnEdge(square, other)) continue;
+        seen.add(next);
+        stack.push(next);
       }
     }
     groups.push(group.toSorted((a, b) => a - b));
@@ -233,10 +311,8 @@ function candidatesAlong(track: number, edge: AxisEdge, part: RampPart, rot: Rot
   return out;
 }
 
-function roadwayUnder(rect: LduRect, roadway: ReadonlySet<number>): number {
-  let count = 0;
-  for (const [x, z] of cellsUnder(rect)) if (roadway.has(cellKey(x, z))) count++;
-  return count;
+function roadwayUnder(rect: LduRect, roadway: SurfaceIndex): number {
+  return roadway.overlapping(rect).length;
 }
 
 function worldAntiStuds(candidate: Candidate): ReadonlyArray<readonly [number, number]> {
@@ -249,7 +325,7 @@ function worldAntiStuds(candidate: Candidate): ReadonlyArray<readonly [number, n
 function rampCandidates(
   candidates: ReadonlyArray<Candidate>,
   tracks: ReadonlyArray<CrossingTrack>,
-  roadway: ReadonlySet<number>,
+  roadway: SurfaceIndex,
 ): RampCandidate[] {
   const seen = new Set<string>();
   const valid: RampCandidate[] = [];
@@ -283,33 +359,104 @@ function rampCandidates(
   return valid.toSorted((a, b) => b.roadwayCovered - a.roadwayCovered);
 }
 
+export class RoadSurfaceCells {
+  private readonly rects: ReadonlyArray<LduRect>;
+  private readonly byChunk = new Map<number, Map<number, number[]>>();
+
+  constructor(private readonly roads: ReadonlyArray<RoadPlacement>) {
+    this.rects = roads.map(placementRect);
+    this.rects.forEach((rect, road) => {
+      const [x0, x1] = chunkSpan(rect.minX, rect.maxX);
+      const [z0, z1] = chunkSpan(rect.minZ, rect.maxZ);
+      for (let cx = x0; cx <= x1; cx++) {
+        let column = this.byChunk.get(cx);
+        if (!column) {
+          column = new Map();
+          this.byChunk.set(cx, column);
+        }
+        for (let cz = z0; cz <= z1; cz++) {
+          const bucket = column.get(cz);
+          if (bucket) bucket.push(road);
+          else column.set(cz, [road]);
+        }
+      }
+    });
+  }
+
+  get empty(): boolean {
+    return this.roads.length === 0;
+  }
+
+  crossings(
+    tracks: ReadonlyArray<CrossingTrack>,
+    rampParts: ReadonlyArray<RampPart>,
+  ): ReadonlyArray<LevelCrossing> {
+    const near = this.nearTracks(tracks);
+    return near.length === 0 ? [] : crossingsOver(near, tracks, rampParts);
+  }
+
+  private nearTracks(tracks: ReadonlyArray<CrossingTrack>): ReadonlyArray<RoadPlacement> {
+    if (tracks.length === 0) return [];
+    const near = new Uint8Array(this.roads.length);
+    for (const track of tracks) {
+      const reach = grown(track.outline.bounds);
+      const [x0, x1] = chunkSpan(reach.minX, reach.maxX);
+      const [z0, z1] = chunkSpan(reach.minZ, reach.maxZ);
+      for (let cx = x0; cx <= x1; cx++) {
+        const column = this.byChunk.get(cx);
+        for (let cz = z0; cz <= z1; cz++) {
+          for (const road of column?.get(cz) ?? []) {
+            const rect = this.rects[road];
+            if (rect && rectsMeet(rect, reach)) near[road] = 1;
+          }
+        }
+      }
+    }
+    return this.roads.filter((_, road) => near[road] === 1);
+  }
+}
+
 export function levelCrossings(
   roads: ReadonlyArray<RoadPlacement>,
   tracks: ReadonlyArray<CrossingTrack>,
   rampParts: ReadonlyArray<RampPart>,
 ): ReadonlyArray<LevelCrossing> {
-  const cells = surfaceCells(roads);
+  return new RoadSurfaceCells(roads).crossings(tracks, rampParts);
+}
+
+function crossingsOver(
+  near: ReadonlyArray<RoadPlacement>,
+  tracks: ReadonlyArray<CrossingTrack>,
+  rampParts: ReadonlyArray<RampPart>,
+): ReadonlyArray<LevelCrossing> {
+  const surfaces = surfaceIndex(near);
   const coveredBy = new Map<number, Set<number>>();
-  tracks.forEach((track, index) => {
-    for (const key of coveredRoadway(track, cells)) {
-      const set = coveredBy.get(key) ?? new Set<number>();
-      set.add(index);
-      coveredBy.set(key, set);
+  tracks.forEach((track, trackIndex) => {
+    for (const at of coveredRoadway(track, surfaces)) {
+      const set = coveredBy.get(at) ?? new Set<number>();
+      set.add(trackIndex);
+      coveredBy.set(at, set);
     }
   });
-  return components(new Set(coveredBy.keys())).map((group) => {
+  return components(new Set(coveredBy.keys()), surfaces).map((group) => {
     const members = new Set<number>();
     const roadIds = new Set<number>();
-    for (const key of group) {
-      for (const track of coveredBy.get(key) ?? []) members.add(track);
-      const placement = cells.get(key)?.placement;
+    for (const at of group) {
+      for (const track of coveredBy.get(at) ?? []) members.add(track);
+      const placement = surfaces.cells[at]?.placement;
       if (placement !== undefined) roadIds.add(placement);
     }
     const trackList = [...members].toSorted((a, b) => a - b);
-    const bed = cells.get(group[0] ?? 0)?.top;
-    const roadway = new Set<number>();
-    for (const [key, cell] of cells) {
-      if (cell.road && cell.top === bed && roadIds.has(cell.placement)) roadway.add(key);
+    const bed = surfaces.cells[group[0] ?? 0]?.topSixteenths;
+    const roadway = new SurfaceIndex();
+    const ranges = [...roadIds]
+      .map((id) => surfaces.cellsOf.get(id) ?? ([0, 0] as const))
+      .toSorted((a, b) => a[0] - b[0]);
+    for (const [from, to] of ranges) {
+      for (let at = from; at < to; at++) {
+        const cell = surfaces.cells[at];
+        if (cell?.road && cell.topSixteenths === bed) roadway.add(cell);
+      }
     }
     const candidates: Candidate[] = [];
     for (const index of trackList) {

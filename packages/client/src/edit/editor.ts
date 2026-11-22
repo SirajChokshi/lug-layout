@@ -122,6 +122,7 @@ import {
   type TrackLayRequest,
   type TrackClickRefusal,
 } from "./track-edit-session.ts";
+import type { RoadNeighbourhood } from "./road-drawing.ts";
 import type { IRoadEditSession, RoadEditView } from "./road-edit-session.ts";
 import type { ITrackPiers, PierPiece } from "./track-piers.ts";
 import type { ITallestTrain } from "../trains/tallest-train.ts";
@@ -134,7 +135,12 @@ import {
   type IPlaceableCatalog,
   type SkippedCatalogModel,
 } from "../catalog/placeable-catalog.ts";
-import { heldPieces, heldRuns, latticeFrame } from "../connect/model-track-ends.ts";
+import {
+  heldPieces,
+  heldRuns,
+  latticeFrame,
+  type FramedTrackPiece,
+} from "../connect/model-track-ends.ts";
 import { partBoxes } from "../connect/part-boxes.ts";
 import { FrozenTechnic } from "../connect/frozen-technic.ts";
 import type {
@@ -164,6 +170,7 @@ import {
 import type {
   JoinEndView,
   RaisedPiece,
+  SolidRects,
   TrackBlockView,
   TrackDrawing,
   TrackRouteView,
@@ -194,11 +201,15 @@ import { OBSTACLE_RECT_FLOATS, seatsPending } from "./track-obstacles.ts";
 import {
   ANY_TURN,
   HELD_TURN,
-  cellExtent,
-  coveredCells,
-  coversRoad,
+  NO_ROAD_SURFACE,
+  overlapsPlacedRoad,
+  placedRoadsOf,
+  roadOverlapCells,
   snapToRoadEdge,
-  type CellExtent,
+  type PlacedRoads,
+  type ProbedRoad,
+  type RestingHeights,
+  type RoadSnap,
 } from "./road-snap.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
@@ -344,7 +355,7 @@ export interface RoadJoinView {
   readonly issues: ReadonlyArray<RoadIssueView>;
 }
 
-export type RoadSnapState = "snapped" | "free" | "refused";
+export type RoadSnapState = "snapped" | "free" | "mismatched" | "refused";
 
 export interface RoadSnapView {
   readonly state: RoadSnapState;
@@ -635,34 +646,18 @@ function rootNotBelow(squared: number): number {
 }
 
 const DEGREES_PER_QUARTER_TURN = 90;
-const ROAD_REFUSAL = "its road edges would mismatch or overlap placed road pieces";
 interface RoadCellCounts {
   readonly mismatchedCells: number;
   readonly overlappingCells: number;
 }
 const NO_ROAD_CELLS: RoadCellCounts = { mismatchedCells: 0, overlappingCells: 0 };
 
-function onRoadFootprint(
-  extents: ReadonlyArray<CellExtent>,
-  surface: RoadSurface,
-  x: number,
-  z: number,
-  rot: number,
-): boolean {
-  return coversRoad(extents, cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot, surface }), x, z);
+function sameLatticePose(a: LatticePose, b: LatticePose): boolean {
+  return a.x === b.x && a.z === b.z && a.rot === b.rot && a.yPlates === b.yPlates;
 }
 
-function roadFitRefused(fit: RoadCellCounts): boolean {
-  return fit.mismatchedCells > 0 || fit.overlappingCells > 0;
-}
-
-interface RoadProbe {
-  id: number;
-  x: number;
-  z: number;
-  yLdu: number;
-  rot: number;
-  surface: RoadSurface;
+function roadOverlapText(placeable: Placeable, overlapping: number): string {
+  return `${placeable.label}'s road would lie in ${overlapping} cells of placed road there, at the same height.`;
 }
 
 type SeatOnRails = "allowed" | "refused";
@@ -673,8 +668,6 @@ interface PlacementCheck {
   waitingOn: number;
   refusal: string | null;
   trackBlock: TrackBlockView | null;
-  road: RoadProbe | null;
-  roadRefused: boolean;
 }
 
 function railSeatRefusal(placeable: Placeable): string {
@@ -723,8 +716,7 @@ function placementRefused(check: PlacementCheck, seat: SeatOnRails): boolean {
     check.waitingOn !== NOT_WAITING ||
     (seat === "refused" && kind === "seat") ||
     check.refusal !== null ||
-    check.trackBlock !== null ||
-    check.roadRefused
+    check.trackBlock !== null
   );
 }
 
@@ -737,8 +729,7 @@ function placementRefusal(
   if (aim?.kind === "refused") return aim.reason;
   if (aim?.kind === "seat") return seat === "refused" ? railSeatRefusal(placeable) : null;
   if (check.refusal) return check.refusal;
-  if (check.trackBlock) return trackRefusal(placeable, check.trackBlock);
-  return check.roadRefused ? ROAD_REFUSAL : null;
+  return check.trackBlock ? trackRefusal(placeable, check.trackBlock) : null;
 }
 
 const MARKER_WIDTH_LDU = 6;
@@ -802,13 +793,16 @@ function markerBox(segment: RoadEdgeSegment): EdgeMarker["box"] {
   }
 }
 const REFUSED_SEAT_LIFT_LDU = BRICK_LDU;
-const VERTICAL_RAY_HEIGHT_LDU = 1_000_000;
-const HANDLE_TOLERANCE_PX = 8;
+const NO_HELD_TRACK: ReadonlyArray<FramedTrackPiece> = [];
 
-interface RoadContext {
-  readonly network: RoadNetwork;
-  readonly extents: ReadonlyArray<CellExtent>;
+interface SolidProbe {
+  placeable: Placeable | null;
+  x: number;
+  z: number;
+  rot: number;
+  yPlates: number;
 }
+const HANDLE_TOLERANCE_PX = 8;
 
 interface ModelMember {
   readonly model: PlacedModel | null;
@@ -873,15 +867,18 @@ interface PlacedEnd {
   readonly yPlates: number;
 }
 
-interface GroupEdit {
-  readonly action: GroupAction;
+interface ModelCheck {
   readonly models: ReadonlyArray<ModelMember>;
-  readonly pieces: ReadonlyArray<PieceMember>;
   readonly exempt: ReadonlySet<PlacedModel>;
-  readonly roads: RoadContext;
+  readonly placedRoads: PlacedRoads;
+  readonly trackSkip: TrackSkip;
+}
+
+interface GroupEdit extends ModelCheck {
+  readonly action: GroupAction;
+  readonly pieces: ReadonlyArray<PieceMember>;
   readonly block: RefusedClick | null;
   readonly joins: ReadonlyArray<GroupJoin>;
-  readonly trackSkip: TrackSkip;
 }
 
 interface TrackSkip {
@@ -920,6 +917,87 @@ const ACTION_VERBS: Readonly<Record<GroupAction, string>> = {
 };
 
 const NO_OFFSET = { dx: 0, dz: 0 } as const;
+const TABLE_Y_LDU = RESTS_ON_TABLE_Y_PLATES * PLATE_LDU;
+
+class FixedHeight implements RestingHeights {
+  yLdu = TABLE_Y_LDU;
+
+  restingYLdu(): number {
+    return this.yLdu;
+  }
+}
+
+interface KeptRoadSnap {
+  readonly item: string;
+  readonly cursorX: number;
+  readonly cursorZ: number;
+  readonly ghostRot: number;
+  readonly revision: number;
+  readonly placedRoads: PlacedRoads;
+  readonly pose: LatticePose;
+  readonly view: RoadSnapView;
+}
+
+interface RoadOverlap {
+  readonly reason: string;
+  readonly counts: RoadCellCounts;
+}
+
+class RoadSnapQuery {
+  surface: RoadSurface | null = null;
+  rot = 0;
+  direction = 0;
+  turns = 0;
+  cursorX = 0;
+  cursorZ = 0;
+  revision = -1;
+  placedRoads: PlacedRoads | null = null;
+  snap: RoadSnap | null = null;
+
+  answers(
+    surface: RoadSurface,
+    rot: number,
+    direction: number,
+    turns: number,
+    cursorX: number,
+    cursorZ: number,
+    revision: number,
+    placedRoads: PlacedRoads,
+  ): boolean {
+    return (
+      this.surface === surface &&
+      this.rot === rot &&
+      this.direction === direction &&
+      this.turns === turns &&
+      this.cursorX === cursorX &&
+      this.cursorZ === cursorZ &&
+      this.revision === revision &&
+      this.placedRoads === placedRoads
+    );
+  }
+
+  remember(
+    surface: RoadSurface,
+    rot: number,
+    direction: number,
+    turns: number,
+    cursorX: number,
+    cursorZ: number,
+    revision: number,
+    placedRoads: PlacedRoads,
+    snap: RoadSnap | null,
+  ): void {
+    this.surface = surface;
+    this.rot = rot;
+    this.direction = direction;
+    this.turns = turns;
+    this.cursorX = cursorX;
+    this.cursorZ = cursorZ;
+    this.revision = revision;
+    this.placedRoads = placedRoads;
+    this.snap = snap;
+  }
+}
 const OPENED_PLAN_COMPONENT = 0;
 const NO_PIECES: ReadonlyArray<PieceMember> = [];
 const WORLD_FRAME: PlacementPose = { refId: -1, colorId: -1, x: 0, z: 0, yPlates: 0, rot: 0 };
@@ -1211,11 +1289,7 @@ export class Editor implements IEditor, IEditedWorld {
     waitingOn: NOT_WAITING,
     refusal: null,
     trackBlock: null,
-    road: null,
-    roadRefused: false,
   };
-  private roadProbe: RoadProbe | null = null;
-  private readonly laidRoads = new RoadNetwork([]);
   private catalogItems: ReadonlyArray<CatalogItemView> = [];
   private bundleColorCodes: ReadonlyArray<number> | null = null;
   private placed: PlacedChunks;
@@ -1245,7 +1319,6 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly surface = new Float64Array(3);
   private readonly topFaceShift = new Float64Array(2);
   private readonly sideRay = new Float64Array(6);
-  private readonly verticalRay = new Float64Array(6);
   private readonly tilePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
   private readonly tileChoice = placementChoice();
   private readonly groupChoice = placementChoice();
@@ -1307,9 +1380,47 @@ export class Editor implements IEditor, IEditedWorld {
   private trackSupportError: string | null = null;
   private trackSupportLoad: Promise<void> | null = null;
   private roadModels: ReadonlyArray<PlacedModel> = [];
-  private roadExtents: ReadonlyArray<CellExtent> = [];
   private roadNetwork = new RoadNetwork([]);
+  private placedRoads: PlacedRoads = placedRoadsOf(this.roadNetwork, []);
+  private keptRoadSnap: KeptRoadSnap | null = null;
+  private pendingTurns = HELD_TURN;
+  private pendingTurnsAtX = 0;
+  private pendingTurnsAtZ = 0;
+  private readonly snapMates = new MateReport();
+  private readonly snapQuery = new RoadSnapQuery();
+  private readonly groupHeight = new FixedHeight();
+  private readonly restingHeights: RestingHeights = {
+    restingYLdu: (x, z) => this.restingYPlatesAt(x, z) * PLATE_LDU,
+  };
   private readonly roadFit = new RoadFit();
+  private readonly nearModels: PlacedModel[] = [];
+  private readonly restingModels: PlacedModel[] = [];
+  private readonly restingTop = new Float64Array(1);
+  private readonly solidProbe: SolidProbe = { placeable: null, x: 0, z: 0, rot: 0, yPlates: 0 };
+  private readonly solidSpan: [number, number] = [0, 0];
+  private readonly solidHit = { rects: new Float64Array(0), floats: 0 };
+  private readonly solidRectsIn: SolidRects = (bottomLdu, topLdu) => {
+    const { placeable, x, z, rot, yPlates } = this.solidProbe;
+    const hit = this.solidHit;
+    if (!placeable) {
+      hit.floats = 0;
+      return hit;
+    }
+    this.solidSpan[0] = bottomLdu;
+    this.solidSpan[1] = topLdu;
+    hit.floats = this.solidRectsAt(placeable, x, z, rot, yPlates, this.solidSpan);
+    hit.rects = this.solidRects;
+    return hit;
+  };
+  private readonly roadProbeScratch: ProbedRoad = {
+    id: -1,
+    x: 0,
+    z: 0,
+    yLdu: 0,
+    rot: 0,
+    surface: NO_ROAD_SURFACE,
+  };
+  private readonly restingPoint = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
   private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private readonly planDelta = new PlanDelta();
   private measure: MeasureTool | null = null;
@@ -1473,7 +1584,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.catalogItems = catalog.items;
       this.bundleColorCodes = index.colors.map((color) => color.code);
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.trackWorld.start(index, this.placed, () => this.roadPlacements());
+      this.trackWorld.start(index, this.placed);
       this.loadTrackSupport();
       const trackItems = this.tracks.start();
       this.roads.start(index.colors);
@@ -1785,8 +1896,13 @@ export class Editor implements IEditor, IEditedWorld {
         if (track.changeOverlaps(change, piece.index, posed)) return false;
         if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
         const member = { model: null, placeable: pier, pose, component: 0 };
-        const roads = this.roadsWithout(NO_MODELS);
-        return this.modelRefusal([member], [pose], NO_MODELS, roads, NO_TRACK_SKIP) === null;
+        const check: ModelCheck = {
+          models: [member],
+          exempt: NO_MODELS,
+          placedRoads: this.placedRoads,
+          trackSkip: NO_TRACK_SKIP,
+        };
+        return this.modelRefusal(check, [pose]) === null;
       },
     });
   }
@@ -1876,9 +1992,20 @@ export class Editor implements IEditor, IEditedWorld {
     if (view) this.update(view);
   }
 
-  private roadNeighbours(): readonly [ReadonlyArray<PlacedModel>, ReadonlyArray<PlacedModel>] {
-    return [this.roadModels, this.placed.models().filter((model) => model.placeable.road === null)];
-  }
+  private readonly roadNeighbourhood: RoadNeighbourhood = {
+    near: (area, roadModels, otherModels) => {
+      const models = this.nearModels;
+      const count = this.placed.over(area, models);
+      roadModels.length = 0;
+      otherModels.length = 0;
+      for (let m = 0; m < count; m++) {
+        const model = models[m];
+        if (!model) continue;
+        if (model.placeable.road === null) otherModels.push(model);
+        else roadModels.push(model);
+      }
+    },
+  };
 
   dragStart(ndcX: number, ndcY: number): boolean {
     this.cancelFill();
@@ -1898,7 +2025,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadDragStart(ndcX: number, ndcY: number): boolean {
     if (this.state.readOnly || !this.groundHit(ndcX, ndcY)) return false;
-    this.roads.beginStroke(this.hitX, this.hitZ, ...this.roadNeighbours());
+    this.roads.beginStroke(this.hitX, this.hitZ, this.roadNeighbourhood);
     this.update(this.roads.view());
     return true;
   }
@@ -1909,7 +2036,7 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     if (this.groundHit(ndcX, ndcY)) this.roads.extendStroke(this.hitX, this.hitZ);
-    const requests = this.roads.endStroke(...this.roadNeighbours());
+    const requests = this.roads.endStroke(this.roadNeighbourhood);
     if (requests === null) return;
     if (requests.length > 0) this.show(this.history.commit("road", requests), eventTimeMs);
     this.update(this.roads.view());
@@ -1936,7 +2063,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (this.state.mode === "road") {
       if (this.groundHit(ndcX, ndcY)) {
-        const view = this.roads.moveStroke(this.hitX, this.hitZ, ...this.roadNeighbours());
+        const view = this.roads.moveStroke(this.hitX, this.hitZ, this.roadNeighbourhood);
         if (view) this.update(view);
       }
       return;
@@ -2204,8 +2331,10 @@ export class Editor implements IEditor, IEditedWorld {
     this.ghostOnRails = false;
     this.backend.setGhost(placeable ? { ...placeable.parts, studs: placeable.studs } : null);
     if (placeable) this.select([]);
-    const snap = this.snapGhost();
+    this.keptRoadSnap = null;
+    this.placeRot = this.ghostRot;
     this.placeGhost();
+    const snap = this.roadFallback(this.pendingTurns) ?? this.roadReadout();
     this.update({
       mode: placeable ? "place" : "select",
       activeItem: placeable?.id ?? null,
@@ -2387,7 +2516,7 @@ export class Editor implements IEditor, IEditedWorld {
     z: number,
     rot: number,
     aimRay: Float64Array,
-    laid: RoadNetwork | null,
+    placedRoads: PlacedRoads,
   ): PlacementCheck {
     const check = this.check;
     const train = this.activeTrain;
@@ -2396,15 +2525,13 @@ export class Editor implements IEditor, IEditedWorld {
     check.waitingOn = NOT_WAITING;
     check.refusal = null;
     check.trackBlock = null;
-    check.road = null;
-    check.roadRefused = false;
     if (check.aim && check.aim.kind !== "off") return check;
     const connected = this.connectedOf(placeable);
     const pose = this.tilePose;
     pose.x = x;
     pose.z = z;
     pose.rot = rot;
-    pose.yPlates = this.aimedYPlates(this.verticalRayAt(x, z), x, z);
+    pose.yPlates = this.restingYPlatesAt(x, z);
     const { model, volumes, boxes, technic } = connected;
     const choice = this.tileChoice;
     this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
@@ -2423,33 +2550,8 @@ export class Editor implements IEditor, IEditedWorld {
       return check;
     }
     check.trackBlock = this.modelTrackBlock(placeable, x, z, rot, check.yPlates, NO_TRACK_SKIP);
-    const surface = this.state.snapRoads ? placeable.road : null;
-    if (!surface) return check;
-    const road = this.probeRoad(surface, x, z, check.yPlates * PLATE_LDU, rot);
-    check.road = road;
-    check.roadRefused =
-      roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
-      (laid !== null && roadFitRefused(laid.fit(road, this.roadFit))) ||
-      onRoadFootprint(this.roadExtents, surface, x, z, rot);
+    check.refusal = this.roadOverlap(placeable, placedRoads, pose)?.reason ?? null;
     return check;
-  }
-
-  private probeRoad(
-    surface: RoadSurface,
-    x: number,
-    z: number,
-    yLdu: number,
-    rot: number,
-  ): RoadProbe {
-    const probe = this.roadProbe ?? { id: -1, x, z, yLdu, rot, surface };
-    probe.id = -1;
-    probe.x = x;
-    probe.z = z;
-    probe.yLdu = yLdu;
-    probe.rot = rot;
-    probe.surface = surface;
-    this.roadProbe = probe;
-    return probe;
   }
 
   private placeGhost(): void {
@@ -2472,9 +2574,11 @@ export class Editor implements IEditor, IEditedWorld {
     switch (outcome) {
       case "quiet":
         return;
-      case "published":
-        this.update({ hover: this.hoverView() });
+      case "published": {
+        const snap = this.roadFallback(this.pendingTurns) ?? this.roadReadout();
+        this.update({ hover: this.hoverView(), snap, ghostRot: this.placeRot });
         return;
+      }
       case "restart":
         this.placeGhost();
         this.update({ hover: this.hoverView() });
@@ -2513,15 +2617,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
-    const track = this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP);
-    if (track !== null) return track;
-    const surface = this.state.snapRoads ? placeable.road : null;
-    if (!surface) return null;
-    const road = this.probeRoad(surface, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot);
-    return roadFitRefused(this.roadNetwork.fit(road, this.roadFit)) ||
-      onRoadFootprint(this.roadExtents, surface, pose.x, pose.z, pose.rot)
-      ? ROAD_REFUSAL
-      : null;
+    return (
+      this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP) ??
+      this.roadOverlap(placeable, this.placedRoads, pose)?.reason ??
+      null
+    );
   }
 
   private assistReachLdu(): number {
@@ -2577,17 +2677,6 @@ export class Editor implements IEditor, IEditedWorld {
     this.topFaceShift[1] = onTopFace ? (ray[2] ?? 0) + (ray[5] ?? 0) * nearest - groundZ : 0;
     if (!Number.isFinite(top)) return RESTS_ON_TABLE_Y_PLATES;
     return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
-  }
-
-  private verticalRayAt(x: number, z: number): Float64Array {
-    const ray = this.verticalRay;
-    ray[0] = x;
-    ray[1] = VERTICAL_RAY_HEIGHT_LDU;
-    ray[2] = z;
-    ray[3] = 0;
-    ray[4] = -1;
-    ray[5] = 0;
-    return ray;
   }
 
   private searchPick(connected: Connected, moving: number | null, out: PlacementChoice): void {
@@ -2730,52 +2819,215 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private snapGhost(): RoadSnapView | null {
-    this.placeRot = this.ghostRot;
+  private roadReadout(): RoadSnapView | null {
     const surface = this.active?.road;
     if (!surface || !this.hovering || !this.state.snapRoads) return null;
-    const snap = snapToRoadEdge(
-      this.roadNetwork,
-      this.roadExtents,
-      surface,
-      this.ghostRot,
-      this.turnDirection,
-      0,
-      this.hoverX,
-      this.hoverZ,
-      ANY_TURN,
-    );
-    if (snap) {
+    const pose = this.assist.placement?.pose ?? this.cursorPose();
+    const probe = this.reusedRoadProbe(surface, pose);
+    const fit = this.placedRoads.network.fit(probe, this.roadFit);
+    const overlapping = roadOverlapCells(this.placedRoads, probe);
+    const state = overlapping > 0 ? "refused" : fit.mismatchedCells > 0 ? "mismatched" : "free";
+    return { state, ...fit, overlappingCells: overlapping };
+  }
+
+  private cursorPose(): LatticePose {
+    const pose = this.tilePose;
+    pose.x = this.hoverX;
+    pose.z = this.hoverZ;
+    pose.rot = this.placeRot;
+    pose.yPlates = this.restingYPlatesAt(pose.x, pose.z);
+    return pose;
+  }
+
+  private restingYPlatesAt(x: number, z: number): number {
+    const point = this.restingPoint;
+    point.minX = x;
+    point.maxX = x;
+    point.minZ = z;
+    point.maxZ = z;
+    const models = this.restingModels;
+    const count = this.placed.over(point, models);
+    const highest = this.restingTop;
+    highest[0] = Number.NEGATIVE_INFINITY;
+    for (let m = 0; m < count; m++) models[m]?.raiseToTopOver(x, z, highest);
+    const top = highest[0] ?? Number.NEGATIVE_INFINITY;
+    if (!Number.isFinite(top)) return RESTS_ON_TABLE_Y_PLATES;
+    return Math.max(RESTS_ON_TABLE_Y_PLATES, Math.floor(top / PLATE_LDU));
+  }
+
+  private roadFallback(turns: number): RoadSnapView | null {
+    const placeable = this.active;
+    const surface = placeable?.road ?? null;
+    if (!placeable || !surface || !this.hovering || !this.state.snapRoads) return null;
+    if (this.placementMode() !== "assist") return null;
+    const shown = this.assist.placement;
+    const kept = this.keptRoadSnap;
+    if (shown && !shown.settled && kept && sameLatticePose(kept.pose, shown.pose)) {
+      return kept.view;
+    }
+    if (!shown || !shown.settled || !shown.accepted) return null;
+    const cursorX = nearestStud(this.hitX);
+    const cursorZ = nearestStud(this.hitZ);
+    const snap = this.snapNear(surface, cursorX, cursorZ, turns);
+    if (!snap) return null;
+    const { pose } = shown;
+    const moved = snap.x !== pose.x || snap.z !== pose.z || snap.rot !== pose.rot;
+    if (moved && !this.roadSnapAccepted(placeable, snap, shown.joints)) return null;
+    const snapped = moved ? { ...this.tilePose } : { ...pose };
+    if (moved) {
       this.hoverX = snap.x;
       this.hoverZ = snap.z;
       this.placeRot = snap.rot;
-      return {
-        state: "snapped",
-        metCells: snap.metCells,
-        joinedCells: snap.joinedCells,
-        joinedRoadCells: snap.joinedRoadCells,
-        mismatchedCells: 0,
-        overlappingCells: 0,
-      };
+      this.aimRoadSnap(placeable, snapped);
     }
-    const fit = this.roadNetwork.fit(
-      { id: -1, x: this.hoverX, z: this.hoverZ, yLdu: 0, rot: this.placeRot, surface },
-      this.roadFit,
+    if (turns !== HELD_TURN) {
+      this.ghostRot = snap.rot;
+      this.pendingTurns = HELD_TURN;
+    }
+    const view: RoadSnapView = {
+      state: "snapped",
+      metCells: snap.metCells,
+      joinedCells: snap.joinedCells,
+      joinedRoadCells: snap.joinedRoadCells,
+      mismatchedCells: 0,
+      overlappingCells: 0,
+    };
+    this.keptRoadSnap = {
+      item: placeable.id,
+      cursorX,
+      cursorZ,
+      ghostRot: this.ghostRot,
+      revision: this.search.revision(),
+      placedRoads: this.placedRoads,
+      pose: snapped,
+      view,
+    };
+    return view;
+  }
+
+  private snapNear(
+    surface: RoadSurface,
+    cursorX: number,
+    cursorZ: number,
+    turns: number,
+  ): RoadSnap | null {
+    const query = this.snapQuery;
+    const revision = this.search.revision();
+    const { ghostRot, turnDirection, placedRoads } = this;
+    if (
+      query.answers(
+        surface,
+        ghostRot,
+        turnDirection,
+        turns,
+        cursorX,
+        cursorZ,
+        revision,
+        placedRoads,
+      )
+    ) {
+      return query.snap;
+    }
+    const snap = snapToRoadEdge(
+      placedRoads,
+      surface,
+      ghostRot,
+      turnDirection,
+      this.restingHeights,
+      cursorX,
+      cursorZ,
+      turns,
     );
-    const ghost = cellExtent({ id: -1, x: 0, z: 0, yLdu: 0, rot: this.placeRot, surface });
-    const covered = coveredCells(this.roadExtents, ghost, this.hoverX, this.hoverZ);
+    query.remember(
+      surface,
+      ghostRot,
+      turnDirection,
+      turns,
+      cursorX,
+      cursorZ,
+      revision,
+      placedRoads,
+      snap,
+    );
+    return snap;
+  }
+
+  private keptSnapHolds(): KeptRoadSnap | null {
+    const kept = this.keptRoadSnap;
+    const placeable = this.active;
+    const holds =
+      kept !== null &&
+      placeable !== null &&
+      this.hovering &&
+      this.state.snapRoads &&
+      this.placementMode() === "assist" &&
+      kept.item === placeable.id &&
+      kept.cursorX === nearestStud(this.hitX) &&
+      kept.cursorZ === nearestStud(this.hitZ) &&
+      kept.ghostRot === this.ghostRot &&
+      kept.revision === this.search.revision() &&
+      kept.placedRoads === this.placedRoads;
+    return holds ? kept : null;
+  }
+
+  private roadSnapAccepted(placeable: Placeable, snap: RoadSnap, joints: number): boolean {
+    const { model, volumes, boxes, technic } = this.connectedOf(placeable);
+    const pose = this.tilePose;
+    pose.x = snap.x;
+    pose.z = snap.z;
+    pose.rot = snap.rot;
+    pose.yPlates = this.restingYPlatesAt(snap.x, snap.z);
+    const choice = this.tileChoice;
+    this.search.check(model, volumes, boxes, technic, pose, RESTS_ON_TABLE_Y_PLATES, choice);
+    if (!choice.accepted || choice.waitingOn !== NOT_WAITING) return false;
+    if (this.heldPoseRefusal(placeable, pose) !== null) return false;
+    this.search.evaluate(model, pose, this.snapMates);
+    return this.snapMates.jointCount >= joints;
+  }
+
+  private aimRoadSnap(placeable: Placeable, pose: LatticePose): void {
+    const connected = this.connectedOf(placeable);
+    this.aimPick(pose.rot, HELD_TURN_ONLY, "precise");
+    this.pick.x = pose.x;
+    this.pick.z = pose.z;
+    this.pick.yPlates = pose.yPlates;
+    this.assist.aim({ placeable, connected, mode: "assist" }, this.pick, performance.now());
+  }
+
+  private reusedRoadProbe(surface: RoadSurface, pose: LatticePose): RoadPlacement {
+    const probe = this.roadProbeScratch;
+    probe.x = pose.x;
+    probe.z = pose.z;
+    probe.yLdu = pose.yPlates * PLATE_LDU;
+    probe.rot = pose.rot;
+    probe.surface = surface;
+    return probe;
+  }
+
+  private roadOverlap(
+    placeable: Placeable,
+    placedRoads: PlacedRoads,
+    pose: LatticePose,
+  ): RoadOverlap | null {
+    const surface = this.state.snapRoads ? placeable.road : null;
+    if (!surface) return null;
+    const probe = this.reusedRoadProbe(surface, pose);
+    const overlapping = roadOverlapCells(placedRoads, probe);
+    if (overlapping === 0) return null;
+    const fit = placedRoads.network.fit(probe, this.roadFit);
     return {
-      state: roadFitRefused(fit) || covered > 0 ? "refused" : "free",
-      ...fit,
-      overlappingCells: covered,
+      reason: roadOverlapText(placeable, overlapping),
+      counts: { mismatchedCells: fit.mismatchedCells, overlappingCells: overlapping },
     };
   }
 
   pointerMove(ndcX: number, ndcY: number): void {
     this.hovering = this.groundHit(ndcX, ndcY);
-    const snap = this.snapGhost();
+    const kept = this.keptSnapHolds();
+    if (!kept) this.keptRoadSnap = null;
+    this.forgetPendingTurnsAway();
     if (this.state.mode === "road" && this.hovering) {
-      const view = this.roads.hover(this.hitX, this.hitZ, ...this.roadNeighbours());
+      const view = this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood);
       if (view) this.update(view);
     }
     const tables = this.tables;
@@ -2786,7 +3038,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (this.tracks.holding()) this.showHeldPiece();
     else this.refreshTrackPreview();
-    this.placeGhost();
+    const snap = kept ? this.keepRoadSnap(kept) : this.settleGhostHere();
     if (this.gesture?.kind === "paste" && this.hovering) this.aimHeld(this.gesture);
     this.update({
       hover: this.hoverView(),
@@ -2795,8 +3047,30 @@ export class Editor implements IEditor, IEditedWorld {
     });
   }
 
+  private settleGhostHere(): RoadSnapView | null {
+    this.placeRot = this.ghostRot;
+    this.placeGhost();
+    if (this.fillTool?.previewing) return null;
+    return this.roadFallback(this.pendingTurns) ?? this.roadReadout();
+  }
+
+  private keepRoadSnap(kept: KeptRoadSnap): RoadSnapView {
+    this.hoverX = kept.pose.x;
+    this.hoverZ = kept.pose.z;
+    this.placeRot = kept.pose.rot;
+    return kept.view;
+  }
+
+  private forgetPendingTurnsAway(): void {
+    if (this.pendingTurns === HELD_TURN) return;
+    const atX = nearestStud(this.hitX);
+    const atZ = nearestStud(this.hitZ);
+    if (atX !== this.pendingTurnsAtX || atZ !== this.pendingTurnsAtZ) this.pendingTurns = HELD_TURN;
+  }
+
   pointerLeave(): void {
     this.hovering = false;
+    this.keptRoadSnap = null;
     this.assist.leave();
     this.update({ hover: null });
     if (this.state.mode === "table" && this.tables?.unhover()) this.showGuides();
@@ -2852,15 +3126,17 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private clickHeld(active: Placeable, eventTimeMs: number): void {
-    const snap = this.snapGhost();
-    this.placeGhost();
-    this.assist.commit();
-    const at = { x: this.hoverX, z: this.hoverZ, rot: this.placeRot };
-    if (snap?.state === "refused") {
-      this.update({ snap });
-      this.refuse(refusedAt(active.id, at, ROAD_REFUSAL, snap), null);
-      return;
+    const kept = this.keptSnapHolds();
+    if (kept) {
+      this.keepRoadSnap(kept);
+    } else {
+      this.keptRoadSnap = null;
+      this.placeRot = this.ghostRot;
+      this.placeGhost();
     }
+    this.assist.commit();
+    if (!kept && this.roadFallback(this.pendingTurns)) this.assist.commit();
+    const at = { x: this.hoverX, z: this.hoverZ, rot: this.placeRot };
     const aim = this.trainAim;
     if (aim && aim.kind !== "off") {
       if (aim.kind === "refused") {
@@ -2885,7 +3161,8 @@ export class Editor implements IEditor, IEditedWorld {
       return;
     }
     if (!placement.accepted) {
-      this.refuse(refusedAt(active.id, pose, this.assist.refusal ?? ""), null);
+      const counts = this.roadOverlap(active, this.placedRoads, pose)?.counts ?? NO_ROAD_CELLS;
+      this.refuse(refusedAt(active.id, pose, this.assist.refusal ?? "", counts), null);
       this.update({ hover: this.hoverView() });
       return;
     }
@@ -3012,24 +3289,27 @@ export class Editor implements IEditor, IEditedWorld {
   ): TrackBlockView | null {
     const drawing = this.trackWorld.drawing();
     if (!drawing) return null;
-    const carried = this.trackWorld.modelTrack(placeable);
-    const frame = latticeFrame(x, z, rot);
+    const track = this.trackWorld.modelTrack(placeable);
+    const carried = track && (track.pieces.length > 0 || track.runs.length > 0) ? track : null;
+    const frame = carried ? latticeFrame(x, z, rot) : null;
     const pieces =
       carried && frame
         ? [
             ...heldPieces(carried, frame, yPlates),
             ...heldRuns(carried, frame, yPlates, WORLD_TRACK_FRAME.id + 1),
           ]
-        : [];
+        : NO_HELD_TRACK;
     if (pieces.length === 0 && drawing.pieceCount + this.trackWorld.carriedModels().length === 0) {
       return null;
     }
     this.trackWorld.ensureObstacles();
-    const rectsIn = (bottomLdu: number, topLdu: number) => {
-      const floats = this.solidRectsAt(placeable, x, z, rot, yPlates, [bottomLdu, topLdu]);
-      return { rects: this.solidRects, floats };
-    };
-    return drawing.modelBlocker(rectsIn, pieces, skip.moving, skip.owners);
+    const probe = this.solidProbe;
+    probe.placeable = placeable;
+    probe.x = x;
+    probe.z = z;
+    probe.rot = rot;
+    probe.yPlates = yPlates;
+    return drawing.modelBlocker(this.solidRectsIn, pieces, skip.moving, skip.owners);
   }
 
   private trackSkip(
@@ -3276,7 +3556,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private replanRoadStroke(): void {
-    const view = this.roads.replanStroke(() => this.roadNeighbours());
+    const view = this.roads.replanStroke(this.roadNeighbourhood);
     if (view) this.update(view);
   }
 
@@ -3289,8 +3569,9 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.roadModels = roadModels;
     const placements = this.roadPlacements();
+    this.trackWorld.setRoads(placements);
     this.roadNetwork = new RoadNetwork(placements);
-    this.roadExtents = placements.map(cellExtent);
+    this.placedRoads = placedRoadsOf(this.roadNetwork, placements);
     this.roadReport = this.roadNetwork.report();
     this.facts.noteRoads(this.roadReport, roadModels);
     this.replanRoadStroke();
@@ -3431,7 +3712,8 @@ export class Editor implements IEditor, IEditedWorld {
     this.backend.setGhost({ ...placeable.parts, studs: placeable.studs });
     this.commitFill(fill, placeable, eventTimeMs);
     this.showGuides();
-    this.placeGhost();
+    if (this.hovering) this.resettleAtCursor();
+    else this.placeGhost();
   }
 
   private commitFill(fill: FillTool, placeable: Placeable, eventTimeMs: number): void {
@@ -3485,9 +3767,10 @@ export class Editor implements IEditor, IEditedWorld {
     this.fillTool.cancel();
     const active = this.active;
     if (active) this.backend.setGhost({ ...active.parts, studs: active.studs });
-    this.placeGhost();
     this.showGuides();
     this.update({ fillDraft: null });
+    if (active && this.hovering) this.resettleAtCursor();
+    else this.placeGhost();
   }
 
   private reframeFill(): void {
@@ -3503,21 +3786,16 @@ export class Editor implements IEditor, IEditedWorld {
     placeable: Placeable,
   ): { readonly refusal: string | null; readonly waitingOn: number } {
     const rot = this.ghostRot;
-    const laid = this.state.snapRoads && placeable.road ? this.laidRoads : null;
-    laid?.clear();
     let reason: string | null = null;
     let waitingOn = NOT_WAITING;
+    const { placedRoads } = this;
     for (let tile = 0; tile < fill.laid; tile++) {
       const x = fill.xAt(tile);
       const z = fill.zAt(tile);
-      const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), laid);
+      const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), placedRoads);
       if (waitingOn === NOT_WAITING) waitingOn = check.waitingOn;
       const refused = placementRefused(check, "refused");
       if (refused && reason === null) reason = placementRefusal(placeable, check, "refused");
-      if (!refused && laid && check.road) {
-        check.road.id = tile;
-        laid.add(check.road);
-      }
       fill.settle(tile, check.yPlates, refused);
     }
     return { refusal: reason, waitingOn };
@@ -3605,12 +3883,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   setRoadErase(erase: boolean): void {
-    this.roads.setErase(erase, ...this.roadNeighbours());
+    this.roads.setErase(erase, this.roadNeighbourhood);
     this.update(this.roads.view());
   }
 
   setSnapRoads(snap: boolean): void {
     this.update({ snapRoads: snap, snap: null });
+    this.rehover();
   }
 
   setPlacementMode(mode: PlacementMode): void {
@@ -3633,8 +3912,15 @@ export class Editor implements IEditor, IEditedWorld {
 
   private rehover(): void {
     if (!this.active || !this.hovering) return;
-    this.placeGhost();
-    this.update({ hover: this.hoverView() });
+    this.resettleAtCursor();
+  }
+
+  private resettleAtCursor(): void {
+    this.keptRoadSnap = null;
+    this.hoverX = nearestStud(this.hitX);
+    this.hoverZ = nearestStud(this.hitZ);
+    const snap = this.settleGhostHere();
+    this.update({ hover: this.hoverView(), snap, ghostRot: this.placeRot });
   }
 
   planSheetShapes(): PlanSheetShapes {
@@ -3875,7 +4161,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.state.mode === "road") {
       this.ghostRot = quarterTurned(this.ghostRot, direction);
       this.placeRot = this.ghostRot;
-      this.roads.turn(this.ghostRot, ...this.roadNeighbours());
+      this.roads.turn(this.ghostRot, this.roadNeighbourhood);
       this.update({ ghostRot: this.ghostRot, ...this.roads.view() });
       return;
     }
@@ -3893,8 +4179,11 @@ export class Editor implements IEditor, IEditedWorld {
         this.hoverX = nearestStud(this.hitX);
         this.hoverZ = nearestStud(this.hitZ);
       }
-      const snap = this.snapGhost();
-      this.placeGhost();
+      this.keptRoadSnap = null;
+      this.pendingTurns = ANY_TURN;
+      this.pendingTurnsAtX = nearestStud(this.hitX);
+      this.pendingTurnsAtZ = nearestStud(this.hitZ);
+      const snap = this.settleGhostHere();
       this.update({
         ghostRot: this.placeRot,
         snap,
@@ -4170,7 +4459,7 @@ export class Editor implements IEditor, IEditedWorld {
         modelPoses: held.models.map((member) => translated(member.pose, dx, dz)),
         piecePoses: held.pieces.map((piece) => pieceTranslated(piece.pose, dx, dz)),
       },
-      this.state.snapRoads,
+      this.state.snapRoads && this.placementMode() === "assist",
     );
     this.gesture = { ...held, placement };
     const target =
@@ -4293,7 +4582,7 @@ export class Editor implements IEditor, IEditedWorld {
       models: this.modelMembers(models),
       pieces,
       exempt,
-      roads: this.roadsWithout(exempt),
+      placedRoads: this.roadsWithout(exempt),
       block: this.groupBlock(models, pieces, action),
       joins: this.groupJoins(models, indices, action),
       trackSkip: this.trackSkip(pieces, exempt),
@@ -4366,13 +4655,13 @@ export class Editor implements IEditor, IEditedWorld {
     return { lift: lift.toSorted(byIndex), lay: lay.toSorted(byIndex) };
   }
 
-  private roadsWithout(exempt: ReadonlySet<PlacedModel>): RoadContext {
-    if (exempt.size === 0) return { network: this.roadNetwork, extents: this.roadExtents };
+  private roadsWithout(exempt: ReadonlySet<PlacedModel>): PlacedRoads {
+    if (exempt.size === 0) return this.placedRoads;
     const placements = this.roadPlacements().filter(({ id }) => {
       const model = this.roadModels[id];
       return model !== undefined && !exempt.has(model);
     });
-    return { network: new RoadNetwork(placements), extents: placements.map(cellExtent) };
+    return placedRoadsOf(new RoadNetwork(placements), placements);
   }
 
   private pasteEdit(
@@ -4384,7 +4673,7 @@ export class Editor implements IEditor, IEditedWorld {
       models,
       pieces,
       exempt: NO_MODELS,
-      roads: this.roadsWithout(NO_MODELS),
+      placedRoads: this.roadsWithout(NO_MODELS),
       block: this.seatsBlock(pieces, NO_MODELS),
       joins: [],
       trackSkip: this.trackSkip(pieces, NO_MODELS),
@@ -4392,15 +4681,35 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeGroup(edit: GroupEdit, targets: GroupTargets, snap: boolean): GroupPlacement {
-    const { models, roads } = edit;
-    const offset = snap ? this.roadSnapOffset(models, targets.modelPoses, roads) : NO_OFFSET;
-    const shifted = targets.modelPoses.map((pose) => translated(pose, offset.dx, offset.dz));
-    const piecePoses =
-      offset === NO_OFFSET
-        ? targets.piecePoses
-        : targets.piecePoses.map((pose) => pieceTranslated(pose, offset.dx, offset.dz));
-    const placed: GroupTargets = { modelPoses: shifted, piecePoses };
-    return { ...placed, refusal: this.groupRefusal(edit, placed) };
+    const refusal = this.groupRefusal(edit, targets);
+    if (!snap || refusal !== null) return { ...targets, refusal };
+    const offset = this.roadSnapOffset(edit.models, targets.modelPoses, edit.placedRoads);
+    if (offset === NO_OFFSET) return { ...targets, refusal };
+    const snapped: GroupTargets = {
+      modelPoses: targets.modelPoses.map((pose) => translated(pose, offset.dx, offset.dz)),
+      piecePoses: targets.piecePoses.map((pose) => pieceTranslated(pose, offset.dx, offset.dz)),
+    };
+    if (this.groupRefusal(edit, snapped) !== null || !this.keepsJoints(edit, targets, snapped)) {
+      return { ...targets, refusal };
+    }
+    return { ...snapped, refusal: null };
+  }
+
+  private keepsJoints(edit: GroupEdit, targets: GroupTargets, snapped: GroupTargets): boolean {
+    return this.search.withdrawn(this.searchIdsOf(edit.exempt), () => {
+      for (let index = 0; index < edit.models.length; index++) {
+        const member = edit.models[index];
+        const target = targets.modelPoses[index];
+        const moved = snapped.modelPoses[index];
+        if (!member || !target || !moved) continue;
+        const { model } = this.connectedOf(member.placeable);
+        this.search.evaluate(model, target, this.snapMates);
+        const held = this.snapMates.jointCount;
+        this.search.evaluate(model, moved, this.snapMates);
+        if (this.snapMates.jointCount < held) return false;
+      }
+      return true;
+    });
   }
 
   private groupRefusal(edit: GroupEdit, placed: GroupTargets): RefusedClick | null {
@@ -4410,13 +4719,7 @@ export class Editor implements IEditor, IEditedWorld {
         edit.block ??
         this.unreadConnectors(edit.models) ??
         this.brokenJoin(edit, placed) ??
-        this.modelRefusal(
-          edit.models,
-          placed.modelPoses,
-          edit.exempt,
-          edit.roads,
-          edit.trackSkip,
-        ) ??
+        this.modelRefusal(edit, placed.modelPoses) ??
         this.pieceRefusal(edit, placed.piecePoses),
     );
   }
@@ -4445,20 +4748,20 @@ export class Editor implements IEditor, IEditedWorld {
   private roadSnapOffset(
     members: ReadonlyArray<ModelMember>,
     targets: ReadonlyArray<PlacementPose>,
-    roads: RoadContext,
+    placedRoads: PlacedRoads,
   ): { readonly dx: number; readonly dz: number } {
     let best: { readonly dx: number; readonly dz: number; readonly distance: number } | null = null;
     for (let index = 0; index < members.length; index++) {
       const surface = members[index]?.placeable.road;
       const pose = targets[index];
       if (!surface || !pose) continue;
+      this.groupHeight.yLdu = pose.yPlates * PLATE_LDU;
       const snapped = snapToRoadEdge(
-        roads.network,
-        roads.extents,
+        placedRoads,
         surface,
         pose.rot,
         1,
-        pose.yPlates * PLATE_LDU,
+        this.groupHeight,
         pose.x,
         pose.z,
         HELD_TURN,
@@ -4469,16 +4772,33 @@ export class Editor implements IEditor, IEditedWorld {
       const distance = Math.hypot(dx, dz);
       if (!best || distance < best.distance) best = { dx, dz, distance };
     }
-    return best ?? NO_OFFSET;
+    if (!best || !this.roadCleanShifted(members, targets, placedRoads, best.dx, best.dz))
+      return NO_OFFSET;
+    return best;
+  }
+
+  private roadCleanShifted(
+    members: ReadonlyArray<ModelMember>,
+    targets: ReadonlyArray<PlacementPose>,
+    placedRoads: PlacedRoads,
+    dx: number,
+    dz: number,
+  ): boolean {
+    for (let index = 0; index < members.length; index++) {
+      const surface = members[index]?.placeable.road;
+      const pose = targets[index];
+      if (!surface || !pose) continue;
+      const shifted = { ...pose, x: pose.x + dx, z: pose.z + dz };
+      if (overlapsPlacedRoad(placedRoads, this.reusedRoadProbe(surface, shifted))) return false;
+    }
+    return true;
   }
 
   private modelRefusal(
-    members: ReadonlyArray<ModelMember>,
+    check: ModelCheck,
     poses: ReadonlyArray<PlacementPose>,
-    exempt: ReadonlySet<PlacedModel>,
-    roads: RoadContext,
-    skip: TrackSkip,
   ): RefusedClick | null {
+    const { models: members, exempt, placedRoads, trackSkip: skip } = check;
     const supported = new Set<number>();
     const lowest = new Map<number, number>();
     for (let index = 0; index < poses.length; index++) {
@@ -4486,7 +4806,7 @@ export class Editor implements IEditor, IEditedWorld {
       const member = members[index];
       if (!pose || !member) continue;
       const { placeable, component } = member;
-      const { x, z, yPlates, rot } = pose;
+      const { yPlates } = pose;
       const connected = this.connectedOf(placeable);
       const choice = this.groupChoice;
       const { model, volumes, boxes, technic } = connected;
@@ -4507,19 +4827,8 @@ export class Editor implements IEditor, IEditedWorld {
       }
       const track = this.trackPlacementRefusal(placeable, pose, exempt, skip);
       if (track !== null) return refusedAt(placeable.id, pose, track);
-      const surface = placeable.road;
-      if (!surface || !this.state.snapRoads) continue;
-      const fit = roads.network.fit(
-        { id: -1, x, z, yLdu: yPlates * PLATE_LDU, rot, surface },
-        this.roadFit,
-      );
-      if (
-        fit.mismatchedCells > 0 ||
-        fit.overlappingCells > 0 ||
-        onRoadFootprint(roads.extents, surface, x, z, rot)
-      ) {
-        return refusedAt(placeable.id, pose, `${placeable.label}: ${ROAD_REFUSAL}.`, fit);
-      }
+      const road = this.roadOverlap(placeable, placedRoads, pose);
+      if (road) return refusedAt(placeable.id, pose, road.reason, road.counts);
     }
     for (const [component, index] of lowest) {
       const base = members[index]?.placeable;

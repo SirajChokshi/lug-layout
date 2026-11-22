@@ -1412,6 +1412,615 @@ function placer(editor: IEditor, backend: AimedBackend) {
   };
 }
 
+it("a road plate hovered at a road baseplate's sidewalk, from one stud onto it to a stud clear of it, settles mating the sidewalk's edge studs, and the click takes exactly the pose shown", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)("ldraw:44336p04@72", 320, 320);
+  await chosen(editor, "ldraw:69958@72");
+  const shown = [];
+  const clicked = [];
+  for (const [x, z] of [
+    [770, 320],
+    [780, 320],
+    [790, 320],
+    [800, 320],
+    [810, 330],
+    [820, 300],
+  ] as const) {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    const hover = await settledHover(editor, frame);
+    const pose = hover?.placement?.pose;
+    const offered = hover?.placement?.accepted === true && hover.refusal === null && pose;
+    shown.push(offered ? [pose.x, pose.z, pose.yPlates] : "refused");
+    const before = editor.snapshot().placements;
+    editor.click(0, 0, 0);
+    const placed = editor.snapshot().placements > before;
+    const { x: xs, z: zs, yPlates } = editor.dump().placements;
+    const last = xs.length - 1;
+    clicked.push(placed ? [xs[last], zs[last], yPlates[last]] : "refused");
+    if (placed) editor.undo(0);
+  }
+  expect(clicked).toEqual(shown);
+  expect(shown).toEqual([
+    [780, 320, 0],
+    [780, 320, 0],
+    [780, 320, 0],
+    [780, 320, 0],
+    [780, 340, 0],
+    [780, 300, 0],
+  ]);
+}, 120_000);
+
+const RECESSED_ROAD_PLATE = "ldraw:69958@72";
+const BASEPLATE_32 = "ldraw:3811@2";
+
+async function settledAt(
+  editor: IEditor,
+  backend: AimedBackend,
+  frame: () => Promise<void>,
+  x: number,
+  z: number,
+) {
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  const hover = await settledHover(editor, frame);
+  const pose = hover?.placement?.pose;
+  return { pose: pose ? [pose.x, pose.z] : null, snap: editor.snapshot().snap?.state ?? null };
+}
+
+it("snaps a road plate flush onto another on studded baseplates, from a stud short of or past each edge, since every lattice pose there mates the same studs", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  const place = placer(editor, backend);
+  for (const [x, z] of [
+    [320, 320],
+    [960, 320],
+    [320, 960],
+    [960, 960],
+  ] as const) {
+    await place(BASEPLATE_32, x, z);
+  }
+  await place(RECESSED_ROAD_PLATE, 640, 640);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  const flush = [
+    [960, 640],
+    [320, 640],
+    [640, 960],
+    [640, 320],
+  ] as const;
+  const outcomes = [];
+  for (const [x, z] of flush) {
+    const normalX = Math.sign(x - 640);
+    const normalZ = Math.sign(z - 640);
+    for (const step of [-STUD, STUD]) {
+      outcomes.push(
+        await settledAt(editor, backend, frame, x + normalX * step, z + normalZ * step),
+      );
+    }
+  }
+  expect(outcomes).toEqual(
+    flush.flatMap(([x, z]) => [
+      { pose: [x, z], snap: "snapped" },
+      { pose: [x, z], snap: "snapped" },
+    ]),
+  );
+}, 120_000);
+
+async function settledBesideAnOverhang(onBaseplate: boolean) {
+  const { editor, backend, frame } = await startEditor([]);
+  if (onBaseplate) await placer(editor, backend)(BASEPLATE_32, 320, 320);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 720, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  return settledAt(editor, backend, frame, 660, 660);
+}
+
+it("never road-snaps a plate to a clean join that would mate fewer studs than where the assist settled, and does on the bare table", async () => {
+  expect(await settledBesideAnOverhang(true)).toEqual({ pose: [660, 660], snap: "free" });
+  expect(await settledBesideAnOverhang(false)).toEqual({ pose: [720, 640], snap: "snapped" });
+}, 120_000);
+
+it("never road-snaps a road module across laid track: a hover clear of the rails stays at the cursor where the flush join would cross them", async () => {
+  const module = "generated:mils-road-straight";
+  const { editor, backend, frame, catalog } = await startEditor(["mils-road-straight"]);
+  await loadCatalogItem(catalog, module);
+  await placer(editor, backend)(module, 320, 320);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [780, -320], [780, 960]);
+  expect(editor.snapshot().track?.pieces).toBeGreaterThan(0);
+  await chosen(editor, module);
+  expect(await settledAt(editor, backend, frame, 1260, 320)).toEqual({
+    pose: [1260, 320],
+    snap: "free",
+  });
+  editor.setPlacementMode("precise");
+  expect(await settledAt(editor, backend, frame, 960, 320)).toMatchObject({ pose: [960, 320] });
+  expect(editor.snapshot().hover?.refusal).toMatch(/would cross the track laid there/u);
+}, 120_000);
+
+it("keeps a road-snapped plate where it snapped while the cursor jitters within its stud, starting no new search", async () => {
+  const { editor, backend, frame, container } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  expect(await settledAt(editor, backend, frame, 650, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  const begin = vi.spyOn(container.get(PLACEMENT_SEARCH), "begin");
+  for (const x of [655, 661, 662]) {
+    backend.aim(x, 320);
+    editor.pointerMove(0, 0);
+    const pose = editor.snapshot().hover?.placement?.pose;
+    expect({ pose: pose && [pose.x, pose.z], snap: editor.snapshot().snap?.state }).toEqual({
+      pose: [640, 320],
+      snap: "snapped",
+    });
+  }
+  expect(begin).not.toHaveBeenCalled();
+}, 120_000);
+
+it.each([
+  ["the placement mode", (editor: IEditor) => editor.setPlacementMode("precise")],
+  ["the held precise override", (editor: IEditor) => editor.setPlacementModeOverride(true)],
+] as const)(
+  "switching to precise through %s after a road snap shows the cursor's pose, and the click takes it",
+  async (_, toPrecise) => {
+    const { editor, backend, frame } = await startEditor([]);
+    await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+    await chosen(editor, RECESSED_ROAD_PLATE);
+    expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+      pose: [640, 320],
+      snap: "snapped",
+    });
+    toPrecise(editor);
+    const hover = await settledHover(editor, frame);
+    const pose = hover?.placement?.pose;
+    editor.click(0, 0, 0);
+    expect({
+      shown: pose && [pose.x, pose.z],
+      snap: editor.snapshot().snap?.state,
+      placed: placedXs(editor),
+    }).toEqual({ shown: [660, 320], snap: "free", placed: [320, 660] });
+  },
+  120_000,
+);
+
+it("a road-snapped plate whose pointer leaves the canvas and comes back to the same stud snaps again, and the click places it there", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.pointerLeave();
+  expect(await settledAt(editor, backend, frame, 662, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.click(0, 0, 0);
+  expect({ placed: placedXs(editor), refused: editor.snapshot().refusedClicks }).toEqual({
+    placed: [320, 640],
+    refused: 0,
+  });
+}, 120_000);
+
+it("turning road snap off after a snap shows the cursor's pose, and the click takes it", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+    pose: [640, 320],
+    snap: "snapped",
+  });
+  editor.setSnapRoads(false);
+  const pose = (await settledHover(editor, frame))?.placement?.pose;
+  editor.click(0, 0, 0);
+  expect({ shown: pose && [pose.x, pose.z], placed: placedXs(editor) }).toEqual({
+    shown: [660, 320],
+    placed: [320, 660],
+  });
+}, 120_000);
+
+it("never pulls or turns a road plate in precise mode: a hover just clear of a road end stays at the cursor", async () => {
+  const { editor, backend, frame } = await startEditor([]);
+  await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+  await chosen(editor, RECESSED_ROAD_PLATE);
+  editor.setPlacementMode("precise");
+  expect(await settledAt(editor, backend, frame, 660, 320)).toEqual({
+    pose: [660, 320],
+    snap: "free",
+  });
+}, 120_000);
+
+it.each([
+  { mode: "assist", landsAt: 640 },
+  { mode: "precise", landsAt: 660 },
+] as const)(
+  "drags a road plate a stud short of another's road end in $mode mode, and road snap follows the mode: it lands at $landsAt",
+  async ({ mode, landsAt }) => {
+    const { editor, backend } = await startEditor([]);
+    await placer(editor, backend)(RECESSED_ROAD_PLATE, 320, 320);
+    await placer(editor, backend)(RECESSED_ROAD_PLATE, 1300, 320);
+    editor.setPlacementMode(mode);
+    expect(selectAt(editor, backend, 1300, 320)?.item).toBe(RECESSED_ROAD_PLATE);
+    dragGroup(editor, backend, [1300, 320], [660, 320]);
+    expect(placedXs(editor)).toEqual([320, landsAt]);
+  },
+  120_000,
+);
+
+it("never road-snaps a dragged road plate into a user's brick standing at the flush pose: it lands where it was dropped", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const place = placer(editor, backend);
+  await place(RECESSED_ROAD_PLATE, 320, 320);
+  const brick = userRoadFile("my-brick.ldr", ["1 4 0 0 0 0 0 1 0 1 0 -1 0 0 3001.dat"]);
+  const brickItem = await importUserFile(editor, "my-brick.ldr", brick);
+  await place(brickItem, 500, 320);
+  await place(RECESSED_ROAD_PLATE, 1300, 320);
+  editor.chooseItem(null);
+  expect(posesOf(editor)).toEqual(
+    [
+      `${brickItem} 500,320 y0`,
+      `${RECESSED_ROAD_PLATE} 320,320 y0`,
+      `${RECESSED_ROAD_PLATE} 1300,320 y0`,
+    ].toSorted(),
+  );
+  expect(selectAt(editor, backend, 1300, 320)?.item).toBe(RECESSED_ROAD_PLATE);
+  dragGroup(editor, backend, [1300, 320], [680, 320]);
+  expect(placedXs(editor)).toEqual([320, 500, 680]);
+}, 120_000);
+
+it.each([
+  { baseplateZ: 320, landsAt: 160 },
+  { baseplateZ: -20, landsAt: 140 },
+])(
+  "road-snaps a pasted or dragged road plate on baseplates only where the join mates at least the studs it had: baseplate at z $baseplateZ, lands at z $landsAt",
+  async ({ baseplateZ, landsAt }) => {
+    const { editor, backend } = await startEditor([]);
+    const place = placer(editor, backend);
+    await place(BASEPLATE_32, 320, 320);
+    await place(BASEPLATE_32, 960, baseplateZ);
+    await place(BASEPLATE_32, 960, 1600);
+    await place(RECESSED_ROAD_PLATE, 480, 160);
+    await place(RECESSED_ROAD_PLATE, 800, 1600);
+    const roadPlates = () => posesOf(editor).filter((pose) => pose.startsWith(RECESSED_ROAD_PLATE));
+    const onBaseplate = (x: number, z: number) => `${RECESSED_ROAD_PLATE} ${x},${z} y0`;
+    expect(roadPlates()).toEqual([onBaseplate(480, 160), onBaseplate(800, 1600)]);
+    editor.chooseItem(null);
+    expect(selectAt(editor, backend, 800, 1600)?.item).toBe(RECESSED_ROAD_PLATE);
+    editor.copySelection();
+    editor.pasteClipboard();
+    backend.aim(800, 140);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    const pasted = roadPlates();
+    editor.undo(0);
+    expect(selectAt(editor, backend, 800, 1600)?.item).toBe(RECESSED_ROAD_PLATE);
+    dragGroup(editor, backend, [800, 1600], [800, 140]);
+    expect({ pasted, dragged: roadPlates() }).toEqual({
+      pasted: [onBaseplate(480, 160), onBaseplate(800, 1600), onBaseplate(800, landsAt)].toSorted(),
+      dragged: [onBaseplate(480, 160), onBaseplate(800, landsAt)].toSorted(),
+    });
+  },
+  120_000,
+);
+
+const L_OF_ROAD_PLATES = [
+  [320, 320],
+  [960, 320],
+  [320, 960],
+] as const;
+
+async function cornerOfAnL(oneFile: boolean) {
+  const { editor, backend, frame } = await startImportingEditor();
+  const place = placer(editor, backend);
+  if (oneFile) {
+    const plates = L_OF_ROAD_PLATES.map(
+      ([x, z]) => `1 72 ${x - 320} 0 ${320 - z} 1 0 0 0 1 0 0 0 1 44336p04.dat`,
+    );
+    const file = userRoadFile("l-of-road-plates.ldr", plates);
+    await place(await importUserFile(editor, "l-of-road-plates.ldr", file), 640, 640);
+  } else {
+    for (const [x, z] of L_OF_ROAD_PLATES) await place("ldraw:44336p04@72", x, z);
+  }
+  await chosen(editor, "ldraw:44336p04@72");
+  const hover = await settledAt(editor, backend, frame, 980, 980);
+  const { joinedCells, mismatchedCells } = editor.snapshot().snap ?? {};
+  editor.click(0, 0, 0);
+  const { refusedClicks, roads } = editor.snapshot();
+  return {
+    hover,
+    joinedCells,
+    mismatchedCells,
+    refusedClicks,
+    mismatchedAfter: roads.mismatchedCells,
+  };
+}
+
+it("road-snaps a plate into the empty corner of an L of road plates alike whether the L is one user's file or three plates", async () => {
+  const threePlates = await cornerOfAnL(false);
+  expect(threePlates).toMatchObject({
+    hover: { pose: [960, 960], snap: "snapped" },
+    mismatchedCells: 0,
+  });
+  expect(threePlates.joinedCells).toBeGreaterThan(0);
+  expect(await cornerOfAnL(true)).toEqual(threePlates);
+}, 240_000);
+
+function roadStrokeResult(
+  editor: IEditor,
+  backend: AimedBackend,
+  from: Ground,
+  to: Ground,
+  erase = false,
+) {
+  const kit = editor.snapshot().roadKits.find((k) => k.label.startsWith("Dark Bluish Grey"));
+  if (!kit) throw new Error("no Dark Bluish Grey road kit");
+  editor.chooseItem(kit.id);
+  editor.setRoadErase(erase);
+  backend.aim(...from);
+  editor.dragStart(0, 0);
+  backend.aim(...to);
+  editor.dragMove(0, 0);
+  editor.dragEnd(0, 0, 0);
+  const { lastRoadStroke } = editor.snapshot();
+  editor.chooseItem(null);
+  return lastRoadStroke?.result ?? null;
+}
+
+const towerAt = (x: number, z: number) =>
+  [-24, -48, -72].map((y) => `1 4 ${x} ${y} ${z} 1 0 0 0 1 0 0 0 1 3005.dat`);
+
+async function strokedToBothEnds(oneFile: boolean) {
+  const { editor, backend } = await startImportingEditor();
+  const place = placer(editor, backend);
+  if (oneFile) {
+    const both = userRoadFile("road-and-tower.ldr", [
+      "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat",
+      ...towerAt(630, 630),
+    ]);
+    await place(await importUserFile(editor, "road-and-tower.ldr", both), 320, 320);
+  } else {
+    const road = userRoadFile("road.ldr", ["1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat"]);
+    await place(await importUserFile(editor, "road.ldr", road), 320, 320);
+    const tower = userRoadFile("tower.ldr", towerAt(10, 10));
+    await place(await importUserFile(editor, "tower.ldr", tower), 940, -300);
+  }
+  const laid = {
+    strokes: [
+      roadStrokeResult(editor, backend, [1600, -320], [960, -320]),
+      roadStrokeResult(editor, backend, [320, -960], [320, -320]),
+      roadStrokeResult(editor, backend, [320, 1600], [320, 960]),
+    ],
+  };
+  const { joinedCells, mismatchedCells, overlaps } = editor.snapshot().roads;
+  return {
+    ...laid,
+    joinedCells,
+    mismatchedCells,
+    overlaps,
+    roadPlacements: editor.dump().roadPlacements.length,
+  };
+}
+
+it("lays road to a user's road end alike whether a tower beside it is in the same file or its own, since only the bricks themselves block a stroke", async () => {
+  const twoFiles = await strokedToBothEnds(false);
+  expect(twoFiles).toEqual({
+    strokes: ["refused", "laid", "laid"],
+    joinedCells: expect.any(Number),
+    mismatchedCells: 0,
+    overlaps: 0,
+    roadPlacements: 5,
+  });
+  expect(twoFiles.joinedCells).toBeGreaterThan(0);
+  expect(await strokedToBothEnds(true)).toEqual(twoFiles);
+}, 120_000);
+
+it("lays road to a user's street of a road plate, a grass baseplate and a parked car with a tile roof: the road joins, the grass edge refuses nothing and the car overlaps nothing", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const street = userRoadFile("my-street-with-grass.ldr", [
+    "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336p01.dat",
+    "1 2 640 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    "1 4 0 -24 0 1 0 0 0 1 0 0 0 1 3001.dat",
+    "1 15 0 -32 0 1 0 0 0 1 0 0 0 1 87079.dat",
+  ]);
+  const place = placer(editor, backend);
+  await place(await importUserFile(editor, "my-street-with-grass.ldr", street), 640, 320);
+  expect(roadStrokeResult(editor, backend, [320, -1600], [320, -320])).toBe("laid");
+  await place("ldraw:44336p04@72", 1600, 320);
+  expect(editor.snapshot()).toMatchObject({
+    placements: 5,
+    refusedClicks: 0,
+    roads: { joinedCells: 3 * 32, mismatchedCells: 0, overlaps: 0 },
+  });
+}, 120_000);
+
+it("draws road across a user's own baseplate model, swapping it for road, and erasing that road gives the model back where it was", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const baseplate = userRoadFile("my-baseplate.ldr", ["1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat"]);
+  const item = await importUserFile(editor, "my-baseplate.ldr", baseplate);
+  await placer(editor, backend)(item, 320, 320);
+  const laidOut = posesOf(editor);
+  expect(laidOut).toEqual([`${item} 320,320 y0`]);
+  expect(roadStrokeResult(editor, backend, [320, 320], [1600, 320])).toBe("laid");
+  expect({
+    overGround: editor.snapshot().lastRoadStroke?.stroke.overGround,
+    userModel: posesOf(editor).filter((pose) => pose.startsWith(item)),
+    roadTiles: editor.dump().roadPlacements.length,
+  }).toEqual({ overGround: 1, userModel: [], roadTiles: 3 });
+  expect(roadStrokeResult(editor, backend, [320, 320], [1600, 320], true)).toBe("laid");
+  expect(posesOf(editor)).toEqual(laidOut);
+}, 120_000);
+
+it.each(["320", "319.9999", "320.0001"])(
+  "lays road past a user's brick column whose box edge, at %s LDU in the file, identifies to the stroke tile's edge",
+  async (edge) => {
+    const { editor, backend } = await startImportingEditor();
+    const column = Number(edge) + 10;
+    const street = userRoadFile("my-road-and-column.ldr", [
+      "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat",
+      `1 4 ${column} -24 650 1 0 0 0 1 0 0 0 1 3005.dat`,
+    ]);
+    await placer(editor, backend)(
+      await importUserFile(editor, "my-road-and-column.ldr", street),
+      320,
+      320,
+    );
+    expect(roadStrokeResult(editor, backend, [320, -1600], [320, -320])).toBe("laid");
+    expect(editor.snapshot().roads).toMatchObject({ mismatchedCells: 0, overlaps: 0 });
+  },
+  120_000,
+);
+
+const PLATE_ON_BASEPLATE = [
+  "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+  "1 72 -160 -16 160 1 0 0 0 1 0 0 0 1 69958.dat",
+];
+
+async function roadEndsOfAPlateOnABaseplate(oneFile: boolean) {
+  const { editor, backend, frame } = await startImportingEditor();
+  const place = placer(editor, backend);
+  if (oneFile) {
+    const scene = userRoadFile("my-corner.ldr", PLATE_ON_BASEPLATE);
+    await place(await importUserFile(editor, "my-corner.ldr", scene), 320, 320);
+  } else {
+    const [baseplateLine = "", plateLine = ""] = PLATE_ON_BASEPLATE;
+    const baseplate = userRoadFile("my-baseplate.ldr", [baseplateLine]);
+    await place(await importUserFile(editor, "my-baseplate.ldr", baseplate), 320, 320);
+    const plate = userRoadFile("my-road-plate.ldr", [plateLine.replace("-160 -16 160", "0 0 0")]);
+    await place(await importUserFile(editor, "my-road-plate.ldr", plate), 160, 160);
+  }
+  const ends = editor.snapshot().roads.issues.filter((issue) => issue.status === "open");
+  await chosen(editor, "ldraw:69958@72");
+  const outcomes = [];
+  for (const end of ends) {
+    const middle = (end.from + end.to) / 2;
+    const outward = end.side.startsWith("max") ? 1 : -1;
+    const acrossX = end.side.endsWith("X");
+    const flush = end.line + outward * 160;
+    const short = flush + outward * STUD;
+    const [x, z] = acrossX ? [short, middle] : [middle, short];
+    outcomes.push({
+      end: `${end.side} ${end.line}`,
+      ...(await settledAt(editor, backend, frame, x, z)),
+    });
+  }
+  return outcomes;
+}
+
+it("road-snaps a plate to each road end of a user's road plate on their own baseplate alike in one file or two, ends facing the baseplate included", async () => {
+  const twoFiles = await roadEndsOfAPlateOnABaseplate(false);
+  expect(twoFiles).toHaveLength(4);
+  expect(twoFiles.every((outcome) => outcome.snap === "snapped")).toBe(true);
+  expect(await roadEndsOfAPlateOnABaseplate(true)).toEqual(twoFiles);
+}, 240_000);
+
+it("refuses a road stroke over a user's car with a tile roof, by the car's own part boxes", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const car = userRoadFile("my-car.ldr", [
+    "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+    "1 15 0 -24 0 1 0 0 0 1 0 0 0 1 87079.dat",
+  ]);
+  await placer(editor, backend)(await importUserFile(editor, "my-car.ldr", car), 640, 300);
+  const placed = () => editor.dump().placements.x.length;
+  expect(roadStrokeResult(editor, backend, [320, 320], [1600, 320])).toBe("refused");
+  expect(placed()).toBe(1);
+  expect(roadStrokeResult(editor, backend, [320, 960], [1600, 960])).toBe("laid");
+  expect(placed()).toBe(4);
+}, 120_000);
+
+it("places a user's car with a tile roof on a road and a road under a user's car alike, in either order", async () => {
+  const car = userRoadFile("my-car.ldr", [
+    "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat",
+    "1 15 0 -24 0 1 0 0 0 1 0 0 0 1 87079.dat",
+  ]);
+  const placedInOrder = async (carFirst: boolean) => {
+    const { editor, backend } = await startImportingEditor();
+    const item = await importUserFile(editor, "my-car.ldr", car);
+    const place = placer(editor, backend);
+    const steps = [() => place(item, 100, 100), () => place("ldraw:44336p04@72", 320, 320)];
+    for (const step of carFirst ? steps : steps.toReversed()) await step();
+    const { placements, refusedClicks, roads } = editor.snapshot();
+    return { placements, refusedClicks, overlaps: roads.overlaps };
+  };
+  const roadFirst = await placedInOrder(false);
+  expect(roadFirst).toEqual({ placements: 2, refusedClicks: 0, overlaps: 0 });
+  expect(await placedInOrder(true)).toEqual(roadFirst);
+}, 120_000);
+
+async function besideTheLevelCrossing() {
+  const crossing = "omr:10128-1";
+  const { editor, backend, frame, catalog } = await startEditor(["10128-1"]);
+  await loadCatalogItem(catalog, crossing);
+  await placer(editor, backend)(crossing, 100, 100);
+  await chosen(editor, "ldraw:44336p04@72");
+  editor.rotate(0);
+  return { editor, backend, frame };
+}
+
+it("joins a road plate to the level-crossing set's road end: road snap brings an accepted hover clear of the set to the flush join, and the click places it (#150)", async () => {
+  const { editor, backend, frame } = await besideTheLevelCrossing();
+  expect(await settledAt(editor, backend, frame, -640, 300)).toEqual({
+    pose: [-540, 260],
+    snap: "snapped",
+  });
+  expect(editor.snapshot().snap).toMatchObject({ joinedCells: 29, mismatchedCells: 0 });
+  editor.click(0, 0, 0);
+  expect(editor.snapshot()).toMatchObject({
+    placements: 2,
+    refusedClicks: 0,
+    roads: { joinedCells: 29, mismatchedCells: 0, overlaps: 0 },
+  });
+}, 240_000);
+
+it("draws road into the level-crossing set's road end with the road tool, joining the set's own road exactly (#150)", async () => {
+  const { editor, backend, catalog } = await startEditor(["10128-1"]);
+  await loadCatalogItem(catalog, "omr:10128-1");
+  await placer(editor, backend)("omr:10128-1", 320, 160);
+  editor.chooseItem(null);
+  expect(roadStrokeResult(editor, backend, [-1600, 320], [-320, 320])).toBe("laid");
+  expect(editor.snapshot()).toMatchObject({
+    placements: 4,
+    roads: { joinedCells: 29 + 2 * 32, mismatchedCells: 0, overlaps: 0 },
+  });
+}, 240_000);
+
+const HITS_THE_SET = /would hit Baseplate 32 x 32 Road .* in 10128-1 /u;
+
+it.each([-300, -400])(
+  "never road-snaps a road plate off a refusal: aimed at x %i into the level-crossing set, the hover and the click stay refused at the cursor, naming the set's baseplate",
+  async (x) => {
+    const { editor, backend, frame } = await besideTheLevelCrossing();
+    expect(await settledAt(editor, backend, frame, x, 300)).toEqual({
+      pose: [x, 300],
+      snap: "refused",
+    });
+    expect(editor.snapshot().hover?.refusal).toMatch(HITS_THE_SET);
+    editor.click(0, 0, 0);
+    expect(editor.snapshot()).toMatchObject({
+      placements: 1,
+      refusedClicks: 1,
+      lastRefusal: { reason: expect.stringMatching(HITS_THE_SET) },
+    });
+  },
+  240_000,
+);
+
+it("never road-snaps a dragged road plate off a refusal: dragged into the level-crossing set, it stays where it was", async () => {
+  const { editor, backend } = await besideTheLevelCrossing();
+  backend.aim(-1600, 300);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  editor.chooseItem(null);
+  const laid = posesOf(editor);
+  expect(selectAt(editor, backend, -1600, 300)?.item).toBe("ldraw:44336p04@72");
+  const dragged = dragGroup(editor, backend, [-1600, 300], [-400, 300]);
+  expect(dragged.gesture).toMatchObject({
+    kind: "move",
+    refusal: expect.stringMatching(HITS_THE_SET),
+  });
+  expect(posesOf(editor)).toEqual(laid);
+}, 240_000);
+
 it("reads a road plate held over a placed road plate of another thickness as refused, as the click is", async () => {
   const { editor, backend } = await startEditor([]);
   await placer(editor, backend)("ldraw:69958@72", 320, 320);
@@ -1420,84 +2029,171 @@ it("reads a road plate held over a placed road plate of another thickness as ref
   editor.pointerMove(0, 0);
   expect(editor.snapshot().snap).toMatchObject({ state: "refused", overlappingCells: 256 });
   editor.click(0, 0, 0);
-  expect(editor.snapshot().placements).toBe(1);
+  expect(editor.snapshot()).toMatchObject({
+    placements: 1,
+    lastRefusal: { overlappingCells: 256 },
+  });
 }, 120_000);
 
-it("refuses a road plate on another road plate's footprint alike by click, fill and move, whatever their tops", async () => {
-  const baseplate = "ldraw:44336p04@72";
-  const plate = "ldraw:69958@72";
-  const withBaseplate = async () => {
-    const started = await startEditor([]);
-    await placer(started.editor, started.backend)(baseplate, 320, 320);
-    return started;
-  };
+it.each([
+  { held: "ldraw:44336p04@72", refused: true },
+  { held: "ldraw:69958@72", refused: false },
+] as const)(
+  "with $held held over a road baseplate, click, fill and move agree: refused when its road would rest in the baseplate's road cells at the same height, accepted when it stacks above them",
+  async ({ held, refused }) => {
+    const baseplate = "ldraw:44336p04@72";
+    const withBaseplate = async () => {
+      const started = await startEditor([]);
+      await placer(started.editor, started.backend)(baseplate, 320, 320);
+      return started;
+    };
 
-  const clicking = await withBaseplate();
-  const clicked = await placer(clicking.editor, clicking.backend)(plate, 320, 320);
+    const clicking = await withBaseplate();
+    const clicked = await placer(clicking.editor, clicking.backend)(held, 320, 320);
 
-  const hovering = await withBaseplate();
-  await chosen(hovering.editor, plate);
-  hovering.backend.aim(320, 320);
-  hovering.editor.pointerMove(0, 0);
-  expect(hovering.editor.snapshot().hover).toMatchObject({
-    refusal: expect.stringContaining("road edges"),
-    placement: { accepted: false },
+    const hovering = await withBaseplate();
+    await chosen(hovering.editor, held);
+    hovering.backend.aim(320, 320);
+    hovering.editor.pointerMove(0, 0);
+    const hover = hovering.editor.snapshot().hover;
+    const hovered = hover?.placement?.accepted === true && hover.refusal === null;
+
+    const filling = await withBaseplate();
+    await chosen(filling.editor, held);
+    filling.editor.cycleFillGrid();
+    filling.editor.cycleFillGrid();
+    dragFill(filling.editor, filling.backend, [160, 160], [480, 480]);
+
+    const moving = await withBaseplate();
+    await placer(moving.editor, moving.backend)(held, 1600, 320);
+    expect(selectAt(moving.editor, moving.backend, 1600, 320)?.item).toBe(held);
+    moving.editor.moveSelectionTo(16, 16, 0);
+
+    expect({
+      hovered,
+      clicked: clicked.placements,
+      filled: filling.editor.snapshot().placements,
+      moved: placedXs(moving.editor),
+    }).toEqual(
+      refused
+        ? { hovered: false, clicked: 1, filled: 1, moved: [320, 1600] }
+        : { hovered: true, clicked: 2, filled: 2, moved: [320, 320] },
+    );
+  },
+  120_000,
+);
+
+function userRoadFile(name: string, parts: ReadonlyArray<string>): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      `0 ${name}, a user's own model`,
+      `0 Name: ${name}`,
+      "0 Author: lug-layout test",
+      `0 !LICENSE ${CC_BY_4}`,
+      ...parts,
+      "",
+    ].join("\n"),
+  );
+}
+
+it("sets a user's own tile into the slot through a user's own road model, where the model's box would have refused it, and its road joins the slot's sides", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const slotted = await importUserFile(
+    editor,
+    "my-slotted-road.ldr",
+    userRoadFile("my-slotted-road.ldr", [
+      "1 71 -40 0 -20 1 0 0 0 1 0 0 0 1 3068b.dat",
+      "1 71 40 0 -20 1 0 0 0 1 0 0 0 1 3068b.dat",
+      "1 71 -40 0 20 1 0 0 0 1 0 0 0 1 3022.dat",
+      "1 71 40 0 20 1 0 0 0 1 0 0 0 1 3022.dat",
+    ]),
+  );
+  const tile = await importUserFile(
+    editor,
+    "my-tile-and-plate.ldr",
+    userRoadFile("my-tile-and-plate.ldr", [
+      "1 71 0 0 -20 1 0 0 0 1 0 0 0 1 3068b.dat",
+      "1 71 0 0 20 1 0 0 0 1 0 0 0 1 3022.dat",
+    ]),
+  );
+  await placer(editor, backend)(slotted, 320, 320);
+  const before = editor.snapshot().roads;
+  const set = await placer(editor, backend)(tile, 320, 320);
+  expect(set).toMatchObject({ placements: 2, refusedClicks: 0 });
+  expect(before).toMatchObject({ joinedCells: 0, mismatchedCells: 0 });
+  expect(editor.snapshot().roads).toMatchObject({
+    joinedCells: 8,
+    mismatchedCells: 0,
+    overlaps: 0,
   });
+}, 120_000);
 
-  const filling = await withBaseplate();
-  await chosen(filling.editor, plate);
-  filling.editor.cycleFillGrid();
-  filling.editor.cycleFillGrid();
-  dragFill(filling.editor, filling.backend, [160, 160], [480, 480]);
-
-  const moving = await withBaseplate();
-  await placer(moving.editor, moving.backend)(plate, 1600, 320);
-  expect(selectAt(moving.editor, moving.backend, 1600, 320)?.item).toBe(plate);
-  moving.editor.moveSelectionTo(16, 16, 0);
-
-  expect({
-    clicked: clicked.placements,
-    filled: filling.editor.snapshot().placements,
-    moved: placedXs(moving.editor),
-  }).toEqual({ clicked: 1, filled: 1, moved: [320, 1600] });
+it("fills a user's own road model with unlike ends in a row: every tile places, and the plan reports where the ends mismatch", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const unlike = await importUserFile(
+    editor,
+    "my-unlike-ends.ldr",
+    userRoadFile("my-unlike-ends.ldr", [
+      "1 71 -60 0 0 0 0 1 0 1 0 -1 0 0 87079.dat",
+      "1 71 -20 0 0 0 0 1 0 1 0 -1 0 0 87079.dat",
+      "1 71 20 0 0 0 0 1 0 1 0 -1 0 0 87079.dat",
+      "1 71 60 0 0 1 0 0 0 1 0 0 0 1 3068b.dat",
+      "1 71 60 0 -30 1 0 0 0 1 0 0 0 1 3023.dat",
+      "1 71 60 0 30 1 0 0 0 1 0 0 0 1 3023.dat",
+    ]),
+  );
+  await chosen(editor, unlike);
+  dragFill(editor, backend, [320, 320], [880, 320]);
+  expect(editor.snapshot().lastFill).toMatchObject({ placed: 4, refused: 0, reason: null });
+  expect(editor.snapshot().roads).toMatchObject({ joinedCells: 3 * 2, mismatchedCells: 3 * 2 });
 }, 120_000);
 
 function placedXs(editor: IEditor): ReadonlyArray<number> {
   return Array.from(editor.dump().placements.x).toSorted((a, b) => a - b);
 }
 
-it("R cycles the fitting turns of a road curve at a road straight's open end, and the click lays the turn the ghost shows", async () => {
-  const { editor, backend } = await startEditor([]);
-  await chosen(editor, "ldraw:44336p04@72");
-  backend.aim(320, 320);
-  editor.pointerMove(0, 0);
-  editor.click(0, 0, 0);
-  await chosen(editor, "ldraw:44342p02@72");
-  backend.aim(320, 960);
-  editor.pointerMove(0, 0);
-  const shown = () => {
-    const { ghostRot, snap } = editor.snapshot();
-    return { ghostRot, fit: snap?.state === "snapped" ? ghostRot : null };
-  };
-  for (const direction of [1, -1] as const) {
-    const turns = [shown()];
-    for (let press = 0; press < 4; press++) {
-      editor.rotate(0, direction);
-      const turned = shown();
-      editor.pointerMove(0, 0);
-      expect(shown()).toEqual(turned);
-      turns.push(turned);
+it.each([false, true])(
+  "a road curve held at a road straight's open end keeps its turn until R, which turns it only to the turns that fit, and the click lays the turn the ghost shows (assist settling over many frames: %s)",
+  async (slow) => {
+    const { editor, backend, frame } = await startEditor([]);
+    await chosen(editor, "ldraw:44336p04@72");
+    backend.aim(320, 320);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+    await chosen(editor, "ldraw:44342p02@72");
+    const clock = slow ? slowClock() : null;
+    backend.aim(320, 960);
+    editor.pointerMove(0, 0);
+    await settledHover(editor, frame);
+    const shown = () => {
+      const { ghostRot, snap } = editor.snapshot();
+      return { ghostRot, fit: snap?.state === "snapped" ? ghostRot : null };
+    };
+    expect(shown().ghostRot).toBe(0);
+    for (const direction of [1, -1] as const) {
+      const turns = [];
+      for (let press = 0; press < 4; press++) {
+        editor.rotate(0, direction);
+        await settledHover(editor, frame);
+        const turned = shown();
+        editor.pointerMove(0, 0);
+        await settledHover(editor, frame);
+        expect(shown()).toEqual(turned);
+        turns.push(turned);
+      }
+      for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
+      const rots = turns.map((turn) => turn.ghostRot);
+      expect(new Set(rots).size).toBe(2);
+      expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
     }
-    for (const turn of turns) expect(turn.fit).toBe(turn.ghostRot);
-    const rots = turns.map((turn) => turn.ghostRot);
-    expect(new Set(rots).size).toBe(2);
-    expect(rots.filter((rot, i) => i > 0 && rot === rots[i - 1])).toEqual([]);
-  }
-  const shownRot = shown().ghostRot;
-  editor.click(0, 0, 0);
-  const { placements } = editor.dump();
-  expect(placements.rot.at(-1)).toBe(shownRot);
-}, 120_000);
+    const shownRot = shown().ghostRot;
+    editor.click(0, 0, 0);
+    clock?.mockRestore();
+    const { placements } = editor.dump();
+    expect(placements.rot.at(-1)).toBe(shownRot);
+  },
+  120_000,
+);
 
 function selectAt(editor: IEditor, backend: AimedBackend, x: number, z: number) {
   editor.chooseItem(null);
@@ -1552,8 +2248,10 @@ it("refuses to turn a module while a set lifted onto it rests on it, turns the s
   });
 }, 120_000);
 
-it("refuses to turn a placed road plate into a mismatch with its neighbour, the same as placing it there, unless road snap is off", async () => {
-  const { editor, backend } = await startEditor([]);
+it("turns a placed road plate into a mismatch with its neighbour without refusing it, and the readout and the plan's road join rule report the mismatch", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const plans = container.get(PLAN_SERVICE);
+  const planId = oneTableRoom(plans);
   const straight = "ldraw:44336p04@72";
   await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, 320);
   await chosen(editor, straight);
@@ -1561,29 +2259,22 @@ it("refuses to turn a placed road plate into a mismatch with its neighbour, the 
   backend.aim(320, 960);
   editor.pointerMove(0, 0);
   editor.click(0, 0, 0);
-  expect(editor.snapshot()).toMatchObject({ placements: 2, roads: { mismatchedCells: 0 } });
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0));
+  const joinedFirst = {
+    mismatchedCells: editor.snapshot().roads.mismatchedCells,
+    roadJoin: plans.issues(planId).filter((issue) => issue.rule === "roadJoin").length,
+  };
 
   expect(selectAt(editor, backend, 320, 960)?.item).toBe(straight);
   const turned = turnOutcome(editor, 1);
-  const turnedBack = turnOutcome(editor, -1);
-  const mismatchedWhileRefused = editor.snapshot().roads.mismatchedCells;
-  editor.setSnapRoads(false);
-  const unsnapped = turnOutcome(editor, 1);
+  await vi.waitFor(() => expect(plans.unmeasuredCount(planId)).toBe(0));
+  const roadJoin = plans.issues(planId).filter((issue) => issue.rule === "roadJoin");
 
-  const refused = {
-    rot: 1,
-    yPlates: 0,
-    refusal: expect.stringContaining("road edges would mismatch"),
-    roadCells: expect.any(Number),
-  };
-  expect({ turned, turnedBack, mismatchedWhileRefused, unsnapped }).toEqual({
-    turned: refused,
-    turnedBack: refused,
-    mismatchedWhileRefused: 0,
-    unsnapped: expect.objectContaining({ rot: 2, refusal: null }),
-  });
-  expect(turned.roadCells).toBeGreaterThan(0);
+  expect(joinedFirst).toEqual({ mismatchedCells: 0, roadJoin: 0 });
+  expect(turned).toEqual({ rot: 2, yPlates: 0, refusal: null, roadCells: null });
   expect(editor.snapshot().roads.mismatchedCells).toBeGreaterThan(0);
+  expect(roadJoin.length).toBeGreaterThan(0);
+  expect(roadJoin.every((issue) => issue.severity === "error")).toBe(true);
 }, 120_000);
 
 class OtherTabLocks implements IWorldLocks {
@@ -7201,12 +7892,9 @@ it("fills the active plan's tables with a user's model, inside the tables, and t
   });
 }, 120_000);
 
-it.each([
-  { snapRoads: true, mismatched: false },
-  { snapRoads: false, mismatched: true },
-] as const)(
-  "with road snapping $snapRoads, fills road straights so that their ends mismatch a dual carriageway's end only where a click would allow it",
-  async ({ snapRoads, mismatched }) => {
+it.each([{ snapRoads: true }, { snapRoads: false }] as const)(
+  "with road snapping $snapRoads, fills road straights against a dual carriageway's end without refusing the tile whose end mismatches it, and the readout counts the mismatch",
+  async ({ snapRoads }) => {
     const { editor, backend } = await startEditor([]);
     await placer(editor, backend)(DUAL_CARRIAGEWAY, 320, -320);
     editor.setSnapRoads(snapRoads);
@@ -7220,8 +7908,8 @@ it.each([
     expect({
       refused: lastFill?.refused ?? 0,
       mismatched: roads.mismatchedCells > 0,
-      placements: placements + (lastFill?.refused ?? 0),
-    }).toEqual({ refused: mismatched ? 0 : 1, mismatched, placements: 1 + 9 });
+      placements,
+    }).toEqual({ refused: 0, mismatched: true, placements: 1 + 9 });
   },
   120_000,
 );
@@ -7348,6 +8036,31 @@ function holdAndClick(editor: IEditor, backend: AimedBackend, piece: string, at:
   const { refusedClicks, lastRefusal, track } = editor.snapshot();
   return { refusedClicks, reason: lastRefusal?.reason ?? null, pieces: track?.pieces ?? 0 };
 }
+
+async function crossingOverRoad(inUsersModel: boolean) {
+  const { editor, backend } = await startImportingEditor();
+  const place = placer(editor, backend);
+  if (inUsersModel) {
+    const street = userRoadFile("my-street-with-grass.ldr", [
+      "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336p04.dat",
+      "1 2 640 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    ]);
+    await place(await importUserFile(editor, "my-street-with-grass.ldr", street), 320, 0);
+  } else {
+    await place(ROAD_STRAIGHT, 0, 0);
+    await place(BASEPLATE_32, 640, 0);
+  }
+  await supportChecked(editor);
+  const across = trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  return { pieces: across.pieces, crossings: editor.dump().crossings };
+}
+
+it("lays track across the road inside a user's own street model as the same level crossing, ramps and all, as across the palette's road plate", async () => {
+  const palette = await crossingOverRoad(false);
+  expect(palette.crossings).toHaveLength(1);
+  expect(palette.crossings[0]?.roadwayCells).toBeGreaterThan(0);
+  expect(await crossingOverRoad(true)).toEqual(palette);
+}, 240_000);
 
 it("lays a run across a road plate's roadway as a level crossing reported unsupported, with ramps on the verge studs; a raised plate stops a run short and can't be dropped onto track", async () => {
   const { editor, backend } = await startEditor([]);

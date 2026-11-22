@@ -6,7 +6,7 @@ const SIX_STUD_STRAIGHT = "ldraw:44336p04@72";
 const EIGHT_STUD_CROSSROADS = "ldraw:611p01@2";
 const QUARTER_TURNS = [0, 1, 2, 3] as const;
 
-test("road plates refuse overlaps and mismatched lanes, and join exactly when they fit", async ({
+test("road plates refuse overlaps, place mismatched lanes and report them, and join exactly when they fit", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -25,20 +25,27 @@ test("road plates refuse overlaps and mismatched lanes, and join exactly when th
   expect(await editor.counter("refused")).toBe(1);
   expect(await editor.poses()).toEqual(placed);
 
+  let mismatchedAt: { readonly sx: number; readonly sy: number; readonly rot: number } | null =
+    null;
   for (const rot of QUARTER_TURNS) {
     const point = await editor.aim(EIGHT_STUD_CROSSROADS, neighbour, rot);
-    expect(await editor.snapState(), `8-stud lanes against 6-stud lanes at ${rot}`).toBe("refused");
-    await page.mouse.click(point.sx, point.sy);
+    expect(await editor.snapState(), `8-stud lanes against 6-stud lanes at ${rot}`).toBe(
+      "mismatched",
+    );
+    mismatchedAt = { ...point, rot };
   }
-  expect(await editor.counter("refused")).toBe(1 + QUARTER_TURNS.length);
-  expect(await editor.poses()).toEqual(placed);
+  if (mismatchedAt === null) throw new Error("no quarter turn was aimed");
+  await page.mouse.click(mismatchedAt.sx, mismatchedAt.sy);
+  expect(await editor.counter("refused")).toBe(1);
+  expect(await editor.poses()).toEqual([
+    ...placed,
+    { item: EIGHT_STUD_CROSSROADS, ...neighbour, yPlates: 0, rot: mismatchedAt.rot },
+  ]);
+  expect(await editor.counter("road-mismatch")).toBeGreaterThan(0);
 
   await editor.undo();
-  expect(await editor.poses(), "one undo after the refusals takes back the first plate").toEqual(
-    [],
-  );
-  await editor.redo();
-  expect(await editor.poses()).toEqual(placed);
+  expect(await editor.poses(), "one undo takes back the mismatched plate").toEqual(placed);
+  expect(await editor.counter("road-mismatch")).toBe(0);
 
   let fitting: number | null = null;
   for (const rot of QUARTER_TURNS) {
@@ -57,7 +64,7 @@ test("road plates refuse overlaps and mismatched lanes, and join exactly when th
   ]);
   expect(await editor.counter("road-mismatch")).toBe(0);
   expect(await editor.counter("road-joined")).toBeGreaterThan(0);
-  expect(await editor.counter("refused")).toBe(1 + QUARTER_TURNS.length);
+  expect(await editor.counter("refused")).toBe(1);
 
   await editor.waitForFarTierAndMeshesSettled();
   await page.screenshot({ path: test.info().outputPath("road-refusals.png") });

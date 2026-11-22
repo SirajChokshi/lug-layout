@@ -36,6 +36,7 @@ const geometry: MeasuredGeometry = measured;
 const STUD = 20;
 const PLATE = 8;
 const CHUNK = 32 * STUD;
+const SIXTEENTHS = 16;
 
 function surfaceOf(
   columns: number,
@@ -48,12 +49,24 @@ function surfaceOf(
   for (let row = 0; row < rows; row++) {
     for (let column = 0; column < columns; column++) {
       const [t, s, r] = cell(column, row);
-      top[row * columns + column] = t;
-      stud[row * columns + column] = s;
+      top[row * columns + column] = sixteenths(t, NO_TOP);
+      stud[row * columns + column] = sixteenths(s, NO_STUD);
       road[row * columns + column] = r;
     }
   }
-  return { minX: (-columns * STUD) / 2, minZ: (-rows * STUD) / 2, columns, rows, top, stud, road };
+  return {
+    minX: (-columns * STUD) / 2,
+    minZ: (-rows * STUD) / 2,
+    columns,
+    rows,
+    topSixteenths: top,
+    studSixteenths: stud,
+    road,
+  };
+}
+
+function sixteenths(ldu: number, absent: number): number {
+  return ldu === absent ? absent : ldu * SIXTEENTHS;
 }
 
 function surfaceFromMap(
@@ -154,6 +167,26 @@ describe("road joins (layout rule 7)", () => {
       expect(report.openCells).toBe(2 * 3 * 16);
       expect(Array.from(report.placementCells)).toEqual([16, 0, 0, 0]);
     }
+  });
+
+  it("joins road at a fractional top only to road at the same fractional top, and leaves it open beside whole-LDU road", () => {
+    const fractionalTop = PLATE + 0.25;
+    const raised = strip([
+      [fractionalTop, 1],
+      [fractionalTop, 1],
+    ]);
+    const level = strip([
+      [PLATE, 1],
+      [PLATE, 1],
+    ]);
+    const alike = new RoadNetwork([at(0, raised, 0, 0), at(1, raised, STUD, 0)]).report();
+    const unlike = new RoadNetwork([at(0, raised, 0, 0), at(1, level, STUD, 0)]).report();
+    expect(alike).toMatchObject({ joinedCells: 2, mismatchedCells: 0 });
+    expect(unlike).toMatchObject({ joinedCells: 0, mismatchedCells: 0, overlaps: [] });
+    expect(seamAt(unlike, ACROSS_X, STUD / 2).map((segment) => segment.topLdu)).toEqual([
+      fractionalTop,
+      PLATE,
+    ]);
   });
 
   it("rejects the same plates shifted one stud along the shared edge, where the edge strips no longer line up", () => {
@@ -319,6 +352,18 @@ describe("road joins (layout rule 7)", () => {
     expect(() => new RoadNetwork([]).fit(at(0, plate, 0, 0, 0, 0.25), new RoadFit())).toThrow(
       RangeError,
     );
+  });
+
+  it("refuses a height whose sixteenths would wrap, instead of joining road far above to road far below", () => {
+    const wraps = 2 ** 27;
+    expect(() => new RoadNetwork([at(0, plate, 0, 0, 0, wraps)])).toThrow(RangeError);
+    expect(() =>
+      new RoadNetwork([at(0, plate, 0, 0, 0, -wraps)]).fit(
+        at(1, plate, 640, 0, 0, wraps),
+        new RoadFit(),
+      ),
+    ).toThrow(RangeError);
+    expect(() => new RoadNetwork([at(0, plate, 0, 0, 0, wraps - 1)])).not.toThrow();
   });
 
   it("keeps surfaces stacked at different tops apart: they neither overlap nor join, and a join beside them stands", () => {
@@ -555,13 +600,13 @@ function randomSurface(random: () => number): RoadSurface {
   const stud = new Int32Array(rows * columns);
   const road = new Uint8Array(rows * columns);
   for (let cell = 0; cell < rows * columns; cell++) {
-    top[cell] = random() < 0.15 ? NO_TOP : pick(random, [PLATE, 2 * PLATE]);
+    top[cell] = random() < 0.15 ? NO_TOP : pick(random, [PLATE, 2 * PLATE]) * SIXTEENTHS;
     road[cell] = random() < 0.6 ? 1 : 0;
-    stud[cell] = pick(random, [NO_STUD, top[cell] ?? 0, (top[cell] ?? 0) - PLATE]);
+    stud[cell] = pick(random, [NO_STUD, top[cell] ?? 0, (top[cell] ?? 0) - PLATE * SIXTEENTHS]);
   }
   const minX = -STUD * Math.floor(random() * columns);
   const minZ = -STUD * Math.floor(random() * rows);
-  return { minX, minZ, columns, rows, top, stud, road };
+  return { minX, minZ, columns, rows, topSixteenths: top, studSixteenths: stud, road };
 }
 
 const PHASES = [0, 3, 10, 17];
@@ -654,16 +699,16 @@ function squaresOf(placement: RoadPlacement): ReadonlyMap<string, string> {
   for (let row = 0; row < surface.rows; row++) {
     for (let column = 0; column < surface.columns; column++) {
       const index = row * surface.columns + column;
-      const top = surface.top[index] ?? NO_TOP;
+      const top = surface.topSixteenths[index] ?? NO_TOP;
       if (top === NO_TOP) continue;
-      const stud = surface.stud[index] ?? NO_STUD;
-      const raisedStud = stud === NO_STUD ? NO_STUD : stud + placement.yLdu;
+      const stud = surface.studSixteenths[index] ?? NO_STUD;
+      const raisedStud = stud === NO_STUD ? NO_STUD : stud + placement.yLdu * SIXTEENTHS;
       const localX = surface.minX + column * STUD + STUD / 2;
       const localZ = surface.minZ + row * STUD + STUD / 2;
       const centreX = placement.x + cos * localX + sin * localZ;
       const centreZ = placement.z - sin * localX + cos * localZ;
       squares.set(
-        `${centreX} ${centreZ} ${top + placement.yLdu}`,
+        `${centreX} ${centreZ} ${top + placement.yLdu * SIXTEENTHS}`,
         `${surface.road[index] ?? 0} ${raisedStud}`,
       );
     }

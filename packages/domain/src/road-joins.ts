@@ -1,4 +1,11 @@
-import { STUD_LDU, isLatticePose, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import {
+  SIXTEENTHS_PER_LDU,
+  STUD_LDU,
+  isLatticePose,
+  isRot90,
+  rot90Cos,
+  rot90Sin,
+} from "@brr/math";
 import type { LduRect } from "./plan/plan-region.ts";
 import { RoadCellGrid, int32, type RoadCellRect } from "./road-cell-grid.ts";
 import { CLASHED_FIT, COMPLETE_FIT, RoadFitMemo, type FitKey, type RoadFit } from "./road-fit.ts";
@@ -11,8 +18,8 @@ export interface RoadSurface {
   readonly minZ: number;
   readonly columns: number;
   readonly rows: number;
-  readonly top: Int32Array;
-  readonly stud: Int32Array;
+  readonly topSixteenths: Int32Array;
+  readonly studSixteenths: Int32Array;
   readonly road: Uint8Array;
 }
 
@@ -58,8 +65,8 @@ interface PlacedCell {
   readonly centreZ: number;
   readonly cellX: number;
   readonly cellZ: number;
-  readonly top: number;
-  readonly stud: number;
+  readonly topSixteenths: number;
+  readonly studSixteenths: number;
   readonly road: number;
 }
 
@@ -81,8 +88,12 @@ const MISMATCHED = 2;
 const OPEN = 3;
 const FIRST_SEAM_CAPACITY = 64;
 
-function raisedStud(stud: number, yLdu: number): number {
-  return stud === NO_STUD ? NO_STUD : stud + yLdu;
+function raisedStud(stud: number, ySixteenths: number): number {
+  return stud === NO_STUD ? NO_STUD : stud + ySixteenths;
+}
+
+function sixteenthsOf(yLdu: number): number {
+  return yLdu * SIXTEENTHS_PER_LDU;
 }
 
 export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell> {
@@ -94,7 +105,7 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
   for (let row = 0; row < surface.rows; row++) {
     for (let column = 0; column < surface.columns; column++) {
       const index = row * surface.columns + column;
-      const top = surface.top[index] ?? NO_TOP;
+      const top = surface.topSixteenths[index] ?? NO_TOP;
       if (top === NO_TOP) continue;
       const localX = surface.minX + column * STUD_LDU + HALF_STUD;
       const localZ = surface.minZ + row * STUD_LDU + HALF_STUD;
@@ -106,8 +117,11 @@ export function placedCells(placement: RoadPlacement): ReadonlyArray<PlacedCell>
         centreZ,
         cellX: Math.floor(centreX / STUD_LDU),
         cellZ: Math.floor(centreZ / STUD_LDU),
-        top: top + placement.yLdu,
-        stud: raisedStud(surface.stud[index] ?? NO_STUD, placement.yLdu),
+        topSixteenths: top + sixteenthsOf(placement.yLdu),
+        studSixteenths: raisedStud(
+          surface.studSixteenths[index] ?? NO_STUD,
+          sixteenthsOf(placement.yLdu),
+        ),
         road: surface.road[index] ?? 0,
       });
     }
@@ -197,13 +211,13 @@ class RoadStamp implements RoadCellRect {
     this.anchorZ = cornersZ.reduce((low, corner) => Math.min(low, corner), cornersZ[0] ?? 0);
     const cells = cornersX
       .map((cornerX, index): StampCell => {
-        const top = surface.top[index] ?? NO_TOP;
+        const top = surface.topSixteenths[index] ?? NO_TOP;
         return {
           column: (cornerX - this.anchorX) / STUD_LDU,
           row: ((cornersZ[index] ?? 0) - this.anchorZ) / STUD_LDU,
           top,
           present: top !== NO_TOP,
-          stud: surface.stud[index] ?? NO_STUD,
+          stud: surface.studSixteenths[index] ?? NO_STUD,
           road: surface.road[index] ?? 0,
         };
       })
@@ -278,8 +292,8 @@ const NO_SURFACE: RoadSurface = {
   minZ: 0,
   columns: 0,
   rows: 0,
-  top: new Int32Array(0),
-  stud: new Int32Array(0),
+  topSixteenths: new Int32Array(0),
+  studSixteenths: new Int32Array(0),
   road: new Uint8Array(0),
 };
 
@@ -291,6 +305,7 @@ class PlacedStamp implements FitKey {
   phaseX = 0;
   phaseZ = 0;
   yLdu = 0;
+  ySixteenths = 0;
   overlapping = false;
 
   get turn(): number {
@@ -306,6 +321,9 @@ class PlacedStamp implements FitKey {
     if (!isLatticePose(x, z, 0) || !isInt32(yLdu)) {
       throw new RangeError(`road pose ${x}, ${yLdu}, ${z} is not whole LDU`);
     }
+    if (!isInt32(sixteenthsOf(yLdu))) {
+      throw new RangeError(`road height ${yLdu} LDU is beyond what sixteenths of an LDU can hold`);
+    }
     this.id = placement.id;
     this.stamp = stampOf(placement.surface, placement.rot);
     const cornerX = x + this.stamp.anchorX;
@@ -315,6 +333,7 @@ class PlacedStamp implements FitKey {
     this.phaseX = int32(cornerX - this.offsetX * STUD_LDU);
     this.phaseZ = int32(cornerZ - this.offsetZ * STUD_LDU);
     this.yLdu = int32(yLdu);
+    this.ySixteenths = int32(sixteenthsOf(yLdu));
     this.overlapping = false;
     return this;
   }
@@ -577,7 +596,7 @@ function edgeCellOf(pose: PlacedStamp, edge: number, status: RoadCellStatus): Ed
     line: lineCell * STUD_LDU + (across ? pose.phaseX : pose.phaseZ),
     along: across ? z : x,
     alongPhase: across ? pose.phaseZ : pose.phaseX,
-    topLdu: (stamp.top[cell] ?? 0) + pose.yLdu,
+    topLdu: ((stamp.top[cell] ?? 0) + pose.ySixteenths) / SIXTEENTHS_PER_LDU,
     status,
   };
 }
@@ -610,11 +629,11 @@ export class RoadNetwork {
       if (stamp.present[c] === 0) continue;
       const x = (stamp.column[c] ?? 0) + pose.offsetX;
       const z = (stamp.row[c] ?? 0) + pose.offsetZ;
-      const top = (stamp.top[c] ?? 0) + pose.yLdu;
+      const top = (stamp.top[c] ?? 0) + pose.ySixteenths;
       for (let found = this.cursor.seek(x, z, top, phase); found; found = this.cursor.advance()) {
         this.recordOverlap(this.cursor.owner, pose);
       }
-      const stud = raisedStud(stamp.stud[c] ?? NO_STUD, pose.yLdu);
+      const stud = raisedStud(stamp.stud[c] ?? NO_STUD, pose.ySixteenths);
       this.grid.claim(x, z, owner, top, phase, stud, stamp.road[c] ?? 0);
     }
   }
@@ -692,12 +711,12 @@ export class RoadNetwork {
   }
 
   private reaches(pose: PlacedStamp): boolean {
-    return this.grid.reachesLevels(pose.stamp, pose.offsetX, pose.offsetZ, pose.yLdu);
+    return this.grid.reachesLevels(pose.stamp, pose.offsetX, pose.offsetZ, pose.ySixteenths);
   }
 
   private occupiedCells(pose: PlacedStamp, stopAtFirst: boolean): number {
-    const { stamp, offsetX, offsetZ, yLdu } = pose;
-    return this.grid.occupiedCells(stamp, offsetX, offsetZ, yLdu, pose.phase, stopAtFirst);
+    const { stamp, offsetX, offsetZ, ySixteenths } = pose;
+    return this.grid.occupiedCells(stamp, offsetX, offsetZ, ySixteenths, pose.phase, stopAtFirst);
   }
 
   private countsPair(owner: number, partner: number): boolean {
@@ -775,7 +794,7 @@ export class RoadNetwork {
     const stamp = pose.stamp;
     const offsetX = pose.offsetX;
     const offsetZ = pose.offsetZ;
-    const yLdu = pose.yLdu;
+    const ySixteenths = pose.ySixteenths;
     const phase = pose.phase;
     const seams = this.seams;
     const cursor = this.cursor;
@@ -787,7 +806,7 @@ export class RoadNetwork {
       const side = stamp.seamSide[e] ?? 0;
       const x = (stamp.column[cell] ?? 0) + offsetX;
       const z = (stamp.row[cell] ?? 0) + offsetZ;
-      const top = (stamp.top[cell] ?? 0) + yLdu;
+      const top = (stamp.top[cell] ?? 0) + ySixteenths;
       const road = stamp.road[cell] ?? 0;
       const along = acrossX(side) ? z : x;
       const neighbourX = x + (SIDE_DX[side] ?? 0);
@@ -800,7 +819,7 @@ export class RoadNetwork {
       ) {
         const partner = cursor.owner;
         if (pose.overlapping && this.grid.holds(x, z, top, partner)) continue;
-        const stud = raisedStud(stamp.stud[cell] ?? NO_STUD, yLdu);
+        const stud = raisedStud(stamp.stud[cell] ?? NO_STUD, ySixteenths);
         seams.push(e, along, partner, road, stud, cursor.road, cursor.stud);
         if (stopAtMismatch && seams.mismatchCertain) return;
         met = true;

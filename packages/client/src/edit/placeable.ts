@@ -14,8 +14,9 @@ import { INSTANCE_MATRIX_FLOATS, type StudInstances } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { bakedVisible, withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable, ModelCredit } from "../scene/viewer-scene.ts";
+import { LatticeSeats } from "./lattice-seats.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
-import { roadSurface } from "./road-surface.ts";
+import { roadCells } from "./road-surface.ts";
 
 export type PlaceableKind = "baseplate" | "road-plate" | "model";
 
@@ -38,6 +39,7 @@ export interface StudLattice {
   readonly cellX: Int32Array;
   readonly cellZ: Int32Array;
   readonly baseLdu: Int32Array;
+  readonly seats: LatticeSeats;
 }
 
 export interface Placeable {
@@ -56,10 +58,12 @@ export interface Placeable {
   readonly cells: PlaceableCells;
   readonly box: LocalBox;
   readonly partBoxes: Float32Array;
+  readonly seatedTops: Uint8Array;
   readonly frameShift: Vec3;
   readonly farModel: number | null;
   readonly credit: ModelCredit | null;
   readonly road: RoadSurface | null;
+  readonly flatTopSixteenths: number | null;
   readonly slabBoxes: Float32Array;
 }
 
@@ -169,15 +173,26 @@ function studLattice(
       `the part transforms give ${visible} visible studs but the render has ${count}`,
     );
   }
-  return { onLattice, cellX, cellZ, baseLdu };
+  return {
+    onLattice,
+    cellX,
+    cellZ,
+    baseLdu,
+    seats: new LatticeSeats(onLattice, cellX, cellZ, baseLdu),
+  };
 }
 
 function noStudsOffered(count: number): StudLattice {
+  const onLattice = new Uint8Array(count);
+  const cellX = new Int32Array(count);
+  const cellZ = new Int32Array(count);
+  const baseLdu = new Int32Array(count);
   return {
-    onLattice: new Uint8Array(count),
-    cellX: new Int32Array(count),
-    cellZ: new Int32Array(count),
-    baseLdu: new Int32Array(count),
+    onLattice,
+    cellX,
+    cellZ,
+    baseLdu,
+    seats: new LatticeSeats(onLattice, cellX, cellZ, baseLdu),
   };
 }
 
@@ -401,6 +416,12 @@ export function modelPlaceable(
     matrices: shiftedTransforms(model.partTransforms, model.instanceCount, shift),
     submodels: shiftedSubmodels(model.submodels, shift),
   };
+  const offeredStuds =
+    cover === undefined
+      ? noStudsOffered(studs.count)
+      : studLattice(partTransforms, parts, cover, studs.count);
+  const placedCells = modelCells(cells, shift, name);
+  const { road, flatTopSixteenths } = roadCells(partTransforms, partBoxes, placedCells, parts);
   return {
     id,
     label,
@@ -411,19 +432,18 @@ export function modelPlaceable(
     parts: local,
     partTransforms,
     studs,
-    studLattice:
-      cover === undefined
-        ? noStudsOffered(studs.count)
-        : studLattice(partTransforms, parts, cover, studs.count),
+    studLattice: offeredStuds,
     studsPending: cover === undefined,
     bakedCoveredStuds: cover?.covered ?? null,
-    cells: modelCells(cells, shift, name),
+    cells: placedCells,
     box,
     partBoxes,
+    seatedTops: offeredStuds.seats.seatedTops(partBoxes),
     frameShift: shift,
     farModel,
     credit,
-    road: null,
+    road,
+    flatTopSixteenths,
     slabBoxes: belowRestPlane(local, partBoxes),
   };
 }
@@ -468,33 +488,37 @@ export function partPlaceable(
   };
   const box = shiftedBox(part.boundsMin, part.boundsMax, shift);
   const partBoxes = instanceBoxes(local, parts);
-  const isRoad = part.role === "road";
   const studs = withStuds(local, parts, colors).studs;
   const partTransforms: PartInstances = {
     count: 1,
     partIndex: local.partIndex,
     matrices: shiftedTransforms(IDENTITY_TRANSFORM, 1, shift),
   };
+  const offeredStuds = studLattice(partTransforms, parts, undefined, studs.count);
+  const placedCells = partCells(part, shift);
+  const { road, flatTopSixteenths } = roadCells(partTransforms, partBoxes, placedCells, parts);
   return {
     id: `${part.id}@${ldrawColor}`,
     label: `${part.id.replace("ldraw:", "")} ${part.title}, ${colorName}`,
     group: part.id,
     groupLabel: `${part.id.replace("ldraw:", "")} ${part.title}`,
-    kind: isRoad ? "road-plate" : "baseplate",
+    kind: road ? "road-plate" : "baseplate",
     worldColor: ldrawColor,
     parts: local,
     partTransforms,
     studs,
-    studLattice: studLattice(partTransforms, parts, undefined, studs.count),
+    studLattice: offeredStuds,
     studsPending: false,
     bakedCoveredStuds: 0,
-    cells: partCells(part, shift),
+    cells: placedCells,
     box,
     partBoxes,
+    seatedTops: offeredStuds.seats.seatedTops(partBoxes),
     frameShift: shift,
     farModel: null,
     credit: null,
-    road: isRoad ? roadSurface(local, partBoxes, box, parts) : null,
+    road,
+    flatTopSixteenths,
     slabBoxes: belowRestPlane(local, partBoxes),
   };
 }
