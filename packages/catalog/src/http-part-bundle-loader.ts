@@ -14,6 +14,7 @@ import {
   ConnectorPackFile,
   CreditTableFile,
   CrosswalkFile,
+  LibraryPartsFile,
   ModelFile,
   PartShape,
   PartTableFile,
@@ -61,12 +62,16 @@ import type {
   PinnedSectionVocabulary,
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
-import { FetchPool, type FetchLane } from "./fetch-pool.ts";
-import { ASSET_FETCHER, BUNDLE_BASE_URL, BUNDLE_MANIFEST_FILE } from "./tokens.ts";
+import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
+import {
+  ASSET_FETCHER,
+  BUNDLE_BASE_URL,
+  BUNDLE_MANIFEST_FILE,
+  FETCH_POOL_POLICY,
+} from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
 const COMPILED_PART_ROLE = "model";
-const MAX_CONCURRENT_FETCHES = 16;
 const HEX_RADIX = 16;
 const BYTE_HEX_DIGITS = 2;
 
@@ -151,7 +156,6 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   private readonly indices = new Map<BundleLod, Promise<BundleIndex>>();
   private readonly manifests = new Map<BundleLod, Promise<BundleManifest>>();
   private readonly meshes = new Map<string, Promise<PartMesh>>();
-  private readonly pool = new FetchPool(MAX_CONCURRENT_FETCHES);
   private readonly partAssets = new Map<string, Promise<PartAsset>>();
   private readonly studPrimitiveAssets = new Map<
     BundleLod,
@@ -171,10 +175,15 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   >();
   private resolvedManifest: Promise<ResolvedManifest> | undefined;
 
+  private readonly pool: FetchPool;
+
   constructor(
     @inject(ASSET_FETCHER) private readonly fetcher: IAssetFetcher,
     @inject(BUNDLE_MANIFEST_FILE) private readonly fallbackManifestFile: string,
-  ) {}
+    @inject(FETCH_POOL_POLICY) poolPolicy: FetchPoolPolicy,
+  ) {
+    this.pool = new FetchPool(poolPolicy);
+  }
 
   async loadManifestFile(): Promise<string> {
     return (await this.manifestFile()).file;
@@ -384,7 +393,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
         if (!compiler) return null;
         const { file, sha256 } = compiler.sectionVocabulary;
         const path = `${lod}/${file}`;
-        const bytes = await this.fetcher.bytes(path);
+        const bytes = await this.bytes(path, "structural");
         const digest = await sha256Hex(bytes);
         if (digest !== sha256) {
           throw new Error(`${path} has SHA-256 ${digest}, but the manifest references ${sha256}`);
@@ -456,7 +465,7 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
   }
 
   private connectorJson(lod: BundleLod, packs: ConnectorPacks | undefined): ReadJson {
-    if (packs === undefined) return async (path) => JSON.parse(await this.fetcher.text(path));
+    if (packs === undefined) return async (path) => JSON.parse(await this.text(path));
     return async (path) => {
       const file = (await this.packedConnectorFiles(lod, packs)).get(path);
       if (file === undefined) throw new Error(`neither connector pack holds ${path}`);
@@ -555,6 +564,12 @@ export class HttpPartBundleLoader implements IPartBundleLoader {
     this.crosswalks.set(lod, loading);
     loading.catch(() => this.crosswalks.delete(lod));
     return loading;
+  }
+
+  async loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    const { libraryParts } = await this.loadIndex(lod);
+    if (libraryParts === undefined) return null;
+    return this.json(LibraryPartsFile, `${lod}/${libraryParts.file}`);
   }
 
   loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
