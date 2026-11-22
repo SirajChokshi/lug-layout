@@ -103,14 +103,14 @@ function generatedPairs(pools: BlockPools, seed: number, count: number): ModuleP
   return pairs;
 }
 
-async function templates(pools: BlockPools): Promise<Template[]> {
+async function templates(pools: BlockPools, bundle: Bundle): Promise<Template[]> {
   const palette = JSON.parse(await readFile(PALETTE, "utf8")) as {
     readonly models: ReadonlyArray<PaletteModel>;
   };
   const found: Template[] = [];
   for (const model of palette.models) {
     const text = await readFile(join(ASSET_PIPELINE, model.file), "utf8").catch(() => null);
-    const edges = text === null ? null : templateEdges(pools, text);
+    const edges = text === null ? null : templateEdges(pools, text, bundle.parts);
     if (edges) found.push({ name: model.name, edges });
   }
   return found.toSorted((a, b) => a.name.localeCompare(b.name));
@@ -343,7 +343,7 @@ it(
     for (const pair of generatedPairs(pools, seed, pairCount())) {
       outcomes.push(await checkPair(bundle, fetchUrl, pair));
     }
-    const found = await templates(pools);
+    const found = await templates(pools, bundle);
     expect(
       found.length,
       "the palette has a flat square module with Technic hole bricks on an edge",
