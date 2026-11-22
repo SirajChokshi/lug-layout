@@ -170,6 +170,28 @@ export class KitOutlines {
     );
   }
 
+  blockerBesideJoins(
+    clearance: TrackClearance,
+    joinedIn: TrackClearance,
+    frame: MoveFrame,
+    heading: number,
+    x: number,
+    z: number,
+    exceptA: number,
+    exceptB: number,
+  ): number {
+    return clearance.blockerBesideJoins(
+      this.outline(frame, heading),
+      frame.boxes,
+      heading * OUTLINE_BOX_FLOATS,
+      x,
+      z,
+      joinedIn,
+      exceptA,
+      exceptB,
+    );
+  }
+
   addTo(
     clearance: TrackClearance,
     frame: MoveFrame,

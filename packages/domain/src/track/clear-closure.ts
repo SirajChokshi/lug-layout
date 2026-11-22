@@ -2,8 +2,11 @@ import {
   HALF_TURN_16,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
+  addZeta16,
   normalizeHeading16,
+  pose16,
   subtractZeta16,
+  zeta16,
   type Pose16,
 } from "@brr/math";
 import type { DrawingKit } from "./drawing-kit.ts";
@@ -14,7 +17,13 @@ import {
   type KitOutlines,
   type MoveFrame,
 } from "./kit-outlines.ts";
-import { NO_OBSTACLE, RUN_CROSSING, poseLdu, type TrackClearance } from "./track-clearance.ts";
+import {
+  NO_OBSTACLE,
+  RUN_CROSSING,
+  poseLdu,
+  studlessTopBlocker,
+  type TrackClearance,
+} from "./track-clearance.ts";
 import type { TrackMove } from "./track-pose.ts";
 import {
   DEFAULT_CLOSURE_TURNS,
@@ -24,8 +33,14 @@ import {
   type TrackRun,
 } from "./track-solver.ts";
 
+export interface SupportSite {
+  readonly studlessTops: TrackClearance;
+  supported(frame: MoveFrame, pose: Pose16): boolean;
+}
+
 export interface ClosureSite {
   readonly clearance: TrackClearance;
+  readonly support: SupportSite;
   readonly outlines: KitOutlines;
   readonly startOwner: number;
   readonly goalOwner: number;
@@ -159,20 +174,35 @@ class ClosureGeometry {
   laidBlocker(
     frame: MoveFrame,
     heading: number,
+    at: Float64Array,
     x: number,
     z: number,
     first: boolean,
     last: boolean,
   ): number {
-    return this.site.outlines.blocker(
-      this.site.clearance,
+    const { clearance, support, outlines } = this.site;
+    const startOwner = first ? this.site.startOwner : NO_OBSTACLE;
+    const goalOwner = last ? this.site.goalOwner : NO_OBSTACLE;
+    const solid = outlines.blocker(clearance, frame, heading, x, z, startOwner, goalOwner);
+    if (solid !== NO_OBSTACLE) return solid;
+    const top = outlines.blockerBesideJoins(
+      support.studlessTops,
+      clearance,
       frame,
       heading,
       x,
       z,
-      first ? this.site.startOwner : NO_OBSTACLE,
-      last ? this.site.goalOwner : NO_OBSTACLE,
+      startOwner,
+      goalOwner,
     );
+    if (top === NO_OBSTACLE || support.supported(frame, this.poseAt(at, heading)))
+      return NO_OBSTACLE;
+    return studlessTopBlocker(top);
+  }
+
+  private poseAt(at: Float64Array, heading: number): Pose16 {
+    const offset = zeta16(Array.from(at, (coefficient) => BigInt(coefficient)));
+    return pose16(addZeta16(this.start.position, offset), heading);
   }
 
   piecesMeet(
@@ -188,9 +218,11 @@ class ClosureGeometry {
     return this.site.outlines.meet(a, aHeading, ax, az, b, bHeading, bx, bz);
   }
 
-  endsBlocked(): boolean {
+  endsBlocker(): number {
     let firstFree = false;
     let lastFree = false;
+    let firstBlocker = NO_OBSTACLE;
+    let lastBlocker = NO_OBSTACLE;
     const [x, z] = this.worldOf(ORIGIN);
     const before = new Float64Array(ZETA16_COEFFICIENT_COUNT);
     const after = new Float64Array(ZETA16_COEFFICIENT_COUNT);
@@ -198,17 +230,20 @@ class ClosureGeometry {
       after.fill(0);
       addRotated(frame.delta, this.start.heading, after, 1);
       const last = this.isFinal(after, normalizeHeading16(this.start.heading + frame.turn));
-      if (this.laidBlocker(frame, this.start.heading, x, z, true, last) === NO_OBSTACLE) {
-        firstFree = true;
-      }
+      const atStart = this.laidBlocker(frame, this.start.heading, ORIGIN, x, z, true, last);
+      if (atStart === NO_OBSTACLE) firstFree = true;
+      else if (firstBlocker === NO_OBSTACLE) firstBlocker = atStart;
       const heading = normalizeHeading16(this.finalHeading - frame.turn);
       before.set(this.final);
       addRotated(frame.delta, heading, before, -1);
       const first = heading === this.start.heading && before.every((c) => c === 0);
       const [bx, bz] = this.worldOf(before);
-      if (this.laidBlocker(frame, heading, bx, bz, first, true) === NO_OBSTACLE) lastFree = true;
+      const atGoal = this.laidBlocker(frame, heading, before, bx, bz, first, true);
+      if (atGoal === NO_OBSTACLE) lastFree = true;
+      else if (lastBlocker === NO_OBSTACLE) lastBlocker = atGoal;
     }
-    return !firstFree || !lastFree;
+    if (!firstFree) return firstBlocker;
+    return lastFree ? NO_OBSTACLE : lastBlocker;
   }
 
   firstBlocker(moves: ReadonlyArray<TrackMove>): number {
@@ -223,7 +258,8 @@ class ClosureGeometry {
       if (!move) continue;
       const frame = this.site.outlines.frameFor(move);
       const [x, z] = this.worldOf(coefficients);
-      const blocker = this.laidBlocker(frame, heading, x, z, i === 0, i === moves.length - 1);
+      const last = i === moves.length - 1;
+      const blocker = this.laidBlocker(frame, heading, coefficients, x, z, i === 0, last);
       if (blocker !== NO_OBSTACLE) return blocker;
       for (let j = 0; j < i - 1; j++) {
         const earlier = frames[j];
@@ -333,7 +369,15 @@ class ClearClosureSearch {
   private pieceBlocked(at: SearchNode, frame: MoveFrame, last: boolean): boolean {
     const geometry = this.geometry;
     if (
-      geometry.laidBlocker(frame, at.heading, at.x, at.z, at.parent === null, last) !== NO_OBSTACLE
+      geometry.laidBlocker(
+        frame,
+        at.heading,
+        at.coefficients,
+        at.x,
+        at.z,
+        at.parent === null,
+        last,
+      ) !== NO_OBSTACLE
     ) {
       return true;
     }
@@ -472,7 +516,8 @@ export function clearClosure(
     blocker = geometry.firstBlocker(runMoves(kit, algebraic.run));
     if (blocker === NO_OBSTACLE) return { kind: "exact", run: algebraic.run };
   }
-  if (geometry.endsBlocked()) return { kind: "blocked", blocker };
+  const ends = geometry.endsBlocker();
+  if (ends !== NO_OBSTACLE) return { kind: "blocked", blocker: ends };
   let sawBlockedJoin = algebraic.run !== null;
   let incumbent: Candidate | null = null;
   for (const candidate of cheapestFirst(geometry, kit, algebraic.withinTurns)) {

@@ -20,11 +20,15 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type IEditor } from "../edit/editor.ts";
+import type { IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
+import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
+import { loadCatalogItem } from "./catalog-item.test-support.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
   COMMAND_PALETTE_SEARCH,
+  CONNECTOR_TABLES,
   EDITOR,
   HOTBAR,
   LIBRARY_PART_PLACER,
@@ -35,6 +39,7 @@ import {
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
+  PLACEABLE_CATALOG,
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
@@ -120,7 +125,8 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
   setGround(): void {}
@@ -407,6 +413,40 @@ describe("palette prefetch", () => {
     prefetch.focus("omr:4554-1");
     await vi.waitFor(() => expect(fetcher.paths).toContain(focused));
     expect(fetcher.paths).not.toContain(passed);
+  }, 120_000);
+
+  it("reads a set's connectors while it holds focus, so picking it places it without waiting", async () => {
+    const { container, editor } = await startEditor();
+    const tables = container.get(CONNECTOR_TABLES);
+
+    container.get(PALETTE_PREFETCH).focus(SET);
+    const set = await loadCatalogItem(container.get(PLACEABLE_CATALOG), SET);
+    await vi.waitFor(() => expect(tables.loaded(set)).not.toBeNull(), { timeout: 60_000 });
+    editor.chooseItem(SET);
+
+    expect(heldItem(editor.snapshot())).toEqual({ item: SET, tables: "ready", queued: null });
+  }, 120_000);
+
+  it("asks for the bundle's two connector packs as the editor starts, so picking a set fetches no other connector file", async () => {
+    const connectorFile = /\/(?:connectivity|connectors?)-[^/]+\.json$/u;
+    const { editor, fetcher, manifest } = await startEditor();
+    const { connectorPacks } = manifest;
+    const packs = [connectorPacks?.connectivity.file, connectorPacks?.connectors.file].map(
+      (file) => `standard/${file}`,
+    );
+
+    await vi.waitFor(() => expect(fetcher.paths).toEqual(expect.arrayContaining(packs)), {
+      timeout: 60_000,
+    });
+    await chosen(editor, SET);
+
+    expect({
+      connectorFiles: fetcher.paths.filter((path) => connectorFile.test(path)).toSorted(),
+      held: heldItem(editor.snapshot()),
+    }).toEqual({
+      connectorFiles: packs.toSorted(),
+      held: { item: SET, tables: "ready", queued: null },
+    });
   }, 120_000);
 });
 

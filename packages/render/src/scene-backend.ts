@@ -1,6 +1,10 @@
 import type { PartAsset, PartMesh, StudPrimitiveAsset } from "@brr/catalog";
+import { CHUNK_STUDS } from "@brr/math";
 
 export type GraphicsApi = "webgpu" | "webgl2";
+
+const GUIDE_LINES_PER_CHUNK = 4;
+export const GUIDE_GRID_STUDS = CHUNK_STUDS / GUIDE_LINES_PER_CHUNK;
 
 export const LOOK_FEATURES = ["plastic", "gtao", "outlines", "bevel", "shadows", "oit"] as const;
 
@@ -127,6 +131,14 @@ export interface EdgeMarker {
   readonly kind: MarkerKind;
 }
 
+export type GhostTone = "fits" | "mates" | "refused";
+
+export interface GhostVerdict {
+  readonly tone: GhostTone | null;
+  readonly hit: WorldBox | null;
+  readonly precise: boolean;
+}
+
 export type TrackEndKind = "open" | "gap" | "target";
 
 export interface TrackEndMarker {
@@ -145,7 +157,7 @@ export interface GroundSettings {
   readonly grid: boolean;
 }
 
-export type GuideKind = "ruler" | "axis" | "draft";
+export type GuideKind = "ruler" | "axis" | "draft" | "refused";
 
 export interface GuideSegment {
   readonly kind: GuideKind;
@@ -166,7 +178,6 @@ export interface PlanOverlay {
   readonly room: WorldBox;
   readonly tables: ReadonlyArray<WorldBox>;
   readonly obstacles: ReadonlyArray<WorldBox>;
-  readonly gridStepLdu: number;
   readonly active: boolean;
 }
 
@@ -193,7 +204,8 @@ export interface ISceneBackend {
   setNeededMeshListener(listener: NeededMeshListener | null): void;
   setGhost(model: ChunkInstances | null): void;
   placeGhost(x: number, yLdu: number, z: number, rot: number): void;
-  setSelectionBox(box: WorldBox | null): void;
+  setGhostVerdict(verdict: GhostVerdict | null): void;
+  setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void;
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void;
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void;
   setGround(ground: GroundSettings | null): void;

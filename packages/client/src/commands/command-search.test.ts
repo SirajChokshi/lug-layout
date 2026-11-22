@@ -32,6 +32,7 @@ function baseplate(
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -54,6 +55,7 @@ function roadPlate(part: string, title: string, studs: number, alias: string): C
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   };
 }
 
@@ -80,6 +82,7 @@ const catalog: ReadonlyArray<CatalogItemView> = [
     draggable: true,
     toggleable: false,
     listedUnder: null,
+    customParts: 0,
   },
   roadPlate(
     "44336p03",

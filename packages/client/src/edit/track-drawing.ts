@@ -10,10 +10,17 @@ import {
   BOX_MIN_Y,
   BOX_MIN_Z,
   BOX_STRIDE,
+  LABEL_AT,
   LABEL_NUMBERED,
+  TRACK_OPEN_END,
   TRACK_SEGMENT,
+  TRACK_UNIDENTIFIED,
+  TRACK_UNJOINED_ENDS,
+  TRACK_UNVERIFIED,
   type PlanDelta,
+  type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
+  NO_OBSTACLE,
   KitOutlines,
   StrokeRouter,
   drawingKit,
@@ -23,15 +30,29 @@ import {
   layMoves,
   NO_END,
   NO_TRACK_CHANGE,
+  OUTLINE_BOX_FLOATS,
+  outlineBox,
+  rotateOutline,
   TrackGraph,
   TrackLayout,
   footprintOutline,
   regionHolds,
   outlineContains,
   placedOutline,
+  placedOutlineInto,
+  solveClosure,
+  studlessTopBlocker,
+  PlacedOutline,
+  OutlineEdges,
+  TrackOutline,
+  type TrackClearance,
+  type MoveFrame,
+  type OutlineRing,
   type BomCounter,
+  type PartSink,
   type DrawingKit,
   type EndGap,
+  type PlacementPose,
   type PlacementRegion,
   type TrackChange,
   type TrackEnd,
@@ -41,9 +62,17 @@ import {
   type TrackPieceDef,
   type TrackPieceSpec,
   WORLD_TRACK_FRAME,
+  boxesOverlap,
+  outlinesOverlap,
+  rampRises,
+  runMoves,
+  reachablePlates,
+  runHeights,
+  type RunHeights,
 } from "@brr/domain";
 import {
   CHUNK_LDU,
+  HALF_TURN_16,
   PLATE_LDU,
   STUD_LDU,
   ZETA16_ORDER,
@@ -53,6 +82,7 @@ import {
   composePose16,
   normalizeHeading16,
   POSE16_IDENTITY,
+  isLatticePose,
   posesJoin16,
   pose16,
   pose16Equals,
@@ -64,22 +94,39 @@ import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import type { FramedTrackPiece } from "../connect/model-track-ends.ts";
+import type { FramedTrackPiece, TrackPartCount } from "../connect/model-track-ends.ts";
 import {
-  DragField,
+  CLOSURE_BUDGET_MS,
   TrackDrag,
+  type DragField,
   type DragEnds,
+  type DragRoute,
   type DragTargetView,
+  type DragRefusal,
+  type JoinWithheld,
   type TrackBlockView,
   type TrackDragView,
-  type TrackRefusal,
 } from "./track-drag.ts";
-import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
+import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles.ts";
+import type { TrackSupport } from "./track-support.ts";
+import { writeChunkSquares } from "./plan-reach.ts";
+import { TrackBands, type BandPieces, type LayingBand, type SupportBandAt } from "./track-bands.ts";
+import { heightText, type LabelView } from "./size-labels.ts";
+import type { TallestTrain } from "../trains/tallest-train.ts";
 import { TrackPieceSet, type Lever } from "./track-pieces.ts";
+import {
+  TrackExtension,
+  type ExtensionJoin,
+  type ExtensionRun,
+  type ExtensionSite,
+} from "./track-extension.ts";
+import { pieceRelativePose } from "./group-transform.ts";
 
 export type {
   ClosureState,
+  DragRefusal,
   DragTargetView,
+  JoinWithheld,
   TrackBlockView,
   TrackDragView,
   TrackRefusal,
@@ -90,8 +137,33 @@ const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
 const GROUND_PLATES = 0;
+const RAMP_HIGH_END = 1;
+const RAMP_CONNECTORS = 2;
+const INT16_MAX = 2 ** 15 - 1;
+const DEFAULT_RAMP_PLATES = 1;
+const PERCENT = 100;
+const NO_PIECE = -1;
+export const RAMP_RATES: ReadonlyArray<number> = [1, 2];
 const GHOST_SCRATCH_PIECES = 64;
 const REFUSED_PIECE_LDRAW_COLOR = 4;
+const NO_PLACEMENTS: ReadonlySet<number> = new Set();
+const NO_OWNERS: ReadonlySet<number> = new Set();
+const PIECE_BOX_FLOATS = 6;
+
+interface SkippedIds {
+  readonly moving: ReadonlySet<number>;
+  readonly movingOwners: ReadonlySet<number>;
+  readonly ids: Int32Array;
+}
+
+interface HeadingOutline {
+  readonly outline: Float64Array;
+  readonly box: Float64Array;
+}
+
+function crossingOutlineKey(catalogIndex: number, pose: Pose16): string {
+  return `${catalogIndex}:${pose.heading}:${pose.position.join(",")}`;
+}
 
 export interface KitPart {
   readonly footprints: Float64Array;
@@ -105,25 +177,159 @@ export interface KitPart {
   readonly yLdu: number;
 }
 
+interface CrossingShape {
+  readonly planOutline: ReadonlyArray<OutlineRing>;
+  readonly bedLdu: number;
+  readonly system: string;
+}
+
+export interface PlacedTrackPiece {
+  readonly placement: number;
+  readonly outline: PlacedOutline;
+  readonly bedLdu: number;
+  readonly system: string;
+}
+
+const NO_JOINS: ReadonlyArray<number> = [];
+const NO_POSES: ReadonlyArray<Pose16> = [];
+const RECT_OUTLINE_FLOATS = 8;
+
+function writeRectOutline(out: Float64Array, rects: Float64Array, at: number): void {
+  const minX = rects[at] ?? 0;
+  const minZ = rects[at + 1] ?? 0;
+  const maxX = rects[at + 2] ?? 0;
+  const maxZ = rects[at + 3] ?? 0;
+  out.set([minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
+}
+
+export interface RampShear {
+  readonly gx: number;
+  readonly gz: number;
+  readonly lowX: number;
+  readonly lowZ: number;
+}
+
+export interface RaisedPiece {
+  readonly index: number;
+  readonly catalogIndex: number;
+  readonly placement: Pose16;
+  readonly yPlates: number;
+}
+
+interface RunHeightsResult {
+  readonly kind: "heights" | "too-steep";
+  readonly heights: RunHeights;
+}
+
+interface RaisedBlock {
+  readonly at: number;
+  readonly block: TrackBlockView;
+}
+
+export interface LiftedPiece {
+  readonly piece: number;
+  readonly pose: Pose16;
+  readonly yPlates: number;
+  readonly rise: number;
+}
+
+export type SolidRects = (
+  bottomLdu: number,
+  topLdu: number,
+) => { readonly rects: Float64Array; readonly floats: number };
+
+export interface SupportPart {
+  readonly catalogIndex: number;
+  readonly partIndex: number;
+}
+
+export interface UnsupportedPiece {
+  readonly piece: number;
+  readonly block: TrackBlockView | null;
+  readonly tilted: boolean;
+}
+
 export interface DragOutcome {
   readonly change: TrackChange;
   readonly goal: Pose16 | null;
-  readonly refusal: TrackRefusal | null;
+  readonly end: Pose16 | null;
+  readonly refusal: DragRefusal | null;
   readonly blocked: TrackBlockView | null;
+  readonly withheld: JoinWithheld | null;
 }
 
 const NOTHING_LAID: DragOutcome = {
   change: NO_TRACK_CHANGE,
   goal: null,
+  end: null,
   refusal: null,
   blocked: null,
+  withheld: null,
 };
+
+export interface ExtensionPlan {
+  readonly run: ExtensionRun;
+  readonly change: TrackChange;
+  readonly goal: Pose16 | null;
+  readonly end: Pose16;
+}
+
+interface PreviewRun {
+  readonly start: Pose16;
+  readonly moves: ReadonlyArray<TrackMove>;
+  readonly refused: TrackMove | null;
+  readonly heights: RunHeights;
+}
+
+interface DragRun extends PreviewRun {
+  readonly route: DragRoute;
+  readonly refusal: DragRefusal | null;
+  readonly blocked: TrackBlockView | null;
+}
+
+export interface LowClearance {
+  readonly piece: number;
+  readonly needPlates: number;
+  readonly hasPlates: number;
+  readonly train: TallestTrain;
+}
+
+interface OverUnderCrossing {
+  readonly upper: number;
+  readonly lower: number;
+  readonly gapLdu: number;
+  readonly x: number;
+  readonly z: number;
+}
+
+interface DragRunCache {
+  readonly key: ReadonlyArray<unknown>;
+  readonly run: DragRun | null;
+}
 
 export interface TrackFootprint {
   readonly key: { readonly chunkKey: number; readonly slot: number };
   readonly ref: string;
   readonly label: string;
   readonly box: WorldBox;
+}
+
+export interface TrackOwner {
+  readonly handle: {
+    readonly chunkKey: number;
+    readonly slot: number;
+    readonly x: number;
+    readonly z: number;
+  };
+  readonly placeable: { readonly label: string };
+  readonly box: WorldBox;
+}
+
+export interface TrackCarrier {
+  readonly model: TrackOwner;
+  readonly held: number;
+  readonly unverified: ReadonlyArray<TrackPartCount>;
+  readonly unidentified: ReadonlyArray<TrackPartCount>;
 }
 
 export interface PlayTrack {
@@ -136,6 +342,7 @@ export interface PlayTrack {
 
 export interface TrackEndView {
   readonly xLdu: number;
+  readonly yPlates: number;
   readonly zLdu: number;
   readonly heading: number;
   readonly headingRadians: number;
@@ -148,6 +355,7 @@ export interface TrackRouteView {
 
 export interface PieceSnap {
   readonly placement: Pose16;
+  readonly yPlates: number;
   readonly end: number | null;
   readonly joins: number;
   readonly misses: ReadonlyArray<number>;
@@ -163,11 +371,24 @@ export interface TrackPieceHit {
   readonly distance: number;
 }
 
+export interface JoinEndView {
+  readonly placement: number;
+  readonly connector: number;
+  readonly pose: Pose16;
+  readonly yPlates: number;
+}
+
+export interface TrackJoinView {
+  readonly end: JoinEndView;
+  readonly partner: JoinEndView;
+}
+
 export interface LaidPieceView {
   readonly piece: string;
   readonly xLdu: number;
   readonly zLdu: number;
   readonly yPlates: number;
+  readonly heading: number;
   readonly chunkKey: number;
   readonly box: WorldBox;
 }
@@ -202,16 +423,19 @@ export interface TrackGapView {
 interface Placed {
   readonly part: KitPart;
   readonly placement: Pose16;
+  readonly yPlates: number;
+  readonly rise: number;
 }
 
 function normalizeConnector(connector: number, count: number): number {
   return ((connector % count) + count) % count;
 }
 
-function endView(end: Pose16, frame: TrackFrame = WORLD_TRACK_FRAME): TrackEndView {
+function endView(end: Pose16, frame: TrackFrame, yPlates: number): TrackEndView {
   const studs = zeta16ToStuds(end.position);
   return {
     xLdu: studs.x * STUD_LDU + frame.xLdu,
+    yPlates,
     zLdu: studs.z * STUD_LDU + frame.zLdu,
     heading: end.heading,
     headingRadians: end.heading * HEADING_RADIANS,
@@ -271,17 +495,20 @@ function writeMatrix(
   yLdu: number,
   originX: number,
   originZ: number,
+  ramp: RampShear | null = null,
 ): void {
   const { x, z, c, s } = partTransform(placement, frame);
+  const gx = ramp?.gx ?? 0;
+  const gz = ramp?.gz ?? 0;
   const o = slot * INSTANCE_MATRIX_FLOATS;
   out[o] = c;
   out[o + 1] = 0;
   out[o + 2] = -s;
   out[o + 3] = x - originX;
-  out[o + 4] = 0;
+  out[o + 4] = gx * c + gz * s;
   out[o + 5] = 1;
-  out[o + 6] = 0;
-  out[o + 7] = yLdu;
+  out[o + 6] = gz * c - gx * s;
+  out[o + 7] = yLdu + (ramp ? gx * (x - ramp.lowX) + gz * (z - ramp.lowZ) : 0);
   out[o + 8] = s;
   out[o + 9] = 0;
   out[o + 10] = c;
@@ -304,18 +531,41 @@ function partBox(placed: Placed): WorldBox {
   const o = normalizeHeading16(placed.placement.heading) * FOOTPRINT_FLOATS;
   const boxes = placed.part.footprints;
   const [minY, maxY] = placed.part.meshY;
+  const low = Math.min(placed.yPlates, placed.yPlates + placed.rise) * PLATE_LDU;
+  const high = Math.max(placed.yPlates, placed.yPlates + placed.rise) * PLATE_LDU;
   return {
     minX: x + (boxes[o] ?? 0),
-    minY: placed.part.yLdu + minY,
+    minY: placed.part.yLdu + minY + low,
     minZ: z + (boxes[o + 1] ?? 0),
     maxX: x + (boxes[o + 2] ?? 0),
-    maxY: placed.part.yLdu + maxY,
+    maxY: placed.part.yLdu + maxY + high,
     maxZ: z + (boxes[o + 3] ?? 0),
   };
 }
 
+function rampShear(placed: Placed): RampShear | null {
+  if (placed.rise === 0) return null;
+  const [low, high] = placed.part.def.connectors;
+  if (!low || !high) return null;
+  const from = zeta16ToStuds(composePose16(placed.placement, low).position);
+  const to = zeta16ToStuds(composePose16(placed.placement, high).position);
+  const dx = (to.x - from.x) * STUD_LDU;
+  const dz = (to.z - from.z) * STUD_LDU;
+  const scale = (placed.rise * PLATE_LDU) / (dx * dx + dz * dz);
+  return { gx: dx * scale, gz: dz * scale, lowX: from.x * STUD_LDU, lowZ: from.z * STUD_LDU };
+}
+
 function framedOutline(outline: Float64Array, placement: Pose16, frame: TrackFrame): Float64Array {
-  const placed = placedOutline(outline, placement);
+  return framedOutlineInto(outline, placement, frame, new Float64Array(outline.length));
+}
+
+function framedOutlineInto(
+  outline: Float64Array,
+  placement: Pose16,
+  frame: TrackFrame,
+  out: Float64Array,
+): Float64Array {
+  const placed = placedOutlineInto(outline, placement, out);
   for (let i = 0; i < placed.length; i += 2) {
     placed[i] = (placed[i] ?? 0) + frame.xLdu;
     placed[i + 1] = (placed[i + 1] ?? 0) + frame.zLdu;
@@ -327,24 +577,64 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
   return -1 - chunkKey(chunkX, chunkZ);
 }
 
-export class TrackDrawing {
+export class TrackDrawing implements ExtensionSite {
   readonly kit: DrawingKit;
+  readonly extension: TrackExtension;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
+  private readonly outlines = new Map<number, Float64Array>();
+  private readonly framedScratch = new Map<number, Float64Array>();
   readonly pieceSet: TrackPieceSet;
   private readonly layout: TrackLayout;
   private readonly pieces: ReadonlyArray<TrackPiece>;
   private held: ReadonlyArray<FramedTrackPiece> = [];
+  private carriers: ReadonlyArray<TrackCarrier> = [];
+  private heldCarrier = new Int32Array(0);
   private combined: TrackLayout;
   private graph: TrackGraph;
   private readonly chunkMembers = new Map<number, number[]>();
+  private pieceBoxes = new Float64Array(0);
+  private pieceKeys = new Float64Array(0);
+  private failedEnds = new Uint8Array(0);
+  private readonly ownerBox = new Float64Array(PIECE_BOX_FLOATS);
+  private readonly headingOutlines = new Map<number, HeadingOutline>();
+  private readonly joinedOwners: number[] = [];
+  private readonly scratchBox = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
   private ends: Pose16[] = [];
+  private endPlates: number[] = [];
   private endOwners: number[] = [];
   private openList: TrackEnd[] = [];
-  private obstacles: TrackObstacles = NO_TRACK_OBSTACLES;
-  private seatsPending = false;
+  private support: TrackSupport | null = null;
+  private readonly skipped = new Map<DragField, SkippedIds>();
+  private readonly bands: TrackBands;
+  private framed: Array<Float64Array | null> = [];
+  private pieceBands: ReadonlyArray<readonly [number, number]> = [];
+  private readonly pieceRanges = new Map<number, readonly [number, number]>();
+  private heightPlates = GROUND_PLATES;
+  private risePerPiece = DEFAULT_RAMP_PLATES;
+  private dragPlates = GROUND_PLATES;
+  private dragRunCache: DragRunCache | null = null;
+  private labelCache: ReadonlyArray<LabelView> | null = null;
+  private crossingCache: ReadonlyArray<OverUnderCrossing> | null = null;
+  private spanBottom = new Float64Array(0);
+  private spanTop = new Float64Array(0);
+  private spanRailTop = new Float64Array(0);
+  private raisedAt = new Int32Array(0);
+  private readonly railTopLdu: number;
+  private readonly pieceBoxScratch = new Float64Array(OUTLINE_BOX_FLOATS);
+  private tallest: TallestTrain | null = null;
+  private readonly crossingShapes = new Map<number, CrossingShape>();
+  private readonly planEdges = new Map<number, OutlineEdges>();
+  private readonly supportPartList: SupportPart[] = [];
+  private crossingOutlines = new Map<string, PlacedOutline>();
+  private previousCrossingOutlines = new Map<string, PlacedOutline>();
+  private crossingPieceList: ReadonlyArray<PlacedTrackPiece> | null = null;
+  private readonly collisionBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly chunkSquareScratch = new Float64Array(OUTLINE_BOX_FLOATS);
+  private readonly rectOutline = new Float64Array(RECT_OUTLINE_FLOATS);
   private gapList: ReadonlyArray<EndGap> = [];
+  private readonly kitOutlines: KitOutlines;
   private readonly router: StrokeRouter;
   private readonly refusedColor: number;
   private drag: TrackDrag | null = null;
@@ -366,19 +656,33 @@ export class TrackDrawing {
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.system !== TRACK_SYSTEM || piece.status !== "certified") return;
-      const inKit = piece.kind === "straight" || piece.kind === "curve";
+      if (piece.status !== "certified") return;
+      const shape = kitFootprints(piece, shapes);
+      const outline = footprintOutline(shape, piece.partFrame);
+      this.outlines.set(catalogIndex, outline);
       const partIndex = partForPiece(piece, parts);
       const part = parts[partIndex];
       if (!part) throw new Error(`${piece.id}: part index ${partIndex} is out of range`);
+      this.supportPartList.push({ catalogIndex, partIndex });
+      this.planEdges.set(catalogIndex, new OutlineEdges(shape.outline));
+      this.pieceRanges.set(catalogIndex, [
+        shape.minY - part.boundsMin[1],
+        shape.maxY - part.boundsMin[1],
+      ]);
+      this.crossingShapes.set(catalogIndex, {
+        planOutline: shape.outline,
+        bedLdu: shape.minY - part.boundsMin[1],
+        system: piece.system,
+      });
+      if (piece.system !== TRACK_SYSTEM) return;
+      const inKit = piece.kind === "straight" || piece.kind === "curve";
       if (part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
       }
       const def: TrackPieceDef = { id: piece.id, connectors: piece.connectors.map((c) => c.pose) };
-      const shape = kitFootprints(piece, shapes);
       const kitPart: KitPart = {
         footprints: Float64Array.from(shape.footprints),
-        outline: footprintOutline(shape, piece.partFrame),
+        outline,
         meshY: [shape.minY, shape.maxY],
         catalogIndex,
         piece,
@@ -396,10 +700,79 @@ export class TrackDrawing {
     const result = drawingKit([...this.byDef.values()].map((k) => k.def));
     if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
     this.kit = result.kit;
-    this.router = new StrokeRouter(
-      new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline),
-    );
+    const { kit: straight, part: straightPart } = this.kitStraight();
+    this.railTopLdu = straight.yLdu + straightPart.boundsMax[1];
+    this.kitOutlines = new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline);
+    this.router = new StrokeRouter(this.kitOutlines);
     this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
+    const pieces: BandPieces = {
+      count: () => this.combined.count,
+      outline: (p) => this.framed[p] ?? null,
+      bottomLdu: (p) => this.spanBottom[p] ?? 0,
+      topLdu: (p) => this.spanTop[p] ?? 0,
+    };
+    this.bands = new TrackBands(pieces, this.verticalRange(), this.supportedOn);
+    this.extension = new TrackExtension(this);
+  }
+
+  private measureSpan(placement: number): void {
+    const layout = this.combined;
+    const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
+    const yPlates = layout.yPlates(placement);
+    const end = yPlates + layout.rise(placement);
+    const low = Math.min(yPlates, end) * PLATE_LDU;
+    const high = Math.max(yPlates, end) * PLATE_LDU;
+    this.spanBottom[placement] = bottom + low;
+    this.spanTop[placement] = top + high;
+    this.spanRailTop[placement] = this.railTopLdu + high;
+  }
+
+  get drawingPlates(): number {
+    return this.heightPlates;
+  }
+
+  get rampPlates(): number {
+    return this.risePerPiece;
+  }
+
+  get tallestTrain(): TallestTrain | null {
+    return this.tallest;
+  }
+
+  setDrawingPlates(plates: number): void {
+    if (!Number.isInteger(plates) || plates < GROUND_PLATES || plates > INT16_MAX) {
+      throw new RangeError(`track can't be drawn ${plates} plates up`);
+    }
+    if (plates === this.heightPlates) return;
+    this.heightPlates = plates;
+    if (this.drag && this.drag.fromEnd === null) this.reseatDrag(plates);
+    this.extension.endsChanged();
+  }
+
+  setRampPlates(plates: number): void {
+    if (!RAMP_RATES.includes(plates))
+      throw new RangeError(`a ramp can't rise ${plates} plates a piece`);
+    if (plates === this.risePerPiece) return;
+    this.risePerPiece = plates;
+    this.extension.endsChanged();
+  }
+
+  gradePercent(): number {
+    const runLdu = Number(this.kit.straightStuds) * STUD_LDU;
+    return (this.risePerPiece * PLATE_LDU * PERCENT) / runLdu;
+  }
+
+  setTallestTrain(train: TallestTrain | null): void {
+    this.tallest = train;
+    this.labelCache = null;
+  }
+
+  private reseatDrag(plates: number): void {
+    const drag = this.drag;
+    if (!drag) return;
+    this.dragPlates = plates;
+    const band = this.bands.laying(plates, plates);
+    drag.reseat(band.field, band.pending);
   }
 
   private placeablePiece(id: string): KitPart {
@@ -412,16 +785,21 @@ export class TrackDrawing {
     return [...this.byDef.values()];
   }
 
-  playTrack(): PlayTrack {
+  private kitStraight(): { readonly kit: KitPart; readonly part: PartShapeAsset } {
     const straight = this.kitParts().find((k) => k.piece.kind === "straight");
     const part = straight ? this.parts[straight.partIndex] : undefined;
     if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
+    return { kit: straight, part };
+  }
+
+  playTrack(): PlayTrack {
+    const { kit: straight } = this.kitStraight();
     const box = straight.footprints;
     return {
       layout: this.combined,
       pieces: this.pieces,
       railPart: straight.piece.part,
-      railTopY: straight.yLdu + part.boundsMax[1],
+      railTopY: this.railTopLdu,
       halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
@@ -462,7 +840,7 @@ export class TrackDrawing {
     return counted;
   }
 
-  countPiece(counter: BomCounter, placement: number): void {
+  countPiece(counter: PartSink, placement: number): void {
     const { part } = this.placedAt(placement);
     counter.add(part.partIndex, this.colors.codeAt(part.color), 1);
   }
@@ -472,13 +850,29 @@ export class TrackDrawing {
   }
 
   private placedAt(placement: number): Placed {
-    const part = this.byCatalogIndex.get(this.layout.piece(placement));
+    const layout = this.layout;
+    const part = this.byCatalogIndex.get(layout.piece(placement));
     if (!part) throw new Error(`placement ${placement} is not a placeable track piece`);
-    return { part, placement: this.layout.pose(placement) };
+    return {
+      part,
+      placement: layout.pose(placement),
+      yPlates: layout.yPlates(placement),
+      rise: layout.rise(placement),
+    };
+  }
+
+  endPoses(): ReadonlyArray<Pose16> {
+    return this.ends;
+  }
+
+  endHeight(end: number): number {
+    const plates = this.endPlates[end];
+    if (plates === undefined) throw new RangeError(`there is no open end ${end}`);
+    return plates;
   }
 
   openEnds(): ReadonlyArray<TrackEndView> {
-    return this.openList.map((end) => endView(end.pose, end.frame));
+    return this.openList.map((end) => endView(end.pose, end.frame, end.yPlates));
   }
 
   gaps(): ReadonlyArray<TrackGapView> {
@@ -487,8 +881,8 @@ export class TrackDrawing {
       const endB = this.openList[gap.b];
       const a = endA?.pose ?? POSE16_IDENTITY;
       const b = endB?.pose ?? POSE16_IDENTITY;
-      const viewA = endView(a, endA?.frame);
-      const viewB = endView(b, endB?.frame);
+      const viewA = endView(a, endA?.frame ?? WORLD_TRACK_FRAME, endA?.yPlates ?? GROUND_PLATES);
+      const viewB = endView(b, endB?.frame ?? WORLD_TRACK_FRAME, endB?.yPlates ?? GROUND_PLATES);
       const theta = a.heading * HEADING_RADIANS;
       const dx = (viewB.xLdu - viewA.xLdu) / STUD_LDU;
       const dz = (viewB.zLdu - viewA.zLdu) / STUD_LDU;
@@ -512,16 +906,35 @@ export class TrackDrawing {
     for (let p = 0; p < layout.count; p++) {
       for (const route of this.pieces[layout.piece(p)]?.routes ?? []) {
         routes.push({
-          from: endView(layout.connectorPose(p, route.from), layout.frame(p)),
-          to: endView(layout.connectorPose(p, route.to), layout.frame(p)),
+          from: endView(
+            layout.connectorPose(p, route.from),
+            layout.frame(p),
+            layout.endYPlates(p, route.from),
+          ),
+          to: endView(
+            layout.connectorPose(p, route.to),
+            layout.frame(p),
+            layout.endYPlates(p, route.to),
+          ),
         });
       }
     }
     return routes;
   }
 
-  syncHeld(held: ReadonlyArray<FramedTrackPiece>): void {
+  syncHeld(held: ReadonlyArray<FramedTrackPiece>, carriers: ReadonlyArray<TrackCarrier>): void {
+    const heldCarrier = new Int32Array(held.length);
+    let next = 0;
+    carriers.forEach((carrier, c) => {
+      heldCarrier.fill(c, next, next + carrier.held);
+      next += carrier.held;
+    });
+    if (next !== held.length) {
+      throw new Error(`the carriers hold ${next} track pieces, not the ${held.length} given`);
+    }
     this.held = held;
+    this.carriers = carriers;
+    this.heldCarrier = heldCarrier;
     this.recomputeEnds();
   }
 
@@ -564,22 +977,125 @@ export class TrackDrawing {
       },
       placement: (end) => this.endOwners[end],
     };
+    const from = this.endNear(hitX, hitZ, null);
+    this.dragPlates = from === null ? this.heightPlates : this.endHeight(from);
+    const band = this.bands.laying(this.dragPlates, this.dragPlates);
     this.drag = new TrackDrag(
       this.kit,
       this.router,
       ends,
       () => performance.now(),
       { hitX, hitZ, latticeX, latticeZ },
-      this.endNear(hitX, hitZ, null),
-      this.dragField(),
-      this.seatsPending,
+      from,
+      band.field,
+      band.pending,
     );
   }
 
-  setObstacles(obstacles: TrackObstacles, seatsPending: boolean): void {
-    this.obstacles = obstacles;
-    this.seatsPending = seatsPending;
-    this.drag?.reseat(this.dragField(), seatsPending);
+  setBands(source: SupportBandAt): void {
+    this.bands.setSource(source);
+    this.skipped.clear();
+    this.reseatDrag(this.dragPlates);
+    this.extension.endsChanged();
+  }
+
+  private readonly supportedOn =
+    (seats: StudSeats) =>
+    (frame: MoveFrame, pose: Pose16, studlessTops: TrackClearance): boolean => {
+      const part = this.byDef.get(frame.move.piece.id);
+      if (!part || !this.support) return false;
+      const { catalogIndex, piece } = part;
+      return this.support.supported(catalogIndex, piece.partFrame, pose, seats, studlessTops);
+    };
+
+  setSupport(support: TrackSupport): void {
+    this.support = support;
+    this.bands.changed();
+    this.skipped.clear();
+    this.reseatDrag(this.dragPlates);
+    this.extension.endsChanged();
+  }
+
+  unsupportedPieces(): ReadonlyArray<UnsupportedPiece> | null {
+    const support = this.support;
+    if (!support) return null;
+    const box = this.collisionBox;
+    const layout = this.combined;
+    const bands = this.supportBands(support);
+    const found: UnsupportedPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      const catalogIndex = layout.piece(p);
+      const outline = this.outlines.get(catalogIndex);
+      const piece = this.pieces[catalogIndex];
+      if (!outline || !piece) continue;
+      const yPlates = layout.yPlates(p);
+      const band = bands.get(yPlates);
+      if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
+      if (band.pending) return null;
+      if (layout.rise(p) !== 0) {
+        found.push({ piece: p, block: null, tilted: true });
+        continue;
+      }
+      const onTable = yPlates === GROUND_PLATES;
+      const placement = layout.pose(p);
+      const frame = layout.frame(p);
+      const placed = framedOutlineInto(
+        outline,
+        placement,
+        frame,
+        this.framedScratchFor(outline.length),
+      );
+      outlineBox(placed, box, 0);
+      const { studlessTops } = band.field.support;
+      const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
+      if (top === NO_OBSTACLE && onTable) continue;
+      const { seats } = band;
+      const { partFrame } = piece;
+      if (
+        support.supported(catalogIndex, partFrame, placement, seats, studlessTops, frame, onTable)
+      ) {
+        continue;
+      }
+      const block = top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top));
+      found.push({ piece: p, block, tilted: false });
+    }
+    return found;
+  }
+
+  private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
+    const box = this.collisionBox;
+    const layout = this.combined;
+    const reachAt = new Map<number, number[]>();
+    for (let p = 0; p < layout.count; p++) {
+      const catalogIndex = layout.piece(p);
+      const outline = this.outlines.get(catalogIndex);
+      const piece = this.pieces[catalogIndex];
+      if (!outline || !piece) continue;
+      const yPlates = layout.yPlates(p);
+      const reach = reachAt.get(yPlates) ?? [];
+      reachAt.set(yPlates, reach);
+      const placement = layout.pose(p);
+      const frame = layout.frame(p);
+      outlineBox(
+        framedOutlineInto(outline, placement, frame, this.framedScratchFor(outline.length)),
+        box,
+        0,
+      );
+      reach.push(...box);
+      const antiStuds = support.antiStudPoints(catalogIndex, piece.partFrame, placement, frame);
+      if (antiStuds.length === 0) continue;
+      outlineBox(antiStuds, box, 0);
+      reach.push(...box);
+    }
+    const bands = new Map<number, LayingBand>();
+    for (const [yPlates, reach] of reachAt) {
+      bands.set(yPlates, this.bands.reaching(yPlates, yPlates, Float64Array.from(reach)));
+    }
+    return bands;
+  }
+
+  supportParts(): ReadonlyArray<SupportPart> {
+    return this.supportPartList;
   }
 
   verticalRange(): readonly [number, number] {
@@ -592,19 +1108,350 @@ export class TrackDrawing {
     return [bottom, top];
   }
 
-  private dragField(): DragField {
-    const [, top] = this.verticalRange();
-    const layout = this.combined;
-    const outlines: Array<Float64Array | null> = [];
-    for (let p = 0; p < layout.count; p++) {
-      const part = this.byCatalogIndex.get(layout.piece(p));
-      if (!part || layout.yPlates(p) * PLATE_LDU >= top) {
-        outlines.push(null);
-        continue;
+  private bandOf(yPlates: number, rise: number): LayingBand {
+    return this.bands.laying(Math.min(yPlates, yPlates + rise), Math.max(yPlates, yPlates + rise));
+  }
+
+  pieceBlock(
+    catalogIndex: number,
+    placement: Pose16,
+    yPlates = GROUND_PLATES,
+    rise = 0,
+    moving: ReadonlySet<number> = NO_PLACEMENTS,
+    movingOwners: ReadonlySet<number> = NO_OWNERS,
+  ): TrackBlockView | null {
+    const { field } = this.bandOf(yPlates, rise);
+    const part = this.pieceByIndex(catalogIndex);
+    const joined = this.joinedAt(field, part.def.connectors, placement, yPlates, rise, moving);
+    const { outline, box } = this.headingOutline(part, placement.heading);
+    const at = zeta16ToStuds(placement.position);
+    const blocker = field.clearance.blockerExcept(
+      outline,
+      box,
+      at.x * STUD_LDU,
+      at.z * STUD_LDU,
+      joined,
+      this.skippedIds(field, moving, movingOwners),
+    );
+    return field.describe(blocker);
+  }
+
+  private joinedAt(
+    field: DragField,
+    connectors: ReadonlyArray<Pose16>,
+    placement: Pose16,
+    yPlates: number,
+    rise: number,
+    moving: ReadonlySet<number>,
+  ): ReadonlyArray<number> {
+    const joined = this.joinedOwners;
+    joined.length = 0;
+    for (let c = 0; c < connectors.length; c++) {
+      const local = connectors[c];
+      if (!local) continue;
+      const end = composePose16(placement, local);
+      const plates = c === RAMP_HIGH_END ? yPlates + rise : yPlates;
+      for (let index = 0; index < this.ends.length; index++) {
+        const open = this.ends[index];
+        const placed = this.endOwners[index];
+        if (!open || this.endPlates[index] !== plates || !posesJoin16(open, end)) continue;
+        if (placed !== undefined && moving.has(placed)) continue;
+        const owner = field.pieceOwner(placed);
+        if (!joined.includes(owner)) joined.push(owner);
       }
-      outlines.push(framedOutline(part.outline, layout.pose(p), layout.frame(p)));
     }
-    return new DragField(outlines, this.obstacles);
+    return joined;
+  }
+
+  private skippedIds(
+    field: DragField,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): ArrayLike<number> {
+    if (moving.size === 0 && movingOwners.size === 0) return NO_JOINS;
+    const cached = this.skipped.get(field);
+    if (cached?.moving === moving && cached.movingOwners === movingOwners) return cached.ids;
+    const ids = field.ownedIds(moving, movingOwners);
+    this.skipped.set(field, { moving, movingOwners, ids });
+    return ids;
+  }
+
+  private headingOutline(part: KitPart, heading: number): HeadingOutline {
+    const steps = normalizeHeading16(heading);
+    const key = part.catalogIndex * ZETA16_ORDER + steps;
+    const cached = this.headingOutlines.get(key);
+    if (cached) return cached;
+    const outline = rotateOutline(part.outline, steps, 0, 0);
+    const box = new Float64Array(OUTLINE_BOX_FLOATS);
+    outlineBox(outline, box, 0);
+    const turned = { outline, box };
+    this.headingOutlines.set(key, turned);
+    return turned;
+  }
+
+  placementsWithin(contains: (box: WorldBox) => boolean, out: number[]): void {
+    out.length = 0;
+    const boxes = this.pieceBoxes;
+    const box = this.scratchBox;
+    for (let p = 0; p < this.layout.count; p++) {
+      const at = p * PIECE_BOX_FLOATS;
+      box.minX = boxes[at] ?? 0;
+      box.minY = boxes[at + 1] ?? 0;
+      box.minZ = boxes[at + 2] ?? 0;
+      box.maxX = boxes[at + 3] ?? 0;
+      box.maxY = boxes[at + 4] ?? 0;
+      box.maxZ = boxes[at + 5] ?? 0;
+      if (contains(box)) out.push(p);
+    }
+  }
+
+  joinsTouching(inside: ReadonlySet<number>): ReadonlyArray<TrackJoinView> {
+    const graph = this.graph;
+    const joins: TrackJoinView[] = [];
+    for (let end = 0; end < graph.endCount; end++) {
+      const partnerEnd = graph.endPartner[end] ?? NO_END;
+      if (partnerEnd === NO_END || graph.endFrame[end] !== WORLD_TRACK_FRAME.id) continue;
+      const placement = graph.endPlacement[end] ?? 0;
+      const partner = graph.endPlacement[partnerEnd] ?? 0;
+      if (!inside.has(placement)) continue;
+      if (inside.has(partner) && partnerEnd < end) continue;
+      joins.push({ end: this.joinEnd(end), partner: this.joinEnd(partnerEnd) });
+    }
+    return joins;
+  }
+
+  private joinEnd(end: number): JoinEndView {
+    const graph = this.graph;
+    const placement = graph.endPlacement[end] ?? 0;
+    const connector = graph.endConnector[end] ?? 0;
+    return {
+      placement,
+      connector,
+      pose: this.combined.connectorPose(placement, connector),
+      yPlates: graph.endYPlates[end] ?? 0,
+    };
+  }
+
+  connectorPose(catalogIndex: number, placement: Pose16, connector: number): Pose16 {
+    const local = this.pieces[catalogIndex]?.connectors[connector]?.pose;
+    if (!local) throw new RangeError(`catalog piece ${catalogIndex} has no connector ${connector}`);
+    return composePose16(placement, local);
+  }
+
+  pieceBox(catalogIndex: number, placement: Pose16, yPlates = GROUND_PLATES, rise = 0): WorldBox {
+    return partBox({ part: this.pieceByIndex(catalogIndex), placement, yPlates, rise });
+  }
+
+  piecesGhost(pieces: ReadonlyArray<LiftedPiece>, frame: PlacementPose): ChunkInstances {
+    const count = pieces.length;
+    const partIndex = new Uint16Array(count);
+    const colorIndex = new Uint16Array(count);
+    const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
+    const lift = frame.yPlates * PLATE_LDU;
+    pieces.forEach(({ piece, pose, yPlates, rise }, slot) => {
+      const part = this.pieceByIndex(piece);
+      partIndex[slot] = part.partIndex;
+      colorIndex[slot] = part.color;
+      const local = pieceRelativePose(pose, frame);
+      const placed = { part, placement: local, yPlates, rise };
+      const yLdu = part.yLdu + yPlates * PLATE_LDU - lift;
+      writeMatrix(matrices, slot, local, part.piece.partFrame, yLdu, 0, 0, rampShear(placed));
+    });
+    const base: ChunkPartInstances = {
+      originX: 0,
+      originZ: 0,
+      count,
+      partIndex,
+      colorIndex,
+      matrices,
+    };
+    return withStuds(base, this.parts, this.colors);
+  }
+
+  crossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    this.crossingPieceList ??= this.worldCrossingPieces();
+    return this.crossingPieceList;
+  }
+
+  private worldCrossingPieces(): ReadonlyArray<PlacedTrackPiece> {
+    const layout = this.combined;
+    const pieces: PlacedTrackPiece[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      const shape = this.crossingShapes.get(layout.piece(p));
+      if (!shape) continue;
+      pieces.push({
+        placement: p,
+        outline: this.worldOutline(p, shape),
+        bedLdu: layout.yPlates(p) * PLATE_LDU + shape.bedLdu,
+        system: shape.system,
+      });
+    }
+    return pieces;
+  }
+
+  laidOutline(piece: number): PlacedOutline {
+    const shape = this.crossingShapes.get(this.layout.piece(piece));
+    if (!shape) throw new Error(`placement ${piece} is not a placeable track piece`);
+    return this.worldOutline(piece, shape);
+  }
+
+  private worldOutline(p: number, shape: CrossingShape): PlacedOutline {
+    const pose = this.combined.pose(p);
+    const key = crossingOutlineKey(this.combined.piece(p), pose);
+    let outline = this.crossingOutlines.get(key) ?? this.previousCrossingOutlines.get(key);
+    if (!outline) outline = PlacedOutline.ofTrackPiece(shape.planOutline, pose);
+    this.crossingOutlines.set(key, outline);
+    return outline;
+  }
+
+  runFrameOutlines(): ReadonlyArray<Float64Array> {
+    const layout = this.combined;
+    const outlines: Float64Array[] = [];
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.frame(p).id === WORLD_TRACK_FRAME.id) continue;
+      const part = this.byCatalogIndex.get(layout.piece(p));
+      if (part) outlines.push(framedOutline(part.outline, layout.pose(p), layout.frame(p)));
+    }
+    return outlines;
+  }
+
+  modelBlocker(
+    rectsIn: SolidRects,
+    carried: ReadonlyArray<FramedTrackPiece>,
+    moving: ReadonlySet<number>,
+    movingOwners: ReadonlySet<number>,
+  ): TrackBlockView | null {
+    const box = this.collisionBox;
+    const rect = this.rectOutline;
+    for (const [low, high] of this.pieceBands) {
+      const field = this.bands.solid(low, high);
+      const span = this.bands.span(low, high);
+      const skipped = this.skippedIds(field, moving, movingOwners);
+      const { rects, floats } = rectsIn(span.bottomLdu, span.topLdu);
+      for (let r = 0; r < floats; r += OBSTACLE_RECT_FLOATS) {
+        writeRectOutline(rect, rects, r);
+        outlineBox(rect, box, 0);
+        const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
+        if (field.isTrack(hit)) return field.describe(hit);
+      }
+    }
+    for (const piece of carried) {
+      const pieceOutline = this.outlines.get(piece.catalogIndex);
+      if (!pieceOutline) continue;
+      const outline = framedOutlineInto(
+        pieceOutline,
+        piece.placement,
+        piece.frame,
+        this.framedScratchFor(pieceOutline.length),
+      );
+      outlineBox(outline, box, 0);
+      const squares = writeChunkSquares(box, this.chunkSquareScratch);
+      const { field } = this.bands.reaching(piece.yPlates, piece.yPlates, squares);
+      const skipped = this.skippedIds(field, moving, movingOwners);
+      const joined =
+        piece.frame.id === WORLD_TRACK_FRAME.id
+          ? this.joinedAt(
+              field,
+              this.layout.pieces[piece.catalogIndex]?.connectors ?? NO_POSES,
+              piece.placement,
+              piece.yPlates,
+              0,
+              moving,
+            )
+          : NO_JOINS;
+      const hit = field.clearance.blockerExcept(outline, box, 0, 0, joined, skipped);
+      if (hit !== NO_OBSTACLE) return field.describe(hit);
+    }
+    return null;
+  }
+
+  private framedScratchFor(floats: number): Float64Array {
+    let scratch = this.framedScratch.get(floats);
+    if (!scratch) {
+      scratch = new Float64Array(floats);
+      this.framedScratch.set(floats, scratch);
+    }
+    return scratch;
+  }
+
+  closure(from: number, to: number): ExtensionJoin {
+    const start = this.ends[from];
+    const goal = this.ends[to];
+    if (!start || !goal) throw new RangeError(`no open ends ${from} and ${to} to join`);
+    const startPlates = this.endHeight(from);
+    const { field, pending } = this.bands.laying(startPlates, startPlates);
+    if (pending) return { kind: "refused", refusal: "pending", blocked: null };
+    const result = solveClosure(
+      this.kit,
+      start,
+      goal,
+      { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
+      {
+        clearance: field.clearance,
+        support: field.support,
+        outlines: this.kitOutlines,
+        startOwner: field.pieceOwner(this.endOwners[from]),
+        goalOwner: field.pieceOwner(this.endOwners[to]),
+      },
+    );
+    switch (result.kind) {
+      case "exact": {
+        const moves = runMoves(this.kit, result.run);
+        const plan = this.runPlan(startPlates, moves, this.endHeight(to));
+        if (plan.kind === "too-steep") {
+          return { kind: "refused", refusal: "too-steep", blocked: null };
+        }
+        const blocked = this.raisedBlock(start, startPlates, moves, plan.heights);
+        if (blocked) return { kind: "refused", refusal: "blocked", blocked: blocked.block };
+        return result;
+      }
+      case "blocked":
+        return { kind: "refused", refusal: "blocked", blocked: field.describe(result.blocker) };
+      case "impossible":
+      case "limit":
+        return { kind: "refused", refusal: result.kind, blocked: null };
+      default: {
+        const unhandled: never = result;
+        throw new Error(`unhandled closure ${String(unhandled)}`);
+      }
+    }
+  }
+
+  joinedEnd(from: number, move: TrackMove): number | null {
+    const start = this.ends[from];
+    if (!start) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
+    const { end } = layMoves(start, [move]);
+    const { endPlates } = this.pieceHeights(from, move);
+    const joined = this.ends.findIndex(
+      (open, index) => this.endPlates[index] === endPlates && posesJoin16(end, open),
+    );
+    return joined < 0 ? null : joined;
+  }
+
+  private pieceHeights(from: number, move: TrackMove): RunHeights {
+    const plan = this.runPlan(this.endHeight(from), [move], null);
+    if (plan.kind === "too-steep")
+      throw new Error("a run without a goal height is never too steep");
+    return plan.heights;
+  }
+
+  crosses(from: number, move: TrackMove, joins: number | null): TrackBlockView | null {
+    const start = this.ends[from];
+    const placed = start ? layMoves(start, [move]).placed[0] : undefined;
+    if (!start || !placed) throw new RangeError(`no open end ${from} to lay ${move.piece.id} on`);
+    const startPlates = this.endHeight(from);
+    const heights = this.pieceHeights(from, move);
+    const raised = this.raisedBlock(start, startPlates, [move], heights);
+    if (raised) return raised.block;
+    const { field } = this.bands.laying(startPlates, startPlates);
+    const blocker = field.clearance.pieceBlocker(
+      this.kitPart(move).outline,
+      placed.placement,
+      field.pieceOwner(this.endOwners[from]),
+      joins === null ? NO_OBSTACLE : field.pieceOwner(this.endOwners[joins]),
+    );
+    return field.describe(blocker);
   }
 
   moveDrag(hitX: number, hitZ: number): void {
@@ -617,18 +1464,125 @@ export class TrackDrawing {
   }
 
   dragView(): TrackDragView | null {
-    return this.drag?.view(this.lastSolveMs) ?? null;
+    const view = this.drag?.view(this.lastSolveMs);
+    if (!view) return null;
+    const run = this.dragRun();
+    if (!run) return view;
+    if (run.refusal) return { ...view, closure: run.refusal, blocked: run.blocked };
+    if (run.moves.length === view.pieces) return view;
+    const straights = run.moves.filter((move) => move.turn === 0).length;
+    const curves = run.moves.length - straights;
+    return { ...view, pieces: run.moves.length, straights, curves, blocked: run.blocked };
+  }
+
+  private runPlan(
+    startPlates: number,
+    moves: ReadonlyArray<TrackMove>,
+    goalPlates: number | null,
+  ): RunHeightsResult {
+    const toward = goalPlates ?? this.heightPlates;
+    const reached = reachablePlates(startPlates, toward, moves.length, this.risePerPiece);
+    const straights = moves.map((move) => move.turn === 0);
+    const rises = rampRises(startPlates, reached, straights, this.risePerPiece);
+    if (!rises) throw new Error(`a run of ${moves.length} pieces can't reach ${reached} plates`);
+    const heights = runHeights(moves, startPlates, rises);
+    return {
+      kind: goalPlates === null || reached === goalPlates ? "heights" : "too-steep",
+      heights,
+    };
+  }
+
+  private raisedBlock(
+    start: Pose16,
+    startPlates: number,
+    moves: ReadonlyArray<TrackMove>,
+    heights: RunHeights,
+  ): RaisedBlock | null {
+    const { placed } = layMoves(start, moves);
+    for (let at = 0; at < placed.length; at++) {
+      const move = moves[at];
+      const piece = placed[at];
+      const yPlates = heights.yPlates[at] ?? startPlates;
+      const rise = heights.rise[at] ?? 0;
+      if (!move || !piece || (rise === 0 && yPlates === startPlates)) continue;
+      const block = this.pieceBlock(
+        this.kitPart(move).catalogIndex,
+        piece.placement,
+        yPlates,
+        rise,
+      );
+      if (block) return { at, block };
+    }
+    return null;
+  }
+
+  private dragRun(): DragRun | null {
+    const drag = this.drag;
+    if (!drag) return null;
+    const key = [
+      drag,
+      drag.revision,
+      this.dragPlates,
+      this.heightPlates,
+      this.risePerPiece,
+      this.bands.version,
+    ] as const;
+    const cached = this.dragRunCache;
+    if (cached && cached.key.every((part, i) => part === key[i])) return cached.run;
+    const run = this.planDragRun(drag.route());
+    this.dragRunCache = { key, run };
+    return run;
+  }
+
+  private planDragRun(route: DragRoute): DragRun | null {
+    if (!route.start) return null;
+    const { start } = route;
+    const startPlates = this.dragPlates;
+    const joining = route.closure === "exact" && route.withheld === null;
+    const goalPlates = joining && route.goalEnd !== null ? this.endHeight(route.goalEnd) : null;
+    const shown = route.blockedMove ? [...route.moves, route.blockedMove] : route.moves;
+    const planned = this.runPlan(startPlates, shown, goalPlates);
+    const { heights } = planned;
+    const whole = { route, start, heights, moves: route.moves, refused: route.blockedMove };
+    if (planned.kind === "too-steep") return { ...whole, refusal: "too-steep", blocked: null };
+    const raised = this.raisedBlock(start, startPlates, route.moves, heights);
+    if (!raised) return { ...whole, refusal: null, blocked: route.blocked };
+    const cut = {
+      ...whole,
+      moves: route.moves.slice(0, raised.at),
+      refused: route.moves[raised.at] ?? null,
+    };
+    return joining
+      ? { ...cut, refusal: "blocked", blocked: raised.block }
+      : { ...cut, refusal: null, blocked: raised.block };
   }
 
   dragTarget(): DragTargetView | null {
     return this.drag?.targetView() ?? null;
   }
 
+  private previewRun(): PreviewRun | null {
+    if (this.drag) return this.dragRun();
+    const run = this.extension.chosen();
+    if (!run) return null;
+    const { choice } = run;
+    const { heights } = this.extensionHeights(run);
+    if (choice.blocked === null) {
+      return { start: run.start, moves: choice.moves, refused: null, heights };
+    }
+    return { start: run.start, moves: [], refused: choice.moves[0] ?? null, heights };
+  }
+
+  private extensionHeights(run: ExtensionRun): RunHeightsResult {
+    const goal = run.choice.joins === null ? null : this.endHeight(run.choice.joins);
+    return this.runPlan(this.endHeight(run.from), run.choice.moves, goal);
+  }
+
   ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
-    const route = this.drag?.route();
-    const start = route?.start;
-    if (!route || !start) return null;
-    const moves = route.blockedMove ? [...route.moves, route.blockedMove] : route.moves;
+    const route = this.previewRun();
+    if (!route) return null;
+    const { start } = route;
+    const moves = route.refused ? [...route.moves, route.refused] : route.moves;
     if (moves.length === 0) return null;
     const { placed } = layMoves(start, moves);
     const count = placed.length;
@@ -645,7 +1599,13 @@ export class TrackDrawing {
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
       colorIndex[i] = i < route.moves.length ? part.color : this.refusedColor;
-      writeMatrix(matrices, i, piece.placement, part.piece.partFrame, part.yLdu, originX, originZ);
+      const yPlates = route.heights.yPlates[i] ?? GROUND_PLATES;
+      const rise = route.heights.rise[i] ?? 0;
+      const lifted = { part, placement: piece.placement, yPlates, rise };
+      const yLdu = part.yLdu + yPlates * PLATE_LDU;
+      const { partFrame } = part.piece;
+      const ramp = rampShear(lifted);
+      writeMatrix(matrices, i, piece.placement, partFrame, yLdu, originX, originZ, ramp);
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
     return {
@@ -668,26 +1628,68 @@ export class TrackDrawing {
   }
 
   endDrag(): DragOutcome {
+    const run = this.dragRun();
     const route = this.drag?.route();
     this.drag = null;
     if (!route) return NOTHING_LAID;
-    const { closure, blocked } = route;
+    const { closure, withheld } = route;
+    if (run?.refusal) return { ...NOTHING_LAID, refusal: run.refusal, blocked: run.blocked };
     if (
-      closure === "impossible" ||
-      closure === "blocked" ||
-      closure === "limit" ||
-      closure === "pending"
+      withheld === null &&
+      (closure === "impossible" || closure === "blocked" || closure === "limit")
     ) {
-      return { ...NOTHING_LAID, refusal: closure, blocked };
+      return { ...NOTHING_LAID, refusal: closure, blocked: route.blocked };
     }
-    if (!route.start || route.moves.length === 0) return { ...NOTHING_LAID, blocked };
-    const { placed } = layMoves(route.start, route.moves);
+    const blocked = run?.blocked ?? route.blocked;
+    if (!run || run.moves.length === 0) return { ...NOTHING_LAID, blocked, withheld };
+    const { change, end } = this.runChange(run.start, run.moves, run.heights);
+    const whole = run.moves.length === route.moves.length;
+    const goal = withheld === null && whole ? route.goal : null;
+    return { change, goal, end, refusal: null, blocked, withheld };
+  }
+
+  extensionPlan(): ExtensionPlan | null {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return null;
+    const { heights } = this.extensionHeights(run);
+    const { change, end } = this.runChange(run.start, run.choice.moves, heights);
+    const goal = run.choice.joins === null ? null : (this.ends[run.choice.joins] ?? null);
+    return { run, change, goal, end };
+  }
+
+  onExtension(xLdu: number, zLdu: number): boolean {
+    const run = this.drag ? null : this.extension.chosen();
+    if (!run) return false;
+    const at = zeta16ToStuds(run.start.position);
+    if (Math.hypot(at.x * STUD_LDU - xLdu, at.z * STUD_LDU - zLdu) <= END_PICK_RADIUS_LDU) {
+      return true;
+    }
+    return layMoves(run.start, run.choice.moves).placed.some((piece, i) => {
+      const move = run.choice.moves[i];
+      if (!move) return false;
+      const box = this.pieceBox(this.kitPart(move).catalogIndex, piece.placement);
+      return xLdu >= box.minX && xLdu <= box.maxX && zLdu >= box.minZ && zLdu <= box.maxZ;
+    });
+  }
+
+  private runChange(
+    start: Pose16,
+    moves: ReadonlyArray<TrackMove>,
+    heights: RunHeights,
+  ): { readonly change: TrackChange; readonly end: Pose16 } {
+    const { placed, end } = layMoves(start, moves);
     const entries: Placed[] = [];
     placed.forEach((piece, i) => {
-      const move = route.moves[i];
-      if (move) entries.push({ part: this.kitPart(move), placement: piece.placement });
+      const move = moves[i];
+      if (!move) return;
+      entries.push({
+        part: this.kitPart(move),
+        placement: piece.placement,
+        yPlates: heights.yPlates[i] ?? GROUND_PLATES,
+        rise: heights.rise[i] ?? 0,
+      });
     });
-    return { change: this.appended(entries), goal: route.goal, refusal: null, blocked };
+    return { change: this.appended(entries), end };
   }
 
   private appended(entries: ReadonlyArray<Placed>): TrackChange {
@@ -697,7 +1699,8 @@ export class TrackDrawing {
         index: this.layout.count + i,
         piece: entry.part.catalogIndex,
         pose: entry.placement,
-        yPlates: GROUND_PLATES,
+        yPlates: entry.yPlates,
+        rise: entry.rise,
       })),
     };
   }
@@ -710,7 +1713,8 @@ export class TrackDrawing {
       const laid = this.placedAt(at.index);
       const same =
         laid.part.catalogIndex === at.piece &&
-        this.layout.yPlates(at.index) === at.yPlates &&
+        laid.yPlates === at.yPlates &&
+        laid.rise === at.rise &&
         pose16Equals(laid.placement, at.pose);
       if (!same) throw new Error(`laid track piece ${at.index} is not the piece the edit lifts`);
       touched.add(this.chunkOfPlaced(laid));
@@ -718,8 +1722,8 @@ export class TrackDrawing {
     }
     for (const at of change.lay) {
       const part = this.pieceByIndex(at.piece);
-      this.layout.insert(at.index, at.piece, at.pose, at.yPlates);
-      touched.add(this.chunkOfPlaced({ part, placement: at.pose }));
+      this.layout.insert(at.index, at.piece, at.pose, at.yPlates, at.rise);
+      touched.add(this.chunkOfPlaced({ part, placement: at.pose, yPlates: at.yPlates, rise: 0 }));
     }
     this.indexChunks();
     this.recomputeEnds();
@@ -728,8 +1732,20 @@ export class TrackDrawing {
 
   private indexChunks(): void {
     this.chunkMembers.clear();
+    this.pieceBoxes = new Float64Array(this.layout.count * PIECE_BOX_FLOATS);
+    this.pieceKeys = new Float64Array(this.layout.count);
     for (let p = 0; p < this.layout.count; p++) {
-      const key = this.chunkOfPlaced(this.placedAt(p));
+      const placed = this.placedAt(p);
+      const box = partBox(placed);
+      const at = p * PIECE_BOX_FLOATS;
+      this.pieceBoxes[at] = box.minX;
+      this.pieceBoxes[at + 1] = box.minY;
+      this.pieceBoxes[at + 2] = box.minZ;
+      this.pieceBoxes[at + 3] = box.maxX;
+      this.pieceBoxes[at + 4] = box.maxY;
+      this.pieceBoxes[at + 5] = box.maxZ;
+      const key = this.chunkOfPlaced(placed);
+      this.pieceKeys[p] = key;
       const members = this.chunkMembers.get(key);
       if (members) members.push(p);
       else this.chunkMembers.set(key, [p]);
@@ -756,13 +1772,14 @@ export class TrackDrawing {
     const end = this.endNear(hitX, hitZ, null);
     const target = end === null ? undefined : this.ends[end];
     const placement = target ? attachPose16(local, target) : freePlacement(part.def, held, free);
+    const yPlates = end === null ? this.heightPlates : this.endHeight(end);
     let joins = 0;
     const misses: number[] = [];
     for (const own of connectors) {
       const pose = composePose16(placement, own);
       const studs = zeta16ToStuds(pose.position);
       this.ends.forEach((open, index) => {
-        if (posesJoin16(open, pose)) {
+        if (this.endPlates[index] === yPlates && posesJoin16(open, pose)) {
           joins++;
           return;
         }
@@ -771,12 +1788,13 @@ export class TrackDrawing {
         if (gapLdu <= NEAR_MISS_RADIUS_LDU) misses.push(index);
       });
     }
-    return { placement, end: target ? end : null, joins, misses };
+    return { placement, yPlates, end: target ? end : null, joins, misses };
   }
 
   pieceGhost(
     catalogIndex: number,
     placement: Pose16,
+    yPlates: number,
   ): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } {
     const part = this.pieceByIndex(catalogIndex);
     const origin = zeta16ToStuds(placement.position);
@@ -787,7 +1805,8 @@ export class TrackDrawing {
     const matrices = this.ghostMatrices.subarray(0, INSTANCE_MATRIX_FLOATS);
     partIndex[0] = part.partIndex;
     colorIndex[0] = part.color;
-    writeMatrix(matrices, 0, placement, part.piece.partFrame, part.yLdu, originX, originZ);
+    const yLdu = part.yLdu + yPlates * PLATE_LDU;
+    writeMatrix(matrices, 0, placement, part.piece.partFrame, yLdu, originX, originZ);
     const base: ChunkPartInstances = {
       originX,
       originZ,
@@ -803,8 +1822,8 @@ export class TrackDrawing {
     };
   }
 
-  pieceChange(catalogIndex: number, placement: Pose16): TrackChange {
-    return this.appended([{ part: this.pieceByIndex(catalogIndex), placement }]);
+  pieceChange(catalogIndex: number, placement: Pose16, yPlates: number): TrackChange {
+    return this.appended([{ part: this.pieceByIndex(catalogIndex), placement, yPlates, rise: 0 }]);
   }
 
   switchAt(xLdu: number, zLdu: number): number | null {
@@ -839,13 +1858,14 @@ export class TrackDrawing {
     return { lift: [this.laidPiece(placement)], lay: [] };
   }
 
-  private laidPiece(placement: number): TrackPieceAt {
+  laidPiece(placement: number): TrackPieceAt {
     const placed = this.placedAt(placement);
     return {
       index: placement,
       piece: placed.part.catalogIndex,
       pose: placed.placement,
-      yPlates: this.layout.yPlates(placement),
+      yPlates: placed.yPlates,
+      rise: placed.rise,
     };
   }
 
@@ -855,7 +1875,7 @@ export class TrackDrawing {
     let best: TrackPieceHit | null = null;
     for (let p = 0; p < this.layout.count; p++) {
       const placed = this.placedAt(p);
-      const top = partBox(placed).maxY + this.layout.yPlates(p) * PLATE_LDU;
+      const top = partBox(placed).maxY;
       const distance = (top - (ray[RAY_ORIGIN_Y] ?? 0)) / dy;
       if (distance < 0 || (best && distance >= best.distance)) continue;
       const x = (ray[RAY_ORIGIN_X] ?? 0) + distance * (ray[RAY_DIRECTION_X] ?? 0);
@@ -875,6 +1895,7 @@ export class TrackDrawing {
       xLdu: centre.x,
       zLdu: centre.z,
       yPlates: this.layout.yPlates(placement),
+      heading: placed.placement.heading,
       chunkKey: this.chunkOfPlaced(placed),
       box: partBox(placed),
     };
@@ -930,6 +1951,10 @@ export class TrackDrawing {
 
   private recomputeEnds(): void {
     this.combined = this.combine();
+    this.indexBands();
+    this.previousCrossingOutlines = this.crossingOutlines;
+    this.crossingOutlines = new Map();
+    this.crossingPieceList = null;
     this.graph = new TrackGraph(this.combined);
     const world: TrackEnd[] = [];
     const inRunFrames: TrackEnd[] = [];
@@ -939,7 +1964,7 @@ export class TrackDrawing {
       const connector = this.graph.endConnector[end] ?? 0;
       const open: TrackEnd = {
         pose: this.combined.connectorPose(placement, connector),
-        yPlates: this.combined.yPlates(placement),
+        yPlates: this.combined.endYPlates(placement, connector),
         frame: this.combined.frame(placement),
       };
       if (open.frame.id !== WORLD_TRACK_FRAME.id) {
@@ -950,9 +1975,271 @@ export class TrackDrawing {
       world.push(open);
     }
     this.ends = world.map((end) => end.pose);
+    this.endPlates = world.map((end) => end.yPlates);
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
+    this.extension.endsChanged();
+  }
+
+  private indexBands(): void {
+    const layout = this.combined;
+    const framed: Array<Float64Array | null> = [];
+    const bands = new Map<string, readonly [number, number]>();
+    const raised: number[] = [];
+    this.spanBottom = new Float64Array(layout.count);
+    this.spanTop = new Float64Array(layout.count);
+    this.spanRailTop = new Float64Array(layout.count);
+    for (let p = 0; p < layout.count; p++) {
+      const outline = this.outlines.get(layout.piece(p));
+      framed.push(outline ? framedOutline(outline, layout.pose(p), layout.frame(p)) : null);
+      const yPlates = layout.yPlates(p);
+      const end = yPlates + layout.rise(p);
+      const band = [Math.min(yPlates, end), Math.max(yPlates, end)] as const;
+      bands.set(`${band[0]}:${band[1]}`, band);
+      if (band[1] !== GROUND_PLATES) raised.push(p);
+      this.measureSpan(p);
+    }
+    this.raisedAt = Int32Array.from(raised);
+    this.framed = framed;
+    this.pieceBands = [...bands.values()];
+    this.labelCache = null;
+    this.crossingCache = null;
+    this.bands.changed();
+    this.skipped.clear();
+  }
+
+  levelRaisedPieces(change: TrackChange): ReadonlyArray<RaisedPiece> {
+    return change.lay.flatMap((at) =>
+      at.yPlates > GROUND_PLATES && at.rise === 0
+        ? [{ index: at.index, catalogIndex: at.piece, placement: at.pose, yPlates: at.yPlates }]
+        : [],
+    );
+  }
+
+  raisedCount(): number {
+    return this.raisedAt.length;
+  }
+
+  seated(piece: RaisedPiece): boolean {
+    const support = this.support;
+    if (!support) return false;
+    const band = this.bands.laying(piece.yPlates, piece.yPlates);
+    const { partFrame } = this.pieceByIndex(piece.catalogIndex).piece;
+    const { studlessTops } = band.field.support;
+    const { placement, catalogIndex } = piece;
+    const world = WORLD_TRACK_FRAME;
+    return support.supported(
+      catalogIndex,
+      partFrame,
+      placement,
+      band.seats,
+      studlessTops,
+      world,
+      false,
+    );
+  }
+
+  changeOverlaps(change: TrackChange, except: number, box: WorldBox): boolean {
+    const rect = this.rectOutline;
+    rect.set([box.minX, box.minZ, box.maxX, box.minZ, box.maxX, box.maxZ, box.minX, box.maxZ]);
+    for (const at of change.lay) {
+      if (at.index === except) continue;
+      const part = this.pieceByIndex(at.piece);
+      const placed = { part, placement: at.pose, yPlates: at.yPlates, rise: at.rise };
+      const piece = partBox(placed);
+      if (piece.minY >= box.maxY || piece.maxY <= box.minY) continue;
+      if (piece.minX >= box.maxX || piece.maxX <= box.minX) continue;
+      if (piece.minZ >= box.maxZ || piece.maxZ <= box.minZ) continue;
+      if (outlinesOverlap(placedOutline(part.outline, at.pose), 0, 0, rect, 0, 0)) return true;
+    }
+    return false;
+  }
+
+  bandBottomLdu(yPlates: number): number {
+    return this.bands.span(yPlates, yPlates).bottomLdu;
+  }
+
+  heightLabels(): ReadonlyArray<LabelView> {
+    this.labelCache ??= this.measuredLabels();
+    return this.labelCache;
+  }
+
+  private measuredLabels(): ReadonlyArray<LabelView> {
+    const graph = this.graph;
+    const layout = this.combined;
+    const [, top] = this.verticalRange();
+    const labels = new Map<string, LabelView>();
+    for (let end = 0; end < graph.endCount; end++) {
+      const yPlates = graph.endYPlates[end] ?? GROUND_PLATES;
+      if (yPlates === GROUND_PLATES) continue;
+      const placement = graph.endPlacement[end] ?? 0;
+      const at = endView(
+        layout.connectorPose(placement, graph.endConnector[end] ?? 0),
+        layout.frame(placement),
+        yPlates,
+      );
+      const id = `height:${yPlates}:${at.xLdu}:${at.zLdu}`;
+      labels.set(id, {
+        id,
+        kind: "height",
+        text: heightText(yPlates * PLATE_LDU),
+        x: at.xLdu,
+        y: top + yPlates * PLATE_LDU,
+        z: at.zLdu,
+      });
+    }
+    return [...labels.values(), ...this.clearanceLabels()];
+  }
+
+  previewLabels(): ReadonlyArray<LabelView> {
+    const run = this.previewRun();
+    if (!run) return [];
+    const moves = run.refused ? [...run.moves, run.refused] : run.moves;
+    const end = moves.length === 0 ? null : layMoves(run.start, moves).end;
+    const plates = run.heights.endPlates;
+    const raised = run.heights.yPlates.some((y) => y !== GROUND_PLATES);
+    if (!end || (plates === GROUND_PLATES && !raised)) return [];
+    const at = endView(end, WORLD_TRACK_FRAME, plates);
+    const [, top] = this.verticalRange();
+    return [
+      {
+        id: "height:preview",
+        kind: "height",
+        text: heightText(plates * PLATE_LDU),
+        x: at.xLdu,
+        y: top + plates * PLATE_LDU,
+        z: at.zLdu,
+      },
+    ];
+  }
+
+  raisedTrackOverlaps(outline: Float64Array, bottomLdu: number, topLdu: number): boolean {
+    if (this.raisedAt.length === 0) return false;
+    const box = this.collisionBox;
+    outlineBox(outline, box, 0);
+    const pieceBox = this.pieceBoxScratch;
+    for (const p of this.raisedAt) {
+      const framed = this.framed[p];
+      if (!framed) continue;
+      if ((this.spanBottom[p] ?? 0) >= topLdu || bottomLdu >= (this.spanTop[p] ?? 0)) continue;
+      outlineBox(framed, pieceBox, 0);
+      if (!boxesOverlap(box, 0, 0, 0, pieceBox, 0)) continue;
+      if (outlinesOverlap(outline, 0, 0, framed, 0, 0)) return true;
+    }
+    return false;
+  }
+
+  lowClearances(): ReadonlyArray<LowClearance> | null {
+    const train = this.tallest;
+    if (!train) return null;
+    const [bottom] = this.verticalRange();
+    const worst = new Map<number, LowClearance>();
+    for (const crossing of this.crossings()) {
+      if (crossing.gapLdu >= train.heightLdu) continue;
+      const hasPlates = ((this.spanBottom[crossing.upper] ?? 0) - bottom) / PLATE_LDU;
+      const shortPlates = Math.ceil((train.heightLdu - crossing.gapLdu) / PLATE_LDU);
+      const needPlates = hasPlates + shortPlates;
+      const known = worst.get(crossing.upper);
+      if (known && known.needPlates >= needPlates) continue;
+      worst.set(crossing.upper, { piece: crossing.upper, needPlates, hasPlates, train });
+    }
+    return [...worst.values()];
+  }
+
+  private crossings(): ReadonlyArray<OverUnderCrossing> {
+    this.crossingCache ??= this.overUnderCrossings();
+    return this.crossingCache;
+  }
+
+  private overUnderCrossings(): ReadonlyArray<OverUnderCrossing> {
+    if (this.raisedAt.length === 0) return [];
+    const count = this.combined.count;
+    const boxes = new Float64Array(count * OUTLINE_BOX_FLOATS);
+    const cells = new Map<number, number[]>();
+    for (let p = 0; p < count; p++) {
+      const outline = this.framed[p];
+      if (!outline) continue;
+      outlineBox(outline, boxes, p * OUTLINE_BOX_FLOATS);
+      this.forCellsOf(boxes, p, (cell) => {
+        const listed = cells.get(cell);
+        if (listed) listed.push(p);
+        else cells.set(cell, [p]);
+      });
+    }
+    const seen = new Int32Array(count).fill(NO_PIECE);
+    const crossings: OverUnderCrossing[] = [];
+    for (const upper of this.raisedAt) {
+      const outline = this.framed[upper];
+      if (!outline) continue;
+      const underside = this.spanBottom[upper] ?? 0;
+      this.forCellsOf(boxes, upper, (cell) => {
+        for (const lower of cells.get(cell) ?? []) {
+          if (lower === upper || seen[lower] === upper) continue;
+          seen[lower] = upper;
+          if (underside < (this.spanTop[lower] ?? 0)) continue;
+          const under = this.framed[lower];
+          if (
+            !under ||
+            !boxesOverlap(
+              boxes,
+              upper * OUTLINE_BOX_FLOATS,
+              0,
+              0,
+              boxes,
+              lower * OUTLINE_BOX_FLOATS,
+            )
+          )
+            continue;
+          if (!outlinesOverlap(outline, 0, 0, under, 0, 0)) continue;
+          crossings.push(this.crossingOf(boxes, upper, lower));
+        }
+      });
+    }
+    return crossings;
+  }
+
+  private forCellsOf(boxes: Float64Array, placement: number, visit: (cell: number) => void): void {
+    const at = placement * OUTLINE_BOX_FLOATS;
+    const minX = Math.floor((boxes[at] ?? 0) / CHUNK_LDU);
+    const minZ = Math.floor((boxes[at + 1] ?? 0) / CHUNK_LDU);
+    const maxX = Math.floor((boxes[at + 2] ?? 0) / CHUNK_LDU);
+    const maxZ = Math.floor((boxes[at + 3] ?? 0) / CHUNK_LDU);
+    for (let x = minX; x <= maxX; x++) {
+      for (let z = minZ; z <= maxZ; z++) visit(cellKey(x, z));
+    }
+  }
+
+  private crossingOf(boxes: Float64Array, upper: number, lower: number): OverUnderCrossing {
+    const u = upper * OUTLINE_BOX_FLOATS;
+    const l = lower * OUTLINE_BOX_FLOATS;
+    const middle = (axis: number): number =>
+      (Math.max(boxes[u + axis] ?? 0, boxes[l + axis] ?? 0) +
+        Math.min(boxes[u + axis + 2] ?? 0, boxes[l + axis + 2] ?? 0)) /
+      2;
+    return {
+      upper,
+      lower,
+      gapLdu: (this.spanBottom[upper] ?? 0) - (this.spanRailTop[lower] ?? 0),
+      x: middle(0),
+      z: middle(1),
+    };
+  }
+
+  private clearanceLabels(): ReadonlyArray<LabelView> {
+    const train = this.tallest;
+    return this.crossings().map((crossing) => {
+      const clear = `${heightText(crossing.gapLdu)} clear`;
+      const low = train !== null && crossing.gapLdu < train.heightLdu;
+      return {
+        id: `clearance:${crossing.upper}:${crossing.lower}`,
+        kind: "height",
+        text: low ? `${clear}: too low for ${train.model}` : clear,
+        x: crossing.x,
+        y: this.spanBottom[crossing.upper] ?? 0,
+        z: crossing.z,
+      };
+    });
   }
 
   footprintAt(piece: number): TrackFootprint {
@@ -980,6 +2267,7 @@ export class TrackDrawing {
     delta.chunkKey[entry] = footprint.key.chunkKey;
     delta.labelA[entry] = piece + 1;
     delta.labelB[entry] = 0;
+    delta.outline[entry] = this.planOutline(piece);
     const { box } = footprint;
     const at = entry * BOX_STRIDE;
     delta.box[at + BOX_MIN_X] = box.minX;
@@ -988,6 +2276,153 @@ export class TrackDrawing {
     delta.box[at + BOX_MAX_X] = box.maxX;
     delta.box[at + BOX_MAX_Y] = box.maxY;
     delta.box[at + BOX_MAX_Z] = box.maxZ;
+  }
+
+  private planOutline(piece: number): TrackOutline {
+    return this.outlineAt(this.layout.piece(piece), this.layout.pose(piece));
+  }
+
+  outlineAt(catalogIndex: number, pose: Pose16): TrackOutline {
+    const edges = this.planEdges.get(catalogIndex);
+    const connectors = this.pieces[catalogIndex]?.connectors;
+    if (!edges || !connectors) {
+      throw new Error(`track catalog piece ${catalogIndex} has no plan outline`);
+    }
+    return new TrackOutline(
+      edges,
+      pose,
+      connectors.map((connector) => connector.pose),
+    );
+  }
+
+  writeIssues(delta: PlanDelta): void {
+    const rows = delta.writeTrackIssues();
+    const graph = this.graph;
+    const failed = this.markFailedEnds();
+    for (let k = 0; k < graph.openEnds.length; k++) {
+      const end = graph.openEnds[k] ?? 0;
+      if (failed[end] === 1) continue;
+      const issue = rows.add(TRACK_OPEN_END, "", "");
+      rows.x[issue] = graph.endXLdu[end] ?? 0;
+      rows.z[issue] = graph.endZLdu[end] ?? 0;
+      this.addEndOwner(rows, issue, graph.endPlacement[end] ?? 0);
+    }
+    const groups = graph.issues;
+    for (let g = 0; g < groups.length; g++) {
+      const ends = groups[g]?.ends ?? [];
+      const first = ends[0] ?? 0;
+      const issue = rows.add(TRACK_UNJOINED_ENDS, "", "");
+      rows.x[issue] = graph.endXLdu[first] ?? 0;
+      rows.z[issue] = graph.endZLdu[first] ?? 0;
+      rows.quantity[issue] = ends.length;
+      const second = ends[1];
+      if (ends.length === 2 && second !== undefined) {
+        const off = normalizeHeading16(
+          (graph.endHeading[first] ?? 0) - (graph.endHeading[second] ?? 0) - HALF_TURN_16,
+        );
+        rows.headingOffset[issue] = Math.min(off, ZETA16_ORDER - off);
+      }
+      for (let e = 0; e < ends.length; e++) {
+        this.addEndOwner(rows, issue, graph.endPlacement[ends[e] ?? 0] ?? 0);
+      }
+    }
+    const carriers = this.carriers;
+    for (let c = 0; c < carriers.length; c++) {
+      const carrier = carriers[c];
+      if (!carrier) continue;
+      this.addPartRows(rows, TRACK_UNVERIFIED, carrier.unverified, carrier.model);
+      this.addPartRows(rows, TRACK_UNIDENTIFIED, carrier.unidentified, carrier.model);
+    }
+  }
+
+  private addPartRows(
+    rows: TrackIssueRows,
+    kind: number,
+    parts: ReadonlyArray<TrackPartCount>,
+    model: TrackOwner,
+  ): void {
+    for (let k = 0; k < parts.length; k++) {
+      const counted = parts[k];
+      const piece = counted ? this.pieces[counted.catalogIndex] : undefined;
+      if (!counted || !piece) throw new RangeError(`track part ${k} is not in the catalog`);
+      const issue = rows.add(kind, piece.part, piece.title);
+      rows.quantity[issue] = counted.count;
+      this.addModelOwner(rows, issue, model);
+    }
+  }
+
+  private markFailedEnds(): Uint8Array {
+    const graph = this.graph;
+    if (this.failedEnds.length < graph.endCount) this.failedEnds = new Uint8Array(graph.endCount);
+    const failed = this.failedEnds;
+    failed.fill(0, 0, graph.endCount);
+    const groups = graph.issues;
+    for (let g = 0; g < groups.length; g++) {
+      const ends = groups[g]?.ends ?? [];
+      for (let e = 0; e < ends.length; e++) failed[ends[e] ?? 0] = 1;
+    }
+    return failed;
+  }
+
+  private addEndOwner(rows: TrackIssueRows, issue: number, placement: number): void {
+    const laid = this.layout.count;
+    if (placement >= laid) {
+      const carrier = this.carriers[this.heldCarrier[placement - laid] ?? -1];
+      if (!carrier) throw new RangeError(`held track piece ${placement - laid} has no carrier`);
+      this.addModelOwner(rows, issue, carrier.model);
+      return;
+    }
+    if (this.ownsLaidPiece(rows, issue, placement)) return;
+    const owner = rows.addOwner(
+      issue,
+      LABEL_NUMBERED,
+      this.pieceByIndex(this.layout.piece(placement)).piece.title,
+      placement,
+    );
+    rows.ownerChunkKey[owner] = this.pieceKeys[placement] ?? 0;
+    rows.ownerLabelA[owner] = placement + 1;
+    rows.ownerLabelB[owner] = 0;
+    rows.setOwnerBox(owner, this.pieceBoxes, placement * PIECE_BOX_FLOATS);
+  }
+
+  private addModelOwner(rows: TrackIssueRows, issue: number, model: TrackOwner): void {
+    const { handle, placeable, box } = model;
+    if (this.ownsModel(rows, issue, handle)) return;
+    const owner = rows.addOwner(issue, LABEL_AT, placeable.label, handle.slot);
+    rows.ownerChunkKey[owner] = handle.chunkKey;
+    rows.ownerLabelA[owner] = handle.x;
+    rows.ownerLabelB[owner] = handle.z;
+    const scratch = this.ownerBox;
+    scratch[0] = box.minX;
+    scratch[1] = box.minY;
+    scratch[2] = box.minZ;
+    scratch[3] = box.maxX;
+    scratch[4] = box.maxY;
+    scratch[5] = box.maxZ;
+    rows.setOwnerBox(owner, scratch, 0);
+  }
+
+  private ownsLaidPiece(rows: TrackIssueRows, issue: number, placement: number): boolean {
+    const last = rows.ownerStart[issue + 1] ?? 0;
+    for (let owner = rows.ownerStart[issue] ?? 0; owner < last; owner++) {
+      if (
+        rows.ownerSlot[owner] === placement &&
+        rows.ownerChunkKey[owner] === this.pieceKeys[placement]
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private ownsModel(rows: TrackIssueRows, issue: number, handle: TrackOwner["handle"]): boolean {
+    const last = rows.ownerStart[issue + 1] ?? 0;
+    for (let owner = rows.ownerStart[issue] ?? 0; owner < last; owner++) {
+      if (rows.ownerSlot[owner] === handle.slot && rows.ownerChunkKey[owner] === handle.chunkKey) {
+        return true;
+      }
+    }
+    return false;
   }
 
   records(): TrackRecordV1[] {
@@ -999,17 +2434,26 @@ export class TrackDrawing {
         ref: placed.part.piece.id,
         heading: placed.placement.heading,
         position: encodeTrackPosition(placed.placement.position),
-        yPlates: this.layout.yPlates(index),
+        yPlates: placed.yPlates,
+        ...(placed.rise === 0 ? {} : { rise: placed.rise }),
       });
     }
     return records;
   }
 
   restore(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<number>> {
-    const issues: Issue[] = [];
     if (this.layout.count > 0) {
-      issues.push({ path: "track", message: "can only be restored into an empty drawing" });
+      return {
+        ok: false,
+        issues: [{ path: "track", message: "can only be restored into an empty drawing" }],
+      };
     }
+    const lay = this.laidPieces(records);
+    return lay.ok ? { ok: true, value: this.applyTrack({ lift: [], lay: lay.value }) } : lay;
+  }
+
+  laidPieces(records: ReadonlyArray<TrackRecordV1>): Decoded<ReadonlyArray<TrackPieceAt>> {
+    const issues: Issue[] = [];
     records.forEach((record, position) => {
       if (record.index !== position) {
         issues.push({ path: `track ${record.index}`, message: `is out of order at ${position}` });
@@ -1020,15 +2464,30 @@ export class TrackDrawing {
           message: `"${record.ref}" isn't a placeable track piece`,
         });
       }
+      const rise = record.rise ?? 0;
+      if (!isLatticePose(0, 0, record.yPlates + rise)) {
+        issues.push({
+          path: `track ${record.index}`,
+          message: `rises to ${record.yPlates + rise} plates, outside the int16 plate range`,
+        });
+      }
+      const ends = this.byPieceId.get(record.ref)?.def.connectors.length ?? 0;
+      if (rise !== 0 && ends !== RAMP_CONNECTORS) {
+        issues.push({
+          path: `track ${record.index}`,
+          message: `"${record.ref}" has ${ends} ends, so it can't ramp`,
+        });
+      }
     });
     if (issues.length > 0) return { ok: false, issues };
     const lay = records.flatMap((record, index) => {
       const part = this.byPieceId.get(record.ref);
       if (!part) return [];
       const pose = pose16(decodeTrackPosition(record.position), record.heading);
-      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates }];
+      const rise = record.rise ?? 0;
+      return [{ index, piece: part.catalogIndex, pose, yPlates: record.yPlates, rise }];
     });
-    return { ok: true, value: this.applyTrack({ lift: [], lay }) };
+    return { ok: true, value: lay };
   }
 
   chunkKeys(): ReadonlyArray<number> {
@@ -1054,9 +2513,10 @@ export class TrackDrawing {
         i,
         piece.placement,
         piece.part.piece.partFrame,
-        piece.part.yLdu,
+        piece.part.yLdu + piece.yPlates * PLATE_LDU,
         originX,
         originZ,
+        rampShear(piece),
       );
     });
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };

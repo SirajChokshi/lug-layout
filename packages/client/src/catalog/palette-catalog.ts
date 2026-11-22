@@ -1,5 +1,6 @@
 import { inject, injectable } from "inversify";
-import { TRACK_ITEM_ID, type EditorSnapshot, type IEditor } from "../edit/editor.ts";
+import type { EditorSnapshot, IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID } from "../edit/track-edit-session.ts";
 import { EDITOR } from "../tokens.ts";
 import { PaletteIndex } from "./palette-index.ts";
 
