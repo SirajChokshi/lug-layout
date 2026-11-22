@@ -286,7 +286,7 @@ export function EditorApp({
           editor={editor}
           camera={camera}
           play={play}
-          search={palette.search}
+          search={palette.commandSearch}
           snapshot={snapshot}
           onClose={closeOverlay}
           onShellCommand={toggleOverlay}

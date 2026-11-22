@@ -2,6 +2,7 @@ import {
   LIBRARY_BAKE_BUCKETS,
   LibraryBakeBucket,
   LibraryBakeIndex,
+  LibraryBakePart,
   libraryBakeBucket,
   type LibraryBakePin,
 } from "@brr/schema/bundle";
@@ -16,9 +17,16 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
-import { publicationIndexKey, uploadPublication } from "../publication/pinned-publication.ts";
+import { liveBundleLibraryBakeIndexes } from "../pointer/live-bundles.ts";
+import { partBundlePointer } from "../pointer/part-bundle-pointer.ts";
+import {
+  movePointer,
+  publicationIndexKey,
+  pruneUnreferenced,
+  uploadPublication,
+} from "../publication/pinned-publication.ts";
 import { contentAddressedName } from "../publish.ts";
-import type { ObjectStore } from "../r2.ts";
+import type { ObjectStore, PrunableStore, StoredObject } from "../r2.ts";
 import { assembleLibraryBake, LIBRARY_BAKE_INDEX, LIBRARY_BAKE_PIN } from "./assemble.ts";
 import { libraryBakePointer, libraryBakePublication } from "./publish.ts";
 
@@ -421,4 +429,105 @@ it("the library-bake pointer's manifest references its index, every bucket, and 
   expect(leaves.filter((key) => key.startsWith("library-bake/rolling-diagnostics/"))).toHaveLength(
     new Set(["ldraw:3040b", "ldraw:3626c"].map(libraryBakeBucket)).size,
   );
+});
+
+class MemoryStore implements PrunableStore {
+  readonly objects = new Map<string, Uint8Array>();
+
+  async has(key: string): Promise<boolean> {
+    return this.objects.has(key);
+  }
+
+  async put(key: string, body: Uint8Array): Promise<void> {
+    this.objects.set(key, body);
+  }
+
+  async get(key: string): Promise<Uint8Array | undefined> {
+    return this.objects.get(key);
+  }
+
+  async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
+    return [...this.objects]
+      .filter(([key]) => key.startsWith(prefix))
+      .map(([key, body]) => ({ key, size: body.length }));
+  }
+
+  async delete(keys: ReadonlyArray<string>): Promise<void> {
+    for (const key of keys) this.objects.delete(key);
+  }
+}
+
+it("the library-bake prune keeps the index a live bundle manifest names beyond its own current and previous, and refuses while a named index is missing", async () => {
+  const store = new MemoryStore();
+  const pins: LibraryBakePin[] = [];
+  for (const version of ["fallback", "first", "second", "third"]) {
+    const inputs = await build([
+      [{ id: "ldraw:3001", record: `3001 ${version}` }, { id: "ldraw:3040b" }],
+    ]);
+    const pin = await assembleLibraryBake({ ...inputs, source: SOURCE, options: OPTIONS });
+    await uploadPublication(libraryBakePublication, store, inputs.out, pin);
+    pins.push(pin);
+  }
+  const [fallbackPin, firstPin, secondPin, thirdPin] = pins;
+  if (!fallbackPin || !firstPin || !secondPin || !thirdPin) throw new Error("four pins");
+  const root = await mkdtemp(join(tmpdir(), "library-bake-live-"));
+  roots.push(root);
+  const fallbackPath = join(root, "bundle-fallback.json");
+  const manifests = {
+    fallback: "manifest.0000000000000001.json",
+    current: "manifest.0000000000000002.json",
+  };
+  await writeFile(fallbackPath, JSON.stringify({ manifest_file: manifests.fallback }));
+  const nameIndex = async (manifest: string, index: LibraryBakePin["index"]) => {
+    for (const lod of ["standard", "low", "far"]) {
+      await store.put(
+        `${lod}/${manifest}`,
+        new TextEncoder().encode(JSON.stringify({ compiler: { libraryBake: index } })),
+      );
+    }
+  };
+  await nameIndex(manifests.fallback, fallbackPin.index);
+  await nameIndex(manifests.current, thirdPin.index);
+  const bundle = partBundlePointer(fallbackPath);
+  await store.put(bundle.key, bundle.encode({ current: manifests.current, previous: null }));
+  const read = (key: string) => store.get(key);
+  const adapter = {
+    ...libraryBakePointer,
+    retained: () => liveBundleLibraryBakeIndexes(read, fallbackPath),
+  };
+  for (const pin of [firstPin, secondPin, thirdPin]) await movePointer(adapter, store, pin.index);
+  const firstOnly = async () => {
+    const { indexes, files } = await adapter.references(firstPin.index, read);
+    const kept = new Set<string>();
+    for (const pin of [fallbackPin, secondPin, thirdPin]) {
+      const live = await adapter.references(pin.index, read);
+      for (const key of [...live.indexes, ...live.files.map((file) => file.key)]) kept.add(key);
+    }
+    return [...indexes, ...files.map((file) => file.key)].filter((key) => !kept.has(key));
+  };
+  const doomed = await firstOnly();
+  expect(doomed.length).toBeGreaterThan(0);
+
+  const outcome = await pruneUnreferenced(adapter, store, false);
+
+  expect(outcome.doomed.map((object) => object.key).toSorted()).toEqual(doomed.toSorted());
+  expect((await adapter.references(fallbackPin.index, read)).indexes.length).toBeGreaterThan(0);
+  expect((await pruneUnreferenced(adapter, store, false)).deleted).toBe(0);
+
+  await nameIndex(manifests.fallback, firstPin.index);
+  const before = [...store.objects.keys()].toSorted();
+  await expect(pruneUnreferenced(adapter, store, false)).rejects.toThrow("is not stored");
+  expect([...store.objects.keys()].toSorted()).toEqual(before);
+});
+
+it("the library-bake index's fields, its buckets' and its parts' are exactly these, so a field naming a file the content-addressed listing can't reach can't land unseen", () => {
+  expect({
+    index: Object.keys(LibraryBakeIndex.entries),
+    bucket: Object.keys(LibraryBakeBucket.entries),
+    part: Object.keys(LibraryBakePart.entries),
+  }).toEqual({
+    index: ["format", "source", "options", "licenses", "buckets", "failed"],
+    bucket: ["bucket", "parts", "rollingDiagnostics"],
+    part: ["record", "glb"],
+  });
 });
