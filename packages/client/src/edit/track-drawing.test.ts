@@ -58,6 +58,7 @@ import {
 } from "./track-drawing.ts";
 import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
+  EVERY_MODEL,
   cellKey,
   seatsPending,
   studSeats,
@@ -1860,6 +1861,119 @@ it("judges track carried in a run frame at its framed pose: the frame's offset p
 
   expect(unsupportedOf(layout)).toEqual([{ piece: 0, on: plate.placeable.label }]);
 });
+
+const REACH_SEED = 581;
+const REACH_LAYOUTS = 160;
+const REACH_TILES = 4;
+const REACH_PLATES = 9;
+const REACH_PIECES = 2;
+const REACH_RAISED_PLATES = 3;
+const REACH_EDGE_STUDS = 4;
+const HEADINGS = 16;
+const TILE_STUDS = 32;
+
+interface PieceSpot {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+}
+
+function pieceSpot(
+  ground: ReadonlyArray<PlacedModel>,
+  random: () => number,
+  spanStuds: number,
+): PieceSpot {
+  const plate = ground[Math.floor(random() * ground.length)];
+  if (!plate || random() < 0.5) {
+    return {
+      x: Math.floor(random() * spanStuds),
+      z: Math.floor(random() * spanStuds),
+      yPlates: random() < 0.25 ? REACH_RAISED_PLATES : 0,
+    };
+  }
+  const { box } = plate;
+  const across = Math.floor(random() * (2 * REACH_EDGE_STUDS + 1)) - REACH_EDGE_STUDS;
+  const minEdge = random() < 0.5;
+  const alongX = studsOf(box.minX) + Math.floor(random() * studsOf(box.maxX - box.minX));
+  const alongZ = studsOf(box.minZ) + Math.floor(random() * studsOf(box.maxZ - box.minZ));
+  const edgeX = studsOf(minEdge ? box.minX : box.maxX) + across;
+  const edgeZ = studsOf(minEdge ? box.minZ : box.maxZ) + across;
+  const acrossX = random() < 0.5;
+  return {
+    x: acrossX ? edgeX : alongX,
+    z: acrossX ? alongZ : edgeZ,
+    yPlates: plate.handle.yPlates,
+  };
+}
+
+function bandsReaching(ground: ReadonlyArray<PlacedModel>, layout: TrackDrawing): SupportBandAt {
+  return (lowPlates, highPlates, reach) => {
+    const [bottom, top] = layout.verticalRange();
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
+    const reaches = reach === null ? EVERY_MODEL : (model: PlacedModel) => reach.reaches(model.box);
+    return {
+      obstacles: trackObstacles(ground, band, NO_TRACK_PARTS, reaches),
+      pending: seatsPending(ground, band),
+    };
+  };
+}
+
+it(
+  "judges support from only the models its track reaches exactly as from the whole layout, over random plates, heights, headings, plate edges and run frames",
+  async () => {
+    const random = seeded(REACH_SEED);
+    const bundle = await trackAndRoadBundle();
+    const [road, baseplate] = await Promise.all([
+      loosePart(ROAD_BASEPLATE_32),
+      loosePart(GROUND_BASEPLATE),
+    ]);
+    const whole = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const near = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const support = await kitSupport(whole);
+    whole.setSupport(support);
+    near.setSupport(support);
+    const pieces = [NINE_VOLT_STRAIGHT, NINE_VOLT_CURVE].map((id) => placeableIndex(whole, id));
+    const span = REACH_TILES * TILE_STUDS;
+    const kinds = new Set<string>();
+    for (let l = 0; l < REACH_LAYOUTS; l++) {
+      const tiles = Array.from({ length: REACH_TILES * REACH_TILES }, (_, tile) => tile)
+        .map((tile) => ({ tile, order: random() }))
+        .toSorted((a, b) => a.order - b.order)
+        .slice(0, REACH_PLATES);
+      const ground = placeGround(
+        tiles.map(({ tile }) => ({
+          placeable: random() < 0.5 ? road : baseplate,
+          x: ((tile % REACH_TILES) * TILE_STUDS + TILE_STUDS / 2) * STUD_LDU,
+          z: (Math.floor(tile / REACH_TILES) * TILE_STUDS + TILE_STUDS / 2) * STUD_LDU,
+          yPlates: random() < 0.25 ? REACH_RAISED_PLATES : 0,
+        })),
+      );
+      whole.setBands(bandsOver(ground, whole));
+      near.setBands(bandsReaching(ground, near));
+      const held = Array.from({ length: REACH_PIECES }, (_, instance) => {
+        const spot = pieceSpot(ground, random, span);
+        return {
+          catalogIndex: pieces[Math.floor(random() * pieces.length)] ?? 0,
+          placement: studPose(spot.x, spot.z, Math.floor(random() * HEADINGS)),
+          yPlates: spot.yPlates,
+          instance,
+          frame:
+            random() < 0.25
+              ? { id: WORLD_TRACK_FRAME.id + 1 + instance, xLdu: random() * STUD_LDU, zLdu: 0.3 }
+              : WORLD_TRACK_FRAME,
+        };
+      });
+      whole.syncHeld(held, [carrierAtOrigin(held.length)]);
+      near.syncHeld(held, [carrierAtOrigin(held.length)]);
+      const verdicts = unsupportedOf(whole);
+      expect(unsupportedOf(near)).toEqual(verdicts);
+      for (const { on } of verdicts) kinds.add(on ?? "over air");
+      if (verdicts.length < held.length) kinds.add("supported");
+    }
+    expect([...kinds].toSorted()).toEqual(["supported", "over air", road.label].toSorted());
+  },
+  SWEEP_TIMEOUT_MS,
+);
 
 it("finds a level crossing only over a road surface's roadway: track on a studless plaza is reported unsupported, but is no crossing and gets no ramp", async () => {
   const { ground, plate, surface } = await roadPlateGround();

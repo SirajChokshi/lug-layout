@@ -50,6 +50,7 @@ export interface PlacedModel {
   studCellX(stud: number): number;
   studCellZ(stud: number): number;
   studBaseLdu(stud: number): number;
+  seatsStudAt(cellX: number, cellZ: number, baseLdu: number): boolean;
   readonly shape: PlanShape | null;
   readonly carried: CarriedTrack | null;
   readonly facts: Int32Array;
@@ -639,6 +640,14 @@ class PlacedEntry implements PlacedModel {
 
   studBaseLdu(stud: number): number {
     return this.yLdu + (this.placeable.studLattice.baseLdu[stud] ?? 0);
+  }
+
+  seatsStudAt(cellX: number, cellZ: number, baseLdu: number): boolean {
+    return this.placeable.studLattice.seats.has(
+      this.pose.localCellX(cellX, cellZ),
+      this.pose.localCellZ(cellX, cellZ),
+      baseLdu - this.yLdu,
+    );
   }
 
   private isStudCulled(

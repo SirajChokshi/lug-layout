@@ -1,11 +1,17 @@
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, chunkKey, chunkOf } from "@brr/math";
 import { BOX_FLOATS } from "./local-box.ts";
 import type { PlacedModel } from "./placed-chunks.ts";
 
 const CELL_KEY_STRIDE = 2 ** 26;
 const CELL_KEY_OFFSET = 2 ** 25;
-const ON_LATTICE = 1;
+const HALF_STUD_LDU = STUD_LDU / 2;
+const SEATED_TOP = 1;
+const NO_MODELS: ReadonlyArray<PlacedModel> = [];
 export const OBSTACLE_RECT_FLOATS = 4;
+
+export interface StudSeats {
+  has(cellKey: number): boolean;
+}
 
 export type ObstacleKind = "solid" | "unseated";
 
@@ -16,7 +22,7 @@ export interface TrackObstacles {
   readonly outlines: ReadonlyArray<Float64Array>;
   readonly outlineOwners: Int32Array;
   readonly labels: ReadonlyArray<string>;
-  readonly seats: ReadonlySet<number>;
+  readonly seats: StudSeats;
 }
 
 export const NO_TRACK_OBSTACLES: TrackObstacles = {
@@ -52,16 +58,43 @@ export function cellKey(cellX: number, cellZ: number): number {
   return (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE + (cellZ + CELL_KEY_OFFSET);
 }
 
-export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): Set<number> {
-  const seats = new Set<number>();
-  for (const model of models) {
-    const onLattice = model.placeable.studLattice.onLattice;
-    for (let i = 0; i < model.placeable.studs.count; i++) {
-      if (onLattice[i] !== ON_LATTICE || model.studBaseLdu(i) !== baseLdu) continue;
-      seats.add(cellKey(model.studCellX(i), model.studCellZ(i)));
+class LayoutSeats implements StudSeats {
+  private readonly byChunk = new Map<number, PlacedModel[]>();
+
+  constructor(
+    models: ReadonlyArray<PlacedModel>,
+    private readonly baseLdu: number,
+  ) {
+    for (const model of models) {
+      const { box } = model;
+      if (box.minY > baseLdu || box.maxY < baseLdu) continue;
+      for (let cz = chunkOf(box.minZ); cz <= chunkOf(box.maxZ); cz++) {
+        for (let cx = chunkOf(box.minX); cx <= chunkOf(box.maxX); cx++) {
+          const key = chunkKey(cx, cz);
+          const inChunk = this.byChunk.get(key);
+          if (inChunk) inChunk.push(model);
+          else this.byChunk.set(key, [model]);
+        }
+      }
     }
   }
-  return seats;
+
+  has(key: number): boolean {
+    const cellX = Math.floor(key / CELL_KEY_STRIDE) - CELL_KEY_OFFSET;
+    const cellZ = key - (cellX + CELL_KEY_OFFSET) * CELL_KEY_STRIDE - CELL_KEY_OFFSET;
+    const chunk = chunkKey(
+      chunkOf(cellX * STUD_LDU + HALF_STUD_LDU),
+      chunkOf(cellZ * STUD_LDU + HALF_STUD_LDU),
+    );
+    for (const model of this.byChunk.get(chunk) ?? NO_MODELS) {
+      if (model.seatsStudAt(cellX, cellZ, this.baseLdu)) return true;
+    }
+    return false;
+  }
+}
+
+export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): StudSeats {
+  return new LayoutSeats(models, baseLdu);
 }
 
 class ObstacleList {
@@ -80,7 +113,7 @@ class ObstacleList {
     this.owners[kind].push(owner);
   }
 
-  obstacles(labels: ReadonlyArray<string>, seats: ReadonlySet<number>): TrackObstacles {
+  obstacles(labels: ReadonlyArray<string>, seats: StudSeats): TrackObstacles {
     const { solid, unseated } = this.owners;
     return {
       rects: Float64Array.from([...this.rects.solid, ...this.rects.unseated]),
@@ -95,7 +128,7 @@ class ObstacleList {
 
   pushUnseated(
     owner: number,
-    seats: ReadonlySet<number>,
+    seats: StudSeats,
     minX: number,
     minZ: number,
     maxX: number,
@@ -141,19 +174,31 @@ export function seatsPending(
   });
 }
 
+export type ModelReach = (model: PlacedModel) => boolean;
+
+export const EVERY_MODEL: ModelReach = () => true;
+
 export function trackObstacles(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],
   trackParts: (model: PlacedModel) => ReadonlySet<number>,
+  reaches: ModelReach = EVERY_MODEL,
 ): TrackObstacles {
   const [bottom, top] = trackRange;
-  const seats = studSeats(models, bottom);
+  const reaching = models.map(reaches);
+  const seats = studSeats(
+    models.filter((_, owner) => reaching[owner]),
+    bottom,
+  );
   const list = new ObstacleList();
   models.forEach((model, owner) => {
+    if (!reaching[owner]) return;
     const boxes = model.worldPartBoxes();
     const track = trackParts(model);
+    const { seatedTops } = model.placeable;
     for (let b = 0; b < boxes.length; b += BOX_FLOATS) {
-      if (track.has(b / BOX_FLOATS)) continue;
+      const part = b / BOX_FLOATS;
+      if (track.has(part)) continue;
       const minX = boxes[b] ?? 0;
       const minY = boxes[b + 1] ?? 0;
       const minZ = boxes[b + 2] ?? 0;
@@ -161,7 +206,9 @@ export function trackObstacles(
       const maxY = boxes[b + 4] ?? 0;
       const maxZ = boxes[b + 5] ?? 0;
       if (minY < top && maxY > bottom) list.push(owner, "solid", minX, minZ, maxX, maxZ);
-      else if (maxY === bottom) list.pushUnseated(owner, seats, minX, minZ, maxX, maxZ);
+      else if (maxY === bottom && seatedTops[part] !== SEATED_TOP) {
+        list.pushUnseated(owner, seats, minX, minZ, maxX, maxZ);
+      }
     }
   });
   return list.obstacles(
