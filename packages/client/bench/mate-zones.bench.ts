@@ -1,4 +1,4 @@
-import { SIXTEENTHS_PER_LDU } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import {
@@ -7,6 +7,7 @@ import {
   CAP_ROOT,
   ConnectionSolver,
   ConnectorTable,
+  FootprintGrid,
   GENDER_FEMALE,
   GENDER_MALE,
   LatticeStudFinder,
@@ -19,7 +20,9 @@ import {
   SnapShapes,
   SparseConnectorFinder,
   TrackEndFinder,
+  VolumeIndex,
   modelTechnic,
+  type CellVolumes,
   type LatticePose,
   type OverlapHit,
 } from "@brr/domain";
@@ -106,6 +109,56 @@ const blockTable = table([
 ]);
 const pinTable = table([[pinEnd, GENDER_MALE, STUD, LINE_Y, 0, AXIS_POS_Z]]);
 
+function cellVolumes(boxes: ReadonlyArray<number>): CellVolumes {
+  const byCell = new Map<string, Array<readonly [number, ReadonlyArray<number>]>>();
+  for (let b = 0; b < boxes.length / 6; b++) {
+    const [x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0] = boxes.slice(b * 6, b * 6 + 6);
+    for (let i = Math.floor(x0 / STUD_LDU); i < Math.ceil(x1 / STUD_LDU); i++) {
+      for (let j = Math.floor(z0 / STUD_LDU); j < Math.ceil(z1 / STUD_LDU); j++) {
+        const left = i * STUD_LDU;
+        const near = j * STUD_LDU;
+        const box = [
+          Math.max(x0, left) - left,
+          Math.max(z0, near) - near,
+          Math.min(x1, left + STUD_LDU) - left,
+          Math.min(z1, near + STUD_LDU) - near,
+          y0,
+          y1,
+        ].map((ldu) => ldu * SIXTEENTHS_PER_LDU);
+        const key = `${i},${j}`;
+        byCell.set(key, [...(byCell.get(key) ?? []), [b, box]]);
+      }
+    }
+  }
+  const cells = [...byCell.entries()].map(([key, parts]) => {
+    const [i = 0, j = 0] = key.split(",").map(Number);
+    return { i, j, parts };
+  });
+  const start = [0];
+  for (const { parts } of cells) start.push((start.at(-1) ?? 0) + parts.length);
+  const all = cells.flatMap(({ parts }) => parts);
+  return {
+    count: cells.length,
+    cellX: Int32Array.from(cells, ({ i }) => i),
+    cellZ: Int32Array.from(cells, ({ j }) => j),
+    bottomLdu: Int32Array.from(cells, ({ parts }) =>
+      Math.min(...parts.map(([, box]) => Math.floor((box[4] ?? 0) / SIXTEENTHS_PER_LDU))),
+    ),
+    topLdu: Int32Array.from(cells, ({ parts }) =>
+      Math.max(...parts.map(([, box]) => Math.ceil((box[5] ?? 0) / SIXTEENTHS_PER_LDU))),
+    ),
+    partsAt: Int32Array.from(cells, (_, c) => c),
+    parts: {
+      start: Int32Array.from(start),
+      instance: Uint32Array.from(all, ([b]) => b),
+      cellBox: Int16Array.from(all.flatMap(([, box]) => box.slice(0, 4))),
+      heightBox: Int32Array.from(all.flatMap(([, box]) => box.slice(4))),
+    },
+    turn: 0,
+    sixteenthsUp: 0,
+  };
+}
+
 function translated(x: number, z: number): number[] {
   const matrix = [...IDENTITY];
   matrix[3] = x;
@@ -114,6 +167,7 @@ function translated(x: number, z: number): number[] {
 }
 
 const placed = new Map<number, PlacedParts>();
+const index = new VolumeIndex();
 const origin: LatticePose = { x: 0, z: 0, yPlates: 0, rot: 0 };
 for (let p = 0; p < PINS; p++) {
   const instances = {
@@ -121,7 +175,12 @@ for (let p = 0; p < PINS; p++) {
     partIndex: [0],
     matrices: Float64Array.from(translated(p * PITCH, 0)),
   };
-  const boxes = partBoxes([p * PITCH, 0, 0, p * PITCH + 2 * STUD, BRICK, STUD]);
+  const block = [p * PITCH, 0, 0, p * PITCH + 2 * STUD, BRICK, STUD];
+  const boxes = partBoxes(block);
+  const footprint = cellVolumes(block);
+  const x0 = Math.min(...Array.from(footprint.cellX));
+  const z0 = Math.min(...Array.from(footprint.cellZ));
+  index.add(p, FootprintGrid.of(footprint, x0, z0, footprint.count, 1, 0), x0, z0, 0);
   const technic = modelTechnic([bored], instances, boxes.boxes);
   solver.insert(ModelConnectors.fromParts([blockTable], instances, mating), origin, p);
   placed.set(p, { boxes, technic, pose: origin });
@@ -148,16 +207,29 @@ const measured = Array.from({ length: parts }, (_, i) =>
 ).flat();
 const instances = { count: parts, partIndex, matrices };
 const candidateBoxes = partBoxes(measured);
+const held = cellVolumes(measured);
+const heldCellAt = (cellX: number, cellZ: number): number => {
+  for (let c = 0; c < held.count; c++) {
+    if (held.cellX[c] === cellX && held.cellZ[c] === cellZ) return c;
+  }
+  throw new RangeError(`the candidate has no cell at ${cellX}, ${cellZ}`);
+};
+const exempted = Array.from({ length: 2 * PINS }, (_, k) => {
+  const cellX = (Math.floor(k / 2) * PITCH) / STUD + (k % 2);
+  return [Math.floor(k / 2), cellX, heldCellAt(cellX, 0)] as const;
+});
 const candidateTechnic = modelTechnic([pin, null], instances, candidateBoxes.boxes);
 const candidate = ModelConnectors.fromParts([pinTable, null], instances, mating);
 const report = new MateReport();
 const zones = new MateZones();
 const hit: OverlapHit = {
   owner: 0,
+  instance: 0,
   bottomLdu: 0,
   topLdu: 0,
   cellX: 0,
   cellZ: 0,
+  candidateInstance: 0,
   candidateBottomLdu: 0,
   candidateTopLdu: 0,
 };
@@ -174,11 +246,8 @@ let clear = 0;
 function hover(): void {
   solver.evaluate(candidate, origin, report);
   zones.collect(report, candidateBoxes, candidateTechnic, origin, placed);
-  for (let p = 0; p < PINS; p++) {
-    zones.exempts(p, (p * PITCH) / STUD, 0);
-    zones.exempts(p, (p * PITCH) / STUD + 1, 0);
-  }
-  if (!zones.firstOverlap(hit)) clear++;
+  for (const [owner, cellX, heldCell] of exempted) zones.exempts(owner, cellX, 0, heldCell);
+  if (!zones.firstOverlap(index, held, hit)) clear++;
 }
 
 function settle(): Promise<void> {

@@ -178,6 +178,13 @@ fn part_summary(part: &CompiledPart) -> Value {
     })
 }
 
+fn without_part_cells(mut cover: Value) -> Value {
+    if let Some(cells) = cover.get_mut("cells").and_then(Value::as_object_mut) {
+        cells.remove("partCells");
+    }
+    cover
+}
+
 fn cover_json(cover: &ModelCover) -> Value {
     let cells = cover.cells.as_ref().map(|cells| {
         json!({
@@ -189,6 +196,11 @@ fn cover_json(cover: &ModelCover) -> Value {
             "columnBottom": cells.column_bottom,
             "columnTop": cells.column_top,
             "footing": { "instance": cells.footing.instance, "cell": cells.footing.cell },
+            "partCells": {
+                "cell": cells.part_cells.cell,
+                "instance": cells.part_cells.instance,
+                "boxes": cells.part_cells.boxes,
+            },
         })
     });
     json!({
@@ -917,6 +929,10 @@ fn run(args: &Args) -> Result<(), String> {
                 }
                 pair
             }
+        };
+        let cover_file = match args.lod {
+            Lod::Standard => cover_file,
+            Lod::Low | Lod::Far => without_part_cells(cover_file),
         };
         if cover_file["studs"].as_u64() != Some(total_studs as u64) {
             return Err(format!(
