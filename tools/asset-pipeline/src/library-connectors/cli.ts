@@ -8,19 +8,21 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUNDLE_DATA_DIRECTORIES, BUNDLE_DATA_FILES } from "../bundle-data.ts";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
-import { extractLibrary, pinnedArchive } from "../library/ldraw-library.ts";
+import { extractLibrary, httpReader, pinnedArchive } from "../library/ldraw-library.ts";
+import { bundleBaseUrl, liveBundleLibraryConnectorsIndexes } from "../pointer/live-bundles.ts";
 import {
   CONNECTOR_SOURCE_USE,
   extractShadowArchive,
   pinnedShadowArchive,
 } from "../section-vocabulary.ts";
 import {
+  runPointerCommand,
   runPublicationCommand,
   writeOrCheckPin,
   type ServedScope,
 } from "../publication/pinned-publication.ts";
 import { assembleLibraryConnectors, LIBRARY_CONNECTORS_PIN } from "./assemble.ts";
-import { libraryConnectorsPublication } from "./publish.ts";
+import { libraryConnectorsPointer, libraryConnectorsPublication } from "./publish.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -31,6 +33,7 @@ const buildRoot = join(repoRoot, ".cache", "library-connectors-build");
 const outRoot = join(toolRoot, "dist", "library-connectors");
 const binary = join(repoRoot, "target", "release", "library-connectors");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
 
 async function readLock(): Promise<InputLock> {
   return JSON.parse(await readFile(join(repoRoot, BUNDLE_DATA_FILES.lock), "utf8")) as InputLock;
@@ -162,6 +165,15 @@ const commands = {
       : "the index and both package indexes",
 };
 
+const libraryConnectorsPointerRetainingLiveBundles = {
+  ...libraryConnectorsPointer,
+  retained: async () =>
+    liveBundleLibraryConnectorsIndexes(
+      httpReader(await bundleBaseUrl(storeConfigPath)),
+      bundleFallbackPath,
+    ),
+};
+
 switch (process.argv[2]) {
   case "published":
   case "upload":
@@ -169,13 +181,27 @@ switch (process.argv[2]) {
   case "verify-served":
     await runPublicationCommand(commands, process.argv.slice(2));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      {
+        storeConfigPath,
+        readPin,
+        pointer: libraryConnectorsPointerRetainingLiveBundles,
+        manifestOf: (pin) => pin.index,
+      },
+      process.argv.slice(2),
+    );
+    break;
   case undefined:
   case "--check":
     await precompute(process.argv.includes("--check"));
     break;
   default:
     process.stderr.write(
-      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait]\n",
+      "usage: library-connectors [--check] | published | upload | served | verify-served [--all] [--wait] | point | current | verify-pointer [--all] [--wait] | prune [--dry-run]\n",
     );
     process.exitCode = 1;
 }

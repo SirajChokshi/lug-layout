@@ -54,6 +54,20 @@ const ManifestLibraryBake = v.object({
   compiler: v.nullable(v.object({ libraryBake: BundleCompiler.entries.libraryBake })),
 });
 
+const ManifestLibraryConnectors = v.object({
+  compiler: v.nullable(v.object({ libraryConnectors: BundleCompiler.entries.libraryConnectors })),
+});
+
+export async function liveBundleLibraryConnectorsIndexes(
+  read: ObjectReader,
+  fallbackPath: string,
+): Promise<PinnedIndex[]> {
+  const values = await liveBundleManifestValues(read, fallbackPath, ManifestLibraryConnectors);
+  return values.flatMap(({ compiler }) =>
+    compiler?.libraryConnectors === undefined ? [] : [compiler.libraryConnectors],
+  );
+}
+
 export async function liveBundleLibraryBakeIndexes(
   read: ObjectReader,
   fallbackPath: string,
