@@ -33,7 +33,7 @@ const ROLE_RULES: Readonly<Record<PartRole, RoleRule | null>> = {
   track: { categories: ["Train"], needsOneOf: ["track"], refusesAll: [] },
   wall: { categories: ["Brick"], needsOneOf: [], refusesAll: [] },
   roof: { categories: ["Plate"], needsOneOf: [], refusesAll: [] },
-  detail: { categories: ["Brick", "Plate", "Tile"], needsOneOf: [], refusesAll: [] },
+  detail: { categories: ["Brick", "Plate", "Tile", "Slope"], needsOneOf: [], refusesAll: [] },
   model: null,
 };
 
@@ -135,6 +135,12 @@ function fileProblem(facts: LdrawPartFacts): string | null {
     return `is a "~" file ("${facts.title}"), which LDraw keeps out of part lists`;
   }
   return null;
+}
+
+export function listedCategory(facts: LdrawPartFacts, categories: LdrawCategories): string | null {
+  if (fileProblem(facts) !== null) return null;
+  const category = ldrawCategoryOf(facts, categories);
+  return category !== null && categories.active.has(category) ? category : null;
 }
 
 function roleProblem(role: PartRole, category: string, facts: LdrawPartFacts): string | null {

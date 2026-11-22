@@ -22,8 +22,10 @@
         "!src/publication/**",
         "!src/library-connectors/**",
         "!src/input-key-cli.ts",
+        "!src/shadow-library/**",
         "palette.json",
         "fixture-models.json",
+        "omr-errata.json",
         "primitive-connectors.json",
         "inferred-connectors.json",
         "section-vocabulary.json",
@@ -31,6 +33,7 @@
         "ldraw.lock.json",
         "library-bake.json",
         "library-connectors.json",
+        "shadow-library.json",
         "$TURBO_ROOT$/crates/**",
         "$TURBO_ROOT$/Cargo.toml",
         "$TURBO_ROOT$/Cargo.lock",
@@ -38,15 +41,19 @@
         "$TURBO_ROOT$/docs/verified-facts/scenes/**",
         "$TURBO_ROOT$/docs/verified-facts/geometry.json",
         "$TURBO_ROOT$/docs/verified-facts/track-catalog.json",
+        "$TURBO_ROOT$/docs/verified-facts/level-crossing.json",
+        "$TURBO_ROOT$/docs/verified-facts/plan-outlines.json",
         "$TURBO_ROOT$/packages/schema/src/bundle/**",
         "!$TURBO_ROOT$/packages/schema/src/bundle/**/*.test.ts",
         "$TURBO_ROOT$/packages/schema/src/decode/**",
         "!$TURBO_ROOT$/packages/schema/src/decode/**/*.test.ts",
         "$TURBO_ROOT$/packages/math/src/**",
         "!$TURBO_ROOT$/packages/math/src/**/*.test.ts",
+        "$TURBO_ROOT$/packages/catalog/src/connector-license.ts",
         "$TURBO_ROOT$/packages/catalog/src/glb.ts",
         "$TURBO_ROOT$/packages/catalog/src/part-bundle.ts",
-        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts"
+        "$TURBO_ROOT$/packages/domain/src/track/heading-footprints.ts",
+        "$TURBO_ROOT$/packages/domain/src/track/piece-outline.ts"
       ],
       "outputs": ["dist/**", "fixture-bundle/**"],
       "passThroughEnv": ["RUSTUP_HOME", "CARGO_HOME", "RUSTUP_TOOLCHAIN"]
@@ -65,6 +72,11 @@
       "dependsOn": ["^build", "@brr/asset-pipeline#build"]
     },
     "@brr/e2e#e2e": {
+      "dependsOn": ["@brr/web#build"],
+      "cache": false,
+      "passThroughEnv": ["CI", "CHROME", "HELD_OUT_SEED", "LIBRARY_BAKE_REQUEST_LOG"]
+    },
+    "@brr/e2e#e2e:library-bake": {
       "dependsOn": ["@brr/web#build"],
       "cache": false,
       "passThroughEnv": ["CI", "CHROME"]

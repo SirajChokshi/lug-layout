@@ -1,16 +1,16 @@
-import { TrackGraph } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
-import { RAY_FLOATS, SCENE_BACKEND, type ChunkInstances, type ISceneBackend } from "@brr/render";
-import type { SimFrameLayout, TrainSpec } from "@brr/sim";
+import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
+import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
-import { consistVehicles, type ConsistVehicle, type RigidBodyInstances } from "../sim/consist.ts";
+import { consistVehicles } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
-import { withStuds } from "../scene/stud-stream.ts";
-import { RUNNING_GEAR, SIM_CLIENT } from "../tokens.ts";
-import type { PlayModel, PlaySetup } from "./play-models.ts";
-import { edgeLengths, trainStart } from "./train-start.ts";
+import { RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
+import { ConsistBodies } from "../trains/consist-bodies.ts";
+import type { IRailYard } from "../trains/rail-yard.ts";
+import type { RailTrack } from "../trains/rail-track.ts";
+import type { IVehicleIds } from "../trains/vehicle-ids.ts";
 
 export type PlayStatus = "idle" | "loading" | "running" | "error";
 export type FollowCamera = (x: number, z: number) => void;
@@ -23,11 +23,25 @@ export interface PlaySwitchView {
   readonly z: number;
 }
 
+export interface PlayTrainView {
+  readonly index: number;
+  readonly label: string;
+  readonly vehicles: number;
+  readonly lengthLdu: number;
+  readonly speedLduPerS: number;
+  readonly direction: number;
+  readonly derailSpeedLduPerS: number;
+  readonly bogiesOffTrack: number;
+  readonly xLdu: number;
+  readonly zLdu: number;
+}
+
 export interface PlaySnapshot {
   readonly status: PlayStatus;
   readonly error: string | null;
   readonly notice: string | null;
-  readonly trainModel: string | null;
+  readonly trains: ReadonlyArray<PlayTrainView>;
+  readonly driven: number;
   readonly vehicles: number;
   readonly trainLengthLdu: number;
   readonly maxSpeedLduPerS: number;
@@ -46,14 +60,24 @@ export interface PlaySnapshot {
 export interface ITrainPlay {
   subscribe(listener: () => void): () => void;
   snapshot(): PlaySnapshot;
-  chooseTrain(model: string): void;
-  start(setup: PlaySetup): Promise<void>;
+  start(): Promise<void>;
+  refusal(): string | null;
   stop(): void;
   drive(signedSpeedLduPerS: number): void;
+  chooseDriven(train: number): void;
   throwSwitch(index: number): void;
   rerail(): void;
   follow(camera: FollowCamera | null): void;
   click(ndcX: number, ndcY: number): boolean;
+}
+
+export const NO_TRACK_LAID = "Lay some track first, then set a train on it.";
+export const NO_TRAIN_PLACED =
+  "No train stands on the rails. Hold a train over laid track to set it on them.";
+
+export function playRefusal(yard: Pick<IRailYard, "rails" | "trains">): string | null {
+  if (!yard.rails()) return NO_TRACK_LAID;
+  return yard.trains().length === 0 ? NO_TRAIN_PLACED : null;
 }
 
 const MAX_SPEED_LDU_PER_S = 400;
@@ -65,28 +89,21 @@ const DIVERGING = 1;
 const STRAIGHT = 0;
 const OFF_TRACK_YAW_RADIANS = 0.12;
 const OFF_TRACK_ROLL_RADIANS = 0.22;
-const NO_BODY = -1;
-const DIVERGING_PIECE = /-f2$/u;
 
-interface PlacedVehicle {
-  readonly vehicle: ConsistVehicle;
-  readonly body: number;
-  readonly frontBogie: number;
-  readonly rearBogie: number;
-}
-
-interface SwitchSite {
+interface RunningTrain {
   readonly label: string;
-  readonly x: number;
-  readonly z: number;
-  readonly startsDiverging: boolean;
+  readonly bodies: ConsistBodies;
+  readonly firstVehicle: number;
+  readonly lengthLdu: number;
+  targetLduPerS: number;
 }
 
 const IDLE: PlaySnapshot = {
   status: "idle",
   error: null,
   notice: null,
-  trainModel: null,
+  trains: [],
+  driven: 0,
   vehicles: 0,
   trainLengthLdu: 0,
   maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
@@ -106,11 +123,10 @@ const IDLE: PlaySnapshot = {
 export class TrainPlay implements ITrainPlay {
   private readonly listeners = new Set<() => void>();
   private state: PlaySnapshot = IDLE;
-  private placed: PlacedVehicle[] = [];
+  private running: RunningTrain[] = [];
   private layout: SimFrameLayout | null = null;
-  private sites: SwitchSite[] = [];
-  private railTopY = 0;
-  private running = false;
+  private rails: RailTrack | null = null;
+  private looping = false;
   private lastStatusMs = 0;
   private camera: FollowCamera | null = null;
   private readonly ray = new Float64Array(RAY_FLOATS);
@@ -119,6 +135,8 @@ export class TrainPlay implements ITrainPlay {
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
     @inject(SIM_CLIENT) private readonly sim: ISimClient,
     @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
+    @inject(RAIL_YARD) private readonly yard: IRailYard,
+    @inject(VEHICLE_IDS) private readonly vehicleIds: IVehicleIds,
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -135,23 +153,18 @@ export class TrainPlay implements ITrainPlay {
     for (const listener of this.listeners) listener();
   }
 
-  chooseTrain(model: string): void {
-    if (this.state.status === "running" || this.state.status === "loading") return;
-    this.update({ trainModel: model });
-  }
-
-  async start(setup: PlaySetup): Promise<void> {
+  async start(): Promise<void> {
     if (this.state.status === "loading" || this.state.status === "running") return;
     this.update({ status: "loading", error: null, notice: null });
     try {
-      await this.load(setup);
-      this.running = true;
+      await this.load();
+      this.looping = true;
       this.sim.run(true);
       this.update({ status: "running", targetLduPerS: 0 });
       this.followTrain();
       requestAnimationFrame(this.step);
     } catch (error) {
-      this.clearVehicles();
+      this.clearTrains();
       this.update({
         status: "error",
         error: error instanceof Error ? error.message : String(error),
@@ -159,104 +172,108 @@ export class TrainPlay implements ITrainPlay {
     }
   }
 
-  private async load(setup: PlaySetup): Promise<void> {
-    const model =
-      setup.models.find((candidate) => candidate.name === this.state.trainModel) ?? setup.models[0];
-    if (!model) throw new Error("No train is placed on the layout.");
-    const { layout, pieces } = setup.track;
-    if (layout.count === 0) throw new Error("Lay some track first: there is nothing to run on.");
-    const graph = new TrackGraph(layout);
-    await this.runningGear.setModels([model.gear]);
-    const consist = consistVehicles(
-      model.model,
-      model.name,
-      false,
-      setup.track.railPart,
-      this.runningGear.effectiveVehicles(model.name),
+  refusal(): string | null {
+    return playRefusal(this.yard);
+  }
+
+  private async load(): Promise<void> {
+    const rails = this.yard.rails();
+    const placed = this.yard.trains();
+    if (!rails) throw new Error(NO_TRACK_LAID);
+    if (placed.length === 0) throw new Error(NO_TRAIN_PLACED);
+    await this.runningGear.setModels(
+      [...new Set(placed.map((train) => train.model))].map((model) => model.gear),
     );
-    const spec: TrainSpec = {
-      vehicles: consist.map((vehicle) => vehicle.spec),
-      maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
-      accelerationLduPerS2: ACCELERATION_LDU_PER_S2,
-      brakingLduPerS2: BRAKING_LDU_PER_S2,
-    };
-    const trainLengthLdu = spec.vehicles.reduce((sum, vehicle) => sum + vehicle.lengthLdu, 0);
-    this.sites = switchSites(graph, setup);
-    const initialStates = Uint8Array.from(this.sites, (site) =>
-      site.startsDiverging ? DIVERGING : STRAIGHT,
-    );
-    const lengths = edgeLengths(graph, layout, pieces);
-    const start = trainStart(graph, lengths, initialStates, trainLengthLdu);
-    if (!start) {
-      throw new Error(
-        `The ${Math.round(trainLengthLdu / STUD_LDU)}-stud train does not fit on any run of this track. Lay a longer run or pick a shorter train.`,
-      );
-    }
+    const consists = placed.map((train) => ({
+      train,
+      vehicles: consistVehicles(
+        train.model.model,
+        train.model.name,
+        false,
+        rails.railPart,
+        this.runningGear.effectiveVehicles(train.model.name),
+      ),
+    }));
+    const loads: SimTrainLoad[] = consists.map(({ train, vehicles }) => ({
+      spec: {
+        vehicles: vehicles.map((vehicle) => vehicle.spec),
+        maxSpeedLduPerS: MAX_SPEED_LDU_PER_S,
+        accelerationLduPerS2: ACCELERATION_LDU_PER_S2,
+        brakingLduPerS2: BRAKING_LDU_PER_S2,
+      } satisfies TrainSpec,
+      placement: { edge: train.head.edge, offsetLdu: train.head.offsetLdu },
+    }));
+    const vehicleCount = consists.reduce((sum, { vehicles }) => sum + vehicles.length, 0);
     const loaded = await this.sim.load({
-      graph: simTopology(graph),
-      routeSegments: routeSegments(graph, layout, pieces),
-      capacity: { trains: 1, vehicles: consist.length },
-      trains: [{ spec, placement: { edge: start.edge, offsetLdu: start.offsetLdu } }],
+      graph: simTopology(rails.graph),
+      routeSegments: routeSegments(rails.graph, rails.play.layout, rails.play.pieces),
+      capacity: { trains: loads.length, vehicles: vehicleCount },
+      trains: loads,
       autopilotSeed: null,
       openEnds: "derail",
     });
-    for (let s = 0; s < initialStates.length; s++) {
-      if (initialStates[s] === DIVERGING) {
+    for (let s = 0; s < rails.switchStates.length; s++) {
+      if (rails.switchStates[s] === DIVERGING) {
         await this.sim.command({ kind: "switch", switchIndex: s, state: DIVERGING });
       }
     }
     this.layout = loaded.layout;
-    this.railTopY = setup.track.railTopY;
-    this.clearVehicles();
-    let nextBody = 0;
-    const show = (rigid: RigidBodyInstances | null): number => {
-      if (!rigid) return NO_BODY;
-      const id = nextBody++;
-      this.backend.setVehicle(id, rigidChunk(rigid, model, setup));
-      return id;
-    };
-    this.placed = consist.map((vehicle) => ({
-      vehicle,
-      body: show(vehicle.body),
-      frontBogie: show(vehicle.frontBogie),
-      rearBogie: show(vehicle.rearBogie),
-    }));
-    this.update({
-      vehicles: consist.length,
-      trainLengthLdu,
-      switches: this.switchViews(initialStates),
+    this.rails = rails;
+    this.clearTrains();
+    this.yard.park(true);
+    let firstVehicle = 0;
+    this.running = consists.map(({ train, vehicles }) => {
+      const first = firstVehicle;
+      firstVehicle += vehicles.length;
+      return {
+        label: train.model.label,
+        bodies: new ConsistBodies(this.backend, this.vehicleIds, {
+          model: train.model,
+          vehicles,
+          parts: train.consist.parts,
+          colors: train.consist.colors,
+        }),
+        firstVehicle: first,
+        lengthLdu: vehicles.reduce((sum, vehicle) => sum + vehicle.spec.lengthLdu, 0),
+        targetLduPerS: 0,
+      };
     });
+    this.update({ driven: 0, switches: this.switchViews(rails.switchStates) });
     this.poseVehicles();
+    this.publishStatus();
   }
 
   stop(): void {
-    this.running = false;
+    this.looping = false;
     this.sim.run(false);
-    this.clearVehicles();
+    this.clearTrains();
     this.layout = null;
-    this.sites = [];
-    this.update({
-      ...IDLE,
-      trainModel: this.state.trainModel,
-      following: this.state.following,
-    });
+    this.rails = null;
+    this.update({ ...IDLE, following: this.state.following });
   }
 
-  private clearVehicles(): void {
-    for (const placed of this.placed) {
-      for (const body of [placed.body, placed.frontBogie, placed.rearBogie]) {
-        if (body !== NO_BODY) this.backend.deleteVehicle(body);
-      }
-    }
-    this.placed = [];
+  private clearTrains(): void {
+    for (const train of this.running) train.bodies.dispose();
+    this.running = [];
+    this.yard.park(false);
+  }
+
+  chooseDriven(train: number): void {
+    const chosen = this.running[train];
+    if (this.state.status !== "running" || !chosen) return;
+    this.update({ driven: train, targetLduPerS: chosen.targetLduPerS, notice: null });
+    this.publishStatus();
+    this.followTrain();
   }
 
   drive(signedSpeedLduPerS: number): void {
-    if (this.state.status !== "running" || this.state.derailSpeedLduPerS > 0) return;
+    const train = this.running[this.state.driven];
+    if (this.state.status !== "running" || !train || this.state.derailSpeedLduPerS > 0) return;
     const max = this.state.maxSpeedLduPerS;
     const target = Math.min(Math.max(signedSpeedLduPerS, -max), max);
+    train.targetLduPerS = target;
     this.update({ targetLduPerS: target, notice: null });
-    void this.sim.command({ kind: "drive", train: 0, signedSpeedLduPerS: target });
+    void this.sim.command({ kind: "drive", train: this.state.driven, signedSpeedLduPerS: target });
   }
 
   throwSwitch(index: number): void {
@@ -268,15 +285,17 @@ export class TrainPlay implements ITrainPlay {
       this.update({
         notice: accepted
           ? null
-          : `${current.label} is locked: the train is on it or has it reserved ahead.`,
+          : `${current.label} is locked: a train is on it or has it reserved ahead.`,
       });
     });
   }
 
   rerail(): void {
-    if (this.state.status !== "running") return;
+    const train = this.running[this.state.driven];
+    if (this.state.status !== "running" || !train) return;
+    train.targetLduPerS = 0;
     this.update({ targetLduPerS: 0, notice: null });
-    void this.sim.command({ kind: "rerail", train: 0 });
+    void this.sim.command({ kind: "rerail", train: this.state.driven });
   }
 
   follow(camera: FollowCamera | null): void {
@@ -287,35 +306,47 @@ export class TrainPlay implements ITrainPlay {
 
   private followTrain(): void {
     const camera = this.camera;
-    const centre = this.trainCentre();
-    if (camera && centre) camera(centre.x, centre.z);
-  }
-
-  private trainCentre(): { readonly x: number; readonly z: number } | null {
+    const train = this.running[this.state.driven];
+    if (!camera || !train) return;
     const frame = this.sim.latestFrame();
     const layout = this.layout;
-    if (!frame || !layout || layout.vehicles === 0) return null;
-    const first = layout.vehiclePoseStart;
-    const last = first + (layout.vehicles - 1) * layout.vehiclePoseFloats;
-    const data = frame.data;
-    return {
-      x: ((data[first] ?? 0) + (data[last] ?? 0)) / 2,
-      z: ((data[first + 1] ?? 0) + (data[last + 1] ?? 0)) / 2,
-    };
+    if (!frame || !layout) return;
+    camera(this.trainX(frame.data, layout, train), this.trainZ(frame.data, layout, train));
+  }
+
+  private trainX(data: Float64Array, layout: SimFrameLayout, train: RunningTrain): number {
+    return this.trainCentre(data, layout, train, 0);
+  }
+
+  private trainZ(data: Float64Array, layout: SimFrameLayout, train: RunningTrain): number {
+    return this.trainCentre(data, layout, train, 1);
+  }
+
+  private trainCentre(
+    data: Float64Array,
+    layout: SimFrameLayout,
+    train: RunningTrain,
+    axis: number,
+  ): number {
+    const vehicles = train.bodies.consist.vehicles.length;
+    const first = layout.vehiclePoseStart + train.firstVehicle * layout.vehiclePoseFloats;
+    const last = first + (vehicles - 1) * layout.vehiclePoseFloats;
+    return ((data[first + axis] ?? 0) + (data[last + axis] ?? 0)) / 2;
   }
 
   click(ndcX: number, ndcY: number): boolean {
-    if (this.state.status !== "running") return false;
+    const rails = this.rails;
+    if (this.state.status !== "running" || !rails) return false;
     this.backend.rayThrough(ndcX, ndcY, this.ray);
     const directionY = this.ray[4] ?? 0;
     if (directionY >= 0) return false;
-    const t = (this.railTopY - (this.ray[1] ?? 0)) / directionY;
+    const t = (rails.railTopY - (this.ray[1] ?? 0)) / directionY;
     const x = (this.ray[0] ?? 0) + (this.ray[3] ?? 0) * t;
     const z = (this.ray[2] ?? 0) + (this.ray[5] ?? 0) * t;
     let best = -1;
     let bestDistance = SWITCH_PICK_RADIUS_LDU;
-    for (let s = 0; s < this.sites.length; s++) {
-      const site = this.sites[s];
+    for (let s = 0; s < rails.sites.length; s++) {
+      const site = rails.sites[s];
       if (!site) continue;
       const distance = Math.hypot(site.x - x, site.z - z);
       if (distance <= bestDistance) {
@@ -329,7 +360,7 @@ export class TrainPlay implements ITrainPlay {
   }
 
   private readonly step = (): void => {
-    if (!this.running) return;
+    if (!this.looping) return;
     this.poseVehicles();
     this.followTrain();
     const now = performance.now();
@@ -345,29 +376,49 @@ export class TrainPlay implements ITrainPlay {
     const layout = this.layout;
     if (!frame || !layout) return;
     const data = frame.data;
-    let off = 0;
-    for (let v = 0; v < layout.vehicles; v++) off += data[layout.bogiesOffTrackStart + v] ?? 0;
+    const trains = this.running.map((train, t) => {
+      let off = 0;
+      const end = train.firstVehicle + train.bodies.consist.vehicles.length;
+      for (let v = train.firstVehicle; v < end; v++) {
+        off += data[layout.bogiesOffTrackStart + v] ?? 0;
+      }
+      return {
+        index: t,
+        label: train.label,
+        vehicles: train.bodies.consist.vehicles.length,
+        lengthLdu: train.lengthLdu,
+        speedLduPerS: data[layout.trainSpeedStart + t] ?? 0,
+        direction: data[layout.trainDirectionStart + t] ?? 1,
+        derailSpeedLduPerS: data[layout.trainDerailSpeedStart + t] ?? 0,
+        bogiesOffTrack: off,
+        xLdu: this.trainX(data, layout, train),
+        zLdu: this.trainZ(data, layout, train),
+      };
+    });
     const states = data.subarray(layout.switchStart, layout.switchStart + layout.switches);
     const switches = this.state.switches.some(
       (view, s) => view.diverging !== ((states[s] ?? 0) === DIVERGING),
     )
       ? this.switchViews(states)
       : this.state.switches;
-    const centre = this.trainCentre();
+    const driven = trains[this.state.driven];
     this.update({
-      trainXLdu: centre?.x ?? 0,
-      trainZLdu: centre?.z ?? 0,
-      speedLduPerS: data[layout.trainSpeedStart] ?? 0,
-      direction: data[layout.trainDirectionStart] ?? 1,
-      derailSpeedLduPerS: data[layout.trainDerailSpeedStart] ?? 0,
-      bogiesOffTrack: off,
+      trains,
+      vehicles: driven?.vehicles ?? 0,
+      trainLengthLdu: driven?.lengthLdu ?? 0,
+      trainXLdu: driven?.xLdu ?? 0,
+      trainZLdu: driven?.zLdu ?? 0,
+      speedLduPerS: driven?.speedLduPerS ?? 0,
+      direction: driven?.direction ?? 1,
+      derailSpeedLduPerS: driven?.derailSpeedLduPerS ?? 0,
+      bogiesOffTrack: driven?.bogiesOffTrack ?? 0,
       switches,
       tick: frame.tick,
     });
   }
 
   private switchViews(states: ArrayLike<number>): PlaySwitchView[] {
-    return this.sites.map((site, index) => ({
+    return (this.rails?.sites ?? []).map((site, index) => ({
       index,
       label: site.label,
       diverging: (states[index] ?? 0) === DIVERGING,
@@ -379,99 +430,34 @@ export class TrainPlay implements ITrainPlay {
   private poseVehicles(): void {
     const frame = this.sim.latestFrame();
     const layout = this.layout;
-    if (!frame || !layout) return;
+    const rails = this.rails;
+    if (!frame || !layout || !rails) return;
     const data = frame.data;
-    for (let v = 0; v < this.placed.length; v++) {
-      const placed = this.placed[v];
-      if (!placed) continue;
-      const o = layout.vehiclePoseStart + v * layout.vehiclePoseFloats;
-      const off = data[layout.bogiesOffTrackStart + v] ?? 0;
-      const onRails = this.railTopY - placed.vehicle.railTopY;
-      const onGround = -placed.vehicle.railTopY;
-      const leadingY = off >= 1 ? onGround : onRails;
-      const trailingY = off >= 2 ? onGround : onRails;
-      const side = v % 2 === 0 ? 1 : -1;
-      const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
-      const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
-      const leadingIsFront = (data[layout.trainFacingStart] ?? 1) > 0;
-      const frontY = leadingIsFront ? leadingY : trailingY;
-      const rearY = leadingIsFront ? trailingY : leadingY;
-      const spacing = Math.hypot(
-        (data[o + 3] ?? 0) - (data[o + 6] ?? 0),
-        (data[o + 4] ?? 0) - (data[o + 7] ?? 0),
-      );
-      this.backend.setVehiclePose(
-        placed.body,
-        data[o] ?? 0,
-        (frontY + rearY) / 2,
-        data[o + 1] ?? 0,
-        (data[o + 2] ?? 0) + kink,
-        spacing === 0 ? 0 : Math.atan2(frontY - rearY, spacing),
-        roll,
-      );
-      this.poseBogie(placed.frontBogie, data, o + 3, frontY, kink, roll);
-      this.poseBogie(placed.rearBogie, data, o + 6, rearY, kink, roll);
+    for (let t = 0; t < this.running.length; t++) {
+      const train = this.running[t];
+      if (!train) continue;
+      const leadingIsFront = (data[layout.trainFacingStart + t] ?? 1) > 0;
+      const count = train.bodies.consist.vehicles.length;
+      for (let k = 0; k < count; k++) {
+        const v = train.firstVehicle + k;
+        const off = data[layout.bogiesOffTrackStart + v] ?? 0;
+        const onRails = rails.railTopY - train.bodies.railTopY(k);
+        const onGround = -train.bodies.railTopY(k);
+        const leadingY = off >= 1 ? onGround : onRails;
+        const trailingY = off >= 2 ? onGround : onRails;
+        const side = v % 2 === 0 ? 1 : -1;
+        const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
+        const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
+        train.bodies.pose(
+          k,
+          data,
+          layout.vehiclePoseStart + v * layout.vehiclePoseFloats,
+          leadingIsFront ? leadingY : trailingY,
+          leadingIsFront ? trailingY : leadingY,
+          kink,
+          roll,
+        );
+      }
     }
   }
-
-  private poseBogie(
-    body: number,
-    data: Float64Array,
-    o: number,
-    y: number,
-    kink: number,
-    roll: number,
-  ): void {
-    if (body === NO_BODY) return;
-    this.backend.setVehiclePose(
-      body,
-      data[o] ?? 0,
-      y,
-      data[o + 1] ?? 0,
-      (data[o + 2] ?? 0) + kink,
-      0,
-      roll,
-    );
-  }
-}
-
-function switchSites(graph: TrackGraph, setup: PlaySetup): SwitchSite[] {
-  const { layout, pieces } = setup.track;
-  const sites: SwitchSite[] = [];
-  for (let s = 0; s < graph.switchCount; s++) {
-    const placement = graph.endPlacement[graph.switchEnd[s] ?? 0] ?? 0;
-    const piece = pieces[layout.piece(placement)];
-    let x = 0;
-    let z = 0;
-    let ends = 0;
-    for (let end = 0; end < graph.endCount; end++) {
-      if (graph.endPlacement[end] !== placement) continue;
-      x += graph.endXLdu[end] ?? 0;
-      z += graph.endZLdu[end] ?? 0;
-      ends++;
-    }
-    sites.push({
-      label: `Switch ${s + 1} (${piece?.title ?? "switch"})`,
-      x: ends === 0 ? 0 : x / ends,
-      z: ends === 0 ? 0 : z / ends,
-      startsDiverging: DIVERGING_PIECE.test(piece?.id ?? ""),
-    });
-  }
-  return sites;
-}
-
-function rigidChunk(rigid: RigidBodyInstances, model: PlayModel, setup: PlaySetup): ChunkInstances {
-  const count = rigid.instances.length;
-  const partIndex = new Uint16Array(count);
-  const colorIndex = new Uint16Array(count);
-  for (let k = 0; k < count; k++) {
-    const i = rigid.instances[k] ?? 0;
-    partIndex[k] = model.model.partIndex[i] ?? 0;
-    colorIndex[k] = model.colorIndex[i] ?? 0;
-  }
-  return withStuds(
-    { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices: rigid.matrices },
-    setup.parts,
-    setup.colors,
-  );
 }

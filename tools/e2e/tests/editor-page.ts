@@ -1,7 +1,10 @@
+import type { HoverMateCount, PlacementHover, PlacementMode } from "@brr/client";
+import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fitGroundMap, type GroundMap, type GroundSample } from "./ground-map.ts";
+import { ServedBake } from "./served-bake.ts";
 
 export const STUD = 20;
 export const TRACK_ITEM = "track:lego-9v";
@@ -17,11 +20,30 @@ const QUARTER_TURNS = 4;
 const SETTLED_STATUS = /^(?:ready|error)$/u;
 const STUDS_META = /(\d+)×(\d+)/u;
 const MODEL_IMPORT_TIMEOUT_MS = 180_000;
+const HOVER_SETTLE_TIMEOUT_MS = 5_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
+const PLACEABLE = "placeable";
+
+function pinnedLdrawPath(url: string): string | undefined {
+  return LDRAW_PATH.exec(decodeURIComponent(new URL(url).pathname))?.groups?.["path"];
+}
+
+export function pinnedLdrawFetch(): FetchFunction {
+  return async (url) => {
+    const path = pinnedLdrawPath(url);
+    const bytes =
+      path === undefined ? null : await readFile(new URL(path, PINNED_LDRAW)).catch(() => null);
+    return bytes === null ? new Response(null, { status: HTTP_NOT_FOUND }) : new Response(bytes);
+  };
+}
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
 const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
+
+export interface RawLibrary {
+  served(): number;
+}
 
 export interface ScreenPoint {
   readonly sx: number;
@@ -59,6 +81,20 @@ export interface TrackEnd {
   readonly xLdu: number;
   readonly zLdu: number;
   readonly heading: number;
+}
+
+export interface LaidTrackPiece {
+  readonly index: number;
+  readonly ref: string;
+  readonly heading: number;
+  readonly position: ReadonlyArray<string>;
+  readonly yPlates: number;
+}
+
+export interface TrackChoice {
+  readonly kind: string;
+  readonly pieces: number;
+  readonly joins: boolean;
 }
 
 export interface ModelTrack {
@@ -109,19 +145,102 @@ interface PlacementColumns {
   readonly rot: ReadonlyArray<number>;
 }
 
+export interface TrackRoute {
+  readonly from: TrackEnd;
+  readonly to: TrackEnd;
+}
+
+export interface CrossingRamp {
+  readonly part: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly rot: number;
+  readonly studMates: number;
+}
+
+export interface LevelCrossing {
+  readonly tracks: ReadonlyArray<number>;
+  readonly roads: ReadonlyArray<number>;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRamp>;
+}
+
+export interface DumpedMateCount extends Omit<HoverMateCount, "jointIds"> {
+  readonly jointIds: ReadonlyArray<number>;
+}
+
+export interface DumpedPlacementHover extends Omit<PlacementHover, "mates" | "turnMates"> {
+  readonly mates: ReadonlyArray<DumpedMateCount>;
+  readonly turnMates: ReadonlyArray<DumpedMateCount>;
+}
+
+export interface HoverState {
+  readonly x: number;
+  readonly z: number;
+  readonly yPlates: number;
+  readonly placement: DumpedPlacementHover | null;
+}
+
 interface EditState {
+  readonly placementMode: PlacementMode;
+  readonly placementModeOverride: boolean;
+  readonly hover: HoverState | null;
   readonly world: {
+    readonly covers: ReadonlyArray<{ readonly id: string }>;
+    readonly frameShifts: ReadonlyArray<readonly [number, number, number]>;
     readonly refs: ReadonlyArray<string>;
     readonly placements: PlacementColumns;
+    readonly laidTrack: ReadonlyArray<LaidTrackPiece>;
     readonly trackEnds: ReadonlyArray<TrackEnd>;
     readonly bakes: ReadonlyArray<ModelBake>;
     readonly studChecks: number;
+    readonly crossings: ReadonlyArray<LevelCrossing>;
+  };
+  readonly routes: ReadonlyArray<TrackRoute>;
+}
+
+export interface PlanRect {
+  readonly x: number;
+  readonly z: number;
+  readonly width: number;
+  readonly depth: number;
+}
+
+export interface PlanRegion {
+  readonly id: string;
+  readonly name: string;
+  readonly originChunkX: number;
+  readonly originChunkZ: number;
+  readonly maxOverhangMm: number;
+  readonly footprint: {
+    readonly roomWidthMm: number;
+    readonly roomDepthMm: number;
+    readonly tables: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly rect: PlanRect;
+      readonly heightMm: number;
+    }>;
+    readonly obstacles: ReadonlyArray<{
+      readonly id: string;
+      readonly name: string;
+      readonly rect: PlanRect;
+    }>;
   };
 }
 
+export interface PlanRow {
+  readonly rule: string;
+  readonly severity: string;
+  readonly message: string;
+}
+
 interface PlanState {
+  readonly plans: ReadonlyArray<PlanRegion>;
   readonly placements: ReadonlyArray<PlanFootprint>;
   readonly tableTopY: number;
+  readonly checks: ReadonlyArray<{ readonly issues: ReadonlyArray<PlanRow> }>;
 }
 
 function column(values: ReadonlyArray<number>, index: number): number {
@@ -138,6 +257,22 @@ export function byPosition(a: Pose, b: Pose): number {
   return a.x - b.x || a.z - b.z || a.yPlates - b.yPlates;
 }
 
+export async function startEmpty(page: Page): Promise<void> {
+  const welcome = page.locator(".welcome");
+  if ((await welcome.count()) === 0) return;
+  await welcome.locator('[data-action="start-empty"]').click();
+  await expect(welcome).toHaveCount(0);
+}
+
+const Z_COEFFICIENT = 4;
+
+export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz: number): string[] {
+  return position.map((coefficient, k) => {
+    const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
+    return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
+  });
+}
+
 export class EditorPage {
   readonly root: Locator;
   private readonly canvas: Locator;
@@ -145,7 +280,10 @@ export class EditorPage {
   private readonly samples: GroundSample[] = [];
   private map: GroundMap | null = null;
 
-  private constructor(readonly page: Page) {
+  private constructor(
+    readonly page: Page,
+    private readonly bake: ServedBake,
+  ) {
     this.root = page.locator(".editor");
     this.canvas = page.locator("canvas.scene");
     this.stateDump = page.locator("#edit-state");
@@ -154,8 +292,9 @@ export class EditorPage {
   static async open(page: Page, query = ""): Promise<EditorPage> {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    const bake = await ServedBake.install(page.context());
     await page.goto(`/?api=webgl2&state=1${query}`);
-    const editor = new EditorPage(page);
+    const editor = new EditorPage(page, bake);
     await expect(editor.root).toHaveAttribute("data-status", SETTLED_STATUS, {
       timeout: READY_TIMEOUT_MS,
     });
@@ -163,6 +302,7 @@ export class EditorPage {
     expect(await editor.root.getAttribute("data-status"), [...shown, ...errors].join("\n")).toBe(
       "ready",
     );
+    await startEmpty(page);
     return editor;
   }
 
@@ -293,6 +433,22 @@ export class EditorPage {
         { message: "the camera's view holds still across consecutive frames" },
       )
       .toBe(true);
+  }
+
+  async goTo(target: LatticePoint): Promise<void> {
+    await this.page.getByLabel("Go to x (LDU)").fill(String(target.x));
+    await this.page.getByLabel("Go to z (LDU)").fill(String(target.z));
+    await this.page.getByRole("button", { name: "Go to x, z" }).click();
+    await this.settle();
+    this.forgetView();
+  }
+
+  async zoomAt(target: LatticePoint, wheelDelta: number): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.mouse.move(point.sx, point.sy);
+    await this.page.mouse.wheel(0, wheelDelta);
+    await this.viewAtRest();
+    this.forgetView();
   }
 
   async zoom(wheelDelta: number): Promise<void> {
@@ -443,6 +599,60 @@ export class EditorPage {
     return this.trackCounts();
   }
 
+  async strokeTrack(points: ReadonlyArray<LatticePoint>): Promise<TrackCounts> {
+    const [first, ...rest] = points;
+    if (!first) throw new Error("a stroke has at least one point");
+    const start = await this.screenOf(first);
+    const map = await this.groundMap();
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (const point of rest) {
+      const at = map.screenOf(point.x, point.z);
+      await this.page.mouse.move(at.sx, at.sy);
+    }
+    await this.page.mouse.up();
+    await this.settle();
+    return this.trackCounts();
+  }
+
+  async toolHint(): Promise<string> {
+    return (await this.page.locator(".tool-hud").innerText()).replaceAll("\n", " ");
+  }
+
+  async dragFrom(from: LatticePoint, ...through: ReadonlyArray<LatticePoint>): Promise<void> {
+    const points = [await this.screenOf(from)];
+    for (const target of through) points.push(await this.screenOf(target));
+    const [start] = points;
+    if (!start) throw new Error("a drag needs a start");
+    await this.page.mouse.move(start.sx, start.sy);
+    await this.settle();
+    await this.page.mouse.down();
+    for (let leg = 1; leg < points.length; leg++) {
+      const a = points[leg - 1] ?? start;
+      const b = points[leg] ?? start;
+      for (let step = 1; step <= DRAG_STEPS; step++) {
+        const t = step / DRAG_STEPS;
+        await this.page.mouse.move(a.sx + (b.sx - a.sx) * t, a.sy + (b.sy - a.sy) * t);
+      }
+    }
+    await this.settle();
+    await this.page.mouse.up();
+    await this.settle();
+  }
+
+  async shiftClickAt(target: LatticePoint): Promise<void> {
+    const point = await this.screenOf(target);
+    await this.page.keyboard.down("Shift");
+    await this.page.mouse.click(point.sx, point.sy);
+    await this.page.keyboard.up("Shift");
+    await this.settle();
+  }
+
+  async selectionCount(): Promise<number> {
+    return Number(await this.root.getAttribute("data-selection-count"));
+  }
+
   async trackCounts(): Promise<TrackCounts> {
     const panel = this.page.locator("section.track-panel");
     const read = async (name: string): Promise<string> =>
@@ -452,6 +662,16 @@ export class EditorPage {
       openEnds: Number(await read("open-ends")),
       joins: Number(await read("joins")),
       lastCommit: await read("last-commit"),
+    };
+  }
+
+  async trackChoice(): Promise<TrackChoice | null> {
+    const strip = this.page.locator("section.track-extend-panel .track-extend");
+    if ((await strip.count()) === 0) return null;
+    return {
+      kind: (await strip.getAttribute("data-choice")) ?? "",
+      pieces: Number(await strip.getAttribute("data-choice-pieces")),
+      joins: (await strip.getAttribute("data-choice-joins")) === "true",
     };
   }
 
@@ -497,32 +717,138 @@ export class EditorPage {
     return read();
   }
 
-  async serveLdrawLibrary(): Promise<void> {
+  async serveLdrawLibrary(): Promise<RawLibrary> {
+    let served = 0;
     await this.page.context().route(GITHUB_RAW, async (route) => {
-      const path = LDRAW_PATH.exec(decodeURIComponent(new URL(route.request().url()).pathname))
-        ?.groups?.["path"];
+      const path = pinnedLdrawPath(route.request().url());
       const text =
         path === undefined
           ? undefined
           : await readFile(new URL(path, PINNED_LDRAW), "utf8").catch(() => undefined);
+      if (text !== undefined) served += 1;
       await (text === undefined
         ? route.fulfill({ status: HTTP_NOT_FOUND })
         : route.fulfill({ status: 200, body: text }));
     });
+    return { served: () => served };
+  }
+
+  blockLibraryBake(): () => void {
+    return this.bake.block();
   }
 
   async importModel(file: string): Promise<ModelImport> {
     await this.page.locator("input.model-file-import").setInputFiles(file);
-    const name = basename(file);
+    return this.importOutcome(basename(file));
+  }
+
+  private async importOutcome(name: string): Promise<ModelImport> {
     const status = this.page.locator(
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
     await expect(status).toHaveCount(1, { timeout: MODEL_IMPORT_TIMEOUT_MS });
+    if ((await status.getAttribute("data-status")) === PLACEABLE) this.bake.expectIndexServed();
     return {
       status: (await status.getAttribute("data-status")) ?? "",
       item: (await status.getAttribute("data-item")) ?? "",
       text: (await status.locator("p").first().textContent()) ?? "",
     };
+  }
+
+  async searchPalette(query: string): Promise<void> {
+    await this.page.locator(".palette-search").fill(query);
+    await expect(this.page.locator(".palette-library")).toHaveAttribute(
+      "data-library-status",
+      "ready",
+      { timeout: READY_TIMEOUT_MS },
+    );
+  }
+
+  async libraryParts(): Promise<ReadonlyArray<string>> {
+    return this.page
+      .locator(".palette-library [data-library-part]")
+      .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-library-part") ?? ""));
+  }
+
+  async pickLibraryPart(part: string, color: number): Promise<ModelImport> {
+    const swatch = this.page.locator(`.palette-library [data-library-item="${part}@${color}"]`);
+    const partInColor = await swatch.getAttribute("aria-label");
+    if (partInColor === null) throw new Error(`the library offers no ${part} in colour ${color}`);
+    await swatch.click();
+    return this.importOutcome(`${part} ${partInColor}.ldr`);
+  }
+
+  async refs(): Promise<ReadonlyArray<string>> {
+    return (await this.editState()).world.refs;
+  }
+
+  async hoverPlacement(): Promise<DumpedPlacementHover | null> {
+    return (await this.editState()).hover?.placement ?? null;
+  }
+
+  async hoverState(): Promise<HoverState | null> {
+    return (await this.editState()).hover;
+  }
+
+  async hoverIn(mode: PlacementMode): Promise<HoverState> {
+    await expect
+      .poll(async () => (await this.hoverPlacement())?.mode ?? null, {
+        message: `the hover is evaluated in ${mode} mode`,
+      })
+      .toBe(mode);
+    const aimed = await this.hoverState();
+    await expect
+      .poll(
+        async () => {
+          const placement = await this.hoverPlacement();
+          if (!placement) return "no placement hover";
+          return [
+            ...(placement.settled ? [] : ["settled"]),
+            ...(placement.turnSettled ? [] : ["turnSettled"]),
+          ].join(" and ");
+        },
+        {
+          message: `the ${mode} hover at cell (${aimed?.x}, ${aimed?.z}) settles within ${HOVER_SETTLE_TIMEOUT_MS} ms; received names the flags still false`,
+          timeout: HOVER_SETTLE_TIMEOUT_MS,
+        },
+      )
+      .toBe("");
+    const hover = await this.hoverState();
+    if (!hover?.placement) throw new Error(`no placement hover in ${mode} mode`);
+    return hover;
+  }
+
+  placementSwitch(): Locator {
+    return this.page.getByRole("switch", { name: "Precise placement" });
+  }
+
+  async placementModes(): Promise<{
+    readonly mode: PlacementMode;
+    readonly override: boolean;
+  }> {
+    const state = await this.editState();
+    return { mode: state.placementMode, override: state.placementModeOverride };
+  }
+
+  async hoverPlacementAt(item: string, target: LatticePoint): Promise<ScreenPoint> {
+    await this.escape();
+    const point = await this.screenOf(target);
+    await this.choose(item);
+    await this.page.mouse.move(point.sx, point.sy);
+    await expect
+      .poll(() => this.hoverPlacement(), { message: `${item} has a placement hover` })
+      .not.toBeNull();
+    return point;
+  }
+
+  async frameShift(item: string): Promise<readonly [number, number, number]> {
+    const { world } = await this.editState();
+    const index = world.covers.findIndex(
+      (cover) => item === cover.id || item.startsWith(`${cover.id}@`),
+    );
+    const shift = world.frameShifts[index];
+    if (index < 0 || !shift) throw new Error(`${item} has no loaded placeable`);
+    return shift;
   }
 
   async bakes(): Promise<ReadonlyArray<ModelBake>> {
@@ -543,8 +869,30 @@ export class EditorPage {
       .toSorted(byPosition);
   }
 
+  async crossings(): Promise<ReadonlyArray<LevelCrossing>> {
+    return (await this.editState()).world.crossings;
+  }
+
+  async unsupportedTrack(): Promise<number> {
+    const panel = this.page.locator("section.track-panel");
+    await expect(panel).not.toHaveAttribute("data-unsupported", "");
+    return Number(await panel.getAttribute("data-unsupported"));
+  }
+
   async trackEnds(): Promise<ReadonlyArray<TrackEnd>> {
     return (await this.editState()).world.trackEnds;
+  }
+
+  async trackRoutes(): Promise<ReadonlyArray<TrackRoute>> {
+    return (await this.editState()).routes;
+  }
+
+  async trainsOnRails(): Promise<number> {
+    return Number(await this.page.locator("section.play-panel").getAttribute("data-trains"));
+  }
+
+  async laidTrack(): Promise<ReadonlyArray<LaidTrackPiece>> {
+    return (await this.editState()).world.laidTrack;
   }
 
   private async planState(): Promise<PlanState> {
@@ -562,6 +910,26 @@ export class EditorPage {
     return (await this.planState()).tableTopY;
   }
 
+  async plans(): Promise<ReadonlyArray<PlanRegion>> {
+    return (await this.planState()).plans;
+  }
+
+  async planRows(): Promise<ReadonlyArray<PlanRow>> {
+    const [check] = (await this.planState()).checks;
+    return (check?.issues ?? []).map(({ rule, severity, message }) => ({
+      rule,
+      severity,
+      message,
+    }));
+  }
+
+  async drawTable(from: LatticePoint, to: LatticePoint): Promise<void> {
+    await this.escape();
+    await this.press("b");
+    await this.dragFrom(from, to);
+    await this.press("b");
+  }
+
   async counter(
     name:
       | "refused"
@@ -574,6 +942,13 @@ export class EditorPage {
   ): Promise<number> {
     return Number(await this.root.getAttribute(`data-${name}`));
   }
+}
+
+export function routeMiddle(route: TrackRoute): LatticePoint {
+  return {
+    x: Math.round((route.from.xLdu + route.to.xLdu) / 2 / STUD) * STUD,
+    z: Math.round((route.from.zLdu + route.to.zLdu) / 2 / STUD) * STUD,
+  };
 }
 
 export function nearestLattice(end: TrackEnd): LatticePoint {

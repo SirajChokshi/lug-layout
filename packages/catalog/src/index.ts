@@ -1,6 +1,9 @@
+export { AssetResponseError } from "./asset-response-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
+export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
+export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
 export {
   ConnectorRecords,
   partConnectors,
@@ -34,6 +37,7 @@ export type {
   ModelBundle,
   ModelRecord,
   ModelCells,
+  InstanceFooting,
   ModelStudCover,
   ModelFarMesh,
   ModelVoxels,
@@ -55,5 +59,8 @@ export {
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,
   CATALOG_API_BASE_URL,
+  FETCH_POOL_POLICY,
+  LIBRARY_PART_CATALOG,
+  NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
 } from "./tokens.ts";

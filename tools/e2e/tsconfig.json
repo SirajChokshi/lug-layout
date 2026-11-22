@@ -2,7 +2,14 @@
   "extends": "@brr/config/tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2024", "DOM"],
-    "types": ["node"]
+    "types": ["@webgpu/types", "node"]
   },
-  "include": ["src", "tests", "playwright.config.ts", "held-out.config.ts"]
+  "include": [
+    "src",
+    "tests",
+    "library-bake-tests",
+    "playwright.config.ts",
+    "playwright.library-bake.config.ts",
+    "held-out.config.ts"
+  ]
 }

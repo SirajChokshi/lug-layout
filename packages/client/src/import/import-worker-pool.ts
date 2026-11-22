@@ -3,7 +3,10 @@ import type {
   ImportWorkerPlaced,
   ImportWorkerRequest,
   ImportWorkerResponse,
+  LibraryBakeSource,
   PlacementListener,
+  RollingDiagnosticsRequest,
+  RollingDiagnosticsRows,
 } from "@brr/import";
 import { IMPORT_PROTOCOL, RpcEndpoint, type BakeHelperHandoff } from "@brr/rpc";
 import { inject, injectable } from "inversify";
@@ -19,12 +22,16 @@ export interface IImportWorkerPool {
     transfer: Transferable[],
     onPlaced?: PlacementListener,
   ): Promise<ImportResult>;
+  rollingDiagnostics(
+    libraryBake: LibraryBakeSource,
+    partIds: ReadonlyArray<string>,
+  ): Promise<RollingDiagnosticsRows>;
 }
 
 interface Primary {
   readonly worker: Worker;
   readonly endpoint: RpcEndpoint<
-    ImportWorkerRequest | BakeHelperHandoff,
+    ImportWorkerRequest | RollingDiagnosticsRequest | BakeHelperHandoff,
     ImportWorkerResponse | ImportWorkerPlaced
   >;
   readonly crashed: Promise<never>;
@@ -86,6 +93,8 @@ export class ImportWorkerPool implements IImportWorkerPool {
           throw new Error(response.message);
         case "placed":
           throw new Error("the import worker replied with a placement instead of a result");
+        case "rollingDiagnostics":
+          throw new Error("the import worker answered an import with rolling diagnostics");
         default: {
           const unhandled: never = response;
           throw new Error(`unhandled import worker response ${String(unhandled)}`);
@@ -94,6 +103,30 @@ export class ImportWorkerPool implements IImportWorkerPool {
     } finally {
       this.listening = null;
       this.scheduleIdleRelease();
+    }
+  }
+
+  async rollingDiagnostics(
+    libraryBake: LibraryBakeSource,
+    partIds: ReadonlyArray<string>,
+  ): Promise<RollingDiagnosticsRows> {
+    const primary = this.primary ?? this.startPrimary();
+    const response = await Promise.race([
+      primary.endpoint.request({ kind: "rollingDiagnostics", libraryBake, partIds }, []),
+      primary.crashed,
+    ]);
+    switch (response.kind) {
+      case "rollingDiagnostics":
+        return response.rows;
+      case "failed":
+        throw new Error(response.message);
+      case "imported":
+      case "placed":
+        throw new Error("the import worker answered a rolling diagnostics request with an import");
+      default: {
+        const unhandled: never = response;
+        throw new Error(`unhandled import worker response ${String(unhandled)}`);
+      }
     }
   }
 

@@ -1,13 +1,18 @@
+import { parseGlb } from "@brr/catalog/glb";
 import {
   LIBRARY_BAKE_BUCKETS,
   LIBRARY_BAKE_FORMAT,
   libraryBakeBucket,
+  ROLLING_STEPS_PER_LDU,
+  rollingDiagnosticsFit,
+  UnreadBandDiagnostic,
   type GithubMirror,
   type LibraryBakeBucket,
   type LibraryBakeIndex,
   type LibraryBakeOptions,
   type LibraryBakePart,
   type LibraryBakePin,
+  type RollingDiagnosticsFile,
 } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import { createHash } from "node:crypto";
@@ -15,12 +20,12 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { dirname, join } from "node:path";
 import * as v from "valibot";
 import { contentAddressedName } from "../publish.ts";
-import { isCaLicense } from "../verify/license-audit.ts";
 
 export const LIBRARY_BAKE_INDEX = "library-bake.json";
 export const LIBRARY_BAKE_PIN = "tools/asset-pipeline/library-bake.json";
 const LISTING = /^shard-\d+-of-\d+\.json$/u;
 const BUCKET_FOLDER = "buckets";
+const DIAGNOSTICS_FOLDER = "rolling-diagnostics";
 const BUCKET_DIGITS = 3;
 
 const CompiledListing = v.strictObject({
@@ -29,6 +34,7 @@ const CompiledListing = v.strictObject({
   record: v.string(),
   glb: v.string(),
   licenses: v.array(v.string()),
+  rollingDiagnostics: v.optional(v.pipe(v.array(UnreadBandDiagnostic), v.minLength(1))),
 });
 const FailedListing = v.strictObject({ id: v.string(), part: v.string(), failed: v.string() });
 const ShardListing = v.array(v.union([CompiledListing, FailedListing]));
@@ -75,9 +81,26 @@ async function writeAddressed(out: string, file: string, text: string): Promise<
   return name;
 }
 
+type DiagnosticsRows = RollingDiagnosticsFile["parts"];
+
+async function servedRowsFit(
+  out: string,
+  glb: string,
+  rows: DiagnosticsRows[string] | undefined,
+): Promise<boolean> {
+  const bytes = await readFile(join(out, glb));
+  const buffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  ) as ArrayBuffer;
+  const bands = parseGlb(buffer, glb).document.extras.rolling?.unread ?? [];
+  return rows === undefined ? bands.length === 0 : rollingDiagnosticsFit(bands, rows);
+}
+
 async function writeBuckets(
   out: string,
   parts: Readonly<Record<string, LibraryBakePart>>,
+  diagnostics: Readonly<DiagnosticsRows>,
 ): Promise<string[]> {
   const buckets: Array<Record<string, LibraryBakePart>> = Array.from(
     { length: LIBRARY_BAKE_BUCKETS },
@@ -88,11 +111,25 @@ async function writeBuckets(
     if (bucket !== undefined) bucket[id] = part;
   }
   await mkdir(join(out, BUCKET_FOLDER), { recursive: true });
+  await mkdir(join(out, DIAGNOSTICS_FOLDER), { recursive: true });
   const files: string[] = [];
   for (const [bucket, bucketParts] of buckets.entries()) {
+    const stem = String(bucket).padStart(BUCKET_DIGITS, "0");
+    const rows: DiagnosticsRows = {};
+    for (const id of Object.keys(bucketParts)) {
+      const partRows = diagnostics[id];
+      if (partRows !== undefined) rows[id] = partRows;
+    }
     const value: LibraryBakeBucket = { bucket, parts: bucketParts };
-    const file = `${BUCKET_FOLDER}/${String(bucket).padStart(BUCKET_DIGITS, "0")}.json`;
-    files.push(await writeAddressed(out, file, JSON.stringify(value)));
+    if (Object.keys(rows).length > 0) {
+      const file: RollingDiagnosticsFile = { stepsPerLdu: ROLLING_STEPS_PER_LDU, parts: rows };
+      const text = JSON.stringify(file);
+      value.rollingDiagnostics = {
+        file: await writeAddressed(out, `${DIAGNOSTICS_FOLDER}/${stem}.json`, text),
+        sha256: sha256(text),
+      };
+    }
+    files.push(await writeAddressed(out, `${BUCKET_FOLDER}/${stem}.json`, JSON.stringify(value)));
   }
   return files;
 }
@@ -102,8 +139,8 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   const parts: Record<string, LibraryBakePart> = {};
+  const diagnostics: DiagnosticsRows = {};
   const failed: Record<string, string> = {};
-  const refused: Array<{ part: string; licenses: ReadonlyArray<string> }> = [];
   const licenses = new Set<string>();
   const listed = await listings(build);
   for (const listing of listed) {
@@ -111,22 +148,26 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
       failed[listing.id] = listing.failed;
       continue;
     }
-    if (!listing.licenses.every(isCaLicense)) {
-      refused.push({ part: listing.id, licenses: listing.licenses });
-      continue;
-    }
     for (const license of listing.licenses) licenses.add(license);
-    parts[listing.id] = {
+    const part = {
       record: await moveAddressed(build, out, listing.record),
       glb: await moveAddressed(build, out, listing.glb),
     };
+    if (!(await servedRowsFit(out, part.glb, listing.rollingDiagnostics))) {
+      throw new Error(
+        `${listing.id}: its rolling diagnostics rows don't match its GLB's unread bands index by index`,
+      );
+    }
+    parts[listing.id] = part;
+    if (listing.rollingDiagnostics !== undefined)
+      diagnostics[listing.id] = listing.rollingDiagnostics;
   }
   const index: LibraryBakeIndex = {
     format: LIBRARY_BAKE_FORMAT,
     source,
     options,
     licenses: [...licenses].toSorted(),
-    buckets: await writeBuckets(out, parts),
+    buckets: await writeBuckets(out, parts, diagnostics),
     failed,
   };
   const text = JSON.stringify(index);
@@ -137,6 +178,5 @@ export async function assembleLibraryBake(inputs: LibraryBakeInputs): Promise<Li
     parts: listed.length,
     records: Object.keys(parts).length,
     failed: Object.keys(failed).length,
-    refused,
   };
 }
