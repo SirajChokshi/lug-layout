@@ -806,6 +806,7 @@ export class Pair {
       placeable: { id: `ref-${this.int(5)}`, label: `Item ${this.int(5)}` },
       box,
       shape: this.next() < 0.5 ? this.pick(TEST_SHAPES) : null,
+      carried: null,
       facts: this.randomFacts(),
     };
     return { ...source, todays: todaysEntry(source) };
@@ -907,6 +908,30 @@ export class Pair {
     const added = Array.from({ length: 1 + this.int(5) }, () => this.newModel());
     this.models.push(...added);
     this.view(removed, added);
+  }
+
+  replaceInPlace(): void {
+    const refs = [...new Set(this.models.map((m) => m.placeable.id))];
+    if (refs.length === 0) return this.place();
+    const ref = this.pick(refs);
+    const removed = this.models.filter((m) => m.placeable.id === ref);
+    this.models = this.models.filter((m) => m.placeable.id !== ref);
+    const added = removed.map((model) => this.copyInPlace(model));
+    this.models.push(...added);
+    this.view(removed, added);
+  }
+
+  copyInPlace(model: TestModel): TestModel {
+    const source: PlanModelSource = {
+      id: this.nextModel++,
+      handle: model.handle,
+      placeable: { ...model.placeable },
+      box: this.throwing.has(model.box) ? model.box : { ...model.box },
+      shape: model.shape,
+      carried: model.carried,
+      facts: model.facts.slice(),
+    };
+    return { ...source, todays: todaysEntry(source) };
   }
 
   undo(): void {
@@ -1122,6 +1147,7 @@ export class Pair {
     if (roll < 0.91) return this.place(this.unreadableModel(this.pick(BOX_FIELDS)));
     if (roll < 0.93) return this.unsupportedEdit();
     if (roll < 0.97) return this.factUpdate();
+    if (roll < 0.99) return this.replaceInPlace();
     const unreadable = this.models.findIndex((m) => this.throwing.has(m.box));
     if (unreadable >= 0) return this.remove(unreadable);
     return this.place();
@@ -1250,6 +1276,10 @@ function recover(pair: Pair): void {
 
 const MANDATORY: ReadonlyArray<MandatoryCase> = [
   { name: "place", run: (p) => p.place() },
+  {
+    name: "replace in place: every copy of one ref rejoins the tail with a fresh id",
+    run: (p) => p.replaceInPlace(),
+  },
   { name: "remove", run: (p) => (p.models.length > 0 ? p.remove() : p.place()) },
   {
     name: "rotate moves the row to the tail",

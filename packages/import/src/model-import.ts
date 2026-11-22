@@ -7,6 +7,7 @@ import {
 import type {
   BakedModel,
   BakeOutcome,
+  BakeInputs,
   BakePhases,
   BakeRequest,
   BrickCompiler,
@@ -20,7 +21,9 @@ import type {
   LooseGeometry,
   ModelRead,
   PartOutcome,
+  PlacementBakeRequest,
   RecordFiles,
+  VisibilityBakeRequest,
 } from "./brick-compiler.ts";
 import {
   customClosure,
@@ -53,6 +56,7 @@ import type { LdrawMirror, MirrorSource, MirrorStats, Probe } from "./ldraw-mirr
 import { isShadowLibraryPath, type IShadowLibrary } from "./shadow-mirror.ts";
 import type { StudioReport } from "./studio-import.ts";
 import { TimeSpent } from "./time-spent.ts";
+import { bakeReceptors, type BakeReceptors } from "./bake-receptors.ts";
 import type { RecordStats } from "./verified-files.ts";
 
 export interface ImportJob {
@@ -128,7 +132,7 @@ export type PartResolution =
   | (Counted & { readonly kind: "missingSubfile"; readonly missing: string; readonly from: string })
   | (Counted & {
       readonly kind: "rejected";
-      readonly gate: "license" | "unofficial";
+      readonly gate: "unofficial";
       readonly path: string;
       readonly message: string;
     })
@@ -266,6 +270,10 @@ function refusedRecords(
     return load?.kind === "refused" ? [{ partId, reason: load.reason }] : [];
   });
 }
+
+function loadedConnectors(loads: ReadonlyArray<ConnectorLoad>): Array<PartConnectors | null> {
+  return loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
+}
 const NOTHING_INFERRED: ReadonlyArray<string> = [];
 const RESOLVER_DIRECTORIES: ReadonlyArray<string> = ["p/8/", "parts/", "p/"];
 const NOTHING_PROBED: Probe = { found: new Map(), absent: [] };
@@ -371,6 +379,11 @@ interface Assembled {
     >;
   };
   readonly drawn: Uint8Array;
+}
+
+interface DrawnInstances {
+  readonly mask: Uint8Array;
+  readonly receptors: Promise<BakeReceptors>;
 }
 
 interface BakeRounds {
@@ -569,13 +582,17 @@ export class ModelImportEngine {
     });
     const custom = await this.compileCustom(job, library, resolved, customFiles, spent);
     const assembled = assemble(job, read, custom.parts, outcomes, custom);
-    const recordFiles = await spent.during("recordFetchMs", () =>
-      this.recordFiles(read, assembled.drawn, officialOf, pinned),
-    );
     const loading = Promise.all(
       assembled.result.partIds.map(
         (partId) => custom.compiled.get(partId)?.connectors ?? this.connectors.read(partId),
       ),
+    );
+    const receptors = loading.then((loads) =>
+      bakeReceptors(assembled.result.partIndex, loadedConnectors(loads)),
+    );
+    receptors.catch(() => undefined);
+    const recordFiles = await spent.during("recordFetchMs", () =>
+      this.recordFiles(read, assembled.drawn, officialOf, pinned),
     );
     const announce = async (placement: BakedModel): Promise<void> => {
       const loads = await loading.catch(() => null);
@@ -584,7 +601,7 @@ export class ModelImportEngine {
       onPlaced({
         ...shape,
         sections: report.sections,
-        connectors: loads.map((load) => (load.kind === "loaded" ? load.connectors : null)),
+        connectors: loadedConnectors(loads),
         refusedConnectorRecords: refusedRecords(shape.partIds, loads),
         bake: placementBake(placement),
       });
@@ -592,14 +609,14 @@ export class ModelImportEngine {
     const baked = await this.bakeDrawn(
       job,
       library,
-      assembled.drawn,
+      { mask: assembled.drawn, receptors },
       recordFiles,
       custom,
       spent,
       announce,
     );
     const loads = await loading;
-    const connectors = loads.map((load) => (load.kind === "loaded" ? load.connectors : null));
+    const connectors = loadedConnectors(loads);
     const bakedAt = this.now();
     const placedAt = baked.placedAt ?? bakedAt;
     return {
@@ -852,13 +869,13 @@ export class ModelImportEngine {
   private async bakeDrawn(
     job: ImportJob,
     library: ImportLibrary,
-    drawn: Uint8Array,
+    drawn: DrawnInstances,
     records: RecordFiles | null,
     { bakeSource, unofficialAllowlist }: Pick<CustomPass, "bakeSource" | "unofficialAllowlist">,
     spent: TimeSpent,
     announce: (placement: BakedModel) => Promise<void>,
   ): Promise<BakeRounds> {
-    if (!drawn.includes(1)) {
+    if (!drawn.mask.includes(1)) {
       return {
         bake: null,
         issue: "nothing in the file is drawn",
@@ -870,9 +887,9 @@ export class ModelImportEngine {
         placedAt: null,
       };
     }
-    const request: BakeRequest = {
+    const inputs: BakeInputs = {
       source: bakeSource,
-      drawn,
+      drawn: drawn.mask,
       studPrimitives: job.studPrimitives,
       unofficialAllowlist,
       translucentColors: job.translucentColors,
@@ -880,29 +897,32 @@ export class ModelImportEngine {
       vehicles: job.vehicles,
     };
     const of = HELPER_SLICES * this.helpers.length + PRIMARY_SLICES;
-    const placementRequest: BakeRequest = {
-      ...request,
-      shard: { from: 0, to: 0, of, visibilityOnly: false },
-      keepParts: true,
-    };
-    const primaryCoverRequest: BakeRequest = {
-      ...request,
-      shard: { from: 0, to: PRIMARY_SLICES, of, visibilityOnly: true },
-    };
-    const helperRequests = this.helpers.map((_, index): BakeRequest => {
-      const from = PRIMARY_SLICES + HELPER_SLICES * index;
-      return { ...request, shard: { from, to: from + HELPER_SLICES, of, visibilityOnly: true } };
+    const visibility = (from: number, slices: number): VisibilityBakeRequest => ({
+      ...inputs,
+      shard: { from, to: from + slices, of, visibilityOnly: true },
     });
+    const primaryCoverRequest = visibility(0, PRIMARY_SLICES);
+    const helped = this.helpers.map((helper, index) => ({
+      helper,
+      request: visibility(PRIMARY_SLICES + HELPER_SLICES * index, HELPER_SLICES),
+    }));
     let helpersFailed = 0;
     for (let rounds = 1; rounds <= MAX_COMPILE_ROUNDS; rounds++) {
-      const needs = this.compiler.bakeNeeds(request, library, records);
+      const needs = this.compiler.bakeNeeds(inputs, library, records);
       if (needs.status === "need") {
         await this.fetchNeeded(library, new Set(needs.paths), spent);
         continue;
       }
-      const assisted = this.helpers.map((helper, index) =>
-        helper.bake(helperRequests[index] ?? request, library, records),
-      );
+      const assisted = helped.map(({ helper, request }) => ({
+        request,
+        outcome: helper.bake(request, library, records),
+      }));
+      const placementRequest: PlacementBakeRequest = {
+        ...inputs,
+        receptors: await drawn.receptors,
+        shard: { from: 0, to: 0, of, visibilityOnly: false },
+        keepParts: true,
+      };
       const primaryStarted = this.now();
       const placement = this.compiler.bake(placementRequest, library, records);
       if (placement.status === "baked") await announce(placement);
@@ -914,16 +934,19 @@ export class ModelImportEngine {
       const deadlineMs =
         HELPER_DEADLINE_PER_PRIMARY_MS * (this.now() - primaryStarted) + HELPER_DEADLINE_SLACK_MS;
       const answered = await Promise.all(
-        assisted.map((outcome) => settledWithin(outcome, deadlineMs)),
+        assisted.map(async ({ request, outcome }) => ({
+          request,
+          outcome: await settledWithin(outcome, deadlineMs),
+        })),
       );
       const outcomes = primaryCover === null ? [placement] : [placement, primaryCover];
-      for (const [index, outcome] of answered.entries()) {
+      for (const { request, outcome } of answered) {
         if (outcome !== null && !asksForHeldFiles(outcome, library)) {
           outcomes.push(outcome);
           continue;
         }
         helpersFailed++;
-        outcomes.push(this.compiler.bake(helperRequests[index] ?? request, library, records));
+        outcomes.push(this.compiler.bake(request, library, records));
       }
       const needed = new Set(
         outcomes.flatMap((outcome) => (outcome.status === "need" ? outcome.paths : [])),
@@ -1138,7 +1161,6 @@ function failureResolution(
         missing: failure.missing ?? "",
         from: failure.from,
       };
-    case "license":
     case "unofficial":
       return {
         kind: "rejected",

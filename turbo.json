@@ -25,6 +25,7 @@
         "!src/shadow-library/**",
         "palette.json",
         "fixture-models.json",
+        "omr-errata.json",
         "primitive-connectors.json",
         "inferred-connectors.json",
         "section-vocabulary.json",
@@ -73,7 +74,7 @@
     "@brr/e2e#e2e": {
       "dependsOn": ["@brr/web#build"],
       "cache": false,
-      "passThroughEnv": ["CI", "CHROME", "HELD_OUT_SEED"]
+      "passThroughEnv": ["CI", "CHROME", "HELD_OUT_SEED", "LIBRARY_BAKE_REQUEST_LOG"]
     },
     "@brr/e2e#e2e:library-bake": {
       "dependsOn": ["@brr/web#build"],

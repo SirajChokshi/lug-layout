@@ -1,5 +1,6 @@
 export {
   NO_STUD,
+  NO_TOP,
   PLACEMENT_CELL_INTS,
   PLACEMENT_JOINED,
   PLACEMENT_MISMATCHED,
@@ -8,12 +9,12 @@ export {
   roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
-  type RoadFit,
   type RoadJoinReport,
   type RoadPlacement,
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
+export { RoadFit } from "./road-fit.ts";
 export {
   ARM_BITS,
   armToward,
@@ -108,7 +109,10 @@ export {
   type PathSampler,
   type VehicleGeometry,
 } from "./rail/running-gear.ts";
+export { pierCourses, type PierCourses } from "./track/pier-courses.ts";
+export { rampRises, reachablePlates, runHeights, type RunHeights } from "./track/ramp-heights.ts";
 export {
+  INT8_MAX,
   TrackLayout,
   type TrackEndRef,
   type TrackPieceSpec,
@@ -177,6 +181,8 @@ export {
   type PlanCheck,
   type PlanIssue,
   type PlanPlacement,
+  type CarriedTrack,
+  type PlateClearance,
   type PlanRegionContext,
   type PlanRuleId,
   type TableTop,
@@ -194,7 +200,7 @@ export {
   TRACK_SEGMENT,
 } from "./plan/plan-rows.ts";
 export { PlanDelta, WRITE_ADD, WRITE_UPDATE } from "./plan/plan-delta.ts";
-export { PlanEvaluation } from "./plan/plan-evaluation.ts";
+export { PlanEvaluation, type PlateHeights } from "./plan/plan-evaluation.ts";
 export { RECT_FLOATS, type PlanShape } from "./plan/plan-shape.ts";
 export {
   FACT_CUSTOM_PARTS,
@@ -262,8 +268,10 @@ export {
   RUN_CROSSING,
   TrackClearance,
   footprintOutline,
+  boxesOverlap,
   outlineBox,
   outlineContains,
+  outlinesOverlap,
   placedOutline,
   placedOutlineInto,
   rotateOutline,
@@ -454,6 +462,7 @@ export {
 } from "./plan/placed-outline.ts";
 export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
+  RoadSurfaceCells,
   levelCrossings,
   type CrossingTrack,
   type LevelCrossing,

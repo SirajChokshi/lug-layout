@@ -12,6 +12,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
   ".wasm": "application/wasm",
 };
+export const BUNDLE_FILE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(CONTENT_TYPES));
 const UPLOAD_CONCURRENCY = 16;
 
 export interface UploadResult {

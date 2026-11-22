@@ -28,6 +28,10 @@ impl<'a> Request<'a> {
         self.range(*range)
     }
 
+    pub fn has_segment(&self, name: &str) -> bool {
+        self.envelope.segments.contains_key(name)
+    }
+
     pub fn text(&self, name: &str) -> Result<String, String> {
         String::from_utf8(self.segment(name)?.to_vec())
             .map_err(|e| format!("the {name} segment is not UTF-8: {e}"))

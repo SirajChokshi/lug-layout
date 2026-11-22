@@ -4,6 +4,7 @@ import { expect, type Locator, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fitGroundMap, type GroundMap, type GroundSample } from "./ground-map.ts";
+import { ServedBake } from "./served-bake.ts";
 
 export const STUD = 20;
 export const TRACK_ITEM = "track:lego-9v";
@@ -23,6 +24,7 @@ const HOVER_SETTLE_TIMEOUT_MS = 5_000;
 const GITHUB_RAW = "https://raw.githubusercontent.com/**";
 const PINNED_LDRAW = new URL("../../../.cache/ldraw/", import.meta.url);
 const HTTP_NOT_FOUND = 404;
+const PLACEABLE = "placeable";
 
 function pinnedLdrawPath(url: string): string | undefined {
   return LDRAW_PATH.exec(decodeURIComponent(new URL(url).pathname))?.groups?.["path"];
@@ -37,7 +39,11 @@ export function pinnedLdrawFetch(): FetchFunction {
   };
 }
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
-const BUNDLE_CONNECTOR_RECORD = /\/standard\/connectivity-(?!index\.)[^/]+\.json$/u;
+const BUNDLE_MODEL_RECORD = /\/standard\/model-[^/]+\.json$/u;
+
+export interface RawLibrary {
+  served(): number;
+}
 
 export interface ScreenPoint {
   readonly sx: number;
@@ -274,7 +280,10 @@ export class EditorPage {
   private readonly samples: GroundSample[] = [];
   private map: GroundMap | null = null;
 
-  private constructor(readonly page: Page) {
+  private constructor(
+    readonly page: Page,
+    private readonly bake: ServedBake,
+  ) {
     this.root = page.locator(".editor");
     this.canvas = page.locator("canvas.scene");
     this.stateDump = page.locator("#edit-state");
@@ -283,8 +292,9 @@ export class EditorPage {
   static async open(page: Page, query = ""): Promise<EditorPage> {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    const bake = await ServedBake.install(page.context());
     await page.goto(`/?api=webgl2&state=1${query}`);
-    const editor = new EditorPage(page);
+    const editor = new EditorPage(page, bake);
     await expect(editor.root).toHaveAttribute("data-status", SETTLED_STATUS, {
       timeout: READY_TIMEOUT_MS,
     });
@@ -479,10 +489,10 @@ export class EditorPage {
     return (await this.page.locator(".tool-hud").textContent()) ?? "";
   }
 
-  async holdConnectorRecords(): Promise<() => void> {
+  async holdModelRecords(): Promise<() => void> {
     const { promise: released, resolve: release } = Promise.withResolvers<void>();
     await this.page.route(
-      (url) => BUNDLE_CONNECTOR_RECORD.test(url.pathname),
+      (url) => BUNDLE_MODEL_RECORD.test(url.pathname),
       async (route) => {
         await released;
         await route.continue();
@@ -707,17 +717,24 @@ export class EditorPage {
     return read();
   }
 
-  async serveLdrawLibrary(): Promise<void> {
+  async serveLdrawLibrary(): Promise<RawLibrary> {
+    let served = 0;
     await this.page.context().route(GITHUB_RAW, async (route) => {
       const path = pinnedLdrawPath(route.request().url());
       const text =
         path === undefined
           ? undefined
           : await readFile(new URL(path, PINNED_LDRAW), "utf8").catch(() => undefined);
+      if (text !== undefined) served += 1;
       await (text === undefined
         ? route.fulfill({ status: HTTP_NOT_FOUND })
         : route.fulfill({ status: 200, body: text }));
     });
+    return { served: () => served };
+  }
+
+  blockLibraryBake(): () => void {
+    return this.bake.block();
   }
 
   async importModel(file: string): Promise<ModelImport> {
@@ -730,6 +747,7 @@ export class EditorPage {
       `.model-import[data-file="${name}"]:not([data-status="importing"]):not([data-status="checking"])`,
     );
     await expect(status).toHaveCount(1, { timeout: MODEL_IMPORT_TIMEOUT_MS });
+    if ((await status.getAttribute("data-status")) === PLACEABLE) this.bake.expectIndexServed();
     return {
       status: (await status.getAttribute("data-status")) ?? "",
       item: (await status.getAttribute("data-item")) ?? "",

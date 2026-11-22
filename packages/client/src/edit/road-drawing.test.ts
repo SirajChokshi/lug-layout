@@ -52,6 +52,8 @@ const EYE_HEIGHT = 1_000;
 const TILE = 640;
 const PLACED_MODEL_NAME = "10185-1";
 const PLACED_MODEL = `omr:${PLACED_MODEL_NAME}`;
+const RAISED_MODULE_NAME = "mils-plain";
+const RAISED_MODULE = `generated:${RAISED_MODULE_NAME}`;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -81,7 +83,8 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
-    return { ...index, models: index.models.filter((m) => m.name === PLACED_MODEL_NAME) };
+    const loaded = [PLACED_MODEL_NAME, RAISED_MODULE_NAME];
+    return { ...index, models: index.models.filter((m) => loaded.includes(m.name)) };
   }
 
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
@@ -151,6 +154,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad> {
     return this.loader.readPartConnectors(lod, partId);
+  }
+
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.loader.prefetchPartConnectors(lod);
   }
 
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
@@ -404,6 +411,24 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
+  it("refuses a tile over a road plate of another thickness and names the plate", async () => {
+    await chosen(editor, "ldraw:69958@72");
+    editor.click(...ndc([0, 0]), 0);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [-1, 0],
+      [2, 0],
+    ]);
+    const snapshot = editor.snapshot();
+    expect(snapshot.placements).toBe(1);
+    expect(snapshot.lastRoadStroke?.result).toBe("refused");
+    expect(snapshot.lastRoadStroke?.stroke.issues).toContainEqual(
+      expect.objectContaining({ problem: "overlap", blocker: expect.stringContaining("69958") }),
+    );
+    editor.undo(0);
+    editor.chooseItem(null);
+  });
+
   it("starts the road tool at the turn a snapped hold showed, and keeps the HUD and laid tiles in step", async () => {
     editor.chooseItem(null);
     expect(toolHints(editor.snapshot()).hints).toContainEqual(
@@ -415,6 +440,8 @@ describe("draw road", () => {
     editor.click(...ndc([0, 0]), 0);
     await chosen(editor, "ldraw:44342p02@72");
     editor.pointerMove(...ndc([0, 1]));
+    expect(editor.snapshot().ghostRot).toBe(0);
+    editor.rotate(0);
     const held = editor.snapshot();
     expect(held.snap?.state).toBe("snapped");
     expect(held.ghostRot).not.toBe(0);
@@ -449,6 +476,23 @@ describe("draw road", () => {
     ]);
     expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
     expect(placedItems(editor)).toEqual([PLACED_MODEL]);
+    editor.undo(0);
+    expect(editor.snapshot().placements).toBe(0);
+    editor.chooseItem(null);
+  });
+
+  it("refuses a stroke across a raised module whose flat top isn't at the road's height, instead of swapping it for road", async () => {
+    await loadCatalogItem(catalog, RAISED_MODULE);
+    await chosen(editor, RAISED_MODULE);
+    editor.click(...ndc([1, 0]), 0);
+    expect(placedItems(editor)).toEqual([RAISED_MODULE]);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [2, 0],
+    ]);
+    expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+    expect(placedItems(editor)).toEqual([RAISED_MODULE]);
     editor.undo(0);
     expect(editor.snapshot().placements).toBe(0);
     editor.chooseItem(null);

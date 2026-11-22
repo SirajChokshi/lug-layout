@@ -29,8 +29,15 @@ import {
 } from "@brr/math";
 import { OBSTACLE_RECT_FLOATS, type TrackObstacles } from "./track-obstacles.ts";
 
-export type ClosureState = "exact" | "impossible" | "blocked" | "limit" | "pending" | null;
-export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending";
+export type ClosureState =
+  | "exact"
+  | "impossible"
+  | "blocked"
+  | "limit"
+  | "pending"
+  | "too-steep"
+  | null;
+export type TrackRefusal = "impossible" | "blocked" | "limit" | "pending" | "too-steep";
 export type DragRefusal = Exclude<TrackRefusal, "pending">;
 export type JoinWithheld = "unsupported" | "pending";
 
@@ -92,6 +99,7 @@ export interface DragRoute {
   readonly blockedMove: TrackMove | null;
   readonly closure: ClosureState;
   readonly goal: Pose16 | null;
+  readonly goalEnd: number | null;
   readonly blocked: TrackBlockView | null;
   readonly withheld: JoinWithheld | null;
 }
@@ -146,6 +154,7 @@ export class DragField {
     }
     this.solidRectOf = Int32Array.from(solid);
     this.studlessRectOf = Int32Array.from(studless);
+    for (const outline of obstacles.outlines) this.clearance.add(outline);
   }
 
   pieceOwner(placement: number | undefined): number {
@@ -178,7 +187,10 @@ export class DragField {
     if (top !== NO_OBSTACLE) return this.modelView(this.studlessRectOf[top] ?? -1);
     if (blocker < 0) return null;
     if (blocker < this.rectBase) return { kind: "track" };
-    return this.modelView(this.solidRectOf[blocker - this.rectBase] ?? -1);
+    const rect = blocker - this.rectBase;
+    if (rect < this.solidRectOf.length) return this.modelView(this.solidRectOf[rect] ?? -1);
+    const owner = this.obstacles.outlineOwners[rect - this.solidRectOf.length] ?? -1;
+    return { kind: "model", label: this.obstacles.labels[owner] ?? "", unseated: false };
   }
 
   private modelView(rect: number): TrackBlockView {
@@ -217,6 +229,7 @@ export class TrackDrag {
   private target: number | null = null;
   private goal: Pose16 | null = null;
   private missStuds = 0;
+  private revised = 0;
 
   constructor(
     private readonly kit: DrawingKit,
@@ -235,7 +248,12 @@ export class TrackDrag {
     this.site = this.siteOf(field);
   }
 
+  get revision(): number {
+    return this.revised;
+  }
+
   reseat(field: DragField, seatsPending: boolean): void {
+    this.revised++;
     this.field = field;
     this.seatsPending = seatsPending;
     this.site = this.siteOf(field);
@@ -256,6 +274,7 @@ export class TrackDrag {
   }
 
   extend(hitX: number, hitZ: number): void {
+    this.revised++;
     this.stroke.extend(hitX, hitZ);
     if (this.fromEnd === null) this.start = this.newRunStart();
     const start = this.start;
@@ -366,6 +385,7 @@ export class TrackDrag {
       blockedMove: this.blockedMove,
       closure: this.closure,
       goal: this.goal,
+      goalEnd: this.goal === null ? null : this.target,
       blocked: this.field.describe(this.blocker),
       withheld: this.withheld,
     };

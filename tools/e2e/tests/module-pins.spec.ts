@@ -614,3 +614,36 @@ test("a held modular clicked within reach of a flush join before assist settles 
     `the click commits the flush join, never a refusal or the cursor pose (at the click: ${JSON.stringify(atClick)})`,
   ).toEqual([{ item: MARKET_STREET, x: flushJoin.x, z: flushJoin.z, yPlates: 0, rot: 0 }]);
 });
+
+test("a modular with tiled sidewalks held within reach of another settles on its Technic pin join and is placed there, and its sidewalks join the neighbour's across the seam", async ({
+  page,
+}) => {
+  const editor = await EditorPage.open(page);
+  await editor.zoom(500);
+  const { wide } = await editor.itemStuds(BASEPLATE);
+  const side = wide * STUD;
+  const flushJoin = { x: -side, z: 0, yPlates: 0, rot: 0 };
+  await placeRowPrecisely(page, editor, [{ item: MARKET_STREET, x: 0, z: 0, yPlates: 0, rot: 0 }]);
+  await editor.choose(MARKET_STREET);
+  const aim = await editor.screenOf({ x: flushJoin.x + ASSIST_CAP_LDU, z: flushJoin.z });
+  await page.mouse.move(aim.sx, aim.sy);
+  const settled = (await editor.hoverIn("assist")).placement;
+  if (!settled) throw new Error("no settled placement hover beside the placed modular");
+  expect(
+    { pose: settled.pose, joints: pinHoleJoints(settled.mates) },
+    "the held modular settles on the pin join",
+  ).toEqual({ pose: flushJoin, joints: WEST_FACE_PIN_JOINTS });
+  await page.mouse.click(aim.sx, aim.sy);
+  await editor.escape();
+
+  expect(await editor.poses()).toContainEqual({ item: MARKET_STREET, ...flushJoin });
+  expect(
+    await editor.counter("road-joined"),
+    "the sidewalks line up across the seam",
+  ).toBeGreaterThan(0);
+  test.info().annotations.push({
+    type: "sidewalks at the seam",
+    description: `${await editor.counter("road-joined")} joined, ${await editor.counter("road-mismatch")} mismatched road edge cells`,
+  });
+  await page.screenshot({ path: test.info().outputPath("modulars-join-by-pins.png") });
+});

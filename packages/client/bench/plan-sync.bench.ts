@@ -19,7 +19,7 @@ import {
   type TrackOutline,
   type TrackPieceAt,
 } from "@brr/domain";
-import { CHUNK_LDU, addZeta16, chunkKey, pose16, zeta16 } from "@brr/math";
+import { CHUNK_LDU, STUD_LDU, addZeta16, chunkKey, lduFromMm, pose16, zeta16 } from "@brr/math";
 import type { TrackCatalog } from "@brr/schema/bundle";
 import { SCENE_BACKEND, type ISceneBackend, type WorldBox } from "@brr/render";
 import { Container } from "inversify";
@@ -253,6 +253,7 @@ function brick(i: number, id: number, shiftZ: number): BenchModel {
     },
     placeable: BRICK,
     shape: BRICK_SHAPE,
+    carried: null,
     facts: emptyFacts(),
     box: {
       minX: x - BRICK_PITCH_X / 2,
@@ -295,6 +296,7 @@ function road(k: number, id: number): BenchModel {
     },
     placeable: ROAD,
     shape: ROAD_SHAPE,
+    carried: null,
     facts: emptyFacts(),
     box: {
       minX: x - ROAD_LDU / 2,
@@ -650,6 +652,7 @@ function planLaid(
         piece: layout.piece(p),
         pose: pose16(addZeta16(pose.position, shift), pose.heading),
         yPlates: 0,
+        rise: 0,
       };
     }),
   };
@@ -677,6 +680,7 @@ function layTrack(track: LoadedTrack): TrackDeltas {
   const outside = drawing.pieceChange(
     straight,
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+    0,
   );
   drawing.applyTrack(outside);
   const openLay = new PlanDelta();
@@ -734,6 +738,7 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
           zeta16([KEPT_L_CORNER_STUDS.x, 0n, 0n, 0n, KEPT_L_CORNER_STUDS.z, 0n, 0n, 0n]),
           heading,
         ),
+        0,
       ),
     );
   }
@@ -741,6 +746,7 @@ async function keptRowsVariant(): Promise<ProbeVariant> {
   const outside = kept.pieceChange(
     straight,
     pose16(zeta16([OUTSIDE_STUDS.x, 0n, 0n, 0n, OUTSIDE_STUDS.z, 0n, 0n, 0n]), 0),
+    0,
   );
   kept.applyTrack(outside);
   const lay = new PlanDelta();
@@ -851,7 +857,70 @@ function outlineScenario(name: string, queries: ReadonlyArray<OutlineQuery>): Sc
   };
 }
 
-function outlineVariant(track: TrackDrawing, deltas: TrackDeltas): ProbeVariant {
+const CARRIED_RUN_STRAIGHTS = 2;
+const STRAIGHT_STUDS = 16n;
+const CARRIED_RUN_Z_STUDS = 200n;
+const CARRIED_RUN_ID = 2_000_000;
+const RUN_HEIGHT_LDU = 24;
+
+function carriedRun({ drawing, catalog }: LoadedTrack): BenchModel {
+  const straight = catalog.pieces.findIndex((piece) => piece.part === "ldraw:74746");
+  const seamLdu = lduFromMm(CIRCLE_SEAM_X_MM);
+  const seamStuds = BigInt(seamLdu / STUD_LDU);
+  const outlines = Array.from({ length: CARRIED_RUN_STRAIGHTS }, (_, k) =>
+    drawing.outlineAt(
+      straight,
+      pose16(
+        zeta16([
+          seamStuds - STRAIGHT_STUDS * BigInt(CARRIED_RUN_STRAIGHTS - k),
+          0n,
+          0n,
+          0n,
+          CARRIED_RUN_Z_STUDS,
+          0n,
+          0n,
+          0n,
+        ]),
+        0,
+      ),
+    ),
+  );
+  const [first] = outlines;
+  const last = outlines.at(-1);
+  if (!first || !last || last.maxX <= seamLdu) {
+    throw new Error("the carried run's joiner tab doesn't reach past the seam");
+  }
+  return {
+    id: CARRIED_RUN_ID,
+    handle: { chunkKey: chunkKey(0, 0), slot: 0, x: 0, z: 0 },
+    placeable: { id: "user:carried-run.ldr", label: "carried-run.ldr" },
+    shape: null,
+    carried: { outlines, bodyBox: null },
+    facts: emptyFacts(),
+    box: {
+      minX: first.minX,
+      minY: 0,
+      minZ: first.minZ,
+      maxX: last.maxX,
+      maxY: RUN_HEIGHT_LDU,
+      maxZ: last.maxZ,
+    },
+  };
+}
+
+function carriedRunScenario(built: Built, run: BenchModel): Scenario {
+  const one: PlanModelSource[] = [run];
+  const placeView = { added: one, removed: NONE };
+  const liftView = { added: NONE, removed: one };
+  return {
+    name: "place and lift a model carrying two 9V straights whose end sits exactly on the seam (its own track's outlines and joint excuse), the apply part",
+    edit: () => applyView(built, placeView),
+    inverse: () => applyView(built, liftView),
+  };
+}
+
+function outlineVariant(loaded: LoadedTrack, deltas: TrackDeltas): ProbeVariant {
+  const track = loaded.drawing;
   const plans = new PlanService(new RecordingBackend());
   const delta = new PlanDelta();
   writeFullRebuild(delta, [], track);
@@ -869,6 +938,7 @@ function outlineVariant(track: TrackDrawing, deltas: TrackDeltas): ProbeVariant 
     reads,
     scenarios: [
       ...trackScenarios(built, deltas),
+      carriedRunScenario(built, carriedRun(loaded)),
       outlineScenario(
         "TrackOutline.meetsOpenRect, four rectangles against a curve at a 22.5° step: certified floats",
         queries.slice(0, 4),
@@ -1112,6 +1182,7 @@ async function fallbackCosts(ids: Ids, lines: string[]): Promise<void> {
       handle: { chunkKey: 0, slot: 0, x: origin + 15, z: 15 },
       placeable: BRICK,
       shape: null,
+      carried: null,
       facts: emptyFacts(),
       box: { minX: origin + 10, minY: 0, minZ: 10, maxX: origin + 20, maxY: 24, maxZ: 20 },
     };
@@ -1171,6 +1242,7 @@ function openStraight(straight: number, slot: number): TrackPieceAt {
     piece: straight,
     pose: pose16(zeta16([x + 4n, 0n, 0n, 0n, z + 8n, 0n, 0n, 0n]), 0),
     yPlates: 0,
+    rise: 0,
   };
 }
 
@@ -1507,7 +1579,7 @@ if (mode === "all" || mode === "probe") {
       endIssues: withRegion ? 0 : null,
     };
   });
-  variants.push(await keptRowsVariant(), outlineVariant(drawing, trackDeltas));
+  variants.push(await keptRowsVariant(), outlineVariant(track, trackDeltas));
   const shortRows: ShortRow[] = [];
   for (const { variant, reads, scenarios } of variants) {
     for (const scenario of scenarios) shortRows.push(await shortProbe(variant, scenario, reads));
@@ -1534,7 +1606,7 @@ if (mode === "all" || mode === "probe") {
   for (const row of shortRows) if (row.mismatches !== 0) failed = true;
   lines.push(
     "",
-    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it; and the same track in a region of three tables whose seam passes through two joints of the circle facing across it, so laying the circle runs the outline rows, the off-table cut and the exact joint test, beside direct calls of the outline predicate on a 22.5° curve (certified floats) and on a straight with rectangles flush to its edges (exact integers)`,
+    `### Allocation probe, JIT protocol (the gate), the plan path at ${ROWS.toLocaleString("en-US")} dense bricks plus ${drawing.pieceCount} track pieces with no open end: a passing loop with two switches and an R40 circle; and a region holding ${KEPT_OPEN_STRAIGHTS} separate open straights and an L of two straights meeting without joining, whose ${2 * KEPT_OPEN_STRAIGHTS + KEPT_L_ROWS} rows (one with two owners) must stay as they are while a straight is laid and lifted outside it; and the same track in a region of three tables whose seam passes through two joints of the circle facing across it, so laying the circle runs the outline rows, the off-table cut and the exact joint test, and a model carrying two straights whose run ends exactly on that seam runs its own track's outlines through the same tests, beside direct calls of the outline predicate on a 22.5° curve (certified floats) and on a straight with rectangles flush to its edges (exact integers)`,
     "",
     `Each edit is the real producer (writeViewUpdate, or a delta filled by writeTrackLay and writeTrackThrow before the window) plus PlanService.apply plus one subscribed listener making the production reader path's reads: what PlanPanel reads on each version (version(), plans(), activePlanId(), sandboxCount(), and for the active region insideCount(), issues() and regionView().tables) and the minimap legend's placementCount(), plus issueCount() and issueVersion(), checking with Object.is that each reference is unchanged unless its own version bumped. The two TrackOutline rows time the predicate calls themselves, with no apply and so no reads. First every edit of every variant runs ${JIT_WARMUP_PASSES} passes of ${JIT_WARMUP_CYCLES} cycles of edit plus inverse through the same window loop, so V8 has optimized the plan path and the loop; then each edit runs another ${WARMUP_CYCLES} warm-up cycles; then, after gc() and ${SETTLE_MS} ms, ${CYCLES} cycles with the work skipped and ${CYCLES} with it; times are the edit alone over another ${CYCLES} cycles.`,
     "",

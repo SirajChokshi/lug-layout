@@ -23,6 +23,7 @@ import {
   type PartRole,
   type PartRolling,
   type PartTechnic,
+  type PartTopSurface,
   type PlanOutline,
   type ProducedColors,
   type PrimitiveConnectorTable,
@@ -68,6 +69,7 @@ export interface PartShapeAsset {
   readonly studMatrices: Float32Array;
   readonly technic: PartTechnic | null;
   readonly rolling: PartRolling | null;
+  readonly topSurface: PartTopSurface | null;
   readonly outline: PlanOutline | null;
 }
 
@@ -125,7 +127,13 @@ export interface ModelCells {
   readonly flat: Uint32Array;
   readonly columnBottom: Int16Array;
   readonly columnTop: Int16Array;
+  readonly footing: InstanceFooting;
   readonly partCells: ModelPartCells | null;
+}
+
+export interface InstanceFooting {
+  readonly instance: Uint32Array;
+  readonly cell: Uint32Array;
 }
 
 export interface ModelStudCover {
@@ -251,6 +259,7 @@ export interface IPartBundleLoader {
   importContext(lod: BundleLod): Promise<ImportContext>;
   loadPartConnectors(lod: BundleLod, partId: string): Promise<PartConnectors | null>;
   readPartConnectors(lod: BundleLod, partId: string): Promise<ConnectorLoad>;
+  prefetchPartConnectors(lod: BundleLod): Promise<void>;
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution>;
   loadSectionVocabularyAttribution(lod: BundleLod): Promise<PackageAttribution | null>;
   loadPartSet(

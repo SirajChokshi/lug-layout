@@ -4,7 +4,7 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use brick_compile::bake::{drawn_lattice, BakeError, LatticeShape, ModelBaker, RecordShelf};
+use brick_compile::bake::{BakeError, LatticeShape, ModelBaker, RecordShelf};
 use brick_compile::compile::stud_primitives_from_table;
 use brick_compile::cover::{tree_order, CoverShard, PartSolid};
 use brick_compile::model::bake_model;
@@ -234,7 +234,9 @@ fn a_model_baked_from_records_equals_the_model_baked_from_compiled_parts() {
             .iter()
             .map(|instance| baker.lattice_shape(&instance.part).expect("shape"))
             .collect();
-        let lattice = drawn_lattice(&drawn, &shapes.iter().collect::<Vec<_>>()).expect("lattice");
+        let lattice = baker
+            .lattice(&drawn, &shapes.iter().collect::<Vec<_>>())
+            .expect("lattice");
         let cover = baker
             .cover(&drawn, lattice.as_ref(), CoverShard::WHOLE)
             .expect("cover");

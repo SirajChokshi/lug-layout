@@ -66,6 +66,7 @@ import {
   verifyClosure,
   verifyConnectivity,
   verifyModels,
+  verifyOmrErrata,
   type CatalogLock,
   type ConnectivityLock,
   type InputLock,
@@ -77,7 +78,13 @@ import {
   readProducedColorInputs,
   REBRICKABLE_EXPORT,
 } from "./catalog/produced-colors.ts";
-import { readFixtureModels, readPalette, readPrimitiveTable, studPrimitives } from "./palette.ts";
+import {
+  readFixtureModels,
+  readOmrErrata,
+  readPalette,
+  readPrimitiveTable,
+  studPrimitives,
+} from "./palette.ts";
 import {
   attachCrosswalk,
   attachLibraryBake,
@@ -110,6 +117,7 @@ import {
   magnetSeatReports,
   paletteTrackCatalog,
   readSources,
+  singlePartSceneReports,
   trackCatalogReports,
   writeReports,
 } from "./verify/facts.ts";
@@ -120,6 +128,7 @@ const repoRoot = join(toolRoot, "..", "..");
 const palettePath = join(repoRoot, BUNDLE_DATA_FILES.palette);
 const primitiveTablePath = join(repoRoot, BUNDLE_DATA_FILES.primitiveConnectors);
 const fixtureModelsPath = join(repoRoot, BUNDLE_DATA_FILES.fixtureModels);
+const omrErrataPath = join(repoRoot, BUNDLE_DATA_FILES.omrErrata);
 const lockPath = join(repoRoot, BUNDLE_DATA_FILES.lock);
 const fixturesRoot = join(repoRoot, FIXTURES_DIRECTORY);
 const ldrawRoot = join(repoRoot, ".cache", "ldraw");
@@ -200,7 +209,11 @@ async function fetchCommand(): Promise<void> {
 async function writeAttribution(lock: InputLock, palette: Palette): Promise<void> {
   const attribution = [
     await renderAttribution(lock, ldrawRoot),
-    await renderModelAttribution(await paletteAndFixtureModels(palette), modelRoots),
+    await renderModelAttribution(
+      await paletteAndFixtureModels(palette),
+      modelRoots,
+      await readOmrErrata(omrErrataPath),
+    ),
     await renderTestDataAttribution(repoRoot, TEST_DATA_DIRECTORIES),
   ].join("\n");
   await writeFile(join(fixturesRoot, "ATTRIBUTION.md"), attribution);
@@ -290,6 +303,7 @@ async function verifyCommand(): Promise<void> {
       lock.files,
     )),
     ...(await verifyModels(await paletteAndFixtureModels(palette), modelRoots)),
+    ...(await verifyOmrErrata(await readOmrErrata(omrErrataPath), palette.models, modelRoots)),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "crosswalk")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "inventory-check")),
     ...(await verifyCatalogSources(catalogLock(lock), catalogRoot, "categories")),
@@ -300,7 +314,7 @@ async function verifyCommand(): Promise<void> {
     process.exitCode = 1;
     return;
   }
-  process.stdout.write("LDraw inputs match ldraw.lock.json\n");
+  process.stdout.write("LDraw inputs match ldraw.lock.json and omr-errata.json\n");
 }
 
 async function sectionVocabularyCommand(check: boolean): Promise<void> {
@@ -390,6 +404,7 @@ async function factsCommand(check: boolean): Promise<void> {
       shadowLibrary,
     }),
     ...geometryReports(lock.source, auditLibrary, shadowLibrary, studs),
+    ...singlePartSceneReports(new LdrawLibrary([ldrawRoot])),
     ...trackCatalogReports(auditLibrary, catalog),
     ...levelCrossingReports(
       new LdrawLibrary([ldrawRoot, auditRoot]),
@@ -606,6 +621,8 @@ async function compileLod(
     fixturesRoot,
     "--omr",
     omrRoot,
+    "--omr-errata",
+    omrErrataPath,
     "--geometry",
     join(repoRoot, BUNDLE_DATA_FILES.geometry),
     "--palette",
@@ -656,7 +673,7 @@ const LIBRARY_PART_SOURCES: ReadonlyArray<CatalogSourceUse> = [
 
 function reportLibraryParts({ report }: DerivedLibraryParts): void {
   process.stdout.write(
-    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.notContributorAgreement} without a CA licence, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
+    `library parts: ${report.listed} of ${report.scanned} listed; left out ${report.unlisted} moved, alias, "~", baked-colour or inactive-category files, ${report.unofficial} unofficial, ${report.withoutRebrickable} without a Rebrickable part and ${report.withoutProducedColor} without a produced colour\n`,
   );
 }
 

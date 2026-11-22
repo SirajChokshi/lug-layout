@@ -38,6 +38,7 @@ export type {
   ModelBundle,
   ModelRecord,
   ModelCells,
+  InstanceFooting,
   ModelPartCells,
   ModelStudCover,
   ModelFarMesh,

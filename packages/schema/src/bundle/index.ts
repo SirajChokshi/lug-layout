@@ -224,6 +224,29 @@ function cellCount([width, depth]: readonly [number, number]): number {
   return width * depth;
 }
 
+function footingListedInOrder(
+  instance: ReadonlyArray<number>,
+  cell: ReadonlyArray<number>,
+): boolean {
+  if (instance.length !== cell.length) return false;
+  for (let k = 1; k < instance.length; k++) {
+    const previous = instance[k - 1] ?? 0;
+    const current = instance[k] ?? 0;
+    if (current < previous || (current === previous && (cell[k] ?? 0) <= (cell[k - 1] ?? 0))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const InstanceFooting = v.pipe(
+  v.object({ instance: v.array(Count), cell: v.array(Count) }),
+  v.check(
+    ({ instance, cell }) => footingListedInOrder(instance, cell),
+    "the footing pairs are not listed once each by instance and then by cell",
+  ),
+);
+
 export const PART_CELL_BOX_INTS = 6;
 
 export const ModelFilePartCells = v.pipe(
@@ -261,6 +284,7 @@ export const ModelFileCells = v.pipe(
     flat: v.array(Count),
     columnBottom: v.array(ColumnPlates),
     columnTop: v.array(ColumnPlates),
+    footing: InstanceFooting,
     partCells: v.optional(ModelFilePartCells),
   }),
   v.check(
@@ -271,6 +295,10 @@ export const ModelFileCells = v.pipe(
     ({ size, columnBottom, columnTop }) =>
       columnBottom.length === cellCount(size) && columnTop.length === cellCount(size),
     "the column arrays do not cover the cell grid",
+  ),
+  v.check(
+    ({ size, footing }) => footing.cell.every((cell) => cell < cellCount(size)),
+    "a footing cell lies outside the cell grid",
   ),
   v.check(
     ({ size, partCells, columnTop }) =>
@@ -322,6 +350,41 @@ export type ModelSet = v.InferOutput<typeof ModelSet>;
 export const ModelRole = v.picklist(["mils-module"]);
 export type ModelRole = v.InferOutput<typeof ModelRole>;
 
+const LineNumber = v.pipe(Integer, v.minValue(1));
+const OmrLine = v.strictObject({ line: LineNumber, text: v.string() });
+
+export const ErratumEvidence = v.variant("kind", [
+  v.strictObject({ kind: v.literal("mirror-twin"), twin: OmrLine, summary: v.string() }),
+  v.strictObject({
+    kind: v.literal("wall-course"),
+    course: v.pipe(v.array(OmrLine), v.minLength(2)),
+    summary: v.string(),
+  }),
+]);
+export type ErratumEvidence = v.InferOutput<typeof ErratumEvidence>;
+
+export const OmrErratum = v.strictObject({
+  model: v.string(),
+  file: v.string(),
+  sha256: Sha256Hex,
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  evidence: ErratumEvidence,
+});
+export type OmrErratum = v.InferOutput<typeof OmrErratum>;
+
+export const OmrErrata = v.strictObject({ errata: v.array(OmrErratum) });
+export type OmrErrata = v.InferOutput<typeof OmrErrata>;
+
+export const ModelErratum = v.object({
+  line: LineNumber,
+  from: v.string(),
+  to: v.string(),
+  summary: v.string(),
+});
+export type ModelErratum = v.InferOutput<typeof ModelErratum>;
+
 const IntegerVec3 = v.tuple([Integer, Integer, Integer]);
 const CountVec3 = v.tuple([Count, Count, Count]);
 
@@ -351,6 +414,7 @@ export const BundleModelEntry = v.object({
   sha256: Sha256Hex,
   cover: BundleModelCover,
   notDrawn: v.optional(v.array(NotDrawnSection)),
+  errata: v.optional(v.array(ModelErratum)),
   farMesh: v.optional(v.nullable(BundleFarMesh)),
 });
 export type BundleModelEntry = v.InferOutput<typeof BundleModelEntry>;
@@ -585,6 +649,41 @@ export type RollingDiagnosticsFile = v.InferOutput<typeof RollingDiagnosticsFile
 export const RollingDiagnosticsRef = v.strictObject({ file: v.string(), sha256: Sha256Hex });
 export type RollingDiagnosticsRef = v.InferOutput<typeof RollingDiagnosticsRef>;
 
+export const TOP_SURFACE_STEPS_PER_LDU = 16;
+
+const TopSurfaceRow = v.pipe(
+  v.string(),
+  v.regex(/^[.fpu]+$/u),
+  v.description(
+    "one row of cells, in order along +x, one character per cell: f flat, p pocket, u undecided, . open",
+  ),
+);
+
+export const PartTopSurface = v.pipe(
+  v.object({
+    stepsPerLdu: v.literal(TOP_SURFACE_STEPS_PER_LDU),
+    top: v.pipe(Integer, v.description("the part's top height, in sixteenths of an LDU")),
+    origin: v.pipe(
+      v.tuple([Integer, Integer]),
+      v.description("the cell grid's minimum x and z corner, in sixteenths of an LDU"),
+    ),
+    size: v.pipe(
+      v.tuple([v.pipe(Integer, v.minValue(1)), v.pipe(Integer, v.minValue(1))]),
+      v.description("the grid's columns along x, then its rows along z, in 20 LDU cells"),
+    ),
+    cells: v.pipe(v.array(TopSurfaceRow), v.description("the grid's rows, in order along +z")),
+  }),
+  v.check(
+    ({ size: [columns, rows], cells }) =>
+      cells.length === rows && cells.every((row) => row.length === columns),
+    "the cell rows don't match the grid size",
+  ),
+  v.description(
+    "what the part's top presents on each cell of its 20 LDU grid, read exactly from the LDraw decimals of its own Standard-LOD triangles. The grid covers the part's plan, which must be whole studs, and the top is the part's highest point, which must be on a sixteenth; otherwise the part has no top surface. f: every point of the cell's square lies within the 0.0005 LDU identification residual of a face lying wholly at the top height (studs standing on it don't matter). p: an upright stud centred on the cell stands below the top, every side of its group of such cells is the part's edge or an f cell, and along x or z the group's run through the cell ends in f cells at both ends. u: the cell isn't covered and a face without exact geometry may lie at the top there. .: none of these",
+  ),
+);
+export type PartTopSurface = v.InferOutput<typeof PartTopSurface>;
+
 export const StudRecord = v.object({ primitive: v.string(), color: Integer, matrix: Matrix });
 export type StudRecord = v.InferOutput<typeof StudRecord>;
 
@@ -600,6 +699,7 @@ export const PartShape = v.object({
   trackEnds: v.optional(v.array(TrackEnd)),
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  topSurface: v.optional(PartTopSurface),
   outline: v.optional(PlanOutline),
 });
 export type PartShape = v.InferOutput<typeof PartShape>;
@@ -711,8 +811,6 @@ export const BundleCompiler = v.object({
   shadowLibrary: v.optional(ShadowLibraryIndexRef),
 });
 export type BundleCompiler = v.InferOutput<typeof BundleCompiler>;
-
-const LineNumber = v.pipe(Integer, v.minValue(1));
 
 export const StudioArchive = v.object({
   status: v.literal("read"),
@@ -850,6 +948,15 @@ export const ConnectorIndexFile = v.object({
 });
 export type ConnectorIndexFile = v.InferOutput<typeof ConnectorIndexFile>;
 
+export const ConnectorPackFile = v.object({
+  package: ConnectorPackage,
+  files: v.record(v.string(), v.unknown()),
+});
+export type ConnectorPackFile = v.InferOutput<typeof ConnectorPackFile>;
+
+export const ConnectorPacks = v.object({ connectivity: FileRef, connectors: FileRef });
+export type ConnectorPacks = v.InferOutput<typeof ConnectorPacks>;
+
 export const TablePlane = v.object({
   part: v.string(),
   depthBelowTopLdu: v.pipe(Finite, v.gtValue(0)),
@@ -882,6 +989,7 @@ export const BundleIndex = v.object({
   connectors: FileRef,
   connectivity: FileRef,
   crosswalk: FileRef,
+  connectorPacks: v.optional(ConnectorPacks),
   partTable: FileRef,
   creditTable: FileRef,
   thumbnails: v.array(BundleThumbnail),
@@ -1255,15 +1363,7 @@ export type MalformedFinding = v.InferOutput<typeof MalformedFinding>;
 
 const CompilerFailure = v.object({
   status: v.literal("failed"),
-  kind: v.picklist([
-    "unresolved",
-    "tooDeep",
-    "license",
-    "unofficial",
-    "noStudRing",
-    "malformed",
-    "tooLarge",
-  ]),
+  kind: v.picklist(["unresolved", "tooDeep", "unofficial", "noStudRing", "malformed", "tooLarge"]),
   message: v.string(),
   missing: v.exactOptional(v.string()),
   from: v.exactOptional(v.string()),
@@ -1476,6 +1576,11 @@ export const ModelFile = v.pipe(
       ),
     "a vehicle names an instance the model does not have",
   ),
+  v.check(
+    ({ cover, instances }) =>
+      (cover.cells?.footing.instance ?? []).every((index) => index < instances.part.length),
+    "a footing cell names an instance the model does not have",
+  ),
 );
 export type ModelFile = v.InferOutput<typeof ModelFile>;
 
@@ -1502,6 +1607,7 @@ export const PartExtras = v.object({
   bounds: Bounds,
   technic: v.optional(PartTechnic),
   rolling: v.optional(PartRolling),
+  topSurface: v.optional(PartTopSurface),
 });
 export type PartExtras = v.InferOutput<typeof PartExtras>;
 
@@ -1652,7 +1758,6 @@ export type LibraryConnectorsIndex = v.InferOutput<typeof LibraryConnectorsIndex
 export const LibraryConnectorsPin = v.strictObject({
   index: LibraryConnectorsIndexRef,
   parts: Count,
-  refused: v.array(v.strictObject({ part: v.string(), license: v.string() })),
   records: v.strictObject({ connectivity: Count, connectors: Count }),
   faces: v.strictObject({ connectivity: Count, connectors: Count }),
   partsWithPieces: Count,
@@ -1755,7 +1860,6 @@ export const LibraryBakePin = v.strictObject({
   parts: Count,
   records: Count,
   failed: Count,
-  refused: v.array(v.strictObject({ part: v.string(), licenses: StringList })),
 });
 export type LibraryBakePin = v.InferOutput<typeof LibraryBakePin>;
 

@@ -34,7 +34,7 @@ import {
   SnapMating,
   SnapShapes,
 } from "@brr/domain";
-import type { ModelFile, NotDrawnSection } from "@brr/schema/bundle";
+import type { ModelErratum, ModelFile, NotDrawnSection } from "@brr/schema/bundle";
 import { beforeAll, describe, expect, it } from "vitest";
 import { BrickCompiler, type CompileRequest } from "./brick-compiler.ts";
 import type { CustomSource } from "./custom-parts.ts";
@@ -61,10 +61,15 @@ const paletteTemplate = new URL(
   import.meta.url,
 );
 const PALETTE_TEMPLATE_MODEL = "mils-road-straight";
+const fixtureBundleRoot = new URL(
+  "../../../tools/asset-pipeline/fixture-bundle/standard/",
+  import.meta.url,
+);
+const jumperScene = new URL("../../../docs/verified-facts/scenes/jumper.ldr", import.meta.url);
+const JUMPER_FIXTURE_MODEL = "jumper";
 const BAKE_TIMEOUT_MS = 120_000;
 const BUNDLE_MODEL_IMPORT_TIMEOUT_MS = 300_000;
 const EVERY_BUNDLE_MODEL_OPT_IN = "IMPORT_EVERY_BUNDLE_MODEL";
-const CA_LICENSE_TEXT = /CC BY [24]\.0|CCAL version 2\.0/u;
 
 function bySection(a: { readonly section: string }, b: { readonly section: string }): number {
   return a.section < b.section ? -1 : a.section > b.section ? 1 : 0;
@@ -119,6 +124,7 @@ interface Manifest {
     readonly name: string;
     readonly file: string;
     readonly notDrawn?: ReadonlyArray<NotDrawnSection>;
+    readonly errata?: ReadonlyArray<ModelErratum>;
   }>;
   readonly connectors: { readonly file: string };
   readonly connectivity: { readonly file: string };
@@ -141,6 +147,10 @@ interface BundledModel {
       readonly flat: ReadonlyArray<number>;
       readonly columnBottom: ReadonlyArray<number>;
       readonly columnTop: ReadonlyArray<number>;
+      readonly footing: {
+        readonly instance: ReadonlyArray<number>;
+        readonly cell: ReadonlyArray<number>;
+      };
       readonly partCells?: {
         readonly cell: ReadonlyArray<number>;
         readonly instance: ReadonlyArray<number>;
@@ -148,6 +158,17 @@ interface BundledModel {
       };
     } | null;
   };
+}
+
+function withBakedErrata(pinned: string, errata: ReadonlyArray<ModelErratum>): string {
+  const lines = pinned.split(/(?<=\n)/u);
+  for (const { line, from, to } of errata) {
+    const original = lines[line - 1] ?? "";
+    const content = original.replace(/\r?\n$/u, "");
+    expect(content, `the pinned line ${line} the bake corrected`).toBe(from);
+    lines[line - 1] = `${to}${original.slice(content.length)}`;
+  }
+  return lines.join("");
 }
 
 async function bundleManifest(): Promise<Manifest> {
@@ -578,6 +599,23 @@ const customParts = new Map([
       "3 16 0 0 0 1 0 0 0 0 1",
     ].join("\n"),
   ],
+  [
+    "parts/zz-custom-recessed-plate.dat",
+    [
+      "0 Custom plate with a stud recessed in its middle",
+      "0 Name: zz-custom-recessed-plate.dat",
+      "0 Author: synthetic test fixture",
+      CA_LICENSE,
+      "0 BFC CERTIFY CCW",
+      "1 16 0 -16 -20 30 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -16 20 30 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 -20 -16 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 20 -16 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -8 0 10 0 0 0 1 0 0 0 10 rect.dat",
+      "1 16 0 -8 0 1 0 0 0 1 0 0 0 1 stud.dat",
+      "1 16 0 0 0 30 0 0 0 -8 0 0 0 30 box5.dat",
+    ].join("\n"),
+  ],
 ]);
 
 const customMirror: FetchFunction = async (url) => {
@@ -853,7 +891,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       const result = await importWith(
         pinnedMirror,
         model.file,
-        await readFile(new URL(model.file, root), "utf8"),
+        withBakedErrata(await readFile(new URL(model.file, root), "utf8"), entry?.errata ?? []),
         { compiler },
       );
       const record = JSON.parse(
@@ -879,7 +917,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       return { imported, record, added, custom: drawnCustomParts(result), entry };
     }
 
-    function expectOnlyLicensedCustomPartsAdded({
+    function expectOnlyTheFilesCustomPartsAdded({
       added,
       custom,
       entry,
@@ -910,7 +948,6 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
       for (const part of custom) {
         expect(part.partId).toMatch(customIdPattern(part.reference));
         expect(["mpd", "inlineDiffers"]).toContain(part.origin);
-        expect(part.header.license).toMatch(CA_LICENSE_TEXT);
         expect(drawn.find(({ section }) => section === part.reference)?.instances).toBe(
           part.instances,
         );
@@ -923,7 +960,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         const imports = await importedAndRecorded(model);
         const { imported, record } = imports;
 
-        expectOnlyLicensedCustomPartsAdded(imports);
+        expectOnlyTheFilesCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeUndefined();
         expect(imported).toEqual({ ...record.submodels, partTransforms: record.partTransforms });
       },
@@ -938,7 +975,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
         const depth = (submodel: number): number =>
           submodel === MODEL_ROOT ? 0 : 1 + depth(record.submodels.parent[submodel] ?? MODEL_ROOT);
 
-        expectOnlyLicensedCustomPartsAdded(imports);
+        expectOnlyTheFilesCustomPartsAdded(imports);
         expect(record.authoredIdentification).toBeDefined();
         expect({ parent: imported.parent, ofPart: imported.ofPart }).toEqual({
           parent: record.submodels.parent,
@@ -961,6 +998,7 @@ describe.runIf(process.env[EVERY_BUNDLE_MODEL_OPT_IN] === "1")(
 );
 
 const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
+const NON_CA = "Not redistributable : see NonCAreadme.txt";
 const UNOFFICIAL_PART = "0 !LDRAW_ORG Unofficial_Part";
 const TRIANGLE = "3 16 0 0 0 20 0 0 0 0 20";
 const OTHER_TRIANGLE = "3 16 0 0 0 40 0 0 0 0 40";
@@ -1015,7 +1053,7 @@ async function pinnedGeometry(path: string): Promise<ReadonlyArray<string>> {
   return text.split(/\r?\n/u).filter((line) => GEOMETRY_LINE.test(line));
 }
 
-it("draws CA-licensed custom parts from the file as custom whatever their LDRAW_ORG, keeps an inline copy's measured difference, reports loose model geometry, and draws a copy whose quads only start elsewhere", async () => {
+it("draws custom parts from the file as custom whatever their LDRAW_ORG, keeps an inline copy's measured difference, reports loose model geometry, and draws a copy whose quads only start elsewhere", async () => {
   const result = await importWith(
     pinnedMirror,
     "critic-gap.mpd",
@@ -1106,33 +1144,33 @@ it("keeps the unofficial allowlist for a part reached through the library, used 
   expect(allowed.report.parts.map((part) => part.kind)).toEqual(["compiled", "custom"]);
 });
 
-it("refuses a custom part without a CA licence header whatever its LDRAW_ORG, and one whose own sub-file has none, naming that sub-file", async () => {
+it("draws a custom part whatever licence it names, or none, and whatever licence its own sub-file names", async () => {
   const result = await importWith(
     pinnedMirror,
     "custom-parts.mpd",
     modelOf(
-      ["unlicensed.dat", "unofficial-unlicensed.dat", "licensed-top.dat"],
+      ["unlicensed.dat", "unofficial-nonca.dat", "licensed-top.dat"],
       [
         customFile("unlicensed.dat", null, [TRIANGLE]),
-        customFile("unofficial-unlicensed.dat", null, [UNOFFICIAL_PART, TRIANGLE]),
+        customFile("unofficial-nonca.dat", NON_CA, [UNOFFICIAL_PART, TRIANGLE]),
         customFile("licensed-top.dat", CC_BY_4, ["1 16 0 0 0 1 0 0 0 1 0 0 0 1 s\\inner.dat"]),
-        customFile("s/inner.dat", null, [TRIANGLE]),
+        customFile("s/inner.dat", NON_CA, [TRIANGLE]),
       ],
     ),
   );
 
-  expect(result.report.parts).toMatchObject([
-    { reference: "unlicensed.dat", kind: "customRefused", gate: "license", path: "unlicensed.dat" },
-    {
-      reference: "unofficial-unlicensed.dat",
-      kind: "customRefused",
-      gate: "license",
-      path: "unofficial-unlicensed.dat",
-    },
-    { reference: "licensed-top.dat", kind: "customRefused", gate: "license", path: "s/inner.dat" },
+  expect(result.report.parts.map((part) => [part.reference, part.kind])).toEqual([
+    ["unlicensed.dat", "custom"],
+    ["unofficial-nonca.dat", "custom"],
+    ["licensed-top.dat", "custom"],
   ]);
-  expect(result.instanceCount).toBe(0);
-  expect(result.compiled).toEqual([]);
+  expect(drawnCustomParts(result).map((part) => part.header.license)).toEqual([
+    null,
+    NON_CA,
+    CC_BY_4,
+  ]);
+  expect(result.instanceCount).toBe(3);
+  expect(result.compiled).toHaveLength(3);
 });
 
 function shadowingSubfile(triangle: string): string {
@@ -1169,7 +1207,7 @@ function studioPart(
   return { name, text: [...customHeader(name, license), ...body].join("\n") };
 }
 
-it("draws a CA-licensed Studio CustomParts file from its own sub-part as custom, under its Studio name even where the library has a part of that name, and refuses an unlicensed one", async () => {
+it("draws a Studio CustomParts file from its own sub-part as custom, under its Studio name even where the library has a part of that name, whatever licence it names", async () => {
   const result = await importWith(
     pinnedMirror,
     "custom-parts.io",
@@ -1194,11 +1232,11 @@ it("draws a CA-licensed Studio CustomParts file from its own sub-part as custom,
 
   expect(result.report.parts).toMatchObject([
     { reference: "studiobrick.dat", kind: "custom", origin: "studio" },
-    { reference: "unlicensed.dat", kind: "customRefused", origin: "studio", gate: "license" },
+    { reference: "unlicensed.dat", kind: "custom", origin: "studio" },
     { reference: "3003.dat", kind: "custom", origin: "studio" },
     { reference: "3001.dat", kind: "bundle" },
   ]);
-  expect(result.instanceCount).toBe(3);
+  expect(result.instanceCount).toBe(4);
 });
 
 it("refuses a Studio custom part whose own files refer to each other in a loop, rather than closing the loop with the library part of that name", async () => {
@@ -1276,12 +1314,12 @@ async function mixedStudBrick(): Promise<MixedStudBrick> {
 
 async function customBricks(): Promise<string> {
   return modelOf(
-    ["stud-brick.dat", "own-stud-brick.dat", "mixed-stud-brick.dat", "unlicensed-brick.dat"],
+    ["stud-brick.dat", "own-stud-brick.dat", "mixed-stud-brick.dat", "nonca-brick.dat"],
     [
       customFile("stud-brick.dat", CC_BY_4, await pinnedGeometry("parts/3001.dat")),
       ...(await ownStudBrick()),
       (await mixedStudBrick()).file,
-      customFile("unlicensed-brick.dat", null, await pinnedGeometry("parts/3001.dat")),
+      customFile("nonca-brick.dat", NON_CA, await pinnedGeometry("parts/3001.dat")),
     ],
   );
 }
@@ -1320,12 +1358,13 @@ const STUD_SOURCE: Readonly<Record<string, number>> = {
   "stud3a.dat": CONNECTOR_SOURCE.primitive,
 };
 
-it("reads custom parts' connectors at import in tier order, each stud from the shadow library where it has a snap, else the primitive table, else geometry, all flagged unverified, and refuses one without a CA header", async () => {
+it("reads custom parts' connectors at import in tier order, each stud from the shadow library where it has a snap, else the primitive table, else geometry, all flagged unverified, whatever licence the part names", async () => {
   const result = await importWith(pinnedMirror, "custom-bricks.mpd", await customBricks(), {
     shadowLibrary: await pinnedShadowLibrary(),
   });
-  const [studBrick, ownStuds, mixedStuds] = drawnCustomParts(result);
+  const [studBrick, ownStuds, mixedStuds, nonCaBrick] = drawnCustomParts(result);
   const shadow = connectorsOf(result, studBrick);
+  const nonCa = connectorsOf(result, nonCaBrick);
   const inferred = connectorsOf(result, ownStuds);
   const mixed = connectorsOf(result, mixedStuds);
   const { studs } = await mixedStudBrick();
@@ -1339,9 +1378,10 @@ it("reads custom parts' connectors at import in tier order, each stud from the s
     ["stud-brick.dat", "custom"],
     ["own-stud-brick.dat", "custom"],
     ["mixed-stud-brick.dat", "custom"],
-    ["unlicensed-brick.dat", "customRefused"],
+    ["nonca-brick.dat", "custom"],
   ]);
   expect(maleSlots(shadow, CONNECTOR_SOURCE.shadow)).toEqual(BRICK_STUDS);
+  expect(maleSlots(nonCa, CONNECTOR_SOURCE.shadow)).toEqual(BRICK_STUDS);
   expect(maleSlots(inferred, CONNECTOR_SOURCE.shadow)).toEqual([]);
   expect(maleSlots(inferred, CONNECTOR_SOURCE.inferred)).toEqual(BRICK_STUDS);
   for (const source of [
@@ -1354,7 +1394,7 @@ it("reads custom parts' connectors at import in tier order, each stud from the s
   expect(mixedStuds?.connectors?.bySource.primitive).toBe(
     mixedFrom(CONNECTOR_SOURCE.primitive).length,
   );
-  for (const table of [shadow, inferred, mixed]) {
+  for (const table of [shadow, inferred, mixed, nonCa]) {
     expect(new Set(table.status)).toEqual(new Set([CONNECTOR_STATUS.unverified]));
   }
   expect(result.report.refusedConnectorRecords).toEqual([]);
@@ -1373,9 +1413,12 @@ const UNREADABLE_SHADOW_LIBRARY: IShadowLibrary = {
 const UNREADABLE_REASON =
   "the pinned shadow library could not be read: GET shadow-library.json failed with 503";
 
-const CUSTOM_BRICK_IDS = ["stud-brick.dat", "own-stud-brick.dat", "mixed-stud-brick.dat"].map(
-  (name) => expect.stringMatching(customIdPattern(name)),
-);
+const CUSTOM_BRICK_IDS = [
+  "stud-brick.dat",
+  "own-stud-brick.dat",
+  "mixed-stud-brick.dat",
+  "nonca-brick.dat",
+].map((name) => expect.stringMatching(customIdPattern(name)));
 
 interface WithoutTables {
   readonly when: string;
@@ -1414,9 +1457,9 @@ it.each<WithoutTables>([
     withoutPrimitiveTable: setup.withoutPrimitiveTable,
   });
 
-  expect(drawnCustomParts(result).map((part) => part.connectors)).toEqual([null, null, null]);
+  expect(drawnCustomParts(result).map((part) => part.connectors)).toEqual([null, null, null, null]);
   expect(result.partIds).toEqual(CUSTOM_BRICK_IDS);
-  expect(result.connectors).toEqual([null, null, null]);
+  expect(result.connectors).toEqual([null, null, null, null]);
   expect(result.report.withoutConnectorRecords).toEqual(setup.refused ? [] : CUSTOM_BRICK_IDS);
   expect(result.report.refusedConnectorRecords).toEqual(
     setup.refused ? CUSTOM_BRICK_IDS.map((partId) => ({ partId, reason: UNREADABLE_REASON })) : [],
@@ -1464,7 +1507,7 @@ function underABrick(brick: string): Layout {
   ];
 }
 
-it("seats custom bricks on a bundle baseplate and takes a brick on their inferred studs exactly as official 3001 does", async () => {
+it("seats custom bricks, whatever licence they name, on a bundle baseplate and takes a brick on their inferred studs exactly as official 3001 does", async () => {
   const shadowLibrary = await pinnedShadowLibrary();
   const custom = async (layout: Layout) =>
     importWith(
@@ -1476,6 +1519,7 @@ it("seats custom bricks on a bundle baseplate and takes a brick on their inferre
         seatedOn(layout),
         "0 NOFILE",
         ...customFile("stud-brick.dat", CC_BY_4, await pinnedGeometry("parts/3001.dat")),
+        ...customFile("nonca-brick.dat", NON_CA, await pinnedGeometry("parts/3001.dat")),
         ...(await ownStudBrick()).flat(),
         "",
       ].join("\n"),
@@ -1487,11 +1531,102 @@ it("seats custom bricks on a bundle baseplate and takes a brick on their inferre
   expect(official).toBeGreaterThan(0);
   expect(stacked).toBeGreaterThan(0);
   expect(await matesIn(await custom(onBaseplate("stud-brick.dat")))).toBe(official);
+  expect(await matesIn(await custom(onBaseplate("nonca-brick.dat")))).toBe(official);
   expect(await matesIn(await custom(underABrick("own-stud-brick.dat")))).toBe(stacked);
 });
 
+const CUSTOM_JUMPER_BENCH = [
+  "0 Bench of two jumpers under a tile, built for the lattice test",
+  "0 Name: custom-jumper-bench.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 -30 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 4 10 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 15 0 -8 0 1 0 0 0 1 0 0 0 1 2431.dat",
+];
+
+const CUSTOM_TABLE_ON_ROUND_PLATES = [
+  "0 Table standing on four 1 x 1 round plates, built for the lattice test",
+  "0 Name: custom-table-on-round-plates.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 -10 0 -10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 10 0 -10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 -10 0 10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 4 10 0 10 1 0 0 0 1 0 0 0 1 6141.dat",
+  "1 15 0 -8 0 1 0 0 0 1 0 0 0 1 3022.dat",
+];
+
+const CUSTOM_JUMPER_BESIDE_A_PLATE = [
+  "0 Jumper beside a 1 x 1 plate, whose two studs tie, built for the lattice test",
+  "0 Name: custom-jumper-beside-a-plate.ldr",
+  "0 Author: lug-layout tests",
+  "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+  "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat",
+  "1 15 10 0 20 1 0 0 0 1 0 0 0 1 3024.dat",
+];
+
+async function importedPhase(name: string, lines: ReadonlyArray<string>) {
+  const { bake } = await importWith(pinnedMirror, name, [...lines, ""].join("\n"));
+  return bake?.lattice ? [bake.lattice.phaseX, bake.lattice.phaseZ] : null;
+}
+
+it(
+  "phases a model by its studs where they seat on a stud field and by the receptors it stands on where only those do: a round plate and a custom table on round plates keep their studs; a studless tile, a jumper, a custom bench of jumpers and a custom jumper beside a plate, whose studs tie, take their receptors",
+  async () => {
+    expect({
+      roundPlate: await importedPhase("round-plate.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 6141.dat"]),
+      table: await importedPhase("custom-table-on-round-plates.ldr", CUSTOM_TABLE_ON_ROUND_PLATES),
+      tile: await importedPhase("tile.ldr", ["1 15 0 0 0 1 0 0 0 1 0 0 0 1 3069b.dat"]),
+      jumper: await importedPhase("jumper.ldr", ["1 4 0 0 0 1 0 0 0 1 0 0 0 1 3794b.dat"]),
+      bench: await importedPhase("custom-jumper-bench.ldr", CUSTOM_JUMPER_BENCH),
+      jumperBesideAPlate: await importedPhase(
+        "custom-jumper-beside-a-plate.ldr",
+        CUSTOM_JUMPER_BESIDE_A_PLATE,
+      ),
+    }).toEqual({
+      roundPlate: [0, 0],
+      table: [10, 10],
+      tile: [10, 0],
+      jumper: [10, 0],
+      bench: [0, 0],
+      jumperBesideAPlate: [10, 0],
+    });
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "bakes a generated jumper to the lattice the pipeline baked for it, framed on both paths by the anti-studs it stands on rather than its centre stud",
+  async () => {
+    const manifest = JSON.parse(
+      await readFile(new URL("manifest.json", fixtureBundleRoot), "utf8"),
+    ) as Manifest;
+    const entry = manifest.models.find((model) => model.name === JUMPER_FIXTURE_MODEL);
+    if (!entry) throw new Error(`the fixture bundle has no ${JUMPER_FIXTURE_MODEL}`);
+    const bundled = JSON.parse(
+      await readFile(new URL(entry.file, fixtureBundleRoot), "utf8"),
+    ) as BundledModel;
+
+    const { bake } = await importWith(
+      pinnedMirror,
+      "jumper.ldr",
+      await readFile(jumperScene, "utf8"),
+    );
+
+    expect(bundled.lattice?.phase).toEqual([10, 0]);
+    expect(bake?.lattice).toEqual({
+      phaseX: bundled.lattice?.phase[0],
+      phaseZ: bundled.lattice?.phase[1],
+      aabbMin: bundled.lattice?.aabb.min,
+      aabbMax: bundled.lattice?.aabb.max,
+    });
+  },
+  BAKE_TIMEOUT_MS,
+);
+
 it.each([0, 2])(
-  "bakes an imported file to the same lattice, stud cover, footprint and columns as the bundle's own bake of that file, with %i helper reactors",
+  "bakes an imported file to the same lattice, stud cover, footprint, columns and instance footing as the bundle's own bake of that file, with %i helper reactors",
   async (helperReactors) => {
     const manifest = await bundleManifest();
     const entry = manifest.models.find((model) => model.name === PALETTE_TEMPLATE_MODEL);
@@ -1530,6 +1665,10 @@ it.each([0, 2])(
         flat: [...bake.cells.flat],
         columnBottom: [...bake.cells.columnBottom],
         columnTop: [...bake.cells.columnTop],
+        footing: {
+          instance: [...bake.cells.footing.instance],
+          cell: [...bake.cells.footing.cell],
+        },
       },
     ).toEqual(columns);
     expect(bake?.cells?.partCells).toEqual(
@@ -1560,6 +1699,46 @@ it(
     expect(alone.report.bakeHelpersFailed).toBe(0);
     expect(failing.report.bakeHelpersFailed).toBe(3);
     expect(failing.bake).toEqual(alone.bake);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "bakes footing for each of an imported file's own instances, so a wall keeps the cell a track end's joiner also reaches",
+  async () => {
+    const result = await importWith(
+      pinnedMirror,
+      "custom-run-and-wall.ldr",
+      [
+        "0 Custom run with a wall at its far end",
+        "0 Name: custom-run-and-wall.ldr",
+        "0 !LICENSE Licensed under CC BY 4.0 : see CAreadme.txt",
+        "1 16 0 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+        "1 16 320 0 0 1 0 0 0 1 0 0 0 1 74746.dat",
+        "1 4 490 -16 50 1 0 0 0 1 0 0 0 1 3005.dat",
+        "1 4 580 -16 0 1 0 0 0 1 0 0 0 1 3001.dat",
+        "1 4 580 -40 0 1 0 0 0 1 0 0 0 1 3001.dat",
+        "",
+      ].join("\n"),
+    );
+    const footing = result.bake?.cells?.footing;
+    if (!footing) throw new Error("the run and wall bake no cells");
+    const cellsOf = (instance: number) =>
+      [...footing.cell].filter((_, k) => footing.instance[k] === instance);
+    const partOf = (instance: number) => result.partIds[result.partIndex[instance] ?? -1];
+
+    expect([0, 1, 2, 3, 4].map(partOf)).toEqual([
+      "ldraw:74746",
+      "ldraw:74746",
+      "ldraw:3005",
+      "ldraw:3001",
+      "ldraw:3001",
+    ]);
+    const [wall] = cellsOf(2);
+    expect(cellsOf(2)).toHaveLength(1);
+    expect(cellsOf(1)).toContain(wall);
+    expect(cellsOf(3)).toHaveLength(8);
+    expect(cellsOf(4)).toEqual([]);
   },
   BAKE_TIMEOUT_MS,
 );
@@ -1607,6 +1786,29 @@ it(
       band(53.5, 56, [2.5, 0]),
     ]);
     expect(rolling?.unread).toEqual([]);
+  },
+  BAKE_TIMEOUT_MS,
+);
+
+it(
+  "reads the top surface of a part the bundle doesn't hold when the import compiles it",
+  async () => {
+    const result = await importWith(
+      customMirror,
+      "recessed.ldr",
+      "0 A plate with a recessed stud\n1 16 0 0 0 1 0 0 0 1 0 0 0 1 zz-custom-recessed-plate.dat\n",
+    );
+
+    const [compiled] = result.compiled;
+    if (!compiled) throw new Error("the import compiled no part");
+    const { topSurface } = parseGlb(compiled.glb.slice().buffer, compiled.partId).document.extras;
+    expect(topSurface).toEqual({
+      stepsPerLdu: SIXTEENTHS_PER_LDU,
+      top: 16 * SIXTEENTHS_PER_LDU,
+      origin: [-30 * SIXTEENTHS_PER_LDU, -30 * SIXTEENTHS_PER_LDU],
+      size: [3, 3],
+      cells: ["fff", "fpf", "fff"],
+    });
   },
   BAKE_TIMEOUT_MS,
 );

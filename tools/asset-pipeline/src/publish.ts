@@ -3,6 +3,8 @@ import {
   ConnectorIndexFile,
   ConnectorRecordFile,
   type ConnectorPackage,
+  type ConnectorPackFile,
+  type ConnectorPacks,
   CreditTableFile,
   CrosswalkFile,
   FarMeshGltfDocument,
@@ -25,11 +27,7 @@ import { createHash } from "node:crypto";
 import { readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, sep } from "node:path";
 import * as v from "valibot";
-import {
-  connectorPackageIssues,
-  sectionVocabularyIssues,
-  sectionVocabularyValues,
-} from "./connector-license.ts";
+import { connectorPackageIssues, sectionVocabularyIssues } from "./connector-license.ts";
 import { CONTENT_HASH_HEX_DIGITS } from "./content-hash.ts";
 import { readPngHeader } from "./thumbnails/png.ts";
 import { THUMBNAIL_PX } from "./thumbnails/rasterizer.ts";
@@ -39,7 +37,6 @@ export const CROSSWALK_FILE = "crosswalk.json";
 export const LIBRARY_PARTS_FILE = "library-parts.json";
 export const SECTION_VOCABULARY_FILE = "section-vocabulary.json";
 export const ROLLING_DIAGNOSTICS_FILE = "rolling-diagnostics.json";
-const LEAKED_PATHS_SHOWN = 3;
 
 const GLB_MAGIC = 0x46546c67;
 const GLB_JSON_LENGTH_OFFSET = 12;
@@ -76,23 +73,11 @@ function undeclaredKeys(raw: unknown, decoded: unknown, path: string): ReadonlyA
   );
 }
 
-function refuseSectionVocabularyValues(raw: unknown, label: string): void {
-  const paths = sectionVocabularyValues(raw);
-  if (paths.length === 0) return;
-  const shown = paths.slice(0, LEAKED_PATHS_SHOWN).join(", ");
-  const more =
-    paths.length > LEAKED_PATHS_SHOWN ? ` and ${paths.length - LEAKED_PATHS_SHOWN} more` : "";
-  throw new Error(
-    `${label} carries section vocabulary values at ${shown}${more}; they ship only in the CC BY-SA section vocabulary asset`,
-  );
-}
-
 function decodeDeclared<const TSchema extends v.GenericSchema>(
   schema: TSchema,
   raw: unknown,
   label: string,
 ): v.InferOutput<TSchema> {
-  refuseSectionVocabularyValues(raw, label);
   const value = decodedOrThrow(decode(schema, raw), label);
   const undeclared = [...new Set(undeclaredKeys(raw, value, "$"))];
   if (undeclared.length > 0) {
@@ -112,6 +97,22 @@ export async function bundleFiles(directory: string): Promise<ReadonlyArray<stri
 export function contentAddressedName(file: string, digest: string): string {
   const extension = extname(file);
   return `${file.slice(0, -extension.length)}.${digest.slice(0, CONTENT_HASH_HEX_DIGITS)}${extension}`;
+}
+
+function connectorPackFile(pkg: ConnectorPackage): string {
+  return `${pkg}-pack.json`;
+}
+
+function publishedName(renamed: ReadonlyMap<string, string>, file: string): string {
+  const name = renamed.get(file);
+  if (name === undefined) throw new Error(`${file} has not been published`);
+  return name;
+}
+
+function requiredPack(packs: ReadonlyMap<ConnectorPackage, string>, pkg: ConnectorPackage): string {
+  const pack = packs.get(pkg);
+  if (pack === undefined) throw new Error(`the bundle published no ${pkg} pack`);
+  return pack;
 }
 
 async function attachCompilerPin(
@@ -386,14 +387,18 @@ export async function publishBundle(
     ["connectivity", manifest.connectivity.file],
   ];
   const indexes = new Map<ConnectorPackage, v.InferOutput<typeof ConnectorIndexFile>>();
+  const packs = new Map<ConnectorPackage, string>();
   for (const [expected, file] of packages) {
-    const { value: index } = await readJson(ConnectorIndexFile, file);
+    const { raw: rawIndex, value: index } = await readJson(ConnectorIndexFile, file);
     indexes.set(expected, index);
     const records = new Map<string, v.InferOutput<typeof ConnectorRecordFile>>();
+    const packed = new Map<string, unknown>();
     for (const [partId, record] of Object.entries(index.parts)) {
       if (record === null) continue;
-      records.set(partId, (await readJson(ConnectorRecordFile, record.file)).value);
+      const { raw, value } = await readJson(ConnectorRecordFile, record.file);
+      records.set(partId, value);
       await publish(record.file);
+      packed.set(publishedName(renamed, record.file), raw);
     }
     const issues = connectorPackageIssues(
       expected,
@@ -403,6 +408,12 @@ export async function publishBundle(
     );
     if (issues.length > 0) throw new Error(`${file}: ${issues.join("; ")}`);
     await publishJson(ConnectorIndexFile, file);
+    packed.set(publishedName(renamed, file), addressedFiles(rawIndex, renamed));
+    const pack = connectorPackFile(expected);
+    const contents: ConnectorPackFile = { package: expected, files: Object.fromEntries(packed) };
+    await writeFile(join(directory, pack), JSON.stringify(contents));
+    await publish(pack);
+    packs.set(expected, publishedName(renamed, pack));
   }
   const connectivity = indexes.get("connectivity");
   if (manifest.compiler !== null && connectivity !== undefined) {
@@ -418,7 +429,11 @@ export async function publishBundle(
   }
   const addressed = addressedFiles(compiled, renamed);
   if (!isRecord(addressed)) throw new Error(`${manifestPath} is not a bundle index`);
-  const body = { ...addressed, inputs };
+  const connectorPacks: ConnectorPacks = {
+    connectivity: { file: requiredPack(packs, "connectivity") },
+    connectors: { file: requiredPack(packs, "connectors") },
+  };
+  const body = { ...addressed, connectorPacks, inputs };
   const bundleVersion = sha256(JSON.stringify(body)).slice(0, CONTENT_HASH_HEX_DIGITS);
   const publishedManifest = { bundleVersion, ...body };
   decodeDeclared(BundleIndex, publishedManifest, manifestPath);

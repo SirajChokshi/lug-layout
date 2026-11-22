@@ -506,6 +506,7 @@ const PLAN_CHECKS = {
   crossesRegion: "Placements stay inside the plan",
   fit: "Placements stand on the tables, clear of obstacles",
   unsupported: "Placements are held: on studs or on the table",
+  clearance: "Bridges leave room for the tallest train",
   seam: "No placement stands across a table seam",
   reach: "Every part is within reach of a table edge",
   overlap: "Placements don't overlap",
@@ -515,8 +516,9 @@ const PLAN_CHECKS = {
   trackJoin: "Track ends that meet join exactly",
   trackUnverified: "Every track part's connector poses are verified",
   trackUnidentified: "Every model's track sits on exact track poses",
-  trackOffTable: "Laid track stands on the tables, by its outline",
-  trackSeam: "No laid track piece's body spans a table seam; a joint may sit on one",
+  trackOffTable: "Track, laid or a model's own, stands on the tables, by its outline",
+  trackSeam:
+    "No track piece's body, laid or a model's own, spans a table seam; a joint may sit on one",
 } satisfies Record<CheckedRule, string>;
 
 function isCheckedRule(rule: string): rule is CheckedRule {
