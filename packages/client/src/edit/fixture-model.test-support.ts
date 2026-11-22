@@ -20,7 +20,14 @@ import {
   type PartShapeRecord,
   type StudPrimitiveAsset,
 } from "@brr/catalog";
-import type { BundleIndex, BundleLod, BundleManifest, CatalogPart } from "@brr/schema/bundle";
+import type {
+  BundleIndex,
+  BundleLod,
+  BundleManifest,
+  CatalogPart,
+  LibraryPartsFile,
+  RollingDiagnosticsFile,
+} from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { mainThreadModules } from "../client.module.ts";
@@ -182,6 +189,14 @@ export class WithFixtureModels implements IPartBundleLoader {
 
   loadBricklinkParts(lod: BundleLod): Promise<BricklinkPartCandidates> {
     return this.shipped.loadBricklinkParts(lod);
+  }
+
+  loadRollingDiagnostics(lod: BundleLod): Promise<RollingDiagnosticsFile | null> {
+    return this.shipped.loadRollingDiagnostics(lod);
+  }
+
+  loadLibraryParts(lod: BundleLod): Promise<LibraryPartsFile | null> {
+    return this.shipped.loadLibraryParts(lod);
   }
 
   private from(name: string): IPartBundleLoader {

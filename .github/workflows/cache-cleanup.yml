@@ -1,0 +1,44 @@
+name: Cache cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      pattern:
+        description: Extended regular expression; every Actions cache whose whole key matches it is listed, and deleted unless this is a dry run
+        required: true
+        default: "^ldraw-inputs-(v2-)?[0-9a-f]{64}$"
+      dry_run:
+        description: List the matching caches without deleting them
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          PATTERN: ${{ inputs.pattern }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | [.id, .key, .ref, .size_in_bytes] | @tsv' > caches.tsv
+          matched=0
+          bytes=0
+          while IFS=$'\t' read -r id key ref size; do
+            [[ "$key" =~ $PATTERN ]] || continue
+            matched=$((matched + 1))
+            bytes=$((bytes + size))
+            echo "${key}  ${ref}  $((size / 1048576)) MiB"
+            if [ "$DRY_RUN" != "true" ]; then
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/actions/caches/${id}" > /dev/null
+            fi
+          done < caches.tsv
+          verb=$([ "$DRY_RUN" = "true" ] && echo "would delete" || echo "deleted")
+          echo "${verb} ${matched} caches, $((bytes / 1048576)) MiB, of $(wc -l < caches.tsv) listed"

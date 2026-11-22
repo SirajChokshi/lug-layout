@@ -17,17 +17,26 @@ export function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
+export interface StoreSpec {
+  readonly name: string;
+  readonly keyPath?: string;
+  readonly indexes?: ReadonlyArray<string>;
+}
+
 export function openDatabase(
   factory: IDBFactory,
   name: string,
-  stores: ReadonlyArray<{ readonly name: string; readonly keyPath?: string }>,
+  stores: ReadonlyArray<StoreSpec>,
 ): Promise<IDBDatabase> {
   const request = factory.open(name, 1);
   request.addEventListener("upgradeneeded", () => {
     for (const store of stores) {
       if (request.result.objectStoreNames.contains(store.name)) continue;
-      if (store.keyPath === undefined) request.result.createObjectStore(store.name);
-      else request.result.createObjectStore(store.name, { keyPath: store.keyPath });
+      const created =
+        store.keyPath === undefined
+          ? request.result.createObjectStore(store.name)
+          : request.result.createObjectStore(store.name, { keyPath: store.keyPath });
+      for (const keyPath of store.indexes ?? []) created.createIndex(keyPath, keyPath);
     }
   });
   return requestResult(request);

@@ -2,10 +2,9 @@ import type { FetchFunction, ImportResult } from "@brr/import";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Bundle } from "./bundle.ts";
-import { NO_IMPORTED_PLACEMENT } from "./checks.ts";
 import type { ModulePair } from "./generator.ts";
 import { importThroughWorkerPath, type ImportOutcome } from "./import-path.ts";
-import { scenarioProblems, shiftedPoseContacts } from "./pair-scenario.ts";
+import { scenarioProblems } from "./pair-scenario.ts";
 
 export interface Criterion {
   readonly label: string;
@@ -39,6 +38,8 @@ const MILS_PATTERN = /mils/iu;
 const NO_MILS_RULE = /"brr\/no-mils"\s*:\s*(?!"off")/u;
 const OXLINT_CONFIG = ".oxlintrc.json";
 const FILE_HEADER = /^0 FILE /gmu;
+const PLACED_CRITERIA_NOTE =
+  "The placed criteria (joins its neighbours only through stud/anti-stud and Technic pin/hole mates, refused one stud off, identical under a rename once placed) are checked through `IEditor` in the editor-path report in this workflow summary.";
 
 function sameNumbers(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
   if (a.length !== b.length) return false;
@@ -151,7 +152,6 @@ export async function runAcceptance(inputs: AcceptanceInputs): Promise<Acceptanc
   if (!renamed) problems.push("the renamed subject fails to import");
   if (!importedCleanly(neighbours[0][1])) problems.push("the partner fails to import");
 
-  const blocked = `blocked: ${NO_IMPORTED_PLACEMENT}`;
   const differences = subject && renamed ? importDifferences(subject, renamed) : ["import failed"];
   const importStage =
     differences.length === 0
@@ -165,19 +165,10 @@ export async function runAcceptance(inputs: AcceptanceInputs): Promise<Acceptanc
     scenarioProblems: problems,
     criteria: [
       {
-        label: "Joins its neighbours only through stud/anti-stud and Technic pin/hole mates",
-        passed: false,
-        detail: `${blocked}. Expected beside the partner, from geometry: ${pair.pins} pin/hole mates at the ${pair.pins} pin positions, and no other contact`,
-      },
-      {
-        label: "Refused one stud off",
-        passed: false,
-        detail: `${blocked}. Expected, from geometry: at each pose at least one pin collides or misses a hole. ${shiftedPoseContacts(pair)}`,
-      },
-      {
-        label: "Identical under a random rename of the file, model name and submodel names",
-        passed: false,
-        detail: `${importStage}; placement stage ${blocked}`,
+        label:
+          "Identical at the import stage under a random rename of the file, model name and submodel names",
+        passed: differences.length === 0,
+        detail: importStage,
       },
       await noMilsCriterion(inputs.repoRoot),
     ],
@@ -194,6 +185,8 @@ export function acceptanceMarkdown(result: AcceptanceResult): string {
     `#### §4.1 acceptance: the engine doesn't know MILS exists (seed ${result.seed})`,
     "",
     `Subject: a freshly generated module with ${result.pins} Technic pins on one edge, in an MPD whose file, model and ${result.subjectSubmodels} submodel names all say "mils"; its rename uses random names. Neighbours: ${result.neighboursImported}. ${passing} of ${result.criteria.length} criteria pass.`,
+    "",
+    PLACED_CRITERIA_NOTE,
     "",
     "| Criterion | Result | Detail |",
     "|---|---|---|",

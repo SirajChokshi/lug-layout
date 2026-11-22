@@ -3,6 +3,7 @@ import {
   type IBomService,
   type IBomSource,
   type IImportScene,
+  type IOwnedParts,
   type ImportedModule,
   type IViewerScene,
   type LookSettings,
@@ -27,7 +28,11 @@ interface AppProps {
   readonly scene: IViewerScene;
   readonly params: ViewerParams;
   readonly importScene: IImportScene | null;
-  readonly bom: { readonly service: IBomService; readonly source: IBomSource } | null;
+  readonly bom: {
+    readonly service: IBomService;
+    readonly ownedParts: IOwnedParts;
+    readonly source: IBomSource;
+  } | null;
 }
 
 function mebibytes(bytes: number): string {
@@ -201,9 +206,11 @@ export function App({ scene, params, importScene, bom }: AppProps) {
         {report && !error && bom && (
           <BomPanel
             service={bom.service}
+            ownedParts={bom.ownedParts}
             source={bom.source}
             region={params.region}
             selectionLabel={null}
+            plans={null}
           />
         )}
         {result && !error && (
