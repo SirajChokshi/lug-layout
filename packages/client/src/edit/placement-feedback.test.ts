@@ -7,6 +7,7 @@ import {
   type PlacementView,
 } from "./placement-feedback.ts";
 import { distinctJoints } from "./placement-hover.ts";
+import { refusalText } from "./placement-hover-view.ts";
 import type {
   ConnectorKindView,
   HoverMateCount,
@@ -99,10 +100,13 @@ function mate(
   };
 }
 
+const HELD = "custom-modular-holes.ldr";
+
 function hover(
   placement: Partial<PlacementHover>,
   view: Partial<PlacementView> = {},
 ): PlacementView {
+  const refused = placement.accepted === false;
   return {
     mode: "place",
     ghostSettled: false,
@@ -113,7 +117,7 @@ function hover(
     placementMode: "assist",
     placementModeOverride: false,
     hover: {
-      refusal: null,
+      refusal: refused ? refusalText(HELD, placement.hit ?? null) : null,
       placement: {
         pose: { x: 320, z: 0, yPlates: 0, rot: 0 },
         accepted: true,
@@ -144,14 +148,13 @@ const FILL: FillView = { wanted: 4, refused: 0, overLimit: false };
 const HIT: HoverRefusalHit = {
   placed: model("Market Street", 0),
   part: "ldraw:3700",
-  partLabel: null,
+  partLabel: "Technic Brick 1 x 2 with Hole",
   cellX: 16,
   cellZ: -7,
   placedBottomLdu: 0,
   placedTopLdu: 24,
   heldBottomLdu: 8,
   heldTopLdu: 32,
-  byColumnOnly: false,
 };
 
 it.each([
@@ -204,7 +207,7 @@ it.each([
     },
     tone: "refused",
     lines: [
-      "Hits ldraw:3700 in Market Street at cell (16, -7)",
+      `${HELD} would overlap ldraw:3700's bounds in Market Street at cell 16, -7`,
       "Turn it to meet the pins (2 unverified)",
     ],
   },
@@ -219,23 +222,6 @@ it.each([
     },
     tone: "fits",
     lines: [],
-  },
-  {
-    name: "a refusal from the column check alone, which names no part and invents none",
-    placement: {
-      accepted: false,
-      hit: { ...HIT, part: null, partLabel: null, byColumnOnly: true },
-    },
-    tone: "refused",
-    lines: [
-      "Hits the column of Market Street at cell (16, -7), though no part is in that height band (column check)",
-    ],
-  },
-  {
-    name: "a refusal outside the column check that still names no part, which names the model and cell only",
-    placement: { accepted: false, hit: { ...HIT, part: null, partLabel: null } },
-    tone: "refused",
-    lines: ["Hits Market Street at cell (16, -7)"],
   },
   {
     name: "a pose magnetised a stud onto a neighbour's pins",
@@ -412,7 +398,9 @@ it("reads an unsettled assist hover or a wait on connector data as neutral, neve
     failed: { tone: "refused", hit: null, precise: false },
     settled: {
       tone: "refused",
-      lines: ["Hits ldraw:3700 in Market Street at cell (16, -7)"],
+      lines: [
+        `${HELD} would overlap Technic Brick 1 x 2 with Hole's bounds in Market Street at cell 16, -7`,
+      ],
       ghost: {
         tone: "refused",
         hit: { minX: 320, minY: 8, minZ: -140, maxX: 340, maxY: 24, maxZ: -120 },
@@ -444,8 +432,8 @@ function holdingGroup(refusal: string | null): PlacementView {
 }
 
 it.each([
-  "brick-2x4 would hit Plate 2 x 8 in 10014-1 Caboose (2001) at cell 3, -2",
-  "MILS Basic Terrain Module would hit Technic Brick 1 x 4 with Holes in MILS Basic Terrain Module at cell -11, 64",
+  "brick-2x4 would overlap Plate 2 x 8's bounds in 10014-1 Caboose (2001) at cell 3, -2",
+  "MILS Basic Terrain Module would overlap Technic Brick 1 x 4 with Holes's bounds in MILS Basic Terrain Module at cell -11, 64",
   "brick-2x4 has nothing to rest on here: none of its connectors mate, and it isn't on the table",
 ])("presents a held group's refusal as it reads, %s, and never a snap or a mate", (refusal) => {
   expect(read(holdingGroup(refusal))).toEqual({

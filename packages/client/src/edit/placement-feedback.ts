@@ -300,16 +300,6 @@ function turnText(turnMates: ReadonlyArray<HoverMateCount>): string {
   return met ? `Turn it to meet the ${met.many}` : "Turn it to snap here";
 }
 
-function refusalText(hit: HoverRefusalHit): string {
-  const part = hit.partLabel || hit.part;
-  const model = hit.placed.label || hit.placed.item;
-  const cell = `cell (${hit.cellX}, ${hit.cellZ})`;
-  if (hit.byColumnOnly) {
-    return `Hits the column of ${model} at ${cell}, though no part is in that height band (column check)`;
-  }
-  return part === null ? `Hits ${model} at ${cell}` : `Hits ${part} in ${model} at ${cell}`;
-}
-
 function badgesOf(mates: ReadonlyArray<HoverMateCount>): ReadonlyArray<BadgeCount> {
   let inferred = 0;
   let unverified = 0;
@@ -370,8 +360,7 @@ function turnToSnap(placement: PlacementHover): boolean {
 function placementLines(hover: PlacementHoverInput, placement: PlacementHover): PlacementLine[] {
   const lines: PlacementLine[] = [];
   if (!placement.accepted) {
-    const reason = placement.hit ? refusalText(placement.hit) : (hover.refusal ?? UNPLACEABLE);
-    lines.push(line("refusal", reason));
+    lines.push(line("refusal", hover.refusal ?? UNPLACEABLE));
   } else {
     const mates = joined(placement.mates);
     const kindLines = mateLines(mates);

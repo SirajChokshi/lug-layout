@@ -17,11 +17,14 @@ import {
   secondOtherAxis,
   technicItemsOverlap,
   technicScratch,
+  type CellVolumes,
   type LatticePose,
   type MateReport,
   type OverlapHit,
+  type PairExcuse,
   type PosedTechnic,
   type TechnicSet,
+  type VolumeIndex,
 } from "@brr/domain";
 import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import { PART_BOX_FLOATS, type PartBoxes } from "./part-boxes.ts";
@@ -46,8 +49,7 @@ const CELL_Z1 = 6;
 const WAIVED = 7;
 const WAIVER = 8;
 const ZONE_INTS = WAIVER + TECHNIC_WAIVER_INTS;
-const DEFERRED_INTS = 3;
-const RANGE_INTS = 4;
+const DEFERRED_INTS = 4;
 const INITIAL_ZONES = 16;
 const NO_ZONE = -1;
 
@@ -98,42 +100,7 @@ function within(inner: Float64Array, outer: Float64Array, at: number): boolean {
   return true;
 }
 
-function inCell(box: Float64Array, cellX: number, cellZ: number): boolean {
-  const x0 = cellX * STUD_LDU;
-  const z0 = cellZ * STUD_LDU;
-  return (
-    (box[X] ?? 0) < x0 + STUD_LDU &&
-    (box[AXES + X] ?? 0) > x0 &&
-    (box[Z] ?? 0) < z0 + STUD_LDU &&
-    (box[AXES + Z] ?? 0) > z0
-  );
-}
-
-function localCells(
-  boxes: PartBoxes,
-  pose: LatticePose,
-  cellX: number,
-  cellZ: number,
-  out: Int32Array,
-): Int32Array {
-  const cos = cosOf(pose);
-  const sin = sinOf(pose);
-  const x0 = cellX * STUD_LDU - pose.x;
-  const z0 = cellZ * STUD_LDU - pose.z;
-  const x1 = x0 + STUD_LDU;
-  const z1 = z0 + STUD_LDU;
-  const loX = Math.min(cos * x0, cos * x1) + Math.min(-sin * z0, -sin * z1);
-  const hiX = Math.max(cos * x0, cos * x1) + Math.max(-sin * z0, -sin * z1);
-  const loZ = Math.min(sin * x0, sin * x1) + Math.min(cos * z0, cos * z1);
-  const hiZ = Math.max(sin * x0, sin * x1) + Math.max(cos * z0, cos * z1);
-  out[0] = Math.max(boxes.cellX0, Math.floor(loX / STUD_LDU));
-  out[1] = Math.max(boxes.cellZ0, Math.floor(loZ / STUD_LDU));
-  out[2] = Math.min(boxes.cellX0 + boxes.width, Math.ceil(hiX / STUD_LDU));
-  out[3] = Math.min(boxes.cellZ0 + boxes.depth, Math.ceil(hiZ / STUD_LDU));
-  return out;
-}
-
-export class MateZones {
+export class MateZones implements PairExcuse {
   private zones = 0;
   private zoneInts = new Int32Array(INITIAL_ZONES * ZONE_INTS);
   private zoneBoxes = new Float64Array(INITIAL_ZONES * PART_BOX_FLOATS);
@@ -145,8 +112,6 @@ export class MateZones {
   private readonly theirBox = new Float64Array(PART_BOX_FLOATS);
   private readonly region = new Float64Array(PART_BOX_FLOATS);
   private readonly cylinder = new Float64Array(PART_BOX_FLOATS);
-  private readonly ownCells = new Int32Array(RANGE_INTS);
-  private readonly theirCells = new Int32Array(RANGE_INTS);
   private boxes: PartBoxes | null = null;
   private technic: TechnicSet | null = null;
   private pose: LatticePose | null = null;
@@ -205,7 +170,7 @@ export class MateZones {
     return this.zones;
   }
 
-  exempts(owner: number, cellX: number, cellZ: number): boolean {
+  exempts(owner: number, cellX: number, cellZ: number, heldCell: number): boolean {
     for (let z = 0; z < this.zones; z++) {
       const at = z * ZONE_INTS;
       if (
@@ -215,27 +180,36 @@ export class MateZones {
         cellZ >= (this.zoneInts[at + CELL_Z0] ?? 0) &&
         cellZ < (this.zoneInts[at + CELL_Z1] ?? 0)
       ) {
-        this.defer(owner, cellX, cellZ);
+        this.defer(owner, cellX, cellZ, heldCell);
         return true;
       }
     }
     return false;
   }
 
-  firstOverlap(out: OverlapHit): boolean {
-    const boxes = this.boxes;
-    const pose = this.pose;
+  firstOverlap(index: VolumeIndex, held: CellVolumes, out: OverlapHit): boolean {
     const placed = this.placed;
-    if (!boxes || !pose || !placed) return false;
+    if (!placed) return false;
     for (let d = 0; d < this.deferred; d++) {
-      const owner = this.deferredInts[d * DEFERRED_INTS] ?? 0;
-      const cellX = this.deferredInts[d * DEFERRED_INTS + 1] ?? 0;
-      const cellZ = this.deferredInts[d * DEFERRED_INTS + 2] ?? 0;
-      const other = placed.get(owner);
-      if (!other) throw new RangeError(`placement ${owner} has volume but no parts`);
-      if (this.firstPartOverlap(boxes, pose, other, owner, cellX, cellZ, out)) return true;
+      const at = d * DEFERRED_INTS;
+      const owner = this.deferredInts[at] ?? 0;
+      const cellX = this.deferredInts[at + 1] ?? 0;
+      const cellZ = this.deferredInts[at + 2] ?? 0;
+      const heldCell = this.deferredInts[at + 3] ?? 0;
+      if (!placed.has(owner)) throw new RangeError(`placement ${owner} has volume but no parts`);
+      if (!index.firstUnexcusedOverlap(cellX, cellZ, held, heldCell, owner, this, out)) continue;
+      out.cellX = cellX;
+      out.cellZ = cellZ;
+      return true;
     }
     return false;
+  }
+
+  excuses(owner: number, own: number, theirs: number, region: Float64Array): boolean {
+    const other = this.placed?.get(owner);
+    if (!other) return false;
+    this.region.set(region);
+    return this.excused(owner, own, theirs, other);
   }
 
   private cutToEngagement(report: MateReport, k: number): boolean {
@@ -331,63 +305,6 @@ export class MateZones {
     return cells;
   }
 
-  private firstPartOverlap(
-    boxes: PartBoxes,
-    pose: LatticePose,
-    other: PlacedParts,
-    owner: number,
-    cellX: number,
-    cellZ: number,
-    out: OverlapHit,
-  ): boolean {
-    const own = localCells(boxes, pose, cellX, cellZ, this.ownCells);
-    const theirs = localCells(other.boxes, other.pose, cellX, cellZ, this.theirCells);
-    for (let lz = own[1] ?? 0; lz < (own[3] ?? 0); lz++) {
-      for (let lx = own[0] ?? 0; lx < (own[2] ?? 0); lx++) {
-        const cell = (lz - boxes.cellZ0) * boxes.width + (lx - boxes.cellX0);
-        for (let r = boxes.cellStart[cell] ?? 0; r < (boxes.cellStart[cell + 1] ?? 0); r++) {
-          const instance = boxes.cellInstance[r] ?? 0;
-          poseBox(boxes.boxes, instance, pose, this.ownBox);
-          if (!inCell(this.ownBox, cellX, cellZ)) continue;
-          if (!this.clashes(instance, other, owner, theirs, cellX, cellZ)) continue;
-          out.owner = owner;
-          out.cellX = cellX;
-          out.cellZ = cellZ;
-          out.bottomLdu = Math.floor(this.theirBox[Y] ?? 0);
-          out.topLdu = Math.ceil(this.theirBox[AXES + Y] ?? 0);
-          out.candidateBottomLdu = Math.floor(this.ownBox[Y] ?? 0);
-          out.candidateTopLdu = Math.ceil(this.ownBox[AXES + Y] ?? 0);
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  private clashes(
-    own: number,
-    other: PlacedParts,
-    owner: number,
-    cells: Int32Array,
-    cellX: number,
-    cellZ: number,
-  ): boolean {
-    const boxes = other.boxes;
-    for (let lz = cells[1] ?? 0; lz < (cells[3] ?? 0); lz++) {
-      for (let lx = cells[0] ?? 0; lx < (cells[2] ?? 0); lx++) {
-        const cell = (lz - boxes.cellZ0) * boxes.width + (lx - boxes.cellX0);
-        for (let r = boxes.cellStart[cell] ?? 0; r < (boxes.cellStart[cell + 1] ?? 0); r++) {
-          const theirs = boxes.cellInstance[r] ?? 0;
-          poseBox(boxes.boxes, theirs, other.pose, this.theirBox);
-          if (!intersect(this.ownBox, this.theirBox, this.region)) continue;
-          if (!inCell(this.region, cellX, cellZ)) continue;
-          if (!this.excused(owner, own, theirs, other)) return true;
-        }
-      }
-    }
-    return false;
-  }
-
   private excused(owner: number, own: number, theirs: number, other: PlacedParts): boolean {
     let mated = false;
     let contained = false;
@@ -418,7 +335,7 @@ export class MateZones {
     return !technicItemsOverlap(posed, ownItem, theirPosed, theirItem, this.waivers, waivers);
   }
 
-  private defer(owner: number, cellX: number, cellZ: number): void {
+  private defer(owner: number, cellX: number, cellZ: number, heldCell: number): void {
     for (let d = 0; d < this.deferred; d++) {
       const at = d * DEFERRED_INTS;
       if (
@@ -433,6 +350,7 @@ export class MateZones {
     this.deferredInts[at] = owner;
     this.deferredInts[at + 1] = cellX;
     this.deferredInts[at + 2] = cellZ;
+    this.deferredInts[at + 3] = heldCell;
   }
 
   private reserveZones(zones: number, joints: number): void {

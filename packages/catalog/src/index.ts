@@ -19,6 +19,7 @@ export {
   EMPTY_COLUMN,
   INHERIT_COLOR,
 } from "./part-bundle.ts";
+export { PART_CELL_HEIGHT_INTS, PART_CELL_PLAN_INTS, modelPartCells } from "./model-part-cells.ts";
 export { undrawnPart } from "./undrawn-part.ts";
 export type {
   BricklinkPartCandidates,
@@ -38,6 +39,7 @@ export type {
   ModelRecord,
   ModelCells,
   InstanceFooting,
+  ModelPartCells,
   ModelStudCover,
   ModelFarMesh,
   ModelVoxels,

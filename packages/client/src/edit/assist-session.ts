@@ -39,7 +39,7 @@ export interface AssistTarget {
 
 export interface AssistHost {
   mateCounts(report: MateReport): ReadonlyArray<HoverMateCount>;
-  refusalHit(connected: Connected, pose: LatticePose, overlap: OverlapHit): HoverRefusalHit | null;
+  refusalHit(overlap: OverlapHit): HoverRefusalHit | null;
   heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null;
   restsOn(connected: Connected, pose: LatticePose): ReadonlyArray<PlacedModelView>;
   neighbourhood(): AssistNeighbourhood;
@@ -350,8 +350,7 @@ export class AssistSession {
     const joints = this.mates.jointCount;
     const waitingOn = this.host.hoverWait(choice);
     const waiting = waitingOn !== null && !waitingOn.failed;
-    const hit =
-      choice.accepted || waitingOn ? null : this.host.refusalHit(connected, pose, choice.overlap);
+    const hit = choice.accepted || waitingOn ? null : this.host.refusalHit(choice.overlap);
     const blocked = choice.accepted ? this.host.heldPoseRefusal(placeable, pose) : null;
     this.shownYPlates = pose.yPlates;
     this.shown = {

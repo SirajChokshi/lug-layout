@@ -247,6 +247,34 @@ const InstanceFooting = v.pipe(
   ),
 );
 
+export const PART_CELL_BOX_INTS = 6;
+
+export const ModelFilePartCells = v.pipe(
+  v.object({
+    cell: v.array(Count),
+    instance: v.array(Count),
+    boxes: v.array(Integer),
+  }),
+  v.check(
+    ({ cell, instance, boxes }) =>
+      instance.length === cell.length && boxes.length === cell.length * PART_CELL_BOX_INTS,
+    "the part cell arrays disagree on their entry count",
+  ),
+  v.check(
+    ({ boxes }) =>
+      Array.from({ length: boxes.length / PART_CELL_BOX_INTS }, (_, k) => k).every((k) => {
+        const at = k * PART_CELL_BOX_INTS;
+        return (
+          (boxes[at] ?? 0) < (boxes[at + 3] ?? 0) &&
+          (boxes[at + 1] ?? 0) < (boxes[at + 4] ?? 0) &&
+          (boxes[at + 2] ?? 0) < (boxes[at + 5] ?? 0)
+        );
+      }),
+    "a part cell box is empty",
+  ),
+);
+export type ModelFilePartCells = v.InferOutput<typeof ModelFilePartCells>;
+
 export const ModelFileCells = v.pipe(
   v.object({
     origin: v.tuple([Finite, Finite]),
@@ -257,6 +285,7 @@ export const ModelFileCells = v.pipe(
     columnBottom: v.array(ColumnPlates),
     columnTop: v.array(ColumnPlates),
     footing: InstanceFooting,
+    partCells: v.optional(ModelFilePartCells),
   }),
   v.check(
     ({ size, footprint, flat }) => [...footprint, ...flat].every((cell) => cell < cellCount(size)),
@@ -270,6 +299,13 @@ export const ModelFileCells = v.pipe(
   v.check(
     ({ size, footing }) => footing.cell.every((cell) => cell < cellCount(size)),
     "a footing cell lies outside the cell grid",
+  ),
+  v.check(
+    ({ size, partCells, columnTop }) =>
+      (partCells?.cell ?? []).every(
+        (cell) => cell < cellCount(size) && columnTop[cell] !== EMPTY_COLUMN,
+      ),
+    "a part cell lies outside the cell grid or in an empty column",
   ),
 );
 export type ModelFileCells = v.InferOutput<typeof ModelFileCells>;
