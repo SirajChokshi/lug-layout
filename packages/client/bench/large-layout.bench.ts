@@ -17,6 +17,7 @@ import { EDITOR, PLACEABLE_CATALOG } from "../src/tokens.ts";
 import { loadCatalogItem } from "../src/catalog/catalog-item.test-support.ts";
 import type { IPlaceableCatalog } from "../src/catalog/placeable-catalog.ts";
 import type { IEditor } from "../src/edit/editor.ts";
+import { chosen } from "../src/edit/editor-choice.test-support.ts";
 import { meshesSettled } from "../src/edit/mesh-progress.ts";
 import type { Placeable } from "../src/edit/placeable.ts";
 
@@ -99,14 +100,18 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setPlanOverlays(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setVehicle(): void {}
   setVehiclePose(): void {}
   deleteVehicle(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   aim(x: number, z: number): void {
     this.aimX = x;
     this.aimZ = z;
@@ -282,8 +287,8 @@ async function startEditor(): Promise<{
 }
 
 function placer(editor: IEditor, backend: HeadlessBackend, clickMs: number[]) {
-  return (item: string, x: number, z: number): void => {
-    editor.chooseItem(item);
+  return async (item: string, x: number, z: number): Promise<void> => {
+    await chosen(editor, item);
     backend.aim(x, z);
     editor.pointerMove(0, 0);
     const before = editor.snapshot().placements;
@@ -346,23 +351,27 @@ for (let row = 0; row < GRID_TILES; row++) {
       displacedBaseplates++;
       continue;
     }
-    place(BASEPLATE, tileCentre(column), tileCentre(row));
+    await place(BASEPLATE, tileCentre(column), tileCentre(row));
   }
 }
 for (let i = 0; i < displacedBaseplates; i++) {
-  place(BASEPLATE, tileCentre(i % GRID_TILES), tileCentre(SPARE_ROW + Math.floor(i / GRID_TILES)));
+  await place(
+    BASEPLATE,
+    tileCentre(i % GRID_TILES),
+    tileCentre(SPARE_ROW + Math.floor(i / GRID_TILES)),
+  );
 }
 for (const [tile, set] of sets) {
-  place(set, tileCentre(tile % GRID_TILES), tileCentre(Math.floor(tile / GRID_TILES)));
+  await place(set, tileCentre(tile % GRID_TILES), tileCentre(Math.floor(tile / GRID_TILES)));
 }
 for (let row = ROAD_ROW; row < ROAD_ROW + ROAD_ROWS; row++) {
   for (let column = 0; column < GRID_TILES; column++) {
-    place(ROAD_PLATE, tileCentre(column), tileCentre(row));
+    await place(ROAD_PLATE, tileCentre(column), tileCentre(row));
   }
 }
 for (let column = 0; column < MODULE_COLUMNS; column++) {
-  place(RAIL_MODULE, tileCentre(column), tileCentre(RAIL_ROW));
-  place(ROAD_MODULE, tileCentre(column), tileCentre(ROAD_MODULE_ROW));
+  await place(RAIL_MODULE, tileCentre(column), tileCentre(RAIL_ROW));
+  await place(ROAD_MODULE, tileCentre(column), tileCentre(ROAD_MODULE_ROW));
 }
 for (let row = 0; row < TRACK_ROWS; row++) {
   for (let run = 0; run < TRACK_RUNS; run++) {
@@ -391,7 +400,7 @@ const hover = (x0: number, z0: number) => (i: number) => {
   backend.aim(x0 + (i % 8) * 20, z0 + ((i >> 3) % 8) * 20);
   editor.pointerMove(0, 0);
 };
-editor.chooseItem(BASEPLATE);
+await chosen(editor, BASEPLATE);
 await timeCalls(
   editor,
   "hover: 3811 baseplate ghost",
@@ -399,7 +408,7 @@ await timeCalls(
   HOVER_WARMUP_CALLS,
   hover(midX, midZ),
 );
-editor.chooseItem("omr:10264-1");
+await chosen(editor, "omr:10264-1");
 await timeCalls(
   editor,
   "hover: 10264-1 set ghost over free baseplates",
@@ -407,7 +416,7 @@ await timeCalls(
   HOVER_WARMUP_CALLS,
   hover(midX, tileCentre(GRID_TILES / 2 - 1)),
 );
-editor.chooseItem(ROAD_PLATE);
+await chosen(editor, ROAD_PLATE);
 await timeCalls(
   editor,
   "hover: road plate ghost over the road rows",
@@ -422,7 +431,7 @@ await timeCalls(
   HOVER_WARMUP_CALLS,
   hover(GRID_TILES * TILE_LDU + 100, tileCentre(ROAD_ROW) + 100),
 );
-editor.chooseItem(RAIL_MODULE);
+await chosen(editor, RAIL_MODULE);
 await timeCalls(
   editor,
   "hover: rail module ghost beside the module row",
@@ -430,7 +439,7 @@ await timeCalls(
   HOVER_WARMUP_CALLS,
   hover(tileCentre(MODULE_COLUMNS), tileCentre(RAIL_ROW)),
 );
-editor.chooseItem(TRACK_PIECE);
+await chosen(editor, TRACK_PIECE);
 await timeCalls(
   editor,
   "hover: held straight track piece near open ends",
@@ -440,7 +449,7 @@ await timeCalls(
 );
 
 async function placeAndUndo(name: string, item: string, x: number, z: number): Promise<void> {
-  editor.chooseItem(item);
+  await chosen(editor, item);
   backend.aim(x, z);
   editor.pointerMove(0, 0);
   const placeCycle = new Float64Array(CLICK_CYCLES);
@@ -494,7 +503,7 @@ await placeAndUndo(
   tileCentre(RAIL_ROW),
 );
 
-editor.chooseItem(null);
+await chosen(editor, null);
 await timeCalls(editor, "select click: pick a placed set", 200, 20, (i) => {
   backend.aim(tileCentre((i % GRID_TILES) & ~1), tileCentre(0));
   editor.click(0, 0, 0);

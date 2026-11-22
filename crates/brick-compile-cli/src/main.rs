@@ -4,16 +4,20 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use brick_compile::authored::AUTHORED_RULE_VERSION;
-use brick_compile::bake::{drawn_lattice, FarVoxels, LatticeShape, ModelBaker};
+use brick_compile::bake::{FarVoxels, LatticeShape, ModelBaker};
 use brick_compile::colors::{parse_ldconfig, Colour};
-use brick_compile::compile::{modified_note, required_stud_roundness, RollingMode, MODIFIED_NOTE};
+use brick_compile::compile::{
+    modified_note, required_stud_roundness, stud_primitives_from_table, RollingMode, MODIFIED_NOTE,
+};
 use brick_compile::connect::{
-    record_json, ConnectorExtractor, InferredFeatures, PartRecords, PrimitiveConnectors,
-    PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
+    lattice_receptors, record_json, ConnectorExtractor, Extraction, InferredFeatures, PartRecords,
+    PrimitiveConnectors, PrimitiveTable, ShadowPatches, ShadowSnaps, TierRecord,
+    CONNECTIVITY_LICENSE,
 };
 use brick_compile::cover::{CoverShard, ModelCover};
 use brick_compile::glb::{self, UintArray};
 use brick_compile::inline::compare_inline_part;
+use brick_compile::lattice::ModelLattice;
 use brick_compile::ldraw::{normalize_reference, parse as parse_ldraw, Header};
 use brick_compile::model::{
     bake_model_with, submodel_index, AuthoredColumns, BakeOptions, ModelInstance, RationalText,
@@ -21,6 +25,7 @@ use brick_compile::model::{
 use brick_compile::vehicle::{GuideKind, RailHeadBand, Vehicle, VehicleSignatures};
 use brick_compile::voxel::{greedy_mesh, CELL_LDU, CELL_MARGIN_LDU, VOXEL_NOTE};
 use brick_compile::{compile_part, CompileOptions, CompiledPart, Library, Lod, TechnicPrimitives};
+use brick_compile_cli::errata::{apply_omr_errata, parse_omr_errata, OmrErratum, PinnedModel};
 use brick_compile_cli::{read_section_vocabulary, verified_patch_paths, LazyLibrary};
 use serde_json::{json, Value};
 
@@ -30,8 +35,8 @@ const LDCONFIG: &str = "ldconfig.ldr";
 const COMPILER_FILE: &str = "brick-compile.wasm";
 const CONNECTOR_INDEX_FILE: &str = "connector-index.json";
 const CONNECTIVITY_INDEX_FILE: &str = "connectivity-index.json";
+const ROLLING_DIAGNOSTICS_FILE: &str = "rolling-diagnostics.json";
 const PATCH_MANIFEST: &str = "manifest.json";
-const CONNECTIVITY_LICENSE: &str = "CC BY-SA 4.0";
 const SHADOW_AUTHORS: &str = "Roland Melkert and the LDCad Shadow Library contributors";
 const PATCH_ATTRIBUTION: &str =
     "Brick Railroad shadow patches (tools/asset-pipeline/shadow-patches), CC BY-SA 4.0";
@@ -72,6 +77,7 @@ struct Args {
     geometry: PathBuf,
     fixtures: PathBuf,
     omr: PathBuf,
+    omr_errata: PathBuf,
     palette: PathBuf,
     primitives: PathBuf,
     inferred: PathBuf,
@@ -102,6 +108,7 @@ fn parse_args() -> Result<Args, String> {
         ldraw: take("--ldraw")?.into(),
         fixtures: take("--fixtures")?.into(),
         omr: take("--omr")?.into(),
+        omr_errata: take("--omr-errata")?.into(),
         geometry: take("--geometry")?.into(),
         palette: take("--palette")?.into(),
         primitives: take("--primitives")?.into(),
@@ -114,6 +121,20 @@ fn parse_args() -> Result<Args, String> {
         lod,
         compiler: values.get("--compiler").map(PathBuf::from),
     })
+}
+
+fn read_errata(path: &Path) -> Result<Vec<OmrErratum>, String> {
+    let file: Value =
+        serde_json::from_slice(&fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?)
+            .map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_omr_errata(&file).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn errata_json(applied: &[&OmrErratum]) -> Value {
+    json!(applied
+        .iter()
+        .map(|e| json!({ "line": e.line, "from": e.from, "to": e.to, "summary": e.summary }))
+        .collect::<Vec<_>>())
 }
 
 fn rational_json(value: &Option<RationalText>) -> Value {
@@ -167,6 +188,7 @@ fn cover_json(cover: &ModelCover) -> Value {
             "flat": cells.flat,
             "columnBottom": cells.column_bottom,
             "columnTop": cells.column_top,
+            "footing": { "instance": cells.footing.instance, "cell": cells.footing.cell },
         })
     });
     json!({
@@ -230,12 +252,17 @@ fn compile_entry(
     options: &CompileOptions,
     out: &Path,
     credits: &mut BTreeMap<String, Value>,
+    diagnostics: &mut BTreeMap<String, Value>,
 ) -> Result<(Value, LatticeShape), String> {
     let compiled = compile_part(library, reference, options).map_err(|e| e.to_string())?;
     let id = stem(reference);
     let file = format!("{id}.glb");
     fs::write(out.join(&file), compiled.to_glb()).map_err(|e| e.to_string())?;
     record_credits(credits, &compiled);
+    let rows = compiled.rolling_diagnostics();
+    if !rows.is_empty() {
+        diagnostics.insert(format!("ldraw:{id}"), json!(rows));
+    }
     let header = &compiled.flattened_files[0].header;
     let mut summary = part_summary(&compiled);
     summary["id"] = json!(format!("ldraw:{id}"));
@@ -354,10 +381,11 @@ fn far_mesh(
     out: &Path,
     name: &str,
     drawn: &[ModelInstance],
+    lattice: Option<&ModelLattice>,
     model_ldraw: &Value,
     credits: &mut BTreeMap<String, Value>,
 ) -> Result<Option<Value>, String> {
-    let grid = match baker.voxels(drawn).map_err(|e| e.to_string())? {
+    let grid = match baker.voxels(drawn, lattice).map_err(|e| e.to_string())? {
         FarVoxels::Grid(grid) => grid,
         FarVoxels::Omitted(reason) => {
             println!("{name}: no far mesh: {reason}");
@@ -438,8 +466,31 @@ fn write_record(
     Ok(json!({ "file": file }))
 }
 
+fn extraction<'e, L: Library, S: Library>(
+    extractor: &mut ConnectorExtractor<'_, L, S>,
+    extractions: &'e mut HashMap<String, Extraction>,
+    path: &str,
+) -> &'e Extraction {
+    extractions
+        .entry(path.to_string())
+        .or_insert_with(|| extractor.extract(path))
+}
+
+fn with_lattice_receptors<L: Library, S: Library>(
+    extractor: &mut ConnectorExtractor<'_, L, S>,
+    extractions: &mut HashMap<String, Extraction>,
+    summary: &Value,
+    shape: LatticeShape,
+) -> Result<LatticeShape, String> {
+    let path = summary["path"]
+        .as_str()
+        .ok_or_else(|| format!("part summary {summary} needs a path"))?;
+    Ok(shape.with_receptors(lattice_receptors(extraction(extractor, extractions, path))))
+}
+
 fn connector_records<L: Library, S: Library>(
     extractor: &mut ConnectorExtractor<'_, L, S>,
+    extractions: &mut HashMap<String, Extraction>,
     parts: &[Value],
     out: &Path,
 ) -> Result<ConnectorIndexes, String> {
@@ -452,7 +503,7 @@ fn connector_records<L: Library, S: Library>(
         let (Some(id), Some(path)) = (part["id"].as_str(), part["path"].as_str()) else {
             return Err(format!("part summary {part} needs an id and a path"));
         };
-        let records = PartRecords::of(&extractor.extract(path));
+        let records = PartRecords::of(extraction(extractor, extractions, path));
         let part_license = part["license"].as_str().unwrap_or_default();
         if !records.connectors.is_empty() {
             indexes.connector_licenses.insert(part_license.to_string());
@@ -498,12 +549,6 @@ fn run(args: &Args) -> Result<(), String> {
         &fs::read(&args.palette).map_err(|e| format!("{}: {e}", args.palette.display()))?,
     )
     .map_err(|e| e.to_string())?;
-    let stud_primitives: Vec<String> = palette["studPrimitives"]
-        .as_array()
-        .ok_or("palette.studPrimitives must be an array")?
-        .iter()
-        .filter_map(|v| v.as_str().map(str::to_string))
-        .collect();
     let unofficial_allowlist: Vec<String> = palette["unofficialAllowlist"]
         .as_array()
         .map(|list| {
@@ -517,6 +562,7 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| format!("{}: {e}", args.primitives.display()))?;
     let technic = TechnicPrimitives::from_table(&primitive_table)?;
+    let stud_primitives = stud_primitives_from_table(&primitive_table)?;
     let section_vocabulary = read_section_vocabulary(&args.vocabulary)?;
     let inferred: Value = serde_json::from_slice(
         &fs::read(&args.inferred).map_err(|e| format!("{}: {e}", args.inferred.display()))?,
@@ -574,7 +620,27 @@ fn run(args: &Args) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
+    let shadow = LazyLibrary::new(args.shadow.clone());
+    let patch_files = LazyLibrary::new(args.patches.clone());
+    let patch_manifest_path = args.patches.join(PATCH_MANIFEST);
+    let patch_manifest: Value = serde_json::from_slice(
+        &fs::read(&patch_manifest_path)
+            .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?,
+    )
+    .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
+    let verified = verified_patch_paths(&patch_manifest);
+    let mut extractor = ConnectorExtractor::new(
+        ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
+            files: &patch_files,
+            verified: &verified,
+        }),
+        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&primitive_table)?),
+        InferredFeatures::new(&library, section_vocabulary.clone(), probe_part)?,
+    );
+    let mut extractions: HashMap<String, Extraction> = HashMap::new();
+
     let mut credits: BTreeMap<String, Value> = BTreeMap::new();
+    let mut diagnostics: BTreeMap<String, Value> = BTreeMap::new();
 
     let mut primitives = Vec::new();
     for name in &stud_primitives {
@@ -606,6 +672,7 @@ fn run(args: &Args) -> Result<(), String> {
             &part_options,
             &args.out,
             &mut credits,
+            &mut diagnostics,
         )?;
         if !entry["displayColor"].is_null() {
             summary["displayColor"] = entry["displayColor"].clone();
@@ -613,6 +680,7 @@ fn run(args: &Args) -> Result<(), String> {
         if !entry["producedColors"].is_null() {
             summary["producedColors"] = entry["producedColors"].clone();
         }
+        let shape = with_lattice_receptors(&mut extractor, &mut extractions, &summary, shape)?;
         part_index.insert(reference, parts.len());
         parts.push(summary);
         shapes.push(shape);
@@ -658,6 +726,7 @@ fn run(args: &Args) -> Result<(), String> {
         return Err("LDConfig.ldr is missing or has no !COLOUR lines".into());
     }
 
+    let errata = read_errata(&args.omr_errata)?;
     let mut models = Vec::new();
     for entry in palette["models"].as_array().cloned().unwrap_or_default() {
         let name = entry["name"]
@@ -678,7 +747,14 @@ fn run(args: &Args) -> Result<(), String> {
         };
         let path = root.join(file);
         let source = fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let text = String::from_utf8_lossy(&source);
+        let pinned = PinnedModel {
+            name,
+            file,
+            sha256: entry["sha256"].as_str().unwrap_or_default(),
+        };
+        let (text, applied_errata) =
+            apply_omr_errata(&errata, pinned, &String::from_utf8_lossy(&source))
+                .map_err(|e| format!("{name}: {e}"))?;
         let baked = bake_model_with(&text, options).map_err(|e| format!("{file}: {e}"))?;
         let acknowledged = acknowledged_not_drawn(&entry, file)?;
         let mut not_drawn: Vec<Value> = Vec::new();
@@ -779,8 +855,11 @@ fn run(args: &Args) -> Result<(), String> {
                         &part_options,
                         &args.out,
                         &mut credits,
+                        &mut diagnostics,
                     )
                     .map_err(|e| format!("{file}: {e}"))?;
+                    let shape =
+                        with_lattice_receptors(&mut extractor, &mut extractions, &summary, shape)?;
                     part_index.insert(instance.part.clone(), parts.len());
                     parts.push(summary);
                     shapes.push(shape);
@@ -802,7 +881,9 @@ fn run(args: &Args) -> Result<(), String> {
             .iter()
             .map(|&index| &shapes[index])
             .collect();
-        let lattice = drawn_lattice(&drawn, &drawn_shapes).map_err(|e| format!("{file}: {e}"))?;
+        let lattice = baker
+            .lattice(&drawn, &drawn_shapes)
+            .map_err(|e| format!("{file}: {e}"))?;
         let total_studs = baker
             .stud_total(&drawn, &drawn_shapes)
             .map_err(|e| format!("{file}: {e}"))?;
@@ -847,7 +928,7 @@ fn run(args: &Args) -> Result<(), String> {
             Some(lattice) => json!({
                 "phase": lattice.phase,
                 "phaseLayerY": lattice.phase_layer_y,
-                "phaseLayerStuds": lattice.phase_layer_studs,
+                "phaseLayerStuds": lattice.phase_layer_votes,
                 "phaseLayerAgreeing": lattice.phase_layer_agreeing,
                 "aabb": { "min": lattice.aabb_min, "max": lattice.aabb_max },
             }),
@@ -912,6 +993,9 @@ fn run(args: &Args) -> Result<(), String> {
         if !not_drawn.is_empty() {
             manifest_entry["notDrawn"] = json!(not_drawn);
         }
+        if !applied_errata.is_empty() {
+            manifest_entry["errata"] = errata_json(&applied_errata);
+        }
         if !entry["role"].is_null() {
             manifest_entry["role"] = entry["role"].clone();
         }
@@ -929,6 +1013,7 @@ fn run(args: &Args) -> Result<(), String> {
                 &args.out,
                 name,
                 &drawn,
+                lattice.as_ref(),
                 &model_ldraw,
                 &mut credits,
             )
@@ -938,24 +1023,7 @@ fn run(args: &Args) -> Result<(), String> {
         models.push(manifest_entry);
     }
 
-    let shadow = LazyLibrary::new(args.shadow.clone());
-    let patch_files = LazyLibrary::new(args.patches.clone());
-    let patch_manifest_path = args.patches.join(PATCH_MANIFEST);
-    let patch_manifest: Value = serde_json::from_slice(
-        &fs::read(&patch_manifest_path)
-            .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?,
-    )
-    .map_err(|e| format!("{}: {e}", patch_manifest_path.display()))?;
-    let verified = verified_patch_paths(&patch_manifest);
-    let mut extractor = ConnectorExtractor::new(
-        ShadowSnaps::new(&library, &shadow).patched(ShadowPatches {
-            files: &patch_files,
-            verified: &verified,
-        }),
-        PrimitiveConnectors::new(&library, PrimitiveTable::from_json(&primitive_table)?),
-        InferredFeatures::new(&library, section_vocabulary.clone(), probe_part)?,
-    );
-    let indexes = connector_records(&mut extractor, &parts, &args.out)?;
+    let indexes = connector_records(&mut extractor, &mut extractions, &parts, &args.out)?;
     let connectivity_source = &palette["connectivitySource"];
     let connectivity_index = json!({
         "package": "connectivity",
@@ -978,9 +1046,14 @@ fn run(args: &Args) -> Result<(), String> {
         "source": palette["source"],
         "parts": indexes.connectors,
     });
+    let rolling_diagnostics = json!({
+        "stepsPerLdu": brick_compile::identify::SIXTEENTHS_PER_LDU,
+        "parts": diagnostics,
+    });
     for (file, index) in [
         (CONNECTIVITY_INDEX_FILE, &connectivity_index),
         (CONNECTOR_INDEX_FILE, &connector_index),
+        (ROLLING_DIAGNOSTICS_FILE, &rolling_diagnostics),
     ] {
         let text = serde_json::to_string(index).map_err(|e| e.to_string())?;
         fs::write(args.out.join(file), text).map_err(|e| format!("{file}: {e}"))?;
@@ -1018,6 +1091,7 @@ fn run(args: &Args) -> Result<(), String> {
         "compiler": compiler,
         "connectors": { "file": CONNECTOR_INDEX_FILE },
         "connectivity": { "file": CONNECTIVITY_INDEX_FILE },
+        "rollingDiagnostics": { "file": ROLLING_DIAGNOSTICS_FILE },
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     fs::write(args.out.join("manifest.json"), text + "\n").map_err(|e| e.to_string())?;

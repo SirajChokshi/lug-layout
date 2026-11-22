@@ -54,17 +54,33 @@ function manifestFile(version: string): string {
   return `manifest.${sha256Hex(version).slice(0, 16)}.json`;
 }
 
+const TOP_SURFACE_44343P02 = {
+  stepsPerLdu: 16,
+  top: 0,
+  origin: [-5120, -5120],
+  size: [32, 2],
+  cells: [".ffffffffffffffffffffffffffffff.", "fffffff.ffffffffffffffff.fffffff"],
+};
+
 function publish(objects: MemoryStore, version: string, parts: ReadonlyArray<string>): string[] {
   const file = manifestFile(version);
   const keys: string[] = [];
   for (const lod of BundleLod.options) {
     const glbs = parts.map((part) => store(objects, lod, `${part}.glb`, `${lod} mesh ${part}`));
-    const table = store(objects, lod, "parts.json", JSON.stringify({ parts: glbs }));
+    const shapes = parts.map((part) =>
+      store(
+        objects,
+        lod,
+        `shape-${part}.json`,
+        JSON.stringify({ id: part, topSurface: TOP_SURFACE_44343P02 }),
+      ),
+    );
+    const table = store(objects, lod, "parts.json", JSON.stringify({ parts: glbs, shapes }));
     const thumb = store(objects, lod, "thumb/ground.png", `${lod} thumb ${parts.length}`);
     const manifest = JSON.stringify({ bundleVersion: version, partTable: table, thumbs: [thumb] });
     objects.objects.set(`${lod}/${file}`, encoder.encode(manifest));
     keys.push(`${lod}/${file}`, `${lod}/${table}`, `${lod}/${thumb}`);
-    keys.push(...glbs.map((glb) => `${lod}/${glb}`));
+    keys.push(...glbs.map((glb) => `${lod}/${glb}`), ...shapes.map((shape) => `${lod}/${shape}`));
   }
   return keys;
 }
@@ -86,7 +102,7 @@ it("writes a pointer every deployed app still reads, and reads the pointer they 
   expect(adapter.decode(legacy)).toEqual({ current: manifestFile("a"), previous: null });
 });
 
-it("keeps every file the three LOD manifests reach, through nested JSON, and refuses a missing or altered index", async () => {
+it("keeps every file the three LOD manifests reach, through nested JSON, without taking a top-surface row for a file name, and refuses a missing or altered index", async () => {
   const objects = new MemoryStore();
   const keys = publish(objects, "a", ["3001", "3002"]);
   const adapter = partBundlePointer("/unused");

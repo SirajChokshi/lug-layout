@@ -15,7 +15,7 @@ import {
   type ReferencedFile,
 } from "../publication/pinned-publication.ts";
 import { referencedDigest, referencedNames } from "../publication/referenced-names.ts";
-import { isContentAddressed } from "../remote-bundle.ts";
+import { BUNDLE_FILE_EXTENSIONS, isContentAddressed } from "../remote-bundle.ts";
 
 const JSON_EXTENSION = ".json";
 
@@ -28,7 +28,7 @@ function namesIn(key: string, bytes: Uint8Array): Set<string> {
   } catch {
     throw new Error(`${key} is not JSON`);
   }
-  return referencedNames(json);
+  return referencedNames(json, BUNDLE_FILE_EXTENSIONS);
 }
 
 async function lodReferences(

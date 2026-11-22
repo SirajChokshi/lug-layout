@@ -3,17 +3,21 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./placement-hover": "./src/edit/placement-hover.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
     "test": "vitest run",
-    "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/mate-zones.bench.ts && pnpm run bench:culling && pnpm run bench:layout && pnpm run bench:frame-loop",
+    "bench": "node --experimental-transform-types --no-warnings bench/view-camera.bench.ts && node --experimental-transform-types --no-warnings --expose-gc bench/mate-zones.bench.ts && pnpm run bench:culling && pnpm run bench:layout && pnpm run bench:frame-loop && pnpm run bench:plan-sync && pnpm run bench:fill-tool && pnpm run bench:road",
     "bench:culling": "node --experimental-transform-types --no-warnings --expose-gc bench/cell-window-index.bench.ts",
     "bench:layout": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/large-layout.bench.js",
     "bench:layout-memory": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/layout-memory.bench.js",
     "bench:needed-meshes": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/needed-meshes.bench.js",
-    "bench:frame-loop": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/editor-frame-loop.bench.js"
+    "bench:frame-loop": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/editor-frame-loop.bench.js",
+    "bench:plan-sync": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/plan-sync.bench.js",
+    "bench:fill-tool": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/fill-tool.bench.js",
+    "bench:road": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/road-scale.bench.js"
   },
   "dependencies": {
     "@brr/catalog": "workspace:*",
@@ -31,6 +35,7 @@
     "@brr/config": "workspace:*",
     "@types/node": "22.20.5",
     "@webgpu/types": "0.1.74",
+    "fake-indexeddb": "6.2.8",
     "typescript": "7.0.2",
     "vite": "8.3.8",
     "vitest": "5.1.0"

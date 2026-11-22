@@ -97,6 +97,7 @@ pub struct ConnectorInputs {
     pub section_vocabulary: serde_json::Value,
     pub cavity_probe: String,
     pub infer: Vec<String>,
+    pub shadow_patch_manifest: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Copy, Deserialize)]

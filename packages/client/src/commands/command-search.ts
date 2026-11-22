@@ -1,10 +1,15 @@
+import type { CatalogSearchView } from "../catalog/catalog-search.ts";
 import type { PaletteIndex } from "../catalog/palette-index.ts";
 import type { CatalogItemView } from "../catalog/placeable-catalog.ts";
-import { COMMANDS, type CommandId, type CommandSpec } from "./editor-commands.ts";
+import { COMMANDS, isHotbarCommand, type CommandId, type CommandSpec } from "./editor-commands.ts";
+
+export interface PaletteCommandSpec extends CommandSpec {
+  readonly id: Exclude<CommandId, "pick-slot">;
+}
 
 export interface CommandResult {
   readonly kind: "command";
-  readonly spec: CommandSpec;
+  readonly spec: PaletteCommandSpec;
   readonly enabled: boolean;
 }
 
@@ -20,6 +25,7 @@ export interface PaletteSources {
   readonly catalog: ReadonlyArray<CatalogItemView>;
   readonly index: PaletteIndex;
   readonly recent: ReadonlyArray<string>;
+  readonly remote: CatalogSearchView;
   readonly enabled: (id: CommandId) => boolean;
 }
 
@@ -31,6 +37,7 @@ const RECENT_BONUS = 20;
 const DISABLED_PENALTY = 30;
 const OTHER_COLOR_PENALTY = 5;
 const RESULT_LIMIT = 60;
+const LISTED = COMMANDS.filter((spec): spec is PaletteCommandSpec => !isHotbarCommand(spec.id));
 const DIMENSION = /(\d)\s*[x×]\s*(\d)/gu;
 const ALPHANUMERIC = /[\p{L}\p{N}]/u;
 
@@ -103,7 +110,7 @@ function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
     const item = sources.catalog.find((entry) => entry.id === id);
     return item ? [{ kind: "item", item, recent: true }] : [];
   });
-  const commands = COMMANDS.map((spec): CommandResult => ({
+  const commands = LISTED.map((spec): CommandResult => ({
     kind: "command",
     spec,
     enabled: sources.enabled(spec.id),
@@ -115,6 +122,23 @@ function browse(sources: PaletteSources): ReadonlyArray<PaletteResult> {
   ];
 }
 
+function serverItems(
+  query: string,
+  { remote, catalog, recent }: PaletteSources,
+  listed: ReadonlyArray<PaletteResult>,
+): ReadonlyArray<ItemResult> {
+  if (remote.query !== query.trim() || remote.hits.length === 0) return [];
+  const shown = new Set(
+    listed.flatMap((result) => (result.kind === "item" ? [result.item.id] : [])),
+  );
+  const byId = new Map(catalog.map((item) => [item.id, item]));
+  return remote.hits.flatMap((hit): ItemResult[] => {
+    const item = byId.get(hit.id);
+    if (item === undefined || shown.has(item.id)) return [];
+    return [{ kind: "item", item, recent: recent.includes(item.id) }];
+  });
+}
+
 export function searchPalette(
   query: string,
   sources: PaletteSources,
@@ -124,7 +148,7 @@ export function searchPalette(
     .filter((word) => word !== "");
   if (words.length === 0) return browse(sources);
   const scored: Scored[] = [];
-  for (const spec of COMMANDS) {
+  for (const spec of LISTED) {
     const score = matchScore(words, spec.title, commandExtra(spec));
     if (score === 0) continue;
     const enabled = sources.enabled(spec.id);
@@ -146,8 +170,6 @@ export function searchPalette(
       });
     });
   }
-  return scored
-    .toSorted(byScore)
-    .slice(0, RESULT_LIMIT)
-    .map((entry) => entry.result);
+  const ranked = scored.toSorted(byScore).map((entry) => entry.result);
+  return [...ranked, ...serverItems(query, sources, ranked)].slice(0, RESULT_LIMIT);
 }

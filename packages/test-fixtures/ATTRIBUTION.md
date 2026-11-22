@@ -348,6 +348,9 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/48/4-4ring9.dat` | Hi-Res Ring 9 x 1.0 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/5-12cyli.dat` | Hi-Res Cylinder 0.4167 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/5-12edge.dat` | Hi-Res Circle 0.4167 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/5-24cyli.dat` | Hi-Res Cylinder 0.2083 | Willy Tschager [Holly-Wood] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/5-24cylo.dat` | Hi-Res Cylinder Open 0.2083 | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/48/5-24edge.dat` | Hi-Res Circle 0.2083 | Paul Easter [pneaster] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/5-24ring7.dat` | Hi-Res Ring 7 x 0.2083 | Tim Gould [timgould] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/5-48chrd.dat` | Hi-Res Chord 0.1042 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/48/5-48edge.dat` | Hi-Res Circle 0.10417 | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -546,6 +549,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `p/clip5.dat` | Clip Symmetrical with Rounded Sides | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/clip6.dat` | Clip Horizontal with Rounded Sides | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/clip8.dat` | Top Clip with Rounded Tips and Centre Notch | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `p/clip9.dat` | Clip Vertical (Thin C-Clip) | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/confric.dat` | Technic Friction Pin 1.0 with Base Collar | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/confric4.dat` | Technic Friction Pin 1.0 with Base Collar and Blind Hole | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `p/confric5.dat` | Technic Friction Pin 1.0 Slotted with Split Base Collar | Donald Sutter [technog] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -737,6 +741,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/15462.dat` | Technic Axle 5 with Stop | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/15535.dat` | Tile 2 x 2 Round with Hole | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/15573.dat` | Plate 1 x 2 with Groove with 1 Centre Stud, without Understud | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/15672.dat` | Slope Plate 45 2 x 1 | Remco Canten [rempie] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/15712.dat` | Tile 1 x 1 with Clip (Thick C-Clip) | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/16577.dat` | Arch 1 x 8 x 2 Raised | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/168265a.dat` | Sticker 1.1 x 2 with Black Train Logo | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -802,6 +807,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/2465.dat` | Brick 1 x 16 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2486.dat` | Bar 1 x 8 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/24866.dat` | Plate 1 x 1 with 5 Petals | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/2488.dat` | Minifig Whip | Franklin W. Cain [fwcain] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2488c01.dat` | Minifig Whip in Latched Position | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2489.dat` | Barrel 2 x 2 x 1.667 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/2495.dat` | Minifig Hand Truck | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -957,6 +963,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/30565.dat` | Plate 4 x 4 with Corner Round | Gerald Lasser [GeraldLasser] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30586.dat` | Plate 2 x 8 with Door Rail | Guy Vivan [guyvivan] | Licensed under CC BY 2.0 and CC BY 4.0 : see CAreadme.txt |
 | `parts/3062b.dat` | Brick 1 x 1 Round with Hollow Stud | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3063a.dat` | Brick 2 x 2 Corner Round without Stud Notch | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3063b.dat` | Brick 2 x 2 Corner Round with Stud Notch | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3065.dat` | Brick 1 x 2 without Centre Stud | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/30663.dat` | Car Steering Wheel 2L | Vincent Messenet [Cheenzo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1064,6 +1071,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/3665a.dat` | Slope Brick 45 2 x 1 Inverted without Inner Stopper Ring | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3665b.dat` | Slope Brick 45 2 x 1 Inverted with Inner Stopper Ring | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3666.dat` | Plate 1 x 6 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/3673.dat` | Technic Pin | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3675.dat` | Slope Brick 33 3 x 3 Double Convex | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/36752a.dat` | Minifig Tool Wand | Magnus Forsberg [MagFors] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/3676.dat` | Slope Brick 45 2 x 2 Inverted Double Convex | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1171,6 +1179,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/4079.dat` | Minifig Seat 2 x 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4081b.dat` | Plate 1 x 1 with Clip Light Type 2 | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4083.dat` | Bar 1 x 4 x 2 with Studs | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/4085a.dat` | Plate 1 x 1 with Clip Vertical (Thin C-Clip) | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4085c.dat` | Plate 1 x 1 with Clip Vertical (Thick U-Clip) | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4092a.dat` | Train Bogie Plate with Long Pin | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/4093b.dat` | Train Base 6 x 28 with 15 Holes | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1363,6 +1372,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 | `parts/60470b.dat` | Plate 1 x 2 with 2 Clips Horizontal (Thick C-Clips) | Max Martin Richter [MMR1988] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60471.dat` | Hinge Plate 1 x 2 Locking 9-Position with Dual Finger on Side | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60474.dat` | Plate 4 x 4 Round with Hole and Snapstud | Alex Taylor [anathema] | Licensed under CC BY 4.0 : see CAreadme.txt |
+| `parts/60475a.dat` | Brick 1 x 1 with Clip Vertical (Thick U-Clip) and Solid Stud | J.C. Tchang [tchang] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60475b.dat` | Brick 1 x 1 with Clip Vertical (Thick C-Clip) and Hollow Stud | Owen Burgoyne [C3POwen] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60478.dat` | Plate 1 x 2 with Handle on End | Michael Heidemann [mikeheide] | Licensed under CC BY 4.0 : see CAreadme.txt |
 | `parts/60479.dat` | Plate 1 x 12 | Philippe Hurbain [Philo] | Licensed under CC BY 4.0 : see CAreadme.txt |
@@ -1984,7 +1994,7 @@ LEGO® is a trademark of the LEGO Group, which does not sponsor, authorize or en
 
 ## Models
 
-Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.
+Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are files from the LDraw Official Model Repository, restored unmodified into `.cache/omr` by `restore-ldraw` and baked with the line errata listed under *Modified from OMR*; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.
 
 | Model | Sections | Authors | Licenses | Source |
 |---|---|---|---|---|
@@ -2022,6 +2032,19 @@ Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in
 | baseplate-row | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents |  | generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using their measured body extents (`measureBaseplate`) (retrieved 2026-11-18) |
 | road-plates | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), abutted edge to edge using measured plate extents |  | generated by tools/asset-pipeline `cli.ts facts`: plates abutted edge to edge using their measured body extents (`measureBaseplate`) (retrieved 2026-11-18) |
 | brick-2x4 | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), one 3001 at the identity pose |  | generated by tools/asset-pipeline `cli.ts facts`: one 3001 at the identity pose, which the dense layout of `bench:layout-memory` places many times (retrieved 2026-11-18) |
+| baseplate-3811 | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), one 3811 at the identity pose |  | generated by tools/asset-pipeline `cli.ts facts`: one 3811 at the identity pose, which editor tests import as a user's model of a 3811 (retrieved 2026-11-21) |
+| jumper | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), one 3794b at the identity pose |  | generated by tools/asset-pipeline `cli.ts facts`: one 3794b at the identity pose, whose two anti-studs sit half a stud off its centre stud (retrieved 2026-11-20) |
+| switch-then-reversed-curve | 1 | Brick Railroad tools/asset-pipeline (cli.ts facts), placed from measured track-end poses |  | generated by tools/asset-pipeline `cli.ts facts`: a 9V switch, a reversed curve and straights placed from their measured track-end poses (retrieved 2026-11-20) |
+
+### Modified from OMR
+
+The bake applies these line errata from `tools/asset-pipeline/omr-errata.json` to the OMR files above. Each is pinned to the file's SHA-256 and proved from the model's own geometry; `verify-ldraw` and the bake fail if a pin or a line no longer matches.
+
+| Model | Line | From | To | Evidence |
+|---|---|---|---|---|
+| 2150-1 | 57 | `1 7 460 0 140 -1 0 0 0 1 0 0 0 -1 3020.DAT` | `1 7 470 0 140 -1 0 0 0 1 0 0 0 -1 3020.DAT` | The six 2 x 4 plates under the platforms are mirrored pairs at z = +140 and z = -140: x = 150, x = -170 and this one. Its twin on the next line is at x = 470. At x = 460 the plate is half a stud off the platforms' stud grid and its walls stand on baseplate studs. |
+| 4554-1 | 50 | `1 7 460 0 140 -1 0 0 0 1 0 0 0 -1 3020.dat` | `1 7 470 0 140 -1 0 0 0 1 0 0 0 -1 3020.dat` | The six 2 x 4 plates under the platforms are mirrored pairs at z = +140 and z = -140: x = 150, x = -170 and this one. Its twin on the next line is at x = 470. At x = 460 the plate is half a stud off the platforms' stud grid and its walls stand on baseplate studs. |
+| 10185-1 | 3592 | `1 19 60 -128 232 1 0 0 0 1 0 0 0 1 3008.dat` | `1 19 60 -128 230 1 0 0 0 1 0 0 0 1 3008.dat` | In "10185 - Second Floor" every other brick of this wall is at z = 230: the course below (lines 3586 and 3587, whose studs it stands on), its own course (lines 3593 and 3645) and the course above (lines 3661, 3662 and 3671, which stand on its studs). At z = 232 the 1 x 8 brick is 2 LDU off those studs and hangs 2 LDU past the baseplate edge. |
 
 ## Test data
 
@@ -2036,3 +2059,5 @@ Committed LDraw test inputs, one row per section. Sections modified from LDraw l
 | `packages/import/test-data/critic-gap.mpd` | `mycustom2.dat` | critic | Licensed under CC BY 4.0 : see CAreadme.txt |  |
 | `packages/import/test-data/critic-gap.mpd` | `9999-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: subpart recoloured 4, side quads recoloured 14 |
 | `packages/import/test-data/critic-gap.mpd` | `9998-1 - 3001.dat` | James Jessiman | Licensed under CC BY 4.0 : see CAreadme.txt | 2026-11-16 [critic] Modified from LDraw parts/3001.dat: side quads listed from a different starting vertex |
+| `packages/import/test-data/custom-pile.ldr` | `` | Brick Railroad tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |
+| `packages/import/test-data/my-container-and-tank-wagons.ldr` | `` | Brick Railroad tests | Licensed under CC BY 4.0 : see CAreadme.txt |  |

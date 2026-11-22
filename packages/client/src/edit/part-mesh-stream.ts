@@ -2,7 +2,7 @@ import type { FetchPriority, IPartBundleLoader, PartMesh } from "@brr/catalog";
 import type { BundleLod } from "@brr/schema/bundle";
 import type { ISceneBackend, NeededMeshListener, PaletteLevel, PartMeshUpdate } from "@brr/render";
 import type { MergedParts } from "./merged-parts.ts";
-import type { MeshCounts, MeshProgress } from "./mesh-progress.ts";
+import type { MeshCounts, MeshProgress, UndrawnPart, UndrawnReason } from "./mesh-progress.ts";
 
 const FAR_LOD: BundleLod = "far";
 
@@ -12,11 +12,15 @@ const PENDING_FLUSH = 2;
 const LOADED = 3;
 const FAILED = 4;
 const ABSENT = 5;
+const PROVIDED = 6;
 const HELD_STALL_MS = 2000;
 
 type HoldStep = 1 | -1;
 
-export type PartMeshProgress = Pick<MeshProgress, "detailedPartMeshes" | "farPartMeshes">;
+export type PartMeshProgress = Pick<
+  MeshProgress,
+  "detailedPartMeshes" | "farPartMeshes" | "undrawnParts"
+>;
 
 class LevelMeshes {
   status = new Uint8Array(0);
@@ -58,6 +62,7 @@ export class PartMeshStream implements NeededMeshListener {
   private readonly detailedFetches = new Map<number, Promise<void>>();
   private farFiles: ReadonlyMap<string, string> | null = null;
   private pending: PartMeshUpdate[] = [];
+  private undrawn: ReadonlyArray<UndrawnPart> = [];
   private heldLoadingCount = 0;
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -76,13 +81,22 @@ export class PartMeshStream implements NeededMeshListener {
     this.ensure(index + 1);
   }
 
+  provide(index: number): void {
+    this.ensure(index + 1);
+    if (this.detailed.status[index] === NOT_WANTED) this.detailed.status[index] = PROVIDED;
+  }
+
   private ensure(size: number): void {
     this.detailed.ensure(size);
     this.far.ensure(size);
   }
 
   progress(): PartMeshProgress {
-    return { detailedPartMeshes: this.detailed.counts(), farPartMeshes: this.far.counts() };
+    return {
+      detailedPartMeshes: this.detailed.counts(),
+      farPartMeshes: this.far.counts(),
+      undrawnParts: this.undrawn,
+    };
   }
 
   request(indices: Iterable<number>): void {
@@ -104,8 +118,9 @@ export class PartMeshStream implements NeededMeshListener {
     this.farFiles = farFiles;
     let started = false;
     for (let index = 0; index < this.far.status.length; index++) {
+      const detailed = this.detailed.status[index] ?? NOT_WANTED;
       const wanted =
-        this.detailed.status[index] !== NOT_WANTED || (this.far.holdCount[index] ?? 0) > 0;
+        (detailed !== NOT_WANTED && detailed !== PROVIDED) || (this.far.holdCount[index] ?? 0) > 0;
       if (wanted && this.want(this.far, index)) started = true;
     }
     if (started) this.onProgress(this.progress());
@@ -157,12 +172,20 @@ export class PartMeshStream implements NeededMeshListener {
   private want(meshes: LevelMeshes, index: number): boolean {
     if (meshes === this.far && this.farFiles === null) return false;
     this.ensure(index + 1);
-    if (meshes.status[index] !== NOT_WANTED) return false;
+    const status = meshes.status[index];
+    if (status === PROVIDED) {
+      meshes.status[index] = LOADED;
+      meshes.wanted++;
+      meshes.loaded++;
+      return true;
+    }
+    if (status !== NOT_WANTED) return false;
     meshes.wanted++;
     const file = this.fileOf(meshes, index);
     if (file === undefined) {
       meshes.status[index] = ABSENT;
       meshes.absent++;
+      this.leaveUndrawn(meshes, index, "absent");
       return true;
     }
     meshes.status[index] = LOADING;
@@ -203,8 +226,15 @@ export class PartMeshStream implements NeededMeshListener {
     const heldFinished = this.finishHeldLoading(meshes, index);
     meshes.status[index] = FAILED;
     meshes.failed++;
+    this.leaveUndrawn(meshes, index, "failed");
     this.onProgress(this.progress());
     this.scheduleFlush(heldFinished);
+  }
+
+  private leaveUndrawn(meshes: LevelMeshes, index: number, reason: UndrawnReason): void {
+    if (meshes !== this.detailed) return;
+    const part = this.palette.parts[index]?.id ?? `palette slot ${index}`;
+    this.undrawn = [...this.undrawn, { part, reason }];
   }
 
   private scheduleFlush(heldFinished: boolean): void {

@@ -15,6 +15,7 @@ use super::{
 
 const MAX_DEPTH: usize = 64;
 const PART_FOLDER: &str = "parts/";
+const VERIFIED_PATCH: &str = "verified";
 const IDENTITY_ROTATION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 const SUBFILE_LINE: &str = "1";
 const SUBFILE_POSITION: std::ops::Range<usize> = 2..5;
@@ -36,6 +37,25 @@ struct Gathered {
     curated: bool,
 }
 
+pub fn patch_path(part: &str) -> String {
+    if part.contains('/') {
+        format!("{part}.dat")
+    } else {
+        format!("{PART_FOLDER}{part}.dat")
+    }
+}
+
+pub fn verified_patch_paths(manifest: &serde_json::Value) -> HashSet<String> {
+    manifest["patches"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|entry| entry["status"] == VERIFIED_PATCH)
+        .filter_map(|entry| entry["part"].as_str())
+        .map(patch_path)
+        .collect()
+}
+
 pub struct ShadowPatches<'a, S: Library + ?Sized> {
     pub files: &'a S,
     pub verified: &'a HashSet<String>,
@@ -52,6 +72,7 @@ pub struct ShadowSnaps<'a, L: Library + ?Sized, S: Library + ?Sized> {
     shadow: &'a S,
     patches: Option<ShadowPatches<'a, S>>,
     gathered: HashMap<String, Rc<Gathered>>,
+    executed_clears: HashMap<String, Rc<Vec<Option<String>>>>,
     numbering: PieceNumbering<'a, L>,
 }
 
@@ -66,6 +87,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             shadow,
             patches: None,
             gathered: HashMap::new(),
+            executed_clears: HashMap::new(),
             numbering: PieceNumbering::new(library),
         }
     }
@@ -138,6 +160,7 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             off_lattice: Vec::new(),
             curated: gathered.curated,
             issues,
+            withheld: Vec::new(),
         }
     }
 
@@ -186,6 +209,37 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
     fn resolve_include(&self, reference: &str) -> Option<String> {
         resolve_reference(self.library, Lod::Standard, reference)
             .or_else(|| resolve_reference(self.shadow, Lod::Standard, reference))
+    }
+
+    fn clears_executed_by(&mut self, path: &str, depth: usize) -> Rc<Vec<Option<String>>> {
+        if let Some(found) = self.executed_clears.get(path) {
+            return Rc::clone(found);
+        }
+        let mut scopes = Vec::new();
+        if depth <= MAX_DEPTH {
+            let shadow = self.shadow;
+            let patch = self.patches.as_ref().map(|patches| patches.files);
+            let texts = [
+                shadow.source(path),
+                patch.and_then(|files| files.source(path)),
+            ];
+            for parsed in texts.into_iter().flatten().flat_map(parse_metas).flatten() {
+                match parsed.meta {
+                    Meta::Clear { id } => scopes.push(id),
+                    Meta::Include { reference, .. } => {
+                        if let Some(target) = self.resolve_include(&reference) {
+                            let nested = self.clears_executed_by(&target, depth + 1);
+                            scopes.extend(nested.iter().cloned());
+                        }
+                    }
+                    Meta::Snap(_) => {}
+                }
+            }
+        }
+        let scopes = Rc::new(scopes);
+        self.executed_clears
+            .insert(path.to_string(), Rc::clone(&scopes));
+        scopes
     }
 
     fn gather(&mut self, path: &str, depth: usize) -> Rc<Gathered> {
@@ -288,11 +342,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
     fn apply(&mut self, path: &str, meta: Meta, tier: Tier, depth: usize, out: &mut Gathered) {
         match meta {
             Meta::Clear { id } => {
-                let (removed, kept): (Vec<Traced>, Vec<Traced>) =
-                    out.connectors.drain(..).partition(|traced| {
-                        id.as_deref()
-                            .is_none_or(|id| traced.connector.id.as_deref() == Some(id))
-                    });
+                let (removed, kept): (Vec<Traced>, Vec<Traced>) = out
+                    .connectors
+                    .drain(..)
+                    .partition(|traced| removes(id.as_deref(), &traced.connector));
                 out.connectors = kept;
                 out.suppressed.extend(removed);
             }
@@ -308,6 +361,15 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
                     });
                     return;
                 };
+                let clears = self.clears_executed_by(&target, depth + 1);
+                for traced in &mut out.connectors {
+                    if clears
+                        .iter()
+                        .any(|scope| removes(scope.as_deref(), &traced.connector))
+                    {
+                        traced.connector.status = Status::Unverified;
+                    }
+                }
                 let included = self.gather(&target, depth + 1);
                 let offsets = grid.map_or_else(|| vec![[0.0; 3]], |grid| grid.offsets());
                 for offset in offsets {
@@ -346,6 +408,10 @@ impl<'a, L: Library + ?Sized, S: Library + ?Sized> ShadowSnaps<'a, L, S> {
             }
         }
     }
+}
+
+fn removes(scope: Option<&str>, connector: &Connector) -> bool {
+    scope.is_none_or(|id| connector.id.as_deref() == Some(id))
 }
 
 fn report(out: &mut Gathered, file: &str, malformation: Malformation) {

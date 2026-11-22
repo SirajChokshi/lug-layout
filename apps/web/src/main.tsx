@@ -3,20 +3,22 @@ import {
   CREDITS,
   EDITOR,
   EDITOR_CAMERA,
+  HOTBAR,
   IMPORT_SCENE,
   mainThreadModules,
   MODEL_SCENE,
-  PALETTE_DRAG,
-  PALETTE_MEMORY,
-  PALETTE_PREFETCH,
-  PALETTE_SEARCH,
-  PALETTE_THUMBNAILS,
+  OWNED_PARTS,
+  PALETTE,
+  PANEL_LAYOUT,
   RUNNING_GEAR,
+  SCALE_BAR,
+  STARTER_WORLDS,
   TRACK_SCENE,
   TRAIN_PLAY,
   type IBomSource,
   type IImportScene,
   PLAN_SERVICE,
+  PLAN_SHEET_SERVICE,
   type IViewerScene,
 } from "@brr/client";
 import { AboutPage, CreditsPage, EditorApp } from "@brr/ui";
@@ -39,14 +41,15 @@ const libraryBakeBaseUrl =
   (import.meta.env.VITE_BUNDLE_BASE_URL === undefined
     ? new URL("library-bake/", document.baseURI).href
     : null);
+const bundleBucketUrl =
+  import.meta.env.VITE_BUNDLE_BASE_URL === undefined
+    ? document.baseURI
+    : new URL(import.meta.env.VITE_BUNDLE_BASE_URL.replace(/\/?$/u, "/"), document.baseURI).href;
 const libraryConnectorsBaseUrl =
   import.meta.env.VITE_LIBRARY_CONNECTORS_BASE_URL ??
-  new URL(
-    "library-connectors/",
-    import.meta.env.VITE_BUNDLE_BASE_URL === undefined
-      ? document.baseURI
-      : new URL(import.meta.env.VITE_BUNDLE_BASE_URL.replace(/\/?$/u, "/"), document.baseURI),
-  ).href;
+  new URL("library-connectors/", bundleBucketUrl).href;
+const shadowLibraryBaseUrl =
+  import.meta.env.VITE_SHADOW_LIBRARY_BASE_URL ?? new URL("shadow-library/", bundleBucketUrl).href;
 const startSimWorker = (): Worker =>
   new Worker(new URL("@brr/sim-worker/entry", import.meta.url), { type: "module" });
 const createImportWorker = (): Worker =>
@@ -63,6 +66,12 @@ const importBakeHelpers = Math.min(
   Math.max(0, navigator.hardwareConcurrency - THREADS_KEPT_FOR_EDITOR),
   Math.floor(deviceMemoryGib() / DEVICE_GIB_PER_BAKE_HELPER),
 );
+const STARTERS_DIRECTORY = "../starters/";
+const starterFileUrls = new Map(
+  Object.entries(
+    import.meta.glob<string>("../starters/**/*", { query: "?url", import: "default", eager: true }),
+  ).map(([path, url]) => [path.slice(STARTERS_DIRECTORY.length), url]),
+);
 container.load(
   ...mainThreadModules({
     bundleBaseUrl,
@@ -77,9 +86,11 @@ container.load(
       : {}),
     ...(libraryBakeBaseUrl === null ? {} : { libraryBakeBaseUrl }),
     libraryConnectorsBaseUrl,
+    shadowLibraryBaseUrl,
     ...(import.meta.env.VITE_CATALOG_API_BASE_URL
       ? { catalogApiBaseUrl: import.meta.env.VITE_CATALOG_API_BASE_URL }
       : {}),
+    starterFileUrls,
     disclaimer: TRADEMARK_DISCLAIMER,
   }),
 );
@@ -136,15 +147,17 @@ function root(): ReactNode {
       <EditorApp
         editor={container.get(EDITOR)}
         camera={container.get(EDITOR_CAMERA)}
+        scaleBar={container.get(SCALE_BAR)}
         plans={container.get(PLAN_SERVICE)}
+        sheets={container.get(PLAN_SHEET_SERVICE)}
         bomService={container.get(BOM_SERVICE)}
+        ownedParts={container.get(OWNED_PARTS)}
         play={container.get(TRAIN_PLAY)}
-        paletteSearch={container.get(PALETTE_SEARCH)}
-        paletteDrag={container.get(PALETTE_DRAG)}
-        palettePrefetch={container.get(PALETTE_PREFETCH)}
-        paletteMemory={container.get(PALETTE_MEMORY)}
-        paletteThumbnails={container.get(PALETTE_THUMBNAILS)}
+        palette={container.get(PALETTE)}
+        panels={container.get(PANEL_LAYOUT)}
+        hotbar={container.get(HOTBAR)}
         runningGear={container.get(RUNNING_GEAR)}
+        starters={container.get(STARTER_WORLDS)}
         options={{
           api: params.api,
           pixelRatio: window.devicePixelRatio,
@@ -157,7 +170,13 @@ function root(): ReactNode {
     );
   }
   const { scene, importScene, bomSource } = viewerScene(params);
-  const bom = bomSource ? { service: container.get(BOM_SERVICE), source: bomSource } : null;
+  const bom = bomSource
+    ? {
+        service: container.get(BOM_SERVICE),
+        ownedParts: container.get(OWNED_PARTS),
+        source: bomSource,
+      }
+    : null;
   return <App scene={scene} params={params} importScene={importScene ?? null} bom={bom} />;
 }
 

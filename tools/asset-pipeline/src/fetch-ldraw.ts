@@ -1,11 +1,20 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { modelStructure, parseLdraw, splitMultiPart, subfileReferences } from "./ldraw/parse.ts";
+import {
+  modelStructure,
+  parseLdraw,
+  snapIncludeReferences,
+  splitMultiPart,
+  subfileReferences,
+} from "./ldraw/parse.ts";
+import { fetchWithRetry, NETWORK, type RetryingFetch } from "./fetch-retry.ts";
 import type {
   CatalogLocation,
   CatalogSource,
   CatalogSourceUse,
+  OmrErrata,
+  OmrErratum,
   Palette,
   PaletteModel,
 } from "@brr/schema/bundle";
@@ -43,6 +52,7 @@ const SEARCH_DIRECTORIES = ["parts/", "p/"] as const;
 const LOW_RESOLUTION_DIRECTORY = "p/8/";
 const CONNECTIVITY_LICENSE = "LICENSE.md";
 const RESTORE_CONCURRENCY = 16;
+const NOT_FOUND = 404;
 
 function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -57,12 +67,16 @@ function downloadUrl(source: CatalogLocation, path: string): string {
     .join("/");
 }
 
-async function download(source: CatalogLocation, path: string): Promise<Uint8Array | undefined> {
+async function download(
+  source: CatalogLocation,
+  path: string,
+  network: RetryingFetch = NETWORK,
+): Promise<Uint8Array | undefined> {
   const url = downloadUrl(source, path);
-  const response = await fetch(url);
-  if (response.status === 404) return undefined;
-  if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const { status, bytes } = await fetchWithRetry(url, network);
+  if (status === NOT_FOUND) return undefined;
+  if (bytes === null) throw new Error(`GET ${url} failed with ${status}`);
+  return bytes;
 }
 
 async function resolveReference(
@@ -82,17 +96,49 @@ export function libraryReference(path: string): string {
   return directory === undefined ? path : path.slice(directory.length);
 }
 
+class ConnectivityPins {
+  private readonly source: Source;
+  private readonly directory: string;
+  private readonly files: Record<string, string> = {};
+
+  constructor(source: Source, directory: string) {
+    this.source = source;
+    this.directory = directory;
+  }
+
+  async pin(path: string): Promise<string[]> {
+    if (path in this.files) return [];
+    const bytes = await download(this.source, path);
+    if (!bytes) return [];
+    await storeInto(this.directory, this.files, path, bytes);
+    return snapIncludeReferences(parseLdraw(new TextDecoder().decode(bytes)));
+  }
+
+  lock(): ConnectivityLock {
+    return { source: this.source, files: sortedRecord(this.files) };
+  }
+}
+
+export interface PinnedClosure {
+  readonly closure: InputLock;
+  readonly connectivity: ConnectivityLock;
+}
+
 export async function fetchClosure(
   palette: Palette,
   outDirectory: string,
+  connectivityDirectory: string,
   modelSources: ReadonlyArray<string>,
+  studPrimitives: ReadonlyArray<string>,
   probeParts: ReadonlyArray<string>,
-): Promise<InputLock> {
+): Promise<PinnedClosure> {
   const files: Record<string, string> = {};
+  const connectivity = new ConnectivityPins(palette.connectivitySource, connectivityDirectory);
+  await connectivity.pin(CONNECTIVITY_LICENSE);
   const queue: string[] = [
     ...new Set([
       ...palette.parts.map((part) => `${part.id}.dat`),
-      ...palette.studPrimitives,
+      ...studPrimitives,
       ...probeParts.map(libraryReference),
       ...modelSources.flatMap((source) => {
         const structure = modelStructure(source);
@@ -102,11 +148,12 @@ export async function fetchClosure(
   ];
   const seen = new Set<string>(queue);
 
-  async function store(path: string, bytes: Uint8Array): Promise<void> {
+  async function store(path: string, bytes: Uint8Array): Promise<string[]> {
     const target = join(outDirectory, path);
     await mkdir(dirname(target), { recursive: true });
     await writeFile(target, bytes);
     files[path] = sha256(bytes);
+    return connectivity.pin(path);
   }
 
   for (const configFile of palette.config) {
@@ -120,13 +167,17 @@ export async function fetchClosure(
     if (reference === undefined) break;
     const resolved = await resolveReference(palette.source, reference);
     if (!resolved) throw new Error(`unresolved LDraw reference ${reference}`);
-    await store(resolved.path, resolved.bytes);
-    const children = subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)));
+    const children = [
+      ...(await store(resolved.path, resolved.bytes)),
+      ...subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes))),
+    ];
     if (resolved.path.startsWith("p/") && !resolved.path.startsWith(LOW_RESOLUTION_DIRECTORY)) {
       const lowResolution = await download(palette.source, LOW_RESOLUTION_DIRECTORY + reference);
       if (lowResolution) {
-        await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution);
-        children.push(...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))));
+        children.push(
+          ...(await store(LOW_RESOLUTION_DIRECTORY + reference, lowResolution)),
+          ...subfileReferences(parseLdraw(new TextDecoder().decode(lowResolution))),
+        );
       }
     }
     for (const child of children) {
@@ -136,10 +187,10 @@ export async function fetchClosure(
     }
   }
 
-  const sorted = Object.fromEntries(
-    Object.entries(files).toSorted(([a], [b]) => a.localeCompare(b)),
-  );
-  return { source: palette.source, files: sorted };
+  return {
+    closure: { source: palette.source, files: sortedRecord(files) },
+    connectivity: connectivity.lock(),
+  };
 }
 
 function sortedRecord(files: Record<string, string>): Record<string, string> {
@@ -166,9 +217,19 @@ export async function fetchAuditInputs(
 ): Promise<AuditLock> {
   const files: Record<string, string> = {};
   const absentParts: string[] = [];
+  const connectivity = new ConnectivityPins(palette.connectivitySource, connectivityDirectory);
+  await connectivity.pin(CONNECTIVITY_LICENSE);
   const seeds = palette.audit.flatMap((group) => group.parts.map((part) => `${part}.dat`));
   const seen = new Set<string>(seeds);
   const queue = [...seeds];
+  const enqueue = (references: ReadonlyArray<string>): void => {
+    for (const reference of references) {
+      if (seen.has(reference)) continue;
+      seen.add(reference);
+      queue.push(reference);
+    }
+  };
+  for (const path of vocabularySnaps) enqueue(await connectivity.pin(path));
   for (let reference = queue.shift(); reference !== undefined; reference = queue.shift()) {
     const resolved = await resolveReference(palette.source, reference);
     if (!resolved) {
@@ -177,51 +238,55 @@ export async function fetchAuditInputs(
       continue;
     }
     await storeInto(auditDirectory, files, resolved.path, resolved.bytes);
-    for (const child of subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes)))) {
-      if (seen.has(child)) continue;
-      seen.add(child);
-      queue.push(child);
-    }
+    enqueue(await connectivity.pin(resolved.path));
+    enqueue(subfileReferences(parseLdraw(new TextDecoder().decode(resolved.bytes))));
   }
   return {
     files: sortedRecord(files),
     absentParts: absentParts.toSorted(),
-    connectivity: await fetchConnectivity(
-      palette.connectivitySource,
-      [...Object.keys(files), ...vocabularySnaps],
-      connectivityDirectory,
-    ),
+    connectivity: connectivity.lock(),
   };
-}
-
-export async function fetchConnectivity(
-  source: Palette["source"],
-  paths: ReadonlyArray<string>,
-  directory: string,
-): Promise<ConnectivityLock> {
-  const files: Record<string, string> = {};
-  for (const path of new Set([CONNECTIVITY_LICENSE, ...paths])) {
-    const bytes = await download(source, path);
-    if (bytes) await storeInto(directory, files, path, bytes);
-  }
-  return { source, files: sortedRecord(files) };
 }
 
 function sameSource(a: Palette["source"], b: Palette["source"]): boolean {
   return a.kind === b.kind && a.repo === b.repo && a.commit === b.commit && a.root === b.root;
 }
 
+async function unpinnedIncludes(
+  connectivity: Readonly<Record<string, string>>,
+  library: Readonly<Record<string, string>>,
+  directory: string,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const path of Object.keys(connectivity)) {
+    const text = await readFile(join(directory, path), "utf8").catch(() => undefined);
+    if (text === undefined) continue;
+    for (const reference of snapIncludeReferences(parseLdraw(text))) {
+      if (SEARCH_DIRECTORIES.some((folder) => Object.hasOwn(library, folder + reference))) continue;
+      problems.push(
+        `${path} includes ${reference}, which the pinned closure leaves out; run fetch-ldraw`,
+      );
+    }
+  }
+  return problems;
+}
+
 export async function verifyConnectivity(
   lock: ConnectivityLock,
   source: Palette["source"],
   directory: string,
+  library: Readonly<Record<string, string>>,
 ): Promise<string[]> {
   const stale = sameSource(lock.source, source)
     ? []
     : [
         `ldraw.lock.json pins LDCad connectivity from ${lock.source.repo}@${lock.source.commit}, but the palette names ${source.repo}@${source.commit}; run fetch-ldraw`,
       ];
-  return [...stale, ...(await hashProblems(lock.files, directory))];
+  return [
+    ...stale,
+    ...(await hashProblems(lock.files, directory)),
+    ...(await unpinnedIncludes(lock.files, library, directory)),
+  ];
 }
 
 export async function fetchCatalogSources(
@@ -296,6 +361,7 @@ export async function restoreFiles(
   source: CatalogLocation,
   files: Readonly<Record<string, string>>,
   directory: string,
+  network: RetryingFetch = NETWORK,
 ): Promise<RestoreResult> {
   const pending = Object.entries(files);
   let present = 0;
@@ -308,7 +374,7 @@ export async function restoreFiles(
         present += 1;
         continue;
       }
-      const bytes = await download(source, path);
+      const bytes = await download(source, path, network);
       if (!bytes)
         throw new Error(`pinned file ${path} is missing from ${source.repo}@${source.commit}`);
       if (sha256(bytes) !== expected) throw new Error(`hash mismatch ${path} from ${source.repo}`);
@@ -331,6 +397,7 @@ export async function verifyAuditInputs(
   return [
     ...(await hashProblems(audit.files, auditDirectory)),
     ...(await hashProblems(audit.connectivity.files, connectivityDirectory)),
+    ...(await unpinnedIncludes(audit.connectivity.files, audit.files, connectivityDirectory)),
   ];
 }
 
@@ -395,6 +462,63 @@ export async function verifyModels(
   return problems;
 }
 
+function evidenceLines(erratum: OmrErratum): ReadonlyArray<{ line: number; text: string }> {
+  switch (erratum.evidence.kind) {
+    case "mirror-twin":
+      return [erratum.evidence.twin];
+    case "wall-course":
+      return erratum.evidence.course;
+    default: {
+      const unknown: never = erratum.evidence;
+      throw new Error(`unknown erratum evidence ${String(unknown)}`);
+    }
+  }
+}
+
+export async function verifyOmrErrata(
+  errata: OmrErrata,
+  models: ReadonlyArray<PaletteModel>,
+  roots: ModelRoots,
+): Promise<string[]> {
+  const problems: string[] = [];
+  for (const erratum of errata.errata) {
+    const at = `${erratum.model} line ${erratum.line}`;
+    const model = models.find((m) => m.name === erratum.model && m.origin === "omr");
+    if (!model) {
+      problems.push(`erratum for ${at}: no OMR model ${erratum.model} in the palette`);
+      continue;
+    }
+    if (model.file !== erratum.file || model.sha256 !== erratum.sha256) {
+      problems.push(
+        `erratum for ${at} pins ${erratum.file} ${erratum.sha256}, but the palette pins ${model.file} ${model.sha256}; re-check it against the new file`,
+      );
+      continue;
+    }
+    const bytes = await readFile(modelPath(model, roots)).catch(() => undefined);
+    if (!bytes) {
+      problems.push(`erratum for ${at}: ${model.file} is missing`);
+      continue;
+    }
+    if (sha256(bytes) !== erratum.sha256) {
+      problems.push(`erratum for ${at}: ${model.file} no longer hashes to ${erratum.sha256}`);
+      continue;
+    }
+    const lines = new TextDecoder("latin1").decode(bytes).split("\n");
+    for (const { line, text } of [
+      { line: erratum.line, text: erratum.from },
+      ...evidenceLines(erratum),
+    ]) {
+      const found = lines[line - 1]?.replace(/\r$/u, "");
+      if (found !== text) {
+        problems.push(
+          `erratum for ${at}: line ${line} reads ${JSON.stringify(found)}, not ${JSON.stringify(text)}`,
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 function distinct(values: ReadonlyArray<string>): string {
   return [...new Set(values.filter((value) => value !== ""))].toSorted().join("; ");
 }
@@ -402,6 +526,7 @@ function distinct(values: ReadonlyArray<string>): string {
 export async function renderModelAttribution(
   models: ReadonlyArray<PaletteModel>,
   roots: ModelRoots,
+  errata: OmrErrata,
 ): Promise<string> {
   const rows: string[] = [];
   for (const model of models) {
@@ -413,11 +538,21 @@ export async function renderModelAttribution(
   return [
     "## Models",
     "",
-    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are unmodified files from the LDraw Official Model Repository, restored into `.cache/omr` by `restore-ldraw`; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
+    "Model files pinned by SHA-256 in `tools/asset-pipeline/palette.json` (shipped in the part bundle) and `tools/asset-pipeline/fixture-models.json` (baked only into the test fixture bundle). OMR models are files from the LDraw Official Model Repository, restored unmodified into `.cache/omr` by `restore-ldraw` and baked with the line errata listed under *Modified from OMR*; the generated scenes are committed under `docs/verified-facts/scenes`. Authors and licenses are collected from every submodel the model reaches.",
     "",
     "| Model | Sections | Authors | Licenses | Source |",
     "|---|---|---|---|---|",
     ...rows,
+    "",
+    "### Modified from OMR",
+    "",
+    "The bake applies these line errata from `tools/asset-pipeline/omr-errata.json` to the OMR files above. Each is pinned to the file's SHA-256 and proved from the model's own geometry; `verify-ldraw` and the bake fail if a pin or a line no longer matches.",
+    "",
+    "| Model | Line | From | To | Evidence |",
+    "|---|---|---|---|---|",
+    ...errata.errata.map(
+      (e) => `| ${e.model} | ${e.line} | \`${e.from}\` | \`${e.to}\` | ${e.evidence.summary} |`,
+    ),
     "",
   ].join("\n");
 }

@@ -87,13 +87,17 @@ it("the bundle manifest's fields, its model entries' and its compiler's are exac
       "trackCatalog",
       "trackShapes",
       "tablePlane",
+      "levelCrossing",
       "compiler",
       "connectors",
       "connectivity",
       "crosswalk",
+      "connectorPacks",
       "partTable",
       "creditTable",
       "thumbnails",
+      "rollingDiagnostics",
+      "libraryParts",
     ],
     model: [
       "name",
@@ -112,6 +116,7 @@ it("the bundle manifest's fields, its model entries' and its compiler's are exac
       "sha256",
       "cover",
       "notDrawn",
+      "errata",
       "farMesh",
     ],
     compiler: [
@@ -123,6 +128,7 @@ it("the bundle manifest's fields, its model entries' and its compiler's are exac
       "cavityProbe",
       "libraryBake",
       "libraryConnectors",
+      "shadowLibrary",
     ],
   });
 });

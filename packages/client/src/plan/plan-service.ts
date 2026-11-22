@@ -1,20 +1,42 @@
 import {
-  checkPlan,
-  regionOf,
+  BOX_MAX_X,
+  BOX_MAX_Y,
+  BOX_MAX_Z,
+  BOX_MIN_X,
+  BOX_MIN_Y,
+  BOX_MIN_Z,
+  BOX_READ,
+  BOX_STRIDE,
+  NO_ROW,
+  PlanEvaluation,
+  mmRectFromWorld,
+  MODEL_SEGMENT,
+  regionAround,
+  TRACK_SEGMENT,
   uncheckedPlan,
+  WRITE_UPDATE,
+  type LduRect,
   type PlacementKey,
+  type PlanChange,
   type PlanCheck,
+  type PlanDelta,
+  type PlanFootprint,
+  type PlanIssue,
   type PlanObstacle,
-  type PlanPlacement,
   type PlanRegion,
+  type PlanState,
   type PlanTable,
+  type PlateHeights,
+  type TableTop,
 } from "@brr/domain";
-import { lduFromMm } from "@brr/math";
+import { chunkOf, lduFromMm } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type PlanOverlay, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 
-export const PLAN_GRID_MM = 100;
 export const DEFAULT_MAX_OVERHANG_MM = 0;
+export const DEFAULT_MAX_REACH_MM = 700;
+export const DEFAULT_TABLE_HEIGHT_MM = 750;
+const NO_CARRIERS: ReadonlySet<number> = new Set();
 
 export interface PlacedForPlan {
   readonly key: PlacementKey;
@@ -23,13 +45,36 @@ export interface PlacedForPlan {
   readonly box: WorldBox;
 }
 
-export interface PlanSnapshot {
+export interface PlanStateDump {
   readonly plans: ReadonlyArray<PlanRegion>;
-  readonly activePlanId: string | null;
   readonly checks: ReadonlyArray<PlanCheck>;
   readonly placements: ReadonlyArray<PlacedForPlan>;
   readonly sandboxPlacements: ReadonlyArray<PlacementKey>;
   readonly tableTopY: number;
+}
+
+export interface PlanView {
+  readonly room: LduRect;
+  readonly tables: ReadonlyArray<TableTop>;
+  readonly obstacles: ReadonlyArray<LduRect>;
+}
+
+export type PlanRowSegment = "model" | "track";
+
+export interface PlanPlacementsView {
+  first(): number;
+  next(row: number): number;
+  segmentOf(row: number): PlanRowSegment;
+  sourceOf(row: number): number;
+  refOf(row: number): string;
+  labelOf(row: number): string;
+  keyOf(row: number): PlacementKey;
+  minX(row: number): number;
+  minY(row: number): number;
+  minZ(row: number): number;
+  maxX(row: number): number;
+  maxY(row: number): number;
+  maxZ(row: number): number;
 }
 
 export interface NewPlan {
@@ -41,16 +86,55 @@ export interface NewPlan {
 }
 
 export type PlanPatch = Partial<
-  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm">
+  Pick<PlanRegion, "name" | "originChunkX" | "originChunkZ" | "maxOverhangMm" | "maxReachMm">
 > &
   Partial<Pick<PlanRegion["footprint"], "roomWidthMm" | "roomDepthMm">>;
 
 export type TableInput = Omit<PlanTable, "id">;
 export type ObstacleInput = Omit<PlanObstacle, "id">;
 
+export interface PlanInput extends Omit<PlanRegion, "id" | "footprint"> {
+  readonly footprint: Omit<PlanFootprint, "tables" | "obstacles"> & {
+    readonly tables: ReadonlyArray<TableInput>;
+    readonly obstacles: ReadonlyArray<ObstacleInput>;
+  };
+}
+
+export interface DrawnTable {
+  readonly planId: string;
+  readonly tableId: string;
+}
+
 export interface IPlanService {
   subscribe(listener: () => void): () => void;
-  snapshot(): PlanSnapshot;
+  version(): number;
+  plans(): ReadonlyArray<PlanRegion>;
+  activePlanId(): string | null;
+  tableTopY(): number;
+  regionView(planId: string): PlanView;
+  insideCount(planId: string): number;
+  issueCount(planId: string): number;
+  joinedRoadCells(planId: string): number;
+  unmeasuredCount(planId: string): number;
+  customParts(planId: string): number;
+  contains(planId: string, row: number): boolean;
+  issueVersion(planId: string): number;
+  issues(planId: string): ReadonlyArray<PlanIssue>;
+  sandboxCount(): number;
+  placementCount(): number;
+  placements(): PlanPlacementsView;
+  materialize(): PlanStateDump;
+  apply(delta: PlanDelta): void;
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void;
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): void;
   createPlan(plan: NewPlan): string;
   updatePlan(planId: string, patch: PlanPatch): void;
   removePlan(planId: string): void;
@@ -58,93 +142,388 @@ export interface IPlanService {
   addTable(planId: string, table: TableInput): string;
   updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void;
   removeTable(planId: string, tableId: string): void;
+  drawTable(rect: LduRect): DrawnTable;
+  placeTable(planId: string, tableId: string, rect: LduRect): void;
   addObstacle(planId: string, obstacle: ObstacleInput): string;
   updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void;
   removeObstacle(planId: string, obstacleId: string): void;
-  setPlacements(placements: ReadonlyArray<PlacedForPlan>): void;
   setTableTopY(y: number): void;
+  onEdit(listener: (change: PlanChange) => void): () => void;
+  restore(state: PlanState): void;
+  addition(plan: PlanInput): PlanChange;
 }
 
-type Evaluation = Pick<PlanSnapshot, "checks" | "sandboxPlacements">;
+interface UnreadableBox {
+  readonly box: WorldBox;
+  readonly caught: unknown;
+}
 
-function evaluate(
+interface UncheckedIssues {
+  readonly at: number;
+  readonly issues: ReadonlyArray<PlanIssue>;
+}
+
+function planOverlays(
   plans: ReadonlyArray<PlanRegion>,
-  placed: ReadonlyArray<PlacedForPlan>,
-): Evaluation {
-  try {
-    const domain = placed.map(toDomain);
+  views: ReadonlyArray<PlanView>,
+  tableTopY: number,
+  activePlanId: string | null,
+): PlanOverlay[] {
+  return plans.map((plan, i) => {
+    const view = views[i];
+    const heightMm = plan.footprint.tables[0]?.heightMm ?? 0;
+    const floorY = tableTopY - lduFromMm(heightMm);
+    const tables = (view?.tables ?? []).map((top) => ({
+      minX: top.surface.minX,
+      minY: tableTopY - lduFromMm(top.heightMm),
+      minZ: top.surface.minZ,
+      maxX: top.surface.maxX,
+      maxY: tableTopY,
+      maxZ: top.surface.maxZ,
+    }));
+    const obstacles = (view?.obstacles ?? []).map((rect) => ({
+      ...rect,
+      minY: floorY,
+      maxY: tableTopY,
+    }));
+    const room = view?.room;
     return {
-      checks: plans.map((plan) => checkPlan(plan, domain)),
-      sandboxPlacements: domain
-        .filter((placement) => regionOf(plans, placement.box) === null)
-        .map((placement) => placement.key),
+      room: {
+        minX: room?.minX ?? 0,
+        minY: floorY,
+        minZ: room?.minZ ?? 0,
+        maxX: room?.maxX ?? 0,
+        maxY: floorY,
+        maxZ: room?.maxZ ?? 0,
+      },
+      tables,
+      obstacles,
+      active: plan.id === activePlanId,
     };
-  } catch (error) {
-    return {
-      checks: plans.map((plan) => uncheckedPlan(plan, [], String(error))),
-      sandboxPlacements: [],
-    };
+  });
+}
+
+function segmentName(segment: number): PlanRowSegment {
+  if (segment === MODEL_SEGMENT) return "model";
+  if (segment === TRACK_SEGMENT) return "track";
+  throw new Error(`unknown plan row segment ${segment}`);
+}
+
+function onlyName(patch: object): boolean {
+  for (const key of Object.keys(patch)) {
+    if (key !== "name" && (patch as Record<string, unknown>)[key] !== undefined) return false;
   }
+  return true;
 }
 
-function placementId(key: PlacementKey): string {
-  return `${key.chunkKey}:${key.slot}`;
-}
-
-function toDomain(placement: PlacedForPlan): PlanPlacement {
-  const { box } = placement;
-  return {
-    key: placement.key,
-    ref: placement.ref,
-    label: placement.label,
-    box: { minX: box.minX, minZ: box.minZ, maxX: box.maxX, maxZ: box.maxZ },
+function withDrawnTable(plan: PlanRegion, tableId: string, rect: LduRect): PlanRegion {
+  const grown = regionAround(plan, rect);
+  const { tables } = grown.footprint;
+  const table: PlanTable = {
+    id: tableId,
+    name: `Table ${tables.length + 1}`,
+    rect: mmRectFromWorld(grown, rect),
+    heightMm: tables[0]?.heightMm ?? DEFAULT_TABLE_HEIGHT_MM,
   };
+  return { ...grown, footprint: { ...grown.footprint, tables: [...tables, table] } };
+}
+
+function withPlacedTable(plan: PlanRegion, tableId: string, rect: LduRect): PlanRegion {
+  const grown = regionAround(plan, rect);
+  const placed = mmRectFromWorld(grown, rect);
+  return {
+    ...grown,
+    footprint: {
+      ...grown.footprint,
+      tables: grown.footprint.tables.map((t) => (t.id === tableId ? { ...t, rect: placed } : t)),
+    },
+  };
+}
+
+function sameRegionIds(a: ReadonlyArray<PlanRegion>, b: ReadonlyArray<PlanRegion>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]?.id !== b[i]?.id) return false;
+  }
+  return true;
 }
 
 @injectable()
 export class PlanService implements IPlanService {
   private readonly listeners = new Set<() => void>();
+  private readonly editListeners = new Set<(change: PlanChange) => void>();
+  private readonly deliver = (listener: () => void): void => listener();
+  private readonly evaluation = new PlanEvaluation();
+  private readonly unreadable = new Map<number, UnreadableBox>();
+  private readonly uncheckedIssues = new Map<string, UncheckedIssues>();
   private nextId = 1;
-  private state: PlanSnapshot = {
-    plans: [],
-    activePlanId: null,
-    checks: [],
-    placements: [],
-    sandboxPlacements: [],
-    tableTopY: 0,
-  };
+  private regions: ReadonlyArray<PlanRegion> = [];
+  private active: string | null = null;
+  private topY = 0;
+  private changes = 0;
+  private readonly view: PlanPlacementsView;
 
-  constructor(@inject(SCENE_BACKEND) private readonly backend: ISceneBackend) {}
+  constructor(@inject(SCENE_BACKEND) private readonly backend: ISceneBackend) {
+    const rows = this.evaluation.rows;
+    this.view = {
+      first: () => rows.first(),
+      next: (row) => rows.after(row),
+      segmentOf: (row) => segmentName(rows.segment[row] ?? -1),
+      sourceOf: (row) => rows.source[row] ?? -1,
+      refOf: (row) => rows.refOf(row),
+      labelOf: (row) => rows.labelOf(row),
+      keyOf: (row) => rows.keyOf(row),
+      minX: (row) => this.edge(row, BOX_MIN_X, "minX"),
+      minY: (row) => this.edge(row, BOX_MIN_Y, "minY"),
+      minZ: (row) => this.edge(row, BOX_MIN_Z, "minZ"),
+      maxX: (row) => this.edge(row, BOX_MAX_X, "maxX"),
+      maxY: (row) => this.edge(row, BOX_MAX_Y, "maxY"),
+      maxZ: (row) => this.edge(row, BOX_MAX_Z, "maxZ"),
+    };
+  }
+
+  private edge(row: number, offset: number, field: keyof WorldBox): number {
+    const rows = this.evaluation.rows;
+    if (rows.boxState[row] === BOX_READ) return rows.box[row * BOX_STRIDE + offset] ?? Number.NaN;
+    const original = this.unreadable.get(row);
+    return original ? original.box[field] : Number.NaN;
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
 
-  snapshot(): PlanSnapshot {
-    return this.state;
+  version(): number {
+    return this.changes;
+  }
+
+  plans(): ReadonlyArray<PlanRegion> {
+    return this.regions;
+  }
+
+  activePlanId(): string | null {
+    return this.active;
+  }
+
+  tableTopY(): number {
+    return this.topY;
+  }
+
+  regionView(planId: string): PlanView {
+    return this.evaluation.context(this.indexOf(planId));
+  }
+
+  insideCount(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.insideCount(index);
+  }
+
+  issueCount(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 1 : this.evaluation.issueCount(index);
+  }
+
+  joinedRoadCells(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.joinedRoadCells(index);
+  }
+
+  unmeasuredCount(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.unmeasuredCount(index);
+  }
+
+  customParts(planId: string): number {
+    const index = this.indexOf(planId);
+    return this.evaluation.unchecked() ? 0 : this.evaluation.customParts(index);
+  }
+
+  contains(planId: string, row: number): boolean {
+    const index = this.indexOf(planId);
+    return !this.evaluation.unchecked() && this.evaluation.isInside(index, row);
+  }
+
+  issueVersion(planId: string): number {
+    return this.evaluation.issueVersion(this.indexOf(planId));
+  }
+
+  issues(planId: string): ReadonlyArray<PlanIssue> {
+    const index = this.indexOf(planId);
+    if (!this.evaluation.unchecked()) return this.evaluation.issues(index);
+    const at = this.evaluation.issueVersion(index);
+    const cached = this.uncheckedIssues.get(planId);
+    if (cached && cached.at === at) return cached.issues;
+    const region = this.regions[index];
+    if (!region) throw new Error(`no plan ${planId}`);
+    const issues = uncheckedPlan(region, [], this.uncheckedReason()).issues;
+    this.uncheckedIssues.set(planId, { at, issues });
+    return issues;
+  }
+
+  sandboxCount(): number {
+    return this.evaluation.unchecked() ? 0 : this.evaluation.sandboxCount;
+  }
+
+  placementCount(): number {
+    return this.evaluation.rows.count;
+  }
+
+  placements(): PlanPlacementsView {
+    return this.view;
+  }
+
+  materialize(): PlanStateDump {
+    const evaluation = this.evaluation;
+    const rows = evaluation.rows;
+    const placements: PlacedForPlan[] = [];
+    for (let row = rows.first(); row !== NO_ROW; row = rows.after(row)) {
+      placements.push({
+        key: rows.keyOf(row),
+        ref: rows.refOf(row),
+        label: rows.labelOf(row),
+        box: this.boxOf(row),
+      });
+    }
+    if (evaluation.unchecked()) {
+      const reason = this.uncheckedReason();
+      return {
+        plans: this.regions,
+        checks: this.regions.map((plan) => uncheckedPlan(plan, [], reason)),
+        placements,
+        sandboxPlacements: [],
+        tableTopY: this.topY,
+      };
+    }
+    const checks = this.regions.map((plan, index): PlanCheck => {
+      const ctx = evaluation.context(index);
+      const inside: PlacementKey[] = [];
+      for (let row = rows.first(); row !== NO_ROW; row = rows.after(row)) {
+        if (evaluation.isInside(index, row)) inside.push(rows.keyOf(row));
+      }
+      return {
+        regionId: plan.id,
+        room: ctx.room,
+        tables: ctx.tables,
+        obstacles: ctx.obstacles,
+        inside,
+        issues: evaluation.issues(index),
+      };
+    });
+    const sandboxPlacements: PlacementKey[] = [];
+    for (let row = rows.first(); row !== NO_ROW; row = rows.after(row)) {
+      if (evaluation.regionsInOf(row) === 0) sandboxPlacements.push(rows.keyOf(row));
+    }
+    return { plans: this.regions, checks, placements, sandboxPlacements, tableTopY: this.topY };
+  }
+
+  apply(delta: PlanDelta): void {
+    const evaluation = this.evaluation;
+    const rows = evaluation.rows;
+    evaluation.resetChanges();
+    if (delta.cleared) this.unreadable.clear();
+    if (this.unreadable.size > 0) {
+      for (let k = 0; k < delta.removalCount; k++) {
+        this.unreadable.delete(
+          rows.find(delta.removalSegment[k] ?? 0, delta.removalSource[k] ?? 0),
+        );
+      }
+      for (let e = 0; e < delta.writeCount; e++) {
+        if (delta.writeKind[e] !== WRITE_UPDATE) continue;
+        this.unreadable.delete(rows.find(delta.writeSegment[e] ?? 0, delta.writeSource[e] ?? 0));
+      }
+    }
+    evaluation.apply(delta);
+    for (let e = 0; e < delta.writeCount; e++) {
+      if (delta.boxState[e] === BOX_READ) continue;
+      const row = rows.find(delta.writeSegment[e] ?? 0, delta.writeSource[e] ?? 0);
+      this.unreadable.set(row, {
+        box: delta.original[e] as WorldBox,
+        caught: delta.caught[e],
+      });
+    }
+    this.afterChange(false);
+  }
+
+  setUnsupported(
+    track: ReadonlySet<number>,
+    models: ReadonlySet<number>,
+    carriers: ReadonlySet<number>,
+  ): void {
+    const evaluation = this.evaluation;
+    evaluation.resetChanges();
+    const trackChanged = evaluation.setUnsupported(TRACK_SEGMENT, track, NO_CARRIERS);
+    const modelsChanged = evaluation.setUnsupported(MODEL_SEGMENT, models, carriers);
+    if (trackChanged || modelsChanged) this.afterChange(false);
+  }
+
+  setLowClearance(
+    track: ReadonlyMap<number, PlateHeights>,
+    models: ReadonlyMap<number, PlateHeights>,
+    train: string,
+  ): void {
+    const evaluation = this.evaluation;
+    evaluation.resetChanges();
+    const trackChanged = evaluation.setLowClearance(TRACK_SEGMENT, track, train);
+    const modelsChanged = evaluation.setLowClearance(MODEL_SEGMENT, models, train);
+    if (trackChanged || modelsChanged) this.afterChange(false);
   }
 
   private newId(prefix: string): string {
     return `${prefix}-${this.nextId++}`;
   }
 
-  private plan(planId: string): PlanRegion {
-    const plan = this.state.plans.find((p) => p.id === planId);
-    if (!plan) throw new Error(`no plan ${planId}`);
-    return plan;
+  private indexOf(planId: string): number {
+    const regions = this.regions;
+    for (let i = 0; i < regions.length; i++) {
+      if (regions[i]?.id === planId) return i;
+    }
+    throw new Error(`no plan ${planId}`);
   }
 
-  private replacePlan(planId: string, next: (plan: PlanRegion) => PlanRegion): void {
-    this.commit({
-      plans: this.state.plans.map((plan) => (plan.id === planId ? next(plan) : plan)),
+  private boxOf(row: number): WorldBox {
+    const rows = this.evaluation.rows;
+    if (rows.boxState[row] !== BOX_READ) {
+      const original = this.unreadable.get(row);
+      if (original) return original.box;
+    }
+    const at = row * BOX_STRIDE;
+    return {
+      minX: rows.box[at + BOX_MIN_X] ?? Number.NaN,
+      minY: rows.box[at + BOX_MIN_Y] ?? Number.NaN,
+      minZ: rows.box[at + BOX_MIN_Z] ?? Number.NaN,
+      maxX: rows.box[at + BOX_MAX_X] ?? Number.NaN,
+      maxY: rows.box[at + BOX_MAX_Y] ?? Number.NaN,
+      maxZ: rows.box[at + BOX_MAX_Z] ?? Number.NaN,
+    };
+  }
+
+  private uncheckedReason(): string {
+    return String(this.unreadable.get(this.evaluation.firstPlanUnreadable)?.caught);
+  }
+
+  private editRegion(
+    planId: string,
+    next: (plan: PlanRegion) => PlanRegion,
+    geometry: boolean,
+  ): void {
+    this.edit(() => {
+      this.evaluation.resetChanges();
+      const index = this.regions.findIndex((plan) => plan.id === planId);
+      const plan = this.regions[index];
+      if (plan) {
+        const replaced = next(plan);
+        this.regions = this.regions.map((p, i) => (i === index ? replaced : p));
+        if (geometry) this.evaluation.replaceRegion(index, replaced);
+        else this.evaluation.renameRegion(index, replaced);
+      }
+      this.afterChange(true);
     });
   }
 
-  createPlan(plan: NewPlan): string {
-    const id = this.newId("plan");
-    const region: PlanRegion = {
-      id,
+  private newRegion(plan: NewPlan): PlanRegion {
+    return {
+      id: this.newId("plan"),
       name: plan.name,
       originChunkX: plan.originChunkX,
       originChunkZ: plan.originChunkZ,
@@ -155,162 +534,288 @@ export class PlanService implements IPlanService {
         obstacles: [],
       },
       maxOverhangMm: DEFAULT_MAX_OVERHANG_MM,
+      maxReachMm: DEFAULT_MAX_REACH_MM,
     };
-    this.commit({ plans: [...this.state.plans, region], activePlanId: id });
-    return id;
+  }
+
+  private insertRegion(region: PlanRegion): void {
+    this.edit(() => {
+      this.evaluation.resetChanges();
+      this.regions = [...this.regions, region];
+      this.active = region.id;
+      this.evaluation.addRegion(region);
+      this.afterChange(true);
+    });
+  }
+
+  private planState(): PlanState {
+    return { regions: this.regions, activePlanId: this.active };
+  }
+
+  private edit(run: () => void): void {
+    const before = this.planState();
+    run();
+    if (before.regions === this.regions && before.activePlanId === this.active) return;
+    const change = { before, after: this.planState() };
+    for (const listener of this.editListeners) listener(change);
+  }
+
+  onEdit(listener: (change: PlanChange) => void): () => void {
+    this.editListeners.add(listener);
+    return () => this.editListeners.delete(listener);
+  }
+
+  restore(state: PlanState): void {
+    if (state.regions === this.regions && state.activePlanId === this.active) return;
+    this.evaluation.resetChanges();
+    const target = state.regions;
+    if (sameRegionIds(this.regions, target)) {
+      for (let i = 0; i < target.length; i++) {
+        const region = target[i];
+        if (region && region !== this.regions[i]) this.evaluation.replaceRegion(i, region);
+      }
+    } else {
+      for (let i = this.regions.length - 1; i >= 0; i--) this.evaluation.removeRegion(i);
+      for (const region of target) this.evaluation.addRegion(region);
+      this.uncheckedIssues.clear();
+    }
+    this.regions = target;
+    this.active = state.activePlanId;
+    this.afterChange(true);
+  }
+
+  addition(plan: PlanInput): PlanChange {
+    const { footprint } = plan;
+    const region: PlanRegion = {
+      id: this.newId("plan"),
+      name: plan.name,
+      originChunkX: plan.originChunkX,
+      originChunkZ: plan.originChunkZ,
+      footprint: {
+        roomWidthMm: footprint.roomWidthMm,
+        roomDepthMm: footprint.roomDepthMm,
+        tables: footprint.tables.map((table) => ({ id: this.newId("table"), ...table })),
+        obstacles: footprint.obstacles.map((obstacle) => ({
+          id: this.newId("obstacle"),
+          ...obstacle,
+        })),
+      },
+      maxOverhangMm: plan.maxOverhangMm,
+      maxReachMm: plan.maxReachMm,
+    };
+    return {
+      before: this.planState(),
+      after: { regions: [...this.regions, region], activePlanId: region.id },
+    };
+  }
+
+  createPlan(plan: NewPlan): string {
+    const region = this.newRegion(plan);
+    this.insertRegion(region);
+    return region.id;
   }
 
   updatePlan(planId: string, patch: PlanPatch): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      name: patch.name ?? plan.name,
-      originChunkX: patch.originChunkX ?? plan.originChunkX,
-      originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
-      maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
-      footprint: {
-        ...plan.footprint,
-        roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,
-        roomDepthMm: patch.roomDepthMm ?? plan.footprint.roomDepthMm,
-      },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        name: patch.name ?? plan.name,
+        originChunkX: patch.originChunkX ?? plan.originChunkX,
+        originChunkZ: patch.originChunkZ ?? plan.originChunkZ,
+        maxOverhangMm: patch.maxOverhangMm ?? plan.maxOverhangMm,
+        maxReachMm: patch.maxReachMm ?? plan.maxReachMm,
+        footprint: {
+          ...plan.footprint,
+          roomWidthMm: patch.roomWidthMm ?? plan.footprint.roomWidthMm,
+          roomDepthMm: patch.roomDepthMm ?? plan.footprint.roomDepthMm,
+        },
+      }),
+      !onlyName(patch),
+    );
   }
 
   removePlan(planId: string): void {
-    this.plan(planId);
-    const plans = this.state.plans.filter((p) => p.id !== planId);
-    this.commit({
-      plans,
-      activePlanId:
-        this.state.activePlanId === planId ? (plans[0]?.id ?? null) : this.state.activePlanId,
+    const index = this.indexOf(planId);
+    this.edit(() => {
+      this.evaluation.resetChanges();
+      const plans = this.regions.filter((p) => p.id !== planId);
+      this.regions = plans;
+      if (this.active === planId) this.active = plans[0]?.id ?? null;
+      this.evaluation.removeRegion(index);
+      this.uncheckedIssues.delete(planId);
+      this.afterChange(true);
     });
   }
 
   activatePlan(planId: string | null): void {
-    if (planId !== null) this.plan(planId);
-    this.commit({ activePlanId: planId });
+    if (planId !== null) this.indexOf(planId);
+    this.evaluation.resetChanges();
+    this.active = planId;
+    this.afterChange(true);
   }
 
   addTable(planId: string, table: TableInput): string {
     const id = this.newId("table");
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: { ...plan.footprint, tables: [...plan.footprint.tables, { ...table, id }] },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: { ...plan.footprint, tables: [...plan.footprint.tables, { ...table, id }] },
+      }),
+      true,
+    );
     return id;
   }
 
   updateTable(planId: string, tableId: string, patch: Partial<TableInput>): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        tables: plan.footprint.tables.map((t) => (t.id === tableId ? { ...t, ...patch } : t)),
-      },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          tables: plan.footprint.tables.map((t) => (t.id === tableId ? { ...t, ...patch } : t)),
+        },
+      }),
+      !onlyName(patch),
+    );
   }
 
   removeTable(planId: string, tableId: string): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        tables: plan.footprint.tables.filter((t) => t.id !== tableId),
-      },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          tables: plan.footprint.tables.filter((t) => t.id !== tableId),
+        },
+      }),
+      true,
+    );
+  }
+
+  drawTable(rect: LduRect): DrawnTable {
+    const active = this.active;
+    if (active === null) {
+      const region = this.newRegion({
+        name: `Plan ${this.regions.length + 1}`,
+        roomWidthMm: 0,
+        roomDepthMm: 0,
+        originChunkX: chunkOf(rect.minX),
+        originChunkZ: chunkOf(rect.minZ),
+      });
+      const tableId = this.newId("table");
+      this.insertRegion(withDrawnTable(region, tableId, rect));
+      return { planId: region.id, tableId };
+    }
+    const tableId = this.newId("table");
+    this.editRegion(active, (plan) => withDrawnTable(plan, tableId, rect), true);
+    return { planId: active, tableId };
+  }
+
+  placeTable(planId: string, tableId: string, rect: LduRect): void {
+    this.editRegion(planId, (plan) => withPlacedTable(plan, tableId, rect), true);
   }
 
   addObstacle(planId: string, obstacle: ObstacleInput): string {
     const id = this.newId("obstacle");
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        obstacles: [...plan.footprint.obstacles, { ...obstacle, id }],
-      },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          obstacles: [...plan.footprint.obstacles, { ...obstacle, id }],
+        },
+      }),
+      true,
+    );
     return id;
   }
 
   updateObstacle(planId: string, obstacleId: string, patch: Partial<ObstacleInput>): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        obstacles: plan.footprint.obstacles.map((o) =>
-          o.id === obstacleId ? { ...o, ...patch } : o,
-        ),
-      },
-    }));
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          obstacles: plan.footprint.obstacles.map((o) =>
+            o.id === obstacleId ? { ...o, ...patch } : o,
+          ),
+        },
+      }),
+      !onlyName(patch),
+    );
   }
 
   removeObstacle(planId: string, obstacleId: string): void {
-    this.replacePlan(planId, (plan) => ({
-      ...plan,
-      footprint: {
-        ...plan.footprint,
-        obstacles: plan.footprint.obstacles.filter((o) => o.id !== obstacleId),
-      },
-    }));
-  }
-
-  setPlacements(placements: ReadonlyArray<PlacedForPlan>): void {
-    this.commit({ placements });
+    this.editRegion(
+      planId,
+      (plan) => ({
+        ...plan,
+        footprint: {
+          ...plan.footprint,
+          obstacles: plan.footprint.obstacles.filter((o) => o.id !== obstacleId),
+        },
+      }),
+      true,
+    );
   }
 
   setTableTopY(y: number): void {
-    this.commit({ tableTopY: y });
+    this.evaluation.resetChanges();
+    this.topY = y;
+    this.afterChange(true);
   }
 
-  private commit(patch: Partial<PlanSnapshot>): void {
-    const next = { ...this.state, ...patch };
-    this.state = { ...next, ...evaluate(next.plans, next.placements) };
-    this.draw();
-    for (const listener of this.listeners) listener();
+  private afterChange(overlays: boolean): void {
+    if (overlays) this.drawOverlays();
+    this.drawIssueBoxes();
+    this.changes++;
+    this.listeners.forEach(this.deliver);
   }
 
-  private draw(): void {
-    const { plans, checks, placements, tableTopY, activePlanId } = this.state;
-    const overlays: PlanOverlay[] = plans.map((plan, i) => {
-      const check = checks[i];
-      const heightMm = plan.footprint.tables[0]?.heightMm ?? 0;
-      const floorY = tableTopY - lduFromMm(heightMm);
-      const tables = (check?.tables ?? []).map((top) => ({
-        minX: top.surface.minX,
-        minY: tableTopY - lduFromMm(top.heightMm),
-        minZ: top.surface.minZ,
-        maxX: top.surface.maxX,
-        maxY: tableTopY,
-        maxZ: top.surface.maxZ,
-      }));
-      const obstacles = (check?.obstacles ?? []).map((rect) => ({
-        ...rect,
-        minY: floorY,
-        maxY: tableTopY,
-      }));
-      const room = check?.room;
-      return {
-        room: {
-          minX: room?.minX ?? 0,
-          minY: floorY,
-          minZ: room?.minZ ?? 0,
-          maxX: room?.maxX ?? 0,
-          maxY: floorY,
-          maxZ: room?.maxZ ?? 0,
-        },
-        tables,
-        obstacles,
-        gridStepLdu: lduFromMm(PLAN_GRID_MM),
-        active: plan.id === activePlanId,
-      };
-    });
-    this.backend.setPlanOverlays(overlays);
-    const flagged = new Set(
-      checks.flatMap((c) => c.issues.flatMap((issue) => issue.placements.map(placementId))),
-    );
-    this.backend.setIssueBoxes(
-      flagged.size === 0
-        ? []
-        : placements.filter((p) => flagged.has(placementId(p.key))).map((p) => p.box),
-    );
+  private drawOverlays(): void {
+    const views: PlanView[] = [];
+    for (let i = 0; i < this.regions.length; i++) views.push(this.evaluation.context(i));
+    this.backend.setPlanOverlays(planOverlays(this.regions, views, this.topY, this.active));
+  }
+
+  private drawIssueBoxes(): void {
+    const evaluation = this.evaluation;
+    if (evaluation.unchecked()) {
+      if (evaluation.uncheckedChanged) this.backend.setIssueBoxes([]);
+      return;
+    }
+    const changed =
+      evaluation.uncheckedChanged ||
+      evaluation.flaggedMembershipChanged ||
+      evaluation.flaggedBoxChanged ||
+      evaluation.trackIssuesChanged;
+    if (!changed) return;
+    const boxes: WorldBox[] = [];
+    for (let row = evaluation.firstFlagged(); row !== NO_ROW; row = evaluation.nextFlagged(row)) {
+      boxes.push(this.boxOf(row));
+    }
+    const track = evaluation.trackIssues;
+    for (let issue = 0; issue < track.count; issue++) {
+      if (!evaluation.trackIssueInRegions(issue)) continue;
+      const last = track.ownerStart[issue + 1] ?? 0;
+      for (let owner = track.ownerStart[issue] ?? 0; owner < last; owner++) {
+        const at = owner * BOX_STRIDE;
+        boxes.push({
+          minX: track.ownerBox[at + BOX_MIN_X] ?? Number.NaN,
+          minY: track.ownerBox[at + BOX_MIN_Y] ?? Number.NaN,
+          minZ: track.ownerBox[at + BOX_MIN_Z] ?? Number.NaN,
+          maxX: track.ownerBox[at + BOX_MAX_X] ?? Number.NaN,
+          maxY: track.ownerBox[at + BOX_MAX_Y] ?? Number.NaN,
+          maxZ: track.ownerBox[at + BOX_MAX_Z] ?? Number.NaN,
+        });
+      }
+    }
+    this.backend.setIssueBoxes(boxes);
   }
 }

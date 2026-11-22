@@ -1,4 +1,10 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  CATALOG_API_BASE_URL,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+} from "@brr/catalog";
+import { BUNDLE_POINTER_FILE } from "@brr/schema/bundle-pointer";
 import {
   SCENE_BACKEND,
   THUMBNAIL_RENDERER,
@@ -14,20 +20,33 @@ import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
-import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX, type IEditor } from "../edit/editor.ts";
+import type { IEditor } from "../edit/editor.ts";
+import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "../edit/track-edit-session.ts";
+import { heldItem } from "../edit/held-item.ts";
 import type { MeshCounts } from "../edit/mesh-progress.ts";
+import { loadCatalogItem } from "./catalog-item.test-support.ts";
 import type { CatalogItemView } from "./placeable-catalog.ts";
 import {
+  COMMAND_PALETTE_SEARCH,
+  CONNECTOR_TABLES,
   EDITOR,
+  HOTBAR,
+  LIBRARY_PART_PLACER,
+  MODEL_IMPORTER,
   PALETTE_DRAG,
   PALETTE_MEMORY,
   PALETTE_MEMORY_STORE,
   PALETTE_PREFETCH,
   PALETTE_SEARCH,
   PALETTE_THUMBNAILS,
+  PLACEABLE_CATALOG,
 } from "../tokens.ts";
 import { EMPTY_PALETTE_MEMORY } from "./palette-memory.ts";
 import type { IPaletteSearch, PaletteSearchSnapshot, PaletteSection } from "./palette-search.ts";
+import { chosen } from "../edit/editor-choice.test-support.ts";
+import type { IModelImporter } from "../import/worker-model-importer.ts";
+import type { ICommandPaletteSearch } from "../commands/command-palette-search.ts";
+import type { ImportResult, RollingDiagnosticsRows } from "@brr/import";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
 const NO_LOOK: LookSettings = {
@@ -54,6 +73,12 @@ const MADE_IN_WHITE = [
   "ldraw:3865",
 ];
 const NOT_MADE_IN_WHITE = ["ldraw:3334", "ldraw:3497"];
+const RED = 4;
+const BRICK_2_X_4 = "3001";
+const WORKER_UNREACHABLE = "the import worker is unreachable";
+const PUBLISHED_KEY = "0123456789abcdef";
+const PUBLISHED_MANIFEST = `manifest.${PUBLISHED_KEY}.json`;
+const CATALOG_WORKER = "https://catalog.test";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   readonly paths: string[] = [];
@@ -67,6 +92,13 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   async text(path: string): Promise<string> {
     this.paths.push(path);
     return readFile(new URL(path, bundleRoot), "utf8");
+  }
+}
+
+class PublishedBundleFetcher extends BundleDirectoryFetcher {
+  override async text(path: string): Promise<string> {
+    if (path === BUNDLE_POINTER_FILE) return JSON.stringify({ manifestFile: PUBLISHED_MANIFEST });
+    return super.text(path.replace(PUBLISHED_MANIFEST, "manifest.json"));
   }
 }
 
@@ -93,11 +125,15 @@ class HeadlessBackend implements ISceneBackend {
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
-  setSelectionBox(): void {}
+  setGhostVerdict(): void {}
+  setSelectionBoxes(): void {}
   setMarkers(): void {}
   setTrackEnds(): void {}
+  setGround(): void {}
   setPlanOverlays(): void {}
   setIssueBoxes(): void {}
+  setGuides(): void {}
+  projectToNdc(): void {}
   aim(x: number, z: number): void {
     this.aimX = x;
     this.aimZ = z;
@@ -139,7 +175,7 @@ class RecordingThumbnailRenderer implements IThumbnailRenderer {
   }
 }
 
-async function startEditor() {
+async function startEditor(configure: (container: Container) => void = () => {}) {
   const fetcher = new BundleDirectoryFetcher();
   const backend = new HeadlessBackend();
   vi.stubGlobal("requestAnimationFrame", () => 0);
@@ -147,6 +183,7 @@ async function startEditor() {
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(fetcher);
   container.rebind(SCENE_BACKEND).toConstantValue(backend);
+  configure(container);
   const editor = container.get(EDITOR);
   const canvas = {
     clientWidth: 640,
@@ -174,6 +211,35 @@ function rowKeys(rows: PaletteSection["rows"]): ReadonlyArray<string> {
 
 function capabilities({ draggable, toggleable, listedUnder }: CatalogItemView) {
   return { draggable, toggleable, listedUnder };
+}
+
+function foundItems(search: ICommandPaletteSearch, query: string): ReadonlyArray<string> {
+  return search
+    .snapshot()
+    .find(query, () => true)
+    .flatMap((result) => (result.kind === "item" ? [result.item.id] : []));
+}
+
+function libraryIds(search: IPaletteSearch): ReadonlyArray<string> {
+  return search.snapshot().library?.hits.map((hit) => hit.part.id) ?? [];
+}
+
+class UnreachableWorkerImporter implements IModelImporter {
+  readonly files: Array<{ readonly name: string; readonly text: string }> = [];
+
+  async importText(name: string, text: string): Promise<ImportResult> {
+    this.files.push({ name, text });
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async importStudio(name: string): Promise<ImportResult> {
+    this.files.push({ name, text: "" });
+    throw new Error(WORKER_UNREACHABLE);
+  }
+
+  async rollingDiagnostics(): Promise<RollingDiagnosticsRows> {
+    throw new Error(WORKER_UNREACHABLE);
+  }
 }
 
 function placedItems(editor: IEditor): ReadonlyArray<string> {
@@ -230,17 +296,52 @@ describe("find palette", () => {
       load: () => ({ ...EMPTY_PALETTE_MEMORY, recents: [CROSSROADS, GREEN_BASEPLATE] }),
       save: () => {},
     });
-    const search = container.get(PALETTE_SEARCH);
-    const foundItems = (query: string): ReadonlyArray<string> =>
-      search
-        .snapshot()
-        .find(query, () => true)
-        .flatMap((result) => (result.kind === "item" ? [result.item.id] : []));
+    const search = container.get(COMMAND_PALETTE_SEARCH);
 
-    expect(foundItems("")).toEqual([CROSSROADS, GREEN_BASEPLATE]);
-    expect(foundItems(STRAIGHT_9V)).toContain(TRACK_ITEM_ID);
+    expect(foundItems(search, "")).toEqual([CROSSROADS, GREEN_BASEPLATE]);
+    expect(foundItems(search, STRAIGHT_9V)).toContain(TRACK_ITEM_ID);
     container.get(PALETTE_MEMORY).forgetRecents();
-    expect(foundItems("")).toEqual([]);
+    expect(foundItems(search, "")).toEqual([]);
+  }, 120_000);
+
+  it("asks the catalog Worker for its own query beside the library's, and lists the Worker's hits after its own matches once they arrive", async () => {
+    const asked: Array<string | null> = [];
+    vi.stubGlobal("fetch", async (input: string) => {
+      const url = new URL(input);
+      if (url.origin !== CATALOG_WORKER || url.pathname !== `/v1/bundles/${PUBLISHED_KEY}/search`) {
+        throw new Error(`unexpected request ${input}`);
+      }
+      const query = url.searchParams.get("q");
+      asked.push(query);
+      const results = [
+        {
+          id: GREEN_BASEPLATE,
+          label: "3811",
+          section: "baseplates",
+          kind: "baseplate",
+          file: null,
+        },
+      ];
+      return new Response(JSON.stringify({ manifest: PUBLISHED_KEY, query, results }));
+    });
+    const { container } = await startEditor((loading) => {
+      loading.rebind(ASSET_FETCHER).toConstantValue(new PublishedBundleFetcher());
+      loading.bind(CATALOG_API_BASE_URL).toConstantValue(CATALOG_WORKER);
+    });
+    const library = container.get(PALETTE_SEARCH);
+    const find = container.get(COMMAND_PALETTE_SEARCH);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    library.setQuery(BASEPLATE_32);
+    find.search("crossroads");
+    const local = foundItems(find, "crossroads");
+    await vi.waitFor(() => expect(library.snapshot().status).toBe("ready"));
+    await vi.waitFor(() => expect(foundItems(find, "crossroads")).toContain(GREEN_BASEPLATE));
+
+    expect(asked).toEqual([BASEPLATE_32, "crossroads"]);
+    expect(local).toContain(CROSSROADS);
+    expect(local).not.toContain(GREEN_BASEPLATE);
+    expect(foundItems(find, "crossroads")).toEqual([...local, GREEN_BASEPLATE]);
   }, 120_000);
 });
 
@@ -313,6 +414,40 @@ describe("palette prefetch", () => {
     await vi.waitFor(() => expect(fetcher.paths).toContain(focused));
     expect(fetcher.paths).not.toContain(passed);
   }, 120_000);
+
+  it("reads a set's connectors while it holds focus, so picking it places it without waiting", async () => {
+    const { container, editor } = await startEditor();
+    const tables = container.get(CONNECTOR_TABLES);
+
+    container.get(PALETTE_PREFETCH).focus(SET);
+    const set = await loadCatalogItem(container.get(PLACEABLE_CATALOG), SET);
+    await vi.waitFor(() => expect(tables.loaded(set)).not.toBeNull(), { timeout: 60_000 });
+    editor.chooseItem(SET);
+
+    expect(heldItem(editor.snapshot())).toEqual({ item: SET, tables: "ready", queued: null });
+  }, 120_000);
+
+  it("asks for the bundle's two connector packs as the editor starts, so picking a set fetches no other connector file", async () => {
+    const connectorFile = /\/(?:connectivity|connectors?)-[^/]+\.json$/u;
+    const { editor, fetcher, manifest } = await startEditor();
+    const { connectorPacks } = manifest;
+    const packs = [connectorPacks?.connectivity.file, connectorPacks?.connectors.file].map(
+      (file) => `standard/${file}`,
+    );
+
+    await vi.waitFor(() => expect(fetcher.paths).toEqual(expect.arrayContaining(packs)), {
+      timeout: 60_000,
+    });
+    await chosen(editor, SET);
+
+    expect({
+      connectorFiles: fetcher.paths.filter((path) => connectorFile.test(path)).toSorted(),
+      held: heldItem(editor.snapshot()),
+    }).toEqual({
+      connectorFiles: packs.toSorted(),
+      held: { item: SET, tables: "ready", queued: null },
+    });
+  }, 120_000);
 });
 
 describe("palette thumbnails", () => {
@@ -374,27 +509,103 @@ describe("palette item labels", () => {
     expect(shortLabel(GREEN_BASEPLATE)).toBe("3811 32×32");
     expect(shortLabel(SET)).toBe("7936-1 Level Crossing");
     expect(shortLabel(TRACK_ITEM_ID)).toBe("Track");
+    expect(shortLabel(`${TRACK_PIECE_PREFIX}ldraw:74746`)).toBe("Train Track 9V Straight");
     const pieces = catalog.filter((item) => item.id.startsWith(TRACK_PIECE_PREFIX));
-    expect(pieces.map((item) => item.shortLabel)).toEqual(pieces.map(() => "Track"));
+    expect(new Set(pieces.map((item) => item.shortLabel)).size).toBe(pieces.length);
   }, 120_000);
 });
 
 describe("palette drag", () => {
-  it("places the dragged item where it is dropped, gives back the item picked before, and ignores a drop with no drag", async () => {
+  it("places the dragged item where it is dropped, even before it has loaded, gives back the item picked before, and ignores a drop with no drag", async () => {
     const { container, editor, backend } = await startEditor();
     const drag = container.get(PALETTE_DRAG);
-    editor.chooseItem(CROSSROADS);
+    await chosen(editor, CROSSROADS);
 
     backend.aim(0, 0);
     drag.start(GREEN_BASEPLATE);
-    expect(editor.snapshot().activeItem).toBe(GREEN_BASEPLATE);
+    const pending = editor.snapshot().pendingItem;
     drag.drop(0, 0, 0);
     drag.end();
-    expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
-    expect(editor.snapshot().activeItem).toBe(CROSSROADS);
+    const beforeLoad = placedItems(editor);
+    await vi.waitFor(() => expect(editor.snapshot().activeItem).toBe(CROSSROADS));
+    expect({ pending, beforeLoad, placed: placedItems(editor) }).toEqual({
+      pending: GREEN_BASEPLATE,
+      beforeLoad: [],
+      placed: [GREEN_BASEPLATE],
+    });
 
     backend.aim(2560, 2560);
     drag.drop(0, 0, 0);
     expect(placedItems(editor)).toEqual([GREEN_BASEPLATE]);
+  }, 120_000);
+});
+
+describe("hotbar", () => {
+  it("gives each part the editor picks its own slot, keeps it through a deselect, and picks it again by slot", async () => {
+    const { container, editor } = await startEditor();
+    const hotbar = container.get(HOTBAR);
+    const slots = (): ReadonlyArray<string> => hotbar.snapshot().slots.map((slot) => slot.item);
+
+    editor.chooseItem(GREEN_BASEPLATE);
+    editor.chooseItem(SET);
+    editor.chooseItem(TRACK_ITEM_ID);
+    editor.chooseItem(null);
+    editor.chooseItem(GREEN_BASEPLATE);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+
+    hotbar.pick(1);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    hotbar.pick(5);
+    expect(editor.snapshot().activeItem).toBe(SET);
+    expect(slots()).toEqual([GREEN_BASEPLATE, SET, TRACK_ITEM_ID]);
+  }, 120_000);
+});
+
+describe("parts library", () => {
+  it("falls back to the pinned library's single parts on the All tab, ranked by their own titles, without the parts the palette already offers", async () => {
+    const { container } = await startEditor();
+    const search = container.get(PALETTE_SEARCH);
+
+    search.setQuery("brick 2 x 4");
+    expect(search.snapshot().library?.status).toBe("loading");
+    await vi.waitFor(() => expect(search.snapshot().library?.status).toBe("ready"));
+    const [first] = search.snapshot().library?.hits ?? [];
+    expect(first?.part).toMatchObject({ id: BRICK_2_X_4, title: "Brick 2 x 4", category: "Brick" });
+    expect(first?.colors.map((color) => color.code)).toContain(RED);
+
+    search.setQuery("baseplate 32 x 32");
+    expect(libraryIds(search).length).toBeGreaterThan(0);
+    expect(libraryIds(search)).not.toContain(BASEPLATE_32);
+
+    search.setTab("road");
+    expect(search.snapshot().library).toBeNull();
+  }, 120_000);
+
+  it("hands the editor's import a one-part LDraw file of the picked part in the picked colour, and keeps the failure on that part", async () => {
+    const importer = new UnreachableWorkerImporter();
+    const { container } = await startEditor((loading) =>
+      loading.rebind(MODEL_IMPORTER).toConstantValue(importer),
+    );
+    const search = container.get(PALETTE_SEARCH);
+    const placer = container.get(LIBRARY_PART_PLACER);
+    search.setQuery("brick 2 x 4");
+    await vi.waitFor(() => expect(search.snapshot().library?.status).toBe("ready"));
+    const [hit] = search.snapshot().library?.hits ?? [];
+    const red = hit?.colors.find((color) => color.code === RED);
+    if (!hit || !red) throw new Error("the library offers no red 2 x 4 brick");
+
+    expect(await placer.place(hit.part, red)).toBe(false);
+
+    expect(importer.files).toEqual([
+      { name: "3001 Brick 2 x 4 in Red.ldr", text: "1 4 0 0 0 1 0 0 0 1 0 0 0 1 3001.dat\n" },
+    ]);
+    expect(placer.view()).toEqual({
+      pending: null,
+      refused: {
+        part: BRICK_2_X_4,
+        color: RED,
+        reason: `model import failed: ${WORKER_UNREACHABLE}`,
+      },
+    });
   }, 120_000);
 });

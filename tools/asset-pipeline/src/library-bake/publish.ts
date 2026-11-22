@@ -16,6 +16,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".bin": "application/octet-stream",
   ".glb": "model/gltf-binary",
 };
+const LIBRARY_BAKE_FILE_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(CONTENT_TYPES));
 
 function listed(file: string, bytes: Uint8Array): IndexListing {
   if (file === LIBRARY_BAKE_INDEX) {
@@ -23,12 +24,19 @@ function listed(file: string, bytes: Uint8Array): IndexListing {
     const buckets = new Set(index.buckets);
     return {
       indexes: index.buckets.map((bucket) => ({ file: bucket })),
-      leaves: [...referencedNames(index)].filter((name) => !buckets.has(name)),
+      leaves: [...referencedNames(index, LIBRARY_BAKE_FILE_EXTENSIONS)].filter(
+        (name) => !buckets.has(name),
+      ),
     };
   }
   return {
     indexes: [],
-    leaves: [...referencedNames(decodeJsonFile(LibraryBakeBucket, bytes, file))],
+    leaves: [
+      ...referencedNames(
+        decodeJsonFile(LibraryBakeBucket, bytes, file),
+        LIBRARY_BAKE_FILE_EXTENSIONS,
+      ),
+    ],
   };
 }
 
