@@ -366,6 +366,28 @@ describe("palette prefetch", () => {
 
     expect(heldItem(editor.snapshot())).toEqual({ item: SET, tables: "ready", queued: null });
   }, 120_000);
+
+  it("asks for the bundle's two connector packs as the editor starts, so picking a set fetches no other connector file", async () => {
+    const connectorFile = /\/(?:connectivity|connectors?)-[^/]+\.json$/u;
+    const { editor, fetcher, manifest } = await startEditor();
+    const { connectorPacks } = manifest;
+    const packs = [connectorPacks?.connectivity.file, connectorPacks?.connectors.file].map(
+      (file) => `standard/${file}`,
+    );
+
+    await vi.waitFor(() => expect(fetcher.paths).toEqual(expect.arrayContaining(packs)), {
+      timeout: 60_000,
+    });
+    await chosen(editor, SET);
+
+    expect({
+      connectorFiles: fetcher.paths.filter((path) => connectorFile.test(path)).toSorted(),
+      held: heldItem(editor.snapshot()),
+    }).toEqual({
+      connectorFiles: packs.toSorted(),
+      held: { item: SET, tables: "ready", queued: null },
+    });
+  }, 120_000);
 });
 
 describe("palette thumbnails", () => {

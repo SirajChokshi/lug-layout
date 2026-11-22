@@ -153,6 +153,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.readPartConnectors(lod, partId);
   }
 
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.loader.prefetchPartConnectors(lod);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.loader.loadConnectivityAttribution(lod);
   }
