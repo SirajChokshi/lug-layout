@@ -1,8 +1,11 @@
+import type { GithubMirror } from "@brr/schema/bundle";
 import { spawnSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { catalogSourceDirectory, restoreFiles, type InputLock } from "../fetch-ldraw.ts";
+import { bundleBaseUrl } from "../pointer/live-bundles.ts";
+import { runPointerCommand, type StoreVariables } from "../publication/pinned-publication.ts";
 import { R2ObjectStore, sha256Hex } from "../r2.ts";
 import {
   CONNECTOR_SOURCE_USE,
@@ -19,6 +22,7 @@ import {
   uploadLibrary,
   verifyServedLibrary,
 } from "./ldraw-library.ts";
+import { ldrawLibraryPointer, liveBundleSources } from "./library-pointer.ts";
 
 const toolRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const repoRoot = join(toolRoot, "..", "..");
@@ -27,6 +31,12 @@ const catalogRoot = join(repoRoot, ".cache", "catalog");
 const extractRoot = join(repoRoot, ".cache", "ldraw-library");
 const shadowLibraryRoot = join(repoRoot, ".cache", "ldcad-shadow-library");
 const storeConfigPath = join(repoRoot, "infra", "cloudflare", "ldraw-library.json");
+const bundleStoreConfigPath = join(repoRoot, "infra", "cloudflare", "part-bundles.json");
+const bundleFallbackPath = join(repoRoot, "infra", "cloudflare", "bundle-fallback.json");
+const STORE_VARIABLES: StoreVariables = {
+  endpoint: "LDRAW_LIBRARY_R2_ENDPOINT",
+  baseUrl: "LDRAW_LIBRARY_BASE_URL",
+};
 const shadowPatchesRoot = join(toolRoot, "shadow-patches");
 const sectionVocabularyPath = join(toolRoot, "section-vocabulary.json");
 const inferredConnectorsPath = join(toolRoot, "inferred-connectors.json");
@@ -85,6 +95,10 @@ async function publicBaseUrl(): Promise<string | undefined> {
   if (fromEnv) return fromEnv;
   return (await readStoreConfig()).public_base_url ?? undefined;
 }
+
+const libraryPointer = ldrawLibraryPointer(async () =>
+  liveBundleSources(httpReader(await bundleBaseUrl(bundleStoreConfigPath)), bundleFallbackPath),
+);
 
 async function writeStepOutput(name: string, value: string): Promise<void> {
   const output = process.env["GITHUB_OUTPUT"];
@@ -237,9 +251,24 @@ switch (command) {
   case "shadow-patches":
     await shadowPatchesCommand(process.argv.includes("--check"));
     break;
+  case "point":
+  case "current":
+  case "verify-pointer":
+  case "prune":
+    await runPointerCommand(
+      {
+        storeConfigPath,
+        storeVariables: STORE_VARIABLES,
+        pointer: libraryPointer,
+        readPin: async () => pinnedArchive(await readLock()).mirror,
+        manifestOf: (mirror: GithubMirror) => mirror,
+      },
+      process.argv.slice(2),
+    );
+    break;
   default:
     process.stderr.write(
-      "usage: library/cli.ts check|published|upload|served|verify-served [--all]|shadow-patches [--check]\n",
+      "usage: library/cli.ts check|published|upload|served|verify-served [--all]|shadow-patches [--check]|point|current|verify-pointer [--all] [--wait]|prune [--dry-run]\n",
     );
     process.exitCode = 2;
 }
