@@ -284,6 +284,10 @@ class ModelSubsetLoader implements IPartBundleLoader {
     return this.loader.readPartConnectors(lod, partId);
   }
 
+  prefetchPartConnectors(lod: BundleLod): Promise<void> {
+    return this.loader.prefetchPartConnectors(lod);
+  }
+
   loadConnectivityAttribution(lod: BundleLod): Promise<PackageAttribution> {
     return this.loader.loadConnectivityAttribution(lod);
   }
@@ -2849,51 +2853,49 @@ it("keeps the plan equal to today's recompute when the checked studs land, with 
 
 it("resolves clicks queued while the held item's tables load, over an import whose studs are being checked, exactly as clicks made once they have loaded, refusal included", async () => {
   const outcome = async (queued: boolean) => {
-    const roadPlateGate = new HeldText(new BundleDirectoryFetcher(), (path) =>
-      path.includes("/connectivity-44336p01."),
-    );
-    const baseplateGate = new HeldText(roadPlateGate, (path) =>
-      path.includes("/connectivity-3811."),
-    );
-    const { editor, backend } = await checkingImport(baseplateGate);
+    const gate = heldConnectivity();
+    const { editor, backend } = await checkingImport(gate);
     const item = await importChecking(editor);
     await placer(editor, backend)(item, 0, 0);
-    const clicks: Array<[string, HeldText, number]> = [
-      [BASEPLATE, baseplateGate, OPEN_TABLE_X],
-      [ROAD_PLATE, roadPlateGate, 0],
-    ];
-    for (const [held, gate, x] of clicks) {
-      if (queued) {
-        placerNow(editor, backend)(held, x, 0);
-        gate.open();
-        await settledChoice(editor);
-      } else {
-        gate.open();
-        await placer(editor, backend)(held, x, 0);
-      }
+    let atClick: EditorSnapshot["queuedPlacement"] = null;
+    if (queued) {
+      placerNow(editor, backend)(ROAD_PLATE, 0, 0);
+      atClick = editor.snapshot().queuedPlacement;
+      gate.open();
+      await settledChoice(editor);
+    } else {
+      gate.open();
+      await placer(editor, backend)(ROAD_PLATE, 0, 0);
     }
+    await placer(editor, backend)(BASEPLATE, OPEN_TABLE_X, 0);
     const { placements, refusedClicks, lastRefusal, studChecks, queuedPlacement } =
       editor.snapshot();
     return {
-      placements,
-      refusedClicks,
-      reason: lastRefusal?.reason ?? null,
-      studChecks,
-      queuedPlacement,
-      poses: posesOf(editor),
+      atClick,
+      settled: {
+        placements,
+        refusedClicks,
+        reason: lastRefusal?.reason ?? null,
+        studChecks,
+        queuedPlacement,
+        poses: posesOf(editor),
+      },
     };
   };
 
   const [queued, direct] = [await outcome(true), await outcome(false)];
 
-  expect(queued).toEqual(direct);
-  expect(queued).toMatchObject({
+  expect(queued).toEqual({
+    atClick: expect.objectContaining({ item: ROAD_PLATE }),
+    settled: direct.settled,
+  });
+  expect(queued.settled).toMatchObject({
     placements: 2,
     refusedClicks: 1,
     studChecks: 1,
     queuedPlacement: null,
   });
-  expect(queued.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
+  expect(queued.settled.poses).toContain(`${BASEPLATE} ${OPEN_TABLE_X},0 y0`);
 }, 120_000);
 
 it("keeps the stud mates of a module loaded after an import that brought no record for the parts they share", async () => {
@@ -4056,14 +4058,13 @@ it("commits the settled assist pose for a click made before the search settles, 
     let holding = false;
     const gate = new HeldText(
       new BundleDirectoryFetcher(),
-      (path) => holding && path.includes("/connectivity-"),
+      (path) => holding && path.includes("/model-"),
     );
     const { editor, backend, catalog } = await startEditor(
       [PLAIN_MODULE_MODEL, PLACEABLE_SET],
       gate,
     );
     await loadCatalogItem(catalog, PLAIN_MODULE);
-    await loadCatalogItem(catalog, SET);
     await placer(editor, backend)(PLAIN_MODULE, 320, 320);
     const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
     const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
@@ -6384,6 +6385,9 @@ it("undoes, redoes and erases a road stroke laid from a 3811 that straddles a ch
   });
 }, 120_000);
 
+const CONNECTOR_INDEX = /\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u;
+const CONNECTOR_PACK = /\/(connectivity|connectors)-pack\.[0-9a-f]+\.json$/u;
+
 class WithoutConnectorRecordsFor implements IAssetFetcher {
   constructor(
     private readonly files: IAssetFetcher,
@@ -6396,10 +6400,20 @@ class WithoutConnectorRecordsFor implements IAssetFetcher {
 
   async text(path: string): Promise<string> {
     const text = await this.files.text(path);
-    if (!/\/(connectivity|connector)-index\.[0-9a-f]+\.json$/u.test(path)) return text;
-    const index = JSON.parse(text) as { parts: Record<string, unknown> };
+    if (CONNECTOR_INDEX.test(path)) return JSON.stringify(this.withdrawn(JSON.parse(text)));
+    if (!CONNECTOR_PACK.test(path)) return text;
+    const pack = JSON.parse(text) as { files: Record<string, unknown> };
+    const files = Object.entries(pack.files).map(([name, file]) => [
+      name,
+      CONNECTOR_INDEX.test(`/${name}`) ? this.withdrawn(file) : file,
+    ]);
+    return JSON.stringify({ ...pack, files: Object.fromEntries(files) });
+  }
+
+  private withdrawn(file: unknown): unknown {
+    const index = file as { parts: Record<string, unknown> };
     const { [this.partId]: _withdrawn, ...parts } = index.parts;
-    return JSON.stringify({ ...index, parts });
+    return { ...index, parts };
   }
 }
 
@@ -6440,7 +6454,7 @@ class HeldText implements IAssetFetcher {
 }
 
 function heldConnectivity(): HeldText {
-  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-3811."));
+  return new HeldText(new BundleDirectoryFetcher(), (path) => path.includes("/connectivity-pack."));
 }
 
 it("places nothing while an item's connector tables load, and places a click made meanwhile once they load", async () => {
@@ -6474,14 +6488,13 @@ it("decides a click queued while a set's tables load in the mode in effect when 
     let holding = false;
     const gate = new HeldText(
       new BundleDirectoryFetcher(),
-      (path) => holding && path.includes("/connectivity-"),
+      (path) => holding && path.includes("/model-"),
     );
     const { editor, backend, catalog } = await startEditor(
       [PLAIN_MODULE_MODEL, PLACEABLE_SET],
       gate,
     );
     await loadCatalogItem(catalog, PLAIN_MODULE);
-    await loadCatalogItem(catalog, SET);
     await placer(editor, backend)(PLAIN_MODULE, 320, 320);
     const wide = editor.snapshot().catalog.find((item) => item.id === SET)?.studsWide ?? 0;
     const clearOfModule = 640 + Math.ceil(wide / 2) * 20;
@@ -6534,10 +6547,31 @@ const ROAD_TILE_LDU = 640;
 const BASEPLATE_SPAN_LDU = 640;
 const WAITING_NOTE = "is still reading its connectors";
 
-function roadPlatesReading(): HeldText {
-  return new HeldText(new BundleDirectoryFetcher(), (path) =>
-    /\/connectivity-(?!index\.|3811\.)/u.test(path),
+const USER_BASEPLATE_MODEL = "baseplate-3811";
+
+async function userBaseplateImport(): Promise<ImportResult> {
+  const fixtures = fixtureBundleLoader();
+  const record = await fixtures.loadModelRecord("standard", USER_BASEPLATE_MODEL);
+  const connectors = await Promise.all(
+    record.parts.map((part) => fixtures.loadPartConnectors("standard", part.id)),
   );
+  return importedRecord(`${USER_BASEPLATE_MODEL}.ldr`, record, connectors);
+}
+
+async function roadPlatesReadingBesideUserBaseplate() {
+  const importer = new GatedModelImporter();
+  importer.serve(await userBaseplateImport());
+  importer.release();
+  const gate = heldConnectivity();
+  const started = await startEditor([], gate, [], (bound) =>
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer),
+  );
+  await started.editor.importModelFile({
+    name: `${USER_BASEPLATE_MODEL}.ldr`,
+    bytes: new TextEncoder().encode("0 a user's model of a 3811\n"),
+  });
+  const held = started.editor.snapshot().modelImport?.item ?? "";
+  return { ...started, gate, held };
 }
 
 function strokeRoad(editor: IEditor, backend: AimedBackend): void {
@@ -6553,7 +6587,7 @@ function strokeRoad(editor: IEditor, backend: AimedBackend): void {
   editor.dragEnd(0, 0, 0);
 }
 
-function baseplatesOnRoad(editor: IEditor): number {
+function baseplatesOnRoad(editor: IEditor, baseplate: string): number {
   const { refs, placements } = editor.dump();
   const at = placements.refId.map((ref, i) => ({
     item: refs[ref] ?? "",
@@ -6564,7 +6598,7 @@ function baseplatesOnRoad(editor: IEditor): number {
   const roads = at.filter(({ item }) => item.startsWith("ldraw:44336"));
   return at.filter(
     (base) =>
-      base.item === BASEPLATE &&
+      base.item === baseplate &&
       roads.some(
         (road) =>
           road.y === base.y &&
@@ -6607,19 +6641,19 @@ it.each([
     act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
     release: (gate: HeldText) => gate.open(),
     decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
-    whileReading: {
-      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+    whileReading: (held: string) => ({
+      queued: { item: held, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
       hover: {
         waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
         accepted: false,
         settled: false,
       },
-    },
-    decision: {
+    }),
+    decision: () => ({
       placed: [],
       refusal: expect.stringContaining("would hit Baseplate 32 x 32 Road"),
       hover: { waitingOn: null, accepted: false, settled: true },
-    },
+    }),
   },
   {
     gesture:
@@ -6632,60 +6666,60 @@ it.each([
     },
     release: (gate: HeldText) => gate.open(),
     decided: (editor: IEditor) => editor.snapshot().placements > 3,
-    whileReading: {
+    whileReading: (held: string) => ({
       queued: {
-        item: BASEPLATE,
+        item: held,
         x: BESIDE_THE_ROAD_EDGE[0],
         z: BESIDE_THE_ROAD_EDGE[1],
         rot: 0,
       },
       hover: { waitingOn: null, accepted: null, settled: null },
-    },
-    decision: {
-      placed: [`${BASEPLATE} ${BESIDE_THE_ROAD_EDGE[0]},${BESIDE_THE_ROAD_EDGE[1]} y0`],
+    }),
+    decision: (held: string) => ({
+      placed: [`${held} ${BESIDE_THE_ROAD_EDGE[0]},${BESIDE_THE_ROAD_EDGE[1]} y0`],
       refusal: null,
       hover: { waitingOn: null, accepted: null, settled: null },
-    },
+    }),
   },
   {
     gesture: "a click over a plate, cancelled by Esc before they load",
-    act: (editor: IEditor, backend: AimedBackend) => {
+    act: (editor: IEditor, backend: AimedBackend, held: string) => {
       clickHeldAt(editor, backend, OVER_THE_ROAD);
       editor.chooseItem(null);
-      editor.chooseItem(BASEPLATE);
+      editor.chooseItem(held);
       backend.aim(...OVER_THE_ROAD);
       editor.pointerMove(0, 0);
     },
     release: (gate: HeldText) => gate.open(),
     decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
-    whileReading: {
+    whileReading: () => ({
       queued: null,
       hover: {
         waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
         accepted: false,
         settled: false,
       },
-    },
-    decision: {
+    }),
+    decision: () => ({
       placed: [],
       refusal: null,
       hover: { waitingOn: null, accepted: false, settled: true },
-    },
+    }),
   },
   {
     gesture: "a click over a plate whose tables fail to load, refused for that",
     act: (editor: IEditor, backend: AimedBackend) => clickHeldAt(editor, backend, OVER_THE_ROAD),
     release: (gate: HeldText) => gate.fail("503"),
     decided: (editor: IEditor) => editor.snapshot().refusedClicks > 0,
-    whileReading: {
-      queued: { item: BASEPLATE, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
+    whileReading: (held: string) => ({
+      queued: { item: held, x: OVER_THE_ROAD[0], z: OVER_THE_ROAD[1], rot: 0 },
       hover: {
         waitingOn: { item: GREY_ROAD_PLATE, at: OVER_THE_ROAD, failed: false },
         accepted: false,
         settled: false,
       },
-    },
-    decision: {
+    }),
+    decision: () => ({
       placed: [],
       refusal: expect.stringContaining("connector data didn't load"),
       hover: {
@@ -6693,7 +6727,7 @@ it.each([
         accepted: false,
         settled: true,
       },
-    },
+    }),
   },
   {
     gesture:
@@ -6704,19 +6738,19 @@ it.each([
     },
     release: (gate: HeldText) => gate.open(),
     decided: (editor: IEditor) => editor.snapshot().hover?.placement?.waitingOn === null,
-    whileReading: {
+    whileReading: () => ({
       queued: null,
       hover: {
         waitingOn: { item: GREY_ROAD_PLATE, at: LAST_ROAD_TILE, failed: false },
         accepted: false,
         settled: false,
       },
-    },
-    decision: {
+    }),
+    decision: () => ({
       placed: [],
       refusal: null,
       hover: { waitingOn: null, accepted: false, settled: true },
-    },
+    }),
   },
   {
     gesture: "a fill across the plates",
@@ -6730,18 +6764,17 @@ it.each([
     },
     release: (gate: HeldText) => gate.open(),
     decided: (editor: IEditor) => (editor.snapshot().lastFill?.refused ?? 0) > 0,
-    whileReading: { queued: null, hover: expect.anything() },
-    decision: { placed: [], refusal: null, hover: expect.anything() },
+    whileReading: () => ({ queued: null, hover: expect.anything() }),
+    decision: () => ({ placed: [], refusal: null, hover: expect.anything() }),
   },
 ])(
-  "waits on $gesture while a road stroke's plates read their connector tables, never committing a 3811 onto a plate",
+  "waits on $gesture while a road stroke's plates read their connector tables, never committing a user's model of a 3811 onto a plate",
   async ({ act, release, decided, whileReading, decision }) => {
-    const gate = roadPlatesReading();
-    const { editor, backend, frame } = await startEditor([], gate);
+    const { editor, backend, frame, gate, held } = await roadPlatesReadingBesideUserBaseplate();
     strokeRoad(editor, backend);
     const laid = posesOf(editor);
-    await chosen(editor, BASEPLATE);
-    act(editor, backend);
+    await chosen(editor, held);
+    act(editor, backend, held);
     const reading = {
       placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
       queued: editor.snapshot().queuedPlacement,
@@ -6750,7 +6783,7 @@ it.each([
     expect({ laid: laid.length, heldRecords: gate.held > 0, reading }).toEqual({
       laid: 3,
       heldRecords: true,
-      reading: { placed: [], ...whileReading },
+      reading: { placed: [], ...whileReading(held) },
     });
     release(gate);
     await vi.waitFor(() => expect(decided(editor)).toBe(true), { timeout: 60_000 });
@@ -6758,17 +6791,17 @@ it.each([
 
     expect({
       placed: posesOf(editor).filter((pose) => !laid.includes(pose)),
-      onRoad: baseplatesOnRoad(editor),
+      onRoad: baseplatesOnRoad(editor, held),
       queued: editor.snapshot().queuedPlacement,
       refusal: editor.snapshot().lastRefusal?.reason ?? null,
       hover: waitingView(editor),
-    }).toEqual({ ...decision, onRoad: 0, queued: null });
+    }).toEqual({ ...decision(held), onRoad: 0, queued: null });
   },
   240_000,
 );
 
 it("leaves nothing of a world it switched away from while that world's plates read their connector tables: their arrival places no ghost to collide with", async () => {
-  const gate = roadPlatesReading();
+  const gate = heldConnectivity();
   const { editor, backend } = await streamingEditor({ models: [], tier: null, fetcher: gate });
   strokeRoad(editor, backend);
   expect(posesOf(editor)).toHaveLength(3);
@@ -6782,7 +6815,11 @@ it("leaves nothing of a world it switched away from while that world's plates re
   expect(posesOf(editor)).toEqual([`${BASEPLATE} ${x},${z} y0`]);
 }, 120_000);
 
-type PendingNeighbourCommit = (editor: IEditor, backend: AimedBackend) => Promise<void>;
+type PendingNeighbourCommit = (
+  editor: IEditor,
+  backend: AimedBackend,
+  held: string,
+) => Promise<void>;
 
 const BESIDE_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (3 * ROAD_TILE_LDU) / 2];
 const CLEAR_OF_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, (5 * ROAD_TILE_LDU) / 2];
@@ -6790,9 +6827,9 @@ const ON_THE_ROAD: Ground = [ROAD_TILE_LDU + ROAD_TILE_LDU / 2, ROAD_TILE_LDU / 
 
 const clickOnRoad =
   (mode: "assist" | "precise"): PendingNeighbourCommit =>
-  async (editor, backend) => {
+  async (editor, backend, held) => {
     editor.setPlacementMode(mode);
-    await chosen(editor, BASEPLATE);
+    await chosen(editor, held);
     backend.aim(...ON_THE_ROAD);
     editor.pointerMove(0, 0);
     editor.click(0, 0, 0);
@@ -6829,8 +6866,8 @@ const COMMITS_THAT_READ_A_VERDICT: Readonly<
     {
       path: "a fill",
       first: null,
-      commit: async (editor, backend) => {
-        await chosen(editor, BASEPLATE);
+      commit: async (editor, backend, held) => {
+        await chosen(editor, held);
         backend.aim(...ON_THE_ROAD);
         editor.pointerMove(0, 0);
         editor.dragStart(0, 0);
@@ -6883,14 +6920,13 @@ it.each(
     typeof paths === "string" ? [] : paths.map((row) => ({ kind, ...row })),
   ),
 )(
-  "$kind: $path beside a road plate still reading its connector tables waits and commits nothing",
+  "$kind: $path of a user's model of a 3811 beside a road plate still reading its connector tables waits and commits nothing",
   async ({ first, commit }) => {
-    const gate = roadPlatesReading();
-    const { editor, backend } = await startEditor([], gate);
-    if (first) await placer(editor, backend)(BASEPLATE, ...first);
+    const { editor, backend, gate, held } = await roadPlatesReadingBesideUserBaseplate();
+    if (first) await placer(editor, backend)(held, ...first);
     strokeRoad(editor, backend);
     const before = layoutState(editor).poses;
-    await commit(editor, backend);
+    await commit(editor, backend, held);
     const { queuedPlacement, lastFill, selectionRefusal } = editor.snapshot();
     const waits =
       queuedPlacement !== null ||
