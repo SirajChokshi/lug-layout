@@ -52,6 +52,8 @@ const EYE_HEIGHT = 1_000;
 const TILE = 640;
 const PLACED_MODEL_NAME = "10185-1";
 const PLACED_MODEL = `omr:${PLACED_MODEL_NAME}`;
+const RAISED_MODULE_NAME = "mils-plain";
+const RAISED_MODULE = `generated:${RAISED_MODULE_NAME}`;
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -81,7 +83,8 @@ class ModelSubsetLoader implements IPartBundleLoader {
 
   async loadIndex(lod: BundleLod): Promise<BundleIndex> {
     const index = await this.loader.loadIndex(lod);
-    return { ...index, models: index.models.filter((m) => m.name === PLACED_MODEL_NAME) };
+    const loaded = [PLACED_MODEL_NAME, RAISED_MODULE_NAME];
+    return { ...index, models: index.models.filter((m) => loaded.includes(m.name)) };
   }
 
   loadStudPrimitives(lod: BundleLod): Promise<ReadonlyArray<StudPrimitiveAsset>> {
@@ -437,6 +440,8 @@ describe("draw road", () => {
     editor.click(...ndc([0, 0]), 0);
     await chosen(editor, "ldraw:44342p02@72");
     editor.pointerMove(...ndc([0, 1]));
+    expect(editor.snapshot().ghostRot).toBe(0);
+    editor.rotate(0);
     const held = editor.snapshot();
     expect(held.snap?.state).toBe("snapped");
     expect(held.ghostRot).not.toBe(0);
@@ -471,6 +476,23 @@ describe("draw road", () => {
     ]);
     expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
     expect(placedItems(editor)).toEqual([PLACED_MODEL]);
+    editor.undo(0);
+    expect(editor.snapshot().placements).toBe(0);
+    editor.chooseItem(null);
+  });
+
+  it("refuses a stroke across a raised module whose flat top isn't at the road's height, instead of swapping it for road", async () => {
+    await loadCatalogItem(catalog, RAISED_MODULE);
+    await chosen(editor, RAISED_MODULE);
+    editor.click(...ndc([1, 0]), 0);
+    expect(placedItems(editor)).toEqual([RAISED_MODULE]);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [2, 0],
+    ]);
+    expect(editor.snapshot().lastRoadStroke?.result).toBe("refused");
+    expect(placedItems(editor)).toEqual([RAISED_MODULE]);
     editor.undo(0);
     expect(editor.snapshot().placements).toBe(0);
     editor.chooseItem(null);
