@@ -382,7 +382,7 @@ impl From<&ModelLattice> for Lattice {
         Lattice {
             phase: lattice.phase,
             phase_layer_y: lattice.phase_layer_y,
-            phase_layer_studs: lattice.phase_layer_studs,
+            phase_layer_studs: lattice.phase_layer_votes,
             phase_layer_agreeing: lattice.phase_layer_agreeing,
             aabb: Aabb {
                 min: lattice.aabb_min,

@@ -4,7 +4,7 @@ use std::collections::{BTreeSet, HashSet};
 use std::fs;
 use std::path::Path;
 
-use brick_compile::bake::{drawn_lattice, LatticeShape, ModelBaker};
+use brick_compile::bake::{LatticeShape, ModelBaker};
 use brick_compile::cover::{CoverShard, ModelCells, EMPTY_COLUMN};
 use brick_compile::model::bake_model;
 use common::fixture_library;
@@ -54,7 +54,9 @@ fn baked_cells(source: &str) -> ModelCells {
         .map(|instance| baker.lattice_shape(&instance.part).expect("part compiles"))
         .collect();
     let drawn: Vec<&LatticeShape> = shapes.iter().collect();
-    let lattice = drawn_lattice(&model.instances, &drawn).expect("one lattice phase");
+    let lattice = baker
+        .lattice(&model.instances, &drawn)
+        .expect("one lattice phase");
     baker
         .cover(&model.instances, lattice.as_ref(), CoverShard::WHOLE)
         .expect("the cover fits")

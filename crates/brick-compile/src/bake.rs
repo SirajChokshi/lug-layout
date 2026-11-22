@@ -4,11 +4,12 @@ use std::sync::Arc;
 use crate::affine::{Affine, Vec3};
 use crate::compile::{compile_part, CompileError, CompileOptions, CompiledPart, RollingMode};
 use crate::cover::{
-    model_cover_with, AxisSpan, CellsTooLarge, CoverInstance, CoverModel, CoverShard, ModelCover,
-    ModelTooLarge, Opacity, PartSolid, ProbeCache, StudShape,
+    inscribed_radius, model_cover_with, stud_field_collides, AxisSpan, CellsTooLarge,
+    CoverInstance, CoverModel, CoverShard, ModelCover, ModelTooLarge, Opacity, PartSolid,
+    ProbeCache, StudShape,
 };
 use crate::flatten::{Library, Lod, StudReference};
-use crate::lattice::{model_lattice, LatticeError, LatticeInstance, ModelLattice, StudPose};
+use crate::lattice::{model_lattice, AxisPose, LatticeError, LatticeInstance, ModelLattice};
 use crate::mesh::Mesh;
 use crate::model::ModelInstance;
 use crate::record::{BakeRecord, RecordError};
@@ -22,6 +23,9 @@ use crate::voxel::{voxelize, VoxelError, VoxelGrid, VoxelPart};
 pub enum BakeError {
     Compile(CompileError),
     StudPrimitiveEmpty {
+        name: String,
+    },
+    StudPrimitiveWithoutWall {
         name: String,
     },
     StudCount {
@@ -42,6 +46,7 @@ pub enum BakeError {
     Recorded {
         part: String,
     },
+    Lattice(LatticeError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,6 +103,9 @@ impl std::fmt::Display for BakeError {
             BakeError::StudPrimitiveEmpty { name } => {
                 write!(f, "stud primitive {name} has no geometry")
             }
+            BakeError::StudPrimitiveWithoutWall { name } => {
+                write!(f, "stud primitive {name} has no upright outer wall")
+            }
             BakeError::StudCount {
                 part,
                 standard,
@@ -118,6 +126,7 @@ impl std::fmt::Display for BakeError {
                     "{part} came from a bake record, so it has no compiled sources"
                 )
             }
+            BakeError::Lattice(error) => write!(f, "{error}"),
         }
     }
 }
@@ -130,7 +139,8 @@ impl From<CompileError> for BakeError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct LatticeShape {
-    pub studs: Vec<StudPose>,
+    pub studs: Vec<AxisPose>,
+    pub receptors: Vec<AxisPose>,
     pub bounds: [Vec3; 2],
 }
 
@@ -143,34 +153,18 @@ impl LatticeShape {
         LatticeShape {
             studs: studs
                 .iter()
-                .map(|stud| StudPose::of(&stud.matrix))
+                .map(|stud| AxisPose::of(&stud.matrix))
                 .collect(),
+            receptors: Vec::new(),
             bounds: mesh
                 .bounds()
                 .unwrap_or([[0.0; 3]; 2])
                 .map(|corner| corner.map(f64::from)),
         }
     }
-}
 
-pub fn drawn_lattice(
-    drawn: &[ModelInstance],
-    shapes: &[&LatticeShape],
-) -> Result<Option<ModelLattice>, LatticeError> {
-    let instances: Vec<LatticeInstance> = drawn
-        .iter()
-        .zip(shapes)
-        .map(|(instance, shape)| LatticeInstance {
-            matrix: &instance.matrix,
-            studs: &shape.studs,
-            bounds_min: shape.bounds[0],
-            bounds_max: shape.bounds[1],
-        })
-        .collect();
-    match model_lattice(&instances) {
-        Ok(lattice) => Ok(Some(lattice)),
-        Err(LatticeError::NoIntegerPhaseStuds) => Ok(None),
-        Err(error) => Err(error),
+    pub fn with_receptors(self, receptors: Vec<AxisPose>) -> Self {
+        LatticeShape { receptors, ..self }
     }
 }
 
@@ -372,6 +366,44 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         Ok(LatticeShape::of_parts(source.mesh(), source.studs()))
     }
 
+    pub fn lattice(
+        &mut self,
+        drawn: &[ModelInstance],
+        shapes: &[&LatticeShape],
+    ) -> Result<Option<ModelLattice>, BakeError> {
+        let slots = self.slots(drawn)?;
+        let lattice_instances: Vec<LatticeInstance> = drawn
+            .iter()
+            .zip(shapes)
+            .map(|(instance, shape)| LatticeInstance {
+                matrix: &instance.matrix,
+                studs: &shape.studs,
+                receptors: &shape.receptors,
+                bounds_min: shape.bounds[0],
+                bounds_max: shape.bounds[1],
+            })
+            .collect();
+        let cover_instances: Vec<CoverInstance> = drawn
+            .iter()
+            .zip(&slots)
+            .map(|(instance, &slot)| CoverInstance {
+                matrix: &instance.matrix,
+                color: instance.color,
+                part: slot,
+                studs: &self.studs[slot],
+            })
+            .collect();
+        let (solids, stud) = (&self.solids, self.stud_shape);
+        let seated = model_lattice(&lattice_instances, |phase, floor_y| {
+            stud_field_collides(&cover_instances, solids, stud, phase, floor_y)
+        });
+        match seated {
+            Ok(lattice) => Ok(Some(lattice)),
+            Err(LatticeError::NoIntegerPhase) => Ok(None),
+            Err(error) => Err(BakeError::Lattice(error)),
+        }
+    }
+
     pub fn stud_total(
         &mut self,
         drawn: &[ModelInstance],
@@ -447,24 +479,27 @@ impl<'a, L: Library> ModelBaker<'a, L> {
         detect_vehicles_with_bounds(self.library, drawn, signatures, rails, recorded)
     }
 
-    pub fn voxels(&mut self, drawn: &[ModelInstance]) -> Result<FarVoxels, BakeError> {
+    pub fn voxels(
+        &mut self,
+        drawn: &[ModelInstance],
+        lattice: Option<&ModelLattice>,
+    ) -> Result<FarVoxels, BakeError> {
+        let Some(lattice) = lattice else {
+            return Ok(FarVoxels::Omitted(VoxelError::NoLattice));
+        };
         let slots = self.slots(drawn)?;
         let parts: Vec<VoxelPart> = drawn
             .iter()
             .zip(&slots)
             .map(|(instance, &slot)| VoxelPart {
                 mesh: self.sources[slot].mesh(),
-                studs: self.sources[slot].studs(),
                 color: instance.color,
                 matrix: &instance.matrix,
             })
             .collect();
-        match voxelize(&parts, &self.translucent) {
+        match voxelize(&parts, lattice, &self.translucent) {
             Ok(grid) => Ok(FarVoxels::Grid(grid)),
-            Err(
-                reason @ (VoxelError::Lattice(LatticeError::NoIntegerPhaseStuds)
-                | VoxelError::FractionalStudLayer(_)),
-            ) => Ok(FarVoxels::Omitted(reason)),
+            Err(reason @ VoxelError::FractionalPhaseLayer(_)) => Ok(FarVoxels::Omitted(reason)),
             Err(error) => Err(BakeError::Voxel(error)),
         }
     }
@@ -487,6 +522,7 @@ fn measured_stud_shape<L: Library>(
     let mut shape = StudShape {
         height: 0.0,
         radius: 0.0,
+        inscribed_radius: f64::INFINITY,
     };
     for name in &options.stud_primitives {
         let compiled = compile_part(library, name, &bare)?;
@@ -494,11 +530,14 @@ fn measured_stud_shape<L: Library>(
             .mesh
             .bounds()
             .ok_or_else(|| BakeError::StudPrimitiveEmpty { name: name.clone() })?;
+        let inscribed = inscribed_radius(&compiled.mesh)
+            .ok_or_else(|| BakeError::StudPrimitiveWithoutWall { name: name.clone() })?;
         shape.height = shape.height.max(f64::from(max[1]));
         shape.radius = shape
             .radius
             .max(f64::from(max[0] - min[0]) / 2.0)
             .max(f64::from(max[2] - min[2]) / 2.0);
+        shape.inscribed_radius = shape.inscribed_radius.min(inscribed);
     }
     Ok(shape)
 }

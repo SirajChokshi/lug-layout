@@ -70,6 +70,7 @@ const RECESSED_ROAD_SCENE_PLATES = ["69958", "71772"];
 const BASEPLATE_ROW_PLATES = ["3811", "44336"];
 const DENSE_STACK_BRICK = "3001";
 const LONE_BASEPLATE = "3811";
+const OFFSET_STUD_JUMPER = "3794b";
 const MAGNET_HOLDER = "2920";
 const MAGNET_CASING = "2959";
 
@@ -106,6 +107,23 @@ export function magnetSeatReports(
           models: models.map(({ name, sha256 }) => ({ name, sha256 })),
           ...measureMagnetSeat(library, shadowLibrary, MAGNET_HOLDER, MAGNET_CASING, models),
         }),
+    },
+  ];
+}
+
+export function singlePartSceneReports(bundleLibrary: LdrawLibrary): ReadonlyArray<FactReport> {
+  return [
+    {
+      fileName: "scenes/brick-2x4.ldr",
+      render: () => singlePartScene(bundleLibrary, DENSE_STACK_BRICK, "Brick 2x4"),
+    },
+    {
+      fileName: "scenes/baseplate-3811.ldr",
+      render: () => singlePartScene(bundleLibrary, LONE_BASEPLATE, "Baseplate 3811"),
+    },
+    {
+      fileName: "scenes/jumper.ldr",
+      render: () => singlePartScene(bundleLibrary, OFFSET_STUD_JUMPER, "Jumper"),
     },
   ];
 }
@@ -150,14 +168,6 @@ export function geometryReports(
           RECESSED_ROAD_SCENE_PLATES.map((part) => measureBaseplate(library, part)),
           "Road Plates",
         ),
-    },
-    {
-      fileName: "scenes/brick-2x4.ldr",
-      render: () => singlePartScene(library, DENSE_STACK_BRICK, "Brick 2x4"),
-    },
-    {
-      fileName: "scenes/baseplate-3811.ldr",
-      render: () => singlePartScene(library, LONE_BASEPLATE, "Baseplate 3811"),
     },
     {
       fileName: "track-loops.json",

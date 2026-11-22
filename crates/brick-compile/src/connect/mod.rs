@@ -29,8 +29,8 @@ pub use inferred::{
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{
-    is_connectivity, published_faces, record_json, source_code, status_code, PartRecords,
-    PublishedFace, TierRecord, CONNECTIVITY_LICENSE,
+    is_connectivity, lattice_receptors, published_faces, record_json, source_code, status_code,
+    PartRecords, PublishedFace, TierRecord, CONNECTIVITY_LICENSE,
 };
 pub use shadow::{patch_path, verified_patch_paths, IncludeRefusal, ShadowPatches, ShadowSnaps};
 
