@@ -1,13 +1,18 @@
 import { PLATE_LDU } from "@brr/math";
+import { PlanReach } from "./plan-reach.ts";
 import { DragField, type SupportedPiece } from "./track-drag.ts";
-import { NO_TRACK_OBSTACLES, type TrackObstacles } from "./track-obstacles.ts";
+import { NO_TRACK_OBSTACLES, type StudSeats, type TrackObstacles } from "./track-obstacles.ts";
 
 export interface SupportBand {
   readonly obstacles: TrackObstacles;
   readonly pending: boolean;
 }
 
-export type SupportBandAt = (lowPlates: number, highPlates: number) => SupportBand;
+export type SupportBandAt = (
+  lowPlates: number,
+  highPlates: number,
+  reach: PlanReach | null,
+) => SupportBand;
 
 export interface HeightSpan {
   readonly bottomLdu: number;
@@ -23,8 +28,13 @@ export interface BandPieces {
 
 export interface LayingBand {
   readonly field: DragField;
-  readonly seats: ReadonlySet<number>;
+  readonly seats: StudSeats;
   readonly pending: boolean;
+}
+
+interface ReachedBand {
+  readonly reach: PlanReach;
+  readonly band: LayingBand;
 }
 
 const NO_BAND: SupportBand = { obstacles: NO_TRACK_OBSTACLES, pending: false };
@@ -37,13 +47,14 @@ function bandKey(lowPlates: number, highPlates: number): string {
 export class TrackBands {
   private source: SupportBandAt = () => NO_BAND;
   private readonly layingBands = new Map<string, LayingBand>();
+  private readonly reachedBands = new Map<string, ReachedBand>();
   private readonly solidBands = new Map<string, DragField>();
   private changes = 0;
 
   constructor(
     private readonly pieces: BandPieces,
     private readonly range: readonly [number, number],
-    private readonly supportedOn: (seats: ReadonlySet<number>) => SupportedPiece,
+    private readonly supportedOn: (seats: StudSeats) => SupportedPiece,
   ) {}
 
   setSource(source: SupportBandAt): void {
@@ -58,6 +69,7 @@ export class TrackBands {
   changed(): void {
     this.changes++;
     this.layingBands.clear();
+    this.reachedBands.clear();
     this.solidBands.clear();
   }
 
@@ -70,12 +82,28 @@ export class TrackBands {
     const key = bandKey(lowPlates, highPlates);
     const known = this.layingBands.get(key);
     if (known) return known;
-    const { obstacles, pending } = this.source(lowPlates, highPlates);
-    const outlines = this.sharingHeight(lowPlates, highPlates);
-    const field = new DragField(outlines, obstacles, this.supportedOn(obstacles.seats));
-    const laid = { field, seats: obstacles.seats, pending };
+    const laid = this.build(lowPlates, highPlates, null);
     this.layingBands.set(key, laid);
     return laid;
+  }
+
+  reaching(lowPlates: number, highPlates: number, planBoxes: Float64Array): LayingBand {
+    const key = bandKey(lowPlates, highPlates);
+    const whole = this.layingBands.get(key);
+    if (whole) return whole;
+    const known = this.reachedBands.get(key);
+    if (known?.reach.covers(planBoxes)) return known.band;
+    const reach = known ? known.reach.with(planBoxes) : PlanReach.of(planBoxes);
+    const band = this.build(lowPlates, highPlates, reach);
+    this.reachedBands.set(key, { reach, band });
+    return band;
+  }
+
+  private build(lowPlates: number, highPlates: number, reach: PlanReach | null): LayingBand {
+    const { obstacles, pending } = this.source(lowPlates, highPlates, reach);
+    const outlines = this.sharingHeight(lowPlates, highPlates);
+    const field = new DragField(outlines, obstacles, this.supportedOn(obstacles.seats));
+    return { field, seats: obstacles.seats, pending };
   }
 
   solid(lowPlates: number, highPlates: number): DragField {

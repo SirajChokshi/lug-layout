@@ -1473,7 +1473,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.catalogItems = catalog.items;
       this.bundleColorCodes = index.colors.map((color) => color.code);
       this.plans.setTableTopY(this.baseplateBottomY());
-      this.trackWorld.start(index, this.placed, () => this.roadPlacements());
+      this.trackWorld.start(index, this.placed);
       this.loadTrackSupport();
       const trackItems = this.tracks.start();
       this.roads.start(index.colors);
@@ -3289,6 +3289,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.roadModels = roadModels;
     const placements = this.roadPlacements();
+    this.trackWorld.setRoads(placements);
     this.roadNetwork = new RoadNetwork(placements);
     this.roadExtents = placements.map(cellExtent);
     this.roadReport = this.roadNetwork.report();
