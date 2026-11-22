@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde_json::{json, Value};
 
+use crate::lattice::AxisPose;
+
 use super::{
     joined_pieces, mating_faces, Extraction, Gender, MatingFace, Source, Status, Unreadable,
     WithheldFace,
@@ -225,6 +227,16 @@ pub fn published_faces(extraction: &Extraction) -> Vec<PublishedFace> {
                 }
                 published
             })
+        })
+        .collect()
+}
+
+pub fn lattice_receptors(extraction: &Extraction) -> Vec<AxisPose> {
+    published_faces(extraction)
+        .iter()
+        .filter(|published| published.face.gender == Gender::Female)
+        .filter_map(|published| {
+            AxisPose::of_face(published.face.sixteenths?, published.face.direction?)
         })
         .collect()
 }

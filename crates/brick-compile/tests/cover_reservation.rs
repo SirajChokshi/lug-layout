@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use brick_compile::affine::Affine;
-use brick_compile::bake::{drawn_lattice, BakeError, LatticeShape, ModelBaker, PartSpan};
+use brick_compile::bake::{BakeError, LatticeShape, ModelBaker, PartSpan};
 use brick_compile::cover::{CellsCause, CellsTooLarge, CoverShard};
 use brick_compile::model::ModelInstance;
 use brick_compile::{compile_part, CompileError, CompileOptions};
@@ -124,7 +124,8 @@ fn parts_placed_beyond_any_stud_cover_fail_the_bake_softly_naming_both_parts() {
             )
         })
         .collect();
-    let lattice = drawn_lattice(&drawn, &shapes.iter().collect::<Vec<_>>())
+    let lattice = baker
+        .lattice(&drawn, &shapes.iter().collect::<Vec<_>>())
         .expect("both bricks agree on one lattice phase")
         .expect("both bricks have studs on the lattice");
     let span = |ldu: f64| {

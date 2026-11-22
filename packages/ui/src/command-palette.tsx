@@ -7,23 +7,23 @@ import {
   runPlayAction,
   type CatalogItemView,
   type EditorSnapshot,
+  type ICommandPaletteSearch,
   type IEditor,
   type IEditorCamera,
-  type IPaletteSearch,
   type ITrainPlay,
   type PaletteResult,
   type ShellCommandId,
 } from "@brr/client";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CommandKeys } from "./keys.tsx";
-import { usePaletteSearchSnapshot } from "./use-palette-search.ts";
+import { useCommandPaletteSnapshot } from "./use-command-palette-search.ts";
 import { usePlaySnapshot } from "./use-play.ts";
 
 interface CommandPaletteProps {
   readonly editor: IEditor;
   readonly camera: IEditorCamera;
   readonly play: ITrainPlay;
-  readonly search: IPaletteSearch;
+  readonly search: ICommandPaletteSearch;
   readonly snapshot: EditorSnapshot;
   readonly onClose: () => void;
   readonly onShellCommand: (id: ShellCommandId) => void;
@@ -110,7 +110,7 @@ export function CommandPalette({
   const [cursor, setCursor] = useState(0);
   const listRef = useRef<HTMLUListElement>(null);
   const playSnapshot = usePlaySnapshot(play);
-  const { find } = usePaletteSearchSnapshot(search);
+  const { find } = useCommandPaletteSnapshot(search);
   const results = useMemo(
     () => find(query, (id) => commandEnabled(id, snapshot, playSnapshot)),
     [find, query, snapshot, playSnapshot],
@@ -179,6 +179,7 @@ export function CommandPalette({
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
+            search.search(event.target.value);
             setCursor(0);
           }}
           onKeyDown={onKeyDown}
