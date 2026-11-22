@@ -107,6 +107,7 @@ const NAME_LENGTH = 10;
 const NAME_RADIX = 36;
 const SECTIONS: ReadonlyArray<Section> = ["ground", "edge", "pins", "scenery"];
 const AXES: ReadonlyArray<Axis> = [0, 1, 2];
+const PLAN_AXES: ReadonlyArray<Axis> = [0, 2];
 const COS = [1, 0, -1, 0] as const;
 const SIN = [0, 1, 0, -1] as const;
 
@@ -366,6 +367,7 @@ class Build {
   readonly cellsX: number;
   readonly cellsZ: number;
   private readonly heights: Int16Array;
+  private readonly keptClear: LdrawBounds[] = [];
 
   constructor(
     base: Block,
@@ -423,13 +425,18 @@ class Build {
     if (layer + block.heightPlates > MAX_STACK_PLATES) return null;
     const [minX, minZ] = turnedMin(block, turn);
     const [baseMinX, baseMinZ] = turnedMin(this.base.block, this.base.turn);
+    const x = this.base.x + baseMinX + cellX * STUD_LDU - minX;
+    const y = this.base.y + this.base.block.topY - layer * PLATE_LDU - block.bottomY;
+    const z = this.base.z + baseMinZ + cellZ * STUD_LDU - minZ;
+    const bounds = blockBounds(block, turn, [x, y, z]);
+    if (this.keptClear.some((volume) => boundsOverlap(bounds, volume))) return null;
     const placed: Placed = {
       block,
       color: this.random.pick(this.colors),
       turn,
-      x: this.base.x + baseMinX + cellX * STUD_LDU - minX,
-      y: this.base.y + this.base.block.topY - layer * PLATE_LDU - block.bottomY,
-      z: this.base.z + baseMinZ + cellZ * STUD_LDU - minZ,
+      x,
+      y,
+      z,
       section,
     };
     this.placed.push(placed);
@@ -439,6 +446,10 @@ class Build {
       }
     }
     return placed;
+  }
+
+  keepClearOf(volumes: ReadonlyArray<LdrawBounds>): void {
+    this.keptClear.push(...volumes);
   }
 
   scatter(pool: ReadonlyArray<Block>, attempts: number, section: Section, flatOnly = false): void {
@@ -603,11 +614,9 @@ class Build {
   }
 }
 
-function blockPart(placed: Placed): AssemblyPart {
-  const { block, turn } = placed;
-  const origin: Vec3 = [placed.x, placed.y, placed.z];
-  const min: [number, number, number] = [Infinity, placed.y + block.topY, Infinity];
-  const max: [number, number, number] = [-Infinity, placed.y + block.bottomY, -Infinity];
+function blockBounds(block: Block, turn: number, origin: Vec3): LdrawBounds {
+  const min: [number, number, number] = [Infinity, origin[1] + block.topY, Infinity];
+  const max: [number, number, number] = [-Infinity, origin[1] + block.bottomY, -Infinity];
   for (const x of [block.minX, block.minX + block.width * STUD_LDU]) {
     for (const z of [block.minZ, block.minZ + block.depth * STUD_LDU]) {
       const [rx, , rz] = rotated([x, 0, z], turn);
@@ -617,6 +626,24 @@ function blockPart(placed: Placed): AssemblyPart {
       max[2] = Math.max(max[2], rz + origin[2]);
     }
   }
+  return { min, max };
+}
+
+function boundsOverlap(a: LdrawBounds, b: LdrawBounds): boolean {
+  return AXES.every((axis) => a.min[axis] < b.max[axis] && a.max[axis] > b.min[axis]);
+}
+
+function shiftedBounds(bounds: LdrawBounds, by: Vec3): LdrawBounds {
+  return {
+    min: [bounds.min[0] + by[0], bounds.min[1] + by[1], bounds.min[2] + by[2]],
+    max: [bounds.max[0] + by[0], bounds.max[1] + by[1], bounds.max[2] + by[2]],
+  };
+}
+
+function blockPart(placed: Placed): AssemblyPart {
+  const { block, turn } = placed;
+  const origin: Vec3 = [placed.x, placed.y, placed.z];
+  const { min, max } = blockBounds(block, turn, origin);
   return {
     reference: block.reference,
     min,
@@ -929,6 +956,7 @@ export interface TemplateBrick {
 export interface TemplateEdges {
   readonly base: Block;
   readonly edges: ReadonlyMap<number, ReadonlyArray<TemplateBrick>>;
+  readonly beyondBase: ReadonlyArray<LdrawBounds>;
 }
 
 export interface CornerModule {
@@ -962,8 +990,76 @@ function firstModelLines(text: string): string[] {
   return lines.slice(first, second);
 }
 
-export function templateEdges(pools: BlockPools, text: string): TemplateEdges | null {
-  const parts = firstModelLines(text).flatMap((line) => {
+function partsByReference(
+  bundleParts: ReadonlyMap<string, ManifestPart>,
+): ReadonlyMap<string, ManifestPart> {
+  return new Map(
+    [...bundleParts.values()].map((part) => [
+      part.path.replace(LIBRARY_PART_PREFIX, "").toLowerCase(),
+      part,
+    ]),
+  );
+}
+
+function placementBounds(values: ReadonlyArray<number>, part: ManifestPart): LdrawBounds {
+  const [x = 0, y = 0, z = 0, ...matrix] = values;
+  const local = ldrawBounds(part);
+  const min: [number, number, number] = [Infinity, Infinity, Infinity];
+  const max: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+  for (const cx of [local.min[0], local.max[0]]) {
+    for (const cy of [local.min[1], local.max[1]]) {
+      for (const cz of [local.min[2], local.max[2]]) {
+        const corner = [x, y, z].map(
+          (origin, row) =>
+            origin +
+            (matrix[row * 3] ?? 0) * cx +
+            (matrix[row * 3 + 1] ?? 0) * cy +
+            (matrix[row * 3 + 2] ?? 0) * cz,
+        );
+        for (const axis of AXES) {
+          min[axis] = Math.min(min[axis], corner[axis] ?? 0);
+          max[axis] = Math.max(max[axis], corner[axis] ?? 0);
+        }
+      }
+    }
+  }
+  return { min, max };
+}
+
+function partsBeyondBase(
+  lines: ReadonlyArray<string>,
+  base: Block,
+  bundleParts: ReadonlyMap<string, ManifestPart>,
+): ReadonlyArray<LdrawBounds> {
+  const byReference = partsByReference(bundleParts);
+  const footprint = blockBounds(base, 0, [0, 0, 0]);
+  return lines.flatMap((line) => {
+    const fields = line.trim().split(/\s+/u);
+    if (fields[0] !== "1" || fields.length < PLACEMENT_FIELDS) return [];
+    const values = fields.slice(2, PLACEMENT_FIELDS - 1).map(Number);
+    if (values.some((value) => !Number.isFinite(value))) return [];
+    const reference = fields.slice(PLACEMENT_FIELDS - 1).join(" ");
+    const part = byReference.get(reference.replaceAll("\\", "/").toLowerCase());
+    if (!part) {
+      throw new Error(
+        `the template places ${reference}, which the bundle's part table doesn't list, so its reach past the baseplate is unknown`,
+      );
+    }
+    const bounds = placementBounds(values, part);
+    const beyond = PLAN_AXES.some(
+      (axis) => bounds.min[axis] < footprint.min[axis] || bounds.max[axis] > footprint.max[axis],
+    );
+    return beyond ? [bounds] : [];
+  });
+}
+
+export function templateEdges(
+  pools: BlockPools,
+  text: string,
+  bundleParts: ReadonlyMap<string, ManifestPart>,
+): TemplateEdges | null {
+  const lines = firstModelLines(text);
+  const parts = lines.flatMap((line) => {
     const fields = line.trim().split(/\s+/u);
     if (fields[0] !== "1" || fields.length < PLACEMENT_FIELDS) return [];
     const values = fields.slice(2, PLACEMENT_FIELDS - 1).map(Number);
@@ -1007,7 +1103,9 @@ export function templateEdges(pools: BlockPools, text: string): TemplateEdges | 
       edges.set(edge, [...(edges.get(edge) ?? []), { block, alongCell, turn: part.turn }]);
     }
   }
-  return edges.size === 0 ? null : { base: baseBlock, edges };
+  return edges.size === 0
+    ? null
+    : { base: baseBlock, edges, beyondBase: partsBeyondBase(lines, baseBlock, bundleParts) };
 }
 
 export function cornerJoinedModule(
@@ -1020,6 +1118,12 @@ export function cornerJoinedModule(
   const edge = random.pick(candidates);
   const facing = oppositeEdge(edge);
   const module = new Build(template.base, random, pools.colors);
+  const frame = edgeFrame(edge);
+  const size = (frame.normal === 0 ? module.cellsX : module.cellsZ) * STUD_LDU;
+  const offset: [number, number, number] = [0, 0, 0];
+  offset[frame.normal] = frame.outward * size;
+  const towardTemplate: Vec3 = [0 - offset[0], 0 - offset[1], 0 - offset[2]];
+  module.keepClearOf(template.beyondBase.map((volume) => shiftedBounds(volume, towardTemplate)));
   const pin = random.pick(pools.pins);
   for (const brick of template.edges.get(edge) ?? []) {
     const placed = module.placeOnEdge(brick.block, facing, brick.alongCell, brick.turn);
@@ -1029,10 +1133,6 @@ export function cornerJoinedModule(
   if (module.pins.length === 0) throw new Error("no hole brick opposite the template took a pin");
   module.edgeBricks(pools.technicBricks, random.between(1, 6), []);
   landscape(module, pools, random);
-  const frame = edgeFrame(edge);
-  const size = (frame.normal === 0 ? module.cellsX : module.cellsZ) * STUD_LDU;
-  const offset: [number, number, number] = [0, 0, 0];
-  offset[frame.normal] = frame.outward * size;
   const names = namedModule(`corner-module-${seed}`, `Corner-joined module ${seed}`);
   return {
     seed,
