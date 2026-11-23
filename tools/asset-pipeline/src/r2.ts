@@ -1,4 +1,6 @@
 import { createHash, createHmac } from "node:crypto";
+import { BUCKET_RETRY, NETWORK, requestWithRetry, type RetryRunner } from "./fetch-retry.ts";
+import { ThrottleGate } from "./throttle-gate.ts";
 
 export interface S3Credentials {
   readonly accessKeyId: string;
@@ -193,9 +195,30 @@ export interface R2Bucket {
 
 export class R2ObjectStore implements PrunableStore {
   private readonly target: R2Bucket;
+  private readonly runner: RetryRunner;
+  private readonly gate: ThrottleGate;
 
   constructor(target: R2Bucket) {
     this.target = target;
+    this.runner = { clock: NETWORK.clock, policy: BUCKET_RETRY, log: NETWORK.log };
+    this.gate = new ThrottleGate(NETWORK.clock, BUCKET_RETRY);
+  }
+
+  private request<T>(
+    method: S3Request["method"],
+    key: string,
+    body: Uint8Array | undefined,
+    headers: Readonly<Record<string, string>>,
+    read: (response: Response) => Promise<T>,
+    query?: Readonly<Record<string, string>>,
+  ): Promise<T> {
+    const target = query === undefined ? key : `${this.target.bucket}?${canonicalQuery(query)}`;
+    return requestWithRetry(
+      `${method} ${target}`,
+      () => this.gate.send(() => this.send(method, key, body, headers, query)),
+      read,
+      this.runner,
+    );
   }
 
   private async send(
@@ -230,29 +253,28 @@ export class R2ObjectStore implements PrunableStore {
     });
   }
 
-  async has(key: string): Promise<boolean> {
-    const response = await this.send("HEAD", key, undefined, {});
-    if (response.status === 404) return false;
-    if (!response.ok) throw new Error(`HEAD ${key} failed with ${response.status}`);
-    return true;
+  has(key: string): Promise<boolean> {
+    return this.request("HEAD", key, undefined, {}, async (response) => {
+      if (response.status === 404) return false;
+      if (!response.ok) throw new Error(`HEAD ${key} failed with ${response.status}`);
+      return true;
+    });
   }
 
-  async put(
-    key: string,
-    body: Uint8Array,
-    headers: Readonly<Record<string, string>>,
-  ): Promise<void> {
-    const response = await this.send("PUT", key, body, headers);
-    if (!response.ok) {
-      throw new Error(`PUT ${key} failed with ${response.status}: ${await response.text()}`);
-    }
+  put(key: string, body: Uint8Array, headers: Readonly<Record<string, string>>): Promise<void> {
+    return this.request("PUT", key, body, headers, async (response) => {
+      if (!response.ok) {
+        throw new Error(`PUT ${key} failed with ${response.status}: ${await response.text()}`);
+      }
+    });
   }
 
-  async get(key: string): Promise<Uint8Array | undefined> {
-    const response = await this.send("GET", key, undefined, {});
-    if (response.status === 404) return undefined;
-    if (!response.ok) throw new Error(`GET ${key} failed with ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+  get(key: string): Promise<Uint8Array | undefined> {
+    return this.request("GET", key, undefined, {}, async (response) => {
+      if (response.status === 404) return undefined;
+      if (!response.ok) throw new Error(`GET ${key} failed with ${response.status}`);
+      return new Uint8Array(await response.arrayBuffer());
+    });
   }
 
   async list(prefix: string): Promise<ReadonlyArray<StoredObject>> {
@@ -261,9 +283,17 @@ export class R2ObjectStore implements PrunableStore {
     do {
       const query: Record<string, string> = { "list-type": "2", prefix };
       if (token !== undefined) query["continuation-token"] = token;
-      const response = await this.send("GET", "", undefined, {}, query);
-      if (!response.ok) throw new Error(`listing ${prefix} failed with ${response.status}`);
-      const xml = await response.text();
+      const xml = await this.request(
+        "GET",
+        "",
+        undefined,
+        {},
+        async (response) => {
+          if (!response.ok) throw new Error(`listing ${prefix} failed with ${response.status}`);
+          return response.text();
+        },
+        query,
+      );
       objects.push(...listedObjects(xml));
       const truncated = xmlField(xml, "IsTruncated") === "true";
       const next = xmlField(xml, "NextContinuationToken");
@@ -278,7 +308,7 @@ export class R2ObjectStore implements PrunableStore {
   async delete(keys: ReadonlyArray<string>): Promise<void> {
     for (let start = 0; start < keys.length; start += DELETE_OBJECTS_LIMIT) {
       const body = deleteRequest(keys.slice(start, start + DELETE_OBJECTS_LIMIT));
-      const response = await this.send(
+      const xml = await this.request(
         "POST",
         "",
         body,
@@ -286,10 +316,14 @@ export class R2ObjectStore implements PrunableStore {
           "Content-Type": "application/xml",
           "Content-MD5": createHash("md5").update(body).digest("base64"),
         },
+        async (response) => {
+          const text = await response.text();
+          if (!response.ok)
+            throw new Error(`DeleteObjects failed with ${response.status}: ${text}`);
+          return text;
+        },
         { delete: "" },
       );
-      const xml = await response.text();
-      if (!response.ok) throw new Error(`DeleteObjects failed with ${response.status}: ${xml}`);
       const failed = [...xml.matchAll(/<Error>(.*?)<\/Error>/gsu)].map(([, entry = ""]) => entry);
       if (failed.length > 0) throw new Error(`DeleteObjects refused: ${failed.join("; ")}`);
     }
