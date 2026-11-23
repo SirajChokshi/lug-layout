@@ -224,6 +224,7 @@ export { disksCover } from "./plan/plan-reach.ts";
 export {
   TRACK_OPEN_END,
   TRACK_UNIDENTIFIED,
+  TRACK_LAID_UNVERIFIED,
   TRACK_UNJOINED_ENDS,
   TRACK_UNVERIFIED,
   TrackIssueRows,

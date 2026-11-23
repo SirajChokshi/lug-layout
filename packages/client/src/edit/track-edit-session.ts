@@ -1,4 +1,5 @@
 import type { PartAsset, PartShapeAsset } from "@brr/catalog";
+import type { PoseStatus } from "@brr/schema/bundle";
 import type { TrackChange } from "@brr/domain";
 import { PLATE_LDU, QUARTER_TURN_16, STUD_LDU, ZETA16_ORDER, type Pose16 } from "@brr/math";
 import { SCENE_BACKEND, type ISceneBackend, type TrackEndMarker } from "@brr/render";
@@ -19,6 +20,8 @@ import {
   type TrackDragView,
   type TrackDrawing,
   type TrackGapView,
+  type KitPart,
+  type TrackSystemView,
 } from "./track-drawing.ts";
 import type { ExtensionRun, ExtensionTurn, TrackExtendView } from "./track-extension.ts";
 import type { Lever } from "./track-pieces.ts";
@@ -98,9 +101,16 @@ export interface TrackHeightView {
   readonly tallestTrain: TallestTrain | null;
 }
 
+export interface TrackToolView {
+  readonly item: string;
+  readonly status: PoseStatus;
+  readonly active: boolean;
+}
+
 export interface TrackEditView {
   readonly track: TrackView | null;
   readonly trackNotDrawable: ReadonlyArray<CatalogPartView>;
+  readonly trackTools: ReadonlyArray<TrackToolView>;
 }
 
 export interface TrackEditSample {
@@ -222,12 +232,37 @@ export interface ITrackEditSession {
   mirror(): string | null;
 }
 
-export const TRACK_ITEM_ID = `track:${TRACK_SYSTEM}`;
+const TRACK_TOOL_PREFIX = "track:";
+export const TRACK_ITEM_ID = trackToolId(TRACK_SYSTEM);
+
+export function trackToolId(system: string): string {
+  return `${TRACK_TOOL_PREFIX}${system}`;
+}
+
+function trackToolSystem(id: string): string | null {
+  return id.startsWith(TRACK_TOOL_PREFIX) ? id.slice(TRACK_TOOL_PREFIX.length) : null;
+}
+
+function sharedLeadingWords(titles: ReadonlyArray<string>): ReadonlyArray<string> {
+  const split = titles.map((title) => title.split(" "));
+  const first = split[0] ?? [];
+  let length = 0;
+  while (length < first.length && split.every((words) => words[length] === first[length])) {
+    length++;
+  }
+  return first.slice(0, length);
+}
+
+function curveRadiusStuds(curve: KitPart | null): number | null {
+  const arc = curve?.piece.routes[0]?.segments.find((segment) => segment.kind === "arc");
+  return arc?.kind === "arc" ? Math.round(arc.radiusLdu / STUD_LDU) : null;
+}
 export const TRACK_PIECE_PREFIX = "track-piece:";
 const TRACK_PIECE_GROUP = "track-pieces";
 const TRACK_PIECE_GROUP_LABEL = "Track pieces";
-const TRACK_ITEM_LABEL = "Track: 9V straights and R40 curves";
 const TRACK_SHORT_LABEL = "Track";
+const NO_TOOLS: ReadonlyArray<TrackToolView> = [];
+const TRACK_TITLE_WORDS = ["Train", "Track"];
 const TRACK_HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const NOTHING: { readonly kind: "none" } = { kind: "none" };
 const NO_ENDS: ReadonlyArray<number> = [];
@@ -272,6 +307,8 @@ function endMarkers(
 @injectable()
 export class TrackEditSession implements ITrackEditSession {
   private notDrawable: ReadonlyArray<CatalogPartView> = [];
+  private tools: ReadonlyArray<TrackToolView> = NO_TOOLS;
+  private toolsFor = "";
   private held: HeldPiece | null = null;
   private trackPress: { readonly x: number; readonly z: number } | null = null;
   private previewVersion: number | null = null;
@@ -328,23 +365,51 @@ export class TrackEditSession implements ITrackEditSession {
     if (!track) return [];
     const parts = this.catalog.parts();
     this.notDrawable = undrawableTrack(track, parts);
-    return [this.trackItem(track, parts), ...this.trackPieceItems(track, parts)];
+    return [
+      ...track.systems().map((system) => this.trackItem(system, parts)),
+      ...this.trackPieceItems(track, parts),
+    ];
   }
 
   view(): TrackEditView {
     const track = this.trackView();
+    const tools = this.toolViews();
     const last = this.lastEditView;
-    if (last && last.track === track && last.trackNotDrawable === this.notDrawable) return last;
-    const view: TrackEditView = { track, trackNotDrawable: this.notDrawable };
+    if (
+      last &&
+      last.track === track &&
+      last.trackNotDrawable === this.notDrawable &&
+      last.trackTools === tools
+    ) {
+      return last;
+    }
+    const view: TrackEditView = { track, trackNotDrawable: this.notDrawable, trackTools: tools };
     this.lastEditView = view;
     return view;
+  }
+
+  private toolViews(): ReadonlyArray<TrackToolView> {
+    const track = this.trackWorld.drawing();
+    if (!track) return NO_TOOLS;
+    if (this.tools !== NO_TOOLS && this.toolsFor === track.activeSystem) return this.tools;
+    this.toolsFor = track.activeSystem;
+    this.tools = track.systems().map(({ system, status }) => ({
+      item: trackToolId(system),
+      status,
+      active: system === track.activeSystem,
+    }));
+    return this.tools;
   }
 
   pick(id: string): boolean {
     const track = this.trackWorld.drawing();
     if (!track) return false;
     const pieceIndex = this.trackPieceIndex(track, id);
-    if (id !== TRACK_ITEM_ID && pieceIndex === null) return false;
+    const system =
+      trackToolSystem(id) ??
+      (pieceIndex === null ? null : track.pieceByIndex(pieceIndex).piece.system);
+    if (system === null) return false;
+    if (!track.useSystem(system) && pieceIndex === null) return false;
     track.cancelDrag();
     track.extension.drop();
     this.held =
@@ -484,7 +549,7 @@ export class TrackEditSession implements ITrackEditSession {
         kind: "lay",
         lay: {
           change: outcome.change,
-          sample: { item: TRACK_ITEM_ID, rot: 0, x: latticeX, z: latticeZ },
+          sample: { item: trackToolId(track.activeSystem), rot: 0, x: latticeX, z: latticeZ },
           origin: {
             kind: "drag",
             goal: outcome.goal,
@@ -569,7 +634,7 @@ export class TrackEditSession implements ITrackEditSession {
       const reason = `${label} would ${trackBlockText(block)}.`;
       return {
         kind: "refused",
-        refusal: { item: TRACK_ITEM_ID, x: latticeX, z: latticeZ, reason },
+        refusal: { item: trackToolId(track.activeSystem), x: latticeX, z: latticeZ, reason },
       };
     }
     const joinsBefore = track.joinedPairs();
@@ -796,18 +861,31 @@ export class TrackEditSession implements ITrackEditSession {
     return kit ? kit.catalogIndex : null;
   }
 
-  private trackItem(track: TrackDrawing, parts: ReadonlyArray<PartShapeAsset>): CatalogItemView {
-    const straight = track.kitParts().find((k) => k.piece.kind === "straight");
-    const part = straight ? parts[straight.partIndex] : undefined;
+  private trackItem(
+    { system, straight, curve }: TrackSystemView,
+    parts: ReadonlyArray<PartShapeAsset>,
+  ): CatalogItemView {
+    const part = parts[straight.partIndex];
+    const shared = sharedLeadingWords(
+      [straight, curve].flatMap((kit) => (kit ? [kit.piece.title] : [])),
+    );
+    const name = (
+      TRACK_TITLE_WORDS.every((word, i) => shared[i] === word)
+        ? shared.slice(TRACK_TITLE_WORDS.length)
+        : shared
+    ).join(" ");
+    const radius = curveRadiusStuds(curve);
+    const label = `Track: ${name} straights${radius === null ? "" : ` and R${radius} curves`}`;
+    const id = trackToolId(system);
     return {
-      id: TRACK_ITEM_ID,
-      label: TRACK_ITEM_LABEL,
-      shortLabel: TRACK_SHORT_LABEL,
-      group: TRACK_ITEM_ID,
-      groupLabel: TRACK_ITEM_LABEL,
+      id,
+      label,
+      shortLabel: system === TRACK_SYSTEM ? TRACK_SHORT_LABEL : `${name} track`,
+      group: id,
+      groupLabel: label,
       color: null,
       kind: "track",
-      parts: track.kitParts().length,
+      parts: curve ? 2 : 1,
       studsWide: part ? Math.round((part.boundsMax[0] - part.boundsMin[0]) / STUD_LDU) : 0,
       studsDeep: part ? Math.round((part.boundsMax[2] - part.boundsMin[2]) / STUD_LDU) : 0,
       thumbnail: null,
@@ -846,7 +924,7 @@ export class TrackEditSession implements ITrackEditSession {
         displayColor: false,
         draggable: false,
         toggleable: true,
-        listedUnder: TRACK_ITEM_ID,
+        listedUnder: trackToolId(kit.piece.system),
         customParts: 0,
       };
     });

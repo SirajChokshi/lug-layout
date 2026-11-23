@@ -155,19 +155,26 @@ function pieceOfPart(catalogIndex: number, piece: TrackCatalog["pieces"][number]
   return { catalogIndex, connectors, offset, halfSteps, localEnds };
 }
 
+const UNVERIFIED: ReadonlySet<PoseStatus> = new Set(["unverified"]);
+const ANY_STATUS: ReadonlySet<PoseStatus> = new Set(["certified", "unverified"]);
+
 function piecesByPart(catalog: TrackCatalog): Map<string, PieceOfPart | null> {
   const byPart = new Map<string, PieceOfPart | null>();
   catalog.pieces.forEach((piece, catalogIndex) => {
-    if (piece.status !== "certified") return;
     byPart.set(piece.part, byPart.has(piece.part) ? null : pieceOfPart(catalogIndex, piece));
   });
   return byPart;
 }
 
-function firstPieceOfPart(catalog: TrackCatalog, status: PoseStatus): Map<string, number> {
+function firstPieceOfPart(
+  catalog: TrackCatalog,
+  statuses: ReadonlySet<PoseStatus>,
+): Map<string, number> {
   const byPart = new Map<string, number>();
   catalog.pieces.forEach((piece, catalogIndex) => {
-    if (piece.status === status && !byPart.has(piece.part)) byPart.set(piece.part, catalogIndex);
+    if (statuses.has(piece.status) && !byPart.has(piece.part)) {
+      byPart.set(piece.part, catalogIndex);
+    }
   });
   return byPart;
 }
@@ -182,18 +189,6 @@ function countedByPart(
     if (catalogIndex !== undefined) counts.set(catalogIndex, (counts.get(catalogIndex) ?? 0) + 1);
   }
   return [...counts].map(([catalogIndex, count]) => ({ catalogIndex, count }));
-}
-
-function instancePartIds(
-  instances: TrackInstances,
-  parts: ReadonlyArray<PartShapeAsset>,
-): ReadonlyArray<string> {
-  const ids: string[] = [];
-  for (let i = 0; i < instances.count; i++) {
-    const part = parts[instances.partIndex[i] ?? -1];
-    if (part) ids.push(part.id);
-  }
-  return ids;
 }
 
 function liesFlat(m: Float64Array, o: number): boolean {
@@ -692,12 +687,15 @@ export function modelTrackEnds(
     runs: trackRuns,
     uncertified,
     unverified: countedByPart(
-      instancePartIds(instances, parts),
-      firstPieceOfPart(catalog, "unverified"),
+      [
+        ...pieces.map((piece) => piece.catalogIndex),
+        ...trackRuns.flatMap((run) => run.pieces.map((piece) => piece.catalogIndex)),
+      ].map((catalogIndex) => catalog.pieces[catalogIndex]?.part ?? ""),
+      firstPieceOfPart(catalog, UNVERIFIED),
     ),
     unidentified: countedByPart(
       uncertified.map((piece) => piece.partId),
-      firstPieceOfPart(catalog, "certified"),
+      firstPieceOfPart(catalog, ANY_STATUS),
     ),
   };
 }

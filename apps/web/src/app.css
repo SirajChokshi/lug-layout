@@ -1252,6 +1252,11 @@ footer a {
   background: #5b4bb7;
 }
 
+.part-badge[data-badge="unverified"] {
+  color: var(--text-on-accent);
+  background: var(--status-warn);
+}
+
 .not-drawn {
   margin: 0;
   padding-left: 18px;
