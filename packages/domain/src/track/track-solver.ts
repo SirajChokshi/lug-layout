@@ -1,6 +1,10 @@
 import {
   HALF_TURN_16,
+  LATTICE_LIMITS,
   ZETA16_COEFFICIENT_COUNT,
+  ZETA16_ORDER,
+  ZETA16_ZERO,
+  addZeta16,
   normalizeHeading16,
   subtractZeta16,
   type Pose16,
@@ -19,7 +23,28 @@ export interface TrackRun {
   readonly pieces: number;
 }
 
-export const DEFAULT_CLOSURE_TURNS = 3;
+const DEFAULT_CLOSURE_TURNS = 3;
+const MAX_RUNS = DEFAULT_CLOSURE_TURNS + 1;
+const MIN_EXACT_STRAIGHT_STUDS = MAX_RUNS;
+const EXACT_DOUBLE_ABS_MAX = 2n ** 52n;
+const NEGATIVE_EXACT_DOUBLE_ABS_MAX = -EXACT_DOUBLE_ABS_MAX;
+const INT32_MAX = BigInt(LATTICE_LIMITS.INT32_MAX);
+const NO_RUNS: ReadonlyArray<TrackRun> = [];
+
+interface TurnSequenceTable {
+  readonly turns: Int8Array;
+  readonly turnCounts: Uint8Array;
+  readonly curves: Uint8Array;
+  readonly headings: Uint8Array;
+  readonly arcSums: Int32Array;
+  readonly indicesByNeeded: ReadonlyArray<Int32Array>;
+  readonly exactDoubles: boolean;
+  readonly straightStuds: number;
+}
+
+const turnSequencesByKit = new WeakMap<DrawingKit, TurnSequenceTable>();
+const rotatedDifference = new Float64Array(ZETA16_COEFFICIENT_COUNT);
+const straightCounts = new Float64Array(MAX_RUNS);
 
 export function runMoves(kit: DrawingKit, run: TrackRun): ReadonlyArray<TrackMove> {
   const moves: TrackMove[] = [];
@@ -72,26 +97,163 @@ function turnSign(turn: number): TurnSign {
   return turn > 0 ? 1 : -1;
 }
 
-function turnSequences(
-  needed: number,
-  maxTurns: number,
-  maxCurves: number,
-): ReadonlyArray<ReadonlyArray<number>> {
-  const all = signedTurns(Math.min(MAX_TURN_CURVES, maxCurves));
-  const out: number[][] = [];
-  const walk = (prefix: number[], sum: number, curves: number): void => {
-    if (normalizeHeading16(sum) === needed) out.push([...prefix]);
-    if (prefix.length === maxTurns) return;
+function everyTurnSequence(): ReadonlyArray<ReadonlyArray<number>> {
+  const all = signedTurns(MAX_TURN_CURVES);
+  const sequences: number[][] = [];
+  const walk = (prefix: number[]): void => {
+    sequences.push([...prefix]);
+    if (prefix.length === DEFAULT_CLOSURE_TURNS) return;
     for (const m of all) {
-      const used = curves + Math.abs(m);
-      if (used > maxCurves) continue;
       prefix.push(m);
-      walk(prefix, sum + m, used);
+      walk(prefix);
       prefix.pop();
     }
   };
-  walk([], 0, 0);
-  return out;
+  walk([]);
+  return sequences;
+}
+
+function fitsInt32(value: bigint): boolean {
+  return value <= INT32_MAX && -value <= INT32_MAX;
+}
+
+function buildTurnSequenceTable(kit: DrawingKit): TurnSequenceTable {
+  const sequences = everyTurnSequence();
+  const count = sequences.length;
+  const turns = new Int8Array(count * DEFAULT_CLOSURE_TURNS);
+  const turnCounts = new Uint8Array(count);
+  const curves = new Uint8Array(count);
+  const headings = new Uint8Array(count * MAX_RUNS);
+  const arcSums = new Int32Array(count * ZETA16_COEFFICIENT_COUNT);
+  const byNeeded: number[][] = Array.from({ length: ZETA16_ORDER }, () => []);
+  const studs = kit.straightStuds;
+  let exactDoubles = studs >= BigInt(MIN_EXACT_STRAIGHT_STUDS) && fitsInt32(studs);
+  sequences.forEach((sequence, entry) => {
+    let heading = 0;
+    let used = 0;
+    let arcSum: Zeta16 = ZETA16_ZERO;
+    sequence.forEach((m, t) => {
+      turns[entry * DEFAULT_CLOSURE_TURNS + t] = m;
+      arcSum = addZeta16(arcSum, kit.arc(turnSign(m), Math.abs(m), heading));
+      heading = normalizeHeading16(heading + m);
+      headings[entry * MAX_RUNS + t + 1] = heading;
+      used += Math.abs(m);
+    });
+    turnCounts[entry] = sequence.length;
+    curves[entry] = used;
+    arcSum.forEach((coefficient, power) => {
+      if (fitsInt32(coefficient)) {
+        arcSums[entry * ZETA16_COEFFICIENT_COUNT + power] = Number(coefficient);
+      } else {
+        exactDoubles = false;
+      }
+    });
+    byNeeded[heading]?.push(entry);
+  });
+  return {
+    turns,
+    turnCounts,
+    curves,
+    headings,
+    arcSums,
+    indicesByNeeded: byNeeded.map((entries) => Int32Array.from(entries)),
+    exactDoubles,
+    straightStuds: Number(studs),
+  };
+}
+
+function turnSequenceTable(kit: DrawingKit): TurnSequenceTable {
+  const known = turnSequencesByKit.get(kit);
+  if (known) return known;
+  const table = buildTurnSequenceTable(kit);
+  turnSequencesByKit.set(kit, table);
+  return table;
+}
+
+function fitsExactDouble(value: bigint): boolean {
+  return value <= EXACT_DOUBLE_ABS_MAX && value >= NEGATIVE_EXACT_DOUBLE_ABS_MAX;
+}
+
+function rotateDifferenceIntoScratch(start: Pose16, goal: Pose16): boolean {
+  const turns = normalizeHeading16(-start.heading);
+  for (let power = 0; power < ZETA16_COEFFICIENT_COUNT; power++) {
+    const source = power - turns;
+    let value: bigint;
+    if (source >= 0) {
+      value = (goal.position[source] ?? 0n) - (start.position[source] ?? 0n);
+    } else if (source + ZETA16_COEFFICIENT_COUNT >= 0) {
+      const wrapped = source + ZETA16_COEFFICIENT_COUNT;
+      value = (start.position[wrapped] ?? 0n) - (goal.position[wrapped] ?? 0n);
+    } else {
+      const wrapped = source + ZETA16_ORDER;
+      value = (goal.position[wrapped] ?? 0n) - (start.position[wrapped] ?? 0n);
+    }
+    if (!fitsExactDouble(value)) return false;
+    rotatedDifference[power] = Number(value);
+  }
+  return true;
+}
+
+function matchingRun(
+  table: TurnSequenceTable,
+  entry: number,
+  runs: number,
+  power: number,
+  wanted: number,
+): number {
+  for (let run = 0; run < runs; run++) {
+    const heading = table.headings[entry * MAX_RUNS + run] ?? 0;
+    if (
+      heading % ZETA16_COEFFICIENT_COUNT === power &&
+      Math.floor(heading / ZETA16_COEFFICIENT_COUNT) === wanted
+    ) {
+      return run;
+    }
+  }
+  return -1;
+}
+
+function runFromEntry(
+  table: TurnSequenceTable,
+  entry: number,
+  runs: number,
+  pieces: number,
+): TrackRun {
+  const segments: TrackSegment[] = [];
+  for (let run = 0; run < runs; run++) {
+    const count = straightCounts[run] ?? 0;
+    if (count > 0) segments.push({ kind: "straight", count });
+    if (run < runs - 1) {
+      const m = table.turns[entry * DEFAULT_CLOSURE_TURNS + run] ?? 0;
+      segments.push({ kind: "turn", sign: turnSign(m), curves: Math.abs(m) });
+    }
+  }
+  return { segments, pieces };
+}
+
+function closureRunFromEntry(
+  table: TurnSequenceTable,
+  entry: number,
+  maxPieces: number,
+): TrackRun | undefined {
+  const runs = (table.turnCounts[entry] ?? 0) + 1;
+  const studs = table.straightStuds;
+  straightCounts.fill(0);
+  for (let power = 0; power < ZETA16_COEFFICIENT_COUNT; power++) {
+    const residual =
+      (rotatedDifference[power] ?? 0) -
+      (table.arcSums[entry * ZETA16_COEFFICIENT_COUNT + power] ?? 0);
+    if (residual === 0) continue;
+    if (residual % studs !== 0) return undefined;
+    const quotient = residual / studs;
+    const run = matchingRun(table, entry, runs, power, quotient > 0 ? 0 : 1);
+    if (run < 0) return undefined;
+    straightCounts[run] = quotient > 0 ? quotient : -quotient;
+  }
+  let pieces = table.curves[entry] ?? 0;
+  for (let run = 0; run < runs; run++) pieces += straightCounts[run] ?? 0;
+  if (pieces > maxPieces) return undefined;
+  return runFromEntry(table, entry, runs, pieces);
 }
 
 function closureRun(
@@ -154,18 +316,55 @@ export function fewestWithinTurns(runs: ReadonlyArray<TrackRun>): TrackRun | nul
   return best;
 }
 
-export function closuresWithinTurns(
+function exactClosures(
+  table: TurnSequenceTable,
+  entries: Int32Array,
+  maxPieces: number,
+): ReadonlyArray<TrackRun> {
+  let runs: TrackRun[] | null = null;
+  for (let e = 0; e < entries.length; e++) {
+    const entry = entries[e] ?? 0;
+    if ((table.curves[entry] ?? 0) > maxPieces) continue;
+    const run = closureRunFromEntry(table, entry, maxPieces);
+    if (!run) continue;
+    runs ??= [];
+    runs.push(run);
+  }
+  return runs ?? NO_RUNS;
+}
+
+function bigIntClosures(
   kit: DrawingKit,
+  table: TurnSequenceTable,
+  entries: Int32Array,
   start: Pose16,
   goal: Pose16,
-  maxTurns: number = DEFAULT_CLOSURE_TURNS,
-  maxPieces: number = Number.POSITIVE_INFINITY,
+  maxPieces: number,
 ): ReadonlyArray<TrackRun> {
-  const needed = normalizeHeading16(goal.heading + HALF_TURN_16 - start.heading);
   const runs: TrackRun[] = [];
-  for (const turns of turnSequences(needed, maxTurns, maxPieces)) {
+  for (let e = 0; e < entries.length; e++) {
+    const entry = entries[e] ?? 0;
+    if ((table.curves[entry] ?? 0) > maxPieces) continue;
+    const first = entry * DEFAULT_CLOSURE_TURNS;
+    const turns = Array.from(table.turns.subarray(first, first + (table.turnCounts[entry] ?? 0)));
     const run = closureRun(kit, start, goal, turns);
     if (run && run.pieces <= maxPieces) runs.push(run);
   }
   return runs;
+}
+
+export function closuresWithinTurns(
+  kit: DrawingKit,
+  start: Pose16,
+  goal: Pose16,
+  maxPieces: number = Number.POSITIVE_INFINITY,
+): ReadonlyArray<TrackRun> {
+  const needed = normalizeHeading16(goal.heading + HALF_TURN_16 - start.heading);
+  const table = turnSequenceTable(kit);
+  const entries = table.indicesByNeeded[needed];
+  if (!entries) return NO_RUNS;
+  if (table.exactDoubles && rotateDifferenceIntoScratch(start, goal)) {
+    return exactClosures(table, entries, maxPieces);
+  }
+  return bigIntClosures(kit, table, entries, start, goal, maxPieces);
 }
