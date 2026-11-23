@@ -14,11 +14,13 @@ import { describe, expect, it } from "vitest";
 import { createSimSession } from "./create-sim-session.ts";
 import type { SimCommand, SimScenario, SimSession } from "./sim-session.ts";
 import {
+  NOT_BLOCKED,
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,
   type Simulation,
   type TrainSpec,
 } from "./simulation.ts";
+import type { SimObstacles } from "./train-clearance.ts";
 
 const RADIUS = 800;
 const ARC_STEPS = 16;
@@ -732,5 +734,93 @@ describe("Driving with a signed speed", () => {
     const turned = frameOf(session);
     expect(turned[session.layout.trainDirectionStart]).toBe(-1);
     expect(turned[session.layout.trainFacingStart]).toBe(-1);
+  });
+});
+
+function boxTriangles(lo: readonly number[], hi: readonly number[]): number[] {
+  const corner = (i: number): number[] => [
+    i & 1 ? (hi[0] ?? 0) : (lo[0] ?? 0),
+    i & 2 ? (hi[1] ?? 0) : (lo[1] ?? 0),
+    i & 4 ? (hi[2] ?? 0) : (lo[2] ?? 0),
+  ];
+  return [
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+  ].flatMap(([a = 0, b = 0, c = 0, d = 0]) => [a, b, c, a, c, d].flatMap(corner));
+}
+
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
+const BLOCK_LO = [-30, 0, -30];
+const BLOCK_HI = [30, 60, 30];
+const BODY_LO = [-150, 0, -30];
+const BODY_HI = [150, 60, 30];
+
+function blockAt(x: number, z: number): SimObstacles {
+  const block = boxTriangles(BLOCK_LO, BLOCK_HI);
+  const body = boxTriangles(BODY_LO, BODY_HI);
+  const at = [...IDENTITY];
+  at[3] = x;
+  at[11] = z;
+  return {
+    solids: {
+      boxes: Float64Array.of(...BLOCK_LO, ...BLOCK_HI, ...BODY_LO, ...BODY_HI),
+      triangleStart: Int32Array.of(0, block.length / 9, (block.length + body.length) / 9),
+      bodyTriangles: Int32Array.of(block.length / 9, body.length / 9),
+      triangles: Float64Array.from([...block, ...body]),
+      studStart: Int32Array.of(0, 0, 0),
+      studFrames: new Float64Array(0),
+      studPrimitive: new Uint8Array(0),
+      primitiveStart: Int32Array.of(0),
+      primitiveBoxes: new Float64Array(0),
+      primitiveTriangles: new Float64Array(0),
+    },
+    modelMatrices: Float64Array.from(at),
+    modelBoxes: Float64Array.of(x - 30, 0, z - 30, x + 30, 60, z + 30),
+    modelSolid: Int32Array.of(0),
+    modelOwner: Int32Array.of(0),
+    vehiclePartStart: Int32Array.of(0, 1, 2),
+    vehicleLocal: Float64Array.from([...IDENTITY, ...IDENTITY]),
+    vehicleSolid: Int32Array.of(1, 1),
+    vehicleRigid: Uint8Array.of(0, 0),
+    vehicleLift: Float64Array.of(0, 0),
+  };
+}
+
+describe("A train running at a model's part", () => {
+  it("stops at its last pose clear of the part, naming it, and reverses away along the track it came by", () => {
+    const scout = createSimSession(circle()).simulation;
+    scout.drive(0, 300);
+    run(scout, 2);
+    const pivots = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
+    scout.writeVehiclePoses(pivots);
+    const sim = createSimSession({
+      ...circle(),
+      obstacles: blockAt(pivots[0] ?? 0, pivots[1] ?? 0),
+    }).simulation;
+
+    sim.drive(0, 300);
+    run(sim, 4);
+    const stopped = { edge: sim.trainEdge[0], offset: sim.trainOffset[0] };
+    const blocked = { by: sim.trainBlockedBy[0], speed: sim.trainSpeed[0] };
+    run(sim, 1);
+    const stillThere = { edge: sim.trainEdge[0], offset: sim.trainOffset[0] };
+    sim.drive(0, -300);
+    run(sim, 1);
+    const poses = new Float64Array(2 * POSE_FLOATS_PER_VEHICLE);
+    sim.writeVehiclePoses(poses);
+    let worst = 0;
+    for (let p = 0; p < poses.length; p += 2) {
+      worst = Math.max(worst, Math.abs(Math.hypot(poses[p] ?? 0, poses[p + 1] ?? 0) - RADIUS));
+    }
+
+    expect(blocked).toEqual({ by: 1, speed: 0 });
+    expect(stillThere).toEqual(stopped);
+    expect({ edge: sim.trainEdge[0], offset: sim.trainOffset[0] }).not.toEqual(stopped);
+    expect(sim.trainBlockedBy[0]).toBe(NOT_BLOCKED);
+    expect(worst).toBeLessThan(1e-9);
   });
 });
