@@ -138,7 +138,7 @@ test("an imported model drags flush beside a baseplate and is refused one stud i
   await page.screenshot({ path: test.info().outputPath("multi-select.png") });
 });
 
-test("an imported model and laid track box-selected together nudge, turn and delete as one undo step each that redo repeats, and a nudge or turn that would pull a piece off its join is refused", async ({
+test("an imported model and laid track box-selected together nudge, turn and delete as one undo step each that redo repeats, and a nudge that pulls a piece off its join unclips it like real track, which undo joins again", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -168,21 +168,28 @@ test("an imported model and laid track box-selected together nudge, turn and del
   });
   states.push(await state());
 
+  const laid = states[0];
+  const laidCottage = laid?.poses.find((pose) => pose.item === cottage);
+  if (!laid || !laidCottage) throw new Error("the cottage was not placed");
+
   await editor.dragFrom({ x: -720, z: -240 }, { x: 80, z: 960 });
   expect(await editor.selectionCount()).toBe(2);
-  const refusedBefore = await editor.counter("refused");
-  await editor.press("ArrowRight");
-  await expect(page.locator(".tool-hud")).toContainText("pull that join apart");
-  await editor.press("r");
-  expect(await editor.counter("refused")).toBe(refusedBefore + 2);
-  expect(await state()).toEqual(states[0]);
+  await editor.press("ArrowLeft");
+  const pulled = await state();
+  expect(pulled.poses).toEqual([{ ...laidCottage, x: laidCottage.x - STUD }]);
+  expect(
+    pulled.track.filter(
+      (piece, index) => JSON.stringify(piece) !== JSON.stringify(laid.track[index]),
+    ),
+  ).toHaveLength(1);
+  expect(await editor.trackCounts()).toMatchObject({ joins: 1, openEnds: 4 });
+  await editor.undo();
+  expect(await state()).toEqual(laid);
+  expect(await editor.trackCounts()).toMatchObject({ joins: 2, openEnds: 2 });
 
   await editor.escape();
   await editor.dragFrom({ x: -720, z: -240 }, { x: 720, z: 960 });
   expect(await editor.selectionCount()).toBe(4);
-  const laid = states[0];
-  const laidCottage = laid?.poses.find((pose) => pose.item === cottage);
-  if (!laid || !laidCottage) throw new Error("the cottage was not placed");
   await editor.press("ArrowDown");
   const nudged = await state();
   const nudgedCottage = nudged.poses.find((pose) => pose.item === cottage);

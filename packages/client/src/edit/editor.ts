@@ -56,10 +56,8 @@ import {
   CHUNK_LDU,
   PLATE_LDU,
   STUD_LDU,
-  composePose16,
   isLatticePose,
   pose16Equals,
-  posesJoin16,
   zeta16ToStuds,
   type Pose16,
   planeHypot,
@@ -162,7 +160,6 @@ import {
   type PlacementChoice,
 } from "../connect/placement-search.ts";
 import type {
-  JoinEndView,
   RaisedPiece,
   SolidRects,
   TrackBlockView,
@@ -850,34 +847,6 @@ interface BoxDrag {
   readonly additive: boolean;
 }
 
-type GroupJoinEnd =
-  | {
-      readonly kind: "piece";
-      readonly member: number;
-      readonly connector: number;
-      readonly yPlates: number;
-    }
-  | {
-      readonly kind: "model";
-      readonly member: number;
-      readonly carried: number;
-      readonly connector: number;
-    }
-  | { readonly kind: "fixed"; readonly pose: Pose16; readonly yPlates: number };
-
-interface GroupJoin {
-  readonly end: GroupJoinEnd;
-  readonly partner: GroupJoinEnd;
-  readonly endLabel: string;
-  readonly partnerLabel: string;
-  readonly at: RefusedClick;
-}
-
-interface PlacedEnd {
-  readonly pose: Pose16;
-  readonly yPlates: number;
-}
-
 interface ModelCheck {
   readonly models: ReadonlyArray<ModelMember>;
   readonly exempt: ReadonlySet<PlacedModel>;
@@ -889,7 +858,6 @@ interface GroupEdit extends ModelCheck {
   readonly action: GroupAction;
   readonly pieces: ReadonlyArray<PieceMember>;
   readonly block: RefusedClick | null;
-  readonly joins: ReadonlyArray<GroupJoin>;
 }
 
 interface TrackSkip {
@@ -1064,15 +1032,6 @@ function samePose(a: PlacementPose, b: PlacementPose): boolean {
 
 function byIndex(a: TrackPieceAt, b: TrackPieceAt): number {
   return a.index - b.index;
-}
-
-function joinBreakReason(join: GroupJoin, action: GroupAction): string {
-  const { endLabel, partnerLabel } = join;
-  const verb = ACTION_VERBS[action];
-  if (join.partner.kind === "fixed") {
-    return `${endLabel} is joined to ${partnerLabel}, so ${verb} it would pull that join apart. ${remedy(action, partnerLabel)}`;
-  }
-  return `${endLabel} is joined to ${partnerLabel}, so ${verb} them there would pull that join apart.`;
 }
 
 function moveRefused(edit: GroupEdit): string {
@@ -4614,7 +4573,6 @@ export class Editor implements IEditor, IEditedWorld {
       exempt,
       placedRoads: this.roadsWithout(exempt),
       block: this.groupBlock(models, pieces, action),
-      joins: this.groupJoins(models, indices, action),
       trackSkip: this.trackSkip(pieces, exempt),
     };
   }
@@ -4705,7 +4663,6 @@ export class Editor implements IEditor, IEditedWorld {
       exempt: NO_MODELS,
       placedRoads: this.roadsWithout(NO_MODELS),
       block: this.seatsBlock(pieces, NO_MODELS),
-      joins: [],
       trackSkip: this.trackSkip(pieces, NO_MODELS),
     };
   }
@@ -4748,7 +4705,6 @@ export class Editor implements IEditor, IEditedWorld {
       () =>
         edit.block ??
         this.unreadConnectors(edit.models) ??
-        this.brokenJoin(edit, placed) ??
         this.modelRefusal(edit, placed.modelPoses) ??
         this.pieceRefusal(edit, placed.piecePoses),
     );
@@ -4904,104 +4860,9 @@ export class Editor implements IEditor, IEditedWorld {
     return `${TRACK_PIECE_PREFIX}${this.trackWorld.drawing()?.pieceByIndex(piece).piece.id ?? ""}`;
   }
 
-  private groupJoins(
-    models: ReadonlyArray<PlacedModel>,
-    indices: ReadonlyArray<number>,
-    action: GroupAction,
-  ): ReadonlyArray<GroupJoin> {
-    const track = this.trackWorld.drawing();
-    if (!track || action === "delete") return [];
-    const laid = track.pieceCount;
-    const inside = new Map<number, { readonly member: number; readonly carried: number | null }>();
-    indices.forEach((index, member) => inside.set(index, { member, carried: null }));
-    models.forEach((model, member) => {
-      const [first, last] = this.trackWorld.carriedRange(model) ?? [0, 0];
-      for (let carried = 0; carried < last - first; carried++) {
-        inside.set(laid + first + carried, { member, carried });
-      }
-    });
-    if (inside.size === 0) return [];
-    const endOf = (view: JoinEndView): GroupJoinEnd => {
-      const at = inside.get(view.placement);
-      if (!at) return { kind: "fixed", pose: view.pose, yPlates: view.yPlates };
-      const { member, carried } = at;
-      return carried === null
-        ? { kind: "piece", member, connector: view.connector, yPlates: view.yPlates }
-        : { kind: "model", member, carried, connector: view.connector };
-    };
-    return track.joinsTouching(new Set(inside.keys())).map((join) => ({
-      end: endOf(join.end),
-      partner: endOf(join.partner),
-      endLabel: this.joinEndLabel(join.end.placement),
-      partnerLabel: this.joinEndLabel(join.partner.placement),
-      at: this.joinEndRefusal(join.end.placement),
-    }));
-  }
-
-  private joinEndLabel(placement: number): string {
-    const track = this.trackWorld.drawing();
-    if (track && placement < track.pieceCount) return track.footprintAt(placement).label;
-    return this.trackWorld.carrierOf(placement)?.placeable.label ?? "";
-  }
-
-  private joinEndRefusal(placement: number): RefusedClick {
-    const track = this.trackWorld.drawing();
-    if (track && placement < track.pieceCount) return this.laidPieceRefusal(placement, "");
-    const carrier = this.trackWorld.carrierOf(placement);
-    if (!carrier) return refusedAt("", { x: 0, z: 0, rot: 0 }, "");
-    return refusedAt(carrier.placeable.id, carrier.handle, "");
-  }
-
   private laidPieceRefusal(placement: number, reason: string): RefusedClick {
     const view = this.pieceView(placement);
     return refusedAt(view.item, { ...latticeCentre(view.box), rot: 0 }, reason);
-  }
-
-  private brokenJoin(edit: GroupEdit, placed: GroupTargets): RefusedClick | null {
-    for (const join of edit.joins) {
-      const end = this.placedEnd(edit, placed, join.end);
-      const partner = this.placedEnd(edit, placed, join.partner);
-      if (!end || !partner) continue;
-      if (end.yPlates === partner.yPlates && posesJoin16(end.pose, partner.pose)) continue;
-      return { ...join.at, reason: joinBreakReason(join, edit.action) };
-    }
-    return null;
-  }
-
-  private placedEnd(edit: GroupEdit, placed: GroupTargets, end: GroupJoinEnd): PlacedEnd | null {
-    const track = this.trackWorld.drawing();
-    if (!track) return null;
-    switch (end.kind) {
-      case "fixed":
-        return end;
-      case "piece": {
-        const member = edit.pieces[end.member];
-        const pose = placed.piecePoses[end.member];
-        if (!member || !pose) return null;
-        return {
-          pose: track.connectorPose(member.piece, pose, end.connector),
-          yPlates: end.yPlates,
-        };
-      }
-      case "model": {
-        const member = edit.models[end.member];
-        const pose = placed.modelPoses[end.member];
-        const carried = member
-          ? this.trackWorld.modelTrack(member.placeable)?.pieces[end.carried]
-          : undefined;
-        const frame = pose ? latticeFrame(pose.x, pose.z, pose.rot) : null;
-        if (!pose || !carried || !frame) return null;
-        const placement = composePose16(frame, carried.placement);
-        return {
-          pose: track.connectorPose(carried.catalogIndex, placement, end.connector),
-          yPlates: pose.yPlates + carried.yPlates,
-        };
-      }
-      default: {
-        const unhandled: never = end;
-        throw new Error(`unhandled join end ${String(unhandled)}`);
-      }
-    }
   }
 
   private groupBlock(
