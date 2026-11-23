@@ -155,6 +155,7 @@ export class AssistSession {
   private shown: PlacementHover | null = null;
   private shownRefusal: string | null = null;
   private shownYPlates = RESTS_ON_TABLE_Y_PLATES;
+  private snapRot = 0;
 
   constructor(
     private readonly search: IPlacementSearch,
@@ -171,6 +172,11 @@ export class AssistSession {
 
   get yPlates(): number {
     return this.shownYPlates;
+  }
+
+  get snapTurn(): number | null {
+    const shown = this.shown;
+    return shown !== null && shown.turnSettled && shown.turnBlocksSnap ? this.snapRot : null;
   }
 
   aim(target: AssistTarget, pick: CursorPick, startedMs: number): void {
@@ -291,6 +297,7 @@ export class AssistSession {
     const connected = this.target?.connected;
     const turned = this.turnChoice;
     const turnBlocksSnap = turned.accepted && turned.votes > 0 && turned.rot !== this.pick.rot;
+    this.snapRot = turned.rot;
     const held = this.shown;
     this.drop();
     if (!held || !connected) return;

@@ -4232,8 +4232,10 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.active) {
       this.turnDirection = direction;
       const fill = this.fillTool;
-      const turnedFrom = fill?.drafting && !fill.cancelled ? this.ghostRot : this.placeRot;
-      this.ghostRot = quarterTurned(turnedFrom, direction);
+      const drafting = fill?.drafting === true && !fill.cancelled;
+      const turnedFrom = drafting ? this.ghostRot : this.placeRot;
+      const snapTurn = drafting || direction !== 1 || !this.hovering ? null : this.assist.snapTurn;
+      this.ghostRot = snapTurn ?? quarterTurned(turnedFrom, direction);
       if (this.hovering) {
         this.hoverX = nearestStud(this.hitX);
         this.hoverZ = nearestStud(this.hitZ);
