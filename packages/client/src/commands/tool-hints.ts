@@ -1,6 +1,12 @@
 import { STUD_LDU } from "@brr/math";
 import { MAX_FILL_TILES, type FillView } from "../edit/fill-tool.ts";
-import type { EditorSnapshot, FillResult, GestureView, SelectionTally } from "../edit/editor.ts";
+import type {
+  CouplingView,
+  EditorSnapshot,
+  FillResult,
+  GestureView,
+  SelectionTally,
+} from "../edit/editor.ts";
 import type { TrackView } from "../edit/track-edit-session.ts";
 import type { TrackLowClearanceView, TrackUnsupportedView } from "../edit/track-world.ts";
 import { heldItem, type HeldItemView } from "../edit/held-item.ts";
@@ -65,6 +71,13 @@ function key(command: CommandId, text: string): ToolHint {
 
 function gesture(name: string, text: string): ToolHint {
   return { kind: "gesture", gesture: name, text };
+}
+
+function railDetail(couples: CouplingView | null): string {
+  if (couples === null) return "it follows the rails under the cursor";
+  return couples.end === "rear"
+    ? `couples behind ${couples.train}`
+    : `couples in front of ${couples.train}`;
 }
 
 function holdAlt(text: string, held: boolean): ToolHint {
@@ -536,7 +549,7 @@ function view(snapshot: EditorSnapshot): HintView {
         return {
           tone: hover.refusal === null ? "place" : "warn",
           title: `Setting ${name} on the rails`,
-          detail: hover.refusal ?? "it follows the rails under the cursor",
+          detail: hover.refusal ?? railDetail(hover.couples),
           hints: [
             gesture("Click", "set it there"),
             key("rotate", "turn round"),

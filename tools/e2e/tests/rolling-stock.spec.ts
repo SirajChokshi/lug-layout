@@ -53,7 +53,7 @@ function curveFarthestFrom(
   return farthest;
 }
 
-test("trains set by hand on a hand-drawn oval, imported ones included, run from where they stand and are still on the rails after a reload", async ({
+test("trains set by hand on a hand-drawn oval, imported ones included, couple when held on a standing train, run from where they stand and are still on the rails after a reload", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -77,9 +77,14 @@ test("trains set by hand on a hand-drawn oval, imported ones included, run from 
   expect(wagons.status, wagons.text).toBe("placeable");
   await editor.placeAt(LOCOMOTIVE, LOCOMOTIVE_AT);
   await editor.placeAt(imported.item, CABOOSE_AT);
-  const refusedBefore = await editor.counter("refused");
   await editor.placeAt(wagons.item, LOCOMOTIVE_AT);
-  expect(await editor.counter("refused")).toBe(refusedBefore + 1);
+  const coupled = page.locator("section.play-panel li", { hasText: basename(MY_WAGONS) });
+  await expect(coupled).toHaveCount(1);
+  await expect(coupled).toContainText("Locomotive (2004)");
+  await expect(coupled).toContainText(" + ");
+  expect(await editor.trainsOnRails()).toBe(2);
+  await editor.undo();
+  await expect(coupled).toHaveCount(0);
   expect(await editor.trainsOnRails()).toBe(2);
   const curve = curveFarthestFrom(await editor.trackRoutes(), [LOCOMOTIVE_AT, CABOOSE_AT]);
   await editor.placeAt(wagons.item, curve);

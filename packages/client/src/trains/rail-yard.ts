@@ -38,6 +38,13 @@ import {
 import { RailTrack, type RailCarrier, type RailHead } from "./rail-track.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
 
+export interface TrainMember {
+  readonly model: PlayModel;
+  readonly reversed: boolean;
+}
+
+export type CoupledEnd = "front" | "rear";
+
 export interface RailSeat {
   readonly anchor: ConsistAnchor;
   readonly head: RailHead;
@@ -45,18 +52,27 @@ export interface RailSeat {
   readonly poses: Float64Array;
   readonly pieces: ReadonlySet<number>;
   readonly lengthLdu: number;
-  readonly remainder: StandingRemainder | null;
+  readonly remainders: ReadonlyArray<StandingRemainder>;
   readonly groundY: number;
+  readonly boxes: Float64Array;
+  readonly tops: Float64Array;
 }
 
 export type RailAim =
   | { readonly kind: "off" }
   | { readonly kind: "seat"; readonly seat: RailSeat }
+  | {
+      readonly kind: "couple";
+      readonly seat: RailSeat;
+      readonly holder: ConsistHandle;
+      readonly end: CoupledEnd;
+      readonly reversed: boolean;
+    }
   | { readonly kind: "refused"; readonly reason: string; readonly seat: RailSeat | null };
 
 export interface RailTrain {
   readonly handle: ConsistHandle;
-  readonly model: PlayModel;
+  readonly members: ReadonlyArray<TrainMember>;
   readonly head: RailHead;
   readonly consist: StandingConsist;
 }
@@ -87,13 +103,13 @@ export interface IRailYard {
   rails(): RailTrack | null;
   aim(model: PlayModel, ray: Float64Array, reversed: boolean): RailAim;
   ghost(seat: RailSeat): RailGhost;
-  add(handle: ConsistHandle, model: PlayModel): void;
+  add(handle: ConsistHandle, members: ReadonlyArray<TrainMember>): void;
   remove(handle: ConsistHandle): void;
   clear(): void;
   pick(ray: Float64Array): RailPick | null;
   box(handle: ConsistHandle): WorldBox | null;
   standingFootprints(): ReadonlyArray<VehicleFootprint>;
-  seatFootprints(seat: RailSeat, model: PlayModel): ReadonlyArray<VehicleFootprint>;
+  seatFootprints(seat: RailSeat, label: string): ReadonlyArray<VehicleFootprint>;
   standingOn(placement: number): ConsistHandle | null;
   trains(): ReadonlyArray<RailTrain>;
   park(hidden: boolean): void;
@@ -101,20 +117,21 @@ export interface IRailYard {
 
 interface Prepared {
   readonly vehicles: ReadonlyArray<ConsistVehicle>;
+  readonly vehicleModels: ReadonlyArray<PlayModel>;
   readonly geometry: Float64Array;
   readonly geometryAt: Int32Array;
   readonly straightLdu: number;
   readonly boxes: Float64Array;
   readonly tops: Float64Array;
-  readonly remainder: StandingRemainder | null;
+  readonly remainders: ReadonlyArray<StandingRemainder>;
 }
 
 interface Parked {
   readonly handle: ConsistHandle;
-  readonly model: PlayModel;
+  readonly members: ReadonlyArray<TrainMember>;
   seat: RailSeat | null;
   bodies: ConsistBodies | null;
-  remainder: StandingRemainderBody | null;
+  remainders: ReadonlyArray<StandingRemainderBody>;
 }
 
 const RAY_ORIGIN = 0;
@@ -126,6 +143,20 @@ function errorText(error: unknown): string {
 
 function studs(ldu: number): number {
   return Math.round(ldu / STUD_LDU);
+}
+
+export function trainLabel(members: ReadonlyArray<TrainMember>): string {
+  return members.map((member) => member.model.label).join(" + ");
+}
+
+function joinedBoxes(parts: ReadonlyArray<Float64Array>): Float64Array {
+  const out = new Float64Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let at = 0;
+  for (const part of parts) {
+    out.set(part, at);
+    at += part.length;
+  }
+  return out;
 }
 
 function vehicleBoxes(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>): Float64Array {
@@ -162,10 +193,14 @@ function vehicleBoxes(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>)
 export class RailYard implements IRailYard {
   private track: RailTrack | null = null;
   private run: RailRun | null = null;
+  private otherRun: RailRun | null = null;
   private readonly poser = new RunningGearPoser();
   private readonly spot = new Float64Array(RAIL_SPOT_FLOATS);
   private readonly lengths = new Float64Array(1);
-  private readonly prepared = new Map<PlayModel, Prepared | string>();
+  private readonly endPoints = new Float64Array(6);
+  private readonly prepared = new Map<string, Prepared | string>();
+  private readonly modelKeys = new WeakMap<PlayModel, number>();
+  private nextModelKey = 0;
   private readonly parked: Parked[] = [];
   private hidden = false;
   private gearModels = "";
@@ -185,7 +220,9 @@ export class RailYard implements IRailYard {
   }
 
   private registerGear(): void {
-    const models = [...new Set(this.parked.map((parked) => parked.model))];
+    const models = [
+      ...new Set(this.parked.flatMap((parked) => parked.members.map((member) => member.model))),
+    ];
     const names = models
       .map((model) => model.name)
       .toSorted()
@@ -196,13 +233,16 @@ export class RailYard implements IRailYard {
   }
 
   private gearOf(model: PlayModel): ReadonlyArray<PartVehicle> {
-    const known = this.runningGear.snapshot().models.some((gear) => gear.name === model.name);
-    return known ? this.runningGear.effectiveVehicles(model.name) : model.model.vehicles;
+    const registered = this.parked.some(({ members }) =>
+      members.some((member) => member.model === model),
+    );
+    return registered ? this.runningGear.effectiveVehicles(model.name) : model.model.vehicles;
   }
 
   setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void {
     this.track = track && track.layout.count > 0 ? new RailTrack(track, carriers) : null;
     this.run = this.track ? new RailRun(this.track.network) : null;
+    this.otherRun = this.track ? new RailRun(this.track.network) : null;
     this.restandAll();
   }
 
@@ -225,38 +265,121 @@ export class RailYard implements IRailYard {
     const edge = reversed ? forward ^ 1 : forward;
     const along = this.spot[SPOT_OFFSET] ?? 0;
     const offset = reversed ? network.edgeLength(forward) - along : along;
-    const prepared = this.prepare(model, rails);
+    const members = [{ model, reversed: false }];
+    const prepared = this.prepare(members, rails);
     if (typeof prepared === "string") return { kind: "refused", reason: prepared, seat: null };
     if (!network.seat(edge, offset, prepared.straightLdu, this.spot)) {
-      return { kind: "refused", reason: this.tooLong(model, prepared.straightLdu), seat: null };
+      return {
+        kind: "refused",
+        reason: this.tooLong(model.label, prepared.straightLdu),
+        seat: null,
+      };
     }
     const head = { edge: this.spot[SPOT_EDGE] ?? edge, offsetLdu: this.spot[SPOT_OFFSET] ?? 0 };
-    let stood = this.stand(model, prepared, rails, head);
+    let stood = this.stand(model.label, prepared, rails, head);
     if (typeof stood === "string") return { kind: "refused", reason: stood, seat: null };
     if (stood.lengthLdu > prepared.straightLdu) {
       if (!network.seat(edge, offset, stood.lengthLdu, this.spot)) {
-        return { kind: "refused", reason: this.tooLong(model, stood.lengthLdu), seat: null };
+        return { kind: "refused", reason: this.tooLong(model.label, stood.lengthLdu), seat: null };
       }
       const reseated = {
         edge: this.spot[SPOT_EDGE] ?? edge,
         offsetLdu: this.spot[SPOT_OFFSET] ?? 0,
       };
-      stood = this.stand(model, prepared, rails, reseated);
+      stood = this.stand(model.label, prepared, rails, reseated);
       if (typeof stood === "string") return { kind: "refused", reason: stood, seat: null };
     }
     if (this.onRaisedTrack(stood.pieces, rails)) {
       const reason = `${model.label} can't stand on raised track yet: trains run on ground-level track only.`;
       return { kind: "refused", reason, seat: stood };
     }
-    const holder = this.holderOf(stood.pieces);
-    if (holder) {
-      return {
-        kind: "refused",
-        reason: `${model.label} would stand on track that ${holder.model.label} already stands on. Put it on a free stretch of track.`,
-        seat: stood,
-      };
+    const holder = this.holderOf(stood.pieces, null);
+    return holder ? this.couple(model, stood, holder, rails) : { kind: "seat", seat: stood };
+  }
+
+  private couple(model: PlayModel, stood: RailSeat, holder: Parked, rails: RailTrack): RailAim {
+    const standing = holder.seat;
+    const label = trainLabel(holder.members);
+    const blocked = `${model.label} would stand on track that ${label} already stands on. Put it on a free stretch of track, or right behind or in front of it on the same line to couple it.`;
+    if (!standing) return { kind: "refused", reason: blocked, seat: stood };
+    const sameWay = this.runsSameWay(stood, standing);
+    if (sameWay === null) return { kind: "refused", reason: blocked, seat: stood };
+    const end = this.nearerEnd(stood, standing);
+    const reversed = !sameWay;
+    if (end === "front" && reversed) {
+      const reason = `${model.label} faces the other way: turn it round (R) to couple it to the front of ${label}.`;
+      return { kind: "refused", reason, seat: stood };
     }
-    return { kind: "seat", seat: stood };
+    const held = { model, reversed };
+    const members = end === "rear" ? [...holder.members, held] : [held, ...holder.members];
+    const head = end === "rear" ? standing.head : this.headAhead(standing.head, stood.lengthLdu);
+    const coupledLabel = trainLabel(members);
+    if (head === null) {
+      const reason = `${model.label} doesn't fit in front of ${label}: the track ends there.`;
+      return { kind: "refused", reason, seat: stood };
+    }
+    const prepared = this.prepare(members, rails);
+    if (typeof prepared === "string") return { kind: "refused", reason: prepared, seat: stood };
+    const coupled = this.stand(coupledLabel, prepared, rails, head);
+    if (typeof coupled === "string") return { kind: "refused", reason: coupled, seat: stood };
+    if (this.onRaisedTrack(coupled.pieces, rails)) {
+      const reason = `${coupledLabel} can't stand on raised track yet: trains run on ground-level track only.`;
+      return { kind: "refused", reason, seat: coupled };
+    }
+    const other = this.holderOf(coupled.pieces, holder);
+    if (other) {
+      const reason = `${coupledLabel} would reach track that ${trainLabel(other.members)} already stands on.`;
+      return { kind: "refused", reason, seat: coupled };
+    }
+    return { kind: "couple", seat: coupled, holder: holder.handle, end, reversed };
+  }
+
+  private runsSameWay(held: RailSeat, standing: RailSeat): boolean | null {
+    const run = this.run;
+    const other = this.otherRun;
+    if (!run || !other) return null;
+    if (!run.standAt(standing.head.edge, standing.head.offsetLdu, standing.lengthLdu)) return null;
+    if (!other.standAt(held.head.edge, held.head.offsetLdu, held.lengthLdu)) return null;
+    for (let i = 0; i < other.edgeCount; i++) {
+      const edge = other.edge(i);
+      for (let j = 0; j < run.edgeCount; j++) {
+        const along = run.edge(j);
+        if (along === edge) return true;
+        if (along === (edge ^ 1)) return false;
+      }
+    }
+    return null;
+  }
+
+  private nearerEnd(held: RailSeat, standing: RailSeat): CoupledEnd {
+    const run = this.run;
+    const ends = this.endPoints;
+    if (!run) return "rear";
+    run.standAt(held.head.edge, held.head.offsetLdu, held.lengthLdu);
+    ends[0] = held.lengthLdu / 2;
+    run.pointBehind(ends, 0);
+    run.standAt(standing.head.edge, standing.head.offsetLdu, standing.lengthLdu);
+    ends[2] = 0;
+    run.pointBehind(ends, 2);
+    ends[4] = standing.lengthLdu;
+    run.pointBehind(ends, 4);
+    const x = ends[0] ?? 0;
+    const z = ends[1] ?? 0;
+    const toFront = ((ends[2] ?? 0) - x) ** 2 + ((ends[3] ?? 0) - z) ** 2;
+    const toRear = ((ends[4] ?? 0) - x) ** 2 + ((ends[5] ?? 0) - z) ** 2;
+    return toFront < toRear ? "front" : "rear";
+  }
+
+  private headAhead(head: RailHead, distanceLdu: number): RailHead | null {
+    const network = this.track?.network;
+    if (!network) return null;
+    if (network.advance(head.edge, head.offsetLdu, distanceLdu, this.spot) < distanceLdu) {
+      return null;
+    }
+    return {
+      edge: this.spot[SPOT_EDGE] ?? head.edge,
+      offsetLdu: Math.floor(this.spot[SPOT_OFFSET] ?? 0),
+    };
   }
 
   ghost(seat: RailSeat): RailGhost {
@@ -264,16 +387,16 @@ export class RailYard implements IRailYard {
       seat.consist,
       seat.poses,
       this.track?.railTopY ?? 0,
-      seat.remainder,
+      seat.remainders,
       seat.groundY,
     );
   }
 
-  add(handle: ConsistHandle, model: PlayModel): void {
-    const parked: Parked = { handle, model, seat: null, bodies: null, remainder: null };
+  add(handle: ConsistHandle, members: ReadonlyArray<TrainMember>): void {
+    const parked: Parked = { handle, members, seat: null, bodies: null, remainders: [] };
     this.parked.push(parked);
-    this.restand(parked);
     this.registerGear();
+    this.restand(parked);
   }
 
   remove(handle: ConsistHandle): void {
@@ -281,7 +404,7 @@ export class RailYard implements IRailYard {
     const parked = this.parked[index];
     if (!parked) return;
     parked.bodies?.dispose();
-    parked.remainder?.dispose();
+    for (const remainder of parked.remainders) remainder.dispose();
     this.parked.splice(index, 1);
     this.registerGear();
   }
@@ -289,7 +412,7 @@ export class RailYard implements IRailYard {
   clear(): void {
     for (const parked of this.parked) {
       parked.bodies?.dispose();
-      parked.remainder?.dispose();
+      for (const remainder of parked.remainders) remainder.dispose();
     }
     this.parked.length = 0;
     this.registerGear();
@@ -300,9 +423,8 @@ export class RailYard implements IRailYard {
     for (const parked of this.parked) {
       const seat = parked.seat;
       if (!seat) continue;
-      const boxes = this.preparedBoxes(parked.model);
       for (let v = 0; v < seat.consist.vehicles.length; v++) {
-        const t = this.vehicleHit(seat, boxes, v, ray);
+        const t = this.vehicleHit(seat, seat.boxes, v, ray);
         if (t < (best?.t ?? Number.POSITIVE_INFINITY)) best = { handle: parked.handle, t };
       }
     }
@@ -313,7 +435,7 @@ export class RailYard implements IRailYard {
     const parked = this.parked.find((candidate) => candidate.handle === handle);
     const seat = parked?.seat;
     if (!parked || !seat) return null;
-    const boxes = this.preparedBoxes(parked.model);
+    const { boxes } = seat;
     const out = {
       minX: Number.POSITIVE_INFINITY,
       minY: Number.POSITIVE_INFINITY,
@@ -345,12 +467,13 @@ export class RailYard implements IRailYard {
   }
 
   standingFootprints(): ReadonlyArray<VehicleFootprint> {
-    return this.parked.flatMap(({ model, seat }) => (seat ? this.seatFootprints(seat, model) : []));
+    return this.parked.flatMap(({ members, seat }) =>
+      seat ? this.seatFootprints(seat, trainLabel(members)) : [],
+    );
   }
 
-  seatFootprints(seat: RailSeat, model: PlayModel): ReadonlyArray<VehicleFootprint> {
-    const boxes = this.preparedBoxes(model);
-    const tops = this.preparedTops(model);
+  seatFootprints(seat: RailSeat, label: string): ReadonlyArray<VehicleFootprint> {
+    const { boxes, tops } = seat;
     return seat.consist.vehicles.map((_, v) => {
       const o = v * BOX_FLOATS;
       const at = v * VEHICLE_POSE_FLOATS;
@@ -370,7 +493,7 @@ export class RailYard implements IRailYard {
         outline,
         railTopLdu: this.track?.railTopY ?? y,
         topLdu: y + (tops[v] ?? Number.NEGATIVE_INFINITY),
-        label: model.label,
+        label,
       };
     });
   }
@@ -380,8 +503,8 @@ export class RailYard implements IRailYard {
   }
 
   trains(): ReadonlyArray<RailTrain> {
-    return this.parked.flatMap(({ handle, model, seat }) =>
-      seat ? [{ handle, model, head: seat.head, consist: seat.consist }] : [],
+    return this.parked.flatMap(({ handle, members, seat }) =>
+      seat ? [{ handle, members, head: seat.head, consist: seat.consist }] : [],
     );
   }
 
@@ -394,28 +517,30 @@ export class RailYard implements IRailYard {
   private restand(parked: Parked): void {
     parked.bodies?.dispose();
     parked.bodies = null;
-    parked.remainder?.dispose();
-    parked.remainder = null;
+    for (const remainder of parked.remainders) remainder.dispose();
+    parked.remainders = [];
     parked.seat = null;
     const rails = this.track;
     const head = rails?.headOf(parked.handle.pose.anchor) ?? null;
     if (!rails || !head) return;
-    const prepared = this.prepare(parked.model, rails);
+    const prepared = this.prepare(parked.members, rails);
+    const label = trainLabel(parked.members);
     const stood =
-      typeof prepared === "string" ? prepared : this.stand(parked.model, prepared, rails, head);
+      typeof prepared === "string" ? prepared : this.stand(label, prepared, rails, head);
     if (typeof stood === "string") return;
     parked.seat = stood;
     this.show(parked);
-    if (stood.remainder) {
-      parked.remainder = new StandingRemainderBody(
-        this.backend,
-        this.vehicleIds,
-        stood.consist,
-        stood.remainder,
-        stood.poses,
-        stood.groundY,
-      );
-    }
+    parked.remainders = stood.remainders.map(
+      (remainder) =>
+        new StandingRemainderBody(
+          this.backend,
+          this.vehicleIds,
+          stood.consist,
+          remainder,
+          stood.poses,
+          stood.groundY,
+        ),
+    );
   }
 
   private show(parked: Parked): void {
@@ -427,13 +552,44 @@ export class RailYard implements IRailYard {
     parked.bodies.stand(seat.poses, this.track?.railTopY ?? 0);
   }
 
-  private prepare(model: PlayModel, rails: RailTrack): Prepared | string {
-    const known = this.prepared.get(model);
+  private membersKey(members: ReadonlyArray<TrainMember>): string {
+    return members
+      .map(({ model, reversed }) => {
+        let key = this.modelKeys.get(model);
+        if (key === undefined) {
+          key = this.nextModelKey++;
+          this.modelKeys.set(model, key);
+        }
+        return reversed ? `${key}r` : `${key}`;
+      })
+      .join(",");
+  }
+
+  private prepare(members: ReadonlyArray<TrainMember>, rails: RailTrack): Prepared | string {
+    const key = this.membersKey(members);
+    const known = this.prepared.get(key);
     if (known !== undefined) return known;
     let prepared: Prepared | string;
+    const label = trainLabel(members);
     try {
-      const gear = this.gearOf(model);
-      const vehicles = consistVehicles(model.model, model.name, false, rails.railPart, gear);
+      const vehicles: ConsistVehicle[] = [];
+      const vehicleModels: PlayModel[] = [];
+      const boxes: Float64Array[] = [];
+      const tops: number[] = [];
+      const remainders: StandingRemainder[] = [];
+      for (const { model, reversed } of members) {
+        const gear = this.gearOf(model);
+        const own = consistVehicles(model.model, model.name, reversed, rails.railPart, gear);
+        const first = vehicles.length;
+        for (const vehicle of own) {
+          vehicles.push(vehicle);
+          vehicleModels.push(model);
+          tops.push(model.vehicleTops[vehicle.vehicle] ?? Number.NEGATIVE_INFINITY);
+        }
+        boxes.push(vehicleBoxes(model, own));
+        const remainder = standingRemainder(model.model, own, gear, model.gear.instanceBoxes);
+        if (remainder) remainders.push({ ...remainder, vehicle: first + remainder.vehicle });
+      }
       const geometry = new Float64Array(vehicles.length * GEOMETRY_FIELDS);
       const geometryAt = new Int32Array(vehicles.length);
       let straightLdu = 0;
@@ -449,51 +605,35 @@ export class RailYard implements IRailYard {
       });
       prepared =
         problems.length > 0
-          ? `${model.label} can't run: ${problems.join("; ")}`
+          ? `${label} can't run: ${problems.join("; ")}`
           : {
               vehicles,
+              vehicleModels,
               geometry,
               geometryAt,
               straightLdu,
-              boxes: vehicleBoxes(model, vehicles),
-              tops: this.vehicleTops(model, vehicles),
-              remainder: standingRemainder(model.model, vehicles, gear, model.gear.instanceBoxes),
+              boxes: joinedBoxes(boxes),
+              tops: Float64Array.from(tops),
+              remainders,
             };
     } catch (error) {
-      prepared = `${model.label} can't go on the rails: ${errorText(error)}`;
+      prepared = `${label} can't go on the rails: ${errorText(error)}`;
     }
-    this.prepared.set(model, prepared);
+    this.prepared.set(key, prepared);
     return prepared;
   }
 
-  private vehicleTops(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>): Float64Array {
-    return Float64Array.from(
-      vehicles,
-      ({ vehicle }) => model.vehicleTops[vehicle] ?? Number.NEGATIVE_INFINITY,
-    );
-  }
-
-  private preparedTops(model: PlayModel): Float64Array {
-    const prepared = this.prepared.get(model);
-    return typeof prepared === "object" ? prepared.tops : new Float64Array(0);
-  }
-
-  private preparedBoxes(model: PlayModel): Float64Array {
-    const prepared = this.prepared.get(model);
-    return typeof prepared === "object" ? prepared.boxes : new Float64Array(0);
-  }
-
   private stand(
-    model: PlayModel,
+    label: string,
     prepared: Prepared,
     rails: RailTrack,
     head: RailHead,
   ): RailSeat | string {
     const run = this.run;
-    if (!run) return `${model.label} has no track to stand on.`;
+    if (!run) return `${label} has no track to stand on.`;
     const network = rails.network;
     if (!run.standAt(head.edge, head.offsetLdu, prepared.straightLdu)) {
-      return `${model.label} is longer than this loop of track.`;
+      return `${label} is longer than this loop of track.`;
     }
     const count = prepared.vehicles.length;
     const poses = new Float64Array(count * VEHICLE_POSE_FLOATS);
@@ -513,10 +653,10 @@ export class RailYard implements IRailYard {
     );
     const lengthLdu = this.lengths[0] ?? prepared.straightLdu;
     if (network.reachBehind(head.edge, head.offsetLdu, lengthLdu) < lengthLdu) {
-      return this.tooLong(model, lengthLdu);
+      return this.tooLong(label, lengthLdu);
     }
     if (!run.standAt(head.edge, head.offsetLdu, lengthLdu)) {
-      return `${model.label} is longer than this loop of track.`;
+      return `${label} is longer than this loop of track.`;
     }
     const pieces = new Set<number>();
     for (let i = 0; i < run.edgeCount; i++) {
@@ -524,17 +664,16 @@ export class RailYard implements IRailYard {
       if (edge !== NO_EDGE) pieces.add(rails.placementOf(edge));
     }
     const anchor = rails.anchorOf(head);
-    if (!anchor)
-      return `${model.label} can't stand on this track: no laid piece or model holds it.`;
+    if (!anchor) return `${label} can't stand on this track: no laid piece or model holds it.`;
     const consist: StandingConsist = {
-      model,
       vehicles: prepared.vehicles,
+      vehicleModels: prepared.vehicleModels,
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };
-    const remainder = prepared.remainder;
+    const { remainders, boxes, tops } = prepared;
     const groundY = this.laidAt(pieces, rails);
-    return { anchor, head, consist, poses, pieces, lengthLdu, remainder, groundY };
+    return { anchor, head, consist, poses, pieces, lengthLdu, remainders, groundY, boxes, tops };
   }
 
   private laidAt(pieces: ReadonlySet<number>, rails: RailTrack): number {
@@ -544,13 +683,13 @@ export class RailYard implements IRailYard {
     return plates * PLATE_LDU;
   }
 
-  private tooLong(model: PlayModel, lengthLdu: number): string {
-    return `${model.label} is ${studs(lengthLdu)} studs long and doesn't fit on this run of track.`;
+  private tooLong(label: string, lengthLdu: number): string {
+    return `${label} is ${studs(lengthLdu)} studs long and doesn't fit on this run of track.`;
   }
 
-  private holderOf(pieces: ReadonlySet<number>): Parked | null {
+  private holderOf(pieces: ReadonlySet<number>, except: Parked | null): Parked | null {
     for (const parked of this.parked) {
-      if (!parked.seat) continue;
+      if (!parked.seat || parked === except) continue;
       for (const piece of pieces) if (parked.seat.pieces.has(piece)) return parked;
     }
     return null;
