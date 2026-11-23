@@ -1,10 +1,11 @@
 import type { HoverMateCount, PlacementHover, PlacementMode } from "@brr/client";
 import type { FetchFunction } from "@brr/import";
 import { expect, type Locator, type Page } from "@playwright/test";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { fitGroundMap, type GroundMap, type GroundSample } from "./ground-map.ts";
 import { ServedBake } from "./served-bake.ts";
+import { UsersOwnParts } from "./users-own-parts.ts";
 
 export const STUD = 20;
 export const TRACK_ITEM = "track:lego-9v";
@@ -39,6 +40,7 @@ export function pinnedLdrawFetch(): FetchFunction {
   };
 }
 const LDRAW_PATH = /^\/[^/]+\/[^/]+\/[0-9a-f]{40}\/ldraw\/(?<path>.+)$/u;
+const LIBRARY_FOLDERS = ["p/8/", "p/48/", "parts/", "p/"] as const;
 const BUNDLE_MODEL_RECORD = /\/standard\/model-[^/]+\.json$/u;
 
 export interface RawLibrary {
@@ -271,6 +273,25 @@ export function shiftedPosition(position: ReadonlyArray<string>, dx: number, dz:
     const shift = k === 0 ? dx : k === Z_COEFFICIENT ? dz : 0;
     return (BigInt(coefficient) + BigInt(shift / STUD)).toString();
   });
+}
+
+function libraryReference(path: string): string {
+  const folder = LIBRARY_FOLDERS.find((candidate) => path.startsWith(candidate));
+  return folder === undefined ? path : path.slice(folder.length);
+}
+
+async function pinned(path: string): Promise<boolean> {
+  return access(new URL(path, PINNED_LDRAW)).then(
+    () => true,
+    () => false,
+  );
+}
+
+async function unpinnedReference(path: string): Promise<string | null> {
+  const reference = libraryReference(path);
+  const places = [reference, ...LIBRARY_FOLDERS.map((folder) => `${folder}${reference}`)];
+  const held = await Promise.all(places.map(pinned));
+  return held.includes(true) ? null : reference;
 }
 
 export class EditorPage {
@@ -719,16 +740,28 @@ export class EditorPage {
 
   async serveLdrawLibrary(): Promise<RawLibrary> {
     let served = 0;
+    const usersOwnParts = UsersOwnParts.of(this.page.context());
+    const reported = new Set<string>();
     await this.page.context().route(GITHUB_RAW, async (route) => {
-      const path = pinnedLdrawPath(route.request().url());
+      const url = route.request().url();
+      const path = pinnedLdrawPath(url);
       const text =
         path === undefined
           ? undefined
           : await readFile(new URL(path, PINNED_LDRAW), "utf8").catch(() => undefined);
-      if (text !== undefined) served += 1;
-      await (text === undefined
-        ? route.fulfill({ status: HTTP_NOT_FOUND })
-        : route.fulfill({ status: 200, body: text }));
+      if (text !== undefined) {
+        served += 1;
+        await route.fulfill({ status: 200, body: text });
+        return;
+      }
+      const missing = path === undefined ? url : await unpinnedReference(path);
+      if (missing !== null && !usersOwnParts.has(missing) && !reported.has(missing)) {
+        reported.add(missing);
+        expect
+          .soft(false, `the editor asked for ${path ?? url}, which .cache/ldraw doesn't hold`)
+          .toBe(true);
+      }
+      await route.fulfill({ status: HTTP_NOT_FOUND });
     });
     return { served: () => served };
   }
@@ -738,8 +771,16 @@ export class EditorPage {
   }
 
   async importModel(file: string): Promise<ModelImport> {
+    await UsersOwnParts.of(this.page.context()).learn(file);
     await this.page.locator("input.model-file-import").setInputFiles(file);
     return this.importOutcome(basename(file));
+  }
+
+  async openPlanFile(file: string): Promise<void> {
+    await UsersOwnParts.of(this.page.context()).learn(file);
+    await this.page
+      .locator('input[aria-label="Open a .brrplan.zip plan file"]')
+      .setInputFiles(file);
   }
 
   private async importOutcome(name: string): Promise<ModelImport> {
