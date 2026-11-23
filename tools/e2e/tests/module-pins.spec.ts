@@ -45,6 +45,23 @@ const PET_SHOP = "omr:10218-1";
 const GROCER = "omr:10185-1";
 const RELOCATING_GAP_STUDS = 2;
 const WEST_FACE_PIN_JOINTS = 2;
+const TURN_AWAY_FROM_PINS = 1;
+const PINNED_MODULE = {
+  names: { file: "my-pinned-module.ldr" },
+  text: [
+    "0 My pinned module",
+    "0 Name: my-pinned-module.ldr",
+    "0 Author: Brick Railroad e2e",
+    "1 2 0 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    "1 0 310 -24 -120 0 0 1 0 1 0 -1 0 0 3700.dat",
+    "1 0 310 -24 120 0 0 1 0 1 0 -1 0 0 3700.dat",
+    "1 0 320 -14 -120 1 0 0 0 1 0 0 0 1 2780.dat",
+    "1 0 320 -14 120 1 0 0 0 1 0 0 0 1 2780.dat",
+    "1 0 -310 -24 -120 0 0 1 0 1 0 -1 0 0 3700.dat",
+    "1 0 -310 -24 120 0 0 1 0 1 0 -1 0 0 3700.dat",
+    "",
+  ].join("\n"),
+};
 
 type Vec3 = readonly [number, number, number];
 
@@ -646,4 +663,57 @@ test("a modular with tiled sidewalks held within reach of another settles on its
     description: `${await editor.counter("road-joined")} joined, ${await editor.counter("road-mismatch")} mismatched road edge cells`,
   });
   await page.screenshot({ path: test.info().outputPath("modulars-join-by-pins.png") });
+});
+
+test("a user's own module held at a turn whose holes can't take a placed copy's pins turns straight to the turn that takes them on R, and is placed flush there", async ({
+  page,
+}) => {
+  const {
+    editor,
+    items: [item],
+  } = await importModels(page, [PINNED_MODULE]);
+  if (!item) throw new Error("the pinned module wasn't imported");
+  await editor.zoom(500);
+  const { wide } = await editor.itemStuds(BASEPLATE);
+  const placed = await placedAtOrigin(editor, item);
+  const flushJoin = { x: placed.x + wide * STUD, z: placed.z, yPlates: placed.yPlates, rot: 0 };
+  await editor.choose(item);
+  await editor.turnGhostTo(TURN_AWAY_FROM_PINS);
+  const aim = await editor.screenOf({ x: flushJoin.x + ASSIST_CAP_LDU, z: flushJoin.z });
+  await page.mouse.move(aim.sx, aim.sy);
+  const away = (await editor.hoverIn("assist")).placement;
+  if (!away) throw new Error("no settled placement hover beside the placed module");
+  expect(
+    {
+      rot: away.pose.rot,
+      joints: pinHoleJoints(away.mates),
+      turnBlocksSnap: away.turnBlocksSnap,
+      turnJoints: pinHoleJoints(away.turnMates),
+    },
+    "turned away, the held module takes no pins, and a turn would take both",
+  ).toEqual({
+    rot: TURN_AWAY_FROM_PINS,
+    joints: 0,
+    turnBlocksSnap: true,
+    turnJoints: WEST_FACE_PIN_JOINTS,
+  });
+  expect(await editor.toolHint()).toContain("turn to snap");
+
+  await editor.press("r");
+  await expect
+    .poll(async () => (await editor.hoverPlacement())?.pose.rot, {
+      message: "one R turns the held module straight to the turn whose holes take the pins",
+    })
+    .toBe(flushJoin.rot);
+  const turned = (await editor.hoverIn("assist")).placement;
+  if (!turned) throw new Error("no settled placement hover after R");
+  expect(
+    { pose: turned.pose, joints: pinHoleJoints(turned.mates), accepted: turned.accepted },
+    "the turned module settles flush with both pins in its holes",
+  ).toEqual({ pose: flushJoin, joints: WEST_FACE_PIN_JOINTS, accepted: true });
+  await page.mouse.click(aim.sx, aim.sy);
+  await editor.escape();
+
+  expect(await editor.poses()).toEqual([placed, { item, ...flushJoin }]);
+  await page.screenshot({ path: test.info().outputPath("user-modules-pinned-after-r.png") });
 });
