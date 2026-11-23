@@ -334,12 +334,17 @@ function extendView(extend: TrackExtendView, released: Omit<HintView, "hints"> |
 function heldPieceView(track: TrackView): HintView | null {
   const held = track.held;
   if (!held) return null;
+  const { blocked } = held;
   return {
-    tone: "place",
+    tone: blocked ? "warn" : "place",
     title: `Holding ${held.label}`,
-    detail: held.snapped ? "attaches to the open end exactly" : "free on the stud grid",
+    detail: blocked
+      ? `would ${trackBlockText(blocked)}`
+      : held.snapped
+        ? "attaches to the open end exactly"
+        : "free on the stud grid",
     hints: [
-      gesture("Click", "lay it"),
+      gesture("Click", blocked ? "refused here" : "lay it"),
       key("next-connector", "next end"),
       key("flip-switch", "other hand"),
       key("rotate", "turn"),
