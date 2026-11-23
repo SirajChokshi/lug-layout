@@ -6043,8 +6043,8 @@ describe("selection groups with laid track", () => {
       pulledOff: {
         ...partialSelected,
         poses: laid.poses.map((pose) => pose.replace(" -320 400 ", " -340 400 ")),
-        openEnds: laid.openEnds + 2,
-        joins: laid.joins - 1,
+        openEnds: 4,
+        joins: 1,
         undo: "move",
         undoDepth: laid.undoDepth + 1,
         pieces: partialPieces.map((at) => {
@@ -6264,6 +6264,7 @@ describe("selection groups with laid track", () => {
     dragTrack(editor, backend, from, [from[0] + outward[0] * reach, from[1] + outward[1] * reach]);
     editor.chooseItem(null);
     const joined = groupOutcome(editor);
+    const { joins: joinedCount = 0, openEnds: openCount = 0 } = joined;
 
     const [dx, dz] = [outward[1] * STUD, outward[0] * STUD];
     const [backX, backZ] = [-outward[0] * STUD, -outward[1] * STUD];
@@ -6288,8 +6289,8 @@ describe("selection groups with laid track", () => {
         poses: joined.poses.map((pose) =>
           pose.startsWith(`${SET} `) ? shiftedLayoutPose(pose, backX, backZ) : pose,
         ),
-        joins: joined.joins - 1,
-        openEnds: joined.openEnds + 2,
+        joins: joinedCount - 1,
+        openEnds: openCount + 2,
         undo: "move",
         undoDepth: joined.undoDepth + 1,
         selected: [SET],

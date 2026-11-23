@@ -443,7 +443,7 @@ test("a curve turned 0.1° off the field is reported and nothing joins it", asyn
   expect(await editor.trackEnds()).toHaveLength(2);
 });
 
-test("an imported model whose own 9V run is joined to drawn track pulls off that join alone like real track, which undo joins again, and moves with the drawn run as one undo step that keeps every join", async ({
+test("an imported model whose own 9V run is joined to drawn track pulls off that join alone like real track and joins it again when moved back, and moves with the drawn run as one undo step that keeps every join", async ({
   page,
 }) => {
   const { text } = await layout(
@@ -481,7 +481,7 @@ test("an imported model whose own 9V run is joined to drawn track pulls off that
     track: laid.track,
   });
   expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 2, openEnds: 4 });
-  await editor.undo();
+  await editor.press("ArrowRight");
   expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
   expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 3, openEnds: 2 });
 

@@ -623,6 +623,7 @@ export class TrackDrawing implements ExtensionSite {
   private readonly ownerBox = new Float64Array(PIECE_BOX_FLOATS);
   private readonly headingOutlines = new Map<number, HeadingOutline>();
   private readonly joinedOwners: number[] = [];
+  private readonly carriedJoinOwners: number[] = [];
   private readonly scratchBox = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
   private ends: Pose16[] = [];
   private endPlates: number[] = [];
@@ -1405,11 +1406,12 @@ export class TrackDrawing implements ExtensionSite {
       const field = this.bands.solid(low, high);
       const span = this.bands.span(low, high);
       const skipped = this.skippedIds(field, moving, movingOwners);
+      const joined = this.carriedJoins(field, carried, moving);
       const { rects, floats } = rectsIn(span.bottomLdu, span.topLdu);
       for (let r = 0; r < floats; r += OBSTACLE_RECT_FLOATS) {
         writeRectOutline(rect, rects, r);
         outlineBox(rect, box, 0);
-        const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
+        const hit = field.clearance.blockerExcept(rect, box, 0, 0, joined, skipped);
         if (field.isTrack(hit)) return field.describe(hit);
       }
     }
@@ -1441,6 +1443,30 @@ export class TrackDrawing implements ExtensionSite {
       if (hit !== NO_OBSTACLE) return field.describe(hit);
     }
     return null;
+  }
+
+  private carriedJoins(
+    field: DragField,
+    carried: ReadonlyArray<FramedTrackPiece>,
+    moving: ReadonlySet<number>,
+  ): ReadonlyArray<number> {
+    const owners = this.carriedJoinOwners;
+    owners.length = 0;
+    for (const piece of carried) {
+      if (piece.frame.id !== WORLD_TRACK_FRAME.id) continue;
+      const connectors = this.layout.pieces[piece.catalogIndex]?.connectors ?? NO_POSES;
+      for (const owner of this.joinedAt(
+        field,
+        connectors,
+        piece.placement,
+        piece.yPlates,
+        0,
+        moving,
+      )) {
+        if (!owners.includes(owner)) owners.push(owner);
+      }
+    }
+    return owners;
   }
 
   private framedScratchFor(floats: number): Float64Array {
