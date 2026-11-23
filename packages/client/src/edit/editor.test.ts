@@ -989,6 +989,28 @@ function startImportingEditor(
   });
 }
 
+it("lists a user's own file in the catalog by its name when a fresh editor reopens the world that places it", async () => {
+  const repository = new MemoryRepository();
+  const saving = await startImportingEditor(() => repository);
+  const cottage = await importUserFile(
+    saving.editor,
+    "my-cottage.mpd",
+    userFileWithOwnPart("my-cottage.mpd", CC_BY_4),
+  );
+  await placer(saving.editor, saving.backend)(cottage, 0, 0);
+  await vi.waitFor(() => expect(repository.storedPlacements()).toBe(1));
+
+  const reopened = await startImportingEditor(() => repository);
+
+  expect(posesOf(reopened.editor)).toEqual(posesOf(saving.editor));
+  expect(
+    reopened.editor
+      .snapshot()
+      .catalog.filter((item) => item.id === cottage)
+      .map((item) => item.label),
+  ).toEqual(["my-cottage.mpd"]);
+}, 240_000);
+
 it("saves a plan's tables, placements, laid track and every user file it places, whatever its own parts' licences, and a fresh editor reopens them exactly as one undo step", async () => {
   const saving = await startImportingEditor();
   const cottageFile = userFileWithOwnPart("my-cottage.mpd", CC_BY_4);
