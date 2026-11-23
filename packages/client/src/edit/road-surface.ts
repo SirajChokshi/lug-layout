@@ -348,6 +348,7 @@ class SurfaceBuilder {
       topSixteenths: this.top,
       studSixteenths: this.stud,
       road,
+      occupied: this.covered,
     };
   }
 }

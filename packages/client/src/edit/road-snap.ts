@@ -1,6 +1,8 @@
 import {
+  NO_STUD,
   NO_TOP,
   RoadFit,
+  closesRoadEdge,
   type RoadNetwork,
   type RoadPlacement,
   type RoadSurface,
@@ -40,6 +42,7 @@ export const NO_ROAD_SURFACE: RoadSurface = {
   topSixteenths: new Int32Array(0),
   studSixteenths: new Int32Array(0),
   road: new Uint8Array(0),
+  occupied: new Uint8Array(0),
 };
 export const ANY_TURN = QUARTER_TURNS;
 export const HELD_TURN = 1;
@@ -392,7 +395,15 @@ const openRunsBySurface = new WeakMap<RoadSurface, ReadonlyArray<OpenRun>>();
 
 function nothingMeetsAt(surface: RoadSurface, column: number, row: number, top: number): boolean {
   if (column < 0 || row < 0 || column >= surface.columns || row >= surface.rows) return true;
-  return (surface.topSixteenths[row * surface.columns + column] ?? NO_TOP) !== top;
+  const beside = row * surface.columns + column;
+  const besideTop = surface.topSixteenths[beside] ?? NO_TOP;
+  if (besideTop === top) return false;
+  return !closesRoadEdge(
+    top,
+    besideTop,
+    surface.studSixteenths[beside] ?? NO_STUD,
+    (surface.occupied[beside] ?? 0) !== 0,
+  );
 }
 
 function openFace(

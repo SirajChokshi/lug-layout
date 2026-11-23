@@ -726,6 +726,16 @@ function drawnPlacedParts(
   return keys;
 }
 
+function rigidBodySource(
+  instances: ArrayLike<number>,
+  { partIds, source }: ModelSource,
+): RigidBodySource {
+  return {
+    parts: Array.from(instances, (i) => partIds[i] ?? "").join(" "),
+    orientations: Array.from(instances, (i) => source[i]?.orientation ?? []),
+  };
+}
+
 async function consistSources(
   container: Container,
   manifest: WorldManifestV1,
@@ -734,15 +744,16 @@ async function consistSources(
   for (const consist of manifest.consists ?? []) {
     const name = omrModelName(consist.ref);
     if (name === null) throw new Error(`consist ${consist.ref} is not an OMR model`);
-    const { partIds, model, source } = await modelSource(container, name);
-    for (const vehicle of model.vehicles) {
+    const walked = await modelSource(container, name);
+    const riding = new Set<number>();
+    for (const vehicle of walked.model.vehicles) {
       for (const instances of [vehicle.body, ...vehicle.bogies.map((bogie) => bogie.instances)]) {
-        bodies.push({
-          parts: Array.from(instances, (i) => partIds[i] ?? "").join(" "),
-          orientations: Array.from(instances, (i) => source[i]?.orientation ?? []),
-        });
+        for (const i of instances) riding.add(i);
+        bodies.push(rigidBodySource(instances, walked));
       }
     }
+    const beside = walked.source.flatMap((_, i) => (riding.has(i) ? [] : [i]));
+    if (beside.length > 0) bodies.push(rigidBodySource(beside, walked));
   }
   return bodies;
 }
@@ -770,7 +781,7 @@ function unmatchedVehicles(
   return { drawn, sources: open.length, unposed };
 }
 
-it("draws every shipped starter's parts in the orientations their pinned LDraw sources give them, mirrored parts and standing trains included", async () => {
+it("draws every shipped starter's parts in the orientations their pinned LDraw sources give them, mirrored parts, standing trains and the figures beside them included", async () => {
   const files = await shippedStarterFiles();
   const shelf = decodedOrThrow(
     decode(StarterShelfV1, jsonFile(files, STARTER_SHELF_FILE), STARTER_SHELF_FILE),

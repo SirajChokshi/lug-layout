@@ -15,6 +15,7 @@ import {
   type PartBundle,
   type PartFilter,
   type PartMesh,
+  type PartShapeAsset,
   type PartShapeRecord,
   type StudPrimitiveAsset,
   type PackageAttribution,
@@ -396,14 +397,17 @@ class HeadlessBackend implements ISceneBackend {
   setTrackEnds(): void {}
   setGround(): void {}
   readonly vehicles = new Map<number, ReadonlyArray<number>>();
-  setVehicle(vehicle: number): void {
+  readonly vehicleModels = new Map<number, ChunkInstances>();
+  setVehicle(vehicle: number, model: ChunkInstances): void {
     this.vehicles.set(vehicle, []);
+    this.vehicleModels.set(vehicle, model);
   }
   setVehiclePose(vehicle: number, x: number, y: number, z: number, yaw: number): void {
     this.vehicles.set(vehicle, [x, y, z, yaw]);
   }
   deleteVehicle(vehicle: number): void {
     this.vehicles.delete(vehicle);
+    this.vehicleModels.delete(vehicle);
   }
   setIssueBoxes(): void {}
   setGuides(): void {}
@@ -713,7 +717,11 @@ function trainsOf(editor: IEditor) {
 
 function standingPoses(backend: HeadlessBackend): ReadonlyArray<ReadonlyArray<number>> {
   return [...backend.vehicles.values()].toSorted(
-    (a, b) => (a[0] ?? 0) - (b[0] ?? 0) || (a[2] ?? 0) - (b[2] ?? 0),
+    (a, b) =>
+      (a[0] ?? 0) - (b[0] ?? 0) ||
+      (a[2] ?? 0) - (b[2] ?? 0) ||
+      (a[1] ?? 0) - (b[1] ?? 0) ||
+      (a[3] ?? 0) - (b[3] ?? 0),
   );
 }
 
@@ -756,6 +764,81 @@ it("seats a held train on the rails of a hand-drawn oval where the cursor points
     [LOCOMOTIVE, true],
     [CABOOSE, true],
   ]);
+}, 120_000);
+
+interface DrawnVehicle {
+  readonly instances: number;
+  readonly pose: ReadonlyArray<number>;
+  readonly lowestLdu: number;
+}
+
+function lowestPointOf(
+  model: ChunkInstances,
+  poseY: number,
+  parts: ReadonlyArray<PartShapeAsset>,
+): number {
+  let lowest = Number.POSITIVE_INFINITY;
+  for (let k = 0; k < model.count; k++) {
+    const part = parts[model.partIndex[k] ?? 0];
+    if (!part) continue;
+    const o = k * INSTANCE_MATRIX_FLOATS;
+    const m = model.matrices;
+    for (let corner = 0; corner < 8; corner++) {
+      const x = corner & 1 ? part.boundsMax[0] : part.boundsMin[0];
+      const y = corner & 2 ? part.boundsMax[1] : part.boundsMin[1];
+      const z = corner & 4 ? part.boundsMax[2] : part.boundsMin[2];
+      const height =
+        (m[o + 4] ?? 0) * x + (m[o + 5] ?? 0) * y + (m[o + 6] ?? 0) * z + (m[o + 7] ?? 0);
+      lowest = Math.min(lowest, poseY + height);
+    }
+  }
+  return lowest;
+}
+
+function drawnVehicles(
+  backend: HeadlessBackend,
+  parts: ReadonlyArray<PartShapeAsset>,
+): ReadonlyArray<DrawnVehicle> {
+  return [...backend.vehicleModels].map(([id, model]) => {
+    const pose = backend.vehicles.get(id) ?? [];
+    return { instances: model.count, pose, lowestLdu: lowestPointOf(model, pose[1] ?? 0, parts) };
+  });
+}
+
+it("draws every part of a train standing on the rails, the figures that ride none of its cars standing on the ground beside it, where they stay while Play runs", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+    },
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  editor.chooseItem(null);
+  const { model } = await container
+    .get(PART_BUNDLE_LOADER)
+    .loadModel("standard", LOCOMOTIVE.slice(4));
+  const laidAtLdu = Math.min(...editor.dump().laidTrack.map((piece) => piece.yPlates)) * PLATE_LDU;
+  const parts = catalog.parts();
+  const standing = drawnVehicles(backend, parts);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
+  const playing = drawnVehicles(backend, parts);
+  play.stop();
+  const stoodBack = drawnVehicles(backend, parts);
+
+  const onTheGround = (drawn: ReadonlyArray<DrawnVehicle>) =>
+    drawn.filter((vehicle) => vehicle.lowestLdu === laidAtLdu);
+  expect(standing.reduce((sum, vehicle) => sum + vehicle.instances, 0)).toBe(model.instanceCount);
+  expect(Math.min(...standing.map((vehicle) => vehicle.lowestLdu))).toBe(laidAtLdu);
+  expect(onTheGround(standing)).toHaveLength(1);
+  expect(onTheGround(playing)).toEqual(onTheGround(standing));
+  expect(onTheGround(stoodBack)).toEqual(onTheGround(standing));
 }, 120_000);
 
 async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<string | null> {

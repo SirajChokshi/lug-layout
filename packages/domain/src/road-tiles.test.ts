@@ -37,6 +37,7 @@ function roadBaseplate(part: string): RoadSurface {
     topSixteenths: top,
     studSixteenths: stud,
     road,
+    occupied: new Uint8Array(top.length).fill(1),
   };
 }
 
