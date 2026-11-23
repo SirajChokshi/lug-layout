@@ -129,7 +129,7 @@ export interface IEditedWorld extends IPlanSheetSource {
   placedCredits(): ReadonlyArray<ModelCredit>;
   validate(stored: StoredContents): ReadonlyArray<Issue>;
   load(stored: StoredContents): Promise<ReadonlyArray<Issue>>;
-  addImportedModel(file: ImportedFile): Promise<string | null>;
+  addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<string | null>;
   planContents(planId: string): Decoded<PlanContents>;
   addPlan(plan: StoredPlan): Promise<ReadonlyArray<Issue>>;
 }
@@ -154,7 +154,7 @@ export interface IWorldSession extends IWorldFiles {
   placementsEdited(edit: AppliedEdit): void;
   trackEdited(lifted: ReadonlyArray<TrackPieceAt>): void;
   pollCamera(): void;
-  addModelFile(file: ModelFileInput): Promise<string | null>;
+  addModelFile(file: ModelFileInput, notice: ModelImportNotice): Promise<string | null>;
   importWorldFiles(files: ReadonlyMap<string, Uint8Array>): Promise<boolean>;
 }
 
@@ -162,6 +162,8 @@ export interface ModelFileInput {
   readonly name: string;
   readonly bytes: Uint8Array;
 }
+
+export type ModelImportNotice = "announce" | "quiet";
 
 const CAMERA_SAVE_DELAY_MS = 500;
 const UNSEEN = Number.NaN;
@@ -598,7 +600,7 @@ export class WorldSession implements IWorldSession {
       if (!file) {
         throw new Error(`it places an imported file (sha256 ${sha256}) that isn't stored here`);
       }
-      if ((await this.editedWorld().addImportedModel(file)) === null) {
+      if ((await this.editedWorld().addImportedModel(file, "quiet")) === null) {
         throw new Error(`the imported file ${file.name} can't be placed any more`);
       }
       this.importedFiles.set(sha256, file);
@@ -851,7 +853,7 @@ export class WorldSession implements IWorldSession {
     });
   }
 
-  async addModelFile(input: ModelFileInput): Promise<string | null> {
+  async addModelFile(input: ModelFileInput, notice: ModelImportNotice): Promise<string | null> {
     let item: string | null = null;
     await this.fileAction(
       "model import",
@@ -859,7 +861,7 @@ export class WorldSession implements IWorldSession {
         const sha256 = await contentSha256(input.bytes);
         const known = this.importedFiles.get(sha256);
         const file = known ?? { sha256, name: input.name, bytes: input.bytes.slice() };
-        const placed = await this.editedWorld().addImportedModel(file);
+        const placed = await this.editedWorld().addImportedModel(file, notice);
         if (placed === null) return;
         if (!known) {
           this.importedFiles.set(sha256, file);
