@@ -8,6 +8,7 @@ import { BOX_FLOATS } from "../edit/local-box.ts";
 export interface RigidBodyInstances {
   readonly instances: Uint32Array;
   readonly matrices: Float32Array;
+  readonly transforms: Float64Array;
 }
 
 export interface ConsistVehicle {
@@ -120,25 +121,24 @@ export function vehicleSpec(vehicle: PartVehicle, reversed: boolean): VehicleSpe
   };
 }
 
-function localMatrices(
-  model: Omit<PartModel, "studCover">,
+function writeLocal(
+  source: ArrayLike<number>,
   instances: Uint32Array,
   vehicle: PartVehicle,
   sign: number,
   pivotX: number,
   pivotZ: number,
-): Float32Array {
+  out: Float32Array | Float64Array,
+): void {
   const cos = Math.cos(vehicle.yaw);
   const sin = Math.sin(vehicle.yaw);
-  const out = new Float32Array(instances.length * INSTANCE_MATRIX_FLOATS);
   for (let k = 0; k < instances.length; k++) {
     const i = (instances[k] ?? 0) * INSTANCE_MATRIX_FLOATS;
     const o = k * INSTANCE_MATRIX_FLOATS;
-    const m = model.matrices;
     for (let col = 0; col < 4; col++) {
-      const x = (m[i + col] ?? 0) - (col === 3 ? vehicle.origin[0] : 0);
-      const y = m[i + 4 + col] ?? 0;
-      const z = (m[i + 8 + col] ?? 0) - (col === 3 ? vehicle.origin[1] : 0);
+      const x = (source[i + col] ?? 0) - (col === 3 ? vehicle.origin[0] : 0);
+      const y = source[i + 4 + col] ?? 0;
+      const z = (source[i + 8 + col] ?? 0) - (col === 3 ? vehicle.origin[1] : 0);
       const u = sign * (x * cos + z * sin) - (col === 3 ? pivotX : 0);
       const v = sign * (-x * sin + z * cos) - (col === 3 ? pivotZ : 0);
       out[o + col] = u;
@@ -146,7 +146,21 @@ function localMatrices(
       out[o + 8 + col] = v;
     }
   }
-  return out;
+}
+
+function rigidBody(
+  model: Omit<PartModel, "studCover">,
+  instances: Uint32Array,
+  vehicle: PartVehicle,
+  sign: number,
+  pivotX: number,
+  pivotZ: number,
+): RigidBodyInstances {
+  const matrices = new Float32Array(instances.length * INSTANCE_MATRIX_FLOATS);
+  const transforms = new Float64Array(instances.length * INSTANCE_MATRIX_FLOATS);
+  writeLocal(model.matrices, instances, vehicle, sign, pivotX, pivotZ, matrices);
+  writeLocal(model.partTransforms, instances, vehicle, sign, pivotX, pivotZ, transforms);
+  return { instances, matrices, transforms };
 }
 
 export interface StandingRemainder {
@@ -224,7 +238,7 @@ export function standingRemainder(
   const sign = standing.reversed ? -1 : 1;
   return {
     vehicle: at,
-    body: { instances, matrices: localMatrices(model, instances, vehicle, sign, 0, 0) },
+    body: rigidBody(model, instances, vehicle, sign, 0, 0),
     lowestY,
   };
 }
@@ -261,17 +275,14 @@ export function consistVehicles(
       const b = bogieAt(orientation, end);
       const bogie = b === null ? undefined : vehicle.bogies[b];
       if (!bogie) return null;
-      return {
-        instances: bogie.instances,
-        matrices: localMatrices(
-          model,
-          bogie.instances,
-          vehicle,
-          sign,
-          sign * bogie.pivot[0],
-          sign * bogie.pivot[2],
-        ),
-      };
+      return rigidBody(
+        model,
+        bogie.instances,
+        vehicle,
+        sign,
+        sign * bogie.pivot[0],
+        sign * bogie.pivot[2],
+      );
     };
     const wheelsets =
       vehicle.fixedAxles.length +
@@ -281,10 +292,7 @@ export function consistVehicles(
       vehicle: index,
       reversed,
       spec: vehicleSpec(vehicle, reversed),
-      body: {
-        instances: vehicle.body,
-        matrices: localMatrices(model, vehicle.body, vehicle, sign, 0, 0),
-      },
+      body: rigidBody(model, vehicle.body, vehicle, sign, 0, 0),
       frontBogie: bogieBody("front"),
       rearBogie: bogieBody("rear"),
       railTopY: railTopFor(vehicle, railPart),

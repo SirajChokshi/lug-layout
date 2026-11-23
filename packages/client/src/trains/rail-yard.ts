@@ -4,11 +4,15 @@ import {
   RAIL_SPOT_FLOATS,
   RailRun,
   RunningGearPoser,
+  SOLID_BOX_FLOATS,
+  SOLID_MATRIX_FLOATS,
   SPOT_DISTANCE,
   SPOT_EDGE,
   SPOT_OFFSET,
   VEHICLE_POSE_FLOATS,
+  composeAffine,
   packGeometry,
+  posedBoxBounds,
   runningGearSpanProblem,
   type ConsistAnchor,
   type ConsistHandle,
@@ -32,9 +36,22 @@ import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
 import {
   ConsistBodies,
   StandingRemainderBody,
+  bodyPoseAt,
+  rigidBodies,
   standingGhost,
   type StandingConsist,
 } from "./consist-bodies.ts";
+import {
+  CLASH_RANK,
+  NO_CLASH_PART,
+  NO_SKIP,
+  clashOut,
+  emptyBounds,
+  growBounds,
+  type ClashOut,
+  type PartClash,
+  type PosedParts,
+} from "./part-clash.ts";
 import { RailTrack, type RailCarrier, type RailHead } from "./rail-track.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
 
@@ -56,6 +73,7 @@ export interface RailSeat {
   readonly groundY: number;
   readonly boxes: Float64Array;
   readonly tops: Float64Array;
+  readonly solids: PosedParts;
 }
 
 export type RailAim =
@@ -68,7 +86,8 @@ export type RailAim =
       readonly end: CoupledEnd;
       readonly reversed: boolean;
     }
-  | { readonly kind: "refused"; readonly reason: string; readonly seat: RailSeat | null };
+  | { readonly kind: "refused"; readonly reason: string; readonly seat: RailSeat | null }
+  | { readonly kind: "waiting"; readonly reason: string; readonly seat: RailSeat };
 
 export interface RailTrain {
   readonly handle: ConsistHandle;
@@ -110,6 +129,12 @@ export interface IRailYard {
   box(handle: ConsistHandle): WorldBox | null;
   standingFootprints(): ReadonlyArray<VehicleFootprint>;
   seatFootprints(seat: RailSeat, label: string): ReadonlyArray<VehicleFootprint>;
+  standingClash(
+    parts: PosedParts,
+    skip: ReadonlySet<number>,
+    clash: PartClash,
+    out: ClashOut,
+  ): string | null;
   standingOn(placement: number): ConsistHandle | null;
   trains(): ReadonlyArray<RailTrain>;
   park(hidden: boolean): void;
@@ -123,7 +148,15 @@ interface Prepared {
   readonly straightLdu: number;
   readonly boxes: Float64Array;
   readonly tops: Float64Array;
+  readonly solids: VehicleSolids;
   readonly remainders: ReadonlyArray<StandingRemainder>;
+}
+
+interface VehicleSolids {
+  readonly local: Float64Array;
+  readonly parts: Uint16Array;
+  readonly pose: Int32Array;
+  readonly lift: Float64Array;
 }
 
 interface Parked {
@@ -189,6 +222,40 @@ function vehicleBoxes(model: PlayModel, vehicles: ReadonlyArray<ConsistVehicle>)
   return boxes;
 }
 
+function vehicleSolids(
+  vehicles: ReadonlyArray<ConsistVehicle>,
+  models: ReadonlyArray<PlayModel>,
+  railTopY: number,
+): VehicleSolids {
+  let count = 0;
+  for (const vehicle of vehicles) {
+    for (const rigid of rigidBodies(vehicle)) count += rigid?.instances.length ?? 0;
+  }
+  const solids: VehicleSolids = {
+    local: new Float64Array(count * SOLID_MATRIX_FLOATS),
+    parts: new Uint16Array(count),
+    pose: new Int32Array(count),
+    lift: new Float64Array(count),
+  };
+  let e = 0;
+  vehicles.forEach((vehicle, v) => {
+    const partIndex = models[v]?.model.partIndex;
+    rigidBodies(vehicle).forEach((rigid, body) => {
+      if (!rigid) return;
+      for (let k = 0; k < rigid.instances.length; k++, e++) {
+        solids.local.set(
+          rigid.transforms.subarray(k * SOLID_MATRIX_FLOATS, (k + 1) * SOLID_MATRIX_FLOATS),
+          e * SOLID_MATRIX_FLOATS,
+        );
+        solids.parts[e] = partIndex?.[rigid.instances[k] ?? 0] ?? 0;
+        solids.pose[e] = bodyPoseAt(v, body);
+        solids.lift[e] = railTopY - vehicle.railTopY;
+      }
+    });
+  });
+  return solids;
+}
+
 @injectable()
 export class RailYard implements IRailYard {
   private track: RailTrack | null = null;
@@ -197,6 +264,8 @@ export class RailYard implements IRailYard {
   private readonly poser = new RunningGearPoser();
   private readonly spot = new Float64Array(RAIL_SPOT_FLOATS);
   private readonly lengths = new Float64Array(1);
+  private readonly vehicleFrame = new Float64Array(SOLID_MATRIX_FLOATS);
+  private readonly trainClash = clashOut();
   private readonly endPoints = new Float64Array(6);
   private readonly prepared = new Map<string, Prepared | string>();
   private readonly modelKeys = new WeakMap<PlayModel, number>();
@@ -498,6 +567,30 @@ export class RailYard implements IRailYard {
     });
   }
 
+  standingClash(
+    parts: PosedParts,
+    skip: ReadonlySet<number>,
+    clash: PartClash,
+    out: ClashOut,
+  ): string | null {
+    out.kind = "clear";
+    out.part = NO_CLASH_PART;
+    let label: string | null = null;
+    for (let p = 0; p < this.parked.length; p++) {
+      const parked = this.parked[p];
+      const seat = parked?.seat;
+      if (!parked || !seat) continue;
+      clash.first(seat.solids, NO_SKIP, parts, skip, this.trainClash);
+      const { kind } = this.trainClash;
+      if (CLASH_RANK[kind] <= CLASH_RANK[out.kind]) continue;
+      out.kind = kind;
+      out.part = this.trainClash.part;
+      label = trainLabel(parked.members);
+      if (kind === "clash") return label;
+    }
+    return label;
+  }
+
   standingOn(placement: number): ConsistHandle | null {
     return this.parked.find((parked) => parked.seat?.pieces.has(placement))?.handle ?? null;
   }
@@ -614,6 +707,7 @@ export class RailYard implements IRailYard {
               straightLdu,
               boxes: joinedBoxes(boxes),
               tops: Float64Array.from(tops),
+              solids: vehicleSolids(vehicles, vehicleModels, rails.railTopY),
               remainders,
             };
     } catch (error) {
@@ -673,7 +767,50 @@ export class RailYard implements IRailYard {
     };
     const { remainders, boxes, tops } = prepared;
     const groundY = this.laidAt(pieces, rails);
-    return { anchor, head, consist, poses, pieces, lengthLdu, remainders, groundY, boxes, tops };
+    const solids = this.seatSolids(prepared.solids, poses);
+    return {
+      anchor,
+      head,
+      consist,
+      poses,
+      pieces,
+      lengthLdu,
+      remainders,
+      groundY,
+      boxes,
+      tops,
+      solids,
+    };
+  }
+
+  private seatSolids(vehicle: VehicleSolids, poses: Float64Array): PosedParts {
+    const count = vehicle.parts.length;
+    const matrices = new Float64Array(count * SOLID_MATRIX_FLOATS);
+    const boxes = new Float64Array(count * SOLID_BOX_FLOATS);
+    const bounds = new Float64Array(SOLID_BOX_FLOATS);
+    emptyBounds(bounds);
+    const solids = this.catalog.partSolids();
+    const frame = this.vehicleFrame;
+    for (let e = 0; e < count; e++) {
+      const at = vehicle.pose[e] ?? 0;
+      const heading = poses[at + 2] ?? 0;
+      const cos = Math.cos(heading);
+      const sin = Math.sin(heading);
+      frame[0] = cos;
+      frame[2] = -sin;
+      frame[3] = poses[at] ?? 0;
+      frame[5] = 1;
+      frame[7] = vehicle.lift[e] ?? 0;
+      frame[8] = sin;
+      frame[10] = cos;
+      frame[11] = poses[at + 1] ?? 0;
+      const m = e * SOLID_MATRIX_FLOATS;
+      const b = e * SOLID_BOX_FLOATS;
+      composeAffine(frame, 0, vehicle.local, m, matrices, m);
+      posedBoxBounds(matrices, m, solids.box(vehicle.parts[e] ?? 0), 0, boxes, b);
+      growBounds(bounds, boxes, b);
+    }
+    return { count, partIndex: vehicle.parts, matrices, boxes, bounds };
   }
 
   private laidAt(pieces: ReadonlySet<number>, rails: RailTrack): number {

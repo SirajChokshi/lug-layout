@@ -458,6 +458,18 @@ export {
   type VolumeHit,
 } from "./volume-index.ts";
 export {
+  SOLID_BOX_FLOATS,
+  SOLID_MATRIX_FLOATS,
+  SOLID_TRIANGLE_FLOATS,
+  boxesCross,
+  composeAffine,
+  invertAffine,
+  posedBoxBounds,
+  solidsCross,
+  type PartSolid,
+  type StudSolid,
+} from "./solid-contact.ts";
+export {
   PlacedOutline,
   type AxisEdge,
   type OutlinePoint,

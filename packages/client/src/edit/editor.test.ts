@@ -1120,8 +1120,9 @@ function planWithoutIds(plans: IPlanService) {
 function startImportingEditor(
   repository: (archives: IWorldRepository) => IWorldRepository = (archives) =>
     new MemoryRepository(archives),
+  models: ReadonlyArray<string> = [],
 ) {
-  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+  return startEditor([...models], new BundleDirectoryFetcher(), [], (bound) => {
     bound
       .rebind(MODEL_IMPORTER)
       .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
@@ -1378,19 +1379,31 @@ it("selects a train rather than the track it stands on, and refuses to delete a 
   expect(trainsOf(editor)).toEqual([[LOCOMOTIVE, true]]);
 }, 120_000);
 
+const SET_LABEL = `${PLACEABLE_SET} Level Crossing (2010)`;
+const MY_OWN_TRAIN_LABEL = "10205-1 Locomotive (2002)";
+const STRAIGHT_CLEAR_OF_THE_CRANE = 2;
+
+function halfway(route: TrackRouteView): { readonly x: number; readonly z: number } {
+  return { x: (route.from.xLdu + route.to.xLdu) / 2, z: (route.from.zLdu + route.to.zLdu) / 2 };
+}
+
 it("sets a train on the track inside a placed set, and refuses to delete or turn the set while the train stands on that track", async () => {
-  const { editor, backend, catalog } = await startEditor([PLACEABLE_SET, MY_OWN_TRAIN.slice(4)]);
+  const { editor, backend, catalog } = await startEditor([
+    PLACEABLE_SET,
+    MY_OWN_TRAIN.slice(4),
+    CABOOSE.slice(4),
+  ]);
   const set = `omr:${PLACEABLE_SET}`;
-  for (const item of [set, MY_OWN_TRAIN]) await loadCatalogItem(catalog, item);
-  const place = placer(editor, backend);
+  for (const item of [set, MY_OWN_TRAIN, CABOOSE]) await loadCatalogItem(catalog, item);
+  const place = settledPlacer(editor, backend);
   await place(set, 0, 0);
-  const route = editor.trackRoutes()[0];
-  if (!route) throw new Error(`${set} carries no track`);
-  const along = {
-    x: (route.from.xLdu + route.to.xLdu) / 2,
-    z: (route.from.zLdu + route.to.zLdu) / 2,
-  };
-  const train = await place(MY_OWN_TRAIN, along.x, along.z);
+  const routes = editor.trackRoutes();
+  const middle = routes[0];
+  const clear = routes[STRAIGHT_CLEAR_OF_THE_CRANE];
+  if (!middle || !clear) throw new Error(`${set} carries no track`);
+  const along = halfway(clear);
+  const train = await place(CABOOSE, along.x, along.z);
+  const standing = trainsOf(editor);
   const box = editor.dump().placements;
   const setAt = { x: (box.x[0] ?? 0) + 20, z: (box.z[0] ?? 0) + 20 };
   editor.chooseItem(null);
@@ -1405,11 +1418,22 @@ it("sets a train on the track inside a placed set, and refuses to delete or turn
   const deleteRefusal = editor.snapshot().selectionRefusal;
   editor.rotate(0);
   const turnRefusal = editor.snapshot().selectionRefusal;
+  editor.undo(0);
+  const refusedBefore = editor.snapshot().refusedClicks;
+  const throughTheCrane = await place(MY_OWN_TRAIN, halfway(middle).x, halfway(middle).z);
 
   expect(train).toMatchObject({ placements: 1, refusedClicks: 0 });
-  expect(trainsOf(editor)).toEqual([[MY_OWN_TRAIN, true]]);
+  expect(standing).toEqual([[CABOOSE, true]]);
   expect(deleteRefusal).toContain("stands on its track");
   expect(turnRefusal).toContain("stands on its track");
+  expect({
+    refused: throughTheCrane.refusedClicks - refusedBefore,
+    reason: throughTheCrane.reason,
+  }).toEqual({
+    refused: 1,
+    reason: `${MY_OWN_TRAIN_LABEL} would run into ${SET_LABEL} there. Put it where it clears every model.`,
+  });
+  expect(trainsOf(editor)).toEqual([]);
   expect(editor.snapshot().placements).toBe(1);
 }, 120_000);
 
@@ -1659,6 +1683,28 @@ function placer(editor: IEditor, backend: AimedBackend) {
   return async (item: string, x: number, z: number) => {
     await chosen(editor, item);
     return now(item, x, z);
+  };
+}
+
+async function queueSettled(editor: IEditor): Promise<void> {
+  while (editor.snapshot().queuedPlacement !== null) {
+    await new Promise<void>((resolve) => {
+      const stop = editor.subscribe(() => {
+        stop();
+        resolve();
+      });
+    });
+  }
+}
+
+function settledPlacer(editor: IEditor, backend: AimedBackend) {
+  const now = placerNow(editor, backend);
+  return async (item: string, x: number, z: number) => {
+    await chosen(editor, item);
+    now(item, x, z);
+    await queueSettled(editor);
+    const { placements, refusedClicks, lastRefusal } = editor.snapshot();
+    return { placements, refusedClicks, reason: lastRefusal?.reason ?? null };
   };
 }
 
@@ -9590,4 +9636,129 @@ it("draws drags in flight, a held piece and the height readout at a drawing heig
   );
   expect(early.laid.some(([yPlates = 0, rise = 0]) => yPlates > 0 && rise > 0)).toBe(true);
   expect(late).toEqual(early);
+}, 180_000);
+
+const TUNNEL_WALL_SIDE_LDU = 140;
+const SECOND_RUN_Z = 40 * STUD;
+
+function tunnelFile(name: string, wallBricks: number): Uint8Array {
+  const wall = (side: number) =>
+    Array.from(
+      { length: wallBricks },
+      (_, k) => `1 7 ${side} ${-BRICK_LDU * (k + 1)} 0 0 0 1 0 1 0 -1 0 0 2456.dat`,
+    );
+  const roofY = -BRICK_LDU * wallBricks - PLATE_LDU;
+  return userRoadFile(name, [
+    ...wall(-TUNNEL_WALL_SIDE_LDU),
+    ...wall(TUNNEL_WALL_SIDE_LDU),
+    `1 72 0 ${roofY} 0 1 0 0 0 1 0 0 0 1 3027.dat`,
+  ]);
+}
+
+async function heldAlongTrack(
+  editor: IEditor,
+  backend: AimedBackend,
+  frame: () => Promise<void>,
+  item: string,
+  x: number,
+  z = 0,
+) {
+  await chosen(editor, item);
+  if (editor.snapshot().ghostRot % 2 === 0) editor.rotate(0, 1);
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
+  return editor.snapshot().hover?.refusal ?? null;
+}
+
+it("refuses a train set where its body meets a model over the track and a model held through a standing train, naming the other, while a tunnel tall enough takes the train", async () => {
+  const { editor, backend, frame, catalog } = await startImportingEditor(undefined, [
+    LOCOMOTIVE.slice(4),
+  ]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-64 * STUD, 0], [64 * STUD, 0]);
+  dragTrack(editor, backend, [-64 * STUD, SECOND_RUN_Z], [64 * STUD, SECOND_RUN_Z]);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const low = await importUserFile(editor, "my-low-tunnel.ldr", tunnelFile("my-low-tunnel.ldr", 3));
+  const tall = await importUserFile(editor, "my-tunnel.ldr", tunnelFile("my-tunnel.ldr", 12));
+  const place = settledPlacer(editor, backend);
+
+  const standing = await place(LOCOMOTIVE, 0, 0);
+  const lowOverTrain = await heldAlongTrack(editor, backend, frame, low, 0);
+  const tallOverTrain = await heldAlongTrack(editor, backend, frame, tall, 0);
+  editor.click(0, 0, 0);
+  const tunnelsAfterTall = editor.snapshot().placements;
+  await heldAlongTrack(editor, backend, frame, low, 0, SECOND_RUN_Z);
+  editor.click(0, 0, 0);
+  const underLowTunnel = await place(LOCOMOTIVE, 0, SECOND_RUN_Z);
+
+  expect({
+    standing,
+    lowOverTrain,
+    tallOverTrain,
+    tunnelsAfterTall,
+    underLowTunnel,
+    trains: editor.snapshot().trains.length,
+  }).toEqual({
+    standing: { placements: 0, refusedClicks: 0, reason: null },
+    lowOverTrain: `my-low-tunnel.ldr would cut through ${LOCOMOTIVE_LABEL} standing there.`,
+    tallOverTrain: null,
+    tunnelsAfterTall: 1,
+    underLowTunnel: {
+      placements: 2,
+      refusedClicks: 1,
+      reason: `${LOCOMOTIVE_LABEL} would run into my-low-tunnel.ldr there. Put it where it clears every model.`,
+    },
+    trains: 1,
+  });
+}, 180_000);
+
+const PLATFORM_CENTRE_LDU = 100;
+const UNDER_THE_OVERHANG_BRICKS = 4;
+
+function platformFile(name: string, bricks: number): Uint8Array {
+  return userRoadFile(
+    name,
+    Array.from(
+      { length: bricks },
+      (_, k) => `1 7 0 ${-BRICK_LDU * (k + 1)} 0 0 0 1 0 1 0 -1 0 0 2456.dat`,
+    ),
+  );
+}
+
+it("takes a station platform beside the track under a train body's overhang, setting the train by it and the platform by the standing train, while a platform reaching the body is refused", async () => {
+  const { editor, backend, frame, catalog } = await startImportingEditor(undefined, [
+    LOCOMOTIVE.slice(4),
+  ]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-64 * STUD, 0], [64 * STUD, 0]);
+  dragTrack(editor, backend, [-64 * STUD, SECOND_RUN_Z], [64 * STUD, SECOND_RUN_Z]);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const low = await importUserFile(
+    editor,
+    "my-platform.ldr",
+    platformFile("my-platform.ldr", UNDER_THE_OVERHANG_BRICKS),
+  );
+  const high = await importUserFile(
+    editor,
+    "my-high-platform.ldr",
+    platformFile("my-high-platform.ldr", UNDER_THE_OVERHANG_BRICKS + 1),
+  );
+  const place = settledPlacer(editor, backend);
+
+  await heldAlongTrack(editor, backend, frame, low, 0, SECOND_RUN_Z + PLATFORM_CENTRE_LDU);
+  editor.click(0, 0, 0);
+  const byPlatform = await place(LOCOMOTIVE, 0, SECOND_RUN_Z);
+  await place(LOCOMOTIVE, 0, 0);
+  const lowByTrain = await heldAlongTrack(editor, backend, frame, low, 0, PLATFORM_CENTRE_LDU);
+  const highByTrain = await heldAlongTrack(editor, backend, frame, high, 0, -PLATFORM_CENTRE_LDU);
+
+  expect({ byPlatform, lowByTrain, highByTrain, trains: editor.snapshot().trains.length }).toEqual({
+    byPlatform: { placements: 1, refusedClicks: 0, reason: null },
+    lowByTrain: null,
+    highByTrain: `my-high-platform.ldr would cut through ${LOCOMOTIVE_LABEL} standing there.`,
+    trains: 2,
+  });
 }, 180_000);
