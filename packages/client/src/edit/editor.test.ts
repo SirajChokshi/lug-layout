@@ -8756,6 +8756,12 @@ async function raisedEditor(models: ReadonlyArray<string>, repository = new Memo
   return started;
 }
 
+async function piersPlaced(editor: IEditor): Promise<void> {
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
+    timeout: 60_000,
+  });
+}
+
 async function layRaised(
   editor: IEditor,
   backend: AimedBackend,
@@ -8763,9 +8769,7 @@ async function layRaised(
   to: readonly [number, number],
 ): Promise<void> {
   dragTrack(editor, backend, from, to);
-  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
-    timeout: 60_000,
-  });
+  await piersPlaced(editor);
 }
 
 function placedImports(editor: IEditor) {
@@ -9099,3 +9103,50 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
     laid,
   );
 }, 180_000);
+
+function previewHeightAt(editor: IEditor): readonly [number, number] | null {
+  const label = editor.snapshot().labels.find((shown) => shown.id === "height:preview");
+  return label ? [label.x, label.z] : null;
+}
+
+function eastmostEnd(editor: IEditor): readonly [number, number] {
+  const ends = editor.dump().trackEnds;
+  const east = ends.reduce((a, b) => (b.xLdu > a.xLdu ? b : a), ends[0] ?? { xLdu: 0, zLdu: 0 });
+  return [east.xLdu, east.zLdu];
+}
+
+it("shows a raised preview's ghost and height where the previewed run ends, on every move of a growing drag and for the extension chosen next", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  const shownWhileDragging = [16, 32, 48].map((studs) => {
+    backend.aim(studs * STUD, 0);
+    editor.dragMove(0, 0);
+    return { height: previewHeightAt(editor), ghostPieces: backend.ghostInstances };
+  });
+  editor.dragEnd(0, 0, 0);
+  await piersPlaced(editor);
+  const draggedPieces = editor.dump().laidTrack.length;
+  const dragged = eastmostEnd(editor);
+  backend.aim(...dragged);
+  editor.pointerMove(0, 0);
+  const offered = editor.snapshot().track?.extend?.choices ?? [];
+  editor.selectTrackChoice(offered.findIndex((choice) => choice.kind === "straight"));
+  const shownForExtension = {
+    height: previewHeightAt(editor),
+    ghostPieces: backend.ghostInstances,
+  };
+  editor.extendTrack(null, 0);
+  await piersPlaced(editor);
+
+  expect(shownWhileDragging.map((shown) => shown.ghostPieces)).toEqual([1, 2, draggedPieces]);
+  expect(new Set(shownWhileDragging.map((shown) => String(shown.height))).size).toBe(3);
+  expect(shownWhileDragging.at(-1)?.height).toEqual(dragged);
+  expect(shownForExtension).toEqual({
+    height: eastmostEnd(editor),
+    ghostPieces: editor.dump().laidTrack.length - draggedPieces,
+  });
+}, 120_000);

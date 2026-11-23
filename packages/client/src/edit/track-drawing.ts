@@ -426,6 +426,12 @@ interface LaidRunEnd {
   readonly endZStuds: number;
 }
 
+interface LaidPreview {
+  readonly run: PreviewRun;
+  readonly moves: ReadonlyArray<TrackMove>;
+  readonly laid: LaidRun;
+}
+
 export interface TrackGapView {
   readonly a: TrackEndView;
   readonly b: TrackEndView;
@@ -698,9 +704,15 @@ export class TrackDrawing implements ExtensionSite {
   private laidStart: Pose16 | null = null;
   private laidMoves: ReadonlyArray<TrackMove> | null = null;
   private lastLaid: LaidRunEnd | null = null;
+  private previewLaidComputed = false;
+  private previewLaidSource: object | null = null;
+  private lastPreviewLaid: LaidPreview | null = null;
   private ghostComputed = false;
-  private ghostSource: object | null = null;
+  private ghostSource: LaidPreview | null = null;
   private lastGhost: PreviewGhost | null = null;
+  private previewLabelsComputed = false;
+  private previewLabelsSource: LaidPreview | null = null;
+  private lastPreviewLabels: ReadonlyArray<LabelView> = [];
 
   constructor(
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
@@ -1697,12 +1709,28 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   ghost(): PreviewGhost | null {
-    const source = this.drag ? this.dragRun() : this.extension.chosen();
-    if (this.ghostComputed && source === this.ghostSource) return this.lastGhost;
+    const preview = this.previewLaid();
+    if (this.ghostComputed && preview === this.ghostSource) return this.lastGhost;
     this.ghostComputed = true;
-    this.ghostSource = source;
-    this.lastGhost = this.buildGhost(this.previewRun());
+    this.ghostSource = preview;
+    this.lastGhost = preview ? this.buildGhost(preview) : null;
     return this.lastGhost;
+  }
+
+  private previewLaid(): LaidPreview | null {
+    const source = this.drag ? this.dragRun() : this.extension.chosen();
+    if (this.previewLaidComputed && source === this.previewLaidSource) return this.lastPreviewLaid;
+    this.previewLaidComputed = true;
+    this.previewLaidSource = source;
+    this.lastPreviewLaid = this.layPreview(this.previewRun());
+    return this.lastPreviewLaid;
+  }
+
+  private layPreview(run: PreviewRun | null): LaidPreview | null {
+    if (!run) return null;
+    const moves = run.refused ? [...run.moves, run.refused] : run.moves;
+    if (moves.length === 0) return null;
+    return { run, moves, laid: this.laidRun(run.start, moves) };
   }
 
   private previewRun(): PreviewRun | null {
@@ -1722,12 +1750,9 @@ export class TrackDrawing implements ExtensionSite {
     return this.runPlan(this.endHeight(run.from), run.choice.moves, goal);
   }
 
-  private buildGhost(route: PreviewRun | null): PreviewGhost | null {
-    if (!route) return null;
+  private buildGhost({ run: route, moves, laid }: LaidPreview): PreviewGhost {
     const { start } = route;
-    const moves = route.refused ? [...route.moves, route.refused] : route.moves;
-    if (moves.length === 0) return null;
-    const { placed } = this.laidRun(start, moves);
+    const { placed } = laid;
     const count = placed.length;
     const partIndex = new Uint16Array(count);
     const colorIndex = new Uint16Array(count);
@@ -2312,14 +2337,21 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   previewLabels(): ReadonlyArray<LabelView> {
-    const run = this.previewRun();
-    if (!run) return [];
-    const moves = run.refused ? [...run.moves, run.refused] : run.moves;
-    const end = moves.length === 0 ? null : layMoves(run.start, moves).end;
+    const preview = this.previewLaid();
+    if (this.previewLabelsComputed && preview === this.previewLabelsSource) {
+      return this.lastPreviewLabels;
+    }
+    this.previewLabelsComputed = true;
+    this.previewLabelsSource = preview;
+    this.lastPreviewLabels = preview ? this.measuredPreviewLabels(preview) : [];
+    return this.lastPreviewLabels;
+  }
+
+  private measuredPreviewLabels({ run, laid }: LaidPreview): ReadonlyArray<LabelView> {
     const plates = run.heights.endPlates;
     const raised = run.heights.yPlates.some((y) => y !== GROUND_PLATES);
-    if (!end || (plates === GROUND_PLATES && !raised)) return [];
-    const at = endView(end, WORLD_TRACK_FRAME, plates);
+    if (plates === GROUND_PLATES && !raised) return [];
+    const at = endView(laid.end, WORLD_TRACK_FRAME, plates);
     const [, top] = this.verticalRange();
     return [
       {
