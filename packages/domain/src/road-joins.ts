@@ -21,6 +21,17 @@ export interface RoadSurface {
   readonly topSixteenths: Int32Array;
   readonly studSixteenths: Int32Array;
   readonly road: Uint8Array;
+  readonly occupied: Uint8Array;
+}
+
+export function closesRoadEdge(
+  top: number,
+  besideTop: number,
+  besideStud: number,
+  besideOccupied: boolean,
+): boolean {
+  if (!besideOccupied) return false;
+  return besideTop === NO_TOP || besideTop > top || besideStud === NO_STUD;
 }
 
 export interface RoadPlacement {
@@ -160,6 +171,7 @@ interface StampCell {
   readonly row: number;
   readonly top: number;
   readonly present: boolean;
+  readonly occupied: boolean;
   readonly stud: number;
   readonly road: number;
 }
@@ -169,6 +181,11 @@ interface SeamEdge {
   readonly side: number;
   readonly line: number;
   readonly along: number;
+  readonly closed: boolean;
+}
+
+function closesEdge(cell: StampCell, beside: StampCell | undefined): boolean {
+  return beside !== undefined && closesRoadEdge(cell.top, beside.top, beside.stud, beside.occupied);
 }
 
 class RoadStamp implements RoadCellRect {
@@ -185,6 +202,7 @@ class RoadStamp implements RoadCellRect {
   readonly levels: Float64Array;
   readonly seamCell: Int32Array;
   readonly seamSide: Uint8Array;
+  readonly seamClosed: Uint8Array;
   readonly seamLineEnd: Int32Array;
 
   constructor(
@@ -217,6 +235,7 @@ class RoadStamp implements RoadCellRect {
           row: ((cornersZ[index] ?? 0) - this.anchorZ) / STUD_LDU,
           top,
           present: top !== NO_TOP,
+          occupied: (surface.occupied[index] ?? 0) !== 0,
           stud: surface.studSixteenths[index] ?? NO_STUD,
           road: surface.road[index] ?? 0,
         };
@@ -234,6 +253,7 @@ class RoadStamp implements RoadCellRect {
     const edges = this.seamEdges(cells);
     this.seamCell = Int32Array.from(edges, (edge) => edge.cell);
     this.seamSide = Uint8Array.from(edges, (edge) => edge.side);
+    this.seamClosed = Uint8Array.from(edges, (edge) => (edge.closed ? 1 : 0));
     this.seamLineEnd = Int32Array.from(
       edges.flatMap((edge, e) => {
         const next = edges[e + 1];
@@ -247,21 +267,21 @@ class RoadStamp implements RoadCellRect {
   private seamEdges(cells: ReadonlyArray<StampCell>): ReadonlyArray<SeamEdge> {
     const at = (column: number, row: number): StampCell | undefined => {
       const inside = column >= 0 && column < this.width && row >= 0 && row < this.depth;
-      const cell = inside ? cells[row * this.width + column] : undefined;
-      return cell?.present ? cell : undefined;
+      return inside ? cells[row * this.width + column] : undefined;
     };
     const edges: SeamEdge[] = [];
     cells.forEach((cell, c) => {
       if (!cell.present) return;
       for (let side = 0; side < SIDE_NAMES.length; side++) {
-        const own = at(cell.column + (SIDE_DX[side] ?? 0), cell.row + (SIDE_DZ[side] ?? 0));
-        if (own?.top === cell.top) continue;
+        const beside = at(cell.column + (SIDE_DX[side] ?? 0), cell.row + (SIDE_DZ[side] ?? 0));
+        if (beside?.present && beside.top === cell.top) continue;
         const across = acrossX(side);
         edges.push({
           cell: c,
           side,
           line: (across ? cell.column : cell.row) + (SIDE_LINE_OFFSET[side] ?? 0),
           along: across ? cell.row : cell.column,
+          closed: closesEdge(cell, beside),
         });
       }
     });
@@ -295,6 +315,7 @@ const NO_SURFACE: RoadSurface = {
   topSixteenths: new Int32Array(0),
   studSixteenths: new Int32Array(0),
   road: new Uint8Array(0),
+  occupied: new Uint8Array(0),
 };
 
 class PlacedStamp implements FitKey {
@@ -824,7 +845,7 @@ export class RoadNetwork {
         if (stopAtMismatch && seams.mismatchCertain) return;
         met = true;
       }
-      if (!met && road !== 0) seams.pushOpen(e);
+      if (!met && road !== 0 && stamp.seamClosed[e] === 0) seams.pushOpen(e);
     }
   }
 }
