@@ -9,6 +9,7 @@ const ROAD_STRAIGHT = "ldraw:44336p04@72";
 const CC_BY_4 = "Licensed under CC BY 4.0 : see CAreadme.txt";
 const COTTAGE_FILE = "my-cottage.mpd";
 const SHED_FILE = "my-shed.mpd";
+const PARTS_OF_THEIR_OWN = ["my-chimney.dat", "my-roof.dat"];
 const TABLE_ONE: readonly [LatticePoint, LatticePoint] = [
   { x: -1600, z: -640 },
   { x: 0, z: 640 },
@@ -87,7 +88,7 @@ test("a plan of two tables, a modular, track across a road plate and two user mo
   const cottageFile = test.info().outputPath(COTTAGE_FILE);
   await writeFile(cottageFile, USER_COTTAGE);
   const editor = await EditorPage.open(page);
-  await editor.serveLdrawLibrary();
+  await editor.serveLdrawLibrary({ expectMissing: PARTS_OF_THEIR_OWN });
   const cottage = await editor.importModel(cottageFile);
   expect(cottage.status, cottage.text).toBe("placeable");
   await editor.escape();
@@ -156,7 +157,7 @@ test("a plan of two tables, a modular, track across a road plate and two user mo
   });
   const freshPage = await freshProfile.newPage();
   const fresh = await EditorPage.open(freshPage);
-  await fresh.serveLdrawLibrary();
+  await fresh.serveLdrawLibrary({ expectMissing: PARTS_OF_THEIR_OWN });
   expect(await snapshot(fresh)).toMatchObject({ poses: [], track: [], plans: [] });
   await openPlanFile(freshPage, planFile);
   await expect.poll(async () => (await fresh.poses()).length).toBe(saved.poses.length);
