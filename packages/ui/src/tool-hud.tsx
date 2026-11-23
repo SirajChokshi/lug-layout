@@ -176,8 +176,8 @@ export function ToolHud({ snapshot, play, hotbar }: ToolHudProps) {
   const view = toolHints(snapshot, play);
   const hotbarSnapshot = useHotbarSnapshot(hotbar);
   const slots = useMemo(
-    () => hotbarView(hotbarSnapshot, snapshot.catalog),
-    [hotbarSnapshot, snapshot.catalog],
+    () => hotbarView(hotbarSnapshot, snapshot.catalog, snapshot.roadKits),
+    [hotbarSnapshot, snapshot.catalog, snapshot.roadKits],
   );
   const cued = useLateCue(view.waiting === null ? null : pendingSearch(snapshot));
   const detail = shownDetail(view, cued);
