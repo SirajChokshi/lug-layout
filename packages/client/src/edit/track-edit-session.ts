@@ -62,6 +62,7 @@ export interface TrackPieceView {
   readonly connector: number;
   readonly connectors: number;
   readonly mirror: string | null;
+  readonly blocked: TrackBlockView | null;
 }
 
 export interface TrackView {
@@ -273,6 +274,7 @@ interface HeldPiece {
   readonly connector: number;
   readonly heading: number;
   readonly snap: PieceSnap | null;
+  readonly blocked: TrackBlockView | null;
 }
 
 function undrawableTrack(
@@ -349,6 +351,8 @@ export class TrackEditSession implements ITrackEditSession {
   private trackTallest: TallestTrain | null = null;
   private lastLow: TrackLowClearanceView | null = null;
   private placingPiers = false;
+  private blockedSnap: PieceSnap | null = null;
+  private blockedBands = -1;
 
   constructor(
     @inject(TRACK_WORLD) private readonly trackWorld: ITrackWorld,
@@ -415,7 +419,7 @@ export class TrackEditSession implements ITrackEditSession {
     this.held =
       pieceIndex === null
         ? null
-        : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null };
+        : { catalogIndex: pieceIndex, connector: 0, heading: 0, snap: null, blocked: null };
     this.backend.setGhost(null);
     this.trackWorld.requestPieceMeshes();
     this.lastCommit = null;
@@ -463,8 +467,14 @@ export class TrackEditSession implements ITrackEditSession {
       latticeZ,
       held.heading,
     );
-    if (snap !== held.snap) this.held = { ...held, snap };
-    const ghost = track.pieceGhost(held.catalogIndex, snap.placement, snap.yPlates);
+    const blocked = this.heldBlock(track, held, snap);
+    if (snap !== held.snap || blocked !== held.blocked) this.held = { ...held, snap, blocked };
+    const ghost = track.pieceGhost(
+      held.catalogIndex,
+      snap.placement,
+      snap.yPlates,
+      blocked !== null,
+    );
     this.backend.setGhost(ghost.instances);
     this.backend.placeGhost(ghost.x, 0, ghost.z, 0);
     this.targetTrackEnds(this.snapTargetsOf(snap), snap.misses);
@@ -930,6 +940,14 @@ export class TrackEditSession implements ITrackEditSession {
     });
   }
 
+  private heldBlock(track: TrackDrawing, held: HeldPiece, snap: PieceSnap): TrackBlockView | null {
+    this.trackWorld.ensureObstacles();
+    if (snap === this.blockedSnap && track.bandsVersion === this.blockedBands) return held.blocked;
+    this.blockedSnap = snap;
+    this.blockedBands = track.bandsVersion;
+    return track.pieceBlock(held.catalogIndex, snap.placement, snap.yPlates);
+  }
+
   private heldView(track: TrackDrawing): TrackPieceView | null {
     const held = this.held;
     if (!held) return null;
@@ -946,6 +964,7 @@ export class TrackEditSession implements ITrackEditSession {
       connector: ((held.connector % count) + count) % count,
       connectors: count,
       mirror: mirror === null ? null : track.pieceSet.element(mirror).title,
+      blocked: held.blocked,
     };
   }
 
