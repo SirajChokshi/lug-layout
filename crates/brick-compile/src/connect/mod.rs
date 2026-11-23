@@ -3,6 +3,7 @@ mod covered;
 mod depth_bands;
 mod faces;
 mod inferred;
+mod mating;
 mod meta;
 mod primitive;
 mod profile;
@@ -26,6 +27,7 @@ pub use faces::{
 pub use inferred::{
     EntranceClosure, Inference, InferredFeatures, Openness, SectionVocabulary, Uninferred,
 };
+pub use mating::{EngagedOffsets, Mate, ShapeError, SnapShape};
 pub use meta::{parse_metas, Meta, MetaError, ParsedMeta};
 pub use primitive::{PrimitiveConnectors, PrimitiveTable};
 pub use records::{

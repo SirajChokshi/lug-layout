@@ -3,6 +3,7 @@ use crate::affine::{Affine, Vec3};
 use crate::clip::{clip_to_box, polygon_area, Polygon, MAX_CLIPPED_VERTICES};
 use crate::lattice::STUD_LDU;
 use crate::mesh::{Mesh, WELD_EPSILON_LDU};
+use crate::stud_fit::ReceptorSeats;
 use crate::trig::planar_length;
 
 pub fn stud_field_collides(
@@ -11,11 +12,12 @@ pub fn stud_field_collides(
     stud: StudShape,
     phase: [u32; 2],
     floor_y: f64,
+    seats: &ReceptorSeats,
 ) -> bool {
     let reach = stud.inscribed_radius - WELD_EPSILON_LDU;
     let bottom = floor_y + WELD_EPSILON_LDU;
     let top = floor_y + stud.height - WELD_EPSILON_LDU;
-    instances.iter().any(|instance| {
+    instances.iter().enumerate().any(|(index, instance)| {
         let solid = &solids[instance.part];
         let bounds = world_box(instance, solid);
         let [min, max] = bounds;
@@ -29,7 +31,8 @@ pub fn stud_field_collides(
             stud_centres(min[2] - reach, max[2] + reach, phase[1]).any(|z| {
                 let low = [x - reach, bottom, z - reach];
                 let high = [x + reach, top, z + reach];
-                overlaps(&bounds, low, high)
+                !seats.seats(index, [x, floor_y, z])
+                    && overlaps(&bounds, low, high)
                     && solid_reaches(instance.matrix, &to_part, solid, [low, high], [x, z], reach)
             })
         })
@@ -165,6 +168,7 @@ fn segment_distance(a: [f64; 2], b: [f64; 2]) -> f64 {
 mod tests {
     use super::*;
     use crate::flatten::Triangle;
+    use crate::lattice::{AxisPose, LatticeInstance};
     use crate::mesh;
 
     const OPAQUE: u32 = 4;
@@ -274,5 +278,51 @@ mod tests {
             .collect();
         assert_eq!(inscribed_radius(&mesh::build(&disc, &[])), None);
         assert_eq!(inscribed_radius(&mesh::build(&cone, &[])), None);
+    }
+
+    #[test]
+    fn a_receptor_that_takes_the_stud_vouches_for_its_own_parts_cavity_and_never_for_another_part()
+    {
+        const STUD: StudShape = StudShape {
+            height: HEIGHT,
+            radius: 6.0,
+            inscribed_radius: 5.8848,
+        };
+        const TIGHT_CAVITY: f64 = 5.5;
+        const DOWN: Vec3 = [0.0, -1.0, 0.0];
+        let mut walls = Vec::new();
+        square_wall(&mut walls, TIGHT_CAVITY);
+        let solids = [PartSolid::from_mesh(&mesh::build(&walls, &[]))];
+        let at = Affine::IDENTITY;
+        let cavity = || CoverInstance {
+            matrix: &at,
+            color: OPAQUE,
+            part: 0,
+            studs: &[],
+        };
+        let receptor = |axis: Vec3| {
+            [AxisPose {
+                origin: [0.0, 0.0, 0.0],
+                axis,
+            }]
+        };
+        let (downward, upward) = (receptor(DOWN), receptor([0.0, 1.0, 0.0]));
+        let seats_of = |receptors: &[AxisPose]| {
+            ReceptorSeats::of(&[LatticeInstance {
+                matrix: &at,
+                studs: &[],
+                receptors,
+                bounds_min: [-TIGHT_CAVITY, 0.0, -TIGHT_CAVITY],
+                bounds_max: [TIGHT_CAVITY, HEIGHT, TIGHT_CAVITY],
+            }])
+        };
+        let collides = |instances: &[CoverInstance], seats: &ReceptorSeats| {
+            stud_field_collides(instances, &solids, STUD, [0, 0], 0.0, seats)
+        };
+
+        assert!(collides(&[cavity()], &ReceptorSeats::default()));
+        assert!(collides(&[cavity()], &seats_of(&upward)));
+        assert!(!collides(&[cavity()], &seats_of(&downward)));
+        assert!(collides(&[cavity(), cavity()], &seats_of(&downward)));
     }
 }

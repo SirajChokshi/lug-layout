@@ -1,0 +1,262 @@
+{
+  "pairs": [
+    {
+      "name": "a stud seats in a plate's anti-stud, closed above it",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a stud seats home in a blind cavity deeper than itself",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 20]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a stud longer than a blind cavity holds it off its root, where it bottoms out",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 2]] },
+      "engaged": [[32, 32]]
+    },
+    {
+      "name": "a stud seats at its root in a through hole of its radius and never sinks past it",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 8]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a stud seats in a square receptor of its half-width",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[2, 6, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a stud is gripped past a wider counterbore",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 8, 2], [0, 6, 16]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a counterbore-sized round rests on the counterbore, blocked by the bore",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 8, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 8, 2], [0, 6, 16]] },
+      "engaged": [[32, 32]]
+    },
+    {
+      "name": "a stud never fits a holder narrower than itself",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 4, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "a stud is loose in a wider hole, which never mates",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 8, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "a round stud never enters an axle hole",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[1, 6, 8]] },
+      "engaged": []
+    },
+    {
+      "name": "a grouped receptor never takes an ungrouped stud",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "token-a", "sections": [[0, 6, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "a female flare reads round at its own radius",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[3, 6, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a stud rests anywhere along an open receptor that slides on it",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "female": { "caps": 0, "slide": true, "group": "", "sections": [[0, 6, 4]] },
+      "engaged": [[0, 63]]
+    },
+    {
+      "name": "an axle fits a round of its half-width",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[1, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "an axle fits an axle hole of its size",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[1, 4, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[1, 4, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a square's corners stand outside a round of its half-width",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[2, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "a square whose corners a round clears is loose in it, so never mates",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[2, 3, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 4.25, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "a collared shaft seats where its collar meets a deep socket's mouth",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 4], [0, 8, 2], [0, 6, 16]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 30]] },
+      "engaged": [[96, 96]]
+    },
+    {
+      "name": "a collared pin open at both ends rests at its seats and wherever the shorter lies fully on the longer",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 4], [0, 8, 2], [0, 6, 16]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 8]] },
+      "engaged": [[-64, -64], [96, 224]]
+    },
+    {
+      "name": "a bore drawn in two halves holds a collared pin like a whole one",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 4], [0, 8, 2], [0, 6, 16]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 4], [0, 6, 4]] },
+      "engaged": [[-64, -64], [96, 224]]
+    },
+    {
+      "name": "a sleeve rests anywhere along a bar held at both ends",
+      "male": { "caps": 3, "slide": false, "group": "", "sections": [[0, 4, 12]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 4, 4]] },
+      "engaged": [[0, 128]]
+    },
+    {
+      "name": "a sliding bar rests partway in a shorter sleeve",
+      "male": { "caps": 1, "slide": true, "group": "", "sections": [[0, 4, 18]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 4, 12]] },
+      "engaged": [[0, 287]]
+    },
+    {
+      "name": "a free sliding shaft rests partway in a blind socket",
+      "male": { "caps": 0, "slide": true, "group": "", "sections": [[0, 4, 18]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 4, 20]] },
+      "engaged": [[-32, 287]]
+    },
+    {
+      "name": "a free sliding shaft rests partway in a stepped sleeve, from a whole sixteenth",
+      "male": { "caps": 0, "slide": true, "group": "", "sections": [[0, 4, 18]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 4, 6.7], [0, 6, 5.3]] },
+      "engaged": [[-107, 287]]
+    },
+    {
+      "name": "a rooted sliding neck rests only home in a blind cap",
+      "male": { "caps": 1, "slide": true, "group": "", "sections": [[0, 6, 12]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 20]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a male flare at the tip seats as round at its round partner's radius",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 16], [3, 6.25, 2]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 18]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a male flare at the root seats home, and also where it has sprung open below the mouth",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[4, 6.25, 2], [0, 6, 16]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 18]] },
+      "engaged": [[0, 0], [32, 32]]
+    },
+    {
+      "name": "a lipped flare holds where it has sprung open into a groove or past the bore",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 10], [3, 6.25, 2]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 6], [0, 8, 3], [0, 6, 6]] },
+      "engaged": [[0, 0], [48, 48], [64, 64]]
+    },
+    {
+      "name": "an unrooted lipped flare rests in a round-then-square bore only where it is not squeezed",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 10], [3, 6.25, 2]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 12], [2, 6, 8]] },
+      "engaged": [[-160, -160], [-128, 0]]
+    },
+    {
+      "name": "a lipped flare seats home in a square-then-round socket",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 10], [3, 6.25, 2]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[2, 6, 8], [0, 6, 12]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a female flare reads round whatever sits beside it",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[0, 6, 14]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[2, 6, 4], [3, 6.5, 2], [0, 6, 12]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a male flare whose partner isn't round never mates",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[1, 4, 11], [3, 4.25, 1]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 4, 12]] },
+      "engaged": []
+    },
+    {
+      "name": "a male flare with no partner never mates",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[3, 6.25, 2], [0, 6, 10]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[0, 6, 12]] },
+      "engaged": []
+    },
+    {
+      "name": "connectors with the same group token mate",
+      "male": { "caps": 1, "slide": false, "group": "token-a", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "token-a", "sections": [[0, 6, 4]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "connectors with different group tokens never mate",
+      "male": { "caps": 1, "slide": false, "group": "token-a", "sections": [[0, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "token-b", "sections": [[0, 6, 4]] },
+      "engaged": []
+    },
+    {
+      "name": "zero-length faces of one group engage only where they touch",
+      "male": { "caps": 0, "slide": false, "group": "token-face", "sections": [[0, 0, 0]] },
+      "female": { "caps": 0, "slide": false, "group": "token-face", "sections": [[0, 0, 0]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a finger seats in a gap of exactly its width",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[5, 0, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[6, 0, 8]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "a finger never seats in a gap a sixteenth wider",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[5, 0, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[6, 0, 8.0625]] },
+      "engaged": []
+    },
+    {
+      "name": "a finger seats at every gap of its width in a longer sequence",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[5, 0, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[5, 0, 8], [6, 0, 8], [5, 0, 8], [6, 0, 8], [5, 0, 8]] },
+      "engaged": [[-384, -384], [-128, -128]]
+    },
+    {
+      "name": "ungrouped fingers that both state a radius need it equal",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[5, 9.5, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[6, 9, 8]] },
+      "engaged": []
+    },
+    {
+      "name": "ungrouped fingers mate where one leaves its radius unstated",
+      "male": { "caps": 0, "slide": false, "group": "", "sections": [[5, 9.5, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "", "sections": [[6, 0, 8]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "grouped fingers mate on their token and widths whatever radii they state",
+      "male": { "caps": 0, "slide": false, "group": "token-finger", "sections": [[5, 2, 8]] },
+      "female": { "caps": 0, "slide": false, "group": "token-finger", "sections": [[6, 4, 8]] },
+      "engaged": [[0, 0]]
+    },
+    {
+      "name": "an unmodelled section code never mates",
+      "male": { "caps": 1, "slide": false, "group": "", "sections": [[7, 6, 4]] },
+      "female": { "caps": 2, "slide": false, "group": "", "sections": [[0, 6, 4]] },
+      "engaged": []
+    }
+  ]
+}
