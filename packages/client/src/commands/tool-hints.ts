@@ -343,7 +343,7 @@ function heldPieceView(track: TrackView): HintView | null {
       key("next-connector", "next end"),
       key("flip-switch", "other hand"),
       key("rotate", "turn"),
-      key("select-tool", "done"),
+      key("select-tool", "let go, keep drawing"),
     ],
   };
 }
