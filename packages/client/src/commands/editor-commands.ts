@@ -791,7 +791,8 @@ export function runEditorAction(
       editor.cancelGesture();
       return;
     case "select-tool":
-      if (!editor.dropTrackEnd()) editor.chooseItem(null);
+      if (editor.dropTrackEnd()) return;
+      editor.chooseItem(editor.snapshot().track?.held ? TRACK_ITEM_ID : null);
       return;
     case "draw-track":
       editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);

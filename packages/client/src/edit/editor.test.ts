@@ -3081,6 +3081,33 @@ it("gives A to the placement mode wherever its switch is enabled, except at an o
   });
 }, 120_000);
 
+it("lets go of a held switch on Esc and keeps drawing track from its open end, and leaves the tool on the next Esc", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const camera = container.get(EDITOR_CAMERA);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+  const holding = editor.snapshot().track?.held != null;
+  runEditorAction(editor, camera, "select-tool", 0);
+  const letGo = { mode: editor.snapshot().mode, held: editor.snapshot().track?.held ?? null };
+  const [end] = editor.dump().trackEnds;
+  if (!end) throw new Error("the laid switch has no open end");
+  backend.aim(end.xLdu, end.zLdu);
+  editor.pointerMove(0, 0);
+  editor.extendTrack("straight", 0);
+  const extended = editor.dump().laidTrack.length;
+  runEditorAction(editor, camera, "select-tool", 0);
+  runEditorAction(editor, camera, "select-tool", 0);
+
+  expect({ holding, letGo, extended, left: editor.snapshot().mode }).toEqual({
+    holding: true,
+    letGo: { mode: "track", held: null },
+    extended: 2,
+    left: "select",
+  });
+}, 120_000);
+
 it("selects nothing on a laid piece clicked in the track tool, leaves the tool on one Esc with nothing to let go of, and extends an open end clicked there", async () => {
   const { editor, backend, container } = await startEditor([]);
   const camera = container.get(EDITOR_CAMERA);
