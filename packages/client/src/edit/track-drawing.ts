@@ -41,6 +41,7 @@ import {
   outlineContains,
   placedOutline,
   placedOutlineInto,
+  CLOSURE_BUDGET,
   solveClosure,
   studlessTopBlocker,
   PlacedOutline,
@@ -99,7 +100,6 @@ import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece, TrackPartCount } from "../connect/model-track-ends.ts";
 import {
-  CLOSURE_BUDGET_MS,
   TrackDrag,
   type DragField,
   type DragEnds,
@@ -1161,7 +1161,6 @@ export class TrackDrawing implements ExtensionSite {
       this.active.router,
       ends,
       this.laidRunEnd,
-      () => performance.now(),
       { hitX, hitZ, latticeX, latticeZ },
       from,
       band.field,
@@ -1558,19 +1557,13 @@ export class TrackDrawing implements ExtensionSite {
     const startPlates = this.endHeight(from);
     const { field, pending } = this.bands.laying(startPlates, startPlates);
     if (pending) return { kind: "refused", refusal: "pending", blocked: null };
-    const result = solveClosure(
-      this.kit,
-      start,
-      goal,
-      { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
-      {
-        clearance: field.clearance,
-        support: field.support,
-        outlines: this.active.outlines,
-        startOwner: field.pieceOwner(this.endOwners[from]),
-        goalOwner: field.pieceOwner(this.endOwners[to]),
-      },
-    );
+    const result = solveClosure(this.kit, start, goal, CLOSURE_BUDGET, {
+      clearance: field.clearance,
+      support: field.support,
+      outlines: this.active.outlines,
+      startOwner: field.pieceOwner(this.endOwners[from]),
+      goalOwner: field.pieceOwner(this.endOwners[to]),
+    });
     switch (result.kind) {
       case "exact": {
         const moves = runMoves(this.kit, result.run);

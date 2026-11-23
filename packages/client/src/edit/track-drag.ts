@@ -1,4 +1,5 @@
 import {
+  CLOSURE_BUDGET,
   NO_OBSTACLE,
   RUN_CROSSING,
   StrokePath,
@@ -10,7 +11,6 @@ import {
   type DrawingKit,
   type FollowedRun,
   type MoveFrame,
-  type SearchBudget,
   type SupportSite,
   type StrokeGoal,
   type StrokeRouter,
@@ -115,7 +115,6 @@ const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
 const NO_MOVES: ReadonlyArray<TrackMove> = [];
-export const CLOSURE_BUDGET_MS = 30;
 
 export type SupportedPiece = (
   frame: MoveFrame,
@@ -249,7 +248,6 @@ export class TrackDrag {
     private readonly router: StrokeRouter,
     private readonly ends: DragEnds,
     private readonly runEnd: RunEndOf,
-    private readonly now: () => number,
     private readonly press: DragPress,
     readonly fromEnd: number | null,
     field: DragField,
@@ -403,8 +401,7 @@ export class TrackDrag {
     let byGoal = this.wholeClosures.get(start);
     const cached = byGoal?.get(goal.pose);
     if (cached) return cached;
-    const budget: SearchBudget = { now: this.now, limitMs: CLOSURE_BUDGET_MS };
-    const result = solveClosure(this.kit, start, goal.pose, budget, site);
+    const result = solveClosure(this.kit, start, goal.pose, CLOSURE_BUDGET, site);
     if (!byGoal) {
       byGoal = new Map();
       this.wholeClosures.set(start, byGoal);
