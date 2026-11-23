@@ -6,6 +6,7 @@ const EAST = 0;
 const WEST = HEADINGS / 2;
 const QUARTER_TURN = HEADINGS / 4;
 const SWITCH_PIECE = /^track-piece:ldraw:7554[12]-/u;
+const STRAIGHT_PIECE = "track-piece:ldraw:74746";
 const SWITCH_STRAIGHT_ENDS = 2;
 
 test("a straight run closed into an oval joins every end exactly", async ({ page }) => {
@@ -113,7 +114,7 @@ test("an oval laid piece by piece from the keyboard closes through the join it s
   expect(left).toEqual([loop - HALF_TURN_CURVES / 2, ...keys.map((_, i) => loop - 5 - i)]);
 });
 
-test("an end that can't be joined, a refused drag and a blocked piece each say why", async ({
+test("an end that can't be joined, a refused drag, a blocked next piece and a held piece that would cross track each say why", async ({
   page,
 }) => {
   const editor = await EditorPage.open(page);
@@ -133,6 +134,10 @@ test("an end that can't be joined, a refused drag and a blocked piece each say w
   await editor.hoverAt(await editor.screenOf(end));
   await editor.press("w");
   const pressed = await editor.toolHint();
+  await editor.choose(STRAIGHT_PIECE);
+  await editor.hoverAt(await editor.screenOf(end));
+  const held = await editor.toolHint();
+  await editor.clickAt(end);
 
   expect(pointed).toContain("Next piece: straight (blocked)");
   expect(pointed).toContain("can't be joined: no exact join reaches it");
@@ -141,5 +146,7 @@ test("an end that can't be joined, a refused drag and a blocked piece each say w
   expect(releasedHint).toContain("no exact join reaches that end");
   expect(pressed).toContain("Nothing laid");
   expect(pressed).toContain("the next piece would cross the track laid there");
+  expect(held).toContain("would cross the track laid there");
+  expect(held).toContain("refused here");
   expect(await editor.laidTrack()).toHaveLength(laid);
 });

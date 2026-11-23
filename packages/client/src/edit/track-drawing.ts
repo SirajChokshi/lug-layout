@@ -703,6 +703,8 @@ export class TrackDrawing implements ExtensionSite {
   private pieceGhostIndex = -1;
   private pieceGhostPlacement: Pose16 | null = null;
   private pieceGhostPlates = GROUND_PLATES;
+  private pieceGhostRefused = false;
+  private bandsChanges = 0;
   private laidStart: Pose16 | null = null;
   private laidMoves: ReadonlyArray<TrackMove> | null = null;
   private lastLaid: LaidRunEnd | null = null;
@@ -1000,6 +1002,10 @@ export class TrackDrawing implements ExtensionSite {
     return this.changes;
   }
 
+  get bandsVersion(): number {
+    return this.bandsChanges;
+  }
+
   openEnds(): ReadonlyArray<TrackEndView> {
     this.openEndViews ??= this.openList.map((end) => endView(end.pose, end.frame, end.yPlates));
     return this.openEndViews;
@@ -1164,6 +1170,7 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   setBands(source: SupportBandAt): void {
+    this.bandsChanges++;
     this.bands.setSource(source);
     this.skipped.clear();
     this.reseatDrag(this.dragPlates);
@@ -2068,13 +2075,19 @@ export class TrackDrawing implements ExtensionSite {
     return last;
   }
 
-  pieceGhost(catalogIndex: number, placement: Pose16, yPlates: number): PreviewGhost {
+  pieceGhost(
+    catalogIndex: number,
+    placement: Pose16,
+    yPlates: number,
+    refused: boolean,
+  ): PreviewGhost {
     const last = this.lastPieceGhost;
     if (
       last &&
       catalogIndex === this.pieceGhostIndex &&
       placement === this.pieceGhostPlacement &&
-      yPlates === this.pieceGhostPlates
+      yPlates === this.pieceGhostPlates &&
+      refused === this.pieceGhostRefused
     ) {
       return last;
     }
@@ -2083,7 +2096,7 @@ export class TrackDrawing implements ExtensionSite {
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
     const partIndex = Uint16Array.of(part.partIndex);
-    const colorIndex = Uint16Array.of(part.color);
+    const colorIndex = Uint16Array.of(refused ? this.refusedColor : part.color);
     const matrices = new Float32Array(INSTANCE_MATRIX_FLOATS);
     const yLdu = part.yLdu + yPlates * PLATE_LDU;
     writeMatrix(matrices, 0, placement, part.piece.partFrame, yLdu, originX, originZ);
@@ -2104,6 +2117,7 @@ export class TrackDrawing implements ExtensionSite {
     this.pieceGhostIndex = catalogIndex;
     this.pieceGhostPlacement = placement;
     this.pieceGhostPlates = yPlates;
+    this.pieceGhostRefused = refused;
     return ghost;
   }
 
