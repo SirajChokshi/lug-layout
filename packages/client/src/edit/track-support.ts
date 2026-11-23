@@ -27,6 +27,7 @@ const QUARTER_COS = [1, 0, -1, 0] as const;
 const QUARTER_SIN = [0, 1, 0, -1] as const;
 const HALF_STEP_RADIANS = Math.PI / HALF_STEPS_PER_QUARTER_TURN / 2;
 const ORIGIN_FLOATS = 3;
+const ROW_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 
 export function antiStudsOf(table: ConnectorTable, undersideLdu: number): Int32Array {
   const underside = undersideLdu * SIXTEENTHS_PER_LDU;
@@ -106,6 +107,38 @@ function placedPartPose(frame: TrackPartFrame, placement: Pose16): PartPose {
 const NO_CELLS = new Int32Array(0);
 const NO_POINTS = new Float64Array(0);
 
+export interface TrackEndAt {
+  readonly xLdu: number;
+  readonly zLdu: number;
+  readonly heading: number;
+}
+
+function alongEnd(part: PartPose, ox: number, oz: number, end: TrackEndAt): number {
+  const { x: dirX, z: dirZ } = zeta16Direction(end.heading);
+  const x = part.x + part.cos * ox - part.sin * oz - end.xLdu * SIXTEENTHS_PER_LDU;
+  const z = part.z + part.sin * ox + part.cos * oz - end.zLdu * SIXTEENTHS_PER_LDU;
+  return Math.abs(x * dirX + z * dirZ);
+}
+
+function onLattice(part: PartPose, ox: number, oz: number): boolean {
+  return (
+    part.exact &&
+    Number.isInteger(studCell(part.x + part.cos * ox - part.sin * oz)) &&
+    Number.isInteger(studCell(part.z + part.sin * ox + part.cos * oz))
+  );
+}
+
+function nearestAlong(origins: Int32Array, part: PartPose, end: TrackEndAt): number {
+  let nearest = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < origins.length; i += 2) {
+    const ox = origins[i] ?? 0;
+    const oz = origins[i + 1] ?? 0;
+    if (part.exact && !onLattice(part, ox, oz)) continue;
+    nearest = Math.min(nearest, alongEnd(part, ox, oz, end));
+  }
+  return nearest;
+}
+
 export class TrackSupport {
   constructor(private readonly antiStuds: ReadonlyMap<number, Int32Array>) {}
 
@@ -141,6 +174,62 @@ export class TrackSupport {
       points[i + 1] = (part.z + part.sin * ox + part.cos * oz) / SIXTEENTHS_PER_LDU;
     }
     return points;
+  }
+
+  endRowCells(
+    catalogIndex: number,
+    frame: TrackPartFrame,
+    placement: Pose16,
+    end: TrackEndAt,
+  ): Int32Array {
+    const origins = this.antiStuds.get(catalogIndex);
+    const part = exactPartPose(frame, placement);
+    if (!origins || !part) return NO_CELLS;
+    const nearest = nearestAlong(origins, part, end);
+    const cells: number[] = [];
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      if (!onLattice(part, ox, oz) || alongEnd(part, ox, oz, end) >= nearest + ROW_SIXTEENTHS) {
+        continue;
+      }
+      const cellX = studCell(part.x + part.cos * ox - part.sin * oz);
+      const cellZ = studCell(part.z + part.sin * ox + part.cos * oz);
+      if (Number.isInteger(cellX) && Number.isInteger(cellZ)) cells.push(cellX, cellZ);
+    }
+    return Int32Array.from(cells);
+  }
+
+  endRests(
+    catalogIndex: number,
+    frame: TrackPartFrame,
+    placement: Pose16,
+    runFrame: PlacementFrame,
+    end: TrackEndAt,
+    seats: StudSeats,
+    studlessTops: TrackClearance,
+    onTable: boolean,
+  ): boolean {
+    const origins = this.antiStuds.get(catalogIndex);
+    if (!origins) return false;
+    const part = framedPartPose(frame, placement, runFrame);
+    const nearest = nearestAlong(origins, part, end);
+    for (let i = 0; i < origins.length; i += 2) {
+      const ox = origins[i] ?? 0;
+      const oz = origins[i + 1] ?? 0;
+      if (part.exact && !onLattice(part, ox, oz)) continue;
+      if (alongEnd(part, ox, oz, end) >= nearest + ROW_SIXTEENTHS) continue;
+      const x = part.x + part.cos * ox - part.sin * oz;
+      const z = part.z + part.sin * ox + part.cos * oz;
+      if (part.exact && onStud(x, z, seats)) return true;
+      if (
+        onTable &&
+        overBareGround(x / SIXTEENTHS_PER_LDU, z / SIXTEENTHS_PER_LDU, seats, studlessTops)
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   supported(

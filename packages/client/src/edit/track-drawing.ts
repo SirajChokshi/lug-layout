@@ -234,6 +234,35 @@ export interface RaisedPiece {
   readonly yPlates: number;
 }
 
+export interface RampEndRest {
+  readonly indices: ReadonlyArray<number>;
+  readonly yPlates: number;
+  readonly antiStuds: Int32Array;
+  readonly rows: ReadonlyArray<Int32Array>;
+  readonly xLdu: number;
+  readonly zLdu: number;
+}
+
+interface RampEndDraft {
+  readonly indices: number[];
+  readonly rows: Int32Array[];
+  readonly yPlates: number;
+  readonly xLdu: number;
+  readonly zLdu: number;
+}
+
+export type StudSeatProbe = (cellX: number, cellZ: number, baseLdu: number) => boolean;
+
+interface RampEndRow {
+  readonly piece: number;
+  readonly baseLdu: number;
+  readonly cells: Int32Array;
+}
+
+function endKeyOf(pose: Pose16, yPlates: number): string {
+  return `${pose.position.join(",")}@${yPlates}`;
+}
+
 interface RunHeightsResult {
   readonly kind: "heights" | "too-steep";
   readonly heights: RunHeights;
@@ -705,6 +734,10 @@ export class TrackDrawing implements ExtensionSite {
   private pieceGhostPlates = GROUND_PLATES;
   private pieceGhostRefused = false;
   private bandsChanges = 0;
+  private readonly seatedRampOwners: number[] = [];
+  private rampRows: ReadonlyArray<RampEndRow> = [];
+  private rampRowsGraph: TrackGraph | null = null;
+  private rampRowsSupport: TrackSupport | null = null;
   private laidStart: Pose16 | null = null;
   private laidMoves: ReadonlyArray<TrackMove> | null = null;
   private lastLaid: LaidRunEnd | null = null;
@@ -1201,6 +1234,8 @@ export class TrackDrawing implements ExtensionSite {
     const layout = this.combined;
     const bands = this.supportBands(support);
     const found: UnsupportedPiece[] = [];
+    const levelHeld = new Uint8Array(layout.count);
+    const ramps: number[] = [];
     for (let p = 0; p < layout.count; p++) {
       const catalogIndex = layout.piece(p);
       const outline = this.outlines.get(catalogIndex);
@@ -1211,7 +1246,7 @@ export class TrackDrawing implements ExtensionSite {
       if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
       if (band.pending) return null;
       if (layout.rise(p) !== 0) {
-        found.push({ piece: p, block: null, tilted: true });
+        ramps.push(p);
         continue;
       }
       const onTable = yPlates === GROUND_PLATES;
@@ -1226,18 +1261,64 @@ export class TrackDrawing implements ExtensionSite {
       outlineBox(placed, box, 0);
       const { studlessTops } = band.field.support;
       const top = studlessTops.blocker(placed, box, 0, 0, 0, NO_OBSTACLE, NO_OBSTACLE);
-      if (top === NO_OBSTACLE && onTable) continue;
       const { seats } = band;
       const { partFrame } = piece;
       if (
+        (top === NO_OBSTACLE && onTable) ||
         support.supported(catalogIndex, partFrame, placement, seats, studlessTops, frame, onTable)
       ) {
+        levelHeld[p] = 1;
         continue;
       }
       const block = top === NO_OBSTACLE ? null : band.field.describe(studlessTopBlocker(top));
       found.push({ piece: p, block, tilted: false });
     }
+    for (const p of ramps) {
+      const rests = this.rampRests(p, support, bands, levelHeld);
+      if (rests === null) return null;
+      if (!rests) found.push({ piece: p, block: null, tilted: true });
+    }
     return found;
+  }
+
+  private rampRests(
+    p: number,
+    support: TrackSupport,
+    bands: ReadonlyMap<number, LayingBand>,
+    levelHeld: Uint8Array,
+  ): boolean | null {
+    const graph = this.graph;
+    const layout = this.combined;
+    const catalogIndex = layout.piece(p);
+    const piece = this.pieces[catalogIndex];
+    if (!piece) return false;
+    const last = graph.endStart[p + 1] ?? 0;
+    for (let end = graph.endStart[p] ?? 0; end < last; end++) {
+      const partner = graph.endPartner[end] ?? -1;
+      const neighbour = partner < 0 ? -1 : (graph.endPlacement[partner] ?? -1);
+      if (neighbour >= 0 && layout.rise(neighbour) === 0 && levelHeld[neighbour] === 1) continue;
+      const yPlates = graph.endYPlates[end] ?? GROUND_PLATES;
+      const band = bands.get(yPlates);
+      if (!band) throw new Error(`no support band was built for ${yPlates} plates up`);
+      if (band.pending) return null;
+      const at = {
+        xLdu: graph.endXLdu[end] ?? 0,
+        zLdu: graph.endZLdu[end] ?? 0,
+        heading: graph.endHeading[end] ?? 0,
+      };
+      const rests = support.endRests(
+        catalogIndex,
+        piece.partFrame,
+        layout.pose(p),
+        layout.frame(p),
+        at,
+        band.seats,
+        band.field.support.studlessTops,
+        yPlates === GROUND_PLATES,
+      );
+      if (!rests) return false;
+    }
+    return true;
   }
 
   private supportBands(support: TrackSupport): ReadonlyMap<number, LayingBand> {
@@ -1249,27 +1330,39 @@ export class TrackDrawing implements ExtensionSite {
       const outline = this.outlines.get(catalogIndex);
       const piece = this.pieces[catalogIndex];
       if (!outline || !piece) continue;
-      const yPlates = layout.yPlates(p);
-      const reach = reachAt.get(yPlates) ?? [];
-      reachAt.set(yPlates, reach);
       const placement = layout.pose(p);
       const frame = layout.frame(p);
+      const heights = layout.rise(p) === 0 ? [layout.yPlates(p)] : this.endHeightsOf(p);
       outlineBox(
         framedOutlineInto(outline, placement, frame, this.framedScratchFor(outline.length)),
         box,
         0,
       );
-      reach.push(...box);
+      const outlineReach = Array.from(box);
       const antiStuds = support.antiStudPoints(catalogIndex, piece.partFrame, placement, frame);
-      if (antiStuds.length === 0) continue;
-      outlineBox(antiStuds, box, 0);
-      reach.push(...box);
+      if (antiStuds.length > 0) outlineBox(antiStuds, box, 0);
+      for (const yPlates of heights) {
+        const reach = reachAt.get(yPlates) ?? [];
+        reachAt.set(yPlates, reach);
+        reach.push(...outlineReach);
+        if (antiStuds.length > 0) reach.push(...box);
+      }
     }
     const bands = new Map<number, LayingBand>();
     for (const [yPlates, reach] of reachAt) {
       bands.set(yPlates, this.bands.reaching(yPlates, yPlates, Float64Array.from(reach)));
     }
     return bands;
+  }
+
+  private endHeightsOf(p: number): ReadonlyArray<number> {
+    const graph = this.graph;
+    const heights: number[] = [];
+    const last = graph.endStart[p + 1] ?? 0;
+    for (let end = graph.endStart[p] ?? 0; end < last; end++) {
+      heights.push(graph.endYPlates[end] ?? GROUND_PLATES);
+    }
+    return heights;
   }
 
   supportParts(): ReadonlyArray<SupportPart> {
@@ -1472,6 +1565,7 @@ export class TrackDrawing implements ExtensionSite {
     carried: ReadonlyArray<FramedTrackPiece>,
     moving: ReadonlySet<number>,
     movingOwners: ReadonlySet<number>,
+    seated: StudSeatProbe | null = null,
   ): TrackBlockView | null {
     const box = this.collisionBox;
     const rect = this.rectOutline;
@@ -1479,7 +1573,8 @@ export class TrackDrawing implements ExtensionSite {
       const field = this.bands.solid(low, high);
       const span = this.bands.span(low, high);
       const skipped = this.skippedIds(field, moving, movingOwners);
-      const joined = this.carriedJoins(field, carried, moving);
+      const carriedJoined = this.carriedJoins(field, carried, moving);
+      const joined = seated ? this.withSeatedRamps(field, carriedJoined, seated) : carriedJoined;
       const { rects, floats } = rectsIn(span.bottomLdu, span.topLdu);
       for (let r = 0; r < floats; r += OBSTACLE_RECT_FLOATS) {
         writeRectOutline(rect, rects, r);
@@ -1516,6 +1611,61 @@ export class TrackDrawing implements ExtensionSite {
       if (hit !== NO_OBSTACLE) return field.describe(hit);
     }
     return null;
+  }
+
+  private withSeatedRamps(
+    field: DragField,
+    joined: ReadonlyArray<number>,
+    seated: StudSeatProbe,
+  ): ReadonlyArray<number> {
+    const rows = this.rampEndRows();
+    if (rows.length === 0) return joined;
+    const owners = this.seatedRampOwners;
+    owners.length = 0;
+    for (const owner of joined) owners.push(owner);
+    for (const row of rows) {
+      const owner = field.pieceOwner(row.piece);
+      if (owners.includes(owner)) continue;
+      for (let i = 0; i < row.cells.length; i += 2) {
+        if (!seated(row.cells[i] ?? 0, row.cells[i + 1] ?? 0, row.baseLdu)) continue;
+        owners.push(owner);
+        break;
+      }
+    }
+    return owners;
+  }
+
+  private rampEndRows(): ReadonlyArray<RampEndRow> {
+    const support = this.support;
+    if (this.rampRowsGraph === this.graph && this.rampRowsSupport === support) {
+      return this.rampRows;
+    }
+    this.rampRowsGraph = this.graph;
+    this.rampRowsSupport = support;
+    const rows: RampEndRow[] = [];
+    this.rampRows = rows;
+    if (!support) return rows;
+    const graph = this.graph;
+    const layout = this.combined;
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.rise(p) === 0 || layout.frame(p).id !== WORLD_TRACK_FRAME.id) continue;
+      const catalogIndex = layout.piece(p);
+      const piece = this.pieces[catalogIndex];
+      if (!piece) continue;
+      const last = graph.endStart[p + 1] ?? 0;
+      for (let end = graph.endStart[p] ?? 0; end < last; end++) {
+        const at = {
+          xLdu: graph.endXLdu[end] ?? 0,
+          zLdu: graph.endZLdu[end] ?? 0,
+          heading: graph.endHeading[end] ?? 0,
+        };
+        const cells = support.endRowCells(catalogIndex, piece.partFrame, layout.pose(p), at);
+        if (cells.length === 0) continue;
+        const baseLdu = this.bandBottomLdu(graph.endYPlates[end] ?? GROUND_PLATES);
+        rows.push({ piece: p, baseLdu, cells });
+      }
+    }
+    return rows;
   }
 
   private carriedJoins(
@@ -2328,6 +2478,64 @@ export class TrackDrawing implements ExtensionSite {
     );
   }
 
+  rampEndsAbove(change: TrackChange): ReadonlyArray<RampEndRest> {
+    const support = this.support;
+    if (!support || change.lay.every((at) => at.rise === 0)) return [];
+    const levelEnds = new Set<string>();
+    const layout = this.combined;
+    for (let p = 0; p < layout.count; p++) {
+      if (layout.rise(p) !== 0) continue;
+      const count = this.pieces[layout.piece(p)]?.connectors.length ?? 0;
+      for (let c = 0; c < count; c++) {
+        levelEnds.add(endKeyOf(layout.connectorPose(p, c), layout.yPlates(p)));
+      }
+    }
+    for (const at of change.lay) {
+      if (at.rise !== 0) continue;
+      const count = this.pieceByIndex(at.piece).def.connectors.length;
+      for (let c = 0; c < count; c++) {
+        levelEnds.add(endKeyOf(this.connectorPose(at.piece, at.pose, c), at.yPlates));
+      }
+    }
+    const drafts = new Map<string, RampEndDraft>();
+    for (const at of change.lay) {
+      if (at.rise === 0) continue;
+      const part = this.pieceByIndex(at.piece);
+      const ends = [at.yPlates, at.yPlates + at.rise];
+      for (let c = 0; c < ends.length; c++) {
+        const yPlates = ends[c] ?? GROUND_PLATES;
+        if (yPlates <= GROUND_PLATES) continue;
+        const pose = this.connectorPose(at.piece, at.pose, c);
+        const key = endKeyOf(pose, yPlates);
+        if (levelEnds.has(key)) continue;
+        const studs = zeta16ToStuds(pose.position);
+        const end = { xLdu: studs.x * STUD_LDU, zLdu: studs.z * STUD_LDU, heading: pose.heading };
+        const draft = drafts.get(key) ?? { indices: [], rows: [], yPlates, ...end };
+        draft.indices.push(at.index);
+        draft.rows.push(support.endRowCells(at.piece, part.piece.partFrame, at.pose, end));
+        drafts.set(key, draft);
+      }
+    }
+    return [...drafts.values()].map(({ indices, rows, yPlates, xLdu, zLdu }) => ({
+      indices,
+      yPlates,
+      antiStuds: Int32Array.from(rows.flatMap((row) => Array.from(row))),
+      rows,
+      xLdu,
+      zLdu,
+    }));
+  }
+
+  rampEndSeated(rest: RampEndRest): boolean {
+    const { seats } = this.bands.laying(rest.yPlates, rest.yPlates);
+    return rest.rows.every((row) => {
+      for (let i = 0; i < row.length; i += 2) {
+        if (seats.has(cellKey(row[i] ?? 0, row[i + 1] ?? 0))) return true;
+      }
+      return false;
+    });
+  }
+
   raisedCount(): number {
     return this.raisedAt.length;
   }
@@ -2351,11 +2559,11 @@ export class TrackDrawing implements ExtensionSite {
     );
   }
 
-  changeOverlaps(change: TrackChange, except: number, box: WorldBox): boolean {
+  changeOverlaps(change: TrackChange, except: ReadonlyArray<number>, box: WorldBox): boolean {
     const rect = this.rectOutline;
     rect.set([box.minX, box.minZ, box.maxX, box.minZ, box.maxX, box.maxZ, box.minX, box.maxZ]);
     for (const at of change.lay) {
-      if (at.index === except) continue;
+      if (except.includes(at.index)) continue;
       const part = this.pieceByIndex(at.piece);
       const placed = { part, placement: at.pose, yPlates: at.yPlates, rise: at.rise };
       const piece = partBox(placed);

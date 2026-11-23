@@ -186,7 +186,7 @@ const PIER_COLOR_ID = 0;
 const ON_THE_TABLE = 0;
 
 export interface PierPiece {
-  readonly index: number;
+  readonly indices: ReadonlyArray<number>;
   readonly bottomLdu: number;
   readonly antiStuds: Int32Array;
   readonly centreX: number;

@@ -394,6 +394,24 @@ export function posedCell(
   out[1] = pose.worldCellZ(localCellX, localCellZ);
 }
 
+export function posedSeatsStudAt(
+  placeable: Placeable,
+  x: number,
+  z: number,
+  rot: number,
+  yLdu: number,
+  cellX: number,
+  cellZ: number,
+  baseLdu: number,
+): boolean {
+  const pose = posingScratch.at(x, z, rot);
+  return placeable.studLattice.seats.has(
+    pose.localCellX(cellX, cellZ),
+    pose.localCellZ(cellX, cellZ),
+    baseLdu - yLdu,
+  );
+}
+
 export function posedPartBoxes(
   partBoxes: Float32Array,
   x: number,

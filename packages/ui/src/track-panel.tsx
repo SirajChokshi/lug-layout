@@ -153,7 +153,7 @@ function unsupportedText(track: TrackView): string {
   const tilted = lastUnsupported?.tilted ?? 0;
   const ramp =
     tilted > 0
-      ? `; ${integer.format(tilted)} of the last laid tilted: no exact stud mate is possible`
+      ? `; ${integer.format(tilted)} of the last laid on a ramp with an end resting on nothing`
       : "";
   return `${integer.format(track.unsupported)} with no anti-stud exactly on a stud${where}${ramp}`;
 }
@@ -429,7 +429,7 @@ export function TrackHeightPanel({
         {`Ramps climb ${rampPlates} ${rampPlates === 1 ? "plate" : "plates"} per straight (${tenths.format(height.gradePercent)} % grade). `}
         <strong className="unverified">Unverified:</strong>
         {
-          " no source gives a maximum grade for LEGO trains; 1 plate per 16 studs is one club's convention. Tilted ramp pieces have no exact stud mate, so they report unsupported."
+          " no source gives a maximum grade for LEGO trains; 1 plate per 16 studs is one club's convention. A ramp piece is supported when each end rests on a pier's studs at that end's height or joins supported level track; new ramps get piers under their raised ends."
         }
       </p>
       <p>{clearanceText(height)}</p>
