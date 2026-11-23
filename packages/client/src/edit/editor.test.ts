@@ -8106,14 +8106,19 @@ it("fills a dragged row with a user's model at its own size rounded up to the 8-
     item: brick,
     placed: row.length,
     refused: 0,
+    alreadyThere: 0,
     reason: null,
   });
 }, 120_000);
 
-it("skips and reports the tiles a click would refuse, places the rest, and one undo takes the whole fill back", async () => {
+it("skips and reports the tiles a click would refuse, counts the tiles already holding that plate as already there, places the rest, and one undo takes the whole fill back", async () => {
   const { editor, backend, catalog } = await startEditor([]);
   const refId = catalog.itemRefId(BASEPLATE) ?? -1;
-  expect((await placer(editor, backend)(BASEPLATE, 960, 320)).placements).toBe(1);
+  const place = placer(editor, backend);
+  editor.setPlacementMode("precise");
+  expect((await place(BASEPLATE, 960, 320)).placements).toBe(1);
+  expect((await place(BASEPLATE, 1640, 320)).placements).toBe(2);
+  editor.setPlacementMode("assist");
   editor.cycleFillGrid();
   editor.cycleFillGrid();
   const seen = () => {
@@ -8122,6 +8127,7 @@ it("skips and reports the tiles a click would refuse, places the rest, and one u
       placements,
       placed: lastFill?.placed ?? null,
       refused: lastFill?.refused ?? null,
+      alreadyThere: lastFill?.alreadyThere ?? null,
       overlap:
         lastFill?.reason?.includes(
           "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32",
@@ -8138,22 +8144,24 @@ it("skips and reports the tiles a click would refuse, places the rest, and one u
 
   expect(filled).toEqual({
     placements: 3,
-    placed: 2,
+    placed: 1,
     refused: 1,
+    alreadyThere: 1,
     overlap: true,
-    undo: "fill (2 placements)",
+    undo: "fill (1 placement)",
   });
   expect(undone).toEqual({
-    placements: 1,
+    placements: 2,
     placed: null,
     refused: null,
+    alreadyThere: null,
     overlap: null,
     undo: "place",
   });
   expect(placedPoses(editor, refId)).toEqual([
     [320, 320, 0],
     [960, 320, 0],
-    [1600, 320, 0],
+    [1640, 320, 0],
   ]);
 }, 120_000);
 
