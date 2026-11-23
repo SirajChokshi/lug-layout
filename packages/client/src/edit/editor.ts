@@ -1600,6 +1600,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.loadTrackSupport();
       const trackItems = this.tracks.start();
       this.roads.start(index.colors);
+      this.update({ catalog: [...catalog.items, ...trackItems] });
       const loadMs = performance.now() - started;
       await this.session.start(this, index.bundleVersion);
       this.update({
@@ -1607,7 +1608,6 @@ export class Editor implements IEditor, IEditedWorld {
         loadMs,
         bundleVersion: index.bundleVersion,
         backend,
-        catalog: [...catalog.items, ...trackItems],
         catalogSkipped: catalog.skipped,
         ...this.tracks.view(),
         ...this.roads.view(),
