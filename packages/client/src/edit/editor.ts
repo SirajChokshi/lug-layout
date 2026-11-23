@@ -1806,11 +1806,13 @@ export class Editor implements IEditor, IEditedWorld {
     const trackMode = this.trackWorld.drawing() !== null && this.state.mode === "track";
     if (trackMode) this.trackWorld.ensureObstacles();
     this.layoutChanged();
-    if (trackMode) {
-      if (this.tracks.dragging()) this.update(this.tracks.moveDrag(this.hitX, this.hitZ));
-      else this.update(this.tracks.view());
-      this.repaintTrackPreview();
+    if (!trackMode) {
+      this.update(this.tracks.view());
+      return;
     }
+    if (this.tracks.dragging()) this.update(this.tracks.moveDrag(this.hitX, this.hitZ));
+    else this.update(this.tracks.view());
+    this.repaintTrackPreview();
   }
 
   private loadTrackSupport(): void {
@@ -5498,6 +5500,7 @@ export class Editor implements IEditor, IEditedWorld {
     this.plans.apply(fullRebuild);
     this.trackWorld.invalidateObstacles();
     this.layoutChanged();
+    this.update(this.tracks.view());
     return [];
   }
 

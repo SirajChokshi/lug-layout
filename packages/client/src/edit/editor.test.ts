@@ -9386,6 +9386,45 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
   );
 }, 180_000);
 
+async function raisedEditorOn(repository: MemoryRepository) {
+  return startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound
+      .rebind(MODEL_IMPORTER)
+      .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  });
+}
+
+it("reports a reopened world's raised run as held by its piers as soon as it opens, and once their studs are checked when they check later, without the track tool open", async () => {
+  const repository = new MemoryRepository();
+  const first = await raisedEditor([], repository);
+  first.editor.chooseItem(TRACK_ITEM_ID);
+  first.editor.raiseTrack(PIER_PLATES);
+  await layRaised(first.editor, first.backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  first.editor.chooseItem(null);
+  const laid = first.editor.snapshot().track?.unsupported;
+  await vi.waitFor(() => expect(first.editor.snapshot().world?.save).toBe("saved"));
+  const reopened = await raisedEditorOn(repository);
+  await vi.waitFor(() => expect(reopened.editor.snapshot().studChecks).toBe(0));
+  const opened = reopened.editor.snapshot().track?.unsupported;
+  let importer: StudsLandLaterImporter | null = null;
+  const { editor } = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    importer = new StudsLandLaterImporter(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer);
+    bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+  });
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBeGreaterThan(0));
+  const checking = editor.snapshot().track?.unsupported;
+  (importer as StudsLandLaterImporter | null)?.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+
+  expect(laid).toBe(0);
+  expect(opened).toBe(laid);
+  expect(checking).not.toBe(laid);
+  await vi.waitFor(() => expect(editor.snapshot().track?.unsupported).toBe(laid));
+  expect(editor.snapshot().mode).not.toBe("track");
+}, 180_000);
+
 function previewHeightAt(editor: IEditor): readonly [number, number] | null {
   const label = editor.snapshot().labels.find((shown) => shown.id === "height:preview");
   return label ? [label.x, label.z] : null;
