@@ -9150,3 +9150,83 @@ it("shows a raised preview's ghost and height where the previewed run ends, on e
     ghostPieces: editor.dump().laidTrack.length - draggedPieces,
   });
 }, 120_000);
+
+const STEEP_RAMP_PLATES = 2;
+
+function laidHeightTexts(editor: IEditor): ReadonlySet<string> {
+  return new Set(
+    editor
+      .snapshot()
+      .labels.filter((label) => label.kind === "height" && label.id !== "height:preview")
+      .map((label) => label.text),
+  );
+}
+
+async function drawnWithHeightSet(late: boolean) {
+  const { editor, backend } = await startEditor([]);
+  const shown = () => ({
+    height: editor.snapshot().track?.height,
+    preview: previewHeightAt(editor),
+    ghostPieces: backend.ghostInstances,
+  });
+  const dragFromEnd = async (
+    from: readonly [number, number],
+    to: readonly [number, number],
+    change: () => void,
+  ) => {
+    if (!late) change();
+    backend.aim(...from);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    if (late) change();
+    const dragging = shown();
+    editor.dragEnd(0, 0, 0);
+    await piersPlaced(editor);
+    return dragging;
+  };
+  const hoverAt = (at: readonly [number, number], change: () => void) => {
+    if (!late) change();
+    backend.aim(...at);
+    editor.pointerMove(0, 0);
+    if (late) change();
+    return { ...shown(), hover: editor.snapshot().hover };
+  };
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-48 * STUD, 0], [-16 * STUD, 0]);
+  editor.setTrackRampPlates(STEEP_RAMP_PLATES);
+  const raisedMidDrag = await dragFromEnd([-16 * STUD, 0], [32 * STUD, 0], () =>
+    editor.raiseTrack(PIER_PLATES),
+  );
+  const rampedMidDrag = await dragFromEnd([-48 * STUD, 0], [-96 * STUD, 0], () =>
+    editor.setTrackRampPlates(1),
+  );
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  const held = hoverAt([0, 48 * STUD], () => editor.raiseTrack(1));
+  editor.click(0, 0, 0);
+  await piersPlaced(editor);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const readout = hoverAt([0, -48 * STUD], () => editor.setTrackRampPlates(STEEP_RAMP_PLATES));
+  const laid = laidHeights(editor);
+  const heldLabels = laidHeightTexts(editor);
+  editor.undo(0);
+  const undoneLabels = laidHeightTexts(editor);
+  return { raisedMidDrag, rampedMidDrag, held, readout, laid, heldLabels, undoneLabels };
+}
+
+it("draws drags in flight, a held piece and the height readout at a drawing height or ramp rate changed under them, as if it had been set first", async () => {
+  const early = await drawnWithHeightSet(false);
+  const late = await drawnWithHeightSet(true);
+
+  expect(early.held.hover?.yPlates).toBe(PIER_PLATES + 1);
+  expect(early.readout.height?.rampPlates).toBe(STEEP_RAMP_PLATES);
+  expect([...early.heldLabels].some((text) => text.startsWith(`${PIER_PLATES + 1} plates`))).toBe(
+    true,
+  );
+  expect([...early.undoneLabels].some((text) => text.startsWith(`${PIER_PLATES + 1} plates`))).toBe(
+    false,
+  );
+  expect(early.laid.some(([yPlates = 0, rise = 0]) => yPlates > 0 && rise > 0)).toBe(true);
+  expect(late).toEqual(early);
+}, 180_000);
