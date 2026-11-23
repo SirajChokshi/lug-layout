@@ -1182,6 +1182,7 @@ function sameHover(a: HoverView | null, b: HoverView | null): boolean {
 }
 
 const NO_LOW_CLEARANCE: ReadonlyMap<number, PlateHeights> = new Map();
+const NO_LABELS: ReadonlyArray<LabelView> = [];
 
 function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
   if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
@@ -1373,6 +1374,14 @@ export class Editor implements IEditor, IEditedWorld {
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
+  private labelsComputed = false;
+  private labelsMeasured: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsTabled: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsFilling: LabelView | null = null;
+  private labelsSelection: SelectionView | null = null;
+  private labelsHeights: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsPreview: ReadonlyArray<LabelView> = NO_LABELS;
+  private lastLabels: ReadonlyArray<LabelView> = NO_LABELS;
   private readonly searchIds = new Map<PlacedModel, number>();
   private readonly awaitingIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
@@ -1523,22 +1532,46 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private labelsOf(state: EditorSnapshot): ReadonlyArray<LabelView> {
-    const labels = [...(this.measure?.labels() ?? [])];
-    if (state.mode === "table" && this.tables) labels.push(...this.tables.labels());
+    const measured = this.measure?.labels() ?? NO_LABELS;
+    const tabled = state.mode === "table" && this.tables ? this.tables.labels() : NO_LABELS;
     const filling = this.fillTool?.label() ?? null;
-    if (filling) labels.push(filling);
     const active = this.active;
-    if (state.mode === "place" && active && state.hover && !filling) {
-      const { x, z, yPlates } = state.hover;
+    const ghostAt = state.mode === "place" && active && !filling ? state.hover : null;
+    const { selection } = state;
+    const track = this.trackWorld.drawing();
+    const drawn = state.mode === "track" ? track : null;
+    const heights = drawn ? drawn.heightLabels() : NO_LABELS;
+    const preview = drawn ? drawn.previewLabels() : NO_LABELS;
+    if (
+      this.labelsComputed &&
+      ghostAt === null &&
+      measured === this.labelsMeasured &&
+      tabled === this.labelsTabled &&
+      filling === this.labelsFilling &&
+      selection === this.labelsSelection &&
+      heights === this.labelsHeights &&
+      preview === this.labelsPreview
+    ) {
+      return this.lastLabels;
+    }
+    const labels = [...measured, ...tabled];
+    if (filling) labels.push(filling);
+    if (active && ghostAt) {
+      const { x, z, yPlates } = ghostAt;
       labels.push(
         boxLabel("ghost", "ghost", posedBox(active.box, x, z, yPlates * PLATE_LDU, state.ghostRot)),
       );
     }
-    if (state.selection) labels.push(boxLabel("selection", "selection", state.selection.box));
-    const track = this.trackWorld.drawing();
-    if (state.mode === "track" && track) {
-      labels.push(...track.heightLabels(), ...track.previewLabels());
-    }
+    if (selection) labels.push(boxLabel("selection", "selection", selection.box));
+    labels.push(...heights, ...preview);
+    this.labelsComputed = true;
+    this.labelsMeasured = measured;
+    this.labelsTabled = tabled;
+    this.labelsFilling = filling;
+    this.labelsSelection = selection;
+    this.labelsHeights = heights;
+    this.labelsPreview = preview;
+    this.lastLabels = labels;
     return labels;
   }
 
