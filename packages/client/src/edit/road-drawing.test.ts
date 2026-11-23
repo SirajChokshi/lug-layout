@@ -50,6 +50,8 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
+const WOBBLE_POINTS = 13;
+const WOBBLE_LDU = 10;
 const SETTLE_FRAMES = 10_000;
 const PLACED_MODEL_NAME = "10185-1";
 const PLACED_MODEL = `omr:${PLACED_MODEL_NAME}`;
@@ -359,6 +361,30 @@ describe("draw road", () => {
       editor.chooseItem(null);
     },
   );
+
+  it("keeps a hand-drawn stroke that wobbles across a tile edge in the row it started in, so it lays one straight row with no jogs", () => {
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    const edge = centre(0) + TILE / 2;
+    const points = Array.from({ length: WOBBLE_POINTS }, (_, i) => [
+      centre(0) + (i * TILE) / 4,
+      edge + (i % 2 === 0 ? -WOBBLE_LDU : WOBBLE_LDU),
+    ]);
+    const [first = [0, 0], ...rest] = points;
+    editor.dragStart((first[0] ?? 0) / WORLD_PER_NDC, (first[1] ?? 0) / WORLD_PER_NDC);
+    for (const [x = 0, z = 0] of rest) editor.dragMove(x / WORLD_PER_NDC, z / WORLD_PER_NDC);
+    const [lastX = 0, lastZ = 0] = points.at(-1) ?? first;
+    editor.dragEnd(lastX / WORLD_PER_NDC, lastZ / WORLD_PER_NDC, 0);
+    const { placements, roads } = editor.snapshot();
+    const items = new Set(placedItems(editor));
+    editor.undo(0);
+    editor.chooseItem(null);
+
+    expect({ placements, kinds: items.size, mismatched: roads.mismatchedCells }).toEqual({
+      placements: 4,
+      kinds: 1,
+      mismatched: 0,
+    });
+  });
 
   it("swaps a straight for a T-junction when a branch is drawn off it", () => {
     editor.chooseItem(kitId(editor, completeKits[1][1]));

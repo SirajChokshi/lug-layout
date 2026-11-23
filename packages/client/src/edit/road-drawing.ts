@@ -354,8 +354,23 @@ export class RoadDrawing {
 
   extend(x: number, z: number): void {
     if (!this.dragging) return;
-    const tile = this.tileAt(x, z);
+    const tile = this.inLane(this.tileAt(x, z), x, z);
     this.path = extendRoadPath(this.path, tile.ix, tile.iz);
+  }
+
+  private inLane(tile: RoadTile, x: number, z: number): RoadTile {
+    const last = this.path.at(-1);
+    const previous = this.path.at(-2);
+    if (!last || !previous) return tile;
+    const tileLdu = this.entry().kit.tileLdu;
+    const [centreX, centreZ] = this.centre(last);
+    if (last.iz === previous.iz && tile.iz !== last.iz && Math.abs(z - centreZ) < tileLdu) {
+      return { ix: tile.ix, iz: last.iz };
+    }
+    if (last.ix === previous.ix && tile.ix !== last.ix && Math.abs(x - centreX) < tileLdu) {
+      return { ix: last.ix, iz: tile.iz };
+    }
+    return tile;
   }
 
   rerun(neighbours: RoadNeighbourhood): RoadPreview | null {
