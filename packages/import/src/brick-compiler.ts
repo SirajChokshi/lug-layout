@@ -163,16 +163,23 @@ type Range = readonly [number, number];
 
 type Segments = Readonly<Record<string, Uint8Array>>;
 
-function wordBytes(values: Uint32Array | Int32Array): Uint8Array {
+function valueBytes(values: Uint32Array | Int32Array | Float64Array): Uint8Array {
   return new Uint8Array(values.buffer, values.byteOffset, values.byteLength);
 }
 
 function receptorSegments(receptors: BakeReceptors): Segments {
   return {
-    receptorParts: wordBytes(receptors.instanceParts),
-    receptorStarts: wordBytes(receptors.partStarts),
-    receptorSixteenths: wordBytes(receptors.sixteenths),
+    receptorParts: valueBytes(receptors.instanceParts),
+    receptorStarts: valueBytes(receptors.partStarts),
+    receptorSixteenths: valueBytes(receptors.sixteenths),
     receptorDirections: receptors.directions,
+    receptorCaps: receptors.caps,
+    receptorSlides: receptors.slides,
+    receptorGroups: utf8.encode(JSON.stringify(receptors.groups)),
+    receptorSectionStarts: valueBytes(receptors.sectionStarts),
+    receptorSectionCodes: receptors.sectionCodes,
+    receptorSectionSizes: valueBytes(receptors.sectionSizes),
+    receptorSectionLengths: valueBytes(receptors.sectionLengths),
   };
 }
 

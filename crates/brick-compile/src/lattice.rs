@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::affine::{Affine, Vec3};
+use crate::connect::SnapShape;
 pub use crate::identify::IDENTIFY_LDU;
 use crate::identify::{sixteenths, SIXTEENTHS_PER_LDU};
 
@@ -93,6 +94,12 @@ impl AxisPose {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct LatticeReceptor {
+    pub pose: AxisPose,
+    pub shape: SnapShape,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct LatticeInstance<'a> {
     pub matrix: &'a Affine,
     pub studs: &'a [AxisPose],
@@ -151,7 +158,7 @@ fn vertical(axis: Vec3) -> bool {
     axis[0] == 0.0 && axis[2] == 0.0 && axis[1] != 0.0
 }
 
-fn downward(axis: Vec3) -> bool {
+pub(crate) fn downward(axis: Vec3) -> bool {
     axis[0] == 0.0 && axis[2] == 0.0 && axis[1] < 0.0
 }
 
