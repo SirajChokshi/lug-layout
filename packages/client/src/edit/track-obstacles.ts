@@ -40,6 +40,50 @@ export interface SolidOutline {
   readonly label: string;
 }
 
+export interface StandingOutline extends SolidOutline {
+  readonly railTopLdu: number;
+  readonly topLdu: number;
+}
+
+export function sameNumbers(a: ArrayLike<number>, b: ArrayLike<number>): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function sameOutlineList(a: ReadonlyArray<Float64Array>, b: ReadonlyArray<Float64Array>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const outline = a[i];
+    const other = b[i];
+    if (!outline || !other || !sameNumbers(outline, other)) return false;
+  }
+  return true;
+}
+
+function sameLabels(a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+export function sameObstacles(a: TrackObstacles, b: TrackObstacles): boolean {
+  return (
+    sameNumbers(a.rects, b.rects) &&
+    sameNumbers(a.owners, b.owners) &&
+    sameNumbers(a.unseated, b.unseated) &&
+    sameNumbers(a.outlineOwners, b.outlineOwners) &&
+    sameOutlineList(a.outlines, b.outlines) &&
+    sameLabels(a.labels, b.labels) &&
+    sameSeats(a.seats, b.seats)
+  );
+}
+
 export function withOutlines(
   obstacles: TrackObstacles,
   solids: ReadonlyArray<SolidOutline>,
@@ -60,6 +104,7 @@ export function cellKey(cellX: number, cellZ: number): number {
 
 class LayoutSeats implements StudSeats {
   private readonly byChunk = new Map<number, PlacedModel[]>();
+  private readonly models: PlacedModel[] = [];
 
   constructor(
     models: ReadonlyArray<PlacedModel>,
@@ -68,6 +113,7 @@ class LayoutSeats implements StudSeats {
     for (const model of models) {
       const { box } = model;
       if (box.minY > baseLdu || box.maxY < baseLdu) continue;
+      this.models.push(model);
       for (let cz = chunkOf(box.minZ); cz <= chunkOf(box.maxZ); cz++) {
         for (let cx = chunkOf(box.minX); cx <= chunkOf(box.maxX); cx++) {
           const key = chunkKey(cx, cz);
@@ -91,10 +137,22 @@ class LayoutSeats implements StudSeats {
     }
     return false;
   }
+
+  sameAs(other: LayoutSeats): boolean {
+    if (other.baseLdu !== this.baseLdu || other.models.length !== this.models.length) return false;
+    for (let i = 0; i < this.models.length; i++) {
+      if (other.models[i] !== this.models[i]) return false;
+    }
+    return true;
+  }
 }
 
 export function studSeats(models: ReadonlyArray<PlacedModel>, baseLdu: number): StudSeats {
   return new LayoutSeats(models, baseLdu);
+}
+
+export function sameSeats(a: StudSeats, b: StudSeats): boolean {
+  return a === b || (a instanceof LayoutSeats && b instanceof LayoutSeats && a.sameAs(b));
 }
 
 class ObstacleList {
@@ -215,6 +273,19 @@ export function trackObstacles(
     models.map((model) => model.placeable.label),
     seats,
   );
+}
+
+export function supportBandOver(
+  models: ReadonlyArray<PlacedModel>,
+  trackRange: readonly [number, number],
+  trackParts: (model: PlacedModel) => ReadonlySet<number>,
+  reaches: ModelReach,
+  standing: ReadonlyArray<StandingOutline>,
+): { readonly obstacles: TrackObstacles; readonly pending: boolean } {
+  const [bottom, top] = trackRange;
+  const placed = trackObstacles(models, trackRange, trackParts, reaches);
+  const trains = standing.filter((vehicle) => vehicle.railTopLdu < top && bottom < vehicle.topLdu);
+  return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, trackRange) };
 }
 
 export function solidRectsIn(
