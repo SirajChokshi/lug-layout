@@ -13,7 +13,12 @@ import { Container } from "inversify";
 import { readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { getHeapSpaceStatistics } from "node:v8";
+import {
+  GCProfiler,
+  getHeapSpaceStatistics,
+  type GCProfilerResult,
+  type HeapSpaceStatistics,
+} from "node:v8";
 import { mainThreadModules } from "../src/client.module.ts";
 import type { IEditor } from "../src/edit/editor.ts";
 import type { IStarterFiles } from "../src/starters/starter-files.ts";
@@ -40,6 +45,17 @@ const SESSION_DRAGS = 100;
 const SESSION_MOVES_PER_DRAG = 200;
 const SESSION_REPORT_MOVES = 2_000;
 const YOUNG_GENERATION_SPACES: ReadonlyArray<string> = ["new_space", "new_large_object_space"];
+const TYPED_ARRAYS = [
+  Float64Array,
+  Float32Array,
+  Int32Array,
+  Uint32Array,
+  Int16Array,
+  Uint16Array,
+  Int8Array,
+  Uint8Array,
+  Uint8ClampedArray,
+];
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -149,6 +165,42 @@ function youngBytes(): number {
     if (YOUNG_GENERATION_SPACES.includes(space.space_name)) bytes += space.space_used_size;
   }
   return bytes;
+}
+
+function youngUsed(spaces: ReadonlyArray<HeapSpaceStatistics>): number {
+  let bytes = 0;
+  for (const space of spaces) {
+    if (YOUNG_GENERATION_SPACES.includes(space.spaceName)) bytes += space.spaceUsedSize;
+  }
+  return bytes;
+}
+
+interface YoungAllocation {
+  readonly bytes: number;
+  readonly collections: number;
+}
+
+function allocatedAcross(
+  from: number,
+  to: number,
+  collections: GCProfilerResult["statistics"],
+): YoungAllocation {
+  let bytes = 0;
+  let segmentStart = from;
+  for (const collection of collections) {
+    bytes += youngUsed(collection.beforeGC.heapSpaceStatistics) - segmentStart;
+    segmentStart = youngUsed(collection.afterGC.heapSpaceStatistics);
+  }
+  return { bytes: bytes + to - segmentStart, collections: collections.length };
+}
+
+function youngAllocatedBy(run: () => void): YoungAllocation {
+  const profiler = new GCProfiler();
+  profiler.start();
+  const before = youngBytes();
+  run();
+  const after = youngBytes();
+  return allocatedAcross(before, after, profiler.stop().statistics);
 }
 
 function report(value: object): void {
@@ -335,22 +387,64 @@ function moves(): (i: number) => void {
   }
 }
 
-function windowBytes(move: (i: number) => void, first: number): number[] {
-  const windows: number[] = [];
+interface Windows {
+  readonly bytesPerMove: number[];
+  readonly collections: number;
+}
+
+function windowBytes(move: (i: number) => void, first: number): Windows {
+  const bytesPerMove: number[] = [];
+  let collections = 0;
   let i = first;
+  const runWindow = (): void => {
+    for (let m = 0; m < windowMoves; m++) move(i++);
+  };
   for (let w = 0; w < windowCount; w++) {
     gc();
-    const before = youngBytes();
-    for (let m = 0; m < windowMoves; m++) move(i++);
-    windows.push(Math.round((youngBytes() - before) / windowMoves));
+    const young = youngAllocatedBy(runWindow);
+    bytesPerMove.push(Math.round(young.bytes / windowMoves));
+    collections += young.collections;
   }
-  return windows;
+  return { bytesPerMove, collections };
+}
+
+function countTypedArrayBytes(run: () => void): number {
+  let bytes = 0;
+  const PlainArrayBuffer = ArrayBuffer;
+  for (const constructor of TYPED_ARRAYS) {
+    const counting = new Proxy(constructor, {
+      construct(target, args, newTarget) {
+        const made: object = Reflect.construct(target, args, newTarget);
+        if (PlainArrayBuffer.isView(made) && !(args[0] instanceof PlainArrayBuffer)) {
+          bytes += made.byteLength;
+        }
+        return made;
+      },
+    });
+    Object.defineProperty(globalThis, constructor.name, { value: counting, writable: true });
+  }
+  const countingBuffer = new Proxy(PlainArrayBuffer, {
+    construct(target, args, newTarget) {
+      const made: object = Reflect.construct(target, args, newTarget);
+      if (made instanceof PlainArrayBuffer) bytes += made.byteLength;
+      return made;
+    },
+  });
+  Object.defineProperty(globalThis, "ArrayBuffer", { value: countingBuffer, writable: true });
+  run();
+  return bytes;
 }
 
 function measureWindows(move: (i: number) => void): void {
   for (let i = 0; i < warmupMoves; i++) move(i);
   const harness = windowBytes(() => undefined, 0);
   const windows = windowBytes(move, warmupMoves);
+  const counted = windowMoves * windowCount;
+  let i = warmupMoves + counted;
+  const typedArrayBytes = countTypedArrayBytes(() => {
+    for (let m = 0; m < counted; m++) move(i++);
+  });
+  const perMove = windows.bytesPerMove;
   report({
     mode,
     fixture,
@@ -358,35 +452,43 @@ function measureWindows(move: (i: number) => void): void {
     warmupMoves,
     laidPieces,
     windowMoves,
-    bytesPerMove: median(windows),
-    meanBytesPerMove: Math.round(windows.reduce((sum, bytes) => sum + bytes, 0) / windows.length),
-    harnessBytesPerMove: median(harness),
-    windows,
+    bytesPerMove: median(perMove),
+    meanBytesPerMove: Math.round(perMove.reduce((sum, bytes) => sum + bytes, 0) / perMove.length),
+    harnessBytesPerMove: median(harness.bytesPerMove),
+    collectionsInWindows: windows.collections,
+    typedArrayBytesPerMove: Math.round(typedArrayBytes / counted),
+    windows: perMove,
   });
 }
 
 function measureLongSession(): void {
   let moved = 0;
   let windowStart = 0;
+  let profiler: GCProfiler | null = null;
   for (let drag = 0; drag < SESSION_DRAGS; drag++) {
     dragFrom(320, 6400);
     for (let m = 0; m < SESSION_MOVES_PER_DRAG; m++) {
       if (moved % SESSION_REPORT_MOVES === SESSION_REPORT_MOVES - windowMoves) {
         gc();
+        profiler = new GCProfiler();
+        profiler.start();
         windowStart = youngBytes();
       }
       aimAt(320 + (moved % 23) * 97.3, 6400 + (moved % 7) * 41.9);
       editor.dragMove(0, 0);
       moved++;
-      if (moved % SESSION_REPORT_MOVES === 0) {
-        const bytesPerMove = Math.round((youngBytes() - windowStart) / windowMoves);
+      if (moved % SESSION_REPORT_MOVES === 0 && profiler) {
+        const windowEnd = youngBytes();
+        const young = allocatedAcross(windowStart, windowEnd, profiler.stop().statistics);
+        profiler = null;
         gc();
         const retainedHeap = process.memoryUsage().heapUsed;
         const solve = editor.snapshot().track?.solve ?? null;
         report({
           mode,
           moves: moved,
-          bytesPerMove,
+          bytesPerMove: Math.round(young.bytes / windowMoves),
+          collectionsInWindow: young.collections,
           retainedHeap,
           solveSamples: solve?.samples ?? 0,
         });
