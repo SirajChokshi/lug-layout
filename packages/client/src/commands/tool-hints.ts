@@ -172,7 +172,7 @@ function unsupportedText({ pieces: count, block, tilted }: TrackUnsupportedView)
   const ramps =
     tilted === 0
       ? ""
-      : `${pieces(tilted)} ${tilted === 1 ? "is" : "are"} tilted on the ramp, so no exact stud mate is possible`;
+      : `${pieces(tilted)} on the ramp ${tilted === 1 ? "has an end" : "have ends"} resting on neither a pier's studs nor supported track`;
   if (flat === 0) return `${ramps}: ${tilted === 1 ? "it isn't" : "they aren't"} supported`;
   const rest = flat === 1 ? "rests" : "rest";
   const where = block?.kind === "model" ? ` on ${block.label}` : "";
