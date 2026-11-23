@@ -366,6 +366,86 @@ fn in_contact(a: &Bounds, b: &Bounds) -> bool {
     (0..3).all(|axis| a[1][axis].min(b[1][axis]) - a[0][axis].max(b[0][axis]) > CONTACT_OVERLAP_LDU)
 }
 
+const PLAN_AXES: [usize; 2] = [0, 2];
+const UP: usize = 1;
+
+fn overlap_along(a: &Bounds, b: &Bounds, axis: usize) -> f64 {
+    a[1][axis].min(b[1][axis]) - a[0][axis].max(b[0][axis])
+}
+
+fn rests_on(part: &Bounds, under: &Bounds) -> bool {
+    part[0][UP] == under[1][UP]
+        && PLAN_AXES
+            .iter()
+            .all(|&axis| overlap_along(part, under, axis) > CONTACT_OVERLAP_LDU)
+}
+
+fn lies_within(inner: &Bounds, outer: &Bounds) -> bool {
+    (0..3).all(|axis| inner[0][axis] >= outer[0][axis] && inner[1][axis] <= outer[1][axis])
+}
+
+fn enclosing(members: &[usize], bounds: &[Bounds]) -> Bounds {
+    members.iter().fold(
+        [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
+        |[min, max], &i| {
+            [
+                [0, 1, 2].map(|axis| min[axis].min(bounds[i][0][axis])),
+                [0, 1, 2].map(|axis| max[axis].max(bounds[i][1][axis])),
+            ]
+        },
+    )
+}
+
+fn plan_overlap_area(a: &Bounds, b: &Bounds) -> f64 {
+    PLAN_AXES
+        .iter()
+        .map(|&axis| overlap_along(a, b, axis).max(0.0))
+        .product()
+}
+
+fn carried_by(loose: &[usize], members: &[usize], bounds: &[Bounds]) -> Option<f64> {
+    let vehicle = enclosing(members, bounds);
+    let group = enclosing(loose, bounds);
+    let carried = lies_within(&group, &vehicle)
+        || loose
+            .iter()
+            .any(|&part| members.iter().any(|&m| rests_on(&bounds[part], &bounds[m])));
+    carried.then(|| plan_overlap_area(&group, &vehicle))
+}
+
+fn carrier_of(loose: &[usize], vehicles: &[Vec<usize>], bounds: &[Bounds]) -> Option<usize> {
+    let mut best: Option<(usize, f64)> = None;
+    for (v, members) in vehicles.iter().enumerate() {
+        let Some(area) = carried_by(loose, members, bounds) else {
+            continue;
+        };
+        if best.is_none_or(|(_, most)| area > most) {
+            best = Some((v, area));
+        }
+    }
+    best.map(|(v, _)| v)
+}
+
+fn take_carried(vehicles: &mut [Vec<usize>], loose: &mut Vec<Vec<usize>>, bounds: &[Bounds]) {
+    loop {
+        let carriers: Vec<Option<usize>> = loose
+            .iter()
+            .map(|group| carrier_of(group, vehicles, bounds))
+            .collect();
+        if carriers.iter().all(Option::is_none) {
+            return;
+        }
+        let mut still_loose = Vec::new();
+        for (group, carrier) in loose.drain(..).zip(carriers) {
+            match carrier {
+                Some(v) => vehicles[v].extend(group),
+                None => still_loose.push(group),
+            }
+        }
+        *loose = still_loose;
+    }
+}
+
 fn contact_graph(bounds: &[Bounds]) -> Vec<Vec<usize>> {
     let mut neighbours = vec![Vec::new(); bounds.len()];
     for i in 0..bounds.len() {
@@ -646,18 +726,26 @@ pub fn detect_vehicles_with_bounds<L: Library>(
     }
     let neighbours = contact_graph(&bounds);
     let mut seen = vec![false; instances.len()];
-    let mut vehicles = Vec::new();
+    let mut running = Vec::new();
+    let mut loose = Vec::new();
     for seed in 0..instances.len() {
         if seen[seed] {
             continue;
         }
         let members = component(seed, &neighbours, |_| true, &mut seen);
-        if !members
+        if members
             .iter()
             .any(|&i| is_one_of(&instances[i].part, &signatures.wheelsets))
         {
-            continue;
+            running.push(members);
+        } else {
+            loose.push(members);
         }
+    }
+    take_carried(&mut running, &mut loose, &bounds);
+    let mut vehicles = Vec::with_capacity(running.len());
+    for mut members in running {
+        members.sort_unstable();
         vehicles.push(analyse(
             &mut geometry,
             instances,
@@ -861,6 +949,32 @@ mod tests {
                 }],
             })
         );
+    }
+
+    #[test]
+    fn a_vehicle_carries_what_rests_on_it_or_lies_within_it_but_not_what_stands_beside_it() {
+        let floor: Bounds = [[0.0, 0.0, 0.0], [200.0, 8.0, 60.0]];
+        let wall: Bounds = [[0.0, 8.0, 0.0], [200.0, 80.0, 8.0]];
+        let roof_brick: Bounds = [[0.0, 80.0, 0.0], [200.0, 104.0, 60.0]];
+        let roof_tile: Bounds = [[20.0, 104.0, 20.0], [180.0, 112.0, 40.0]];
+        let side_sticker: Bounds = [[50.0, 20.0, 8.1], [70.0, 40.0, 8.35]];
+        let figure_beside: Bounds = [[50.0, -10.0, 90.0], [70.0, 60.0, 110.0]];
+        let slab_beside: Bounds = [[0.0, 80.0, 61.0], [200.0, 104.0, 120.0]];
+        let bounds = [
+            floor,
+            wall,
+            roof_brick,
+            roof_tile,
+            side_sticker,
+            figure_beside,
+            slab_beside,
+        ];
+        let mut vehicles = vec![vec![0, 1]];
+        let mut loose = vec![vec![2], vec![3], vec![4], vec![5], vec![6]];
+        take_carried(&mut vehicles, &mut loose, &bounds);
+        vehicles[0].sort_unstable();
+        assert_eq!(vehicles, vec![vec![0, 1, 2, 3, 4]]);
+        assert_eq!(loose, vec![vec![5], vec![6]]);
     }
 
     #[test]
