@@ -63,6 +63,7 @@ function surfaceOf(
     topSixteenths: top,
     studSixteenths: stud,
     road,
+    occupied: Uint8Array.from(top, (t) => (t === NO_TOP ? 0 : 1)),
   };
 }
 
@@ -291,6 +292,31 @@ describe("road joins (layout rule 7)", () => {
       openCells: 4 * 6,
       overlaps: [],
     });
+  });
+
+  it("leaves a model's road open only where a piece could be set beside it: not against its own walls, its own studless lower cells or its own columns whose top isn't on the lattice", () => {
+    const wall: CellFacts = [5 * PLATE, NO_STUD, 0];
+    const studlessBelow: CellFacts = [0, NO_STUD, 0];
+    const studdedBelow: CellFacts = [0, 0, 0];
+    const empty: CellFacts = [NO_TOP, NO_STUD, 0];
+    const road: CellFacts = [PLATE, NO_STUD, 1];
+    const layout: ReadonlyArray<ReadonlyArray<CellFacts>> = [
+      [empty, studlessBelow, studdedBelow, empty, empty],
+      [wall, road, road, road, empty],
+      [empty, wall, studdedBelow, empty, empty],
+    ];
+    const unlatticedColumn = 1 * 5 + 4;
+    const surface = surfaceOf(5, 3, (column, row) => layout[row]?.[column] ?? empty);
+    const occupied = surface.occupied.slice();
+    occupied[unlatticedColumn] = 1;
+    const sidewalk = { ...surface, occupied };
+    const report = new RoadNetwork([at(0, sidewalk, 0, 0)]).report();
+    const open = report.segments.map(({ side, line, from, to }) => ({ side, line, from, to }));
+    expect(report).toMatchObject({ joinedCells: 0, mismatchedCells: 0, openCells: 4 });
+    expect(open.toSorted((a, b) => a.side.localeCompare(b.side))).toEqual([
+      { side: "maxZ", line: 10, from: -10, to: 30 },
+      { side: "minZ", line: -10, from: -10, to: 30 },
+    ]);
   });
 
   it("gives a cell with no surface nothing to overlap or meet: an L-shaped surface's missing corner takes another piece flush", () => {
@@ -613,7 +639,8 @@ function randomSurface(random: () => number): RoadSurface {
   }
   const minX = -STUD * Math.floor(random() * columns);
   const minZ = -STUD * Math.floor(random() * rows);
-  return { minX, minZ, columns, rows, topSixteenths: top, studSixteenths: stud, road };
+  const occupied = Uint8Array.from(top, (t) => (t === NO_TOP ? 0 : 1));
+  return { minX, minZ, columns, rows, topSixteenths: top, studSixteenths: stud, road, occupied };
 }
 
 const PHASES = [0, 3, 10, 17];

@@ -38,6 +38,7 @@ function roadBaseplate(part: string): RoadSurface {
     topSixteenths: top,
     studSixteenths: stud,
     road,
+    occupied: new Uint8Array(top.length).fill(1),
   };
 }
 
@@ -50,6 +51,7 @@ function allRoad(columns: number, rows: number): RoadSurface {
     topSixteenths: new Int32Array(rows * columns),
     studSixteenths: new Int32Array(rows * columns).fill(NO_STUD),
     road: new Uint8Array(rows * columns).fill(1),
+    occupied: new Uint8Array(rows * columns).fill(1),
   };
 }
 
@@ -63,6 +65,7 @@ function rowsOf(surface: RoadSurface, from: number, count: number): RoadSurface 
     rows: count,
     topSixteenths: surface.topSixteenths.slice(start, end),
     studSixteenths: surface.studSixteenths.slice(start, end),
+    occupied: surface.occupied.slice(start, end),
     road: surface.road.slice(start, end),
   };
 }

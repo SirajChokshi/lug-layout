@@ -85,6 +85,7 @@ function road(roadwayStuds: number, topLdu = 0): RoadPlacement {
       topSixteenths: top,
       studSixteenths: stud,
       road: roadway,
+      occupied: new Uint8Array(top.length).fill(1),
     },
   };
 }
@@ -198,6 +199,7 @@ describe("levelCrossings", () => {
           topSixteenths: new Int32Array(rows),
           studSixteenths: new Int32Array(rows).fill(NO_STUD),
           road: new Uint8Array(rows).fill(1),
+          occupied: new Uint8Array(rows).fill(1),
         },
       };
     };

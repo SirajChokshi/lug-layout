@@ -3,6 +3,7 @@ import type { VehicleCoupler } from "@brr/schema/bundle";
 import { INSTANCE_MATRIX_FLOATS } from "@brr/render";
 import type { CouplerGeometry, CouplerMount, GuideGeometry, VehicleGeometry } from "@brr/domain";
 import type { VehicleSpec } from "@brr/sim";
+import { BOX_FLOATS } from "../edit/local-box.ts";
 
 export interface RigidBodyInstances {
   readonly instances: Uint32Array;
@@ -146,6 +147,86 @@ function localMatrices(
     }
   }
   return out;
+}
+
+export interface StandingRemainder {
+  readonly vehicle: number;
+  readonly body: RigidBodyInstances;
+  readonly lowestY: number;
+}
+
+const BOX_MIN_Y = 1;
+
+function ridingInstances(vehicles: ReadonlyArray<PartVehicle>, count: number): Uint8Array {
+  const riding = new Uint8Array(count);
+  for (const vehicle of vehicles) {
+    for (const i of vehicle.body) riding[i] = 1;
+    for (const bogie of vehicle.bogies) for (const i of bogie.instances) riding[i] = 1;
+  }
+  return riding;
+}
+
+function planCentre(instances: Uint32Array, boxes: Float64Array): readonly [number, number] {
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minZ = Number.POSITIVE_INFINITY;
+  let maxZ = Number.NEGATIVE_INFINITY;
+  for (const i of instances) {
+    const b = i * BOX_FLOATS;
+    minX = Math.min(minX, boxes[b] ?? 0);
+    minZ = Math.min(minZ, boxes[b + 2] ?? 0);
+    maxX = Math.max(maxX, boxes[b + 3] ?? 0);
+    maxZ = Math.max(maxZ, boxes[b + 5] ?? 0);
+  }
+  return [(minX + maxX) / 2, (minZ + maxZ) / 2];
+}
+
+function nearestVehicle(
+  consist: ReadonlyArray<ConsistVehicle>,
+  vehicles: ReadonlyArray<PartVehicle>,
+  x: number,
+  z: number,
+): number {
+  let nearest = 0;
+  let best = Number.POSITIVE_INFINITY;
+  consist.forEach((standing, v) => {
+    const origin = vehicles[standing.vehicle]?.origin;
+    if (!origin) return;
+    const distance = Math.hypot(origin[0] - x, origin[1] - z);
+    if (distance < best) {
+      best = distance;
+      nearest = v;
+    }
+  });
+  return nearest;
+}
+
+export function standingRemainder(
+  model: Omit<PartModel, "studCover">,
+  consist: ReadonlyArray<ConsistVehicle>,
+  vehicles: ReadonlyArray<PartVehicle>,
+  instanceBoxes: Float64Array,
+): StandingRemainder | null {
+  const riding = ridingInstances(vehicles, model.instanceCount);
+  const left: number[] = [];
+  for (let i = 0; i < model.instanceCount; i++) if (riding[i] === 0) left.push(i);
+  if (left.length === 0) return null;
+  const instances = Uint32Array.from(left);
+  const [x, z] = planCentre(instances, instanceBoxes);
+  const at = nearestVehicle(consist, vehicles, x, z);
+  const standing = consist[at];
+  const vehicle = standing ? vehicles[standing.vehicle] : undefined;
+  if (!standing || !vehicle) throw new Error("a train with parts left over has no vehicle");
+  let lowestY = Number.POSITIVE_INFINITY;
+  for (const i of instances) {
+    lowestY = Math.min(lowestY, instanceBoxes[i * BOX_FLOATS + BOX_MIN_Y] ?? 0);
+  }
+  const sign = standing.reversed ? -1 : 1;
+  return {
+    vehicle: at,
+    body: { instances, matrices: localMatrices(model, instances, vehicle, sign, 0, 0) },
+    lowestY,
+  };
 }
 
 function railTopFor(vehicle: PartVehicle, railPart: string): number {

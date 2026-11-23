@@ -5,6 +5,7 @@ export {
   PLACEMENT_JOINED,
   PLACEMENT_MISMATCHED,
   RoadNetwork,
+  closesRoadEdge,
   placedCells,
   roadwayCells,
   type RoadCellStatus,

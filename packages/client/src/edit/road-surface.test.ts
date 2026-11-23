@@ -275,6 +275,27 @@ describe("roadCells", () => {
     expect(road?.topSixteenths[1]).toBe(NO_TOP);
   });
 
+  it("marks a column a part stands in as occupied even when its top doesn't identify to a sixteenth, and a column no part covers as empty", () => {
+    const tile = part("tile", { min: [-10, 0, -10], max: [10, TILE, 10], cells: ["f"] });
+    const figure = part("figure", {
+      min: [-10, 0, -10],
+      max: [10, 5 * TILE + 0.37, 10],
+      cells: null,
+    });
+    const { road } = read(
+      [tile, figure],
+      [
+        { part: 0, transform: turned(0, [0, 0, 0]) },
+        { part: 1, transform: turned(0, [20, 0, 0]) },
+      ],
+      { cellX0: -0.5, cellZ0: -0.5, width: 3, depth: 1 },
+    );
+    expect({
+      top: [...(road?.topSixteenths ?? [])],
+      occupied: [...(road?.occupied ?? [])],
+    }).toEqual({ top: [TILE * SIXTEENTHS_PER_LDU, NO_TOP, NO_TOP], occupied: [1, 1, 0] });
+  });
+
   it("keeps a top at a fractional height in sixteenths, and leaves a top that doesn't identify to a sixteenth unread", () => {
     const tile = part("tile", { min: [-10, 0, -10], max: [10, TILE, 10], cells: ["f"] });
     const grid = gridOf([-10, 0, -10], [10, TILE, 10]);
