@@ -264,6 +264,7 @@ import type {
   IWorldFiles,
   IWorldSession,
   ModelFileInput,
+  ModelImportNotice,
   PlanContents,
   PlanImport,
   StoredContents,
@@ -1669,9 +1670,10 @@ export class Editor implements IEditor, IEditedWorld {
     return this.catalog.placeables().filter((placeable) => placeable !== null);
   }
 
-  async addImportedModel(file: ImportedFile): Promise<string | null> {
+  async addImportedModel(file: ImportedFile, notice: ModelImportNotice): Promise<string | null> {
     const id = importRef(file.sha256);
     if (this.catalog.itemRefId(id) !== null) return id;
+    const announced = notice === "announce";
     const importing = {
       file: file.name,
       status: "importing",
@@ -1680,12 +1682,14 @@ export class Editor implements IEditor, IEditedWorld {
       report: null,
       studio: null,
     } as const;
-    this.update({ modelImport: importing });
+    if (announced) this.update({ modelImport: importing });
     const outcome = await this.catalog.addImported(file);
     switch (outcome.kind) {
       case "refused": {
         const reported = { ...importing, report: outcome.report, studio: outcome.studio };
-        this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
+        if (announced) {
+          this.update({ modelImport: { ...reported, status: "refused", reason: outcome.refusal } });
+        }
         return null;
       }
       case "placeable": {
@@ -1694,22 +1698,22 @@ export class Editor implements IEditor, IEditedWorld {
         if (imported) await this.connectorTables.load(imported);
         this.remeasureTrains(imported);
         const reported = { ...importing, report: outcome.report, studio: outcome.studio };
-        this.addImportedItem(outcome.item, outcome.credit, {
-          ...reported,
-          status: "placeable",
-          item: outcome.item.id,
-        });
+        this.addImportedItem(
+          outcome.item,
+          outcome.credit,
+          announced ? { ...reported, status: "placeable", item: outcome.item.id } : null,
+        );
         return outcome.item.id;
       }
       case "checking": {
         await this.connectorTables.load(outcome.pending);
         this.remeasureTrains(outcome.pending);
         this.studChecks.add(outcome.pending);
-        this.addImportedItem(outcome.item, outcome.credit, {
-          ...importing,
-          status: "checking",
-          item: outcome.item.id,
-        });
+        this.addImportedItem(
+          outcome.item,
+          outcome.credit,
+          announced ? { ...importing, status: "checking", item: outcome.item.id } : null,
+        );
         const landed = outcome.checked.then((checked) =>
           this.studsChecked(outcome.pending, checked),
         );
@@ -1727,13 +1731,13 @@ export class Editor implements IEditor, IEditedWorld {
   private addImportedItem(
     item: CatalogItemView,
     credit: ModelCredit,
-    modelImport: ModelImportView,
+    modelImport: ModelImportView | null,
   ): void {
     this.catalogItems = [...this.catalogItems, item];
     const credits = this.state.credits;
     this.update({
       catalog: [...this.state.catalog, item],
-      modelImport,
+      ...(modelImport ? { modelImport } : {}),
       studChecks: this.studChecks.size,
       ...(credits ? { credits: { ...credits, models: [...credits.models, credit] } } : {}),
     });
@@ -1940,7 +1944,7 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   async importModelFile(file: ModelFileInput): Promise<boolean> {
-    const item = await this.session.addModelFile(file);
+    const item = await this.session.addModelFile(file, "announce");
     if (item !== null && !this.state.readOnly) this.chooseItem(item);
     return item !== null;
   }
