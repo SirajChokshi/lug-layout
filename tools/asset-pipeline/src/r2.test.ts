@@ -68,6 +68,11 @@ describe("signS3Request", () => {
 
 const PAGE_KEYS = 2;
 const BUCKET = "bucket";
+const OK = 200;
+const NOT_FOUND = 404;
+const REQUESTS_PER_UPLOAD = 2;
+const ATTEMPTS_WHEN_FIRST_DROPPED = 2;
+const DROPPED_UPLOAD_TIMEOUT_MS = 30_000;
 const REFUSED_PREFIX = "p/refused";
 const XML_ENTITIES: ReadonlyArray<readonly [string, string]> = [
   ["&", "&amp;"],
@@ -95,20 +100,42 @@ function unescaped(text: string): string {
     .reduce((out, [raw, entity]) => out.replaceAll(entity, raw), text);
 }
 
+interface BucketBehaviour {
+  readonly dropsTokens?: boolean;
+  readonly dropsFirstConnection?: boolean;
+}
+
 async function withBucket(
   keys: ReadonlyArray<string>,
   run: (store: R2ObjectStore, requests: string[], held: Set<string>) => Promise<void>,
-  listing: { readonly dropsTokens: boolean } = { dropsTokens: false },
+  behaviour: BucketBehaviour = {},
 ): Promise<void> {
   const held = new Set(keys);
   const requests: string[] = [];
+  const dropped = new Set<string>();
   const server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", "http://bucket.test");
     requests.push(`${request.method} ${url.search}`);
+    const target = `${request.method} ${url.pathname}${url.search}`;
+    if (behaviour.dropsFirstConnection && !dropped.has(target)) {
+      dropped.add(target);
+      request.socket.destroy();
+      return;
+    }
+    const objectKey = decodeURIComponent(url.pathname.slice(`/${BUCKET}/`.length));
     const chunks: Buffer[] = [];
     request.on("data", (chunk: Buffer) => chunks.push(chunk));
     request.on("end", () => {
       const body = Buffer.concat(chunks);
+      if (request.method === "HEAD") {
+        response.writeHead(held.has(objectKey) ? OK : NOT_FOUND).end();
+        return;
+      }
+      if (request.method === "PUT") {
+        held.add(objectKey);
+        response.writeHead(OK).end();
+        return;
+      }
       if (request.method === "POST" && url.searchParams.has("delete")) {
         const md5 = createHash("md5").update(body).digest("base64");
         if (request.headers["content-md5"] !== md5) {
@@ -134,7 +161,7 @@ async function withBucket(
         (key) => `<Contents><Key>${escaped(key)}</Key><Size>3</Size></Contents>`,
       );
       const token =
-        truncated && !listing.dropsTokens
+        truncated && !behaviour.dropsTokens
           ? `<NextContinuationToken>${start + PAGE_KEYS}</NextContinuationToken>`
           : "";
       response
@@ -215,4 +242,32 @@ describe("R2ObjectStore listing and deletion", () => {
       expect([...held]).toEqual([refused]);
     });
   });
+});
+
+describe("R2ObjectStore uploads", () => {
+  it(
+    "uploads every object, HEAD then PUT as an upload does, through an endpoint that drops each request's first connection",
+    async () => {
+      const keys = ["p/a.glb", "p/b.json", "p/a&<b>.json", "p/c'ü.json"];
+      await withBucket(
+        [],
+        async (store, requests, held) => {
+          await Promise.all(
+            keys.map(async (key) => {
+              if (!(await store.has(key))) {
+                await store.put(key, new Uint8Array([1, 2, 3]), { "Content-Type": "model/gltf" });
+              }
+            }),
+          );
+
+          expect([...held].toSorted()).toEqual(keys.toSorted());
+          expect(requests).toHaveLength(
+            ATTEMPTS_WHEN_FIRST_DROPPED * REQUESTS_PER_UPLOAD * keys.length,
+          );
+        },
+        { dropsFirstConnection: true },
+      );
+    },
+    DROPPED_UPLOAD_TIMEOUT_MS,
+  );
 });

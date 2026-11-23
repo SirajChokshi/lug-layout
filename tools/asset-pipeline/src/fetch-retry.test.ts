@@ -62,6 +62,19 @@ describe("fetchWithRetry", () => {
     ["503", 503],
     ["ECONNRESET", connectionFailure("ECONNRESET")],
     ["EAI_AGAIN", connectionFailure("EAI_AGAIN")],
+    ["UND_ERR_CONNECT_TIMEOUT", connectionFailure("UND_ERR_CONNECT_TIMEOUT")],
+    [
+      "ETIMEDOUT",
+      new TypeError("fetch failed", {
+        cause: Object.assign(
+          new AggregateError(
+            [connectionFailure("ETIMEDOUT"), connectionFailure("ENETUNREACH")],
+            "connect ETIMEDOUT",
+          ),
+          { code: "ETIMEDOUT" },
+        ),
+      }),
+    ],
     ["UND_ERR_SOCKET", { bodyFails: connectionFailure("UND_ERR_SOCKET", "terminated") }],
   ])(
     "retries a transient %s, logging the URL and the failure, then returns the next answer",
