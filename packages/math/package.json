@@ -6,11 +6,13 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "typecheck": "tsc -p tsconfig.json && tsc -p bench/tsconfig.json",
+    "test": "vitest run",
+    "bench": "node --experimental-transform-types --no-warnings bench/plane-hypot.bench.ts"
   },
   "devDependencies": {
     "@brr/config": "workspace:*",
+    "@types/node": "22.20.5",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
   }
