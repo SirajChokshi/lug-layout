@@ -45,6 +45,7 @@ export function connectorKind(
   shapes: SnapShapes,
   shape: number,
   gender: number,
+  studShapes: ReadonlySet<number>,
 ): ConnectorKindView {
   const male = gender === GENDER_MALE;
   const first = shapes.firstSection(shape);
@@ -56,7 +57,12 @@ export function connectorKind(
       lengthLdu: shapes.span(s),
     });
   }
-  return { gender: male ? "male" : "female", slides: shapes.slides(shape), sections };
+  return {
+    gender: male ? "male" : "female",
+    slides: shapes.slides(shape),
+    stud: male && studShapes.has(shape),
+    sections,
+  };
 }
 
 interface MateTally {
@@ -72,6 +78,7 @@ interface MateTally {
 export function mateCounts(
   report: MateReport,
   shapes: SnapShapes,
+  studShapes: ReadonlySet<number>,
   placedView: (owner: number) => PlacedModelView | null,
 ): ReadonlyArray<HoverMateCount> {
   const tallies = new Map<number, MateTally>();
@@ -83,7 +90,7 @@ export function mateCounts(
     let tally = tallies.get(key);
     if (!tally) {
       tally = {
-        kind: connectorKind(shapes, shape, gender),
+        kind: connectorKind(shapes, shape, gender, studShapes),
         partnerKinds: new Map(),
         connectors: 0,
         joints: new Set(),
@@ -99,7 +106,10 @@ export function mateCounts(
     const partnerGender = report.partnerGender[k] ?? 0;
     const partnerKey = partnerShape * 2 + partnerGender;
     if (partnerShape !== NO_SHAPE && !tally.partnerKinds.has(partnerKey)) {
-      tally.partnerKinds.set(partnerKey, connectorKind(shapes, partnerShape, partnerGender));
+      tally.partnerKinds.set(
+        partnerKey,
+        connectorKind(shapes, partnerShape, partnerGender, studShapes),
+      );
     }
     const owner = report.partner[k] ?? -1;
     const partner = owner < 0 ? null : placedView(owner);

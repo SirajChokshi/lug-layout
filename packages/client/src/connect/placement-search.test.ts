@@ -492,6 +492,8 @@ function verdict(choice: PlacementChoice): readonly [boolean, number, number] {
   return [choice.accepted, choice.votes, choice.accepted ? -1 : choice.overlap.owner];
 }
 
+const NO_STUD_SHAPES: ReadonlySet<number> = new Set();
+
 describe("PlacementSearch", () => {
   it("takes the nearest mated pose that fits when the cursor pose collides, breaking an equal-distance tie by lattice order", () => {
     const f = fixture();
@@ -1023,7 +1025,7 @@ describe("PlacementSearch mate zones", () => {
     ]);
     const report = new MateReport();
     f.search.evaluate(held, ORIGIN, report);
-    const mates = mateCounts(report, f.shapes, () => null);
+    const mates = mateCounts(report, f.shapes, NO_STUD_SHAPES, () => null);
     const studs = mates.filter((mate) => mate.kind.gender === "female");
     const pins = mates.filter((mate) => mate.kind.gender === "male");
 
