@@ -1538,7 +1538,7 @@ export class Editor implements IEditor, IEditedWorld {
       );
     }
     if (selection) labels.push(boxLabel("selection", "selection", selection.box));
-    labels.push(...heights, ...preview);
+    labels.push(...preview, ...heights);
     this.labelsReusable = ghostAt === null;
     this.labelsMeasured = measured;
     this.labelsTabled = tabled;

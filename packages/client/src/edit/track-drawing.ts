@@ -2400,7 +2400,7 @@ export class TrackDrawing implements ExtensionSite {
         z: at.zLdu,
       });
     }
-    return [...labels.values(), ...this.clearanceLabels()];
+    return [...this.clearanceLabels(), ...labels.values()];
   }
 
   previewLabels(): ReadonlyArray<LabelView> {
