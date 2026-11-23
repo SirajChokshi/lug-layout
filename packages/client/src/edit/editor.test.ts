@@ -4138,6 +4138,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
   const whileHeld = labels();
   const ghost = editor.snapshot().labels.find((label) => label.kind === "ghost");
   editor.chooseItem(null);
+  const putDown = labels();
   backend.aim(ghost?.x ?? Number.NaN, ghost?.z ?? Number.NaN);
   editor.click(0, 0, 0);
   const whileSelected = labels();
@@ -4176,6 +4177,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
 
   expect({
     whileHeld,
+    putDown,
     whileSelected,
     firstDraftDeletable,
     firstDraftDeleted,
@@ -4187,6 +4189,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
     after: { mode: editor.snapshot().mode, rulers: editor.snapshot().rulers },
   }).toEqual({
     whileHeld: ["ghost: 32 × 64 studs · 25.6 × 51.2 cm"],
+    putDown: [],
     whileSelected: ["selection: 32 × 64 studs · 25.6 × 51.2 cm"],
     firstDraftDeletable: true,
     firstDraftDeleted: [],

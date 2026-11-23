@@ -1374,7 +1374,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
-  private labelsComputed = false;
+  private labelsReusable = false;
   private labelsMeasured: ReadonlyArray<LabelView> = NO_LABELS;
   private labelsTabled: ReadonlyArray<LabelView> = NO_LABELS;
   private labelsFilling: LabelView | null = null;
@@ -1543,7 +1543,7 @@ export class Editor implements IEditor, IEditedWorld {
     const heights = drawn ? drawn.heightLabels() : NO_LABELS;
     const preview = drawn ? drawn.previewLabels() : NO_LABELS;
     if (
-      this.labelsComputed &&
+      this.labelsReusable &&
       ghostAt === null &&
       measured === this.labelsMeasured &&
       tabled === this.labelsTabled &&
@@ -1564,7 +1564,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     if (selection) labels.push(boxLabel("selection", "selection", selection.box));
     labels.push(...heights, ...preview);
-    this.labelsComputed = true;
+    this.labelsReusable = ghostAt === null;
     this.labelsMeasured = measured;
     this.labelsTabled = tabled;
     this.labelsFilling = filling;
