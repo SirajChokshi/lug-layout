@@ -11,7 +11,9 @@ import {
 } from "@brr/schema/bundle";
 import { readTarGz } from "../catalog/tar.ts";
 import type { InputLock } from "../fetch-ldraw.ts";
+import { fetchWithRetry } from "../fetch-retry.ts";
 import { parseLdraw } from "../ldraw/parse.ts";
+import { publicBucketNetwork } from "../publication/public-bucket-reads.ts";
 import { encodeObjectPath, sha256Hex, type ObjectStore } from "../r2.ts";
 
 const LIBRARY_DIRECTORIES = ["parts/", "p/"] as const;
@@ -232,12 +234,13 @@ export function publicObjectUrl(baseUrl: string, key: string): string {
 }
 
 export function httpReader(baseUrl: string): ObjectReader {
+  const network = publicBucketNetwork();
   return async (key) => {
     const url = publicObjectUrl(baseUrl, key);
-    const response = await fetch(url);
-    if (response.status === HTTP_NOT_FOUND) return undefined;
-    if (!response.ok) throw new Error(`GET ${url} failed with ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
+    const { status, bytes } = await fetchWithRetry(url, network);
+    if (status === HTTP_NOT_FOUND) return undefined;
+    if (bytes === null) throw new Error(`GET ${url} failed with ${status}`);
+    return bytes;
   };
 }
 

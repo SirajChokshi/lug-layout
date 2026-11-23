@@ -378,6 +378,38 @@ jobs:
           CLOUDFLARE_API_TOKEN_ID: ${{ secrets.CLOUDFLARE_API_TOKEN_ID }}
         run: node tools/asset-pipeline/src/pointer/cli.ts prune
 
+  starters:
+    name: Open every starter in this commit's app from the bundle the served pointer names
+    needs: [status, pointer]
+    if: ${{ !cancelled() && needs.status.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: pnpm install --frozen-lockfile --filter "@brr/web..." --filter "@brr/e2e..."
+      - name: Build the app as Vercel builds it, reading the part bundle from R2
+        working-directory: apps/web
+        env:
+          VITE_BUNDLE_BASE_URL: ${{ vars.PART_BUNDLE_BASE_URL }}
+        run: sh vercel-build.sh
+      - name: Open every starter on the welcome card
+        run: pnpm --filter @brr/e2e exec playwright test tests/starter-worlds.spec.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: failure()
+        with:
+          name: starters-served-bundle-report
+          path: |
+            tools/e2e/playwright-report
+            tools/e2e/test-results
+          retention-days: 7
+
   library-status:
     name: Check the public LDraw library
     if: github.ref == 'refs/heads/main'

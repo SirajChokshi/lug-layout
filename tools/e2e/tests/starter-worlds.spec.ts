@@ -110,9 +110,13 @@ test("a fresh profile opens on the welcome card, and each starter opens as its o
   for (const starter of shipped) {
     if ((await welcome.count()) === 0) await showStarters(page);
     await welcome.locator(`[data-starter="${starter.id}"]`).click();
-    await expect(page.locator(".world-glance strong")).toHaveText(starter.name, {
+    const worldName = page.locator(".world-glance strong");
+    const refusal = welcome.locator(".error");
+    await expect(worldName.filter({ hasText: starter.name }).or(refusal).first()).toBeVisible({
       timeout: OPEN_TIMEOUT_MS,
     });
+    expect(await refusal.allTextContents(), `opening ${starter.id}`).toEqual([]);
+    await expect(worldName).toHaveText(starter.name);
     await expect(welcome).toHaveCount(0);
     opened.push(await openedWorld(page));
     play.push(await runATrain(page));
