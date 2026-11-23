@@ -92,7 +92,7 @@ The browser import worker and the OMR ingest share the same code.
 7. Derive the **base footprint**: the set of bottom-facing anti-stud cells on the lattice, plus flat-bottom regions. Layout placement uses this for support checks.
 8. Compute the 2.5D occupancy (a voxel column per stud cell) and the AABB.
 9. Build **merged LOD meshes** per material class: mid LOD from LOD1 parts merged; far LOD as a voxel greedy mesh at 1 stud × 1 stud × 1 plate resolution.
-10. Detect vehicles by part signatures (train motors, wheels, magnetic couplers) and propose a vehicle sidecar.
+10. Detect vehicles by part signatures (train motors, wheels, magnetic couplers) and propose a vehicle sidecar. A vehicle is a group of touching parts that holds a wheelset. It also carries every other group that rests on it (a part whose bottom is exactly its top, overlapping it in plan) or lies wholly within its bounds, so a loose roof, sticker or seated figure rides its car. A group that more than one vehicle could carry rides the one it overlaps most in plan. A group that does neither, such as a figure standing beside the train, rides no vehicle. A train standing on the rails draws those parts on the ground the track is laid on, beside the nearest car, where they stay while Play runs.
 11. Store the original file unchanged so it can be re-exported.
 
 ### 3.4 Attribution and licenses in shipped assets

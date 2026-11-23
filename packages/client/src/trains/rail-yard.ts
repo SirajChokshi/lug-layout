@@ -14,17 +14,27 @@ import {
   type ConsistHandle,
 } from "@brr/domain";
 import type { PartVehicle } from "@brr/catalog";
-import { STUD_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox } from "@brr/render";
 import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { BOX_FLOATS } from "../edit/local-box.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import type { PlayModel } from "../play/play-models.ts";
-import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
+import {
+  consistVehicles,
+  standingRemainder,
+  type ConsistVehicle,
+  type StandingRemainder,
+} from "../sim/consist.ts";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
-import { ConsistBodies, standingGhost, type StandingConsist } from "./consist-bodies.ts";
+import {
+  ConsistBodies,
+  StandingRemainderBody,
+  standingGhost,
+  type StandingConsist,
+} from "./consist-bodies.ts";
 import { RailTrack, type RailCarrier, type RailHead } from "./rail-track.ts";
 import type { IVehicleIds } from "./vehicle-ids.ts";
 
@@ -35,6 +45,8 @@ export interface RailSeat {
   readonly poses: Float64Array;
   readonly pieces: ReadonlySet<number>;
   readonly lengthLdu: number;
+  readonly remainder: StandingRemainder | null;
+  readonly groundY: number;
 }
 
 export type RailAim =
@@ -94,6 +106,7 @@ interface Prepared {
   readonly straightLdu: number;
   readonly boxes: Float64Array;
   readonly tops: Float64Array;
+  readonly remainder: StandingRemainder | null;
 }
 
 interface Parked {
@@ -101,6 +114,7 @@ interface Parked {
   readonly model: PlayModel;
   seat: RailSeat | null;
   bodies: ConsistBodies | null;
+  remainder: StandingRemainderBody | null;
 }
 
 const RAY_ORIGIN = 0;
@@ -246,11 +260,17 @@ export class RailYard implements IRailYard {
   }
 
   ghost(seat: RailSeat): RailGhost {
-    return standingGhost(seat.consist, seat.poses, this.track?.railTopY ?? 0);
+    return standingGhost(
+      seat.consist,
+      seat.poses,
+      this.track?.railTopY ?? 0,
+      seat.remainder,
+      seat.groundY,
+    );
   }
 
   add(handle: ConsistHandle, model: PlayModel): void {
-    const parked: Parked = { handle, model, seat: null, bodies: null };
+    const parked: Parked = { handle, model, seat: null, bodies: null, remainder: null };
     this.parked.push(parked);
     this.restand(parked);
     this.registerGear();
@@ -261,12 +281,16 @@ export class RailYard implements IRailYard {
     const parked = this.parked[index];
     if (!parked) return;
     parked.bodies?.dispose();
+    parked.remainder?.dispose();
     this.parked.splice(index, 1);
     this.registerGear();
   }
 
   clear(): void {
-    for (const parked of this.parked) parked.bodies?.dispose();
+    for (const parked of this.parked) {
+      parked.bodies?.dispose();
+      parked.remainder?.dispose();
+    }
     this.parked.length = 0;
     this.registerGear();
   }
@@ -370,6 +394,8 @@ export class RailYard implements IRailYard {
   private restand(parked: Parked): void {
     parked.bodies?.dispose();
     parked.bodies = null;
+    parked.remainder?.dispose();
+    parked.remainder = null;
     parked.seat = null;
     const rails = this.track;
     const head = rails?.headOf(parked.handle.pose.anchor) ?? null;
@@ -380,6 +406,16 @@ export class RailYard implements IRailYard {
     if (typeof stood === "string") return;
     parked.seat = stood;
     this.show(parked);
+    if (stood.remainder) {
+      parked.remainder = new StandingRemainderBody(
+        this.backend,
+        this.vehicleIds,
+        stood.consist,
+        stood.remainder,
+        stood.poses,
+        stood.groundY,
+      );
+    }
   }
 
   private show(parked: Parked): void {
@@ -421,6 +457,7 @@ export class RailYard implements IRailYard {
               straightLdu,
               boxes: vehicleBoxes(model, vehicles),
               tops: this.vehicleTops(model, vehicles),
+              remainder: standingRemainder(model.model, vehicles, gear, model.gear.instanceBoxes),
             };
     } catch (error) {
       prepared = `${model.label} can't go on the rails: ${errorText(error)}`;
@@ -495,7 +532,16 @@ export class RailYard implements IRailYard {
       parts: this.catalog.parts(),
       colors: this.catalog.colors(),
     };
-    return { anchor, head, consist, poses, pieces, lengthLdu };
+    const remainder = prepared.remainder;
+    const groundY = this.laidAt(pieces, rails);
+    return { anchor, head, consist, poses, pieces, lengthLdu, remainder, groundY };
+  }
+
+  private laidAt(pieces: ReadonlySet<number>, rails: RailTrack): number {
+    let plates = Number.POSITIVE_INFINITY;
+    for (const piece of pieces) plates = Math.min(plates, rails.play.layout.yPlates(piece));
+    if (plates === Number.POSITIVE_INFINITY) throw new Error("a standing train covers no track");
+    return plates * PLATE_LDU;
   }
 
   private tooLong(model: PlayModel, lengthLdu: number): string {
