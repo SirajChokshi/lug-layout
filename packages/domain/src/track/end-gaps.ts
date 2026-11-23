@@ -6,6 +6,7 @@ import {
   posesJoin16,
   zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 
 export interface TrackFrame {
@@ -85,7 +86,7 @@ export function endGaps(
       for (let dz = -1; dz <= 1; dz++) {
         for (const b of cells.get(cellKey(cellX + dx, cellZ + dz, a.end.yPlates)) ?? []) {
           if (b.index <= a.index || trackEndsJoin(a.end, b.end)) continue;
-          const gapLdu = Math.hypot(b.x - a.x, b.z - a.z);
+          const gapLdu = planeHypot(b.x - a.x, b.z - a.z);
           if (gapLdu > radiusLdu) continue;
           gaps.push({
             a: a.index,

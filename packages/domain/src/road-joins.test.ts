@@ -12,6 +12,7 @@ import {
   roadwayCells,
   type RoadJoinReport,
   type RoadPlacement,
+  type RoadPlacementJoin,
   type RoadSide,
   type RoadSurface,
 } from "./road-joins.ts";
@@ -398,6 +399,12 @@ describe("road joins (layout rule 7)", () => {
   it("reports overlapping pieces and refuses them as a fit, leaving the caller's result empty", () => {
     const overlapping = () => new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 160, 0)]);
     expect(overlapping().report().overlaps).toEqual([[0, 1]]);
+    const twice = new RoadNetwork([at(0, plate, 0, 0), at(1, plate, 160, 0), at(2, plate, 0, 160)]);
+    expect(twice.report().overlaps).toEqual([
+      [0, 1],
+      [0, 2],
+      [1, 2],
+    ]);
     const reused = new RoadFit();
     overlapping().fit(at(2, plate, 0, 320), reused);
     expect(cleanFitOf(overlapping(), at(2, plate, 0, 160), reused)).toBeNull();
@@ -927,4 +934,99 @@ describe("road joins on seeded layouts", () => {
       expect(fitOf(reused, candidate)).toEqual(fitOf(fresh, candidate));
     }
   });
+});
+
+const NETWORKS = 2000;
+const DIFFERENTIAL_TIMEOUT_MS = 30_000;
+const MAX_STEPS = 12;
+const HALF_STUD_LDU = STUD / 2;
+const QUARTER_TURNS = 4;
+const STEPS: ReadonlyArray<readonly [number, number]> = [
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [0, -1],
+];
+
+function everySurface(): ReadonlyArray<RoadSurface> {
+  return [
+    ...geometry.recessedRoadPlates.map((plate) => recessedPlate(plate.part)),
+    ...geometry.roadStudZones.map((zones) => roadBaseplate(zones.part)),
+  ];
+}
+
+function strokeNetwork(
+  random: () => number,
+  surfaces: ReadonlyArray<RoadSurface>,
+): RoadPlacement[] {
+  const surface = pick(random, surfaces);
+  const tileLdu = surface.columns * STUD;
+  const placements: RoadPlacement[] = [];
+  const visited: Array<readonly [number, number]> = [];
+  let x = 0;
+  let z = 0;
+  let step = pick(random, STEPS);
+  const steps = 2 + Math.floor(random() * (MAX_STEPS - 1));
+  for (let k = 0; k < steps; k++) {
+    const roll = random();
+    if (roll < 0.25) step = pick(random, STEPS);
+    if (roll > 0.85 && visited.length > 0) [x, z] = pick(random, visited);
+    x += step[0] * tileLdu;
+    z += step[1] * tileLdu;
+    visited.push([x, z]);
+    if (random() < 0.12) continue;
+    const offLattice = random() < 0.08 ? HALF_STUD_LDU : 0;
+    const overlap = random() < 0.08 ? tileLdu / 2 : 0;
+    placements.push({
+      id: 0,
+      x: x + offLattice + overlap,
+      z,
+      yLdu: random() < 0.15 ? 8 : 0,
+      rot: Math.floor(random() * QUARTER_TURNS),
+      surface: random() < 0.1 ? pick(random, surfaces) : surface,
+    });
+  }
+  const ids = placements.map((_, k) => 3 * k + Math.floor(random() * 3));
+  for (let k = ids.length - 1; k > 0; k--) {
+    const other = Math.floor(random() * (k + 1));
+    [ids[k], ids[other]] = [ids[other] ?? 0, ids[k] ?? 0];
+  }
+  return placements.map((placement, k) => ({ ...placement, id: ids[k] ?? 0 }));
+}
+
+function joinFromReport(report: RoadJoinReport, id: number): RoadPlacementJoin {
+  const overlap = report.overlaps.find(([a, b]) => a === id || b === id);
+  return {
+    mismatched: report.segments.some((s) => s.placement === id && s.status === "mismatch"),
+    overlapPartner: overlap ? (overlap[0] === id ? overlap[1] : overlap[0]) : null,
+  };
+}
+
+describe("placementJoin", () => {
+  it(
+    "equals a fresh report's mismatch and first overlap for every placement of 2,000 generated road strokes, from one refilled network",
+    () => {
+      const random = seeded(0x60ad);
+      const surfaces = everySurface();
+      const reused = new RoadNetwork([]);
+      const seen = { mismatched: 0, overlapped: 0, clean: 0 };
+      for (let n = 0; n < NETWORKS; n++) {
+        const placements = strokeNetwork(random, surfaces);
+        const report = new RoadNetwork(placements).report();
+        reused.clear();
+        for (const placement of placements) reused.add(placement);
+        for (const { id } of placements) {
+          const expected = joinFromReport(report, id);
+          expect(reused.placementJoin(id)).toEqual(expected);
+          if (expected.mismatched) seen.mismatched++;
+          if (expected.overlapPartner !== null) seen.overlapped++;
+          if (!expected.mismatched && expected.overlapPartner === null) seen.clean++;
+        }
+      }
+      expect(seen.mismatched).toBeGreaterThan(0);
+      expect(seen.overlapped).toBeGreaterThan(0);
+      expect(seen.clean).toBeGreaterThan(0);
+    },
+    DIFFERENTIAL_TIMEOUT_MS,
+  );
 });

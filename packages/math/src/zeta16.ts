@@ -78,7 +78,10 @@ export function conjugateZeta16(value: Zeta16): Zeta16 {
 }
 
 export function zeta16Equals(a: Zeta16, b: Zeta16): boolean {
-  return a.every((coefficient, power) => coefficient === coefficientAt(b, power));
+  for (let power = 0; power < a.length; power++) {
+    if (a[power] !== coefficientAt(b, power)) return false;
+  }
+  return true;
 }
 
 export function zeta16ToStuds(value: Zeta16): PlaneStuds {

@@ -121,6 +121,7 @@ const NO_BLOCK = new CellBlock();
 
 interface BlockSource {
   readonly blocksMade: number;
+  readonly clears: number;
   blockAt(blockX: number, blockZ: number): CellBlock | undefined;
 }
 
@@ -128,6 +129,7 @@ class RoadCellCursor {
   private blockX = 0;
   private blockZ = 0;
   private blocksSeen = -1;
+  private clearsSeen = -1;
   private block = NO_BLOCK;
   private record = NO_RECORD;
   private top = 0;
@@ -139,10 +141,16 @@ class RoadCellCursor {
     const blockX = cellX >> BLOCK_SHIFT;
     const blockZ = cellZ >> BLOCK_SHIFT;
     const moved = blockX !== this.blockX || blockZ !== this.blockZ;
-    if (moved || (this.block === NO_BLOCK && this.blocks.blocksMade !== this.blocksSeen)) {
+    const cleared = this.blocks.clears !== this.clearsSeen;
+    if (
+      moved ||
+      cleared ||
+      (this.block === NO_BLOCK && this.blocks.blocksMade !== this.blocksSeen)
+    ) {
       this.blockX = blockX;
       this.blockZ = blockZ;
       this.blocksSeen = this.blocks.blocksMade;
+      this.clearsSeen = this.blocks.clears;
       this.block = this.blocks.blockAt(blockX, blockZ) ?? NO_BLOCK;
     }
     this.top = top;
@@ -172,7 +180,10 @@ class RoadCellCursor {
 
 export class RoadCellGrid implements BlockSource {
   private made = 0;
+  private cleared = 0;
   private readonly blocks = new Map<number, Map<number, CellBlock>>();
+  private readonly freeBlocks: CellBlock[] = [];
+  private readonly freeRows: Array<Map<number, CellBlock>> = [];
   private readonly cachedX = new Int32Array(CACHE_SLOTS);
   private readonly cachedZ = new Int32Array(CACHE_SLOTS);
   private readonly cachedKnown = new Uint8Array(CACHE_SLOTS);
@@ -180,6 +191,10 @@ export class RoadCellGrid implements BlockSource {
 
   get blocksMade(): number {
     return this.made;
+  }
+
+  get clears(): number {
+    return this.cleared;
   }
 
   cursor(): RoadCellCursor {
@@ -201,10 +216,10 @@ export class RoadCellGrid implements BlockSource {
     if (!block) {
       let row = this.blocks.get(blockX);
       if (!row) {
-        row = new Map();
+        row = this.freeRows.pop() ?? new Map();
         this.blocks.set(blockX, row);
       }
-      block = new CellBlock();
+      block = this.freeBlocks.pop() ?? new CellBlock();
       row.set(blockZ, block);
       this.remember(blockX, blockZ, block);
       this.made++;
@@ -287,10 +302,23 @@ export class RoadCellGrid implements BlockSource {
   }
 
   clear(): void {
-    for (const row of this.blocks.values()) {
-      for (const block of row.values()) if (block.claimed > 0) block.clear();
-    }
+    this.blocks.forEach(this.releaseRow);
+    this.blocks.clear();
+    this.cachedKnown.fill(0);
+    this.cached.fill(undefined);
+    this.cleared++;
   }
+
+  private readonly releaseRow = (row: Map<number, CellBlock>): void => {
+    row.forEach(this.releaseBlock);
+    row.clear();
+    this.freeRows.push(row);
+  };
+
+  private readonly releaseBlock = (block: CellBlock): void => {
+    if (block.claimed > 0) block.clear();
+    this.freeBlocks.push(block);
+  };
 
   blockAt(blockX: number, blockZ: number): CellBlock | undefined {
     const slot = cacheSlotOf(blockX, blockZ);

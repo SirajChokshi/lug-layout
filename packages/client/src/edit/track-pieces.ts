@@ -57,8 +57,11 @@ function entryOf(piece: TrackPiece, index: number, formed: boolean): Entry {
   return { index, piece, element, lever: lever.lever, title: lever.title };
 }
 
+const NO_MIRROR = -1;
+
 export class TrackPieceSet {
   private readonly entries = new Map<number, Entry>();
+  private readonly mirrors: Int32Array;
 
   constructor(pieces: ReadonlyArray<readonly [number, TrackPiece]>) {
     const variants = new Map<string, number>();
@@ -74,6 +77,12 @@ export class TrackPieceSet {
       if (entry.lever === null) continue;
       const other = this.thrown(entry.index);
       if (other === null) throw new Error(`${entry.piece.id}: no other lever position for it`);
+    }
+    let last = -1;
+    for (const index of this.entries.keys()) last = Math.max(last, index);
+    this.mirrors = new Int32Array(last + 1).fill(NO_MIRROR);
+    for (const index of this.entries.keys()) {
+      this.mirrors[index] = this.mirrorOf(index) ?? NO_MIRROR;
     }
   }
 
@@ -119,6 +128,12 @@ export class TrackPieceSet {
   }
 
   mirrored(index: number): number | null {
+    this.entry(index);
+    const mirror = this.mirrors[index] ?? NO_MIRROR;
+    return mirror === NO_MIRROR ? null : mirror;
+  }
+
+  private mirrorOf(index: number): number | null {
     const entry = this.entry(index);
     if (entry.piece.kind !== "switch") return null;
     for (const other of this.entries.values()) {

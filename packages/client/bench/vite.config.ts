@@ -15,6 +15,7 @@ export default defineConfig({
         "bench/editor-frame-loop.bench.ts",
         "bench/plan-sync.bench.ts",
         "bench/fill-tool.bench.ts",
+        "bench/pointer-moves.bench.ts",
         "bench/road-scale.bench.ts",
       ],
     },

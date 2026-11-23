@@ -620,6 +620,32 @@ describe("draw road", () => {
     editor.chooseItem(null);
   });
 
+  it("joins a road plate and swaps a baseplate that only come within reach as the stroke grows toward them", async () => {
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [6, 0],
+      [7, 0],
+    ]);
+    await chosen(editor, "ldraw:3811@19");
+    editor.click(...ndc([5, 0]), 0);
+    editor.chooseItem(kitId(editor, completeKits[0][1]));
+    drag(editor, [
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [3, 0],
+      [4, 0],
+      [5, 0],
+      [6, 0],
+    ]);
+    const { lastRoadStroke, roads } = editor.snapshot();
+    while (editor.snapshot().history.undoDepth > 0) editor.undo(0);
+    editor.chooseItem(null);
+
+    expect(lastRoadStroke).toMatchObject({ result: "laid", stroke: { overGround: 1, issues: [] } });
+    expect(roads.overlaps).toBe(0);
+  });
+
   it("starts every kit in Draw, even after Erase was on", () => {
     const [first, second] = editor.snapshot().roadKits;
     if (!first || !second) throw new Error("fewer than two road kits");

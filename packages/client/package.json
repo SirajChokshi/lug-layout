@@ -17,6 +17,7 @@
     "bench:frame-loop": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/editor-frame-loop.bench.js",
     "bench:plan-sync": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc dist/bench/plan-sync.bench.js",
     "bench:fill-tool": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/fill-tool.bench.js",
+    "bench:pointer-moves": "vite build --config bench/vite.config.ts --logLevel warn && node --expose-gc --min-semi-space-size=256 --max-semi-space-size=256 dist/bench/pointer-moves.bench.js",
     "bench:road": "vite build --config bench/vite.config.ts --logLevel warn && node dist/bench/road-scale.bench.js"
   },
   "dependencies": {

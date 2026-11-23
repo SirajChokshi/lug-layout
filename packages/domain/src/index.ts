@@ -10,6 +10,7 @@ export {
   type RoadCellStatus,
   type RoadEdgeSegment,
   type RoadJoinReport,
+  type RoadPlacementJoin,
   type RoadPlacement,
   type RoadSide,
   type RoadSurface,

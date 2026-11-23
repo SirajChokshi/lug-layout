@@ -67,6 +67,7 @@ import {
 } from "@brr/schema/world";
 import {
   WORLD_LOCKS,
+  INDEXED_DB,
   WORLD_REPOSITORY,
   type IWorldLocks,
   type IWorldRepository,
@@ -74,6 +75,7 @@ import {
   type StoredWorld,
   type WorldChange,
 } from "@brr/storage";
+import { IDBFactory } from "fake-indexeddb";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import {
@@ -4136,6 +4138,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
   const whileHeld = labels();
   const ghost = editor.snapshot().labels.find((label) => label.kind === "ghost");
   editor.chooseItem(null);
+  const putDown = labels();
   backend.aim(ghost?.x ?? Number.NaN, ghost?.z ?? Number.NaN);
   editor.click(0, 0, 0);
   const whileSelected = labels();
@@ -4174,6 +4177,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
 
   expect({
     whileHeld,
+    putDown,
     whileSelected,
     firstDraftDeletable,
     firstDraftDeleted,
@@ -4185,6 +4189,7 @@ it("measures in studs and cm: a user's model reads its size held and selected, a
     after: { mode: editor.snapshot().mode, rulers: editor.snapshot().rulers },
   }).toEqual({
     whileHeld: ["ghost: 32 × 64 studs · 25.6 × 51.2 cm"],
+    putDown: [],
     whileSelected: ["selection: 32 × 64 studs · 25.6 × 51.2 cm"],
     firstDraftDeletable: true,
     firstDraftDeleted: [],
@@ -8528,6 +8533,209 @@ it("re-plans a track drag in flight against the new obstacles when a seat-level 
   expect(landed).toBe(editor.snapshot().track?.drag?.closure);
 }, 120_000);
 
+async function trackOwnerEditor() {
+  const importer = new GatedModelImporter();
+  const started = await startEditor([], new BundleDirectoryFetcher(), [], (bound) => {
+    bound.rebind(MODEL_IMPORTER).toConstantValue(importer);
+    bound.rebind(INDEXED_DB).toConstantValue(new IDBFactory());
+  });
+  const record = await started.container
+    .get(PART_BUNDLE_LOADER)
+    .loadModelRecord("standard", PLACEABLE_SET);
+  importer.serve(importedRecord("carrier.mpd", record));
+  return { ...started, importer };
+}
+
+function trackFacts(editor: IEditor) {
+  const track = editor.snapshot().track;
+  return {
+    ends: editor.dump().trackEnds,
+    openEnds: track?.openEnds,
+    gaps: track?.gaps,
+    switches: track?.switches,
+    bom: track?.bom,
+    joins: track?.joins,
+    models: [track?.modelPieces, track?.runFramePieces, track?.offField, track?.unanchored],
+    crossings: track?.crossings,
+  };
+}
+
+async function reopenedFresh(editor: IEditor) {
+  const { bytes } = await editor.exportWorld();
+  const fresh = await trackOwnerEditor();
+  fresh.importer.release();
+  expect(await fresh.editor.importWorld(bytes)).toBe(true);
+  await vi.waitFor(() => {
+    expect(fresh.editor.snapshot().placements).toBe(editor.snapshot().placements);
+    expect(fresh.editor.snapshot().studChecks).toBe(0);
+  });
+  return fresh;
+}
+
+function laySwitchAt(editor: IEditor, backend: AimedBackend, x: number, z: number): void {
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  backend.aim(x, z);
+  editor.pointerMove(0, 0);
+  editor.click(0, 0, 0);
+}
+
+function throwFirstSwitch(editor: IEditor, backend: AimedBackend): void {
+  const lever = editor.snapshot().track?.switches[0];
+  if (!lever) throw new Error("no switch to throw");
+  editor.chooseItem(TRACK_ITEM_ID);
+  backend.aim(lever.xLdu, lever.zLdu);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  editor.dragEnd(0, 0, 0);
+}
+
+it("gives the track view after each kind of edit that a fresh editor gives on reopening the saved world", async () => {
+  const { editor, backend, importer } = await trackOwnerEditor();
+  const checked: string[] = [];
+  let previous = trackFacts(editor);
+  const matchesReopened = async (
+    edit: string,
+    changes: ReadonlyArray<keyof ReturnType<typeof trackFacts>>,
+  ) => {
+    const facts = trackFacts(editor);
+    for (const field of changes) {
+      expect(facts[field], `${edit} changes ${field}`).not.toEqual(previous[field]);
+    }
+    previous = facts;
+    const fresh = await reopenedFresh(editor);
+    expect(facts, `${edit}`).toEqual(trackFacts(fresh.editor));
+    checked.push(edit);
+  };
+
+  laySwitchAt(editor, backend, 0, 0);
+  const end = editor.dump().trackEnds.find((open) => open.heading === 0);
+  if (!end) throw new Error("the switch has no end at heading 0");
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(
+    editor,
+    backend,
+    [onLattice(end.xLdu), onLattice(end.zLdu)],
+    [onLattice(end.xLdu) + 96 * STUD, onLattice(end.zLdu)],
+  );
+  await matchesReopened("lay", ["ends", "bom", "joins"]);
+  throwFirstSwitch(editor, backend);
+  await matchesReopened("switch throw", ["switches"]);
+  editor.undo(0);
+  await matchesReopened("undo", ["switches"]);
+  editor.redo(0);
+  await matchesReopened("redo", ["switches"]);
+  await vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"));
+  const first = editor.snapshot().world?.id;
+  if (!first) throw new Error("no current world");
+  expect(await editor.newWorld("Other")).toBe(true);
+  expect(await editor.openWorld(first)).toBe(true);
+  await matchesReopened("openWorld", []);
+  expect(await editor.importWorld((await editor.exportWorld()).bytes)).toBe(true);
+  await matchesReopened("replaceWorld", []);
+  const item = await importChecking(editor);
+  await placer(editor, backend)(item, 0, 120 * STUD);
+  await matchesReopened("import a model that carries track", ["models", "ends"]);
+  importer.release();
+  await vi.waitFor(() => expect(editor.snapshot().studChecks).toBe(0));
+  await matchesReopened("stud-landing swap", []);
+  editor.chooseItem(null);
+  selectAt(editor, backend, 0, 120 * STUD);
+  editor.deleteSelection(0);
+  await matchesReopened("remove the model", ["models", "ends"]);
+
+  expect(checked).toHaveLength(9);
+}, 300_000);
+
+const FREE_SAMPLE: Ground = [0, -160 * STUD];
+const NEAR_MISS_LAY: Ground = [3 * STUD, -158 * STUD];
+const END_OFFSET_LDU = 5 * STUD;
+
+function heldSamples(editor: IEditor): ReadonlyArray<Ground> {
+  const samples: Ground[] = [FREE_SAMPLE];
+  for (const end of editor.dump().trackEnds) {
+    const x = onLattice(end.xLdu);
+    const z = onLattice(end.zLdu);
+    samples.push([x, z], [x + END_OFFSET_LDU, z]);
+  }
+  return samples;
+}
+
+function hoveredHeld(editor: IEditor, backend: AimedBackend, samples: ReadonlyArray<Ground>) {
+  return samples.map(([x, z]) => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    const held = editor.snapshot().track?.held;
+    return {
+      at: [x, z],
+      snapped: held?.snapped,
+      joins: held?.joins,
+      misses: held?.misses,
+      ends: editor.dump().trackEnds,
+    };
+  });
+}
+
+it("snaps a held switch, and counts the ends it misses, as a fresh editor does after each edit made while holding it", async () => {
+  const { editor, backend, importer } = await trackOwnerEditor();
+  importer.release();
+  const item = await importChecking(editor);
+  await placer(editor, backend)(item, 0, 120 * STUD);
+  laySwitchAt(editor, backend, 0, 0);
+  const samples = heldSamples(editor);
+  const piece = `${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`;
+  const edits: ReadonlyArray<readonly [string, () => void]> = [
+    [
+      "lay beside the free sample",
+      () => {
+        backend.aim(...NEAR_MISS_LAY);
+        editor.pointerMove(0, 0);
+        editor.click(0, 0, 0);
+      },
+    ],
+    ["undo the lay", () => editor.undo(0)],
+    ["undo the switch", () => editor.undo(0)],
+    ["undo the carrier", () => editor.undo(0)],
+    ["redo the carrier", () => editor.redo(0)],
+    ["redo the switch", () => editor.redo(0)],
+  ];
+  const missesAtFree: number[] = [];
+  for (const [edit, made] of edits) {
+    editor.chooseItem(piece);
+    hoveredHeld(editor, backend, samples.toReversed());
+    made();
+    expect(editor.snapshot().activeItem, `${edit}`).toBe(piece);
+    const after = hoveredHeld(editor, backend, samples);
+    missesAtFree.push(after[0]?.misses ?? -1);
+    const fresh = await reopenedFresh(editor);
+    fresh.editor.chooseItem(piece);
+    expect(after, `${edit}`).toEqual(hoveredHeld(fresh.editor, fresh.backend, samples));
+  }
+
+  expect(missesAtFree[0]).toBeGreaterThan(missesAtFree[1] ?? 0);
+}, 300_000);
+
+it("publishes nothing for a pointer move that stays on the same stud, and the new hover for one that leaves it", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-16 * STUD, 0], [16 * STUD, 0]);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${NINE_VOLT_STRAIGHT}`);
+  backend.aim(0, 40 * STUD);
+  editor.pointerMove(0, 0);
+  const before = editor.snapshot();
+  let published = 0;
+  editor.subscribe(() => published++);
+
+  backend.aim(STUD / 4, 40 * STUD);
+  editor.pointerMove(0, 0);
+  const stayed = { published, same: editor.snapshot() === before };
+  backend.aim(STUD, 40 * STUD);
+  editor.pointerMove(0, 0);
+
+  expect(stayed).toEqual({ published: 0, same: true });
+  expect(published).toBe(1);
+  expect(editor.snapshot().hover).toMatchObject({ x: STUD, z: 40 * STUD });
+}, 120_000);
+
 const PIER_PLATES = 5;
 const TALLEST_TRAIN = "10014-1";
 const BRIDGE_PLATES = 39;
@@ -8551,6 +8759,12 @@ async function raisedEditor(models: ReadonlyArray<string>, repository = new Memo
   return started;
 }
 
+async function piersPlaced(editor: IEditor): Promise<void> {
+  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
+    timeout: 60_000,
+  });
+}
+
 async function layRaised(
   editor: IEditor,
   backend: AimedBackend,
@@ -8558,9 +8772,7 @@ async function layRaised(
   to: readonly [number, number],
 ): Promise<void> {
   dragTrack(editor, backend, from, to);
-  await vi.waitFor(() => expect(editor.snapshot().track?.placingPiers).toBe(false), {
-    timeout: 60_000,
-  });
+  await piersPlaced(editor);
 }
 
 function placedImports(editor: IEditor) {
@@ -8893,4 +9105,131 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
   expect({ state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported }).toEqual(
     laid,
   );
+}, 180_000);
+
+function previewHeightAt(editor: IEditor): readonly [number, number] | null {
+  const label = editor.snapshot().labels.find((shown) => shown.id === "height:preview");
+  return label ? [label.x, label.z] : null;
+}
+
+function eastmostEnd(editor: IEditor): readonly [number, number] {
+  const ends = editor.dump().trackEnds;
+  const east = ends.reduce((a, b) => (b.xLdu > a.xLdu ? b : a), ends[0] ?? { xLdu: 0, zLdu: 0 });
+  return [east.xLdu, east.zLdu];
+}
+
+it("shows a raised preview's ghost and height where the previewed run ends, on every move of a growing drag and for the extension chosen next", async () => {
+  const { editor, backend } = await startEditor([]);
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  backend.aim(0, 0);
+  editor.pointerMove(0, 0);
+  editor.dragStart(0, 0);
+  const shownWhileDragging = [16, 32, 48].map((studs) => {
+    backend.aim(studs * STUD, 0);
+    editor.dragMove(0, 0);
+    return { height: previewHeightAt(editor), ghostPieces: backend.ghostInstances };
+  });
+  editor.dragEnd(0, 0, 0);
+  await piersPlaced(editor);
+  const draggedPieces = editor.dump().laidTrack.length;
+  const dragged = eastmostEnd(editor);
+  backend.aim(...dragged);
+  editor.pointerMove(0, 0);
+  const offered = editor.snapshot().track?.extend?.choices ?? [];
+  editor.selectTrackChoice(offered.findIndex((choice) => choice.kind === "straight"));
+  const shownForExtension = {
+    height: previewHeightAt(editor),
+    ghostPieces: backend.ghostInstances,
+  };
+  editor.extendTrack(null, 0);
+  await piersPlaced(editor);
+
+  expect(shownWhileDragging.map((shown) => shown.ghostPieces)).toEqual([1, 2, draggedPieces]);
+  expect(new Set(shownWhileDragging.map((shown) => String(shown.height))).size).toBe(3);
+  expect(shownWhileDragging.at(-1)?.height).toEqual(dragged);
+  expect(shownForExtension).toEqual({
+    height: eastmostEnd(editor),
+    ghostPieces: editor.dump().laidTrack.length - draggedPieces,
+  });
+}, 120_000);
+
+const STEEP_RAMP_PLATES = 2;
+
+function laidHeightTexts(editor: IEditor): ReadonlySet<string> {
+  return new Set(
+    editor
+      .snapshot()
+      .labels.filter((label) => label.kind === "height" && label.id !== "height:preview")
+      .map((label) => label.text),
+  );
+}
+
+async function drawnWithHeightSet(late: boolean) {
+  const { editor, backend } = await startEditor([]);
+  const shown = () => ({
+    height: editor.snapshot().track?.height,
+    preview: previewHeightAt(editor),
+    ghostPieces: backend.ghostInstances,
+  });
+  const dragFromEnd = async (
+    from: readonly [number, number],
+    to: readonly [number, number],
+    change: () => void,
+  ) => {
+    if (!late) change();
+    backend.aim(...from);
+    editor.pointerMove(0, 0);
+    editor.dragStart(0, 0);
+    backend.aim(...to);
+    editor.dragMove(0, 0);
+    if (late) change();
+    const dragging = shown();
+    editor.dragEnd(0, 0, 0);
+    await piersPlaced(editor);
+    return dragging;
+  };
+  const hoverAt = (at: readonly [number, number], change: () => void) => {
+    if (!late) change();
+    backend.aim(...at);
+    editor.pointerMove(0, 0);
+    if (late) change();
+    return { ...shown(), hover: editor.snapshot().hover };
+  };
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-48 * STUD, 0], [-16 * STUD, 0]);
+  editor.setTrackRampPlates(STEEP_RAMP_PLATES);
+  const raisedMidDrag = await dragFromEnd([-16 * STUD, 0], [32 * STUD, 0], () =>
+    editor.raiseTrack(PIER_PLATES),
+  );
+  const rampedMidDrag = await dragFromEnd([-48 * STUD, 0], [-96 * STUD, 0], () =>
+    editor.setTrackRampPlates(1),
+  );
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  const held = hoverAt([0, 48 * STUD], () => editor.raiseTrack(1));
+  editor.click(0, 0, 0);
+  await piersPlaced(editor);
+  editor.chooseItem(TRACK_ITEM_ID);
+  const readout = hoverAt([0, -48 * STUD], () => editor.setTrackRampPlates(STEEP_RAMP_PLATES));
+  const laid = laidHeights(editor);
+  const heldLabels = laidHeightTexts(editor);
+  editor.undo(0);
+  const undoneLabels = laidHeightTexts(editor);
+  return { raisedMidDrag, rampedMidDrag, held, readout, laid, heldLabels, undoneLabels };
+}
+
+it("draws drags in flight, a held piece and the height readout at a drawing height or ramp rate changed under them, as if it had been set first", async () => {
+  const early = await drawnWithHeightSet(false);
+  const late = await drawnWithHeightSet(true);
+
+  expect(early.held.hover?.yPlates).toBe(PIER_PLATES + 1);
+  expect(early.readout.height?.rampPlates).toBe(STEEP_RAMP_PLATES);
+  expect([...early.heldLabels].some((text) => text.startsWith(`${PIER_PLATES + 1} plates`))).toBe(
+    true,
+  );
+  expect([...early.undoneLabels].some((text) => text.startsWith(`${PIER_PLATES + 1} plates`))).toBe(
+    false,
+  );
+  expect(early.laid.some(([yPlates = 0, rise = 0]) => yPlates > 0 && rise > 0)).toBe(true);
+  expect(late).toEqual(early);
 }, 180_000);

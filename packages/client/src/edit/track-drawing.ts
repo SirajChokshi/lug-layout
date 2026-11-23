@@ -86,9 +86,11 @@ import {
   posesJoin16,
   pose16,
   pose16Equals,
+  zeta16,
   zeta16Direction,
   zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type WorldBox } from "@brr/render";
 import type { ChunkPartInstances } from "../scene/placements.ts";
@@ -121,6 +123,7 @@ import {
   type ExtensionSite,
 } from "./track-extension.ts";
 import { pieceRelativePose } from "./group-transform.ts";
+import { SolveSamples, type TrackSolveStats } from "./solve-samples.ts";
 
 export type {
   ClosureState,
@@ -144,8 +147,8 @@ const DEFAULT_RAMP_PLATES = 1;
 const PERCENT = 100;
 const NO_PIECE = -1;
 export const RAMP_RATES: ReadonlyArray<number> = [1, 2];
-const GHOST_SCRATCH_PIECES = 64;
 const REFUSED_PIECE_LDRAW_COLOR = 4;
+const NO_MISSES: ReadonlyArray<number> = [];
 const NO_PLACEMENTS: ReadonlySet<number> = new Set();
 const NO_OWNERS: ReadonlySet<number> = new Set();
 const PIECE_BOX_FLOATS = 6;
@@ -302,11 +305,6 @@ interface OverUnderCrossing {
   readonly z: number;
 }
 
-interface DragRunCache {
-  readonly key: ReadonlyArray<unknown>;
-  readonly run: DragRun | null;
-}
-
 export interface TrackFootprint {
   readonly key: { readonly chunkKey: number; readonly slot: number };
   readonly ref: string;
@@ -408,6 +406,32 @@ export interface SwitchLeverView {
   readonly zLdu: number;
 }
 
+export interface TrackBomLine {
+  readonly piece: string;
+  readonly title: string;
+  readonly count: number;
+}
+
+export interface PreviewGhost {
+  readonly instances: ChunkInstances;
+  readonly x: number;
+  readonly z: number;
+}
+
+type LaidRun = ReturnType<typeof layMoves>;
+
+interface LaidRunEnd {
+  readonly run: LaidRun;
+  readonly endXStuds: number;
+  readonly endZStuds: number;
+}
+
+interface LaidPreview {
+  readonly run: PreviewRun;
+  readonly moves: ReadonlyArray<TrackMove>;
+  readonly laid: LaidRun;
+}
+
 export interface TrackGapView {
   readonly a: TrackEndView;
   readonly b: TrackEndView;
@@ -425,6 +449,17 @@ interface Placed {
   readonly placement: Pose16;
   readonly yPlates: number;
   readonly rise: number;
+}
+
+function sameStuds(ax: number, az: number, bx: number, bz: number): boolean {
+  return ax === bx && az === bz;
+}
+
+function latticePose(latticeX: number, latticeZ: number, heading: number): Pose16 {
+  return pose16(
+    zeta16([BigInt(latticeX / STUD_LDU), 0n, 0n, 0n, BigInt(latticeZ / STUD_LDU), 0n, 0n, 0n]),
+    heading,
+  );
 }
 
 function normalizeConnector(connector: number, count: number): number {
@@ -614,7 +649,13 @@ export class TrackDrawing implements ExtensionSite {
   private heightPlates = GROUND_PLATES;
   private risePerPiece = DEFAULT_RAMP_PLATES;
   private dragPlates = GROUND_PLATES;
-  private dragRunCache: DragRunCache | null = null;
+  private dragRunComputed = false;
+  private dragRunRoute: DragRoute | null = null;
+  private dragRunStartPlates = GROUND_PLATES;
+  private dragRunHeightPlates = GROUND_PLATES;
+  private dragRunRise = DEFAULT_RAMP_PLATES;
+  private dragRunBands = -1;
+  private lastDragRun: DragRun | null = null;
   private labelCache: ReadonlyArray<LabelView> | null = null;
   private crossingCache: ReadonlyArray<OverUnderCrossing> | null = null;
   private spanBottom = new Float64Array(0);
@@ -639,10 +680,39 @@ export class TrackDrawing implements ExtensionSite {
   private readonly refusedColor: number;
   private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
-  private ghostParts = new Uint16Array(GHOST_SCRATCH_PIECES);
-  private ghostColors = new Uint16Array(GHOST_SCRATCH_PIECES);
-  private ghostMatrices = new Float32Array(GHOST_SCRATCH_PIECES * INSTANCE_MATRIX_FLOATS);
-  readonly solveSamplesMs: number[] = [];
+  private readonly solveSamples = new SolveSamples();
+  private changes = 0;
+  private openEndViews: ReadonlyArray<TrackEndView> | null = null;
+  private gapViews: ReadonlyArray<TrackGapView> | null = null;
+  private gappedSet: ReadonlySet<number> | null = null;
+  private leverViews: ReadonlyArray<SwitchLeverView> | null = null;
+  private bomList: ReadonlyArray<TrackBomLine> | null = null;
+  private endStudFloats: Float64Array | null = null;
+  private lastSnap: PieceSnap | null = null;
+  private snapCatalogIndex = -1;
+  private snapConnector = 0;
+  private snapVersion = -1;
+  private snapPlates = GROUND_PLATES;
+  private snapEnd = NO_END;
+  private snapLatticeX = 0;
+  private snapLatticeZ = 0;
+  private snapHeading = 0;
+  private lastPieceGhost: PreviewGhost | null = null;
+  private pieceGhostIndex = -1;
+  private pieceGhostPlacement: Pose16 | null = null;
+  private pieceGhostPlates = GROUND_PLATES;
+  private laidStart: Pose16 | null = null;
+  private laidMoves: ReadonlyArray<TrackMove> | null = null;
+  private lastLaid: LaidRunEnd | null = null;
+  private previewLaidComputed = false;
+  private previewLaidSource: object | null = null;
+  private lastPreviewLaid: LaidPreview | null = null;
+  private ghostComputed = false;
+  private ghostSource: LaidPreview | null = null;
+  private lastGhost: PreviewGhost | null = null;
+  private previewLabelsComputed = false;
+  private previewLabelsSource: LaidPreview | null = null;
+  private lastPreviewLabels: ReadonlyArray<LabelView> = [];
 
   constructor(
     { trackCatalog: catalog, trackShapes }: Pick<PartBundle, "trackCatalog" | "trackShapes">,
@@ -871,12 +941,17 @@ export class TrackDrawing implements ExtensionSite {
     return plates;
   }
 
+  get version(): number {
+    return this.changes;
+  }
+
   openEnds(): ReadonlyArray<TrackEndView> {
-    return this.openList.map((end) => endView(end.pose, end.frame, end.yPlates));
+    this.openEndViews ??= this.openList.map((end) => endView(end.pose, end.frame, end.yPlates));
+    return this.openEndViews;
   }
 
   gaps(): ReadonlyArray<TrackGapView> {
-    return this.gapList.map((gap) => {
+    this.gapViews ??= this.gapList.map((gap) => {
       const endA = this.openList[gap.a];
       const endB = this.openList[gap.b];
       const a = endA?.pose ?? POSE16_IDENTITY;
@@ -898,6 +973,7 @@ export class TrackDrawing implements ExtensionSite {
         headingErrorDegrees: (gap.headingErrorSteps * 360) / ZETA16_ORDER,
       };
     });
+    return this.gapViews;
   }
 
   routes(): ReadonlyArray<TrackRouteView> {
@@ -939,7 +1015,42 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   gappedEnds(): ReadonlySet<number> {
-    return new Set(this.gapList.flatMap((gap) => [gap.a, gap.b]));
+    this.gappedSet ??= new Set(this.gapList.flatMap((gap) => [gap.a, gap.b]));
+    return this.gappedSet;
+  }
+
+  bomLines(): ReadonlyArray<TrackBomLine> {
+    this.bomList ??= this.countBomLines();
+    return this.bomList;
+  }
+
+  private countBomLines(): ReadonlyArray<TrackBomLine> {
+    const lines = new Map<string, TrackBomLine>();
+    for (const kit of this.pieceParts()) {
+      const { element, title } = this.pieceSet.element(kit.catalogIndex);
+      const count = this.countOf(kit.catalogIndex);
+      const line = lines.get(element);
+      lines.set(element, { piece: element, title, count: (line?.count ?? 0) + count });
+    }
+    return [...lines.values()].filter(
+      (line) => line.count > 0 || this.kitParts().some((k) => k.piece.part === line.piece),
+    );
+  }
+
+  private endStuds(): Float64Array {
+    let studs = this.endStudFloats;
+    if (!studs) {
+      studs = new Float64Array(2 * this.ends.length);
+      for (let index = 0; index < this.ends.length; index++) {
+        const end = this.ends[index];
+        if (!end) continue;
+        const at = zeta16ToStuds(end.position);
+        studs[2 * index] = at.x;
+        studs[2 * index + 1] = at.z;
+      }
+      this.endStudFloats = studs;
+    }
+    return studs;
   }
 
   joinedPairs(): number {
@@ -953,18 +1064,22 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   endNear(xLdu: number, zLdu: number, except: number | null): number | null {
-    let best: number | null = null;
+    const studs = this.endStuds();
+    let best = NO_END;
     let bestDistance = END_PICK_RADIUS_LDU;
-    this.ends.forEach((end, index) => {
-      if (index === except) return;
-      const studs = zeta16ToStuds(end.position);
-      const distance = Math.hypot(studs.x * STUD_LDU - xLdu, studs.z * STUD_LDU - zLdu);
+    for (let slot = 0; slot + 1 < studs.length; slot += 2) {
+      const index = slot >> 1;
+      if (index === except) continue;
+      const distance = planeHypot(
+        (studs[slot] ?? 0) * STUD_LDU - xLdu,
+        (studs[slot + 1] ?? 0) * STUD_LDU - zLdu,
+      );
       if (distance <= bestDistance) {
         bestDistance = distance;
         best = index;
       }
-    });
-    return best;
+    }
+    return best === NO_END ? null : best;
   }
 
   beginDrag(hitX: number, hitZ: number, latticeX: number, latticeZ: number): void {
@@ -984,6 +1099,7 @@ export class TrackDrawing implements ExtensionSite {
       this.kit,
       this.router,
       ends,
+      this.laidRunEnd,
       () => performance.now(),
       { hitX, hitZ, latticeX, latticeZ },
       from,
@@ -1460,7 +1576,15 @@ export class TrackDrawing implements ExtensionSite {
     const began = performance.now();
     drag.extend(hitX, hitZ);
     this.lastSolveMs = performance.now() - began;
-    this.solveSamplesMs.push(this.lastSolveMs);
+    this.solveSamples.push(this.lastSolveMs);
+  }
+
+  solveStats(): TrackSolveStats | null {
+    return this.solveSamples.stats();
+  }
+
+  isDragging(): boolean {
+    return this.drag !== null;
   }
 
   dragView(): TrackDragView | null {
@@ -1519,18 +1643,25 @@ export class TrackDrawing implements ExtensionSite {
   private dragRun(): DragRun | null {
     const drag = this.drag;
     if (!drag) return null;
-    const key = [
-      drag,
-      drag.revision,
-      this.dragPlates,
-      this.heightPlates,
-      this.risePerPiece,
-      this.bands.version,
-    ] as const;
-    const cached = this.dragRunCache;
-    if (cached && cached.key.every((part, i) => part === key[i])) return cached.run;
-    const run = this.planDragRun(drag.route());
-    this.dragRunCache = { key, run };
+    const route = drag.route();
+    if (
+      this.dragRunComputed &&
+      route === this.dragRunRoute &&
+      this.dragPlates === this.dragRunStartPlates &&
+      this.heightPlates === this.dragRunHeightPlates &&
+      this.risePerPiece === this.dragRunRise &&
+      this.bands.version === this.dragRunBands
+    ) {
+      return this.lastDragRun;
+    }
+    const run = this.planDragRun(route);
+    this.dragRunComputed = true;
+    this.dragRunRoute = route;
+    this.dragRunStartPlates = this.dragPlates;
+    this.dragRunHeightPlates = this.heightPlates;
+    this.dragRunRise = this.risePerPiece;
+    this.dragRunBands = this.bands.version;
+    this.lastDragRun = run;
     return run;
   }
 
@@ -1557,8 +1688,49 @@ export class TrackDrawing implements ExtensionSite {
       : { ...cut, refusal: null, blocked: raised.block };
   }
 
+  private laidRun(start: Pose16, moves: ReadonlyArray<TrackMove>): LaidRun {
+    return this.laidRunEnd(start, moves).run;
+  }
+
+  private readonly laidRunEnd = (start: Pose16, moves: ReadonlyArray<TrackMove>): LaidRunEnd => {
+    const last = this.lastLaid;
+    if (last && start === this.laidStart && moves === this.laidMoves) return last;
+    const run = layMoves(start, moves);
+    const end = zeta16ToStuds(run.end.position);
+    const laid: LaidRunEnd = { run, endXStuds: end.x, endZStuds: end.z };
+    this.lastLaid = laid;
+    this.laidStart = start;
+    this.laidMoves = moves;
+    return laid;
+  };
+
   dragTarget(): DragTargetView | null {
     return this.drag?.targetView() ?? null;
+  }
+
+  ghost(): PreviewGhost | null {
+    const preview = this.previewLaid();
+    if (this.ghostComputed && preview === this.ghostSource) return this.lastGhost;
+    this.ghostComputed = true;
+    this.ghostSource = preview;
+    this.lastGhost = preview ? this.buildGhost(preview) : null;
+    return this.lastGhost;
+  }
+
+  private previewLaid(): LaidPreview | null {
+    const source = this.drag ? this.dragRun() : this.extension.chosen();
+    if (this.previewLaidComputed && source === this.previewLaidSource) return this.lastPreviewLaid;
+    this.previewLaidComputed = true;
+    this.previewLaidSource = source;
+    this.lastPreviewLaid = this.layPreview(this.previewRun());
+    return this.lastPreviewLaid;
+  }
+
+  private layPreview(run: PreviewRun | null): LaidPreview | null {
+    if (!run) return null;
+    const moves = run.refused ? [...run.moves, run.refused] : run.moves;
+    if (moves.length === 0) return null;
+    return { run, moves, laid: this.laidRun(run.start, moves) };
   }
 
   private previewRun(): PreviewRun | null {
@@ -1578,24 +1750,20 @@ export class TrackDrawing implements ExtensionSite {
     return this.runPlan(this.endHeight(run.from), run.choice.moves, goal);
   }
 
-  ghost(): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } | null {
-    const route = this.previewRun();
-    if (!route) return null;
+  private buildGhost({ run: route, moves, laid }: LaidPreview): PreviewGhost {
     const { start } = route;
-    const moves = route.refused ? [...route.moves, route.refused] : route.moves;
-    if (moves.length === 0) return null;
-    const { placed } = layMoves(start, moves);
+    const { placed } = laid;
     const count = placed.length;
-    this.growGhostScratch(count);
-    const partIndex = this.ghostParts.subarray(0, count);
-    const colorIndex = this.ghostColors.subarray(0, count);
-    const matrices = this.ghostMatrices.subarray(0, count * INSTANCE_MATRIX_FLOATS);
+    const partIndex = new Uint16Array(count);
+    const colorIndex = new Uint16Array(count);
+    const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
     const origin = zeta16ToStuds(start.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
-    placed.forEach((piece, i) => {
+    for (let i = 0; i < count; i++) {
       const move = moves[i];
-      if (!move) return;
+      const piece = placed[i];
+      if (!move || !piece) continue;
       const part = this.kitPart(move);
       partIndex[i] = part.partIndex;
       colorIndex[i] = i < route.moves.length ? part.color : this.refusedColor;
@@ -1606,21 +1774,13 @@ export class TrackDrawing implements ExtensionSite {
       const { partFrame } = part.piece;
       const ramp = rampShear(lifted);
       writeMatrix(matrices, i, piece.placement, partFrame, yLdu, originX, originZ, ramp);
-    });
+    }
     const base: ChunkPartInstances = { originX, originZ, count, partIndex, colorIndex, matrices };
     return {
       instances: withStuds(base, this.parts, this.colors),
       x: originX,
       z: originZ,
     };
-  }
-
-  private growGhostScratch(count: number): void {
-    if (count <= this.ghostParts.length) return;
-    const capacity = Math.max(count, this.ghostParts.length * 2);
-    this.ghostParts = new Uint16Array(capacity);
-    this.ghostColors = new Uint16Array(capacity);
-    this.ghostMatrices = new Float32Array(capacity * INSTANCE_MATRIX_FLOATS);
   }
 
   cancelDrag(): void {
@@ -1661,7 +1821,7 @@ export class TrackDrawing implements ExtensionSite {
     const run = this.drag ? null : this.extension.chosen();
     if (!run) return false;
     const at = zeta16ToStuds(run.start.position);
-    if (Math.hypot(at.x * STUD_LDU - xLdu, at.z * STUD_LDU - zLdu) <= END_PICK_RADIUS_LDU) {
+    if (planeHypot(at.x * STUD_LDU - xLdu, at.z * STUD_LDU - zLdu) <= END_PICK_RADIUS_LDU) {
       return true;
     }
     return layMoves(run.start, run.choice.moves).placed.some((piece, i) => {
@@ -1762,49 +1922,116 @@ export class TrackDrawing implements ExtensionSite {
     connector: number,
     hitX: number,
     hitZ: number,
-    free: Pose16,
+    latticeX: number,
+    latticeZ: number,
+    heading: number,
+  ): PieceSnap {
+    const end = this.endNear(hitX, hitZ, null) ?? NO_END;
+    const last = this.lastSnap;
+    if (
+      last !== null &&
+      catalogIndex === this.snapCatalogIndex &&
+      connector === this.snapConnector &&
+      this.changes === this.snapVersion &&
+      this.heightPlates === this.snapPlates &&
+      end === this.snapEnd &&
+      latticeX === this.snapLatticeX &&
+      latticeZ === this.snapLatticeZ &&
+      heading === this.snapHeading
+    ) {
+      return last;
+    }
+    const snap = this.buildSnap(catalogIndex, connector, end, latticeX, latticeZ, heading);
+    this.lastSnap = snap;
+    this.snapCatalogIndex = catalogIndex;
+    this.snapConnector = connector;
+    this.snapVersion = this.changes;
+    this.snapPlates = this.heightPlates;
+    this.snapEnd = end;
+    this.snapLatticeX = latticeX;
+    this.snapLatticeZ = latticeZ;
+    this.snapHeading = heading;
+    return snap;
+  }
+
+  private buildSnap(
+    catalogIndex: number,
+    connector: number,
+    end: number,
+    latticeX: number,
+    latticeZ: number,
+    heading: number,
   ): PieceSnap {
     const part = this.pieceByIndex(catalogIndex);
     const connectors = part.def.connectors;
     const held = normalizeConnector(connector, connectors.length);
     const local = connectors[held];
     if (!local) throw new RangeError(`${part.piece.id} has no connector ${connector}`);
-    const end = this.endNear(hitX, hitZ, null);
-    const target = end === null ? undefined : this.ends[end];
-    const placement = target ? attachPose16(local, target) : freePlacement(part.def, held, free);
-    const yPlates = end === null ? this.heightPlates : this.endHeight(end);
+    const target = end === NO_END ? undefined : this.ends[end];
+    const placement = target
+      ? attachPose16(local, target)
+      : freePlacement(part.def, held, latticePose(latticeX, latticeZ, heading));
+    const yPlates = end === NO_END ? this.heightPlates : this.endHeight(end);
+    const studs = this.endStuds();
     let joins = 0;
     const misses: number[] = [];
-    for (const own of connectors) {
+    for (let c = 0; c < connectors.length; c++) {
+      const own = connectors[c];
+      if (!own) continue;
       const pose = composePose16(placement, own);
-      const studs = zeta16ToStuds(pose.position);
-      this.ends.forEach((open, index) => {
-        if (this.endPlates[index] === yPlates && posesJoin16(open, pose)) {
+      const at = zeta16ToStuds(pose.position);
+      for (let slot = 0; slot + 1 < studs.length; slot += 2) {
+        const index = slot >> 1;
+        const endX = studs[slot] ?? 0;
+        const endZ = studs[slot + 1] ?? 0;
+        const open = this.ends[index];
+        if (
+          open &&
+          this.endPlates[index] === yPlates &&
+          sameStuds(endX, endZ, at.x, at.z) &&
+          posesJoin16(open, pose)
+        ) {
           joins++;
-          return;
+          continue;
         }
-        const at = zeta16ToStuds(open.position);
-        const gapLdu = Math.hypot(at.x - studs.x, at.z - studs.z) * STUD_LDU;
+        const gapLdu = planeHypot(endX - at.x, endZ - at.z) * STUD_LDU;
         if (gapLdu <= NEAR_MISS_RADIUS_LDU) misses.push(index);
-      });
+      }
     }
-    return { placement, yPlates, end: target ? end : null, joins, misses };
+    return {
+      placement,
+      yPlates,
+      end: target ? end : null,
+      joins,
+      misses: this.stableMisses(misses),
+    };
   }
 
-  pieceGhost(
-    catalogIndex: number,
-    placement: Pose16,
-    yPlates: number,
-  ): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } {
+  private stableMisses(misses: number[]): ReadonlyArray<number> {
+    if (misses.length === 0) return NO_MISSES;
+    const last = this.lastSnap?.misses;
+    if (!last || last.length !== misses.length) return misses;
+    for (let i = 0; i < misses.length; i++) if (last[i] !== misses[i]) return misses;
+    return last;
+  }
+
+  pieceGhost(catalogIndex: number, placement: Pose16, yPlates: number): PreviewGhost {
+    const last = this.lastPieceGhost;
+    if (
+      last &&
+      catalogIndex === this.pieceGhostIndex &&
+      placement === this.pieceGhostPlacement &&
+      yPlates === this.pieceGhostPlates
+    ) {
+      return last;
+    }
     const part = this.pieceByIndex(catalogIndex);
     const origin = zeta16ToStuds(placement.position);
     const originX = origin.x * STUD_LDU;
     const originZ = origin.z * STUD_LDU;
-    const partIndex = this.ghostParts.subarray(0, 1);
-    const colorIndex = this.ghostColors.subarray(0, 1);
-    const matrices = this.ghostMatrices.subarray(0, INSTANCE_MATRIX_FLOATS);
-    partIndex[0] = part.partIndex;
-    colorIndex[0] = part.color;
+    const partIndex = Uint16Array.of(part.partIndex);
+    const colorIndex = Uint16Array.of(part.color);
+    const matrices = new Float32Array(INSTANCE_MATRIX_FLOATS);
     const yLdu = part.yLdu + yPlates * PLATE_LDU;
     writeMatrix(matrices, 0, placement, part.piece.partFrame, yLdu, originX, originZ);
     const base: ChunkPartInstances = {
@@ -1815,11 +2042,16 @@ export class TrackDrawing implements ExtensionSite {
       colorIndex,
       matrices,
     };
-    return {
+    const ghost: PreviewGhost = {
       instances: withStuds(base, this.parts, this.colors),
       x: originX,
       z: originZ,
     };
+    this.lastPieceGhost = ghost;
+    this.pieceGhostIndex = catalogIndex;
+    this.pieceGhostPlacement = placement;
+    this.pieceGhostPlates = yPlates;
+    return ghost;
   }
 
   pieceChange(catalogIndex: number, placement: Pose16, yPlates: number): TrackChange {
@@ -1835,7 +2067,7 @@ export class TrackDrawing implements ExtensionSite {
       const box = partBox(placed);
       if (xLdu < box.minX || xLdu > box.maxX || zLdu < box.minZ || zLdu > box.maxZ) continue;
       const centre = partCentre(placed);
-      const distance = Math.hypot(centre.x - xLdu, centre.z - zLdu);
+      const distance = planeHypot(centre.x - xLdu, centre.z - zLdu);
       if (distance < bestDistance) {
         bestDistance = distance;
         best = p;
@@ -1902,11 +2134,16 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   switchLevers(): ReadonlyArray<SwitchLeverView> {
+    this.leverViews ??= this.findSwitchLevers();
+    return this.leverViews;
+  }
+
+  private findSwitchLevers(): ReadonlyArray<SwitchLeverView> {
     const levers: SwitchLeverView[] = [];
     for (let p = 0; p < this.layout.count; p++) {
-      const placed = this.placedAt(p);
-      const lever = this.pieceSet.lever(placed.part.catalogIndex);
+      const lever = this.pieceSet.lever(this.layout.piece(p));
       if (lever === null) continue;
+      const placed = this.placedAt(p);
       const centre = partCentre(placed);
       levers.push({
         placement: p,
@@ -1979,6 +2216,13 @@ export class TrackDrawing implements ExtensionSite {
     this.endOwners = owners;
     this.openList = [...world, ...inRunFrames];
     this.gapList = endGaps(this.openList);
+    this.changes++;
+    this.openEndViews = null;
+    this.gapViews = null;
+    this.gappedSet = null;
+    this.leverViews = null;
+    this.bomList = null;
+    this.endStudFloats = null;
     this.extension.endsChanged();
   }
 
@@ -2093,14 +2337,21 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   previewLabels(): ReadonlyArray<LabelView> {
-    const run = this.previewRun();
-    if (!run) return [];
-    const moves = run.refused ? [...run.moves, run.refused] : run.moves;
-    const end = moves.length === 0 ? null : layMoves(run.start, moves).end;
+    const preview = this.previewLaid();
+    if (this.previewLabelsComputed && preview === this.previewLabelsSource) {
+      return this.lastPreviewLabels;
+    }
+    this.previewLabelsComputed = true;
+    this.previewLabelsSource = preview;
+    this.lastPreviewLabels = preview ? this.measuredPreviewLabels(preview) : [];
+    return this.lastPreviewLabels;
+  }
+
+  private measuredPreviewLabels({ run, laid }: LaidPreview): ReadonlyArray<LabelView> {
     const plates = run.heights.endPlates;
     const raised = run.heights.yPlates.some((y) => y !== GROUND_PLATES);
-    if (!end || (plates === GROUND_PLATES && !raised)) return [];
-    const at = endView(end, WORLD_TRACK_FRAME, plates);
+    if (plates === GROUND_PLATES && !raised) return [];
+    const at = endView(laid.end, WORLD_TRACK_FRAME, plates);
     const [, top] = this.verticalRange();
     return [
       {
