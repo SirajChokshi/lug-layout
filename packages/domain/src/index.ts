@@ -249,6 +249,7 @@ export {
 } from "./track/track-pose.ts";
 export { runMoves, type TrackRun, type TrackSegment } from "./track/track-solver.ts";
 export {
+  CLOSURE_BUDGET,
   solveClosure,
   UNLIMITED_BUDGET,
   type ClosureResult,
