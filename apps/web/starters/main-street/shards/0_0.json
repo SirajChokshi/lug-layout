@@ -4,7 +4,7 @@
     { "color": 72, "ref": "ldraw:44336p04", "rot": 0, "x": 0, "yPlates": 0, "z": 640 },
     { "color": 72, "ref": "ldraw:44336p04", "rot": 0, "x": 640, "yPlates": 0, "z": 640 },
     { "color": 0, "ref": "omr:10190-1", "rot": 0, "x": 0, "yPlates": 0, "z": 0 },
-    { "color": 0, "ref": "omr:10218-1", "rot": 1, "x": 700, "yPlates": 0, "z": 0 }
+    { "color": 0, "ref": "omr:10218-1", "rot": 3, "x": 700, "yPlates": 0, "z": 0 }
   ],
   "schemaVersion": 1,
   "superChunk": [0, 0],
