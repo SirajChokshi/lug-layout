@@ -27,12 +27,13 @@ describe("connectorKind", () => {
       [2, 16, 2],
     );
     expect([
-      connectorKind(shapes, pin, GENDER_MALE),
-      connectorKind(shapes, hole, GENDER_FEMALE),
+      connectorKind(shapes, pin, GENDER_MALE, new Set()),
+      connectorKind(shapes, hole, GENDER_FEMALE, new Set()),
     ]).toEqual([
       {
         gender: "male",
         slides: false,
+        stud: false,
         sections: [
           { profile: "round", sizeLdu: 8, lengthLdu: 2 },
           { profile: "round", sizeLdu: 6, lengthLdu: 16 },
@@ -42,6 +43,7 @@ describe("connectorKind", () => {
       {
         gender: "female",
         slides: true,
+        stud: false,
         sections: [
           { profile: "round", sizeLdu: 8, lengthLdu: 2 },
           { profile: "round", sizeLdu: 6, lengthLdu: 16 },

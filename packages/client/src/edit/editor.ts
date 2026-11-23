@@ -50,11 +50,15 @@ import {
   PartTally,
   type PartSink,
   outlinesOverlap,
+  GENDER_MALE,
+  NO_SHAPE,
+  type ModelConnectors,
 } from "@brr/domain";
 import {
   BRICK_LDU,
   CHUNK_LDU,
   PLATE_LDU,
+  SIXTEENTHS_PER_LDU,
   STUD_LDU,
   isLatticePose,
   pose16Equals,
@@ -636,6 +640,8 @@ const ASSIST_TOLERANCE_PX = 32;
 const ASSIST_FLOOR_LDU = STUD_LDU;
 const ASSIST_BASIN_LDU = 3 * STUD_LDU;
 const NDC_SPAN = 2;
+const HALF_STUD_LDU = STUD_LDU / 2;
+const ORIGIN_INTS = 3;
 
 function cellsWithin(reachLdu: number): number {
   return Math.ceil(reachLdu / STUD_LDU);
@@ -1360,6 +1366,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly awaitingIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
   private readonly connected = new Map<Placeable, Connected>();
+  private readonly studShapes = new Set<number>();
   private readonly frozenVolumes = new Map<Placeable, FrozenVolumes>();
   private replayReachLdu: number | null = null;
   private waitingFill: {
@@ -2627,7 +2634,8 @@ export class Editor implements IEditor, IEditedWorld {
 
   private assistHost(): AssistHost {
     return {
-      mateCounts: (report) => mateCounts(report, this.shapes, (owner) => this.placedViewOf(owner)),
+      mateCounts: (report) =>
+        mateCounts(report, this.shapes, this.studShapes, (owner) => this.placedViewOf(owner)),
       refusalHit: (overlap) => this.refusalHit(overlap),
       heldPoseRefusal: (placeable, pose) => this.heldPoseRefusal(placeable, pose),
       restsOn: (connected, pose) =>
@@ -5347,6 +5355,19 @@ export class Editor implements IEditor, IEditedWorld {
       .flatMap((model) => (model.placeable.credit ? [model.placeable.credit] : []));
   }
 
+  private noteStudShapes(placeable: Placeable, model: ModelConnectors): void {
+    const { seats } = placeable.studLattice;
+    for (let c = 0; c < model.shape.length; c++) {
+      if (model.gender[c] !== GENDER_MALE) continue;
+      const at = c * ORIGIN_INTS;
+      const cellX = ((model.origin[at] ?? 0) / SIXTEENTHS_PER_LDU - HALF_STUD_LDU) / STUD_LDU;
+      const cellZ = ((model.origin[at + 2] ?? 0) / SIXTEENTHS_PER_LDU - HALF_STUD_LDU) / STUD_LDU;
+      const baseLdu = (model.origin[at + 1] ?? 0) / SIXTEENTHS_PER_LDU;
+      if (!Number.isInteger(cellX) || !Number.isInteger(cellZ)) continue;
+      if (seats.has(cellX, cellZ, baseLdu)) this.studShapes.add(model.shape[c] ?? NO_SHAPE);
+    }
+  }
+
   private connectedOf(placeable: Placeable): Connected {
     let connected = this.connected.get(placeable);
     if (!connected) {
@@ -5369,6 +5390,7 @@ export class Editor implements IEditor, IEditedWorld {
         ),
       };
       this.connected.set(placeable, connected);
+      this.noteStudShapes(placeable, connected.model);
     }
     return connected;
   }

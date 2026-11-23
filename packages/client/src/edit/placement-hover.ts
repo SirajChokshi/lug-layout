@@ -13,6 +13,7 @@ export interface ConnectorSectionView {
 export interface ConnectorKindView {
   readonly gender: ConnectorGender;
   readonly slides: boolean;
+  readonly stud: boolean;
   readonly sections: ReadonlyArray<ConnectorSectionView>;
 }
 

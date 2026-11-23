@@ -4154,7 +4154,7 @@ const SEATED_ON_STUDS = {
   ghostTone: "mates",
   hint: {
     tone: "place",
-    detail: expect.stringMatching(/^Magnetic · 0° · \d+ round sockets take \d+ round pegs/u),
+    detail: expect.stringMatching(/^Magnetic · 0° · \d+ studs(?: of [^·]+)? hold it/u),
   },
 };
 
@@ -4224,7 +4224,7 @@ it("says what mates when a set is held over a user's own baseplate file, which i
     hint: {
       tone: "place",
       detail: expect.stringMatching(
-        /^Magnetic · 0° · (?:Snapped [^·]+ · )?\d+ round sockets take \d+ round pegs/u,
+        /^Magnetic · 0° · (?:Snapped [^·]+ · )?\d+ studs(?: of [^·]+)? hold it/u,
       ),
     },
   });
@@ -5384,7 +5384,7 @@ it("proposes on the stud lattice exactly the lattice poses of the full slot walk
     for (const key of indexed) {
       const [px = 0, pz = 0, yPlates = 0, rot = 0] = key.split(",").map(Number);
       solver.partneredMates(model, { x: px, z: pz, yPlates, rot }, report);
-      for (const mate of mateCounts(report, shapes, () => null)) {
+      for (const mate of mateCounts(report, shapes, new Set(), () => null)) {
         const flaredPartner = mate.partnerKinds.some((kind) =>
           kind.sections.some((section) => section.profile === "flare"),
         );
