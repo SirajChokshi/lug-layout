@@ -10,7 +10,7 @@ export {
   mmFromLdu,
 } from "./units.ts";
 export { isRot90, rot90Cos, rot90Sin, type Rot90 } from "./rot90.ts";
-export { isLatticePose } from "./lattice.ts";
+export { LATTICE_LIMITS, isLatticePose } from "./lattice.ts";
 export { zeta16FloorStuds, type FloorStuds } from "./zeta16-floor.ts";
 export { zeta16ImaginarySign, zeta16RealSign, type Sign } from "./zeta16-sign.ts";
 export { assertChunkInRange, chunkKey, chunkOf } from "./chunk-key.ts";
