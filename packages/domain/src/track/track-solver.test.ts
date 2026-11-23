@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import {
   HALF_TURN_16,
   ZETA16_COEFFICIENT_COUNT,
@@ -11,16 +12,36 @@ import {
   posesJoin16,
   POSE16_IDENTITY,
   pose16Equals,
+  rotateZeta16,
   subtractZeta16,
   zeta16,
+  zeta16Equals,
   type Pose16,
   type Zeta16,
 } from "@brr/math";
 import { describe, expect, it } from "vitest";
 import { drawingKit, MAX_TURN_CURVES, type DrawingKit, type TurnSign } from "./drawing-kit.ts";
-import { advance, connectorPose, layMoves, type TrackPieceDef } from "./track-pose.ts";
-import { solveClosure, type ClosureResult, type SearchBudget } from "./closure.ts";
-import { closuresWithinTurns, runMoves, type TrackRun } from "./track-solver.ts";
+import {
+  advance,
+  connectorPose,
+  layMoves,
+  type TrackMove,
+  type TrackPieceDef,
+} from "./track-pose.ts";
+import {
+  solveClosure,
+  UNLIMITED_BUDGET,
+  type ClosureResult,
+  type SearchBudget,
+} from "./closure.ts";
+import { Deadline } from "./search-deadline.ts";
+import {
+  closuresWithinTurns,
+  fewestWithinTurns,
+  runMoves,
+  runOfMoves,
+  type TrackRun,
+} from "./track-solver.ts";
 
 interface GeometryEnd {
   readonly fieldCertified: boolean;
@@ -141,6 +162,8 @@ function turnsRun(random: () => number, turns: number): TrackRun {
   return { segments, pieces };
 }
 
+const CLOSURE_BUDGET_MS = 30;
+
 function expiredBudget(): SearchBudget {
   let tick = 0;
   return { now: () => (tick += 1000), limitMs: 1 };
@@ -260,6 +283,28 @@ describe("solveClosure", () => {
       if (result.kind === "limit") limited++;
     }
     expect(limited).toBeGreaterThan(0);
+  });
+
+  it("gives the unlimited closure even when building the kit's turn table takes longer than the whole 30 ms budget on the solve's own clock", () => {
+    const goal = pose16(zeta16([112n, 16n, 0n, 0n, 72n, 0n, 0n, -56n]), 3);
+    const clock = { ms: 0 };
+    const slowKit: DrawingKit = {
+      ...kit,
+      arc: (sign, curves, heading) => {
+        clock.ms += 1;
+        return kit.arc(sign, curves, heading);
+      },
+    };
+    const unlimited = solveClosure(kit, POSE16_IDENTITY, goal);
+    const budgeted = solveClosure(slowKit, POSE16_IDENTITY, goal, {
+      now: () => clock.ms,
+      limitMs: CLOSURE_BUDGET_MS,
+    });
+    expect(clock.ms).toBeGreaterThan(CLOSURE_BUDGET_MS);
+    expect(budgeted).toEqual(unlimited);
+    expect(solveClosure(kit, POSE16_IDENTITY, goal, { now: () => 0, limitMs: -1 })).not.toEqual(
+      unlimited,
+    );
   });
 });
 
@@ -516,6 +561,531 @@ describe("closuresWithinTurns", () => {
           referenceClosures(shortKit, start, goal, cap),
         );
       }
+    },
+    DIFFERENTIAL_TIMEOUT_MS,
+  );
+});
+
+const REFERENCE_BASIS = ZETA16_COEFFICIENT_COUNT;
+const REFERENCE_EDGES = ZETA16_ORDER;
+const REFERENCE_BOX_SIZES: ReadonlyArray<number> = [8, 16, 32, 64, 128, 256];
+const REFERENCE_PAIR_FILL_PIECES = 4;
+
+interface ReferenceArc {
+  readonly edges: Uint8Array;
+  readonly vertices: Uint8Array;
+}
+
+function referenceArcs(): ReadonlyArray<ReferenceArc> {
+  const list: ReferenceArc[] = [];
+  const add = (start: number, length: number): void => {
+    const edges = new Uint8Array(REFERENCE_EDGES);
+    const vertices = new Uint8Array(REFERENCE_EDGES);
+    for (let i = 0; i < length; i++) {
+      edges[(start + i) % REFERENCE_EDGES] = 1;
+      vertices[(start + i) % REFERENCE_EDGES] = 1;
+      vertices[(start + i + 1) % REFERENCE_EDGES] = 1;
+    }
+    list.push({ edges, vertices });
+  };
+  for (let start = 0; start < REFERENCE_EDGES; start++) {
+    for (let length = 1; length < REFERENCE_EDGES; length++) add(start, length);
+  }
+  add(0, REFERENCE_EDGES);
+  return list;
+}
+
+const REFERENCE_ARCS = referenceArcs();
+
+interface ReferenceChain {
+  readonly length: number;
+  readonly residual: Float64Array;
+  readonly chords: ReadonlyArray<Float64Array>;
+  readonly unaryRows: ReadonlyArray<ReadonlyArray<number>>;
+  readonly pairRows: ReadonlyArray<ReadonlyArray<number>>;
+  readonly constant: number;
+}
+
+interface ReferenceCrossings {
+  readonly pieces: number;
+  readonly edges: Int32Array;
+  readonly straights: Int32Array;
+}
+
+function referenceChordsOf(closureKit: DrawingKit): ReadonlyArray<Float64Array> | undefined {
+  if (!zeta16Equals(rotateZeta16(closureKit.right.delta, 1), closureKit.left.delta))
+    return undefined;
+  return Array.from({ length: REFERENCE_BASIS }, (_v, j) =>
+    Float64Array.from(rotateZeta16(closureKit.left.delta, j), (c) => Number(c)),
+  );
+}
+
+function referenceChainOf(
+  chords: ReadonlyArray<Float64Array>,
+  residual: Float64Array,
+  length: number,
+): ReferenceChain | undefined {
+  const unaryRows: number[][] = Array.from({ length: REFERENCE_BASIS }, () => []);
+  const pairRows: number[][] = Array.from({ length: REFERENCE_BASIS }, () => []);
+  let constant = 0;
+  for (let k = 0; k < REFERENCE_BASIS; k++) {
+    const support: number[] = [];
+    for (let j = 0; j < REFERENCE_BASIS; j++) if ((chords[j]?.[k] ?? 0) !== 0) support.push(j);
+    const [a, b] = support;
+    if (a === undefined) constant += Math.abs(residual[k] ?? 0);
+    else if (b === undefined) unaryRows[a]?.push(k);
+    else if (support.length === 2 && b === a + 1) pairRows[a]?.push(k);
+    else if (support.length === 2 && a === 0 && b === REFERENCE_BASIS - 1) pairRows[b]?.push(k);
+    else return undefined;
+  }
+  for (const chord of chords) {
+    for (const c of chord) if ((2 * c) % length !== 0) return undefined;
+  }
+  return { length, residual, chords, unaryRows, pairRows, constant };
+}
+
+function referenceCrossingParity(h0: number, h1: number): Int32Array {
+  const parity = new Int32Array(REFERENCE_BASIS);
+  if (h0 === h1) return parity;
+  for (let j = 0; j < REFERENCE_BASIS; j++) {
+    let count = 0;
+    for (let v = j + 1; v <= j + REFERENCE_BASIS; v++) {
+      const vertex = v % REFERENCE_EDGES;
+      if (vertex === h0 || vertex === h1) count++;
+    }
+    parity[j] = count % 2;
+  }
+  return parity;
+}
+
+function referenceEdgeParityPatterns(h0: number, h1: number): ReadonlyArray<Int32Array> {
+  return [0, 1].map((first) => {
+    const pattern = new Int32Array(REFERENCE_EDGES);
+    pattern[0] = first;
+    for (let v = 1; v < REFERENCE_EDGES; v++) {
+      const special = h0 !== h1 && (v === h0 || v === h1) ? 1 : 0;
+      pattern[v] = (pattern[v - 1] ?? 0) ^ special;
+    }
+    return pattern;
+  });
+}
+
+function referenceMod(value: number, m: number): number {
+  return ((value % m) + m) % m;
+}
+
+class ReferenceClosureChain {
+  private readonly patterns: ReadonlyArray<Int32Array>;
+
+  constructor(
+    private readonly chain: ReferenceChain,
+    private readonly parity: Int32Array,
+    private readonly h0: number,
+    private readonly h1: number,
+  ) {
+    this.patterns = referenceEdgeParityPatterns(h0, h1);
+  }
+
+  private row(k: number, curves: Int32Array): number {
+    let value = this.chain.residual[k] ?? 0;
+    for (let j = 0; j < REFERENCE_BASIS; j++)
+      value -= (curves[j] ?? 0) * (this.chain.chords[j]?.[k] ?? 0);
+    return value;
+  }
+
+  get constant(): number {
+    return this.chain.constant;
+  }
+
+  unary(j: number, x: number): number {
+    let total = this.chain.length * Math.abs(x);
+    const chord = this.chain.chords[j];
+    for (const k of this.chain.unaryRows[j] ?? []) {
+      total += Math.abs((this.chain.residual[k] ?? 0) - x * (chord?.[k] ?? 0));
+    }
+    return total;
+  }
+
+  pair(j: number, x: number, y: number): number {
+    let total = 0;
+    const next = (j + 1) % REFERENCE_BASIS;
+    const a = this.chain.chords[j];
+    const b = this.chain.chords[next];
+    for (const k of this.chain.pairRows[j] ?? []) {
+      total += Math.abs((this.chain.residual[k] ?? 0) - x * (a?.[k] ?? 0) - y * (b?.[k] ?? 0));
+    }
+    return total;
+  }
+
+  domain(j: number, box: number): Int32Array {
+    const values: number[] = [];
+    const parity = this.parity[j] ?? 0;
+    for (let magnitude = parity; magnitude <= box; magnitude += 2) {
+      values.push(magnitude);
+      if (magnitude > 0) values.push(-magnitude);
+    }
+    return Int32Array.from(values);
+  }
+
+  crossings(curves: Int32Array): ReferenceCrossings {
+    const straights = new Int32Array(REFERENCE_EDGES);
+    const required = new Uint8Array(REFERENCE_EDGES);
+    required[this.h0] = 1;
+    required[this.h1] = 1;
+    let straightCount = 0;
+    for (let k = 0; k < REFERENCE_BASIS; k++) {
+      const n = this.row(k, curves) / this.chain.length;
+      if (n > 0) {
+        straights[k] = n;
+        required[k] = 1;
+      } else if (n < 0) {
+        straights[k + REFERENCE_BASIS] = -n;
+        required[k + REFERENCE_BASIS] = 1;
+      }
+      straightCount += Math.abs(n);
+    }
+    let best: Int32Array | undefined;
+    let bestCurves = Number.POSITIVE_INFINITY;
+    for (const pattern of this.patterns) {
+      const edges = new Int32Array(REFERENCE_EDGES);
+      for (let j = 0; j < REFERENCE_BASIS; j++) {
+        const m = curves[j] ?? 0;
+        let forward = Math.max(m, 0);
+        let backward = Math.max(-m, 0);
+        if (referenceMod(forward, 2) !== (pattern[j] ?? 0)) {
+          forward += 1;
+          backward += 1;
+        }
+        edges[j] = forward;
+        edges[j + REFERENCE_BASIS] = backward;
+      }
+      const filled = this.connect(edges, required);
+      if (!filled) continue;
+      let total = 0;
+      for (const e of filled) total += e;
+      if (total < bestCurves) {
+        bestCurves = total;
+        best = filled;
+      }
+    }
+    if (!best)
+      throw new Error("no Euler trail fits these crossings, which the parity rule excludes");
+    return { pieces: bestCurves + straightCount, edges: best, straights };
+  }
+
+  private connect(edges: Int32Array, required: Uint8Array): Int32Array | undefined {
+    let present = 0;
+    for (const e of edges) if (e > 0) present++;
+    if (present === 0 && this.h0 === this.h1) {
+      let onlyStart = true;
+      for (let v = 0; v < REFERENCE_EDGES; v++) if (required[v] && v !== this.h0) onlyStart = false;
+      if (onlyStart) return edges;
+    }
+    let best: Int32Array | undefined;
+    let bestFill = Number.POSITIVE_INFINITY;
+    for (const arc of REFERENCE_ARCS) {
+      let valid = true;
+      for (let h = 0; h < REFERENCE_EDGES && valid; h++) {
+        if ((edges[h] ?? 0) > 0 && !arc.edges[h]) valid = false;
+        if (required[h] && !arc.vertices[h]) valid = false;
+      }
+      if (!valid) continue;
+      const fill = new Uint8Array(REFERENCE_BASIS);
+      for (let h = 0; h < REFERENCE_EDGES && valid; h++) {
+        if (!arc.edges[h] || (edges[h] ?? 0) > 0) continue;
+        const pairIndex = h % REFERENCE_BASIS;
+        if (!arc.edges[pairIndex] || !arc.edges[pairIndex + REFERENCE_BASIS]) valid = false;
+        fill[pairIndex] = 1;
+      }
+      if (!valid) continue;
+      let fills = 0;
+      for (const f of fill) fills += f;
+      if (fills < bestFill) {
+        bestFill = fills;
+        const filled = Int32Array.from(edges);
+        for (let j = 0; j < REFERENCE_BASIS; j++) {
+          if (!fill[j]) continue;
+          filled[j] = (filled[j] ?? 0) + REFERENCE_PAIR_FILL_PIECES / 2;
+          filled[j + REFERENCE_BASIS] =
+            (filled[j + REFERENCE_BASIS] ?? 0) + REFERENCE_PAIR_FILL_PIECES / 2;
+        }
+        best = filled;
+      }
+    }
+    return best;
+  }
+}
+
+interface ReferenceCandidate {
+  readonly i: number;
+  readonly bound: number;
+}
+
+function referenceInsertByBound(order: ReferenceCandidate[], candidate: ReferenceCandidate): void {
+  let at = order.length;
+  while (at > 0 && (order[at - 1]?.bound ?? 0) > candidate.bound) at--;
+  order.splice(at, 0, candidate);
+}
+
+interface ReferenceIncumbent {
+  pieces: number;
+  curves: Int32Array | undefined;
+}
+
+function referenceSearchBox(
+  problem: ReferenceClosureChain,
+  box: number,
+  incumbent: ReferenceIncumbent,
+  deadline: Deadline,
+  scale: number,
+): void {
+  const domains = Array.from({ length: REFERENCE_BASIS }, (_v, j) => problem.domain(j, box));
+  const last = REFERENCE_BASIS - 1;
+  const chosen = new Int32Array(REFERENCE_BASIS);
+  for (const v0 of domains[0] ?? []) {
+    if (deadline.check()) return;
+    const toGo: Float64Array[] = Array.from(
+      { length: REFERENCE_BASIS },
+      (_v, j) => new Float64Array(domains[j]?.length ?? 0),
+    );
+    const lastDomain = domains[last] ?? new Int32Array(0);
+    const lastToGo = toGo[last] ?? new Float64Array(0);
+    for (let i = 0; i < lastDomain.length; i++) {
+      const x = lastDomain[i] ?? 0;
+      lastToGo[i] = problem.unary(last, x) + problem.pair(last, x, v0);
+    }
+    for (let j = last - 1; j >= 1; j--) {
+      const domain = domains[j] ?? new Int32Array(0);
+      const nextDomain = domains[j + 1] ?? new Int32Array(0);
+      const nextToGo = toGo[j + 1] ?? new Float64Array(0);
+      const here = toGo[j] ?? new Float64Array(0);
+      for (let i = 0; i < domain.length; i++) {
+        const x = domain[i] ?? 0;
+        let bestNext = Number.POSITIVE_INFINITY;
+        for (let n = 0; n < nextDomain.length; n++) {
+          const cost = problem.pair(j, x, nextDomain[n] ?? 0) + (nextToGo[n] ?? 0);
+          if (cost < bestNext) bestNext = cost;
+        }
+        here[i] = problem.unary(j, x) + bestNext;
+      }
+    }
+    chosen[0] = v0;
+    const descend = (j: number, accumulated: number): void => {
+      if (deadline.expired) return;
+      const previous = chosen[j - 1] ?? 0;
+      const domain = domains[j] ?? new Int32Array(0);
+      const here = toGo[j] ?? new Float64Array(0);
+      const base = accumulated + problem.unary(j - 1, previous);
+      const order: ReferenceCandidate[] = [];
+      for (let i = 0; i < domain.length; i++) {
+        const bound = base + problem.pair(j - 1, previous, domain[i] ?? 0) + (here[i] ?? 0);
+        if (bound / scale < incumbent.pieces) referenceInsertByBound(order, { i, bound });
+      }
+      for (const { i } of order) {
+        if (deadline.tick()) return;
+        const x = domain[i] ?? 0;
+        chosen[j] = x;
+        const next = base + problem.pair(j - 1, previous, x);
+        if (j === last) {
+          const lowerBound = (next + (here[i] ?? 0)) / scale;
+          if (lowerBound >= incumbent.pieces) continue;
+          const crossing = problem.crossings(chosen);
+          if (crossing.pieces < incumbent.pieces) {
+            incumbent.pieces = crossing.pieces;
+            incumbent.curves = Int32Array.from(chosen);
+          }
+        } else {
+          descend(j + 1, next);
+        }
+      }
+    };
+    descend(1, problem.constant);
+  }
+}
+
+function referenceTrailMoves(
+  closureKit: DrawingKit,
+  crossing: ReferenceCrossings,
+  h0: number,
+  h1: number,
+): ReadonlyArray<TrackMove> {
+  const remaining = Int32Array.from(crossing.edges);
+  const stack = [h0];
+  const trail: number[] = [];
+  while (stack.length > 0) {
+    const v = stack.at(-1) ?? h0;
+    const back = (v + REFERENCE_EDGES - 1) % REFERENCE_EDGES;
+    if ((remaining[v] ?? 0) > 0) {
+      remaining[v] = (remaining[v] ?? 0) - 1;
+      stack.push((v + 1) % REFERENCE_EDGES);
+    } else if ((remaining[back] ?? 0) > 0) {
+      remaining[back] = (remaining[back] ?? 0) - 1;
+      stack.push(back);
+    } else {
+      trail.push(stack.pop() ?? h0);
+    }
+  }
+  trail.reverse();
+  if (trail[0] !== h0 || trail.at(-1) !== h1) {
+    throw new Error(`Euler trail runs ${trail[0]} → ${trail.at(-1)}, expected ${h0} → ${h1}`);
+  }
+  const moves: TrackMove[] = [];
+  const placed = new Uint8Array(REFERENCE_EDGES);
+  trail.forEach((v, i) => {
+    if (!placed[v]) {
+      placed[v] = 1;
+      for (let s = 0; s < (crossing.straights[v] ?? 0); s++) moves.push(closureKit.straight);
+    }
+    const next = trail[i + 1];
+    if (next === undefined) return;
+    moves.push(next === (v + 1) % REFERENCE_EDGES ? closureKit.left : closureKit.right);
+  });
+  return moves;
+}
+
+function referenceCompleteClosure(
+  closureKit: DrawingKit,
+  start: Pose16,
+  goal: Pose16,
+  deadline: Deadline,
+  searched: { boxes: number },
+): ClosureResult {
+  const chords = referenceChordsOf(closureKit);
+  const length = Number(closureKit.straightStuds);
+  const residual = Float64Array.from(subtractZeta16(goal.position, start.position), (c) =>
+    Number(c),
+  );
+  const chain = chords ? referenceChainOf(chords, residual, length) : undefined;
+  if (!chain) return { kind: "limit" };
+  const h0 = start.heading;
+  const h1 = normalizeHeading16(goal.heading + HALF_TURN_16);
+  const parity = referenceCrossingParity(h0, h1);
+  for (let k = 0; k < REFERENCE_BASIS; k++) {
+    let value = residual[k] ?? 0;
+    for (let j = 0; j < REFERENCE_BASIS; j++)
+      value -= (parity[j] ?? 0) * (chain.chords[j]?.[k] ?? 0);
+    if (referenceMod(value, length) !== 0) return { kind: "impossible" };
+  }
+  const problem = new ReferenceClosureChain(chain, parity, h0, h1);
+  const incumbent: ReferenceIncumbent = { pieces: Number.POSITIVE_INFINITY, curves: undefined };
+  for (const box of REFERENCE_BOX_SIZES) {
+    searched.boxes++;
+    referenceSearchBox(problem, box, incumbent, deadline, length);
+    if (deadline.expired || incumbent.pieces <= box) break;
+  }
+  const curves = incumbent.curves;
+  if (!curves) return { kind: "limit" };
+  const moves = referenceTrailMoves(closureKit, problem.crossings(curves), h0, h1);
+  if (!posesJoin16(layMoves(start, moves).end, goal)) {
+    throw new Error("the complete closure laid a run that does not join its goal");
+  }
+  return { kind: "exact", run: runOfMoves(closureKit, moves) };
+}
+
+const COMPLETE_TRIALS = 60;
+const MAX_LAID_TURNS = 5;
+const STEP_LIMITS: ReadonlyArray<number> = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+const STEPPED_CASES = 24;
+const MANY_BOXES = 3;
+
+interface ReferenceSolve {
+  readonly result: ClosureResult;
+  readonly fromComplete: boolean;
+  readonly boxes: number;
+}
+
+function referenceSolve(start: Pose16, goal: Pose16, budget: SearchBudget): ReferenceSolve {
+  const withinTurns = closuresWithinTurns(kit, start, goal);
+  const simple = fewestWithinTurns(withinTurns);
+  const searched = { boxes: 0 };
+  const complete = referenceCompleteClosure(kit, start, goal, new Deadline(budget), searched);
+  if (!simple) return { result: complete, fromComplete: true, boxes: searched.boxes };
+  if (complete.kind === "exact" && complete.run.pieces < simple.pieces) {
+    return { result: complete, fromComplete: true, boxes: searched.boxes };
+  }
+  return { result: { kind: "exact", run: simple }, fromComplete: false, boxes: searched.boxes };
+}
+
+function steppedBudget(limitMs: number): SearchBudget {
+  let steps = 0;
+  return { now: () => ++steps, limitMs };
+}
+
+const RECORDED_COMPLETE_CASES: ReadonlyArray<{ start: Pose16; goal: Pose16 }> = [
+  {
+    start: pose16(zeta16([-80n, 0n, 0n, 0n, 256n, 0n, 0n, 0n]), 0),
+    goal: pose16(zeta16([16n, 0n, 0n, 0n, 320n, 0n, 0n, 0n]), 8),
+  },
+  {
+    start: pose16(zeta16([80n, 0n, 0n, 0n, 320n, 0n, 0n, 0n]), 0),
+    goal: pose16(zeta16([144n, 0n, 0n, 0n, 384n, 0n, 0n, 0n]), 8),
+  },
+  {
+    start: pose16(zeta16([80n, 0n, 0n, 0n, 320n, 0n, 0n, 0n]), 0),
+    goal: pose16(zeta16([128n, 0n, 0n, 0n, 368n, 0n, 0n, 0n]), 8),
+  },
+  { start: POSE16_IDENTITY, goal: pose16(zeta16([112n, 16n, 0n, 0n, 72n, 0n, 0n, -56n]), 3) },
+  {
+    start: pose16(ZETA16_ZERO, 2),
+    goal: pose16(zeta16([0n, -64n, 16n, 16n, -24n, 0n, 40n, -80n]), 8),
+  },
+  {
+    start: pose16(ZETA16_ZERO, 10),
+    goal: pose16(zeta16([16n, -48n, 16n, -80n, 88n, 80n, -120n, 16n]), 0),
+  },
+];
+
+function completeCases(seed: number, trials: number): Array<{ start: Pose16; goal: Pose16 }> {
+  const random = seeded(seed);
+  const cases: Array<{ start: Pose16; goal: Pose16 }> = [];
+  for (let trial = 0; trial < trials; trial++) {
+    const walked = layMoves(POSE16_IDENTITY, runMoves(kit, randomRun(random))).end;
+    const start = pose16(walked.position, trial % ZETA16_ORDER);
+    const laid = turnsRun(random, 1 + Math.floor(random() * MAX_LAID_TURNS));
+    const goal = openEndFacing(endOf(start, laid));
+    cases.push({ start, goal });
+    cases.push({ start, goal: oneStudOff(goal, Math.floor(random() * ZETA16_COEFFICIENT_COUNT)) });
+  }
+  return [...cases, ...RECORDED_COMPLETE_CASES];
+}
+
+describe("completeClosure", () => {
+  it(
+    "closes every generated and recorded gap with exactly the run today's search finds, from complete-only joins to impossible ones and searches of three or more box sizes",
+    () => {
+      let completeOnly = 0;
+      let impossible = 0;
+      let manyBoxes = 0;
+      for (const { start, goal } of completeCases(0xc0de, COMPLETE_TRIALS)) {
+        const reference = referenceSolve(start, goal, UNLIMITED_BUDGET);
+        expect(solveClosure(kit, start, goal)).toEqual(reference.result);
+        if (reference.fromComplete && reference.result.kind === "exact") completeOnly++;
+        if (reference.result.kind === "impossible") impossible++;
+        if (reference.boxes >= MANY_BOXES) manyBoxes++;
+      }
+      expect(completeOnly).toBeGreaterThan(0);
+      expect(impossible).toBeGreaterThan(0);
+      expect(manyBoxes).toBeGreaterThan(0);
+    },
+    DIFFERENTIAL_TIMEOUT_MS,
+  );
+
+  it(
+    "keeps today's result when a deadline counted in clock reads cuts the search, at every limit",
+    () => {
+      const cases = completeCases(0xc0de, COMPLETE_TRIALS)
+        .filter(({ start, goal }) => solveClosure(kit, start, goal).kind !== "impossible")
+        .slice(-STEPPED_CASES);
+      let cut = 0;
+      for (const { start, goal } of cases) {
+        const unlimited = solveClosure(kit, start, goal);
+        for (const limit of STEP_LIMITS) {
+          const reference = referenceSolve(start, goal, steppedBudget(limit)).result;
+          expect(solveClosure(kit, start, goal, steppedBudget(limit))).toEqual(reference);
+          if (!isDeepStrictEqual(reference, unlimited)) cut++;
+        }
+      }
+      expect(cut).toBeGreaterThan(0);
     },
     DIFFERENTIAL_TIMEOUT_MS,
   );

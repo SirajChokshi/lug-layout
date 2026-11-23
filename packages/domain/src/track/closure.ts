@@ -58,6 +58,52 @@ function arcs(): ReadonlyArray<Arc> {
 }
 
 const ARCS = arcs();
+const ARC_COUNT = ARCS.length;
+const ARC_EDGE_MASKS = new Uint16Array(ARC_COUNT);
+const ARC_VERTEX_MASKS = new Uint16Array(ARC_COUNT);
+const ARC_PAIR_FILL_MASKS = new Uint8Array(ARC_COUNT);
+const PAIR_FILL_BITS = (1 << BASIS) - 1;
+const NO_FILL = -1;
+const NO_PATTERN = -1;
+
+ARCS.forEach((arc, a) => {
+  let edgeMask = 0;
+  let vertexMask = 0;
+  for (let h = 0; h < EDGES; h++) {
+    if (arc.edges[h]) edgeMask |= 1 << h;
+    if (arc.vertices[h]) vertexMask |= 1 << h;
+  }
+  let pairFillMask = 0;
+  for (let j = 0; j < BASIS; j++) {
+    if (arc.edges[j] && arc.edges[j + BASIS]) pairFillMask |= 1 << j;
+  }
+  ARC_EDGE_MASKS[a] = edgeMask;
+  ARC_VERTEX_MASKS[a] = vertexMask;
+  ARC_PAIR_FILL_MASKS[a] = pairFillMask;
+});
+
+const MAX_DOMAIN = (BOX_SIZES.at(-1) ?? 0) + 1;
+const crossingStraights = new Int32Array(EDGES);
+const crossingEdges = new Int32Array(EDGES);
+const toGoRows: ReadonlyArray<Float64Array> = Array.from(
+  { length: BASIS },
+  () => new Float64Array(MAX_DOMAIN),
+);
+const orderIndices: ReadonlyArray<Int32Array> = Array.from(
+  { length: BASIS },
+  () => new Int32Array(MAX_DOMAIN),
+);
+const orderBounds: ReadonlyArray<Float64Array> = Array.from(
+  { length: BASIS },
+  () => new Float64Array(MAX_DOMAIN),
+);
+const chosenCurves = new Int32Array(BASIS);
+
+function bitCount(bits: number): number {
+  let count = 0;
+  for (let rest = bits; rest !== 0; rest &= rest - 1) count++;
+  return count;
+}
 
 interface Chain {
   readonly length: number;
@@ -137,6 +183,8 @@ function mod(value: number, m: number): number {
 
 class ClosureChain {
   private readonly patterns: ReadonlyArray<Int32Array>;
+  private bestPattern = NO_PATTERN;
+  private bestFill = 0;
 
   constructor(
     private readonly chain: Chain,
@@ -187,108 +235,154 @@ class ClosureChain {
     return Int32Array.from(values);
   }
 
-  crossings(curves: Int32Array): Crossings {
-    const straights = new Int32Array(EDGES);
-    const required = new Uint8Array(EDGES);
-    required[this.h0] = 1;
-    required[this.h1] = 1;
+  crossingPieces(curves: Int32Array): number {
+    crossingStraights.fill(0);
+    let requiredVertices = (1 << this.h0) | (1 << this.h1);
     let straightCount = 0;
     for (let k = 0; k < BASIS; k++) {
       const n = this.row(k, curves) / this.chain.length;
       if (n > 0) {
-        straights[k] = n;
-        required[k] = 1;
+        crossingStraights[k] = n;
+        requiredVertices |= 1 << k;
       } else if (n < 0) {
-        straights[k + BASIS] = -n;
-        required[k + BASIS] = 1;
+        crossingStraights[k + BASIS] = -n;
+        requiredVertices |= 1 << (k + BASIS);
       }
       straightCount += Math.abs(n);
     }
-    let best: Int32Array | undefined;
     let bestCurves = Number.POSITIVE_INFINITY;
-    for (const pattern of this.patterns) {
-      const edges = new Int32Array(EDGES);
-      for (let j = 0; j < BASIS; j++) {
-        const m = curves[j] ?? 0;
-        let forward = Math.max(m, 0);
-        let backward = Math.max(-m, 0);
-        if (mod(forward, 2) !== (pattern[j] ?? 0)) {
-          forward += 1;
-          backward += 1;
-        }
-        edges[j] = forward;
-        edges[j + BASIS] = backward;
-      }
-      const filled = this.connect(edges, required);
-      if (!filled) continue;
-      let total = 0;
-      for (const e of filled) total += e;
+    this.bestPattern = NO_PATTERN;
+    this.bestFill = 0;
+    for (let p = 0; p < this.patterns.length; p++) {
+      const occupiedEdges = this.patternEdges(curves, p);
+      const fill = this.connect(occupiedEdges, requiredVertices);
+      if (fill === NO_FILL) continue;
+      let total = PAIR_FILL_PIECES * bitCount(fill);
+      for (let e = 0; e < EDGES; e++) total += crossingEdges[e] ?? 0;
       if (total < bestCurves) {
         bestCurves = total;
-        best = filled;
+        this.bestPattern = p;
+        this.bestFill = fill;
       }
     }
-    if (!best)
+    if (this.bestPattern === NO_PATTERN)
       throw new Error("no Euler trail fits these crossings, which the parity rule excludes");
-    return { pieces: bestCurves + straightCount, edges: best, straights };
+    return bestCurves + straightCount;
   }
 
-  private connect(edges: Int32Array, required: Uint8Array): Int32Array | undefined {
-    let present = 0;
-    for (const e of edges) if (e > 0) present++;
-    if (present === 0 && this.h0 === this.h1) {
-      let onlyStart = true;
-      for (let v = 0; v < EDGES; v++) if (required[v] && v !== this.h0) onlyStart = false;
-      if (onlyStart) return edges;
+  crossings(curves: Int32Array): Crossings {
+    const pieces = this.crossingPieces(curves);
+    this.patternEdges(curves, this.bestPattern);
+    const edges = Int32Array.from(crossingEdges);
+    for (let j = 0; j < BASIS; j++) {
+      if ((this.bestFill & (1 << j)) === 0) continue;
+      edges[j] = (edges[j] ?? 0) + PAIR_FILL_PIECES / 2;
+      edges[j + BASIS] = (edges[j + BASIS] ?? 0) + PAIR_FILL_PIECES / 2;
     }
-    let best: Int32Array | undefined;
-    let bestFill = Number.POSITIVE_INFINITY;
-    for (const arc of ARCS) {
-      let valid = true;
-      for (let h = 0; h < EDGES && valid; h++) {
-        if ((edges[h] ?? 0) > 0 && !arc.edges[h]) valid = false;
-        if (required[h] && !arc.vertices[h]) valid = false;
+    return { pieces, edges, straights: Int32Array.from(crossingStraights) };
+  }
+
+  private patternEdges(curves: Int32Array, patternIndex: number): number {
+    const pattern = this.patterns[patternIndex];
+    crossingEdges.fill(0);
+    let occupiedEdges = 0;
+    for (let j = 0; j < BASIS; j++) {
+      const m = curves[j] ?? 0;
+      let forward = Math.max(m, 0);
+      let backward = Math.max(-m, 0);
+      if (mod(forward, 2) !== (pattern?.[j] ?? 0)) {
+        forward += 1;
+        backward += 1;
       }
-      if (!valid) continue;
-      const fill = new Uint8Array(BASIS);
-      for (let h = 0; h < EDGES && valid; h++) {
-        if (!arc.edges[h] || (edges[h] ?? 0) > 0) continue;
-        const pairIndex = h % BASIS;
-        if (!arc.edges[pairIndex] || !arc.edges[pairIndex + BASIS]) valid = false;
-        fill[pairIndex] = 1;
-      }
-      if (!valid) continue;
-      let fills = 0;
-      for (const f of fill) fills += f;
-      if (fills < bestFill) {
-        bestFill = fills;
-        const filled = Int32Array.from(edges);
-        for (let j = 0; j < BASIS; j++) {
-          if (!fill[j]) continue;
-          filled[j] = (filled[j] ?? 0) + PAIR_FILL_PIECES / 2;
-          filled[j + BASIS] = (filled[j + BASIS] ?? 0) + PAIR_FILL_PIECES / 2;
-        }
-        best = filled;
+      crossingEdges[j] = forward;
+      crossingEdges[j + BASIS] = backward;
+      if (forward > 0) occupiedEdges |= 1 << j;
+      if (backward > 0) occupiedEdges |= 1 << (j + BASIS);
+    }
+    return occupiedEdges;
+  }
+
+  private connect(occupiedEdges: number, requiredVertices: number): number {
+    if (occupiedEdges === 0 && this.h0 === this.h1 && (requiredVertices & ~(1 << this.h0)) === 0) {
+      return 0;
+    }
+    let best = NO_FILL;
+    let bestFills = Number.POSITIVE_INFINITY;
+    for (let a = 0; a < ARC_COUNT; a++) {
+      const edgeMask = ARC_EDGE_MASKS[a] ?? 0;
+      if ((occupiedEdges & ~edgeMask) !== 0) continue;
+      if ((requiredVertices & ~(ARC_VERTEX_MASKS[a] ?? 0)) !== 0) continue;
+      const missing = edgeMask & ~occupiedEdges;
+      const fill = (missing | (missing >>> BASIS)) & PAIR_FILL_BITS;
+      if ((fill & ~(ARC_PAIR_FILL_MASKS[a] ?? 0)) !== 0) continue;
+      const fills = bitCount(fill);
+      if (fills < bestFills) {
+        bestFills = fills;
+        best = fill;
       }
     }
     return best;
   }
 }
 
-interface Candidate {
-  readonly i: number;
-  readonly bound: number;
-}
-
-function insertByBound(order: Candidate[], candidate: Candidate): void {
-  let at = order.length;
-  while (at > 0 && (order[at - 1]?.bound ?? 0) > candidate.bound) at--;
-  order.splice(at, 0, candidate);
-}
-
 interface Incumbent {
   pieces: number;
   curves: Int32Array | undefined;
+}
+
+const LAST_CURVE = BASIS - 1;
+const NO_DOMAIN = new Int32Array(0);
+const NO_ROW = new Float64Array(0);
+
+function descend(
+  problem: ClosureChain,
+  domains: ReadonlyArray<Int32Array>,
+  incumbent: Incumbent,
+  deadline: Deadline,
+  scale: number,
+  j: number,
+  accumulated: number,
+): void {
+  if (deadline.expired) return;
+  const previous = chosenCurves[j - 1] ?? 0;
+  const domain = domains[j] ?? NO_DOMAIN;
+  const here = toGoRows[j] ?? NO_ROW;
+  const indices = orderIndices[j] ?? NO_DOMAIN;
+  const bounds = orderBounds[j] ?? NO_ROW;
+  const base = accumulated + problem.unary(j - 1, previous);
+  let ordered = 0;
+  for (let i = 0; i < domain.length; i++) {
+    const bound = base + problem.pair(j - 1, previous, domain[i] ?? 0) + (here[i] ?? 0);
+    if (bound / scale < incumbent.pieces) {
+      let at = ordered;
+      while (at > 0 && (bounds[at - 1] ?? 0) > bound) {
+        bounds[at] = bounds[at - 1] ?? 0;
+        indices[at] = indices[at - 1] ?? 0;
+        at--;
+      }
+      bounds[at] = bound;
+      indices[at] = i;
+      ordered++;
+    }
+  }
+  for (let o = 0; o < ordered; o++) {
+    if (deadline.tick()) return;
+    const i = indices[o] ?? 0;
+    const x = domain[i] ?? 0;
+    chosenCurves[j] = x;
+    const next = base + problem.pair(j - 1, previous, x);
+    if (j === LAST_CURVE) {
+      const lowerBound = (next + (here[i] ?? 0)) / scale;
+      if (lowerBound >= incumbent.pieces) continue;
+      const pieces = problem.crossingPieces(chosenCurves);
+      if (pieces < incumbent.pieces) {
+        incumbent.pieces = pieces;
+        incumbent.curves = Int32Array.from(chosenCurves);
+      }
+    } else {
+      descend(problem, domains, incumbent, deadline, scale, j + 1, next);
+    }
+  }
 }
 
 function searchBox(
@@ -299,25 +393,22 @@ function searchBox(
   scale: number,
 ): void {
   const domains = Array.from({ length: BASIS }, (_v, j) => problem.domain(j, box));
-  const last = BASIS - 1;
-  const chosen = new Int32Array(BASIS);
-  for (const v0 of domains[0] ?? []) {
+  const firstDomain = domains[0] ?? NO_DOMAIN;
+  const lastDomain = domains[LAST_CURVE] ?? NO_DOMAIN;
+  const lastToGo = toGoRows[LAST_CURVE] ?? NO_ROW;
+  chosenCurves.fill(0);
+  for (let first = 0; first < firstDomain.length; first++) {
     if (deadline.check()) return;
-    const toGo: Float64Array[] = Array.from(
-      { length: BASIS },
-      (_v, j) => new Float64Array(domains[j]?.length ?? 0),
-    );
-    const lastDomain = domains[last] ?? new Int32Array(0);
-    const lastToGo = toGo[last] ?? new Float64Array(0);
+    const v0 = firstDomain[first] ?? 0;
     for (let i = 0; i < lastDomain.length; i++) {
       const x = lastDomain[i] ?? 0;
-      lastToGo[i] = problem.unary(last, x) + problem.pair(last, x, v0);
+      lastToGo[i] = problem.unary(LAST_CURVE, x) + problem.pair(LAST_CURVE, x, v0);
     }
-    for (let j = last - 1; j >= 1; j--) {
-      const domain = domains[j] ?? new Int32Array(0);
-      const nextDomain = domains[j + 1] ?? new Int32Array(0);
-      const nextToGo = toGo[j + 1] ?? new Float64Array(0);
-      const here = toGo[j] ?? new Float64Array(0);
+    for (let j = LAST_CURVE - 1; j >= 1; j--) {
+      const domain = domains[j] ?? NO_DOMAIN;
+      const nextDomain = domains[j + 1] ?? NO_DOMAIN;
+      const nextToGo = toGoRows[j + 1] ?? NO_ROW;
+      const here = toGoRows[j] ?? NO_ROW;
       for (let i = 0; i < domain.length; i++) {
         const x = domain[i] ?? 0;
         let bestNext = Number.POSITIVE_INFINITY;
@@ -328,37 +419,8 @@ function searchBox(
         here[i] = problem.unary(j, x) + bestNext;
       }
     }
-    chosen[0] = v0;
-    const descend = (j: number, accumulated: number): void => {
-      if (deadline.expired) return;
-      const previous = chosen[j - 1] ?? 0;
-      const domain = domains[j] ?? new Int32Array(0);
-      const here = toGo[j] ?? new Float64Array(0);
-      const base = accumulated + problem.unary(j - 1, previous);
-      const order: Candidate[] = [];
-      for (let i = 0; i < domain.length; i++) {
-        const bound = base + problem.pair(j - 1, previous, domain[i] ?? 0) + (here[i] ?? 0);
-        if (bound / scale < incumbent.pieces) insertByBound(order, { i, bound });
-      }
-      for (const { i } of order) {
-        if (deadline.tick()) return;
-        const x = domain[i] ?? 0;
-        chosen[j] = x;
-        const next = base + problem.pair(j - 1, previous, x);
-        if (j === last) {
-          const lowerBound = (next + (here[i] ?? 0)) / scale;
-          if (lowerBound >= incumbent.pieces) continue;
-          const crossing = problem.crossings(chosen);
-          if (crossing.pieces < incumbent.pieces) {
-            incumbent.pieces = crossing.pieces;
-            incumbent.curves = Int32Array.from(chosen);
-          }
-        } else {
-          descend(j + 1, next);
-        }
-      }
-    };
-    descend(1, problem.constant);
+    chosenCurves[0] = v0;
+    descend(problem, domains, incumbent, deadline, scale, 1, problem.constant);
   }
 }
 
@@ -448,11 +510,11 @@ function algebraicClosure(
   kit: DrawingKit,
   start: Pose16,
   goal: Pose16,
-  deadline: Deadline,
+  budget: SearchBudget,
 ): Algebraic {
   const withinTurns = closuresWithinTurns(kit, start, goal);
   const simple = fewestWithinTurns(withinTurns);
-  const complete = completeClosure(kit, start, goal, deadline);
+  const complete = completeClosure(kit, start, goal, new Deadline(budget));
   const fewestPieces =
     complete.kind === "exact" ? Math.min(complete.run.pieces, simple?.pieces ?? Infinity) : 0;
   if (!simple) return { result: complete, fewestPieces, withinTurns };
@@ -469,12 +531,7 @@ export function solveClosure(
   budget: SearchBudget = UNLIMITED_BUDGET,
   site?: ClosureSite,
 ): ClosureResult {
-  const { result, fewestPieces, withinTurns } = algebraicClosure(
-    kit,
-    start,
-    goal,
-    new Deadline(budget),
-  );
+  const { result, fewestPieces, withinTurns } = algebraicClosure(kit, start, goal, budget);
   if (!site || result.kind === "impossible") return result;
   return clearClosure(kit, start, goal, site, {
     run: result.kind === "exact" ? result.run : null,

@@ -3,8 +3,6 @@ import {
   LATTICE_LIMITS,
   ZETA16_COEFFICIENT_COUNT,
   ZETA16_ORDER,
-  ZETA16_ZERO,
-  addZeta16,
   normalizeHeading16,
   subtractZeta16,
   type Pose16,
@@ -97,66 +95,111 @@ function turnSign(turn: number): TurnSign {
   return turn > 0 ? 1 : -1;
 }
 
-function everyTurnSequence(): ReadonlyArray<ReadonlyArray<number>> {
-  const all = signedTurns(MAX_TURN_CURVES);
-  const sequences: number[][] = [];
-  const walk = (prefix: number[]): void => {
-    sequences.push([...prefix]);
-    if (prefix.length === DEFAULT_CLOSURE_TURNS) return;
-    for (const m of all) {
-      prefix.push(m);
-      walk(prefix);
-      prefix.pop();
-    }
-  };
-  walk([]);
-  return sequences;
-}
-
 function fitsInt32(value: bigint): boolean {
   return value <= INT32_MAX && -value <= INT32_MAX;
 }
 
+function turnSequenceCount(choices: number): number {
+  let count = 0;
+  let level = 1;
+  for (let t = 0; t <= DEFAULT_CLOSURE_TURNS; t++) {
+    count += level;
+    level *= choices;
+  }
+  return count;
+}
+
+function arcSlot(m: number, heading: number): number {
+  const sign = m > 0 ? 0 : 1;
+  return (
+    ((sign * MAX_TURN_CURVES + Math.abs(m) - 1) * ZETA16_ORDER + heading) * ZETA16_COEFFICIENT_COUNT
+  );
+}
+
 function buildTurnSequenceTable(kit: DrawingKit): TurnSequenceTable {
-  const sequences = everyTurnSequence();
-  const count = sequences.length;
+  const choices = signedTurns(MAX_TURN_CURVES);
+  const count = turnSequenceCount(choices.length);
   const turns = new Int8Array(count * DEFAULT_CLOSURE_TURNS);
   const turnCounts = new Uint8Array(count);
   const curves = new Uint8Array(count);
   const headings = new Uint8Array(count * MAX_RUNS);
   const arcSums = new Int32Array(count * ZETA16_COEFFICIENT_COUNT);
-  const byNeeded: number[][] = Array.from({ length: ZETA16_ORDER }, () => []);
   const studs = kit.straightStuds;
   let exactDoubles = studs >= BigInt(MIN_EXACT_STRAIGHT_STUDS) && fitsInt32(studs);
-  sequences.forEach((sequence, entry) => {
-    let heading = 0;
-    let used = 0;
-    let arcSum: Zeta16 = ZETA16_ZERO;
-    sequence.forEach((m, t) => {
-      turns[entry * DEFAULT_CLOSURE_TURNS + t] = m;
-      arcSum = addZeta16(arcSum, kit.arc(turnSign(m), Math.abs(m), heading));
-      heading = normalizeHeading16(heading + m);
-      headings[entry * MAX_RUNS + t + 1] = heading;
-      used += Math.abs(m);
-    });
-    turnCounts[entry] = sequence.length;
-    curves[entry] = used;
-    arcSum.forEach((coefficient, power) => {
-      if (fitsInt32(coefficient)) {
-        arcSums[entry * ZETA16_COEFFICIENT_COUNT + power] = Number(coefficient);
+  const arcs = new Int32Array(choices.length * ZETA16_ORDER * ZETA16_COEFFICIENT_COUNT);
+  for (const m of choices) {
+    for (let heading = 0; heading < ZETA16_ORDER; heading++) {
+      const arc = kit.arc(turnSign(m), Math.abs(m), heading);
+      const slot = arcSlot(m, heading);
+      arc.forEach((coefficient, power) => {
+        if (fitsInt32(coefficient)) arcs[slot + power] = Number(coefficient);
+        else exactDoubles = false;
+      });
+    }
+  }
+  const sums = new Float64Array((DEFAULT_CLOSURE_TURNS + 1) * ZETA16_COEFFICIENT_COUNT);
+  const stackEntry = new Int32Array(DEFAULT_CLOSURE_TURNS + 1);
+  const stackChild = new Int32Array(DEFAULT_CLOSURE_TURNS + 1);
+  let next = 1;
+  let depth = 0;
+  while (depth >= 0) {
+    const child = stackChild[depth] ?? 0;
+    if (depth === DEFAULT_CLOSURE_TURNS || child === choices.length) {
+      depth--;
+      continue;
+    }
+    stackChild[depth] = child + 1;
+    const m = choices[child] ?? 0;
+    const parent = stackEntry[depth] ?? 0;
+    const entry = next++;
+    for (let t = 0; t < depth; t++) {
+      turns[entry * DEFAULT_CLOSURE_TURNS + t] = turns[parent * DEFAULT_CLOSURE_TURNS + t] ?? 0;
+    }
+    turns[entry * DEFAULT_CLOSURE_TURNS + depth] = m;
+    for (let r = 0; r <= depth; r++) {
+      headings[entry * MAX_RUNS + r] = headings[parent * MAX_RUNS + r] ?? 0;
+    }
+    const parentHeading = headings[parent * MAX_RUNS + depth] ?? 0;
+    headings[entry * MAX_RUNS + depth + 1] = normalizeHeading16(parentHeading + m);
+    turnCounts[entry] = depth + 1;
+    curves[entry] = (curves[parent] ?? 0) + Math.abs(m);
+    const slot = arcSlot(m, parentHeading);
+    for (let power = 0; power < ZETA16_COEFFICIENT_COUNT; power++) {
+      const sum = (sums[depth * ZETA16_COEFFICIENT_COUNT + power] ?? 0) + (arcs[slot + power] ?? 0);
+      sums[(depth + 1) * ZETA16_COEFFICIENT_COUNT + power] = sum;
+      if (Math.abs(sum) <= LATTICE_LIMITS.INT32_MAX) {
+        arcSums[entry * ZETA16_COEFFICIENT_COUNT + power] = sum;
       } else {
         exactDoubles = false;
       }
-    });
-    byNeeded[heading]?.push(entry);
-  });
+    }
+    depth++;
+    stackEntry[depth] = entry;
+    stackChild[depth] = 0;
+  }
+  const needed = new Int32Array(ZETA16_ORDER);
+  for (let entry = 0; entry < count; entry++) {
+    const heading = headings[entry * MAX_RUNS + (turnCounts[entry] ?? 0)] ?? 0;
+    needed[heading] = (needed[heading] ?? 0) + 1;
+  }
+  const indicesByNeeded = Array.from(
+    { length: ZETA16_ORDER },
+    (_v, heading) => new Int32Array(needed[heading] ?? 0),
+  );
+  needed.fill(0);
+  for (let entry = 0; entry < count; entry++) {
+    const heading = headings[entry * MAX_RUNS + (turnCounts[entry] ?? 0)] ?? 0;
+    const list = indicesByNeeded[heading];
+    if (list) list[needed[heading] ?? 0] = entry;
+    needed[heading] = (needed[heading] ?? 0) + 1;
+  }
   return {
     turns,
     turnCounts,
     curves,
     headings,
     arcSums,
-    indicesByNeeded: byNeeded.map((entries) => Int32Array.from(entries)),
+    indicesByNeeded,
     exactDoubles,
     straightStuds: Number(studs),
   };

@@ -24,6 +24,7 @@ import {
   pose16,
   STUD_LDU,
   zeta16,
+  zeta16Direction,
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
@@ -928,6 +929,69 @@ it("suggests nothing and lays nothing when a road plate leaves no room to reach 
   expect(commit).toMatchObject({ laid: 0, refusal: "blocked" });
   expect(layout.pieceCount).toBe(before);
 });
+
+function choicesFromEndAt(layout: TrackDrawing, xStuds: number) {
+  layout.extension.focusOn(layout.endNear(xStuds * STUD_LDU, 0, null));
+  const choices = layout.extension.view()?.choices ?? [];
+  layout.extension.focusOn(null);
+  return choices;
+}
+
+it("stops offering a join from an open end once an obstacle placed after the end was first hovered blocks the way", async () => {
+  const bundle = await trackAndRoadBundle();
+  const straights: Run = [{ kind: "straight", count: 3 }];
+  const plate = plateRect(bundle.parts, "ldraw:44336p04", 112, 0);
+  const hovered = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const walled = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  for (const layout of [hovered, walled]) {
+    layRun(layout, studPose(0, 0, 0), straights);
+    layRun(layout, studPose(128, 0, 0), straights);
+  }
+  walled.setBands(everyBand(plateObstacles(plate)));
+
+  const before = choicesFromEndAt(hovered, 48);
+  hovered.setBands(everyBand(plateObstacles(plate)));
+  const after = choicesFromEndAt(hovered, 48);
+
+  expect(before.some((choice) => choice.kind === "join" && choice.joinsEnd)).toBe(true);
+  expect(after.some((choice) => choice.kind === "join")).toBe(false);
+  expect(after).toEqual(choicesFromEndAt(walled, 48));
+});
+
+it(
+  "blocks a drag's join once an obstacle lands under it mid-drag, though the join was exact before",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const sides: Run = [{ kind: "straight", count: 6 }];
+    let end = layRun(layout, studPose(0, 0, 0), sides);
+    end = layRun(layout, end, BALLOON);
+    layRun(layout, end, sides);
+    const top = endAt(layout, 0, 64);
+    const bottom = endAt(layout, 0, 0);
+    const from = zeta16ToStuds(latticeEndPose(top).position);
+    const to = zeta16ToStuds(latticeEndPose(bottom).position);
+    const facing = zeta16Direction(top.heading);
+    const walls = plateObstacles(
+      plateRect(bundle.parts, "ldraw:44336p04", -16, 0),
+      plateRect(bundle.parts, "ldraw:44336p04", -16, 64),
+    );
+
+    layout.beginDrag(top.xLdu, top.zLdu, top.xLdu, top.zLdu);
+    layout.moveDrag(bottom.xLdu, bottom.zLdu);
+    const beforeWalls = layout.dragView();
+    layout.setBands(everyBand(walls));
+    layout.moveDrag(bottom.xLdu + STUD_LDU, bottom.zLdu);
+    const afterWalls = layout.dragView();
+    layout.cancelDrag();
+
+    expect((to.x - from.x) * facing.x + (to.z - from.z) * facing.z).toBeLessThanOrEqual(0);
+    expect(beforeWalls?.closure).toBe("exact");
+    expect(beforeWalls?.pieces).toBe(unobstructedFewest(layout, top, bottom));
+    expect(afterWalls?.closure).toBe("blocked");
+  },
+  CLOSURE_SEARCH_TIMEOUT_MS,
+);
 
 function focusEnd(layout: TrackDrawing, end: TrackEndView): void {
   layout.extension.focusOn(layout.endNear(end.xLdu, end.zLdu, null));
