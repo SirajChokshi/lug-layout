@@ -651,8 +651,8 @@ function onLattice(ldu: number): number {
   return Math.round(ldu / STUD_LDU) * STUD_LDU;
 }
 
-function drawOval(editor: IEditor, backend: AimedBackend): void {
-  editor.chooseItem(TRACK_ITEM_ID);
+function drawOval(editor: IEditor, backend: AimedBackend, tool = TRACK_ITEM_ID): void {
+  editor.chooseItem(tool);
   const drag = (from: { x: number; z: number }, to: { x: number; z: number }) => {
     backend.aim(from.x, from.z);
     editor.dragStart(0, 0);
@@ -675,6 +675,62 @@ function drawOval(editor: IEditor, backend: AimedBackend): void {
   if (editor.dump().trackEnds.length > 0) throw new Error("the oval did not close");
   editor.chooseItem(null);
 }
+
+const PLASTIC_TRACK = "track:lego-plastic";
+
+it("draws an oval of 6-wide plastic track with its own tool, every end joined exactly, warns in the plan that its curves' connector poses are unverified, and lays 9V again with the 9V tool", async () => {
+  const { editor, backend, container } = await startEditor([]);
+  const plans = container.get(PLAN_SERVICE);
+  const planId = plans.createPlan({
+    name: "Room",
+    roomWidthMm: 4000,
+    roomDepthMm: 4000,
+    originChunkX: -2,
+    originChunkZ: -2,
+  });
+  const tools = editor
+    .snapshot()
+    .catalog.filter((item) => item.kind === "track" && item.listedUnder === null)
+    .map((item) => [item.id, item.label]);
+  drawOval(editor, backend, PLASTIC_TRACK);
+  const plastic = editor.dump().laidTrack;
+  const counts = editor.snapshot().track;
+  const toolStates = editor.snapshot().trackTools;
+  const warnings = plans
+    .issues(planId)
+    .filter((issue) => issue.rule === "trackUnverified")
+    .map((issue) => issue.message);
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-24 * STUD, 120 * STUD], [24 * STUD, 120 * STUD]);
+  const nineVolt = editor.dump().laidTrack.slice(plastic.length);
+  const curves = plastic.filter((piece) => piece.ref === "ldraw:53400").length;
+
+  expect(tools).toEqual([
+    [TRACK_ITEM_ID, "Track: 9V straights and R40 curves"],
+    [PLASTIC_TRACK, "Track: 6 Studs Wide straights and R40 curves"],
+  ]);
+  expect(new Set(plastic.map((piece) => piece.ref))).toEqual(
+    new Set(["ldraw:53401", "ldraw:53400"]),
+  );
+  expect({ openEnds: counts?.openEnds, joins: counts?.joins }).toEqual({
+    openEnds: 0,
+    joins: plastic.length,
+  });
+  expect(toolStates).toEqual([
+    { item: TRACK_ITEM_ID, status: "certified", active: false },
+    { item: PLASTIC_TRACK, status: "unverified", active: true },
+  ]);
+  expect(warnings).toEqual([
+    expect.stringMatching(
+      new RegExp(
+        `^${curves} × 53400 Train Track 6 Studs Wide Curved laid as .*, whose connector poses are unverified: they're derived from the part file but not certified`,
+        "u",
+      ),
+    ),
+  ]);
+  expect(nineVolt.length).toBeGreaterThan(0);
+  expect(new Set(nineVolt.map((piece) => piece.ref))).toEqual(new Set(["ldraw:74746"]));
+}, 120_000);
 
 const MY_WAGONS = new URL(
   "../../../import/test-data/my-container-and-tank-wagons.ldr",

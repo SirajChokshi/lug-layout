@@ -474,7 +474,7 @@ describe("palette thumbnails", () => {
 });
 
 describe("palette item capabilities", () => {
-  it("marks parts draggable and not toggleable, and the track tool and the pieces listed under it toggleable and not draggable", async () => {
+  it("marks parts draggable and not toggleable, and each track tool and the pieces listed under them toggleable and not draggable", async () => {
     const { editor } = await startEditor();
     const { catalog } = editor.snapshot();
     const item = (id: string): CatalogItemView => {
@@ -483,18 +483,25 @@ describe("palette item capabilities", () => {
       return found;
     };
     const part = { draggable: true, toggleable: false, listedUnder: null };
-    const piece = { draggable: false, toggleable: true, listedUnder: TRACK_ITEM_ID };
+    const tools = catalog.filter(
+      (candidate) => candidate.kind === "track" && candidate.listedUnder === null,
+    );
+    const toolIds = new Set(tools.map((tool) => tool.id));
 
     expect(capabilities(item(GREEN_BASEPLATE))).toEqual(part);
     expect(capabilities(item(SET))).toEqual(part);
-    expect(capabilities(item(TRACK_ITEM_ID))).toEqual({
-      draggable: false,
-      toggleable: true,
-      listedUnder: null,
-    });
+    expect(tools.map(capabilities)).toEqual(
+      tools.map(() => ({ draggable: false, toggleable: true, listedUnder: null })),
+    );
+    expect(toolIds.has(TRACK_ITEM_ID)).toBe(true);
     const pieces = catalog.filter((candidate) => candidate.id.startsWith(TRACK_PIECE_PREFIX));
     expect(pieces.length).toBeGreaterThan(0);
-    expect(pieces.map(capabilities)).toEqual(pieces.map(() => piece));
+    expect(
+      pieces.map((candidate) => {
+        const { listedUnder, ...rest } = capabilities(candidate);
+        return { ...rest, underATool: listedUnder !== null && toolIds.has(listedUnder) };
+      }),
+    ).toEqual(pieces.map(() => ({ draggable: false, toggleable: true, underATool: true })));
     expect(catalog.filter((candidate) => candidate.listedUnder !== null)).toEqual(pieces);
   }, 120_000);
 });

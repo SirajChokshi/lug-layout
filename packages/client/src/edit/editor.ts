@@ -1192,6 +1192,7 @@ export class Editor implements IEditor, IEditedWorld {
     catalog: [],
     catalogSkipped: [],
     trackNotDrawable: [],
+    trackTools: [],
     mode: "select",
     activeItem: null,
     ghostRot: 0,
@@ -3047,7 +3048,8 @@ export class Editor implements IEditor, IEditedWorld {
       roadView === null &&
       (trackView === null ||
         (trackView.track === state.track &&
-          trackView.trackNotDrawable === state.trackNotDrawable)) &&
+          trackView.trackNotDrawable === state.trackNotDrawable &&
+          trackView.trackTools === state.trackTools)) &&
       hover === state.hover &&
       snap === state.snap &&
       ghostRot === state.ghostRot
