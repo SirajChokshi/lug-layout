@@ -3,12 +3,13 @@ import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
-import { consistVehicles } from "../sim/consist.ts";
+import type { PlayModel } from "./play-models.ts";
+import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import { RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
 import { ConsistBodies } from "../trains/consist-bodies.ts";
-import type { IRailYard } from "../trains/rail-yard.ts";
+import { trainLabel, type IRailYard } from "../trains/rail-yard.ts";
 import type { RailTrack } from "../trains/rail-track.ts";
 import type { IVehicleIds } from "../trains/vehicle-ids.ts";
 
@@ -181,19 +182,26 @@ export class TrainPlay implements ITrainPlay {
     const placed = this.yard.trains();
     if (!rails) throw new Error(NO_TRACK_LAID);
     if (placed.length === 0) throw new Error(NO_TRAIN_PLACED);
-    await this.runningGear.setModels(
-      [...new Set(placed.map((train) => train.model))].map((model) => model.gear),
-    );
-    const consists = placed.map((train) => ({
-      train,
-      vehicles: consistVehicles(
-        train.model.model,
-        train.model.name,
-        false,
-        rails.railPart,
-        this.runningGear.effectiveVehicles(train.model.name),
-      ),
-    }));
+    const models = new Set(placed.flatMap((train) => train.members.map(({ model }) => model)));
+    await this.runningGear.setModels([...models].map((model) => model.gear));
+    const consists = placed.map((train) => {
+      const vehicles: ConsistVehicle[] = [];
+      const vehicleModels: PlayModel[] = [];
+      for (const { model, reversed } of train.members) {
+        const gear = this.runningGear.effectiveVehicles(model.name);
+        for (const vehicle of consistVehicles(
+          model.model,
+          model.name,
+          reversed,
+          rails.railPart,
+          gear,
+        )) {
+          vehicles.push(vehicle);
+          vehicleModels.push(model);
+        }
+      }
+      return { train, vehicles, vehicleModels };
+    });
     const loads: SimTrainLoad[] = consists.map(({ train, vehicles }) => ({
       spec: {
         vehicles: vehicles.map((vehicle) => vehicle.spec),
@@ -222,14 +230,14 @@ export class TrainPlay implements ITrainPlay {
     this.clearTrains();
     this.yard.park(true);
     let firstVehicle = 0;
-    this.running = consists.map(({ train, vehicles }) => {
+    this.running = consists.map(({ train, vehicles, vehicleModels }) => {
       const first = firstVehicle;
       firstVehicle += vehicles.length;
       return {
-        label: train.model.label,
+        label: trainLabel(train.members),
         bodies: new ConsistBodies(this.backend, this.vehicleIds, {
-          model: train.model,
           vehicles,
+          vehicleModels,
           parts: train.consist.parts,
           colors: train.consist.colors,
         }),

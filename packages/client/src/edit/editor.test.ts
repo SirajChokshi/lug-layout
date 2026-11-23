@@ -60,6 +60,7 @@ import {
   shardEntry,
   shardName,
   worldManifest,
+  type ConsistRecordV1,
   type ImportedFile,
   type WorldArchive,
   type WorldHeader,
@@ -638,6 +639,7 @@ it("starts with a stud-less set in the bundle, leaving it out of the catalog and
 const LOCOMOTIVE = "omr:10133-1";
 const LOCOMOTIVE_LABEL = "10133-1 Burlington Northern Santa Fe Locomotive (2004)";
 const CABOOSE = "omr:10014-1";
+const CABOOSE_LABEL = "10014-1 Caboose (2001)";
 const MY_OWN_TRAIN = "omr:10205-1";
 const DRAG_STEPS = 8;
 const TRAIN_SPEED_LDU_PER_S = 200;
@@ -737,7 +739,7 @@ function sameStanding(
   );
 }
 
-it("seats a held train on the rails of a hand-drawn oval where the cursor points at them, places it as a model away from them, and refuses a second train on track a train already stands on", async () => {
+it("seats a held train on the rails of a hand-drawn oval where the cursor points at them, places it as a model away from them, and couples a second train held on track a train already stands on", async () => {
   const { editor, backend, catalog } = await startEditor(
     [LOCOMOTIVE, CABOOSE].map((id) => id.slice(4)),
   );
@@ -753,16 +755,12 @@ it("seats a held train on the rails of a hand-drawn oval where the cursor points
 
   expect(onRails).toMatchObject({ placements: 0, refusedClicks: 0 });
   expect(onRailsVehicles).toBeGreaterThan(0);
-  expect(sameTrack).toMatchObject({
-    placements: 0,
-    refusedClicks: 1,
-    reason: expect.stringContaining("already stands on"),
-  });
-  expect(farSide).toMatchObject({ placements: 0, refusedClicks: 1 });
-  expect(awayFromRails).toMatchObject({ placements: 1, refusedClicks: 1 });
-  expect(trainsOf(editor)).toEqual([
-    [LOCOMOTIVE, true],
-    [CABOOSE, true],
+  expect(sameTrack).toMatchObject({ placements: 0, refusedClicks: 0 });
+  expect(farSide).toMatchObject({ placements: 0, refusedClicks: 0 });
+  expect(awayFromRails).toMatchObject({ placements: 1, refusedClicks: 0 });
+  expect(editor.snapshot().trains.map((train) => [train.label, train.onRails])).toEqual([
+    [`${CABOOSE_LABEL} + ${LOCOMOTIVE_LABEL}`, true],
+    [CABOOSE_LABEL, true],
   ]);
 }, 120_000);
 
@@ -840,6 +838,93 @@ it("draws every part of a train standing on the rails, the figures that ride non
   expect(onTheGround(playing)).toEqual(onTheGround(standing));
   expect(onTheGround(stoodBack)).toEqual(onTheGround(standing));
 }, 120_000);
+
+it("couples a user's own caboose behind a set's locomotive and a user's two wagons turned round behind that, runs them as one train, undoes and redoes each coupling, and reopens the world with the train coupled", async () => {
+  const sim = new InThreadSim();
+  const repository = new MemoryRepository();
+  const { editor, backend, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+      bound.rebind(WORLD_REPOSITORY).toConstantValue(repository);
+    },
+  );
+  drawOval(editor, backend);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await editor.importModelFile({ name: "my-blue-caboose.mpd", bytes: await myBlueCaboose() });
+  const caboose = editor.snapshot().modelImport?.item ?? "";
+  await editor.importModelFile({
+    name: "my-container-and-tank-wagons.ldr",
+    bytes: await readFile(MY_WAGONS),
+  });
+  const wagons = editor.snapshot().modelImport?.item ?? "";
+  const labels = () => editor.snapshot().trains.map((train) => train.label);
+  const hold = async (item: string, x: number, z: number, turned: boolean) => {
+    await chosen(editor, item);
+    if (turned) editor.rotate(0, 1);
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    const couples = editor.snapshot().hover?.couples ?? null;
+    editor.click(0, 0, 0);
+    return { couples, refused: editor.snapshot().lastRefusal?.reason ?? null };
+  };
+  await placer(editor, backend)(LOCOMOTIVE, 0, 0);
+  const behindLoco = await hold(caboose, -500, 0, false);
+  const behindCaboose = await hold(wagons, -550, 0, true);
+  editor.chooseItem(null);
+  const coupled = labels();
+  const play = container.get(TRAIN_PLAY);
+  await play.start();
+  const running = play.snapshot().trains.map((train) => [train.label, train.vehicles]);
+  play.stop();
+  editor.undo(0);
+  const undoneOnce = labels();
+  editor.undo(0);
+  const undoneTwice = labels();
+  editor.redo(0);
+  editor.redo(0);
+  const redone = labels();
+  const saved = () =>
+    repository.storedConsistRecords().map((consist) => ({
+      ref: consist.ref,
+      coupled: consist.coupled?.map((vehicle) => [vehicle.ref, vehicle.reversed]),
+    }));
+  await vi.waitFor(() => expect(saved()[0]?.coupled).toHaveLength(2));
+  const first = editor.snapshot().world?.id ?? "";
+  await editor.newWorld("Second");
+  await editor.openWorld(first);
+
+  const whole = `${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd + my-container-and-tank-wagons.ldr`;
+  expect({ behindLoco, behindCaboose }).toEqual({
+    behindLoco: { couples: { end: "rear", train: LOCOMOTIVE_LABEL }, refused: null },
+    behindCaboose: {
+      couples: { end: "rear", train: `${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd` },
+      refused: null,
+    },
+  });
+  expect({ coupled, running, undoneOnce, undoneTwice, redone }).toEqual({
+    coupled: [whole],
+    running: [[whole, 4]],
+    undoneOnce: [`${LOCOMOTIVE_LABEL} + my-blue-caboose.mpd`],
+    undoneTwice: [LOCOMOTIVE_LABEL],
+    redone: [whole],
+  });
+  expect(saved()).toEqual([
+    {
+      ref: LOCOMOTIVE,
+      coupled: [
+        [caboose, false],
+        [wagons, true],
+      ],
+    },
+  ]);
+  expect(labels()).toEqual([whole]);
+}, 240_000);
 
 async function saveShiftedPivot(gear: IRunningGear, model: string): Promise<string | null> {
   gear.select(model, 0);
@@ -1369,9 +1454,11 @@ class MemoryRepository implements IWorldRepository {
   }
 
   storedConsists(): number {
-    let count = 0;
-    for (const world of this.worlds.values()) count += world.header.consists?.length ?? 0;
-    return count;
+    return this.storedConsistRecords().length;
+  }
+
+  storedConsistRecords(): ReadonlyArray<ConsistRecordV1> {
+    return [...this.worlds.values()].flatMap((world) => world.header.consists ?? []);
   }
 
   storedTrack(): number {

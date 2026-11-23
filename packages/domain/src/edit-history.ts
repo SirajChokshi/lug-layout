@@ -246,6 +246,18 @@ export class EditHistory {
     });
   }
 
+  replaceConsist(consist: ConsistRef, pose: ConsistPose): AppliedEdit {
+    const ref = this.ownConsist(consist);
+    if (!ref.handle?.live) throw new Error("consist is not on the layout");
+    return this.record({
+      kind: "place",
+      changes: [],
+      consists: [{ ref, before: ref.handle.pose, after: pose }],
+      track: NO_TRACK_CHANGE,
+      plan: null,
+    });
+  }
+
   removeConsist(consist: ConsistRef): AppliedEdit {
     const ref = this.ownConsist(consist);
     if (!ref.handle?.live) throw new Error("consist is not on the layout");

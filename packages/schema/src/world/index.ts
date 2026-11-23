@@ -265,6 +265,16 @@ export const ConsistPieceV1 = v.variant("on", [LaidPieceV1, CarriedPieceV1], (is
 );
 export type ConsistPieceV1 = v.InferOutput<typeof ConsistPieceV1>;
 
+export const CoupledVehicleV1 = v.strictObject(
+  {
+    ref: PlacementRecordV1.entries.ref,
+    color: Count,
+    reversed: v.boolean(),
+  },
+  strictMessage,
+);
+export type CoupledVehicleV1 = v.InferOutput<typeof CoupledVehicleV1>;
+
 export const ConsistRecordV1 = v.strictObject(
   {
     ref: PlacementRecordV1.entries.ref,
@@ -273,6 +283,9 @@ export const ConsistRecordV1 = v.strictObject(
     route: Count,
     reversed: v.boolean(),
     offsetLdu: Count,
+    coupled: v.exactOptional(
+      v.pipe(v.array(CoupledVehicleV1), v.minLength(1, "is empty: leave it out instead")),
+    ),
   },
   strictMessage,
 );
@@ -433,7 +446,10 @@ export function referencedImports(
   const referenced = new Set<string>();
   const refs = [
     ...shards.flatMap((shard) => shard.placements.map((placement) => placement.ref)),
-    ...consists.map((consist) => consist.ref),
+    ...consists.flatMap((consist) => [
+      consist.ref,
+      ...(consist.coupled ?? []).map((vehicle) => vehicle.ref),
+    ]),
   ];
   for (const ref of refs) {
     const sha256 = importedSha256(ref);

@@ -33,8 +33,15 @@ function livePlacements(world: World): string[] {
 function liveConsists(layout: ConsistLayout): string[] {
   return layout
     .consists()
-    .map(({ pose: { refId, anchor } }) =>
-      [refId, anchor.track.piece, anchor.route, anchor.reversed, anchor.offsetLdu].join(","),
+    .map(({ pose: { refId, anchor, coupled } }) =>
+      [
+        refId,
+        anchor.track.piece,
+        anchor.route,
+        anchor.reversed,
+        anchor.offsetLdu,
+        ...coupled.map((vehicle) => `${vehicle.refId}${vehicle.reversed ? "r" : ""}`),
+      ].join(","),
     )
     .toSorted();
 }
@@ -62,7 +69,7 @@ const LONG_SESSION_TIMEOUT_MS = 30_000;
 
 describe("EditHistory", () => {
   it(
-    "undoes a long session of model and train edits back to an empty world and redoes it state by state",
+    "undoes a long session of model, train and coupling edits back to an empty world and redoes it state by state",
     () => {
       const world = new World();
       const trains = new ConsistLayout();
@@ -73,7 +80,7 @@ describe("EditHistory", () => {
       const snapshot = () => [...livePlacements(world), ...liveConsists(trains)];
       const states: string[][] = [snapshot()];
       for (let step = 0; step < 400; step++) {
-        const choice = next() % 6;
+        const choice = next() % 7;
         const target = placements[next() % Math.max(1, placements.length)];
         const train = consists[next() % Math.max(1, consists.length)];
         if (choice === 4) {
@@ -86,8 +93,13 @@ describe("EditHistory", () => {
               reversed: next() % 2 === 0,
               offsetLdu: next() % 320,
             },
+            coupled: [],
           }).consists[0]?.consist;
           if (consist) consists.push(consist);
+        } else if (choice === 6 && train?.handle) {
+          const { pose } = train.handle;
+          const wagon = { refId: next() % 7, colorId: 0, reversed: next() % 2 === 0 };
+          history.replaceConsist(train, { ...pose, coupled: [...pose.coupled, wagon] });
         } else if (choice === 5 && train) {
           history.removeConsist(train);
           consists.splice(consists.indexOf(train), 1);
