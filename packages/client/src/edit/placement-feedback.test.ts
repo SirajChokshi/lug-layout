@@ -19,6 +19,7 @@ import type {
 const TECHNIC_HOLE: ConnectorKindView = {
   gender: "female",
   slides: true,
+  stud: false,
   sections: [
     { profile: "round", sizeLdu: 8, lengthLdu: 2 },
     { profile: "round", sizeLdu: 6, lengthLdu: 16 },
@@ -28,6 +29,7 @@ const TECHNIC_HOLE: ConnectorKindView = {
 const FRICTION_PIN: ConnectorKindView = {
   gender: "male",
   slides: false,
+  stud: false,
   sections: [
     { profile: "round", sizeLdu: 8, lengthLdu: 2 },
     { profile: "round", sizeLdu: 6, lengthLdu: 12 },
@@ -37,31 +39,37 @@ const FRICTION_PIN: ConnectorKindView = {
 const AXLE_END: ConnectorKindView = {
   gender: "male",
   slides: true,
+  stud: false,
   sections: [{ profile: "axle", sizeLdu: 6, lengthLdu: 20 }],
 };
 const BAR_TUBE: ConnectorKindView = {
   gender: "female",
   slides: true,
+  stud: false,
   sections: [{ profile: "round", sizeLdu: 4, lengthLdu: 16 }],
 };
 const SHORT_TUBE: ConnectorKindView = {
   gender: "female",
   slides: true,
+  stud: false,
   sections: [{ profile: "round", sizeLdu: 4, lengthLdu: 8 }],
 };
 const STUD: ConnectorKindView = {
   gender: "male",
   slides: false,
+  stud: true,
   sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 4 }],
 };
 const BRICK_SOCKET: ConnectorKindView = {
   gender: "female",
   slides: false,
+  stud: false,
   sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 20 }],
 };
 const PLATE_SOCKET: ConnectorKindView = {
   gender: "female",
   slides: false,
+  stud: false,
   sections: [{ profile: "round", sizeLdu: 6, lengthLdu: 4 }],
 };
 
@@ -271,10 +279,7 @@ it.each([
       ],
     },
     tone: "mates",
-    lines: [
-      "4 round sockets take 4 round pegs (3 unverified)",
-      "Lands 3 plates up on custom-modular-pinned",
-    ],
+    lines: ["4 studs hold it (3 unverified)", "Lands 3 plates up on custom-modular-pinned"],
   },
   {
     name: "kinds that read alike but name different partners as their own lines under the lead line",

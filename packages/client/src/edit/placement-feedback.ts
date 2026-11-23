@@ -152,6 +152,8 @@ function noun(one: string): ConnectorNoun {
   return { one, many: `${one}s` };
 }
 
+const STUD = noun("stud");
+const STUD_HOLDER = noun("stud holder");
 const PIN = noun("pin");
 const PIN_HOLE = noun("pin hole");
 const AXLE = noun("axle");
@@ -179,6 +181,7 @@ function counterbored(sections: ReadonlyArray<ConnectorSectionView>): boolean {
 }
 
 function connectorNoun(kind: ConnectorKindView): ConnectorNoun {
+  if (kind.stud) return STUD;
   const male = kind.gender === "male";
   if (hasProfile(kind, "axle")) return male ? AXLE : AXLE_HOLE;
   if (hasProfile(kind, "finger")) return HINGE_FINGER;
@@ -238,11 +241,13 @@ interface MateWording {
 }
 
 function mateWording(mate: HoverMateCount): MateWording {
+  const partner = sharedNoun(mate.partnerKinds);
+  const female = mate.kind.gender === "female";
   return {
-    held: connectorNoun(mate.kind),
-    partner: sharedNoun(mate.partnerKinds),
+    held: female && partner === STUD ? STUD_HOLDER : connectorNoun(mate.kind),
+    partner,
     models: modelNames(mate.partners),
-    female: mate.kind.gender === "female",
+    female,
   };
 }
 
@@ -254,6 +259,14 @@ function mateText(count: number, { held, partner, models, female }: MateWording)
   const holes = female ? held : partner;
   const pegs = female ? partner : held;
   if (holes === PIN_HOLE && pegs === PIN) return seamText(count, models, female);
+  if (held === STUD_HOLDER) {
+    return `${counted(count, STUD)}${models ? ` of ${models}` : ""} ${verb(count, "holds", "hold")} it`;
+  }
+  if (held === STUD) {
+    return models
+      ? `${counted(count, STUD)} ${verb(count, "goes into", "go into")} ${models}`
+      : `${counted(count, STUD)} ${verb(count, "goes in", "go in")}`;
+  }
   if (held === HINGE_FINGER) {
     return `${counted(count, held)} ${verb(count, "interlocks", "interlock")}${models ? ` with ${models}` : ""}`;
   }
