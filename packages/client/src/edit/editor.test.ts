@@ -3983,7 +3983,7 @@ it("A switches to precise placement and back, the hold override flips the mode w
 }, 120_000);
 
 it("settles the ghost to neutral after a click's drop until the pointer leaves the cell, a click there is refused or the mode changes, never after a redo, while the hover keeps the solver's verdict", async () => {
-  const { editor, backend } = await startEditor([]);
+  const { editor, backend, frame } = await startEditor([]);
   const place = placer(editor, backend);
   await place(BASEPLATE, 0, 0);
   const shown = () => ({
@@ -4000,6 +4000,7 @@ it("settles the ghost to neutral after a click's drop until the pointer leaves t
   const clickedAgain = shown();
   backend.aim(100, 0);
   editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
   const moved = shown();
   editor.undo(0);
   const undone = shown();

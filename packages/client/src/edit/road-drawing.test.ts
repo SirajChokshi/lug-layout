@@ -37,7 +37,7 @@ import {
 } from "@brr/render";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import { EDITOR, PLACEABLE_CATALOG } from "../tokens.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
@@ -50,6 +50,7 @@ const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", impo
 const WORLD_PER_NDC = 10_000;
 const EYE_HEIGHT = 1_000;
 const TILE = 640;
+const SETTLE_FRAMES = 10_000;
 const PLACED_MODEL_NAME = "10185-1";
 const PLACED_MODEL = `omr:${PLACED_MODEL_NAME}`;
 const RAISED_MODULE_NAME = "mils-plain";
@@ -230,8 +231,18 @@ class TopDownBackend implements ISceneBackend {
   }
 }
 
-async function startEditor(): Promise<{ editor: IEditor; catalog: IPlaceableCatalog }> {
-  vi.stubGlobal("requestAnimationFrame", () => 0);
+interface StartedEditor {
+  readonly editor: IEditor;
+  readonly catalog: IPlaceableCatalog;
+  readonly frame: () => Promise<void>;
+}
+
+async function startEditor(): Promise<StartedEditor> {
+  let scheduled: FrameRequestCallback | null = null;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    scheduled = callback;
+    return 1;
+  });
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
   container.rebind(ASSET_FETCHER).toConstantValue(new BundleDirectoryFetcher());
@@ -245,7 +256,25 @@ async function startEditor(): Promise<{ editor: IEditor; catalog: IPlaceableCata
     dataset: {},
   } as unknown as HTMLCanvasElement;
   await editor.start(canvas, { api: "webgl2", pixelRatio: 1, look: NO_LOOK, tier: null });
-  return { editor, catalog: container.get(PLACEABLE_CATALOG) };
+  const frame = async (): Promise<void> => {
+    const callback = scheduled;
+    if (!callback) throw new Error("no frame is scheduled");
+    scheduled = null;
+    callback(performance.now());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  return { editor, catalog: container.get(PLACEABLE_CATALOG), frame };
+}
+
+async function settledHover(editor: IEditor, frame: () => Promise<void>): Promise<void> {
+  for (let frames = 0; ; frames++) {
+    const placement = editor.snapshot().hover?.placement;
+    if (placement?.settled !== false && placement?.turnSettled !== false) return;
+    if (frames >= SETTLE_FRAMES) {
+      throw new Error(`the hover is still unsettled after ${SETTLE_FRAMES} frames`);
+    }
+    await frame();
+  }
 }
 
 function centre(tile: number): number {
@@ -285,15 +314,16 @@ function kitId(editor: IEditor, matches: (label: string, edge: string) => boolea
   return kit.id;
 }
 
-afterEach(() => {
+afterAll(() => {
   vi.unstubAllGlobals();
 });
 
 describe("draw road", () => {
   let editor: IEditor;
   let catalog: IPlaceableCatalog;
+  let frame: () => Promise<void>;
   beforeAll(async () => {
-    ({ editor, catalog } = await startEditor());
+    ({ editor, catalog, frame } = await startEditor());
   }, 120_000);
 
   const completeKits = [
@@ -440,8 +470,10 @@ describe("draw road", () => {
     editor.click(...ndc([0, 0]), 0);
     await chosen(editor, "ldraw:44342p02@72");
     editor.pointerMove(...ndc([0, 1]));
+    await settledHover(editor, frame);
     expect(editor.snapshot().ghostRot).toBe(0);
     editor.rotate(0);
+    await settledHover(editor, frame);
     const held = editor.snapshot();
     expect(held.snap?.state).toBe("snapped");
     expect(held.ghostRot).not.toBe(0);
