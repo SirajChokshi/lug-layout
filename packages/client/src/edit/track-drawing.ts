@@ -40,6 +40,7 @@ import {
   outlineContains,
   placedOutline,
   placedOutlineInto,
+  solveClosure,
   studlessTopBlocker,
   PlacedOutline,
   OutlineEdges,
@@ -96,8 +97,8 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece, TrackPartCount } from "../connect/model-track-ends.ts";
-import { FieldClosures } from "./field-closures.ts";
 import {
+  CLOSURE_BUDGET_MS,
   TrackDrag,
   type DragField,
   type DragEnds,
@@ -107,7 +108,6 @@ import {
   type JoinWithheld,
   type TrackBlockView,
   type TrackDragView,
-  type WholeClosureOf,
 } from "./track-drag.ts";
 import { OBSTACLE_RECT_FLOATS, cellKey, type StudSeats } from "./track-obstacles.ts";
 import type { TrackSupport } from "./track-support.ts";
@@ -677,7 +677,6 @@ export class TrackDrawing implements ExtensionSite {
   private gapList: ReadonlyArray<EndGap> = [];
   private readonly kitOutlines: KitOutlines;
   private readonly router: StrokeRouter;
-  private readonly fieldClosures: FieldClosures;
   private readonly refusedColor: number;
   private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
@@ -775,7 +774,6 @@ export class TrackDrawing implements ExtensionSite {
     this.railTopLdu = straight.yLdu + straightPart.boundsMax[1];
     this.kitOutlines = new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline);
     this.router = new StrokeRouter(this.kitOutlines);
-    this.fieldClosures = new FieldClosures(this.kit, this.kitOutlines, () => performance.now());
     this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
     const pieces: BandPieces = {
       count: () => this.combined.count,
@@ -1098,10 +1096,11 @@ export class TrackDrawing implements ExtensionSite {
     this.dragPlates = from === null ? this.heightPlates : this.endHeight(from);
     const band = this.bands.laying(this.dragPlates, this.dragPlates);
     this.drag = new TrackDrag(
+      this.kit,
       this.router,
       ends,
       this.laidRunEnd,
-      this.closeWholeOnField,
+      () => performance.now(),
       { hitX, hitZ, latticeX, latticeZ },
       from,
       band.field,
@@ -1499,12 +1498,18 @@ export class TrackDrawing implements ExtensionSite {
     const startPlates = this.endHeight(from);
     const { field, pending } = this.bands.laying(startPlates, startPlates);
     if (pending) return { kind: "refused", refusal: "pending", blocked: null };
-    const result = this.fieldClosures.closeWhole(
+    const result = solveClosure(
+      this.kit,
       start,
       goal,
-      field,
-      field.pieceOwner(this.endOwners[from]),
-      field.pieceOwner(this.endOwners[to]),
+      { now: () => performance.now(), limitMs: CLOSURE_BUDGET_MS },
+      {
+        clearance: field.clearance,
+        support: field.support,
+        outlines: this.kitOutlines,
+        startOwner: field.pieceOwner(this.endOwners[from]),
+        goalOwner: field.pieceOwner(this.endOwners[to]),
+      },
     );
     switch (result.kind) {
       case "exact": {
@@ -1686,14 +1691,6 @@ export class TrackDrawing implements ExtensionSite {
   private laidRun(start: Pose16, moves: ReadonlyArray<TrackMove>): LaidRun {
     return this.laidRunEnd(start, moves).run;
   }
-
-  private readonly closeWholeOnField: WholeClosureOf = (
-    start,
-    goal,
-    field,
-    startOwner,
-    goalOwner,
-  ) => this.fieldClosures.closeWhole(start, goal, field, startOwner, goalOwner);
 
   private readonly laidRunEnd = (start: Pose16, moves: ReadonlyArray<TrackMove>): LaidRunEnd => {
     const last = this.lastLaid;

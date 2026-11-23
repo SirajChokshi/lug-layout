@@ -3,11 +3,14 @@ import {
   RUN_CROSSING,
   StrokePath,
   TrackClearance,
+  solveClosure,
   studlessTopOf,
   type ClosureResult,
   type ClosureSite,
+  type DrawingKit,
   type FollowedRun,
   type MoveFrame,
+  type SearchBudget,
   type SupportSite,
   type StrokeGoal,
   type StrokeRouter,
@@ -90,14 +93,6 @@ export interface RunEndStuds {
 
 export type RunEndOf = (start: Pose16, moves: ReadonlyArray<TrackMove>) => RunEndStuds;
 
-export type WholeClosureOf = (
-  start: Pose16,
-  goal: Pose16,
-  field: DragField,
-  startOwner: number,
-  goalOwner: number,
-) => ClosureResult;
-
 export interface DragPress {
   readonly hitX: number;
   readonly hitZ: number;
@@ -120,6 +115,7 @@ const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
 const NO_MOVES: ReadonlyArray<TrackMove> = [];
+export const CLOSURE_BUDGET_MS = 30;
 
 export type SupportedPiece = (
   frame: MoveFrame,
@@ -249,10 +245,11 @@ export class TrackDrag {
   private lastTargetView: DragTargetView | null = null;
 
   constructor(
+    private readonly kit: DrawingKit,
     private readonly router: StrokeRouter,
     private readonly ends: DragEnds,
     private readonly runEnd: RunEndOf,
-    private readonly wholeClosure: WholeClosureOf,
+    private readonly now: () => number,
     private readonly press: DragPress,
     readonly fromEnd: number | null,
     field: DragField,
@@ -406,7 +403,8 @@ export class TrackDrag {
     let byGoal = this.wholeClosures.get(start);
     const cached = byGoal?.get(goal.pose);
     if (cached) return cached;
-    const result = this.wholeClosure(start, goal.pose, this.field, site.startOwner, site.goalOwner);
+    const budget: SearchBudget = { now: this.now, limitMs: CLOSURE_BUDGET_MS };
+    const result = solveClosure(this.kit, start, goal.pose, budget, site);
     if (!byGoal) {
       byGoal = new Map();
       this.wholeClosures.set(start, byGoal);
