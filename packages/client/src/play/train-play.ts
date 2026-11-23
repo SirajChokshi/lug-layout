@@ -1,6 +1,6 @@
 import { STUD_LDU } from "@brr/math";
 import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
-import { NOT_BLOCKED, type SimFrameLayout, type SimTrainLoad, type TrainSpec } from "@brr/sim";
+import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
 import { inject, injectable } from "inversify";
 import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import type { PlayModel } from "./play-models.ts";
@@ -90,6 +90,7 @@ const BRAKING_LDU_PER_S2 = 300;
 const SWITCH_PICK_RADIUS_LDU = 4 * STUD_LDU;
 const STATUS_INTERVAL_MS = 100;
 const DIVERGING = 1;
+const NOT_BLOCKED = 0;
 const STRAIGHT = 0;
 const OFF_TRACK_YAW_RADIANS = 0.12;
 const OFF_TRACK_ROLL_RADIANS = 0.22;
