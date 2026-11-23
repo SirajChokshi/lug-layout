@@ -9283,7 +9283,7 @@ it("holds raised track on a user's own pier of official parts exactly like a gen
   expect(editor.snapshot().track?.unsupported).toBe(0);
 }, 180_000);
 
-it("ramps a run from a raised end toward the drawing height one plate per straight, reports its tilted pieces unsupported, and refuses a join it can't climb to in its pieces as too steep", async () => {
+it("ramps a run from a raised end toward the drawing height one plate per straight on generated piers under its raised ends, so it counts as supported until a pier under one of its joints is removed, and refuses a join it can't climb to in its pieces as too steep", async () => {
   const { editor, backend } = await raisedEditor([]);
   editor.chooseItem(TRACK_ITEM_ID);
   dragTrack(editor, backend, [32 * STUD, 0], [48 * STUD, 0]);
@@ -9291,10 +9291,16 @@ it("ramps a run from a raised end toward the drawing height one plate per straig
   await layRaised(editor, backend, [-48 * STUD, 0], [-32 * STUD, 0]);
   await layRaised(editor, backend, [-32 * STUD, 0], [32 * STUD, 0]);
   const steep = editor.snapshot().track?.lastCommit;
+  const levelPiers = new Set(placedImports(editor).map((pier) => `${pier.x},${pier.z}`));
   editor.raiseTrack(-PIER_PLATES);
   await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
   const ramp = laidHeights(editor).slice(2);
-  const unsupported = editor.snapshot().track?.lastUnsupported;
+  const rampPiers = placedImports(editor).filter((pier) => !levelPiers.has(`${pier.x},${pier.z}`));
+  const rested = editor.snapshot().track?.unsupported;
+  const joint = rampPiers.find((pier) => pier.x === 0);
+  selectFromSide(editor, backend, joint?.x ?? 0, joint?.z ?? 0);
+  editor.deleteSelection(0);
+  const jointBare = editor.snapshot().track?.unsupported;
 
   expect(steep).toBe("refused-too-steep");
   expect(ramp).toEqual([
@@ -9302,7 +9308,51 @@ it("ramps a run from a raised end toward the drawing height one plate per straig
     [PIER_PLATES - 1, -1],
     [PIER_PLATES - 2, -1],
   ]);
-  expect(unsupported).toMatchObject({ pieces: 3, tilted: 3 });
+  expect(
+    rampPiers.map((pier) => [pier.x, pier.yPlates]).toSorted(([a = 0], [b = 0]) => a - b),
+  ).toEqual([
+    [-16 * STUD, 0],
+    [0, 0],
+    [16 * STUD, 0],
+  ]);
+  expect(rested).toBe(0);
+  expect(jointBare).toBe(2);
+}, 180_000);
+
+const MY_RAMP_PIER = `0 My ramp pier
+0 Name: my-ramp-pier.ldr
+0 Author: A Builder
+1 15 0 0 0 1 0 0 0 1 0 0 0 1 3003.dat
+1 15 0 -8 0 1 0 0 0 1 0 0 0 1 3022.dat
+`;
+
+it("holds a ramp joint on a user's own pier of official parts as on a generated one: the pieces meeting there are unsupported while it has no pier, and supported again once the user's pier seats their end rows at the joint's height", async () => {
+  const { editor, backend } = await raisedEditor([]);
+  await editor.importModelFile({
+    name: "my-ramp-pier.ldr",
+    bytes: new TextEncoder().encode(MY_RAMP_PIER),
+  });
+  const mine = editor.snapshot().modelImport?.item ?? "";
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(PIER_PLATES);
+  await layRaised(editor, backend, [-48 * STUD, 0], [-32 * STUD, 0]);
+  const levelPiers = new Set(placedImports(editor).map((pier) => `${pier.x},${pier.z}`));
+  editor.raiseTrack(-PIER_PLATES);
+  await layRaised(editor, backend, [-32 * STUD, 0], [16 * STUD, 0]);
+  const joint = placedImports(editor).find(
+    (pier) => !levelPiers.has(`${pier.x},${pier.z}`) && pier.x === -16 * STUD,
+  );
+  selectFromSide(editor, backend, joint?.x ?? 0, joint?.z ?? 0);
+  editor.deleteSelection(0);
+  const bare = editor.snapshot().track?.unsupported;
+  editor.setPlacementMode("precise");
+  await chosen(editor, mine);
+  const placed = placerNow(editor, backend)(mine, -16 * STUD, -3 * STUD);
+
+  expect(bare).toBe(2);
+  expect(placed).toMatchObject({ refusedClicks: 0 });
+  expect(placedImports(editor).filter((pier) => pier.ref === mine)).toHaveLength(1);
+  expect(editor.snapshot().track?.unsupported).toBe(0);
 }, 180_000);
 
 class StudsLandLaterImporter implements IModelImporter {
@@ -9402,6 +9452,10 @@ it("measures the tallest train from every train in the catalog, and again when a
   expect(tallest()?.heightLdu).toBeGreaterThanOrEqual((bundled?.heightLdu ?? 0) + BRICK_LDU);
 }, 180_000);
 
+function byPlace(a: { x: number; z: number }, b: { x: number; z: number }): number {
+  return a.x - b.x || a.z - b.z;
+}
+
 it("reopens a saved world with its raised run, its generated piers and a ramp's rises exactly as laid, the run still held by its piers", async () => {
   const { editor, backend } = await raisedEditor([]);
   editor.chooseItem(TRACK_ITEM_ID);
@@ -9410,6 +9464,7 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
   await layRaised(editor, backend, [-32 * STUD, -16 * STUD], [16 * STUD, -16 * STUD]);
   await layRaised(editor, backend, [-16 * STUD, 16 * STUD], [16 * STUD, 16 * STUD]);
   const laid = { state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported };
+  const piers = placedImports(editor).toSorted(byPlace);
   const first = editor.snapshot().world?.id ?? "";
   await editor.newWorld("Second");
   const fresh = editor.dump().laidTrack.length;
@@ -9419,7 +9474,7 @@ it("reopens a saved world with its raised run, its generated piers and a ramp's 
   });
 
   expect(laid.state.laidTrack.some((piece) => (piece.rise ?? 0) !== 0)).toBe(true);
-  expect(placedImports(editor)).toHaveLength(2);
+  expect(placedImports(editor).toSorted(byPlace)).toEqual(piers);
   expect({ fresh, reopened }).toEqual({ fresh: 0, reopened: true });
   expect({ state: layoutState(editor), unsupported: editor.snapshot().track?.unsupported }).toEqual(
     laid,

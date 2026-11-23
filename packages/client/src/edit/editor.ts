@@ -177,6 +177,7 @@ import {
   ON_TOP_FACE,
   PlacedChunks,
   posedBox,
+  posedSeatsStudAt,
   writePosedPartBoxes,
   type PlacedModel,
   type RebuildReport,
@@ -1402,6 +1403,13 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly tileModels: PlacedModel[] = [];
   private readonly restingTop = new Float64Array(1);
   private readonly solidProbe: SolidProbe = { placeable: null, x: 0, z: 0, rot: 0, yPlates: 0 };
+  private readonly probeSeatsStud = (cellX: number, cellZ: number, baseLdu: number): boolean => {
+    const { placeable, x, z, rot, yPlates } = this.solidProbe;
+    return (
+      placeable !== null &&
+      posedSeatsStudAt(placeable, x, z, rot, yPlates * PLATE_LDU, cellX, cellZ, baseLdu)
+    );
+  };
   private readonly solidSpan: [number, number] = [0, 0];
   private readonly solidHit = { rects: new Float64Array(0), floats: 0 };
   private readonly solidRectsIn: SolidRects = (bottomLdu, topLdu) => {
@@ -1916,24 +1924,33 @@ export class Editor implements IEditor, IEditedWorld {
     const support = await this.loadedSupport();
     if (!support) return [];
     const unseated = raised.filter((piece) => !track.seated(piece));
-    if (unseated.length === 0) return [];
-    const pieces = unseated.map((piece): PierPiece => {
+    const rampEnds = track.rampEndsAbove(change).filter((rest) => !track.rampEndSeated(rest));
+    if (unseated.length === 0 && rampEnds.length === 0) return [];
+    const levelPieces = unseated.map((piece): PierPiece => {
       const { partFrame } = track.pieceByIndex(piece.catalogIndex).piece;
       const box = track.pieceBox(piece.catalogIndex, piece.placement);
       return {
-        index: piece.index,
+        indices: [piece.index],
         bottomLdu: track.bandBottomLdu(piece.yPlates),
         antiStuds: support.antiStudCells(piece.catalogIndex, partFrame, piece.placement),
         centreX: (box.minX + box.maxX) / 2,
         centreZ: (box.minZ + box.maxZ) / 2,
       };
     });
+    const rampPieces = rampEnds.map((rest): PierPiece => ({
+      indices: rest.indices,
+      bottomLdu: track.bandBottomLdu(rest.yPlates),
+      antiStuds: rest.antiStuds,
+      centreX: rest.xLdu,
+      centreZ: rest.zLdu,
+    }));
+    const pieces = [...levelPieces, ...rampPieces];
     const trains = this.railYard.standingFootprints();
     return this.piers.piersFor({
       pieces,
       studsChecked: (item) => this.studsLanding.get(item) ?? Promise.resolve(),
       fits: (pier, pose, posed, piece) => {
-        if (track.changeOverlaps(change, piece.index, posed)) return false;
+        if (track.changeOverlaps(change, piece.indices, posed)) return false;
         if (trains.some((train) => footprintMeetsBox(train, posed))) return false;
         const member = { model: null, placeable: pier, pose, component: 0 };
         const check: ModelCheck = {
@@ -2176,9 +2193,14 @@ export class Editor implements IEditor, IEditedWorld {
     const track = this.trackWorld.drawing();
     if (!track) return;
     const raised = track.levelRaisedPieces(lay.change);
+    const ready = this.trackWorld.support() !== null;
+    const rampEnds = track.rampEndsAbove(lay.change);
+    const rampsWaiting = !ready && lay.change.lay.some((at) => at.rise !== 0);
     const allSeated =
-      this.trackWorld.support() !== null && raised.every((piece) => track.seated(piece));
-    if (raised.length === 0 || allSeated) {
+      ready &&
+      raised.every((piece) => track.seated(piece)) &&
+      rampEnds.every((rest) => track.rampEndSeated(rest));
+    if ((raised.length === 0 && rampEnds.length === 0 && !rampsWaiting) || allSeated) {
       this.show(
         this.history.commit("lay-track", [], lay.change),
         eventTimeMs,
@@ -3342,7 +3364,13 @@ export class Editor implements IEditor, IEditedWorld {
     probe.z = z;
     probe.rot = rot;
     probe.yPlates = yPlates;
-    return drawing.modelBlocker(this.solidRectsIn, pieces, skip.moving, skip.owners);
+    return drawing.modelBlocker(
+      this.solidRectsIn,
+      pieces,
+      skip.moving,
+      skip.owners,
+      this.probeSeatsStud,
+    );
   }
 
   private trackSkip(
