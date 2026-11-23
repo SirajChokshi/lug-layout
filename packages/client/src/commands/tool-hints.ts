@@ -356,13 +356,17 @@ function fillingView(fill: FillView, name: string): Omit<HintView, "hints"> {
       detail: `one fill places at most ${MAX_FILL_TILES}, so release places nothing`,
     };
   }
-  const placing = fill.wanted - fill.refused;
+  const placing = fill.wanted - fill.refused - fill.alreadyThere;
+  const skipped = [
+    ...(fill.alreadyThere > 0 ? [`${fill.alreadyThere} already there`] : []),
+    ...(fill.refused > 0 ? [`${fill.refused} refused and skipped`] : []),
+  ];
   return {
-    tone: placing > 0 ? "place" : "warn",
+    tone: placing > 0 || fill.refused === 0 ? "place" : "warn",
     title: `Filling ${fill.wanted} × ${name}`,
     detail:
-      fill.refused > 0
-        ? `${placing} to place, ${fill.refused} refused and skipped`
+      skipped.length > 0
+        ? [`${placing} to place`, ...skipped].join(", ")
         : "release to place them all, one undo removes them",
   };
 }
@@ -370,13 +374,18 @@ function fillingView(fill: FillView, name: string): Omit<HintView, "hints"> {
 function filledView(fill: FillResult, name: string): Omit<HintView, "hints"> {
   const why = fill.reason === null ? "" : `: ${fill.reason}`;
   const skipped = fill.refused > 0 ? `skipped ${fill.refused} refused${why}` : null;
+  const there = fill.alreadyThere > 0 ? `${fill.alreadyThere} already there` : null;
   if (fill.placed === 0) {
+    if (skipped === null && there !== null) {
+      return { tone: "place", title: "Nothing to fill", detail: "every tile is already there" };
+    }
     return { tone: "warn", title: "Nothing filled", detail: skipped ?? fill.reason };
   }
   return {
     tone: skipped === null ? "place" : "warn",
     title: `Filled ${fill.placed} × ${name}`,
-    detail: skipped ?? "one undo removes them",
+    detail:
+      skipped ?? (there === null ? "one undo removes them" : `${there}; one undo removes the rest`),
   };
 }
 

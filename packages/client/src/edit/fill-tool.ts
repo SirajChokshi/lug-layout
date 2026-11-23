@@ -21,7 +21,29 @@ export function nextFillGrid(studs: number): number {
 export interface FillView {
   readonly wanted: number;
   readonly refused: number;
+  readonly alreadyThere: number;
   readonly overLimit: boolean;
+}
+
+export type FillTileState = "free" | "refused" | "already-there";
+
+const FREE_TILE = 0;
+const REFUSED_TILE = 1;
+const ALREADY_THERE_TILE = 2;
+
+function tileCode(state: FillTileState): number {
+  switch (state) {
+    case "free":
+      return FREE_TILE;
+    case "refused":
+      return REFUSED_TILE;
+    case "already-there":
+      return ALREADY_THERE_TILE;
+    default: {
+      const unhandled: never = state;
+      throw new Error(`unhandled fill tile state ${String(unhandled)}`);
+    }
+  }
 }
 
 interface TileFrame {
@@ -99,12 +121,13 @@ export class FillTool {
   private readonly tileX = new Int32Array(MAX_FILL_TILES);
   private readonly tileZ = new Int32Array(MAX_FILL_TILES);
   private readonly tileY = new Int16Array(MAX_FILL_TILES);
-  private readonly refusedAt = new Uint8Array(MAX_FILL_TILES);
+  private readonly stateAt = new Uint8Array(MAX_FILL_TILES);
   private frame: TileFrame | null = null;
   private grids: ReadonlyArray<TileGrid> = NO_GRIDS;
   private wantedTiles = 0;
   private laidTiles = 0;
   private refusedTiles = 0;
+  private alreadyThereTiles = 0;
   private pressX = 0;
   private pressZ = 0;
   private endX = 0;
@@ -139,6 +162,10 @@ export class FillTool {
 
   get refused(): number {
     return this.refusedTiles;
+  }
+
+  get alreadyThere(): number {
+    return this.alreadyThereTiles;
   }
 
   get overLimit(): boolean {
@@ -217,18 +244,21 @@ export class FillTool {
     this.grids = grids;
   }
 
-  settle(tile: number, yPlates: number, refused: boolean): void {
+  settle(tile: number, yPlates: number, state: FillTileState): void {
     this.tileY[tile] = yPlates;
-    const was = this.refusedAt[tile] === 1;
-    this.refusedAt[tile] = refused ? 1 : 0;
-    this.refusedTiles += (refused ? 1 : 0) - (was ? 1 : 0);
+    const was = this.stateAt[tile] ?? FREE_TILE;
+    const now = tileCode(state);
+    this.stateAt[tile] = now;
+    this.refusedTiles += (now === REFUSED_TILE ? 1 : 0) - (was === REFUSED_TILE ? 1 : 0);
+    this.alreadyThereTiles +=
+      (now === ALREADY_THERE_TILE ? 1 : 0) - (was === ALREADY_THERE_TILE ? 1 : 0);
   }
 
   requests(refId: number, colorId: number, rot: number): PlacementRequest[] {
     const requests: PlacementRequest[] = [];
     if (this.overLimit) return requests;
     for (let tile = 0; tile < this.laidTiles; tile++) {
-      if (this.refusedAt[tile] === 1) continue;
+      if (this.stateAt[tile] !== FREE_TILE) continue;
       requests.push({
         placement: null,
         to: {
@@ -245,7 +275,12 @@ export class FillTool {
   }
 
   view(): FillView {
-    return { wanted: this.wantedTiles, refused: this.refusedTiles, overLimit: this.overLimit };
+    return {
+      wanted: this.wantedTiles,
+      refused: this.refusedTiles,
+      alreadyThere: this.alreadyThereTiles,
+      overLimit: this.overLimit,
+    };
   }
 
   guides(out: GuideSegment[]): void {
@@ -272,7 +307,7 @@ export class FillTool {
     }
     if (over) return;
     for (let tile = 0; tile < this.laidTiles; tile++) {
-      if (this.refusedAt[tile] !== 1) continue;
+      if (this.stateAt[tile] !== REFUSED_TILE) continue;
       const minX = (this.tileX[tile] ?? 0) - frame.offsetX;
       const minZ = (this.tileZ[tile] ?? 0) - frame.offsetZ;
       const maxX = minX + frame.pitchX;
@@ -292,7 +327,7 @@ export class FillTool {
     const depth = grid.rows * frame.pitchZ;
     const counts = this.overLimit
       ? `${this.wantedTiles} tiles, at most ${MAX_FILL_TILES} in one fill`
-      : `${this.laidTiles - this.refusedTiles} to place${this.refusedTiles > 0 ? `, ${this.refusedTiles} refused` : ""}`;
+      : this.countsText();
     return {
       id: FILL_LABEL_ID,
       kind: "draft",
@@ -301,6 +336,13 @@ export class FillTool {
       y: this.y,
       z: grid.cornerZ + depth / 2,
     };
+  }
+
+  private countsText(): string {
+    const placing = this.laidTiles - this.refusedTiles - this.alreadyThereTiles;
+    const there = this.alreadyThereTiles > 0 ? `, ${this.alreadyThereTiles} already there` : "";
+    const refused = this.refusedTiles > 0 ? `, ${this.refusedTiles} refused` : "";
+    return `${placing} to place${there}${refused}`;
   }
 
   private relayout(): boolean {
@@ -321,6 +363,7 @@ export class FillTool {
     this.wantedTiles = 0;
     this.laidTiles = 0;
     this.refusedTiles = 0;
+    this.alreadyThereTiles = 0;
   }
 
   private lay(frame: TileFrame, grid: TileGrid): void {
@@ -332,7 +375,7 @@ export class FillTool {
         this.tileX[tile] = grid.cornerX + column * frame.pitchX + frame.offsetX;
         this.tileZ[tile] = grid.cornerZ + row * frame.pitchZ + frame.offsetZ;
         this.tileY[tile] = 0;
-        this.refusedAt[tile] = 0;
+        this.stateAt[tile] = FREE_TILE;
         this.laidTiles = tile + 1;
       }
     }

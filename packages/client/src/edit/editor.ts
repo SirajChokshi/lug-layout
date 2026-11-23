@@ -371,6 +371,7 @@ export interface FillResult {
   readonly item: string;
   readonly placed: number;
   readonly refused: number;
+  readonly alreadyThere: number;
   readonly reason: string | null;
 }
 
@@ -1377,6 +1378,7 @@ export class Editor implements IEditor, IEditedWorld {
   private readonly roadFit = new RoadFit();
   private readonly nearModels: PlacedModel[] = [];
   private readonly restingModels: PlacedModel[] = [];
+  private readonly tileModels: PlacedModel[] = [];
   private readonly restingTop = new Float64Array(1);
   private readonly solidProbe: SolidProbe = { placeable: null, x: 0, z: 0, rot: 0, yPlates: 0 };
   private readonly solidSpan: [number, number] = [0, 0];
@@ -3711,7 +3713,7 @@ export class Editor implements IEditor, IEditedWorld {
       fill.cancel();
       this.update({
         fillDraft: null,
-        lastFill: { item: placeable.id, placed: 0, refused: 0, reason },
+        lastFill: { item: placeable.id, placed: 0, refused: 0, alreadyThere: 0, reason },
       });
       return;
     }
@@ -3725,6 +3727,7 @@ export class Editor implements IEditor, IEditedWorld {
           item: placeable.id,
           placed: 0,
           refused: 0,
+          alreadyThere: 0,
           reason: waitingText(placeable.label, neighbour, "the fill"),
         },
       });
@@ -3735,6 +3738,7 @@ export class Editor implements IEditor, IEditedWorld {
       item: placeable.id,
       placed: requests.length,
       refused: fill.refused,
+      alreadyThere: fill.alreadyThere,
       reason: fill.laid === 0 ? `No whole ${placeable.label} fits there.` : reason.refusal,
     };
     fill.cancel();
@@ -3784,10 +3788,33 @@ export class Editor implements IEditor, IEditedWorld {
       const check = this.checkPlacement(placeable, x, z, rot, this.downRayAt(x, z), placedRoads);
       if (waitingOn === NOT_WAITING) waitingOn = check.waitingOn;
       const refused = placementRefused(check, "refused");
-      if (refused && reason === null) reason = placementRefusal(placeable, check, "refused");
-      fill.settle(tile, check.yPlates, refused);
+      const there = refused && this.alreadyPlacedAt(placeable, x, z, rot);
+      if (refused && !there && reason === null) {
+        reason = placementRefusal(placeable, check, "refused");
+      }
+      fill.settle(tile, check.yPlates, there ? "already-there" : refused ? "refused" : "free");
     }
     return { refusal: reason, waitingOn };
+  }
+
+  private alreadyPlacedAt(placeable: Placeable, x: number, z: number, rot: number): boolean {
+    const models = this.tileModels;
+    const count = this.placed.over(posedBox(placeable.box, x, z, 0, rot), models);
+    const refId = this.activeRefId;
+    const colorId = placeable.worldColor;
+    for (let m = 0; m < count; m++) {
+      const handle = models[m]?.handle;
+      if (
+        handle?.refId === refId &&
+        handle.colorId === colorId &&
+        handle.x === x &&
+        handle.z === z &&
+        handle.rot === rot
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private downRayAt(x: number, z: number): Float64Array {

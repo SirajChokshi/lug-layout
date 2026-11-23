@@ -143,7 +143,7 @@ function hover(
   };
 }
 
-const FILL: FillView = { wanted: 4, refused: 0, overLimit: false };
+const FILL: FillView = { wanted: 4, refused: 0, alreadyThere: 0, overLimit: false };
 
 const HIT: HoverRefusalHit = {
   placed: model("Market Street", 0),

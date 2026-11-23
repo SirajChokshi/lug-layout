@@ -223,12 +223,12 @@ describe("filling tables", () => {
 });
 
 describe("a settled fill", () => {
-  it("asks to place every tile that wasn't refused, at the height each one settled at", () => {
+  it("asks to place only the free tiles, at the height each one settled at, and marks only the refused ones", () => {
     const plate: LocalBox = { min: [-320, -4, -320], max: [320, 0, 320] };
     const fill = dragged(plate, 1, 32, [0, 0], [1900, 10]);
-    fill.settle(0, 3, false);
-    fill.settle(1, 0, true);
-    fill.settle(2, 1, false);
+    fill.settle(0, 3, "free");
+    fill.settle(1, 0, "refused");
+    fill.settle(2, 1, "already-there");
 
     const guides: GuideSegment[] = [];
     fill.guides(guides);
@@ -237,10 +237,9 @@ describe("a settled fill", () => {
       { kind: "refused", ax: 640, ay: GUIDE_Y, az: 0, bx: 1280, by: GUIDE_Y, bz: 640 },
       { kind: "refused", ax: 1280, ay: GUIDE_Y, az: 0, bx: 640, by: GUIDE_Y, bz: 640 },
     ]);
-    expect(fill.refused).toBe(1);
+    expect(fill.view()).toEqual({ wanted: 3, refused: 1, alreadyThere: 1, overLimit: false });
     expect(fill.requests(7, 15, 1).map((request) => request.to)).toEqual([
       { refId: 7, colorId: 15, x: 320, z: 320, yPlates: 3, rot: 1 },
-      { refId: 7, colorId: 15, x: 1600, z: 320, yPlates: 1, rot: 1 },
     ]);
   });
 });
