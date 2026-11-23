@@ -1,4 +1,6 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -10,9 +12,15 @@ import {
   type IndexListing,
   type Publication,
 } from "./pinned-publication.ts";
+import { httpReader } from "../library/ldraw-library.ts";
 import { contentAddressedName } from "../publish.ts";
 import { sha256Hex, type ObjectStore } from "../r2.ts";
 import * as v from "valibot";
+
+const OK = 200;
+const NOT_FOUND = 404;
+const TOO_MANY_REQUESTS = 429;
+const THROTTLED_READ_TIMEOUT_MS = 30_000;
 
 class MemoryStore implements ObjectStore {
   readonly objects = new Map<string, { body: Uint8Array; type: string | undefined }>();
@@ -152,3 +160,39 @@ it("refuses an index tree that loops back to its pinned index, and verify-served
     "shelf.json is listed by more than one index",
   ]);
 });
+
+it(
+  "verify-served reads every file through a public bucket that answers each file's first request with 429, and still reports the tampered one",
+  async () => {
+    const { root, pin } = await shelfBuild();
+    const store = new MemoryStore();
+    await uploadPublication(shelf, store, root, pin);
+    const leaf = [...store.objects.keys()].find((key) => key.endsWith(".glb")) ?? "";
+    store.objects.set(leaf, { body: new Uint8Array([9]), type: undefined });
+    const throttled = new Set<string>();
+    const server = createServer((request, response) => {
+      const key = decodeURIComponent((request.url ?? "/").slice(1));
+      if (!throttled.has(key)) {
+        throttled.add(key);
+        response.statusCode = TOO_MANY_REQUESTS;
+        response.end();
+        return;
+      }
+      const object = store.objects.get(key);
+      response.statusCode = object === undefined ? NOT_FOUND : OK;
+      response.end(object?.body);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const read = httpReader(`http://127.0.0.1:${port}/`);
+      expect(await verifyServedPublication(shelf, read, pin, "all")).toEqual([
+        `${leaf} differs from its content address`,
+      ]);
+      expect(throttled).toEqual(new Set(store.objects.keys()));
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+  },
+  THROTTLED_READ_TIMEOUT_MS,
+);
