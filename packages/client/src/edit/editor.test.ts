@@ -2065,6 +2065,36 @@ it("lays road to a user's road end alike whether a tower beside it is in the sam
   expect(await strokedToBothEnds(true)).toEqual(twoFiles);
 }, 120_000);
 
+it("continues a stroke that starts on a user's own road plate as it would from the palette's, and refuses one that would have to change the user's plate", async () => {
+  const { editor, backend } = await startImportingEditor();
+  const place = placer(editor, backend);
+  const plate = userRoadFile("my-road-plate.ldr", ["1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336.dat"]);
+  await place(await importUserFile(editor, "my-road-plate.ldr", plate), 320, 320);
+  const along = roadStrokeResult(editor, backend, [320, 320], [320, 1600]);
+  const placedAlong = editor.dump().roadPlacements.length;
+  const across = roadStrokeResult(editor, backend, [320, 320], [1600, 320]);
+  const { roads, lastRoadStroke } = editor.snapshot();
+  const { mismatchedCells, overlaps } = roads;
+
+  expect({
+    along,
+    placedAlong,
+    across,
+    acrossBlockers: lastRoadStroke?.stroke.issues.map((issue) => issue.blocker),
+    placedAcross: editor.dump().roadPlacements.length,
+    mismatchedCells,
+    overlaps,
+  }).toEqual({
+    along: "laid",
+    placedAlong: 3,
+    across: "refused",
+    acrossBlockers: ["my-road-plate.ldr"],
+    placedAcross: 3,
+    mismatchedCells: 0,
+    overlaps: 0,
+  });
+}, 120_000);
+
 it("lays road to a user's street of a road plate, a grass baseplate and a parked car with a tile roof: the road joins, the grass edge refuses nothing and the car overlaps nothing", async () => {
   const { editor, backend } = await startImportingEditor();
   const street = userRoadFile("my-street-with-grass.ldr", [
