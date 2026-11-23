@@ -15,12 +15,6 @@ const PLATE_SPAN = 640;
 const QUARTER_TURNS = [0, 1, 2, 3];
 const ON_THE_TABLE: RestingHeights = { restingYLdu: () => 0 };
 
-function leadingSidewalkLdu(surface: RoadSurface): number {
-  let cells = 0;
-  while (cells < surface.columns && surface.road[cells] === 0) cells++;
-  return cells * STUD;
-}
-
 function roadBaseplate(part: string): RoadSurface {
   const zones = measured.roadStudZones.find((entry) => entry.part === part);
   if (!zones) throw new Error(`${part} is not measured`);
@@ -295,14 +289,12 @@ describe("road-edge snap", () => {
     }
   });
 
-  it("snaps a crossroads beside a straight's sidewalk only where its corner sidewalk alone meets it, never with a road end against the sidewalk", () => {
+  it("never snaps a crossroads beside a straight's sidewalk: in line with it a road end would butt into the sidewalk, and it never slides along the edge to where only its corner meets", () => {
     const crossroads = roadBaseplate("44343");
     const sideX = cellExtent(straight).maxX;
-    const cornerSidewalk = leadingSidewalkLdu(crossroads);
-    const cornerOnly = PLATE_SPAN - cornerSidewalk;
     for (const preferred of QUARTER_TURNS) {
-      const snaps = [-260, 0, 300].map((cursorZ) =>
-        snapToRoadEdge(
+      for (const cursorZ of [-260, 0, 300]) {
+        const snap = snapToRoadEdge(
           roads,
           crossroads,
           preferred,
@@ -311,21 +303,9 @@ describe("road-edge snap", () => {
           sideX + 300,
           cursorZ,
           ANY_TURN,
-        ),
-      );
-      const corner = (z: number) => ({
-        x: sideX + PLATE_SPAN / 2,
-        z,
-        rot: preferred,
-        metCells: cornerSidewalk / STUD,
-        joinedCells: 0,
-        joinedRoadCells: 0,
-      });
-      expect(snaps).toEqual([
-        corner(straight.z - cornerOnly),
-        null,
-        corner(straight.z + cornerOnly),
-      ]);
+        );
+        expect(snap).toBeNull();
+      }
     }
   });
 
