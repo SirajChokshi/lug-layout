@@ -9094,7 +9094,7 @@ function selectFromSide(editor: IEditor, backend: AimedBackend, x: number, z: nu
   return editor.snapshot().selection?.primary ?? null;
 }
 
-it("lays raised runs on generated brick piers of real parts, each piece held only by its anti-studs on a pier's studs: joined, reported unsupported once its pier is removed, and undone and redone with its piers as one edit", async () => {
+it("lays raised runs on generated brick piers of real parts without announcing them as a model import, each piece held only by its anti-studs on a pier's studs: joined, reported unsupported once its pier is removed, and undone and redone with its piers as one edit", async () => {
   const { editor, backend, catalog } = await raisedEditor([]);
   editor.chooseItem(TRACK_ITEM_ID);
   editor.raiseTrack(PIER_PLATES);
@@ -9102,6 +9102,7 @@ it("lays raised runs on generated brick piers of real parts, each piece held onl
   await layRaised(editor, backend, [16 * STUD, 0], [48 * STUD, 0]);
   await layRaised(editor, backend, [0, 0], [16 * STUD, 0]);
   const closed = editor.snapshot().track?.lastCommit;
+  const announced = editor.snapshot().modelImport;
   const piers = placedImports(editor);
   const pierRef = piers[0]?.ref ?? "";
   const pier = catalog.placeables()[catalog.itemRefId(pierRef) ?? -1];
@@ -9121,6 +9122,7 @@ it("lays raised runs on generated brick piers of real parts, each piece held onl
   editor.redo(0);
 
   expect(closed).toBe("joined");
+  expect(announced).toBeNull();
   expect(catalogLabel(editor, pierRef)).toBe(`track-pier-${PIER_PLATES}-plates.ldr`);
   expect(pierParts.toSorted()).toEqual([PIER_BRICK, PIER_PLATE, PIER_PLATE]);
   expect(heights).toEqual(Array.from({ length: laid }, () => [PIER_PLATES, 0]));
