@@ -95,9 +95,13 @@ export const ARM_BITS: Readonly<Record<RoadSide, number>> = {
   maxZ: 0b1000,
 };
 
+const SIDE_ARM_BITS = Uint8Array.from(SIDES, ([side]) => ARM_BITS[side]);
+const SIDE_DX = Int8Array.from(SIDES, ([, dx]) => dx);
+const SIDE_DZ = Int8Array.from(SIDES, ([, , dz]) => dz);
+
 export function armToward(dx: number, dz: number): number {
-  for (const [side, sx, sz] of SIDES) {
-    if (sx === dx && sz === dz) return ARM_BITS[side];
+  for (let side = 0; side < SIDE_ARM_BITS.length; side++) {
+    if (SIDE_DX[side] === dx && SIDE_DZ[side] === dz) return SIDE_ARM_BITS[side] ?? 0;
   }
   throw new Error(`(${dx}, ${dz}) is not a unit step along x or z`);
 }
@@ -113,8 +117,10 @@ export function rotateArms(arms: number, rot: number): number {
   const cos = rot90Cos(rot);
   const sin = rot90Sin(rot);
   let rotated = 0;
-  for (const [side, dx, dz] of SIDES) {
-    if ((arms & ARM_BITS[side]) === 0) continue;
+  for (let side = 0; side < SIDE_ARM_BITS.length; side++) {
+    if ((arms & (SIDE_ARM_BITS[side] ?? 0)) === 0) continue;
+    const dx = SIDE_DX[side] ?? 0;
+    const dz = SIDE_DZ[side] ?? 0;
     rotated |= armToward(cos * dx + sin * dz, -sin * dx + cos * dz);
   }
   return rotated;
@@ -241,7 +247,27 @@ export function roadKits(candidates: ReadonlyArray<RoadKitCandidate>): ReadonlyA
   }));
 }
 
+const choicesByKit = new WeakMap<RoadKit, Map<number, ReadonlyArray<RoadPieceChoice>>>();
+
 export function roadPieceChoices(
+  kit: RoadKit,
+  needed: number,
+  preferredRot: number,
+): ReadonlyArray<RoadPieceChoice> {
+  let byNeed = choicesByKit.get(kit);
+  if (!byNeed) {
+    byNeed = new Map();
+    choicesByKit.set(kit, byNeed);
+  }
+  const key = needed * QUARTER_TURNS + preferredRot;
+  const cached = byNeed.get(key);
+  if (cached) return cached;
+  const choices = rankedChoices(kit, needed, preferredRot);
+  byNeed.set(key, choices);
+  return choices;
+}
+
+function rankedChoices(
   kit: RoadKit,
   needed: number,
   preferredRot: number,

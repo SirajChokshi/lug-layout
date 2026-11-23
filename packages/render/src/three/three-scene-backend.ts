@@ -793,7 +793,9 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   private ghostNeeds: ChunkNeeds | null = null;
   private neededMeshListener: NeededMeshListener | null = null;
   private readonly rebuildKeys: number[] = [];
-  private ghostPose: readonly [number, number, number, number] | null = null;
+  private ghostModel: ChunkInstances | null = null;
+  private readonly ghostPose = new Float64Array(4);
+  private ghostPosed = false;
   private forcedTier: number | null = null;
   private readonly farModelNodes = new Map<number, FarModelNode>();
   private farModelList: FarModelNode[] = [];
@@ -1366,6 +1368,8 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setGhost(model: ChunkInstances | null): void {
+    if (model === this.ghostModel) return;
+    this.ghostModel = model;
     this.changed = true;
     this.showGhost(model ? this.pageFor(model) : null);
   }
@@ -1379,7 +1383,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     }
     const held = this.ghostNeeds;
     const samePage = page !== null && page === this.ghostPage;
-    this.ghostPose = null;
+    this.ghostPosed = false;
     this.ghostPage = page;
     this.ghostNeeds = null;
     this.showGhostHit();
@@ -1406,16 +1410,33 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private rebuildGhost(page: InstancePage): void {
-    const pose = this.ghostPose;
+    const posed = this.ghostPosed;
     this.showGhost(page);
-    if (pose) this.placeGhost(...pose);
+    const pose = this.ghostPose;
+    if (posed) this.placeGhost(pose[0] ?? 0, pose[1] ?? 0, pose[2] ?? 0, pose[3] ?? 0);
   }
 
   placeGhost(x: number, yLdu: number, z: number, rot: number): void {
-    this.changed = true;
     const ghost = this.ghost;
+    const pose = this.ghostPose;
+    if (
+      ghost &&
+      ghost.visible &&
+      this.ghostPosed &&
+      pose[0] === x &&
+      pose[1] === yLdu &&
+      pose[2] === z &&
+      pose[3] === rot
+    ) {
+      return;
+    }
+    this.changed = true;
     if (!ghost) return;
-    this.ghostPose = [x, yLdu, z, rot];
+    pose[0] = x;
+    pose[1] = yLdu;
+    pose[2] = z;
+    pose[3] = rot;
+    this.ghostPosed = true;
     this.ghostX = x;
     this.ghostZ = z;
     ghost.position.set(x - this.renderOriginX, yLdu, z - this.renderOriginZ);
@@ -1466,7 +1487,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   private showGhostHit(): void {
-    this.ghostHit.visible = this.ghostHitShown && this.ghostPose !== null;
+    this.ghostHit.visible = this.ghostHitShown && this.ghostPosed;
   }
 
   setSelectionBoxes(boxes: ReadonlyArray<WorldBox>): void {
@@ -1482,6 +1503,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setMarkers(markers: ReadonlyArray<EdgeMarker>): void {
+    if (markers === this.markers) return;
     this.changed = true;
     this.markerGroup.clear();
     this.markers = markers;
@@ -1512,6 +1534,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
   }
 
   setTrackEnds(markers: ReadonlyArray<TrackEndMarker>): void {
+    if (markers === this.trackEnds) return;
     this.changed = true;
     this.trackEndGroup.clear();
     this.trackEnds = markers;

@@ -1,4 +1,12 @@
-import { CHUNK_LDU, STUD_LDU, ZETA16_ORDER, chunkKey, zeta16ToStuds, type Pose16 } from "@brr/math";
+import {
+  CHUNK_LDU,
+  STUD_LDU,
+  ZETA16_ORDER,
+  assertChunkInRange,
+  zeta16ToStuds,
+  type Pose16,
+  planeHypot,
+} from "@brr/math";
 
 const OUTLINE_POINT_FLOATS = 2;
 export const OUTLINE_BOX_FLOATS = 4;
@@ -36,6 +44,37 @@ function clipped(polygon: ReadonlyArray<number>, a: number, b: number, d: number
     }
   }
   return out;
+}
+
+function clippedInto(
+  polygon: ArrayLike<number>,
+  polygonFloats: number,
+  a: number,
+  b: number,
+  d: number,
+  out: Float64Array,
+): number {
+  let written = 0;
+  const count = polygonFloats / OUTLINE_POINT_FLOATS;
+  for (let i = 0; i < count; i++) {
+    const j = (i + 1) % count;
+    const px = polygon[2 * i] ?? 0;
+    const pz = polygon[2 * i + 1] ?? 0;
+    const qx = polygon[2 * j] ?? 0;
+    const qz = polygon[2 * j + 1] ?? 0;
+    const pInside = d - (a * px + b * pz);
+    const qInside = d - (a * qx + b * qz);
+    if (pInside >= 0) {
+      out[written++] = px;
+      out[written++] = pz;
+    }
+    if (pInside >= 0 !== qInside >= 0) {
+      const t = pInside / (pInside - qInside);
+      out[written++] = px + t * (qx - px);
+      out[written++] = pz + t * (qz - pz);
+    }
+  }
+  return written;
 }
 
 function translated(polygon: ArrayLike<number>, frame: PlacementFrame): Float64Array {
@@ -156,31 +195,33 @@ export function outlineContains(outline: Float64Array, x: number, z: number): bo
 
 function separatedByEdgesOf(
   a: Float64Array,
+  aFloats: number,
   ax: number,
   az: number,
   b: Float64Array,
+  bFloats: number,
   bx: number,
   bz: number,
 ): boolean {
-  const count = a.length / OUTLINE_POINT_FLOATS;
+  const count = aFloats / OUTLINE_POINT_FLOATS;
   for (let i = 0; i < count; i++) {
     const j = (i + 1) % count;
     const ex = (a[2 * j] ?? 0) - (a[2 * i] ?? 0);
     const ez = (a[2 * j + 1] ?? 0) - (a[2 * i + 1] ?? 0);
-    const length = Math.hypot(ex, ez);
+    const length = planeHypot(ex, ez);
     if (length === 0) continue;
     const nx = -ez / length;
     const nz = ex / length;
     let minA = Number.POSITIVE_INFINITY;
     let maxA = Number.NEGATIVE_INFINITY;
-    for (let p = 0; p < a.length; p += 2) {
+    for (let p = 0; p < aFloats; p += 2) {
       const d = ((a[p] ?? 0) + ax) * nx + ((a[p + 1] ?? 0) + az) * nz;
       if (d < minA) minA = d;
       if (d > maxA) maxA = d;
     }
     let minB = Number.POSITIVE_INFINITY;
     let maxB = Number.NEGATIVE_INFINITY;
-    for (let p = 0; p < b.length; p += 2) {
+    for (let p = 0; p < bFloats; p += 2) {
       const d = ((b[p] ?? 0) + bx) * nx + ((b[p + 1] ?? 0) + bz) * nz;
       if (d < minB) minB = d;
       if (d > maxB) maxB = d;
@@ -198,7 +239,23 @@ export function outlinesOverlap(
   bx: number,
   bz: number,
 ): boolean {
-  return !separatedByEdgesOf(a, ax, az, b, bx, bz) && !separatedByEdgesOf(b, bx, bz, a, ax, az);
+  return polygonsOverlap(a, a.length, ax, az, b, b.length, bx, bz);
+}
+
+function polygonsOverlap(
+  a: Float64Array,
+  aFloats: number,
+  ax: number,
+  az: number,
+  b: Float64Array,
+  bFloats: number,
+  bx: number,
+  bz: number,
+): boolean {
+  return (
+    !separatedByEdgesOf(a, aFloats, ax, az, b, bFloats, bx, bz) &&
+    !separatedByEdgesOf(b, bFloats, bx, bz, a, aFloats, ax, az)
+  );
 }
 
 export function boxesOverlap(
@@ -241,23 +298,35 @@ function signedArea(polygon: ArrayLike<number>): number {
   return twice / 2;
 }
 
-function overlapsOutside(piece: Float64Array, other: Float64Array, joined: Float64Array): boolean {
+function overlapsOutside(
+  piece: Float64Array,
+  pieceFloats: number,
+  other: Float64Array,
+  joined: Float64Array,
+  beyond: Float64Array,
+): boolean {
   const count = joined.length / OUTLINE_POINT_FLOATS;
   const outward = signedArea(joined) < 0 ? -1 : 1;
-  const points = Array.from(piece);
   for (let i = 0; i < count; i++) {
     const j = (i + 1) % count;
     const ax = joined[2 * i] ?? 0;
     const az = joined[2 * i + 1] ?? 0;
     const ex = (joined[2 * j] ?? 0) - ax;
     const ez = (joined[2 * j + 1] ?? 0) - az;
-    const length = Math.hypot(ex, ez);
+    const length = planeHypot(ex, ez);
     if (length === 0) continue;
     const nx = (outward * ez) / length;
     const nz = (-outward * ex) / length;
-    const beyond = clipped(points, -nx, -nz, -(nx * ax + nz * az + REPRESENTATION_LDU));
-    if (beyond.length < MIN_POLYGON_FLOATS) continue;
-    if (outlinesOverlap(Float64Array.from(beyond), 0, 0, other, 0, 0)) return true;
+    const kept = clippedInto(
+      piece,
+      pieceFloats,
+      -nx,
+      -nz,
+      -(nx * ax + nz * az + REPRESENTATION_LDU),
+      beyond,
+    );
+    if (kept < MIN_POLYGON_FLOATS) continue;
+    if (polygonsOverlap(beyond, kept, 0, 0, other, other.length, 0, 0)) return true;
   }
   return false;
 }
@@ -266,14 +335,21 @@ const NO_IDS: ArrayLike<number> = [];
 
 export class TrackClearance {
   private readonly outlines: Float64Array[] = [];
+  private readonly pooled: Float64Array[] = [];
   private boxes = new Float64Array(64 * OUTLINE_BOX_FLOATS);
-  private readonly cells = new Map<number, number[]>();
+  private readonly cells = new Map<number, Map<number, number[]>>();
   private readonly queryBox = new Float64Array(OUTLINE_BOX_FLOATS);
   private readonly pieceBox = new Float64Array(OUTLINE_BOX_FLOATS);
   private readonly joinedPair = [NO_OBSTACLE, NO_OBSTACLE];
   private visit = new Uint32Array(64);
   private generation = 0;
   private readonly pointBox = new Float64Array(OUTLINE_BOX_FLOATS);
+  private cellX0 = 0;
+  private cellZ0 = 0;
+  private cellX1 = -1;
+  private cellZ1 = -1;
+  private placedPiece = new Float64Array(0);
+  private beyondPiece = new Float64Array(0);
 
   get count(): number {
     return this.outlines.length;
@@ -281,14 +357,30 @@ export class TrackClearance {
 
   truncate(count: number): void {
     for (let id = this.outlines.length - 1; id >= count; id--) {
-      this.forCells(this.boxes, id * OUTLINE_BOX_FLOATS, 0, 0, (key) => {
-        const members = this.cells.get(key);
-        if (members?.at(-1) === id) members.pop();
-        if (members?.length === 0) this.cells.delete(key);
-        return false;
-      });
+      this.cellRange(this.boxes, id * OUTLINE_BOX_FLOATS, 0, 0);
+      for (let cx = this.cellX0; cx <= this.cellX1; cx++) {
+        for (let cz = this.cellZ0; cz <= this.cellZ1; cz++) {
+          const members = this.cells.get(cx)?.get(cz);
+          if (members && members[members.length - 1] === id) members.pop();
+        }
+      }
       this.outlines.pop();
     }
+  }
+
+  addRotated(
+    outline: Float64Array,
+    headingSteps: number,
+    offsetX: number,
+    offsetZ: number,
+  ): number {
+    const id = this.outlines.length;
+    let buffer = this.pooled[id];
+    if (!buffer || buffer.length !== outline.length) {
+      buffer = new Float64Array(outline.length);
+      this.pooled[id] = buffer;
+    }
+    return this.add(rotateOutlineInto(outline, headingSteps, offsetX, offsetZ, buffer));
   }
 
   add(outline: Float64Array): number {
@@ -304,12 +396,12 @@ export class TrackClearance {
     }
     const at = id * OUTLINE_BOX_FLOATS;
     outlineBox(outline, this.boxes, at);
-    this.forCells(this.boxes, at, 0, 0, (key) => {
-      const members = this.cells.get(key);
-      if (members) members.push(id);
-      else this.cells.set(key, [id]);
-      return false;
-    });
+    this.cellRange(this.boxes, at, 0, 0);
+    for (let cx = this.cellX0; cx <= this.cellX1; cx++) {
+      for (let cz = this.cellZ0; cz <= this.cellZ1; cz++) {
+        this.membersAt(cx, cz).push(id);
+      }
+    }
     return id;
   }
 
@@ -395,20 +487,25 @@ export class TrackClearance {
     if (joinedIn === this) this.markVisited(joined, generation);
     this.markVisited(skipped, generation);
     let found = NO_OBSTACLE;
-    this.forCells(box, boxAt, x, z, (key) => {
-      const members = this.cells.get(key);
-      if (!members) return false;
-      for (const id of members) {
-        if (found !== NO_OBSTACLE && id >= found) break;
-        if (this.visit[id] === generation) continue;
-        this.visit[id] = generation;
-        if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
-        const other = this.outlines[id];
-        if (!other || !outlinesOverlap(outline, x, z, other, 0, 0)) continue;
-        if (!joinedIn.insideJoined(outline, x, z, other, joined)) found = id;
+    this.cellRange(box, boxAt, x, z);
+    const { cellX0, cellZ0, cellX1, cellZ1 } = this;
+    for (let cx = cellX0; cx <= cellX1; cx++) {
+      for (let cz = cellZ0; cz <= cellZ1; cz++) {
+        const members = this.cells.get(cx)?.get(cz);
+        if (!members) continue;
+        for (let m = 0; m < members.length; m++) {
+          const id = members[m] ?? NO_OBSTACLE;
+          if (found !== NO_OBSTACLE && id >= found) break;
+          if (this.visit[id] === generation) continue;
+          this.visit[id] = generation;
+          if (!boxesOverlap(box, boxAt, x, z, this.boxes, id * OUTLINE_BOX_FLOATS)) continue;
+          const other = this.outlines[id];
+          if (!other || !outlinesOverlap(outline, x, z, other, 0, 0)) continue;
+          if (!joinedIn.insideJoined(outline, x, z, other, joined)) found = id;
+        }
+        if (found === 0) return found;
       }
-      return found === 0;
-    });
+    }
     return found;
   }
 
@@ -419,15 +516,32 @@ export class TrackClearance {
     other: Float64Array,
     joined: ArrayLike<number>,
   ): boolean {
-    let piece: Float64Array | null = null;
+    let placed = false;
     for (let i = 0; i < joined.length; i++) {
       const id = joined[i] ?? NO_OBSTACLE;
       const shape = id < 0 ? undefined : this.outlines[id];
       if (!shape) continue;
-      piece ??= translated(outline, { xLdu: x, zLdu: z });
-      if (!overlapsOutside(piece, other, shape)) return true;
+      if (!placed) {
+        this.placePiece(outline, x, z);
+        placed = true;
+      }
+      if (!overlapsOutside(this.placedPiece, outline.length, other, shape, this.beyondPiece)) {
+        return true;
+      }
     }
     return false;
+  }
+
+  private placePiece(outline: Float64Array, x: number, z: number): void {
+    if (this.placedPiece.length < outline.length) {
+      this.placedPiece = new Float64Array(outline.length);
+      this.beyondPiece = new Float64Array(2 * outline.length + 2 * OUTLINE_POINT_FLOATS);
+    }
+    const placed = this.placedPiece;
+    for (let p = 0; p < outline.length; p += OUTLINE_POINT_FLOATS) {
+      placed[p] = (outline[p] ?? 0) + x;
+      placed[p + 1] = (outline[p + 1] ?? 0) + z;
+    }
   }
 
   covers(x: number, z: number): boolean {
@@ -436,36 +550,45 @@ export class TrackClearance {
     box[1] = z;
     box[2] = x;
     box[3] = z;
-    return this.forCells(box, 0, 0, 0, (key) => {
-      for (const id of this.cells.get(key) ?? []) {
-        const outline = this.outlines[id];
-        if (outline && outlineContains(outline, x, z)) return true;
+    this.cellRange(box, 0, 0, 0);
+    for (let cx = this.cellX0; cx <= this.cellX1; cx++) {
+      for (let cz = this.cellZ0; cz <= this.cellZ1; cz++) {
+        const members = this.cells.get(cx)?.get(cz);
+        if (!members) continue;
+        for (let m = 0; m < members.length; m++) {
+          const outline = this.outlines[members[m] ?? NO_OBSTACLE];
+          if (outline && outlineContains(outline, x, z)) return true;
+        }
       }
-      return false;
-    });
+    }
+    return false;
   }
 
-  private forCells(
-    box: Float64Array,
-    at: number,
-    x: number,
-    z: number,
-    visit: (key: number) => boolean,
-  ): boolean {
+  private membersAt(cx: number, cz: number): number[] {
+    let column = this.cells.get(cx);
+    if (!column) {
+      column = new Map();
+      this.cells.set(cx, column);
+    }
+    let members = column.get(cz);
+    if (!members) {
+      members = [];
+      column.set(cz, members);
+    }
+    return members;
+  }
+
+  private cellRange(box: Float64Array, at: number, x: number, z: number): void {
     const box0 = this.queryBox;
     box0[0] = (box[at] ?? 0) + x;
     box0[1] = (box[at + 1] ?? 0) + z;
     box0[2] = (box[at + 2] ?? 0) + x;
     box0[3] = (box[at + 3] ?? 0) + z;
-    const cx0 = Math.floor((box0[0] ?? 0) / CHUNK_LDU);
-    const cz0 = Math.floor((box0[1] ?? 0) / CHUNK_LDU);
-    const cx1 = Math.floor((box0[2] ?? 0) / CHUNK_LDU);
-    const cz1 = Math.floor((box0[3] ?? 0) / CHUNK_LDU);
-    for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cz = cz0; cz <= cz1; cz++) {
-        if (visit(chunkKey(cx, cz))) return true;
-      }
-    }
-    return false;
+    this.cellX0 = Math.floor((box0[0] ?? 0) / CHUNK_LDU);
+    this.cellZ0 = Math.floor((box0[1] ?? 0) / CHUNK_LDU);
+    this.cellX1 = Math.floor((box0[2] ?? 0) / CHUNK_LDU);
+    this.cellZ1 = Math.floor((box0[3] ?? 0) / CHUNK_LDU);
+    assertChunkInRange(this.cellX0, this.cellZ0);
+    assertChunkInRange(this.cellX1, this.cellZ1);
   }
 }

@@ -62,6 +62,7 @@ import {
   posesJoin16,
   zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import {
   PROJECTION_FLOATS,
@@ -1168,12 +1169,20 @@ function sameModels(a: ReadonlyArray<PlacedModel>, b: ReadonlyArray<PlacedModel>
   return true;
 }
 
+function changesAny<T extends object>(state: T, patch: Partial<T>): boolean {
+  for (const key in patch) {
+    if (!Object.is(patch[key], state[key])) return true;
+  }
+  return false;
+}
+
 function sameHover(a: HoverView | null, b: HoverView | null): boolean {
   if (a === null || b === null) return a === b;
   return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates;
 }
 
 const NO_LOW_CLEARANCE: ReadonlyMap<number, PlateHeights> = new Map();
+const NO_LABELS: ReadonlyArray<LabelView> = [];
 
 function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
   if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
@@ -1365,6 +1374,14 @@ export class Editor implements IEditor, IEditedWorld {
   private hovering = false;
   private hitX = 0;
   private hitZ = 0;
+  private labelsReusable = false;
+  private labelsMeasured: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsTabled: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsFilling: LabelView | null = null;
+  private labelsSelection: SelectionView | null = null;
+  private labelsHeights: ReadonlyArray<LabelView> = NO_LABELS;
+  private labelsPreview: ReadonlyArray<LabelView> = NO_LABELS;
+  private lastLabels: ReadonlyArray<LabelView> = NO_LABELS;
   private readonly searchIds = new Map<PlacedModel, number>();
   private readonly awaitingIds = new Map<PlacedModel, number>();
   private readonly searchModels = new Map<number, PlacedModel>();
@@ -1497,6 +1514,12 @@ export class Editor implements IEditor, IEditedWorld {
 
   private update(patch: Partial<EditorSnapshot>): void {
     const before = this.state;
+    if (
+      !changesAny(before, patch) &&
+      ghostSettles(before, before, this.dropping) === before.ghostSettled
+    ) {
+      return;
+    }
     const merged = { ...before, ...patch };
     const ghostSettled = ghostSettles(before, merged, this.dropping);
     const next = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
@@ -1509,22 +1532,46 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private labelsOf(state: EditorSnapshot): ReadonlyArray<LabelView> {
-    const labels = [...(this.measure?.labels() ?? [])];
-    if (state.mode === "table" && this.tables) labels.push(...this.tables.labels());
+    const measured = this.measure?.labels() ?? NO_LABELS;
+    const tabled = state.mode === "table" && this.tables ? this.tables.labels() : NO_LABELS;
     const filling = this.fillTool?.label() ?? null;
-    if (filling) labels.push(filling);
     const active = this.active;
-    if (state.mode === "place" && active && state.hover && !filling) {
-      const { x, z, yPlates } = state.hover;
+    const ghostAt = state.mode === "place" && active && !filling ? state.hover : null;
+    const { selection } = state;
+    const track = this.trackWorld.drawing();
+    const drawn = state.mode === "track" ? track : null;
+    const heights = drawn ? drawn.heightLabels() : NO_LABELS;
+    const preview = drawn ? drawn.previewLabels() : NO_LABELS;
+    if (
+      this.labelsReusable &&
+      ghostAt === null &&
+      measured === this.labelsMeasured &&
+      tabled === this.labelsTabled &&
+      filling === this.labelsFilling &&
+      selection === this.labelsSelection &&
+      heights === this.labelsHeights &&
+      preview === this.labelsPreview
+    ) {
+      return this.lastLabels;
+    }
+    const labels = [...measured, ...tabled];
+    if (filling) labels.push(filling);
+    if (active && ghostAt) {
+      const { x, z, yPlates } = ghostAt;
       labels.push(
         boxLabel("ghost", "ghost", posedBox(active.box, x, z, yPlates * PLATE_LDU, state.ghostRot)),
       );
     }
-    if (state.selection) labels.push(boxLabel("selection", "selection", state.selection.box));
-    const track = this.trackWorld.drawing();
-    if (state.mode === "track" && track) {
-      labels.push(...track.heightLabels(), ...track.previewLabels());
-    }
+    if (selection) labels.push(boxLabel("selection", "selection", selection.box));
+    labels.push(...heights, ...preview);
+    this.labelsReusable = ghostAt === null;
+    this.labelsMeasured = measured;
+    this.labelsTabled = tabled;
+    this.labelsFilling = filling;
+    this.labelsSelection = selection;
+    this.labelsHeights = heights;
+    this.labelsPreview = preview;
+    this.lastLabels = labels;
     return labels;
   }
 
@@ -1979,13 +2026,17 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private refreshTrackPreview(): void {
-    const view = this.tracks.refreshPreview(
+    const view = this.trackPreviewView();
+    if (view) this.update(view);
+  }
+
+  private trackPreviewView(): TrackEditView | null {
+    return this.tracks.refreshPreview(
       this.state.mode === "track",
       this.hovering,
       this.hitX,
       this.hitZ,
     );
-    if (view) this.update(view);
   }
 
   private repaintTrackPreview(): void {
@@ -2389,14 +2440,12 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private showHeldPiece(): void {
-    const view = this.tracks.showHeld(
-      this.hovering,
-      this.hitX,
-      this.hitZ,
-      this.hoverX,
-      this.hoverZ,
-    );
+    const view = this.heldPieceView();
     if (view) this.update(view);
+  }
+
+  private heldPieceView(): TrackEditView | null {
+    return this.tracks.showHeld(this.hovering, this.hitX, this.hitZ, this.hoverX, this.hoverZ);
   }
 
   private placeHeldPiece(eventTimeMs: number): void {
@@ -2558,13 +2607,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeGhost(): void {
-    const startedMs = performance.now();
     const placeable = this.active;
     if (!placeable || !this.hovering || this.fillTool?.previewing) {
       this.assist.cancel();
       this.railRefusal = null;
       return;
     }
+    const startedMs = performance.now();
     if (this.placeOnRails(placeable)) return;
     const connected = this.connectedOf(placeable);
     const mode = this.placementMode();
@@ -2644,7 +2693,7 @@ export class Editor implements IEditor, IEditedWorld {
     const t = -(side[1] ?? 0) / directionY;
     const dx = (side[0] ?? 0) + (side[3] ?? 0) * t - this.hitX;
     const dz = (side[2] ?? 0) + (side[5] ?? 0) * t - this.hitZ;
-    return Math.hypot(dx, dz);
+    return planeHypot(dx, dz);
   }
 
   private aimPick(rot: number, turns: number, mode: PlacementMode): void {
@@ -2773,14 +2822,22 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverView(): HoverView | null {
     if (!this.hovering) return null;
     const onRails = this.active !== null && this.trainAim !== null && this.trainAim.kind !== "off";
-    return {
-      x: this.hoverX,
-      z: this.hoverZ,
-      yPlates: this.drawingTrack()?.drawingPlates ?? this.assist.yPlates,
-      refusal: onRails ? this.railRefusal : this.assist.refusal,
-      onRails,
-      placement: this.assist.placement,
-    };
+    const refusal = onRails ? this.railRefusal : this.assist.refusal;
+    const yPlates = this.drawingTrack()?.drawingPlates ?? this.assist.yPlates;
+    const { placement } = this.assist;
+    const shown = this.state.hover;
+    if (
+      shown !== null &&
+      shown.x === this.hoverX &&
+      shown.z === this.hoverZ &&
+      shown.yPlates === yPlates &&
+      shown.refusal === refusal &&
+      shown.onRails === onRails &&
+      shown.placement === placement
+    ) {
+      return shown;
+    }
+    return { x: this.hoverX, z: this.hoverZ, yPlates, refusal, onRails, placement };
   }
 
   private roadReadout(): RoadSnapView | null {
@@ -2990,25 +3047,34 @@ export class Editor implements IEditor, IEditedWorld {
     const kept = this.keptSnapHolds();
     if (!kept) this.keptRoadSnap = null;
     this.forgetPendingTurnsAway();
-    if (this.state.mode === "road" && this.hovering) {
-      const view = this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood);
-      if (view) this.update(view);
-    }
+    const roadView =
+      this.state.mode === "road" && this.hovering
+        ? this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood)
+        : null;
     const tables = this.tables;
     if (this.state.mode === "table" && tables && this.hovering) {
       if (tables.hoverAt(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY))) {
         this.showGuides();
       }
     }
-    if (this.tracks.holding()) this.showHeldPiece();
-    else this.refreshTrackPreview();
+    const trackView = this.tracks.holding() ? this.heldPieceView() : this.trackPreviewView();
     const snap = kept ? this.keepRoadSnap(kept) : this.settleGhostHere();
     if (this.gesture?.kind === "paste" && this.hovering) this.aimHeld(this.gesture);
-    this.update({
-      hover: this.hoverView(),
-      snap,
-      ghostRot: this.placeRot,
-    });
+    const hover = this.hoverView();
+    const ghostRot = this.placeRot;
+    const state = this.state;
+    if (
+      roadView === null &&
+      (trackView === null ||
+        (trackView.track === state.track &&
+          trackView.trackNotDrawable === state.trackNotDrawable)) &&
+      hover === state.hover &&
+      snap === state.snap &&
+      ghostRot === state.ghostRot
+    ) {
+      return;
+    }
+    this.update({ ...roadView, ...trackView, hover, snap, ghostRot });
   }
 
   private settleGhostHere(): RoadSnapView | null {
@@ -3807,7 +3873,7 @@ export class Editor implements IEditor, IEditedWorld {
     const z = this.hitZ;
     const widthPx = this.canvas?.clientWidth ?? 0;
     const reached = widthPx > 0 && this.groundHit(ndcX + (2 * HANDLE_TOLERANCE_PX) / widthPx, ndcY);
-    const tolerance = reached ? Math.hypot(this.hitX - x, this.hitZ - z) : 0;
+    const tolerance = reached ? planeHypot(this.hitX - x, this.hitZ - z) : 0;
     this.groundHit(ndcX, ndcY);
     return Math.max(STUD_LDU, tolerance);
   }
@@ -4733,7 +4799,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!snapped) continue;
       const dx = snapped.x - pose.x;
       const dz = snapped.z - pose.z;
-      const distance = Math.hypot(dx, dz);
+      const distance = planeHypot(dx, dz);
       if (!best || distance < best.distance) best = { dx, dz, distance };
     }
     if (!best || !this.roadCleanShifted(members, targets, placedRoads, best.dx, best.dz))

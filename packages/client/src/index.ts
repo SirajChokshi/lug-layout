@@ -96,16 +96,19 @@ export type {
 } from "./edit/editor.ts";
 export type {
   CatalogPartView,
-  CrossingRampView,
-  CrossingView,
-  TrackBomLine,
   TrackCommitResult,
   TrackHeightView,
   TrackPieceView,
-  TrackSolveStats,
   TrackView,
 } from "./edit/track-edit-session.ts";
-export type { TrackLowClearanceView, TrackUnsupportedView } from "./edit/track-world.ts";
+export type { TrackBomLine } from "./edit/track-drawing.ts";
+export type { TrackSolveStats } from "./edit/solve-samples.ts";
+export type {
+  CrossingRampView,
+  CrossingView,
+  TrackLowClearanceView,
+  TrackUnsupportedView,
+} from "./edit/track-world.ts";
 export type { RoadStrokeResult } from "./edit/road-edit-session.ts";
 export { heldItem, type HeldItemView, type HeldTables } from "./edit/held-item.ts";
 export type { FillView } from "./edit/fill-tool.ts";

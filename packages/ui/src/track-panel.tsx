@@ -237,7 +237,7 @@ export function TrackPanel({ snapshot }: { readonly snapshot: EditorSnapshot }) 
   if (track.solve) {
     rows.push([
       "Solver per pointer move",
-      `median ${track.solve.medianMs.toFixed(2)} ms, p95 ${track.solve.p95Ms.toFixed(2)} ms, max ${track.solve.maxMs.toFixed(2)} ms (${integer.format(track.solve.samples)} moves)`,
+      `median ${track.solve.medianMs.toFixed(2)} ms, p95 ${track.solve.p95Ms.toFixed(2)} ms, max ${track.solve.maxMs.toFixed(2)} ms (last ${integer.format(track.solve.samples)} moves)`,
     ]);
   }
   return (

@@ -1063,6 +1063,7 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
 
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
+  private changes = 0;
   private readonly live = new Set<PlacedEntry>();
   private readonly byChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byFootprintChunk = new Map<number, Set<PlacedEntry>>();
@@ -1120,6 +1121,10 @@ export class PlacedChunks {
 
   models(): ReadonlyArray<PlacedModel> {
     return this.entries;
+  }
+
+  get version(): number {
+    return this.changes;
   }
 
   apply(edit: AppliedEdit, placeableOf: (refId: number) => Placeable): ViewUpdate {
@@ -1280,6 +1285,7 @@ export class PlacedChunks {
     this.byBoxChunk.clear();
     this.chunkStuds.clear();
     this.entries.length = 0;
+    this.changes++;
     this.live.clear();
   }
 
@@ -1297,6 +1303,7 @@ export class PlacedChunks {
       this.carriedTrack,
     );
     this.entries.push(entry);
+    this.changes++;
     this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
     const { chunks } = entry;
@@ -1334,6 +1341,7 @@ export class PlacedChunks {
     const entry = this.entries[index];
     if (!entry) throw new Error("placement is not in this world view");
     this.entries.splice(index, 1);
+    this.changes++;
     this.live.delete(entry);
     this.backend.setFarModel(entry.id, null);
     const { chunks } = entry;

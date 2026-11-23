@@ -11,7 +11,7 @@ import type { ClosureResult } from "./closure.ts";
 import {
   addRotated,
   coefficientNumbers,
-  coefficientsLdu,
+  coefficientsLduInto,
   type KitOutlines,
 } from "./kit-outlines.ts";
 import {
@@ -19,6 +19,12 @@ import {
   PROJECTED_DISTANCE,
   PROJECTED_TANGENT,
   PROJECTION_FLOATS,
+  PROJECTION_QUERY_FLOATS,
+  QUERY_FROM_ARC,
+  QUERY_TANGENT_HALF_SPAN,
+  QUERY_TO_ARC,
+  QUERY_X,
+  QUERY_Z,
   type StrokePath,
 } from "./stroke-path.ts";
 import {
@@ -49,7 +55,7 @@ export interface StudlessScan {
 
 export interface FollowedRun {
   readonly moves: ReadonlyArray<TrackMove>;
-  readonly progressLdu: ReadonlyArray<number>;
+  readonly progressLdu: Float64Array;
   readonly blocked: TrackMove | null;
   readonly blocker: number;
   readonly joined: boolean;
@@ -67,6 +73,7 @@ const HEADING_WEIGHT_PIECES_PER_RADIAN = 0.5;
 const JOIN_SLACK_PIECES = 2;
 const JOIN_BACKOFF_PIECES = 4;
 const MAX_FOLLOWED_PIECES = 512;
+const NO_MOVES: ReadonlyArray<TrackMove> = [];
 
 function headingError(heading: number, tangent: number): number {
   if (Number.isNaN(tangent)) return 0;
@@ -77,6 +84,36 @@ function headingError(heading: number, tangent: number): number {
 export class StrokeRouter {
   readonly startReachLdu: number;
   private readonly projection = new Float64Array(PROJECTION_FLOATS);
+  private readonly query = new Float64Array(PROJECTION_QUERY_FLOATS);
+  private readonly branchCosts = new Float64Array(LOOKAHEAD_PIECES + 1);
+  private readonly branchX = new Float64Array(LOOKAHEAD_PIECES + 1);
+  private readonly branchZ = new Float64Array(LOOKAHEAD_PIECES + 1);
+  private readonly branchProgress = new Float64Array(LOOKAHEAD_PIECES + 1);
+  private readonly branchHeading = new Int32Array(LOOKAHEAD_PIECES + 1);
+  private readonly coefficients = new Float64Array(ZETA16_COEFFICIENT_COUNT);
+  private readonly next = new Float64Array(ZETA16_COEFFICIENT_COUNT);
+  private readonly stepLdu = new Float64Array(2);
+  private readonly originLdu = new Float64Array(2);
+  private originPose: Pose16 | null = null;
+  private finalStart: Pose16 | null = null;
+  private finalGoal: Pose16 | null = null;
+  private finalCoefficients: Float64Array | null = null;
+  private readonly chosenFrames = new Int32Array(MAX_FOLLOWED_PIECES);
+  private readonly chosenProgress = new Float64Array(MAX_FOLLOWED_PIECES + 1);
+  private lastMoves: ReadonlyArray<TrackMove> = NO_MOVES;
+  private readonly joinLimits = new Int32Array(JOIN_BACKOFF_PIECES + 1);
+  private readonly lastJoinLimits = new Int32Array(JOIN_BACKOFF_PIECES + 1);
+  private lastJoinLimitCount = -1;
+  private lastJoin: StrokeJoin | null = null;
+  private lastJoinStart: Pose16 | null = null;
+  private lastJoinMoves: ReadonlyArray<TrackMove> | null = null;
+  private lastJoinGoal: StrokeGoal | null = null;
+  private lastJoinSite: StrokeSite | null = null;
+  private lastScan: StudlessScan | null = null;
+  private lastScanStart: Pose16 | null = null;
+  private lastScanMoves: ReadonlyArray<TrackMove> | null = null;
+  private lastScanSite: StrokeSite | null = null;
+  private lastScanGoalOwner = NO_OBSTACLE;
   private readonly windowLdu: number;
   private readonly tangentSpanLdu: number;
   private readonly headingWeightLdu: number;
@@ -94,29 +131,29 @@ export class StrokeRouter {
     site: StrokeSite,
     goal: StrokeGoal | null = null,
   ): FollowedRun {
-    const { outlines } = this;
+    const { outlines, coefficients, next, stepLdu, chosenFrames, chosenProgress } = this;
     const { clearance } = site;
-    const origin = poseLdu(start);
-    const coefficients = new Float64Array(ZETA16_COEFFICIENT_COUNT);
-    const next = new Float64Array(ZETA16_COEFFICIENT_COUNT);
-    const final = goal
-      ? coefficientNumbers(subtractZeta16(goal.pose.position, start.position))
-      : null;
+    const origin = this.originOf(start);
+    const originX = origin[0] ?? 0;
+    const originZ = origin[1] ?? 0;
+    coefficients.fill(0);
+    const final = goal ? this.finalOf(goal.pose, start) : null;
     const finalHeading = goal ? normalizeHeading16(goal.pose.heading + HALF_TURN_16) : -1;
     let heading = start.heading;
-    let x = origin.x;
-    let z = origin.z;
+    let x = originX;
+    let z = originZ;
     let progress = this.progressOf(stroke, x, z, 0);
-    const moves: TrackMove[] = [];
-    const progressLdu = [progress];
+    let count = 0;
+    chosenProgress[0] = progress;
     let laidLdu = 0;
     let blocked: TrackMove | null = null;
     let blocker = NO_OBSTACLE;
     let joined = false;
     const mark = clearance.count;
     try {
-      while (moves.length < MAX_FOLLOWED_PIECES) {
-        const frame = outlines.frames[this.choose(stroke, x, z, heading, progress)];
+      while (count < MAX_FOLLOWED_PIECES) {
+        const chosen = this.choose(stroke, x, z, heading, progress);
+        const frame = outlines.frames[chosen];
         if (!frame) break;
         if (stroke.length - progress < frame.lengthLdu / 2) break;
         if (laidLdu + frame.lengthLdu > stroke.length + outlines.maxLengthLdu) break;
@@ -131,7 +168,7 @@ export class StrokeRouter {
           heading,
           x,
           z,
-          moves.length === 0 ? site.startOwner : mark + moves.length - 1,
+          count === 0 ? site.startOwner : mark + count - 1,
           lands && goal ? goal.owner : NO_OBSTACLE,
         );
         if (hit !== NO_OBSTACLE) {
@@ -140,14 +177,15 @@ export class StrokeRouter {
           break;
         }
         outlines.addTo(clearance, frame, heading, x, z);
-        moves.push(frame.move);
+        chosenFrames[count] = chosen;
+        count++;
         coefficients.set(next);
         heading = nextHeading;
-        const [dx, dz] = coefficientsLdu(coefficients);
-        x = origin.x + dx;
-        z = origin.z + dz;
+        coefficientsLduInto(coefficients, stepLdu);
+        x = originX + (stepLdu[0] ?? 0);
+        z = originZ + (stepLdu[1] ?? 0);
         progress = this.progressOf(stroke, x, z, progress);
-        progressLdu.push(progress);
+        chosenProgress[count] = progress;
         laidLdu += frame.lengthLdu;
         if (lands) {
           joined = true;
@@ -157,7 +195,46 @@ export class StrokeRouter {
     } finally {
       clearance.truncate(mark);
     }
-    return { moves, progressLdu, blocked, blocker, joined };
+    const progressLdu = new Float64Array(count + 1);
+    for (let i = 0; i <= count; i++) progressLdu[i] = chosenProgress[i] ?? 0;
+    return { moves: this.chosenMoves(count), progressLdu, blocked, blocker, joined };
+  }
+
+  private originOf(start: Pose16): Float64Array {
+    if (start !== this.originPose) {
+      const origin = poseLdu(start);
+      this.originLdu[0] = origin.x;
+      this.originLdu[1] = origin.z;
+      this.originPose = start;
+    }
+    return this.originLdu;
+  }
+
+  private finalOf(goal: Pose16, start: Pose16): Float64Array {
+    const cached = this.finalCoefficients;
+    if (cached && goal === this.finalGoal && start === this.finalStart) return cached;
+    const final = coefficientNumbers(subtractZeta16(goal.position, start.position));
+    this.finalCoefficients = final;
+    this.finalGoal = goal;
+    this.finalStart = start;
+    return final;
+  }
+
+  private chosenMoves(count: number): ReadonlyArray<TrackMove> {
+    const { frames } = this.outlines;
+    const last = this.lastMoves;
+    let same = last.length === count;
+    for (let i = 0; same && i < count; i++) {
+      same = last[i] === frames[this.chosenFrames[i] ?? 0]?.move;
+    }
+    if (same) return last;
+    const moves: TrackMove[] = [];
+    for (let i = 0; i < count; i++) {
+      const frame = frames[this.chosenFrames[i] ?? 0];
+      if (frame) moves.push(frame.move);
+    }
+    this.lastMoves = moves;
+    return moves;
   }
 
   join(
@@ -169,10 +246,67 @@ export class StrokeRouter {
     closeWhole: (site: ClosureSite) => ClosureResult,
   ): StrokeJoin {
     if (followed.joined) return { kind: "exact", moves: followed.moves };
+    const { supportedPieces } = this.studlessScan(start, followed.moves, site, NO_OBSTACLE);
+    const backoffFrom = Math.min(followed.moves.length, supportedPieces);
+    const backoffTo = Math.max(1, backoffFrom - JOIN_BACKOFF_PIECES);
+    const limits = this.backoffLimits(stroke, followed, backoffFrom, backoffTo);
+    const last = this.lastJoin;
+    if (
+      last !== null &&
+      start === this.lastJoinStart &&
+      followed.moves === this.lastJoinMoves &&
+      goal === this.lastJoinGoal &&
+      site === this.lastJoinSite &&
+      this.sameJoinLimits(limits)
+    ) {
+      return last;
+    }
+    const joined = this.searchJoin(start, followed, goal, site, closeWhole, backoffFrom, backoffTo);
+    this.lastJoin = joined;
+    this.lastJoinStart = start;
+    this.lastJoinMoves = followed.moves;
+    this.lastJoinGoal = goal;
+    this.lastJoinSite = site;
+    this.lastJoinLimits.set(this.joinLimits);
+    this.lastJoinLimitCount = limits;
+    return joined;
+  }
+
+  private backoffLimits(
+    stroke: StrokePath,
+    followed: FollowedRun,
+    backoffFrom: number,
+    backoffTo: number,
+  ): number {
+    let count = 0;
+    for (let k = backoffFrom; k >= backoffTo; k--) {
+      const remaining = Math.max(0, stroke.length - (followed.progressLdu[k] ?? 0));
+      this.joinLimits[count++] =
+        Math.ceil(remaining / this.outlines.minLengthLdu) + JOIN_SLACK_PIECES;
+    }
+    return count;
+  }
+
+  private sameJoinLimits(count: number): boolean {
+    if (count !== this.lastJoinLimitCount) return false;
+    for (let i = 0; i < count; i++) {
+      if (this.joinLimits[i] !== this.lastJoinLimits[i]) return false;
+    }
+    return true;
+  }
+
+  private searchJoin(
+    start: Pose16,
+    followed: FollowedRun,
+    goal: StrokeGoal,
+    site: StrokeSite,
+    closeWhole: (site: ClosureSite) => ClosureResult,
+    backoffFrom: number,
+    backoffTo: number,
+  ): StrokeJoin {
     const { outlines } = this;
     const { kit } = outlines;
     const { clearance, support } = site;
-    const { supportedPieces } = this.studlessScan(start, followed.moves, site, NO_OBSTACLE);
     const mark = clearance.count;
     const poses: Pose16[] = [start];
     try {
@@ -183,14 +317,11 @@ export class StrokeRouter {
         pose = advance(pose, move);
         poses.push(pose);
       }
-      const backoffFrom = Math.min(followed.moves.length, supportedPieces);
-      const backoffTo = Math.max(1, backoffFrom - JOIN_BACKOFF_PIECES);
       for (let k = backoffFrom; k >= backoffTo; k--) {
         clearance.truncate(mark + k);
         const from = poses[k];
         if (!from) continue;
-        const remaining = Math.max(0, stroke.length - (followed.progressLdu[k] ?? 0));
-        const maxPieces = Math.ceil(remaining / outlines.minLengthLdu) + JOIN_SLACK_PIECES;
+        const maxPieces = this.joinLimits[backoffFrom - k] ?? 0;
         const run = shortClearClosure(
           kit,
           from,
@@ -233,6 +364,31 @@ export class StrokeRouter {
     site: StrokeSite,
     goalOwner: number,
   ): StudlessScan {
+    const last = this.lastScan;
+    if (
+      last !== null &&
+      start === this.lastScanStart &&
+      moves === this.lastScanMoves &&
+      site === this.lastScanSite &&
+      goalOwner === this.lastScanGoalOwner
+    ) {
+      return last;
+    }
+    const scan = this.scanStudless(start, moves, site, goalOwner);
+    this.lastScan = scan;
+    this.lastScanStart = start;
+    this.lastScanMoves = moves;
+    this.lastScanSite = site;
+    this.lastScanGoalOwner = goalOwner;
+    return scan;
+  }
+
+  private scanStudless(
+    start: Pose16,
+    moves: ReadonlyArray<TrackMove>,
+    site: StrokeSite,
+    goalOwner: number,
+  ): StudlessScan {
     const { outlines } = this;
     const { clearance, support } = site;
     const mark = clearance.count;
@@ -266,8 +422,18 @@ export class StrokeRouter {
   }
 
   private progressOf(stroke: StrokePath, x: number, z: number, from: number): number {
-    stroke.project(x, z, from, from + this.windowLdu, this.tangentSpanLdu, this.projection);
+    this.projectFrom(stroke, x, z, from);
     return Math.max(from, this.projection[PROJECTED_ARC] ?? from);
+  }
+
+  private projectFrom(stroke: StrokePath, x: number, z: number, from: number): void {
+    const query = this.query;
+    query[QUERY_X] = x;
+    query[QUERY_Z] = z;
+    query[QUERY_FROM_ARC] = from;
+    query[QUERY_TO_ARC] = from + this.windowLdu;
+    query[QUERY_TANGENT_HALF_SPAN] = this.tangentSpanLdu;
+    stroke.project(query, this.projection);
   }
 
   private choose(
@@ -277,10 +443,16 @@ export class StrokeRouter {
     heading: number,
     progress: number,
   ): number {
+    const costs = this.branchCosts;
+    this.branchX[LOOKAHEAD_PIECES] = x;
+    this.branchZ[LOOKAHEAD_PIECES] = z;
+    this.branchHeading[LOOKAHEAD_PIECES] = heading;
+    this.branchProgress[LOOKAHEAD_PIECES] = progress;
     let best = 0;
     let bestCost = Number.POSITIVE_INFINITY;
     for (let f = 0; f < this.outlines.frames.length; f++) {
-      const cost = this.branch(stroke, f, x, z, heading, progress, LOOKAHEAD_PIECES);
+      this.branch(stroke, f, LOOKAHEAD_PIECES);
+      const cost = costs[LOOKAHEAD_PIECES] ?? Number.POSITIVE_INFINITY;
       if (cost < bestCost) {
         bestCost = cost;
         best = f;
@@ -289,33 +461,40 @@ export class StrokeRouter {
     return best;
   }
 
-  private branch(
-    stroke: StrokePath,
-    f: number,
-    x: number,
-    z: number,
-    heading: number,
-    progress: number,
-    depth: number,
-  ): number {
+  private branch(stroke: StrokePath, f: number, depth: number): void {
+    const costs = this.branchCosts;
     const frame = this.outlines.frames[f];
-    if (!frame) return Number.POSITIVE_INFINITY;
-    const ex = x + (frame.exitX[heading] ?? 0);
-    const ez = z + (frame.exitZ[heading] ?? 0);
+    if (!frame) {
+      costs[depth] = Number.POSITIVE_INFINITY;
+      return;
+    }
+    const heading = this.branchHeading[depth] ?? 0;
+    const progress = this.branchProgress[depth] ?? 0;
+    const ex = (this.branchX[depth] ?? 0) + (frame.exitX[heading] ?? 0);
+    const ez = (this.branchZ[depth] ?? 0) + (frame.exitZ[heading] ?? 0);
     const exitHeading = normalizeHeading16(heading + frame.turn);
     const p = this.projection;
-    stroke.project(ex, ez, progress, progress + this.windowLdu, this.tangentSpanLdu, p);
+    this.projectFrom(stroke, ex, ez, progress);
     const arc = Math.max(progress, p[PROJECTED_ARC] ?? progress);
     const cost =
       (p[PROJECTED_DISTANCE] ?? 0) +
       this.headingWeightLdu * headingError(exitHeading, p[PROJECTED_TANGENT] ?? Number.NaN);
-    if (depth === 1 || arc >= stroke.length) return cost;
+    if (depth === 1 || arc >= stroke.length) {
+      costs[depth] = cost;
+      return;
+    }
+    const child = depth - 1;
+    this.branchX[child] = ex;
+    this.branchZ[child] = ez;
+    this.branchHeading[child] = exitHeading;
+    this.branchProgress[child] = arc;
     let bestChild = Number.POSITIVE_INFINITY;
     for (let g = 0; g < this.outlines.frames.length; g++) {
-      const child = this.branch(stroke, g, ex, ez, exitHeading, arc, depth - 1);
-      if (child < bestChild) bestChild = child;
+      this.branch(stroke, g, child);
+      const childCost = costs[child] ?? Number.POSITIVE_INFINITY;
+      if (childCost < bestChild) bestChild = childCost;
     }
-    return cost + bestChild;
+    costs[depth] = cost + bestChild;
   }
 }
 

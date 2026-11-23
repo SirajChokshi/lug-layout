@@ -11,7 +11,7 @@ import {
   type ToolHintView,
   type ToolSpeech,
 } from "@brr/client";
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { Chord, PLATFORM } from "./keys.tsx";
 import { pendingSearch, useLateCue, useSteadySpeech } from "./late-cue.ts";
 import { useHotbarSnapshot } from "./use-hotbar.ts";
@@ -174,7 +174,11 @@ function HotbarSlots({ snapshot, hotbar, slots }: HotbarSlotsProps) {
 
 export function ToolHud({ snapshot, play, hotbar }: ToolHudProps) {
   const view = toolHints(snapshot, play);
-  const slots = hotbarView(useHotbarSnapshot(hotbar), snapshot.catalog);
+  const hotbarSnapshot = useHotbarSnapshot(hotbar);
+  const slots = useMemo(
+    () => hotbarView(hotbarSnapshot, snapshot.catalog),
+    [hotbarSnapshot, snapshot.catalog],
+  );
   const cued = useLateCue(view.waiting === null ? null : pendingSearch(snapshot));
   const detail = shownDetail(view, cued);
   const title = detail === null ? view.title : `${view.title} · ${detail}`;

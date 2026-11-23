@@ -7,6 +7,7 @@ import {
   rotateZeta16,
   zeta16ToStuds,
   type Zeta16,
+  planeHypot,
 } from "@brr/math";
 import type { DrawingKit } from "./drawing-kit.ts";
 import {
@@ -44,13 +45,20 @@ export function coefficientNumbers(value: Zeta16): Float64Array {
 }
 
 export function coefficientsLdu(coefficients: Float64Array): readonly [number, number] {
+  const out = new Float64Array(2);
+  coefficientsLduInto(coefficients, out);
+  return [out[0] ?? 0, out[1] ?? 0];
+}
+
+export function coefficientsLduInto(coefficients: Float64Array, out: Float64Array): void {
   let x = 0;
   let z = 0;
   for (let k = 0; k < ZETA16_COEFFICIENT_COUNT; k++) {
     x += (coefficients[k] ?? 0) * (BASIS_X[k] ?? 0);
     z += (coefficients[k] ?? 0) * (BASIS_Z[k] ?? 0);
   }
-  return [x * STUD_LDU, z * STUD_LDU];
+  out[0] = x * STUD_LDU;
+  out[1] = z * STUD_LDU;
 }
 
 export function addRotated(
@@ -73,7 +81,7 @@ export function addRotated(
 
 function arcLengthLdu(move: TrackMove): number {
   const studs = zeta16ToStuds(move.delta);
-  const chord = Math.hypot(studs.x, studs.z) * STUD_LDU;
+  const chord = planeHypot(studs.x, studs.z) * STUD_LDU;
   const steps = Math.min(move.turn, ZETA16_ORDER - move.turn);
   if (steps === 0) return chord;
   const angle = steps * HEADING_RADIANS;
@@ -99,7 +107,7 @@ export class KitOutlines {
     this.maxStepLdu = Math.max(
       ...this.frames.map((f) => {
         const studs = zeta16ToStuds(f.move.delta);
-        return Math.hypot(studs.x, studs.z) * STUD_LDU;
+        return planeHypot(studs.x, studs.z) * STUD_LDU;
       }),
     );
   }
@@ -139,9 +147,12 @@ export class KitOutlines {
   }
 
   frameFor(move: TrackMove): MoveFrame {
-    const frame = this.frames.find((f) => f.move === move);
-    if (!frame) throw new Error(`${move.piece.id} is not a drawing-kit move`);
-    return frame;
+    const { frames } = this;
+    for (let f = 0; f < frames.length; f++) {
+      const frame = frames[f];
+      if (frame && frame.move === move) return frame;
+    }
+    throw new Error(`${move.piece.id} is not a drawing-kit move`);
   }
 
   outline(frame: MoveFrame, heading: number): Float64Array {
@@ -199,7 +210,7 @@ export class KitOutlines {
     x: number,
     z: number,
   ): number {
-    return clearance.add(rotateOutline(this.outline(frame, heading), 0, x, z));
+    return clearance.addRotated(this.outline(frame, heading), 0, x, z);
   }
 
   meet(

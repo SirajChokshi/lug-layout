@@ -85,6 +85,18 @@ export interface ModelTrackCounts {
   readonly unanchored: number;
 }
 
+export interface CrossingRampView {
+  readonly part: string;
+  readonly title: string;
+  readonly count: number;
+}
+
+export interface CrossingView {
+  readonly tracks: number;
+  readonly roadwayCells: number;
+  readonly ramps: ReadonlyArray<CrossingRampView>;
+}
+
 export interface PlayRails {
   readonly track: PlayTrack | null;
   readonly carriers: ReadonlyArray<RailCarrier>;
@@ -96,7 +108,7 @@ export interface UnsupportedTrack {
 }
 
 export type TrackBundle = Pick<BundleIndex, "trackCatalog" | "trackShapes" | "levelCrossing">;
-export type PlacedModels = Pick<PlacedChunks, "models">;
+export type PlacedModels = Pick<PlacedChunks, "models" | "version">;
 
 interface CrossingInputs {
   readonly ramps: CrossingRamps;
@@ -134,6 +146,7 @@ export interface ITrackWorld extends PlanTrackSource {
   lowClearanceSince(firstPiece: number): TrackLowClearanceView | null;
   refreshCrossings(): void;
   crossings(): ReadonlyArray<SuggestedCrossing>;
+  crossingViews(): ReadonlyArray<CrossingView>;
   crossingOutlines(): ReadonlyArray<PlacedOutline>;
   restore(records: ReadonlyArray<TrackRecordV1>): ReadonlyArray<Issue>;
   adoptRestored(): void;
@@ -146,7 +159,7 @@ export const NOTHING_REBUILT: RebuildReport = { chunks: 0, instances: 0, studs: 
 const NO_TRACK_PARTS: ReadonlySet<number> = new Set();
 const NO_IDS: ReadonlySet<number> = new Set();
 const TRACK_SUPPORT_TABLES = "track-drawing-kit";
-const NO_PLACED_MODELS: PlacedModels = { models: () => [] };
+const NO_PLACED_MODELS: PlacedModels = { models: () => [], version: 0 };
 
 @injectable()
 export class TrackWorld implements ITrackWorld {
@@ -171,8 +184,12 @@ export class TrackWorld implements ITrackWorld {
   private lowTrack: ReadonlyArray<LowClearance> | null = null;
   private crossingRamps: CrossingRamps | null = null;
   private suggested: ReadonlyArray<SuggestedCrossing> = [];
+  private suggestedViews: ReadonlyArray<CrossingView> | null = null;
   private crossingInputs: CrossingInputs | null = null;
   private rampChunks: ReadonlyArray<number> = [];
+  private countedModels: PlacedModels | null = null;
+  private countedVersion = -1;
+  private counts: ModelTrackCounts | null = null;
 
   constructor(
     @inject(SCENE_BACKEND)
@@ -368,6 +385,22 @@ export class TrackWorld implements ITrackWorld {
   }
 
   modelCounts(): ModelTrackCounts {
+    const cached = this.counts;
+    if (
+      cached &&
+      this.countedModels === this.placed &&
+      this.countedVersion === this.placed.version
+    ) {
+      return cached;
+    }
+    const counts = this.countModelTrack();
+    this.counts = counts;
+    this.countedModels = this.placed;
+    this.countedVersion = this.placed.version;
+    return counts;
+  }
+
+  private countModelTrack(): ModelTrackCounts {
     let pieces = 0;
     let runFrame = 0;
     let offField = 0;
@@ -513,6 +546,7 @@ export class TrackWorld implements ITrackWorld {
     this.suggested = ramps.suggest(roads, pieces, models, (band) =>
       this.rampClearance(track, models, band),
     );
+    this.suggestedViews = null;
     const chunks = ramps.instances(this.suggested);
     for (const key of this.rampChunks) if (!chunks.has(key)) this.backend.deleteChunk(key);
     for (const [key, chunk] of chunks) {
@@ -524,6 +558,30 @@ export class TrackWorld implements ITrackWorld {
 
   crossings(): ReadonlyArray<SuggestedCrossing> {
     return this.suggested;
+  }
+
+  crossingViews(): ReadonlyArray<CrossingView> {
+    this.suggestedViews ??= this.viewCrossings();
+    return this.suggestedViews;
+  }
+
+  private viewCrossings(): ReadonlyArray<CrossingView> {
+    return this.suggested.map((crossing) => this.crossingView(crossing));
+  }
+
+  private crossingView({ crossing, ramps }: SuggestedCrossing): CrossingView {
+    const parts = this.catalog.parts();
+    const counts = new Map<string, number>();
+    for (const ramp of ramps) counts.set(ramp.part, (counts.get(ramp.part) ?? 0) + 1);
+    return {
+      tracks: crossing.tracks.length,
+      roadwayCells: crossing.roadwayCells,
+      ramps: [...counts].map(([part, count]) => ({
+        part: part.replace("ldraw:", ""),
+        title: parts.find((asset) => asset.id === part)?.title ?? part,
+        count,
+      })),
+    };
   }
 
   crossingOutlines(): ReadonlyArray<PlacedOutline> {

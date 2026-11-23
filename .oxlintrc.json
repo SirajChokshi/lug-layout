@@ -17,6 +17,18 @@
   },
   "overrides": [
     {
+      "files": ["packages/domain/src/track/**/*.ts", "packages/client/src/edit/**/*.ts"],
+      "rules": {
+        "brr/no-math-hypot": "error"
+      }
+    },
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "brr/no-math-hypot": "off"
+      }
+    },
+    {
       "files": [
         "**/*.config.ts",
         "tools/oxlint-plugin/src/index.ts",

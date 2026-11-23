@@ -5,7 +5,7 @@ import {
   type RoadPlacement,
   type RoadSurface,
 } from "@brr/domain";
-import { SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
+import { SIXTEENTHS_PER_LDU, STUD_LDU, isRot90, planeHypot, rot90Cos, rot90Sin } from "@brr/math";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 
 export interface CellExtent {
@@ -520,7 +520,7 @@ function consider(query: SnapQuery, x: number, z: number, contactWith: CellExten
       joinedCells: fit.joinedCells,
       joinedRoadCells: fit.joinedRoadCells,
     },
-    distance: Math.hypot(
+    distance: planeHypot(
       cursorX - (x + (ghost.minX + ghost.maxX) / 2),
       cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
     ),

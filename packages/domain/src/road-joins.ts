@@ -59,6 +59,11 @@ export interface RoadJoinReport {
   readonly segments: ReadonlyArray<RoadEdgeSegment>;
 }
 
+export interface RoadPlacementJoin {
+  readonly mismatched: boolean;
+  readonly overlapPartner: number | null;
+}
+
 interface PlacedCell {
   readonly placement: number;
   readonly centreX: number;
@@ -657,6 +662,34 @@ export class RoadNetwork {
       overlaps: [...this.overlapPairs.values()].toSorted(byPair),
       segments: mergeSegments(tally.edgeCells),
     };
+  }
+
+  placementJoin(id: number): RoadPlacementJoin {
+    let mismatched = false;
+    for (let owner = 0; owner < this.poses.length && !mismatched; owner++) {
+      if (this.poses[owner]?.id === id) mismatched = this.mismatchesAt(owner);
+    }
+    let first: readonly [number, number] | null = null;
+    for (const pair of this.overlapPairs.values()) {
+      if (pair[0] !== id && pair[1] !== id) continue;
+      if (first === null || byPair(pair, first) < 0) first = pair;
+    }
+    const overlapPartner = first === null ? null : first[0] === id ? first[1] : first[0];
+    return { mismatched, overlapPartner };
+  }
+
+  private mismatchesAt(owner: number): boolean {
+    const pose = this.poses[owner];
+    if (!pose) return false;
+    const seams = this.seams;
+    for (let line = 0; line < pose.stamp.seamLineEnd.length; line++) {
+      this.collectLine(pose, line, false);
+      seams.classify();
+      for (let i = 0; i < seams.pairCount; i++) {
+        if (seams.statusOf(i) === MISMATCHED) return true;
+      }
+    }
+    return false;
   }
 
   fit(candidate: RoadPlacement, into: RoadFit): RoadFit {
