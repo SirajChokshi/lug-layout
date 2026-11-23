@@ -443,7 +443,7 @@ test("a curve turned 0.1° off the field is reported and nothing joins it", asyn
   expect(await editor.trackEnds()).toHaveLength(2);
 });
 
-test("an imported model whose own 9V run is joined to drawn track won't nudge off that join alone, and moves with the drawn run as one undo step that keeps every join", async ({
+test("an imported model whose own 9V run is joined to drawn track pulls off that join alone like real track, which undo joins again, and moves with the drawn run as one undo step that keeps every join", async ({
   page,
 }) => {
   const { text } = await layout(
@@ -473,11 +473,17 @@ test("an imported model whose own 9V run is joined to drawn track won't nudge of
   const laid = { poses: await editor.poses(), track: await editor.laidTrack() };
 
   expect(await editor.select({ x: model.x, z: model.z })).toBe(model.item);
-  const refusedBefore = await editor.counter("refused");
-  await editor.press("ArrowUp");
-  await expect(page.locator(".tool-hud")).toContainText("pull that join apart");
-  expect(await editor.counter("refused")).toBe(refusedBefore + 1);
+  await editor.press("ArrowLeft");
+  expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual({
+    poses: laid.poses.map((pose) =>
+      pose.item === model.item ? { ...model, x: model.x - STUD } : pose,
+    ),
+    track: laid.track,
+  });
+  expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 2, openEnds: 4 });
+  await editor.undo();
   expect({ poses: await editor.poses(), track: await editor.laidTrack() }).toEqual(laid);
+  expect(await editor.trackCounts()).toMatchObject({ pieces: 2, joins: 3, openEnds: 2 });
 
   await editor.shiftClickAt({ x: from.x + DRAWN_RUN_LDU / 4, z: from.z });
   await editor.shiftClickAt({ x: from.x + (DRAWN_RUN_LDU * 3) / 4, z: from.z });

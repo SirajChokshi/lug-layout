@@ -369,18 +369,6 @@ export interface TrackPieceHit {
   readonly distance: number;
 }
 
-export interface JoinEndView {
-  readonly placement: number;
-  readonly connector: number;
-  readonly pose: Pose16;
-  readonly yPlates: number;
-}
-
-export interface TrackJoinView {
-  readonly end: JoinEndView;
-  readonly partner: JoinEndView;
-}
-
 export interface LaidPieceView {
   readonly piece: string;
   readonly xLdu: number;
@@ -1319,33 +1307,6 @@ export class TrackDrawing implements ExtensionSite {
       box.maxZ = boxes[at + 5] ?? 0;
       if (contains(box)) out.push(p);
     }
-  }
-
-  joinsTouching(inside: ReadonlySet<number>): ReadonlyArray<TrackJoinView> {
-    const graph = this.graph;
-    const joins: TrackJoinView[] = [];
-    for (let end = 0; end < graph.endCount; end++) {
-      const partnerEnd = graph.endPartner[end] ?? NO_END;
-      if (partnerEnd === NO_END || graph.endFrame[end] !== WORLD_TRACK_FRAME.id) continue;
-      const placement = graph.endPlacement[end] ?? 0;
-      const partner = graph.endPlacement[partnerEnd] ?? 0;
-      if (!inside.has(placement)) continue;
-      if (inside.has(partner) && partnerEnd < end) continue;
-      joins.push({ end: this.joinEnd(end), partner: this.joinEnd(partnerEnd) });
-    }
-    return joins;
-  }
-
-  private joinEnd(end: number): JoinEndView {
-    const graph = this.graph;
-    const placement = graph.endPlacement[end] ?? 0;
-    const connector = graph.endConnector[end] ?? 0;
-    return {
-      placement,
-      connector,
-      pose: this.combined.connectorPose(placement, connector),
-      yPlates: graph.endYPlates[end] ?? 0,
-    };
   }
 
   connectorPose(catalogIndex: number, placement: Pose16, connector: number): Pose16 {
