@@ -31,10 +31,17 @@ export interface ConsistAnchor {
   readonly offsetLdu: number;
 }
 
+export interface CoupledVehicle {
+  readonly refId: number;
+  readonly colorId: number;
+  readonly reversed: boolean;
+}
+
 export interface ConsistPose {
   readonly refId: number;
   readonly colorId: number;
   readonly anchor: ConsistAnchor;
+  readonly coupled: ReadonlyArray<CoupledVehicle>;
 }
 
 export class ConsistHandle {
@@ -74,6 +81,9 @@ function pieceProblem(track: TrackPieceRef): string | null {
 export function consistPoseProblem(pose: ConsistPose): string | null {
   const { anchor } = pose;
   if (!isCount(pose.refId) || !isCount(pose.colorId)) return "its catalog ref is not an index";
+  if (pose.coupled.some(({ refId, colorId }) => !isCount(refId) || !isCount(colorId))) {
+    return "a vehicle coupled to it has no catalog ref";
+  }
   if (!isCount(anchor.route)) return "its route is not an index";
   if (!isCount(anchor.offsetLdu)) return "its offset along the route is not a whole LDU";
   return pieceProblem(anchor.track);

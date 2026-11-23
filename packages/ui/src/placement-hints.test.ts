@@ -107,6 +107,7 @@ function placing(
       z: hovered.pose.z,
       yPlates: 0,
       onRails: false,
+      couples: null,
       refusal: hovered.accepted ? null : refusalOf(hovered.hit),
       placement: hovered,
     },

@@ -17,8 +17,8 @@ const POSE_FRONT_BOGIE = 3;
 const POSE_REAR_BOGIE = 6;
 
 export interface StandingConsist {
-  readonly model: PlayModel;
   readonly vehicles: ReadonlyArray<ConsistVehicle>;
+  readonly vehicleModels: ReadonlyArray<PlayModel>;
   readonly parts: ReadonlyArray<PartAsset>;
   readonly colors: ColorTable;
 }
@@ -27,14 +27,24 @@ function rigidBodies(vehicle: ConsistVehicle): ReadonlyArray<RigidBodyInstances 
   return [vehicle.body, vehicle.frontBogie, vehicle.rearBogie];
 }
 
-function rigidChunk(rigid: RigidBodyInstances, consist: StandingConsist): ChunkInstances {
+function vehicleModel(consist: StandingConsist, v: number): PlayModel {
+  const model = consist.vehicleModels[v];
+  if (!model) throw new Error(`a standing consist has no model for vehicle ${v}`);
+  return model;
+}
+
+function rigidChunk(
+  rigid: RigidBodyInstances,
+  consist: StandingConsist,
+  model: PlayModel,
+): ChunkInstances {
   const count = rigid.instances.length;
   const partIndex = new Uint16Array(count);
   const colorIndex = new Uint16Array(count);
   for (let k = 0; k < count; k++) {
     const i = rigid.instances[k] ?? 0;
-    partIndex[k] = consist.model.model.partIndex[i] ?? 0;
-    colorIndex[k] = consist.model.colorIndex[i] ?? 0;
+    partIndex[k] = model.model.partIndex[i] ?? 0;
+    colorIndex[k] = model.colorIndex[i] ?? 0;
   }
   return withStuds(
     { originX: 0, originZ: 0, count, partIndex, colorIndex, matrices: rigid.matrices },
@@ -52,6 +62,7 @@ function bodyPoseAt(v: number, body: number): number {
 
 interface PosedBody {
   readonly rigid: RigidBodyInstances;
+  readonly model: PlayModel;
   readonly at: number;
   readonly y: number;
 }
@@ -60,7 +71,7 @@ export function standingGhost(
   consist: StandingConsist,
   poses: Float64Array,
   railTopY: number,
-  remainder: StandingRemainder | null,
+  remainders: ReadonlyArray<StandingRemainder>,
   groundY: number,
 ): { readonly instances: ChunkInstances; readonly x: number; readonly z: number } {
   const originX = poses[POSE_BODY] ?? 0;
@@ -68,13 +79,15 @@ export function standingGhost(
   const posed: PosedBody[] = [];
   consist.vehicles.forEach((vehicle, v) => {
     const y = railTopY - vehicle.railTopY;
+    const model = vehicleModel(consist, v);
     rigidBodies(vehicle).forEach((rigid, body) => {
-      if (rigid) posed.push({ rigid, at: bodyPoseAt(v, body), y });
+      if (rigid) posed.push({ rigid, model, at: bodyPoseAt(v, body), y });
     });
   });
-  if (remainder) {
+  for (const remainder of remainders) {
     posed.push({
       rigid: remainder.body,
+      model: vehicleModel(consist, remainder.vehicle),
       at: bodyPoseAt(remainder.vehicle, BODY),
       y: groundY - remainder.lowestY,
     });
@@ -85,7 +98,7 @@ export function standingGhost(
   const colorIndex = new Uint16Array(count);
   const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
   let slot = 0;
-  for (const { rigid, at, y } of posed) {
+  for (const { rigid, model, at, y } of posed) {
     const x = (poses[at] ?? 0) - originX;
     const z = (poses[at + 1] ?? 0) - originZ;
     const c = Math.cos(poses[at + 2] ?? 0);
@@ -94,8 +107,8 @@ export function standingGhost(
       const i = rigid.instances[k] ?? 0;
       const m = k * INSTANCE_MATRIX_FLOATS;
       const o = slot * INSTANCE_MATRIX_FLOATS;
-      partIndex[slot] = consist.model.model.partIndex[i] ?? 0;
-      colorIndex[slot] = consist.model.colorIndex[i] ?? 0;
+      partIndex[slot] = model.model.partIndex[i] ?? 0;
+      colorIndex[slot] = model.colorIndex[i] ?? 0;
       for (let col = 0; col < 4; col++) {
         const lx = rigid.matrices[m + col] ?? 0;
         const ly = rigid.matrices[m + 4 + col] ?? 0;
@@ -131,7 +144,10 @@ export class StandingRemainderBody {
     groundY: number,
   ) {
     this.id = vehicleIds.take();
-    backend.setVehicle(this.id, rigidChunk(remainder.body, consist));
+    backend.setVehicle(
+      this.id,
+      rigidChunk(remainder.body, consist, vehicleModel(consist, remainder.vehicle)),
+    );
     const at = bodyPoseAt(remainder.vehicle, BODY);
     backend.setVehiclePose(
       this.id,
@@ -163,7 +179,7 @@ export class ConsistBodies {
       rigidBodies(vehicle).forEach((rigid, body) => {
         if (!rigid) return;
         const id = vehicleIds.take();
-        backend.setVehicle(id, rigidChunk(rigid, consist));
+        backend.setVehicle(id, rigidChunk(rigid, consist, vehicleModel(consist, v)));
         this.ids[v * BODIES_PER_VEHICLE + body] = id;
       });
     });

@@ -67,6 +67,8 @@ const consist: ConsistRecordV1 = {
   offsetLdu: 120,
 };
 
+const WAGON = { ref: "omr:10017-1", color: 0, reversed: false };
+
 function withConsist(patch: Record<string, unknown>) {
   return { ...manifest, consists: [{ ...consist, ...patch }] };
 }
@@ -103,17 +105,22 @@ function backwards<T>(rows: ReadonlyArray<T>): ReadonlyArray<T> {
 }
 
 describe("world schema v1", () => {
-  it("accepts a valid shard and manifest unchanged, with or without consists on the rails", () => {
+  it("accepts a valid shard and manifest unchanged, with or without consists on the rails and wagons coupled to them", () => {
     const decodedShard = decode(WorldShardV1, shard);
     const decodedManifest = decode(WorldManifestV1, manifest);
     const withTrain = withConsist({});
     const decodedWithTrain = decode(WorldManifestV1, withTrain);
+    const withWagons = withConsist({ coupled: [WAGON, { ...WAGON, reversed: true }] });
+    const decodedWithWagons = decode(WorldManifestV1, withWagons);
     expect(decodedShard.ok && canonicalJson(decodedShard.value)).toBe(canonicalJson(shard));
     expect(decodedManifest.ok && canonicalJson(decodedManifest.value)).toBe(
       canonicalJson(manifest),
     );
     expect(decodedWithTrain.ok && canonicalJson(decodedWithTrain.value)).toBe(
       canonicalJson(withTrain),
+    );
+    expect(decodedWithWagons.ok && canonicalJson(decodedWithWagons.value)).toBe(
+      canonicalJson(withWagons),
     );
   });
 
@@ -184,6 +191,17 @@ describe("world schema v1", () => {
       "$.consists.0.track.heading",
     ],
     ["a consist with an unknown key", withConsist({ facing: 1 }), "$.consists.0.facing"],
+    ["an empty coupled list", withConsist({ coupled: [] }), "$.consists.0.coupled"],
+    [
+      "a coupled wagon with an unknown key",
+      withConsist({ coupled: [{ ...WAGON, facing: 1 }] }),
+      "$.consists.0.coupled.0.facing",
+    ],
+    [
+      "a coupled wagon ref without a namespace",
+      withConsist({ coupled: [{ ...WAGON, ref: "10017-1" }] }),
+      "$.consists.0.coupled.0.ref",
+    ],
     [
       "a consist on a model off the lattice",
       withConsist({
@@ -305,12 +323,14 @@ describe("world schema v1", () => {
     expect(worldTrack(loaded.shards)).toEqual(track);
   });
 
-  it("keeps the consists on the rails through an archive, and counts their imported files as used", () => {
+  it("keeps the consists on the rails and their coupled wagons through an archive, and counts their imported files as used", () => {
     const sha256 = "a".repeat(64);
+    const wagonSha256 = "b".repeat(64);
     const consists: ConsistRecordV1[] = [
       { ...consist, ref: importRef(sha256) },
       {
         ...consist,
+        coupled: [{ ...WAGON, ref: importRef(wagonSha256), reversed: true }],
         reversed: false,
         offsetLdu: 0,
         track: {
@@ -335,7 +355,7 @@ describe("world schema v1", () => {
 
     expect(loaded.manifest.consists).toEqual(consists);
     expect(referencedImports(loaded.shards, loaded.manifest.consists ?? [])).toEqual(
-      new Set([sha256]),
+      new Set([sha256, wagonSha256]),
     );
     expect(referencedImports(loaded.shards, [])).toEqual(new Set());
   });

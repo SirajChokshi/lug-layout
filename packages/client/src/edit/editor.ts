@@ -239,7 +239,13 @@ import {
 } from "../plan/plan-producer.ts";
 import type { IEditorCamera } from "../camera/editor-camera.ts";
 import type { PlayModel } from "../play/play-models.ts";
-import type { IRailYard, RailAim, VehicleFootprint } from "../trains/rail-yard.ts";
+import type {
+  CoupledEnd,
+  IRailYard,
+  RailAim,
+  TrainMember,
+  VehicleFootprint,
+} from "../trains/rail-yard.ts";
 import { laidPieceRecord, laidPieceRef } from "../trains/rail-track.ts";
 import { errorText } from "./error-text.ts";
 import { boxLabel, type LabelView } from "./size-labels.ts";
@@ -408,12 +414,18 @@ export interface CrossingDump {
   readonly ramps: ReadonlyArray<RampDump>;
 }
 
+export interface CouplingView {
+  readonly end: CoupledEnd;
+  readonly train: string;
+}
+
 export interface HoverView {
   readonly x: number;
   readonly z: number;
   readonly yPlates: number;
   readonly refusal: string | null;
   readonly onRails: boolean;
+  readonly couples: CouplingView | null;
   readonly placement: PlacementHover | null;
 }
 
@@ -1936,7 +1948,10 @@ export class Editor implements IEditor, IEditedWorld {
 
   private async ensureStoredPlaceables({ shards, consists }: StoredContents): Promise<void> {
     const refIds = new Set<number>();
-    const placed = [...shards.flatMap((shard) => shard.placements), ...consists];
+    const placed = [
+      ...shards.flatMap((shard) => shard.placements),
+      ...consists.flatMap((consist) => [consist, ...(consist.coupled ?? [])]),
+    ];
     for (const { ref, color } of placed) {
       const target = this.catalog.resolveRef(ref, color);
       if (target) refIds.add(target.refId);
@@ -2706,9 +2721,10 @@ export class Editor implements IEditor, IEditedWorld {
   private aimTrain(train: PlayModel, ray: Float64Array, reversed: boolean): RailAim {
     const aim = this.railYard.aim(train, ray, reversed);
     const track = this.trackWorld.drawing();
-    if (aim.kind !== "seat" || !track || track.raisedCount() === 0) return aim;
+    if (aim.kind !== "seat" && aim.kind !== "couple") return aim;
+    if (!track || track.raisedCount() === 0) return aim;
     const meets = this.railYard
-      .seatFootprints(aim.seat, train)
+      .seatFootprints(aim.seat, train.label)
       .some(({ outline, railTopLdu, topLdu }) =>
         track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
       );
@@ -2780,10 +2796,13 @@ export class Editor implements IEditor, IEditedWorld {
 
   private hoverView(): HoverView | null {
     if (!this.hovering) return null;
-    const onRails = this.active !== null && this.trainAim !== null && this.trainAim.kind !== "off";
+    const aim = this.active !== null ? this.trainAim : null;
+    const onRails = aim !== null && aim.kind !== "off";
     const refusal = onRails ? this.railRefusal : this.assist.refusal;
     const yPlates = this.drawingTrack()?.drawingPlates ?? this.assist.yPlates;
     const { placement } = this.assist;
+    const couples =
+      aim?.kind === "couple" ? { end: aim.end, train: this.trainLabelOf(aim.holder.pose) } : null;
     const shown = this.state.hover;
     if (
       shown !== null &&
@@ -2792,11 +2811,13 @@ export class Editor implements IEditor, IEditedWorld {
       shown.yPlates === yPlates &&
       shown.refusal === refusal &&
       shown.onRails === onRails &&
+      shown.couples?.end === couples?.end &&
+      shown.couples?.train === couples?.train &&
       shown.placement === placement
     ) {
       return shown;
     }
-    return { x: this.hoverX, z: this.hoverZ, yPlates, refusal, onRails, placement };
+    return { x: this.hoverX, z: this.hoverZ, yPlates, refusal, onRails, couples, placement };
   }
 
   private roadReadout(): RoadSnapView | null {
@@ -3132,11 +3153,16 @@ export class Editor implements IEditor, IEditedWorld {
         this.refuse(refusedAt(active.id, at, aim.reason), null);
         return;
       }
+      if (aim.kind === "couple") {
+        this.couple(aim, { refId: this.activeRefId, colorId: active.worldColor }, eventTimeMs);
+        return;
+      }
       this.show(
         this.history.placeConsist({
           refId: this.activeRefId,
           colorId: active.worldColor,
           anchor: aim.seat.anchor,
+          coupled: [],
         }),
         eventTimeMs,
       );
@@ -3509,12 +3535,53 @@ export class Editor implements IEditor, IEditedWorld {
     }
   }
 
+  private couple(
+    aim: Extract<RailAim, { readonly kind: "couple" }>,
+    held: { readonly refId: number; readonly colorId: number },
+    eventTimeMs: number,
+  ): void {
+    const ref = this.consistRefs.get(aim.holder);
+    if (!ref) throw new Error("the train being coupled to is not in the edit history");
+    const standing = aim.holder.pose;
+    const pose: ConsistPose =
+      aim.end === "rear"
+        ? {
+            ...standing,
+            anchor: aim.seat.anchor,
+            coupled: [...standing.coupled, { ...held, reversed: aim.reversed }],
+          }
+        : {
+            ...held,
+            anchor: aim.seat.anchor,
+            coupled: [
+              { refId: standing.refId, colorId: standing.colorId, reversed: false },
+              ...standing.coupled,
+            ],
+          };
+    this.show(this.history.replaceConsist(ref, pose), eventTimeMs);
+  }
+
+  private trainLabelOf({ refId, coupled }: ConsistPose): string {
+    return [refId, ...coupled.map((vehicle) => vehicle.refId)]
+      .map((ref) => this.placeableAt(ref).label)
+      .join(" + ");
+  }
+
+  private trainMembers(pose: ConsistPose): ReadonlyArray<TrainMember> | null {
+    const members: TrainMember[] = [];
+    for (const { refId, reversed } of [{ refId: pose.refId, reversed: false }, ...pose.coupled]) {
+      const placeable = this.placeableAt(refId);
+      const model = this.catalog.playModel(placeable);
+      if (!model) return null;
+      this.requestMeshes(placeable);
+      members.push({ model, reversed });
+    }
+    return members;
+  }
+
   private parkConsist(handle: ConsistHandle): void {
-    const placeable = this.placeableAt(handle.pose.refId);
-    const model = this.catalog.playModel(placeable);
-    if (!model) return;
-    this.requestMeshes(placeable);
-    this.railYard.add(handle, model);
+    const members = this.trainMembers(handle.pose);
+    if (members) this.railYard.add(handle, members);
   }
 
   private sampleOf(edit: AppliedEdit): EditSample | null {
@@ -3597,10 +3664,11 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.selection.trains.some((train) => this.trainView(train) === null)) this.select([]);
     const onRails = new Set(this.railYard.trains().map((train) => train.handle));
     this.update({
-      trains: this.consists.consists().map((handle) => {
-        const placeable = this.placeableAt(handle.pose.refId);
-        return { item: placeable.id, label: placeable.label, onRails: onRails.has(handle) };
-      }),
+      trains: this.consists.consists().map((handle) => ({
+        item: this.placeableAt(handle.pose.refId).id,
+        label: this.trainLabelOf(handle.pose),
+        onRails: onRails.has(handle),
+      })),
     });
   }
 
@@ -5190,6 +5258,15 @@ export class Editor implements IEditor, IEditedWorld {
       route: pose.anchor.route,
       reversed: pose.anchor.reversed,
       offsetLdu: pose.anchor.offsetLdu,
+      ...(pose.coupled.length > 0
+        ? {
+            coupled: pose.coupled.map((vehicle) => ({
+              ref: this.catalog.refs()[vehicle.refId] ?? "",
+              color: vehicle.colorId,
+              reversed: vehicle.reversed,
+            })),
+          }
+        : {}),
     }));
   }
 
@@ -5432,17 +5509,16 @@ export class Editor implements IEditor, IEditedWorld {
     const poses: ConsistPose[] = [];
     consists.forEach((record, index) => {
       const path = `consist ${index}`;
-      const target = this.catalog.resolveRef(record.ref, record.color);
-      const placeable = target ? this.catalog.placeables()[target.refId] : null;
+      const target = this.trainVehicle(record, path, issues);
+      const coupled = (record.coupled ?? []).flatMap((vehicle, v) => {
+        const resolved = this.trainVehicle(vehicle, `${path} coupled vehicle ${v}`, issues);
+        return resolved ? [{ ...resolved, reversed: vehicle.reversed }] : [];
+      });
       const piece = this.pieceRef(record.track);
-      if (!target) issues.push({ path, message: `"${record.ref}" isn't in the catalog` });
-      else if (placeable && !this.catalog.playModel(placeable)) {
-        issues.push({ path, message: `${placeable.label} has no running gear to stand on rails` });
-      }
       if (!piece) {
         issues.push({ path, message: `"${record.track.ref}" isn't a track piece or a model` });
       }
-      if (!target || !piece) return;
+      if (!target || !piece || coupled.length !== (record.coupled ?? []).length) return;
       const pose: ConsistPose = {
         refId: target.refId,
         colorId: target.colorId,
@@ -5452,6 +5528,7 @@ export class Editor implements IEditor, IEditedWorld {
           reversed: record.reversed,
           offsetLdu: record.offsetLdu,
         },
+        coupled,
       };
       const problem = consistPoseProblem(pose);
       if (problem) issues.push({ path, message: problem });
@@ -5459,6 +5536,23 @@ export class Editor implements IEditor, IEditedWorld {
     });
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: { world, handles: handles.value, consists: poses } };
+  }
+
+  private trainVehicle(
+    { ref, color }: { readonly ref: string; readonly color: number },
+    path: string,
+    issues: Issue[],
+  ): { readonly refId: number; readonly colorId: number } | null {
+    const target = this.catalog.resolveRef(ref, color);
+    if (!target) {
+      issues.push({ path, message: `"${ref}" isn't in the catalog` });
+      return null;
+    }
+    const placeable = this.catalog.placeables()[target.refId];
+    if (placeable && !this.catalog.playModel(placeable)) {
+      issues.push({ path, message: `${placeable.label} has no running gear to stand on rails` });
+    }
+    return target;
   }
 
   private replaceWorld({ world, handles }: RestoredWorld): void {
