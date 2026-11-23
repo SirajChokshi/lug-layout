@@ -26,13 +26,7 @@ import {
   type TrackClearance,
 } from "./track-clearance.ts";
 import type { TrackMove } from "./track-pose.ts";
-import {
-  DEFAULT_CLOSURE_TURNS,
-  closuresWithinTurns,
-  runMoves,
-  runOfMoves,
-  type TrackRun,
-} from "./track-solver.ts";
+import { closuresWithinTurns, runMoves, runOfMoves, type TrackRun } from "./track-solver.ts";
 
 export interface SupportSite {
   readonly studlessTops: TrackClearance;
@@ -497,7 +491,7 @@ export function shortClearClosure(
   maxPieces: number,
 ): TrackRun | null {
   const geometry = new ClosureGeometry(kit, start, goal, site);
-  const runs = closuresWithinTurns(kit, start, goal, DEFAULT_CLOSURE_TURNS, maxPieces);
+  const runs = closuresWithinTurns(kit, start, goal, maxPieces);
   for (const candidate of cheapestFirst(geometry, kit, runs)) {
     if (geometry.firstBlocker(candidate.moves) === NO_OBSTACLE) return candidate.run;
   }
