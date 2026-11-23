@@ -526,8 +526,15 @@ it(
           [1_000_003, -999_999],
         ] as const) {
           for (let heading = 0; heading < 16; heading += QUARTER_TURN_STEPS) {
-            const free = latticePose(x, z, heading);
-            const snap = yard.snapPiece(part.catalogIndex, held, nowhere, nowhere, free);
+            const snap = yard.snapPiece(
+              part.catalogIndex,
+              held,
+              nowhere,
+              nowhere,
+              x * STUD_LDU,
+              z * STUD_LDU,
+              heading,
+            );
             expect(snap.end).toBeNull();
             layPiece(yard, part.catalogIndex, snap.placement);
           }
@@ -576,7 +583,7 @@ it("lays a passing siding from the real 9V switches that closes exactly and keep
   const curve = index("ldraw:74747");
   if (left === null) throw new Error("the right switch has no mirror");
   const snapAt = (piece: number, connector: number, end: { xLdu: number; zLdu: number }) => {
-    const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, latticePose(0, 0));
+    const snap = siding.snapPiece(piece, connector, end.xLdu, end.zLdu, 0, 0, 0);
     expect(snap.end).not.toBeNull();
     layPiece(siding, piece, snap.placement);
   };
@@ -1078,7 +1085,7 @@ function placeableIndex(layout: TrackDrawing, id: string): number {
 
 function snapOnto(layout: TrackDrawing, id: string, connector: number, end: TrackEndView): void {
   const piece = placeableIndex(layout, id);
-  const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, studPose(0, 0, 0));
+  const snap = layout.snapPiece(piece, connector, end.xLdu, end.zLdu, 0, 0, 0);
   if (snap.end === null) throw new Error(`${id} did not snap onto the open end`);
   layPiece(layout, piece, snap.placement);
 }
@@ -2132,6 +2139,80 @@ it("reports unsupported track inside a plan as a plan issue, so the plan isn't V
   expect(unsupported).toEqual([0]);
   expect(flagged).toHaveLength(1);
   expect(cleared).toEqual([]);
+});
+
+function farEnd(layout: TrackDrawing): TrackEndView {
+  const end = layout.openEnds().find((open) => open.xLdu > 0);
+  if (!end) throw new Error("the run has no far end");
+  return end;
+}
+
+it("joins a reseated drag to where its targeted end lies after the piece carrying that end is replaced", async () => {
+  const bundle = await trackAndRoadBundle();
+  const origin = studPose(0, 0, 0);
+  const straights: Run = [{ kind: "straight", count: 3 }];
+  const curved: Run = [
+    { kind: "straight", count: 2 },
+    { kind: "turn", sign: 1, curves: 1 },
+  ];
+  const drawn = (run: Run) => {
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    layRun(layout, origin, run);
+    return layout;
+  };
+  const layout = drawn(straights);
+  const expected = drawn(curved);
+  expected.setBands(everyBand(plateObstacles()));
+  const before = farEnd(layout);
+  const after = farEnd(expected);
+  const meet: StudPoint = [
+    (before.xLdu + after.xLdu) / 2 / STUD_LDU,
+    (before.zLdu + after.zLdu) / 2 / STUD_LDU,
+  ];
+  const points = linePoints([144, 80], meet);
+  const last = points.at(-1);
+  if (!last) throw new Error("the stroke is empty");
+  const replaced = layMoves(origin, runMoves(layout.kit, { segments: curved, pieces: 3 }))
+    .placed[2];
+  const curve = layout.kitParts().find((part) => part.def.id === replaced?.piece.id);
+  if (!replaced || !curve) throw new Error("the curved run has no third piece");
+  const dragged = (target: TrackDrawing, edit: () => void) => {
+    target.beginDrag(144 * STUD_LDU, 80 * STUD_LDU, 144 * STUD_LDU, 80 * STUD_LDU);
+    for (const [x, z] of points.slice(1, -1)) target.moveDrag(x * STUD_LDU, z * STUD_LDU);
+    const aimed = target.dragTarget();
+    edit();
+    target.moveDrag(last[0] * STUD_LDU, last[1] * STUD_LDU);
+    const view = target.dragView();
+    return {
+      aimed: aimed?.end,
+      target: target.dragTarget()?.end,
+      view: view && {
+        pieces: view.pieces,
+        straights: view.straights,
+        curves: view.curves,
+        closure: view.closure,
+        blocked: view.blocked,
+        withheld: view.withheld,
+      },
+    };
+  };
+
+  const edited = dragged(layout, () => {
+    const lifted = layout.laidPiece(2);
+    layout.applyTrack({
+      lift: [lifted],
+      lay: [{ ...lifted, piece: curve.catalogIndex, pose: replaced.placement }],
+    });
+    layout.setBands(everyBand(plateObstacles()));
+  });
+  const fresh = dragged(expected, () => undefined);
+
+  expect(edited.aimed).toBe(edited.target);
+  expect(edited.view?.closure).toBe("exact");
+  expect({ target: edited.target, view: edited.view }).toEqual({
+    target: fresh.target,
+    view: fresh.view,
+  });
 });
 
 const MY_TRAIN = { heightLdu: 100, model: "my tall train" };

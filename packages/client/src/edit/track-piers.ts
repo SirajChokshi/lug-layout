@@ -15,7 +15,7 @@ import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { PLACEABLE_CATALOG, SNAP_SHAPES, WORLD_SESSION } from "../tokens.ts";
 import type { IWorldSession } from "./world-session.ts";
-import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU } from "@brr/math";
+import { PLATE_LDU, SIXTEENTHS_PER_LDU, STUD_LDU, planeHypot } from "@brr/math";
 import type { Placeable } from "./placeable.ts";
 import { posedBox, posedCell } from "./placed-chunks.ts";
 import { cellKey } from "./track-obstacles.ts";
@@ -175,7 +175,7 @@ export function pierSites(
       const box = posedBox(pier.box, x, z, 0, rot);
       const dx = (box.minX + box.maxX) / 2 - centreX;
       const dz = (box.minZ + box.maxZ) / 2 - centreZ;
-      sites.set(key, { x, z, rot, mates, distance: Math.hypot(dx, dz) });
+      sites.set(key, { x, z, rot, mates, distance: planeHypot(dx, dz) });
     }
   }
   return [...sites.values()].toSorted(ranked).map(({ x, z, rot, mates }) => ({ x, z, rot, mates }));

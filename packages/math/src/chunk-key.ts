@@ -15,11 +15,15 @@ function inChunkRange(chunk: number): boolean {
   return Number.isInteger(chunk) && chunk >= MIN_CHUNK && chunk <= MAX_CHUNK;
 }
 
-export function chunkKey(chunkX: number, chunkZ: number): number {
+export function assertChunkInRange(chunkX: number, chunkZ: number): void {
   if (!inChunkRange(chunkX) || !inChunkRange(chunkZ)) {
     throw new RangeError(
       `chunk (${chunkX}, ${chunkZ}) is outside the int32 LDU world (chunks ${MIN_CHUNK} to ${MAX_CHUNK})`,
     );
   }
+}
+
+export function chunkKey(chunkX: number, chunkZ: number): number {
+  assertChunkInRange(chunkX, chunkZ);
   return (chunkX + CHUNK_KEY_OFFSET) * CHUNK_KEY_STRIDE + (chunkZ + CHUNK_KEY_OFFSET);
 }

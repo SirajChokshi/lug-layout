@@ -10,10 +10,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChunkInstances,
   ChunkTier,
+  EdgeMarker,
   FarModelPlacement,
   NeededMeshListener,
   PartPalette,
   PlanOverlay,
+  TrackEndMarker,
   WorldBox,
 } from "../scene-backend.ts";
 import { edgeIdOf } from "./edge-ids.ts";
@@ -256,6 +258,73 @@ it("swaps meshes, far studs and far model meshes while chunks, a vehicle, a ghos
   expect(() =>
     backend.setPartMeshes([{ index: 2, level: "detailed", part: part("c", 20) }]),
   ).toThrow("part 2 is not in the palette");
+});
+
+function frameDrawn(backend: ThreeSceneBackend): void {
+  backend["changed"] = false;
+}
+
+function trackEnd(xLdu: number): TrackEndMarker {
+  return { xLdu, yLdu: 0, zLdu: 0, headingRadians: 0, kind: "open" };
+}
+
+function edgeMarker(minX: number): EdgeMarker {
+  return { kind: "open", box: { minX, minY: 0, minZ: 0, maxX: minX + 20, maxY: 8, maxZ: 20 } };
+}
+
+it.each([
+  {
+    payload: "ghost",
+    show: (backend: ThreeSceneBackend, x: number) =>
+      backend.setGhost({ ...chunkOf(0), originX: x }),
+    resend: (backend: ThreeSceneBackend) => backend.setGhost(backend["ghostModel"]),
+    shown: (backend: ThreeSceneBackend): unknown => backend["ghost"],
+  },
+  {
+    payload: "track end markers",
+    show: (backend: ThreeSceneBackend, x: number) => backend.setTrackEnds([trackEnd(x)]),
+    resend: (backend: ThreeSceneBackend) => backend.setTrackEnds(backend["trackEnds"]),
+    shown: (backend: ThreeSceneBackend): unknown => backend["trackEndGroup"].children[0],
+  },
+  {
+    payload: "edge markers",
+    show: (backend: ThreeSceneBackend, x: number) => backend.setMarkers([edgeMarker(x)]),
+    resend: (backend: ThreeSceneBackend) => backend.setMarkers(backend["markers"]),
+    shown: (backend: ThreeSceneBackend): unknown => backend["markerGroup"].children[0],
+  },
+])(
+  "keeps the $payload it shows, asking for no frame, when sent the same object again, and rebuilds them for another",
+  ({ show, resend, shown }) => {
+    const { backend, listener } = tieredBackend();
+    show(backend, 0);
+    const before = shown(backend);
+    listener.take();
+    frameDrawn(backend);
+
+    resend(backend);
+    expect(shown(backend)).toBe(before);
+    expect(listener.take()).toEqual([]);
+    expect(backend.needsFrame()).toBe(false);
+
+    show(backend, 0);
+    expect(shown(backend)).not.toBe(before);
+    expect(backend.needsFrame()).toBe(true);
+  },
+);
+
+it("leaves a placed ghost where it is, asking for no frame, when placed at the same pose, and moves it for another", () => {
+  const { backend } = tieredBackend();
+  backend.setGhost(chunkOf(0));
+  backend.placeGhost(40, 8, 60, 1);
+  const ghost: Object3D | undefined = backend["ghost"];
+  frameDrawn(backend);
+
+  backend.placeGhost(40, 8, 60, 1);
+  expect(backend.needsFrame()).toBe(false);
+
+  backend.placeGhost(80, 8, 60, 1);
+  expect(backend.needsFrame()).toBe(true);
+  expect(ghost?.position.x).toBe(80);
 });
 
 const CHUNK = 640;

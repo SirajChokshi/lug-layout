@@ -7,6 +7,7 @@ import {
   zeta16Direction,
   zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import type { TrackBlockView, TrackRefusal } from "./track-drag.ts";
 
@@ -92,6 +93,7 @@ const JOIN_SEARCH_RADIUS_LDU = 96 * STUD_LDU;
 const JOIN_TARGETS = 4;
 const SUGGESTED_JOIN_PIECES = 4;
 const TURN_ORDER: ReadonlyArray<ExtensionTurn> = ["straight", "left", "right"];
+const NO_ENDS: ReadonlyArray<number> = [];
 
 function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | null {
   const from = zeta16ToStuds(start.position);
@@ -100,7 +102,7 @@ function targetAhead(start: Pose16, end: Pose16, index: number): JoinTarget | nu
   const dz = to.z - from.z;
   const facing = zeta16Direction(start.heading);
   if (dx * facing.x + dz * facing.z <= 0) return null;
-  const distanceLdu = Math.hypot(dx, dz) * STUD_LDU;
+  const distanceLdu = planeHypot(dx, dz) * STUD_LDU;
   return distanceLdu <= JOIN_SEARCH_RADIUS_LDU ? { index, distanceLdu } : null;
 }
 
@@ -123,10 +125,17 @@ function choiceView(choice: ExtensionChoice): TrackChoiceView {
 
 export class TrackExtension {
   private anchor: Pose16 | null = null;
+  private anchorEnd: number | null = null;
   private focus: Focus | null = null;
   private preferred: ExtensionTurn = "straight";
   private readonly options = new Map<number, EndOptions>();
   private changes = 0;
+  private chosenAt = -1;
+  private chosenRun: ExtensionRun | null = null;
+  private highlightedAt = -1;
+  private highlightedEnds: ReadonlyArray<number> = NO_ENDS;
+  private viewAt = -1;
+  private extendView: TrackExtendView | null = null;
 
   constructor(private readonly site: ExtensionSite) {}
 
@@ -137,12 +146,14 @@ export class TrackExtension {
   endsChanged(): void {
     this.options.clear();
     this.focus = null;
-    if (this.anchor && this.endIndex(this.anchor) === null) this.anchor = null;
+    this.anchorEnd = this.anchor === null ? null : this.endIndex(this.anchor);
+    if (this.anchorEnd === null) this.anchor = null;
     this.changes++;
   }
 
   continueFrom(end: Pose16 | null): void {
-    this.anchor = end !== null && this.endIndex(end) !== null ? end : null;
+    this.anchorEnd = end === null ? null : this.endIndex(end);
+    this.anchor = this.anchorEnd === null ? null : end;
     this.focus = null;
     this.changes++;
   }
@@ -155,13 +166,14 @@ export class TrackExtension {
   drop(): boolean {
     const anchored = this.anchor !== null;
     this.anchor = null;
+    this.anchorEnd = null;
     if (this.focus) this.changes++;
     this.focus = null;
     return anchored;
   }
 
   focusOn(hovered: number | null): void {
-    const from = hovered ?? (this.anchor === null ? null : this.endIndex(this.anchor));
+    const from = hovered ?? this.anchorEnd;
     if (from === (this.focus?.from ?? null)) return;
     this.changes++;
     if (from === null) {
@@ -193,6 +205,30 @@ export class TrackExtension {
   }
 
   chosen(): ExtensionRun | null {
+    if (this.chosenAt !== this.changes) {
+      this.chosenRun = this.findChosen();
+      this.chosenAt = this.changes;
+    }
+    return this.chosenRun;
+  }
+
+  highlighted(): ReadonlyArray<number> {
+    if (this.highlightedAt !== this.changes) {
+      this.highlightedEnds = this.findHighlighted();
+      this.highlightedAt = this.changes;
+    }
+    return this.highlightedEnds;
+  }
+
+  view(): TrackExtendView | null {
+    if (this.viewAt !== this.changes) {
+      this.extendView = this.buildView();
+      this.viewAt = this.changes;
+    }
+    return this.extendView;
+  }
+
+  private findChosen(): ExtensionRun | null {
     const focus = this.focus;
     const choice = focus?.options.choices[focus.index];
     const start = focus ? this.site.endPoses()[focus.from] : undefined;
@@ -200,19 +236,19 @@ export class TrackExtension {
     return { from: focus.from, start, choice };
   }
 
-  highlighted(): ReadonlyArray<number> {
+  private findHighlighted(): ReadonlyArray<number> {
     const run = this.chosen();
-    if (!run) return [];
+    if (!run) return NO_ENDS;
     return run.choice.joins === null ? [run.from] : [run.from, run.choice.joins];
   }
 
-  view(): TrackExtendView | null {
+  private buildView(): TrackExtendView | null {
     const focus = this.focus;
     if (!focus) return null;
     return {
       choices: focus.options.choices.map(choiceView),
       index: focus.index,
-      continuing: this.anchor !== null && this.endIndex(this.anchor) === focus.from,
+      continuing: this.anchorEnd !== null && this.anchorEnd === focus.from,
       unjoined: focus.options.unjoined,
     };
   }

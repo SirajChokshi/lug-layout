@@ -3,7 +3,6 @@ import {
   RUN_CROSSING,
   StrokePath,
   TrackClearance,
-  layMoves,
   solveClosure,
   studlessTopOf,
   type ClosureResult,
@@ -21,11 +20,12 @@ import {
 import {
   QUARTER_TURN_16,
   STUD_LDU,
+  ZETA16_ORDER,
   normalizeHeading16,
   pose16,
   zeta16,
-  zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import { OBSTACLE_RECT_FLOATS, type TrackObstacles } from "./track-obstacles.ts";
 
@@ -86,6 +86,13 @@ export interface DragEnds {
   placement(end: number): number | undefined;
 }
 
+export interface RunEndStuds {
+  readonly endXStuds: number;
+  readonly endZStuds: number;
+}
+
+export type RunEndOf = (start: Pose16, moves: ReadonlyArray<TrackMove>) => RunEndStuds;
+
 export interface DragPress {
   readonly hitX: number;
   readonly hitZ: number;
@@ -107,6 +114,7 @@ export interface DragRoute {
 const QUARTER_TURN_RADIANS = Math.PI / 2;
 const MIN_START_DRAG_LDU = STUD_LDU;
 const STROKE_SPACING_LDU = STUD_LDU / 2;
+const NO_MOVES: ReadonlyArray<TrackMove> = [];
 export const CLOSURE_BUDGET_MS = 30;
 
 export type SupportedPiece = (
@@ -203,25 +211,19 @@ export class DragField {
   }
 }
 
-function unjoined(followed: FollowedRun): FollowedRun {
-  if (!followed.joined) return followed;
-  return {
-    ...followed,
-    moves: followed.moves.slice(0, -1),
-    progressLdu: followed.progressLdu.slice(0, -1),
-    joined: false,
-  };
-}
-
 export class TrackDrag {
   private readonly stroke: StrokePath;
-  private readonly wholeClosures = new Map<string, ClosureResult>();
+  private readonly wholeClosures = new Map<Pose16, Map<Pose16, ClosureResult>>();
+  private readonly runStarts: Array<Pose16 | null> = Array.from(
+    { length: ZETA16_ORDER },
+    () => null,
+  );
   private readonly at = new Float64Array(2);
   private field: DragField;
   private site: StrokeSite;
   private seatsPending: boolean;
   private start: Pose16 | null;
-  private moves: ReadonlyArray<TrackMove> = [];
+  private moves: ReadonlyArray<TrackMove> = NO_MOVES;
   private blockedMove: TrackMove | null = null;
   private blocker = NO_OBSTACLE;
   private closure: ClosureState = null;
@@ -230,11 +232,23 @@ export class TrackDrag {
   private goal: Pose16 | null = null;
   private missStuds = 0;
   private revised = 0;
+  private lastGoal: StrokeGoal | null = null;
+  private solvingStart: Pose16 | null = null;
+  private solvingGoal: StrokeGoal | null = null;
+  private unjoinedFrom: ReadonlyArray<TrackMove> | null = null;
+  private unjoinedMoves: ReadonlyArray<TrackMove> = NO_MOVES;
+  private lastRoute: DragRoute | null = null;
+  private routeField: DragField | null = null;
+  private routeBlocker = NO_OBSTACLE;
+  private lastView: TrackDragView | null = null;
+  private viewRevision = -1;
+  private lastTargetView: DragTargetView | null = null;
 
   constructor(
     private readonly kit: DrawingKit,
     private readonly router: StrokeRouter,
     private readonly ends: DragEnds,
+    private readonly runEnd: RunEndOf,
     private readonly now: () => number,
     private readonly press: DragPress,
     readonly fromEnd: number | null,
@@ -246,10 +260,6 @@ export class TrackDrag {
     this.field = field;
     this.seatsPending = seatsPending;
     this.site = this.siteOf(field);
-  }
-
-  get revision(): number {
-    return this.revised;
   }
 
   reseat(field: DragField, seatsPending: boolean): void {
@@ -280,8 +290,7 @@ export class TrackDrag {
     const start = this.start;
     if (!start) return;
     const target = this.ends.near(hitX, hitZ, this.fromEnd);
-    const goal: StrokeGoal | null =
-      target === null ? null : { pose: this.ends.pose(target), owner: this.owner(target) };
+    const goal = target === null ? null : this.goalAt(target);
     this.target = target;
     this.goal = goal?.pose ?? null;
     this.withheld = null;
@@ -292,28 +301,61 @@ export class TrackDrag {
       this.blockedMove = followed.blocked;
       this.blocker = followed.blocker;
     } else if (this.seatsPending) {
-      this.withhold("pending", unjoined(followed), NO_OBSTACLE);
+      this.withhold("pending", this.unjoined(followed), NO_OBSTACLE);
     } else {
       this.joinOrWithhold(start, followed, goal);
     }
-    const end = zeta16ToStuds(layMoves(start, this.moves).end.position);
-    this.missStuds = Math.hypot(end.x - hitX / STUD_LDU, end.z - hitZ / STUD_LDU);
+    const end = this.runEnd(start, this.moves);
+    this.missStuds = planeHypot(end.endXStuds - hitX / STUD_LDU, end.endZStuds - hitZ / STUD_LDU);
   }
+
+  private goalAt(target: number): StrokeGoal {
+    const pose = this.ends.pose(target);
+    const owner = this.owner(target);
+    const last = this.lastGoal;
+    if (last && last.pose === pose && last.owner === owner) return last;
+    const goal: StrokeGoal = { pose, owner };
+    this.lastGoal = goal;
+    return goal;
+  }
+
+  private unjoined(followed: FollowedRun): FollowedRun {
+    if (!followed.joined) return followed;
+    if (followed.moves !== this.unjoinedFrom) {
+      this.unjoinedFrom = followed.moves;
+      this.unjoinedMoves = followed.moves.slice(0, -1);
+    }
+    return {
+      ...followed,
+      moves: this.unjoinedMoves,
+      progressLdu: followed.progressLdu.slice(0, -1),
+      joined: false,
+    };
+  }
+
+  private readonly closeWholeHere = (site: ClosureSite): ClosureResult => this.closeWhole(site);
 
   private joinOrWithhold(start: Pose16, followed: FollowedRun, goal: StrokeGoal): void {
     if (followed.joined) {
       this.joinLanded(start, followed, goal);
       return;
     }
-    const join = this.router.join(start, this.stroke, followed, goal, this.site, (site) =>
-      this.closeWhole(start, goal, site),
+    this.solvingStart = start;
+    this.solvingGoal = goal;
+    const join = this.router.join(
+      start,
+      this.stroke,
+      followed,
+      goal,
+      this.site,
+      this.closeWholeHere,
     );
     if (join.kind === "blocked" && studlessTopOf(join.blocker) !== NO_OBSTACLE) {
       this.withhold("unsupported", followed, join.blocker);
       return;
     }
     this.closure = join.kind;
-    this.moves = join.kind === "exact" ? join.moves : [];
+    this.moves = join.kind === "exact" ? join.moves : NO_MOVES;
     this.blockedMove = null;
     this.blocker = join.kind === "blocked" ? join.blocker : NO_OBSTACLE;
   }
@@ -324,9 +366,16 @@ export class TrackDrag {
       this.joined(followed.moves);
       return;
     }
-    const short = unjoined(followed);
-    const detour = this.router.join(start, this.stroke, short, goal, this.site, (site) =>
-      this.closeWhole(start, goal, site),
+    const short = this.unjoined(followed);
+    this.solvingStart = start;
+    this.solvingGoal = goal;
+    const detour = this.router.join(
+      start,
+      this.stroke,
+      short,
+      goal,
+      this.site,
+      this.closeWholeHere,
     );
     if (detour.kind === "exact") this.joined(detour.moves);
     else this.withhold("unsupported", short, top);
@@ -347,13 +396,20 @@ export class TrackDrag {
     this.blocker = joinBlocker === NO_OBSTACLE ? followed.blocker : joinBlocker;
   }
 
-  private closeWhole(start: Pose16, goal: StrokeGoal, site: ClosureSite): ClosureResult {
-    const key = `${this.target}|${start.heading}|${start.position.join(",")}`;
-    const cached = this.wholeClosures.get(key);
+  private closeWhole(site: ClosureSite): ClosureResult {
+    const start = this.solvingStart;
+    const goal = this.solvingGoal;
+    if (!start || !goal) throw new Error("a whole closure needs the start and goal being joined");
+    let byGoal = this.wholeClosures.get(start);
+    const cached = byGoal?.get(goal.pose);
     if (cached) return cached;
     const budget: SearchBudget = { now: this.now, limitMs: CLOSURE_BUDGET_MS };
     const result = solveClosure(this.kit, start, goal.pose, budget, site);
-    this.wholeClosures.set(key, result);
+    if (!byGoal) {
+      byGoal = new Map();
+      this.wholeClosures.set(start, byGoal);
+    }
+    byGoal.set(goal.pose, result);
     return result;
   }
 
@@ -365,6 +421,9 @@ export class TrackDrag {
     const dx = (this.at[0] ?? 0) - press.latticeX;
     const dz = (this.at[1] ?? 0) - press.latticeZ;
     const quarterTurns = Math.round(Math.atan2(dz, dx) / QUARTER_TURN_RADIANS);
+    const heading = normalizeHeading16(quarterTurns * QUARTER_TURN_16);
+    const cached = this.runStarts[heading];
+    if (cached) return cached;
     const position = zeta16([
       BigInt(press.latticeX / STUD_LDU),
       0n,
@@ -375,11 +434,27 @@ export class TrackDrag {
       0n,
       0n,
     ]);
-    return pose16(position, normalizeHeading16(quarterTurns * QUARTER_TURN_16));
+    const runStart = pose16(position, heading);
+    this.runStarts[heading] = runStart;
+    return runStart;
   }
 
   route(): DragRoute {
-    return {
+    const last = this.lastRoute;
+    if (
+      last !== null &&
+      last.start === this.start &&
+      last.moves === this.moves &&
+      last.blockedMove === this.blockedMove &&
+      last.closure === this.closure &&
+      last.goal === this.goal &&
+      last.withheld === this.withheld &&
+      this.routeBlocker === this.blocker &&
+      this.routeField === this.field
+    ) {
+      return last;
+    }
+    const route: DragRoute = {
       start: this.start,
       moves: this.moves,
       blockedMove: this.blockedMove,
@@ -389,25 +464,44 @@ export class TrackDrag {
       blocked: this.field.describe(this.blocker),
       withheld: this.withheld,
     };
+    this.lastRoute = route;
+    this.routeBlocker = this.blocker;
+    this.routeField = this.field;
+    return route;
   }
 
   view(solveMs: number): TrackDragView {
-    const straights = this.moves.filter((m) => m.turn === 0).length;
-    return {
-      pieces: this.moves.length,
+    const last = this.lastView;
+    if (last !== null && this.viewRevision === this.revised && last.solveMs === solveMs)
+      return last;
+    const { moves } = this;
+    let straights = 0;
+    for (let i = 0; i < moves.length; i++) {
+      if (moves[i]?.turn === 0) straights++;
+    }
+    const view: TrackDragView = {
+      pieces: moves.length,
       straights,
-      curves: this.moves.length - straights,
+      curves: moves.length - straights,
       missStuds: this.missStuds,
       closure: this.closure,
-      blocked: this.field.describe(this.blocker),
+      blocked: this.route().blocked,
       withheld: this.withheld,
       fromOpenEnd: this.fromEnd !== null,
       solveMs,
     };
+    this.lastView = view;
+    this.viewRevision = this.revised;
+    return view;
   }
 
   targetView(): DragTargetView | null {
     if (this.target === null) return null;
-    return { end: this.target, joins: this.closure === "exact" };
+    const joins = this.closure === "exact";
+    const last = this.lastTargetView;
+    if (last && last.end === this.target && last.joins === joins) return last;
+    const view: DragTargetView = { end: this.target, joins };
+    this.lastTargetView = view;
+    return view;
   }
 }

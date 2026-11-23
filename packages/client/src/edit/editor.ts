@@ -62,6 +62,7 @@ import {
   posesJoin16,
   zeta16ToStuds,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import {
   PROJECTION_FLOATS,
@@ -1168,6 +1169,13 @@ function sameModels(a: ReadonlyArray<PlacedModel>, b: ReadonlyArray<PlacedModel>
   return true;
 }
 
+function changesAny<T extends object>(state: T, patch: Partial<T>): boolean {
+  for (const key in patch) {
+    if (!Object.is(patch[key], state[key])) return true;
+  }
+  return false;
+}
+
 function sameHover(a: HoverView | null, b: HoverView | null): boolean {
   if (a === null || b === null) return a === b;
   return a.x === b.x && a.z === b.z && a.yPlates === b.yPlates;
@@ -1497,6 +1505,12 @@ export class Editor implements IEditor, IEditedWorld {
 
   private update(patch: Partial<EditorSnapshot>): void {
     const before = this.state;
+    if (
+      !changesAny(before, patch) &&
+      ghostSettles(before, before, this.dropping) === before.ghostSettled
+    ) {
+      return;
+    }
     const merged = { ...before, ...patch };
     const ghostSettled = ghostSettles(before, merged, this.dropping);
     const next = merged.ghostSettled === ghostSettled ? merged : { ...merged, ghostSettled };
@@ -1979,13 +1993,17 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private refreshTrackPreview(): void {
-    const view = this.tracks.refreshPreview(
+    const view = this.trackPreviewView();
+    if (view) this.update(view);
+  }
+
+  private trackPreviewView(): TrackEditView | null {
+    return this.tracks.refreshPreview(
       this.state.mode === "track",
       this.hovering,
       this.hitX,
       this.hitZ,
     );
-    if (view) this.update(view);
   }
 
   private repaintTrackPreview(): void {
@@ -2389,14 +2407,12 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private showHeldPiece(): void {
-    const view = this.tracks.showHeld(
-      this.hovering,
-      this.hitX,
-      this.hitZ,
-      this.hoverX,
-      this.hoverZ,
-    );
+    const view = this.heldPieceView();
     if (view) this.update(view);
+  }
+
+  private heldPieceView(): TrackEditView | null {
+    return this.tracks.showHeld(this.hovering, this.hitX, this.hitZ, this.hoverX, this.hoverZ);
   }
 
   private placeHeldPiece(eventTimeMs: number): void {
@@ -2558,13 +2574,13 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private placeGhost(): void {
-    const startedMs = performance.now();
     const placeable = this.active;
     if (!placeable || !this.hovering || this.fillTool?.previewing) {
       this.assist.cancel();
       this.railRefusal = null;
       return;
     }
+    const startedMs = performance.now();
     if (this.placeOnRails(placeable)) return;
     const connected = this.connectedOf(placeable);
     const mode = this.placementMode();
@@ -2644,7 +2660,7 @@ export class Editor implements IEditor, IEditedWorld {
     const t = -(side[1] ?? 0) / directionY;
     const dx = (side[0] ?? 0) + (side[3] ?? 0) * t - this.hitX;
     const dz = (side[2] ?? 0) + (side[5] ?? 0) * t - this.hitZ;
-    return Math.hypot(dx, dz);
+    return planeHypot(dx, dz);
   }
 
   private aimPick(rot: number, turns: number, mode: PlacementMode): void {
@@ -2773,14 +2789,22 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverView(): HoverView | null {
     if (!this.hovering) return null;
     const onRails = this.active !== null && this.trainAim !== null && this.trainAim.kind !== "off";
-    return {
-      x: this.hoverX,
-      z: this.hoverZ,
-      yPlates: this.drawingTrack()?.drawingPlates ?? this.assist.yPlates,
-      refusal: onRails ? this.railRefusal : this.assist.refusal,
-      onRails,
-      placement: this.assist.placement,
-    };
+    const refusal = onRails ? this.railRefusal : this.assist.refusal;
+    const yPlates = this.drawingTrack()?.drawingPlates ?? this.assist.yPlates;
+    const { placement } = this.assist;
+    const shown = this.state.hover;
+    if (
+      shown !== null &&
+      shown.x === this.hoverX &&
+      shown.z === this.hoverZ &&
+      shown.yPlates === yPlates &&
+      shown.refusal === refusal &&
+      shown.onRails === onRails &&
+      shown.placement === placement
+    ) {
+      return shown;
+    }
+    return { x: this.hoverX, z: this.hoverZ, yPlates, refusal, onRails, placement };
   }
 
   private roadReadout(): RoadSnapView | null {
@@ -2990,25 +3014,34 @@ export class Editor implements IEditor, IEditedWorld {
     const kept = this.keptSnapHolds();
     if (!kept) this.keptRoadSnap = null;
     this.forgetPendingTurnsAway();
-    if (this.state.mode === "road" && this.hovering) {
-      const view = this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood);
-      if (view) this.update(view);
-    }
+    const roadView =
+      this.state.mode === "road" && this.hovering
+        ? this.roads.hover(this.hitX, this.hitZ, this.roadNeighbourhood)
+        : null;
     const tables = this.tables;
     if (this.state.mode === "table" && tables && this.hovering) {
       if (tables.hoverAt(this.hitX, this.hitZ, this.handleToleranceLdu(ndcX, ndcY))) {
         this.showGuides();
       }
     }
-    if (this.tracks.holding()) this.showHeldPiece();
-    else this.refreshTrackPreview();
+    const trackView = this.tracks.holding() ? this.heldPieceView() : this.trackPreviewView();
     const snap = kept ? this.keepRoadSnap(kept) : this.settleGhostHere();
     if (this.gesture?.kind === "paste" && this.hovering) this.aimHeld(this.gesture);
-    this.update({
-      hover: this.hoverView(),
-      snap,
-      ghostRot: this.placeRot,
-    });
+    const hover = this.hoverView();
+    const ghostRot = this.placeRot;
+    const state = this.state;
+    if (
+      roadView === null &&
+      (trackView === null ||
+        (trackView.track === state.track &&
+          trackView.trackNotDrawable === state.trackNotDrawable)) &&
+      hover === state.hover &&
+      snap === state.snap &&
+      ghostRot === state.ghostRot
+    ) {
+      return;
+    }
+    this.update({ ...roadView, ...trackView, hover, snap, ghostRot });
   }
 
   private settleGhostHere(): RoadSnapView | null {
@@ -3807,7 +3840,7 @@ export class Editor implements IEditor, IEditedWorld {
     const z = this.hitZ;
     const widthPx = this.canvas?.clientWidth ?? 0;
     const reached = widthPx > 0 && this.groundHit(ndcX + (2 * HANDLE_TOLERANCE_PX) / widthPx, ndcY);
-    const tolerance = reached ? Math.hypot(this.hitX - x, this.hitZ - z) : 0;
+    const tolerance = reached ? planeHypot(this.hitX - x, this.hitZ - z) : 0;
     this.groundHit(ndcX, ndcY);
     return Math.max(STUD_LDU, tolerance);
   }
@@ -4733,7 +4766,7 @@ export class Editor implements IEditor, IEditedWorld {
       if (!snapped) continue;
       const dx = snapped.x - pose.x;
       const dz = snapped.z - pose.z;
-      const distance = Math.hypot(dx, dz);
+      const distance = planeHypot(dx, dz);
       if (!best || distance < best.distance) best = { dx, dz, distance };
     }
     if (!best || !this.roadCleanShifted(members, targets, placedRoads, best.dx, best.dz))

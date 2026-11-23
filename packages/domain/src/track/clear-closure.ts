@@ -8,6 +8,7 @@ import {
   subtractZeta16,
   zeta16,
   type Pose16,
+  planeHypot,
 } from "@brr/math";
 import type { DrawingKit } from "./drawing-kit.ts";
 import {
@@ -335,7 +336,7 @@ class ClearClosureSearch {
         TABLE_DEPTH + 1,
         headingSteps(heading, this.geometry.finalHeading),
         Math.ceil(
-          Math.hypot(this.finalX - x, this.finalZ - z) / this.geometry.site.outlines.maxStepLdu -
+          planeHypot(this.finalX - x, this.finalZ - z) / this.geometry.site.outlines.maxStepLdu -
             BOUND_SLACK,
         ),
       );

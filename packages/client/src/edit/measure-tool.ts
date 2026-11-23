@@ -1,4 +1,4 @@
-import { STUD_LDU } from "@brr/math";
+import { STUD_LDU, planeHypot } from "@brr/math";
 import type { GuideKind, GuideSegment } from "@brr/render";
 import { lengthText, studsText, type LabelKind, type LabelView } from "./size-labels.ts";
 
@@ -13,7 +13,7 @@ const TICK_HALF_LDU = STUD_LDU / 2;
 const DRAFT_ID = "draft";
 
 export function rulerLength(ruler: Ruler): number {
-  return Math.hypot(ruler.bx - ruler.ax, ruler.bz - ruler.az);
+  return planeHypot(ruler.bx - ruler.ax, ruler.bz - ruler.az);
 }
 
 export function rulerText(ruler: Ruler): string {

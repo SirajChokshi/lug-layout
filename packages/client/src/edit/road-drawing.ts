@@ -12,7 +12,6 @@ import {
   type PlacementRequest,
   type PlannedRoadTile,
   type RoadKit,
-  type RoadPlacement,
   type RoadShape,
   type RoadTile,
 } from "@brr/domain";
@@ -98,6 +97,11 @@ interface KitEntry {
   readonly view: RoadKitView;
 }
 
+interface ExistingTileAt {
+  readonly model: PlacedModel;
+  readonly tile: ExistingRoadTile;
+}
+
 export const ROAD_KIT_PREFIX = "road-kit:";
 const MAX_CHOICE_ROUNDS = 4;
 const OUTLINE_LDU = 6;
@@ -134,6 +138,77 @@ function touches(a: WorldBox, b: WorldBox): boolean {
   );
 }
 
+function replacedBy(
+  model: PlacedModel,
+  removals: ReadonlyArray<PlacedModel>,
+  placements: ReadonlyArray<TilePlacement>,
+): boolean {
+  for (let r = 0; r < removals.length; r++) if (removals[r] === model) return true;
+  for (let p = 0; p < placements.length; p++) if (placements[p]?.replaces === model) return true;
+  return false;
+}
+
+function nearArea(box: WorldBox, area: ReadonlyArray<WorldBox>, reach: number): boolean {
+  for (let i = 0; i < area.length; i++) {
+    const a = area[i];
+    if (
+      a &&
+      box.minX < a.maxX + reach &&
+      box.maxX > a.minX - reach &&
+      box.minZ < a.maxZ + reach &&
+      box.maxZ > a.minZ - reach
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function meetingModel(
+  kept: ReadonlyArray<PlacedModel>,
+  keptCount: number,
+  others: ReadonlyArray<PlacedModel>,
+  box: WorldBox,
+  removals: ReadonlyArray<PlacedModel>,
+  placements: ReadonlyArray<TilePlacement>,
+): PlacedModel | undefined {
+  for (let k = 0; k < keptCount; k++) {
+    const model = kept[k];
+    if (model?.meetsInPlan(box)) return model;
+  }
+  for (let o = 0; o < others.length; o++) {
+    const other = others[o];
+    if (other && !replacedBy(other, removals, placements) && other.meetsInPlan(box)) return other;
+  }
+  return undefined;
+}
+
+function sameModels(a: ReadonlyArray<PlacedModel>, b: ReadonlyArray<PlacedModel>): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function copyModels(from: ReadonlyArray<PlacedModel>, into: PlacedModel[]): void {
+  into.length = 0;
+  for (let i = 0; i < from.length; i++) {
+    const model = from[i];
+    if (model) into.push(model);
+  }
+}
+
+function touchingModel(
+  kept: ReadonlyArray<PlacedModel>,
+  count: number,
+  box: WorldBox,
+): PlacedModel | undefined {
+  for (let k = 0; k < count; k++) {
+    const other = kept[k];
+    if (other && touches(other.box, box)) return other;
+  }
+  return undefined;
+}
+
 function outline(box: WorldBox, kind: MarkerKind): ReadonlyArray<EdgeMarker> {
   const minY = box.maxY + OUTLINE_LIFT_LDU;
   const maxY = minY + OUTLINE_LIFT_LDU;
@@ -156,8 +231,18 @@ export class RoadDrawing {
   private dragging = false;
   private evaluated: Evaluated | null = null;
   private readonly groundUnder = new Map<PlacementRef, PlacementPose>();
+  private atIx = 0;
+  private atIz = 0;
+  private existing: Map<string, ExistingTileAt> | null = null;
+  private readonly existingFrom: PlacedModel[] = [];
+  private ground: Map<string, PlacedModel> | null = null;
+  private readonly groundRoads: PlacedModel[] = [];
+  private readonly groundOthers: PlacedModel[] = [];
+  private readonly network = new RoadNetwork([]);
+  private readonly kept: PlacedModel[] = [];
   private readonly nearRoads: PlacedModel[] = [];
   private readonly nearOthers: PlacedModel[] = [];
+  private readonly cursorPoint = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
   preferredRot = 0;
   erasing = false;
 
@@ -209,6 +294,7 @@ export class RoadDrawing {
     const index = this.kits.findIndex((entry) => entry.view.id === id);
     if (index < 0) return false;
     this.active = index;
+    this.tilesChanged();
     this.cancel();
     return true;
   }
@@ -228,21 +314,27 @@ export class RoadDrawing {
     const { phaseX, phaseZ } = this;
     const previous = this.path[0];
     this.choosePhase(x, z, neighbours);
-    const tile = this.tileAt(x, z);
+    this.locate(x, z);
     const unchanged =
       this.evaluated !== null &&
       this.path.length === 1 &&
-      previous?.ix === tile.ix &&
-      previous.iz === tile.iz &&
+      previous?.ix === this.atIx &&
+      previous.iz === this.atIz &&
       phaseX === this.phaseX &&
       phaseZ === this.phaseZ;
     if (unchanged) return null;
-    this.path = [tile];
+    this.path = [{ ix: this.atIx, iz: this.atIz }];
     return this.evaluate(neighbours);
   }
 
   worldChanged(): void {
     this.evaluated = null;
+    this.tilesChanged();
+  }
+
+  private tilesChanged(): void {
+    this.existing = null;
+    this.ground = null;
   }
 
   begin(x: number, z: number, neighbours: RoadNeighbourhood): RoadPreview | null {
@@ -330,40 +422,78 @@ export class RoadDrawing {
 
   private choosePhase(x: number, z: number, neighbours: RoadNeighbourhood): void {
     const tileLdu = this.entry().kit.tileLdu;
-    const point = { minX: x, maxX: x, minY: 0, maxY: 0, minZ: z, maxZ: z };
-    neighbours.near(point, this.nearRoads, this.nearOthers);
-    const under = [...this.nearRoads, ...this.nearOthers].find(
-      (model) =>
-        (this.compatible(model) || this.isGround(model)) &&
-        x >= model.box.minX &&
-        x < model.box.maxX &&
-        z >= model.box.minZ &&
-        z < model.box.maxZ,
-    );
+    const point = this.cursorPoint;
+    point.minX = x;
+    point.maxX = x;
+    point.minZ = z;
+    point.maxZ = z;
+    const roads = this.nearRoads;
+    const others = this.nearOthers;
+    neighbours.near(point, roads, others);
+    const under = this.tileUnder(x, z, roads) ?? this.tileUnder(x, z, others);
     const latticeCentre = Math.round(tileLdu / 2 / STUD_LDU) * STUD_LDU;
-    this.phaseX = under ? (under.box.minX + under.box.maxX) / 2 : latticeCentre;
-    this.phaseZ = under ? (under.box.minZ + under.box.maxZ) / 2 : latticeCentre;
+    const phaseX = under ? (under.box.minX + under.box.maxX) / 2 : latticeCentre;
+    const phaseZ = under ? (under.box.minZ + under.box.maxZ) / 2 : latticeCentre;
+    if (phaseX !== this.phaseX || phaseZ !== this.phaseZ) this.tilesChanged();
+    this.phaseX = phaseX;
+    this.phaseZ = phaseZ;
   }
 
-  private groundTiles(models: ReadonlyArray<PlacedModel>): Map<string, PlacedModel> {
-    const tileLdu = this.entry().kit.tileLdu;
+  private tileUnder(
+    x: number,
+    z: number,
+    models: ReadonlyArray<PlacedModel>,
+  ): PlacedModel | undefined {
+    for (let m = 0; m < models.length; m++) {
+      const model = models[m];
+      if (!model || !(this.compatible(model) || this.isGround(model))) continue;
+      const { box } = model;
+      if (x >= box.minX && x < box.maxX && z >= box.minZ && z < box.maxZ) return model;
+    }
+    return undefined;
+  }
+
+  private groundTiles(
+    roads: ReadonlyArray<PlacedModel>,
+    others: ReadonlyArray<PlacedModel>,
+  ): Map<string, PlacedModel> {
+    const cached = this.ground;
+    if (cached && sameModels(roads, this.groundRoads) && sameModels(others, this.groundOthers)) {
+      return cached;
+    }
     const tiles = new Map<string, PlacedModel>();
-    for (const model of models) {
-      if (!this.isGround(model)) continue;
+    this.addGroundTiles(roads, tiles);
+    this.addGroundTiles(others, tiles);
+    this.ground = tiles;
+    copyModels(roads, this.groundRoads);
+    copyModels(others, this.groundOthers);
+    return tiles;
+  }
+
+  private addGroundTiles(
+    models: ReadonlyArray<PlacedModel>,
+    tiles: Map<string, PlacedModel>,
+  ): void {
+    const tileLdu = this.entry().kit.tileLdu;
+    for (let m = 0; m < models.length; m++) {
+      const model = models[m];
+      if (!model || !this.isGround(model)) continue;
       const dx = (model.box.minX + model.box.maxX) / 2 - this.phaseX;
       const dz = (model.box.minZ + model.box.maxZ) / 2 - this.phaseZ;
       if (dx % tileLdu !== 0 || dz % tileLdu !== 0) continue;
       tiles.set(`${dx / tileLdu},${dz / tileLdu}`, model);
     }
-    return tiles;
+  }
+
+  private locate(x: number, z: number): void {
+    const tileLdu = this.entry().kit.tileLdu;
+    this.atIx = Math.round((x - this.phaseX) / tileLdu);
+    this.atIz = Math.round((z - this.phaseZ) / tileLdu);
   }
 
   private tileAt(x: number, z: number): RoadTile {
-    const tileLdu = this.entry().kit.tileLdu;
-    return {
-      ix: Math.round((x - this.phaseX) / tileLdu),
-      iz: Math.round((z - this.phaseZ) / tileLdu),
-    };
+    this.locate(x, z);
+    return { ix: this.atIx, iz: this.atIz };
   }
 
   private centre(tile: { readonly ix: number; readonly iz: number }): readonly [number, number] {
@@ -377,15 +507,19 @@ export class RoadDrawing {
     return { minX: x - half, maxX: x + half, minY: 0, maxY: top, minZ: z - half, maxZ: z + half };
   }
 
-  private existingTiles(
-    roads: ReadonlyArray<PlacedModel>,
-  ): Map<string, { readonly model: PlacedModel; readonly tile: ExistingRoadTile }> {
+  private existingTiles(roads: ReadonlyArray<PlacedModel>): Map<string, ExistingTileAt> {
+    const cached = this.existing;
+    if (cached && sameModels(roads, this.existingFrom)) return cached;
+    const tiles = this.findExistingTiles(roads);
+    this.existing = tiles;
+    copyModels(roads, this.existingFrom);
+    return tiles;
+  }
+
+  private findExistingTiles(roads: ReadonlyArray<PlacedModel>): Map<string, ExistingTileAt> {
     const tileLdu = this.entry().kit.tileLdu;
     const family = this.entry().kit.family;
-    const tiles = new Map<
-      string,
-      { readonly model: PlacedModel; readonly tile: ExistingRoadTile }
-    >();
+    const tiles = new Map<string, ExistingTileAt>();
     for (const model of roads) {
       const entry = this.compatible(model);
       if (!entry) continue;
@@ -435,7 +569,7 @@ export class RoadDrawing {
     neighbours.near(this.strokeReach(), roads, others);
     const { kit, view } = this.entry();
     const existing = this.existingTiles(roads);
-    const ground = this.groundTiles([...roads, ...others]);
+    const ground = this.groundTiles(roads, others);
     const existingAt = (ix: number, iz: number) => existing.get(`${ix},${iz}`)?.tile ?? null;
     const planned = this.erasing
       ? planRoadErase(kit, this.path, existingAt)
@@ -550,43 +684,41 @@ export class RoadDrawing {
       issues.push({ x, z, problem: tile.reason, shape: shapeOf(tile.arms), blocker: null });
     }
     if (placements.length === 0) return issues;
-    const top = Math.max(...placements.map((p) => this.placeable(p.pose.refId).box.max[1]));
+    let top = Number.NEGATIVE_INFINITY;
+    for (let p = 0; p < placements.length; p++) {
+      const placement = placements[p];
+      if (placement) top = Math.max(top, this.placeable(placement.pose.refId).box.max[1]);
+    }
     const area = placements.map((p) => this.tileBox(p.tile, top));
-    const near = (box: WorldBox): boolean => {
-      const reach = this.entry().kit.tileLdu;
-      return area.some(
-        (a) =>
-          box.minX < a.maxX + reach &&
-          box.maxX > a.minX - reach &&
-          box.minZ < a.maxZ + reach &&
-          box.maxZ > a.minZ - reach,
-      );
-    };
-    const replaced = new Set([
-      ...removals,
-      ...placements.flatMap((p) => (p.replaces ? [p.replaces] : [])),
-    ]);
-    const kept = roads.filter((model) => !replaced.has(model) && near(model.box));
-    const standing = [...kept, ...others.filter((model) => !replaced.has(model))];
-    const network: RoadPlacement[] = kept.flatMap((model, id) =>
-      model.placeable.road
-        ? [
-            {
-              id,
-              x: model.handle.x,
-              z: model.handle.z,
-              yLdu: model.handle.yPlates * PLATE_LDU,
-              rot: model.handle.rot,
-              surface: model.placeable.road,
-            },
-          ]
-        : [],
-    );
-    const firstNew = kept.length;
-    placements.forEach((p, index) => {
-      const surface = this.placeable(p.pose.refId).road;
-      if (!surface) return;
-      network.push({
+    const reach = this.entry().kit.tileLdu;
+    const network = this.network;
+    const kept = this.kept;
+    network.clear();
+    let keptCount = 0;
+    for (let r = 0; r < roads.length; r++) {
+      const model = roads[r];
+      if (!model || replacedBy(model, removals, placements) || !nearArea(model.box, area, reach)) {
+        continue;
+      }
+      const id = keptCount++;
+      kept[id] = model;
+      const surface = model.placeable.road;
+      if (!surface) continue;
+      network.add({
+        id,
+        x: model.handle.x,
+        z: model.handle.z,
+        yLdu: model.handle.yPlates * PLATE_LDU,
+        rot: model.handle.rot,
+        surface,
+      });
+    }
+    const firstNew = keptCount;
+    for (let index = 0; index < placements.length; index++) {
+      const p = placements[index];
+      const surface = p ? this.placeable(p.pose.refId).road : null;
+      if (!p || !surface) continue;
+      network.add({
         id: firstNew + index,
         x: p.pose.x,
         z: p.pose.z,
@@ -594,27 +726,26 @@ export class RoadDrawing {
         rot: p.pose.rot,
         surface,
       });
-    });
-    const report = new RoadNetwork(network).report();
-    placements.forEach((p, index) => {
+    }
+    for (let index = 0; index < placements.length; index++) {
+      const p = placements[index];
+      if (!p) continue;
       const id = firstNew + index;
       const [x, z] = this.centre(p.tile);
-      const overlap = report.overlaps.find(([a, b]) => a === id || b === id);
-      const blockerOf = (other: number): string | null =>
-        other >= firstNew ? null : (kept[other]?.placeable.label ?? null);
-      if (overlap) {
-        const other = overlap[0] === id ? overlap[1] : overlap[0];
+      const join = network.placementJoin(id);
+      if (join.overlapPartner !== null) {
+        const other = join.overlapPartner;
         issues.push({
           x,
           z,
           problem: "overlap",
           shape: shapeOf(p.tile.arms),
-          blocker: blockerOf(other),
+          blocker: other >= firstNew ? null : (kept[other]?.placeable.label ?? null),
         });
-        return;
+        continue;
       }
       const box = this.tileBox(p.tile, top);
-      const model = standing.find((other) => other.meetsInPlan(box));
+      const model = meetingModel(kept, keptCount, others, box, removals, placements);
       if (model) {
         issues.push({
           x,
@@ -623,19 +754,18 @@ export class RoadDrawing {
           shape: shapeOf(p.tile.arms),
           blocker: model.placeable.label,
         });
-        return;
+        continue;
       }
-      if (report.segments.some((s) => s.placement === id && s.status === "mismatch")) {
-        const beside = kept.find((other) => touches(other.box, box));
+      if (join.mismatched) {
         issues.push({
           x,
           z,
           problem: "mismatch",
           shape: shapeOf(p.tile.arms),
-          blocker: beside?.placeable.label ?? null,
+          blocker: touchingModel(kept, keptCount, box)?.placeable.label ?? null,
         });
       }
-    });
+    }
     return issues;
   }
 

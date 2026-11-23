@@ -1,9 +1,21 @@
+import { planeHypot } from "@brr/math";
+
 export const PROJECTION_FLOATS = 3;
 export const PROJECTED_DISTANCE = 0;
 export const PROJECTED_ARC = 1;
 export const PROJECTED_TANGENT = 2;
+export const PROJECTION_QUERY_FLOATS = 5;
+export const QUERY_X = 0;
+export const QUERY_Z = 1;
+export const QUERY_FROM_ARC = 2;
+export const QUERY_TO_ARC = 3;
+export const QUERY_TANGENT_HALF_SPAN = 4;
 
 const INITIAL_POINTS = 64;
+const BEHIND = 0;
+const AHEAD = 1;
+const PROBE = 2;
+const ARC_SLOTS = 3;
 
 export class StrokePath {
   private xs = new Float64Array(INITIAL_POINTS);
@@ -38,7 +50,7 @@ export class StrokePath {
 
   extend(x: number, z: number): void {
     const last = this.count - 1;
-    const step = Math.hypot(x - (this.xs[last] ?? 0), z - (this.zs[last] ?? 0));
+    const step = planeHypot(x - (this.xs[last] ?? 0), z - (this.zs[last] ?? 0));
     if (step === 0) return;
     if (step < this.spacingLdu && last > 0) {
       this.xs[last] = x;
@@ -46,7 +58,7 @@ export class StrokePath {
       const before = last - 1;
       this.arcs[last] =
         (this.arcs[before] ?? 0) +
-        Math.hypot(x - (this.xs[before] ?? 0), z - (this.zs[before] ?? 0));
+        planeHypot(x - (this.xs[before] ?? 0), z - (this.zs[before] ?? 0));
       return;
     }
     if (step < this.spacingLdu) return;
@@ -83,12 +95,17 @@ export class StrokePath {
   }
 
   pointAt(arc: number, out: Float64Array): void {
+    this.around[PROBE] = arc;
+    this.pointAround(PROBE, out);
+  }
+
+  private pointAround(slot: number, out: Float64Array): void {
     if (this.count === 1) {
       out[0] = this.xs[0] ?? 0;
       out[1] = this.zs[0] ?? 0;
       return;
     }
-    const clamped = Math.min(Math.max(arc, 0), this.length);
+    const clamped = Math.min(Math.max(this.around[slot] ?? 0, 0), this.length);
     const i = this.segmentAt(clamped);
     const a = this.arcs[i] ?? 0;
     const span = (this.arcs[i + 1] ?? a) - a;
@@ -99,25 +116,25 @@ export class StrokePath {
 
   private readonly ahead = new Float64Array(2);
   private readonly behind = new Float64Array(2);
+  private readonly around = new Float64Array(ARC_SLOTS);
 
-  tangentAt(arc: number, halfSpanLdu: number): number {
-    this.pointAt(arc - halfSpanLdu, this.behind);
-    this.pointAt(arc + halfSpanLdu, this.ahead);
+  private writeTangent(out: Float64Array): void {
+    this.pointAround(BEHIND, this.behind);
+    this.pointAround(AHEAD, this.ahead);
     const dx = (this.ahead[0] ?? 0) - (this.behind[0] ?? 0);
     const dz = (this.ahead[1] ?? 0) - (this.behind[1] ?? 0);
-    return dx === 0 && dz === 0 ? Number.NaN : Math.atan2(dz, dx);
+    if (dx === 0 && dz === 0) out[PROJECTED_TANGENT] = Number.NaN;
+    else out[PROJECTED_TANGENT] = Math.atan2(dz, dx);
   }
 
-  project(
-    x: number,
-    z: number,
-    fromArc: number,
-    toArc: number,
-    tangentHalfSpanLdu: number,
-    out: Float64Array,
-  ): void {
+  project(query: Float64Array, out: Float64Array): void {
+    const x = query[QUERY_X] ?? 0;
+    const z = query[QUERY_Z] ?? 0;
+    const fromArc = query[QUERY_FROM_ARC] ?? 0;
+    const toArc = query[QUERY_TO_ARC] ?? 0;
+    const tangentHalfSpanLdu = query[QUERY_TANGENT_HALF_SPAN] ?? 0;
     if (this.count === 1) {
-      out[PROJECTED_DISTANCE] = Math.hypot(x - (this.xs[0] ?? 0), z - (this.zs[0] ?? 0));
+      out[PROJECTED_DISTANCE] = planeHypot(x - (this.xs[0] ?? 0), z - (this.zs[0] ?? 0));
       out[PROJECTED_ARC] = 0;
       out[PROJECTED_TANGENT] = Number.NaN;
       return;
@@ -137,7 +154,7 @@ export class StrokePath {
       const dz = ((this.zs[i + 1] ?? 0) - az) / span;
       const along = (x - ax) * dx + (z - az) * dz;
       const t = Math.min(Math.max(along, from - a, 0), to - a, span);
-      const distance = Math.hypot(x - (ax + t * dx), z - (az + t * dz));
+      const distance = planeHypot(x - (ax + t * dx), z - (az + t * dz));
       if (distance < bestDistance) {
         bestDistance = distance;
         bestArc = a + t;
@@ -145,6 +162,8 @@ export class StrokePath {
     }
     out[PROJECTED_DISTANCE] = bestDistance;
     out[PROJECTED_ARC] = bestArc;
-    out[PROJECTED_TANGENT] = this.tangentAt(bestArc, tangentHalfSpanLdu);
+    this.around[BEHIND] = bestArc - tangentHalfSpanLdu;
+    this.around[AHEAD] = bestArc + tangentHalfSpanLdu;
+    this.writeTangent(out);
   }
 }
