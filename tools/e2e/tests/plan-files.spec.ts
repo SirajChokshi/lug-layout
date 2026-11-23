@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { readFile, writeFile } from "node:fs/promises";
 import { readZip } from "@brr/storage/zip";
 import { EditorPage, TRACK_ITEM, byPosition, type LatticePoint } from "./editor-page.ts";
@@ -71,10 +71,6 @@ async function snapshot(editor: EditorPage) {
     })),
     crossings: (await editor.crossings()).length,
   };
-}
-
-async function openPlanFile(page: Page, path: string): Promise<void> {
-  await page.locator('input[aria-label="Open a .brrplan.zip plan file"]').setInputFiles(path);
 }
 
 test("a plan of two tables, a modular, track across a road plate and two user models, one with a part that has no licence line, saves to a .brrplan.zip carrying both files, which a fresh profile reopens exactly, crediting the licensed part", async ({
@@ -158,7 +154,7 @@ test("a plan of two tables, a modular, track across a road plate and two user mo
   const fresh = await EditorPage.open(freshPage);
   await fresh.serveLdrawLibrary();
   expect(await snapshot(fresh)).toMatchObject({ poses: [], track: [], plans: [] });
-  await openPlanFile(freshPage, planFile);
+  await fresh.openPlanFile(planFile);
   await expect.poll(async () => (await fresh.poses()).length).toBe(saved.poses.length);
   expect(await snapshot(fresh)).toEqual(saved);
   await fresh.waitForFarTierAndMeshesSettled();
