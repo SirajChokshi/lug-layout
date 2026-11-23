@@ -1,21 +1,34 @@
-import { ASSET_FETCHER, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import {
+  ASSET_FETCHER,
+  PART_BUNDLE_LOADER,
+  type IAssetFetcher,
+  type PartAsset,
+  type PartModel,
+} from "@brr/catalog";
+import { isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import {
   SCENE_BACKEND,
   type BackendInfo,
   type BufferMemory,
+  INSTANCE_MATRIX_FLOATS,
+  type ChunkInstances,
   type ISceneBackend,
   type LookSettings,
+  type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
 import { decode, decodedOrThrow, type Decoded } from "@brr/schema/decode";
 import type { PlanArchive } from "@brr/schema/plan";
-import { STARTER_SHELF_FILE, starterFilePath, type StarterShelfV1 } from "@brr/schema/starters";
+import { STARTER_SHELF_FILE, StarterShelfV1, starterFilePath } from "@brr/schema/starters";
 import {
   CREDITS_FILE,
+  MANIFEST_FILE,
+  WorldManifestV1,
   WorldShardV1,
   canonicalJson,
   shardEntry,
   shardName,
+  shardPath,
   worldArchiveFiles,
   worldManifest,
   type ImportedFile,
@@ -31,7 +44,9 @@ import {
   type WorldChange,
 } from "@brr/storage";
 import { Container } from "inversify";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
 import type { IEditor } from "../edit/editor.ts";
@@ -40,8 +55,10 @@ import { chosen } from "../edit/editor-choice.test-support.ts";
 import { WithFixtureModels } from "../edit/fixture-model.test-support.ts";
 import { EDITOR, STARTER_FILES, STARTER_WORLDS } from "../tokens.ts";
 import type { IStarterFiles } from "./starter-files.ts";
+import { sourceInstances, type SourceInstance } from "./source-orientation.test-support.ts";
 
 const bundleRoot = new URL("../../../../tools/asset-pipeline/dist/bundle/", import.meta.url);
+const shippedStartersRoot = new URL("../../../../apps/web/starters/", import.meta.url);
 const NO_LOOK: LookSettings = {
   plastic: false,
   gtao: false,
@@ -73,7 +90,18 @@ class BundleDirectoryFetcher implements IAssetFetcher {
   }
 }
 
+interface DrawnVehicle {
+  readonly model: ChunkInstances;
+  readonly posed: boolean;
+  readonly yaw: number;
+  readonly pitch: number;
+  readonly roll: number;
+}
+
 class HeadlessBackend implements ISceneBackend {
+  readonly chunks = new Map<number, ChunkInstances>();
+  readonly vehicles = new Map<number, DrawnVehicle>();
+  readonly partIds: string[] = [];
   private aimX = 0;
   private aimZ = 0;
   async init(): Promise<BackendInfo> {
@@ -85,14 +113,22 @@ class HeadlessBackend implements ISceneBackend {
       look: NO_LOOK,
     };
   }
-  setPalette(): void {}
-  addParts(): void {}
+  setPalette(palette: PartPalette): void {
+    this.partIds.splice(0, this.partIds.length, ...palette.detailed.parts.map((part) => part.id));
+  }
+  addParts(parts: ReadonlyArray<PartAsset>): void {
+    this.partIds.push(...parts.map((part) => part.id));
+  }
   setPartMeshes(): void {}
   setFarStuds(): void {}
   setFarModelMesh(): void {}
   setColors(): void {}
-  setChunk(): void {}
-  deleteChunk(): void {}
+  setChunk(key: number, chunk: ChunkInstances): void {
+    this.chunks.set(key, chunk);
+  }
+  deleteChunk(key: number): void {
+    this.chunks.delete(key);
+  }
   setNeededMeshListener(): void {}
   setGhost(): void {}
   placeGhost(): void {}
@@ -112,9 +148,25 @@ class HeadlessBackend implements ISceneBackend {
   rayThrough(_ndcX: number, _ndcY: number, out: Float64Array): void {
     out.set([this.aimX, RAY_HEIGHT_LDU, this.aimZ, 0, -1, 0]);
   }
-  setVehicle(): void {}
-  setVehiclePose(): void {}
-  deleteVehicle(): void {}
+  setVehicle(vehicle: number, model: ChunkInstances): void {
+    this.vehicles.set(vehicle, { model, posed: false, yaw: 0, pitch: 0, roll: 0 });
+  }
+  setVehiclePose(
+    vehicle: number,
+    _x: number,
+    _y: number,
+    _z: number,
+    yaw: number,
+    pitch = 0,
+    roll = 0,
+  ): void {
+    const drawn = this.vehicles.get(vehicle);
+    if (!drawn) throw new Error(`vehicle ${vehicle} was posed before it was set`);
+    this.vehicles.set(vehicle, { model: drawn.model, posed: true, yaw, pitch, roll });
+  }
+  deleteVehicle(vehicle: number): void {
+    this.vehicles.delete(vehicle);
+  }
   setView(): void {}
   resize(): void {}
   renderFrame(): void {}
@@ -468,3 +520,298 @@ it("offers the starters for each world that opens empty, not again after Start e
     ["asked", true],
   ]);
 }, 120_000);
+
+const AXES = 3;
+const ROW_FLOATS = 4;
+const IDENTITY_ORIENTATION: Orientation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
+const REPRESENTATION_ERROR = 1e-6;
+const LISTED_MISMATCHES = 5;
+const PART_REF = /^ldraw:/u;
+const OMR_REF = /^omr:(?<name>.+)$/u;
+const STANDARD = "standard";
+
+type Orientation = ReadonlyArray<number>;
+
+interface StarterOrientations {
+  readonly world: string;
+  readonly missing: ReadonlyArray<string>;
+  readonly unexpected: ReadonlyArray<string>;
+  readonly drawn: ReadonlyArray<number>;
+  readonly sources: number;
+  readonly unposed: number;
+}
+
+interface ModelSource {
+  readonly partIds: ReadonlyArray<string>;
+  readonly model: PartModel;
+  readonly source: ReadonlyArray<SourceInstance>;
+}
+
+interface RigidBodySource {
+  readonly parts: string;
+  readonly orientations: ReadonlyArray<Orientation>;
+}
+
+async function shippedStarterFiles(): Promise<ReadonlyMap<string, Uint8Array>> {
+  const root = fileURLToPath(shippedStartersRoot);
+  const files = new Map<string, Uint8Array>();
+  for (const entry of await readdir(root, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const path = join(entry.parentPath, entry.name);
+    files.set(relative(root, path).split(sep).join("/"), await readFile(path));
+  }
+  return files;
+}
+
+function jsonFile(files: ReadonlyMap<string, Uint8Array>, path: string): unknown {
+  const bytes = files.get(path);
+  if (!bytes) throw new Error(`no shipped starter file ${path}`);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function orientationAt(matrices: Float32Array, instance: number): number[] {
+  const out: number[] = [];
+  for (let row = 0; row < AXES; row++) {
+    for (let column = 0; column < AXES; column++) {
+      out.push(matrices[instance * INSTANCE_MATRIX_FLOATS + row * ROW_FLOATS + column] ?? 0);
+    }
+  }
+  return out;
+}
+
+function quarterTurned(orientation: Orientation, rot: number): number[] {
+  if (!isRot90(rot)) throw new Error(`rotation ${rot} is not a quarter turn`);
+  const cos = rot90Cos(rot);
+  const sin = rot90Sin(rot);
+  const out: number[] = [];
+  for (let column = 0; column < AXES; column++) {
+    const x = orientation[column] ?? 0;
+    const z = orientation[2 * AXES + column] ?? 0;
+    out[column] = cos * x + sin * z;
+    out[AXES + column] = orientation[AXES + column] ?? 0;
+    out[2 * AXES + column] = -sin * x + cos * z;
+  }
+  return out;
+}
+
+function product(a: Orientation, b: Orientation): number[] {
+  const out: number[] = [];
+  for (let row = 0; row < AXES; row++) {
+    for (let column = 0; column < AXES; column++) {
+      let value = 0;
+      for (let k = 0; k < AXES; k++) {
+        value += (a[row * AXES + k] ?? 0) * (b[k * AXES + column] ?? 0);
+      }
+      out.push(value);
+    }
+  }
+  return out;
+}
+
+function inverse(m: Orientation): number[] {
+  const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0, i = 0] = m;
+  const determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  return [
+    (e * i - f * h) / determinant,
+    (c * h - b * i) / determinant,
+    (b * f - c * e) / determinant,
+    (f * g - d * i) / determinant,
+    (a * i - c * g) / determinant,
+    (c * d - a * f) / determinant,
+    (d * h - e * g) / determinant,
+    (b * g - a * h) / determinant,
+    (a * e - b * d) / determinant,
+  ];
+}
+
+function headingTurn(yaw: number): number[] {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  return [cos, 0, -sin, 0, 1, 0, sin, 0, cos];
+}
+
+function within(a: Orientation, b: Orientation): boolean {
+  return a.every((value, k) => Math.abs(value - (b[k] ?? 0)) <= REPRESENTATION_ERROR);
+}
+
+function isTurnAboutUp(turn: Orientation): boolean {
+  const [xx = 0, xy = 0, xz = 0, yx = 0, yy = 0, yz = 0, zx = 0, zy = 0, zz = 0] = turn;
+  return within(
+    [xy, yx, yz, zy, yy, xx - zz, xz + zx, xx * xx + xz * xz],
+    [0, 0, 0, 0, 1, 0, 0, 1],
+  );
+}
+
+function movedRigidly(drawn: ReadonlyArray<Orientation>, source: RigidBodySource): boolean {
+  const [first, firstSource] = [drawn[0], source.orientations[0]];
+  if (!first || !firstSource || drawn.length !== source.orientations.length) return false;
+  const turn = product(first, inverse(firstSource));
+  return (
+    isTurnAboutUp(turn) &&
+    drawn.every((orientation, k) =>
+      within(orientation, product(turn, source.orientations[k] ?? IDENTITY_ORIENTATION)),
+    )
+  );
+}
+
+function orientationKey(partId: string, orientation: Orientation): string {
+  return `${partId} ${orientation.map((value) => String(value + 0)).join(" ")}`;
+}
+
+function tally(keys: ReadonlyArray<string>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+  return counts;
+}
+
+function surplus(more: Map<string, number>, fewer: Map<string, number>): ReadonlyArray<string> {
+  return [...more]
+    .filter(([key, count]) => count > (fewer.get(key) ?? 0))
+    .map(([key, count]) => `${count - (fewer.get(key) ?? 0)}× ${key}`)
+    .slice(0, LISTED_MISMATCHES);
+}
+
+async function modelSource(container: Container, name: string): Promise<ModelSource> {
+  const { bundle, entry, model } = await container
+    .get(PART_BUNDLE_LOADER)
+    .loadModel(STANDARD, name);
+  const source = await sourceInstances(entry);
+  const partIds = Array.from(model.partIndex, (part) => bundle.parts[part]?.id ?? "");
+  const walked = source.map((instance) => instance.partId);
+  if (walked.join(" ") !== partIds.join(" ")) {
+    throw new Error(`walking ${name}'s source file doesn't give the parts its bake draws`);
+  }
+  return { partIds, model, source };
+}
+
+function omrModelName(ref: string): string | null {
+  return OMR_REF.exec(ref)?.groups?.["name"] ?? null;
+}
+
+async function sourcePlacedParts(
+  container: Container,
+  shards: ReadonlyArray<WorldShardV1>,
+): Promise<ReadonlyArray<string>> {
+  const keys: string[] = [];
+  for (const placement of shards.flatMap((shard) => shard.placements)) {
+    const name = omrModelName(placement.ref);
+    if (name !== null) {
+      const { source } = await modelSource(container, name);
+      for (const instance of source) {
+        const stored = instance.orientation.map((value) => Math.fround(value));
+        keys.push(orientationKey(instance.partId, quarterTurned(stored, placement.rot)));
+      }
+    } else if (PART_REF.test(placement.ref)) {
+      keys.push(orientationKey(placement.ref, quarterTurned(IDENTITY_ORIENTATION, placement.rot)));
+    } else {
+      throw new Error(`starter placement ${placement.ref} is neither an OMR model nor a part`);
+    }
+  }
+  return keys;
+}
+
+function drawnPlacedParts(
+  backend: HeadlessBackend,
+  shards: ReadonlyArray<WorldShardV1>,
+): ReadonlyArray<string> {
+  const laidTrack = new Set(shards.flatMap((shard) => shard.track.map((piece) => piece.ref)));
+  const keys: string[] = [];
+  for (const chunk of backend.chunks.values()) {
+    for (let i = 0; i < chunk.count; i++) {
+      const partId = backend.partIds[chunk.partIndex[i] ?? 0] ?? "";
+      if (!laidTrack.has(partId))
+        keys.push(orientationKey(partId, orientationAt(chunk.matrices, i)));
+    }
+  }
+  return keys;
+}
+
+async function consistSources(
+  container: Container,
+  manifest: WorldManifestV1,
+): Promise<ReadonlyArray<RigidBodySource>> {
+  const bodies: RigidBodySource[] = [];
+  for (const consist of manifest.consists ?? []) {
+    const name = omrModelName(consist.ref);
+    if (name === null) throw new Error(`consist ${consist.ref} is not an OMR model`);
+    const { partIds, model, source } = await modelSource(container, name);
+    for (const vehicle of model.vehicles) {
+      for (const instances of [vehicle.body, ...vehicle.bogies.map((bogie) => bogie.instances)]) {
+        bodies.push({
+          parts: Array.from(instances, (i) => partIds[i] ?? "").join(" "),
+          orientations: Array.from(instances, (i) => source[i]?.orientation ?? []),
+        });
+      }
+    }
+  }
+  return bodies;
+}
+
+function unmatchedVehicles(
+  backend: HeadlessBackend,
+  sources: ReadonlyArray<RigidBodySource>,
+): { readonly drawn: ReadonlyArray<number>; readonly sources: number; readonly unposed: number } {
+  const open = [...sources];
+  const drawn: number[] = [];
+  let unposed = 0;
+  for (const [id, vehicle] of backend.vehicles) {
+    if (!vehicle.posed || vehicle.pitch !== 0 || vehicle.roll !== 0) unposed++;
+    const parts = Array.from(vehicle.model.partIndex, (p) => backend.partIds[p] ?? "").join(" ");
+    const turn = headingTurn(vehicle.yaw);
+    const orientations = Array.from({ length: vehicle.model.count }, (_, k) =>
+      product(turn, orientationAt(vehicle.model.matrices, k)),
+    );
+    const at = open.findIndex(
+      (source) => source.parts === parts && movedRigidly(orientations, source),
+    );
+    if (at < 0) drawn.push(id);
+    else open.splice(at, 1);
+  }
+  return { drawn, sources: open.length, unposed };
+}
+
+it("draws every shipped starter's parts in the orientations their pinned LDraw sources give them, mirrored parts and standing trains included", async () => {
+  const files = await shippedStarterFiles();
+  const shelf = decodedOrThrow(
+    decode(StarterShelfV1, jsonFile(files, STARTER_SHELF_FILE), STARTER_SHELF_FILE),
+    "the shipped shelf is invalid",
+  );
+  const results: StarterOrientations[] = [];
+  for (const { world } of shelf.starters) {
+    const manifestPath = starterFilePath(world, MANIFEST_FILE);
+    const manifest = decodedOrThrow(
+      decode(WorldManifestV1, jsonFile(files, manifestPath), manifestPath),
+      `${world}'s manifest is invalid`,
+    );
+    const shards = manifest.shards.map((entry) => {
+      const path = starterFilePath(world, shardPath(entry.superChunk));
+      return decodedOrThrow(
+        decode(WorldShardV1, jsonFile(files, path), path),
+        `${path} is invalid`,
+      );
+    });
+    const { container, backend, starters } = await startEditor(files);
+    await vi.waitFor(() => expect(starters.view().shelf).toBe("ready"));
+    expect(await starters.open(world)).toBe(true);
+    const expected = tally(await sourcePlacedParts(container, shards));
+    const drawn = tally(drawnPlacedParts(backend, shards));
+    const vehicles = unmatchedVehicles(backend, await consistSources(container, manifest));
+    results.push({
+      world,
+      missing: surplus(expected, drawn),
+      unexpected: surplus(drawn, expected),
+      ...vehicles,
+    });
+  }
+
+  expect(results).toEqual(
+    shelf.starters.map(({ world }) => ({
+      world,
+      missing: [],
+      unexpected: [],
+      drawn: [],
+      sources: 0,
+      unposed: 0,
+    })),
+  );
+}, 600_000);

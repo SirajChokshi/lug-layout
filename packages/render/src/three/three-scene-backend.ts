@@ -87,6 +87,7 @@ import { type ChunkNeeds, ChunkNeedsBuilder } from "./chunk-needs.ts";
 import { GpuBufferTally } from "./gpu-buffer-tally.ts";
 import { GroundPlane } from "./ground-plane.ts";
 import { GuideLines } from "./guide-lines.ts";
+import { MirroredGeometries } from "./mirrored-geometry.ts";
 import {
   MATRIX4_FLOATS,
   groupRunEnd,
@@ -700,6 +701,7 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     linearColorTexture: texture(lookupTexture(new Float32Array(LOOKUP_TEXEL_FLOATS))),
   };
   private studBases = new StudBasisTable();
+  private readonly mirroredGeometries = new MirroredGeometries();
   private uploadedStudBases = 0;
   private materials = new PlasticMaterials(false, 1, this.studLookups);
   private shellMaterials = new PlasticMaterials(false, 1, this.studLookups);
@@ -1867,7 +1869,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
         ? part?.body
         : part?.fixed[meshes.geometryIndex[row] ?? 0]?.geometry;
     if (!geometry) throw new Error(`mesh row ${row} names a geometry its level does not have`);
-    return geometry;
+    return this.handed(geometry, meshes, row);
+  }
+
+  private handed(geometry: BufferGeometry, meshes: MeshPage, row: number): BufferGeometry {
+    return meshes.mirrored[row] === 1 ? this.mirroredGeometries.of(geometry) : geometry;
   }
 
   private partMaterial(
@@ -1999,7 +2005,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
       studBasisAndColorIndexOf(page, start, end),
       1,
     );
-    const near = studGeometry(detailedPrimitive, translations, basisAndColorIndex);
+    const near = studGeometry(
+      this.handed(detailedPrimitive, meshes, row),
+      translations,
+      basisAndColorIndex,
+    );
     const mesh = new StudMesh(near, material, translations, basisAndColorIndex, this.studBases);
     mesh.matrixAutoUpdate = false;
     mesh.receiveShadow = this.look.shadows && !material.transparent;
@@ -2008,7 +2018,11 @@ export class ThreeSceneBackend implements ISceneBackend, IThumbnailRenderer {
     swaps.capture(row, "near", near, material, mesh.boundingSphere);
     const coarsePrimitive = this.farLevel.studs[primitive];
     if ((meshes.shellCount[row] ?? 0) === 0 || !coarsePrimitive) return mesh;
-    const shell = studGeometry(coarsePrimitive, translations, basisAndColorIndex);
+    const shell = studGeometry(
+      this.handed(coarsePrimitive, meshes, row),
+      translations,
+      basisAndColorIndex,
+    );
     mesh.geometry = shell;
     mesh.computeBoundingSphere();
     swaps.capture(row, "shell", shell, shellMaterials.basisInstanced(alpha), mesh.boundingSphere);

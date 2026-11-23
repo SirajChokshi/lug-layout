@@ -1,5 +1,11 @@
 import type { ChunkTier } from "../scene-backend.ts";
-import { groupRunEnd, isNotUpright, isVoxelized, type InstancePage } from "./instance-page.ts";
+import {
+  groupRunEnd,
+  isMirrored,
+  isNotUpright,
+  isVoxelized,
+  type InstancePage,
+} from "./instance-page.ts";
 
 export const MESH_KIND_BODY = 0;
 export const MESH_KIND_FIXED = 1;
@@ -26,6 +32,7 @@ export interface MeshPage {
   readonly shellCount: Uint32Array;
   readonly shellFromDetailed: Uint8Array;
   readonly shellAtFar: Uint8Array;
+  readonly mirrored: Uint8Array;
 }
 
 export type ShownState = "near" | "shell" | "hidden";
@@ -61,6 +68,7 @@ function emptyMeshPage(rows: number): MeshPage {
     shellCount: new Uint32Array(rows),
     shellFromDetailed: new Uint8Array(rows),
     shellAtFar: new Uint8Array(rows),
+    mirrored: new Uint8Array(rows),
   };
 }
 
@@ -91,6 +99,7 @@ class RowWriter {
     shellCount: number,
     fromDetailed: boolean,
     atFar: boolean,
+    mirrored: boolean,
   ): void {
     const out = this.out;
     const row = this.row++;
@@ -104,6 +113,7 @@ class RowWriter {
     out.shellCount[row] = shellCount;
     out.shellFromDetailed[row] = shellCount > 0 && fromDetailed ? 1 : 0;
     out.shellAtFar[row] = shellCount > 0 && atFar ? 1 : 0;
+    out.mirrored[row] = mirrored ? 1 : 0;
   }
 }
 
@@ -121,6 +131,7 @@ function writePartRows(
     const alphaSlot = runs.alphaSlot[first] ?? 0;
     const groupStart = runs.start[first] ?? 0;
     const groupSize = (runs.end[next - 1] ?? 0) - groupStart;
+    const mirrored = isMirrored(runs.instanceClass[first] ?? 0);
     const nearBodyCount = bodyCountOf(detailed, part);
     const nearFixedCount = fixedCountOf(detailed, part);
     for (let run = first; run < next; run++) {
@@ -139,12 +150,34 @@ function writePartRows(
       for (let b = 0; b < bodyRows; b++) {
         const near = pairsWithNear && b < nearBodyCount ? groupSize : 0;
         const shell = b < shellBodyCount ? runSize : 0;
-        rows.write(MESH_KIND_BODY, part, alphaSlot, 0, start, near, shell, fromDetailed, atFar);
+        rows.write(
+          MESH_KIND_BODY,
+          part,
+          alphaSlot,
+          0,
+          start,
+          near,
+          shell,
+          fromDetailed,
+          atFar,
+          mirrored,
+        );
       }
       for (let f = 0; f < fixedRows; f++) {
         const near = pairsWithNear && f < nearFixedCount ? groupSize : 0;
         const shell = f < shellFixedCount ? runSize : 0;
-        rows.write(MESH_KIND_FIXED, part, alphaSlot, f, start, near, shell, fromDetailed, atFar);
+        rows.write(
+          MESH_KIND_FIXED,
+          part,
+          alphaSlot,
+          f,
+          start,
+          near,
+          shell,
+          fromDetailed,
+          atFar,
+          mirrored,
+        );
       }
     }
     first = next;
@@ -165,7 +198,8 @@ function writeStudRows(
     const size = (studs.end[run] ?? 0) - start;
     const shell = far && (far.studs[primitive] ?? 0) !== 0 ? size : 0;
     const alphaSlot = studs.alphaSlot[run] ?? 0;
-    rows.write(MESH_KIND_STUD, primitive, alphaSlot, 0, start, size, shell, false, false);
+    const mirrored = isMirrored(studs.instanceClass[run] ?? 0);
+    rows.write(MESH_KIND_STUD, primitive, alphaSlot, 0, start, size, shell, false, false, mirrored);
   }
 }
 

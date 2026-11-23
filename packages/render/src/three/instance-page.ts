@@ -31,6 +31,7 @@ export function writeMatrix4(
 
 const CLASS_NOT_UPRIGHT = 1;
 const CLASS_VOXELIZED = 2;
+const CLASS_MIRRORED = 4;
 const UPRIGHT_TOLERANCE = 1e-6;
 
 export interface InstanceRuns {
@@ -53,6 +54,7 @@ export interface InstancePage {
   readonly shape: Uint16Array;
   readonly studTranslations: Float32Array;
   readonly studBasisAndColorIndex: Uint32Array;
+  readonly studMirrored: Uint8Array;
   readonly partRuns: InstanceRuns;
   readonly studRuns: InstanceRuns;
 }
@@ -75,6 +77,7 @@ interface PartSource extends RunKeys {
 interface StudSource extends RunKeys {
   readonly translations: Float32Array;
   readonly basisAndColorIndex: Uint32Array;
+  readonly mirrored: Uint8Array;
 }
 
 export function isNotUpright(instanceClass: number): boolean {
@@ -83,6 +86,62 @@ export function isNotUpright(instanceClass: number): boolean {
 
 export function isVoxelized(instanceClass: number): boolean {
   return (instanceClass & CLASS_VOXELIZED) !== 0;
+}
+
+export function isMirrored(instanceClass: number): boolean {
+  return (instanceClass & CLASS_MIRRORED) !== 0;
+}
+
+function sameHandedness(a: number, b: number): boolean {
+  return (a & CLASS_MIRRORED) === (b & CLASS_MIRRORED);
+}
+
+function determinant3(
+  xx: number,
+  xy: number,
+  xz: number,
+  yx: number,
+  yy: number,
+  yz: number,
+  zx: number,
+  zy: number,
+  zz: number,
+): number {
+  return xx * (yy * zz - yz * zy) - xy * (yx * zz - yz * zx) + xz * (yx * zy - yy * zx);
+}
+
+function isMirroredMatrix4(matrices: Float32Array, i: number): boolean {
+  const o = i * MATRIX4_FLOATS;
+  return (
+    determinant3(
+      matrices[o] ?? 0,
+      matrices[o + 4] ?? 0,
+      matrices[o + 8] ?? 0,
+      matrices[o + 1] ?? 0,
+      matrices[o + 5] ?? 0,
+      matrices[o + 9] ?? 0,
+      matrices[o + 2] ?? 0,
+      matrices[o + 6] ?? 0,
+      matrices[o + 10] ?? 0,
+    ) < 0
+  );
+}
+
+function isMirroredRows(matrices: Float32Array, i: number): boolean {
+  const o = i * INSTANCE_MATRIX_FLOATS;
+  return (
+    determinant3(
+      matrices[o] ?? 0,
+      matrices[o + 1] ?? 0,
+      matrices[o + 2] ?? 0,
+      matrices[o + 4] ?? 0,
+      matrices[o + 5] ?? 0,
+      matrices[o + 6] ?? 0,
+      matrices[o + 8] ?? 0,
+      matrices[o + 9] ?? 0,
+      matrices[o + 10] ?? 0,
+    ) < 0
+  );
 }
 
 export function studBasisIndexOf(basisAndColorIndex: number): number {
@@ -108,7 +167,16 @@ function partClassesOf(parts: PartSource): Uint8Array {
   const classes = new Uint8Array(parts.count);
   for (let i = 0; i < parts.count; i++) {
     const voxelized = (parts.voxelized[i] ?? 0) !== 0 ? CLASS_VOXELIZED : 0;
-    classes[i] = voxelized | (isUpright(parts.matrices, i) ? 0 : CLASS_NOT_UPRIGHT);
+    const mirrored = isMirroredMatrix4(parts.matrices, i) ? CLASS_MIRRORED : 0;
+    classes[i] = voxelized | mirrored | (isUpright(parts.matrices, i) ? 0 : CLASS_NOT_UPRIGHT);
+  }
+  return classes;
+}
+
+function studClassesOf(studs: StudSource): Uint8Array {
+  const classes = new Uint8Array(studs.count);
+  for (let i = 0; i < studs.count; i++) {
+    classes[i] = (studs.mirrored[i] ?? 0) !== 0 ? CLASS_MIRRORED : 0;
   }
   return classes;
 }
@@ -138,28 +206,41 @@ function pageOrder(keys: RunKeys, slots: Uint8Array, classes: Uint8Array): Uint3
       (classes[a] ?? 0) - (classes[b] ?? 0) ||
       a - b,
   );
-  return orderGroupsByFirstIndex(order, keys, slots);
+  return orderGroupsByFirstIndex(order, keys, slots, classes);
 }
 
-function sameGroup(keys: RunKeys, slots: Uint8Array, a: number, b: number): boolean {
-  return keys.shape[a] === keys.shape[b] && slots[a] === slots[b];
+function sameGroup(
+  keys: RunKeys,
+  slots: Uint8Array,
+  classes: Uint8Array,
+  a: number,
+  b: number,
+): boolean {
+  return (
+    keys.shape[a] === keys.shape[b] &&
+    slots[a] === slots[b] &&
+    sameHandedness(classes[a] ?? 0, classes[b] ?? 0)
+  );
 }
 
 function orderGroupsByFirstIndex(
   order: Uint32Array,
   keys: RunKeys,
   slots: Uint8Array,
+  classes: Uint8Array,
 ): Uint32Array {
   let groupCount = 0;
   for (let n = 0; n < order.length; n++) {
-    if (n === 0 || !sameGroup(keys, slots, order[n] ?? 0, order[n - 1] ?? 0)) groupCount++;
+    if (n === 0 || !sameGroup(keys, slots, classes, order[n] ?? 0, order[n - 1] ?? 0)) {
+      groupCount++;
+    }
   }
   const groupStart = new Uint32Array(groupCount + 1);
   const firstIndex = new Uint32Array(groupCount);
   let group = -1;
   for (let n = 0; n < order.length; n++) {
     const i = order[n] ?? 0;
-    if (n === 0 || !sameGroup(keys, slots, i, order[n - 1] ?? 0)) {
+    if (n === 0 || !sameGroup(keys, slots, classes, i, order[n - 1] ?? 0)) {
       group++;
       groupStart[group] = n;
       firstIndex[group] = i;
@@ -253,6 +334,7 @@ function copyStuds(studs: StudSource, order: Uint32Array, page: InstancePage): v
         studs.translations[i * TRANSLATION_FLOATS + axis] ?? 0;
     }
     page.studBasisAndColorIndex[n] = studs.basisAndColorIndex[i] ?? 0;
+    page.studMirrored[n] = studs.mirrored[i] ?? 0;
     page.shape[page.partCount + n] = studs.shape[i] ?? 0;
   }
 }
@@ -269,7 +351,7 @@ function build(
   const partClasses = partClassesOf(parts);
   const partOrder = pageOrder(parts, partSlots, partClasses);
   const studSlots = studSlotsOf(studs, colorAlphaSlot);
-  const studClasses = new Uint8Array(studs.count);
+  const studClasses = studClassesOf(studs);
   const studOrder = pageOrder(studs, studSlots, studClasses);
   const page: InstancePage = {
     originX,
@@ -283,6 +365,7 @@ function build(
     shape: new Uint16Array(parts.count + studs.count),
     studTranslations: new Float32Array(studs.count * TRANSLATION_FLOATS),
     studBasisAndColorIndex: new Uint32Array(studs.count),
+    studMirrored: new Uint8Array(studs.count),
     partRuns: runsOf(parts, partOrder, partSlots, partClasses, 0),
     studRuns: runsOf(studs, studOrder, studSlots, studClasses, parts.count),
   };
@@ -301,6 +384,7 @@ function studSourceOf(instances: ChunkInstances, studBases: StudBasisTable): Stu
   const { studs } = instances;
   const translations = new Float32Array(studs.count * TRANSLATION_FLOATS);
   const basisAndColorIndex = new Uint32Array(studs.count);
+  const mirrored = new Uint8Array(studs.count);
   for (let i = 0; i < studs.count; i++) {
     const s = i * INSTANCE_MATRIX_FLOATS;
     translations[i * TRANSLATION_FLOATS] = studs.matrices[s + 3] ?? 0;
@@ -309,8 +393,15 @@ function studSourceOf(instances: ChunkInstances, studBases: StudBasisTable): Stu
     const color = studs.colorIndex[i] ?? 0;
     basisAndColorIndex[i] =
       ((color << STUD_COLOR_INDEX_SHIFT) | studBases.indexOf(studs.matrices, i)) >>> 0;
+    mirrored[i] = isMirroredRows(studs.matrices, i) ? 1 : 0;
   }
-  return { count: studs.count, shape: studs.primitiveIndex, translations, basisAndColorIndex };
+  return {
+    count: studs.count,
+    shape: studs.primitiveIndex,
+    translations,
+    basisAndColorIndex,
+    mirrored,
+  };
 }
 
 export function pageOf(
@@ -403,6 +494,7 @@ export function regroupedPage(
       shape: page.shape.subarray(parts),
       translations: page.studTranslations,
       basisAndColorIndex: page.studBasisAndColorIndex,
+      mirrored: page.studMirrored,
     },
     linearColors,
     colorAlphaSlot,
@@ -414,7 +506,8 @@ export function groupRunEnd(runs: InstanceRuns, firstRun: number): number {
   while (
     end < runs.shape.length &&
     runs.shape[end] === runs.shape[firstRun] &&
-    runs.alphaSlot[end] === runs.alphaSlot[firstRun]
+    runs.alphaSlot[end] === runs.alphaSlot[firstRun] &&
+    sameHandedness(runs.instanceClass[end] ?? 0, runs.instanceClass[firstRun] ?? 0)
   ) {
     end++;
   }
