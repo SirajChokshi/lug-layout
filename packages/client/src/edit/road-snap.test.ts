@@ -274,22 +274,22 @@ describe("road-edge snap", () => {
     }
   });
 
-  it("snaps a piece beside a sidewalk only flush with the neighbour's corner, never part-way along it", () => {
+  it("snaps a piece beside a sidewalk at the stud under the cursor, part-way along it as well as flush with its corner, meeting exactly the cells that overlap", () => {
     const sideX = cellExtent(straight).maxX;
     for (const cursorZ of [-260, -60, 0, 140, 300]) {
       const snap = snapToRoadEdge(roads, curve, 0, 1, ON_THE_TABLE, sideX + 300, cursorZ, ANY_TURN);
       expect(snap).toEqual({
         x: sideX + PLATE_SPAN / 2,
-        z: straight.z,
+        z: cursorZ,
         rot: 2,
-        metCells: 32,
+        metCells: (PLATE_SPAN - Math.abs(cursorZ - straight.z)) / STUD,
         joinedCells: 0,
         joinedRoadCells: 0,
       });
     }
   });
 
-  it("never snaps a crossroads beside a straight's sidewalk, where every turn would butt a road end into it", () => {
+  it("never snaps a crossroads beside a straight's sidewalk: in line with it a road end would butt into the sidewalk, and it never slides along the edge to where only its corner meets", () => {
     const crossroads = roadBaseplate("44343");
     const sideX = cellExtent(straight).maxX;
     for (const preferred of QUARTER_TURNS) {

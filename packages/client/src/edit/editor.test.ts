@@ -2095,6 +2095,70 @@ it("continues a stroke that starts on a user's own road plate as it would from t
   });
 }, 120_000);
 
+const TILE_LDU = 640;
+const ROAD_ROW_XS = [-2240, -1600, -960, -320, 320, 960];
+const ROAD_ROW_Z = -320;
+const BESIDE_ROAD_Z = -960;
+const OFF_PLATE_GRID_X = -900;
+
+async function roadRowAlongX(editor: IEditor, backend: AimedBackend): Promise<void> {
+  await chosen(editor, "ldraw:44336p04@72");
+  editor.rotate(0, 1);
+  for (const x of ROAD_ROW_XS) {
+    backend.aim(x, ROAD_ROW_Z);
+    editor.pointerMove(0, 0);
+    editor.click(0, 0, 0);
+  }
+  editor.chooseItem(null);
+}
+
+async function heldBesideRoad(
+  editor: IEditor,
+  backend: AimedBackend,
+  frame: () => Promise<void>,
+  item: string,
+  x: number,
+) {
+  await chosen(editor, item);
+  backend.aim(x, BESIDE_ROAD_Z);
+  editor.pointerMove(0, 0);
+  await settledHover(editor, frame);
+  const { snap, hover } = editor.snapshot();
+  return { snap: snap?.state, x: hover?.placement?.pose.x, refusal: hover?.refusal ?? null };
+}
+
+it("road-snaps buildings beside a road where the cursor holds them, so Market Street sits flush against the Pet Shop though its overhang puts its footprint's centre a stud off its pose", async () => {
+  const { editor, backend, frame, catalog } = await startEditor(["10218-1", "10190-1"]);
+  await roadRowAlongX(editor, backend);
+  await loadCatalogItem(catalog, "omr:10218-1");
+  await loadCatalogItem(catalog, "omr:10190-1");
+  const petShop = await heldBesideRoad(editor, backend, frame, "omr:10218-1", -960);
+  editor.click(0, 0, 0);
+  const flush = (petShop.x ?? 0) + TILE_LDU;
+  const market = await heldBesideRoad(editor, backend, frame, "omr:10190-1", flush);
+
+  expect({ petShop, market }).toEqual({
+    petShop: { snap: "snapped", x: -960, refusal: null },
+    market: { snap: "snapped", x: flush, refusal: null },
+  });
+}, 120_000);
+
+it("road-snaps a user's road plate with a brick hanging off one edge to the pose under the cursor, between the road plates' corners", async () => {
+  const { editor, backend, frame } = await startImportingEditor();
+  await roadRowAlongX(editor, backend);
+  const plate = userRoadFile("my-awning-plate.ldr", [
+    "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336p04.dat",
+    "1 4 0 -24 320 0 0 1 0 1 0 -1 0 0 3001.dat",
+  ]);
+  const item = await importUserFile(editor, "my-awning-plate.ldr", plate);
+
+  expect(await heldBesideRoad(editor, backend, frame, item, OFF_PLATE_GRID_X)).toEqual({
+    snap: "snapped",
+    x: OFF_PLATE_GRID_X,
+    refusal: null,
+  });
+}, 120_000);
+
 it("lays road to a user's street of a road plate, a grass baseplate and a parked car with a tile roof: the road joins, the grass edge refuses nothing and the car overlaps nothing", async () => {
   const { editor, backend } = await startImportingEditor();
   const street = userRoadFile("my-street-with-grass.ldr", [
