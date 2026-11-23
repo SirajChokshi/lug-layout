@@ -36,7 +36,6 @@ const DRAWN_PAST_TABLE_LDU = 64 * STUD;
 const PLASTIC_OVAL_OFFSET_LDU = 640;
 const PLASTIC_FILES: ReadonlySet<string> = new Set(["53401.dat", "53400.dat"]);
 const KINKED_RUN_FREE_ENDS = 2;
-const PLASTIC_OVAL_STRAIGHT_RUNS = 2;
 
 interface Reference {
   readonly color: string;
@@ -627,7 +626,7 @@ async function kinkedRunBesidePlasticOval(): Promise<string> {
   return file;
 }
 
-test("a plan lists the kink in a user's 9V run as ends that don't join, warns that its plastic curves have unverified poses, and lists drawn track past the table edge", async ({
+test("a plan lists the kink in a user's 9V run as ends that don't join, closes the user's plastic oval on its curves while warning that their poses are unverified, and lists drawn track past the table edge", async ({
   page,
 }) => {
   const editor = await importAndPlace(page, await kinkedRunBesidePlasticOval());
@@ -648,9 +647,7 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, warns th
   await planShot(page, "plan-kink-unverified-and-off-the-table");
   await page.screenshot({ path: test.info().outputPath("kink-plastic-oval-and-drawn-run.png") });
 
-  expect(ruled(placed, "trackOpenEnd")).toHaveLength(
-    KINKED_RUN_FREE_ENDS + 2 * PLASTIC_OVAL_STRAIGHT_RUNS,
-  );
+  expect(ruled(placed, "trackOpenEnd")).toHaveLength(KINKED_RUN_FREE_ENDS);
   expect(ruled(placed, "trackJoin")).toEqual([
     expect.stringMatching(
       /^Two track ends of kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ meet at \(-?\d+ mm, -?\d+ mm\) but don't join: their headings are 90° off a straight join\.$/u,
@@ -661,7 +658,7 @@ test("a plan lists the kink in a user's 9V run as ends that don't join, warns th
       rule: "trackUnverified",
       severity: "warning",
       message: expect.stringMatching(
-        /^kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ holds 16 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified, so the plan can't check their ends/u,
+        /^kinked-run-and-plastic-oval\.ldr at -?\d+, -?\d+ holds 16 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified: they're derived from the part file but not certified/u,
       ),
     },
   ]);

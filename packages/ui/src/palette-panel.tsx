@@ -45,6 +45,7 @@ const PALETTE_FIELDS = [
   "mode",
   "status",
   "trackNotDrawable",
+  "trackTools",
   "readOnly",
   "roadKits",
   "roadKit",
@@ -386,23 +387,39 @@ function TrackSection({
   snapshot,
 }: Pick<PaletteProps, "editor" | "snapshot"> & { readonly rows: ReadonlyArray<PaletteRow> }) {
   const items = rows.flatMap((row) => row.items);
-  const tool = items.find((item) => item.listedUnder === null);
+  const tools = items.filter((item) => item.listedUnder === null);
   const pieces = items.filter((item) => item.listedUnder !== null);
-  const drawing = tool !== undefined && snapshot.activeItem === tool.id;
   return (
     <Section id="track" title="Track" count={`${pieces.length} real pieces`}>
-      {tool && (
-        <button
-          type="button"
-          className="palette-primary"
-          data-item={tool.id}
-          aria-pressed={drawing}
-          disabled={snapshot.readOnly}
-          onClick={() => choosePaletteItem(editor, snapshot, tool)}
-        >
-          {drawing ? "Drawing track" : "Draw track"} <FirstChord id="draw-track" />
-        </button>
-      )}
+      {tools.map((tool) => {
+        const drawing = snapshot.activeItem === tool.id;
+        const state = snapshot.trackTools.find((candidate) => candidate.item === tool.id);
+        const noun = tool.shortLabel.toLowerCase();
+        return (
+          <button
+            key={tool.id}
+            type="button"
+            className="palette-primary"
+            data-item={tool.id}
+            aria-pressed={drawing}
+            disabled={snapshot.readOnly}
+            title={tool.label}
+            onClick={() => choosePaletteItem(editor, snapshot, tool)}
+          >
+            {drawing ? `Drawing ${noun}` : `Draw ${noun}`}{" "}
+            {state?.active === true && <FirstChord id="draw-track" />}
+            {state?.status === "unverified" && (
+              <span
+                className="part-badge"
+                data-badge="unverified"
+                title="Its curves' connector poses come from the part file but aren't certified, so its joins are only as exact as those poses."
+              >
+                unverified
+              </span>
+            )}
+          </button>
+        );
+      })}
       <p className="palette-hint">
         Drag on the ground to lay a run. Start or release on an open end (amber arrow) to join it
         exactly; red arrows mark ends that nearly meet but don't join.

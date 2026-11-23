@@ -11,9 +11,11 @@ import {
   attachPose16,
   chunkKey,
   chunkOf,
+  composePose16,
   mmFromLdu,
   pose16,
   zeta16,
+  zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
 import { INSTANCE_MATRIX_FLOATS, SCENE_BACKEND, type WorldBox } from "@brr/render";
@@ -54,6 +56,8 @@ const FAR_EAST_STUDS = 600n;
 const ROOM_DEPTH_MM = 3000;
 const OFF_FIELD_RADIANS = (0.1 * Math.PI) / 180;
 const UNCHECKED_ENDS = "so the plan can't check their ends or join anything to them.";
+const UNVERIFIED_POSES =
+  "whose connector poses are unverified: they're derived from the part file but not certified, so their joins are only as exact as those poses.";
 
 class BundleDirectoryFetcher implements IAssetFetcher {
   async bytes(path: string): Promise<ArrayBuffer> {
@@ -382,13 +386,20 @@ it("counts a point where laid track meets without joining only in a room one of 
   expect(at.backend.boxes).toEqual([]);
 });
 
-it("warns that a user's model holds plastic curves whose connector poses are unverified, naming the part and count, beside the open ends of its certified straight", () => {
+it("joins a user's model's plastic curves to its straight on their unverified connector poses, warns that they're unverified with the part and count, and lists the run's two open ends", () => {
   const at = room();
-  const plastic = userModel(
-    "My plastic run",
-    chainedPoses(bundle, studPose(0n, 0n, 0), [PLASTIC_STRAIGHT, PLASTIC_CURVE, PLASTIC_CURVE]),
-  );
+  const run = chainedPoses(bundle, studPose(0n, 0n, 0), [
+    PLASTIC_STRAIGHT,
+    PLASTIC_CURVE,
+    PLASTIC_CURVE,
+  ]);
+  const plastic = userModel("My plastic run", run);
   place(at, plastic);
+  const [lastPart, lastPose] = run.at(-1) ?? [PLASTIC_CURVE, studPose(0n, 0n, 0)];
+  const exit = catalogPieceOf(bundle, lastPart).connectors[1]?.pose;
+  if (!exit) throw new Error(`${lastPart} has no exit connector`);
+  const far = zeta16ToStuds(composePose16(lastPose, exit).position);
+  const farEnd = planAt(MODEL_AT.x + far.x * STUD_LDU, MODEL_AT.z + far.z * STUD_LDU);
 
   expect(
     at.plans.issues(at.planId).map((issue) => [issue.rule, issue.severity, issue.message]),
@@ -401,12 +412,12 @@ it("warns that a user's model holds plastic curves whose connector poses are unv
     [
       "trackOpenEnd",
       "error",
-      `Open track end at ${KINK} on My plastic run ${MODEL_LABEL_AT}: nothing joins it.`,
+      `Open track end at ${farEnd} on My plastic run ${MODEL_LABEL_AT}: nothing joins it.`,
     ],
     [
       "trackUnverified",
       "warning",
-      `My plastic run ${MODEL_LABEL_AT} holds 2 × 53400 Train Track 6 Studs Wide Curved, whose connector poses are unverified, ${UNCHECKED_ENDS}`,
+      `My plastic run ${MODEL_LABEL_AT} holds 2 × 53400 Train Track 6 Studs Wide Curved, ${UNVERIFIED_POSES}`,
     ],
   ]);
 });

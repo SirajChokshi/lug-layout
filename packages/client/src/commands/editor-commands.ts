@@ -793,9 +793,12 @@ export function runEditorAction(
     case "select-tool":
       if (!editor.dropTrackEnd()) editor.chooseItem(null);
       return;
-    case "draw-track":
-      editor.chooseItem(editor.snapshot().mode === "track" ? null : TRACK_ITEM_ID);
+    case "draw-track": {
+      const snapshot = editor.snapshot();
+      const tool = snapshot.trackTools.find((candidate) => candidate.active)?.item;
+      editor.chooseItem(snapshot.mode === "track" ? null : (tool ?? TRACK_ITEM_ID));
       return;
+    }
     case "draw-road": {
       const snapshot = editor.snapshot();
       editor.chooseItem(snapshot.mode === "road" ? null : snapshot.roadKit);

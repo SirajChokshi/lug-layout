@@ -7,6 +7,7 @@ export const TRACK_OPEN_END = 0;
 export const TRACK_UNJOINED_ENDS = 1;
 export const TRACK_UNVERIFIED = 2;
 export const TRACK_UNIDENTIFIED = 3;
+export const TRACK_LAID_UNVERIFIED = 4;
 
 const NO_HEADING_OFFSET = -1;
 const INITIAL_ISSUES = 8;
@@ -214,6 +215,8 @@ function heldParts(names: ReadonlyArray<string>, rows: TrackIssueRows, issue: nu
 }
 
 const UNCHECKED_ENDS = "so the plan can't check their ends or join anything to them.";
+const UNVERIFIED_POSES =
+  "whose connector poses are unverified: they're derived from the part file but not certified, so their joins are only as exact as those poses.";
 
 function unjoinedMessage(
   names: ReadonlyArray<string>,
@@ -267,7 +270,15 @@ export function trackIssue(region: PlanRegion, rows: TrackIssueRows, issue: numb
         rule: "trackUnverified",
         severity: "warning",
         placements,
-        message: `${heldParts(names, rows, issue)}, whose connector poses are unverified, ${UNCHECKED_ENDS}`,
+        message: `${heldParts(names, rows, issue)}, ${UNVERIFIED_POSES}`,
+        ...fit,
+      };
+    case TRACK_LAID_UNVERIFIED:
+      return {
+        rule: "trackUnverified",
+        severity: "warning",
+        placements,
+        message: `${rows.quantity[issue] ?? 0} × ${partNumber(rows.part[issue] ?? "")} ${rows.title[issue] ?? ""} laid as ${listed(names)}, ${UNVERIFIED_POSES}`,
         ...fit,
       };
     case TRACK_UNIDENTIFIED:

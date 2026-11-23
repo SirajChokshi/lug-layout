@@ -1,5 +1,5 @@
 import type { PartBundle, PartShapeAsset } from "@brr/catalog";
-import type { TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
+import type { PoseStatus, TrackPartFrame, TrackPiece, TrackShape } from "@brr/schema/bundle";
 import type { Decoded, Issue } from "@brr/schema/decode";
 import { decodeTrackPosition, encodeTrackPosition, type TrackRecordV1 } from "@brr/schema/world";
 import {
@@ -17,6 +17,7 @@ import {
   TRACK_UNIDENTIFIED,
   TRACK_UNJOINED_ENDS,
   TRACK_UNVERIFIED,
+  TRACK_LAID_UNVERIFIED,
   type PlanDelta,
   type TrackIssueRows,
   NEAR_MISS_RADIUS_LDU,
@@ -136,6 +137,20 @@ export type {
 } from "./track-drag.ts";
 
 export const TRACK_SYSTEM = "lego-9v";
+
+export interface TrackSystemView {
+  readonly system: string;
+  readonly status: PoseStatus;
+  readonly straight: KitPart;
+  readonly curve: KitPart | null;
+}
+
+interface SystemKit extends TrackSystemView {
+  readonly kit: DrawingKit;
+  readonly outlines: KitOutlines;
+  readonly router: StrokeRouter;
+  readonly railTopLdu: number;
+}
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
 const HALF_STEP_RADIANS = HEADING_RADIANS / 2;
 const END_PICK_RADIUS_LDU = 3 * STUD_LDU;
@@ -613,8 +628,9 @@ export function trackChunkKey(chunkX: number, chunkZ: number): number {
 }
 
 export class TrackDrawing implements ExtensionSite {
-  readonly kit: DrawingKit;
   readonly extension: TrackExtension;
+  private readonly systemKits = new Map<string, SystemKit>();
+  private active: SystemKit;
   private readonly byDef = new Map<string, KitPart>();
   private readonly byCatalogIndex = new Map<number, KitPart>();
   private readonly byPieceId = new Map<string, KitPart>();
@@ -662,7 +678,6 @@ export class TrackDrawing implements ExtensionSite {
   private spanTop = new Float64Array(0);
   private spanRailTop = new Float64Array(0);
   private raisedAt = new Int32Array(0);
-  private readonly railTopLdu: number;
   private readonly pieceBoxScratch = new Float64Array(OUTLINE_BOX_FLOATS);
   private tallest: TallestTrain | null = null;
   private readonly crossingShapes = new Map<number, CrossingShape>();
@@ -675,8 +690,6 @@ export class TrackDrawing implements ExtensionSite {
   private readonly chunkSquareScratch = new Float64Array(OUTLINE_BOX_FLOATS);
   private readonly rectOutline = new Float64Array(RECT_OUTLINE_FLOATS);
   private gapList: ReadonlyArray<EndGap> = [];
-  private readonly kitOutlines: KitOutlines;
-  private readonly router: StrokeRouter;
   private readonly refusedColor: number;
   private drag: TrackDrag | null = null;
   private lastSolveMs = 0;
@@ -726,7 +739,6 @@ export class TrackDrawing implements ExtensionSite {
     this.graph = new TrackGraph(this.layout);
     const placeable: Array<readonly [number, TrackPiece]> = [];
     catalog.pieces.forEach((piece, catalogIndex) => {
-      if (piece.status !== "certified") return;
       const shape = kitFootprints(piece, shapes);
       const outline = footprintOutline(shape, piece.partFrame);
       this.outlines.set(catalogIndex, outline);
@@ -744,7 +756,6 @@ export class TrackDrawing implements ExtensionSite {
         bedLdu: shape.minY - part.boundsMin[1],
         system: piece.system,
       });
-      if (piece.system !== TRACK_SYSTEM) return;
       const inKit = piece.kind === "straight" || piece.kind === "curve";
       if (part.producedColor === undefined) {
         throw new Error(`${piece.id}: track part has no sourced produced colour`);
@@ -767,13 +778,14 @@ export class TrackDrawing implements ExtensionSite {
       placeable.push([catalogIndex, piece]);
     });
     this.pieceSet = new TrackPieceSet(placeable);
-    const result = drawingKit([...this.byDef.values()].map((k) => k.def));
-    if (result.kind !== "kit") throw new Error(`no ${TRACK_SYSTEM} drawing kit: ${result.reason}`);
-    this.kit = result.kit;
-    const { kit: straight, part: straightPart } = this.kitStraight();
-    this.railTopLdu = straight.yLdu + straightPart.boundsMax[1];
-    this.kitOutlines = new KitOutlines(this.kit, (piece) => this.placeablePiece(piece.id).outline);
-    this.router = new StrokeRouter(this.kitOutlines);
+    const systems = new Set([TRACK_SYSTEM, ...[...this.byDef.values()].map((p) => p.piece.system)]);
+    for (const system of systems) {
+      const built = this.systemKit(system);
+      if (built) this.systemKits.set(system, built);
+    }
+    const active = this.systemKits.get(TRACK_SYSTEM) ?? [...this.systemKits.values()][0];
+    if (!active) throw new Error("the track catalog has no system to draw: no straight and curve");
+    this.active = active;
     this.refusedColor = colors.indexOfCode(REFUSED_PIECE_LDRAW_COLOR);
     const pieces: BandPieces = {
       count: () => this.combined.count,
@@ -785,6 +797,55 @@ export class TrackDrawing implements ExtensionSite {
     this.extension = new TrackExtension(this);
   }
 
+  private systemKit(system: string): SystemKit | null {
+    const parts = [...this.byDef.values()].filter((part) => part.piece.system === system);
+    const straight = parts.find((part) => part.piece.kind === "straight");
+    const straightPart = straight ? this.parts[straight.partIndex] : undefined;
+    const result = drawingKit(parts.map((part) => part.def));
+    if (!straight || !straightPart || result.kind !== "kit") return null;
+    const outlines = new KitOutlines(result.kit, (piece) => this.placeablePiece(piece.id).outline);
+    return {
+      system,
+      status: parts.every((part) => part.piece.status === "certified") ? "certified" : "unverified",
+      straight,
+      curve: parts.find((part) => part.piece.kind === "curve") ?? null,
+      kit: result.kit,
+      outlines,
+      router: new StrokeRouter(outlines),
+      railTopLdu: straight.yLdu + straightPart.boundsMax[1],
+    };
+  }
+
+  get kit(): DrawingKit {
+    return this.active.kit;
+  }
+
+  get activeSystem(): string {
+    return this.active.system;
+  }
+
+  systems(): ReadonlyArray<TrackSystemView> {
+    return [...this.systemKits.values()];
+  }
+
+  useSystem(system: string): boolean {
+    const chosen = this.systemKits.get(system);
+    if (!chosen) return false;
+    if (chosen === this.active) return true;
+    this.cancelDrag();
+    this.active = chosen;
+    this.extension.endsChanged();
+    return true;
+  }
+
+  private railTopOf(catalogIndex: number): number {
+    const system = this.pieces[catalogIndex]?.system;
+    return (
+      (system === undefined ? undefined : this.systemKits.get(system))?.railTopLdu ??
+      this.active.railTopLdu
+    );
+  }
+
   private measureSpan(placement: number): void {
     const layout = this.combined;
     const [bottom, top] = this.pieceRanges.get(layout.piece(placement)) ?? this.verticalRange();
@@ -794,7 +855,7 @@ export class TrackDrawing implements ExtensionSite {
     const high = Math.max(yPlates, end) * PLATE_LDU;
     this.spanBottom[placement] = bottom + low;
     this.spanTop[placement] = top + high;
-    this.spanRailTop[placement] = this.railTopLdu + high;
+    this.spanRailTop[placement] = this.railTopOf(layout.piece(placement)) + high;
   }
 
   get drawingPlates(): number {
@@ -852,24 +913,29 @@ export class TrackDrawing implements ExtensionSite {
   }
 
   kitParts(): ReadonlyArray<KitPart> {
-    return [...this.byDef.values()];
+    return [...this.byDef.values()].filter((part) => part.piece.system === this.active.system);
   }
 
-  private kitStraight(): { readonly kit: KitPart; readonly part: PartShapeAsset } {
-    const straight = this.kitParts().find((k) => k.piece.kind === "straight");
-    const part = straight ? this.parts[straight.partIndex] : undefined;
-    if (!straight || !part) throw new Error(`the ${TRACK_SYSTEM} kit has no straight to run on`);
-    return { kit: straight, part };
+  private mostLaidSystem(): SystemKit {
+    const counts = new Map<SystemKit, number>();
+    for (let p = 0; p < this.combined.count; p++) {
+      const system = this.pieces[this.combined.piece(p)]?.system;
+      const kit = system === undefined ? undefined : this.systemKits.get(system);
+      if (kit) counts.set(kit, (counts.get(kit) ?? 0) + 1);
+    }
+    let most = this.active;
+    for (const [kit, count] of counts) if (count > (counts.get(most) ?? 0)) most = kit;
+    return most;
   }
 
   playTrack(): PlayTrack {
-    const { kit: straight } = this.kitStraight();
-    const box = straight.footprints;
+    const rail = this.mostLaidSystem();
+    const box = rail.straight.footprints;
     return {
       layout: this.combined,
       pieces: this.pieces,
-      railPart: straight.piece.part,
-      railTopY: this.railTopLdu,
+      railPart: rail.straight.piece.part,
+      railTopY: rail.railTopLdu,
       halfWidthLdu: Math.min((box[2] ?? 0) - (box[0] ?? 0), (box[3] ?? 0) - (box[1] ?? 0)) / 2,
     };
   }
@@ -1097,7 +1163,7 @@ export class TrackDrawing implements ExtensionSite {
     const band = this.bands.laying(this.dragPlates, this.dragPlates);
     this.drag = new TrackDrag(
       this.kit,
-      this.router,
+      this.active.router,
       ends,
       this.laidRunEnd,
       () => performance.now(),
@@ -1506,7 +1572,7 @@ export class TrackDrawing implements ExtensionSite {
       {
         clearance: field.clearance,
         support: field.support,
-        outlines: this.kitOutlines,
+        outlines: this.active.outlines,
         startOwner: field.pieceOwner(this.endOwners[from]),
         goalOwner: field.pieceOwner(this.endOwners[to]),
       },
@@ -2583,6 +2649,25 @@ export class TrackDrawing implements ExtensionSite {
       if (!carrier) continue;
       this.addPartRows(rows, TRACK_UNVERIFIED, carrier.unverified, carrier.model);
       this.addPartRows(rows, TRACK_UNIDENTIFIED, carrier.unidentified, carrier.model);
+    }
+    this.addLaidUnverifiedRows(rows);
+  }
+
+  private addLaidUnverifiedRows(rows: TrackIssueRows): void {
+    const laid = new Map<number, number[]>();
+    for (let p = 0; p < this.layout.count; p++) {
+      const catalogIndex = this.layout.piece(p);
+      if (this.pieces[catalogIndex]?.status !== "unverified") continue;
+      const placements = laid.get(catalogIndex) ?? [];
+      placements.push(p);
+      laid.set(catalogIndex, placements);
+    }
+    for (const [catalogIndex, placements] of laid) {
+      const piece = this.pieces[catalogIndex];
+      if (!piece) continue;
+      const issue = rows.add(TRACK_LAID_UNVERIFIED, piece.part, piece.title);
+      rows.quantity[issue] = placements.length;
+      for (const placement of placements) this.addEndOwner(rows, issue, placement);
     }
   }
 
