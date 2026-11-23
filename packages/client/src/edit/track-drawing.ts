@@ -369,18 +369,6 @@ export interface TrackPieceHit {
   readonly distance: number;
 }
 
-export interface JoinEndView {
-  readonly placement: number;
-  readonly connector: number;
-  readonly pose: Pose16;
-  readonly yPlates: number;
-}
-
-export interface TrackJoinView {
-  readonly end: JoinEndView;
-  readonly partner: JoinEndView;
-}
-
 export interface LaidPieceView {
   readonly piece: string;
   readonly xLdu: number;
@@ -635,6 +623,7 @@ export class TrackDrawing implements ExtensionSite {
   private readonly ownerBox = new Float64Array(PIECE_BOX_FLOATS);
   private readonly headingOutlines = new Map<number, HeadingOutline>();
   private readonly joinedOwners: number[] = [];
+  private readonly carriedJoinOwners: number[] = [];
   private readonly scratchBox = { minX: 0, minY: 0, minZ: 0, maxX: 0, maxY: 0, maxZ: 0 };
   private ends: Pose16[] = [];
   private endPlates: number[] = [];
@@ -1321,33 +1310,6 @@ export class TrackDrawing implements ExtensionSite {
     }
   }
 
-  joinsTouching(inside: ReadonlySet<number>): ReadonlyArray<TrackJoinView> {
-    const graph = this.graph;
-    const joins: TrackJoinView[] = [];
-    for (let end = 0; end < graph.endCount; end++) {
-      const partnerEnd = graph.endPartner[end] ?? NO_END;
-      if (partnerEnd === NO_END || graph.endFrame[end] !== WORLD_TRACK_FRAME.id) continue;
-      const placement = graph.endPlacement[end] ?? 0;
-      const partner = graph.endPlacement[partnerEnd] ?? 0;
-      if (!inside.has(placement)) continue;
-      if (inside.has(partner) && partnerEnd < end) continue;
-      joins.push({ end: this.joinEnd(end), partner: this.joinEnd(partnerEnd) });
-    }
-    return joins;
-  }
-
-  private joinEnd(end: number): JoinEndView {
-    const graph = this.graph;
-    const placement = graph.endPlacement[end] ?? 0;
-    const connector = graph.endConnector[end] ?? 0;
-    return {
-      placement,
-      connector,
-      pose: this.combined.connectorPose(placement, connector),
-      yPlates: graph.endYPlates[end] ?? 0,
-    };
-  }
-
   connectorPose(catalogIndex: number, placement: Pose16, connector: number): Pose16 {
     const local = this.pieces[catalogIndex]?.connectors[connector]?.pose;
     if (!local) throw new RangeError(`catalog piece ${catalogIndex} has no connector ${connector}`);
@@ -1444,11 +1406,12 @@ export class TrackDrawing implements ExtensionSite {
       const field = this.bands.solid(low, high);
       const span = this.bands.span(low, high);
       const skipped = this.skippedIds(field, moving, movingOwners);
+      const joined = this.carriedJoins(field, carried, moving);
       const { rects, floats } = rectsIn(span.bottomLdu, span.topLdu);
       for (let r = 0; r < floats; r += OBSTACLE_RECT_FLOATS) {
         writeRectOutline(rect, rects, r);
         outlineBox(rect, box, 0);
-        const hit = field.clearance.blockerExcept(rect, box, 0, 0, NO_JOINS, skipped);
+        const hit = field.clearance.blockerExcept(rect, box, 0, 0, joined, skipped);
         if (field.isTrack(hit)) return field.describe(hit);
       }
     }
@@ -1480,6 +1443,30 @@ export class TrackDrawing implements ExtensionSite {
       if (hit !== NO_OBSTACLE) return field.describe(hit);
     }
     return null;
+  }
+
+  private carriedJoins(
+    field: DragField,
+    carried: ReadonlyArray<FramedTrackPiece>,
+    moving: ReadonlySet<number>,
+  ): ReadonlyArray<number> {
+    const owners = this.carriedJoinOwners;
+    owners.length = 0;
+    for (const piece of carried) {
+      if (piece.frame.id !== WORLD_TRACK_FRAME.id) continue;
+      const connectors = this.layout.pieces[piece.catalogIndex]?.connectors ?? NO_POSES;
+      for (const owner of this.joinedAt(
+        field,
+        connectors,
+        piece.placement,
+        piece.yPlates,
+        0,
+        moving,
+      )) {
+        if (!owners.includes(owner)) owners.push(owner);
+      }
+    }
+    return owners;
   }
 
   private framedScratchFor(floats: number): Float64Array {

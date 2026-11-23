@@ -5996,16 +5996,16 @@ describe("selection groups with laid track", () => {
     expect(seen).toEqual([[]]);
   }, 120_000);
 
-  it("box-selects a user's brick with laid track, nudges, turns and deletes them as one undo step each that redo repeats, and won't pull a piece off its join", async () => {
+  it("box-selects a user's brick with laid track, nudges, turns and deletes them as one undo step each that redo repeats, and pulls a piece off its join like real track, which undo joins again", async () => {
     const { editor, backend } = await brickBesideRun();
     const laid = groupOutcome(editor);
 
     const partial = boxSelect(editor, backend, [-520, -200], [-140, 500]);
     const partialPieces = pieceCentres(editor);
-    editor.moveSelectionBy(STUD, 0, 0);
-    const nudgeOff = groupOutcome(editor);
-    editor.rotate(0, 1);
-    const turnOff = groupOutcome(editor);
+    editor.moveSelectionBy(-STUD, 0, 0);
+    const pulledOff = groupOutcome(editor);
+    editor.undo(0);
+    const rejoined = groupOutcome(editor);
 
     const whole = boxSelect(editor, backend, [-520, -200], [520, 500]);
     const wholeTitle = toolHints(editor.snapshot()).title;
@@ -6032,26 +6032,27 @@ describe("selection groups with laid track", () => {
     editor.redo(0);
     const deleteRedone = groupOutcome(editor);
 
-    const offJoin = { ...laid, selected: partial.selected, pieces: partialPieces };
-    expect({ partial, nudgeOff, turnOff }).toEqual({
+    const partialSelected = { ...laid, selected: partial.selected, pieces: partialPieces };
+    expect({ partial, pulledOff, rejoined }).toEqual({
       partial: {
         kind: "box",
         inside: { kind: "box", models: 1, pieces: 1, trains: 0 },
         selected: [HELD_BRICK, STRAIGHT_PIECE].toSorted(),
         outlined: 2,
       },
-      nudgeOff: {
-        ...offJoin,
-        refusal: expect.stringMatching(
-          /^Can't move them there\. .* is joined to .*pull that join apart/u,
-        ),
+      pulledOff: {
+        ...partialSelected,
+        poses: laid.poses.map((pose) => pose.replace(" -320 400 ", " -340 400 ")),
+        openEnds: 4,
+        joins: 1,
+        undo: "move",
+        undoDepth: laid.undoDepth + 1,
+        pieces: partialPieces.map((at) => {
+          const [x, z] = centreOf(at);
+          return `${x - STUD},${z}`;
+        }),
       },
-      turnOff: {
-        ...offJoin,
-        refusal: expect.stringMatching(
-          /^Can't turn the group\. .* is joined to .*pull that join apart/u,
-        ),
-      },
+      rejoined: partialSelected,
     });
     expect(whole.selected).toEqual([HELD_BRICK, STRAIGHT_PIECE, STRAIGHT_PIECE, STRAIGHT_PIECE]);
     expect(wholeTitle).toBe("1 model and 3 track pieces selected");
@@ -6121,7 +6122,7 @@ describe("selection groups with laid track", () => {
     expect(undone).toEqual([turned, nudged, laid]);
   }, 120_000);
 
-  it("drags a lone laid piece along its line until it joins the open end exactly, won't nudge it off that join, and pastes a copy of it on the cursor in one undo step", async () => {
+  it("drags a lone laid piece along its line until it joins the open end exactly, nudges it off that join and back by undo, and pastes a copy of it on the cursor in one undo step", async () => {
     const { editor, backend } = await startEditor([]);
     editor.chooseItem(TRACK_ITEM_ID);
     dragTrack(editor, backend, [-24 * STUD, 0], [-8 * STUD, 0]);
@@ -6133,7 +6134,9 @@ describe("selection groups with laid track", () => {
     const slid = dragGroup(editor, backend, [16 * STUD, 0], [0, 0]);
     const joined = groupOutcome(editor);
     editor.moveSelectionBy(STUD, 0, 0);
-    const nudgeOff = groupOutcome(editor);
+    const pulled = groupOutcome(editor);
+    editor.undo(0);
+    const rejoined = groupOutcome(editor);
     editor.copySelection();
     editor.pasteClipboard();
     backend.aim(0, 40 * STUD);
@@ -6160,7 +6163,7 @@ describe("selection groups with laid track", () => {
         ghost: { x: -16 * STUD, z: 0, rot: 0 },
       },
     });
-    expect({ joined, nudgeOff, pasting, pasted, pasteUndone }).toEqual({
+    expect({ joined, pulled, rejoined, pasting, pasted, pasteUndone }).toEqual({
       joined: {
         ...apart,
         joins: 1,
@@ -6170,12 +6173,14 @@ describe("selection groups with laid track", () => {
         selected: [STRAIGHT_PIECE],
         pieces: ["0,0"],
       },
-      nudgeOff: {
+      pulled: {
         ...joined,
-        refusal: expect.stringMatching(
-          /^Can't move it there\. .* is joined to .*pull that join apart/u,
-        ),
+        joins: 0,
+        openEnds: 4,
+        undoDepth: joined.undoDepth + 1,
+        pieces: [`${STUD},0`],
       },
+      rejoined: joined,
       pasting: expect.objectContaining({ kind: "paste", models: 0, pieces: 1, refusal: null }),
       pasted: {
         ...joined,
@@ -6189,7 +6194,7 @@ describe("selection groups with laid track", () => {
     });
   }, 120_000);
 
-  it("moves a lone laid piece from the properties panel by its centre in studs until it joins the open end, refuses pulling it off that join, and offers it no model rotation", async () => {
+  it("moves a lone laid piece from the properties panel by its centre in studs until it joins the open end, and offers it no model rotation", async () => {
     const { editor, backend } = await startEditor([]);
     editor.chooseItem(TRACK_ITEM_ID);
     dragTrack(editor, backend, [-24 * STUD, 0], [-8 * STUD, 0]);
@@ -6203,10 +6208,8 @@ describe("selection groups with laid track", () => {
     const joined = { ...groupOutcome(editor), pivotStuds: pivot() };
     editor.turnSelectedModelTo(1, 0);
     const turned = { ...groupOutcome(editor), pivotStuds: pivot() };
-    editor.moveSelectionTo(1, 0, 0);
-    const pulled = { ...groupOutcome(editor), pivotStuds: pivot() };
 
-    expect({ apart: apart.pivotStuds, joined, pulled, turned }).toEqual({
+    expect({ apart: apart.pivotStuds, joined, turned }).toEqual({
       apart: { x: 16, z: 0 },
       joined: {
         ...apart,
@@ -6216,12 +6219,6 @@ describe("selection groups with laid track", () => {
         undoDepth: apart.undoDepth + 1,
         pieces: ["0,0"],
         pivotStuds: { x: 0, z: 0 },
-      },
-      pulled: {
-        ...joined,
-        refusal: expect.stringMatching(
-          /^Can't move it there\. .* is joined to .*pull that join apart/u,
-        ),
       },
       turned: joined,
     });
@@ -6248,7 +6245,7 @@ describe("selection groups with laid track", () => {
     expect(editor.snapshot().track?.pieces).toBe(2);
   }, 120_000);
 
-  it("won't nudge a set whose own track is joined to laid track, moves both together with the join kept, and won't drag them into the module beside them", async () => {
+  it("nudges a set off the laid track its own track is joined to, moves both together with the join kept, and won't drag them into the module beside them", async () => {
     const { editor, backend, catalog } = await startEditor(["mils-plain", PLACEABLE_SET]);
     await loadCatalogItem(catalog, PLAIN_MODULE);
     await loadCatalogItem(catalog, SET);
@@ -6267,16 +6264,19 @@ describe("selection groups with laid track", () => {
     dragTrack(editor, backend, from, [from[0] + outward[0] * reach, from[1] + outward[1] * reach]);
     editor.chooseItem(null);
     const joined = groupOutcome(editor);
+    const { joins: joinedCount = 0, openEnds: openCount = 0 } = joined;
 
+    const [dx, dz] = [outward[1] * STUD, outward[0] * STUD];
+    const [backX, backZ] = [-outward[0] * STUD, -outward[1] * STUD];
     expect(selectAt(editor, backend, 0, 0)?.item).toBe(SET);
-    editor.moveSelectionBy(outward[1] * STUD, outward[0] * STUD, 0);
+    editor.moveSelectionBy(backX, backZ, 0);
     const setAlone = groupOutcome(editor);
+    editor.undo(0);
     toggleAt(editor, backend, [
       from[0] + (outward[0] * reach) / 2,
       from[1] + (outward[1] * reach) / 2,
     ]);
     const pair = groupOutcome(editor);
-    const [dx, dz] = [outward[1] * STUD, outward[0] * STUD];
     editor.moveSelectionBy(dx, dz, 0);
     const together = groupOutcome(editor);
     const ontoModule = dragGroup(editor, backend, [0, 0], [0, 1600]).gesture;
@@ -6286,10 +6286,14 @@ describe("selection groups with laid track", () => {
     expect({ setAlone, together }).toEqual({
       setAlone: {
         ...joined,
-        selected: [SET],
-        refusal: expect.stringMatching(
-          /^Can't move it there\. .* is joined to .*pull that join apart/u,
+        poses: joined.poses.map((pose) =>
+          pose.startsWith(`${SET} `) ? shiftedLayoutPose(pose, backX, backZ) : pose,
         ),
+        joins: joinedCount - 1,
+        openEnds: openCount + 2,
+        undo: "move",
+        undoDepth: joined.undoDepth + 1,
+        selected: [SET],
       },
       together: {
         ...pair,
