@@ -29,12 +29,12 @@ import {
   type TrackPieceDef,
 } from "./track-pose.ts";
 import {
+  CLOSURE_BUDGET,
   solveClosure,
   UNLIMITED_BUDGET,
   type ClosureResult,
   type SearchBudget,
 } from "./closure.ts";
-import { Deadline } from "./search-deadline.ts";
 import {
   closuresWithinTurns,
   fewestWithinTurns,
@@ -162,12 +162,7 @@ function turnsRun(random: () => number, turns: number): TrackRun {
   return { segments, pieces };
 }
 
-const CLOSURE_BUDGET_MS = 30;
-
-function expiredBudget(): SearchBudget {
-  let tick = 0;
-  return { now: () => (tick += 1000), limitMs: 1 };
-}
+const ZERO_BUDGET: SearchBudget = { tablePairs: 0, curveCandidates: 0 };
 
 describe("solveClosure", () => {
   it(
@@ -261,7 +256,7 @@ describe("solveClosure", () => {
     expect(closedBy(end, back, result)).toBe(true);
   });
 
-  it("proves a gap one stud off any reachable pose impossible, even with no time left", () => {
+  it("proves a gap one stud off any reachable pose impossible, even with no budget left", () => {
     const random = seeded(3);
     for (let trial = 0; trial < 30; trial++) {
       const goal = openEndFacing(endOf(POSE16_IDENTITY, randomRun(random)));
@@ -269,42 +264,20 @@ describe("solveClosure", () => {
       const shifted = goal.position.map((c, k) => (k === coefficient ? c + 1n : c));
       const offGoal = pose16(zeta16(shifted), goal.heading);
       expect(solveClosure(kit, POSE16_IDENTITY, offGoal).kind).toBe("impossible");
-      expect(solveClosure(kit, POSE16_IDENTITY, offGoal, expiredBudget()).kind).toBe("impossible");
+      expect(solveClosure(kit, POSE16_IDENTITY, offGoal, ZERO_BUDGET).kind).toBe("impossible");
     }
   });
 
-  it("reports the search limit, not impossibility, when time runs out before a join is found", () => {
+  it("reports the search limit, not impossibility, when the budget runs out before a join is found", () => {
     const random = seeded(99);
     let limited = 0;
     for (let trial = 0; trial < 40; trial++) {
       const goal = openEndFacing(endOf(POSE16_IDENTITY, turnsRun(random, 4)));
-      const result = solveClosure(kit, POSE16_IDENTITY, goal, expiredBudget());
+      const result = solveClosure(kit, POSE16_IDENTITY, goal, ZERO_BUDGET);
       expect(result.kind).not.toBe("impossible");
       if (result.kind === "limit") limited++;
     }
     expect(limited).toBeGreaterThan(0);
-  });
-
-  it("gives the unlimited closure even when building the kit's turn table takes longer than the whole 30 ms budget on the solve's own clock", () => {
-    const goal = pose16(zeta16([112n, 16n, 0n, 0n, 72n, 0n, 0n, -56n]), 3);
-    const clock = { ms: 0 };
-    const slowKit: DrawingKit = {
-      ...kit,
-      arc: (sign, curves, heading) => {
-        clock.ms += 1;
-        return kit.arc(sign, curves, heading);
-      },
-    };
-    const unlimited = solveClosure(kit, POSE16_IDENTITY, goal);
-    const budgeted = solveClosure(slowKit, POSE16_IDENTITY, goal, {
-      now: () => clock.ms,
-      limitMs: CLOSURE_BUDGET_MS,
-    });
-    expect(clock.ms).toBeGreaterThan(CLOSURE_BUDGET_MS);
-    expect(budgeted).toEqual(unlimited);
-    expect(solveClosure(kit, POSE16_IDENTITY, goal, { now: () => 0, limitMs: -1 })).not.toEqual(
-      unlimited,
-    );
   });
 });
 
@@ -832,18 +805,50 @@ interface ReferenceIncumbent {
   curves: Int32Array | undefined;
 }
 
+interface ReferenceMeter {
+  readonly tablePairs: number;
+  readonly curveCandidates: number;
+  spentTablePairs: number;
+  spentCurveCandidates: number;
+  exhausted: boolean;
+}
+
+function referenceMeter(budget: SearchBudget): ReferenceMeter {
+  return {
+    tablePairs: budget.tablePairs,
+    curveCandidates: budget.curveCandidates,
+    spentTablePairs: 0,
+    spentCurveCandidates: 0,
+    exhausted: false,
+  };
+}
+
+interface ReferenceSearched {
+  boxes: number;
+  firstStepPairs: number;
+  firstRunCandidates: number;
+}
+
 function referenceSearchBox(
   problem: ReferenceClosureChain,
   box: number,
   incumbent: ReferenceIncumbent,
-  deadline: Deadline,
+  meter: ReferenceMeter,
   scale: number,
+  searched: ReferenceSearched,
 ): void {
   const domains = Array.from({ length: REFERENCE_BASIS }, (_v, j) => problem.domain(j, box));
   const last = REFERENCE_BASIS - 1;
   const chosen = new Int32Array(REFERENCE_BASIS);
+  let stepPairs = domains[last]?.length ?? 0;
+  for (let j = last - 1; j >= 1; j--) {
+    stepPairs += (domains[j]?.length ?? 0) * (domains[j + 1]?.length ?? 0);
+  }
+  if (searched.firstStepPairs === 0) searched.firstStepPairs = stepPairs;
   for (const v0 of domains[0] ?? []) {
-    if (deadline.check()) return;
+    meter.spentTablePairs += stepPairs;
+    if (meter.spentTablePairs > meter.tablePairs) meter.exhausted = true;
+    if (meter.exhausted) return;
     const toGo: Float64Array[] = Array.from(
       { length: REFERENCE_BASIS },
       (_v, j) => new Float64Array(domains[j]?.length ?? 0),
@@ -871,7 +876,7 @@ function referenceSearchBox(
     }
     chosen[0] = v0;
     const descend = (j: number, accumulated: number): void => {
-      if (deadline.expired) return;
+      if (meter.exhausted) return;
       const previous = chosen[j - 1] ?? 0;
       const domain = domains[j] ?? new Int32Array(0);
       const here = toGo[j] ?? new Float64Array(0);
@@ -882,7 +887,9 @@ function referenceSearchBox(
         if (bound / scale < incumbent.pieces) referenceInsertByBound(order, { i, bound });
       }
       for (const { i } of order) {
-        if (deadline.tick()) return;
+        meter.spentCurveCandidates += 1;
+        if (meter.spentCurveCandidates > meter.curveCandidates) meter.exhausted = true;
+        if (meter.exhausted) return;
         const x = domain[i] ?? 0;
         chosen[j] = x;
         const next = base + problem.pair(j - 1, previous, x);
@@ -891,6 +898,9 @@ function referenceSearchBox(
           if (lowerBound >= incumbent.pieces) continue;
           const crossing = problem.crossings(chosen);
           if (crossing.pieces < incumbent.pieces) {
+            if (searched.firstRunCandidates === 0) {
+              searched.firstRunCandidates = meter.spentCurveCandidates;
+            }
             incumbent.pieces = crossing.pieces;
             incumbent.curves = Int32Array.from(chosen);
           }
@@ -947,8 +957,8 @@ function referenceCompleteClosure(
   closureKit: DrawingKit,
   start: Pose16,
   goal: Pose16,
-  deadline: Deadline,
-  searched: { boxes: number },
+  meter: ReferenceMeter,
+  searched: ReferenceSearched,
 ): ClosureResult {
   const chords = referenceChordsOf(closureKit);
   const length = Number(closureKit.straightStuds);
@@ -970,8 +980,8 @@ function referenceCompleteClosure(
   const incumbent: ReferenceIncumbent = { pieces: Number.POSITIVE_INFINITY, curves: undefined };
   for (const box of REFERENCE_BOX_SIZES) {
     searched.boxes++;
-    referenceSearchBox(problem, box, incumbent, deadline, length);
-    if (deadline.expired || incumbent.pieces <= box) break;
+    referenceSearchBox(problem, box, incumbent, meter, length, searched);
+    if (meter.exhausted || incumbent.pieces <= box) break;
   }
   const curves = incumbent.curves;
   if (!curves) return { kind: "limit" };
@@ -985,6 +995,7 @@ function referenceCompleteClosure(
 const COMPLETE_TRIALS = 60;
 const MAX_LAID_TURNS = 5;
 const STEP_LIMITS: ReadonlyArray<number> = [1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+const TABLE_PAIR_LIMITS: ReadonlyArray<number> = Array.from({ length: 10 }, (_v, k) => 4 ** k);
 const STEPPED_CASES = 24;
 const MANY_BOXES = 3;
 
@@ -992,23 +1003,30 @@ interface ReferenceSolve {
   readonly result: ClosureResult;
   readonly fromComplete: boolean;
   readonly boxes: number;
+  readonly firstStepPairs: number;
+  readonly firstRunCandidates: number;
 }
 
 function referenceSolve(start: Pose16, goal: Pose16, budget: SearchBudget): ReferenceSolve {
   const withinTurns = closuresWithinTurns(kit, start, goal);
   const simple = fewestWithinTurns(withinTurns);
-  const searched = { boxes: 0 };
-  const complete = referenceCompleteClosure(kit, start, goal, new Deadline(budget), searched);
-  if (!simple) return { result: complete, fromComplete: true, boxes: searched.boxes };
+  const searched: ReferenceSearched = { boxes: 0, firstStepPairs: 0, firstRunCandidates: 0 };
+  const complete = referenceCompleteClosure(kit, start, goal, referenceMeter(budget), searched);
+  const { boxes, firstStepPairs, firstRunCandidates } = searched;
+  const work = { boxes, firstStepPairs, firstRunCandidates };
+  if (!simple) return { result: complete, fromComplete: true, ...work };
   if (complete.kind === "exact" && complete.run.pieces < simple.pieces) {
-    return { result: complete, fromComplete: true, boxes: searched.boxes };
+    return { result: complete, fromComplete: true, ...work };
   }
-  return { result: { kind: "exact", run: simple }, fromComplete: false, boxes: searched.boxes };
+  return { result: { kind: "exact", run: simple }, fromComplete: false, ...work };
 }
 
-function steppedBudget(limitMs: number): SearchBudget {
-  let steps = 0;
-  return { now: () => ++steps, limitMs };
+function tablePairBudget(tablePairs: number): SearchBudget {
+  return { tablePairs, curveCandidates: Number.POSITIVE_INFINITY };
+}
+
+function curveCandidateBudget(curveCandidates: number): SearchBudget {
+  return { tablePairs: Number.POSITIVE_INFINITY, curveCandidates };
 }
 
 const RECORDED_COMPLETE_CASES: ReadonlyArray<{ start: Pose16; goal: Pose16 }> = [
@@ -1035,6 +1053,31 @@ const RECORDED_COMPLETE_CASES: ReadonlyArray<{ start: Pose16; goal: Pose16 }> = 
   },
 ];
 
+interface RecordedFarCase {
+  readonly start: Pose16;
+  readonly goal: Pose16;
+  readonly pieces: number;
+}
+
+const KEPT_UNDER_CLOSURE_BUDGET: ReadonlyArray<RecordedFarCase> = [
+  {
+    start: pose16(ZETA16_ZERO, 12),
+    goal: pose16(zeta16([24n, -272n, 32n, 192n, 336n, -288n, -248n, -16n]), 10),
+    pieces: 57,
+  },
+  {
+    start: pose16(ZETA16_ZERO, 4),
+    goal: pose16(zeta16([-720n, 272n, -400n, 352n, -288n, 80n, -416n, 352n]), 4),
+    pieces: 75,
+  },
+];
+
+const STOPPED_BY_CLOSURE_BUDGET: RecordedFarCase = {
+  start: pose16(ZETA16_ZERO, 12),
+  goal: pose16(zeta16([40n, -176n, -536n, -16n, -128n, 608n, -304n, 704n]), 6),
+  pieces: 98,
+};
+
 function completeCases(seed: number, trials: number): Array<{ start: Pose16; goal: Pose16 }> {
   const random = seeded(seed);
   const cases: Array<{ start: Pose16; goal: Pose16 }> = [];
@@ -1047,6 +1090,38 @@ function completeCases(seed: number, trials: number): Array<{ start: Pose16; goa
     cases.push({ start, goal: oneStudOff(goal, Math.floor(random() * ZETA16_COEFFICIENT_COUNT)) });
   }
   return [...cases, ...RECORDED_COMPLETE_CASES];
+}
+
+function steppedCases(): Array<{ start: Pose16; goal: Pose16 }> {
+  return completeCases(0xc0de, COMPLETE_TRIALS)
+    .filter(({ start, goal }) => solveClosure(kit, start, goal).kind !== "impossible")
+    .slice(-STEPPED_CASES);
+}
+
+interface LimitWitness {
+  readonly start: Pose16;
+  readonly goal: Pose16;
+  readonly atLimit: SearchBudget;
+  readonly belowLimit: SearchBudget;
+  readonly referenceAt: ClosureResult;
+  readonly referenceBelow: ClosureResult;
+}
+
+function limitWitness(
+  limitOf: (unlimited: ReferenceSolve) => number,
+  budgetOf: (limit: number) => SearchBudget,
+): LimitWitness | undefined {
+  for (const { start, goal } of steppedCases()) {
+    const limit = limitOf(referenceSolve(start, goal, UNLIMITED_BUDGET));
+    const atLimit = budgetOf(limit);
+    const belowLimit = budgetOf(limit - 1);
+    const referenceAt = referenceSolve(start, goal, atLimit).result;
+    const referenceBelow = referenceSolve(start, goal, belowLimit).result;
+    if (!isDeepStrictEqual(referenceAt, referenceBelow)) {
+      return { start, goal, atLimit, belowLimit, referenceAt, referenceBelow };
+    }
+  }
+  return undefined;
 }
 
 describe("completeClosure", () => {
@@ -1071,21 +1146,57 @@ describe("completeClosure", () => {
   );
 
   it(
-    "keeps today's result when a deadline counted in clock reads cuts the search, at every limit",
+    "cuts the complete search after exactly the table pairs and curve candidates its budget allows, with today's search order and best run so far",
     () => {
-      const cases = completeCases(0xc0de, COMPLETE_TRIALS)
-        .filter(({ start, goal }) => solveClosure(kit, start, goal).kind !== "impossible")
-        .slice(-STEPPED_CASES);
-      let cut = 0;
-      for (const { start, goal } of cases) {
+      let pairCuts = 0;
+      let candidateCuts = 0;
+      for (const { start, goal } of steppedCases()) {
         const unlimited = solveClosure(kit, start, goal);
-        for (const limit of STEP_LIMITS) {
-          const reference = referenceSolve(start, goal, steppedBudget(limit)).result;
-          expect(solveClosure(kit, start, goal, steppedBudget(limit))).toEqual(reference);
-          if (!isDeepStrictEqual(reference, unlimited)) cut++;
+        for (const budget of TABLE_PAIR_LIMITS.map(tablePairBudget)) {
+          const reference = referenceSolve(start, goal, budget).result;
+          expect(solveClosure(kit, start, goal, budget)).toEqual(reference);
+          if (!isDeepStrictEqual(reference, unlimited)) pairCuts++;
+        }
+        for (const budget of STEP_LIMITS.map(curveCandidateBudget)) {
+          const reference = referenceSolve(start, goal, budget).result;
+          expect(solveClosure(kit, start, goal, budget)).toEqual(reference);
+          if (!isDeepStrictEqual(reference, unlimited)) candidateCuts++;
         }
       }
-      expect(cut).toBeGreaterThan(0);
+      expect(pairCuts).toBeGreaterThan(0);
+      expect(candidateCuts).toBeGreaterThan(0);
+    },
+    DIFFERENTIAL_TIMEOUT_MS,
+  );
+
+  it("stops before the outer step or curve candidate that would take its count over the limit, and not before", () => {
+    const witnesses = [
+      limitWitness((unlimited) => unlimited.firstStepPairs, tablePairBudget),
+      limitWitness((unlimited) => unlimited.firstRunCandidates, curveCandidateBudget),
+    ];
+    for (const witness of witnesses) {
+      if (!witness) throw new Error("no stepped case changes its result at an exact limit");
+      const { start, goal, atLimit, belowLimit, referenceAt, referenceBelow } = witness;
+      expect(solveClosure(kit, start, goal, atLimit)).toEqual(referenceAt);
+      expect(solveClosure(kit, start, goal, belowLimit)).toEqual(referenceBelow);
+    }
+  });
+
+  it(
+    "keeps the closure budget's runs on searches through box 64, and stops a far search short of the unlimited run",
+    () => {
+      expect(CLOSURE_BUDGET).toEqual({ tablePairs: 2 ** 21, curveCandidates: 2 ** 16 });
+      for (const { start, goal, pieces } of KEPT_UNDER_CLOSURE_BUDGET) {
+        const unlimited = solveClosure(kit, start, goal);
+        expect(unlimited.kind === "exact" ? unlimited.run.pieces : 0).toBe(pieces);
+        expect(solveClosure(kit, start, goal, CLOSURE_BUDGET)).toEqual(unlimited);
+      }
+      const { start, goal, pieces } = STOPPED_BY_CLOSURE_BUDGET;
+      const unlimited = solveClosure(kit, start, goal);
+      expect(unlimited.kind === "exact" ? unlimited.run.pieces : 0).toBe(pieces);
+      const budgeted = solveClosure(kit, start, goal, CLOSURE_BUDGET);
+      expect(closedBy(start, goal, budgeted)).toBe(true);
+      expect(budgeted).not.toEqual(unlimited);
     },
     DIFFERENTIAL_TIMEOUT_MS,
   );

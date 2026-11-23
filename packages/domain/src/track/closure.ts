@@ -12,7 +12,7 @@ import {
 import type { DrawingKit } from "./drawing-kit.ts";
 import { layMoves, type TrackMove } from "./track-pose.ts";
 import { clearClosure, type ClosureSite } from "./clear-closure.ts";
-import { Deadline, UNLIMITED_BUDGET, type SearchBudget } from "./search-deadline.ts";
+import { SearchAllowance, UNLIMITED_BUDGET, type SearchBudget } from "./search-budget.ts";
 import {
   closuresWithinTurns,
   fewestWithinTurns,
@@ -20,7 +20,7 @@ import {
   type TrackRun,
 } from "./track-solver.ts";
 
-export { UNLIMITED_BUDGET, type SearchBudget } from "./search-deadline.ts";
+export { CLOSURE_BUDGET, UNLIMITED_BUDGET, type SearchBudget } from "./search-budget.ts";
 
 export type ClosureResult =
   | { readonly kind: "exact"; readonly run: TrackRun }
@@ -338,12 +338,12 @@ function descend(
   problem: ClosureChain,
   domains: ReadonlyArray<Int32Array>,
   incumbent: Incumbent,
-  deadline: Deadline,
+  allowance: SearchAllowance,
   scale: number,
   j: number,
   accumulated: number,
 ): void {
-  if (deadline.expired) return;
+  if (allowance.exhausted) return;
   const previous = chosenCurves[j - 1] ?? 0;
   const domain = domains[j] ?? NO_DOMAIN;
   const here = toGoRows[j] ?? NO_ROW;
@@ -366,7 +366,7 @@ function descend(
     }
   }
   for (let o = 0; o < ordered; o++) {
-    if (deadline.tick()) return;
+    if (allowance.spendCurveCandidate()) return;
     const i = indices[o] ?? 0;
     const x = domain[i] ?? 0;
     chosenCurves[j] = x;
@@ -380,25 +380,34 @@ function descend(
         incumbent.curves = Int32Array.from(chosenCurves);
       }
     } else {
-      descend(problem, domains, incumbent, deadline, scale, j + 1, next);
+      descend(problem, domains, incumbent, allowance, scale, j + 1, next);
     }
   }
+}
+
+function tablePairsPerStep(domains: ReadonlyArray<Int32Array>): number {
+  let pairs = domains[LAST_CURVE]?.length ?? 0;
+  for (let j = 1; j < LAST_CURVE; j++) {
+    pairs += (domains[j]?.length ?? 0) * (domains[j + 1]?.length ?? 0);
+  }
+  return pairs;
 }
 
 function searchBox(
   problem: ClosureChain,
   box: number,
   incumbent: Incumbent,
-  deadline: Deadline,
+  allowance: SearchAllowance,
   scale: number,
 ): void {
   const domains = Array.from({ length: BASIS }, (_v, j) => problem.domain(j, box));
+  const stepPairs = tablePairsPerStep(domains);
   const firstDomain = domains[0] ?? NO_DOMAIN;
   const lastDomain = domains[LAST_CURVE] ?? NO_DOMAIN;
   const lastToGo = toGoRows[LAST_CURVE] ?? NO_ROW;
   chosenCurves.fill(0);
   for (let first = 0; first < firstDomain.length; first++) {
-    if (deadline.check()) return;
+    if (allowance.spendTablePairs(stepPairs)) return;
     const v0 = firstDomain[first] ?? 0;
     for (let i = 0; i < lastDomain.length; i++) {
       const x = lastDomain[i] ?? 0;
@@ -420,7 +429,7 @@ function searchBox(
       }
     }
     chosenCurves[0] = v0;
-    descend(problem, domains, incumbent, deadline, scale, 1, problem.constant);
+    descend(problem, domains, incumbent, allowance, scale, 1, problem.constant);
   }
 }
 
@@ -468,7 +477,7 @@ function completeClosure(
   kit: DrawingKit,
   start: Pose16,
   goal: Pose16,
-  deadline: Deadline,
+  allowance: SearchAllowance,
 ): ClosureResult {
   const chords = chordsOf(kit);
   const length = Number(kit.straightStuds);
@@ -488,8 +497,8 @@ function completeClosure(
   const problem = new ClosureChain(chain, parity, h0, h1);
   const incumbent: Incumbent = { pieces: Number.POSITIVE_INFINITY, curves: undefined };
   for (const box of BOX_SIZES) {
-    searchBox(problem, box, incumbent, deadline, length);
-    if (deadline.expired || incumbent.pieces <= box) break;
+    searchBox(problem, box, incumbent, allowance, length);
+    if (allowance.exhausted || incumbent.pieces <= box) break;
   }
   const curves = incumbent.curves;
   if (!curves) return { kind: "limit" };
@@ -514,7 +523,7 @@ function algebraicClosure(
 ): Algebraic {
   const withinTurns = closuresWithinTurns(kit, start, goal);
   const simple = fewestWithinTurns(withinTurns);
-  const complete = completeClosure(kit, start, goal, new Deadline(budget));
+  const complete = completeClosure(kit, start, goal, new SearchAllowance(budget));
   const fewestPieces =
     complete.kind === "exact" ? Math.min(complete.run.pieces, simple?.pieces ?? Infinity) : 0;
   if (!simple) return { result: complete, fewestPieces, withinTurns };
