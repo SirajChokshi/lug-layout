@@ -63,7 +63,7 @@ function heldPoses(poses: ReadonlyArray<Pose>, item: string): ReadonlyArray<Pose
   return poses.filter((pose) => pose.item === item);
 }
 
-test("drags a fill of baseplates across a seated one, skips the refused tile, and one undo takes the fill back", async ({
+test("drags a fill of baseplates across a seated one, counts its tile as already there rather than refused, and one undo takes the fill back", async ({
   page,
 }, testInfo) => {
   const editor = await EditorPage.open(page);
@@ -87,11 +87,10 @@ test("drags a fill of baseplates across a seated one, skips the refused tile, an
   const undone = (await editor.poses()).length;
   await editor.redo();
 
-  expect(preview).toContain("2 to place, 1 refused and skipped");
-  expect(filled).toContain("skipped 1 refused");
-  expect(filled).toContain(
-    "would overlap Baseplate 32 x 32's bounds in 3811 Baseplate 32 x 32, Green",
-  );
+  expect(preview).toContain("2 to place, 1 already there");
+  expect(filled).toContain("Filled 2 ×");
+  expect(filled).toContain("1 already there");
+  expect(filled).not.toContain("refused");
   expect(placed).toEqual([320, 960, 1600]);
   expect(undone).toBe(1);
   expect((await editor.poses()).length).toBe(3);
