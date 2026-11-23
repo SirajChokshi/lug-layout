@@ -12,6 +12,7 @@ import {
   type PlacementRequest,
   type PlannedRoadTile,
   type RoadKit,
+  type RoadKitPiece,
   type RoadShape,
   type RoadTile,
 } from "@brr/domain";
@@ -95,6 +96,11 @@ interface Evaluated {
 interface KitEntry {
   readonly kit: RoadKit;
   readonly view: RoadKitView;
+}
+
+interface CompatibleTile {
+  readonly piece: RoadKitPiece;
+  readonly sameKit: boolean;
 }
 
 interface ExistingTileAt {
@@ -224,6 +230,7 @@ function outline(box: WorldBox, kind: MarkerKind): ReadonlyArray<EdgeMarker> {
 export class RoadDrawing {
   private readonly kits: ReadonlyArray<KitEntry>;
   private readonly kitOfRef = new Map<number, KitEntry>();
+  private readonly ownTiles = new Map<number, RoadKit | null>();
   private active = 0;
   private phaseX = 0;
   private phaseZ = 0;
@@ -418,11 +425,26 @@ export class RoadDrawing {
     return entry;
   }
 
-  private compatible(model: PlacedModel): KitEntry | null {
-    const entry = this.kitOfRef.get(model.handle.refId);
-    if (!entry || model.handle.yPlates !== 0) return null;
+  private compatible(model: PlacedModel): CompatibleTile | null {
+    if (model.handle.yPlates !== 0) return null;
+    const ref = model.handle.refId;
+    const kitPiece = this.kitOfRef.get(ref)?.kit;
+    const tileKit = kitPiece ?? this.ownTileKit(ref, model.placeable);
     const kit = this.entry().kit;
-    return entry.kit.tileLdu === kit.tileLdu && entry.kit.profile === kit.profile ? entry : null;
+    if (!tileKit || tileKit.tileLdu !== kit.tileLdu || tileKit.profile !== kit.profile) return null;
+    const piece = tileKit.pieces.find((p) => p.ref === ref);
+    if (!piece) return null;
+    return { piece, sameKit: kitPiece !== undefined && tileKit.family === kit.family };
+  }
+
+  private ownTileKit(ref: number, placeable: Placeable): RoadKit | null {
+    if (this.ownTiles.has(ref)) return this.ownTiles.get(ref) ?? null;
+    const surface = placeable.road;
+    const kit = surface
+      ? (roadKits([{ ref, family: String(placeable.worldColor), surface }])[0] ?? null)
+      : null;
+    this.ownTiles.set(ref, kit);
+    return kit;
   }
 
   private isGround(model: PlacedModel): boolean {
@@ -533,21 +555,19 @@ export class RoadDrawing {
 
   private findExistingTiles(roads: ReadonlyArray<PlacedModel>): Map<string, ExistingTileAt> {
     const tileLdu = this.entry().kit.tileLdu;
-    const family = this.entry().kit.family;
     const tiles = new Map<string, ExistingTileAt>();
     for (const model of roads) {
-      const entry = this.compatible(model);
-      if (!entry) continue;
+      const compatible = this.compatible(model);
+      if (!compatible) continue;
       const dx = model.handle.x - this.phaseX;
       const dz = model.handle.z - this.phaseZ;
       if (dx % tileLdu !== 0 || dz % tileLdu !== 0) continue;
-      const piece = entry.kit.pieces.find((p) => p.ref === model.handle.refId);
-      if (!piece || !isRot90(model.handle.rot)) continue;
+      if (!isRot90(model.handle.rot)) continue;
       tiles.set(`${dx / tileLdu},${dz / tileLdu}`, {
         model,
         tile: {
-          arms: rotateArms(piece.arms, model.handle.rot),
-          sameKit: entry.kit.family === family,
+          arms: rotateArms(compatible.piece.arms, model.handle.rot),
+          sameKit: compatible.sameKit,
         },
       });
     }
@@ -696,7 +716,11 @@ export class RoadDrawing {
     for (const tile of planned) {
       if (tile.kind !== "refuse") continue;
       const [x, z] = this.centre(tile);
-      issues.push({ x, z, problem: tile.reason, shape: shapeOf(tile.arms), blocker: null });
+      const there =
+        tile.reason === "other-family"
+          ? (this.existing?.get(`${tile.ix},${tile.iz}`)?.model.placeable.label ?? null)
+          : null;
+      issues.push({ x, z, problem: tile.reason, shape: shapeOf(tile.arms), blocker: there });
     }
     if (placements.length === 0) return issues;
     let top = Number.NEGATIVE_INFINITY;

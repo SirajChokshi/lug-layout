@@ -35,8 +35,12 @@ function issueText(issue: RoadTileIssue): string {
   switch (issue.problem) {
     case "no-piece":
       return `${where}: needs a ${issue.shape ? shapeName(issue.shape) : "piece"}, and this kit has none`;
-    case "other-family":
-      return `${where}: a plate from another road family is there, so it can't become a ${issue.shape ? shapeName(issue.shape) : "different piece"}`;
+    case "other-family": {
+      const piece = issue.shape ? shapeName(issue.shape) : "different piece";
+      return issue.blocker
+        ? `${where}: ${issue.blocker} is there and isn't part of this kit, so it can't become a ${piece}`
+        : `${where}: a plate from another road family is there, so it can't become a ${piece}`;
+    }
     case "mismatch":
       return `${where}: its edges wouldn't line up with ${issue.blocker ?? "the road"} beside it`;
     case "overlap":
