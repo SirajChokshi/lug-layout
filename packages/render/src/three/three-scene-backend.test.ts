@@ -5,7 +5,16 @@ import {
   type StudPrimitiveAsset,
 } from "@brr/catalog";
 import { CHUNK_LDU } from "@brr/math";
-import { Mesh, type MeshStandardNodeMaterial, type Object3D } from "three/webgpu";
+import {
+  InstancedMesh,
+  Matrix3,
+  Matrix4,
+  Mesh,
+  Vector3,
+  type BufferGeometry,
+  type MeshStandardNodeMaterial,
+  type Object3D,
+} from "three/webgpu";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ChunkInstances,
@@ -17,6 +26,9 @@ import type {
   WorldBox,
 } from "../scene-backend.ts";
 import { edgeIdOf } from "./edge-ids.ts";
+import { studBasisIndexOf } from "./instance-page.ts";
+import { STUD_BASIS_FLOATS, type StudBasisTable } from "./stud-basis-table.ts";
+import { StudMesh } from "./stud-mesh.ts";
 import { ThreeSceneBackend } from "./three-scene-backend.ts";
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0];
@@ -367,6 +379,101 @@ it("gives a chunk the same edge ids whether its far mesh arrived before it was s
     [2048, 4096],
   ]);
 });
+
+const HANDED_TRANSFORMS: ReadonlyArray<ReadonlyArray<number>> = [
+  IDENTITY,
+  TILTED,
+  [0, 0, 1, 40, 0, 1, 0, 0, -1, 0, 0, 0],
+  [-1, 0, 0, 80, 0, 1, 0, 0, 0, 0, 1, 0],
+  [1, 0, 0, 120, 0, 0, -1, 0, 0, -1, 0, 0],
+  [0, 0.8938, 0.4478, 160, 1, 0, 0.0915, 0, -0.0817, -0.4497, 0.89, 0],
+  [0.5, 0, 0, 200, 0, -2, 0, 0, 0, 0, 1, 0],
+];
+
+function handedChunk(): ChunkInstances {
+  const count = HANDED_TRANSFORMS.length;
+  const matrices = Float32Array.from(HANDED_TRANSFORMS.flat());
+  return {
+    originX: 0,
+    originZ: 0,
+    count,
+    partIndex: new Uint16Array(count),
+    colorIndex: new Uint16Array(count),
+    matrices,
+    studs: {
+      count,
+      primitiveIndex: new Uint8Array(count),
+      colorIndex: new Uint16Array(count),
+      matrices,
+    },
+  };
+}
+
+function frontFacesOutward(geometry: BufferGeometry, matrix: Matrix4): boolean {
+  const index = geometry.getIndex();
+  const positions = geometry.getAttribute("position");
+  const normals = geometry.getAttribute("normal");
+  if (!index) throw new Error("drawn geometry has no index");
+  const normalMatrix = new Matrix3().getNormalMatrix(matrix);
+  for (let t = 0; t < index.count; t += 3) {
+    const a = new Vector3().fromBufferAttribute(positions, index.getX(t)).applyMatrix4(matrix);
+    const b = new Vector3().fromBufferAttribute(positions, index.getX(t + 1)).applyMatrix4(matrix);
+    const c = new Vector3().fromBufferAttribute(positions, index.getX(t + 2)).applyMatrix4(matrix);
+    const winding = b.sub(a).cross(c.sub(a));
+    const normal = new Vector3()
+      .fromBufferAttribute(normals, index.getX(t))
+      .applyMatrix3(normalMatrix);
+    if (winding.dot(normal) <= 0) return false;
+  }
+  return true;
+}
+
+function studMatrixOf(backend: ThreeSceneBackend, mesh: StudMesh, i: number): Matrix4 {
+  const bases: StudBasisTable = backend["studBases"];
+  const basis = studBasisIndexOf(mesh.studBasisAndColorIndex.getX(i)) * STUD_BASIS_FLOATS;
+  const elements = Array.from(bases.columns.subarray(basis, basis + STUD_BASIS_FLOATS));
+  return new Matrix4().fromArray([
+    ...elements,
+    mesh.studTranslations.getX(i),
+    mesh.studTranslations.getY(i),
+    mesh.studTranslations.getZ(i),
+    1,
+  ]);
+}
+
+function inwardInstances(backend: ThreeSceneBackend): string[] {
+  const inward: string[] = [];
+  for (const mesh of drawnMeshes(backend)) {
+    if (mesh instanceof InstancedMesh) {
+      for (let i = 0; i < mesh.count; i++) {
+        const matrix = new Matrix4().fromArray(mesh.instanceMatrix.array, i * 16);
+        if (!frontFacesOutward(mesh.geometry, matrix)) inward.push(`part ${i} of mesh ${mesh.id}`);
+      }
+    } else if (mesh instanceof StudMesh) {
+      for (let i = 0; i < mesh.geometry.instanceCount; i++) {
+        const matrix = studMatrixOf(backend, mesh, i);
+        if (!frontFacesOutward(mesh.geometry, matrix)) inward.push(`stud ${i} of mesh ${mesh.id}`);
+      }
+    }
+  }
+  return inward;
+}
+
+it.each<ChunkTier>(["near", "mid"])(
+  "draws every part and stud at the %s tier with its outer faces in front, mirrored or not, in chunks, vehicles and the ghost",
+  (tier) => {
+    const backend = edgeBackend();
+    backend.setPartMeshes([{ index: 0, level: "far", part: part("a", 20) }]);
+    backend.setChunk(1, handedChunk());
+    backend.setVehicle(0, handedChunk());
+    backend.setGhost(handedChunk());
+
+    backend.forceTier(tier);
+
+    expect(drawnMeshes(backend).length).toBeGreaterThan(0);
+    expect(inwardInstances(backend)).toEqual([]);
+  },
+);
 
 it("keeps edge ids when colours are appended, and refuses colours that change which colours share an alpha slot", () => {
   const backend = edgeBackend();
