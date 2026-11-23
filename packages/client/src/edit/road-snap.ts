@@ -120,12 +120,6 @@ function sideZ(placed: CellExtent, ghost: CellExtent, index: number, zSteps: num
   return (index - 2 * zSteps) % 2 === 0 ? placed.maxZ - ghost.minZ : placed.minZ - ghost.maxZ;
 }
 
-function cornerFlush(placed: CellExtent, ghost: CellExtent, x: number, z: number): boolean {
-  const besideX = x + ghost.minX === placed.maxX || x + ghost.maxX === placed.minX;
-  if (besideX) return z + ghost.minZ === placed.minZ || z + ghost.maxZ === placed.maxZ;
-  return x + ghost.minX === placed.minX || x + ghost.maxX === placed.maxX;
-}
-
 function within(extent: CellExtent, ghost: CellExtent, x: number, z: number): boolean {
   return (
     x >= extent.minX - (ghost.maxX - ghost.minX) &&
@@ -518,9 +512,7 @@ function consider(query: SnapQuery, x: number, z: number, contactWith: CellExten
   probe.yLdu = query.heights.restingYLdu(x, z, rot);
   const fit =
     roads.network.cleanFit(probe, snapFit) ??
-    (contactWith && cornerFlush(contactWith, ghost, x, z)
-      ? roads.network.cleanContact(probe, snapFit)
-      : null);
+    (contactWith ? roads.network.cleanContact(probe, snapFit) : null);
   if (!fit) return;
   cleanCandidates.push({
     snap: {
@@ -531,10 +523,7 @@ function consider(query: SnapQuery, x: number, z: number, contactWith: CellExten
       joinedCells: fit.joinedCells,
       joinedRoadCells: fit.joinedRoadCells,
     },
-    distance: planeHypot(
-      cursorX - (x + (ghost.minX + ghost.maxX) / 2),
-      cursorZ - (z + (ghost.minZ + ghost.maxZ) / 2),
-    ),
+    distance: planeHypot(cursorX - x, cursorZ - z),
     turn: query.turn,
     yLdu: probe.yLdu,
   });

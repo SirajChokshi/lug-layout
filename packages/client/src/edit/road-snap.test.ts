@@ -15,6 +15,12 @@ const PLATE_SPAN = 640;
 const QUARTER_TURNS = [0, 1, 2, 3];
 const ON_THE_TABLE: RestingHeights = { restingYLdu: () => 0 };
 
+function leadingSidewalkLdu(surface: RoadSurface): number {
+  let cells = 0;
+  while (cells < surface.columns && surface.road[cells] === 0) cells++;
+  return cells * STUD;
+}
+
 function roadBaseplate(part: string): RoadSurface {
   const zones = measured.roadStudZones.find((entry) => entry.part === part);
   if (!zones) throw new Error(`${part} is not measured`);
@@ -274,27 +280,29 @@ describe("road-edge snap", () => {
     }
   });
 
-  it("snaps a piece beside a sidewalk only flush with the neighbour's corner, never part-way along it", () => {
+  it("snaps a piece beside a sidewalk at the stud under the cursor, part-way along it as well as flush with its corner, meeting exactly the cells that overlap", () => {
     const sideX = cellExtent(straight).maxX;
     for (const cursorZ of [-260, -60, 0, 140, 300]) {
       const snap = snapToRoadEdge(roads, curve, 0, 1, ON_THE_TABLE, sideX + 300, cursorZ, ANY_TURN);
       expect(snap).toEqual({
         x: sideX + PLATE_SPAN / 2,
-        z: straight.z,
+        z: cursorZ,
         rot: 2,
-        metCells: 32,
+        metCells: (PLATE_SPAN - Math.abs(cursorZ - straight.z)) / STUD,
         joinedCells: 0,
         joinedRoadCells: 0,
       });
     }
   });
 
-  it("never snaps a crossroads beside a straight's sidewalk, where every turn would butt a road end into it", () => {
+  it("snaps a crossroads beside a straight's sidewalk only where its corner sidewalk alone meets it, never with a road end against the sidewalk", () => {
     const crossroads = roadBaseplate("44343");
     const sideX = cellExtent(straight).maxX;
+    const cornerSidewalk = leadingSidewalkLdu(crossroads);
+    const cornerOnly = PLATE_SPAN - cornerSidewalk;
     for (const preferred of QUARTER_TURNS) {
-      for (const cursorZ of [-260, 0, 300]) {
-        const snap = snapToRoadEdge(
+      const snaps = [-260, 0, 300].map((cursorZ) =>
+        snapToRoadEdge(
           roads,
           crossroads,
           preferred,
@@ -303,9 +311,21 @@ describe("road-edge snap", () => {
           sideX + 300,
           cursorZ,
           ANY_TURN,
-        );
-        expect(snap).toBeNull();
-      }
+        ),
+      );
+      const corner = (z: number) => ({
+        x: sideX + PLATE_SPAN / 2,
+        z,
+        rot: preferred,
+        metCells: cornerSidewalk / STUD,
+        joinedCells: 0,
+        joinedRoadCells: 0,
+      });
+      expect(snaps).toEqual([
+        corner(straight.z - cornerOnly),
+        null,
+        corner(straight.z + cornerOnly),
+      ]);
     }
   });
 
