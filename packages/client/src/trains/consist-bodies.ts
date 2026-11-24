@@ -23,7 +23,7 @@ export interface StandingConsist {
   readonly colors: ColorTable;
 }
 
-function rigidBodies(vehicle: ConsistVehicle): ReadonlyArray<RigidBodyInstances | null> {
+export function rigidBodies(vehicle: ConsistVehicle): ReadonlyArray<RigidBodyInstances | null> {
   return [vehicle.body, vehicle.frontBogie, vehicle.rearBogie];
 }
 
@@ -53,7 +53,7 @@ function rigidChunk(
   );
 }
 
-function bodyPoseAt(v: number, body: number): number {
+export function bodyPoseAt(v: number, body: number): number {
   const o = v * VEHICLE_POSE_FLOATS;
   if (body === FRONT_BOGIE) return o + POSE_FRONT_BOGIE;
   if (body === REAR_BOGIE) return o + POSE_REAR_BOGIE;

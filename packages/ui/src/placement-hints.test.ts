@@ -109,6 +109,7 @@ function placing(
       onRails: false,
       couples: null,
       refusal: hovered.accepted ? null : refusalOf(hovered.hit),
+      waiting: null,
       placement: hovered,
     },
   };

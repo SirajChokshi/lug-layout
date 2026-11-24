@@ -54,6 +54,7 @@ export interface PlacementFeedback {
 
 export interface PlacementHoverInput {
   readonly refusal: string | null;
+  readonly waiting?: string | null;
   readonly placement: PlacementHover | null;
 }
 
@@ -359,6 +360,7 @@ function searching(placement: PlacementHover | null): boolean {
 
 function placementTone(hover: PlacementHoverInput): PlacementTone {
   const { placement } = hover;
+  if (hover.waiting) return "waiting";
   if (placement?.waitingOn) return placement.waitingOn.failed ? "refused" : "waiting";
   if (searching(placement)) return "pending";
   if (!placement) return hover.refusal === null ? "fits" : "refused";
@@ -427,6 +429,7 @@ function heldLines(
 ): PlacementLine[] {
   const { placement } = hover;
   if (view.pendingItem !== null) return [];
+  if (hover.waiting) return [line("waiting", hover.waiting)];
   if (placement?.waitingOn) return [waitLine(placement.waitingOn)];
   if (tone === "pending") return [line("pending", FINDING_A_FIT)];
   if (placement) return placementLines(hover, placement);

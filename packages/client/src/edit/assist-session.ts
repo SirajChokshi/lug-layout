@@ -41,6 +41,7 @@ export interface AssistHost {
   mateCounts(report: MateReport): ReadonlyArray<HoverMateCount>;
   refusalHit(overlap: OverlapHit): HoverRefusalHit | null;
   heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null;
+  heldPoseWaits(): boolean;
   restsOn(connected: Connected, pose: LatticePose): ReadonlyArray<PlacedModelView>;
   neighbourhood(): AssistNeighbourhood;
   showGhost(pose: LatticePose): void;
@@ -154,6 +155,7 @@ export class AssistSession {
   private revision = -1;
   private shown: PlacementHover | null = null;
   private shownRefusal: string | null = null;
+  private shownShapesWait = false;
   private shownYPlates = RESTS_ON_TABLE_Y_PLATES;
   private snapRot = 0;
 
@@ -170,6 +172,10 @@ export class AssistSession {
     return this.shownRefusal;
   }
 
+  get waitsOnShapes(): boolean {
+    return this.shown !== null && this.shownShapesWait;
+  }
+
   get yPlates(): number {
     return this.shownYPlates;
   }
@@ -180,7 +186,13 @@ export class AssistSession {
   }
 
   aim(target: AssistTarget, pick: CursorPick, startedMs: number): void {
-    if (this.shown && this.cell.holds(target.placeable, pick, target.mode, this.search)) return;
+    if (
+      this.shown &&
+      !this.shownShapesWait &&
+      this.cell.holds(target.placeable, pick, target.mode, this.search)
+    ) {
+      return;
+    }
     this.drop();
     this.pick.copy(pick);
     this.target = target;
@@ -359,6 +371,8 @@ export class AssistSession {
     const waiting = waitingOn !== null && !waitingOn.failed;
     const hit = choice.accepted || waitingOn ? null : this.host.refusalHit(choice.overlap);
     const blocked = choice.accepted ? this.host.heldPoseRefusal(placeable, pose) : null;
+    const shapesWait = blocked !== null && this.host.heldPoseWaits();
+    this.shownShapesWait = shapesWait;
     this.shownYPlates = pose.yPlates;
     this.shown = {
       pose,
@@ -374,8 +388,8 @@ export class AssistSession {
       magnetised: magnet.distanceLdu > 0,
       magnet,
       assistNeighbourhood: this.host.neighbourhood(),
-      settled: stage !== "provisional" && !waiting,
-      turnSettled: stage === "final" && !waiting,
+      settled: stage !== "provisional" && !waiting && !shapesWait,
+      turnSettled: stage === "final" && !waiting && !shapesWait,
       waitingOn,
     };
     this.shownRefusal = this.refusalOf(placeable, blocked, waitingOn, hit);
