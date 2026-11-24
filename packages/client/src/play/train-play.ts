@@ -7,7 +7,9 @@ import type { PlayModel } from "./play-models.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
 import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
-import { RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
+import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
+import { PLACEABLE_CATALOG, RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
+import { playObstacles } from "./play-obstacles.ts";
 import { ConsistBodies } from "../trains/consist-bodies.ts";
 import { trainLabel, type IRailYard } from "../trains/rail-yard.ts";
 import type { RailTrack } from "../trains/rail-track.ts";
@@ -33,6 +35,7 @@ export interface PlayTrainView {
   readonly direction: number;
   readonly derailSpeedLduPerS: number;
   readonly bogiesOffTrack: number;
+  readonly blockedBy: string | null;
   readonly xLdu: number;
   readonly zLdu: number;
 }
@@ -87,6 +90,7 @@ const BRAKING_LDU_PER_S2 = 300;
 const SWITCH_PICK_RADIUS_LDU = 4 * STUD_LDU;
 const STATUS_INTERVAL_MS = 100;
 const DIVERGING = 1;
+const NOT_BLOCKED = 0;
 const STRAIGHT = 0;
 const OFF_TRACK_YAW_RADIANS = 0.12;
 const OFF_TRACK_ROLL_RADIANS = 0.22;
@@ -97,6 +101,7 @@ interface RunningTrain {
   readonly firstVehicle: number;
   readonly lengthLdu: number;
   targetLduPerS: number;
+  blockedBy: number;
 }
 
 const IDLE: PlaySnapshot = {
@@ -131,6 +136,7 @@ export class TrainPlay implements ITrainPlay {
   private lastStatusMs = 0;
   private camera: FollowCamera | null = null;
   private readonly ray = new Float64Array(RAY_FLOATS);
+  private obstacleLabels: ReadonlyArray<string> = [];
 
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
@@ -138,6 +144,7 @@ export class TrainPlay implements ITrainPlay {
     @inject(RUNNING_GEAR) private readonly runningGear: IRunningGear,
     @inject(RAIL_YARD) private readonly yard: IRailYard,
     @inject(VEHICLE_IDS) private readonly vehicleIds: IVehicleIds,
+    @inject(PLACEABLE_CATALOG) private readonly catalog: IPlaceableCatalog,
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -212,6 +219,17 @@ export class TrainPlay implements ITrainPlay {
       placement: { edge: train.head.edge, offsetLdu: train.head.offsetLdu },
     }));
     const vehicleCount = consists.reduce((sum, { vehicles }) => sum + vehicles.length, 0);
+    const obstacleModels = this.yard.obstacleModels();
+    const obstacles = obstacleModels
+      ? await playObstacles({
+          consists,
+          rails,
+          models: obstacleModels,
+          solids: this.catalog.partSolids(),
+          loadSolids: (parts) => this.catalog.loadPartSolids(parts),
+          partTitle: (part) => this.catalog.parts()[part]?.title ?? `palette part ${part}`,
+        })
+      : null;
     const loaded = await this.sim.load({
       graph: simTopology(rails.graph),
       routeSegments: routeSegments(rails.graph, rails.play.layout, rails.play.pieces),
@@ -219,7 +237,9 @@ export class TrainPlay implements ITrainPlay {
       trains: loads,
       autopilotSeed: null,
       openEnds: "derail",
+      ...(obstacles ? { obstacles: obstacles.obstacles } : {}),
     });
+    this.obstacleLabels = obstacles?.labels ?? [];
     for (let s = 0; s < rails.switchStates.length; s++) {
       if (rails.switchStates[s] === DIVERGING) {
         await this.sim.command({ kind: "switch", switchIndex: s, state: DIVERGING });
@@ -244,6 +264,7 @@ export class TrainPlay implements ITrainPlay {
         firstVehicle: first,
         lengthLdu: vehicles.reduce((sum, vehicle) => sum + vehicle.spec.lengthLdu, 0),
         targetLduPerS: 0,
+        blockedBy: NOT_BLOCKED,
       };
     });
     this.update({ driven: 0, switches: this.switchViews(rails.switchStates) });
@@ -384,6 +405,7 @@ export class TrainPlay implements ITrainPlay {
     const layout = this.layout;
     if (!frame || !layout) return;
     const data = frame.data;
+    const notice = this.newlyBlocked(data, layout);
     const trains = this.running.map((train, t) => {
       let off = 0;
       const end = train.firstVehicle + train.bodies.consist.vehicles.length;
@@ -399,6 +421,7 @@ export class TrainPlay implements ITrainPlay {
         direction: data[layout.trainDirectionStart + t] ?? 1,
         derailSpeedLduPerS: data[layout.trainDerailSpeedStart + t] ?? 0,
         bogiesOffTrack: off,
+        blockedBy: this.obstacleLabels[train.blockedBy - 1] ?? null,
         xLdu: this.trainX(data, layout, train),
         zLdu: this.trainZ(data, layout, train),
       };
@@ -411,6 +434,7 @@ export class TrainPlay implements ITrainPlay {
       : this.state.switches;
     const driven = trains[this.state.driven];
     this.update({
+      ...(notice === null ? {} : { notice, targetLduPerS: 0 }),
       trains,
       vehicles: driven?.vehicles ?? 0,
       trainLengthLdu: driven?.lengthLdu ?? 0,
@@ -423,6 +447,23 @@ export class TrainPlay implements ITrainPlay {
       switches,
       tick: frame.tick,
     });
+  }
+
+  private newlyBlocked(data: Float64Array, layout: SimFrameLayout): string | null {
+    let notice: string | null = null;
+    for (let t = 0; t < this.running.length; t++) {
+      const train = this.running[t];
+      if (!train) continue;
+      const blockedBy = data[layout.trainBlockedStart + t] ?? NOT_BLOCKED;
+      if (blockedBy === train.blockedBy) continue;
+      train.blockedBy = blockedBy;
+      if (blockedBy === NOT_BLOCKED) continue;
+      train.targetLduPerS = 0;
+      if (t !== this.state.driven) continue;
+      const model = this.obstacleLabels[blockedBy - 1] ?? "a model";
+      notice = `${train.label} stopped: it would run into ${model}.`;
+    }
+    return notice;
   }
 
   private switchViews(states: ArrayLike<number>): PlaySwitchView[] {

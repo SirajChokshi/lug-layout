@@ -1,6 +1,7 @@
 import type { SimPathSegment, TrackGraphTopology } from "@brr/domain";
 import type { SimCommand, SimFrameLayout, SimTrainLoad } from "./sim-session.ts";
 import type { OpenEndRule, SimCapacity } from "./simulation.ts";
+import type { SimObstacles } from "./train-clearance.ts";
 
 export interface SimLoad {
   readonly graph: TrackGraphTopology;
@@ -9,6 +10,7 @@ export interface SimLoad {
   readonly trains: ReadonlyArray<SimTrainLoad>;
   readonly autopilotSeed: number | null;
   readonly openEnds: OpenEndRule;
+  readonly obstacles?: SimObstacles;
 }
 
 export interface SimLoaded {

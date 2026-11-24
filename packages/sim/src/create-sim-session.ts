@@ -5,6 +5,7 @@ import { BlockMap, type BlockTopology } from "./blocks/block-map.ts";
 import { RoutePlanner } from "./routing/route-planner.ts";
 import { SimSession, type SimScenario } from "./sim-session.ts";
 import { SIM_TICK_HZ, Simulation, type SimCapacity } from "./simulation.ts";
+import { TrainClearance } from "./train-clearance.ts";
 
 const AUTOPILOT_DWELL_SECONDS = 3;
 const AUTOPILOT_RETRY_SECONDS = 2;
@@ -20,6 +21,7 @@ export function createSimSession(scenario: SimScenario): SimSession {
     new RunningGearPoser(),
     keeper,
     keeper && seed !== null ? autopilot(keeper, seed, capacity) : null,
+    scenario.obstacles ? new TrainClearance(scenario.obstacles) : null,
   );
   for (const train of scenario.trains) simulation.addTrain(train.spec, train.placement);
   return new SimSession(simulation);

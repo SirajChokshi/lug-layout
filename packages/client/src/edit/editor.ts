@@ -1517,6 +1517,10 @@ export class Editor implements IEditor, IEditedWorld {
     frames.subscribe(() => this.update(this.frames.view()));
     ground.subscribe(() => this.update(this.ground.view()));
     this.assist = new AssistSession(search, this.assistHost());
+    railYard.watchModels({
+      models: () => this.placed.models(),
+      carriedParts: (placeable) => this.trackWorld.carriedParts(placeable),
+    });
     frames.setFrameWork(this.assistFrame);
     catalog.subscribe(() => {
       this.update({ meshes: catalog.meshProgress() });

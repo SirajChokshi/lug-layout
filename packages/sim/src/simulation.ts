@@ -5,6 +5,7 @@ import {
   packSpecOnlyGeometry,
   runningGearSpanProblem,
   trackPoint,
+  VEHICLE_POSE_FLOATS,
   type PathSampler,
   type RunningGearPoser,
   type SimTrack,
@@ -13,6 +14,7 @@ import {
 import type { Autopilot } from "./blocks/autopilot.ts";
 import type { BlockKeeper } from "./blocks/block-keeper.ts";
 import { NO_BLOCK } from "./blocks/block-map.ts";
+import { NO_OWNER, type TrainClearance } from "./train-clearance.ts";
 
 export const SIM_TICK_HZ = 60;
 export const SIM_TICK_SECONDS = 1 / SIM_TICK_HZ;
@@ -51,6 +53,7 @@ export interface SimCapacity {
 
 export type OpenEndRule = "brake" | "derail";
 
+export const NOT_BLOCKED = 0;
 export const DIRECTION_FORWARD = 1;
 export const DIRECTION_BACKWARD = -1;
 
@@ -75,6 +78,7 @@ export class Simulation {
   private readonly trainTurnPending: Uint8Array;
   private readonly trainTurnSpeed: Float64Array;
   readonly trainDerailSpeed: Float64Array;
+  readonly trainBlockedBy: Int32Array;
   private readonly trainCoupledLength: Float64Array;
   private readonly trainVehicleStart: Int32Array;
   private readonly trainVehicleCount: Int32Array;
@@ -105,6 +109,9 @@ export class Simulation {
   readonly separationCounters = Float64Array.of(0, Number.POSITIVE_INFINITY, 0);
   readonly openEnds: OpenEndRule;
   private readonly openEndsDerail: boolean;
+  private readonly clearance: TrainClearance | null;
+  private readonly clearancePoses: Float64Array;
+  private readonly heldPath = new Int32Array(PATH_CAPACITY);
 
   constructor(
     track: SimTrack,
@@ -113,11 +120,14 @@ export class Simulation {
     poser: RunningGearPoser,
     keeper: BlockKeeper | null,
     autopilot: Autopilot | null,
+    clearance: TrainClearance | null,
   ) {
     this.track = track;
     this.capacity = capacity;
     this.openEnds = openEnds;
     this.openEndsDerail = openEnds === "derail";
+    this.clearance = clearance;
+    this.clearancePoses = new Float64Array(clearance ? capacity.vehicles * VEHICLE_POSE_FLOATS : 0);
     this.poser = poser;
     this.keeper = keeper;
     this.autopilot = autopilot;
@@ -140,6 +150,7 @@ export class Simulation {
     this.trainTurnPending = new Uint8Array(capacity.trains);
     this.trainTurnSpeed = new Float64Array(capacity.trains);
     this.trainDerailSpeed = new Float64Array(capacity.trains);
+    this.trainBlockedBy = new Int32Array(capacity.trains);
     this.trainCoupledLength = new Float64Array(capacity.trains);
     this.trainVehicleStart = new Int32Array(capacity.trains);
     this.trainVehicleCount = new Int32Array(capacity.trains);
@@ -585,6 +596,43 @@ export class Simulation {
   }
 
   private advanceTrain(train: number): void {
+    const clearance = this.clearance;
+    if (!clearance || (this.trainDerailSpeed[train] ?? 0) > 0) {
+      this.moveTrain(train);
+      return;
+    }
+    const edge = this.trainEdge[train] ?? 0;
+    const offset = this.trainOffset[train] ?? 0;
+    const top = this.pathTop[train] ?? 0;
+    const count = this.pathCount[train] ?? 0;
+    const base = train * PATH_CAPACITY;
+    for (let i = 0; i < PATH_CAPACITY; i++) this.heldPath[i] = this.pathEdges[base + i] ?? 0;
+    this.moveTrain(train);
+    if (this.trainEdge[train] === edge && this.trainOffset[train] === offset) return;
+    if ((this.trainDerailSpeed[train] ?? 0) > 0) return;
+    this.poseTrain(train, null, 0, this.clearancePoses, 0);
+    const owner = clearance.firstOwnerMet(
+      this.clearancePoses,
+      this.trainVehicleStart[train] ?? 0,
+      this.trainVehicleCount[train] ?? 0,
+    );
+    if (owner === NO_OWNER) {
+      this.trainBlockedBy[train] = NOT_BLOCKED;
+      return;
+    }
+    this.trainEdge[train] = edge;
+    this.trainOffset[train] = offset;
+    for (let i = 0; i < PATH_CAPACITY; i++) this.pathEdges[base + i] = this.heldPath[i] ?? 0;
+    this.pathTop[train] = top;
+    this.pathCount[train] = count;
+    this.trainSpeed[train] = 0;
+    this.trainThrottle[train] = 0;
+    this.trainTurnPending[train] = 0;
+    this.trainSolvedTick[train] = NOT_SOLVED;
+    this.trainBlockedBy[train] = owner + 1;
+  }
+
+  private moveTrain(train: number): void {
     if ((this.trainDerailSpeed[train] ?? 0) > 0) {
       this.skid(train);
       return;

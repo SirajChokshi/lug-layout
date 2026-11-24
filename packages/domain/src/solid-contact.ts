@@ -185,7 +185,12 @@ function writeParallelepiped(
   }
 }
 
-function separatedOn(lx: number, ly: number, lz: number): boolean {
+const satAxis = new Float64Array(AXES);
+
+function separatedOnAxis(): boolean {
+  const lx = satAxis[0] ?? 0;
+  const ly = satAxis[1] ?? 0;
+  const lz = satAxis[2] ?? 0;
   if (lx === 0 && ly === 0 && lz === 0) return false;
   let radii = 0;
   for (let k = 0; k < AXES; k++) {
@@ -207,7 +212,10 @@ function separatedOnCross(p: number, q: number): boolean {
   const qx = sat[q] ?? 0;
   const qy = sat[q + 1] ?? 0;
   const qz = sat[q + 2] ?? 0;
-  return separatedOn(py * qz - pz * qy, pz * qx - px * qz, px * qy - py * qx);
+  satAxis[0] = py * qz - pz * qy;
+  satAxis[1] = pz * qx - px * qz;
+  satAxis[2] = px * qy - py * qx;
+  return separatedOnAxis();
 }
 
 function separatedOnFaces(edges: number): boolean {

@@ -160,6 +160,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
   partSolids(): IPartSolids;
+  loadPartSolids(partIndices: ReadonlySet<number>): Promise<void>;
 }
 
 interface CatalogSlot {
@@ -784,6 +785,10 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   partSolids(): IPartSolids {
     if (!this.solids) throw new Error("the catalog has no part solids before it starts");
     return this.solids;
+  }
+
+  async loadPartSolids(partIndices: ReadonlySet<number>): Promise<void> {
+    await this.meshes?.whenLoaded(partIndices);
   }
 
   async rollingStock(): Promise<ReadonlyArray<PlayModel>> {
