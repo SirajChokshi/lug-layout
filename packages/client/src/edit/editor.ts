@@ -158,6 +158,14 @@ import { failedLoadText, mateCounts, refusalText } from "./placement-hover-view.
 import { ghostSettles, ghostVerdict, sameVerdict } from "./placement-feedback.ts";
 import { FrozenVolumes } from "../connect/placeable-volumes.ts";
 import {
+  CLASH_RANK,
+  NO_CLASH_PART,
+  NO_SKIP,
+  PartClash,
+  PosedPlaceable,
+  clashOut,
+} from "../trains/part-clash.ts";
+import {
   NOT_WAITING,
   placementChoice,
   type IPlacementSearch,
@@ -248,6 +256,7 @@ import type {
   CoupledEnd,
   IRailYard,
   RailAim,
+  RailSeat,
   TrainMember,
   VehicleFootprint,
 } from "../trains/rail-yard.ts";
@@ -431,6 +440,7 @@ export interface HoverView {
   readonly z: number;
   readonly yPlates: number;
   readonly refusal: string | null;
+  readonly waiting: string | null;
   readonly onRails: boolean;
   readonly couples: CouplingView | null;
   readonly placement: PlacementHover | null;
@@ -742,6 +752,7 @@ function placementRefused(check: PlacementCheck, seat: SeatOnRails): boolean {
   const kind = check.aim?.kind;
   return (
     kind === "refused" ||
+    kind === "waiting" ||
     check.waitingOn !== NOT_WAITING ||
     (seat === "refused" && kind === "seat") ||
     check.refusal !== null ||
@@ -755,7 +766,7 @@ function placementRefusal(
   seat: SeatOnRails,
 ): string | null {
   const { aim } = check;
-  if (aim?.kind === "refused") return aim.reason;
+  if (aim?.kind === "refused" || aim?.kind === "waiting") return aim.reason;
   if (aim?.kind === "seat") return seat === "refused" ? railSeatRefusal(placeable) : null;
   if (check.refusal) return check.refusal;
   return check.trackBlock ? trackRefusal(placeable, check.trackBlock) : null;
@@ -1037,6 +1048,10 @@ function refusedAt(
   };
 }
 
+function shapesWaitText(subject: string, other: string): string {
+  return `Waiting for part shapes to check ${subject} against ${other}…`;
+}
+
 function waitingText(subject: string, neighbour: string, checked: string): string {
   return `${subject}: ${neighbour} beside it is still reading its connectors, so ${checked} can't be checked yet.`;
 }
@@ -1163,6 +1178,15 @@ function sameHover(a: HoverView | null, b: HoverView | null): boolean {
 
 const NO_LOW_CLEARANCE: ReadonlyMap<number, PlateHeights> = new Map();
 const NO_LABELS: ReadonlyArray<LabelView> = [];
+
+interface ReachBox {
+  minX: number;
+  minY: number;
+  minZ: number;
+  maxX: number;
+  maxY: number;
+  maxZ: number;
+}
 
 function footprintMeetsBox(vehicle: VehicleFootprint, box: WorldBox): boolean {
   if (vehicle.topLdu <= box.minY || box.maxY <= vehicle.railTopLdu) return false;
@@ -1311,6 +1335,7 @@ export class Editor implements IEditor, IEditedWorld {
   private hoverX = 0;
   private hoverZ = 0;
   private railRefusal: string | null = null;
+  private railWaiting: string | null = null;
   private queuedClick: QueuedClick | null = null;
   private readonly pick = new CursorPick();
   private readonly surface = new Float64Array(3);
@@ -1411,6 +1436,21 @@ export class Editor implements IEditor, IEditedWorld {
     );
   };
   private readonly solidSpan: [number, number] = [0, 0];
+  private readonly trainReach: ReachBox = {
+    minX: 0,
+    maxX: 0,
+    minY: 0,
+    maxY: 0,
+    minZ: 0,
+    maxZ: 0,
+  };
+  private readonly trainNeighbours: PlacedModel[] = [];
+  private readonly posedModel = new PosedPlaceable();
+  private readonly clash = clashOut();
+  private readonly modelClash = clashOut();
+  private partClash: PartClash | null = null;
+  private solidsAwaited = false;
+  private heldShapesWait = false;
   private readonly solidHit = { rects: new Float64Array(0), floats: 0 };
   private readonly solidRectsIn: SolidRects = (bottomLdu, topLdu) => {
     const { placeable, x, z, rot, yPlates } = this.solidProbe;
@@ -1478,7 +1518,10 @@ export class Editor implements IEditor, IEditedWorld {
     ground.subscribe(() => this.update(this.ground.view()));
     this.assist = new AssistSession(search, this.assistHost());
     frames.setFrameWork(this.assistFrame);
-    catalog.subscribe(() => this.update({ meshes: catalog.meshProgress() }));
+    catalog.subscribe(() => {
+      this.update({ meshes: catalog.meshProgress() });
+      if (this.solidsAwaited) void Promise.resolve().then(() => this.solidsArrived());
+    });
     plans.subscribe(() => this.plansChanged());
     plans.onEdit((change) => this.planEdited(change));
   }
@@ -2623,6 +2666,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (!placeable || !this.hovering || this.fillTool?.previewing) {
       this.assist.cancel();
       this.railRefusal = null;
+      this.railWaiting = null;
       return;
     }
     const startedMs = performance.now();
@@ -2660,6 +2704,7 @@ export class Editor implements IEditor, IEditedWorld {
         mateCounts(report, this.shapes, this.studShapes, (owner) => this.placedViewOf(owner)),
       refusalHit: (overlap) => this.refusalHit(overlap),
       heldPoseRefusal: (placeable, pose) => this.heldPoseRefusal(placeable, pose),
+      heldPoseWaits: () => this.heldShapesWait,
       restsOn: (connected, pose) =>
         this.search
           .restingOn(connected.volumes, pose, null)
@@ -2682,10 +2727,11 @@ export class Editor implements IEditor, IEditedWorld {
   }
 
   private heldPoseRefusal(placeable: Placeable, pose: LatticePose): string | null {
+    this.heldShapesWait = false;
     return (
       this.trackPlacementRefusal(placeable, pose, NO_MODELS, NO_TRACK_SKIP) ??
       this.roadOverlap(placeable, this.placedRoads, pose)?.reason ??
-      null
+      this.standingTrainCut(placeable, pose)
     );
   }
 
@@ -2759,17 +2805,113 @@ export class Editor implements IEditor, IEditedWorld {
 
   private aimTrain(train: PlayModel, ray: Float64Array, reversed: boolean): RailAim {
     const aim = this.railYard.aim(train, ray, reversed);
-    const track = this.trackWorld.drawing();
     if (aim.kind !== "seat" && aim.kind !== "couple") return aim;
-    if (!track || track.raisedCount() === 0) return aim;
-    const meets = this.railYard
-      .seatFootprints(aim.seat, train.label)
-      .some(({ outline, railTopLdu, topLdu }) =>
-        track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
-      );
-    if (!meets) return aim;
-    const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;
-    return { kind: "refused", reason, seat: aim.seat };
+    const track = this.trackWorld.drawing();
+    const meetsTrack =
+      track !== null &&
+      track.raisedCount() > 0 &&
+      this.railYard
+        .seatFootprints(aim.seat, train.label)
+        .some(({ outline, railTopLdu, topLdu }) =>
+          track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
+        );
+    if (meetsTrack) {
+      const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;
+      return { kind: "refused", reason, seat: aim.seat };
+    }
+    const model = this.modelMeetingSeat(aim.seat);
+    if (!model) return aim;
+    const { kind, part } = this.clash;
+    const modelLabel = model.placeable.label;
+    const { seat } = aim;
+    switch (kind) {
+      case "clear":
+        return aim;
+      case "clash": {
+        const reason = `${train.label} would run into ${modelLabel} there. Put it where it clears every model.`;
+        return { kind: "refused", reason, seat };
+      }
+      case "waiting":
+        this.solidsAwaited = true;
+        return { kind: "waiting", reason: shapesWaitText(train.label, modelLabel), seat };
+      case "missing": {
+        const reason = `${train.label} can't be checked against ${modelLabel}: ${this.partTitle(part)}'s shape didn't load.`;
+        return { kind: "refused", reason, seat };
+      }
+      default: {
+        const unhandled: never = kind;
+        throw new Error(`unhandled clash ${String(unhandled)}`);
+      }
+    }
+  }
+
+  private partTitle(partIndex: number): string {
+    const part = this.catalog.parts()[partIndex];
+    return part ? `${part.id.replace(/^ldraw:/u, "")} ${part.title}` : `palette part ${partIndex}`;
+  }
+
+  private partClashes(): PartClash {
+    this.partClash ??= new PartClash(this.catalog.partSolids());
+    return this.partClash;
+  }
+
+  private modelMeetingSeat(seat: RailSeat): PlacedModel | null {
+    const { bounds } = seat.solids;
+    const reach = this.catalog.partSolids().studReach();
+    const area = this.trainReach;
+    area.minX = (bounds[0] ?? 0) - reach;
+    area.minY = bounds[1] ?? 0;
+    area.minZ = (bounds[2] ?? 0) - reach;
+    area.maxX = (bounds[3] ?? 0) + reach;
+    area.maxY = bounds[4] ?? 0;
+    area.maxZ = (bounds[5] ?? 0) + reach;
+    const models = this.trainNeighbours;
+    const count = this.placed.over(area, models);
+    const clash = this.clash;
+    const found = this.modelClash;
+    clash.kind = "clear";
+    clash.part = NO_CLASH_PART;
+    let named: PlacedModel | null = null;
+    const solids = this.catalog.partSolids();
+    for (let m = 0; m < count; m++) {
+      const model = models[m];
+      if (!model) continue;
+      const { x, z, yPlates, rot } = model.handle;
+      this.posedModel.place(model.placeable, x, z, yPlates * PLATE_LDU, rot, solids);
+      const skip = this.trackWorld.carriedParts(model.placeable);
+      this.partClashes().first(seat.solids, NO_SKIP, this.posedModel, skip, found);
+      if (CLASH_RANK[found.kind] <= CLASH_RANK[clash.kind]) continue;
+      clash.kind = found.kind;
+      clash.part = found.part;
+      named = model;
+      if (found.kind === "clash") break;
+    }
+    return named;
+  }
+
+  private standingTrainCut(placeable: Placeable, pose: LatticePose): string | null {
+    const solids = this.catalog.partSolids();
+    this.posedModel.place(placeable, pose.x, pose.z, pose.yPlates * PLATE_LDU, pose.rot, solids);
+    const skip = this.trackWorld.carriedParts(placeable);
+    const clash = this.clash;
+    const train = this.railYard.standingClash(this.posedModel, skip, this.partClashes(), clash);
+    if (train === null) return null;
+    switch (clash.kind) {
+      case "clear":
+        return null;
+      case "clash":
+        return `${placeable.label} would cut through ${train} standing there.`;
+      case "waiting":
+        this.solidsAwaited = true;
+        this.heldShapesWait = true;
+        return shapesWaitText(placeable.label, train);
+      case "missing":
+        return `${placeable.label} can't be checked against ${train}: ${this.partTitle(clash.part)}'s shape didn't load.`;
+      default: {
+        const unhandled: never = clash.kind;
+        throw new Error(`unhandled clash ${String(unhandled)}`);
+      }
+    }
   }
 
   private placeOnRails(placeable: Placeable): boolean {
@@ -2785,6 +2927,7 @@ export class Editor implements IEditor, IEditedWorld {
     }
     this.assist.leave();
     this.railRefusal = aim.kind === "refused" ? aim.reason : null;
+    this.railWaiting = aim.kind === "waiting" ? aim.reason : null;
     if (aim.seat) {
       const ghost = this.railYard.ghost(aim.seat);
       this.backend.setGhost(ghost.instances);
@@ -2838,6 +2981,7 @@ export class Editor implements IEditor, IEditedWorld {
     const aim = this.active !== null ? this.trainAim : null;
     const onRails = aim !== null && aim.kind !== "off";
     const refusal = onRails ? this.railRefusal : this.assist.refusal;
+    const waiting = onRails ? this.railWaiting : null;
     const yPlates = this.drawingTrack()?.drawingPlates ?? this.assist.yPlates;
     const { placement } = this.assist;
     const couples =
@@ -2849,6 +2993,7 @@ export class Editor implements IEditor, IEditedWorld {
       shown.z === this.hoverZ &&
       shown.yPlates === yPlates &&
       shown.refusal === refusal &&
+      shown.waiting === waiting &&
       shown.onRails === onRails &&
       shown.couples?.end === couples?.end &&
       shown.couples?.train === couples?.train &&
@@ -2856,7 +3001,16 @@ export class Editor implements IEditor, IEditedWorld {
     ) {
       return shown;
     }
-    return { x: this.hoverX, z: this.hoverZ, yPlates, refusal, onRails, couples, placement };
+    return {
+      x: this.hoverX,
+      z: this.hoverZ,
+      yPlates,
+      refusal,
+      waiting,
+      onRails,
+      couples,
+      placement,
+    };
   }
 
   private roadReadout(): RoadSnapView | null {
@@ -3193,6 +3347,10 @@ export class Editor implements IEditor, IEditedWorld {
         this.refuse(refusedAt(active.id, at, aim.reason), null);
         return;
       }
+      if (aim.kind === "waiting") {
+        this.queueClick(this.clickedPick(active.id, eventTimeMs));
+        return;
+      }
       if (aim.kind === "couple") {
         this.couple(aim, { refId: this.activeRefId, colorId: active.worldColor }, eventTimeMs);
         return;
@@ -3211,7 +3369,7 @@ export class Editor implements IEditor, IEditedWorld {
     const placement = this.assist.placement;
     if (!placement) return;
     const { pose } = placement;
-    if (placement.waitingOn && !placement.waitingOn.failed) {
+    if ((placement.waitingOn && !placement.waitingOn.failed) || this.assist.waitsOnShapes) {
       this.queueClick(this.clickedPick(active.id, eventTimeMs));
       return;
     }
@@ -4956,6 +5114,8 @@ export class Editor implements IEditor, IEditedWorld {
       if (track !== null) return refusedAt(placeable.id, pose, track);
       const road = this.roadOverlap(placeable, placedRoads, pose);
       if (road) return refusedAt(placeable.id, pose, road.reason, road.counts);
+      const cut = this.standingTrainCut(placeable, pose);
+      if (cut !== null) return refusedAt(placeable.id, pose, cut);
     }
     for (const [component, index] of lowest) {
       const base = members[index]?.placeable;
@@ -5493,6 +5653,14 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.ghostRot !== waiting.rot) return;
     if (fill.laid > 0) this.commitFill(fill, waiting.placeable, waiting.eventTimeMs);
     this.rehover();
+  }
+
+  private solidsArrived(): void {
+    if (!this.solidsAwaited) return;
+    this.solidsAwaited = false;
+    this.rehover();
+    const queued = this.queuedClick;
+    if (queued && this.active && queued.item === this.active.id) this.replayQueued(queued);
   }
 
   private strandedBy(removed: ReadonlySet<PlacedModel>): ModelStranding {

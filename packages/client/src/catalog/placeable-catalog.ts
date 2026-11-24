@@ -53,6 +53,7 @@ import { studPrimitiveBoxes } from "../running-gear/instance-boxes.ts";
 import { ColorTable, ldrawColors, type ModelCredit } from "../scene/viewer-scene.ts";
 import { MODEL_IMPORTER } from "../tokens.ts";
 import { customPartCredits } from "./custom-part-credits.ts";
+import { PartSolids, type IPartSolids } from "./part-solids.ts";
 import { modelLabel, withoutYear } from "./model-label.ts";
 import { thumbnailUrls } from "./thumbnail-urls.ts";
 
@@ -158,6 +159,7 @@ export interface IPlaceableCatalog extends ICatalogAssets {
   customParts(placeable: Placeable): ReadonlyArray<CustomPartCredit> | null;
   baked(placeable: Placeable): Pick<PartModel, "lattice" | "cells"> | null;
   partConnectorRecord(placeableId: string, partIndex: number): Promise<PartConnectorRecord>;
+  partSolids(): IPartSolids;
 }
 
 interface CatalogSlot {
@@ -323,6 +325,7 @@ export class PlaceableCatalog implements IPlaceableCatalog {
   private colorTable: ColorTable | null = null;
   private installedColors = 0;
   private meshes: PartMeshStream | null = null;
+  private solids: PartSolids | null = null;
   private progress: MeshProgress = {
     detailedPartMeshes: NO_MESHES,
     farPartMeshes: NO_MESHES,
@@ -371,6 +374,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
       this.notify();
     });
     this.backend.setNeededMeshListener(this.meshes);
+    const meshes = this.meshes;
+    this.solids = new PartSolids(
+      { parts: () => palette.parts, readiness: (partIndex) => meshes.readiness(partIndex) },
+      studPrimitives,
+    );
     for (const shape of shapes) this.meshes.register(palette.indexOf(shape.id), shape.meshFile);
     const skipped = this.buildCatalog(index, shapes);
     this.backend.setPalette({
@@ -771,6 +779,11 @@ export class PlaceableCatalog implements IPlaceableCatalog {
 
   playModel(placeable: Placeable): PlayModel | null {
     return this.playModels.get(placeable) ?? null;
+  }
+
+  partSolids(): IPartSolids {
+    if (!this.solids) throw new Error("the catalog has no part solids before it starts");
+    return this.solids;
   }
 
   async rollingStock(): Promise<ReadonlyArray<PlayModel>> {

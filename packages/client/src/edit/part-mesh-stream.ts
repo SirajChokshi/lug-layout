@@ -17,6 +17,8 @@ const HELD_STALL_MS = 2000;
 
 type HoldStep = 1 | -1;
 
+export type MeshReadiness = "ready" | "loading" | "missing";
+
 export type PartMeshProgress = Pick<
   MeshProgress,
   "detailedPartMeshes" | "farPartMeshes" | "undrawnParts"
@@ -106,6 +108,22 @@ export class PartMeshStream implements NeededMeshListener {
       if (this.want(this.far, index)) started = true;
     }
     if (started) this.onProgress(this.progress());
+  }
+
+  readiness(index: number): MeshReadiness {
+    this.ensure(index + 1);
+    if (this.detailed.status[index] === NOT_WANTED) this.want(this.detailed, index);
+    switch (this.detailed.status[index]) {
+      case LOADED:
+      case PENDING_FLUSH:
+      case PROVIDED:
+        return "ready";
+      case FAILED:
+      case ABSENT:
+        return "missing";
+      default:
+        return "loading";
+    }
   }
 
   async whenLoaded(indices: ReadonlySet<number>): Promise<void> {
