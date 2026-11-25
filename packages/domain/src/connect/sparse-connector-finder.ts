@@ -962,7 +962,10 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   private turn(model: ModelConnectors): TurnedModel {
-    if (this.turned.model === model) return this.turned;
+    return this.turned.model === model ? this.turned : this.switchTurned(model);
+  }
+
+  private switchTurned(model: ModelConnectors): TurnedModel {
     const cached = this.turnedModels.get(model);
     if (cached !== undefined && cached.classCount === this.classes.count) {
       this.turned = cached;

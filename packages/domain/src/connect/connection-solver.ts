@@ -199,8 +199,11 @@ export class ConnectionSolver {
   }
 
   private reinsertWithdrawn(): void {
+    if (this.withdrawal.owed) this.reinsertOwed();
+  }
+
+  private reinsertOwed(): void {
     const withdrawal = this.withdrawal;
-    if (!withdrawal.owed) return;
     const count = withdrawal.take();
     for (let k = 0; k < count; k++) {
       const model = withdrawal.modelAt(k);
