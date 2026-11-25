@@ -174,6 +174,18 @@ const farTrack: CrossingTrack = {
 };
 const acrossTrack = trackDownEveryRow(gateSide)[1];
 if (!acrossTrack) throw new Error("no track to lay across the field");
+const [firstStrip] = gateTracks;
+if (!firstStrip) throw new Error("the field has no strips");
+const overOneCrossing: CrossingTrack = {
+  outline: PlacedOutline.ofRect({
+    minX: firstStrip.outline.bounds.minX,
+    minZ: firstStrip.outline.bounds.minZ,
+    maxX: firstStrip.outline.bounds.minX + TRACK_WIDTH_LDU,
+    maxZ: firstStrip.outline.bounds.maxZ,
+  }),
+  bedLdu: 0,
+  railTopLdu: RAIL_TOP_LDU,
+};
 const gate = new LevelCrossings([]);
 gate.crossings(gateRoads, gateTracks);
 const alternate = (a: () => void, b: () => void): (() => number) => {
@@ -231,6 +243,7 @@ function youngBytesPerCall(call: () => number): number {
 const withFarRoad = [...gateRoads, farRoad];
 const withFarTrack = [...gateTracks, farTrack];
 const withAcross = [...gateTracks, acrossTrack];
+const withOverOne = [...gateTracks, overOneCrossing];
 const farRoadEdit = alternate(
   () => gate.crossings(withFarRoad, gateTracks),
   () => gate.crossings(gateRoads, gateTracks),
@@ -239,24 +252,58 @@ const farTrackEdit = alternate(
   () => gate.crossings(gateRoads, withFarTrack),
   () => gate.crossings(gateRoads, gateTracks),
 );
-const touchingEdit = alternate(
-  () => gate.crossings(gateRoads, withAcross),
-  () => gate.crossings(gateRoads, gateTracks),
-);
+function median(samples: ReadonlyArray<number>): number {
+  return samples.toSorted((a, b) => a - b)[Math.floor(samples.length / 2)] ?? 0;
+}
+
+function takeUp(): number {
+  return gate.crossings(gateRoads, gateTracks).length;
+}
+
+function layAndTakeUp(withTrack: ReadonlyArray<CrossingTrack>): {
+  readonly layMs: number;
+  readonly takeUpMs: number;
+  readonly layBytes: number;
+} {
+  const lay = (): number => gate.crossings(gateRoads, withTrack).length;
+  const layMs: number[] = [];
+  const takeUpMs: number[] = [];
+  for (let i = -WARMUP; i < RUNS; i++) {
+    const laid = performance.now();
+    lay();
+    const takenUp = performance.now();
+    takeUp();
+    const done = performance.now();
+    if (i < 0) continue;
+    layMs.push(takenUp - laid);
+    takeUpMs.push(done - takenUp);
+  }
+  let layBytes = 0;
+  for (let i = 0; i < RUNS; i++) {
+    layBytes += youngBytesAllocatedBy(lay);
+    takeUp();
+  }
+  return { layMs: median(layMs), takeUpMs: median(takeUpMs), layBytes: layBytes / RUNS };
+}
+const crossingsKept = gate.crossings(gateRoads, gateTracks).length;
 const farRoadMs = medianMs(farRoadEdit).ms;
 const farTrackMs = medianMs(farTrackEdit).ms;
-const touchingMs = medianMs(touchingEdit).ms;
+const across = layAndTakeUp(withAcross);
+const overOne = layAndTakeUp(withOverOne);
 const farRoadBytes = youngBytesPerCall(farRoadEdit);
 const farTrackBytes = youngBytesPerCall(farTrackEdit);
-const touchingBytes = youngBytesPerCall(touchingEdit);
+
 lines.push(
   "",
-  `LevelCrossings kept across edits on the ${gateSide} x ${gateSide} field with ${TRACKS} strips (median ms per call, edits alternating with their undo):`,
+  `LevelCrossings kept across edits on the ${gateSide} x ${gateSide} field with ${TRACKS} strips and ${crossingsKept} crossings (median ms per call, edits alternating with their undo):`,
   "",
   "| Edit | ms | Young-generation bytes per call |",
   "|---|---:|---:|",
   `| a road added and removed far from every track (reused) | ${farRoadMs.toFixed(3)} | ${Math.round(farRoadBytes)} |`,
   `| a track added and removed far from every road (reused) | ${farTrackMs.toFixed(3)} | ${Math.round(farTrackBytes)} |`,
-  `| a track laid across the field and taken up (recomputed in full) | ${touchingMs.toFixed(1)} | ${Math.round(touchingBytes)} |`,
+  `| a track laid across the field far from every crossing (its own crossings built, the rest reused) | ${across.layMs.toFixed(1)} | ${Math.round(across.layBytes)} |`,
+  `| that track taken up | ${across.takeUpMs.toFixed(2)} | - |`,
+  `| a short track laid over one crossing (that crossing rebuilt, the rest reused) | ${overOne.layMs.toFixed(2)} | ${Math.round(overOne.layBytes)} |`,
+  `| that short track taken up (that crossing rebuilt, the rest reused) | ${overOne.takeUpMs.toFixed(2)} | - |`,
 );
 process.stdout.write(`${lines.join("\n")}\n`);
