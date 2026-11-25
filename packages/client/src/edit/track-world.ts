@@ -606,8 +606,10 @@ export class TrackWorld implements ITrackWorld {
       if (chunk) this.backend.setChunk(key, chunk);
     }
     this.heldTrackModels = [];
+    this.unsupportedTrack = null;
     this.unsupportedLaid = NO_IDS;
     this.unsupportedCarriers = NO_IDS;
+    this.lowTrack = null;
   }
 
   records(): TrackRecordV1[] {

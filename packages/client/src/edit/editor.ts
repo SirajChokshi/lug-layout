@@ -1902,6 +1902,14 @@ export class Editor implements IEditor, IEditedWorld {
     this.trackWorld.refreshCrossings();
   }
 
+  private forgetLayout(): void {
+    this.pushUnsupported();
+    if (this.trackWorld.drawing() !== null) {
+      this.plans.setLowClearance(NO_LOW_CLEARANCE, NO_LOW_CLEARANCE, "");
+    }
+    this.trackWorld.refreshCrossings();
+  }
+
   private reportClearance(): void {
     const track = this.trackWorld.drawing();
     if (!track) return;
@@ -5820,7 +5828,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.trackWorld.setObstacles();
     }
     this.trackWorld.setRoads([]);
-    this.layoutChanged();
+    this.forgetLayout();
     this.update({
       placements: world.size,
       history: this.historyView(),
