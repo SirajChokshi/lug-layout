@@ -1130,7 +1130,7 @@ describe("road network kept up to date by adds and removes", () => {
           if (report.joinedCells > 0) seen.joined++;
           const ask = pick(random, asks);
           const pose = probeNear(random, pick(random, live.length > 0 ? live : pool));
-          expect(ask(network, pose)).toEqual(ask(new RoadNetwork(live), pose));
+          expect(ask(network, pose)).toEqual(ask(fresh, pose));
           const asked = live.length > 0 ? pick(random, live).id : 0;
           expect(network.placementJoin(asked)).toEqual(fresh.placementJoin(asked));
         }

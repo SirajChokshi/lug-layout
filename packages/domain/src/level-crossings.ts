@@ -96,16 +96,6 @@ function onPhase(value: number, phase: number): boolean {
   return (((value - phase) % STUD_LDU) + STUD_LDU) % STUD_LDU === 0;
 }
 
-function cellsUnder(rect: LduRect): Array<readonly [number, number]> {
-  const cells: Array<readonly [number, number]> = [];
-  for (let x = Math.floor(rect.minX / STUD_LDU); x < Math.ceil(rect.maxX / STUD_LDU); x++) {
-    for (let z = Math.floor(rect.minZ / STUD_LDU); z < Math.ceil(rect.maxZ / STUD_LDU); z++) {
-      cells.push([x, z]);
-    }
-  }
-  return cells;
-}
-
 class SurfaceIndex {
   readonly cells: SurfaceCell[] = [];
   readonly cellsOf = new Map<number, readonly [number, number]>();
@@ -125,13 +115,30 @@ class SurfaceIndex {
 
   overlapping(rect: LduRect): ReadonlyArray<number> {
     const found: number[] = [];
-    for (const [x, z] of cellsUnder(grown(rect))) {
-      for (const index of this.buckets.get(cellKey(x, z)) ?? []) {
-        const cell = this.cells[index];
-        if (cell && squaresOverlap(cell.square, rect)) found.push(index);
+    this.eachOverlapping(rect, (index) => found.push(index));
+    return found;
+  }
+
+  countOverlapping(rect: LduRect): number {
+    let count = 0;
+    this.eachOverlapping(rect, () => count++);
+    return count;
+  }
+
+  private eachOverlapping(rect: LduRect, visit: (index: number) => void): void {
+    const reach = grown(rect);
+    const toX = Math.ceil(reach.maxX / STUD_LDU);
+    const toZ = Math.ceil(reach.maxZ / STUD_LDU);
+    for (let x = Math.floor(reach.minX / STUD_LDU); x < toX; x++) {
+      for (let z = Math.floor(reach.minZ / STUD_LDU); z < toZ; z++) {
+        const bucket = this.buckets.get(cellKey(x, z));
+        if (!bucket) continue;
+        for (const index of bucket) {
+          const cell = this.cells[index];
+          if (cell && squaresOverlap(cell.square, rect)) visit(index);
+        }
       }
     }
-    return found;
   }
 }
 
@@ -312,7 +319,7 @@ function candidatesAlong(track: number, edge: AxisEdge, part: RampPart, rot: Rot
 }
 
 function roadwayUnder(rect: LduRect, roadway: SurfaceIndex): number {
-  return roadway.overlapping(rect).length;
+  return roadway.countOverlapping(rect);
 }
 
 function worldAntiStuds(candidate: Candidate): ReadonlyArray<readonly [number, number]> {

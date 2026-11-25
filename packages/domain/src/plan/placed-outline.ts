@@ -79,6 +79,9 @@ function isWholeLdu(exact: Zeta16): boolean {
 }
 
 function vertexOf(exact: Zeta16): Vertex {
+  if (isWholeLdu(exact)) {
+    return { exact, x: Number(exact[0] / ONE), z: Number(exact[4] / ONE), whole: true };
+  }
   let x = 0;
   let z = 0;
   exact.forEach((coefficient, power) => {
@@ -86,10 +89,7 @@ function vertexOf(exact: Zeta16): Vertex {
     x += c * Math.cos(power * STEP_RADIANS);
     z += c * Math.sin(power * STEP_RADIANS);
   });
-  const whole = isWholeLdu(exact);
-  return whole
-    ? { exact, x: Number(exact[0] / ONE), z: Number(exact[4] / ONE), whole }
-    : { exact, x, z, whole };
+  return { exact, x, z, whole: false };
 }
 
 function tolerance(...values: ReadonlyArray<number>): number {
@@ -218,29 +218,60 @@ function lduCorner(x: number, z: number): Vertex {
   return vertexOf(planValue(exactLdu(x), exactLdu(z)));
 }
 
-function* edgesOf(
-  rings: ReadonlyArray<ReadonlyArray<Vertex>>,
-): Generator<readonly [Vertex, Vertex]> {
+interface Edge {
+  readonly a: Vertex;
+  readonly b: Vertex;
+  readonly box: LduRect;
+  readonly zeroLength: boolean;
+}
+
+function sameExact(a: Vertex, b: Vertex): boolean {
+  return a.exact.every((coefficient, power) => coefficient === b.exact[power]);
+}
+
+function edgesOf(rings: ReadonlyArray<ReadonlyArray<Vertex>>): ReadonlyArray<Edge> {
+  const edges: Edge[] = [];
   for (const ring of rings) {
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % ring.length];
-      if (a && b) yield [a, b];
+      if (a && b) edges.push({ a, b, box: edgeBounds(a, b), zeroLength: sameExact(a, b) });
     }
   }
+  return edges;
+}
+
+function boxHolds(box: LduRect, point: Vertex): boolean {
+  return point.x >= box.minX && point.x <= box.maxX && point.z >= box.minZ && point.z <= box.maxZ;
 }
 
 export class PlacedOutline {
   readonly bounds: LduRect;
-  private doubledRings: ReadonlyArray<ReadonlyArray<Vertex>> | null = null;
+  private edgeList: ReadonlyArray<Edge> | null = null;
+  private doubledEdgeList: ReadonlyArray<Edge> | null = null;
+  private vertexList: ReadonlyArray<Vertex> | null = null;
 
   private constructor(private readonly rings: ReadonlyArray<ReadonlyArray<Vertex>>) {
     this.bounds = boundsOf(rings);
   }
 
-  private doubled(): ReadonlyArray<ReadonlyArray<Vertex>> {
-    this.doubledRings ??= this.rings.map((ring) => ring.map(doubled));
-    return this.doubledRings;
+  private edges(): ReadonlyArray<Edge> {
+    this.edgeList ??= edgesOf(this.rings);
+    return this.edgeList;
+  }
+
+  private doubledEdges(): ReadonlyArray<Edge> {
+    this.doubledEdgeList ??= edgesOf(this.rings.map((ring) => ring.map(doubled)));
+    return this.doubledEdgeList;
+  }
+
+  private hasZeroLengthEdge(): boolean {
+    return this.edges().some((edge) => edge.zeroLength);
+  }
+
+  private vertices(): ReadonlyArray<Vertex> {
+    this.vertexList ??= this.rings.flat();
+    return this.vertexList;
   }
 
   lduRings(): ReadonlyArray<OutlineRing> {
@@ -295,11 +326,11 @@ export class PlacedOutline {
 
   overlaps(other: PlacedOutline): boolean {
     if (!boundsMeet(this.bounds, other.bounds)) return false;
-    for (const [a, b] of edgesOf(this.rings)) {
-      const box = edgeBounds(a, b);
+    const theirs = other.edges();
+    for (const { a, b, box } of this.edges()) {
       if (!boundsMeet(box, other.bounds)) continue;
-      for (const [c, d] of edgesOf(other.rings)) {
-        if (!boundsMeet(box, edgeBounds(c, d))) continue;
+      for (const { a: c, b: d, box: theirBox } of theirs) {
+        if (!boundsMeet(box, theirBox)) continue;
         const o1 = orient(a, b, c);
         const o2 = orient(a, b, d);
         if (o1 === 0 && o2 === 0) {
@@ -317,8 +348,8 @@ export class PlacedOutline {
     const f = vertexOf(planValue(exactLdu(from[0]), exactLdu(from[1])));
     const t = vertexOf(planValue(exactLdu(to[0]), exactLdu(to[1])));
     const box = edgeBounds(f, t);
-    for (const [a, b] of edgesOf(this.rings)) {
-      if (!boundsMeet(box, edgeBounds(a, b))) continue;
+    for (const { a, b, box: edgeBox } of this.edges()) {
+      if (!boundsMeet(box, edgeBox)) continue;
       if (orient(f, t, a) !== 0 || orient(f, t, b) !== 0) continue;
       if (collinearOverlap(f, t, a, b)) return true;
     }
@@ -327,7 +358,7 @@ export class PlacedOutline {
 
   axisEdges(): ReadonlyArray<AxisEdge> {
     const edges: AxisEdge[] = [];
-    for (const [a, b] of edgesOf(this.rings)) {
+    for (const { a, b } of this.edges()) {
       for (const axis of ["x", "z"] as const) {
         const at = wholeLdu(a.exact, axis, axis === "x" ? a.x : a.z);
         if (at === null || wholeLdu(b.exact, axis, axis === "x" ? b.x : b.z) !== at) continue;
@@ -346,8 +377,9 @@ export class PlacedOutline {
     return edges;
   }
 
-  private onBoundary(point: Vertex, rings: ReadonlyArray<ReadonlyArray<Vertex>>): boolean {
-    for (const [c, d] of edgesOf(rings)) {
+  private onBoundary(point: Vertex, edges: ReadonlyArray<Edge>): boolean {
+    for (const { a: c, b: d, box, zeroLength } of edges) {
+      if (!zeroLength && !boxHolds(box, point)) continue;
       if (orient(c, d, point) === 0 && dot(c, d, c, point) >= 0 && dot(d, c, d, point) >= 0) {
         return true;
       }
@@ -355,9 +387,10 @@ export class PlacedOutline {
     return false;
   }
 
-  private contains(point: Vertex, rings: ReadonlyArray<ReadonlyArray<Vertex>>): boolean {
+  private contains(point: Vertex, edges: ReadonlyArray<Edge>): boolean {
     let inside = false;
-    for (const [a, b] of edgesOf(rings)) {
+    for (const { a, b, box } of edges) {
+      if (box.minZ > point.z || box.maxZ < point.z) continue;
       const aAbove = zOrder(a, point) > 0;
       const bAbove = zOrder(b, point) > 0;
       if (aAbove === bAbove) continue;
@@ -368,21 +401,21 @@ export class PlacedOutline {
   }
 
   private edgeEntersInterior(other: PlacedOutline): boolean {
-    const otherDoubled = other.doubled();
-    const otherVertices = other.rings.flat();
-    for (const [a, b] of edgesOf(this.rings)) {
-      const box = edgeBounds(a, b);
+    if (other.hasZeroLengthEdge()) return false;
+    const otherVertices = other.vertices();
+    for (const { a, b, box } of this.edges()) {
       if (!boundsMeet(box, other.bounds)) continue;
-      const events = [
-        a,
-        ...otherVertices.filter((q) => orient(a, b, q) === 0 && strictlyWithin(a, b, q)),
-        b,
-      ].toSorted((p, q) => dot(a, b, p, q) * -1);
+      const within = otherVertices.filter(
+        (q) => boxHolds(box, q) && orient(a, b, q) === 0 && strictlyWithin(a, b, q),
+      );
+      const events =
+        within.length === 0 ? [a, b] : [a, ...within, b].toSorted((p, q) => dot(a, b, p, q) * -1);
       for (let i = 0; i + 1 < events.length; i++) {
         const s = events[i];
         const t = events[i + 1];
         if (!s || !t) continue;
         const middle = sum(s, t);
+        const otherDoubled = other.doubledEdges();
         if (this.onBoundary(middle, otherDoubled)) continue;
         if (this.contains(middle, otherDoubled)) return true;
       }
