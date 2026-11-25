@@ -128,6 +128,28 @@ export class SnapShapes {
     return true;
   }
 
+  compare(a: number, b: number): number {
+    if (a === b) return 0;
+    const count = this.sectionCount(a);
+    const byHead =
+      this.caps(a) - this.caps(b) ||
+      (this.slideOf[a] ?? 0) - (this.slideOf[b] ?? 0) ||
+      count - this.sectionCount(b);
+    if (byHead !== 0) return byHead;
+    const firstA = this.firstSection(a);
+    const firstB = this.firstSection(b);
+    for (let s = 0; s < count; s++) {
+      const bySection =
+        (this.codeOf[firstA + s] ?? 0) - (this.codeOf[firstB + s] ?? 0) ||
+        Math.sign((this.sizeOf[firstA + s] ?? 0) - (this.sizeOf[firstB + s] ?? 0)) ||
+        Math.sign((this.spanOf[firstA + s] ?? 0) - (this.spanOf[firstB + s] ?? 0));
+      if (bySection !== 0) return bySection;
+    }
+    const groupA = this.groupName(a);
+    const groupB = this.groupName(b);
+    return groupA < groupB ? -1 : groupA > groupB ? 1 : 0;
+  }
+
   groupName(shape: number): string {
     return this.groupNames[this.group(shape)] ?? NO_GROUP;
   }
