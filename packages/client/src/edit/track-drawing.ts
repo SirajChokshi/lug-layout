@@ -372,6 +372,7 @@ export interface TrackCarrier {
 
 export interface PlayTrack {
   readonly layout: TrackLayout;
+  readonly graph: TrackGraph;
   readonly pieces: ReadonlyArray<TrackPiece>;
   readonly railPart: string;
   readonly railTopY: number;
@@ -953,6 +954,7 @@ export class TrackDrawing implements ExtensionSite {
     const box = rail.straight.footprints;
     return {
       layout: this.combined,
+      graph: this.graph,
       pieces: this.pieces,
       railPart: rail.straight.piece.part,
       railTopY: rail.railTopLdu,

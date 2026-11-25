@@ -48,13 +48,9 @@ import {
   type TrackRouteView,
   type UnsupportedPiece,
 } from "./track-drawing.ts";
+import { ModelBands } from "./model-bands.ts";
 import type { SupportBand } from "./track-bands.ts";
-import {
-  EVERY_MODEL,
-  OBSTACLE_RECT_FLOATS,
-  solidRectsIn,
-  supportBandOver,
-} from "./track-obstacles.ts";
+import { OBSTACLE_RECT_FLOATS, solidRectsIn, withStanding } from "./track-obstacles.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
 export interface TrackUnsupportedView {
@@ -186,6 +182,7 @@ export class TrackWorld implements ITrackWorld {
   private countedModels: PlacedModels | null = null;
   private countedVersion = -1;
   private counts: ModelTrackCounts | null = null;
+  private readonly modelBands = new ModelBands((model) => this.carriedParts(model.placeable));
 
   constructor(
     @inject(SCENE_BACKEND)
@@ -197,6 +194,7 @@ export class TrackWorld implements ITrackWorld {
   ) {}
 
   start(bundle: TrackBundle, placed: PlacedModels): void {
+    this.modelBands.clear();
     this.bundle = bundle;
     this.trackCatalog = bundle.trackCatalog;
     this.placed = placed;
@@ -599,6 +597,7 @@ export class TrackWorld implements ITrackWorld {
   adoptRestored(): void {
     const track = this.pendingRestored;
     this.pendingRestored = null;
+    this.modelBands.clear();
     for (const key of this.track?.chunkKeys() ?? []) this.backend.deleteChunk(key);
     this.track = track;
     if (track && this.trackSupport) track.setSupport(this.trackSupport);
@@ -647,13 +646,8 @@ export class TrackWorld implements ITrackWorld {
   ): SupportBand {
     const [bottom, top] = track.verticalRange();
     const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
-    return supportBandOver(
-      this.placed.models(),
-      band,
-      (model) => this.carriedParts(model.placeable),
-      reach === null ? EVERY_MODEL : (model) => reach.reaches(model.box),
-      this.railYard.standingFootprints(),
-    );
+    const modelBand = this.modelBands.band(this.placed, this.trackCatalog, band, reach);
+    return withStanding(modelBand, band, this.railYard.standingFootprints());
   }
 
   private rampClearance(
