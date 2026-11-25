@@ -1380,17 +1380,11 @@ export class PlacementSearch implements IPlacementSearch {
       const placed = this.placed.get(placement);
       if (placed) removed.push([placement, placed]);
     }
-    for (const [placement, placed] of removed) {
-      this.solver.remove(placed.model, placed.pose, placement);
-    }
     this.withheld = placements;
     try {
-      return during();
+      return this.solver.withdrawn(removed, during);
     } finally {
       this.withheld = NO_PLACEMENTS;
-      for (const [placement, placed] of removed) {
-        this.solver.insert(placed.model, placed.pose, placement);
-      }
     }
   }
 
