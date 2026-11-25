@@ -7,6 +7,7 @@ import {
   HEIGHT_BOX_INTS,
   MateReport,
   NO_OVERLAP,
+  NO_PARTNER,
   NO_PART_INSTANCE,
   NO_SHAPE,
   ProposalProgress,
@@ -39,7 +40,9 @@ import type { FrozenVolumes } from "./placeable-volumes.ts";
 
 const HALF_STUD_LDU = STUD_LDU / 2;
 const ORIGIN_INTS = 3;
+const X = 0;
 const Y = 1;
+const Z = 2;
 const HANGS = 0;
 const RESTS = 1;
 const RESTS_PRESSING_UP = 2;
@@ -179,6 +182,30 @@ interface Placed extends PlacedParts {
   readonly technic: FrozenTechnic;
   readonly row: number;
   readonly grid: FootprintGrid;
+  readonly verticalX0: number;
+  readonly verticalZ0: number;
+  readonly verticalX1: number;
+  readonly verticalZ1: number;
+}
+
+function verticalBoxesMeet(a: Placed, b: Placed): boolean {
+  return (
+    a.verticalX0 <= b.verticalX1 &&
+    b.verticalX0 <= a.verticalX1 &&
+    a.verticalZ0 <= b.verticalZ1 &&
+    b.verticalZ0 <= a.verticalZ1
+  );
+}
+
+function meetsAnyVerticalBox(
+  placed: Placed,
+  removed: ReadonlyArray<readonly [number, Placed]>,
+): boolean {
+  for (let r = 0; r < removed.length; r++) {
+    const other = removed[r];
+    if (other && verticalBoxesMeet(placed, other[1])) return true;
+  }
+  return false;
 }
 
 const TURNS = 4;
@@ -320,6 +347,38 @@ class Bounds {
     this.cellZ0 = z0;
     this.width = x1 - x0 + 1;
     this.depth = z1 - z0 + 1;
+    return this;
+  }
+}
+
+class VerticalBox {
+  x0 = Number.POSITIVE_INFINITY;
+  z0 = Number.POSITIVE_INFINITY;
+  x1 = Number.NEGATIVE_INFINITY;
+  z1 = Number.NEGATIVE_INFINITY;
+
+  measure(model: ModelConnectors, pose: LatticePose): this {
+    const rot = isRot90(pose.rot) ? pose.rot : 0;
+    const cos = rot90Cos(rot);
+    const sin = rot90Sin(rot);
+    const offsetX = pose.x * SIXTEENTHS_PER_LDU;
+    const offsetZ = pose.z * SIXTEENTHS_PER_LDU;
+    this.x0 = Number.POSITIVE_INFINITY;
+    this.z0 = Number.POSITIVE_INFINITY;
+    this.x1 = Number.NEGATIVE_INFINITY;
+    this.z1 = Number.NEGATIVE_INFINITY;
+    for (let c = 0; c < model.count; c++) {
+      const axis = model.axis[c];
+      if (axis !== AXIS_POS_Y && axis !== AXIS_NEG_Y) continue;
+      const mx = model.origin[c * ORIGIN_INTS + X] ?? 0;
+      const mz = model.origin[c * ORIGIN_INTS + Z] ?? 0;
+      const x = cos * mx + sin * mz + offsetX;
+      const z = -sin * mx + cos * mz + offsetZ;
+      this.x0 = Math.min(this.x0, x);
+      this.z0 = Math.min(this.z0, z);
+      this.x1 = Math.max(this.x1, x);
+      this.z1 = Math.max(this.z1, z);
+    }
     return this;
   }
 }
@@ -593,6 +652,7 @@ export class PlacementSearch implements IPlacementSearch {
   };
   private readonly zones = new MateZones();
   private readonly bounds = new Bounds();
+  private readonly verticalBox = new VerticalBox();
   private readonly reach = new Reach();
   private readonly footprint = new Reach();
   private readonly reachPose = new Pose();
@@ -650,7 +710,20 @@ export class PlacementSearch implements IPlacementSearch {
     const row = this.volumes.add(placement, grid, bounds.cellX0, bounds.cellZ0, yLdu);
     this.edits++;
     this.solver.insert(model, at, placement);
-    this.placed.set(placement, { model, volumes, boxes, technic, pose: at, row, grid });
+    const vertical = this.verticalBox.measure(model, at);
+    this.placed.set(placement, {
+      model,
+      volumes,
+      boxes,
+      technic,
+      pose: at,
+      row,
+      grid,
+      verticalX0: vertical.x0,
+      verticalZ0: vertical.z0,
+      verticalX1: vertical.x1,
+      verticalZ1: vertical.z1,
+    });
   }
 
   awaitTables(placement: number, volumes: CellVolumes, pose: LatticePose): void {
@@ -1223,9 +1296,12 @@ export class PlacementSearch implements IPlacementSearch {
       );
       if (waiting !== NO_SLOT) return this.waitingOn(waiting);
     }
+    if (this.withheld.size > 0) throw new Error("placements are already withdrawn");
+    const partners = this.partnersOf(removed);
     const before = new Map<number, number>();
     for (const [other, placed] of this.placed) {
       if (placements.has(other)) continue;
+      if (!partners.has(other) && !meetsAnyVerticalBox(placed, removed)) continue;
       this.solver.evaluate(placed.model, placed.pose, this.report);
       if (this.report.count > 0) before.set(other, this.report.count);
     }
@@ -1246,6 +1322,17 @@ export class PlacementSearch implements IPlacementSearch {
       this.solver.insert(placed.model, placed.pose, placement);
     }
     return stranded === null ? NOT_STRANDED : { kind: "stranded", placement: stranded };
+  }
+
+  private partnersOf(removed: ReadonlyArray<readonly [number, Placed]>): ReadonlySet<number> {
+    const partners = new Set<number>();
+    for (const [, placed] of removed) {
+      this.solver.partneredMates(placed.model, placed.pose, this.report);
+      for (let k = 0; k < this.report.count; k++) {
+        partners.add(this.report.partner[k] ?? NO_PARTNER);
+      }
+    }
+    return partners;
   }
 
   private waitingOn(slot: number): Stranding {
