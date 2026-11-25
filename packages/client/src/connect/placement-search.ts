@@ -351,34 +351,64 @@ class Bounds {
   }
 }
 
+const LOCAL_X0 = 0;
+const LOCAL_Z0 = 1;
+const LOCAL_X1 = 2;
+const LOCAL_Z1 = 3;
+
+function localVerticalBox(model: ModelConnectors): Float64Array {
+  const box = Float64Array.of(
+    Number.POSITIVE_INFINITY,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  );
+  for (let c = 0; c < model.count; c++) {
+    const axis = model.axis[c];
+    if (axis !== AXIS_POS_Y && axis !== AXIS_NEG_Y) continue;
+    const mx = model.origin[c * ORIGIN_INTS + X] ?? 0;
+    const mz = model.origin[c * ORIGIN_INTS + Z] ?? 0;
+    box[LOCAL_X0] = Math.min(box[LOCAL_X0] ?? mx, mx);
+    box[LOCAL_Z0] = Math.min(box[LOCAL_Z0] ?? mz, mz);
+    box[LOCAL_X1] = Math.max(box[LOCAL_X1] ?? mx, mx);
+    box[LOCAL_Z1] = Math.max(box[LOCAL_Z1] ?? mz, mz);
+  }
+  return box;
+}
+
 class VerticalBox {
   x0 = Number.POSITIVE_INFINITY;
   z0 = Number.POSITIVE_INFINITY;
   x1 = Number.NEGATIVE_INFINITY;
   z1 = Number.NEGATIVE_INFINITY;
+  private readonly local = new WeakMap<ModelConnectors, Float64Array>();
 
   measure(model: ModelConnectors, pose: LatticePose): this {
+    let box = this.local.get(model);
+    if (!box) {
+      box = localVerticalBox(model);
+      this.local.set(model, box);
+    }
+    const lx0 = box[LOCAL_X0] ?? Number.POSITIVE_INFINITY;
+    const lz0 = box[LOCAL_Z0] ?? Number.POSITIVE_INFINITY;
+    const lx1 = box[LOCAL_X1] ?? Number.NEGATIVE_INFINITY;
+    const lz1 = box[LOCAL_Z1] ?? Number.NEGATIVE_INFINITY;
+    if (lx0 > lx1) {
+      this.x0 = Number.POSITIVE_INFINITY;
+      this.z0 = Number.POSITIVE_INFINITY;
+      this.x1 = Number.NEGATIVE_INFINITY;
+      this.z1 = Number.NEGATIVE_INFINITY;
+      return this;
+    }
     const rot = isRot90(pose.rot) ? pose.rot : 0;
     const cos = rot90Cos(rot);
     const sin = rot90Sin(rot);
     const offsetX = pose.x * SIXTEENTHS_PER_LDU;
     const offsetZ = pose.z * SIXTEENTHS_PER_LDU;
-    this.x0 = Number.POSITIVE_INFINITY;
-    this.z0 = Number.POSITIVE_INFINITY;
-    this.x1 = Number.NEGATIVE_INFINITY;
-    this.z1 = Number.NEGATIVE_INFINITY;
-    for (let c = 0; c < model.count; c++) {
-      const axis = model.axis[c];
-      if (axis !== AXIS_POS_Y && axis !== AXIS_NEG_Y) continue;
-      const mx = model.origin[c * ORIGIN_INTS + X] ?? 0;
-      const mz = model.origin[c * ORIGIN_INTS + Z] ?? 0;
-      const x = cos * mx + sin * mz + offsetX;
-      const z = -sin * mx + cos * mz + offsetZ;
-      this.x0 = Math.min(this.x0, x);
-      this.z0 = Math.min(this.z0, z);
-      this.x1 = Math.max(this.x1, x);
-      this.z1 = Math.max(this.z1, z);
-    }
+    this.x0 = Math.min(cos * lx0, cos * lx1) + Math.min(sin * lz0, sin * lz1) + offsetX;
+    this.x1 = Math.max(cos * lx0, cos * lx1) + Math.max(sin * lz0, sin * lz1) + offsetX;
+    this.z0 = Math.min(-sin * lx0, -sin * lx1) + Math.min(cos * lz0, cos * lz1) + offsetZ;
+    this.z1 = Math.max(-sin * lx0, -sin * lx1) + Math.max(cos * lz0, cos * lz1) + offsetZ;
     return this;
   }
 }

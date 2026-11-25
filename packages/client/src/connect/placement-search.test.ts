@@ -23,7 +23,7 @@ import {
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
-import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER, type IAssetFetcher } from "@brr/catalog";
+import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER } from "@brr/catalog";
 import {
   PLATE_LDU,
   isRot90,
@@ -38,9 +38,9 @@ import {
 } from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
-import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { fixtureBundleFetcher } from "../edit/fixture-model.test-support.ts";
 import { distinctJoints } from "../edit/placement-hover.ts";
 import { mateCounts } from "../edit/placement-hover-view.ts";
 import type { PlaceablePartCells } from "../edit/placeable.ts";
@@ -1316,6 +1316,14 @@ class LiveWorld {
     return this.search.strandedByRemoval(removed, this.restsOnTable);
   }
 
+  disagreement(removed: ReadonlySet<number>): unknown {
+    const local = this.stranded(removed);
+    const everyModel = this.everyModelChecked(removed);
+    return JSON.stringify(local) === JSON.stringify(everyModel)
+      ? null
+      : { removed: [...removed], local, everyModel };
+  }
+
   everyModelChecked(removed: ReadonlySet<number>): unknown {
     const report = new MateReport();
     const mated: Array<readonly [number, Listed]> = [];
@@ -1567,21 +1575,10 @@ const axled: Scenario = (b, site) => {
   const first = b.next();
   const second = b.next();
   const axle = b.next();
-  const hole = (z: number): Spec => [
-    b.joints.axleHole,
-    GENDER_FEMALE,
-    LINE_X,
-    LINE_Y,
-    z,
-    AXIS_NEG_Z,
-  ];
+  const hole: Spec = [b.joints.axleHole, GENDER_FEMALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z];
   const beam: Box = [0, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU];
-  b.live.place(first, singleConnector(b.f, hole(0), beam), sited(site, 0, 0, RAISED_Y_PLATES));
-  b.live.place(
-    second,
-    singleConnector(b.f, hole(0), beam),
-    sited(site, 0, STUD_LDU, RAISED_Y_PLATES),
-  );
+  b.live.place(first, singleConnector(b.f, hole, beam), sited(site, 0, 0, RAISED_Y_PLATES));
+  b.live.place(second, singleConnector(b.f, hole, beam), sited(site, 0, STUD_LDU, RAISED_Y_PLATES));
   b.live.place(
     axle,
     singleConnector(b.f, [b.joints.axle, GENDER_MALE, LINE_X, LINE_Y, 0, AXIS_POS_Z], CELL),
@@ -1785,11 +1782,8 @@ describe("PlacementSearch stranding by removal", () => {
       const pick = seeded(seed * 7919);
       const disagreements: unknown[] = [];
       for (const removed of removalSets(generated, pick)) {
-        const local = generated.live.stranded(removed);
-        const everyModel = generated.live.everyModelChecked(removed);
-        if (JSON.stringify(local) !== JSON.stringify(everyModel)) {
-          disagreements.push({ removed: [...removed], local, everyModel });
-        }
+        const disagreement = generated.live.disagreement(removed);
+        if (disagreement !== null) disagreements.push(disagreement);
         for (let k = 0; k < REORDERED_PER_DRAW; k++) {
           const moved = generated.placements[pick(generated.placements.length)];
           if (moved !== undefined) generated.live.replace(moved);
@@ -1876,22 +1870,6 @@ describe("PlacementSearch stranding by removal", () => {
   });
 });
 
-const fixtureBundleRoot = new URL(
-  "../../../../tools/asset-pipeline/fixture-bundle/",
-  import.meta.url,
-);
-
-class FixtureBundleFetcher implements IAssetFetcher {
-  async bytes(path: string): Promise<ArrayBuffer> {
-    const buffer = await readFile(new URL(path, fixtureBundleRoot));
-    return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  }
-
-  text(path: string): Promise<string> {
-    return readFile(new URL(path, fixtureBundleRoot), "utf8");
-  }
-}
-
 const OFFICIAL_BASEPLATE = "generated:baseplate-3811";
 const OFFICIAL_BRICK = "generated:brick-2x4";
 const OFFICIAL_JUMPER = "generated:jumper";
@@ -1900,7 +1878,7 @@ const ON_THE_TABLE_FAR_AWAY = 50 * STUD_LDU;
 async function officialParts() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
-  container.rebind(ASSET_FETCHER).toConstantValue(new FixtureBundleFetcher());
+  container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
   const catalog = container.get(PLACEABLE_CATALOG);
   await catalog.start(await container.get(PART_BUNDLE_LOADER).loadIndex("standard"));
   const tables = container.get(CONNECTOR_TABLES);
@@ -1972,12 +1950,8 @@ describe("PlacementSearch stranding by removal, on official parts", () => {
     const disagreements: unknown[] = [];
     for (let a = 0; a < placements.length; a++) {
       for (let b = a; b < placements.length; b++) {
-        const removed = new Set([placements[a] ?? 0, placements[b] ?? 0]);
-        const local = live.stranded(removed);
-        const everyModel = live.everyModelChecked(removed);
-        if (JSON.stringify(local) !== JSON.stringify(everyModel)) {
-          disagreements.push({ removed: [...removed], local, everyModel });
-        }
+        const disagreement = live.disagreement(new Set([placements[a] ?? 0, placements[b] ?? 0]));
+        if (disagreement !== null) disagreements.push(disagreement);
       }
     }
     expect({
