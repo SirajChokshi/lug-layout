@@ -62,7 +62,7 @@ import {
 import { LevelCrossingFacts } from "@brr/schema/bundle";
 import { decode, decodedOrThrow } from "@brr/schema/decode";
 import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
-import { PLATE_LDU, STUD_LDU } from "@brr/math";
+import { PLATE_LDU, STUD_LDU, pose16, zeta16 } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
 import { CHUNK_LDU, ZETA16_ORDER } from "@brr/math";
@@ -134,6 +134,7 @@ import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/do
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
+import { chainedPoses, instancesAt } from "../connect/track-instances.test-support.ts";
 import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
@@ -10234,6 +10235,31 @@ function expectFullRebuild(editor: IEditor, container: Container, catalog: IPlac
   return dump.crossings.length;
 }
 
+const LDRAW_DECIMALS = 6;
+const RUN_OFF_THE_LATTICE_LDU = 0.3;
+const RUN_STRAIGHT = "ldraw:74746";
+const BASEPLATE_UNDER_THE_RUN = "1 2 320 0 160 1 0 0 0 1 0 0 0 1 3811.dat";
+
+async function offLatticeRunFile(loader: IPartBundleLoader): Promise<Uint8Array> {
+  const bundle = await loader.load("standard", (part) => part.role === "track");
+  const origin = pose16(zeta16([0n, 0n, 0n, 0n, 0n, 0n, 0n, 0n]), 0);
+  const { count, partIndex, matrices } = instancesAt(
+    bundle,
+    chainedPoses(bundle, origin, [RUN_STRAIGHT, RUN_STRAIGHT]),
+  );
+  const lines = Array.from({ length: count }, (_, i) => {
+    const m = Array.from(matrices.subarray(i * 12, i * 12 + 12));
+    const at = (row: number, column: number) => m[row * 4 + column] ?? 0;
+    const part = bundle.parts[partIndex[i] ?? 0]?.id.replace("ldraw:", "") ?? "";
+    const entries = [at(0, 3) + RUN_OFF_THE_LATTICE_LDU, -at(1, 3), at(2, 3)];
+    entries.push(at(0, 0), -at(0, 1), at(0, 2));
+    entries.push(-at(1, 0), at(1, 1), -at(1, 2));
+    entries.push(at(2, 0), -at(2, 1), at(2, 2));
+    return `1 7 ${entries.map((value) => value.toFixed(LDRAW_DECIMALS)).join(" ")} ${part}.dat`;
+  });
+  return userRoadFile("my-off-lattice-run.ldr", [BASEPLATE_UNDER_THE_RUN, ...lines]);
+}
+
 function rampsByCrossing(editor: IEditor) {
   return new Map(
     editor.dump().crossings.map((crossing) => [JSON.stringify(crossing.tracks), crossing.ramps]),
@@ -10269,7 +10295,13 @@ it("keeps the road report, the road placements and the level crossings after eve
     const road = roads[Math.floor(random() * roads.length)];
     return road ? [road.x, road.z] : null;
   };
-  const seen = { crossingsChanged: 0, roadsChanged: 0, reloads: 0, mostCrossings: 0 };
+  const seen = {
+    crossingsChanged: 0,
+    roadsChanged: 0,
+    reloads: 0,
+    mostCrossings: 0,
+    rampSpots: 0,
+  };
   const reopen = async (): Promise<void> => {
     session.editor.chooseItem(null);
     const stored = session.editor.dump().placements.refId.length;
@@ -10293,6 +10325,17 @@ it("keeps the road report, the road placements and the level crossings after eve
   expect(session.editor.dump().crossings).not.toEqual(seated.crossings);
   await reopen();
   session.editor.undo(0);
+  expectFullRebuild(session.editor, session.container, session.catalog);
+  await reopen();
+  const offLatticeRun = await importUserFile(
+    session.editor,
+    "my-off-lattice-run.ldr",
+    await offLatticeRunFile(session.container.get(PART_BUNDLE_LOADER)),
+  );
+  const [runSpot] = free.splice(free.length - 1, 1);
+  if (!runSpot) throw new Error("no free spot for the off-lattice run");
+  await place(offLatticeRun, ...runSpot);
+  expect(session.editor.snapshot().track?.runFramePieces).toBeGreaterThan(0);
   expectFullRebuild(session.editor, session.container, session.catalog);
   await reopen();
   for (let edit = 0; edit < SESSION_EDITS; edit++) {
@@ -10350,8 +10393,20 @@ it("keeps the road report, the road placements and the level crossings after eve
         editor.selectDragMove(0, 0);
         editor.selectDragEnd(0, 0, 0);
       }
-    } else if (roll < 0.82) editor.undo(0);
-    else if (roll < 0.92) editor.redo(0);
+    } else if (roll < 0.76) {
+      const spots = editor.dump().crossings.flatMap((crossing) => crossing.ramps);
+      const spot = spots[Math.floor(random() * spots.length)];
+      if (spot && editor.dump().crossings.length > 1) {
+        await place(brick, spot.x, spot.z);
+        expectFullRebuild(session.editor, session.container, session.catalog);
+        await reopen();
+        session.editor.undo(0);
+        expectFullRebuild(session.editor, session.container, session.catalog);
+        await reopen();
+        seen.rampSpots++;
+      }
+    } else if (roll < 0.86) editor.undo(0);
+    else if (roll < 0.94) editor.redo(0);
     else await reopen();
     const crossings = expectFullRebuild(session.editor, session.container, session.catalog);
     const after = session.editor.dump();
@@ -10363,7 +10418,8 @@ it("keeps the road report, the road placements and the level crossings after eve
   expect(seen.crossingsChanged).toBeGreaterThan(SESSION_EDITS / 8);
   expect(seen.mostCrossings).toBeGreaterThan(1);
   expect(seen.reloads).toBeGreaterThan(0);
-}, 600_000);
+  expect(seen.rampSpots).toBeGreaterThan(0);
+}, 900_000);
 
 function pick<T>(choices: ReadonlyArray<T>, random: () => number): T {
   const choice = choices[Math.floor(random() * choices.length)];
