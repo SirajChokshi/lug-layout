@@ -48,6 +48,7 @@ class PhaseGroups {
   memberGroup = new Int32Array(0);
   memberCellX = new Int32Array(0);
   memberCellZ = new Int32Array(0);
+  groupMemberStart = new Int32Array(1);
   groupClass = new Int32Array(0);
   groupAxis = new Int32Array(0);
   groupY = new Int32Array(0);
@@ -136,6 +137,7 @@ class PhaseGroups {
     prepared.memberGroup = new Int32Array(total);
     prepared.memberCellX = new Int32Array(total);
     prepared.memberCellZ = new Int32Array(total);
+    prepared.groupMemberStart = new Int32Array(groups + 1);
     prepared.groupClass = new Int32Array(groups);
     prepared.groupAxis = new Int32Array(groups);
     prepared.groupY = new Int32Array(groups);
@@ -160,6 +162,7 @@ class PhaseGroups {
       }
       if (startsGroup(k)) {
         g++;
+        prepared.groupMemberStart[g] = k;
         prepared.groupClass[g] = entryClass[entry] ?? 0;
         prepared.groupAxis[g] = entryAxis[entry] ?? 0;
         prepared.groupY[g] = entryY[entry] ?? 0;
@@ -179,6 +182,7 @@ class PhaseGroups {
     }
     prepared.phaseGroupStart[phases] = groups;
     prepared.phaseMemberStart[phases] = total;
+    prepared.groupMemberStart[groups] = total;
     prepared.rasterize(groups, total);
     return prepared;
   }
@@ -342,51 +346,96 @@ export class LatticeStudFinder implements MateFinder {
       groupY,
     } = phases;
     for (
-      let k = phases.phaseMemberStart[phase] ?? 0;
-      k < (phases.phaseMemberStart[phase + 1] ?? 0);
-      k++
+      let group = phases.phaseGroupStart[phase] ?? 0;
+      group < (phases.phaseGroupStart[phase + 1] ?? 0);
+      group++
     ) {
-      const i = memberConnector[k] ?? 0;
-      const g = memberGroup[k] ?? 0;
-      const own = groupClass[g] ?? 0;
-      const axis = groupAxis[g] ?? 0;
-      const ownSource = model.source[i] ?? 0;
-      const ownStatus = model.status[i] ?? 0;
-      const y = (groupY[g] ?? 0) + baseY;
-      const x = cellX + (memberCellX[k] ?? 0);
-      const z = cellZ + (memberCellZ[k] ?? 0);
-      for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
-        const partner = classes.pairClass[p] ?? 0;
-        const from = y + this.nearestTravel(p, axis);
-        const to = y + this.farthestTravel(p, axis);
-        for (let q = 0; q < this.presentCount; q++) {
-          const provenance = this.present[q] ?? 0;
-          const bucket = levelBucket(partner, -axis, provenance);
-          const size = this.levelCount[bucket] ?? 0;
-          if (size === 0) continue;
-          const ys = this.levelYs[bucket];
-          const levels = this.levelsOf[bucket];
-          if (!ys || !levels) continue;
-          for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
-            if (!this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) continue;
-            if (!levels[l]?.has(x, z)) continue;
-            out.push(
-              i,
-              model.shape[i] ?? 0,
-              model.gender[i] ?? 0,
-              classes.shapeOf(partner),
-              classes.genderOf(partner),
-              ownSource | provenanceSource(provenance),
-              Math.max(ownStatus, provenanceStatus(provenance)),
-              NO_PARTNER,
-              model.instance[i] ?? NO_INSTANCE,
-              NO_INSTANCE,
-              null,
-            );
+      if (!this.groupHasStuds(group, cellX, cellZ, baseY)) continue;
+      for (
+        let k = phases.groupMemberStart[group] ?? 0;
+        k < (phases.groupMemberStart[group + 1] ?? 0);
+        k++
+      ) {
+        const i = memberConnector[k] ?? 0;
+        const g = memberGroup[k] ?? 0;
+        const own = groupClass[g] ?? 0;
+        const axis = groupAxis[g] ?? 0;
+        const ownSource = model.source[i] ?? 0;
+        const ownStatus = model.status[i] ?? 0;
+        const y = (groupY[g] ?? 0) + baseY;
+        const x = cellX + (memberCellX[k] ?? 0);
+        const z = cellZ + (memberCellZ[k] ?? 0);
+        for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+          const partner = classes.pairClass[p] ?? 0;
+          const from = y + this.nearestTravel(p, axis);
+          const to = y + this.farthestTravel(p, axis);
+          for (let q = 0; q < this.presentCount; q++) {
+            const provenance = this.present[q] ?? 0;
+            const bucket = levelBucket(partner, -axis, provenance);
+            const size = this.levelCount[bucket] ?? 0;
+            if (size === 0) continue;
+            const ys = this.levelYs[bucket];
+            const levels = this.levelsOf[bucket];
+            if (!ys || !levels) continue;
+            for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
+              if (!this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) continue;
+              if (!levels[l]?.has(x, z)) continue;
+              out.push(
+                i,
+                model.shape[i] ?? 0,
+                model.gender[i] ?? 0,
+                classes.shapeOf(partner),
+                classes.genderOf(partner),
+                ownSource | provenanceSource(provenance),
+                Math.max(ownStatus, provenanceStatus(provenance)),
+                NO_PARTNER,
+                model.instance[i] ?? NO_INSTANCE,
+                NO_INSTANCE,
+                null,
+              );
+            }
           }
         }
       }
     }
+  }
+
+  private groupHasStuds(group: number, cellX: number, cellZ: number, baseY: number): boolean {
+    const phases = this.phases;
+    const classes = this.classes;
+    const own = phases.groupClass[group] ?? 0;
+    const axis = phases.groupAxis[group] ?? 0;
+    const y = (phases.groupY[group] ?? 0) + baseY;
+    const minX = phases.groupMinX[group] ?? 0;
+    const minZ = phases.groupMinZ[group] ?? 0;
+    const rows = (phases.groupMaxZ[group] ?? 0) - minZ + 1;
+    for (let p = classes.pairStart[own] ?? 0; p < (classes.pairStart[own + 1] ?? 0); p++) {
+      const partner = classes.pairClass[p] ?? 0;
+      const from = y + this.nearestTravel(p, axis);
+      const to = y + this.farthestTravel(p, axis);
+      for (let q = 0; q < this.presentCount; q++) {
+        const bucket = levelBucket(partner, -axis, this.present[q] ?? 0);
+        const size = this.levelCount[bucket] ?? 0;
+        if (size === 0) continue;
+        const ys = this.levelYs[bucket];
+        const levels = this.levelsOf[bucket];
+        if (!ys || !levels) continue;
+        for (let l = this.firstLevelFrom(bucket, from); l < size && (ys[l] ?? 0) <= to; l++) {
+          if (!this.classes.pairEngages(p, Math.imul((ys[l] ?? 0) - y, axis))) continue;
+          const studs =
+            levels[l]?.countRows(
+              phases.raster,
+              phases.groupOffset[group] ?? 0,
+              rows,
+              phases.groupWords[group] ?? 0,
+              cellX + minX,
+              cellZ + minZ,
+            ) ?? 0;
+          if (studs > 0) return true;
+        }
+      }
+    }
+    return false;
   }
 
   private stamp(model: ModelConnectors, pose: LatticePose, adding: boolean): void {
