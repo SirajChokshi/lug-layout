@@ -134,6 +134,7 @@ import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/do
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
+import { rampChunkKey } from "./crossing-ramps.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
@@ -355,6 +356,7 @@ class HeadlessBackend implements ISceneBackend {
   }
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
+  readonly chunksSet: number[] = [];
   readonly farModels = new Map<number, FarModelPlacement>();
   private readonly detailedMeshes: PartMesh[] = [];
   setPalette(palette: PartPalette): void {
@@ -383,6 +385,7 @@ class HeadlessBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(key: number, chunk: ChunkInstances): void {
     this.chunks.set(key, chunk);
+    this.chunksSet.push(key);
   }
   deleteChunk(key: number): void {
     this.chunks.delete(key);
@@ -10367,3 +10370,28 @@ function pick<T>(choices: ReadonlyArray<T>, random: () => number): T {
   if (choice === undefined) throw new Error("nothing to pick from");
   return choice;
 }
+
+const RAMP_CHUNK_KEYS_BELOW = rampChunkKey(0, 0) / 2;
+
+it("opens a world of track over a baseplate without ever drawing ramps for a crossing it doesn't have, though the world it replaces had a road where that track runs", async () => {
+  const repository = new MemoryRepository();
+  const { editor, backend } = await startImportingEditor(() => repository);
+  await placer(editor, backend)(BASEPLATE_32, 0, 0);
+  trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  expect(editor.dump().crossings).toEqual([]);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBeGreaterThan(0));
+  const trackOnly = editor.snapshot().world?.id;
+  if (!trackOnly) throw new Error("no current world");
+  expect(await editor.newWorld("Roads")).toBe(true);
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  expect(editor.dump().roadPlacements).toHaveLength(1);
+  const uploadsBefore = backend.chunksSet.length;
+  expect(await editor.openWorld(trackOnly)).toBe(true);
+  const rampUploads = backend.chunksSet
+    .slice(uploadsBefore)
+    .filter((key) => key < RAMP_CHUNK_KEYS_BELOW);
+  expect({ crossings: editor.dump().crossings, rampUploads }).toEqual({
+    crossings: [],
+    rampUploads: [],
+  });
+}, 240_000);
