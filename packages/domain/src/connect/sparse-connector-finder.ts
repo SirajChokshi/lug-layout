@@ -982,12 +982,9 @@ export class SparseConnectorFinder implements MateFinder {
   private turnModel(model: ModelConnectors): TurnedModel {
     const turned = new TurnedModel(model);
     const n = model.count;
-    turned.connectorClass = new Int32Array(n);
+    turned.connectorClass = this.classes.classesOf(model);
     turned.position = new Int32Array(QUARTER_TURNS * n * VECTOR_FLOATS);
     turned.axis = new Int8Array(QUARTER_TURNS * n);
-    for (let i = 0; i < n; i++) {
-      turned.connectorClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
-    }
     turned.classes = Int32Array.from(new Set(turned.connectorClass));
     turned.classCount = this.classes.count;
     turned.axisClasses = new Uint8Array(QUARTER_TURNS * AXIS_CODES * turned.classCount);

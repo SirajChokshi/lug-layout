@@ -1,5 +1,6 @@
 import { GENDER_FEMALE, GENDER_MALE } from "./connector-table.ts";
 import type { SnapMating } from "./mating.ts";
+import type { ModelConnectors } from "./model-connectors.ts";
 
 const GENDERS = 2;
 const RANGE_INTS = 2;
@@ -32,15 +33,14 @@ export class MateClasses {
     return this.gender[mateClass] ?? GENDER_MALE;
   }
 
-  classOf(shape: number, gender: number): number {
-    const key = shape * GENDERS + gender;
-    const known = this.ids.get(key);
-    if (known !== undefined) return known;
-    this.shape.push(shape);
-    this.gender.push(gender);
-    this.ids.set(key, this.shape.length - 1);
-    this.rebuildPairs();
-    return this.shape.length - 1;
+  classesOf(model: ModelConnectors): Int32Array<ArrayBuffer> {
+    const before = this.shape.length;
+    const classes = new Int32Array(model.count);
+    for (let i = 0; i < model.count; i++) {
+      classes[i] = this.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
+    }
+    if (this.shape.length > before) this.rebuildPairs();
+    return classes;
   }
 
   engagesAt(own: number, partner: number, offset: number): boolean {
@@ -64,6 +64,16 @@ export class MateClasses {
       else high = middle;
     }
     return low;
+  }
+
+  private classOf(shape: number, gender: number): number {
+    const key = shape * GENDERS + gender;
+    const known = this.ids.get(key);
+    if (known !== undefined) return known;
+    this.shape.push(shape);
+    this.gender.push(gender);
+    this.ids.set(key, this.shape.length - 1);
+    return this.shape.length - 1;
   }
 
   private engagement(own: number, other: number): Int32Array {
