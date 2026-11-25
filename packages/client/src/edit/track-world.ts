@@ -539,8 +539,12 @@ export class TrackWorld implements ITrackWorld {
     }
     this.crossingInputs = { ramps, roads, pieces };
     const placed = this.placed;
-    this.suggested = ramps.suggest(roads, pieces, placed, (band) =>
-      this.rampClearance(track, placed.models(), band),
+    this.suggested = ramps.suggest(
+      roads,
+      pieces,
+      placed,
+      (band) => this.rampClearance(track, placed.models(), band),
+      (model) => (this.modelTrack(model.placeable)?.runs.length ?? 0) > 0,
     );
     this.suggestedViews = null;
     const chunks = ramps.instances(this.suggested);
