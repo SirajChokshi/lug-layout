@@ -141,13 +141,11 @@ export class SnapShapes {
     for (let s = 0; s < count; s++) {
       const bySection =
         (this.codeOf[firstA + s] ?? 0) - (this.codeOf[firstB + s] ?? 0) ||
-        Math.sign((this.sizeOf[firstA + s] ?? 0) - (this.sizeOf[firstB + s] ?? 0)) ||
-        Math.sign((this.spanOf[firstA + s] ?? 0) - (this.spanOf[firstB + s] ?? 0));
+        order(this.sizeOf[firstA + s] ?? 0, this.sizeOf[firstB + s] ?? 0) ||
+        order(this.spanOf[firstA + s] ?? 0, this.spanOf[firstB + s] ?? 0);
       if (bySection !== 0) return bySection;
     }
-    const groupA = this.groupName(a);
-    const groupB = this.groupName(b);
-    return groupA < groupB ? -1 : groupA > groupB ? 1 : 0;
+    return order(this.groupName(a), this.groupName(b));
   }
 
   groupName(shape: number): string {
@@ -301,6 +299,10 @@ function shapeKey(
     parts.push(`${codes[s]}:${sizes[s] ?? 0}:${lengths[s] ?? 0}`);
   }
   return parts.join("|");
+}
+
+function order<T extends number | string>(a: T, b: T): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function copied<T extends Uint8Array | Int32Array | Float64Array>(from: T, to: T): T {

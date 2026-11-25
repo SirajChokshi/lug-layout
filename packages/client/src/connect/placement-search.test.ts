@@ -2949,7 +2949,7 @@ describe("mateCounts' canonical join order", () => {
     });
   }, 120_000);
 
-  it("orders generated reports of every size from 1 to 300, rows in any order, as the specification does", () => {
+  it("orders generated reports of every size from 1 to 300, rows in any order and up to every row on one connector, as the specification does", () => {
     const f = fixture();
     const pick = seeded(CANONICAL_SEED * 41);
     const shapes = [
@@ -2987,7 +2987,7 @@ describe("mateCounts' canonical join order", () => {
         engagement[4] = pick(4) + 4;
         engagement[5] = 6;
         report.push(
-          pick(GENERATED_CONNECTORS),
+          pick(1 + (size % GENERATED_CONNECTORS)),
           shaped ? (shapes[pick(shapes.length)] ?? f.stud) : NO_SHAPE,
           pick(2) === 0 ? GENDER_MALE : GENDER_FEMALE,
           shaped ? (shapes[pick(shapes.length)] ?? f.stud) : NO_SHAPE,

@@ -80,55 +80,137 @@ type PlacedView = (owner: number) => PlacedModelView | null;
 
 const INITIAL_ROWS = 64;
 const UNLABELLED = -1;
+const INSERTION_RUN = 16;
+const DIGIT_BITS = 8;
+const DIGITS = 1 << DIGIT_BITS;
+const DIGIT_MASK = DIGITS - 1;
+const KEY_BITS = 32;
 
 class CanonicalRows {
   order = new Int32Array(INITIAL_ROWS);
   label = new Int32Array(INITIAL_ROWS);
   readonly views: Array<PlacedModelView | null> = [];
   private merged = new Int32Array(INITIAL_ROWS);
+  private family = new Int32Array(INITIAL_ROWS);
+  private connector = new Int32Array(INITIAL_ROWS);
+  private readonly counts = new Int32Array(DIGITS);
 
   sort(report: MateReport, shapes: SnapShapes, placedView: PlacedView): void {
     const n = report.count;
     if (this.order.length < n) {
       this.order = new Int32Array(Math.max(n, this.order.length * 2));
       this.merged = new Int32Array(this.order.length);
+      this.family = new Int32Array(this.order.length);
+      this.connector = new Int32Array(this.order.length);
     }
+    const { family, connector, partner, shape } = report;
+    let lowest = 0;
+    let highest = 0;
     for (let k = 0; k < n; k++) {
+      const own = connector[k] ?? 0;
+      lowest = k === 0 ? own : Math.min(lowest, own);
+      highest = k === 0 ? own : Math.max(highest, own);
       this.order[k] = k;
-      const owner = report.partner[k] ?? NO_PARTNER;
-      const shaped = (report.shape[k] ?? NO_SHAPE) !== NO_SHAPE;
+      this.family[k] = family[k] ?? 0;
+      const owner = partner[k] ?? NO_PARTNER;
+      const shaped = (shape[k] ?? NO_SHAPE) !== NO_SHAPE;
       this.views[k] = shaped && owner !== NO_PARTNER ? placedView(owner) : null;
     }
-    this.mergeSort(report, shapes, n);
+    for (let k = 0; k < n; k++) this.connector[k] = (connector[k] ?? 0) - lowest;
+    const spread = highest - lowest;
+    for (
+      let shift = 0;
+      shift < KEY_BITS && Math.floor(spread / 2 ** shift) > 0;
+      shift += DIGIT_BITS
+    ) {
+      this.distribute(this.connector, shift, n);
+    }
+    this.distribute(this.family, 0, n);
+    this.orderTies(report, shapes, n);
     this.relabel(report);
   }
 
-  private mergeSort(report: MateReport, shapes: SnapShapes, n: number): void {
-    for (let width = 1; width < n; width *= 2) {
-      const from = this.order;
-      const into = this.merged;
-      for (let lo = 0; lo < n; lo += 2 * width) {
-        const mid = Math.min(lo + width, n);
-        const hi = Math.min(lo + 2 * width, n);
-        let left = lo;
-        let right = mid;
-        let at = lo;
-        while (left < mid && right < hi) {
-          const l = from[left] ?? 0;
-          const r = from[right] ?? 0;
-          if (this.compare(report, shapes, r, l) < 0) {
-            into[at++] = r;
-            right++;
+  private distribute(keys: Int32Array, shift: number, n: number): void {
+    const counts = this.counts;
+    const from = this.order;
+    const into = this.merged;
+    counts.fill(0);
+    for (let i = 0; i < n; i++) {
+      const digit = ((keys[from[i] ?? 0] ?? 0) >>> shift) & DIGIT_MASK;
+      counts[digit] = (counts[digit] ?? 0) + 1;
+    }
+    let start = 0;
+    for (let digit = 0; digit < DIGITS; digit++) {
+      const count = counts[digit] ?? 0;
+      counts[digit] = start;
+      start += count;
+    }
+    for (let i = 0; i < n; i++) {
+      const row = from[i] ?? 0;
+      const digit = ((keys[row] ?? 0) >>> shift) & DIGIT_MASK;
+      const at = counts[digit] ?? 0;
+      into[at] = row;
+      counts[digit] = at + 1;
+    }
+    this.order = into;
+    this.merged = from;
+  }
+
+  private orderTies(report: MateReport, shapes: SnapShapes, n: number): void {
+    let start = 0;
+    for (let i = 1; i <= n; i++) {
+      if (i < n && this.sameHead(this.order[i] ?? 0, this.order[start] ?? 0)) continue;
+      if (i - start <= INSERTION_RUN) this.insertionSort(report, shapes, start, i);
+      else this.mergeSort(report, shapes, start, i);
+      start = i;
+    }
+  }
+
+  private sameHead(a: number, b: number): boolean {
+    return this.family[a] === this.family[b] && this.connector[a] === this.connector[b];
+  }
+
+  private insertionSort(report: MateReport, shapes: SnapShapes, lo: number, hi: number): void {
+    const order = this.order;
+    for (let i = lo + 1; i < hi; i++) {
+      const row = order[i] ?? 0;
+      let j = i;
+      while (j > lo && this.compareTies(report, shapes, row, order[j - 1] ?? 0) < 0) {
+        order[j] = order[j - 1] ?? 0;
+        j--;
+      }
+      order[j] = row;
+    }
+  }
+
+  private mergeSort(report: MateReport, shapes: SnapShapes, lo: number, hi: number): void {
+    for (let run = lo; run < hi; run += INSERTION_RUN) {
+      this.insertionSort(report, shapes, run, Math.min(run + INSERTION_RUN, hi));
+    }
+    const order = this.order;
+    const merged = this.merged;
+    for (let width = INSERTION_RUN; width < hi - lo; width *= 2) {
+      for (let left = lo; left < hi; left += 2 * width) {
+        const mid = Math.min(left + width, hi);
+        const end = Math.min(left + 2 * width, hi);
+        let a = left;
+        let b = mid;
+        let at = left;
+        while (a < mid && b < end) {
+          const fromA = order[a] ?? 0;
+          const fromB = order[b] ?? 0;
+          if (this.compareTies(report, shapes, fromB, fromA) < 0) {
+            merged[at++] = fromB;
+            b++;
           } else {
-            into[at++] = l;
-            left++;
+            merged[at++] = fromA;
+            a++;
           }
         }
-        while (left < mid) into[at++] = from[left++] ?? 0;
-        while (right < hi) into[at++] = from[right++] ?? 0;
+        while (a < mid) merged[at++] = order[a++] ?? 0;
+        while (b < end) merged[at++] = order[b++] ?? 0;
       }
-      this.order = into;
-      this.merged = from;
+      for (let i = lo; i < hi; i++) order[i] = merged[i] ?? 0;
     }
   }
 
@@ -144,10 +226,8 @@ class CanonicalRows {
     }
   }
 
-  private compare(report: MateReport, shapes: SnapShapes, a: number, b: number): number {
+  private compareTies(report: MateReport, shapes: SnapShapes, a: number, b: number): number {
     return (
-      (report.family[a] ?? 0) - (report.family[b] ?? 0) ||
-      (report.connector[a] ?? 0) - (report.connector[b] ?? 0) ||
       this.comparePartners(report, a, b) ||
       (report.partnerInstance[a] ?? 0) - (report.partnerInstance[b] ?? 0) ||
       comparePartnerShapes(
