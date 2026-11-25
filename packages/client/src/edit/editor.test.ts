@@ -9943,3 +9943,194 @@ it("stops a running train before a user's own tunnel too low for it, naming the 
   expect(throughTall).toMatchObject({ blockedBy: null, derailSpeedLduPerS: 0 });
   expect(Math.abs(throughTall?.xLdu ?? 0)).toBeGreaterThan(TUNNEL_ALONG_LDU);
 }, 240_000);
+
+const LOOP_HALF_LDU = 72 * STUD;
+const LEVEL_HALF_LDU = 40 * STUD;
+const WHOLE_TRAIN_LEVEL_LDU = 15 * STUD;
+const LOOP_RADIUS_LDU = 800;
+const RAMP_CLIMB_PLATES = 4;
+const RAMP_PLATES_A_PIECE = 2;
+const ARC_POINTS = 24;
+const LAP_SAMPLE_TICKS = 30;
+const LAP_TICKS = 4800;
+
+function strokeTrack(
+  editor: IEditor,
+  backend: AimedBackend,
+  points: ReadonlyArray<readonly [number, number]>,
+): void {
+  const [first, ...rest] = points;
+  if (!first) return;
+  backend.aim(...first);
+  editor.pointerMove(0, 0);
+  expect(editor.dragStart(0, 0)).toBe(true);
+  for (const point of rest) {
+    backend.aim(...point);
+    editor.dragMove(0, 0);
+  }
+  editor.dragEnd(0, 0, 0);
+}
+
+function arcPoints(
+  centreX: number,
+  from: number,
+  to: number,
+): ReadonlyArray<readonly [number, number]> {
+  return Array.from({ length: ARC_POINTS + 1 }, (_, k) => {
+    const angle = from + ((to - from) * k) / ARC_POINTS;
+    return [
+      Math.round(centreX + LOOP_RADIUS_LDU * Math.cos(angle)),
+      Math.round(LOOP_RADIUS_LDU * Math.sin(angle)),
+    ] as const;
+  });
+}
+
+async function rampedLoop(sim: InThreadSim) {
+  const started = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+    },
+  );
+  const { editor, backend } = started;
+  const place = placer(editor, backend);
+  for (const x of [-96, -64, -32, 0, 32, 64, 96]) {
+    for (const z of [-32, 0, 32]) await place(BASEPLATE, x * STUD, z * STUD);
+  }
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.setTrackRampPlates(RAMP_PLATES_A_PIECE);
+  dragTrack(editor, backend, [-LOOP_HALF_LDU, LOOP_RADIUS_LDU], [LOOP_HALF_LDU, LOOP_RADIUS_LDU]);
+  strokeTrack(editor, backend, arcPoints(LOOP_HALF_LDU, Math.PI / 2, -Math.PI / 2));
+  editor.raiseTrack(RAMP_CLIMB_PLATES);
+  await layRaised(
+    editor,
+    backend,
+    [LOOP_HALF_LDU, -LOOP_RADIUS_LDU],
+    [-LEVEL_HALF_LDU, -LOOP_RADIUS_LDU],
+  );
+  editor.raiseTrack(-RAMP_CLIMB_PLATES);
+  await layRaised(
+    editor,
+    backend,
+    [-LEVEL_HALF_LDU, -LOOP_RADIUS_LDU],
+    [-LOOP_HALF_LDU, -LOOP_RADIUS_LDU],
+  );
+  strokeTrack(editor, backend, arcPoints(-LOOP_HALF_LDU, -Math.PI / 2, -(3 * Math.PI) / 2));
+  await piersPlaced(editor);
+  editor.chooseItem(null);
+  return started;
+}
+
+const RAISED_LDU = RAMP_CLIMB_PLATES * PLATE_LDU;
+const RAMP_MIDDLE_LDU = LOOP_HALF_LDU - 8 * STUD;
+
+function bodiesOnSide(backend: HeadlessBackend, side: number): ReadonlyArray<number> {
+  return [...backend.vehicles]
+    .filter(([, pose]) => Math.sign(pose[2] ?? 0) === side)
+    .map(([id]) => id);
+}
+
+function drawnHeights(backend: HeadlessBackend): ReadonlyMap<number, number> {
+  return new Map([...backend.vehicles].map(([id, pose]) => [id, pose[1] ?? 0]));
+}
+
+function everyAnimationFrame(): () => void {
+  const waiting: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    waiting.push(callback);
+    return waiting.length;
+  });
+  return () => {
+    for (const callback of waiting.splice(0)) callback(performance.now());
+  };
+}
+
+it("runs a train whole laps of a loop that ramps up over generated piers and back down, drawn on the ramps' rails, never stopping at a pier", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, container, catalog } = await rampedLoop(sim);
+  const track = editor.snapshot().track;
+  const piers = placedImports(editor).length;
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  await settledPlacer(editor, backend)(LOCOMOTIVE, 0, LOOP_RADIUS_LDU);
+  editor.chooseItem(null);
+  const play = container.get(TRAIN_PLAY);
+  const frame = everyAnimationFrame();
+  await play.start();
+  frame();
+  const onGround = drawnHeights(backend);
+  let running: ReadonlyArray<number> = [];
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  const stops = new Set<string>();
+  let raised: ReadonlyMap<number, number> | null = null;
+  let farSide = false;
+  let lapped = false;
+  for (let tick = 0; tick < LAP_TICKS && !lapped; tick += LAP_SAMPLE_TICKS) {
+    sim.advance(LAP_SAMPLE_TICKS);
+    play.chooseDriven(0);
+    const view = play.snapshot().trains[0];
+    if (view?.blockedBy) stops.add(view.blockedBy);
+    const x = view?.xLdu ?? 0;
+    const z = view?.zLdu ?? 0;
+    if (z < 0 && Math.abs(x) < WHOLE_TRAIN_LEVEL_LDU && !raised) {
+      frame();
+      raised = drawnHeights(backend);
+      running = bodiesOnSide(backend, -1);
+      farSide = true;
+    }
+    lapped = farSide && z > 0 && x > 0 && x < LOOP_HALF_LDU;
+  }
+  play.stop();
+  const lifted = running.map(
+    (id) => (raised?.get(id) ?? Number.NaN) - (onGround.get(id) ?? Number.NaN),
+  );
+
+  expect({ openEnds: track?.openEnds, unsupported: track?.unsupported }).toEqual({
+    openEnds: 0,
+    unsupported: 0,
+  });
+  expect(piers).toBeGreaterThan(0);
+  expect([...stops]).toEqual([]);
+  expect(lapped).toBe(true);
+  expect(lifted.length).toBeGreaterThan(0);
+  for (const rise of lifted) expect(rise).toBeCloseTo(RAISED_LDU, 9);
+}, 300_000);
+
+it("sets a train on raised track and on a ramp where it fits, drawn on their rails", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, catalog } = await rampedLoop(sim);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const place = settledPlacer(editor, backend);
+  await place(LOCOMOTIVE, 0, LOOP_RADIUS_LDU);
+  const placed = editor.snapshot().placements;
+  const onRaised = await place(LOCOMOTIVE, 0, -LOOP_RADIUS_LDU);
+  const groundTrain = bodiesOnSide(backend, 1);
+  const raisedTrain = bodiesOnSide(backend, -1);
+  const heights = drawnHeights(backend);
+  const sortedHeights = (ids: ReadonlyArray<number>) =>
+    ids.map((id) => heights.get(id) ?? Number.NaN).toSorted((a, b) => a - b);
+  const lifted = sortedHeights(raisedTrain).map(
+    (y, k) => y - (sortedHeights(groundTrain)[k] ?? Number.NaN),
+  );
+  const bothStanding = trainsOf(editor);
+  editor.undo(0);
+  const onRamp = await place(LOCOMOTIVE, RAMP_MIDDLE_LDU, -LOOP_RADIUS_LDU);
+
+  expect(onRaised).toEqual({ placements: placed, refusedClicks: 0, reason: null });
+  expect(onRamp).toEqual({ placements: placed, refusedClicks: 0, reason: null });
+  expect(bothStanding).toEqual([
+    [LOCOMOTIVE, true],
+    [LOCOMOTIVE, true],
+  ]);
+  expect(trainsOf(editor)).toEqual([
+    [LOCOMOTIVE, true],
+    [LOCOMOTIVE, true],
+  ]);
+  expect(raisedTrain).toHaveLength(groundTrain.length);
+  expect(lifted.length).toBeGreaterThan(0);
+  for (const rise of lifted) expect(rise).toBeCloseTo(RAISED_LDU, 9);
+}, 300_000);

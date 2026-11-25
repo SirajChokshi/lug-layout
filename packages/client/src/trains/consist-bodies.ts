@@ -1,5 +1,12 @@
 import type { PartAsset } from "@brr/catalog";
-import { VEHICLE_POSE_FLOATS } from "@brr/domain";
+import {
+  SOLID_MATRIX_FLOATS,
+  VEHICLE_POSE_FLOATS,
+  composeAffine,
+  rigidLift,
+  rigidPitch,
+  writeRigidFrame,
+} from "@brr/domain";
 import { INSTANCE_MATRIX_FLOATS, type ChunkInstances, type ISceneBackend } from "@brr/render";
 import type { PlayModel } from "../play/play-models.ts";
 import { withStuds } from "../scene/stud-stream.ts";
@@ -15,6 +22,7 @@ const REAR_BOGIE = 2;
 const POSE_BODY = 0;
 const POSE_FRONT_BOGIE = 3;
 const POSE_REAR_BOGIE = 6;
+const RIGID_POSE_FLOATS = 3;
 
 export interface StandingConsist {
   readonly vehicles: ReadonlyArray<ConsistVehicle>;
@@ -65,6 +73,13 @@ interface PosedBody {
   readonly model: PlayModel;
   readonly at: number;
   readonly y: number;
+  readonly onRails: { readonly vehicleAt: number; readonly body: number } | null;
+}
+
+function writeFlatFrame(poses: Float64Array, at: number, y: number, out: Float64Array): void {
+  const c = Math.cos(poses[at + 2] ?? 0);
+  const s = Math.sin(poses[at + 2] ?? 0);
+  out.set([c, 0, -s, poses[at] ?? 0, 0, 1, 0, y, s, 0, c, poses[at + 1] ?? 0]);
 }
 
 export function standingGhost(
@@ -81,7 +96,9 @@ export function standingGhost(
     const y = railTopY - vehicle.railTopY;
     const model = vehicleModel(consist, v);
     rigidBodies(vehicle).forEach((rigid, body) => {
-      if (rigid) posed.push({ rigid, model, at: bodyPoseAt(v, body), y });
+      if (!rigid) return;
+      const onRails = { vehicleAt: v * VEHICLE_POSE_FLOATS, body };
+      posed.push({ rigid, model, at: bodyPoseAt(v, body), y, onRails });
     });
   });
   for (const remainder of remainders) {
@@ -90,6 +107,7 @@ export function standingGhost(
       model: vehicleModel(consist, remainder.vehicle),
       at: bodyPoseAt(remainder.vehicle, BODY),
       y: groundY - remainder.lowestY,
+      onRails: null,
     });
   }
   let count = 0;
@@ -98,26 +116,21 @@ export function standingGhost(
   const colorIndex = new Uint16Array(count);
   const matrices = new Float32Array(count * INSTANCE_MATRIX_FLOATS);
   let slot = 0;
-  for (const { rigid, model, at, y } of posed) {
-    const x = (poses[at] ?? 0) - originX;
-    const z = (poses[at + 1] ?? 0) - originZ;
-    const c = Math.cos(poses[at + 2] ?? 0);
-    const s = Math.sin(poses[at + 2] ?? 0);
+  const frame = new Float64Array(SOLID_MATRIX_FLOATS);
+  const lifts = new Float64Array(1);
+  const posedPart = new Float64Array(SOLID_MATRIX_FLOATS);
+  for (const { rigid, model, at, y, onRails } of posed) {
+    lifts[0] = y;
+    if (onRails) writeRigidFrame(poses, onRails.vehicleAt, onRails.body, lifts, 0, frame, 0);
+    else writeFlatFrame(poses, at, y, frame);
+    frame[3] = (frame[3] ?? 0) - originX;
+    frame[11] = (frame[11] ?? 0) - originZ;
     for (let k = 0; k < rigid.instances.length; k++) {
       const i = rigid.instances[k] ?? 0;
-      const m = k * INSTANCE_MATRIX_FLOATS;
-      const o = slot * INSTANCE_MATRIX_FLOATS;
       partIndex[slot] = model.model.partIndex[i] ?? 0;
       colorIndex[slot] = model.colorIndex[i] ?? 0;
-      for (let col = 0; col < 4; col++) {
-        const lx = rigid.matrices[m + col] ?? 0;
-        const ly = rigid.matrices[m + 4 + col] ?? 0;
-        const lz = rigid.matrices[m + 8 + col] ?? 0;
-        const translation = col === 3 ? 1 : 0;
-        matrices[o + col] = c * lx - s * lz + translation * x;
-        matrices[o + 4 + col] = ly + translation * y;
-        matrices[o + 8 + col] = s * lx + c * lz + translation * z;
-      }
+      composeAffine(frame, 0, rigid.matrices, k * INSTANCE_MATRIX_FLOATS, posedPart, 0);
+      matrices.set(posedPart, slot * INSTANCE_MATRIX_FLOATS);
       slot++;
     }
   }
@@ -191,12 +204,26 @@ export class ConsistBodies {
 
   stand(poses: Float64Array, railTopY: number): void {
     for (let v = 0; v < this.consist.vehicles.length; v++) {
-      const y = railTopY - this.railTopY(v);
-      this.pose(v, poses, v * VEHICLE_POSE_FLOATS, y, y, 0, 0);
+      this.onRails(v, poses, v * VEHICLE_POSE_FLOATS, railTopY - this.railTopY(v));
     }
   }
 
-  pose(
+  onRails(v: number, data: Float64Array, at: number, y: number): void {
+    const base = v * BODIES_PER_VEHICLE;
+    for (let body = BODY; body <= REAR_BOGIE; body++) {
+      this.place(
+        this.ids[base + body] ?? NO_BODY,
+        data,
+        at + body * RIGID_POSE_FLOATS,
+        y + rigidLift(data, at, body),
+        0,
+        rigidPitch(data, at, body),
+        0,
+      );
+    }
+  }
+
+  offRails(
     v: number,
     data: Float64Array,
     at: number,

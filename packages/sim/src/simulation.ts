@@ -4,6 +4,7 @@ import {
   packGeometry,
   packSpecOnlyGeometry,
   runningGearSpanProblem,
+  trackLift,
   trackPoint,
   VEHICLE_POSE_FLOATS,
   type PathSampler,
@@ -89,6 +90,7 @@ export class Simulation {
   private samplingTrain = 0;
   private readonly pathSampler: PathSampler = {
     pointBehind: (io, at) => this.pointBehind(this.samplingTrain, io, at),
+    liftBehind: (io, at) => this.liftBehind(this.samplingTrain, io, at),
   };
   private readonly pathEdges: Int32Array;
   private readonly pathTop: Int32Array;
@@ -684,6 +686,14 @@ export class Simulation {
   }
 
   private pointBehind(train: number, io: Float64Array, at: number): void {
+    trackPoint(this.track, this.edgeBehind(train, io, at), io, at);
+  }
+
+  private liftBehind(train: number, io: Float64Array, at: number): void {
+    trackLift(this.track, this.edgeBehind(train, io, at), io, at);
+  }
+
+  private edgeBehind(train: number, io: Float64Array, at: number): number {
     const base = train * PATH_CAPACITY;
     const count = this.pathCount[train] ?? 0;
     let slot = this.pathTop[train] ?? 0;
@@ -697,7 +707,7 @@ export class Simulation {
       used++;
     }
     io[at] = Math.max(offset, 0);
-    trackPoint(this.track, edge, io, at);
+    return edge;
   }
 
   private measureSeparation(edgePlacement: Int32Array): void {

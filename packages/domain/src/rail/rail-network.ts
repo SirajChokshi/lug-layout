@@ -1,7 +1,7 @@
 import { NO_EDGE } from "../track/track-graph.ts";
 import { wrapAngle } from "./route-geometry.ts";
 import type { PathSampler } from "./running-gear.ts";
-import { trackPoint, type SimTrack } from "./sim-track.ts";
+import { trackLift, trackPoint, type SimTrack } from "./sim-track.ts";
 
 export const RAIL_SPOT_FLOATS = 3;
 export const SPOT_EDGE = 0;
@@ -41,6 +41,10 @@ export class RailNetwork {
 
   point(edge: number, io: Float64Array, at: number): void {
     trackPoint(this.track, edge, io, at);
+  }
+
+  lift(edge: number, io: Float64Array, at: number): void {
+    trackLift(this.track, edge, io, at);
   }
 
   nearest(x: number, z: number, out: Float64Array): boolean {
@@ -217,6 +221,14 @@ export class RailRun implements PathSampler {
   }
 
   pointBehind(io: Float64Array, at: number): void {
+    this.network.point(this.edgeBehind(io, at), io, at);
+  }
+
+  liftBehind(io: Float64Array, at: number): void {
+    this.network.lift(this.edgeBehind(io, at), io, at);
+  }
+
+  private edgeBehind(io: Float64Array, at: number): number {
     let i = 0;
     let edge = this.edges[0] ?? 0;
     let offset = this.headOffset - (io[at] ?? 0);
@@ -226,6 +238,6 @@ export class RailRun implements PathSampler {
       offset += this.network.edgeLength(edge);
     }
     io[at] = Math.max(offset, 0);
-    this.network.point(edge, io, at);
+    return edge;
   }
 }

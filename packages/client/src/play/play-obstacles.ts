@@ -4,6 +4,7 @@ import {
   SOLID_TRIANGLE_FLOATS,
   SPOT_DISTANCE,
   posedBoxBounds,
+  type GuideGeometry,
   type PartSolid,
   type StudSolid,
 } from "@brr/domain";
@@ -38,7 +39,8 @@ export interface ObstacleSources {
 
 const MAX = 3;
 const RIGID_BODY = 0;
-const PLAN_CORNERS = 4;
+const RIGID_FRONT_BOGIE = 1;
+const BOX_CORNERS = 8;
 
 interface VehicleParts {
   readonly start: number[];
@@ -71,51 +73,49 @@ function vehicleParts(consists: ReadonlyArray<PlayConsist>, railTopY: number): V
   return parts;
 }
 
-function frontPivotOffTrack(vehicle: ConsistVehicle): number {
-  const front = vehicle.spec.geometry?.front;
-  return front ? Math.abs(front.pivotZLdu - front.axleZLdu) : 0;
+function guideOffTrack(guide: GuideGeometry | undefined): number {
+  if (!guide?.pivots) return 0;
+  const u = guide.pivotXLdu - (guide.leadAxleXLdu + guide.trailAxleXLdu) / 2;
+  const w = guide.pivotZLdu - guide.axleZLdu;
+  return Math.sqrt(u * u + w * w) + Math.abs(guide.leadAxleXLdu - guide.trailAxleXLdu) / 2;
 }
 
-function frontPivot(vehicle: ConsistVehicle): readonly [number, number] {
-  const front = vehicle.spec.geometry?.front;
-  return front ? [front.pivotXLdu, front.pivotZLdu] : [0, 0];
+function bodyToTrack(vehicle: ConsistVehicle): number {
+  const { spec } = vehicle;
+  const front = spec.geometry?.front;
+  const rear = spec.geometry?.rear;
+  const pivotX = front?.pivotXLdu ?? -spec.frontBogieLdu;
+  const pivotZ = front?.pivotZLdu ?? 0;
+  const lateral = Math.abs((front?.pivotZLdu ?? 0) - (rear?.pivotZLdu ?? 0)) / 2;
+  return Math.sqrt(pivotX * pivotX + pivotZ * pivotZ) + lateral + guideOffTrack(front);
 }
 
-interface Reach {
-  plan: number;
-  bottom: number;
-  top: number;
+function rigidToTrack(vehicle: ConsistVehicle, rigid: number): number {
+  const { geometry } = vehicle.spec;
+  if (rigid === RIGID_BODY) return bodyToTrack(vehicle);
+  return guideOffTrack(rigid === RIGID_FRONT_BOGIE ? geometry?.front : geometry?.rear);
 }
 
 function vehicleReach(
   consists: ReadonlyArray<PlayConsist>,
   parts: VehicleParts,
   solids: IPartSolids,
-): Reach {
-  const reach: Reach = {
-    plan: 0,
-    bottom: Number.POSITIVE_INFINITY,
-    top: Number.NEGATIVE_INFINITY,
-  };
+): number {
+  let reach = 0;
   const box = new Float64Array(SOLID_BOX_FLOATS);
   const local = Float64Array.from(parts.local);
   let v = 0;
   for (const { vehicles } of consists) {
     for (const vehicle of vehicles) {
-      const [pivotX, pivotZ] = frontPivot(vehicle);
-      const offTrack = frontPivotOffTrack(vehicle);
       for (let e = parts.start[v] ?? 0; e < (parts.start[v + 1] ?? 0); e++) {
         posedBoxBounds(local, e * SOLID_MATRIX_FLOATS, solids.box(parts.part[e] ?? 0), 0, box, 0);
-        const fromX = parts.rigid[e] === RIGID_BODY ? pivotX : 0;
-        const fromZ = parts.rigid[e] === RIGID_BODY ? pivotZ : 0;
-        for (let corner = 0; corner < PLAN_CORNERS; corner++) {
-          const x = (corner & 1 ? (box[MAX] ?? 0) : (box[0] ?? 0)) - fromX;
-          const z = (corner & 2 ? (box[MAX + 2] ?? 0) : (box[2] ?? 0)) - fromZ;
-          reach.plan = Math.max(reach.plan, Math.sqrt(x * x + z * z) + offTrack);
+        const toTrack = rigidToTrack(vehicle, parts.rigid[e] ?? RIGID_BODY);
+        for (let corner = 0; corner < BOX_CORNERS; corner++) {
+          const x = corner & 1 ? (box[MAX] ?? 0) : (box[0] ?? 0);
+          const y = corner & 2 ? (box[MAX + 1] ?? 0) : (box[1] ?? 0);
+          const z = corner & 4 ? (box[MAX + 2] ?? 0) : (box[2] ?? 0);
+          reach = Math.max(reach, Math.sqrt(x * x + y * y + z * z) + toTrack);
         }
-        const lift = parts.lift[e] ?? 0;
-        reach.bottom = Math.min(reach.bottom, lift + (box[1] ?? 0));
-        reach.top = Math.max(reach.top, lift + (box[MAX + 1] ?? 0));
       }
       v++;
     }
@@ -135,19 +135,18 @@ function nearTrack(
   rails: RailTrack,
   box: ArrayLike<number>,
   at: number,
-  reach: Reach,
+  reach: number,
   spot: Float64Array,
 ): boolean {
-  if ((box[at + MAX + 1] ?? 0) <= reach.bottom || (box[at + 1] ?? 0) >= reach.top) return false;
   const halfX = ((box[at + MAX] ?? 0) - (box[at] ?? 0)) / 2;
   const halfZ = ((box[at + MAX + 2] ?? 0) - (box[at + 2] ?? 0)) / 2;
   const centreX = (box[at] ?? 0) + halfX;
   const centreZ = (box[at + 2] ?? 0) + halfZ;
   if (!rails.network.nearest(centreX, centreZ, spot)) return false;
-  return (spot[SPOT_DISTANCE] ?? 0) - Math.sqrt(halfX * halfX + halfZ * halfZ) < reach.plan;
+  return (spot[SPOT_DISTANCE] ?? 0) - Math.sqrt(halfX * halfX + halfZ * halfZ) < reach;
 }
 
-function modelParts(sources: ObstacleSources, reach: Reach): ModelParts {
+function modelParts(sources: ObstacleSources, reach: number): ModelParts {
   const { rails, models, solids } = sources;
   const parts: ModelParts = { matrices: [], boxes: [], part: [], owner: [], labels: [] };
   const posed = new PosedPlaceable();
