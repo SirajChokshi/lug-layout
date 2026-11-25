@@ -53,10 +53,8 @@ import type { SupportBand } from "./track-bands.ts";
 import {
   EVERY_MODEL,
   OBSTACLE_RECT_FLOATS,
-  seatsPending,
   solidRectsIn,
-  trackObstacles,
-  withOutlines,
+  supportBandOver,
 } from "./track-obstacles.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
@@ -647,17 +645,13 @@ export class TrackWorld implements ITrackWorld {
   ): SupportBand {
     const [bottom, top] = track.verticalRange();
     const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
-    const models = this.placed.models();
-    const placed = trackObstacles(
-      models,
+    return supportBandOver(
+      this.placed.models(),
       band,
       (model) => this.carriedParts(model.placeable),
       reach === null ? EVERY_MODEL : (model) => reach.reaches(model.box),
+      this.railYard.standingFootprints(),
     );
-    const trains = this.railYard
-      .standingFootprints()
-      .filter((vehicle) => vehicle.railTopLdu < band[1] && band[0] < vehicle.topLdu);
-    return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, band) };
   }
 
   private rampClearance(

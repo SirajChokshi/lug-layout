@@ -41,8 +41,6 @@ import {
   outlineContains,
   placedOutline,
   placedOutlineInto,
-  CLOSURE_BUDGET,
-  solveClosure,
   studlessTopBlocker,
   PlacedOutline,
   OutlineEdges,
@@ -99,6 +97,7 @@ import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
 import type { FramedTrackPiece, TrackPartCount } from "../connect/model-track-ends.ts";
+import { FieldClosures } from "./field-closures.ts";
 import {
   TrackDrag,
   type DragField,
@@ -107,6 +106,7 @@ import {
   type DragTargetView,
   type DragRefusal,
   type JoinWithheld,
+  type SupportedPiece,
   type TrackBlockView,
   type TrackDragView,
 } from "./track-drag.ts";
@@ -149,6 +149,7 @@ interface SystemKit extends TrackSystemView {
   readonly kit: DrawingKit;
   readonly outlines: KitOutlines;
   readonly router: StrokeRouter;
+  readonly closures: FieldClosures;
   readonly railTopLdu: number;
 }
 const HEADING_RADIANS = (2 * Math.PI) / ZETA16_ORDER;
@@ -836,6 +837,7 @@ export class TrackDrawing implements ExtensionSite {
       kit: result.kit,
       outlines,
       router: new StrokeRouter(outlines),
+      closures: new FieldClosures(result.kit, outlines),
       railTopLdu: straight.yLdu + straightPart.boundsMax[1],
     };
   }
@@ -1190,7 +1192,7 @@ export class TrackDrawing implements ExtensionSite {
     this.dragPlates = from === null ? this.heightPlates : this.endHeight(from);
     const band = this.bands.laying(this.dragPlates, this.dragPlates);
     this.drag = new TrackDrag(
-      this.kit,
+      this.active.closures.closeWhole,
       this.active.router,
       ends,
       this.laidRunEnd,
@@ -1209,18 +1211,19 @@ export class TrackDrawing implements ExtensionSite {
     this.extension.endsChanged();
   }
 
-  private readonly supportedOn =
-    (seats: StudSeats) =>
-    (frame: MoveFrame, pose: Pose16, studlessTops: TrackClearance): boolean => {
+  private readonly supportedOn = (seats: StudSeats): SupportedPiece => {
+    const { support } = this;
+    return (frame: MoveFrame, pose: Pose16, studlessTops: TrackClearance): boolean => {
       const part = this.byDef.get(frame.move.piece.id);
-      if (!part || !this.support) return false;
+      if (!part || !support) return false;
       const { catalogIndex, piece } = part;
-      return this.support.supported(catalogIndex, piece.partFrame, pose, seats, studlessTops);
+      return support.supported(catalogIndex, piece.partFrame, pose, seats, studlessTops);
     };
+  };
 
   setSupport(support: TrackSupport): void {
     this.support = support;
-    this.bands.changed();
+    this.bands.clear();
     this.skipped.clear();
     this.reseatDrag(this.dragPlates);
     this.extension.endsChanged();
@@ -1707,13 +1710,13 @@ export class TrackDrawing implements ExtensionSite {
     const startPlates = this.endHeight(from);
     const { field, pending } = this.bands.laying(startPlates, startPlates);
     if (pending) return { kind: "refused", refusal: "pending", blocked: null };
-    const result = solveClosure(this.kit, start, goal, CLOSURE_BUDGET, {
-      clearance: field.clearance,
-      support: field.support,
-      outlines: this.active.outlines,
-      startOwner: field.pieceOwner(this.endOwners[from]),
-      goalOwner: field.pieceOwner(this.endOwners[to]),
-    });
+    const result = this.active.closures.closeWhole(
+      start,
+      goal,
+      field,
+      field.pieceOwner(this.endOwners[from]),
+      field.pieceOwner(this.endOwners[to]),
+    );
     switch (result.kind) {
       case "exact": {
         const moves = runMoves(this.kit, result.run);

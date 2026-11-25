@@ -1,14 +1,11 @@
 import {
-  CLOSURE_BUDGET,
   NO_OBSTACLE,
   RUN_CROSSING,
   StrokePath,
   TrackClearance,
-  solveClosure,
   studlessTopOf,
   type ClosureResult,
   type ClosureSite,
-  type DrawingKit,
   type FollowedRun,
   type MoveFrame,
   type SupportSite,
@@ -92,6 +89,14 @@ export interface RunEndStuds {
 }
 
 export type RunEndOf = (start: Pose16, moves: ReadonlyArray<TrackMove>) => RunEndStuds;
+
+export type WholeClosureOf = (
+  start: Pose16,
+  goal: Pose16,
+  field: DragField,
+  startOwner: number,
+  goalOwner: number,
+) => ClosureResult;
 
 export interface DragPress {
   readonly hitX: number;
@@ -244,7 +249,7 @@ export class TrackDrag {
   private lastTargetView: DragTargetView | null = null;
 
   constructor(
-    private readonly kit: DrawingKit,
+    private readonly wholeClosure: WholeClosureOf,
     private readonly router: StrokeRouter,
     private readonly ends: DragEnds,
     private readonly runEnd: RunEndOf,
@@ -401,7 +406,7 @@ export class TrackDrag {
     let byGoal = this.wholeClosures.get(start);
     const cached = byGoal?.get(goal.pose);
     if (cached) return cached;
-    const result = solveClosure(this.kit, start, goal.pose, CLOSURE_BUDGET, site);
+    const result = this.wholeClosure(start, goal.pose, this.field, site.startOwner, site.goalOwner);
     if (!byGoal) {
       byGoal = new Map();
       this.wholeClosures.set(start, byGoal);
