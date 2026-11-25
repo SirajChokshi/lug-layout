@@ -7,6 +7,7 @@ import {
 import {
   ConnectorTable,
   EditHistory,
+  KitOutlines,
   PlanDelta,
   NO_STUD,
   WORLD_TRACK_FRAME,
@@ -24,6 +25,7 @@ import {
   pose16,
   STUD_LDU,
   zeta16,
+  zeta16Direction,
   zeta16ToStuds,
   type Pose16,
 } from "@brr/math";
@@ -60,14 +62,24 @@ import {
 import { carrierAtOrigin } from "./track-carrier.test-support.ts";
 import {
   EVERY_MODEL,
+  NO_TRACK_OBSTACLES,
   cellKey,
   seatsPending,
   studSeats,
+  supportBandOver,
   trackObstacles,
+  type StandingOutline,
   type TrackObstacles,
 } from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
-import type { SupportBandAt } from "./track-bands.ts";
+import {
+  TrackBands,
+  type BandPieces,
+  type SupportBand,
+  type SupportBandAt,
+} from "./track-bands.ts";
+import { DragField } from "./track-drag.ts";
+import { FieldClosures } from "./field-closures.ts";
 import { heightText } from "./size-labels.ts";
 import { TrackSupport, antiStudsOf } from "./track-support.ts";
 
@@ -2378,4 +2390,421 @@ it("lists a bridge lower than the measured train as a plan clearance issue that 
   expect(withRow).toEqual([expect.stringContaining(`${MY_TRAIN.model} ${finding}`)]);
   expect(renamed).toEqual([expect.stringContaining(`my other train ${finding}`)]);
   expect(lifted).toEqual([]);
+});
+
+const BAND_PIECE_OUTLINE = [0, 0, 320, 0, 320, 80, 0, 80];
+const MOVED_PIECE_OUTLINE = [20, 0, 340, 0, 340, 80, 20, 80];
+const SECOND_PIECE_OUTLINE = [320, 0, 640, 0, 640, 80, 320, 80];
+
+interface BandPiece {
+  readonly outline: ReadonlyArray<number>;
+  readonly shares: boolean;
+}
+
+const LAID_PIECE: BandPiece = { outline: BAND_PIECE_OUTLINE, shares: true };
+const MOVED_PIECE: BandPiece = { outline: MOVED_PIECE_OUTLINE, shares: true };
+const PARKED_TRAIN_LABEL = "Parked train";
+const ABOVE_THE_BAND_PLATES = 40;
+const NOTHING_SUPPORTED = (): boolean => false;
+
+interface BandInputs {
+  readonly models: ReadonlyArray<PlacedModel>;
+  readonly carried: ReadonlySet<number>;
+  readonly standing: ReadonlyArray<StandingOutline>;
+  readonly pieces: ReadonlyArray<BandPiece>;
+  readonly edit: (band: SupportBand) => SupportBand;
+}
+
+type BandRefresh = (bands: TrackBands, source: SupportBandAt) => void;
+
+const NEW_SOURCE: BandRefresh = (bands, source) => bands.setSource(source);
+const LAYOUT_CHANGE: BandRefresh = (bands) => bands.changed();
+
+function standingTrain(
+  [minX, minZ, maxX, maxZ]: Rect,
+  label: string,
+  [bottom, top]: readonly [number, number],
+): StandingOutline {
+  return {
+    outline: Float64Array.of(minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ),
+    label,
+    railTopLdu: bottom,
+    topLdu: top,
+  };
+}
+
+function bandsReading(range: readonly [number, number], read: () => BandInputs) {
+  const pieceAt = (placement: number): BandPiece => {
+    const piece = read().pieces[placement];
+    if (!piece) throw new Error(`no laid piece ${placement}`);
+    return piece;
+  };
+  const pieces: BandPieces = {
+    count: () => read().pieces.length,
+    outline: (placement) => Float64Array.from(pieceAt(placement).outline),
+    bottomLdu: (placement) => (pieceAt(placement).shares ? range[0] : range[1]),
+    topLdu: () => range[1],
+  };
+  const bands = new TrackBands(pieces, range, () => NOTHING_SUPPORTED);
+  const source: SupportBandAt = (lowPlates, highPlates) => {
+    const { models, carried, standing, edit } = read();
+    const { bottomLdu, topLdu } = bands.span(lowPlates, highPlates);
+    return edit(supportBandOver(models, [bottomLdu, topLdu], () => carried, EVERY_MODEL, standing));
+  };
+  bands.setSource(source);
+  return { bands, source };
+}
+
+function withObstacles(change: (obstacles: TrackObstacles) => Partial<TrackObstacles>) {
+  return (band: SupportBand): SupportBand => ({
+    ...band,
+    obstacles: { ...band.obstacles, ...change(band.obstacles) },
+  });
+}
+
+function firstChanged<T extends Float64Array | Int32Array | Uint8Array>(
+  values: T,
+  to: (value: number) => number,
+): T {
+  const changed = values.slice() as T;
+  changed[0] = to(changed[0] ?? 0);
+  return changed;
+}
+
+it("keeps a laying field when a source refresh or a layout change recomputes identical inputs, returns the earlier field when an undo restores them, and builds a new field when any input differs or the bands are cleared", async () => {
+  const bundle = await trackAndRoadBundle();
+  const range = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle)).verticalRange();
+  const road = await loosePart(ROAD_BASEPLATE_32);
+  const baseplate = await loosePart(GROUND_BASEPLATE);
+  const side = road.box.max[0] - road.box.min[0];
+  const items = [
+    { placeable: road, x: 0, z: 0 },
+    { placeable: baseplate, x: side, z: 0 },
+    { placeable: baseplate, x: side, z: 0, yPlates: ABOVE_THE_BAND_PLATES },
+  ];
+  const [roadModel, lowered, raised] = placeGround(items);
+  if (!roadModel || !lowered || !raised) throw new Error("the ground was not placed");
+  const ground = [roadModel];
+  const train = standingTrain([2000, 0, 2400, 100], PARKED_TRAIN_LABEL, range);
+  const base: BandInputs = {
+    models: ground,
+    carried: new Set(),
+    standing: [train],
+    pieces: [LAID_PIECE],
+    edit: (band) => band,
+  };
+  const afterRefresh = (changed: Partial<BandInputs>, refresh: BandRefresh, from = base) => {
+    let inputs = from;
+    const { bands, source } = bandsReading(range, () => inputs);
+    const first = bands.laying(0, 0);
+    inputs = { ...from, ...changed };
+    refresh(bands, source);
+    return bands.laying(0, 0) === first ? "kept" : "rebuilt";
+  };
+  const afterClear = () => {
+    const { bands } = bandsReading(range, () => base);
+    const first = bands.laying(0, 0);
+    bands.clear();
+    return bands.laying(0, 0) === first ? "kept" : "rebuilt";
+  };
+  const undo = () => {
+    let inputs = base;
+    const { bands } = bandsReading(range, () => inputs);
+    const original = bands.laying(0, 0);
+    inputs = { ...base, pieces: [MOVED_PIECE] };
+    bands.changed();
+    const committed = bands.laying(0, 0);
+    inputs = base;
+    bands.changed();
+    return { committed: committed === original, undone: bands.laying(0, 0) === original };
+  };
+  const appendedRect = withObstacles(({ rects, owners, unseated }) => ({
+    rects: Float64Array.from([...rects, 0, 0, STUD_LDU, STUD_LDU]),
+    owners: Int32Array.from([...owners, 0]),
+    unseated: Uint8Array.from([...unseated, 0]),
+  }));
+  const reachedAfterNewRect = () => {
+    let inputs = base;
+    const { bands, source } = bandsReading(range, () => inputs);
+    const whole = bands.laying(0, 0);
+    inputs = { ...base, edit: appendedRect };
+    bands.setSource(source);
+    const reached = bands.reaching(0, 0, Float64Array.of(0, 0, STUD_LDU, STUD_LDU));
+    return reached === whole ? "kept" : "rebuilt";
+  };
+
+  expect({
+    "a new source over the same world": afterRefresh({}, NEW_SOURCE),
+    "a layout change with equal pieces": afterRefresh({}, LAYOUT_CHANGE),
+    "a carried part left out": afterRefresh({ carried: new Set([0]) }, NEW_SOURCE),
+    "an obstacle appended": afterRefresh({ edit: appendedRect }, NEW_SOURCE),
+    "another train parked": afterRefresh(
+      { standing: [train, standingTrain([2800, 0, 3200, 100], PARKED_TRAIN_LABEL, range)] },
+      NEW_SOURCE,
+    ),
+    "the parked train moved": afterRefresh(
+      { standing: [standingTrain([2000, 40, 2400, 140], PARKED_TRAIN_LABEL, range)] },
+      NEW_SOURCE,
+    ),
+    "the parked train relabelled": afterRefresh(
+      { standing: [standingTrain([2000, 0, 2400, 100], "Another train", range)] },
+      NEW_SOURCE,
+    ),
+    "the same ground from new model objects": afterRefresh(
+      { models: placeGround(items).slice(0, 1) },
+      NEW_SOURCE,
+    ),
+    "a model placed above the band": afterRefresh({ models: [roadModel, raised] }, NEW_SOURCE, {
+      ...base,
+      standing: [],
+    }),
+    "a baseplate lowered onto the band's base": afterRefresh(
+      { models: [roadModel, lowered] },
+      NEW_SOURCE,
+      { ...base, models: [roadModel, raised] },
+    ),
+    "one rect moved": afterRefresh(
+      { edit: withObstacles(({ rects }) => ({ rects: firstChanged(rects, (v) => v + 1) })) },
+      NEW_SOURCE,
+    ),
+    "pending flipped": afterRefresh(
+      { edit: (band) => ({ ...band, pending: !band.pending }) },
+      NEW_SOURCE,
+    ),
+    "one owner changed": afterRefresh(
+      { edit: withObstacles(({ owners }) => ({ owners: firstChanged(owners, (v) => v + 1) })) },
+      NEW_SOURCE,
+    ),
+    "one unseated flag flipped": afterRefresh(
+      {
+        edit: withObstacles(({ unseated }) => ({
+          unseated: firstChanged(unseated, (v) => 1 - v),
+        })),
+      },
+      NEW_SOURCE,
+    ),
+    "one outline owner changed": afterRefresh(
+      {
+        edit: withObstacles(({ outlineOwners }) => ({
+          outlineOwners: firstChanged(outlineOwners, (v) => v + 1),
+        })),
+      },
+      NEW_SOURCE,
+    ),
+    "the same models seating one LDU lower": afterRefresh(
+      { edit: withObstacles(() => ({ seats: studSeats(ground, range[0] - 1) })) },
+      NEW_SOURCE,
+    ),
+    "a laid piece moved": afterRefresh({ pieces: [MOVED_PIECE] }, LAYOUT_CHANGE),
+    "a piece laid": afterRefresh(
+      { pieces: [LAID_PIECE, { outline: SECOND_PIECE_OUTLINE, shares: true }] },
+      LAYOUT_CHANGE,
+    ),
+    "a laid piece raised out of the band": afterRefresh(
+      { pieces: [{ ...LAID_PIECE, shares: false }] },
+      LAYOUT_CHANGE,
+    ),
+    "the bands cleared": afterClear(),
+    "a plan check after a new obstacle": reachedAfterNewRect(),
+  }).toEqual({
+    "a new source over the same world": "kept",
+    "a layout change with equal pieces": "kept",
+    "a carried part left out": "rebuilt",
+    "an obstacle appended": "rebuilt",
+    "another train parked": "rebuilt",
+    "the parked train moved": "rebuilt",
+    "the parked train relabelled": "rebuilt",
+    "the same ground from new model objects": "rebuilt",
+    "a model placed above the band": "rebuilt",
+    "a baseplate lowered onto the band's base": "rebuilt",
+    "one rect moved": "rebuilt",
+    "pending flipped": "rebuilt",
+    "one owner changed": "rebuilt",
+    "one unseated flag flipped": "rebuilt",
+    "one outline owner changed": "rebuilt",
+    "the same models seating one LDU lower": "rebuilt",
+    "a laid piece moved": "rebuilt",
+    "a piece laid": "rebuilt",
+    "a laid piece raised out of the band": "rebuilt",
+    "the bands cleared": "rebuilt",
+    "a plan check after a new obstacle": "rebuilt",
+  });
+  expect(undo()).toEqual({ committed: false, undone: true });
+});
+
+async function shortGap(): Promise<TrackDrawing> {
+  const bundle = await trackAndRoadBundle();
+  const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+  const straights: Run = [{ kind: "straight", count: 3 }];
+  layRun(layout, studPose(0, 0, 0), straights);
+  layRun(layout, studPose(128, 0, 0), straights);
+  return layout;
+}
+
+function standingOver(
+  layout: TrackDrawing,
+  standing: ReadonlyArray<StandingOutline>,
+): SupportBandAt {
+  return (lowPlates, highPlates) => {
+    const [bottom, top] = layout.verticalRange();
+    const band = [bottom + lowPlates * PLATE_LDU, top + highPlates * PLATE_LDU] as const;
+    return supportBandOver([], band, NO_TRACK_PARTS, EVERY_MODEL, standing);
+  };
+}
+
+function hoverOffer(layout: TrackDrawing, end: TrackEndView) {
+  focusEnd(layout, end);
+  const offered = layout.extension.view();
+  layout.extension.focusOn(null);
+  return offered;
+}
+
+function dragOutcome(layout: TrackDrawing, from: TrackEndView, to: TrackEndView) {
+  const { view, commit } = closeFrom(layout, from, to);
+  return {
+    closure: view?.closure ?? null,
+    blocked: view?.blocked ?? null,
+    withheld: view?.withheld ?? null,
+    pieces: view?.pieces ?? 0,
+    commit,
+    routes: layout.routes(),
+  };
+}
+
+it("joins as a freshly built drawing would after hovering an end and dragging from it, whether nothing changed, a train parked across the gap, or track support loaded in between", async () => {
+  const bundle = await trackAndRoadBundle();
+  const plate = plateRect(bundle.parts, ROAD_BASEPLATE_32, 112, 0);
+  const acrossTheGap = async (parks: boolean) => {
+    const layout = await shortGap();
+    const standing: StandingOutline[] = [];
+    layout.setBands(standingOver(layout, standing));
+    const offered = hoverOffer(layout, endAt(layout, 48, 0));
+    if (parks) standing.push(standingTrain(plate, PARKED_TRAIN_LABEL, layout.verticalRange()));
+    layout.setBands(standingOver(layout, standing));
+    const dragged = dragOutcome(layout, endAt(layout, 48, 0), endAt(layout, 128, 0));
+    const fresh = await shortGap();
+    fresh.setBands(standingOver(fresh, standing));
+    return {
+      offered: offered?.choices.find((choice) => choice.kind === "join") ?? null,
+      dragged,
+      fresh: dragOutcome(fresh, endAt(fresh, 48, 0), endAt(fresh, 128, 0)),
+    };
+  };
+
+  const { ground, plate: road } = await roadPlateGround();
+  const roadway = async () => {
+    const layout = await trackOver(ground);
+    const seats = studSeats(ground, layout.verticalRange()[0]);
+    const centreZ = studsOf((road.box.minZ + road.box.maxZ) / 2);
+    let roadwayEdge = Math.ceil(road.box.minX / STUD_LDU);
+    while (seats.has(cellKey(roadwayEdge, centreZ))) roadwayEdge++;
+    const reach = studsOf(road.box.maxZ - road.box.minZ);
+    const straights: Run = [{ kind: "straight", count: 2 }];
+    layRun(layout, studPose(roadwayEdge, centreZ - reach, NORTH), straights);
+    layRun(layout, studPose(roadwayEdge, centreZ + reach, SOUTH), straights);
+    return {
+      layout,
+      from: () => endAt(layout, roadwayEdge, centreZ - reach),
+      to: () => endAt(layout, roadwayEdge, centreZ + reach),
+    };
+  };
+  const hovered = await roadway();
+  const offeredWithout = hoverOffer(hovered.layout, hovered.from());
+  hovered.layout.setSupport(await kitSupport(hovered.layout));
+  const supportedDrag = dragOutcome(hovered.layout, hovered.from(), hovered.to());
+  const supported = await roadway();
+  supported.layout.setSupport(await kitSupport(supported.layout));
+  const offeredWith = hoverOffer(supported.layout, supported.from());
+  const freshDrag = dragOutcome(supported.layout, supported.from(), supported.to());
+
+  const unchanged = await acrossTheGap(false);
+  const parked = await acrossTheGap(true);
+  expect(unchanged.offered).toMatchObject({ kind: "join", joinsEnd: true, blocked: null });
+  expect(unchanged.dragged).toEqual(unchanged.fresh);
+  expect(unchanged.dragged.closure).toBe("exact");
+  expect(parked.offered).toEqual(unchanged.offered);
+  expect(parked.dragged).toEqual(parked.fresh);
+  expect(parked.dragged.closure).toBe("blocked");
+  expect(parked.dragged.blocked).toEqual({
+    kind: "model",
+    label: PARKED_TRAIN_LABEL,
+    unseated: false,
+  });
+  expect(offeredWithout).not.toEqual(offeredWith);
+  expect(supportedDrag).toEqual(freshDrag);
+  expect(freshDrag.closure).toBe("exact");
+});
+
+it(
+  "blocks a drag's join once an obstacle lands under it mid-drag, though the join was exact before",
+  async () => {
+    const bundle = await trackAndRoadBundle();
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const sides: Run = [{ kind: "straight", count: 6 }];
+    let end = layRun(layout, studPose(0, 0, 0), sides);
+    end = layRun(layout, end, BALLOON);
+    layRun(layout, end, sides);
+    const top = endAt(layout, 0, 64);
+    const bottom = endAt(layout, 0, 0);
+    const from = zeta16ToStuds(latticeEndPose(top).position);
+    const to = zeta16ToStuds(latticeEndPose(bottom).position);
+    const facing = zeta16Direction(top.heading);
+    const walls = plateObstacles(
+      plateRect(bundle.parts, ROAD_BASEPLATE_32, -16, 0),
+      plateRect(bundle.parts, ROAD_BASEPLATE_32, -16, 64),
+    );
+
+    layout.beginDrag(top.xLdu, top.zLdu, top.xLdu, top.zLdu);
+    layout.moveDrag(bottom.xLdu, bottom.zLdu);
+    const beforeWalls = layout.dragView();
+    layout.setBands(everyBand(walls));
+    layout.moveDrag(bottom.xLdu + STUD_LDU, bottom.zLdu);
+    const afterWalls = layout.dragView();
+    layout.cancelDrag();
+
+    expect((to.x - from.x) * facing.x + (to.z - from.z) * facing.z).toBeLessThanOrEqual(0);
+    expect(beforeWalls?.closure).toBe("exact");
+    expect(beforeWalls?.pieces).toBe(unobstructedFewest(layout, top, bottom));
+    expect(afterWalls?.closure).toBe("blocked");
+  },
+  CLOSURE_SEARCH_TIMEOUT_MS,
+);
+
+it("returns the same solve for the same field, poses and owners, and solves again for another field, another owner, or another track system's cache", async () => {
+  const layout = await shortGap();
+  const parts = layout.kitParts();
+  const outlineOf = (id: string): Float64Array => {
+    const part = parts.find((kitPart) => kitPart.piece.id === id);
+    if (!part) throw new Error(`${id} is not in the drawing kit`);
+    return part.outline;
+  };
+  const kitOutlines = new KitOutlines(layout.kit, (piece) => outlineOf(piece.id));
+  const poseAt = (end: TrackEndView): Pose16 => {
+    const index = layout.endNear(end.xLdu, end.zLdu, null);
+    const pose = index === null ? undefined : layout.endPoses()[index];
+    if (!pose) throw new Error("no open end there");
+    return pose;
+  };
+  const start = poseAt(endAt(layout, 48, 0));
+  const goal = poseAt(endAt(layout, 128, 0));
+  const field = new DragField([], NO_TRACK_OBSTACLES, NOTHING_SUPPORTED);
+  const twin = new DragField([], NO_TRACK_OBSTACLES, NOTHING_SUPPORTED);
+  const closures = new FieldClosures(layout.kit, kitOutlines);
+  const other = new FieldClosures(layout.kit, kitOutlines);
+  const NO_OWNER = -1;
+  const ANOTHER_OWNER = 0;
+
+  const solved = closures.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
+  const again = closures.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
+  const onTwin = closures.closeWhole(start, goal, twin, NO_OWNER, NO_OWNER);
+  const anotherOwner = closures.closeWhole(start, goal, field, ANOTHER_OWNER, NO_OWNER);
+  const anotherGoalOwner = closures.closeWhole(start, goal, field, NO_OWNER, ANOTHER_OWNER);
+  const anotherCache = other.closeWhole(start, goal, field, NO_OWNER, NO_OWNER);
+
+  expect(solved.kind).toBe("exact");
+  expect(again).toBe(solved);
+  for (const resolved of [onTwin, anotherOwner, anotherGoalOwner, anotherCache]) {
+    expect(resolved).not.toBe(solved);
+    expect(resolved).toEqual(solved);
+  }
 });
