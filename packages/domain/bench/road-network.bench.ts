@@ -1,6 +1,6 @@
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
-import { getHeapSpaceStatistics } from "node:v8";
+import { GCProfiler, getHeapSpaceStatistics } from "node:v8";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { RoadFit } from "../src/road-fit.ts";
@@ -21,6 +21,7 @@ const WARMUP_CHANGES = 1000;
 const FAR_LDU = 1_000_000;
 const REPORTS = 20;
 const BUILDS = 20;
+const EDITS = 40;
 const SETTLE_MS = 50;
 const YOUNG_GENERATION_SPACES: ReadonlyArray<string> = ["new_space", "new_large_object_space"];
 
@@ -143,6 +144,31 @@ function youngGenerationBytes(): number {
   return bytes;
 }
 
+function youngUsedIn(
+  spaces: ReadonlyArray<{ readonly spaceName: string; readonly spaceUsedSize: number }>,
+): number {
+  let bytes = 0;
+  for (const space of spaces) {
+    if (YOUNG_GENERATION_SPACES.includes(space.spaceName)) bytes += space.spaceUsedSize;
+  }
+  return bytes;
+}
+
+function youngBytesAllocatedBy(run: () => void): number {
+  const profiler = new GCProfiler();
+  profiler.start();
+  const before = youngGenerationBytes();
+  run();
+  const after = youngGenerationBytes();
+  let collected = 0;
+  for (const collection of profiler.stop().statistics) {
+    collected +=
+      youngUsedIn(collection.beforeGC.heapSpaceStatistics) -
+      youngUsedIn(collection.afterGC.heapSpaceStatistics);
+  }
+  return after - before + collected;
+}
+
 interface Probe {
   readonly startMs: number;
   readonly endMs: number;
@@ -239,8 +265,29 @@ fresh.cleanFit(probe, fit);
 const memoBytes = process.memoryUsage().arrayBuffers - buffersBefore;
 const reportMs = timed(REPORTS, () => fresh.report());
 const buildMs = timed(BUILDS, () => new RoadNetwork(placements));
+const buildAndReportMs = timed(BUILDS, () => new RoadNetwork(placements).report());
 const report = fresh.report();
 const cells = placements.reduce((sum, p) => sum + p.surface.columns * p.surface.rows, 0);
+const edited = new RoadNetwork(placements);
+edited.report();
+const movedFrom = placements[0];
+if (!movedFrom) throw new Error("the city has no placements");
+const movedTo = { ...movedFrom, x: movedFrom.x + CITY_SIDE * BASEPLATE_SPAN };
+let movedAway = false;
+const moveOnce = (): void => {
+  edited.remove(movedFrom.id);
+  edited.add(movedAway ? movedFrom : movedTo);
+  movedAway = !movedAway;
+  edited.report();
+};
+for (let warm = 0; warm < WARMUP_CALLS; warm++) moveOnce();
+collect();
+const editMs = timed(EDITS, moveOnce);
+const editBytes =
+  youngBytesAllocatedBy(() => {
+    for (let edit = 0; edit < EDITS; edit++) moveOnce();
+  }) / EDITS;
+const unchangedMs = timed(REPORTS, () => edited.report());
 
 process.stdout.write(
   [
@@ -254,10 +301,13 @@ process.stdout.write(
     "",
     "| Work | ms (median) |",
     "|---|---:|",
-    `| report | ${reportMs.toFixed(2)} |`,
+    `| report again, nothing changed since the last | ${reportMs.toFixed(2)} |`,
     `| build the network | ${buildMs.toFixed(2)} |`,
+    `| build the network and report it | ${buildAndReportMs.toFixed(2)} |`,
+    `| move one straight out of the city and back: remove, add, report | ${editMs.toFixed(3)} |`,
+    `| report again after the moves, nothing changed since the last | ${unchangedMs.toFixed(3)} |`,
     "",
-    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays.`,
+    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays. Moving one straight allocates about ${Math.round(editBytes).toLocaleString("en-US")} young-generation bytes per edit (mean of ${EDITS} edits after ${WARMUP_CALLS} warm-up edits, collections included; the report's segment list and the moved straight's own tallies).`,
     "",
   ].join("\n"),
 );

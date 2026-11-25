@@ -1,8 +1,9 @@
 import { cpus } from "node:os";
 import { performance } from "node:perf_hooks";
+import { GCProfiler, getHeapSpaceStatistics } from "node:v8";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
+import { LevelCrossings, levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
 import { PlacedOutline } from "../src/plan/placed-outline.ts";
 import { NO_STUD, type RoadPlacement, type RoadSurface } from "../src/road-joins.ts";
 
@@ -155,4 +156,107 @@ for (const { side, tracks, label, warmup, runs } of scenes) {
     `| ${side} x ${side} | ${label} | ${roads.length} | ${roads.length * straight.columns * straight.rows} | ${ms.toFixed(1)} | ${result} | ${roadway} |`,
   );
 }
+const gateSide = FIELDS[FIELDS.length - 1] ?? DENSE_FIELD;
+const gateRoads = field(gateSide);
+const gateTracks = crossingTracks(gateSide);
+const farRoad: RoadPlacement = {
+  id: gateRoads.length,
+  x: -100 * BASEPLATE_SPAN,
+  z: 0,
+  yLdu: 0,
+  rot: 0,
+  surface: straight,
+};
+const farTrack: CrossingTrack = {
+  outline: PlacedOutline.ofRect({ minX: -100_000, minZ: -100_000, maxX: -99_000, maxZ: -99_840 }),
+  bedLdu: 0,
+  railTopLdu: RAIL_TOP_LDU,
+};
+const acrossTrack = trackDownEveryRow(gateSide)[1];
+if (!acrossTrack) throw new Error("no track to lay across the field");
+const gate = new LevelCrossings([]);
+gate.crossings(gateRoads, gateTracks);
+const alternate = (a: () => void, b: () => void): (() => number) => {
+  let flip = false;
+  return () => {
+    flip = !flip;
+    (flip ? a : b)();
+    return 0;
+  };
+};
+const YOUNG_GENERATION_SPACES: ReadonlyArray<string> = ["new_space", "new_large_object_space"];
+
+function youngGenerationBytes(): number {
+  let bytes = 0;
+  for (const space of getHeapSpaceStatistics()) {
+    if (YOUNG_GENERATION_SPACES.includes(space.space_name)) bytes += space.space_used_size;
+  }
+  return bytes;
+}
+
+function youngUsedIn(
+  spaces: ReadonlyArray<{ readonly spaceName: string; readonly spaceUsedSize: number }>,
+): number {
+  let bytes = 0;
+  for (const space of spaces) {
+    if (YOUNG_GENERATION_SPACES.includes(space.spaceName)) bytes += space.spaceUsedSize;
+  }
+  return bytes;
+}
+
+function youngBytesAllocatedBy(run: () => void): number {
+  const profiler = new GCProfiler();
+  profiler.start();
+  const before = youngGenerationBytes();
+  run();
+  const after = youngGenerationBytes();
+  let collected = 0;
+  for (const collection of profiler.stop().statistics) {
+    collected +=
+      youngUsedIn(collection.beforeGC.heapSpaceStatistics) -
+      youngUsedIn(collection.afterGC.heapSpaceStatistics);
+  }
+  return after - before + collected;
+}
+
+function youngBytesPerCall(call: () => number): number {
+  for (let i = 0; i < WARMUP; i++) call();
+  return (
+    youngBytesAllocatedBy(() => {
+      for (let i = 0; i < RUNS; i++) call();
+    }) / RUNS
+  );
+}
+
+const withFarRoad = [...gateRoads, farRoad];
+const withFarTrack = [...gateTracks, farTrack];
+const withAcross = [...gateTracks, acrossTrack];
+const farRoadEdit = alternate(
+  () => gate.crossings(withFarRoad, gateTracks),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const farTrackEdit = alternate(
+  () => gate.crossings(gateRoads, withFarTrack),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const touchingEdit = alternate(
+  () => gate.crossings(gateRoads, withAcross),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const farRoadMs = medianMs(farRoadEdit).ms;
+const farTrackMs = medianMs(farTrackEdit).ms;
+const touchingMs = medianMs(touchingEdit).ms;
+const farRoadBytes = youngBytesPerCall(farRoadEdit);
+const farTrackBytes = youngBytesPerCall(farTrackEdit);
+const touchingBytes = youngBytesPerCall(touchingEdit);
+lines.push(
+  "",
+  `LevelCrossings kept across edits on the ${gateSide} x ${gateSide} field with ${TRACKS} strips (median ms per call, edits alternating with their undo):`,
+  "",
+  "| Edit | ms | Young-generation bytes per call |",
+  "|---|---:|---:|",
+  `| a road added and removed far from every track (reused) | ${farRoadMs.toFixed(3)} | ${Math.round(farRoadBytes)} |`,
+  `| a track added and removed far from every road (reused) | ${farTrackMs.toFixed(3)} | ${Math.round(farTrackBytes)} |`,
+  `| a track laid across the field and taken up (recomputed in full) | ${touchingMs.toFixed(1)} | ${Math.round(touchingBytes)} |`,
+);
 process.stdout.write(`${lines.join("\n")}\n`);

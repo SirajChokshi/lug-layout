@@ -49,7 +49,19 @@ import {
   type PartPalette,
   type RebaseEvent,
 } from "@brr/render";
-import { CandidatePoses, MateReport, ProposalProgress } from "@brr/domain";
+import {
+  CandidatePoses,
+  MateReport,
+  ProposalProgress,
+  RoadNetwork,
+  levelCrossings,
+  type CrossingTrack,
+  type RampPart,
+  type RoadPlacement,
+} from "@brr/domain";
+import { LevelCrossingFacts } from "@brr/schema/bundle";
+import { decode, decodedOrThrow } from "@brr/schema/decode";
+import crossingJson from "../../../../docs/verified-facts/level-crossing.json" with { type: "json" };
 import { PLATE_LDU, STUD_LDU } from "@brr/math";
 import { Container } from "inversify";
 import { readFile } from "node:fs/promises";
@@ -98,6 +110,7 @@ import {
   EDITOR_CAMERA,
   MODEL_IMPORTER,
   PLACEABLE_CATALOG,
+  TRACK_WORLD,
   PLACEMENT_SEARCH,
   PLAN_SERVICE,
   PLAN_SHEET_SERVICE,
@@ -121,6 +134,8 @@ import { TRACK_SEGMENT, WRITE_ADD, type EditKind, type PlanDelta } from "@brr/do
 import type { BomScope } from "../bom/bom-service.ts";
 import type { PlaceableConnectorTables } from "../connect/connector-tables.ts";
 import { loadCatalogItem } from "../catalog/catalog-item.test-support.ts";
+import { rampChunkKey } from "./crossing-ramps.ts";
+import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import type { EditorSnapshot, IEditor } from "./editor.ts";
 import { TRACK_ITEM_ID, TRACK_PIECE_PREFIX } from "./track-edit-session.ts";
 import type { IPlanService } from "../plan/plan-service.ts";
@@ -341,6 +356,7 @@ class HeadlessBackend implements ISceneBackend {
   }
   readonly partIds: string[] = [];
   readonly chunks = new Map<number, ChunkInstances>();
+  readonly chunksSet: number[] = [];
   readonly farModels = new Map<number, FarModelPlacement>();
   private readonly detailedMeshes: PartMesh[] = [];
   setPalette(palette: PartPalette): void {
@@ -369,6 +385,7 @@ class HeadlessBackend implements ISceneBackend {
   setColors(): void {}
   setChunk(key: number, chunk: ChunkInstances): void {
     this.chunks.set(key, chunk);
+    this.chunksSet.push(key);
   }
   deleteChunk(key: number): void {
     this.chunks.delete(key);
@@ -10134,3 +10151,247 @@ it("sets a train on raised track and on a ramp where it fits, drawn on their rai
   expect(lifted.length).toBeGreaterThan(0);
   for (const rise of lifted) expect(rise).toBeCloseTo(RAISED_LDU, 9);
 }, 300_000);
+
+const crossingFacts = decodedOrThrow(
+  decode(LevelCrossingFacts, crossingJson),
+  "level-crossing.json",
+);
+const SESSION_EDITS = 40;
+const FREE_SPOTS: ReadonlyArray<PlanPoint> = [
+  [-1280, 0],
+  [1920, 0],
+  [3200, 0],
+  [3200, 640],
+  [-1280, 1600],
+  [1280, 1600],
+  [-3200, 3200],
+  [3200, 3200],
+  [0, 4800],
+  [1920, 4800],
+  [-1920, 4800],
+  [4480, 1600],
+];
+
+function seededSession(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function rankedRoads(editor: IEditor, catalog: IPlaceableCatalog): RoadPlacement[] {
+  return editor.dump().roadPlacements.map((placed) => {
+    const refId = catalog.itemRefId(placed.item);
+    const surface = refId === null ? null : catalog.placeables()[refId]?.road;
+    if (!surface) throw new Error(`${placed.item} has no road surface`);
+    return {
+      id: placed.id,
+      x: placed.x,
+      z: placed.z,
+      yLdu: placed.yPlates * PLATE_LDU,
+      rot: placed.rot,
+      surface,
+    };
+  });
+}
+
+function crossingRampParts(catalog: IPlaceableCatalog): ReadonlyArray<RampPart> {
+  return crossingFacts.ramps.map((ramp) => {
+    const outline = catalog.parts().find((part) => part.id === ramp.part)?.outline;
+    if (!outline) throw new Error(`ramp ${ramp.part} has no outline`);
+    return { facts: ramp, outline };
+  });
+}
+
+function expectFullRebuild(editor: IEditor, container: Container, catalog: IPlaceableCatalog) {
+  const dump = editor.dump();
+  const roads = rankedRoads(editor, catalog);
+  expect(dump.roads).toEqual(new RoadNetwork(roads).report());
+  const pieces = container.get(TRACK_WORLD).drawing()?.crossingPieces() ?? [];
+  const tracks = pieces.map((piece): CrossingTrack => {
+    const system = crossingFacts.systems.find((entry) => entry.system === piece.system);
+    if (!system) throw new Error(`no rail top for ${piece.system}`);
+    return { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu: system.railTopLdu };
+  });
+  const expected =
+    roads.length === 0 || pieces.length === 0
+      ? []
+      : levelCrossings(roads, tracks, crossingRampParts(catalog));
+  expect(
+    dump.crossings.map(({ tracks: placements, roads: ranks, roadwayCells }) => ({
+      placements,
+      ranks,
+      roadwayCells,
+    })),
+  ).toEqual(
+    expected.map((crossing) => ({
+      placements: crossing.tracks.map((t) => pieces[t]?.placement ?? 0),
+      ranks: crossing.roads,
+      roadwayCells: crossing.roadwayCells,
+    })),
+  );
+  return dump.crossings.length;
+}
+
+function rampsByCrossing(editor: IEditor) {
+  return new Map(
+    editor.dump().crossings.map((crossing) => [JSON.stringify(crossing.tracks), crossing.ramps]),
+  );
+}
+
+it("keeps the road report, the road placements and the level crossings after every edit of a seeded session exactly as a full rebuild over the editor's road list, and the ramps as a reopened editor seats them, through sets, road plates, a user's own street and brick, track and road strokes, deletes, moves, turns, drags, undo, redo and reloads", async () => {
+  const repository = new MemoryRepository();
+  let session = await startImportingEditor(() => repository, [PLACEABLE_SET]);
+  const street = await importUserFile(
+    session.editor,
+    "my-street-with-grass.ldr",
+    userRoadFile("my-street-with-grass.ldr", [
+      "1 72 0 0 0 1 0 0 0 1 0 0 0 1 44336p04.dat",
+      "1 2 640 0 0 1 0 0 0 1 0 0 0 1 3811.dat",
+    ]),
+  );
+  const brick = await importUserFile(
+    session.editor,
+    "my-brick.ldr",
+    userRoadFile("my-brick.ldr", ["1 4 0 -24 0 1 0 0 0 1 0 0 0 1 3004.dat"]),
+  );
+  await loadCatalogItem(session.catalog, SET);
+  let place = placer(session.editor, session.backend);
+  await place(ROAD_STRAIGHT, 0, 0);
+  await place(BASEPLATE_32, 640, 0);
+  await place(street, 320, 1600);
+  await supportChecked(session.editor);
+  const random = seededSession(0x5e55);
+  const free = [...FREE_SPOTS];
+  const roadAt = (): PlanPoint | null => {
+    const roads = session.editor.dump().roadPlacements;
+    const road = roads[Math.floor(random() * roads.length)];
+    return road ? [road.x, road.z] : null;
+  };
+  const seen = { crossingsChanged: 0, roadsChanged: 0, reloads: 0, mostCrossings: 0 };
+  const reopen = async (): Promise<void> => {
+    session.editor.chooseItem(null);
+    const stored = session.editor.dump().placements.refId.length;
+    await vi.waitFor(() => expect(repository.storedPlacements()).toBe(stored), { timeout: 60_000 });
+    const ramps = rampsByCrossing(session.editor);
+    session = await startImportingEditor(() => repository, [PLACEABLE_SET]);
+    await supportChecked(session.editor);
+    expect(rampsByCrossing(session.editor)).toEqual(ramps);
+    place = placer(session.editor, session.backend);
+    seen.reloads++;
+  };
+  trackDrawer(session.editor, session.backend)([-480, 0], [480, 0]);
+  trackDrawer(session.editor, session.backend)([-480, 1600], [480, 1600]);
+  expectFullRebuild(session.editor, session.container, session.catalog);
+  const seated = session.editor.dump();
+  const ramp = seated.crossings[0]?.ramps[0];
+  if (!ramp) throw new Error("the first crossing has no ramp");
+  await place(brick, ramp.x, ramp.z);
+  expectFullRebuild(session.editor, session.container, session.catalog);
+  expect(session.editor.dump().roadPlacements).toEqual(seated.roadPlacements);
+  expect(session.editor.dump().crossings).not.toEqual(seated.crossings);
+  await reopen();
+  session.editor.undo(0);
+  expectFullRebuild(session.editor, session.container, session.catalog);
+  await reopen();
+  for (let edit = 0; edit < SESSION_EDITS; edit++) {
+    const { editor, backend } = session;
+    const before = {
+      roads: JSON.stringify(editor.dump().roads),
+      crossings: JSON.stringify(editor.dump().crossings),
+    };
+    const roll = random();
+    const at = roadAt();
+    if (roll < 0.16 && free.length > 0) {
+      const [spot] = free.splice(Math.floor(random() * free.length), 1);
+      if (spot) await place(pick([ROAD_STRAIGHT, ROAD_STRAIGHT, street, SET], random), ...spot);
+    } else if (roll < 0.3) {
+      const [x, z] = at ?? [0, 0];
+      const across = random() < 0.5;
+      const far = random() < 0.25 ? 6400 : 0;
+      trackDrawer(editor, backend)(
+        across ? [x - 480 + far, z] : [x + far, z - 480],
+        across ? [x + 480 + far, z] : [x + far, z + 480],
+      );
+    } else if (roll < 0.36 && at) {
+      roadStrokeResult(editor, backend, [at[0] - 320, at[1] + 960], [at[0] + 320, at[1] + 960]);
+    } else if (roll < 0.46 && at) {
+      if (selectAt(editor, backend, ...at)) editor.deleteSelection(0);
+    } else if (roll < 0.54 && at) {
+      if (selectAt(editor, backend, ...at)) {
+        editor.moveSelectionTo(
+          Math.floor(at[0] / STUD_LDU) + 32 * Math.floor(random() * 3 - 1),
+          Math.floor(at[1] / STUD_LDU) + 32,
+          0,
+        );
+      }
+    } else if (roll < 0.6 && at) {
+      if (selectAt(editor, backend, ...at)) editor.rotate(0, 1);
+    } else if (roll < 0.66 && at) {
+      if (selectAt(editor, backend, ...at)) dragGroup(editor, backend, at, [at[0] + 640, at[1]]);
+    } else if (roll < 0.7 && at && free.length > 0) {
+      const [spot] = free.splice(0, 1);
+      if (spot && selectAt(editor, backend, ...at)) {
+        await place(street, ...spot);
+        selectAt(editor, backend, ...at);
+        backend.aim(...at);
+        editor.selectDragStart(0, 0, false);
+        backend.aim(at[0], at[1] + 640);
+        editor.pointerMove(0, 0);
+        editor.selectDragMove(0, 0);
+        await vi.waitFor(
+          () => {
+            if (editor.snapshot().studChecks > 0)
+              throw new Error("the street's studs are still pending");
+          },
+          { timeout: 60_000 },
+        );
+        editor.selectDragMove(0, 0);
+        editor.selectDragEnd(0, 0, 0);
+      }
+    } else if (roll < 0.82) editor.undo(0);
+    else if (roll < 0.92) editor.redo(0);
+    else await reopen();
+    const crossings = expectFullRebuild(session.editor, session.container, session.catalog);
+    const after = session.editor.dump();
+    if (JSON.stringify(after.roads) !== before.roads) seen.roadsChanged++;
+    if (JSON.stringify(after.crossings) !== before.crossings) seen.crossingsChanged++;
+    seen.mostCrossings = Math.max(seen.mostCrossings, crossings);
+  }
+  expect(seen.roadsChanged).toBeGreaterThan(SESSION_EDITS / 4);
+  expect(seen.crossingsChanged).toBeGreaterThan(SESSION_EDITS / 8);
+  expect(seen.mostCrossings).toBeGreaterThan(1);
+  expect(seen.reloads).toBeGreaterThan(0);
+}, 600_000);
+
+function pick<T>(choices: ReadonlyArray<T>, random: () => number): T {
+  const choice = choices[Math.floor(random() * choices.length)];
+  if (choice === undefined) throw new Error("nothing to pick from");
+  return choice;
+}
+
+const RAMP_CHUNK_KEYS_BELOW = rampChunkKey(0, 0) / 2;
+
+it("opens a world of track over a baseplate without ever drawing ramps for a crossing it doesn't have, though the world it replaces had a road where that track runs", async () => {
+  const repository = new MemoryRepository();
+  const { editor, backend } = await startImportingEditor(() => repository);
+  await placer(editor, backend)(BASEPLATE_32, 0, 0);
+  trackDrawer(editor, backend)([-480, 0], [480, 0]);
+  expect(editor.dump().crossings).toEqual([]);
+  await vi.waitFor(() => expect(repository.storedTrack()).toBeGreaterThan(0));
+  const trackOnly = editor.snapshot().world?.id;
+  if (!trackOnly) throw new Error("no current world");
+  expect(await editor.newWorld("Roads")).toBe(true);
+  await placer(editor, backend)(ROAD_STRAIGHT, 0, 0);
+  expect(editor.dump().roadPlacements).toHaveLength(1);
+  const uploadsBefore = backend.chunksSet.length;
+  expect(await editor.openWorld(trackOnly)).toBe(true);
+  const rampUploads = backend.chunksSet
+    .slice(uploadsBefore)
+    .filter((key) => key < RAMP_CHUNK_KEYS_BELOW);
+  expect({ crossings: editor.dump().crossings, rampUploads }).toEqual({
+    crossings: [],
+    rampUploads: [],
+  });
+}, 240_000);

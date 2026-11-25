@@ -10,6 +10,7 @@ export {
   roadwayCells,
   type RoadCellStatus,
   type RoadEdgeSegment,
+  type RoadFitSource,
   type RoadJoinReport,
   type RoadPlacementJoin,
   type RoadPlacement,
@@ -486,6 +487,7 @@ export {
 } from "./plan/placed-outline.ts";
 export { OutlineEdges, TrackOutline } from "./plan/track-outline.ts";
 export {
+  LevelCrossings,
   RoadSurfaceCells,
   levelCrossings,
   type CrossingTrack,
