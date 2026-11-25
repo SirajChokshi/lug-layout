@@ -9881,3 +9881,65 @@ it("takes a station platform beside the track under a train body's overhang, set
     trains: 2,
   });
 }, 180_000);
+
+const TUNNEL_ALONG_LDU = 500;
+const THROUGH_TUNNEL_TICKS = 240;
+
+it("stops a running train before a user's own tunnel too low for it, naming the tunnel, and runs a train on through one tall enough", async () => {
+  const sim = new InThreadSim();
+  const { editor, backend, frame, container, catalog } = await startEditor(
+    [LOCOMOTIVE.slice(4)],
+    new BundleDirectoryFetcher(),
+    [],
+    (bound) => {
+      bound
+        .rebind(MODEL_IMPORTER)
+        .toConstantValue(new InThreadModelImporter(bound.get(PART_BUNDLE_LOADER)));
+      bound.rebind(SIM_CLIENT).toConstantValue(sim);
+    },
+  );
+  editor.chooseItem(TRACK_ITEM_ID);
+  dragTrack(editor, backend, [-64 * STUD, 0], [64 * STUD, 0]);
+  dragTrack(editor, backend, [-64 * STUD, SECOND_RUN_Z], [64 * STUD, SECOND_RUN_Z]);
+  editor.chooseItem(null);
+  await loadCatalogItem(catalog, LOCOMOTIVE);
+  const low = await importUserFile(editor, "my-low-tunnel.ldr", tunnelFile("my-low-tunnel.ldr", 3));
+  const tall = await importUserFile(editor, "my-tunnel.ldr", tunnelFile("my-tunnel.ldr", 12));
+  for (const [item, z] of [
+    [low, 0],
+    [tall, SECOND_RUN_Z],
+  ] as const) {
+    for (const x of [-TUNNEL_ALONG_LDU, TUNNEL_ALONG_LDU]) {
+      await heldAlongTrack(editor, backend, frame, item, x, z);
+      editor.click(0, 0, 0);
+    }
+  }
+  const place = settledPlacer(editor, backend);
+  await place(LOCOMOTIVE, 0, 0);
+  await place(LOCOMOTIVE, 0, SECOND_RUN_Z);
+  editor.chooseItem(null);
+  const play = container.get(TRAIN_PLAY);
+
+  await play.start();
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  play.chooseDriven(1);
+  play.drive(TRAIN_SPEED_LDU_PER_S);
+  sim.advance(THROUGH_TUNNEL_TICKS);
+  play.chooseDriven(0);
+  const { notice, trains, status } = play.snapshot();
+  play.stop();
+  const [underLow, throughTall] = trains;
+
+  expect({ status, placements: editor.snapshot().placements, notice }).toEqual({
+    status: "running",
+    placements: 4,
+    notice: `${LOCOMOTIVE_LABEL} stopped: it would run into my-low-tunnel.ldr.`,
+  });
+  expect(underLow).toMatchObject({ blockedBy: "my-low-tunnel.ldr", speedLduPerS: 0 });
+  expect(Math.abs(underLow?.xLdu ?? 0)).toBeGreaterThan(0);
+  expect(Math.abs(underLow?.xLdu ?? 0) + (underLow?.lengthLdu ?? 0) / 2).toBeLessThan(
+    TUNNEL_ALONG_LDU,
+  );
+  expect(throughTall).toMatchObject({ blockedBy: null, derailSpeedLduPerS: 0 });
+  expect(Math.abs(throughTall?.xLdu ?? 0)).toBeGreaterThan(TUNNEL_ALONG_LDU);
+}, 240_000);

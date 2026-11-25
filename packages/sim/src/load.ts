@@ -16,6 +16,7 @@ export function loadSession(createSession: SimSessionFactory, load: SimLoad): Lo
     trains: load.trains,
     railway: { topology: load.graph, autopilotSeed: load.autopilotSeed },
     openEnds: load.openEnds,
+    obstacles: load.obstacles ?? null,
   };
   const session = createSession(scenario);
   return {

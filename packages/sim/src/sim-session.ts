@@ -8,6 +8,7 @@ import {
   type TrainPlacement,
   type TrainSpec,
 } from "./simulation.ts";
+import type { SimObstacles } from "./train-clearance.ts";
 
 export type SimCommand =
   | { readonly kind: "throttle"; readonly train: number; readonly speedLduPerS: number }
@@ -33,6 +34,7 @@ export interface SimScenario {
   readonly trains: ReadonlyArray<SimTrainLoad>;
   readonly railway?: SimRailway;
   readonly openEnds?: OpenEndRule;
+  readonly obstacles?: SimObstacles | null;
 }
 
 export type SimSessionFactory = (scenario: SimScenario) => SimSession;
@@ -60,6 +62,7 @@ export interface SimFrameLayout {
   readonly trainFacingStart: number;
   readonly trainDerailSpeedStart: number;
   readonly bogiesOffTrackStart: number;
+  readonly trainBlockedStart: number;
   readonly floats: number;
 }
 
@@ -79,6 +82,7 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
   const trainFacingStart = trainDirectionStart + trains;
   const trainDerailSpeedStart = trainFacingStart + trains;
   const bogiesOffTrackStart = trainDerailSpeedStart + trains;
+  const trainBlockedStart = bogiesOffTrackStart + vehicles;
   return {
     poseFloatsPerVehicle: POSE_FLOATS_PER_VEHICLE,
     vehicles,
@@ -100,7 +104,8 @@ export function simFrameLayout(vehicles: number, trains: number, switches: numbe
     trainFacingStart,
     trainDerailSpeedStart,
     bogiesOffTrackStart,
-    floats: bogiesOffTrackStart + vehicles,
+    trainBlockedStart,
+    floats: trainBlockedStart + trains,
   };
 }
 
@@ -130,6 +135,7 @@ export class SimSession {
       out[layout.trainDirectionStart + t] = sim.direction(t);
       out[layout.trainFacingStart + t] = sim.facing(t);
       out[layout.trainDerailSpeedStart + t] = sim.trainDerailSpeed[t] ?? 0;
+      out[layout.trainBlockedStart + t] = sim.trainBlockedBy[t] ?? 0;
     }
     sim.writeBogiesOffTrack(out, layout.bogiesOffTrackStart);
     for (let s = 0; s < layout.switches; s++) {

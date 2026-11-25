@@ -23,6 +23,8 @@ import { SCENE_BACKEND, type ChunkInstances, type ISceneBackend, type WorldBox }
 import { inject, injectable } from "inversify";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { BOX_FLOATS } from "../edit/local-box.ts";
+import type { PlacedModel } from "../edit/placed-chunks.ts";
+import type { Placeable } from "../edit/placeable.ts";
 import type { PlayTrack } from "../edit/track-drawing.ts";
 import type { PlayModel } from "../play/play-models.ts";
 import {
@@ -117,8 +119,15 @@ export interface RailGhost {
   readonly z: number;
 }
 
+export interface ObstacleModels {
+  models(): ReadonlyArray<PlacedModel>;
+  carriedParts(placeable: Placeable): ReadonlySet<number>;
+}
+
 export interface IRailYard {
   setTrack(track: PlayTrack | null, carriers: ReadonlyArray<RailCarrier>): void;
+  watchModels(models: ObstacleModels): void;
+  obstacleModels(): ObstacleModels | null;
   rails(): RailTrack | null;
   aim(model: PlayModel, ray: Float64Array, reversed: boolean): RailAim;
   ghost(seat: RailSeat): RailGhost;
@@ -273,6 +282,7 @@ export class RailYard implements IRailYard {
   private readonly parked: Parked[] = [];
   private hidden = false;
   private gearModels = "";
+  private watched: ObstacleModels | null = null;
 
   constructor(
     @inject(SCENE_BACKEND) private readonly backend: ISceneBackend,
@@ -317,6 +327,14 @@ export class RailYard implements IRailYard {
 
   rails(): RailTrack | null {
     return this.track;
+  }
+
+  watchModels(models: ObstacleModels): void {
+    this.watched = models;
+  }
+
+  obstacleModels(): ObstacleModels | null {
+    return this.watched;
   }
 
   aim(model: PlayModel, ray: Float64Array, reversed: boolean): RailAim {

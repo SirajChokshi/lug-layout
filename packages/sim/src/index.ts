@@ -14,6 +14,7 @@ export {
 export {
   DIRECTION_BACKWARD,
   DIRECTION_FORWARD,
+  NOT_BLOCKED,
   POSE_FLOATS_PER_VEHICLE,
   SIM_TICK_HZ,
   SIM_TICK_SECONDS,
@@ -33,3 +34,4 @@ export {
   type TrainRouteState,
 } from "./blocks/block-keeper.ts";
 export type { RoutePlanner } from "./routing/route-planner.ts";
+export type { SimObstacles, SimSolids } from "./train-clearance.ts";
