@@ -1,6 +1,7 @@
 import { STUD_LDU, isRot90, rot90Cos, rot90Sin } from "@brr/math";
 import type { CandidatePoses, LatticePose, SnapWindow } from "./candidate-poses.ts";
 import { SOURCES, STATUSES, VECTOR_FLOATS } from "./connector-table.ts";
+import { IntKeyMap, MISSING } from "./int-key-map.ts";
 import {
   PLATE_SIXTEENTHS,
   QUARTER_TURNS,
@@ -24,6 +25,9 @@ const WORD_MASK = 31;
 const NO_PHASE = -1;
 const INITIAL_LEVELS = 4;
 const INITIAL_MATCHES = 256;
+const MATCHED_ENTRIES = 256;
+const KEPT_MATCHES = 2 ** 16;
+const MATCHED_KEY_INTS = 2;
 const PROVENANCES = SOURCES.length * STATUSES.length;
 const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 
@@ -211,8 +215,10 @@ export class LatticeStudFinder implements MateFinder {
   private levelCount = new Int32Array(0);
   private revision = 0;
   private matchedRevision = -1;
-  private matchedPhase = NO_PHASE;
-  private matchedBaseY = 0;
+  private readonly matchedEntries = new IntKeyMap(MATCHED_KEY_INTS);
+  private readonly matchedKey = new Int32Array(MATCHED_KEY_INTS);
+  private readonly matchedStart = new Int32Array(MATCHED_ENTRIES + 1);
+  private matchedEntryCount = 0;
   private matches = 0;
   private matchGroup = new Int32Array(INITIAL_MATCHES);
   private matchBucket = new Int32Array(INITIAL_MATCHES);
@@ -287,16 +293,15 @@ export class LatticeStudFinder implements MateFinder {
     const cellX = (x16 - phaseX) / STUD_SIXTEENTHS;
     const cellZ = (z16 - phaseZ) / STUD_SIXTEENTHS;
     const baseY = pose.yPlates * PLATE_SIXTEENTHS;
-    if (
-      this.matchedRevision !== this.revision ||
-      this.matchedPhase !== phase ||
-      this.matchedBaseY !== baseY
-    ) {
-      this.match(phase, baseY);
-    }
+    if (this.matchedRevision !== this.revision) this.clearMatches();
+    this.matchedKey[0] = phase;
+    this.matchedKey[1] = baseY;
+    let entry = this.matchedEntries.get(this.matchedKey);
+    if (entry === MISSING) entry = this.match(phase, baseY);
     const { raster, groupOffset, groupWords, groupMinX, groupMinZ, groupMaxZ } = phases;
+    const end = this.matchedStart[entry + 1] ?? 0;
     let n = 0;
-    for (let j = 0; j < this.matches; j++) {
+    for (let j = this.matchedStart[entry] ?? 0; j < end; j++) {
       const g = this.matchGroup[j] ?? 0;
       const minX = groupMinX[g] ?? 0;
       const minZ = groupMinZ[g] ?? 0;
@@ -505,11 +510,12 @@ export class LatticeStudFinder implements MateFinder {
     this.revision++;
   }
 
-  private match(phase: number, baseY: number): void {
+  private match(phase: number, baseY: number): number {
+    if (this.matchedEntryCount === MATCHED_ENTRIES || this.matches >= KEPT_MATCHES)
+      this.clearMatches();
     const phases = this.phases;
     const classes = this.classes;
     const { groupClass, groupAxis, groupY } = phases;
-    this.matches = 0;
     for (
       let g = phases.phaseGroupStart[phase] ?? 0;
       g < (phases.phaseGroupStart[phase + 1] ?? 0);
@@ -539,9 +545,20 @@ export class LatticeStudFinder implements MateFinder {
         }
       }
     }
+    const entry = this.matchedEntryCount++;
+    this.matchedStart[entry + 1] = this.matches;
+    this.matchedKey[0] = phase;
+    this.matchedKey[1] = baseY;
+    this.matchedEntries.set(this.matchedKey, entry);
+    return entry;
+  }
+
+  private clearMatches(): void {
+    this.matchedEntries.clear();
+    this.matchedEntryCount = 0;
+    this.matches = 0;
+    this.matchedStart[0] = 0;
     this.matchedRevision = this.revision;
-    this.matchedPhase = phase;
-    this.matchedBaseY = baseY;
   }
 
   private growMatches(): void {
