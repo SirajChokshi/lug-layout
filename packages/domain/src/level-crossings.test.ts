@@ -44,12 +44,27 @@ function railTop(system: string): number {
   return found.railTopLdu;
 }
 
+type CatalogPiece = (typeof catalog.pieces)[number];
+const placedPieces = new Map<string, PlacedOutline>();
+
+function placedPiece(piece: CatalogPiece, pose: Pose16): PlacedOutline {
+  const key = `${piece.id}|${pose.heading}|${pose.position.join(",")}`;
+  let outline = placedPieces.get(key);
+  if (!outline) {
+    outline = PlacedOutline.ofTrackPiece(
+      pieceFrameOutline(outlineOf(piece.part), piece.partFrame),
+      pose,
+    );
+    placedPieces.set(key, outline);
+  }
+  return outline;
+}
+
 function track(pieceId: string, pose: Pose16): CrossingTrack {
   const piece = catalog.pieces.find((entry) => entry.id === pieceId);
   if (!piece) throw new Error(`no catalog piece ${pieceId}`);
-  const rings = pieceFrameOutline(outlineOf(piece.part), piece.partFrame);
   return {
-    outline: PlacedOutline.ofTrackPiece(rings, pose),
+    outline: placedPiece(piece, pose),
     bedLdu: 0,
     railTopLdu: railTop(piece.system),
   };
@@ -59,7 +74,16 @@ function at(xStuds: number, zStuds: number, heading: number): Pose16 {
   return pose16(zeta16([BigInt(xStuds), 0n, 0n, 0n, BigInt(zStuds), 0n, 0n, 0n]), heading);
 }
 
+const roadSurfaces = new Map<string, RoadPlacement["surface"]>();
+
 function road(roadwayStuds: number, topLdu = 0): RoadPlacement {
+  const key = `${roadwayStuds}|${topLdu}`;
+  const surface = roadSurfaces.get(key) ?? plateSurface(roadwayStuds, topLdu);
+  roadSurfaces.set(key, surface);
+  return { id: 0, x: 0, z: 0, yLdu: 0, rot: 0, surface };
+}
+
+function plateSurface(roadwayStuds: number, topLdu: number): RoadPlacement["surface"] {
   const cells = PLATE_STUDS * PLATE_STUDS;
   const top = new Int32Array(cells).fill(topLdu * SIXTEENTHS);
   const stud = new Int32Array(cells).fill(topLdu * SIXTEENTHS);
@@ -73,21 +97,14 @@ function road(roadwayStuds: number, topLdu = 0): RoadPlacement {
   }
   const half = (PLATE_STUDS * STUD) / 2;
   return {
-    id: 0,
-    x: 0,
-    z: 0,
-    yLdu: 0,
-    rot: 0,
-    surface: {
-      minX: -half,
-      minZ: -half,
-      columns: PLATE_STUDS,
-      rows: PLATE_STUDS,
-      topSixteenths: top,
-      studSixteenths: stud,
-      road: roadway,
-      occupied: new Uint8Array(top.length).fill(1),
-    },
+    minX: -half,
+    minZ: -half,
+    columns: PLATE_STUDS,
+    rows: PLATE_STUDS,
+    topSixteenths: top,
+    studSixteenths: stud,
+    road: roadway,
+    occupied: new Uint8Array(top.length).fill(1),
   };
 }
 
@@ -295,6 +312,7 @@ describe("level crossings kept up to date across edits", () => {
         let before = levelCrossings(roads, tracks, parts);
         expect(gate.crossings(roads, tracks)).toEqual(before);
         for (let edit = 0; edit < EDITS; edit++) {
+          const unchanged = { roads, tracks };
           const roll = random();
           if (roll < 0.15) roads = [...roads, randomRoad(random, nextId++)];
           else if (roll < 0.25 && roads.length > 0) {
@@ -309,7 +327,10 @@ describe("level crossings kept up to date across edits", () => {
             if (old) tracks = tracks.map((t, i) => (i === slot ? { ...old } : t));
           } else if (roll < 0.86) tracks = tracks.toReversed();
           else if (roll < 0.9) roads = roads.toReversed();
-          const expected = levelCrossings(roads, tracks, parts);
+          const expected =
+            roads === unchanged.roads && tracks === unchanged.tracks
+              ? before
+              : levelCrossings(roads, tracks, parts);
           expect(gate.crossings(roads, tracks)).toEqual(expected);
           if (expected.length > 0) seen.crossed++;
           if (expected.length < before.length && tracks.length > 0) seen.merged++;
