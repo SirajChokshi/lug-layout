@@ -49,7 +49,7 @@ const extents = recorded.map(cellExtent);
 const nearby = new NearbyRoadNetwork(recorded, extents, RoadIndex.of(extents), MARGIN_LDU);
 const fit = new RoadFit();
 const centre = (CITY_SIDE / 2) * PLATE_LDU;
-const probe: RoadPlacement = { id: -1, x: centre, z: centre, yLdu: 0, rot: 0, surface: plate };
+const probe = { id: -1, x: centre, z: centre, yLdu: 0, rot: 0, surface: plate };
 
 function carry(): number {
   let joining = 0;
