@@ -7,6 +7,7 @@ import {
   subtractZeta16,
   ZETA16_ORDER,
   zeta16,
+  zeta16Equals,
   zeta16ImaginarySign,
   zeta16RealSign,
   type Pose16,
@@ -222,11 +223,10 @@ interface Edge {
   readonly a: Vertex;
   readonly b: Vertex;
   readonly box: LduRect;
-  readonly zeroLength: boolean;
 }
 
-function sameExact(a: Vertex, b: Vertex): boolean {
-  return a.exact.every((coefficient, power) => coefficient === b.exact[power]);
+function edgeBetween(a: Vertex, b: Vertex): Edge | null {
+  return zeta16Equals(a.exact, b.exact) ? null : { a, b, box: edgeBounds(a, b) };
 }
 
 function edgesOf(rings: ReadonlyArray<ReadonlyArray<Vertex>>): ReadonlyArray<Edge> {
@@ -235,7 +235,8 @@ function edgesOf(rings: ReadonlyArray<ReadonlyArray<Vertex>>): ReadonlyArray<Edg
     for (let i = 0; i < ring.length; i++) {
       const a = ring[i];
       const b = ring[(i + 1) % ring.length];
-      if (a && b) edges.push({ a, b, box: edgeBounds(a, b), zeroLength: sameExact(a, b) });
+      const edge = a && b ? edgeBetween(a, b) : null;
+      if (edge) edges.push(edge);
     }
   }
   return edges;
@@ -263,10 +264,6 @@ export class PlacedOutline {
   private doubledEdges(): ReadonlyArray<Edge> {
     this.doubledEdgeList ??= edgesOf(this.rings.map((ring) => ring.map(doubled)));
     return this.doubledEdgeList;
-  }
-
-  private hasZeroLengthEdge(): boolean {
-    return this.edges().some((edge) => edge.zeroLength);
   }
 
   private vertices(): ReadonlyArray<Vertex> {
@@ -378,8 +375,8 @@ export class PlacedOutline {
   }
 
   private onBoundary(point: Vertex, edges: ReadonlyArray<Edge>): boolean {
-    for (const { a: c, b: d, box, zeroLength } of edges) {
-      if (!zeroLength && !boxHolds(box, point)) continue;
+    for (const { a: c, b: d, box } of edges) {
+      if (!boxHolds(box, point)) continue;
       if (orient(c, d, point) === 0 && dot(c, d, c, point) >= 0 && dot(d, c, d, point) >= 0) {
         return true;
       }
@@ -401,7 +398,6 @@ export class PlacedOutline {
   }
 
   private edgeEntersInterior(other: PlacedOutline): boolean {
-    if (other.hasZeroLengthEdge()) return false;
     const otherVertices = other.vertices();
     for (const { a, b, box } of this.edges()) {
       if (!boundsMeet(box, other.bounds)) continue;

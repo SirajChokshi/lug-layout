@@ -108,6 +108,48 @@ function plateSurface(roadwayStuds: number, topLdu: number): RoadPlacement["surf
   };
 }
 
+const STREET_COLUMNS = 48;
+const STREET_ROWS = 16;
+const SIDEWALK_ROWS = 3;
+
+function userBuiltStreet(): RoadPlacement {
+  const cells = STREET_COLUMNS * STREET_ROWS;
+  const stud = new Int32Array(cells);
+  const roadway = new Uint8Array(cells);
+  for (let row = SIDEWALK_ROWS; row < STREET_ROWS - SIDEWALK_ROWS; row++) {
+    for (let column = 0; column < STREET_COLUMNS; column++) {
+      roadway[row * STREET_COLUMNS + column] = 1;
+      stud[row * STREET_COLUMNS + column] = NO_STUD;
+    }
+  }
+  return {
+    id: 0,
+    x: 0,
+    z: 0,
+    yLdu: 0,
+    rot: 0,
+    surface: {
+      minX: (-STREET_COLUMNS * STUD) / 2,
+      minZ: (-STREET_ROWS * STUD) / 2,
+      columns: STREET_COLUMNS,
+      rows: STREET_ROWS,
+      topSixteenths: new Int32Array(cells),
+      studSixteenths: stud,
+      road: roadway,
+      occupied: new Uint8Array(cells).fill(1),
+    },
+  };
+}
+
+function crossingTracksOverStreet(
+  piece: string,
+  pose: Pose16,
+): ReadonlyArray<ReadonlyArray<number>> {
+  return levelCrossings([userBuiltStreet()], [track(piece, pose)], []).map(
+    (crossing) => crossing.tracks,
+  );
+}
+
 function straightRunAcross(xStuds = 0, zStuds = 0): CrossingTrack[] {
   return [-24, -8, 8].map((z) => track("ldraw:74746", at(xStuds, zStuds + z, ALONG_Z)));
 }
@@ -197,6 +239,13 @@ describe("levelCrossings", () => {
       for (const candidate of crossing.candidates)
         expect(clearOf(candidate, parts, tracks)).toBe(true);
     }
+  });
+
+  it("counts a left- or right-hand switch laid across a user's own street as one crossing, not pieces of one", () => {
+    expect({
+      rightHand: crossingTracksOverStreet("ldraw:75541-f1", at(8, -10, 6)),
+      leftHand: crossingTracksOverStreet("ldraw:75542-f1", at(0, -12, ALONG_Z)),
+    }).toEqual({ rightHand: [[0]], leftHand: [[0]] });
   });
 
   it("crosses a one-stud road strip where its own square lies under the track's ends and not a stud beyond them, whatever stands higher beside it in the same stud cell", () => {
