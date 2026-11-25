@@ -309,6 +309,10 @@ export function mateCounts(
     if (((report.sourceMask[k] ?? 0) & SOURCE_INFERRED) !== 0) tally.inferred++;
     if (report.status[k] === STATUS_UNVERIFIED) tally.unverified++;
   }
+  return hoverCounts(tallies);
+}
+
+function hoverCounts(tallies: ReadonlyMap<number, MateTally>): ReadonlyArray<HoverMateCount> {
   return [...tallies.values()].map((tally) => ({
     kind: tally.kind,
     partnerKinds: [...tally.partnerKinds.values()],
