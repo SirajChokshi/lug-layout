@@ -647,13 +647,13 @@ export class LevelCrossings {
     let bounds: LduRect | null = null;
     for (const index of crossing.tracks) {
       const track = tracks[index];
-      const own = track ? this.rampOutlineBoundsAlong(track) : null;
+      const own = track ? this.rampOutlineBoundsOf(track) : null;
       if (own) bounds = bounds ? unionBounds(bounds, own) : own;
     }
     return bounds;
   }
 
-  private rampOutlineBoundsAlong(track: CrossingTrack): LduRect | null {
+  private rampOutlineBoundsOf(track: CrossingTrack): LduRect | null {
     const known = this.trackRampOutlineBounds.get(track);
     if (known !== undefined) return known;
     const seen = new Set<string>();
