@@ -1,8 +1,23 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import type { PlacedPolygon } from "../ldraw/walk.ts";
+import { LdrawLibrary } from "../ldraw/library.ts";
+import { walkPart, type PlacedPolygon } from "../ldraw/walk.ts";
 import { outlineAreaLdu2, planOutline } from "./plan-outline.ts";
 
 const MICRO = 1_000_000;
+const TONGUE_TIP_LDU = 169;
+const SLEEPER_END_LDU = 80;
+const NOTCH_LDU = 60;
+
+const pinnedLibrary = new LdrawLibrary([
+  fileURLToPath(new URL("../../../../.cache/ldraw", import.meta.url)),
+]);
+
+function pinnedOutline(part: string) {
+  const polygons: PlacedPolygon[] = [];
+  walkPart(pinnedLibrary, `${part}.dat`, { polygon: (polygon) => void polygons.push(polygon) });
+  return planOutline(polygons);
+}
 
 function flatQuad(minX: number, minZ: number, maxX: number, maxZ: number, y = 0): PlacedPolygon {
   return {
@@ -63,5 +78,28 @@ describe("planOutline", () => {
         [0, -20 * MICRO],
       ]),
     ]);
+  });
+});
+
+describe("planOutline of the pinned library's parts", () => {
+  it("draws 74746 as its sleeper comb with its holes, not a hull", () => {
+    const [comb, ...holes] = pinnedOutline("74746").rings;
+    const xs = comb?.map(([x]) => x) ?? [];
+    const zs = comb?.map(([, z]) => z) ?? [];
+    expect({
+      x: [Math.min(...xs), Math.max(...xs)],
+      z: [Math.min(...zs), Math.max(...zs)],
+      notches: [-NOTCH_LDU * MICRO, NOTCH_LDU * MICRO].every((z) => zs.includes(z)),
+      holes: holes.length > 0,
+    }).toEqual({
+      x: [-TONGUE_TIP_LDU * MICRO, TONGUE_TIP_LDU * MICRO],
+      z: [-SLEEPER_END_LDU * MICRO, SLEEPER_END_LDU * MICRO],
+      notches: true,
+      holes: true,
+    });
+  });
+
+  it("rounds no vertex of the ramp parts 4515 and 3297", () => {
+    expect([pinnedOutline("4515").roundedLdu, pinnedOutline("3297").roundedLdu]).toEqual([0, 0]);
   });
 });

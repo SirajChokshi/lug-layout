@@ -1,11 +1,12 @@
-import { OUTLINE_UNITS_PER_LDU } from "@brr/schema/bundle";
+import { withoutDegeneratePieces } from "@brr/domain/degenerate-outline";
+import { OUTLINE_UNITS_PER_LDU, type PlanOutline } from "@brr/schema/bundle";
 import type { PlacedPolygon } from "../ldraw/walk.ts";
 
 export type PlanPoint = readonly [number, number];
 export type PlanRing = ReadonlyArray<PlanPoint>;
 
 export interface BakedOutline {
-  readonly rings: ReadonlyArray<PlanRing>;
+  readonly rings: PlanOutline;
   readonly roundedLdu: number;
 }
 
@@ -389,17 +390,19 @@ export function planOutline(polygons: ReadonlyArray<PlacedPolygon>): BakedOutlin
   const segments = uniqueSegments(triangles);
   splitAll(segments);
   let roundedLdu = grid.roundedLdu;
-  const rings = chainRings(boundaryEdges(triangles, segments))
+  const rounded = chainRings(boundaryEdges(triangles, segments))
     .map(withoutStraightVertices)
     .map((ring) =>
-      ring.map((p): PlanPoint => {
+      ring.map((p): [number, number] => {
         const x = nearestUnit(p.x, p.d);
         const z = nearestUnit(p.z, p.d);
         roundedLdu = Math.max(roundedLdu, residualLdu(p.x, p.d, x), residualLdu(p.z, p.d, z));
         return [Number(x), Number(z)];
       }),
-    )
-    .toSorted((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
+    );
+  const rings = withoutDegeneratePieces(rounded).toSorted(
+    (a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)),
+  );
   return { rings, roundedLdu: Math.round(roundedLdu * REPORTED_LDU_STEPS) / REPORTED_LDU_STEPS };
 }
 

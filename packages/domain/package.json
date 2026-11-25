@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./degenerate-outline": "./src/plan/degenerate-outline.ts",
     "./heading-footprints": "./src/track/heading-footprints.ts",
     "./piece-outline": "./src/track/piece-outline.ts"
   },
