@@ -2,7 +2,7 @@ import { cpus } from "node:os";
 import { performance } from "node:perf_hooks";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
-import { levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
+import { LevelCrossings, levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
 import { PlacedOutline } from "../src/plan/placed-outline.ts";
 import { NO_STUD, type RoadPlacement, type RoadSurface } from "../src/road-joins.ts";
 
@@ -155,4 +155,63 @@ for (const { side, tracks, label, warmup, runs } of scenes) {
     `| ${side} x ${side} | ${label} | ${roads.length} | ${roads.length * straight.columns * straight.rows} | ${ms.toFixed(1)} | ${result} | ${roadway} |`,
   );
 }
+const gateSide = FIELDS[FIELDS.length - 1] ?? DENSE_FIELD;
+const gateRoads = field(gateSide);
+const gateTracks = crossingTracks(gateSide);
+const farRoad: RoadPlacement = {
+  id: gateRoads.length,
+  x: -100 * BASEPLATE_SPAN,
+  z: 0,
+  yLdu: 0,
+  rot: 0,
+  surface: straight,
+};
+const farTrack: CrossingTrack = {
+  outline: PlacedOutline.ofRect({ minX: -100_000, minZ: -100_000, maxX: -99_000, maxZ: -99_840 }),
+  bedLdu: 0,
+  railTopLdu: RAIL_TOP_LDU,
+};
+const acrossTrack = trackDownEveryRow(gateSide)[1];
+if (!acrossTrack) throw new Error("no track to lay across the field");
+const gate = new LevelCrossings([]);
+gate.crossings(gateRoads, gateTracks);
+const alternate = (a: () => void, b: () => void): (() => number) => {
+  let flip = false;
+  return () => {
+    flip = !flip;
+    (flip ? a : b)();
+    return 0;
+  };
+};
+const withFarRoad = [...gateRoads, farRoad];
+const withFarTrack = [...gateTracks, farTrack];
+const withAcross = [...gateTracks, acrossTrack];
+const farRoadMs = medianMs(
+  alternate(
+    () => gate.crossings(withFarRoad, gateTracks),
+    () => gate.crossings(gateRoads, gateTracks),
+  ),
+).ms;
+const farTrackMs = medianMs(
+  alternate(
+    () => gate.crossings(gateRoads, withFarTrack),
+    () => gate.crossings(gateRoads, gateTracks),
+  ),
+).ms;
+const touchingMs = medianMs(
+  alternate(
+    () => gate.crossings(gateRoads, withAcross),
+    () => gate.crossings(gateRoads, gateTracks),
+  ),
+).ms;
+lines.push(
+  "",
+  `LevelCrossings kept across edits on the ${gateSide} x ${gateSide} field with ${TRACKS} strips (median ms per call, edits alternating with their undo):`,
+  "",
+  "| Edit | ms |",
+  "|---|---:|",
+  `| a road added and removed far from every track (reused) | ${farRoadMs.toFixed(3)} |`,
+  `| a track added and removed far from every road (reused) | ${farTrackMs.toFixed(3)} |`,
+  `| a track laid across the field and taken up (recomputed in full) | ${touchingMs.toFixed(1)} |`,
+);
 process.stdout.write(`${lines.join("\n")}\n`);

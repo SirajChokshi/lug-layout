@@ -1,5 +1,4 @@
 import {
-  RoadSurfaceCells,
   TrackClearance,
   WORLD_TRACK_FRAME,
   type PlacementHandle,
@@ -110,7 +109,7 @@ export type PlacedModels = Pick<PlacedChunks, "models" | "version">;
 
 interface CrossingInputs {
   readonly ramps: CrossingRamps;
-  readonly roads: RoadSurfaceCells;
+  readonly roads: ReadonlyArray<RoadPlacement>;
   readonly pieces: ReadonlyArray<PlacedTrackPiece>;
 }
 
@@ -164,7 +163,7 @@ export class TrackWorld implements ITrackWorld {
   private bundle: TrackBundle | null = null;
   private trackCatalog: TrackCatalog | null = null;
   private placed: PlacedModels = NO_PLACED_MODELS;
-  private roads = new RoadSurfaceCells([]);
+  private roads: ReadonlyArray<RoadPlacement> = [];
   private track: TrackDrawing | null = null;
   private pendingRestored: TrackDrawing | null = null;
   private readonly modelTracks = new Map<Placeable, ModelTrackEnds>();
@@ -211,7 +210,7 @@ export class TrackWorld implements ITrackWorld {
   }
 
   setRoads(roads: ReadonlyArray<RoadPlacement>): void {
-    this.roads = new RoadSurfaceCells(roads);
+    this.roads = roads;
   }
 
   loadSupport(): Promise<void> | null {
@@ -540,9 +539,9 @@ export class TrackWorld implements ITrackWorld {
       return;
     }
     this.crossingInputs = { ramps, roads, pieces };
-    const models = this.placed.models();
-    this.suggested = ramps.suggest(roads, pieces, models, (band) =>
-      this.rampClearance(track, models, band),
+    const placed = this.placed;
+    this.suggested = ramps.suggest(roads, pieces, placed, (band) =>
+      this.rampClearance(track, placed.models(), band),
     );
     this.suggestedViews = null;
     const chunks = ramps.instances(this.suggested);

@@ -21,6 +21,7 @@ const WARMUP_CHANGES = 1000;
 const FAR_LDU = 1_000_000;
 const REPORTS = 20;
 const BUILDS = 20;
+const EDITS = 40;
 const SETTLE_MS = 50;
 const YOUNG_GENERATION_SPACES: ReadonlyArray<string> = ["new_space", "new_large_object_space"];
 
@@ -239,8 +240,27 @@ fresh.cleanFit(probe, fit);
 const memoBytes = process.memoryUsage().arrayBuffers - buffersBefore;
 const reportMs = timed(REPORTS, () => fresh.report());
 const buildMs = timed(BUILDS, () => new RoadNetwork(placements));
+const buildAndReportMs = timed(BUILDS, () => new RoadNetwork(placements).report());
 const report = fresh.report();
 const cells = placements.reduce((sum, p) => sum + p.surface.columns * p.surface.rows, 0);
+const edited = new RoadNetwork(placements);
+edited.report();
+const movedFrom = placements[0];
+if (!movedFrom) throw new Error("the city has no placements");
+const movedTo = { ...movedFrom, x: movedFrom.x + CITY_SIDE * BASEPLATE_SPAN };
+let movedAway = false;
+const moveOnce = (): void => {
+  edited.remove(movedFrom.id);
+  edited.add(movedAway ? movedFrom : movedTo);
+  movedAway = !movedAway;
+  edited.report();
+};
+for (let warm = 0; warm < WARMUP_CALLS; warm++) moveOnce();
+collect();
+const editYoungBefore = youngGenerationBytes();
+const editMs = timed(EDITS, moveOnce);
+const editBytes = (youngGenerationBytes() - editYoungBefore) / EDITS;
+const unchangedMs = timed(REPORTS, () => edited.report());
 
 process.stdout.write(
   [
@@ -254,10 +274,13 @@ process.stdout.write(
     "",
     "| Work | ms (median) |",
     "|---|---:|",
-    `| report | ${reportMs.toFixed(2)} |`,
+    `| report again, nothing changed since the last | ${reportMs.toFixed(2)} |`,
     `| build the network | ${buildMs.toFixed(2)} |`,
+    `| build the network and report it | ${buildAndReportMs.toFixed(2)} |`,
+    `| move one straight out of the city and back: remove, add, report | ${editMs.toFixed(3)} |`,
+    `| report again after the moves, nothing changed since the last | ${unchangedMs.toFixed(3)} |`,
     "",
-    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays.`,
+    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays. Moving one straight allocates about ${Math.round(editBytes).toLocaleString("en-US")} young-generation bytes per edit (median of ${EDITS} edits after ${WARMUP_CALLS} warm-up edits; the report's segment list and the moved straight's own tallies).`,
     "",
   ].join("\n"),
 );

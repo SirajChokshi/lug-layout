@@ -1,8 +1,17 @@
-import { NO_STUD, RoadFit, RoadNetwork, type RoadPlacement, type RoadSurface } from "@brr/domain";
+import {
+  NO_STUD,
+  RoadFit,
+  RoadNetwork,
+  type RoadFitSource,
+  type RoadPlacement,
+  type RoadSurface,
+} from "@brr/domain";
 import { describe, expect, it } from "vitest";
 import measured from "../../../../docs/verified-facts/geometry.json" with { type: "json" };
 import {
   ANY_TURN,
+  NearbyRoadNetwork,
+  RoadIndex,
   cellExtent,
   placedRoadsOf,
   roadOverlapCells,
@@ -396,5 +405,119 @@ describe("road-edge snap", () => {
       );
       expect(snap).toBeNull();
     }
+  });
+});
+
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function pick<T>(random: () => number, choices: ReadonlyArray<T>): T {
+  const choice = choices[Math.floor(random() * choices.length)];
+  if (choice === undefined) throw new Error("nothing to pick from");
+  return choice;
+}
+
+function nearby(recorded: ReadonlyArray<RoadPlacement>, margin: number): NearbyRoadNetwork {
+  const extents = recorded.map(cellExtent);
+  return new NearbyRoadNetwork(recorded, extents, RoadIndex.of(extents), margin);
+}
+
+const ASKS = [
+  (source: RoadFitSource, at: RoadPlacement) => source.fit(at, new RoadFit()),
+  (source: RoadFitSource, at: RoadPlacement) => source.cleanFit(at, new RoadFit()),
+  (source: RoadFitSource, at: RoadPlacement) => source.cleanContact(at, new RoadFit()),
+];
+const PROBES = 600;
+const COVERING_PLATES = 81;
+const NEARBY_TIMEOUT_MS = 60_000;
+
+function scattered(random: () => number): RoadPlacement[] {
+  const surfaces = [allRoad(4, 4), allRoad(8, 2), allRoad(32, 32), roadBaseplate("44336")];
+  return Array.from({ length: 120 }, (_, id) => ({
+    id: 3 * id + 1,
+    x: STUD * Math.floor(random() * 120 - 60) + pick(random, [0, 0, 0, 7]),
+    z: STUD * Math.floor(random() * 120 - 60) + pick(random, [0, 0, 13]),
+    yLdu: random() < 0.15 ? 8 : 0,
+    rot: Math.floor(random() * 4),
+    surface: pick(random, surfaces),
+  }));
+}
+
+describe("the road network without the moved models", () => {
+  it(
+    "answers every fit, clean fit and clean contact as a network of all its placements does, while queries wander across region borders, other phases, raised plates and overlaps",
+    () => {
+      const random = seeded(0x4ea7);
+      for (const margin of [0, STUD, 3 * STUD, 64 * STUD]) {
+        const recorded = scattered(random);
+        const regional = nearby(recorded, margin);
+        const whole = new RoadNetwork(recorded);
+        let x = 0;
+        let z = 0;
+        for (let probe = 0; probe < PROBES; probe++) {
+          x += STUD * Math.floor(random() * 9 - 4);
+          z += STUD * Math.floor(random() * 9 - 4);
+          const at: RoadPlacement = {
+            id: -1,
+            x: x + pick(random, [0, 0, 7]),
+            z: z + pick(random, [0, 0, 13]),
+            yLdu: pick(random, [0, 0, 8]),
+            rot: Math.floor(random() * 4),
+            surface: pick(random, recorded).surface,
+          };
+          const ask = pick(random, ASKS);
+          expect(ask(regional, at)).toEqual(ask(whole, at));
+        }
+      }
+    },
+    NEARBY_TIMEOUT_MS,
+  );
+
+  it("refills for a query whose own cells lie inside the region but whose neighbour beside it doesn't, and joins that neighbour", () => {
+    const surface = allRoad(4, 4);
+    const side = 4 * STUD;
+    const first: RoadPlacement = { id: -1, x: 0, z: 0, yLdu: 0, rot: 0, surface };
+    const edge: RoadPlacement = { ...first, x: 2 * STUD };
+    const beside: RoadPlacement = { id: 7, x: 2 * STUD + side, z: 0, yLdu: 0, rot: 0, surface };
+    const regional = nearby([beside], 2 * STUD);
+    const whole = new RoadNetwork([beside]);
+    expect(regional.fit(first, new RoadFit())).toEqual(whole.fit(first, new RoadFit()));
+    const joined = regional.fit(edge, new RoadFit());
+    expect(joined).toEqual(whole.fit(edge, new RoadFit()));
+    expect(joined.joinedCells).toBe(4);
+  });
+
+  it("takes every placement once a refill would claim 80,000 cells, and then answers a query far outside that region with the placements that region left out", () => {
+    const surface = allRoad(32, 32);
+    const grid: RoadPlacement[] = Array.from({ length: COVERING_PLATES }, (_, k) => ({
+      id: k,
+      x: (k % 9) * PLATE_SPAN,
+      z: Math.floor(k / 9) * PLATE_SPAN,
+      yLdu: 0,
+      rot: 0,
+      surface,
+    }));
+    const far: RoadPlacement = { id: 500, x: 100 * PLATE_SPAN, z: 0, yLdu: 0, rot: 0, surface };
+    const recorded = [...grid, far];
+    const regional = nearby(recorded, 9 * PLATE_SPAN);
+    const whole = new RoadNetwork(recorded);
+    const centre: RoadPlacement = {
+      id: -1,
+      x: 4 * PLATE_SPAN,
+      z: 4 * PLATE_SPAN,
+      yLdu: 0,
+      rot: 0,
+      surface,
+    };
+    expect(regional.fit(centre, new RoadFit())).toEqual(whole.fit(centre, new RoadFit()));
+    const besideFar: RoadPlacement = { ...centre, x: 101 * PLATE_SPAN, z: 0 };
+    const answer = regional.fit(besideFar, new RoadFit());
+    expect(answer).toEqual(whole.fit(besideFar, new RoadFit()));
+    expect(answer.joinedCells).toBe(32);
   });
 });

@@ -30,6 +30,12 @@ function cacheSlotOf(blockX: number, blockZ: number): number {
   return ((blockZ & CACHE_MASK) << CACHE_SHIFT) | (blockX & CACHE_MASK);
 }
 
+function grownInts(from: Int32Array, length: number): Int32Array<ArrayBuffer> {
+  const to = new Int32Array(length);
+  to.set(from);
+  return to;
+}
+
 class CellBlock {
   claimed = 0;
   owner = new Int32Array(BLOCK_SLOTS).fill(NO_OWNER);
@@ -39,7 +45,10 @@ class CellBlock {
   road = new Uint8Array(BLOCK_SLOTS);
   next = new Int32Array(BLOCK_SLOTS).fill(NO_RECORD);
   private nextOverflow = BLOCK_SLOTS;
+  private freeRecords = new Int32Array(FIRST_OVERFLOW_RECORDS);
+  private freeCount = 0;
   private levels = new Float64Array(FIRST_LEVELS);
+  private levelClaims = new Int32Array(FIRST_LEVELS);
   private levelCount = 0;
 
   first(slot: number): number {
@@ -55,15 +64,13 @@ class CellBlock {
   }
 
   holdsLevel(top: number): boolean {
-    for (let l = 0; l < this.levelCount; l++) if (this.levels[l] === top) return true;
-    return false;
+    return this.levelIndex(top) >= 0;
   }
 
   claim(slot: number, owner: number, top: number, phase: number, stud: number, road: number) {
     let record = slot;
     if (this.owner[slot] !== NO_OWNER) {
-      record = this.nextOverflow++;
-      if (record >= this.owner.length) this.grow();
+      record = this.overflowRecord();
       this.next[record] = this.next[slot] ?? NO_RECORD;
       this.next[slot] = record;
     }
@@ -73,24 +80,102 @@ class CellBlock {
     this.stud[record] = stud;
     this.road[record] = road;
     this.claimed++;
-    if (!this.holdsLevel(top)) this.addLevel(top);
+    this.countLevel(top);
+  }
+
+  unclaim(slot: number, owner: number): void {
+    let before = NO_RECORD;
+    let record = this.first(slot);
+    while (record !== NO_RECORD && this.owner[record] !== owner) {
+      before = record;
+      record = this.next[record] ?? NO_RECORD;
+    }
+    if (record === NO_RECORD) throw new Error(`owner ${owner} holds no claim in slot ${slot}`);
+    const top = this.top[record] ?? 0;
+    if (record === slot) this.unlinkHead(slot);
+    else {
+      this.next[before] = this.next[record] ?? NO_RECORD;
+      this.freeRecord(record);
+    }
+    this.claimed--;
+    this.uncountLevel(top);
   }
 
   clear(): void {
     this.owner.fill(NO_OWNER, 0, BLOCK_SLOTS);
     this.next.fill(NO_RECORD, 0, BLOCK_SLOTS);
     this.nextOverflow = BLOCK_SLOTS;
+    this.freeCount = 0;
     this.claimed = 0;
     this.levelCount = 0;
   }
 
-  private addLevel(top: number): void {
+  private unlinkHead(slot: number): void {
+    let beforeTail = NO_RECORD;
+    let tail = slot;
+    while ((this.next[tail] ?? NO_RECORD) !== NO_RECORD) {
+      beforeTail = tail;
+      tail = this.next[tail] ?? NO_RECORD;
+    }
+    if (tail === slot) {
+      this.owner[slot] = NO_OWNER;
+      return;
+    }
+    this.owner[slot] = this.owner[tail] ?? NO_OWNER;
+    this.top[slot] = this.top[tail] ?? 0;
+    this.phase[slot] = this.phase[tail] ?? 0;
+    this.stud[slot] = this.stud[tail] ?? 0;
+    this.road[slot] = this.road[tail] ?? 0;
+    this.next[beforeTail] = NO_RECORD;
+    this.freeRecord(tail);
+  }
+
+  private overflowRecord(): number {
+    if (this.freeCount > 0) return this.freeRecords[--this.freeCount] ?? NO_RECORD;
+    const record = this.nextOverflow++;
+    if (record >= this.owner.length) this.grow();
+    return record;
+  }
+
+  private freeRecord(record: number): void {
+    this.next[record] = NO_RECORD;
+    if (this.freeCount === this.freeRecords.length) {
+      this.freeRecords = grownInts(this.freeRecords, 2 * this.freeRecords.length);
+    }
+    this.freeRecords[this.freeCount++] = record;
+  }
+
+  private levelIndex(top: number): number {
+    for (let l = 0; l < this.levelCount; l++) if (this.levels[l] === top) return l;
+    return -1;
+  }
+
+  private countLevel(top: number): void {
+    const at = this.levelIndex(top);
+    if (at >= 0) {
+      this.levelClaims[at] = (this.levelClaims[at] ?? 0) + 1;
+      return;
+    }
     if (this.levelCount === this.levels.length) {
       const levels = new Float64Array(2 * this.levels.length);
       levels.set(this.levels);
       this.levels = levels;
+      this.levelClaims = grownInts(this.levelClaims, levels.length);
     }
-    this.levels[this.levelCount++] = top;
+    this.levels[this.levelCount] = top;
+    this.levelClaims[this.levelCount++] = 1;
+  }
+
+  private uncountLevel(top: number): void {
+    const at = this.levelIndex(top);
+    const left = (this.levelClaims[at] ?? 0) - 1;
+    if (left > 0) {
+      this.levelClaims[at] = left;
+      return;
+    }
+    const last = --this.levelCount;
+    this.levels[at] = this.levels[last] ?? 0;
+    this.levelClaims[at] = this.levelClaims[last] ?? 0;
   }
 
   private grow(): void {
@@ -122,6 +207,7 @@ const NO_BLOCK = new CellBlock();
 interface BlockSource {
   readonly blocksMade: number;
   readonly clears: number;
+  readonly releases: number;
   blockAt(blockX: number, blockZ: number): CellBlock | undefined;
 }
 
@@ -130,6 +216,7 @@ class RoadCellCursor {
   private blockZ = 0;
   private blocksSeen = -1;
   private clearsSeen = -1;
+  private releasesSeen = -1;
   private block = NO_BLOCK;
   private record = NO_RECORD;
   private top = 0;
@@ -141,7 +228,8 @@ class RoadCellCursor {
     const blockX = cellX >> BLOCK_SHIFT;
     const blockZ = cellZ >> BLOCK_SHIFT;
     const moved = blockX !== this.blockX || blockZ !== this.blockZ;
-    const cleared = this.blocks.clears !== this.clearsSeen;
+    const cleared =
+      this.blocks.clears !== this.clearsSeen || this.blocks.releases !== this.releasesSeen;
     if (
       moved ||
       cleared ||
@@ -151,6 +239,7 @@ class RoadCellCursor {
       this.blockZ = blockZ;
       this.blocksSeen = this.blocks.blocksMade;
       this.clearsSeen = this.blocks.clears;
+      this.releasesSeen = this.blocks.releases;
       this.block = this.blocks.blockAt(blockX, blockZ) ?? NO_BLOCK;
     }
     this.top = top;
@@ -181,6 +270,7 @@ class RoadCellCursor {
 export class RoadCellGrid implements BlockSource {
   private made = 0;
   private cleared = 0;
+  private released = 0;
   private readonly blocks = new Map<number, Map<number, CellBlock>>();
   private readonly freeBlocks: CellBlock[] = [];
   private readonly freeRows: Array<Map<number, CellBlock>> = [];
@@ -195,6 +285,10 @@ export class RoadCellGrid implements BlockSource {
 
   get clears(): number {
     return this.cleared;
+  }
+
+  get releases(): number {
+    return this.released;
   }
 
   cursor(): RoadCellCursor {
@@ -225,6 +319,51 @@ export class RoadCellGrid implements BlockSource {
       this.made++;
     }
     block.claim(slotOf(cellX, cellZ), owner, top, phase, stud, road);
+  }
+
+  unclaim(cellX: number, cellZ: number, owner: number): void {
+    const blockX = cellX >> BLOCK_SHIFT;
+    const blockZ = cellZ >> BLOCK_SHIFT;
+    const block = this.blockAt(blockX, blockZ);
+    if (!block) throw new Error(`no claim at cell ${cellX}, ${cellZ}`);
+    block.unclaim(slotOf(cellX, cellZ), owner);
+    if (block.claimed > 0) return;
+    block.clear();
+    const row = this.blocks.get(blockX);
+    if (row) {
+      row.delete(blockZ);
+      if (row.size === 0) {
+        this.blocks.delete(blockX);
+        this.freeRows.push(row);
+      }
+    }
+    this.freeBlocks.push(block);
+    this.remember(blockX, blockZ, undefined);
+    this.released++;
+  }
+
+  flagOwnersIn(minX: number, minZ: number, maxX: number, maxZ: number, flags: Uint8Array): void {
+    for (let blockZ = minZ >> BLOCK_SHIFT; blockZ <= maxZ >> BLOCK_SHIFT; blockZ++) {
+      for (let blockX = minX >> BLOCK_SHIFT; blockX <= maxX >> BLOCK_SHIFT; blockX++) {
+        const block = this.blockAt(blockX, blockZ);
+        if (!block) continue;
+        const fromX = Math.max(minX, blockX << BLOCK_SHIFT);
+        const toX = Math.min(maxX, (blockX << BLOCK_SHIFT) | BLOCK_MASK);
+        const fromZ = Math.max(minZ, blockZ << BLOCK_SHIFT);
+        const toZ = Math.min(maxZ, (blockZ << BLOCK_SHIFT) | BLOCK_MASK);
+        for (let z = fromZ; z <= toZ; z++) {
+          for (let x = fromX; x <= toX; x++) {
+            for (
+              let r = block.first(slotOf(x, z));
+              r !== NO_RECORD;
+              r = block.next[r] ?? NO_RECORD
+            ) {
+              flags[block.owner[r] ?? 0] = 1;
+            }
+          }
+        }
+      }
+    }
   }
 
   occupiedCells(

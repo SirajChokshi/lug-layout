@@ -480,3 +480,188 @@ function crossingsOver(
     };
   });
 }
+
+interface RoadChange {
+  readonly removed: ReadonlyArray<RoadPlacement>;
+  readonly added: ReadonlyArray<RoadPlacement>;
+}
+
+interface TrackChange {
+  readonly changed: ReadonlyArray<CrossingTrack>;
+  readonly newIndexOf: Int32Array;
+}
+
+const NOT_KEPT = -1;
+
+function roadChange(
+  before: ReadonlyArray<RoadPlacement>,
+  after: ReadonlyArray<RoadPlacement>,
+): RoadChange | null {
+  const indexBefore = new Map<RoadPlacement, number>();
+  before.forEach((road, index) => indexBefore.set(road, index));
+  const kept = new Set(after);
+  if (indexBefore.size !== before.length || kept.size !== after.length) return null;
+  const added: RoadPlacement[] = [];
+  let last = NOT_KEPT;
+  for (const road of after) {
+    const index = indexBefore.get(road);
+    if (index === undefined) added.push(road);
+    else if (index < last) return null;
+    else last = index;
+  }
+  return { removed: before.filter((road) => !kept.has(road)), added };
+}
+
+function occurrences(tracks: ReadonlyArray<CrossingTrack>): Map<CrossingTrack, number> {
+  const counts = new Map<CrossingTrack, number>();
+  for (const track of tracks) counts.set(track, (counts.get(track) ?? 0) + 1);
+  return counts;
+}
+
+function trackChange(
+  before: ReadonlyArray<CrossingTrack>,
+  after: ReadonlyArray<CrossingTrack>,
+): TrackChange | null {
+  const countBefore = occurrences(before);
+  const countAfter = occurrences(after);
+  const keptOnce = (track: CrossingTrack): boolean =>
+    countBefore.get(track) === 1 && countAfter.get(track) === 1;
+  const indexBefore = new Map<CrossingTrack, number>();
+  before.forEach((track, index) => {
+    if (keptOnce(track)) indexBefore.set(track, index);
+  });
+  const newIndexOf = new Int32Array(before.length).fill(NOT_KEPT);
+  const changed = before.filter((track) => !keptOnce(track));
+  let last = NOT_KEPT;
+  for (let index = 0; index < after.length; index++) {
+    const track = after[index];
+    if (!track) continue;
+    const old = indexBefore.get(track);
+    if (old === undefined) {
+      changed.push(track);
+      continue;
+    }
+    if (old < last) return null;
+    last = old;
+    newIndexOf[old] = index;
+  }
+  return { changed, newIndexOf };
+}
+
+function relabelled(crossing: LevelCrossing, newIndexOf: Int32Array): LevelCrossing | null {
+  let moved = false;
+  const tracks: number[] = [];
+  for (const old of crossing.tracks) {
+    const index = newIndexOf[old] ?? NOT_KEPT;
+    if (index === NOT_KEPT) return null;
+    if (index !== old) moved = true;
+    tracks.push(index);
+  }
+  return moved ? { ...crossing, tracks } : crossing;
+}
+
+function hull(a: LduRect, b: LduRect): LduRect {
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minZ: Math.min(a.minZ, b.minZ),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxZ: Math.max(a.maxZ, b.maxZ),
+  };
+}
+
+export class LevelCrossings {
+  private roads: ReadonlyArray<RoadPlacement> = [];
+  private tracks: ReadonlyArray<CrossingTrack> = [];
+  private found: ReadonlyArray<LevelCrossing> = [];
+  private rampOutlineBounds: ReadonlyArray<LduRect | null> = [];
+  private readonly roadRects = new WeakMap<RoadPlacement, LduRect>();
+
+  constructor(private readonly rampParts: ReadonlyArray<RampPart>) {}
+
+  crossings(
+    roads: ReadonlyArray<RoadPlacement>,
+    tracks: ReadonlyArray<CrossingTrack>,
+  ): ReadonlyArray<LevelCrossing> {
+    const reused = this.reused(roads, tracks);
+    if (reused) this.found = reused;
+    else {
+      this.found = levelCrossings(roads, tracks, this.rampParts);
+      this.rampOutlineBounds = this.found.map((crossing) => this.outlineBoundsOf(crossing, tracks));
+    }
+    this.roads = roads;
+    this.tracks = tracks;
+    return this.found;
+  }
+
+  private reused(
+    roads: ReadonlyArray<RoadPlacement>,
+    tracks: ReadonlyArray<CrossingTrack>,
+  ): ReadonlyArray<LevelCrossing> | null {
+    const roadsMoved = roadChange(this.roads, roads);
+    const tracksMoved = trackChange(this.tracks, tracks);
+    if (!roadsMoved || !tracksMoved) return null;
+    if (roadsMoved.removed.some((road) => this.meetsTrack(road, this.tracks))) return null;
+    if (roadsMoved.added.some((road) => this.meetsTrack(road, tracks))) return null;
+    for (const track of tracksMoved.changed) {
+      if (this.meetsRoad(track, this.roads)) return null;
+      const bounds = track.outline.bounds;
+      if (this.rampOutlineBounds.some((ramps) => ramps !== null && rectsMeet(bounds, ramps))) {
+        return null;
+      }
+    }
+    const crossings: LevelCrossing[] = [];
+    for (const crossing of this.found) {
+      const kept = relabelled(crossing, tracksMoved.newIndexOf);
+      if (!kept) return null;
+      crossings.push(kept);
+    }
+    return crossings;
+  }
+
+  private meetsTrack(road: RoadPlacement, tracks: ReadonlyArray<CrossingTrack>): boolean {
+    const rect = this.rectOf(road);
+    return tracks.some((track) => rectsMeet(rect, grown(track.outline.bounds)));
+  }
+
+  private meetsRoad(track: CrossingTrack, roads: ReadonlyArray<RoadPlacement>): boolean {
+    const reach = grown(track.outline.bounds);
+    return roads.some((road) => rectsMeet(this.rectOf(road), reach));
+  }
+
+  private rectOf(road: RoadPlacement): LduRect {
+    let rect = this.roadRects.get(road);
+    if (!rect) {
+      rect = placementRect(road);
+      this.roadRects.set(road, rect);
+    }
+    return rect;
+  }
+
+  private outlineBoundsOf(
+    crossing: LevelCrossing,
+    tracks: ReadonlyArray<CrossingTrack>,
+  ): LduRect | null {
+    const seen = new Set<string>();
+    let bounds: LduRect | null = null;
+    for (const index of crossing.tracks) {
+      const track = tracks[index];
+      if (!track) continue;
+      const edges = track.outline.axisEdges();
+      for (const part of this.rampParts) {
+        if (part.facts.highEdgeLdu !== track.railTopLdu) continue;
+        for (const rot of ROTATIONS) {
+          for (const edge of edges) {
+            for (const candidate of candidatesAlong(index, edge, part, rot)) {
+              const key = `${part.facts.part}|${candidate.x}|${candidate.z}|${rot}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              const outline = PlacedOutline.onLattice(part.outline, candidate.x, candidate.z, rot);
+              bounds = bounds ? hull(bounds, outline.bounds) : outline.bounds;
+            }
+          }
+        }
+      }
+    }
+    return bounds;
+  }
+}

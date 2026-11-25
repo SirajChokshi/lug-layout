@@ -1057,3 +1057,119 @@ describe("placementJoin", () => {
     DIFFERENTIAL_TIMEOUT_MS,
   );
 });
+
+const EDIT_SEQUENCES = 300;
+const EDITS_PER_SEQUENCE = 24;
+const FAR_LDU = 4 * CHUNK;
+
+function placementsOf(random: () => number, surfaces: ReadonlyArray<RoadSurface>): RoadPlacement[] {
+  const strokes = strokeNetwork(random, surfaces);
+  const phased = randomLayout(random, true).map((placement) => ({
+    ...placement,
+    id: 1000 + placement.id,
+  }));
+  return [...strokes, ...phased];
+}
+
+function probeNear(random: () => number, around: RoadPlacement): RoadPlacement {
+  return {
+    ...around,
+    x: around.x + STUD * Math.floor(random() * 7 - 3),
+    z: around.z + STUD * Math.floor(random() * 7 - 3),
+    rot: Math.floor(random() * QUARTER_TURNS),
+    yLdu: pick(random, [0, PLATE]),
+  };
+}
+
+function earliestWithId(live: ReadonlyArray<RoadPlacement>, id: number): number {
+  return live.findIndex((placement) => placement.id === id);
+}
+
+describe("road network kept up to date by adds and removes", () => {
+  it(
+    "reports, fits and joins after every one or two adds and removes of 300 generated edit sequences exactly as a network built fresh from the pieces left, in the order they were added",
+    () => {
+      const random = seeded(0x1ead);
+      const surfaces = everySurface();
+      const asks = [fitOf, cleanFitOf, cleanContactOf];
+      const seen = { removed: 0, sharedIds: 0, overlaps: 0, joined: 0, far: 0 };
+      for (let sequence = 0; sequence < EDIT_SEQUENCES; sequence++) {
+        const pool = placementsOf(random, surfaces);
+        const live: RoadPlacement[] = [];
+        const network = new RoadNetwork([]);
+        const editOnce = (): void => {
+          const roll = random();
+          if (live.length > 0 && roll < 0.4) {
+            const { id } = pick(random, live);
+            network.remove(id);
+            live.splice(earliestWithId(live, id), 1);
+            seen.removed++;
+          } else if (live.length > 0 && roll < 0.47) {
+            const twin = { ...pick(random, live) };
+            network.add(twin);
+            live.push(twin);
+            seen.sharedIds++;
+          } else if (roll < 0.57) {
+            const far = moved(pick(random, pool), FAR_LDU * pick(random, [1, 2, -1]), FAR_LDU);
+            network.add(far);
+            live.push(far);
+            seen.far++;
+          } else {
+            const placement = pick(random, pool);
+            network.add(placement);
+            live.push(placement);
+          }
+        };
+        for (let step = 0; step < EDITS_PER_SEQUENCE; step++) {
+          editOnce();
+          if (random() < 0.25) editOnce();
+          const fresh = new RoadNetwork(live);
+          const report = fresh.report();
+          expect(network.report()).toEqual(report);
+          if (report.overlaps.length > 0) seen.overlaps++;
+          if (report.joinedCells > 0) seen.joined++;
+          const ask = pick(random, asks);
+          const pose = probeNear(random, pick(random, live.length > 0 ? live : pool));
+          expect(ask(network, pose)).toEqual(ask(new RoadNetwork(live), pose));
+          const asked = live.length > 0 ? pick(random, live).id : 0;
+          expect(network.placementJoin(asked)).toEqual(fresh.placementJoin(asked));
+        }
+      }
+      expect(Object.values(seen).every((count) => count > 0)).toBe(true);
+    },
+    DIFFERENTIAL_TIMEOUT_MS,
+  );
+
+  it("refuses to remove an id it doesn't hold", () => {
+    const network = new RoadNetwork([at(4, roadBaseplate("44336"), 0, 0, 0, 0)]);
+    network.remove(4);
+    expect(() => network.remove(4)).toThrow(RangeError);
+  });
+});
+
+const LAYOUTS_FOR_IDS = 400;
+
+describe("road ids", () => {
+  it("reports a layout whose ids rise with gaps exactly as the same layout numbered 0, 1, 2…, read through the renumbering", () => {
+    const random = seeded(0x1d5);
+    const surfaces = everySurface();
+    for (let layout = 0; layout < LAYOUTS_FOR_IDS; layout++) {
+      const placements = placementsOf(random, surfaces);
+      const dense = placements.map((placement, rank) => ({ ...placement, id: rank }));
+      let next = Math.floor(random() * 5);
+      const sparseIds = dense.map(() => (next += 1 + Math.floor(random() * 9)));
+      const sparse = dense.map((placement, rank) => ({ ...placement, id: sparseIds[rank] ?? 0 }));
+      const rankOf = new Map(sparseIds.map((id, rank) => [id, rank]));
+      const back = (id: number): number => rankOf.get(id) ?? Number.NaN;
+      const report = new RoadNetwork(sparse).report();
+      expect({
+        ...report,
+        overlaps: report.overlaps.map(([a, b]) => [back(a), back(b)]),
+        segments: report.segments.map((segment) => ({
+          ...segment,
+          placement: back(segment.placement),
+        })),
+      }).toEqual(new RoadNetwork(dense).report());
+    }
+  });
+});
