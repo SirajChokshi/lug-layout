@@ -7,6 +7,7 @@ import {
   composeAffine,
   posedBoxBounds,
   solidsCross,
+  writeRigidFrame,
   type PartSolid,
   type StudSolid,
 } from "@brr/domain";
@@ -40,7 +41,6 @@ export interface SimObstacles {
 export const NO_OWNER = -1;
 const MAX = 3;
 const AXES = 3;
-const RIGID_POSE_FLOATS = 3;
 
 function boxesMeet(a: Float64Array, aAt: number, b: Float64Array, bAt: number): boolean {
   for (let axis = 0; axis < AXES; axis++) {
@@ -135,31 +135,25 @@ export class TrainClearance {
   }
 
   private poseVehicleParts(poses: Float64Array, firstVehicle: number, vehicles: number): void {
-    const { obstacles, frame, bounds } = this;
+    const { obstacles, bounds } = this;
     bounds.fill(Number.POSITIVE_INFINITY, 0, MAX);
     bounds.fill(Number.NEGATIVE_INFINITY, MAX, SOLID_BOX_FLOATS);
     for (let v = firstVehicle; v < firstVehicle + vehicles; v++) {
       const base = v * VEHICLE_POSE_FLOATS;
-      for (
-        let e = obstacles.vehiclePartStart[v] ?? 0;
-        e < (obstacles.vehiclePartStart[v + 1] ?? 0);
-        e++
-      ) {
-        const at = base + (obstacles.vehicleRigid[e] ?? 0) * RIGID_POSE_FLOATS;
-        const heading = poses[at + 2] ?? 0;
-        const cos = Math.cos(heading);
-        const sin = Math.sin(heading);
-        frame[0] = cos;
-        frame[2] = -sin;
-        frame[3] = poses[at] ?? 0;
-        frame[5] = 1;
-        frame[7] = obstacles.vehicleLift[e] ?? 0;
-        frame[8] = sin;
-        frame[10] = cos;
-        frame[11] = poses[at + 1] ?? 0;
+      const last = obstacles.vehiclePartStart[v + 1] ?? 0;
+      for (let e = obstacles.vehiclePartStart[v] ?? 0; e < last; e++) {
         const m = e * SOLID_MATRIX_FLOATS;
         const b = e * SOLID_BOX_FLOATS;
-        composeAffine(frame, 0, obstacles.vehicleLocal, m, this.matrices, m);
+        writeRigidFrame(
+          poses,
+          base,
+          obstacles.vehicleRigid[e] ?? 0,
+          obstacles.vehicleLift,
+          e,
+          this.frame,
+          0,
+        );
+        composeAffine(this.frame, 0, obstacles.vehicleLocal, m, this.matrices, m);
         const solid = this.solids[obstacles.vehicleSolid[e] ?? 0];
         if (!solid) continue;
         posedBoxBounds(this.matrices, m, solid.box, 0, this.boxes, b);

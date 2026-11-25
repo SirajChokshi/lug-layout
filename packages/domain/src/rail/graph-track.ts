@@ -1,6 +1,12 @@
 import { NO_SWITCH, type TrackGraph } from "../track/track-graph.ts";
 import { ZETA16_ORDER } from "@brr/math";
-import { buildSimTrack, type BuiltSimTrack, type SimRoute } from "./sim-track.ts";
+import {
+  buildSimTrack,
+  LEVEL_TRACK,
+  type BuiltSimTrack,
+  type SimRoute,
+  type TrackLift,
+} from "./sim-track.ts";
 import type { PlanPose, SimPathSegment } from "./route-geometry.ts";
 
 export type TrackGraphTopology = Pick<
@@ -38,6 +44,7 @@ function endPose(graph: TrackGraphTopology, end: number, travelsOutward: boolean
 export function simTrackFromGraph(
   graph: TrackGraphTopology,
   routeSegments: ReadonlyArray<ReadonlyArray<SimPathSegment>>,
+  routeLifts: ReadonlyArray<TrackLift> = [],
 ): BuiltSimTrack {
   if (!Number.isInteger(graph.edgeCount) || !Number.isInteger(graph.switchCount)) {
     throw new Error("track graph topology needs integer edgeCount and switchCount");
@@ -52,6 +59,7 @@ export function simTrackFromGraph(
       from: endPose(graph, graph.edgeFromEnd[edge] ?? 0, false),
       to: endPose(graph, graph.edgeToEnd[edge] ?? 0, true),
       segments: routeSegments[edge / 2] ?? [],
+      lift: routeLifts[edge / 2] ?? LEVEL_TRACK,
     });
   }
   const successors: number[][] = [];

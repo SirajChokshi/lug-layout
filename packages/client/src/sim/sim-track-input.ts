@@ -1,5 +1,12 @@
 import type { TrackPiece } from "@brr/schema/bundle";
-import type { SimPathSegment, TrackGraph, TrackGraphTopology, TrackLayout } from "@brr/domain";
+import {
+  placementLift,
+  type SimPathSegment,
+  type TrackGraph,
+  type TrackGraphTopology,
+  type TrackLayout,
+  type TrackLift,
+} from "@brr/domain";
 
 export function simTopology(graph: TrackGraph): TrackGraphTopology {
   return {
@@ -36,4 +43,12 @@ export function routeSegments(
     segments.push([...route.segments]);
   }
   return segments;
+}
+
+export function routeLifts(graph: TrackGraph, layout: TrackLayout): TrackLift[] {
+  const lifts: TrackLift[] = [];
+  for (let edge = 0; edge < graph.edgeCount; edge += 2) {
+    lifts.push(placementLift(layout, graph.edgePlacement[edge] ?? 0));
+  }
+  return lifts;
 }

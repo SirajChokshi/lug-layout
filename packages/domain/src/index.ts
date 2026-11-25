@@ -91,20 +91,28 @@ export {
   backwardEdge,
   buildSimTrack,
   forwardEdge,
+  LEVEL_TRACK,
+  trackLift,
   trackPoint,
   type BuiltSimTrack,
   type SimRoute,
   type SimTrack,
   type SimTrackInput,
+  type TrackLift,
 } from "./rail/sim-track.ts";
+export { placementLift, rampShear, type RampShear } from "./track/ramp-lift.ts";
 export { simTrackFromGraph, type TrackGraphTopology } from "./rail/graph-track.ts";
 export {
   GEOMETRY_FIELDS,
   PIVOT_POINT_FLOATS,
   RunningGearPoser,
+  VEHICLE_LIFT_START,
   VEHICLE_POSE_FLOATS,
   packGeometry,
   packSpecOnlyGeometry,
+  rigidLift,
+  rigidPitch,
+  writeRigidFrame,
   type CouplerGeometry,
   type CouplerMount,
   type GuideGeometry,

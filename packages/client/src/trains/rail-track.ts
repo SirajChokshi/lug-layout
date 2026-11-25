@@ -12,7 +12,7 @@ import { pose16 } from "@brr/math";
 import type { TrackPiece } from "@brr/schema/bundle";
 import { decodeTrackPosition, encodeTrackPosition, type LaidPieceV1 } from "@brr/schema/world";
 import type { PlayTrack } from "../edit/track-drawing.ts";
-import { routeSegments } from "../sim/sim-track-input.ts";
+import { routeLifts, routeSegments } from "../sim/sim-track-input.ts";
 
 const DIVERGING = 1;
 const STRAIGHT = 0;
@@ -96,7 +96,11 @@ export class RailTrack {
       });
     }
     this.sites = sites;
-    const { track } = simTrackFromGraph(graph, routeSegments(graph, layout, pieces));
+    const { track } = simTrackFromGraph(
+      graph,
+      routeSegments(graph, layout, pieces),
+      routeLifts(graph, layout),
+    );
     this.network = new RailNetwork(track, this.switchStates);
   }
 

@@ -1,3 +1,4 @@
+import { rigidLift } from "@brr/domain";
 import { STUD_LDU } from "@brr/math";
 import { RAY_FLOATS, SCENE_BACKEND, type ISceneBackend } from "@brr/render";
 import type { SimFrameLayout, SimTrainLoad, TrainSpec } from "@brr/sim";
@@ -6,7 +7,7 @@ import type { IRunningGear } from "../running-gear/running-gear-editor.ts";
 import type { PlayModel } from "./play-models.ts";
 import { consistVehicles, type ConsistVehicle } from "../sim/consist.ts";
 import type { ISimClient } from "../sim/sim-client.ts";
-import { routeSegments, simTopology } from "../sim/sim-track-input.ts";
+import { routeLifts, routeSegments, simTopology } from "../sim/sim-track-input.ts";
 import type { IPlaceableCatalog } from "../catalog/placeable-catalog.ts";
 import { PLACEABLE_CATALOG, RAIL_YARD, RUNNING_GEAR, SIM_CLIENT, VEHICLE_IDS } from "../tokens.ts";
 import { playObstacles } from "./play-obstacles.ts";
@@ -94,6 +95,8 @@ const NOT_BLOCKED = 0;
 const STRAIGHT = 0;
 const OFF_TRACK_YAW_RADIANS = 0.12;
 const OFF_TRACK_ROLL_RADIANS = 0.22;
+const FRONT_BOGIE = 1;
+const REAR_BOGIE = 2;
 
 interface RunningTrain {
   readonly label: string;
@@ -233,6 +236,7 @@ export class TrainPlay implements ITrainPlay {
     const loaded = await this.sim.load({
       graph: simTopology(rails.graph),
       routeSegments: routeSegments(rails.graph, rails.play.layout, rails.play.pieces),
+      routeLifts: routeLifts(rails.graph, rails.play.layout),
       capacity: { trains: loads.length, vehicles: vehicleCount },
       trains: loads,
       autopilotSeed: null,
@@ -489,22 +493,27 @@ export class TrainPlay implements ITrainPlay {
       const count = train.bodies.consist.vehicles.length;
       for (let k = 0; k < count; k++) {
         const v = train.firstVehicle + k;
+        const at = layout.vehiclePoseStart + v * layout.vehiclePoseFloats;
         const off = data[layout.bogiesOffTrackStart + v] ?? 0;
         const onRails = rails.railTopY - train.bodies.railTopY(k);
+        if (off === 0) {
+          train.bodies.onRails(k, data, at, onRails);
+          continue;
+        }
         const onGround = -train.bodies.railTopY(k);
-        const leadingY = off >= 1 ? onGround : onRails;
-        const trailingY = off >= 2 ? onGround : onRails;
+        const leadingBogie = leadingIsFront ? FRONT_BOGIE : REAR_BOGIE;
+        const trailingBogie = leadingIsFront ? REAR_BOGIE : FRONT_BOGIE;
+        const leadingY = off >= 1 ? onGround : onRails + rigidLift(data, at, leadingBogie);
+        const trailingY = off >= 2 ? onGround : onRails + rigidLift(data, at, trailingBogie);
         const side = v % 2 === 0 ? 1 : -1;
-        const kink = off === 0 ? 0 : OFF_TRACK_YAW_RADIANS * side;
-        const roll = off === 0 ? 0 : OFF_TRACK_ROLL_RADIANS * side;
-        train.bodies.pose(
+        train.bodies.offRails(
           k,
           data,
-          layout.vehiclePoseStart + v * layout.vehiclePoseFloats,
+          at,
           leadingIsFront ? leadingY : trailingY,
           leadingIsFront ? trailingY : leadingY,
-          kink,
-          roll,
+          OFF_TRACK_YAW_RADIANS * side,
+          OFF_TRACK_ROLL_RADIANS * side,
         );
       }
     }

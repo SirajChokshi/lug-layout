@@ -70,6 +70,8 @@ import {
   runMoves,
   reachablePlates,
   runHeights,
+  rampShear as shearOfRamp,
+  type RampShear,
   type RunHeights,
 } from "@brr/domain";
 import {
@@ -218,13 +220,6 @@ function writeRectOutline(out: Float64Array, rects: Float64Array, at: number): v
   const maxX = rects[at + 2] ?? 0;
   const maxZ = rects[at + 3] ?? 0;
   out.set([minX, minZ, maxX, minZ, maxX, maxZ, minX, maxZ]);
-}
-
-export interface RampShear {
-  readonly gx: number;
-  readonly gz: number;
-  readonly lowX: number;
-  readonly lowZ: number;
 }
 
 export interface RaisedPiece {
@@ -614,12 +609,11 @@ function rampShear(placed: Placed): RampShear | null {
   if (placed.rise === 0) return null;
   const [low, high] = placed.part.def.connectors;
   if (!low || !high) return null;
-  const from = zeta16ToStuds(composePose16(placed.placement, low).position);
-  const to = zeta16ToStuds(composePose16(placed.placement, high).position);
-  const dx = (to.x - from.x) * STUD_LDU;
-  const dz = (to.z - from.z) * STUD_LDU;
-  const scale = (placed.rise * PLATE_LDU) / (dx * dx + dz * dz);
-  return { gx: dx * scale, gz: dz * scale, lowX: from.x * STUD_LDU, lowZ: from.z * STUD_LDU };
+  return shearOfRamp(
+    composePose16(placed.placement, low),
+    composePose16(placed.placement, high),
+    placed.rise,
+  );
 }
 
 function framedOutline(outline: Float64Array, placement: Pose16, frame: TrackFrame): Float64Array {
@@ -2633,12 +2627,18 @@ export class TrackDrawing implements ExtensionSite {
     ];
   }
 
-  raisedTrackOverlaps(outline: Float64Array, bottomLdu: number, topLdu: number): boolean {
+  raisedTrackOverlaps(
+    outline: Float64Array,
+    bottomLdu: number,
+    topLdu: number,
+    standsOn: ReadonlySet<number>,
+  ): boolean {
     if (this.raisedAt.length === 0) return false;
     const box = this.collisionBox;
     outlineBox(outline, box, 0);
     const pieceBox = this.pieceBoxScratch;
     for (const p of this.raisedAt) {
+      if (standsOn.has(p)) continue;
       const framed = this.framed[p];
       if (!framed) continue;
       if ((this.spanBottom[p] ?? 0) >= topLdu || bottomLdu >= (this.spanTop[p] ?? 0)) continue;

@@ -2817,7 +2817,7 @@ export class Editor implements IEditor, IEditedWorld {
       this.railYard
         .seatFootprints(aim.seat, train.label)
         .some(({ outline, railTopLdu, topLdu }) =>
-          track.raisedTrackOverlaps(outline, railTopLdu, topLdu),
+          track.raisedTrackOverlaps(outline, railTopLdu, topLdu, aim.seat.pieces),
         );
     if (meetsTrack) {
       const reason = `${train.label} would run into raised track there. Put it where it fits under every bridge.`;

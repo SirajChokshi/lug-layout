@@ -9,7 +9,7 @@ export interface LoadedSession {
 }
 
 export function loadSession(createSession: SimSessionFactory, load: SimLoad): LoadedSession {
-  const built = simTrackFromGraph(load.graph, load.routeSegments);
+  const built = simTrackFromGraph(load.graph, load.routeSegments, load.routeLifts ?? []);
   const scenario: SimScenario = {
     track: built.track,
     capacity: load.capacity,
