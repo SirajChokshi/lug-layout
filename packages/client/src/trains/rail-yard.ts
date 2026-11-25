@@ -13,7 +13,10 @@ import {
   composeAffine,
   packGeometry,
   posedBoxBounds,
+  rigidLift,
+  rigidPitch,
   runningGearSpanProblem,
+  writeRigidFrame,
   type ConsistAnchor,
   type ConsistHandle,
 } from "@brr/domain";
@@ -38,7 +41,6 @@ import { PLACEABLE_CATALOG, RUNNING_GEAR, VEHICLE_IDS } from "../tokens.ts";
 import {
   ConsistBodies,
   StandingRemainderBody,
-  bodyPoseAt,
   rigidBodies,
   standingGhost,
   type StandingConsist,
@@ -106,7 +108,9 @@ export interface VehicleFootprint {
 }
 
 const FOOTPRINT_CORNERS = [0, 1, 3, 2] as const;
-const GROUND_PLATES = 0;
+const BODY = 0;
+const FRONT_BOGIE = 1;
+const REAR_BOGIE = 2;
 
 export interface RailPick {
   readonly handle: ConsistHandle;
@@ -164,7 +168,8 @@ interface Prepared {
 interface VehicleSolids {
   readonly local: Float64Array;
   readonly parts: Uint16Array;
-  readonly pose: Int32Array;
+  readonly vehicleAt: Int32Array;
+  readonly rigid: Uint8Array;
   readonly lift: Float64Array;
 }
 
@@ -243,7 +248,8 @@ function vehicleSolids(
   const solids: VehicleSolids = {
     local: new Float64Array(count * SOLID_MATRIX_FLOATS),
     parts: new Uint16Array(count),
-    pose: new Int32Array(count),
+    vehicleAt: new Int32Array(count),
+    rigid: new Uint8Array(count),
     lift: new Float64Array(count),
   };
   let e = 0;
@@ -257,7 +263,8 @@ function vehicleSolids(
           e * SOLID_MATRIX_FLOATS,
         );
         solids.parts[e] = partIndex?.[rigid.instances[k] ?? 0] ?? 0;
-        solids.pose[e] = bodyPoseAt(v, body);
+        solids.vehicleAt[e] = v * VEHICLE_POSE_FLOATS;
+        solids.rigid[e] = body;
         solids.lift[e] = railTopY - vehicle.railTopY;
       }
     });
@@ -274,6 +281,7 @@ export class RailYard implements IRailYard {
   private readonly spot = new Float64Array(RAIL_SPOT_FLOATS);
   private readonly lengths = new Float64Array(1);
   private readonly vehicleFrame = new Float64Array(SOLID_MATRIX_FLOATS);
+  private readonly vehicleBase = new Float64Array(1);
   private readonly trainClash = clashOut();
   private readonly endPoints = new Float64Array(6);
   private readonly prepared = new Map<string, Prepared | string>();
@@ -376,10 +384,6 @@ export class RailYard implements IRailYard {
       stood = this.stand(model.label, prepared, rails, reseated);
       if (typeof stood === "string") return { kind: "refused", reason: stood, seat: null };
     }
-    if (this.onRaisedTrack(stood.pieces, rails)) {
-      const reason = `${model.label} can't stand on raised track yet: trains run on ground-level track only.`;
-      return { kind: "refused", reason, seat: stood };
-    }
     const holder = this.holderOf(stood.pieces, null);
     return holder ? this.couple(model, stood, holder, rails) : { kind: "seat", seat: stood };
   }
@@ -409,10 +413,6 @@ export class RailYard implements IRailYard {
     if (typeof prepared === "string") return { kind: "refused", reason: prepared, seat: stood };
     const coupled = this.stand(coupledLabel, prepared, rails, head);
     if (typeof coupled === "string") return { kind: "refused", reason: coupled, seat: stood };
-    if (this.onRaisedTrack(coupled.pieces, rails)) {
-      const reason = `${coupledLabel} can't stand on raised track yet: trains run on ground-level track only.`;
-      return { kind: "refused", reason, seat: coupled };
-    }
     const other = this.holderOf(coupled.pieces, holder);
     if (other) {
       const reason = `${coupledLabel} would reach track that ${trainLabel(other.members)} already stands on.`;
@@ -561,6 +561,7 @@ export class RailYard implements IRailYard {
 
   seatFootprints(seat: RailSeat, label: string): ReadonlyArray<VehicleFootprint> {
     const { boxes, tops } = seat;
+    const railTopY = this.track?.railTopY ?? 0;
     return seat.consist.vehicles.map((_, v) => {
       const o = v * BOX_FLOATS;
       const at = v * VEHICLE_POSE_FLOATS;
@@ -568,18 +569,35 @@ export class RailYard implements IRailYard {
       const z = seat.poses[at + 1] ?? 0;
       const c = Math.cos(seat.poses[at + 2] ?? 0);
       const s = Math.sin(seat.poses[at + 2] ?? 0);
-      const y = this.vehicleY(seat, v);
+      const pitch = rigidPitch(seat.poses, at, BODY);
+      const cosPitch = Math.cos(pitch);
+      const sinPitch = Math.sin(pitch);
+      const y = this.vehicleY(seat, v) + rigidLift(seat.poses, at, BODY);
+      const top = tops[v] ?? Number.NEGATIVE_INFINITY;
+      let rear = Number.POSITIVE_INFINITY;
+      let front = Number.NEGATIVE_INFINITY;
+      let highest = Number.NEGATIVE_INFINITY;
+      for (const along of [boxes[o] ?? 0, boxes[o + 3] ?? 0]) {
+        for (const up of [boxes[o + 1] ?? 0, boxes[o + 4] ?? 0]) {
+          const ahead = along * cosPitch - up * sinPitch;
+          rear = Math.min(rear, ahead);
+          front = Math.max(front, ahead);
+        }
+        highest = Math.max(highest, along * sinPitch + top * cosPitch);
+      }
       const outline = new Float64Array(FOOTPRINT_CORNERS.length * 2);
       FOOTPRINT_CORNERS.forEach((corner, k) => {
-        const u = boxes[o + (corner & 1 ? 3 : 0)] ?? 0;
+        const u = corner & 1 ? front : rear;
         const w = boxes[o + (corner & 2 ? 5 : 2)] ?? 0;
         outline[2 * k] = x + c * u - s * w;
         outline[2 * k + 1] = z + s * u + c * w;
       });
+      const underFront = rigidLift(seat.poses, at, FRONT_BOGIE);
+      const underRear = rigidLift(seat.poses, at, REAR_BOGIE);
       return {
         outline,
-        railTopLdu: this.track?.railTopY ?? y,
-        topLdu: y + (tops[v] ?? Number.NEGATIVE_INFINITY),
+        railTopLdu: railTopY + Math.min(underFront, underRear),
+        topLdu: y + highest,
         label,
       };
     });
@@ -810,18 +828,15 @@ export class RailYard implements IRailYard {
     const solids = this.catalog.partSolids();
     const frame = this.vehicleFrame;
     for (let e = 0; e < count; e++) {
-      const at = vehicle.pose[e] ?? 0;
-      const heading = poses[at + 2] ?? 0;
-      const cos = Math.cos(heading);
-      const sin = Math.sin(heading);
-      frame[0] = cos;
-      frame[2] = -sin;
-      frame[3] = poses[at] ?? 0;
-      frame[5] = 1;
-      frame[7] = vehicle.lift[e] ?? 0;
-      frame[8] = sin;
-      frame[10] = cos;
-      frame[11] = poses[at + 1] ?? 0;
+      writeRigidFrame(
+        poses,
+        vehicle.vehicleAt[e] ?? 0,
+        vehicle.rigid[e] ?? 0,
+        vehicle.lift,
+        e,
+        frame,
+        0,
+      );
       const m = e * SOLID_MATRIX_FLOATS;
       const b = e * SOLID_BOX_FLOATS;
       composeAffine(frame, 0, vehicle.local, m, matrices, m);
@@ -850,31 +865,25 @@ export class RailYard implements IRailYard {
     return null;
   }
 
-  private onRaisedTrack(pieces: ReadonlySet<number>, rails: RailTrack): boolean {
-    const { layout } = rails.play;
-    for (const piece of pieces) {
-      if (layout.yPlates(piece) !== GROUND_PLATES || layout.rise(piece) !== 0) return true;
-    }
-    return false;
-  }
-
   private vehicleY(seat: RailSeat, v: number): number {
     return (this.track?.railTopY ?? 0) - (seat.consist.vehicles[v]?.railTopY ?? 0);
   }
 
   private vehicleHit(seat: RailSeat, boxes: Float64Array, v: number, ray: Float64Array): number {
-    const at = v * VEHICLE_POSE_FLOATS;
     const o = v * BOX_FLOATS;
-    const c = Math.cos(seat.poses[at + 2] ?? 0);
-    const s = Math.sin(seat.poses[at + 2] ?? 0);
-    const px = (ray[RAY_ORIGIN] ?? 0) - (seat.poses[at] ?? 0);
-    const py = (ray[RAY_ORIGIN + 1] ?? 0) - this.vehicleY(seat, v);
-    const pz = (ray[RAY_ORIGIN + 2] ?? 0) - (seat.poses[at + 1] ?? 0);
+    const frame = this.vehicleFrame;
+    this.vehicleBase[0] = this.vehicleY(seat, v);
+    writeRigidFrame(seat.poses, v * VEHICLE_POSE_FLOATS, BODY, this.vehicleBase, 0, frame, 0);
+    const px = (ray[RAY_ORIGIN] ?? 0) - (frame[3] ?? 0);
+    const py = (ray[RAY_ORIGIN + 1] ?? 0) - (frame[7] ?? 0);
+    const pz = (ray[RAY_ORIGIN + 2] ?? 0) - (frame[11] ?? 0);
     const dx = ray[RAY_DIRECTION] ?? 0;
     const dy = ray[RAY_DIRECTION + 1] ?? 0;
     const dz = ray[RAY_DIRECTION + 2] ?? 0;
-    const origin = [c * px + s * pz, py, -s * px + c * pz];
-    const direction = [c * dx + s * dz, dy, -s * dx + c * dz];
+    const local = (axis: number, x: number, y: number, z: number): number =>
+      (frame[axis] ?? 0) * x + (frame[4 + axis] ?? 0) * y + (frame[8 + axis] ?? 0) * z;
+    const origin = [local(0, px, py, pz), local(1, px, py, pz), local(2, px, py, pz)];
+    const direction = [local(0, dx, dy, dz), local(1, dx, dy, dz), local(2, dx, dy, dz)];
     let near = 0;
     let far = Number.POSITIVE_INFINITY;
     for (let axis = 0; axis < 3; axis++) {

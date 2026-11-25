@@ -22,7 +22,10 @@ export interface VehicleGeometry {
   readonly rearCoupler: CouplerGeometry;
 }
 
-export const VEHICLE_POSE_FLOATS = 9;
+export const VEHICLE_LIFT_START = 9;
+export const VEHICLE_POSE_FLOATS = 15;
+const RIGID_POSE_FLOATS = 3;
+const RIGID_LIFT_FLOATS = 2;
 
 const G_PIVOT_X = 0;
 const G_PIVOT_Z = 1;
@@ -126,6 +129,7 @@ export function packSpecOnlyGeometry(
 
 export interface PathSampler {
   pointBehind(io: Float64Array, at: number): void;
+  liftBehind(io: Float64Array, at: number): void;
 }
 
 const P_LEAD = 0;
@@ -140,7 +144,18 @@ const P_FRONT_COUPLER = 13;
 const P_REAR_COUPLER = 15;
 const P_FRONT_COUPLER_YAW = 17;
 const P_REAR_COUPLER_YAW = 18;
-const POSE_SCRATCH = 19;
+const P_GUIDE_SAMPLES = 19;
+const S_LEAD_AT = 0;
+const S_TRAIL_AT = 1;
+const S_CHORD = 2;
+const GUIDE_SAMPLE_FLOATS = 3;
+const P_GUIDE_LIFTS = P_GUIDE_SAMPLES + 2 * GUIDE_SAMPLE_FLOATS;
+const P_BODY_LIFT = P_GUIDE_LIFTS + 2 * RIGID_LIFT_FLOATS;
+const P_LIFT_A = P_BODY_LIFT + RIGID_LIFT_FLOATS;
+const P_LIFT_B = P_LIFT_A + 1;
+const POSE_SCRATCH = P_LIFT_B + 1;
+const FRONT_SIDE = 0;
+const REAR_SIDE = 1;
 const NEWTON_ITERATIONS = 12;
 const NEWTON_TOLERANCE_LDU = 1e-10;
 const CHORD_SLOPE_FACTOR = 3;
@@ -202,6 +217,7 @@ export class RunningGearPoser {
       const coupled = (g[COUPLED] ?? 0) === 1;
       if (k > 0 && coupled && this.aheadCoupled) this.coupleBehind(path);
       else this.pose(path);
+      if (poses) this.lift(path);
       this.emit(v, mirrored, pivots, pivotStart, poses, poseStart);
       const s = this.scratch;
       this.ahead[0] = s[P_REAR_COUPLER] ?? 0;
@@ -245,6 +261,56 @@ export class RunningGearPoser {
     poses[o + 6] = s[ownRear] ?? 0;
     poses[o + 7] = s[ownRear + 1] ?? 0;
     poses[o + 8] = (s[ownRearYaw] ?? 0) + turn;
+    const pitchSign = mirrored ? -1 : 1;
+    const ownFrontLift = P_GUIDE_LIFTS + (mirrored ? REAR_SIDE : FRONT_SIDE) * RIGID_LIFT_FLOATS;
+    const ownRearLift = P_GUIDE_LIFTS + (mirrored ? FRONT_SIDE : REAR_SIDE) * RIGID_LIFT_FLOATS;
+    const lifts = o + VEHICLE_LIFT_START;
+    poses[lifts] = s[P_BODY_LIFT] ?? 0;
+    poses[lifts + 1] = pitchSign * (s[P_BODY_LIFT + 1] ?? 0);
+    poses[lifts + 2] = s[ownFrontLift] ?? 0;
+    poses[lifts + 3] = pitchSign * (s[ownFrontLift + 1] ?? 0);
+    poses[lifts + 4] = s[ownRearLift] ?? 0;
+    poses[lifts + 5] = pitchSign * (s[ownRearLift + 1] ?? 0);
+  }
+
+  private lift(path: PathSampler): void {
+    const g = this.geometry;
+    const s = this.scratch;
+    for (let side = FRONT_SIDE; side <= REAR_SIDE; side++) {
+      const at = side === FRONT_SIDE ? FRONT_GUIDE : REAR_GUIDE;
+      const sample = P_GUIDE_SAMPLES + side * GUIDE_SAMPLE_FLOATS;
+      const out = P_GUIDE_LIFTS + side * RIGID_LIFT_FLOATS;
+      if ((g[at + G_PIVOTS] ?? 0) === 0) {
+        s[out] = s[sample + S_LEAD_AT] ?? 0;
+        path.liftBehind(s, out);
+        continue;
+      }
+      s[P_LIFT_A] = s[sample + S_LEAD_AT] ?? 0;
+      path.liftBehind(s, P_LIFT_A);
+      s[P_LIFT_B] = s[sample + S_TRAIL_AT] ?? 0;
+      path.liftBehind(s, P_LIFT_B);
+      const lead = s[P_LIFT_A] ?? 0;
+      const trail = s[P_LIFT_B] ?? 0;
+      const chord = s[sample + S_CHORD] ?? 0;
+      const slope = chord === 0 ? 0 : (lead - trail) / chord;
+      const u = (g[at + G_PIVOT_X] ?? 0) - ((g[at + G_LEAD] ?? 0) + (g[at + G_TRAIL] ?? 0)) / 2;
+      s[out] = (lead + trail) / 2 + slope * u;
+      s[out + 1] = Math.atan(slope);
+    }
+    const front = s[P_GUIDE_LIFTS] ?? 0;
+    const rear = s[P_GUIDE_LIFTS + RIGID_LIFT_FLOATS] ?? 0;
+    const apartX = (s[P_FRONT_PIVOT] ?? 0) - (s[P_REAR_PIVOT] ?? 0);
+    const apartZ = (s[P_FRONT_PIVOT + 1] ?? 0) - (s[P_REAR_PIVOT + 1] ?? 0);
+    const spacing = Math.sqrt(apartX * apartX + apartZ * apartZ);
+    const slope = spacing === 0 ? 0 : (front - rear) / spacing;
+    const midX = ((g[FRONT_GUIDE + G_PIVOT_X] ?? 0) + (g[REAR_GUIDE + G_PIVOT_X] ?? 0)) / 2;
+    s[P_BODY_LIFT] = (front + rear) / 2 - midX * slope;
+    s[P_BODY_LIFT + 1] = Math.atan(slope);
+    for (let side = FRONT_SIDE; side <= REAR_SIDE; side++) {
+      const at = side === FRONT_SIDE ? FRONT_GUIDE : REAR_GUIDE;
+      if ((g[at + G_PIVOTS] ?? 0) !== 0) continue;
+      s[P_GUIDE_LIFTS + side * RIGID_LIFT_FLOATS + 1] = s[P_BODY_LIFT + 1] ?? 0;
+    }
   }
 
   private coupleBehind(path: PathSampler): void {
@@ -329,23 +395,22 @@ export class RunningGearPoser {
     const pivotZ = g[at + G_PIVOT_Z] ?? 0;
     const front = this.frontCouplerDistance + (g[FRONT_COUPLER + C_X] ?? 0);
     const spreadShift = spread * this.guideSpread;
+    const side = at === FRONT_GUIDE ? FRONT_SIDE : REAR_SIDE;
+    const sample = P_GUIDE_SAMPLES + side * GUIDE_SAMPLE_FLOATS;
     if ((g[at + G_PIVOTS] ?? 0) === 0) {
       s[pivotOut] = front - pivotX + spreadShift;
+      s[sample + S_LEAD_AT] = s[pivotOut] ?? 0;
       path.pointBehind(s, pivotOut);
       return;
     }
     const lead = g[at + G_LEAD] ?? 0;
     const trail = g[at + G_TRAIL] ?? 0;
-    this.axlesAbout(
-      path,
-      front - (lead + trail) / 2 + spreadShift,
-      lead - trail,
-      at === FRONT_GUIDE ? 0 : 1,
-    );
+    this.axlesAbout(path, front - (lead + trail) / 2 + spreadShift, lead - trail, side);
     const ax = s[P_LEAD] ?? 0;
     const az = s[P_LEAD + 1] ?? 0;
     const bx = s[P_TRAIL] ?? 0;
     const bz = s[P_TRAIL + 1] ?? 0;
+    s[sample + S_CHORD] = Math.sqrt((ax - bx) * (ax - bx) + (az - bz) * (az - bz));
     const yaw = Math.atan2(az - bz, ax - bx);
     const u = pivotX - (lead + trail) / 2;
     const w = pivotZ - (g[at + G_AXLE_Z] ?? 0);
@@ -357,10 +422,13 @@ export class RunningGearPoser {
   private axlesAbout(path: PathSampler, middle: number, spacing: number, side: number): void {
     const s = this.scratch;
     let half = spacing * (this.halfRatio[side] ?? HALF);
+    const sample = P_GUIDE_SAMPLES + side * GUIDE_SAMPLE_FLOATS;
     for (let i = 0; i < NEWTON_ITERATIONS; i++) {
       s[P_LEAD] = middle - half;
+      s[sample + S_LEAD_AT] = middle - half;
       path.pointBehind(s, P_LEAD);
       s[P_TRAIL] = middle + half;
+      s[sample + S_TRAIL_AT] = middle + half;
       path.pointBehind(s, P_TRAIL);
       const dx = (s[P_LEAD] ?? 0) - (s[P_TRAIL] ?? 0);
       const dz = (s[P_LEAD + 1] ?? 0) - (s[P_TRAIL + 1] ?? 0);
@@ -397,4 +465,43 @@ export class RunningGearPoser {
     s[out + 1] = (s[pivot + 1] ?? 0) + u * Math.sin(yaw) + w * Math.cos(yaw);
     s[yawOut] = yaw + facing;
   }
+}
+
+export function writeRigidFrame(
+  poses: ArrayLike<number>,
+  vehicleAt: number,
+  rigid: number,
+  lifts: ArrayLike<number>,
+  liftAt: number,
+  out: Float64Array,
+  outAt: number,
+): void {
+  const at = vehicleAt + rigid * RIGID_POSE_FLOATS;
+  const lift = vehicleAt + VEHICLE_LIFT_START + rigid * RIGID_LIFT_FLOATS;
+  const yaw = poses[at + 2] ?? 0;
+  const pitch = poses[lift + 1] ?? 0;
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  const cosPitch = Math.cos(pitch);
+  const sinPitch = Math.sin(pitch);
+  out[outAt] = cos * cosPitch;
+  out[outAt + 1] = -cos * sinPitch;
+  out[outAt + 2] = -sin;
+  out[outAt + 3] = poses[at] ?? 0;
+  out[outAt + 4] = sinPitch;
+  out[outAt + 5] = cosPitch;
+  out[outAt + 6] = 0;
+  out[outAt + 7] = (lifts[liftAt] ?? 0) + (poses[lift] ?? 0);
+  out[outAt + 8] = sin * cosPitch;
+  out[outAt + 9] = -sin * sinPitch;
+  out[outAt + 10] = cos;
+  out[outAt + 11] = poses[at + 1] ?? 0;
+}
+
+export function rigidLift(poses: ArrayLike<number>, vehicleAt: number, rigid: number): number {
+  return poses[vehicleAt + VEHICLE_LIFT_START + rigid * RIGID_LIFT_FLOATS] ?? 0;
+}
+
+export function rigidPitch(poses: ArrayLike<number>, vehicleAt: number, rigid: number): number {
+  return poses[vehicleAt + VEHICLE_LIFT_START + rigid * RIGID_LIFT_FLOATS + 1] ?? 0;
 }

@@ -23,13 +23,32 @@ export interface SimTrack {
   readonly segmentHeading: Float64Array;
   readonly segmentCurvature: Float64Array;
   readonly segmentLength: Float64Array;
+  readonly edgeLift: Float64Array;
 }
+
+export interface TrackLift {
+  readonly baseLdu: number;
+  readonly gx: number;
+  readonly gz: number;
+  readonly lowX: number;
+  readonly lowZ: number;
+}
+
+export const LEVEL_TRACK: TrackLift = { baseLdu: 0, gx: 0, gz: 0, lowX: 0, lowZ: 0 };
 
 export interface SimRoute {
   readonly from: PlanPose;
   readonly to: PlanPose;
   readonly segments: ReadonlyArray<SimPathSegment>;
+  readonly lift?: TrackLift;
 }
+
+const LIFT_BASE = 0;
+const LIFT_GX = 1;
+const LIFT_GZ = 2;
+const LIFT_LOW_X = 3;
+const LIFT_LOW_Z = 4;
+const LIFT_FLOATS = 5;
 
 export interface SimTrackInput {
   readonly routes: ReadonlyArray<SimRoute>;
@@ -89,10 +108,18 @@ export function buildSimTrack(input: SimTrackInput): BuiltSimTrack {
     segmentHeading: new Float64Array(segmentCount),
     segmentCurvature: new Float64Array(segmentCount),
     segmentLength: new Float64Array(segmentCount),
+    edgeLift: new Float64Array(edgeCount * LIFT_FLOATS),
   };
   let segment = 0;
   let successor = 0;
   for (let edge = 0; edge < edgeCount; edge++) {
+    const lift = input.routes[edge >> 1]?.lift ?? LEVEL_TRACK;
+    const l = edge * LIFT_FLOATS;
+    track.edgeLift[l + LIFT_BASE] = lift.baseLdu;
+    track.edgeLift[l + LIFT_GX] = lift.gx;
+    track.edgeLift[l + LIFT_GZ] = lift.gz;
+    track.edgeLift[l + LIFT_LOW_X] = lift.lowX;
+    track.edgeLift[l + LIFT_LOW_Z] = lift.lowZ;
     track.reverseEdge[edge] = edge ^ 1;
     track.segmentStart[edge] = segment;
     let length = 0;
@@ -154,4 +181,23 @@ export function trackPoint(track: SimTrack, edge: number, io: Float64Array, at: 
   const turned = h + k * s;
   io[at] = x + (Math.sin(turned) - Math.sin(h)) / k;
   io[at + 1] = z - (Math.cos(turned) - Math.cos(h)) / k;
+}
+
+const liftPoint = new Float64Array(2);
+
+export function trackLift(track: SimTrack, edge: number, io: Float64Array, at: number): void {
+  const l = edge * LIFT_FLOATS;
+  const base = track.edgeLift[l + LIFT_BASE] ?? 0;
+  const gx = track.edgeLift[l + LIFT_GX] ?? 0;
+  const gz = track.edgeLift[l + LIFT_GZ] ?? 0;
+  if (gx === 0 && gz === 0) {
+    io[at] = base;
+    return;
+  }
+  liftPoint[0] = io[at] ?? 0;
+  trackPoint(track, edge, liftPoint, 0);
+  io[at] =
+    base +
+    gx * ((liftPoint[0] ?? 0) - (track.edgeLift[l + LIFT_LOW_X] ?? 0)) +
+    gz * ((liftPoint[1] ?? 0) - (track.edgeLift[l + LIFT_LOW_Z] ?? 0));
 }
