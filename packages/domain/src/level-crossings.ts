@@ -766,10 +766,11 @@ export class LevelCrossings {
     if (this.roads.length === 0 || this.tracks.length === 0) return null;
     const roadsMoved = roadChange(this.roads, roads);
     const tracksMoved = trackChange(this.tracks, tracks);
-    if (!roadsMoved || !tracksMoved || sharesAnId(roads)) return null;
+    if (!roadsMoved || !tracksMoved) return null;
     if (this.untouched(tracks, roadsMoved, tracksMoved)) {
       return this.relabelledAll(tracksMoved.newIndexOf);
     }
+    if (sharesAnId(roads)) return null;
     return this.rebuiltAround(roads, tracks, roadsMoved, tracksMoved);
   }
 
