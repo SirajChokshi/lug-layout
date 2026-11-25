@@ -36,10 +36,13 @@ export interface SuggestedCrossing {
 
 export type ClearanceInBand = (band: readonly [number, number]) => TrackClearance;
 
+export type CarriesRunTrack = (model: PlacedModel) => boolean;
+
 interface Suggestion {
   readonly crossings: ReadonlyArray<LevelCrossing>;
   readonly pieces: ReadonlyArray<PlacedTrackPiece>;
   readonly modelsVersion: number;
+  readonly models: ReadonlyArray<PlacedModel>;
   readonly suggested: ReadonlyArray<SuggestedCrossing>;
 }
 
@@ -60,6 +63,20 @@ export function rampChunkKey(chunkX: number, chunkZ: number): number {
 
 function rectsShareArea(a: LduRect, b: LduRect): boolean {
   return a.minX < b.maxX && b.minX < a.maxX && a.minZ < b.maxZ && b.minZ < a.maxZ;
+}
+
+function rectsMeet(a: LduRect, b: LduRect): boolean {
+  return a.minX <= b.maxX && b.minX <= a.maxX && a.minZ <= b.maxZ && b.minZ <= a.maxZ;
+}
+
+function joined(a: LduRect | null, b: LduRect): LduRect {
+  if (!a) return b;
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minZ: Math.min(a.minZ, b.minZ),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxZ: Math.max(a.maxZ, b.maxZ),
+  };
 }
 
 function planHullOf(outline: RampPart["outline"]): Float64Array {
@@ -119,6 +136,27 @@ class LayoutProbe {
   }
 }
 
+function changedModelBoxes(
+  last: Suggestion,
+  models: ReadonlyArray<PlacedModel>,
+  version: number,
+  carriesRunTrack: CarriesRunTrack,
+): ReadonlyArray<LduRect> | null {
+  if (last.modelsVersion === version) return [];
+  const before = new Set(last.models);
+  const now = new Set(models);
+  const changed: PlacedModel[] = [];
+  for (const model of models) if (!before.has(model)) changed.push(model);
+  for (const model of last.models) if (!now.has(model)) changed.push(model);
+  if (changed.some(carriesRunTrack)) return null;
+  return changed.map(({ box }) => ({
+    minX: box.minX,
+    minZ: box.minZ,
+    maxX: box.maxX,
+    maxZ: box.maxZ,
+  }));
+}
+
 export class CrossingRamps {
   private readonly ramps: ReadonlyArray<RampAsset>;
   private readonly railTops: ReadonlyMap<string, number>;
@@ -127,6 +165,7 @@ export class CrossingRamps {
   private piecesSeen: ReadonlyArray<PlacedTrackPiece> | null = null;
   private tracksSeen: ReadonlyArray<CrossingTrack> = [];
   private lastSuggestion: Suggestion | null = null;
+  private readonly seatRegions = new WeakMap<ReadonlyArray<RampCandidate>, LduRect | null>();
 
   constructor(
     facts: LevelCrossingFacts,
@@ -159,6 +198,7 @@ export class CrossingRamps {
     pieces: ReadonlyArray<PlacedTrackPiece>,
     placed: PlacedModels,
     clearanceIn: ClearanceInBand,
+    carriesRunTrack: CarriesRunTrack,
   ): ReadonlyArray<SuggestedCrossing> {
     if (roads.length === 0 || pieces.length === 0) {
       this.forget();
@@ -178,14 +218,72 @@ export class CrossingRamps {
     ) {
       return last.suggested;
     }
-    const probe = new LayoutProbe(placed.models(), clearanceIn);
-    const suggested = crossings.map((crossing) => ({
-      crossing,
-      trackPlacements: crossing.tracks.map((track) => pieces[track]?.placement ?? 0),
-      ramps: this.seated(crossing, probe),
-    }));
-    this.lastSuggestion = { crossings, pieces, modelsVersion: placed.version, suggested };
+    const models = placed.models();
+    const changed = last ? changedModelBoxes(last, models, placed.version, carriesRunTrack) : null;
+    const seatedBefore = new Map(
+      last?.suggested.map((suggestion) => [suggestion.crossing.candidates, suggestion.ramps]),
+    );
+    let probe: LayoutProbe | null = null;
+    const suggested = crossings.map((crossing) => {
+      const before = changed ? seatedBefore.get(crossing.candidates) : undefined;
+      const ramps =
+        before && changed && !this.reachesSeats(changed, crossing.candidates)
+          ? before
+          : this.seated(crossing, (probe ??= new LayoutProbe(models, clearanceIn)));
+      return {
+        crossing,
+        trackPlacements: crossing.tracks.map((track) => pieces[track]?.placement ?? 0),
+        ramps,
+      };
+    });
+    this.lastSuggestion = {
+      crossings,
+      pieces,
+      modelsVersion: placed.version,
+      models: [...models],
+      suggested,
+    };
     return suggested;
+  }
+
+  private reachesSeats(
+    changed: ReadonlyArray<LduRect>,
+    candidates: ReadonlyArray<RampCandidate>,
+  ): boolean {
+    const region = this.seatRegionOf(candidates);
+    return region !== null && changed.some((box) => rectsMeet(box, region));
+  }
+
+  private seatRegionOf(candidates: ReadonlyArray<RampCandidate>): LduRect | null {
+    const known = this.seatRegions.get(candidates);
+    if (known !== undefined) return known;
+    let region: LduRect | null = null;
+    for (const candidate of candidates) {
+      region = joined(region, candidate.rect);
+      region = joined(region, this.posedHullBounds(candidate));
+      for (const [x, z] of candidate.antiStuds) {
+        const minX = Math.floor(x / STUD_LDU) * STUD_LDU;
+        const minZ = Math.floor(z / STUD_LDU) * STUD_LDU;
+        region = joined(region, { minX, minZ, maxX: minX + STUD_LDU, maxZ: minZ + STUD_LDU });
+      }
+    }
+    this.seatRegions.set(candidates, region);
+    return region;
+  }
+
+  private posedHullBounds(candidate: RampCandidate): LduRect {
+    const { hull } = this.assetOf(candidate.part);
+    const cos = rot90Cos(candidate.rot);
+    const sin = rot90Sin(candidate.rot);
+    let bounds: LduRect | null = null;
+    for (let p = 0; p < hull.length; p += 2) {
+      const x = hull[p] ?? 0;
+      const z = hull[p + 1] ?? 0;
+      const worldX = candidate.x + cos * x + sin * z;
+      const worldZ = candidate.z - sin * x + cos * z;
+      bounds = joined(bounds, { minX: worldX, minZ: worldZ, maxX: worldX, maxZ: worldZ });
+    }
+    return bounds ?? candidate.rect;
   }
 
   private forget(): void {
