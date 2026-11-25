@@ -57,6 +57,8 @@ const Y = 1;
 const Z = 2;
 const AXIAL_GROUP = -1;
 const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
+const PHASE_RADIX = STUD_SIXTEENTHS;
+const UNBUILT_OFF_AXIS_PHASES = new Int32Array(0);
 const JOINT_KEY_INTS = 6;
 const LINE_KEY_INTS = 4;
 
@@ -146,6 +148,54 @@ function firstAtLeast(values: Int32Array, from: number, to: number, value: numbe
   return low;
 }
 
+function platePhaseOf(y16: number): number {
+  return ((y16 % PLATE_SIXTEENTHS) + PLATE_SIXTEENTHS) % PLATE_SIXTEENTHS;
+}
+
+function offAxisPhaseKey(rot: number, axis: number, x16: number, y16: number, z16: number): number {
+  const dimension = axisDimension(axis);
+  const across = (dimension + 1) % VECTOR_FLOATS;
+  const beyond = (dimension + 2) % VECTOR_FLOATS;
+  const acrossPhase = across === Y ? platePhaseOf(y16) : phaseOf(across === X ? x16 : z16);
+  const beyondPhase = beyond === Y ? platePhaseOf(y16) : phaseOf(beyond === X ? x16 : z16);
+  return ((rot * AXIS_CODES + axis) * PHASE_RADIX + acrossPhase) * PHASE_RADIX + beyondPhase;
+}
+
+function offAxisPhaseIndex(turned: TurnedModel, n: number): Int32Array<ArrayBuffer> {
+  const total = QUARTER_TURNS * n;
+  const keys = new Int32Array(total);
+  for (let m = 0; m < total; m++) {
+    const at = m * VECTOR_FLOATS;
+    keys[m] = offAxisPhaseKey(
+      Math.floor(m / n),
+      turned.axis[m] ?? 0,
+      turned.position[at + X] ?? 0,
+      turned.position[at + Y] ?? 0,
+      turned.position[at + Z] ?? 0,
+    );
+  }
+  keys.sort();
+  let distinct = 0;
+  for (let k = 0; k < total; k++) {
+    if (k === 0 || keys[k] !== keys[k - 1]) keys[distinct++] = keys[k] ?? 0;
+  }
+  return keys.slice(0, distinct);
+}
+
+function hasOffAxisPhase(
+  turned: TurnedModel,
+  rot: number,
+  wanted: number,
+  sx: number,
+  sy: number,
+  sz: number,
+): boolean {
+  const key = offAxisPhaseKey(rot, wanted, sx, sy, sz);
+  const keys = turned.offAxisPhases;
+  const k = firstAtLeast(keys, 0, keys.length, key);
+  return k < keys.length && (keys[k] ?? 0) === key;
+}
+
 class TurnedModel {
   constructor(readonly model: ModelConnectors | null) {}
   order = new Int32Array(0);
@@ -170,6 +220,7 @@ class TurnedModel {
   columnStart = new Int32Array(1);
   columnOrder = new Int32Array(0);
   columnAlong = new Int32Array(0);
+  offAxisPhases: Int32Array<ArrayBuffer> = UNBUILT_OFF_AXIS_PHASES;
   lineShared = new Uint8Array(0);
 }
 
@@ -313,6 +364,9 @@ export class SparseConnectorFinder implements MateFinder {
     }
     progress.revision = this.revision;
     const turned = this.turn(model);
+    if (latticeOnly && turned.offAxisPhases === UNBUILT_OFF_AXIS_PHASES) {
+      turned.offAxisPhases = offAxisPhaseIndex(turned, model.count);
+    }
     const reach = this.modelTravel(turned);
     const spanXZ = window.cells * STUD_SIXTEENTHS + reach;
     const spanY = window.plates * PLATE_SIXTEENTHS + reach;
@@ -825,6 +879,7 @@ export class SparseConnectorFinder implements MateFinder {
     const sx = (this.slotX[slot] ?? 0) - sixteenths(window.x);
     const sy = (this.slotY[slot] ?? 0) - window.yPlates * PLATE_SIXTEENTHS;
     const sz = (this.slotZ[slot] ?? 0) - sixteenths(window.z);
+    if (latticeOnly && !hasOffAxisPhase(turned, rot, wanted, sx, sy, sz)) return;
     const spanXZ = window.cells * STUD_SIXTEENTHS;
     const spanY = window.plates * PLATE_SIXTEENTHS;
     const ax = Math.abs(axisStep(wanted, X)) * travel;
