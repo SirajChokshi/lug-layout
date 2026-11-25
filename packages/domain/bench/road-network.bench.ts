@@ -1,6 +1,6 @@
 import { cpus } from "node:os";
 import { PerformanceObserver, performance } from "node:perf_hooks";
-import { getHeapSpaceStatistics } from "node:v8";
+import { GCProfiler, getHeapSpaceStatistics } from "node:v8";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { RoadFit } from "../src/road-fit.ts";
@@ -144,6 +144,31 @@ function youngGenerationBytes(): number {
   return bytes;
 }
 
+function youngUsedIn(
+  spaces: ReadonlyArray<{ readonly spaceName: string; readonly spaceUsedSize: number }>,
+): number {
+  let bytes = 0;
+  for (const space of spaces) {
+    if (YOUNG_GENERATION_SPACES.includes(space.spaceName)) bytes += space.spaceUsedSize;
+  }
+  return bytes;
+}
+
+function youngBytesAllocatedBy(run: () => void): number {
+  const profiler = new GCProfiler();
+  profiler.start();
+  const before = youngGenerationBytes();
+  run();
+  const after = youngGenerationBytes();
+  let collected = 0;
+  for (const collection of profiler.stop().statistics) {
+    collected +=
+      youngUsedIn(collection.beforeGC.heapSpaceStatistics) -
+      youngUsedIn(collection.afterGC.heapSpaceStatistics);
+  }
+  return after - before + collected;
+}
+
 interface Probe {
   readonly startMs: number;
   readonly endMs: number;
@@ -257,9 +282,11 @@ const moveOnce = (): void => {
 };
 for (let warm = 0; warm < WARMUP_CALLS; warm++) moveOnce();
 collect();
-const editYoungBefore = youngGenerationBytes();
 const editMs = timed(EDITS, moveOnce);
-const editBytes = (youngGenerationBytes() - editYoungBefore) / EDITS;
+const editBytes =
+  youngBytesAllocatedBy(() => {
+    for (let edit = 0; edit < EDITS; edit++) moveOnce();
+  }) / EDITS;
 const unchangedMs = timed(REPORTS, () => edited.report());
 
 process.stdout.write(
@@ -280,7 +307,7 @@ process.stdout.write(
     `| move one straight out of the city and back: remove, add, report | ${editMs.toFixed(3)} |`,
     `| report again after the moves, nothing changed since the last | ${unchangedMs.toFixed(3)} |`,
     "",
-    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays. Moving one straight allocates about ${Math.round(editBytes).toLocaleString("en-US")} young-generation bytes per edit (median of ${EDITS} edits after ${WARMUP_CALLS} warm-up edits; the report's segment list and the moved straight's own tallies).`,
+    `A newly built network's first fit creates its fit memo once: ${memoBytes.toLocaleString("en-US")} bytes of typed arrays. Moving one straight allocates about ${Math.round(editBytes).toLocaleString("en-US")} young-generation bytes per edit (mean of ${EDITS} edits after ${WARMUP_CALLS} warm-up edits, collections included; the report's segment list and the moved straight's own tallies).`,
     "",
   ].join("\n"),
 );

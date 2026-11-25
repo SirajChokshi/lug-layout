@@ -1,6 +1,6 @@
 import { cpus } from "node:os";
 import { performance } from "node:perf_hooks";
-import { getHeapSpaceStatistics } from "node:v8";
+import { GCProfiler, getHeapSpaceStatistics } from "node:v8";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { LevelCrossings, levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
@@ -194,11 +194,38 @@ function youngGenerationBytes(): number {
   return bytes;
 }
 
+function youngUsedIn(
+  spaces: ReadonlyArray<{ readonly spaceName: string; readonly spaceUsedSize: number }>,
+): number {
+  let bytes = 0;
+  for (const space of spaces) {
+    if (YOUNG_GENERATION_SPACES.includes(space.spaceName)) bytes += space.spaceUsedSize;
+  }
+  return bytes;
+}
+
+function youngBytesAllocatedBy(run: () => void): number {
+  const profiler = new GCProfiler();
+  profiler.start();
+  const before = youngGenerationBytes();
+  run();
+  const after = youngGenerationBytes();
+  let collected = 0;
+  for (const collection of profiler.stop().statistics) {
+    collected +=
+      youngUsedIn(collection.beforeGC.heapSpaceStatistics) -
+      youngUsedIn(collection.afterGC.heapSpaceStatistics);
+  }
+  return after - before + collected;
+}
+
 function youngBytesPerCall(call: () => number): number {
   for (let i = 0; i < WARMUP; i++) call();
-  const before = youngGenerationBytes();
-  for (let i = 0; i < RUNS; i++) call();
-  return (youngGenerationBytes() - before) / RUNS;
+  return (
+    youngBytesAllocatedBy(() => {
+      for (let i = 0; i < RUNS; i++) call();
+    }) / RUNS
+  );
 }
 
 const withFarRoad = [...gateRoads, farRoad];
