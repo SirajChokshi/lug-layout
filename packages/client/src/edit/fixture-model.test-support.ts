@@ -39,7 +39,7 @@ const fixtureBundleRoot = new URL(
   import.meta.url,
 );
 
-function fixtureBundleFetcher(): IAssetFetcher {
+export function fixtureBundleFetcher(): IAssetFetcher {
   return {
     async bytes(path) {
       const buffer = await readFile(new URL(path, fixtureBundleRoot));

@@ -1,6 +1,8 @@
 import {
+  AXIS_NEG_X,
   AXIS_NEG_Y,
   AXIS_NEG_Z,
+  AXIS_POS_X,
   AXIS_POS_Y,
   AXIS_POS_Z,
   CAP_FAR,
@@ -10,6 +12,9 @@ import {
   GENDER_MALE,
   MateReport,
   ModelConnectors,
+  SECTION_AXLE,
+  SECTION_FEMALE_FINGER,
+  SECTION_MALE_FINGER,
   SECTION_ROUND,
   type SnapShapes,
   SOURCE_SHADOW,
@@ -18,23 +23,34 @@ import {
   type TrackEnd,
   WORLD_TRACK_FRAME,
 } from "@brr/domain";
-import { EMPTY_COLUMN } from "@brr/catalog";
+import { ASSET_FETCHER, EMPTY_COLUMN, PART_BUNDLE_LOADER } from "@brr/catalog";
 import {
   PLATE_LDU,
+  isRot90,
   pose16,
+  rot90Cos,
+  rot90Sin,
   SIXTEENTHS_PER_LDU,
   STUD_LDU,
   zeta16,
   ZETA16_COEFFICIENT_COUNT,
+  type Rot90,
 } from "@brr/math";
 import type { PartTechnic } from "@brr/schema/bundle";
 import { Container } from "inversify";
 import { describe, expect, it } from "vitest";
 import { mainThreadModules } from "../client.module.ts";
+import { fixtureBundleFetcher } from "../edit/fixture-model.test-support.ts";
 import { distinctJoints } from "../edit/placement-hover.ts";
 import { mateCounts } from "../edit/placement-hover-view.ts";
 import type { PlaceablePartCells } from "../edit/placeable.ts";
-import { PLACEMENT_SEARCH, SNAP_MATING, SNAP_SHAPES } from "../tokens.ts";
+import {
+  CONNECTOR_TABLES,
+  PLACEABLE_CATALOG,
+  PLACEMENT_SEARCH,
+  SNAP_MATING,
+  SNAP_SHAPES,
+} from "../tokens.ts";
 import { partBoxes, type PartBoxes } from "./part-boxes.ts";
 import { FrozenTechnic } from "./frozen-technic.ts";
 import { typedArraysConstructedDuring } from "./typed-arrays.test-support.ts";
@@ -1261,4 +1277,693 @@ describe("PlacementSearch assist support", () => {
     ]);
     expect([whole.x, sliced.slices > 1]).toEqual([2 * STUD_LDU, true]);
   });
+});
+
+interface Listed {
+  readonly piece: Piece;
+  readonly pose: LatticePose;
+}
+
+class LiveWorld {
+  readonly listed = new Map<number, Listed>();
+
+  constructor(readonly search: IPlacementSearch) {}
+
+  readonly restsOnTable = (placement: number): boolean =>
+    this.listed.get(placement)?.pose.yPlates === TABLE_Y_PLATES;
+
+  place(placement: number, piece: Piece, pose: LatticePose): void {
+    this.search.add(
+      placement,
+      piece.connectors,
+      piece.volumes,
+      piece.parts.boxes,
+      piece.parts.technic,
+      pose,
+    );
+    this.listed.set(placement, { piece, pose });
+  }
+
+  replace(placement: number): void {
+    const entry = this.listed.get(placement);
+    if (!entry) throw new Error(`placement ${placement} isn't listed`);
+    this.search.remove(placement);
+    this.listed.delete(placement);
+    this.place(placement, entry.piece, entry.pose);
+  }
+
+  stranded(removed: ReadonlySet<number>): unknown {
+    return this.search.strandedByRemoval(removed, this.restsOnTable);
+  }
+
+  disagreement(removed: ReadonlySet<number>): unknown {
+    const local = this.stranded(removed);
+    const everyModel = this.everyModelChecked(removed);
+    return JSON.stringify(local) === JSON.stringify(everyModel)
+      ? null
+      : { removed: [...removed], local, everyModel };
+  }
+
+  everyModelChecked(removed: ReadonlySet<number>): unknown {
+    const report = new MateReport();
+    const mated: Array<readonly [number, Listed]> = [];
+    for (const [placement, entry] of this.listed) {
+      if (removed.has(placement)) continue;
+      this.search.evaluate(entry.piece.connectors, entry.pose, report);
+      if (report.count > 0) mated.push([placement, entry]);
+    }
+    return this.search.withdrawn(removed, () => {
+      for (const [placement, entry] of mated) {
+        this.search.evaluate(entry.piece.connectors, entry.pose, report);
+        if (report.count === 0 && !this.restsOnTable(placement)) return stranded(placement);
+      }
+      return { kind: "none" };
+    });
+  }
+}
+
+const LCG_MULTIPLIER = 1664525;
+const LCG_INCREMENT = 1013904223;
+const UINT32_RANGE = 2 ** 32;
+
+function seeded(seed: number): (below: number) => number {
+  let state = seed >>> 0;
+  return (below) => {
+    state = (Math.imul(state, LCG_MULTIPLIER) + LCG_INCREMENT) >>> 0;
+    return Math.floor((state / UINT32_RANGE) * below);
+  };
+}
+
+function block(f: Fixture, width: number, depth: number, heightLdu: number): Piece {
+  return {
+    connectors: f.connectors([
+      grid(width, depth, f.stud, GENDER_MALE, heightLdu, AXIS_POS_Y),
+      grid(width, depth, f.receptor(heightLdu - 4), GENDER_FEMALE, 0, AXIS_NEG_Y),
+    ]),
+    volumes: columns(width, depth, 0, heightLdu),
+    parts: partsOf([[0, 0, 0, width * STUD_LDU, heightLdu, depth * STUD_LDU]]),
+  };
+}
+
+function studdedSlab(f: Fixture, width: number, depth: number): Piece {
+  return {
+    connectors: f.connectors([grid(width, depth, f.stud, GENDER_MALE, 0, AXIS_POS_Y)]),
+    volumes: columns(width, depth, -SLAB_LDU, 0),
+    parts: partsOf([[0, -SLAB_LDU, 0, width * STUD_LDU, 0, depth * STUD_LDU]]),
+  };
+}
+
+function singleConnector(f: Fixture, spec: Spec, cell: Box): Piece {
+  return {
+    connectors: f.connectors([table([spec])]),
+    volumes: boxVolumes(0, 0, 1, 1, [cell]),
+    parts: partsOf([cell]),
+  };
+}
+
+const CELL: Box = [0, 0, 0, STUD_LDU, PLATE_LDU, STUD_LDU];
+
+function jumperPlate(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      table([
+        [f.receptor(4), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y],
+        [f.receptor(4), GENDER_FEMALE, HALF + STUD_LDU, 0, HALF, AXIS_NEG_Y],
+        [f.stud, GENDER_MALE, STUD_LDU, PLATE_LDU, HALF, AXIS_POS_Y],
+      ]),
+    ]),
+    volumes: columns(2, 1, 0, PLATE_LDU),
+    parts: partsOf([[0, 0, 0, 2 * STUD_LDU, PLATE_LDU, STUD_LDU]]),
+  };
+}
+
+function sideStudded(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([
+      table([
+        [f.stud, GENDER_MALE, HALF, BRICK_LDU, HALF, AXIS_POS_Y],
+        [f.receptor(BRICK_LDU - 4), GENDER_FEMALE, HALF, 0, HALF, AXIS_NEG_Y],
+        [f.stud, GENDER_MALE, STUD_LDU, LINE_Y, HALF, AXIS_POS_X],
+      ]),
+    ]),
+    volumes: columns(1, 1, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, STUD_LDU, BRICK_LDU, STUD_LDU]]),
+  };
+}
+
+function studdedTrack(f: Fixture, end: TrackEnd): Piece {
+  const body = [0, 0, 0, 2 * STUD_LDU, PLATE_LDU, 2 * STUD_LDU];
+  return {
+    connectors: f.connectors([grid(2, 2, f.stud, GENDER_MALE, PLATE_LDU, AXIS_POS_Y)], [end]),
+    volumes: boxVolumes(0, 0, 2, 2, [body]),
+    parts: partsOf([body]),
+  };
+}
+
+function connectorless(f: Fixture): Piece {
+  return {
+    connectors: f.connectors([null]),
+    volumes: columns(2, 2, 0, BRICK_LDU),
+    parts: partsOf([[0, 0, 0, 2 * STUD_LDU, BRICK_LDU, 2 * STUD_LDU]]),
+  };
+}
+
+interface Joints {
+  readonly bar: number;
+  readonly clip: number;
+  readonly hollowStud: number;
+  readonly maleFinger: number;
+  readonly femaleFinger: number;
+  readonly axle: number;
+  readonly axleHole: number;
+}
+
+const BAR_RADIUS = 4;
+const BAR_LENGTH = STUD_LDU;
+const CLIP_LENGTH = 4;
+const FINGER_WIDTH = 8;
+const NO_FINGER_RADIUS = 0;
+const AXLE_RADIUS = 4;
+const AXLE_LENGTH = 2 * STUD_LDU;
+const AXLE_HOLE_LENGTH = 10;
+
+function joints(f: Fixture): Joints {
+  return {
+    bar: f.shapes.intern(CAP_ROOT, true, [SECTION_ROUND], [BAR_RADIUS], [BAR_LENGTH]),
+    clip: f.shapes.intern(0, false, [SECTION_ROUND], [BAR_RADIUS], [CLIP_LENGTH]),
+    hollowStud: f.shapes.intern(0, false, [SECTION_ROUND], [BAR_RADIUS], [PLATE_LDU]),
+    maleFinger: f.shapes.intern(
+      0,
+      false,
+      [SECTION_MALE_FINGER],
+      [NO_FINGER_RADIUS],
+      [FINGER_WIDTH],
+    ),
+    femaleFinger: f.shapes.intern(
+      0,
+      false,
+      [SECTION_FEMALE_FINGER],
+      [NO_FINGER_RADIUS],
+      [FINGER_WIDTH],
+    ),
+    axle: f.shapes.intern(CAP_ROOT, true, [SECTION_AXLE], [AXLE_RADIUS], [AXLE_LENGTH]),
+    axleHole: f.shapes.intern(0, true, [SECTION_AXLE], [AXLE_RADIUS], [AXLE_HOLE_LENGTH]),
+  };
+}
+
+interface Site {
+  readonly x: number;
+  readonly z: number;
+  readonly turn: Rot90;
+}
+
+function sited(site: Site, x: number, z: number, yPlates: number, rot = 0): LatticePose {
+  const cos = rot90Cos(site.turn);
+  const sin = rot90Sin(site.turn);
+  return {
+    x: site.x + cos * x + sin * z,
+    z: site.z - sin * x + cos * z,
+    yPlates,
+    rot: (rot + site.turn) % 4,
+  };
+}
+
+interface Built {
+  readonly carriers: ReadonlyArray<number>;
+}
+
+interface Builder {
+  readonly live: LiveWorld;
+  readonly f: Fixture;
+  readonly joints: Joints;
+  readonly next: () => number;
+  readonly pick: (below: number) => number;
+}
+
+type Scenario = (b: Builder, site: Site) => Built;
+
+const RAISED_Y_PLATES = 4;
+
+const towers: Scenario = (b, site) => {
+  const base = b.next();
+  b.live.place(base, studdedSlab(b.f, 4, 4), sited(site, 0, 0, 0));
+  const carriers = [base];
+  for (let tower = 0; tower < 2; tower++) {
+    let yPlates = 0;
+    const cellX = b.pick(3);
+    const cellZ = b.pick(3);
+    for (let level = 0; level < 1 + b.pick(4); level++) {
+      const id = b.next();
+      const tall = b.pick(2) === 0;
+      const width = 1 + b.pick(2);
+      b.live.place(
+        id,
+        block(b.f, width, 1, tall ? BRICK_LDU : PLATE_LDU),
+        sited(site, cellX * STUD_LDU, cellZ * STUD_LDU, yPlates),
+      );
+      carriers.push(id);
+      yPlates += tall ? 3 : 1;
+    }
+  }
+  return { carriers };
+};
+
+const singleStudStack: Scenario = (b, site) => {
+  const carriers: number[] = [];
+  for (let level = 0; level < 2 + b.pick(2); level++) {
+    const id = b.next();
+    b.live.place(id, block(b.f, 1, 1, BRICK_LDU), sited(site, 0, 0, 3 * level));
+    carriers.push(id);
+  }
+  return { carriers };
+};
+
+const jumped: Scenario = (b, site) => {
+  const below = b.next();
+  const plate = b.next();
+  const above = b.next();
+  b.live.place(below, block(b.f, 2, 1, BRICK_LDU), sited(site, 0, 0, 0));
+  b.live.place(plate, jumperPlate(b.f), sited(site, 0, 0, 3));
+  b.live.place(above, block(b.f, 1, 1, BRICK_LDU), sited(site, HALF, 0, 4));
+  return { carriers: [below, plate] };
+};
+
+const snot: Scenario = (b, site) => {
+  const below = b.next();
+  const studded = b.next();
+  const mounted = b.next();
+  b.live.place(below, block(b.f, 1, 1, BRICK_LDU), sited(site, 0, 0, 0));
+  b.live.place(studded, sideStudded(b.f), sited(site, 0, 0, 3));
+  b.live.place(
+    mounted,
+    singleConnector(b.f, [b.f.receptor(4), GENDER_FEMALE, 0, LINE_Y, HALF, AXIS_NEG_X], CELL),
+    sited(site, STUD_LDU, 0, 3),
+  );
+  return { carriers: [below, studded] };
+};
+
+const pinned: Scenario = (b, site) => {
+  const bored = b.next();
+  const holder = b.next();
+  const yPlates = b.pick(2) === 0 ? 0 : RAISED_Y_PLATES;
+  b.live.place(bored, boredBlock(b.f), sited(site, 0, 0, yPlates));
+  b.live.place(holder, pinnedBlock(b.f, STUD_LDU), sited(site, 0, 0, yPlates));
+  return { carriers: [holder, bored] };
+};
+
+const axled: Scenario = (b, site) => {
+  const first = b.next();
+  const second = b.next();
+  const axle = b.next();
+  const hole: Spec = [b.joints.axleHole, GENDER_FEMALE, LINE_X, LINE_Y, 0, AXIS_NEG_Z];
+  const beam: Box = [0, 0, 0, 2 * STUD_LDU, BRICK_LDU, STUD_LDU];
+  b.live.place(first, singleConnector(b.f, hole, beam), sited(site, 0, 0, RAISED_Y_PLATES));
+  b.live.place(second, singleConnector(b.f, hole, beam), sited(site, 0, STUD_LDU, RAISED_Y_PLATES));
+  b.live.place(
+    axle,
+    singleConnector(b.f, [b.joints.axle, GENDER_MALE, LINE_X, LINE_Y, 0, AXIS_POS_Z], CELL),
+    sited(site, 0, 0, RAISED_Y_PLATES),
+  );
+  return { carriers: [axle, first] };
+};
+
+const clipped: Scenario = (b, site) => {
+  const bar = b.next();
+  const clip = b.next();
+  const hollow = b.next();
+  const pole = b.next();
+  b.live.place(
+    bar,
+    singleConnector(b.f, [b.joints.bar, GENDER_MALE, 0, LINE_Y, HALF, AXIS_POS_X], CELL),
+    sited(site, 0, 0, RAISED_Y_PLATES),
+  );
+  b.live.place(
+    clip,
+    singleConnector(b.f, [b.joints.clip, GENDER_FEMALE, 0, LINE_Y, HALF, AXIS_NEG_X], CELL),
+    sited(site, 0, 0, RAISED_Y_PLATES),
+  );
+  b.live.place(
+    hollow,
+    singleConnector(
+      b.f,
+      [b.joints.hollowStud, GENDER_FEMALE, HALF, PLATE_LDU, HALF, AXIS_POS_Y],
+      CELL,
+    ),
+    sited(site, 3 * STUD_LDU, 0, 0),
+  );
+  b.live.place(
+    pole,
+    singleConnector(b.f, [b.joints.bar, GENDER_MALE, HALF, 0, HALF, AXIS_NEG_Y], CELL),
+    sited(site, 3 * STUD_LDU, 0, 1),
+  );
+  return { carriers: [bar, hollow] };
+};
+
+const hinged: Scenario = (b, site) => {
+  const leaf = b.next();
+  const flap = b.next();
+  b.live.place(
+    leaf,
+    singleConnector(b.f, [b.joints.maleFinger, GENDER_MALE, 0, LINE_Y, HALF, AXIS_POS_X], CELL),
+    sited(site, 0, 0, RAISED_Y_PLATES),
+  );
+  b.live.place(
+    flap,
+    singleConnector(b.f, [b.joints.femaleFinger, GENDER_FEMALE, 0, LINE_Y, HALF, AXIS_NEG_X], CELL),
+    sited(site, 0, 0, RAISED_Y_PLATES),
+  );
+  return { carriers: [leaf] };
+};
+
+const turntable: Scenario = (b, site) => {
+  const base = b.next();
+  const top = b.next();
+  b.live.place(
+    base,
+    singleConnector(b.f, [b.f.stud, GENDER_MALE, 0, PLATE_LDU, 0, AXIS_POS_Y], CELL),
+    sited(site, 0, 0, 0),
+  );
+  b.live.place(
+    top,
+    singleConnector(b.f, [b.f.receptor(4), GENDER_FEMALE, 0, 0, 0, AXIS_NEG_Y], CELL),
+    sited(site, 0, 0, 1),
+  );
+  return { carriers: [base] };
+};
+
+const tracked: Scenario = (b, site) => {
+  const laid = b.next();
+  const joined = b.next();
+  b.live.place(laid, studdedTrack(b.f, straightEnd(2, 0)), sited(site, 0, 0, 2));
+  b.live.place(joined, studdedTrack(b.f, straightEnd(0, 8)), sited(site, 2 * STUD_LDU, 0, 2));
+  return { carriers: [laid] };
+};
+
+const loose: Scenario = (b, site) => {
+  const standing = b.next();
+  const floating = b.next();
+  const lone = b.next();
+  b.live.place(standing, connectorless(b.f), sited(site, 0, 0, 0));
+  b.live.place(floating, connectorless(b.f), sited(site, 0, 3 * STUD_LDU, 2));
+  b.live.place(lone, block(b.f, 2, 2, BRICK_LDU), sited(site, 4 * STUD_LDU, 0, 0));
+  return { carriers: [standing] };
+};
+
+const BIG_STUDS = 48;
+
+const big: Scenario = (b, site) => {
+  const base = b.next();
+  b.live.place(base, studdedSlab(b.f, BIG_STUDS, BIG_STUDS), sited(site, 0, 0, 0));
+  const carriers = [base];
+  for (let k = 0; k < 4; k++) {
+    const id = b.next();
+    b.live.place(
+      id,
+      block(b.f, 2, 2, BRICK_LDU),
+      sited(site, b.pick(BIG_STUDS - 2) * STUD_LDU, b.pick(BIG_STUDS - 2) * STUD_LDU, 0),
+    );
+    carriers.push(id);
+  }
+  return { carriers };
+};
+
+const SCENARIOS: ReadonlyArray<Scenario> = [
+  towers,
+  singleStudStack,
+  jumped,
+  snot,
+  pinned,
+  axled,
+  clipped,
+  hinged,
+  turntable,
+  tracked,
+  loose,
+];
+
+const SITE_SPACING_LDU = 1200;
+const SITES_PER_ROW = 7;
+const SITE_ROWS = 7;
+const FIRST_GENERATED_ID = 100;
+const SINGLE_REMOVALS = 30;
+const TEN_REMOVALS = 8;
+const HUNDRED_REMOVALS = 3;
+const REORDERED_PER_DRAW = 2;
+const CARRIER_SHARE_OF_TEN = 5;
+
+interface GeneratedWorld {
+  readonly live: LiveWorld;
+  readonly carriers: ReadonlyArray<number>;
+  readonly placements: ReadonlyArray<number>;
+}
+
+function generatedWorld(seed: number): GeneratedWorld {
+  const f = fixture();
+  const live = new LiveWorld(f.search);
+  const pick = seeded(seed);
+  let id = FIRST_GENERATED_ID;
+  const builder: Builder = { live, f, joints: joints(f), next: () => id++, pick };
+  const carriers: number[] = [];
+  for (let s = 0; s < SITES_PER_ROW * SITE_ROWS; s++) {
+    const turn = pick(4);
+    if (!isRot90(turn)) throw new RangeError(`turn ${turn} is not a quarter turn`);
+    const site: Site = {
+      x: (s % SITES_PER_ROW) * SITE_SPACING_LDU + pick(2) * HALF,
+      z: Math.floor(s / SITES_PER_ROW) * SITE_SPACING_LDU + pick(2) * HALF,
+      turn,
+    };
+    const scenario = s === 0 ? big : (SCENARIOS[pick(SCENARIOS.length)] ?? towers);
+    carriers.push(...scenario(builder, site).carriers);
+  }
+  return { live, carriers, placements: [...live.listed.keys()] };
+}
+
+function drawn(
+  pick: (below: number) => number,
+  from: ReadonlyArray<number>,
+  count: number,
+  into: Set<number>,
+): void {
+  for (let tries = 0; into.size < count && tries < 10 * count; tries++) {
+    const placement = from[pick(from.length)];
+    if (placement !== undefined) into.add(placement);
+  }
+}
+
+function removalSets(
+  generated: GeneratedWorld,
+  pick: (below: number) => number,
+): ReadonlyArray<ReadonlySet<number>> {
+  const sets: Set<number>[] = [];
+  for (let k = 0; k < SINGLE_REMOVALS; k++) {
+    const one = new Set<number>();
+    drawn(pick, pick(5) === 0 ? generated.placements : generated.carriers, 1, one);
+    sets.push(one);
+  }
+  for (let k = 0; k < TEN_REMOVALS; k++) {
+    const ten = new Set<number>();
+    drawn(pick, generated.carriers, CARRIER_SHARE_OF_TEN, ten);
+    drawn(pick, generated.placements, 10, ten);
+    sets.push(ten);
+  }
+  for (let k = 0; k < HUNDRED_REMOVALS; k++) {
+    const hundred = new Set<number>();
+    drawn(pick, generated.placements, 100, hundred);
+    sets.push(hundred);
+  }
+  return sets;
+}
+
+describe("PlacementSearch stranding by removal", () => {
+  it.each([1, 2, 3])(
+    "names the same stranded placement as checking every placed model, in generated worlds of stacks, jumpers, side studs, pins, axles, clips, hollow studs, hinges, turntables, joined track, connectorless and 2,304-stud models, turned and half a stud off the grid (seed %i)",
+    (seed) => {
+      const generated = generatedWorld(seed);
+      const pick = seeded(seed * 7919);
+      const disagreements: unknown[] = [];
+      for (const removed of removalSets(generated, pick)) {
+        const disagreement = generated.live.disagreement(removed);
+        if (disagreement !== null) disagreements.push(disagreement);
+        for (let k = 0; k < REORDERED_PER_DRAW; k++) {
+          const moved = generated.placements[pick(generated.placements.length)];
+          if (moved !== undefined) generated.live.replace(moved);
+        }
+      }
+      expect(disagreements).toEqual([]);
+    },
+  );
+
+  it("names a model held only by a side pin, a side stud or a track end on a studded model, whose stud boxes miss the removed holder's", () => {
+    const f = fixture();
+    const live = new LiveWorld(f.search);
+    const raised = { x: 0, z: 0, yPlates: RAISED_Y_PLATES, rot: 0 };
+    live.place(10, pinnedBlock(f, STUD_LDU), raised);
+    live.place(11, boredBlock(f), raised);
+    const studAt = { x: 20 * STUD_LDU, z: 0, yPlates: 0, rot: 0 };
+    live.place(20, block(f, 1, 1, BRICK_LDU), studAt);
+    live.place(21, sideStudded(f), { ...studAt, yPlates: 3 });
+    live.place(
+      22,
+      singleConnector(f, [f.receptor(4), GENDER_FEMALE, 0, LINE_Y, HALF, AXIS_NEG_X], CELL),
+      { ...studAt, x: studAt.x + STUD_LDU, yPlates: 3 },
+    );
+    const trackAt = { x: 40 * STUD_LDU, z: 0, yPlates: 2, rot: 0 };
+    live.place(30, studdedTrack(f, straightEnd(2, 0)), trackAt);
+    live.place(31, studdedTrack(f, straightEnd(0, 8)), {
+      ...trackAt,
+      x: trackAt.x + 2 * STUD_LDU,
+    });
+    expect([
+      live.stranded(new Set([10])),
+      live.stranded(new Set([21])),
+      live.stranded(new Set([30])),
+    ]).toEqual([stranded(11), stranded(22), stranded(31)]);
+  });
+
+  it("names a model held only by studs, including a 1×1 brick on a 1×1 brick whose stud boxes are one shared point", () => {
+    const f = fixture();
+    const live = new LiveWorld(f.search);
+    live.place(40, block(f, 2, 1, BRICK_LDU), ORIGIN);
+    live.place(41, block(f, 2, 1, BRICK_LDU), { ...ORIGIN, yPlates: 3 });
+    const single = { x: 10 * STUD_LDU, z: 0, yPlates: 0, rot: 0 };
+    live.place(42, block(f, 1, 1, BRICK_LDU), single);
+    live.place(43, block(f, 1, 1, BRICK_LDU), { ...single, yPlates: 3 });
+    expect([live.stranded(new Set([40])), live.stranded(new Set([42]))]).toEqual([
+      stranded(41),
+      stranded(43),
+    ]);
+  });
+
+  it("names the first stranded placement in the order the search holds them, not in id order", () => {
+    const f = fixture();
+    const live = new LiveWorld(f.search);
+    live.place(50, block(f, 2, 1, BRICK_LDU), ORIGIN);
+    live.place(55, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, yPlates: 3 });
+    live.place(53, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, x: STUD_LDU, yPlates: 3 });
+    const first = live.stranded(new Set([50]));
+    live.replace(55);
+    expect([first, live.stranded(new Set([50]))]).toEqual([stranded(55), stranded(53)]);
+  });
+
+  it("still answers waiting first, for a removed placement that waits and for one that waits beside a removed one, before checking any neighbour", () => {
+    const f = fixture();
+    const live = new LiveWorld(f.search);
+    live.place(60, block(f, 2, 1, BRICK_LDU), ORIGIN);
+    live.place(61, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, yPlates: 3 });
+    const beside = block(f, 1, 1, BRICK_LDU);
+    f.search.awaitTables(62, beside.volumes, { ...ORIGIN, x: 2 * STUD_LDU });
+    expect([live.stranded(new Set([60])), live.stranded(new Set([62, 60]))]).toEqual([
+      { kind: "waiting", placement: 62, failed: false },
+      { kind: "waiting", placement: 62, failed: false },
+    ]);
+  });
+
+  it("refuses to check a removal while other placements are withdrawn", () => {
+    const f = fixture();
+    const live = new LiveWorld(f.search);
+    live.place(70, block(f, 2, 1, BRICK_LDU), ORIGIN);
+    live.place(71, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, yPlates: 3 });
+    live.place(72, block(f, 1, 1, BRICK_LDU), { ...ORIGIN, x: 10 * STUD_LDU });
+    expect(() => f.search.withdrawn(new Set([72]), () => live.stranded(new Set([70])))).toThrow(
+      "placements are already withdrawn",
+    );
+  });
+});
+
+const OFFICIAL_BASEPLATE = "generated:baseplate-3811";
+const OFFICIAL_BRICK = "generated:brick-2x4";
+const OFFICIAL_JUMPER = "generated:jumper";
+const ON_THE_TABLE_FAR_AWAY = 50 * STUD_LDU;
+
+async function officialParts() {
+  const container = new Container();
+  container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "unused" }));
+  container.rebind(ASSET_FETCHER).toConstantValue(fixtureBundleFetcher());
+  const catalog = container.get(PLACEABLE_CATALOG);
+  await catalog.start(await container.get(PART_BUNDLE_LOADER).loadIndex("standard"));
+  const tables = container.get(CONNECTOR_TABLES);
+  const search = container.get(PLACEMENT_SEARCH);
+  const piece = async (item: string): Promise<Piece> => {
+    const placeable = await catalog.load(catalog.itemRefId(item) ?? -1);
+    const { tables: parts } = await tables.load(placeable);
+    const boxes = partBoxes(placeable.partBoxes);
+    return {
+      connectors: search.model(parts, placeable.partTransforms, []),
+      volumes: FrozenVolumes.ofPlaceable(placeable),
+      parts: {
+        boxes,
+        technic: FrozenTechnic.ofParts(
+          catalog.parts().map((part) => part.technic),
+          placeable.partTransforms,
+          boxes.boxes,
+        ),
+      },
+    };
+  };
+  return {
+    live: new LiveWorld(search),
+    officialBaseplate: await piece(OFFICIAL_BASEPLATE),
+    officialBrick: await piece(OFFICIAL_BRICK),
+    officialJumper: await piece(OFFICIAL_JUMPER),
+  };
+}
+
+function seatedNear(live: LiveWorld, piece: Piece, at: PlacementWindow): LatticePose {
+  const choice = placementChoice();
+  live.search.search(
+    piece.connectors,
+    piece.volumes,
+    piece.parts.boxes,
+    piece.parts.technic,
+    at,
+    TABLE_Y_PLATES,
+    null,
+    choice,
+  );
+  if (!choice.accepted || choice.votes === 0) {
+    throw new Error(`no mated pose near ${at.x}, ${at.z}, ${at.yPlates}`);
+  }
+  return { x: choice.x, z: choice.z, yPlates: choice.yPlates, rot: choice.rot };
+}
+
+describe("PlacementSearch stranding by removal, on official parts", () => {
+  it("names what the generated official-part scenes leave stranded, as checking every placed model does: a 3001 on a 3001 on a 3811, and a 3001 on a 3794b jumper's off-centre stud on a 3001, where the jumper is stranded only when both neighbours go", async () => {
+    const { live, officialBaseplate, officialBrick, officialJumper } = await officialParts();
+    live.place(80, officialBaseplate, ORIGIN);
+    const lower = seatedNear(live, officialBrick, window(2 * STUD_LDU, 2 * STUD_LDU, 1));
+    live.place(81, officialBrick, lower);
+    live.place(
+      82,
+      officialBrick,
+      seatedNear(live, officialBrick, window(lower.x, lower.z, 1, lower.yPlates + 3)),
+    );
+    const carrier = { x: ON_THE_TABLE_FAR_AWAY, z: 0, yPlates: 0, rot: 0 };
+    live.place(83, officialBrick, carrier);
+    const seated = seatedNear(live, officialJumper, window(carrier.x, carrier.z, 1, 3));
+    live.place(84, officialJumper, seated);
+    live.place(
+      85,
+      officialBrick,
+      seatedNear(live, officialBrick, window(seated.x + HALF, seated.z, 1, seated.yPlates + 1)),
+    );
+    const placements = [80, 81, 82, 83, 84, 85];
+    const disagreements: unknown[] = [];
+    for (let a = 0; a < placements.length; a++) {
+      for (let b = a; b < placements.length; b++) {
+        const disagreement = live.disagreement(new Set([placements[a] ?? 0, placements[b] ?? 0]));
+        if (disagreement !== null) disagreements.push(disagreement);
+      }
+    }
+    expect({
+      disagreements,
+      underTheTop: live.stranded(new Set([81])),
+      underAndOverTheJumper: live.stranded(new Set([83, 85])),
+      theJumper: live.stranded(new Set([84])),
+    }).toEqual({
+      disagreements: [],
+      underTheTop: stranded(82),
+      underAndOverTheJumper: stranded(84),
+      theJumper: stranded(85),
+    });
+  }, 60_000);
 });
