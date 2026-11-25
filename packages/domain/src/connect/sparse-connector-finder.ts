@@ -22,7 +22,7 @@ import {
   turnSin,
 } from "./lattice-frame.ts";
 import { MateClasses } from "./mate-classes.ts";
-import type { MateFinder } from "./mate-finder.ts";
+import type { PartnerNamingFinder } from "./mate-finder.ts";
 import { MODEL_CACHE_CONNECTORS, MODEL_CACHE_MODELS, ModelCache } from "./model-cache.ts";
 import { NO_PROPOSAL_SLOT, ProposalProgress } from "./proposal-progress.ts";
 import {
@@ -60,6 +60,8 @@ const STUD_CENTRE_SIXTEENTHS = STUD_SIXTEENTHS / 2;
 const PHASE_RADIX = STUD_SIXTEENTHS;
 const UNBUILT_OFF_AXIS_PHASES = new Int32Array(0);
 const UNBUILT_ROWS = new Int32Array(0);
+const EVERY_PARTNER = -1;
+const EVERY_INSTANCE = -1;
 const JOINT_KEY_INTS = 6;
 const LINE_KEY_INTS = 4;
 
@@ -276,6 +278,7 @@ function hasOffAxisPhase(
 class TurnedModel {
   constructor(readonly model: ModelConnectors | null) {}
   order = new Int32Array(0);
+  connectorGroupKey = new Int32Array(0);
   groupKey = new Int32Array(0);
   groupEnd = new Int32Array(0);
   readonly groupsOfTurn = new Int32Array(QUARTER_TURNS + 1);
@@ -306,7 +309,7 @@ class TurnedModel {
   lineShared = new Uint8Array(0);
 }
 
-export class SparseConnectorFinder implements MateFinder {
+export class SparseConnectorFinder implements PartnerNamingFinder {
   readonly namesPartners = true;
   readonly proposesEveryPose = false;
   private readonly classes: MateClasses;
@@ -529,6 +532,28 @@ export class SparseConnectorFinder implements MateFinder {
     this.matesAt(model, pose, out);
   }
 
+  joinsPart(
+    model: ModelConnectors,
+    pose: LatticePose,
+    instance: number,
+    partner: number,
+    partnerInstance: number,
+  ): boolean {
+    checkPose(pose);
+    const turned = this.turn(model);
+    const skipped = latticeKey(pose);
+    const first = pose.rot * model.count;
+    this.joints.clear();
+    const from = model.instanceStart[instance] ?? 0;
+    const to = model.instanceStart[instance + 1] ?? 0;
+    for (let i = from; i < to; i++) {
+      const m = first + i;
+      if (turned.connectorGroupKey[m] === skipped) continue;
+      if (this.connectorMates(model, m, pose, null, partner, partnerInstance) > 0) return true;
+    }
+    return false;
+  }
+
   private matesAt(model: ModelConnectors, pose: LatticePose, out: MateReport | null): number {
     const turned = this.turn(model);
     this.joints.clear();
@@ -732,7 +757,14 @@ export class SparseConnectorFinder implements MateFinder {
       const to = turned.groupEnd[g] ?? from;
       if (turned.groupKey[g] !== skipped) {
         for (let k = from; k < to; k++) {
-          n += this.connectorMates(model, turned.order[k] ?? 0, pose, out);
+          n += this.connectorMates(
+            model,
+            turned.order[k] ?? 0,
+            pose,
+            out,
+            EVERY_PARTNER,
+            EVERY_INSTANCE,
+          );
         }
       }
       from = to;
@@ -745,6 +777,8 @@ export class SparseConnectorFinder implements MateFinder {
     m: number,
     pose: LatticePose,
     out: MateReport | null,
+    partner: number,
+    partnerInstance: number,
   ): number {
     const turned = this.turned;
     const classes = this.classes;
@@ -783,6 +817,10 @@ export class SparseConnectorFinder implements MateFinder {
         const sz = (this.slotZ[slot] ?? 0) - z;
         const d = Math.imul(sx, dx) + Math.imul(sy, dy) + Math.imul(sz, dz);
         if (sx !== dx * d || sy !== dy * d || sz !== dz * d) continue;
+        if (partner !== EVERY_PARTNER && this.slotOwner[slot] !== partner) continue;
+        if (partnerInstance !== EVERY_INSTANCE && this.slotInstance[slot] !== partnerInstance) {
+          continue;
+        }
         if (!classes.engagesAt(own, this.slotClass[slot] ?? UNCLASSED, d)) continue;
         if (!out) {
           n += this.sharesLine(i, slot) ? this.newJoint(model, i, slot, axis, x, y, z) : 1;
@@ -1281,6 +1319,7 @@ export class SparseConnectorFinder implements MateFinder {
       }
     }
     turned.groupsOfTurn[QUARTER_TURNS] = keys.length;
+    turned.connectorGroupKey = keyOf;
     turned.groupKey = Int32Array.from(keys);
     turned.groupEnd = Int32Array.from(ends);
   }

@@ -11,7 +11,7 @@ import {
   sixteenths,
   verticalSign,
 } from "./lattice-frame.ts";
-import type { MateFinder } from "./mate-finder.ts";
+import type { UnnamedPartnerFinder } from "./mate-finder.ts";
 import type { ProposalProgress } from "./proposal-progress.ts";
 import { MateClasses } from "./mate-classes.ts";
 import { MODEL_CACHE_CONNECTORS, MODEL_CACHE_MODELS, ModelCache } from "./model-cache.ts";
@@ -210,7 +210,7 @@ class PhaseGroups {
   }
 }
 
-export class LatticeStudFinder implements MateFinder {
+export class LatticeStudFinder implements UnnamedPartnerFinder {
   readonly namesPartners = false;
   readonly proposesEveryPose = true;
   private readonly classes: MateClasses;
