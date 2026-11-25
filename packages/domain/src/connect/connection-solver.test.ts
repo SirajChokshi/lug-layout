@@ -2625,3 +2625,902 @@ describe("finger sequences", () => {
     });
   });
 });
+
+const CARRY_SIDE_Y = 12;
+const CARRY_GRID_STEPS = 24;
+const CARRY_STEP_LDU = HALF;
+const CARRY_REGISTRY_LDU = 40_000;
+const CARRY_WORLD = 170;
+const CARRY_SHARES = 4;
+const CARRY_FIELD_LDU = 4000;
+const CARRY_FIELD_ROWS = 8;
+const CARRY_FIELD_PINS = 4;
+const CARRY_FIELD_STEPS = 12;
+const CARRY_FIELD_MOVE_LDU = STUD_LDU;
+const CARRY_MOVES = 20;
+const CARRY_TURN_AT = 10;
+const CARRY_STEPS_LDU = [10, 20, 20, 40, 10, -20, 160, 20, -10, 20, 300, -20];
+const CARRY_OTHER_OPS = 6;
+const CARRY_SINGLE_WITHDRAWALS = 3;
+const CARRY_FIRST_OWNER = 100;
+const CARRY_DEEP_EVERY = 10;
+const CARRY_TIMEOUT_MS = 120_000;
+const TRACK_RUN = 2;
+const LATTICE_FAMILY = 0;
+const SPARSE_FAMILY = 1;
+const TRACK_FAMILY = 2;
+const DROPPED = "dropped mid-carry";
+
+type CarryEnding = "cancel" | "drop" | "drop, undo and redo" | "throw";
+type QueryKind = "votes" | "evaluate" | "partnered" | "propose" | "rank";
+
+interface CarryKind {
+  readonly name: string;
+  readonly model: ModelConnectors;
+  readonly partner: number;
+}
+
+interface Placement {
+  readonly kind: number;
+  readonly pose: LatticePose;
+}
+
+interface Op {
+  readonly insert: boolean;
+  readonly owner: number;
+  readonly model: ModelConnectors;
+  readonly pose: LatticePose;
+}
+
+interface Query {
+  readonly type: QueryKind;
+  readonly kind: number;
+  readonly pose: LatticePose;
+}
+
+type CarriedEntry = readonly [
+  number,
+  { readonly model: ModelConnectors; readonly pose: LatticePose },
+];
+
+interface CarriedMoves {
+  readonly entries: ReadonlyArray<CarriedEntry>;
+  readonly moves: ReadonlyArray<ReadonlyArray<Query>>;
+}
+
+function droppedBy(run: () => unknown): void {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof Error && error.message === DROPPED) return;
+    throw error;
+  }
+  throw new Error(`the carry wasn't ${DROPPED}`);
+}
+
+function seededPick(seed: number): (below: number) => number {
+  let state = seed >>> 0;
+  return (below) => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return Math.floor((state / 2 ** 32) * below);
+  };
+}
+
+function solverOfThreeFamilies(): ConnectionSolver {
+  return new ConnectionSolver([
+    new LatticeStudFinder(mating),
+    new SparseConnectorFinder(mating),
+    new TrackEndFinder(),
+  ]);
+}
+
+function onAxis(axis: number, x: number, z: number, shapeId: number, gender: number): Spec {
+  return { shape: shapeId, gender, origin: [x, HOLE_HEIGHT, z], axis };
+}
+
+function straightRun(from: number, heading: number): TrackEnd[] {
+  return [
+    end([from, 0, 0, 0, 0, 0, 0, 0], (heading + 8) % 16),
+    end([from + (heading === 0 ? TRACK_RUN : -TRACK_RUN), 0, 0, 0, 0, 0, 0, 0], heading),
+  ];
+}
+
+function carryKinds(): ReadonlyArray<CarryKind> {
+  const brick = block(2, 4, BRICK_LDU, BRICK_RECEPTOR);
+  const pegRow = table(
+    Array.from({ length: 4 }, (_, k) =>
+      onAxis(AXIS_POS_X, 0, HALF + k * STUD_LDU, PIN, GENDER_MALE),
+    ),
+  );
+  const socketRow = table(
+    Array.from({ length: 6 }, (_, k) =>
+      onAxis(AXIS_NEG_X, 0, HALF + k * STUD_LDU, PIN_HOLE, GENDER_FEMALE),
+    ),
+  );
+  return [
+    { name: "plate", model: single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR)), partner: 3 },
+    { name: "brick", model: single(brick), partner: 0 },
+    { name: "baseplate", model: single(baseplate(8, 8)), partner: 1 },
+    {
+      name: "jumper",
+      model: single(
+        table([
+          {
+            shape: PLATE_RECEPTOR,
+            gender: GENDER_FEMALE,
+            origin: [HALF, 0, HALF],
+            axis: AXIS_NEG_Y,
+          },
+          {
+            shape: PLATE_RECEPTOR,
+            gender: GENDER_FEMALE,
+            origin: [HALF + STUD_LDU, 0, HALF],
+            axis: AXIS_NEG_Y,
+          },
+          {
+            shape: STUD,
+            gender: GENDER_MALE,
+            origin: [STUD_LDU, PLATE_LDU, HALF],
+            axis: AXIS_POS_Y,
+          },
+        ]),
+      ),
+      partner: 0,
+    },
+    {
+      name: "side-studded brick",
+      model: single(
+        table([
+          { shape: STUD, gender: GENDER_MALE, origin: [HALF, BRICK_LDU, HALF], axis: AXIS_POS_Y },
+          {
+            shape: BRICK_RECEPTOR,
+            gender: GENDER_FEMALE,
+            origin: [HALF, 0, HALF],
+            axis: AXIS_NEG_Y,
+          },
+          {
+            shape: STUD,
+            gender: GENDER_MALE,
+            origin: [STUD_LDU, CARRY_SIDE_Y, HALF],
+            axis: AXIS_POS_X,
+          },
+        ]),
+      ),
+      partner: 5,
+    },
+    {
+      name: "side-mounted plate",
+      model: single(
+        table([
+          {
+            shape: PLATE_RECEPTOR,
+            gender: GENDER_FEMALE,
+            origin: [STUD_LDU, CARRY_SIDE_Y, HALF],
+            axis: AXIS_NEG_X,
+          },
+          {
+            shape: PLATE_RECEPTOR,
+            gender: GENDER_FEMALE,
+            origin: [HALF, 0, HALF],
+            axis: AXIS_NEG_Y,
+          },
+        ]),
+      ),
+      partner: 4,
+    },
+    {
+      name: "pin",
+      model: single(table([onAxis(AXIS_POS_X, 0, HALF, PIN, GENDER_MALE)])),
+      partner: 7,
+    },
+    {
+      name: "hole",
+      model: single(table([onAxis(AXIS_NEG_X, 0, HALF, PIN_HOLE, GENDER_FEMALE)])),
+      partner: 6,
+    },
+    { name: "pin row", model: single(pegRow), partner: 9 },
+    { name: "hole row", model: single(socketRow), partner: 8 },
+    { name: "track", model: trackModel(straightRun(0, 0)), partner: 11 },
+    { name: "facing track", model: trackModel(straightRun(0, 8)), partner: 10 },
+    {
+      name: "brick with pins",
+      model: model(
+        [brick, pegRow],
+        [
+          [0, IDENTITY],
+          [1, translation(0, PLATE_LDU, 0)],
+        ],
+      ),
+      partner: 9,
+    },
+    {
+      name: "studded track",
+      model: ModelConnectors.fromParts(
+        [block(2, 2, PLATE_LDU, PLATE_RECEPTOR)],
+        { count: 1, partIndex: [0], matrices: Float64Array.from(IDENTITY) },
+        mating,
+        straightRun(0, 0),
+      ),
+      partner: 11,
+    },
+  ];
+}
+
+function reportRows(report: MateReport): string {
+  const rows: number[][] = [];
+  for (let k = 0; k < report.count; k++) {
+    rows.push([
+      report.connector[k] ?? 0,
+      report.shape[k] ?? 0,
+      report.gender[k] ?? 0,
+      report.partnerShape[k] ?? 0,
+      report.partnerGender[k] ?? 0,
+      report.sourceMask[k] ?? 0,
+      report.status[k] ?? 0,
+      report.family[k] ?? 0,
+      report.partner[k] ?? 0,
+      report.instance[k] ?? 0,
+      report.partnerInstance[k] ?? 0,
+      report.joint[k] ?? 0,
+      ...report.engagement.subarray(k * ENGAGEMENT_FLOATS, (k + 1) * ENGAGEMENT_FLOATS),
+    ]);
+  }
+  return JSON.stringify([report.jointCount, rows]);
+}
+
+function candidateRows(candidates: CandidatePoses): string {
+  const rows: number[][] = [];
+  for (let k = 0; k < candidates.count; k++) {
+    rows.push([
+      candidates.x[k] ?? 0,
+      candidates.z[k] ?? 0,
+      candidates.yPlates[k] ?? 0,
+      candidates.rot[k] ?? 0,
+      candidates.votes[k] ?? 0,
+    ]);
+  }
+  return JSON.stringify(rows);
+}
+
+function answer(
+  solver: ConnectionSolver,
+  kinds: ReadonlyArray<CarryKind>,
+  query: Query,
+  report: MateReport,
+): string {
+  const piece = kinds[query.kind]?.model;
+  if (!piece) throw new Error(`no carry kind ${query.kind}`);
+  const candidates = new CandidatePoses();
+  switch (query.type) {
+    case "votes":
+      return `votes ${solver.votes(piece, query.pose)}`;
+    case "evaluate":
+      solver.evaluate(piece, query.pose, report);
+      return reportRows(report);
+    case "partnered":
+      solver.partneredMates(piece, query.pose, report);
+      return reportRows(report);
+    case "propose":
+      solver.proposeMates(piece, window(query.pose, 1, 1, 2), candidates);
+      return candidateRows(candidates);
+    case "rank":
+      solver.rank(piece, window(query.pose, 1, 0), candidates);
+      return candidateRows(candidates);
+    default: {
+      const unhandled: never = query.type;
+      throw new Error(`unhandled query ${String(unhandled)}`);
+    }
+  }
+}
+
+function turnedAbout(at: LatticePose, pivot: LatticePose): LatticePose {
+  return {
+    x: pivot.x + (at.z - pivot.z),
+    z: pivot.z - (at.x - pivot.x),
+    yPlates: at.yPlates,
+    rot: (at.rot + 1) % 4,
+  };
+}
+
+class CarryRun {
+  readonly subject = solverOfThreeFamilies();
+  readonly oracle = solverOfThreeFamilies();
+  readonly ops: Op[] = [];
+  readonly subjectLog: string[] = [];
+  readonly oracleLog: string[] = [];
+  readonly world = new Map<number, Placement>();
+  readonly field: number[] = [];
+  readonly holeRows: number[] = [];
+  readonly families = new Set<number>();
+  readonly report = new MateReport();
+  halfStudLattice = 0;
+  sideStudSparse = 0;
+  stackedTrackHolders = 0;
+  chainWitnesses = 0;
+  private nextOwner = CARRY_FIRST_OWNER;
+
+  constructor(
+    readonly kinds: ReadonlyArray<CarryKind>,
+    readonly pick: (below: number) => number,
+  ) {
+    kinds.forEach((_, k) => this.place(1 + k, k, pose(CARRY_REGISTRY_LDU + k * 2000, 0, 0)));
+  }
+
+  randomPlacement(): Placement {
+    const kind = this.pick(this.kinds.length);
+    const step = this.kinds[kind]?.model.trackEndCount === 0 ? CARRY_STEP_LDU : STUD_LDU;
+    const steps = (CARRY_GRID_STEPS * CARRY_STEP_LDU) / step;
+    return {
+      kind,
+      pose: pose(
+        this.pick(steps) * step,
+        this.pick(steps) * step,
+        this.pick(4),
+        this.pick(4) as QuarterTurn,
+      ),
+    };
+  }
+
+  populate(count: number): void {
+    const placed: Placement[] = [];
+    for (let k = 0; k < count; k++) {
+      const share = this.pick(CARRY_SHARES);
+      const twin = placed[this.pick(placed.length)];
+      const placement: Placement =
+        twin && share === 0
+          ? twin
+          : twin && share === 1
+            ? {
+                kind: STACKED_KINDS[this.pick(STACKED_KINDS.length)] ?? 0,
+                pose: {
+                  ...twin.pose,
+                  x: twin.pose.x + this.pick(2) * HALF,
+                  yPlates: twin.pose.yPlates + 1 + 2 * this.pick(2),
+                },
+              }
+            : this.randomPlacement();
+      placed.push(placement);
+      this.placeNew(placement.kind, placement.pose);
+    }
+    for (let row = 0; row < CARRY_FIELD_PINS; row++) {
+      this.field.push(this.nextOwner);
+      this.placeNew(PIN_ROW_KIND, this.fieldPose());
+    }
+  }
+
+  relayField(): void {
+    for (const owner of this.holeRows) if (this.world.has(owner)) this.lift(owner);
+    this.holeRows.length = 0;
+    for (let row = 0; row < CARRY_FIELD_ROWS; row++) {
+      this.holeRows.push(this.nextOwner);
+      this.placeNew(HOLE_ROW_KIND, this.fieldPose());
+    }
+  }
+
+  fieldPose(): LatticePose {
+    return pose(
+      CARRY_FIELD_LDU + this.pick(CARRY_FIELD_STEPS) * HALF,
+      this.pick(CARRY_FIELD_STEPS) * STUD_LDU,
+      0,
+    );
+  }
+
+  survey(): void {
+    const everyModel = [...this.world.values()].flatMap((placed) => [
+      ...queriesAt(placed.pose, placed.kind, false),
+      ...queriesAt(placed.pose, this.kinds[placed.kind]?.partner ?? 0, false),
+    ]);
+    this.ask(everyModel, null);
+  }
+
+  placeNew(kind: number, at: LatticePose): void {
+    this.place(this.nextOwner++, kind, at);
+  }
+
+  place(owner: number, kind: number, at: LatticePose): void {
+    const piece = this.model(kind);
+    this.subject.insert(piece, at, owner);
+    this.oracle.insert(piece, at, owner);
+    this.ops.push({ insert: true, owner, model: piece, pose: at });
+    this.world.set(owner, { kind, pose: at });
+  }
+
+  lift(owner: number): void {
+    const placed = this.world.get(owner);
+    if (!placed) throw new Error(`owner ${owner} isn't placed`);
+    const piece = this.model(placed.kind);
+    this.subject.remove(piece, placed.pose, owner);
+    this.oracle.remove(piece, placed.pose, owner);
+    this.ops.push({ insert: false, owner, model: piece, pose: placed.pose });
+    this.world.delete(owner);
+  }
+
+  model(kind: number): ModelConnectors {
+    const piece = this.kinds[kind]?.model;
+    if (!piece) throw new Error(`no carry kind ${kind}`);
+    return piece;
+  }
+
+  movable(): number[] {
+    return [...this.world.keys()].filter((owner) => owner >= CARRY_FIRST_OWNER);
+  }
+
+  entry(owner: number): CarriedEntry {
+    const placed = this.world.get(owner);
+    if (!placed) throw new Error(`owner ${owner} isn't placed`);
+    return [owner, { model: this.model(placed.kind), pose: placed.pose }];
+  }
+
+  line(solver: ConnectionSolver, query: Query): string {
+    const asked = answer(solver, this.kinds, query, this.report);
+    return `${query.type} ${this.kinds[query.kind]?.name} ${JSON.stringify(query.pose)}: ${asked}`;
+  }
+
+  subjectAnswers(queries: ReadonlyArray<Query>, held: ReadonlySet<number> | null): void {
+    for (const query of queries) {
+      this.subjectLog.push(this.line(this.subject, query));
+      if (query.type === "evaluate" || query.type === "partnered") this.tally(query, held);
+    }
+  }
+
+  oracleAnswers(queries: ReadonlyArray<Query>): void {
+    for (const query of queries) this.oracleLog.push(this.line(this.oracle, query));
+  }
+
+  ask(queries: ReadonlyArray<Query>, held: ReadonlySet<number> | null): void {
+    this.subjectAnswers(queries, held);
+    this.oracleAnswers(queries);
+  }
+
+  private tally(query: Query, held: ReadonlySet<number> | null): void {
+    const report = this.report;
+    const owners = new Map<number, Set<number>>();
+    for (let k = 0; k < report.count; k++) {
+      const family = report.family[k] ?? 0;
+      this.families.add(family);
+      if (
+        family === LATTICE_FAMILY &&
+        report.gender[k] === GENDER_MALE &&
+        this.kinds[query.kind]?.name === "jumper"
+      ) {
+        this.halfStudLattice++;
+      }
+      if (
+        family === SPARSE_FAMILY &&
+        (report.shape[k] === STUD || report.partnerShape[k] === STUD)
+      ) {
+        this.sideStudSparse++;
+      }
+      const connector = report.connector[k] ?? 0;
+      const named = owners.get(connector) ?? new Set<number>();
+      named.add(report.partner[k] ?? NO_PARTNER);
+      owners.set(connector, named);
+      if (family === TRACK_FAMILY && named.size >= 2) this.stackedTrackHolders++;
+    }
+    if (!held) return;
+    for (const named of owners.values()) {
+      let fromHeld = 0;
+      for (const owner of named) if (held.has(owner)) fromHeld++;
+      if (fromHeld >= 2) this.chainWitnesses++;
+    }
+  }
+
+  carry(size: number, ending: CarryEnding, inField: boolean): CarriedMoves {
+    const owners = inField ? this.field.filter((owner) => this.world.has(owner)) : this.movable();
+    const held: number[] = [];
+    while (held.length < Math.min(size, owners.length)) {
+      const owner = owners[this.pick(owners.length)];
+      if (owner !== undefined && !held.includes(owner)) held.push(owner);
+    }
+    const entries = held.map((owner) => this.entry(owner));
+    const pivot = entries[0]?.[1].pose ?? pose(0, 0, 0);
+    let targets = entries.map(([, placed]) => placed.pose);
+    const moves: Query[][] = [];
+    for (let move = 0; move < CARRY_MOVES; move++) {
+      const step = inField
+        ? (this.pick(3) - 1) * CARRY_FIELD_MOVE_LDU
+        : (CARRY_STEPS_LDU[move % CARRY_STEPS_LDU.length] ?? STUD_LDU);
+      targets = targets.map((at) =>
+        move % 2 === 0 ? { ...at, x: at.x + step } : { ...at, z: at.z + step },
+      );
+      if (move === CARRY_TURN_AT) targets = targets.map((at) => turnedAbout(at, pivot));
+      const asked = targets.flatMap((at, i) =>
+        queriesAt(
+          at,
+          this.world.get(held[i] ?? 0)?.kind ?? 0,
+          i % CARRY_DEEP_EVERY === 0 && (!inField || move === 0),
+        ),
+      );
+      moves.push(asked);
+      const throws = ending === "throw" && move === CARRY_MOVES - 1;
+      if (throws) {
+        droppedBy(() =>
+          this.subject.withdrawn(entries, () => {
+            this.subjectAnswers(asked, null);
+            throw new Error(DROPPED);
+          }),
+        );
+      } else {
+        this.subject.withdrawn(entries, () => this.subjectAnswers(asked, null));
+      }
+      this.eagerly(entries, asked, throws);
+    }
+    if (ending === "drop" || ending === "drop, undo and redo") {
+      const from = entries.map(([, placed]) => placed.pose);
+      this.relay(held, from, targets);
+      if (ending === "drop, undo and redo") {
+        this.relay(held, targets, from);
+        this.relay(held, from, targets);
+      }
+    }
+    const restored = ending === "cancel" || ending === "throw";
+    const after = held.flatMap((owner) => {
+      const placed = this.world.get(owner);
+      if (!placed) return [];
+      return [
+        ...queriesAt(placed.pose, placed.kind, false),
+        ...queriesAt(placed.pose, this.kinds[placed.kind]?.partner ?? 0, false),
+      ];
+    });
+    this.ask(after, restored ? new Set(held) : null);
+    return { entries, moves };
+  }
+
+  singleWithdrawals(count: number): void {
+    const owners = this.movable();
+    for (let k = 0; k < count; k++) {
+      const owner = owners[this.pick(owners.length)];
+      const placed = owner === undefined ? undefined : this.world.get(owner);
+      if (owner === undefined || !placed) continue;
+      const entries = [this.entry(owner)];
+      const asked = queriesAt(placed.pose, this.kinds[placed.kind]?.partner ?? 0, true);
+      this.subject.withdrawn(entries, () => this.subjectAnswers(asked, null));
+      this.eagerly(entries, asked, false);
+    }
+  }
+
+  otherEdits(count: number): void {
+    for (let k = 0; k < count; k++) {
+      const owners = this.movable();
+      const owner = owners[this.pick(owners.length)];
+      if (this.pick(2) === 0 && owner !== undefined) this.lift(owner);
+      else {
+        const placement = this.randomPlacement();
+        this.placeNew(placement.kind, placement.pose);
+      }
+    }
+  }
+
+  private relay(
+    held: ReadonlyArray<number>,
+    from: ReadonlyArray<LatticePose>,
+    to: ReadonlyArray<LatticePose>,
+  ): void {
+    held.forEach((owner, i) => {
+      const kind = this.world.get(owner)?.kind ?? 0;
+      const at = from[i];
+      if (!at) return;
+      const piece = this.model(kind);
+      this.subject.remove(piece, at, owner);
+      this.oracle.remove(piece, at, owner);
+      this.ops.push({ insert: false, owner, model: piece, pose: at });
+    });
+    held.forEach((owner, i) => {
+      const kind = this.world.get(owner)?.kind ?? 0;
+      const at = to[i];
+      if (at) this.place(owner, kind, at);
+    });
+  }
+
+  private eagerly(
+    entries: ReadonlyArray<CarriedEntry>,
+    asked: ReadonlyArray<Query>,
+    throws: boolean,
+  ): void {
+    for (const [owner, placed] of entries) {
+      this.oracle.remove(placed.model, placed.pose, owner);
+      this.ops.push({ insert: false, owner, model: placed.model, pose: placed.pose });
+    }
+    try {
+      this.oracleAnswers(asked);
+      if (throws) throw new Error(DROPPED);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== DROPPED) throw error;
+    } finally {
+      for (const [owner, placed] of entries) {
+        this.oracle.insert(placed.model, placed.pose, owner);
+        this.ops.push({ insert: true, owner, model: placed.model, pose: placed.pose });
+      }
+    }
+  }
+}
+
+const STACKED_KINDS = [0, 1, 3];
+const PIN_ROW_KIND = 8;
+const HOLE_ROW_KIND = 9;
+
+function queriesAt(at: LatticePose, kind: number, deep: boolean): Query[] {
+  const types: ReadonlyArray<QueryKind> = deep
+    ? ["votes", "evaluate", "partnered", "propose", "rank"]
+    : ["votes", "evaluate"];
+  return types.map((type) => ({ type, kind, pose: at }));
+}
+
+function replayed(
+  ops: ReadonlyArray<Op>,
+  upto: number,
+  withdrawn: ReadonlyArray<CarriedEntry>,
+): ConnectionSolver {
+  const solver = solverOfThreeFamilies();
+  for (let k = 0; k < upto; k++) {
+    const op = ops[k];
+    if (!op) continue;
+    if (op.insert) solver.insert(op.model, op.pose, op.owner);
+    else solver.remove(op.model, op.pose, op.owner);
+  }
+  for (const [owner, placed] of withdrawn) solver.remove(placed.model, placed.pose, owner);
+  return solver;
+}
+
+function hasSkipWitness(run: CarryRun, opsAtStart: number, carried: CarriedMoves): boolean {
+  const report = new MateReport();
+  const { entries, moves } = carried;
+  for (let move = 1; move < moves.length; move++) {
+    const asked = moves[move] ?? [];
+    for (let q = 0; q < asked.length; q++) {
+      const query = asked[q];
+      if (!query || query.type !== "evaluate") continue;
+      const warm = replayed(run.ops, opsAtStart, entries);
+      for (let earlier = 0; earlier < move; earlier++) {
+        for (const before of moves[earlier] ?? []) answer(warm, run.kinds, before, report);
+      }
+      const cold = replayed(run.ops, opsAtStart, entries);
+      for (let k = 0; k < q; k++) {
+        const before = asked[k];
+        if (!before) continue;
+        answer(warm, run.kinds, before, report);
+        answer(cold, run.kinds, before, report);
+      }
+      if (answer(warm, run.kinds, query, report) !== answer(cold, run.kinds, query, report))
+        return true;
+    }
+  }
+  return false;
+}
+
+function firstDifference(subject: ReadonlyArray<string>, oracle: ReadonlyArray<string>): unknown {
+  for (let k = 0; k < Math.max(subject.length, oracle.length); k++) {
+    if (subject[k] !== oracle[k]) return { at: k, subject: subject[k], oracle: oracle[k] };
+  }
+  return null;
+}
+
+const CARRY_PLAN: ReadonlyArray<readonly [number, CarryEnding, boolean]> = [
+  [1, "cancel", true],
+  [10, "drop", false],
+  [1, "throw", true],
+  [100, "cancel", false],
+  [1, "drop", true],
+  [1, "drop, undo and redo", false],
+  [4, "cancel", true],
+  [10, "throw", false],
+  [1, "cancel", true],
+  [100, "drop, undo and redo", false],
+  [1, "throw", true],
+  [1, "throw", false],
+  [1, "drop, undo and redo", true],
+  [10, "cancel", false],
+  [1, "cancel", true],
+  [100, "throw", false],
+  [1, "drop", false],
+  [1, "cancel", true],
+  [10, "drop, undo and redo", false],
+  [100, "drop", false],
+];
+
+describe("ConnectionSolver withdrawals", () => {
+  it(
+    "answers every query of generated carries of 1, 10 and 100 models, of studs, jumpers, side studs, pins in hole rows, track and multi-part models, turned mid-carry and then dropped, cancelled, undone and redone or thrown out of, exactly as removing and re-inserting the carried models around each move does",
+    () => {
+      const run = new CarryRun(carryKinds(), seededPick(20261125));
+      run.populate(CARRY_WORLD);
+      run.survey();
+      let skipped = false;
+      for (const [size, ending, inField] of CARRY_PLAN) {
+        run.otherEdits(CARRY_OTHER_OPS);
+        run.singleWithdrawals(CARRY_SINGLE_WITHDRAWALS);
+        if (inField) run.relayField();
+        const opsAtStart = run.ops.length;
+        const carried = run.carry(size, ending, inField);
+        if (!skipped && inField) skipped = hasSkipWitness(run, opsAtStart, carried);
+      }
+      run.survey();
+      expect(firstDifference(run.subjectLog, run.oracleLog)).toBeNull();
+      expect({
+        families: [...run.families].toSorted((a, b) => a - b),
+        halfStudLatticeMates: run.halfStudLattice > 0,
+        sideStudMates: run.sideStudSparse > 0,
+        trackHoldersTwoDeep: run.stackedTrackHolders > 0,
+        restoredOrderSeen: run.chainWitnesses > 0,
+        skippedMoveOrderSeen: skipped,
+      }).toEqual({
+        families: [LATTICE_FAMILY, SPARSE_FAMILY, TRACK_FAMILY],
+        halfStudLatticeMates: true,
+        sideStudMates: true,
+        trackHoldersTwoDeep: true,
+        restoredOrderSeen: true,
+        skippedMoveOrderSeen: true,
+      });
+    },
+    CARRY_TIMEOUT_MS,
+  );
+
+  it("pays the restore it owes before withdrawing the same owners from poses they don't hold, then refuses as removing them there does", () => {
+    const brick = single(block(2, 4, BRICK_LDU, BRICK_RECEPTOR));
+    const plate = single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+    const placed = pose(0, 0, 0);
+    const elsewhere = pose(STUD_LDU, 0, 0);
+    const above = pose(0, 0, 3);
+    const subject = solverOfThreeFamilies();
+    const oracle = solverOfThreeFamilies();
+    for (const solver of [subject, oracle]) {
+      solver.insert(brick, placed, 1);
+      solver.insert(plate, above, 2);
+    }
+    subject.withdrawn([[1, { model: brick, pose: placed }]], () => subject.votes(plate, above));
+    oracle.remove(brick, placed, 1);
+    oracle.votes(plate, above);
+    oracle.insert(brick, placed, 1);
+    expect(() =>
+      subject.withdrawn([[1, { model: brick, pose: elsewhere }]], () =>
+        subject.votes(plate, above),
+      ),
+    ).toThrow(RangeError);
+    expect(() => oracle.remove(brick, elsewhere, 1)).toThrow(RangeError);
+    expect(reportRows(evaluated(subject, plate, above))).toBe(
+      reportRows(evaluated(oracle, plate, above)),
+    );
+  });
+});
+
+function makeHole(): ModelConnectors {
+  return single(table([onAxis(AXIS_NEG_X, 0, HALF, PIN_HOLE, GENDER_FEMALE)]));
+}
+
+function makeHoleRow(): ModelConnectors {
+  return single(
+    table(
+      Array.from({ length: 6 }, (_, k) =>
+        onAxis(AXIS_NEG_X, 0, HALF + k * STUD_LDU, PIN_HOLE, GENDER_FEMALE),
+      ),
+    ),
+  );
+}
+
+function makePlate(): ModelConnectors {
+  return single(block(2, 2, PLATE_LDU, PLATE_RECEPTOR));
+}
+
+function makeBrick(): ModelConnectors {
+  return single(block(2, 2, BRICK_LDU, BRICK_RECEPTOR));
+}
+
+function makePin(length: number): () => ModelConnectors {
+  return () =>
+    single(
+      table([
+        onAxis(
+          AXIS_POS_X,
+          0,
+          HALF,
+          shape(CAP_ROOT, false, [[SECTION_ROUND, 6, length]]),
+          GENDER_MALE,
+        ),
+      ]),
+    );
+}
+
+describe("ConnectionSolver turned models", () => {
+  it(
+    "answers from a turned model it cached, rebuilt once its finders know more mate classes, exactly as an identical model turned for the first time does",
+    () => {
+      const pick = seededPick(20261126);
+      const copies = new Map<ModelConnectors, () => ModelConnectors>();
+      const made = (make: () => ModelConnectors): ModelConnectors => {
+        const piece = make();
+        copies.set(piece, make);
+        return piece;
+      };
+      const hole = made(makeHole);
+      const holeRow = made(makeHoleRow);
+      const plate = made(makePlate);
+      const brick = made(makeBrick);
+      const pins = GROWN_PIN_LENGTHS.map((length) => made(makePin(length)));
+      const cachedEarly = [hole, holeRow];
+      const known: ModelConnectors[] = [hole, holeRow, plate, brick];
+      const partnerOf = (piece: ModelConnectors): ModelConnectors => {
+        if (piece === plate) return brick;
+        if (piece === brick) return plate;
+        if (cachedEarly.includes(piece))
+          return known.findLast((other) => pins.includes(other)) ?? brick;
+        return hole;
+      };
+      const nearby = (): LatticePose =>
+        pose(
+          pick(GROWN_FIELD_STEPS) * HALF,
+          pick(GROWN_FIELD_STEPS) * STUD_LDU,
+          0,
+          (pick(4) === 0 ? pick(4) : 0) as QuarterTurn,
+        );
+      const subject = solverOfThreeFamilies();
+      const inserted: Op[] = [];
+      const insert = (piece: ModelConnectors): void => {
+        const op = { insert: true, owner: inserted.length + 1, model: piece, pose: nearby() };
+        inserted.push(op);
+        subject.insert(op.model, op.pose, op.owner);
+      };
+      for (const piece of known) insert(piece);
+      const subjectLog: string[] = [];
+      const oracleLog: string[] = [];
+      const report = new MateReport();
+      let grownClassesProposed = 0;
+      for (let step = 0; step < GROWN_STEPS; step++) {
+        const grown = pins[Math.floor(step / GROWN_STEPS_PER_PIN)];
+        if (grown && !known.includes(grown)) {
+          known.push(grown);
+          insert(grown);
+        } else if (pick(2) === 0) {
+          insert(known[pick(known.length)] ?? hole);
+        }
+        const pinned = inserted.filter((op) => pins.includes(op.model));
+        const onPin = pinned[pick(pinned.length)];
+        const asked =
+          onPin && pick(2) === 0
+            ? (cachedEarly[pick(cachedEarly.length)] ?? hole)
+            : (known[pick(known.length)] ?? hole);
+        const at = onPin && cachedEarly.includes(asked) ? onPin.pose : nearby();
+        subject.evaluate(partnerOf(asked), at, report);
+        const oracle = solverOfThreeFamilies();
+        for (const op of inserted) oracle.insert(op.model, op.pose, op.owner);
+        const copy = (copies.get(asked) ?? makeHole)();
+        for (const type of GROWN_QUERIES) {
+          const query = { type, kind: 0, pose: at };
+          const subjectAnswer = answer(
+            subject,
+            [{ name: "asked", model: asked, partner: 0 }],
+            query,
+            report,
+          );
+          const oracleAnswer = answer(
+            oracle,
+            [{ name: "copy", model: copy, partner: 0 }],
+            query,
+            report,
+          );
+          subjectLog.push(`${step} ${type}: ${subjectAnswer}`);
+          oracleLog.push(`${step} ${type}: ${oracleAnswer}`);
+          if (type === "propose" && onPin && at === onPin.pose && oracleAnswer !== "[]") {
+            grownClassesProposed++;
+          }
+        }
+      }
+      expect({
+        difference: firstDifference(subjectLog, oracleLog),
+        grownClassesProposed: grownClassesProposed > 0,
+      }).toEqual({ difference: null, grownClassesProposed: true });
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
+});
+
+const GROWN_PIN_LENGTHS = [8, 12, 16, 4];
+const GROWN_STEPS = 96;
+const GROWN_STEPS_PER_PIN = 24;
+const GROWN_FIELD_STEPS = 6;
+const GROWN_QUERIES: ReadonlyArray<QueryKind> = [
+  "evaluate",
+  "votes",
+  "partnered",
+  "propose",
+  "rank",
+];

@@ -90,6 +90,8 @@ export class TrackEndFinder implements MateFinder {
     }
   }
 
+  placedChanged(): void {}
+
   proposeOnLattice(
     model: ModelConnectors,
     window: SnapWindow,
