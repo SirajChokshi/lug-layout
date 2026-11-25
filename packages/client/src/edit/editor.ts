@@ -1461,7 +1461,6 @@ export class Editor implements IEditor, IEditedWorld {
     surface: NO_ROAD_SURFACE,
   };
   private readonly restingPoint = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
-  private roadReport: RoadJoinReport = this.liveRoads.report;
   private readonly planDelta = new PlanDelta();
   private measure: MeasureTool | null = null;
   private tables: TableTool | null = null;
@@ -3810,12 +3809,11 @@ export class Editor implements IEditor, IEditedWorld {
     this.liveRoads.refresh(roadModels);
     this.trackWorld.setRoads(this.liveRoads.placements);
     this.placedRoads = this.liveRoads.placedRoads;
-    this.roadReport = this.liveRoads.report;
-    this.facts.noteRoads(this.roadReport, roadModels);
+    this.facts.noteRoads(this.liveRoads.report, roadModels);
     this.replanRoadStroke();
     const checkMs = performance.now() - started;
     this.showMarkers();
-    const report = this.roadReport;
+    const report = this.liveRoads.report;
     const issues: RoadIssueView[] = [];
     for (const segment of report.segments) {
       if (segment.status === "joined" || issues.length >= LISTED_ROAD_ISSUES) continue;
@@ -3856,7 +3854,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private showMarkers(): void {
     const joins: EdgeMarker[] = this.state.showJoins
-      ? this.roadReport.segments.map((segment) => this.joinMarkerOf(segment))
+      ? this.liveRoads.report.segments.map((segment) => this.joinMarkerOf(segment))
       : [];
     this.roads.setJoinMarkers(joins);
   }

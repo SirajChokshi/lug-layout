@@ -610,12 +610,14 @@ export class LevelCrossings {
       }
     }
     const crossings: LevelCrossing[] = [];
+    let moved = false;
     for (const crossing of this.found) {
       const kept = relabelled(crossing, tracksMoved.newIndexOf);
       if (!kept) return null;
+      if (kept !== crossing) moved = true;
       crossings.push(kept);
     }
-    return crossings;
+    return moved ? crossings : this.found;
   }
 
   private meetsTrack(road: RoadPlacement, tracks: ReadonlyArray<CrossingTrack>): boolean {

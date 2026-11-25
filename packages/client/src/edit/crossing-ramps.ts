@@ -43,12 +43,6 @@ interface Suggestion {
   readonly suggested: ReadonlyArray<SuggestedCrossing>;
 }
 
-function sameItems<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
-}
-
 interface RampAsset {
   readonly part: RampPart;
   readonly hull: Float64Array;
@@ -180,7 +174,7 @@ export class CrossingRamps {
       last &&
       last.pieces === pieces &&
       last.modelsVersion === placed.version &&
-      sameItems(last.crossings, crossings)
+      last.crossings === crossings
     ) {
       return last.suggested;
     }
