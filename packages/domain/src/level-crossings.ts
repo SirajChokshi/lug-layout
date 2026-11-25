@@ -44,6 +44,7 @@ export interface LevelCrossing {
 
 interface SurfaceCell {
   readonly placement: number;
+  readonly source: number;
   readonly topSixteenths: number;
   readonly road: boolean;
   readonly square: LduRect;
@@ -99,6 +100,7 @@ function onPhase(value: number, phase: number): boolean {
 class SurfaceIndex {
   readonly cells: SurfaceCell[] = [];
   readonly cellsOf = new Map<number, readonly [number, number]>();
+  readonly firstCellOf: number[] = [];
   private readonly buckets = new Map<number, number[]>();
 
   add(cell: SurfaceCell): void {
@@ -144,11 +146,13 @@ class SurfaceIndex {
 
 function surfaceIndex(roads: ReadonlyArray<RoadPlacement>): SurfaceIndex {
   const index = new SurfaceIndex();
-  for (const road of roads) {
+  roads.forEach((road, source) => {
     const first = index.cells.length;
+    index.firstCellOf.push(first);
     for (const cell of placedCells(road)) {
       index.add({
         placement: cell.placement,
+        source,
         topSixteenths: cell.topSixteenths,
         road: cell.road === 1,
         square: {
@@ -160,7 +164,7 @@ function surfaceIndex(roads: ReadonlyArray<RoadPlacement>): SurfaceIndex {
       });
     }
     index.cellsOf.set(road.id, [first, index.cells.length]);
-  }
+  });
   return index;
 }
 
@@ -366,11 +370,11 @@ function rampCandidates(
   return valid.toSorted((a, b) => b.roadwayCovered - a.roadwayCovered);
 }
 
-export class RoadSurfaceCells {
+class RoadChunks {
   private readonly rects: ReadonlyArray<LduRect>;
   private readonly byChunk = new Map<number, Map<number, number[]>>();
 
-  constructor(private readonly roads: ReadonlyArray<RoadPlacement>) {
+  constructor(readonly roads: ReadonlyArray<RoadPlacement>) {
     this.rects = roads.map(placementRect);
     this.rects.forEach((rect, road) => {
       const [x0, x1] = chunkSpan(rect.minX, rect.maxX);
@@ -390,19 +394,7 @@ export class RoadSurfaceCells {
     });
   }
 
-  get empty(): boolean {
-    return this.roads.length === 0;
-  }
-
-  crossings(
-    tracks: ReadonlyArray<CrossingTrack>,
-    rampParts: ReadonlyArray<RampPart>,
-  ): ReadonlyArray<LevelCrossing> {
-    const near = this.nearTracks(tracks);
-    return near.length === 0 ? [] : crossingsOver(near, tracks, rampParts);
-  }
-
-  private nearTracks(tracks: ReadonlyArray<CrossingTrack>): ReadonlyArray<RoadPlacement> {
+  nearTracks(tracks: ReadonlyArray<CrossingTrack>): ReadonlyArray<RoadPlacement> {
     if (tracks.length === 0) return [];
     const near = new Uint8Array(this.roads.length);
     for (const track of tracks) {
@@ -423,6 +415,35 @@ export class RoadSurfaceCells {
   }
 }
 
+function recordsNear(
+  chunks: RoadChunks,
+  tracks: ReadonlyArray<CrossingTrack>,
+  rampParts: ReadonlyArray<RampPart>,
+): CrossingRecord[] {
+  const near = chunks.nearTracks(tracks);
+  if (near.length === 0) return [];
+  return crossingsOver(near, tracks, rampParts, everyIndex(tracks.length), null);
+}
+
+export class RoadSurfaceCells {
+  private readonly chunks: RoadChunks;
+
+  constructor(roads: ReadonlyArray<RoadPlacement>) {
+    this.chunks = new RoadChunks(roads);
+  }
+
+  get empty(): boolean {
+    return this.chunks.roads.length === 0;
+  }
+
+  crossings(
+    tracks: ReadonlyArray<CrossingTrack>,
+    rampParts: ReadonlyArray<RampPart>,
+  ): ReadonlyArray<LevelCrossing> {
+    return recordsNear(this.chunks, tracks, rampParts).map((record) => record.crossing);
+  }
+}
+
 export function levelCrossings(
   roads: ReadonlyArray<RoadPlacement>,
   tracks: ReadonlyArray<CrossingTrack>,
@@ -431,21 +452,43 @@ export function levelCrossings(
   return new RoadSurfaceCells(roads).crossings(tracks, rampParts);
 }
 
+interface CrossingRecord {
+  readonly crossing: LevelCrossing;
+  readonly anchor: RoadPlacement;
+  readonly anchorCell: number;
+  readonly cells: ReadonlyArray<readonly [RoadPlacement, Int32Array]>;
+  readonly cellBounds: LduRect;
+}
+
+type DirtyCell = (road: RoadPlacement, cell: number, coverers: ReadonlySet<number>) => boolean;
+
+function everyIndex(count: number): ReadonlyArray<number> {
+  return Array.from({ length: count }, (_, index) => index);
+}
+
 function crossingsOver(
   near: ReadonlyArray<RoadPlacement>,
   tracks: ReadonlyArray<CrossingTrack>,
   rampParts: ReadonlyArray<RampPart>,
-): ReadonlyArray<LevelCrossing> {
+  coverers: ReadonlyArray<number>,
+  dirty: DirtyCell | null,
+): CrossingRecord[] {
   const surfaces = surfaceIndex(near);
   const coveredBy = new Map<number, Set<number>>();
-  tracks.forEach((track, trackIndex) => {
+  for (const trackIndex of coverers) {
+    const track = tracks[trackIndex];
+    if (!track) continue;
     for (const at of coveredRoadway(track, surfaces)) {
       const set = coveredBy.get(at) ?? new Set<number>();
       set.add(trackIndex);
       coveredBy.set(at, set);
     }
-  });
-  return components(new Set(coveredBy.keys()), surfaces).map((group) => {
+  }
+  const grouped = new Set<number>();
+  for (const [at, by] of coveredBy) {
+    if (!dirty || cellIsDirty(at, by, surfaces, near, dirty)) grouped.add(at);
+  }
+  return components(grouped, surfaces).map((group) => {
     const members = new Set<number>();
     const roadIds = new Set<number>();
     for (const at of group) {
@@ -479,13 +522,57 @@ function crossingsOver(
         }
       }
     }
-    return {
+    const crossing: LevelCrossing = {
       tracks: trackList,
       roads: [...roadIds].toSorted((a, b) => a - b),
       roadwayCells: group.length,
       candidates: rampCandidates(candidates, tracks, roadway),
     };
+    return recordOf(crossing, group, surfaces, near);
   });
+}
+
+function cellIsDirty(
+  at: number,
+  coverers: ReadonlySet<number>,
+  surfaces: SurfaceIndex,
+  near: ReadonlyArray<RoadPlacement>,
+  dirty: DirtyCell,
+): boolean {
+  const source = surfaces.cells[at]?.source ?? 0;
+  const road = near[source];
+  return road !== undefined && dirty(road, at - (surfaces.firstCellOf[source] ?? 0), coverers);
+}
+
+function recordOf(
+  crossing: LevelCrossing,
+  group: ReadonlyArray<number>,
+  surfaces: SurfaceIndex,
+  near: ReadonlyArray<RoadPlacement>,
+): CrossingRecord {
+  const bySource = new Map<number, number[]>();
+  let bounds: LduRect | null = null;
+  for (const at of group) {
+    const cell = surfaces.cells[at];
+    if (!cell) continue;
+    const offsets = bySource.get(cell.source) ?? [];
+    offsets.push(at - (surfaces.firstCellOf[cell.source] ?? 0));
+    bySource.set(cell.source, offsets);
+    bounds = bounds ? unionBounds(bounds, cell.square) : cell.square;
+  }
+  const first = surfaces.cells[group[0] ?? 0];
+  const anchor = near[first?.source ?? 0];
+  if (!first || !anchor || !bounds) throw new Error("a crossing has no cells");
+  return {
+    crossing,
+    anchor,
+    anchorCell: (group[0] ?? 0) - (surfaces.firstCellOf[first.source] ?? 0),
+    cells: [...bySource].map(([source, offsets]) => [
+      near[source] ?? anchor,
+      Int32Array.from(offsets),
+    ]),
+    cellBounds: bounds,
+  };
 }
 
 interface RoadChange {
@@ -496,6 +583,7 @@ interface RoadChange {
 interface TrackChange {
   readonly changed: ReadonlyArray<CrossingTrack>;
   readonly newIndexOf: Int32Array;
+  readonly addedAt: Uint8Array;
 }
 
 const NOT_KEPT = -1;
@@ -538,6 +626,7 @@ function trackChange(
     if (keptOnce(track)) indexBefore.set(track, index);
   });
   const newIndexOf = new Int32Array(before.length).fill(NOT_KEPT);
+  const addedAt = new Uint8Array(after.length);
   const changed = before.filter((track) => !keptOnce(track));
   let last = NOT_KEPT;
   for (let index = 0; index < after.length; index++) {
@@ -546,13 +635,14 @@ function trackChange(
     const old = indexBefore.get(track);
     if (old === undefined) {
       changed.push(track);
+      addedAt[index] = 1;
       continue;
     }
     if (old < last) return null;
     last = old;
     newIndexOf[old] = index;
   }
-  return { changed, newIndexOf };
+  return { changed, newIndexOf, addedAt };
 }
 
 function relabelled(crossing: LevelCrossing, newIndexOf: Int32Array): LevelCrossing | null {
@@ -576,11 +666,67 @@ function unionBounds(a: LduRect, b: LduRect): LduRect {
   };
 }
 
+function sharesAnId(roads: ReadonlyArray<RoadPlacement>): boolean {
+  const ids = new Set<number>();
+  for (const road of roads) {
+    if (ids.has(road.id)) return true;
+    ids.add(road.id);
+  }
+  return false;
+}
+
+function grownByCell(rect: LduRect): LduRect {
+  return {
+    minX: rect.minX - STUD_LDU,
+    minZ: rect.minZ - STUD_LDU,
+    maxX: rect.maxX + STUD_LDU,
+    maxZ: rect.maxZ + STUD_LDU,
+  };
+}
+
+function meetsRamps(bounds: LduRect, ramps: LduRect | null): boolean {
+  return ramps !== null && rectsMeet(bounds, ramps);
+}
+
+function relabelledEntry(entry: KeptCrossing, newIndexOf: Int32Array): KeptCrossing | null {
+  const crossing = relabelled(entry.record.crossing, newIndexOf);
+  if (!crossing) return null;
+  return crossing === entry.record.crossing
+    ? entry
+    : { ...entry, record: { ...entry.record, crossing } };
+}
+
+function dirtyCellsOf(
+  addedRoads: ReadonlyArray<RoadPlacement>,
+  addedAt: Uint8Array,
+  dirty: ReadonlyArray<KeptCrossing>,
+): DirtyCell {
+  const added = new Set(addedRoads);
+  const cells = new Map<RoadPlacement, Set<number>>();
+  for (const entry of dirty) {
+    for (const [road, offsets] of entry.record.cells) {
+      const set = cells.get(road) ?? new Set<number>();
+      for (const offset of offsets) set.add(offset);
+      cells.set(road, set);
+    }
+  }
+  return (road, cell, coverers) => {
+    if (added.has(road) || cells.get(road)?.has(cell) === true) return true;
+    for (const track of coverers) if (addedAt[track] === 1) return true;
+    return false;
+  };
+}
+
+interface KeptCrossing {
+  readonly record: CrossingRecord;
+  readonly rampOutlineBounds: LduRect | null;
+}
+
 export class LevelCrossings {
   private roads: ReadonlyArray<RoadPlacement> = [];
   private tracks: ReadonlyArray<CrossingTrack> = [];
+  private kept: ReadonlyArray<KeptCrossing> = [];
   private found: ReadonlyArray<LevelCrossing> = [];
-  private rampOutlineBounds: ReadonlyArray<LduRect | null> = [];
   private readonly roadRects = new WeakMap<RoadPlacement, LduRect>();
   private readonly trackRampOutlineBounds = new WeakMap<CrossingTrack, LduRect | null>();
 
@@ -590,42 +736,161 @@ export class LevelCrossings {
     roads: ReadonlyArray<RoadPlacement>,
     tracks: ReadonlyArray<CrossingTrack>,
   ): ReadonlyArray<LevelCrossing> {
-    const reused = this.reused(roads, tracks);
-    if (reused) this.found = reused;
-    else {
-      this.found = levelCrossings(roads, tracks, this.rampParts);
-      this.rampOutlineBounds = this.found.map((crossing) => this.outlineBoundsOf(crossing, tracks));
+    const kept = this.update(roads, tracks) ?? this.recomputed(roads, tracks);
+    if (kept !== this.kept) {
+      this.kept = kept;
+      this.found = kept.map((entry) => entry.record.crossing);
     }
     this.roads = roads;
     this.tracks = tracks;
     return this.found;
   }
 
-  private reused(
+  private recomputed(
     roads: ReadonlyArray<RoadPlacement>,
     tracks: ReadonlyArray<CrossingTrack>,
-  ): ReadonlyArray<LevelCrossing> | null {
+  ): ReadonlyArray<KeptCrossing> {
+    return recordsNear(new RoadChunks(roads), tracks, this.rampParts).map((record) =>
+      this.keep(record, tracks),
+    );
+  }
+
+  private keep(record: CrossingRecord, tracks: ReadonlyArray<CrossingTrack>): KeptCrossing {
+    return { record, rampOutlineBounds: this.outlineBoundsOf(record.crossing, tracks) };
+  }
+
+  private update(
+    roads: ReadonlyArray<RoadPlacement>,
+    tracks: ReadonlyArray<CrossingTrack>,
+  ): ReadonlyArray<KeptCrossing> | null {
+    if (this.roads.length === 0 || this.tracks.length === 0) return null;
     const roadsMoved = roadChange(this.roads, roads);
     const tracksMoved = trackChange(this.tracks, tracks);
-    if (!roadsMoved || !tracksMoved) return null;
-    if (roadsMoved.removed.some((road) => this.meetsTrack(road, this.tracks))) return null;
-    if (roadsMoved.added.some((road) => this.meetsTrack(road, tracks))) return null;
+    if (!roadsMoved || !tracksMoved || sharesAnId(roads)) return null;
+    if (this.untouched(tracks, roadsMoved, tracksMoved)) {
+      return this.relabelledAll(tracksMoved.newIndexOf);
+    }
+    return this.rebuiltAround(roads, tracks, roadsMoved, tracksMoved);
+  }
+
+  private untouched(
+    tracks: ReadonlyArray<CrossingTrack>,
+    roadsMoved: RoadChange,
+    tracksMoved: TrackChange,
+  ): boolean {
+    if (roadsMoved.removed.some((road) => this.meetsTrack(road, this.tracks))) return false;
+    if (roadsMoved.added.some((road) => this.meetsTrack(road, tracks))) return false;
     for (const track of tracksMoved.changed) {
-      if (this.meetsRoad(track, this.roads)) return null;
+      if (this.meetsRoad(track, this.roads)) return false;
       const bounds = track.outline.bounds;
-      if (this.rampOutlineBounds.some((ramps) => ramps !== null && rectsMeet(bounds, ramps))) {
-        return null;
+      if (this.kept.some((entry) => meetsRamps(bounds, entry.rampOutlineBounds))) return false;
+    }
+    return true;
+  }
+
+  private relabelledAll(newIndexOf: Int32Array): ReadonlyArray<KeptCrossing> | null {
+    const kept: KeptCrossing[] = [];
+    let moved = false;
+    for (const entry of this.kept) {
+      const relabel = relabelledEntry(entry, newIndexOf);
+      if (!relabel) return null;
+      if (relabel !== entry) moved = true;
+      kept.push(relabel);
+    }
+    return moved ? kept : this.kept;
+  }
+
+  private rebuiltAround(
+    roads: ReadonlyArray<RoadPlacement>,
+    tracks: ReadonlyArray<CrossingTrack>,
+    roadsMoved: RoadChange,
+    tracksMoved: TrackChange,
+  ): ReadonlyArray<KeptCrossing> | null {
+    const changedRoads = [...roadsMoved.removed, ...roadsMoved.added];
+    const changedTracks = tracksMoved.changed;
+    const clean: KeptCrossing[] = [];
+    const dirty: KeptCrossing[] = [];
+    let moved = false;
+    for (const entry of this.kept) {
+      if (this.isDirty(entry, changedRoads, changedTracks)) {
+        dirty.push(entry);
+        moved = true;
+        continue;
+      }
+      const relabel = relabelledEntry(entry, tracksMoved.newIndexOf);
+      if (!relabel) return null;
+      if (relabel !== entry) moved = true;
+      clean.push(relabel);
+    }
+    const coverers = this.localCoverers(tracks, roadsMoved.added, tracksMoved, dirty);
+    const local =
+      coverers.length === 0
+        ? []
+        : crossingsOver(
+            this.localRoads(roads, tracks, coverers),
+            tracks,
+            this.rampParts,
+            coverers,
+            dirtyCellsOf(roadsMoved.added, tracksMoved.addedAt, dirty),
+          );
+    if (!moved && local.length === 0) return this.kept;
+    const rank = new Map<RoadPlacement, number>();
+    roads.forEach((road, index) => rank.set(road, index));
+    return [...clean, ...local.map((record) => this.keep(record, tracks))].toSorted(
+      (a, b) =>
+        (rank.get(a.record.anchor) ?? 0) - (rank.get(b.record.anchor) ?? 0) ||
+        a.record.anchorCell - b.record.anchorCell,
+    );
+  }
+
+  private isDirty(
+    entry: KeptCrossing,
+    changedRoads: ReadonlyArray<RoadPlacement>,
+    changedTracks: ReadonlyArray<CrossingTrack>,
+  ): boolean {
+    const cells = entry.record.cellBounds;
+    if (changedRoads.some((road) => rectsMeet(this.rectOf(road), cells))) return true;
+    return changedTracks.some((track) => {
+      const bounds = track.outline.bounds;
+      return rectsMeet(grownByCell(bounds), cells) || meetsRamps(bounds, entry.rampOutlineBounds);
+    });
+  }
+
+  private localCoverers(
+    tracks: ReadonlyArray<CrossingTrack>,
+    addedRoads: ReadonlyArray<RoadPlacement>,
+    tracksMoved: TrackChange,
+    dirty: ReadonlyArray<KeptCrossing>,
+  ): ReadonlyArray<number> {
+    const coverers = new Set<number>();
+    for (const entry of dirty) {
+      for (const old of entry.record.crossing.tracks) {
+        const index = tracksMoved.newIndexOf[old] ?? NOT_KEPT;
+        if (index !== NOT_KEPT) coverers.add(index);
       }
     }
-    const crossings: LevelCrossing[] = [];
-    let moved = false;
-    for (const crossing of this.found) {
-      const kept = relabelled(crossing, tracksMoved.newIndexOf);
-      if (!kept) return null;
-      if (kept !== crossing) moved = true;
-      crossings.push(kept);
+    tracks.forEach((track, index) => {
+      const reach = grown(track.outline.bounds);
+      if (tracksMoved.addedAt[index] === 1) coverers.add(index);
+      else if (addedRoads.some((road) => rectsMeet(this.rectOf(road), reach))) coverers.add(index);
+    });
+    return [...coverers].toSorted((a, b) => a - b);
+  }
+
+  private localRoads(
+    roads: ReadonlyArray<RoadPlacement>,
+    tracks: ReadonlyArray<CrossingTrack>,
+    coverers: ReadonlyArray<number>,
+  ): ReadonlyArray<RoadPlacement> {
+    const reaches: LduRect[] = [];
+    for (const index of coverers) {
+      const track = tracks[index];
+      if (track) reaches.push(grown(track.outline.bounds));
     }
-    return moved ? crossings : this.found;
+    return roads.filter((road) => {
+      const rect = this.rectOf(road);
+      return reaches.some((reach) => rectsMeet(rect, reach));
+    });
   }
 
   private meetsTrack(road: RoadPlacement, tracks: ReadonlyArray<CrossingTrack>): boolean {
