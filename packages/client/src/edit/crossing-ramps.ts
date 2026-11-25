@@ -49,6 +49,7 @@ interface Suggestion {
 interface RampAsset {
   readonly part: RampPart;
   readonly hull: Float64Array;
+  readonly seatBox: LduRect;
   readonly index: number;
   readonly color: number;
   readonly minY: number;
@@ -76,6 +77,39 @@ function joined(a: LduRect | null, b: LduRect): LduRect {
     minZ: Math.min(a.minZ, b.minZ),
     maxX: Math.max(a.maxX, b.maxX),
     maxZ: Math.max(a.maxZ, b.maxZ),
+  };
+}
+
+function seatBoxOf(facts: RampPart["facts"], hull: Float64Array): LduRect {
+  let box: LduRect = facts.footprint;
+  for (let p = 0; p < hull.length; p += 2) {
+    const x = hull[p] ?? 0;
+    const z = hull[p + 1] ?? 0;
+    box = joined(box, { minX: x, minZ: z, maxX: x, maxZ: z });
+  }
+  for (const [x, z] of facts.antiStuds) {
+    box = joined(box, {
+      minX: x - STUD_LDU,
+      minZ: z - STUD_LDU,
+      maxX: x + STUD_LDU,
+      maxZ: z + STUD_LDU,
+    });
+  }
+  return box;
+}
+
+function posed(box: LduRect, candidate: RampCandidate): LduRect {
+  const cos = rot90Cos(candidate.rot);
+  const sin = rot90Sin(candidate.rot);
+  const ax = candidate.x + cos * box.minX + sin * box.minZ;
+  const az = candidate.z - sin * box.minX + cos * box.minZ;
+  const bx = candidate.x + cos * box.maxX + sin * box.maxZ;
+  const bz = candidate.z - sin * box.maxX + cos * box.maxZ;
+  return {
+    minX: Math.min(ax, bx),
+    minZ: Math.min(az, bz),
+    maxX: Math.max(ax, bx),
+    maxZ: Math.max(az, bz),
   };
 }
 
@@ -181,9 +215,11 @@ export class CrossingRamps {
       if (part.producedColor === undefined) {
         throw new Error(`ramp part ${ramp.part} has no sourced colour`);
       }
+      const hull = planHullOf(part.outline);
       return {
         part: { facts: ramp, outline: part.outline },
-        hull: planHullOf(part.outline),
+        hull,
+        seatBox: seatBoxOf(ramp, hull),
         index,
         color: colors.indexOfCode(part.producedColor),
         minY: part.boundsMin[1],
@@ -227,7 +263,7 @@ export class CrossingRamps {
     const suggested = crossings.map((crossing) => {
       const before = changed ? seatedBefore.get(crossing.candidates) : undefined;
       const ramps =
-        before && changed && !this.reachesSeats(changed, crossing.candidates)
+        before && changed && !this.meetsSeatRegion(changed, crossing.candidates)
           ? before
           : this.seated(crossing, (probe ??= new LayoutProbe(models, clearanceIn)));
       return {
@@ -246,7 +282,7 @@ export class CrossingRamps {
     return suggested;
   }
 
-  private reachesSeats(
+  private meetsSeatRegion(
     changed: ReadonlyArray<LduRect>,
     candidates: ReadonlyArray<RampCandidate>,
   ): boolean {
@@ -259,31 +295,10 @@ export class CrossingRamps {
     if (known !== undefined) return known;
     let region: LduRect | null = null;
     for (const candidate of candidates) {
-      region = joined(region, candidate.rect);
-      region = joined(region, this.posedHullBounds(candidate));
-      for (const [x, z] of candidate.antiStuds) {
-        const minX = Math.floor(x / STUD_LDU) * STUD_LDU;
-        const minZ = Math.floor(z / STUD_LDU) * STUD_LDU;
-        region = joined(region, { minX, minZ, maxX: minX + STUD_LDU, maxZ: minZ + STUD_LDU });
-      }
+      region = joined(region, posed(this.assetOf(candidate.part).seatBox, candidate));
     }
     this.seatRegions.set(candidates, region);
     return region;
-  }
-
-  private posedHullBounds(candidate: RampCandidate): LduRect {
-    const { hull } = this.assetOf(candidate.part);
-    const cos = rot90Cos(candidate.rot);
-    const sin = rot90Sin(candidate.rot);
-    let bounds: LduRect | null = null;
-    for (let p = 0; p < hull.length; p += 2) {
-      const x = hull[p] ?? 0;
-      const z = hull[p + 1] ?? 0;
-      const worldX = candidate.x + cos * x + sin * z;
-      const worldZ = candidate.z - sin * x + cos * z;
-      bounds = joined(bounds, { minX: worldX, minZ: worldZ, maxX: worldX, maxZ: worldZ });
-    }
-    return bounds ?? candidate.rect;
   }
 
   private forget(): void {

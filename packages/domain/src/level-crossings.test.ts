@@ -439,8 +439,8 @@ describe("level crossings kept up to date across edits", () => {
     GATE_TIMEOUT_MS,
   );
 
-  it("merges a crossing with a new track whose covered cells only share an edge with its cells, on a road whose stud cells sit half a stud off the track's edges", () => {
-    const parts = [rampPart("ldraw:4515")];
+  it("merges a crossing with a new track whose covered cells only share an edge with its cells, on a road whose stud cells sit half a stud off the track's edges, for track no ramp part fits", () => {
+    const parts: ReadonlyArray<RampPart> = [];
     const roads = [{ ...road(20), x: STUD / 2 }];
     const crossing = straightRunAcross();
     const beside = track("ldraw:74746", at(9, 0, ALONG_Z));
