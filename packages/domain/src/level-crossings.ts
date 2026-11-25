@@ -575,6 +575,7 @@ export class LevelCrossings {
   private found: ReadonlyArray<LevelCrossing> = [];
   private rampOutlineBounds: ReadonlyArray<LduRect | null> = [];
   private readonly roadRects = new WeakMap<RoadPlacement, LduRect>();
+  private readonly trackRampOutlineBounds = new WeakMap<CrossingTrack, LduRect | null>();
 
   constructor(private readonly rampParts: ReadonlyArray<RampPart>) {}
 
@@ -643,27 +644,36 @@ export class LevelCrossings {
     crossing: LevelCrossing,
     tracks: ReadonlyArray<CrossingTrack>,
   ): LduRect | null {
-    const seen = new Set<string>();
     let bounds: LduRect | null = null;
     for (const index of crossing.tracks) {
       const track = tracks[index];
-      if (!track) continue;
-      const edges = track.outline.axisEdges();
-      for (const part of this.rampParts) {
-        if (part.facts.highEdgeLdu !== track.railTopLdu) continue;
-        for (const rot of ROTATIONS) {
-          for (const edge of edges) {
-            for (const candidate of candidatesAlong(index, edge, part, rot)) {
-              const key = `${part.facts.part}|${candidate.x}|${candidate.z}|${rot}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              const outline = PlacedOutline.onLattice(part.outline, candidate.x, candidate.z, rot);
-              bounds = bounds ? unionBounds(bounds, outline.bounds) : outline.bounds;
-            }
+      const own = track ? this.rampOutlineBoundsAlong(track) : null;
+      if (own) bounds = bounds ? unionBounds(bounds, own) : own;
+    }
+    return bounds;
+  }
+
+  private rampOutlineBoundsAlong(track: CrossingTrack): LduRect | null {
+    const known = this.trackRampOutlineBounds.get(track);
+    if (known !== undefined) return known;
+    const seen = new Set<string>();
+    let bounds: LduRect | null = null;
+    const edges = track.outline.axisEdges();
+    for (const part of this.rampParts) {
+      if (part.facts.highEdgeLdu !== track.railTopLdu) continue;
+      for (const rot of ROTATIONS) {
+        for (const edge of edges) {
+          for (const candidate of candidatesAlong(0, edge, part, rot)) {
+            const key = `${part.facts.part}|${candidate.x}|${candidate.z}|${rot}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const outline = PlacedOutline.onLattice(part.outline, candidate.x, candidate.z, rot);
+            bounds = bounds ? unionBounds(bounds, outline.bounds) : outline.bounds;
           }
         }
       }
     }
+    this.trackRampOutlineBounds.set(track, bounds);
     return bounds;
   }
 }
