@@ -33,7 +33,7 @@ import type { Placeable } from "./placeable.ts";
 import type { PlanReach } from "./plan-reach.ts";
 import type {
   CarriedTrackParts,
-  PlacedChunks,
+  PlacedModels,
   PlacedModel,
   RebuildReport,
 } from "./placed-chunks.ts";
@@ -105,7 +105,6 @@ export interface UnsupportedTrack {
 }
 
 export type TrackBundle = Pick<BundleIndex, "trackCatalog" | "trackShapes" | "levelCrossing">;
-export type PlacedModels = Pick<PlacedChunks, "models" | "version">;
 
 interface CrossingInputs {
   readonly ramps: CrossingRamps;

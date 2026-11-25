@@ -560,7 +560,7 @@ function relabelled(crossing: LevelCrossing, newIndexOf: Int32Array): LevelCross
   return moved ? { ...crossing, tracks } : crossing;
 }
 
-function hull(a: LduRect, b: LduRect): LduRect {
+function unionBounds(a: LduRect, b: LduRect): LduRect {
   return {
     minX: Math.min(a.minX, b.minX),
     minZ: Math.min(a.minZ, b.minZ),
@@ -656,7 +656,7 @@ export class LevelCrossings {
               if (seen.has(key)) continue;
               seen.add(key);
               const outline = PlacedOutline.onLattice(part.outline, candidate.x, candidate.z, rot);
-              bounds = bounds ? hull(bounds, outline.bounds) : outline.bounds;
+              bounds = bounds ? unionBounds(bounds, outline.bounds) : outline.bounds;
             }
           }
         }

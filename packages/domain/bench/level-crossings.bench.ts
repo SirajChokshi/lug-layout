@@ -1,5 +1,6 @@
 import { cpus } from "node:os";
 import { performance } from "node:perf_hooks";
+import { getHeapSpaceStatistics } from "node:v8";
 import { SIXTEENTHS_PER_LDU } from "@brr/math";
 import measured from "../../../docs/verified-facts/geometry.json" with { type: "json" };
 import { LevelCrossings, levelCrossings, type CrossingTrack } from "../src/level-crossings.ts";
@@ -183,35 +184,52 @@ const alternate = (a: () => void, b: () => void): (() => number) => {
     return 0;
   };
 };
+const YOUNG_GENERATION_SPACES: ReadonlyArray<string> = ["new_space", "new_large_object_space"];
+
+function youngGenerationBytes(): number {
+  let bytes = 0;
+  for (const space of getHeapSpaceStatistics()) {
+    if (YOUNG_GENERATION_SPACES.includes(space.space_name)) bytes += space.space_used_size;
+  }
+  return bytes;
+}
+
+function youngBytesPerCall(call: () => number): number {
+  for (let i = 0; i < WARMUP; i++) call();
+  const before = youngGenerationBytes();
+  for (let i = 0; i < RUNS; i++) call();
+  return (youngGenerationBytes() - before) / RUNS;
+}
+
 const withFarRoad = [...gateRoads, farRoad];
 const withFarTrack = [...gateTracks, farTrack];
 const withAcross = [...gateTracks, acrossTrack];
-const farRoadMs = medianMs(
-  alternate(
-    () => gate.crossings(withFarRoad, gateTracks),
-    () => gate.crossings(gateRoads, gateTracks),
-  ),
-).ms;
-const farTrackMs = medianMs(
-  alternate(
-    () => gate.crossings(gateRoads, withFarTrack),
-    () => gate.crossings(gateRoads, gateTracks),
-  ),
-).ms;
-const touchingMs = medianMs(
-  alternate(
-    () => gate.crossings(gateRoads, withAcross),
-    () => gate.crossings(gateRoads, gateTracks),
-  ),
-).ms;
+const farRoadEdit = alternate(
+  () => gate.crossings(withFarRoad, gateTracks),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const farTrackEdit = alternate(
+  () => gate.crossings(gateRoads, withFarTrack),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const touchingEdit = alternate(
+  () => gate.crossings(gateRoads, withAcross),
+  () => gate.crossings(gateRoads, gateTracks),
+);
+const farRoadMs = medianMs(farRoadEdit).ms;
+const farTrackMs = medianMs(farTrackEdit).ms;
+const touchingMs = medianMs(touchingEdit).ms;
+const farRoadBytes = youngBytesPerCall(farRoadEdit);
+const farTrackBytes = youngBytesPerCall(farTrackEdit);
+const touchingBytes = youngBytesPerCall(touchingEdit);
 lines.push(
   "",
   `LevelCrossings kept across edits on the ${gateSide} x ${gateSide} field with ${TRACKS} strips (median ms per call, edits alternating with their undo):`,
   "",
-  "| Edit | ms |",
-  "|---|---:|",
-  `| a road added and removed far from every track (reused) | ${farRoadMs.toFixed(3)} |`,
-  `| a track added and removed far from every road (reused) | ${farTrackMs.toFixed(3)} |`,
-  `| a track laid across the field and taken up (recomputed in full) | ${touchingMs.toFixed(1)} |`,
+  "| Edit | ms | Young-generation bytes per call |",
+  "|---|---:|---:|",
+  `| a road added and removed far from every track (reused) | ${farRoadMs.toFixed(3)} | ${Math.round(farRoadBytes)} |`,
+  `| a track added and removed far from every road (reused) | ${farTrackMs.toFixed(3)} | ${Math.round(farTrackBytes)} |`,
+  `| a track laid across the field and taken up (recomputed in full) | ${touchingMs.toFixed(1)} | ${Math.round(touchingBytes)} |`,
 );
 process.stdout.write(`${lines.join("\n")}\n`);

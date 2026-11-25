@@ -20,7 +20,7 @@ import { OUTLINE_UNITS_PER_LDU, type LevelCrossingFacts } from "@brr/schema/bund
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import type { PlacedChunks, PlacedModel } from "./placed-chunks.ts";
+import type { PlacedModel, PlacedModels } from "./placed-chunks.ts";
 import type { PlacedTrackPiece } from "./track-drawing.ts";
 import { cellKey, studSeats, type StudSeats } from "./track-obstacles.ts";
 
@@ -35,8 +35,6 @@ export interface SuggestedCrossing {
 }
 
 export type ClearanceInBand = (band: readonly [number, number]) => TrackClearance;
-
-type ModelsAndVersion = Pick<PlacedChunks, "models" | "version">;
 
 interface Suggestion {
   readonly crossings: ReadonlyArray<LevelCrossing>;
@@ -134,7 +132,7 @@ export class CrossingRamps {
   private readonly tracksByOutline = new WeakMap<PlacedOutline, Map<string, CrossingTrack>>();
   private piecesSeen: ReadonlyArray<PlacedTrackPiece> | null = null;
   private tracksSeen: ReadonlyArray<CrossingTrack> = [];
-  private last: Suggestion | null = null;
+  private lastSuggestion: Suggestion | null = null;
 
   constructor(
     facts: LevelCrossingFacts,
@@ -165,13 +163,19 @@ export class CrossingRamps {
   suggest(
     roads: ReadonlyArray<RoadPlacement>,
     pieces: ReadonlyArray<PlacedTrackPiece>,
-    placed: ModelsAndVersion,
+    placed: PlacedModels,
     clearanceIn: ClearanceInBand,
   ): ReadonlyArray<SuggestedCrossing> {
-    if (roads.length === 0 || pieces.length === 0) return [];
+    if (roads.length === 0 || pieces.length === 0) {
+      this.forget();
+      return [];
+    }
     const crossings = this.levelCrossings.crossings(roads, this.tracksOf(pieces));
-    if (crossings.length === 0) return [];
-    const last = this.last;
+    if (crossings.length === 0) {
+      this.lastSuggestion = null;
+      return [];
+    }
+    const last = this.lastSuggestion;
     if (
       last &&
       last.pieces === pieces &&
@@ -186,8 +190,15 @@ export class CrossingRamps {
       trackPlacements: crossing.tracks.map((track) => pieces[track]?.placement ?? 0),
       ramps: this.seated(crossing, probe),
     }));
-    this.last = { crossings, pieces, modelsVersion: placed.version, suggested };
+    this.lastSuggestion = { crossings, pieces, modelsVersion: placed.version, suggested };
     return suggested;
+  }
+
+  private forget(): void {
+    this.lastSuggestion = null;
+    this.piecesSeen = null;
+    this.tracksSeen = [];
+    this.levelCrossings.crossings([], []);
   }
 
   private tracksOf(pieces: ReadonlyArray<PlacedTrackPiece>): ReadonlyArray<CrossingTrack> {

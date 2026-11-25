@@ -1396,7 +1396,6 @@ export class Editor implements IEditor, IEditedWorld {
   private mappingRequested = false;
   private trackSupportError: string | null = null;
   private trackSupportLoad: Promise<void> | null = null;
-  private roadModels: ReadonlyArray<PlacedModel> = [];
   private readonly liveRoads = new LiveRoads();
   private readonly joinMarkers = new WeakMap<RoadEdgeSegment, EdgeMarker>();
   private placedRoads: PlacedRoads = this.liveRoads.placedRoads;
@@ -3804,11 +3803,10 @@ export class Editor implements IEditor, IEditedWorld {
   private refreshRoads(): void {
     const started = performance.now();
     const roadModels = this.placed.models().filter((model) => model.placeable.road !== null);
-    if (sameModels(roadModels, this.roadModels)) {
+    if (sameModels(roadModels, this.liveRoads.models)) {
       this.replanRoadStroke();
       return;
     }
-    this.roadModels = roadModels;
     this.liveRoads.refresh(roadModels);
     this.trackWorld.setRoads(this.liveRoads.placements);
     this.placedRoads = this.liveRoads.placedRoads;
@@ -5823,6 +5821,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.trackWorld.drawing() !== null && this.state.mode === "track") {
       this.trackWorld.setObstacles();
     }
+    this.trackWorld.setRoads([]);
     this.layoutChanged();
     this.update({
       placements: world.size,
@@ -5920,7 +5919,7 @@ export class Editor implements IEditor, IEditedWorld {
           : [];
       }),
       placements: dumpPlacements(this.world),
-      roadPlacements: this.roadModels.map((model, id) => ({
+      roadPlacements: this.liveRoads.models.map((model, id) => ({
         id,
         item: model.placeable.id,
         x: model.handle.x,
