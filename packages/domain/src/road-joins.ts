@@ -602,8 +602,8 @@ class EdgeTally {
 
   constructor(readonly placementCells: Int32Array) {}
 
-  countPlacement(placement: number, column: number): void {
-    const at = placement * PLACEMENT_CELL_INTS + column;
+  countPlacement(rank: number, column: number): void {
+    const at = rank * PLACEMENT_CELL_INTS + column;
     this.placementCells[at] = (this.placementCells[at] ?? 0) + 1;
   }
 }
@@ -631,13 +631,85 @@ function byPair(a: readonly [number, number], b: readonly [number, number]): num
   return a[0] - b[0] || a[1] - b[1];
 }
 
-export class RoadNetwork {
+export interface RoadFitSource {
+  fit(candidate: RoadPlacement, into: RoadFit): RoadFit;
+  cleanFit(candidate: RoadPlacement, into: RoadFit): RoadFit | null;
+  cleanContact(candidate: RoadPlacement, into: RoadFit): RoadFit | null;
+}
+
+const FIRST_SLOTS = 64;
+const NO_SEGMENTS: ReadonlyArray<RoadEdgeSegment> = [];
+
+interface OverlapCount {
+  readonly pair: readonly [number, number];
+  cells: number;
+}
+
+class SlotTallies {
+  stale = new Uint8Array(FIRST_SLOTS);
+  overlapCells = new Int32Array(FIRST_SLOTS);
+  joinedCells = new Int32Array(FIRST_SLOTS);
+  openCells = new Int32Array(FIRST_SLOTS);
+  mismatchedCells = new Int32Array(FIRST_SLOTS);
+  placementCells = new Int32Array(FIRST_SLOTS * PLACEMENT_CELL_INTS);
+  readonly segments: Array<ReadonlyArray<RoadEdgeSegment>> = [];
+
+  open(slot: number): void {
+    if (slot >= this.stale.length) this.grow(2 * Math.max(slot + 1, this.stale.length));
+    this.stale[slot] = 1;
+    this.overlapCells[slot] = 0;
+    this.store(slot, 0, 0, 0, 0, 0, NO_SEGMENTS);
+  }
+
+  close(slot: number): void {
+    this.stale[slot] = 0;
+    this.store(slot, 0, 0, 0, 0, 0, NO_SEGMENTS);
+  }
+
+  forgetSegments(): void {
+    for (let slot = 0; slot < this.segments.length; slot++) this.segments[slot] = NO_SEGMENTS;
+  }
+
+  store(
+    slot: number,
+    joined: number,
+    open: number,
+    mismatched: number,
+    placementJoined: number,
+    placementMismatched: number,
+    segments: ReadonlyArray<RoadEdgeSegment>,
+  ): void {
+    this.joinedCells[slot] = joined;
+    this.openCells[slot] = open;
+    this.mismatchedCells[slot] = mismatched;
+    this.placementCells[slot * PLACEMENT_CELL_INTS + PLACEMENT_JOINED] = placementJoined;
+    this.placementCells[slot * PLACEMENT_CELL_INTS + PLACEMENT_MISMATCHED] = placementMismatched;
+    this.segments[slot] = segments;
+  }
+
+  private grow(slots: number): void {
+    this.stale = grown(this.stale, new Uint8Array(slots));
+    this.overlapCells = grown(this.overlapCells, new Int32Array(slots));
+    this.joinedCells = grown(this.joinedCells, new Int32Array(slots));
+    this.openCells = grown(this.openCells, new Int32Array(slots));
+    this.mismatchedCells = grown(this.mismatchedCells, new Int32Array(slots));
+    this.placementCells = grown(this.placementCells, new Int32Array(slots * PLACEMENT_CELL_INTS));
+  }
+}
+
+export class RoadNetwork implements RoadFitSource {
   private readonly grid = new RoadCellGrid();
   private readonly cursor = this.grid.cursor();
   private readonly seams = new SeamLine();
   private readonly probe = new PlacedStamp();
-  private readonly poses: PlacedStamp[] = [];
-  private readonly overlapPairs = new Map<string, readonly [number, number]>();
+  private readonly poses: Array<PlacedStamp | null> = [];
+  private readonly slots = new SlotTallies();
+  private live = new Int32Array(FIRST_SLOTS);
+  private liveCount = 0;
+  private readonly idCounts = new Map<number, number>();
+  private sharedIds = 0;
+  private readonly overlapPairs = new Map<string, OverlapCount>();
+  private reported = false;
   private memo: RoadFitMemo | null = null;
 
   constructor(placements: ReadonlyArray<RoadPlacement>) {
@@ -648,7 +720,11 @@ export class RoadNetwork {
     this.memo?.forget();
     const owner = this.poses.length;
     const pose = new PlacedStamp().at(placement);
+    this.slots.open(owner);
+    if (this.reported) this.flagAround(pose);
     this.poses.push(pose);
+    this.appendLive(owner);
+    this.countId(pose.id, 1);
     const stamp = pose.stamp;
     const phase = pose.phase;
     for (let c = 0; c < stamp.column.length; c++) {
@@ -657,46 +733,168 @@ export class RoadNetwork {
       const z = (stamp.row[c] ?? 0) + pose.offsetZ;
       const top = (stamp.top[c] ?? 0) + pose.ySixteenths;
       for (let found = this.cursor.seek(x, z, top, phase); found; found = this.cursor.advance()) {
-        this.recordOverlap(this.cursor.owner, pose);
+        this.countOverlap(this.cursor.owner, owner, 1);
       }
       const stud = raisedStud(stamp.stud[c] ?? NO_STUD, pose.ySixteenths);
       this.grid.claim(x, z, owner, top, phase, stud, stamp.road[c] ?? 0);
     }
   }
 
+  remove(id: number): void {
+    const rank = this.rankOf(id);
+    const owner = this.live[rank] ?? NO_PARTNER;
+    const pose = this.poses[owner];
+    if (rank < 0 || !pose) throw new RangeError(`no road placement ${id} to remove`);
+    this.memo?.forget();
+    if (this.reported) this.flagAround(pose);
+    const stamp = pose.stamp;
+    const phase = pose.phase;
+    for (let c = 0; c < stamp.column.length; c++) {
+      if (stamp.present[c] === 0) continue;
+      const x = (stamp.column[c] ?? 0) + pose.offsetX;
+      const z = (stamp.row[c] ?? 0) + pose.offsetZ;
+      const top = (stamp.top[c] ?? 0) + pose.ySixteenths;
+      for (let found = this.cursor.seek(x, z, top, phase); found; found = this.cursor.advance()) {
+        if (this.cursor.owner !== owner) this.countOverlap(this.cursor.owner, owner, -1);
+      }
+      this.grid.unclaim(x, z, owner);
+    }
+    this.poses[owner] = null;
+    this.live.copyWithin(rank, rank + 1, this.liveCount);
+    this.liveCount--;
+    this.countId(id, -1);
+    this.slots.close(owner);
+  }
+
   clear(): void {
     this.memo?.forget();
     this.poses.length = 0;
+    this.slots.forgetSegments();
+    this.liveCount = 0;
+    this.idCounts.clear();
+    this.sharedIds = 0;
     this.overlapPairs.clear();
+    this.reported = false;
     this.grid.clear();
   }
 
   report(): RoadJoinReport {
-    const tally = new EdgeTally(new Int32Array(this.poses.length * PLACEMENT_CELL_INTS));
-    for (let owner = 0; owner < this.poses.length; owner++) this.tallyPlacement(owner, tally);
+    if (this.sharedIds > 0) return this.wholeReport();
+    this.reported = true;
+    const slots = this.slots;
+    const placementCells = new Int32Array(this.liveCount * PLACEMENT_CELL_INTS);
+    const segments: RoadEdgeSegment[] = [];
+    let joinedCells = 0;
+    let openCells = 0;
+    let mismatchedCells = 0;
+    for (let rank = 0; rank < this.liveCount; rank++) {
+      const owner = this.live[rank] ?? 0;
+      if (slots.stale[owner] === 1) this.tallySlot(owner);
+      joinedCells += slots.joinedCells[owner] ?? 0;
+      openCells += slots.openCells[owner] ?? 0;
+      mismatchedCells += slots.mismatchedCells[owner] ?? 0;
+      const from = owner * PLACEMENT_CELL_INTS;
+      placementCells.set(
+        slots.placementCells.subarray(from, from + PLACEMENT_CELL_INTS),
+        rank * PLACEMENT_CELL_INTS,
+      );
+      for (const segment of slots.segments[owner] ?? NO_SEGMENTS) segments.push(segment);
+    }
     return {
-      placements: this.poses.length,
-      joinedCells: tally.joinedCells,
-      openCells: tally.openCells,
-      mismatchedCells: tally.mismatchedCells,
-      placementCells: tally.placementCells,
-      overlaps: [...this.overlapPairs.values()].toSorted(byPair),
-      segments: mergeSegments(tally.edgeCells),
+      placements: this.liveCount,
+      joinedCells,
+      openCells,
+      mismatchedCells,
+      placementCells,
+      overlaps: this.overlapList(),
+      segments,
     };
   }
 
   placementJoin(id: number): RoadPlacementJoin {
     let mismatched = false;
-    for (let owner = 0; owner < this.poses.length && !mismatched; owner++) {
+    for (let rank = 0; rank < this.liveCount && !mismatched; rank++) {
+      const owner = this.live[rank] ?? 0;
       if (this.poses[owner]?.id === id) mismatched = this.mismatchesAt(owner);
     }
     let first: readonly [number, number] | null = null;
-    for (const pair of this.overlapPairs.values()) {
+    for (const { pair } of this.overlapPairs.values()) {
       if (pair[0] !== id && pair[1] !== id) continue;
       if (first === null || byPair(pair, first) < 0) first = pair;
     }
     const overlapPartner = first === null ? null : first[0] === id ? first[1] : first[0];
     return { mismatched, overlapPartner };
+  }
+
+  private wholeReport(): RoadJoinReport {
+    const tally = new EdgeTally(new Int32Array(this.liveCount * PLACEMENT_CELL_INTS));
+    for (let rank = 0; rank < this.liveCount; rank++) {
+      this.tallyPlacement(this.live[rank] ?? 0, rank, tally);
+    }
+    return {
+      placements: this.liveCount,
+      joinedCells: tally.joinedCells,
+      openCells: tally.openCells,
+      mismatchedCells: tally.mismatchedCells,
+      placementCells: tally.placementCells,
+      overlaps: this.overlapList(),
+      segments: mergeSegments(tally.edgeCells),
+    };
+  }
+
+  private tallySlot(owner: number): void {
+    const tally = new EdgeTally(new Int32Array(PLACEMENT_CELL_INTS));
+    this.tallyPlacement(owner, 0, tally);
+    this.slots.store(
+      owner,
+      tally.joinedCells,
+      tally.openCells,
+      tally.mismatchedCells,
+      tally.placementCells[PLACEMENT_JOINED] ?? 0,
+      tally.placementCells[PLACEMENT_MISMATCHED] ?? 0,
+      mergeSegments(tally.edgeCells),
+    );
+    this.slots.stale[owner] = 0;
+  }
+
+  private overlapList(): ReadonlyArray<readonly [number, number]> {
+    const pairs: Array<readonly [number, number]> = [];
+    for (const { pair } of this.overlapPairs.values()) pairs.push(pair);
+    return pairs.toSorted(byPair);
+  }
+
+  private flagAround(pose: PlacedStamp): void {
+    const { offsetX, offsetZ, stamp } = pose;
+    this.grid.flagOwnersIn(
+      offsetX - 1,
+      offsetZ - 1,
+      offsetX + stamp.width,
+      offsetZ + stamp.depth,
+      this.slots.stale,
+    );
+  }
+
+  private appendLive(owner: number): void {
+    if (this.liveCount === this.live.length) {
+      this.live = grown(this.live, new Int32Array(2 * this.live.length));
+    }
+    this.live[this.liveCount++] = owner;
+  }
+
+  private rankOf(id: number): number {
+    for (let rank = 0; rank < this.liveCount; rank++) {
+      if (this.poses[this.live[rank] ?? 0]?.id === id) return rank;
+    }
+    return NO_PARTNER;
+  }
+
+  private countId(id: number, change: number): void {
+    const before = this.idCounts.get(id) ?? 0;
+    const after = before + change;
+    if (after === 0) this.idCounts.delete(id);
+    else this.idCounts.set(id, after);
+    if (before < 2 && after >= 2) this.sharedIds++;
+    if (before >= 2 && after < 2) this.sharedIds--;
   }
 
   private mismatchesAt(owner: number): boolean {
@@ -780,17 +978,28 @@ export class RoadNetwork {
     return own.id < other.id || (own.id === other.id && owner < partner);
   }
 
-  private recordOverlap(owner: number, pose: PlacedStamp): void {
-    const other = this.poses[owner];
-    if (!other) throw new Error(`road cell owner ${owner} has no placement`);
-    other.overlapping = true;
-    pose.overlapping = true;
-    const pair = [Math.min(other.id, pose.id), Math.max(other.id, pose.id)] as const;
-    const key = `${pair[0]},${pair[1]}`;
-    if (!this.overlapPairs.has(key)) this.overlapPairs.set(key, pair);
+  private countOverlap(owner: number, partner: number, change: number): void {
+    const own = this.poses[owner];
+    const other = this.poses[partner];
+    if (!own || !other) throw new Error(`road overlap ${owner}, ${partner} has no placement`);
+    const overlapCells = this.slots.overlapCells;
+    overlapCells[owner] = (overlapCells[owner] ?? 0) + change;
+    overlapCells[partner] = (overlapCells[partner] ?? 0) + change;
+    own.overlapping = (overlapCells[owner] ?? 0) > 0;
+    other.overlapping = (overlapCells[partner] ?? 0) > 0;
+    const low = Math.min(own.id, other.id);
+    const high = Math.max(own.id, other.id);
+    const key = `${low},${high}`;
+    const counted = this.overlapPairs.get(key);
+    if (!counted) {
+      this.overlapPairs.set(key, { pair: [low, high], cells: change });
+      return;
+    }
+    counted.cells += change;
+    if (counted.cells === 0) this.overlapPairs.delete(key);
   }
 
-  private tallyPlacement(owner: number, tally: EdgeTally): void {
+  private tallyPlacement(owner: number, rank: number, tally: EdgeTally): void {
     const pose = this.poses[owner];
     if (!pose) return;
     const seams = this.seams;
@@ -809,11 +1018,11 @@ export class RoadNetwork {
         const counted = this.countsPair(owner, seams.partnerOf(i));
         if (joined && counted) {
           tally.joinedCells++;
-          tally.countPlacement(owner, PLACEMENT_JOINED);
+          tally.countPlacement(rank, PLACEMENT_JOINED);
         }
         if (!joined) {
           if (counted) tally.mismatchedCells++;
-          tally.countPlacement(owner, PLACEMENT_MISMATCHED);
+          tally.countPlacement(rank, PLACEMENT_MISMATCHED);
         }
         tally.edgeCells.push(edgeCellOf(pose, seams.edgeOf(i), joined ? "joined" : "mismatch"));
       }

@@ -14,7 +14,6 @@ import {
   NO_ROW,
   PlanDelta,
   RoadFit,
-  RoadNetwork,
   World,
   addShards,
   shardPoses,
@@ -207,7 +206,6 @@ import {
   HELD_TURN,
   NO_ROAD_SURFACE,
   overlapsPlacedRoad,
-  placedRoadsOf,
   roadOverlapCells,
   snapToRoadEdge,
   type PlacedRoads,
@@ -215,6 +213,7 @@ import {
   type RestingHeights,
   type RoadSnap,
 } from "./road-snap.ts";
+import { LiveRoads, roadPlacementOf } from "./live-roads.ts";
 import { quarterTurned, type TurnDirection } from "./turn.ts";
 import {
   QUAD_FLOATS,
@@ -1089,18 +1088,6 @@ function restoredMembers(
 const EDITOR_WORLD_NAME = "editor-world";
 const FILE_NAME_UNSAFE = /[^A-Za-z0-9.-]+/gu;
 
-function roadPlacement(id: number, model: PlacedModel, surface: RoadSurface): RoadPlacement {
-  const { handle } = model;
-  return {
-    id,
-    x: handle.x,
-    z: handle.z,
-    yLdu: handle.yPlates * PLATE_LDU,
-    rot: handle.rot,
-    surface,
-  };
-}
-
 interface EditSample {
   readonly item: string;
   readonly rot: number;
@@ -1409,9 +1396,9 @@ export class Editor implements IEditor, IEditedWorld {
   private mappingRequested = false;
   private trackSupportError: string | null = null;
   private trackSupportLoad: Promise<void> | null = null;
-  private roadModels: ReadonlyArray<PlacedModel> = [];
-  private roadNetwork = new RoadNetwork([]);
-  private placedRoads: PlacedRoads = placedRoadsOf(this.roadNetwork, []);
+  private readonly liveRoads = new LiveRoads();
+  private readonly joinMarkers = new WeakMap<RoadEdgeSegment, EdgeMarker>();
+  private placedRoads: PlacedRoads = this.liveRoads.placedRoads;
   private keptRoadSnap: KeptRoadSnap | null = null;
   private pendingTurns = HELD_TURN;
   private pendingTurnsAtX = 0;
@@ -1474,7 +1461,6 @@ export class Editor implements IEditor, IEditedWorld {
     surface: NO_ROAD_SURFACE,
   };
   private readonly restingPoint = { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
-  private roadReport: RoadJoinReport = new RoadNetwork([]).report();
   private readonly planDelta = new PlanDelta();
   private measure: MeasureTool | null = null;
   private tables: TableTool | null = null;
@@ -3808,17 +3794,6 @@ export class Editor implements IEditor, IEditedWorld {
     };
   }
 
-  private roadPlacements(): ReadonlyArray<RoadPlacement> {
-    const placements: RoadPlacement[] = [];
-    for (let id = 0; id < this.roadModels.length; id++) {
-      const model = this.roadModels[id];
-      const surface = model?.placeable.road;
-      if (!model || !surface) continue;
-      placements.push(roadPlacement(id, model, surface));
-    }
-    return placements;
-  }
-
   private replanRoadStroke(): void {
     const view = this.roads.replanStroke(this.roadNeighbourhood);
     if (view) this.update(view);
@@ -3827,27 +3802,24 @@ export class Editor implements IEditor, IEditedWorld {
   private refreshRoads(): void {
     const started = performance.now();
     const roadModels = this.placed.models().filter((model) => model.placeable.road !== null);
-    if (sameModels(roadModels, this.roadModels)) {
+    if (sameModels(roadModels, this.liveRoads.models)) {
       this.replanRoadStroke();
       return;
     }
-    this.roadModels = roadModels;
-    const placements = this.roadPlacements();
-    this.trackWorld.setRoads(placements);
-    this.roadNetwork = new RoadNetwork(placements);
-    this.placedRoads = placedRoadsOf(this.roadNetwork, placements);
-    this.roadReport = this.roadNetwork.report();
-    this.facts.noteRoads(this.roadReport, roadModels);
+    this.liveRoads.refresh(roadModels);
+    this.trackWorld.setRoads(this.liveRoads.placements);
+    this.placedRoads = this.liveRoads.placedRoads;
+    this.facts.noteRoads(this.liveRoads.report, roadModels);
     this.replanRoadStroke();
     const checkMs = performance.now() - started;
     this.showMarkers();
-    const report = this.roadReport;
+    const report = this.liveRoads.report;
     const issues: RoadIssueView[] = [];
     for (const segment of report.segments) {
       if (segment.status === "joined" || issues.length >= LISTED_ROAD_ISSUES) continue;
       issues.push({
         status: segment.status,
-        item: this.roadModels[segment.placement]?.placeable.id ?? "",
+        item: this.liveRoads.modelOf(segment.placement)?.placeable.id ?? "",
         side: segment.side,
         line: segment.line,
         from: segment.from,
@@ -3882,12 +3854,18 @@ export class Editor implements IEditor, IEditedWorld {
 
   private showMarkers(): void {
     const joins: EdgeMarker[] = this.state.showJoins
-      ? this.roadReport.segments.map((segment) => ({
-          box: markerBox(segment),
-          kind: segment.status,
-        }))
+      ? this.liveRoads.report.segments.map((segment) => this.joinMarkerOf(segment))
       : [];
     this.roads.setJoinMarkers(joins);
+  }
+
+  private joinMarkerOf(segment: RoadEdgeSegment): EdgeMarker {
+    let marker = this.joinMarkers.get(segment);
+    if (!marker) {
+      marker = { box: markerBox(segment), kind: segment.status };
+      this.joinMarkers.set(segment, marker);
+    }
+    return marker;
   }
 
   setShowGrid(show: boolean): void {
@@ -4246,7 +4224,7 @@ export class Editor implements IEditor, IEditedWorld {
       roadwayOf: (id) => {
         const model = modelOf(id);
         const surface = model.placeable.road;
-        return surface ? roadwayCells(roadPlacement(id, model, surface)) : [];
+        return surface ? roadwayCells(roadPlacementOf(id, model, surface)) : [];
       },
       trackOutlineOf: (piece) => trackOf().laidOutline(piece).lduRings(),
       crossingRamps: ramps.map((outline) => outline.lduRings()),
@@ -4948,11 +4926,7 @@ export class Editor implements IEditor, IEditedWorld {
 
   private roadsWithout(exempt: ReadonlySet<PlacedModel>): PlacedRoads {
     if (exempt.size === 0) return this.placedRoads;
-    const placements = this.roadPlacements().filter(({ id }) => {
-      const model = this.roadModels[id];
-      return model !== undefined && !exempt.has(model);
-    });
-    return placedRoadsOf(new RoadNetwork(placements), placements);
+    return this.liveRoads.excluding(exempt);
   }
 
   private pasteEdit(
@@ -5845,6 +5819,7 @@ export class Editor implements IEditor, IEditedWorld {
     if (this.trackWorld.drawing() !== null && this.state.mode === "track") {
       this.trackWorld.setObstacles();
     }
+    this.trackWorld.setRoads([]);
     this.layoutChanged();
     this.update({
       placements: world.size,
@@ -5942,7 +5917,7 @@ export class Editor implements IEditor, IEditedWorld {
           : [];
       }),
       placements: dumpPlacements(this.world),
-      roadPlacements: this.roadModels.map((model, id) => ({
+      roadPlacements: this.liveRoads.models.map((model, id) => ({
         id,
         item: model.placeable.id,
         x: model.handle.x,
@@ -5950,10 +5925,10 @@ export class Editor implements IEditor, IEditedWorld {
         yPlates: model.handle.yPlates,
         rot: model.handle.rot,
       })),
-      roads: this.roadReport,
+      roads: this.liveRoads.reportByRank(),
       crossings: this.trackWorld.crossings().map(({ crossing, trackPlacements, ramps }) => ({
         tracks: trackPlacements,
-        roads: crossing.roads,
+        roads: crossing.roads.map((id) => this.liveRoads.rankOf(id)),
         roadwayCells: crossing.roadwayCells,
         ramps: ramps.map(({ part, x, y, z, rot, studMates }) => ({
           part,

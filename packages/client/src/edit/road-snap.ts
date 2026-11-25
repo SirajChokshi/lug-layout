@@ -2,8 +2,9 @@ import {
   NO_STUD,
   NO_TOP,
   RoadFit,
+  RoadNetwork,
   closesRoadEdge,
-  type RoadNetwork,
+  type RoadFitSource,
   type RoadPlacement,
   type RoadSurface,
 } from "@brr/domain";
@@ -18,7 +19,7 @@ export interface CellExtent {
 }
 
 export interface PlacedRoads {
-  readonly network: RoadNetwork;
+  readonly network: RoadFitSource;
   readonly placements: ReadonlyArray<RoadPlacement>;
   readonly extents: ReadonlyArray<CellExtent>;
   readonly index: RoadIndex;
@@ -160,28 +161,47 @@ export class RoadIndex {
   ) {}
 
   static of(extents: ReadonlyArray<CellExtent>): RoadIndex {
-    const entries: Array<readonly [number, number]> = [];
-    extents.forEach((extent, placement) => {
+    let entries = 0;
+    for (const extent of extents) entries += bucketsAcross(extent);
+    const entryKey = new Float64Array(entries);
+    const entryPlacement = new Int32Array(entries);
+    let at = 0;
+    for (let placement = 0; placement < extents.length; placement++) {
+      const extent = extents[placement];
+      if (!extent) continue;
       for (let bx = bucketOf(extent.minX); bx <= bucketOf(extent.maxX); bx++) {
         for (let bz = bucketOf(extent.minZ); bz <= bucketOf(extent.maxZ); bz++) {
-          entries.push([bucketKey(bx, bz), placement]);
+          entryKey[at] = bucketKey(bx, bz);
+          entryPlacement[at++] = placement;
         }
       }
-    });
-    entries.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const keys: number[] = [];
-    const starts: number[] = [];
-    entries.forEach(([key], at) => {
-      if (keys[keys.length - 1] === key) return;
-      keys.push(key);
-      starts.push(at);
-    });
-    starts.push(entries.length);
-    return new RoadIndex(
-      Float64Array.from(keys),
-      Int32Array.from(starts),
-      Int32Array.from(entries, ([, placement]) => placement),
+    }
+    const order = new Int32Array(entries);
+    for (let e = 0; e < entries; e++) order[e] = e;
+    order.sort(
+      (a, b) =>
+        (entryKey[a] ?? 0) - (entryKey[b] ?? 0) ||
+        (entryPlacement[a] ?? 0) - (entryPlacement[b] ?? 0),
     );
+    let distinct = 0;
+    for (let e = 0; e < entries; e++) {
+      if (e === 0 || entryKey[order[e] ?? 0] !== entryKey[order[e - 1] ?? 0]) distinct++;
+    }
+    const keys = new Float64Array(distinct);
+    const starts = new Int32Array(distinct + 1);
+    const members = new Int32Array(entries);
+    let bucket = -1;
+    for (let e = 0; e < entries; e++) {
+      const entry = order[e] ?? 0;
+      const key = entryKey[entry] ?? 0;
+      if (bucket < 0 || keys[bucket] !== key) {
+        keys[++bucket] = key;
+        starts[bucket] = e;
+      }
+      members[e] = entryPlacement[entry] ?? 0;
+    }
+    starts[distinct] = entries;
+    return new RoadIndex(keys, starts, members);
   }
 
   private find(bucketX: number, bucketZ: number): number {
@@ -212,12 +232,126 @@ export class RoadIndex {
   }
 }
 
+function bucketsAcross(extent: CellExtent): number {
+  return (
+    (bucketOf(extent.maxX) - bucketOf(extent.minX) + 1) *
+    (bucketOf(extent.maxZ) - bucketOf(extent.minZ) + 1)
+  );
+}
+
 export function placedRoadsOf(
-  network: RoadNetwork,
+  network: RoadFitSource,
   placements: ReadonlyArray<RoadPlacement>,
+  extents: ReadonlyArray<CellExtent> = placements.map(cellExtent),
 ): PlacedRoads {
-  const extents = placements.map(cellExtent);
   return { network, placements, extents, index: RoadIndex.of(extents) };
+}
+
+const SERVE_REACH_LDU = 2 * STUD_LDU;
+const COVERING_CELLS = 80_000;
+const presentCellCounts = new WeakMap<RoadSurface, number>();
+
+function presentCells(surface: RoadSurface): number {
+  let count = presentCellCounts.get(surface);
+  if (count === undefined) {
+    count = 0;
+    for (const top of surface.topSixteenths) if (top !== NO_TOP) count++;
+    presentCellCounts.set(surface, count);
+  }
+  return count;
+}
+
+export class NearbyRoadNetwork implements RoadFitSource {
+  private readonly network = new RoadNetwork([]);
+  private readonly region: MutableExtent = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+  private readonly query: MutableExtent = { minX: 0, maxX: 0, minZ: 0, maxZ: 0 };
+  private readonly near: number[] = [];
+  private readonly picked: number[] = [];
+  private filled = false;
+  private coversRecorded = false;
+
+  constructor(
+    private readonly recorded: ReadonlyArray<RoadPlacement>,
+    private readonly extents: ReadonlyArray<CellExtent>,
+    private readonly index: RoadIndex,
+    private readonly margin: number,
+  ) {}
+
+  fit(candidate: RoadPlacement, into: RoadFit): RoadFit {
+    return this.serving(candidate).fit(candidate, into);
+  }
+
+  cleanFit(candidate: RoadPlacement, into: RoadFit): RoadFit | null {
+    return this.serving(candidate).cleanFit(candidate, into);
+  }
+
+  cleanContact(candidate: RoadPlacement, into: RoadFit): RoadFit | null {
+    return this.serving(candidate).cleanContact(candidate, into);
+  }
+
+  private serving(candidate: RoadPlacement): RoadNetwork {
+    if (this.coversRecorded) return this.network;
+    const query = cellExtentInto(candidate, this.query);
+    if (!Number.isFinite(query.minX) || this.serves(query)) return this.network;
+    this.refill(query);
+    return this.network;
+  }
+
+  private serves(query: CellExtent): boolean {
+    const region = this.region;
+    return (
+      this.filled &&
+      query.minX - SERVE_REACH_LDU >= region.minX &&
+      query.maxX + SERVE_REACH_LDU <= region.maxX &&
+      query.minZ - SERVE_REACH_LDU >= region.minZ &&
+      query.maxZ + SERVE_REACH_LDU <= region.maxZ
+    );
+  }
+
+  private refill(query: CellExtent): void {
+    const region = this.region;
+    const grow = Math.max(this.margin, SERVE_REACH_LDU);
+    region.minX = query.minX - grow;
+    region.maxX = query.maxX + grow;
+    region.minZ = query.minZ - grow;
+    region.maxZ = query.maxZ + grow;
+    this.filled = true;
+    const picked = this.overlapping(region);
+    let cells = 0;
+    for (const p of picked) cells += presentCells(this.recorded[p]?.surface ?? NO_ROAD_SURFACE);
+    this.network.clear();
+    if (cells >= COVERING_CELLS) {
+      for (const placement of this.recorded) this.network.add(placement);
+      this.coversRecorded = true;
+      return;
+    }
+    for (const p of picked) {
+      const placement = this.recorded[p];
+      if (placement) this.network.add(placement);
+    }
+  }
+
+  private overlapping(region: CellExtent): ReadonlyArray<number> {
+    const near = this.near;
+    const count = this.index.near(region.minX, region.maxX, region.minZ, region.maxZ, near);
+    const picked = this.picked;
+    picked.length = 0;
+    for (let n = 0; n < count; n++) {
+      const p = near[n] ?? 0;
+      const extent = this.extents[p];
+      if (!extent || !extentsOverlap(extent, region.minX, region.maxX, region.minZ, region.maxZ)) {
+        continue;
+      }
+      picked.push(p);
+    }
+    picked.sort((a, b) => a - b);
+    let kept = 0;
+    for (let i = 0; i < picked.length; i++) {
+      if (i === 0 || picked[i] !== picked[i - 1]) picked[kept++] = picked[i] ?? 0;
+    }
+    picked.length = kept;
+    return picked;
+  }
 }
 
 function roadAtTop(

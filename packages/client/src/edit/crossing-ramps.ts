@@ -1,16 +1,17 @@
 import type { PartShapeAsset } from "@brr/catalog";
 import {
+  LevelCrossings,
   NO_OBSTACLE,
   OUTLINE_BOX_FLOATS,
   PlacedOutline,
   convexHull,
   outlineBox,
-  type RoadSurfaceCells,
   type CrossingTrack,
   type LduRect,
   type LevelCrossing,
   type RampCandidate,
   type RampPart,
+  type RoadPlacement,
   type TrackClearance,
 } from "@brr/domain";
 import { CHUNK_LDU, STUD_LDU, chunkKey, chunkOf, rot90Cos, rot90Sin } from "@brr/math";
@@ -19,7 +20,7 @@ import { OUTLINE_UNITS_PER_LDU, type LevelCrossingFacts } from "@brr/schema/bund
 import type { ChunkPartInstances } from "../scene/placements.ts";
 import { withStuds } from "../scene/stud-stream.ts";
 import type { ColorTable } from "../scene/viewer-scene.ts";
-import type { PlacedModel } from "./placed-chunks.ts";
+import type { PlacedModel, PlacedModels } from "./placed-chunks.ts";
 import type { PlacedTrackPiece } from "./track-drawing.ts";
 import { cellKey, studSeats, type StudSeats } from "./track-obstacles.ts";
 
@@ -34,6 +35,13 @@ export interface SuggestedCrossing {
 }
 
 export type ClearanceInBand = (band: readonly [number, number]) => TrackClearance;
+
+interface Suggestion {
+  readonly crossings: ReadonlyArray<LevelCrossing>;
+  readonly pieces: ReadonlyArray<PlacedTrackPiece>;
+  readonly modelsVersion: number;
+  readonly suggested: ReadonlyArray<SuggestedCrossing>;
+}
 
 interface RampAsset {
   readonly part: RampPart;
@@ -114,6 +122,11 @@ class LayoutProbe {
 export class CrossingRamps {
   private readonly ramps: ReadonlyArray<RampAsset>;
   private readonly railTops: ReadonlyMap<string, number>;
+  private readonly levelCrossings: LevelCrossings;
+  private readonly tracksByOutline = new WeakMap<PlacedOutline, Map<string, CrossingTrack>>();
+  private piecesSeen: ReadonlyArray<PlacedTrackPiece> | null = null;
+  private tracksSeen: ReadonlyArray<CrossingTrack> = [];
+  private lastSuggestion: Suggestion | null = null;
 
   constructor(
     facts: LevelCrossingFacts,
@@ -138,33 +151,75 @@ export class CrossingRamps {
         maxY: part.boundsMax[1],
       };
     });
+    this.levelCrossings = new LevelCrossings(this.ramps.map((ramp) => ramp.part));
   }
 
   suggest(
-    roads: RoadSurfaceCells,
+    roads: ReadonlyArray<RoadPlacement>,
     pieces: ReadonlyArray<PlacedTrackPiece>,
-    models: ReadonlyArray<PlacedModel>,
+    placed: PlacedModels,
     clearanceIn: ClearanceInBand,
   ): ReadonlyArray<SuggestedCrossing> {
-    if (roads.empty || pieces.length === 0) return [];
-    const tracks = pieces.map((piece): CrossingTrack => {
-      const railTopLdu = this.railTops.get(piece.system);
-      if (railTopLdu === undefined) {
-        throw new Error(`track system ${piece.system} has no rail top in the bundle`);
-      }
-      return { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu };
-    });
-    const crossings = roads.crossings(
-      tracks,
-      this.ramps.map((ramp) => ramp.part),
-    );
-    if (crossings.length === 0) return [];
-    const probe = new LayoutProbe(models, clearanceIn);
-    return crossings.map((crossing) => ({
+    if (roads.length === 0 || pieces.length === 0) {
+      this.forget();
+      return [];
+    }
+    const crossings = this.levelCrossings.crossings(roads, this.tracksOf(pieces));
+    if (crossings.length === 0) {
+      this.lastSuggestion = null;
+      return [];
+    }
+    const last = this.lastSuggestion;
+    if (
+      last &&
+      last.pieces === pieces &&
+      last.modelsVersion === placed.version &&
+      last.crossings === crossings
+    ) {
+      return last.suggested;
+    }
+    const probe = new LayoutProbe(placed.models(), clearanceIn);
+    const suggested = crossings.map((crossing) => ({
       crossing,
       trackPlacements: crossing.tracks.map((track) => pieces[track]?.placement ?? 0),
       ramps: this.seated(crossing, probe),
     }));
+    this.lastSuggestion = { crossings, pieces, modelsVersion: placed.version, suggested };
+    return suggested;
+  }
+
+  private forget(): void {
+    this.lastSuggestion = null;
+    this.piecesSeen = null;
+    this.tracksSeen = [];
+    this.levelCrossings.crossings([], []);
+  }
+
+  private tracksOf(pieces: ReadonlyArray<PlacedTrackPiece>): ReadonlyArray<CrossingTrack> {
+    if (pieces !== this.piecesSeen) {
+      this.piecesSeen = pieces;
+      this.tracksSeen = pieces.map((piece) => this.trackOf(piece));
+    }
+    return this.tracksSeen;
+  }
+
+  private trackOf(piece: PlacedTrackPiece): CrossingTrack {
+    let bySystem = this.tracksByOutline.get(piece.outline);
+    if (!bySystem) {
+      bySystem = new Map();
+      this.tracksByOutline.set(piece.outline, bySystem);
+    }
+    const key = `${piece.system}|${piece.bedLdu}`;
+    let track = bySystem.get(key);
+    if (!track) {
+      const railTopLdu = this.railTops.get(piece.system);
+      if (railTopLdu === undefined) {
+        throw new Error(`track system ${piece.system} has no rail top in the bundle`);
+      }
+      track = { outline: piece.outline, bedLdu: piece.bedLdu, railTopLdu };
+      bySystem.set(key, track);
+    }
+    return track;
   }
 
   private seated(crossing: LevelCrossing, probe: LayoutProbe): ReadonlyArray<SeatedRamp> {

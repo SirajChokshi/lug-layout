@@ -1079,6 +1079,8 @@ function inWorldOrder(entries: ReadonlySet<PlacedEntry>): PlacedEntry[] {
   return [...entries].toSorted(byPlacementValue);
 }
 
+export type PlacedModels = Pick<PlacedChunks, "models" | "version">;
+
 export class PlacedChunks {
   private readonly entries: PlacedEntry[] = [];
   private changes = 0;

@@ -6,6 +6,7 @@ import crossingJson from "../../../docs/verified-facts/level-crossing.json" with
 import outlinesJson from "../../../docs/verified-facts/plan-outlines.json" with { type: "json" };
 import catalogJson from "../../../docs/verified-facts/track-catalog.json" with { type: "json" };
 import {
+  LevelCrossings,
   levelCrossings,
   type CrossingTrack,
   type RampCandidate,
@@ -225,5 +226,136 @@ describe("levelCrossings", () => {
     expect(levelCrossings([road(20, 16)], straightRunAcross(), [rampPart("ldraw:4515")])).toEqual(
       [],
     );
+  });
+});
+
+const SEQUENCES = 60;
+const EDITS = 16;
+const GATE_TIMEOUT_MS = 120_000;
+const PLATE_LDU = PLATE_STUDS * STUD;
+const ROAD_SPOTS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [PLATE_LDU, 0],
+  [0, PLATE_LDU],
+  [3 * PLATE_LDU, 0],
+  [10, PLATE_LDU],
+];
+const TRACK_PIECES = ["ldraw:74746", "ldraw:74746", "ldraw:74747", "ldraw:53401"];
+const ACROSS_STUDS = [-21, -10, 0, 10, 21, 32, 42, 53, 96];
+const ALONG_STUDS = [-16, -8, 0, 8, 24];
+const HEADINGS = [0, ALONG_Z, 2 * ALONG_Z, 3 * ALONG_Z];
+
+function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 2 ** 32;
+  };
+}
+
+function pick<T>(random: () => number, choices: ReadonlyArray<T>): T {
+  const choice = choices[Math.floor(random() * choices.length)];
+  if (choice === undefined) throw new Error("nothing to pick from");
+  return choice;
+}
+
+function randomRoad(random: () => number, id: number): RoadPlacement {
+  const [x, z] = pick(random, ROAD_SPOTS);
+  const plate = road(pick(random, [20, 20, 12]), random() < 0.1 ? 8 : 0);
+  return { ...plate, id, x, z, rot: Math.floor(random() * 4) };
+}
+
+function randomTrack(random: () => number): CrossingTrack {
+  const heading = pick(random, HEADINGS);
+  const across = pick(random, ACROSS_STUDS);
+  const along = pick(random, ALONG_STUDS);
+  const alongZ = heading % (2 * ALONG_Z) !== 0;
+  return track(
+    pick(random, TRACK_PIECES),
+    alongZ ? at(across, along, heading) : at(along, across, heading),
+  );
+}
+
+function without<T>(items: ReadonlyArray<T>, gone: number): T[] {
+  return items.filter((_, index) => index !== gone);
+}
+
+describe("level crossings kept up to date across edits", () => {
+  it(
+    "finds, after every edit of 60 generated sequences, exactly the crossings in exactly the order a full levelCrossings finds, as roads and tracks come, go, repeat and change order",
+    () => {
+      const random = seeded(0xc055);
+      const parts = [rampPart("ldraw:4515"), rampPart("ldraw:3297")];
+      const seen = { crossed: 0, merged: 0, split: 0, unchanged: 0 };
+      let nextId = 0;
+      for (let sequence = 0; sequence < SEQUENCES; sequence++) {
+        const gate = new LevelCrossings(parts);
+        let roads: RoadPlacement[] = [randomRoad(random, nextId++)];
+        let tracks: CrossingTrack[] = straightRunAcross();
+        let before = levelCrossings(roads, tracks, parts);
+        expect(gate.crossings(roads, tracks)).toEqual(before);
+        for (let edit = 0; edit < EDITS; edit++) {
+          const roll = random();
+          if (roll < 0.15) roads = [...roads, randomRoad(random, nextId++)];
+          else if (roll < 0.25 && roads.length > 0) {
+            roads = without(roads, Math.floor(random() * roads.length));
+          } else if (roll < 0.5) tracks = [...tracks, randomTrack(random)];
+          else if (roll < 0.7 && tracks.length > 0) {
+            tracks = without(tracks, Math.floor(random() * tracks.length));
+          } else if (roll < 0.76 && tracks.length > 0) tracks = [...tracks, pick(random, tracks)];
+          else if (roll < 0.82 && tracks.length > 0) {
+            const slot = Math.floor(random() * tracks.length);
+            const old = tracks[slot];
+            if (old) tracks = tracks.map((t, i) => (i === slot ? { ...old } : t));
+          } else if (roll < 0.86) tracks = tracks.toReversed();
+          else if (roll < 0.9) roads = roads.toReversed();
+          const expected = levelCrossings(roads, tracks, parts);
+          expect(gate.crossings(roads, tracks)).toEqual(expected);
+          if (expected.length > 0) seen.crossed++;
+          if (expected.length < before.length && tracks.length > 0) seen.merged++;
+          if (expected.length > before.length && before.length > 0) seen.split++;
+          if (JSON.stringify(expected) === JSON.stringify(before)) seen.unchanged++;
+          before = expected;
+        }
+      }
+      expect(Object.values(seen).every((count) => count > 0)).toBe(true);
+    },
+    GATE_TIMEOUT_MS,
+  );
+
+  it("drops the ramps a new track beyond the road's edge would cut into, though the track meets no road", () => {
+    const parts = [rampPart("ldraw:4515"), rampPart("ldraw:3297")];
+    const roads = [road(20)];
+    const crossing = [-24, -8, 8].map((z) => track("ldraw:74746", at(10, z, ALONG_Z)));
+    const beyond = track("ldraw:74746", at(21, 0, ALONG_Z));
+    expect(beyond.outline.bounds.minX).toBeGreaterThan(PLATE_LDU / 2 + STUD / 2);
+    const gate = new LevelCrossings(parts);
+    const alone = gate.crossings(roads, crossing);
+    const withBeyond = gate.crossings(roads, [...crossing, beyond]);
+    expect(withBeyond).toEqual(levelCrossings(roads, [...crossing, beyond], parts));
+    expect(withBeyond.map((c) => c.candidates.length)).not.toEqual(
+      alone.map((c) => c.candidates.length),
+    );
+  });
+
+  it("reads road ids only as labels: crossings over roads whose ids rise with gaps are the crossings over the same roads numbered 0, 1, 2…, renumbered", () => {
+    const random = seeded(0x1d);
+    const parts = [rampPart("ldraw:4515")];
+    for (let layout = 0; layout < 40; layout++) {
+      const dense = Array.from({ length: 2 + Math.floor(random() * 3) }, (_, id) =>
+        randomRoad(random, id),
+      );
+      const tracks = [...straightRunAcross(), randomTrack(random), randomTrack(random)];
+      let next = 0;
+      const sparseIds = dense.map(() => (next += 1 + Math.floor(random() * 7)));
+      const sparse = dense.map((r, rank) => ({ ...r, id: sparseIds[rank] ?? 0 }));
+      const rankOf = new Map(sparseIds.map((id, rank) => [id, rank]));
+      expect(
+        levelCrossings(sparse, tracks, parts).map((c) => ({
+          ...c,
+          roads: c.roads.map((id) => rankOf.get(id)),
+        })),
+      ).toEqual(levelCrossings(dense, tracks, parts));
+    }
   });
 });
