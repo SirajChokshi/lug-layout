@@ -1247,13 +1247,29 @@ export class PlacementSearch implements IPlacementSearch {
   ): boolean {
     this.zones.clear();
     if (hinted && !exemptable && this.hintBlocks(volumes, pose)) return true;
+    const placed = this.placedIfOverlapping(volumes, pose);
+    return (
+      placed !== null && this.blockedDespiteZones(model, boxes, technic, pose, placed, exemptable)
+    );
+  }
+
+  private placedIfOverlapping(volumes: CellVolumes, pose: LatticePose): VolumeBuffer | null {
     const placed = this.scratch.place(volumes, pose);
     const at = firstOverlapFrom(placed, this.volumes, this.exempt, this.hit, NO_OVERLAP);
-    if (at === NO_OVERLAP) return false;
+    if (at === NO_OVERLAP) return null;
     this.remember(at);
-    if (!exemptable || this.collectZones(model, boxes, technic, pose) === 0) {
-      return true;
-    }
+    return placed;
+  }
+
+  private blockedDespiteZones(
+    model: ModelConnectors,
+    boxes: PartBoxes,
+    technic: TechnicSet,
+    pose: LatticePose,
+    placed: VolumeBuffer,
+    exemptable: boolean,
+  ): boolean {
+    if (!exemptable || this.collectZones(model, boxes, technic, pose) === 0) return true;
     return (
       firstOverlap(placed, this.volumes, this.exempt, this.hit) ||
       this.zones.firstOverlap(this.volumes, placed, this.hit)
@@ -1409,8 +1425,12 @@ export class PlacementSearch implements IPlacementSearch {
     const moving = this.moving;
     this.moving = placement;
     try {
+      this.solver.reinsertWithdrawn();
+      this.zones.clear();
+      const placed = this.placedIfOverlapping(volumes, pose);
+      if (placed === null) return NO_PLACEMENT;
       const mated = this.solver.votes(model, pose) > 0;
-      return this.blocked(model, volumes, boxes, technic, pose, mated, false)
+      return this.blockedDespiteZones(model, boxes, technic, pose, placed, mated)
         ? this.hit.owner
         : NO_PLACEMENT;
     } finally {
