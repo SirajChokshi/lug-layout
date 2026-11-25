@@ -10451,3 +10451,373 @@ it("opens a world of track over a baseplate without ever drawing ramps for a cro
     rampUploads: [],
   });
 }, 240_000);
+
+const SUPPORT_SESSION_STEPS = 40;
+const SUPPORT_SESSION_SEED = 0x5a99_07e1;
+const PLATFORM_PLATES = 3;
+const ABOVE_GROUND_TRACK_PLATES = 6;
+const PLATFORM_AT: PlanPoint = [2560, 0];
+const PLATFORM_EDGE_Z = 120;
+const PLATFORM_ROWS_Z = [-240, 240];
+const SWITCH_SPOTS: ReadonlyArray<PlanPoint> = [-3840, -2560, -1280, 0, 1280, 3840].map((x) => [
+  x,
+  -3840,
+]);
+const REOPEN_STEP = 9;
+const FRESH_EDITOR_STEP = 19;
+const SESSION_EDIT_KINDS = [
+  "ground stroke",
+  "baseplate placed, moved, turned or removed",
+  "raised stroke",
+  "switch lay",
+  "lever throw",
+  "platform moved, turned or removed",
+  "brick removed or placed",
+  "train removed or placed",
+  "undo",
+  "redo",
+] as const;
+
+const TRAIN_RUN_Z = 2560;
+const BRICK_RUN_Z = -2560;
+const BRICK_OFF_RUN_LDU = 20 * STUD;
+const SWITCH_AT: PlanPoint = [-2560, 0];
+const RUN_FILE_AT: PlanPoint = [-2560, 2560];
+const FREE_LANES_Z = [-1280, 1280, 3840];
+const SESSION_TABLE = { minX: -5120, minZ: -5120, maxX: 5120, maxZ: 5120 };
+const PLATFORM_BRICKS_X = [-280, -200, -120, -40, 40, 120, 200, 280];
+const PLATFORM_BRICKS_Z = [
+  -300, -260, -220, -180, -140, -100, -60, -20, 20, 60, 100, 140, 180, 220, 260, 300,
+];
+const RUN_HALF_LDU = 480;
+const PLATFORM_STROKE_HALF_LDU = 240;
+const PLATFORM_SHIFT_LDU = 8 * STUD;
+const SHIFT_STEPS = 5;
+const SHIFT_STEP_LDU = 4 * STUD;
+const MOVE_CHANCE = 0.5;
+const TURN_CHANCE = 0.7;
+const BASEPLATE_AT: PlanPoint = [0, -1280];
+const BASEPLATE_CORNER_LDU = 240;
+const BASEPLATE_SHIFT_LDU = 32 * STUD;
+
+function shuffledKinds(random: () => number): Array<(typeof SESSION_EDIT_KINDS)[number]> {
+  const kinds = [...SESSION_EDIT_KINDS];
+  for (let k = kinds.length - 1; k > 0; k--) {
+    const other = Math.floor(random() * (k + 1));
+    const kind = kinds[k];
+    const swapped = kinds[other];
+    if (kind === undefined || swapped === undefined) continue;
+    kinds[k] = swapped;
+    kinds[other] = kind;
+  }
+  return kinds;
+}
+
+function brickTopPlatform(): Uint8Array {
+  return userRoadFile(
+    "my-platform.ldr",
+    PLATFORM_BRICKS_X.flatMap((x) =>
+      PLATFORM_BRICKS_Z.map((z) => `1 4 ${x} 0 ${z} 1 0 0 0 1 0 0 0 1 3001.dat`),
+    ),
+  );
+}
+
+function sessionEditor(repository: MemoryRepository) {
+  return startImportingEditor(() => repository, [LOCOMOTIVE.slice(4)]);
+}
+
+function savedIn(editor: IEditor): Promise<void> {
+  return vi.waitFor(() => expect(editor.snapshot().world?.save).toBe("saved"), {
+    timeout: 60_000,
+  });
+}
+
+async function settledSupport(editor: IEditor, plans: IPlanService): Promise<string> {
+  const planId = plans.plans()[0]?.id ?? plans.drawTable(SESSION_TABLE).planId;
+  await vi.waitFor(
+    () => {
+      expect(editor.dump().studChecks).toBe(0);
+      expect(editor.snapshot().track?.placingPiers).toBe(false);
+      expect(editor.snapshot().track?.unsupported).not.toBeNull();
+      expect(plans.unmeasuredCount(planId)).toBe(0);
+    },
+    { timeout: 60_000 },
+  );
+  return planId;
+}
+
+function drawnAt(editor: IEditor, plates: number): void {
+  editor.chooseItem(TRACK_ITEM_ID);
+  editor.raiseTrack(plates - (editor.snapshot().track?.height.drawingPlates ?? 0));
+}
+
+function heldBlocks(
+  editor: IEditor,
+  backend: AimedBackend,
+  plates: number,
+  samples: ReadonlyArray<PlanPoint>,
+) {
+  drawnAt(editor, plates);
+  editor.chooseItem(`${TRACK_PIECE_PREFIX}${RIGHT_SWITCH}`);
+  return samples.map(([x, z]) => {
+    backend.aim(x, z);
+    editor.pointerMove(0, 0);
+    return editor.snapshot().track?.held?.blocked ?? null;
+  });
+}
+
+async function supportObserved(
+  editor: IEditor,
+  backend: AimedBackend,
+  plans: IPlanService,
+  samples: ReadonlyArray<PlanPoint>,
+) {
+  const planId = await settledSupport(editor, plans);
+  const drawing = editor.snapshot().track?.height.drawingPlates ?? 0;
+  const atGround = heldBlocks(editor, backend, 0, samples);
+  const aboveGroundTrack = heldBlocks(editor, backend, ABOVE_GROUND_TRACK_PLATES, samples);
+  drawnAt(editor, drawing);
+  editor.chooseItem(null);
+  const track = editor.snapshot().track;
+  return {
+    issues: plans
+      .issues(planId)
+      .filter((issue) => issue.rule === "unsupported" || issue.rule === "clearance")
+      .map((issue) => `${issue.rule}: ${issue.message}`)
+      .toSorted(),
+    unsupported: track?.unsupported ?? null,
+    lowClearance: track?.lowClearance ?? null,
+    atGround,
+    aboveGroundTrack,
+    trains: trainsOf(editor),
+  };
+}
+
+async function freshlyComputed(
+  editor: IEditor,
+  repository: MemoryRepository,
+  samples: ReadonlyArray<PlanPoint>,
+) {
+  await savedIn(editor);
+  const fresh = await sessionEditor(repository);
+  await vi.waitFor(() =>
+    expect(fresh.editor.snapshot().placements).toBe(editor.snapshot().placements),
+  );
+  return supportObserved(fresh.editor, fresh.backend, fresh.container.get(PLAN_SERVICE), samples);
+}
+
+it("keeps track support, clearance, blocking and the trains after every edit of a seeded session exactly as a fresh editor computes them from the saved world, through an official baseplate, a user's platform, brick and off-lattice run, a standing train, raised and ground strokes, switch lays and throws, model moves and removals, undo, redo and reloads", async () => {
+  const repository = new MemoryRepository();
+  let session = await sessionEditor(repository);
+  await loadCatalogItem(session.catalog, LOCOMOTIVE);
+  const platform = await importUserFile(session.editor, "my-platform.ldr", brickTopPlatform());
+  const brick = await importUserFile(
+    session.editor,
+    "my-brick.ldr",
+    userRoadFile("my-brick.ldr", ["1 4 0 -24 0 1 0 0 0 1 0 0 0 1 3004.dat"]),
+  );
+  const run = await importUserFile(
+    session.editor,
+    "my-off-lattice-run.ldr",
+    await offLatticeRunFile(session.container.get(PART_BUNDLE_LOADER)),
+  );
+  const brickAt: PlanPoint = [0, BRICK_RUN_Z + BRICK_OFF_RUN_LDU];
+  let platformAt: PlanPoint = PLATFORM_AT;
+  let baseplateAt: PlanPoint = BASEPLATE_AT;
+  const samples: ReadonlyArray<PlanPoint> = [
+    [0, TRAIN_RUN_Z],
+    brickAt,
+    [PLATFORM_AT[0], PLATFORM_AT[1] + PLATFORM_EDGE_Z],
+    [0, 0],
+  ];
+  const seen = {
+    unsupportedRose: 0,
+    unsupportedFell: 0,
+    brickBlocks: 0,
+    trainBlocks: 0,
+    platformBlocks: 0,
+    seatedOnPlatform: 0,
+    leversThrown: 0,
+    openedAgain: 0,
+    freshEditors: 0,
+    baseplateEdits: 0,
+  };
+  const tools = () => ({
+    editor: session.editor,
+    backend: session.backend,
+    place: placer(session.editor, session.backend),
+    draw: trackDrawer(session.editor, session.backend),
+  });
+  const raisedStroke = (offset: number, row: number) => {
+    const { editor, draw } = tools();
+    const before = editor.snapshot();
+    drawnAt(editor, PLATFORM_PLATES);
+    draw(
+      [platformAt[0] - PLATFORM_STROKE_HALF_LDU + offset, platformAt[1] + row],
+      [platformAt[0] + PLATFORM_STROKE_HALF_LDU + offset, platformAt[1] + row],
+    );
+    drawnAt(editor, 0);
+    const after = editor.snapshot();
+    if (
+      (after.track?.pieces ?? 0) > (before.track?.pieces ?? 0) &&
+      after.placements === before.placements
+    ) {
+      seen.seatedOnPlatform++;
+    }
+  };
+  {
+    const { editor, backend, place, draw } = tools();
+    await place(BASEPLATE, ...baseplateAt);
+    await place(platform, ...platformAt);
+    raisedStroke(0, 0);
+    draw([-RUN_HALF_LDU, TRAIN_RUN_Z], [RUN_HALF_LDU, TRAIN_RUN_Z]);
+    await place(LOCOMOTIVE, 0, TRAIN_RUN_Z);
+    draw([-RUN_HALF_LDU, BRICK_RUN_Z], [RUN_HALF_LDU, BRICK_RUN_Z]);
+    await place(brick, ...brickAt);
+    laySwitchAt(editor, backend, ...SWITCH_AT);
+    await place(run, ...RUN_FILE_AT);
+    editor.chooseItem(null);
+  }
+  const random = seededSession(SUPPORT_SESSION_SEED);
+  const planned: Array<(typeof SESSION_EDIT_KINDS)[number]> = [];
+
+  let previous = await supportObserved(
+    session.editor,
+    session.backend,
+    session.container.get(PLAN_SERVICE),
+    samples,
+  );
+  expect(previous).toEqual(await freshlyComputed(session.editor, repository, samples));
+  for (let step = 0; step < SUPPORT_SESSION_STEPS; step++) {
+    const { editor, backend, place, draw } = tools();
+    if (planned.length === 0) planned.push(...shuffledKinds(random));
+    const edit =
+      step === REOPEN_STEP
+        ? "world opened again"
+        : step === FRESH_EDITOR_STEP
+          ? "a fresh editor continues"
+          : (planned.shift() ?? "undo");
+    const lane = FREE_LANES_Z[Math.floor(random() * FREE_LANES_Z.length)] ?? 0;
+    const shift =
+      (Math.floor(random() * SHIFT_STEPS) - Math.floor(SHIFT_STEPS / 2)) * SHIFT_STEP_LDU;
+    switch (edit) {
+      case "ground stroke":
+        draw([shift - RUN_HALF_LDU, lane], [shift + RUN_HALF_LDU, lane]);
+        break;
+      case "raised stroke":
+        raisedStroke(shift, PLATFORM_ROWS_Z[Math.floor(random() * PLATFORM_ROWS_Z.length)] ?? 0);
+        break;
+      case "switch lay":
+        laySwitchAt(
+          editor,
+          backend,
+          ...(SWITCH_SPOTS[Math.floor(random() * SWITCH_SPOTS.length)] ?? SWITCH_AT),
+        );
+        break;
+      case "lever throw":
+        if ((editor.snapshot().track?.switches.length ?? 0) > 0) {
+          const levers = JSON.stringify(editor.snapshot().track?.switches);
+          throwFirstSwitch(editor, backend);
+          if (JSON.stringify(editor.snapshot().track?.switches) !== levers) seen.leversThrown++;
+        }
+        break;
+      case "platform moved, turned or removed": {
+        const picked = selectAt(editor, backend, platformAt[0], platformAt[1] + PLATFORM_EDGE_Z);
+        if (picked?.kind !== "model") break;
+        const how = random();
+        if (how < MOVE_CHANCE) {
+          const dx = random() < 0.5 ? -PLATFORM_SHIFT_LDU : PLATFORM_SHIFT_LDU;
+          editor.moveSelectionBy(dx, 0, 0);
+          if (editor.snapshot().selectionRefusal === null)
+            platformAt = [platformAt[0] + dx, platformAt[1]];
+        } else if (how < TURN_CHANCE) editor.rotate(0, 1);
+        else {
+          editor.deleteSelection(0);
+          planned.unshift("undo");
+        }
+        break;
+      }
+      case "baseplate placed, moved, turned or removed": {
+        const picked = selectAt(
+          editor,
+          backend,
+          baseplateAt[0] + BASEPLATE_CORNER_LDU,
+          baseplateAt[1] + BASEPLATE_CORNER_LDU,
+        );
+        if (picked?.kind !== "model") {
+          await place(BASEPLATE, ...baseplateAt);
+          break;
+        }
+        seen.baseplateEdits++;
+        const how = random();
+        if (how < MOVE_CHANCE) {
+          const dx = random() < 0.5 ? -BASEPLATE_SHIFT_LDU : BASEPLATE_SHIFT_LDU;
+          editor.moveSelectionBy(dx, 0, 0);
+          if (editor.snapshot().selectionRefusal === null)
+            baseplateAt = [baseplateAt[0] + dx, baseplateAt[1]];
+        } else if (how < TURN_CHANCE) editor.rotate(0, 1);
+        else editor.deleteSelection(0);
+        break;
+      }
+      case "brick removed or placed": {
+        const picked = selectAt(editor, backend, ...brickAt);
+        if (picked?.kind === "model") editor.deleteSelection(0);
+        else await place(brick, ...brickAt);
+        break;
+      }
+      case "train removed or placed":
+        if (editor.snapshot().trains.length > 0) editor.removeTrain(0, 0);
+        else await place(LOCOMOTIVE, 0, TRAIN_RUN_Z);
+        break;
+      case "undo":
+        editor.undo(0);
+        break;
+      case "redo":
+        editor.redo(0);
+        break;
+      case "world opened again": {
+        await savedIn(editor);
+        const id = editor.snapshot().world?.id ?? "";
+        if (!(await editor.newWorld("Other"))) throw new Error("a new world wasn't opened");
+        if (!(await editor.openWorld(id))) throw new Error(`world ${id} didn't open again`);
+        seen.openedAgain++;
+        break;
+      }
+      case "a fresh editor continues":
+        await savedIn(editor);
+        session = await sessionEditor(repository);
+        seen.freshEditors++;
+        break;
+      default: {
+        const unplanned: never = edit;
+        throw new Error(`unplanned edit ${String(unplanned)}`);
+      }
+    }
+    const observed = await supportObserved(
+      session.editor,
+      session.backend,
+      session.container.get(PLAN_SERVICE),
+      samples,
+    );
+    expect(observed, `step ${step}: ${edit}`).toEqual(
+      await freshlyComputed(session.editor, repository, samples),
+    );
+    const unsupported = observed.unsupported ?? 0;
+    if (unsupported > (previous.unsupported ?? 0)) seen.unsupportedRose++;
+    if (unsupported < (previous.unsupported ?? 0)) seen.unsupportedFell++;
+    const blocks = [...observed.atGround, ...observed.aboveGroundTrack];
+    if (blocks.some((block) => block?.kind === "model" && block.label === "my-brick.ldr"))
+      seen.brickBlocks++;
+    if (blocks.some((block) => block?.kind === "model" && block.label === "my-platform.ldr"))
+      seen.platformBlocks++;
+    if (
+      observed.aboveGroundTrack.some(
+        (block) => block?.kind === "model" && block.label === LOCOMOTIVE_LABEL,
+      )
+    ) {
+      seen.trainBlocks++;
+    }
+    previous = observed;
+  }
+  for (const [kind, count] of Object.entries(seen)) expect(count, `${kind}`).toBeGreaterThan(0);
+}, 900_000);

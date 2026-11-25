@@ -234,23 +234,40 @@ export function seatsPending(
 
 export type ModelReach = (model: PlacedModel) => boolean;
 
+export type TrackPartsOf = (model: PlacedModel) => ReadonlySet<number>;
+
 export const EVERY_MODEL: ModelReach = () => true;
+
+export const REACHES = 1;
 
 export function trackObstacles(
   models: ReadonlyArray<PlacedModel>,
   trackRange: readonly [number, number],
-  trackParts: (model: PlacedModel) => ReadonlySet<number>,
+  trackParts: TrackPartsOf,
   reaches: ModelReach = EVERY_MODEL,
 ): TrackObstacles {
+  const reaching = new Uint8Array(models.length);
+  for (let owner = 0; owner < models.length; owner++) {
+    const model = models[owner];
+    reaching[owner] = model && reaches(model) ? REACHES : 0;
+  }
+  return obstaclesOver(models, trackRange, trackParts, reaching);
+}
+
+export function obstaclesOver(
+  models: ReadonlyArray<PlacedModel>,
+  trackRange: readonly [number, number],
+  trackParts: TrackPartsOf,
+  reaching: Uint8Array,
+): TrackObstacles {
   const [bottom, top] = trackRange;
-  const reaching = models.map(reaches);
   const seats = studSeats(
-    models.filter((_, owner) => reaching[owner]),
+    models.filter((_, owner) => reaching[owner] === REACHES),
     bottom,
   );
   const list = new ObstacleList();
   models.forEach((model, owner) => {
-    if (!reaching[owner]) return;
+    if (reaching[owner] !== REACHES) return;
     const boxes = model.worldPartBoxes();
     const track = trackParts(model);
     const { seatedTops } = model.placeable;
@@ -275,17 +292,13 @@ export function trackObstacles(
   );
 }
 
-export function supportBandOver(
-  models: ReadonlyArray<PlacedModel>,
-  trackRange: readonly [number, number],
-  trackParts: (model: PlacedModel) => ReadonlySet<number>,
-  reaches: ModelReach,
+export function withStanding(
+  band: { readonly obstacles: TrackObstacles; readonly pending: boolean },
+  [bottom, top]: readonly [number, number],
   standing: ReadonlyArray<StandingOutline>,
 ): { readonly obstacles: TrackObstacles; readonly pending: boolean } {
-  const [bottom, top] = trackRange;
-  const placed = trackObstacles(models, trackRange, trackParts, reaches);
   const trains = standing.filter((vehicle) => vehicle.railTopLdu < top && bottom < vehicle.topLdu);
-  return { obstacles: withOutlines(placed, trains), pending: seatsPending(models, trackRange) };
+  return { obstacles: withOutlines(band.obstacles, trains), pending: band.pending };
 }
 
 export function solidRectsIn(

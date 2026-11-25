@@ -10,6 +10,7 @@ import {
   KitOutlines,
   PlanDelta,
   NO_STUD,
+  TrackGraph,
   WORLD_TRACK_FRAME,
   World,
   levelCrossings,
@@ -66,10 +67,12 @@ import {
   cellKey,
   seatsPending,
   studSeats,
-  supportBandOver,
   trackObstacles,
+  withStanding,
+  type ModelReach,
   type StandingOutline,
   type TrackObstacles,
+  type TrackPartsOf,
 } from "./track-obstacles.ts";
 import type { ExtensionTurn } from "./track-extension.ts";
 import {
@@ -2641,6 +2644,23 @@ async function shortGap(): Promise<TrackDrawing> {
   return layout;
 }
 
+function supportBandOver(
+  models: ReadonlyArray<PlacedModel>,
+  band: readonly [number, number],
+  trackParts: TrackPartsOf,
+  reaches: ModelReach,
+  standing: ReadonlyArray<StandingOutline>,
+): SupportBand {
+  return withStanding(
+    {
+      obstacles: trackObstacles(models, band, trackParts, reaches),
+      pending: seatsPending(models, band),
+    },
+    band,
+    standing,
+  );
+}
+
 function standingOver(
   layout: TrackDrawing,
   standing: ReadonlyArray<StandingOutline>,
@@ -2807,4 +2827,107 @@ it("returns the same solve for the same field, poses and owners, and solves agai
     expect(resolved).not.toBe(solved);
     expect(resolved).toEqual(solved);
   }
+});
+
+const GRAPH_SEEDS = [11, 12, 13, 14];
+const GRAPH_STEPS = 48;
+const LAY_CHANCE = 0.4;
+const LIFT_CHANCE = 0.6;
+const RELAY_CHANCE = 0.75;
+const MOST_HELD = 4;
+const HELD_SPREAD_STUDS = 24;
+const RUN_FRAME = { id: 1, xLdu: 7.5, zLdu: 3.25 };
+
+function graphArrays(graph: TrackGraph) {
+  return {
+    placementCount: graph.placementCount,
+    endStart: graph.endStart,
+    endPlacement: graph.endPlacement,
+    endConnector: graph.endConnector,
+    endPartner: graph.endPartner,
+    endXLdu: graph.endXLdu,
+    endZLdu: graph.endZLdu,
+    endHeading: graph.endHeading,
+    endYPlates: graph.endYPlates,
+    endFrame: graph.endFrame,
+    edgePlacement: graph.edgePlacement,
+    edgeRoute: graph.edgeRoute,
+    edgeFromEnd: graph.edgeFromEnd,
+    edgeToEnd: graph.edgeToEnd,
+    outStart: graph.outStart,
+    outEdges: graph.outEdges,
+    successorStart: graph.successorStart,
+    successors: graph.successors,
+    edgeSwitch: graph.edgeSwitch,
+    switchEnd: graph.switchEnd,
+    openEnds: graph.openEnds,
+    issues: graph.issues,
+  };
+}
+
+it("plays the rails on the graph of exactly the layout it hands them, after every lay, lift, re-lay and change of carried track", async () => {
+  const bundle = await trackAndRoadBundle();
+  const seen = { joined: 0, switches: 0, held: 0, lifted: 0, relaid: 0 };
+  for (const seed of GRAPH_SEEDS) {
+    const random = seeded(seed);
+    const layout = new TrackDrawing(bundle, bundle.parts, new ColorTable(bundle));
+    const straight = placeableIndex(layout, NINE_VOLT_STRAIGHT);
+    const curve = placeableIndex(layout, NINE_VOLT_CURVE);
+    const switchPiece = placeableIndex(layout, RIGHT_SWITCH);
+    const pieces = [straight, curve, switchPiece];
+    const lifted: Array<ReturnType<TrackDrawing["laidPiece"]>> = [];
+    for (let step = 0; step < GRAPH_STEPS; step++) {
+      const roll = random();
+      if (roll < LAY_CHANCE || layout.pieceCount === 0) {
+        const ends = layout.endPoses();
+        const at = ends[Math.floor(random() * ends.length)] ?? studPose(0, 0, 0);
+        const piece = pieces[Math.floor(random() * pieces.length)] ?? straight;
+        const count = 1 + Math.floor(random() * 3);
+        if (piece === switchPiece) layout.applyTrack(layout.pieceChange(piece, at, 0));
+        else if (piece === straight) layRun(layout, at, [{ kind: "straight", count }]);
+        else layRun(layout, at, [{ kind: "turn", sign: random() < 0.5 ? 1 : -1, curves: count }]);
+      } else if (roll < LIFT_CHANCE) {
+        const piece = layout.laidPiece(Math.floor(random() * layout.pieceCount));
+        layout.applyTrack({ lift: [piece], lay: [] });
+        lifted.push(piece);
+        seen.lifted++;
+      } else if (roll < RELAY_CHANCE && lifted.length > 0) {
+        const piece = lifted.pop();
+        if (piece) {
+          layout.applyTrack({
+            lift: [],
+            lay: [{ ...piece, index: Math.min(piece.index, layout.pieceCount) }],
+          });
+          seen.relaid++;
+        }
+      } else {
+        const count = Math.floor(random() * MOST_HELD);
+        const held = Array.from({ length: count }, (_, instance) => ({
+          catalogIndex: pieces[Math.floor(random() * pieces.length)] ?? straight,
+          placement: studPose(
+            Math.floor(random() * HELD_SPREAD_STUDS) - HELD_SPREAD_STUDS / 2,
+            Math.floor(random() * HELD_SPREAD_STUDS) - HELD_SPREAD_STUDS / 2,
+            Math.floor(random() * 4) * 4,
+          ),
+          yPlates: 0,
+          instance,
+          frame: random() < 0.5 ? WORLD_TRACK_FRAME : RUN_FRAME,
+        }));
+        layout.syncHeld(held, count === 0 ? [] : [carrierAtOrigin(count)]);
+        seen.held += count;
+      }
+      const play = layout.playTrack();
+      expect(graphArrays(play.graph), `seed ${seed}, step ${step}`).toEqual(
+        graphArrays(new TrackGraph(play.layout)),
+      );
+      seen.joined = Math.max(seen.joined, play.graph.joinCount);
+      seen.switches = Math.max(seen.switches, play.graph.switchCount);
+    }
+  }
+
+  expect(seen.joined).toBeGreaterThan(0);
+  expect(seen.switches).toBeGreaterThan(0);
+  expect(seen.held).toBeGreaterThan(0);
+  expect(seen.lifted).toBeGreaterThan(0);
+  expect(seen.relaid).toBeGreaterThan(0);
 });

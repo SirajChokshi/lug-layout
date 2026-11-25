@@ -1,12 +1,12 @@
 import {
   RailNetwork,
-  TrackGraph,
   WORLD_TRACK_FRAME,
   sameCarrier,
   simTrackFromGraph,
   type CarrierPose,
   type ConsistAnchor,
   type LaidPieceRef,
+  type TrackGraph,
 } from "@brr/domain";
 import { pose16 } from "@brr/math";
 import type { TrackPiece } from "@brr/schema/bundle";
@@ -58,9 +58,8 @@ export class RailTrack {
     readonly play: PlayTrack,
     private readonly carriers: ReadonlyArray<RailCarrier>,
   ) {
-    const { layout, pieces } = play;
-    this.graph = new TrackGraph(layout);
-    const graph = this.graph;
+    const { layout, pieces, graph } = play;
+    this.graph = graph;
     this.firstEdge = new Int32Array(layout.count).fill(-1);
     for (let edge = graph.edgeCount - 1; edge >= 0; edge--) {
       this.firstEdge[graph.edgePlacement[edge] ?? 0] = edge;
