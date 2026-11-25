@@ -666,6 +666,10 @@ class SlotTallies {
     this.store(slot, 0, 0, 0, 0, 0, NO_SEGMENTS);
   }
 
+  forgetSegments(): void {
+    for (let slot = 0; slot < this.segments.length; slot++) this.segments[slot] = NO_SEGMENTS;
+  }
+
   store(
     slot: number,
     joined: number,
@@ -765,7 +769,7 @@ export class RoadNetwork implements RoadFitSource {
   clear(): void {
     this.memo?.forget();
     this.poses.length = 0;
-    this.slots.segments.length = 0;
+    this.slots.forgetSegments();
     this.liveCount = 0;
     this.idCounts.clear();
     this.sharedIds = 0;

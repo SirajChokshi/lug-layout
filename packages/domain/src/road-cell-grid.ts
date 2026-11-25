@@ -80,7 +80,9 @@ class CellBlock {
     this.stud[record] = stud;
     this.road[record] = road;
     this.claimed++;
-    this.countLevel(top);
+    const level = this.levelIndex(top);
+    if (level >= 0) this.levelClaims[level] = (this.levelClaims[level] ?? 0) + 1;
+    else this.addLevel(top);
   }
 
   unclaim(slot: number, owner: number): void {
@@ -150,12 +152,7 @@ class CellBlock {
     return -1;
   }
 
-  private countLevel(top: number): void {
-    const at = this.levelIndex(top);
-    if (at >= 0) {
-      this.levelClaims[at] = (this.levelClaims[at] ?? 0) + 1;
-      return;
-    }
+  private addLevel(top: number): void {
     if (this.levelCount === this.levels.length) {
       const levels = new Float64Array(2 * this.levels.length);
       levels.set(this.levels);
@@ -206,8 +203,7 @@ const NO_BLOCK = new CellBlock();
 
 interface BlockSource {
   readonly blocksMade: number;
-  readonly clears: number;
-  readonly releases: number;
+  readonly blockDrops: number;
   blockAt(blockX: number, blockZ: number): CellBlock | undefined;
 }
 
@@ -215,8 +211,7 @@ class RoadCellCursor {
   private blockX = 0;
   private blockZ = 0;
   private blocksSeen = -1;
-  private clearsSeen = -1;
-  private releasesSeen = -1;
+  private blockDropsSeen = -1;
   private block = NO_BLOCK;
   private record = NO_RECORD;
   private top = 0;
@@ -228,18 +223,15 @@ class RoadCellCursor {
     const blockX = cellX >> BLOCK_SHIFT;
     const blockZ = cellZ >> BLOCK_SHIFT;
     const moved = blockX !== this.blockX || blockZ !== this.blockZ;
-    const cleared =
-      this.blocks.clears !== this.clearsSeen || this.blocks.releases !== this.releasesSeen;
     if (
       moved ||
-      cleared ||
+      this.blocks.blockDrops !== this.blockDropsSeen ||
       (this.block === NO_BLOCK && this.blocks.blocksMade !== this.blocksSeen)
     ) {
       this.blockX = blockX;
       this.blockZ = blockZ;
       this.blocksSeen = this.blocks.blocksMade;
-      this.clearsSeen = this.blocks.clears;
-      this.releasesSeen = this.blocks.releases;
+      this.blockDropsSeen = this.blocks.blockDrops;
       this.block = this.blocks.blockAt(blockX, blockZ) ?? NO_BLOCK;
     }
     this.top = top;
@@ -269,8 +261,7 @@ class RoadCellCursor {
 
 export class RoadCellGrid implements BlockSource {
   private made = 0;
-  private cleared = 0;
-  private released = 0;
+  private dropped = 0;
   private readonly blocks = new Map<number, Map<number, CellBlock>>();
   private readonly freeBlocks: CellBlock[] = [];
   private readonly freeRows: Array<Map<number, CellBlock>> = [];
@@ -283,12 +274,8 @@ export class RoadCellGrid implements BlockSource {
     return this.made;
   }
 
-  get clears(): number {
-    return this.cleared;
-  }
-
-  get releases(): number {
-    return this.released;
+  get blockDrops(): number {
+    return this.dropped;
   }
 
   cursor(): RoadCellCursor {
@@ -339,7 +326,7 @@ export class RoadCellGrid implements BlockSource {
     }
     this.freeBlocks.push(block);
     this.remember(blockX, blockZ, undefined);
-    this.released++;
+    this.dropped++;
   }
 
   flagOwnersIn(minX: number, minZ: number, maxX: number, maxZ: number, flags: Uint8Array): void {
@@ -445,7 +432,7 @@ export class RoadCellGrid implements BlockSource {
     this.blocks.clear();
     this.cachedKnown.fill(0);
     this.cached.fill(undefined);
-    this.cleared++;
+    this.dropped++;
   }
 
   private readonly releaseRow = (row: Map<number, CellBlock>): void => {
