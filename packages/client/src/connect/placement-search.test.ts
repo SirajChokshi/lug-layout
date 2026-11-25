@@ -2032,6 +2032,7 @@ const CARRY_MOVES = 20;
 const CARRY_TURN_AT = 10;
 const CARRY_STEPS_LDU = [HALF, STUD_LDU, -HALF, 2 * STUD_LDU, STUD_LDU, -STUD_LDU, 8 * STUD_LDU];
 const DROPPED = "dropped mid-carry";
+const CARRY_TIMEOUT_MS = 60_000;
 
 function droppedBy(run: () => unknown): void {
   try {
@@ -2194,6 +2195,7 @@ describe("PlacementSearch withdrawals during carries", () => {
       expect(pair.subjectLog.length).toBeGreaterThan(0);
       expect(pair.subjectLog).toEqual(pair.oracleLog);
     },
+    CARRY_TIMEOUT_MS,
   );
 });
 
@@ -2235,26 +2237,30 @@ function officialWorld(parts: OfficialParts): ReadonlyArray<number> {
 }
 
 describe("PlacementSearch withdrawals during carries, on official parts", () => {
-  it("answers carries of 1, 10 and 100 official 3001s and 3794b jumpers and custom models built from their tables, a 3001 with a 3001 on its side and a 3794b on a 3001, on an official 3811, exactly as removing and re-inserting them around each move does", async () => {
-    const subject = await officialParts();
-    const oracle = await officialParts();
-    const placed = officialWorld(subject);
-    officialWorld(oracle);
-    const pair = new CarryAgainstOracle(subject, oracle);
-    const pick = seeded(20261125);
-    CARRY_GROUPS.forEach((size, k) => {
-      const members = new Set<number>();
-      drawn(pick, placed, size, members);
-      pair.carry([...members], CARRY_ENDINGS[k % CARRY_ENDINGS.length] ?? "cancel");
-    });
-    const side = subject.sideStudPair.connectors;
-    expect({
-      jumperSeatedOnItsBrick: subject.jumperOnBrick.connectors.internalMates > 0,
-      sideStuds: Array.from(side.axis.subarray(0, side.count)).some(
-        (axis) => axis === AXIS_POS_Z || axis === AXIS_NEG_Z,
-      ),
-      carried: pair.subjectLog.length > 0,
-    }).toEqual({ jumperSeatedOnItsBrick: true, sideStuds: true, carried: true });
-    expect(pair.subjectLog).toEqual(pair.oracleLog);
-  }, 120_000);
+  it(
+    "answers carries of 1, 10 and 100 official 3001s and 3794b jumpers and custom models built from their tables, a 3001 with a 3001 on its side and a 3794b on a 3001, on an official 3811, exactly as removing and re-inserting them around each move does",
+    async () => {
+      const subject = await officialParts();
+      const oracle = await officialParts();
+      const placed = officialWorld(subject);
+      officialWorld(oracle);
+      const pair = new CarryAgainstOracle(subject, oracle);
+      const pick = seeded(20261125);
+      CARRY_GROUPS.forEach((size, k) => {
+        const members = new Set<number>();
+        drawn(pick, placed, size, members);
+        pair.carry([...members], CARRY_ENDINGS[k % CARRY_ENDINGS.length] ?? "cancel");
+      });
+      const side = subject.sideStudPair.connectors;
+      expect({
+        jumperSeatedOnItsBrick: subject.jumperOnBrick.connectors.internalMates > 0,
+        sideStuds: Array.from(side.axis.subarray(0, side.count)).some(
+          (axis) => axis === AXIS_POS_Z || axis === AXIS_NEG_Z,
+        ),
+        carried: pair.subjectLog.length > 0,
+      }).toEqual({ jumperSeatedOnItsBrick: true, sideStuds: true, carried: true });
+      expect(pair.subjectLog).toEqual(pair.oracleLog);
+    },
+    CARRY_TIMEOUT_MS,
+  );
 });

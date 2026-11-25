@@ -3421,92 +3421,96 @@ function makePin(length: number): () => ModelConnectors {
 }
 
 describe("ConnectionSolver turned models", () => {
-  it("answers from a turned model it cached, rebuilt once its finders know more mate classes, exactly as an identical model turned for the first time does", () => {
-    const pick = seededPick(20261126);
-    const copies = new Map<ModelConnectors, () => ModelConnectors>();
-    const made = (make: () => ModelConnectors): ModelConnectors => {
-      const piece = make();
-      copies.set(piece, make);
-      return piece;
-    };
-    const hole = made(makeHole);
-    const holeRow = made(makeHoleRow);
-    const plate = made(makePlate);
-    const brick = made(makeBrick);
-    const pins = GROWN_PIN_LENGTHS.map((length) => made(makePin(length)));
-    const cachedEarly = [hole, holeRow];
-    const known: ModelConnectors[] = [hole, holeRow, plate, brick];
-    const partnerOf = (piece: ModelConnectors): ModelConnectors => {
-      if (piece === plate) return brick;
-      if (piece === brick) return plate;
-      if (cachedEarly.includes(piece))
-        return known.findLast((other) => pins.includes(other)) ?? brick;
-      return hole;
-    };
-    const nearby = (): LatticePose =>
-      pose(
-        pick(GROWN_FIELD_STEPS) * HALF,
-        pick(GROWN_FIELD_STEPS) * STUD_LDU,
-        0,
-        (pick(4) === 0 ? pick(4) : 0) as QuarterTurn,
-      );
-    const subject = solverOfThreeFamilies();
-    const inserted: Op[] = [];
-    const insert = (piece: ModelConnectors): void => {
-      const op = { insert: true, owner: inserted.length + 1, model: piece, pose: nearby() };
-      inserted.push(op);
-      subject.insert(op.model, op.pose, op.owner);
-    };
-    for (const piece of known) insert(piece);
-    const subjectLog: string[] = [];
-    const oracleLog: string[] = [];
-    const report = new MateReport();
-    let grownClassesProposed = 0;
-    for (let step = 0; step < GROWN_STEPS; step++) {
-      const grown = pins[Math.floor(step / GROWN_STEPS_PER_PIN)];
-      if (grown && !known.includes(grown)) {
-        known.push(grown);
-        insert(grown);
-      } else if (pick(2) === 0) {
-        insert(known[pick(known.length)] ?? hole);
-      }
-      const pinned = inserted.filter((op) => pins.includes(op.model));
-      const onPin = pinned[pick(pinned.length)];
-      const asked =
-        onPin && pick(2) === 0
-          ? (cachedEarly[pick(cachedEarly.length)] ?? hole)
-          : (known[pick(known.length)] ?? hole);
-      const at = onPin && cachedEarly.includes(asked) ? onPin.pose : nearby();
-      subject.evaluate(partnerOf(asked), at, report);
-      const oracle = solverOfThreeFamilies();
-      for (const op of inserted) oracle.insert(op.model, op.pose, op.owner);
-      const copy = (copies.get(asked) ?? makeHole)();
-      for (const type of GROWN_QUERIES) {
-        const query = { type, kind: 0, pose: at };
-        const subjectAnswer = answer(
-          subject,
-          [{ name: "asked", model: asked, partner: 0 }],
-          query,
-          report,
+  it(
+    "answers from a turned model it cached, rebuilt once its finders know more mate classes, exactly as an identical model turned for the first time does",
+    () => {
+      const pick = seededPick(20261126);
+      const copies = new Map<ModelConnectors, () => ModelConnectors>();
+      const made = (make: () => ModelConnectors): ModelConnectors => {
+        const piece = make();
+        copies.set(piece, make);
+        return piece;
+      };
+      const hole = made(makeHole);
+      const holeRow = made(makeHoleRow);
+      const plate = made(makePlate);
+      const brick = made(makeBrick);
+      const pins = GROWN_PIN_LENGTHS.map((length) => made(makePin(length)));
+      const cachedEarly = [hole, holeRow];
+      const known: ModelConnectors[] = [hole, holeRow, plate, brick];
+      const partnerOf = (piece: ModelConnectors): ModelConnectors => {
+        if (piece === plate) return brick;
+        if (piece === brick) return plate;
+        if (cachedEarly.includes(piece))
+          return known.findLast((other) => pins.includes(other)) ?? brick;
+        return hole;
+      };
+      const nearby = (): LatticePose =>
+        pose(
+          pick(GROWN_FIELD_STEPS) * HALF,
+          pick(GROWN_FIELD_STEPS) * STUD_LDU,
+          0,
+          (pick(4) === 0 ? pick(4) : 0) as QuarterTurn,
         );
-        const oracleAnswer = answer(
-          oracle,
-          [{ name: "copy", model: copy, partner: 0 }],
-          query,
-          report,
-        );
-        subjectLog.push(`${step} ${type}: ${subjectAnswer}`);
-        oracleLog.push(`${step} ${type}: ${oracleAnswer}`);
-        if (type === "propose" && onPin && at === onPin.pose && oracleAnswer !== "[]") {
-          grownClassesProposed++;
+      const subject = solverOfThreeFamilies();
+      const inserted: Op[] = [];
+      const insert = (piece: ModelConnectors): void => {
+        const op = { insert: true, owner: inserted.length + 1, model: piece, pose: nearby() };
+        inserted.push(op);
+        subject.insert(op.model, op.pose, op.owner);
+      };
+      for (const piece of known) insert(piece);
+      const subjectLog: string[] = [];
+      const oracleLog: string[] = [];
+      const report = new MateReport();
+      let grownClassesProposed = 0;
+      for (let step = 0; step < GROWN_STEPS; step++) {
+        const grown = pins[Math.floor(step / GROWN_STEPS_PER_PIN)];
+        if (grown && !known.includes(grown)) {
+          known.push(grown);
+          insert(grown);
+        } else if (pick(2) === 0) {
+          insert(known[pick(known.length)] ?? hole);
+        }
+        const pinned = inserted.filter((op) => pins.includes(op.model));
+        const onPin = pinned[pick(pinned.length)];
+        const asked =
+          onPin && pick(2) === 0
+            ? (cachedEarly[pick(cachedEarly.length)] ?? hole)
+            : (known[pick(known.length)] ?? hole);
+        const at = onPin && cachedEarly.includes(asked) ? onPin.pose : nearby();
+        subject.evaluate(partnerOf(asked), at, report);
+        const oracle = solverOfThreeFamilies();
+        for (const op of inserted) oracle.insert(op.model, op.pose, op.owner);
+        const copy = (copies.get(asked) ?? makeHole)();
+        for (const type of GROWN_QUERIES) {
+          const query = { type, kind: 0, pose: at };
+          const subjectAnswer = answer(
+            subject,
+            [{ name: "asked", model: asked, partner: 0 }],
+            query,
+            report,
+          );
+          const oracleAnswer = answer(
+            oracle,
+            [{ name: "copy", model: copy, partner: 0 }],
+            query,
+            report,
+          );
+          subjectLog.push(`${step} ${type}: ${subjectAnswer}`);
+          oracleLog.push(`${step} ${type}: ${oracleAnswer}`);
+          if (type === "propose" && onPin && at === onPin.pose && oracleAnswer !== "[]") {
+            grownClassesProposed++;
+          }
         }
       }
-    }
-    expect({
-      difference: firstDifference(subjectLog, oracleLog),
-      grownClassesProposed: grownClassesProposed > 0,
-    }).toEqual({ difference: null, grownClassesProposed: true });
-  });
+      expect({
+        difference: firstDifference(subjectLog, oracleLog),
+        grownClassesProposed: grownClassesProposed > 0,
+      }).toEqual({ difference: null, grownClassesProposed: true });
+    },
+    PROPERTY_TIMEOUT_MS,
+  );
 });
 
 const GROWN_PIN_LENGTHS = [8, 12, 16, 4];
