@@ -7,6 +7,7 @@ import {
   AXIS_POS_Z,
   CAP_FAR,
   CAP_ROOT,
+  type ConnectionSolver,
   ConnectorTable,
   GENDER_FEMALE,
   GENDER_MALE,
@@ -45,6 +46,7 @@ import { distinctJoints } from "../edit/placement-hover.ts";
 import { mateCounts } from "../edit/placement-hover-view.ts";
 import type { PlaceablePartCells } from "../edit/placeable.ts";
 import {
+  CONNECTION_SOLVER,
   CONNECTOR_TABLES,
   PLACEABLE_CATALOG,
   PLACEMENT_SEARCH,
@@ -90,6 +92,7 @@ type Spec = readonly [shape: number, gender: number, x: number, y: number, z: nu
 
 interface Fixture {
   readonly search: IPlacementSearch;
+  readonly solver: ConnectionSolver;
   readonly shapes: SnapShapes;
   readonly connectors: (
     parts: ReadonlyArray<ConnectorTable | null>,
@@ -121,6 +124,7 @@ function fixture(): Fixture {
   const mating = container.get(SNAP_MATING);
   return {
     search: container.get(PLACEMENT_SEARCH),
+    solver: container.get(CONNECTION_SOLVER),
     shapes,
     connectors: (parts, trackEnds = []) =>
       ModelConnectors.fromParts(
@@ -1713,6 +1717,7 @@ const CARRIER_SHARE_OF_TEN = 5;
 
 interface GeneratedWorld {
   readonly live: LiveWorld;
+  readonly solver: ConnectionSolver;
   readonly carriers: ReadonlyArray<number>;
   readonly placements: ReadonlyArray<number>;
 }
@@ -1735,7 +1740,7 @@ function generatedWorld(seed: number): GeneratedWorld {
     const scenario = s === 0 ? big : (SCENARIOS[pick(SCENARIOS.length)] ?? towers);
     carriers.push(...scenario(builder, site).carriers);
   }
-  return { live, carriers, placements: [...live.listed.keys()] };
+  return { live, solver: f.solver, carriers, placements: [...live.listed.keys()] };
 }
 
 function drawn(
@@ -1883,9 +1888,13 @@ async function officialParts() {
   await catalog.start(await container.get(PART_BUNDLE_LOADER).loadIndex("standard"));
   const tables = container.get(CONNECTOR_TABLES);
   const search = container.get(PLACEMENT_SEARCH);
-  const piece = async (item: string): Promise<Piece> => {
+  const loaded = async (item: string) => {
     const placeable = await catalog.load(catalog.itemRefId(item) ?? -1);
     const { tables: parts } = await tables.load(placeable);
+    return { placeable, parts };
+  };
+  const piece = async (item: string): Promise<Piece> => {
+    const { placeable, parts } = await loaded(item);
     const boxes = partBoxes(placeable.partBoxes);
     return {
       connectors: search.model(parts, placeable.partTransforms, []),
@@ -1900,12 +1909,50 @@ async function officialParts() {
       },
     };
   };
+  const officialBrick = await piece(OFFICIAL_BRICK);
+  const brick = await loaded(OFFICIAL_BRICK);
+  const jumper = await loaded(OFFICIAL_JUMPER);
+  const brickPart = brick.placeable.partTransforms.partIndex[0] ?? 0;
+  const jumperPart = jumper.placeable.partTransforms.partIndex[0] ?? 0;
+  const brickAt = Array.from(brick.placeable.partTransforms.matrices.subarray(0, MATRIX_FLOATS));
+  const jumperAt = Array.from(jumper.placeable.partTransforms.matrices.subarray(0, MATRIX_FLOATS));
+  const both = Array.from(
+    { length: Math.max(brick.parts.length, jumper.parts.length) },
+    (_, i) => brick.parts[i] ?? jumper.parts[i] ?? null,
+  );
+  const custom = (partIndex: ReadonlyArray<number>, matrices: ReadonlyArray<number>): Piece => ({
+    ...officialBrick,
+    connectors: search.model(
+      both,
+      { count: partIndex.length, partIndex, matrices: Float64Array.from(matrices) },
+      [],
+    ),
+  });
   return {
     live: new LiveWorld(search),
+    solver: container.get(CONNECTION_SOLVER),
     officialBaseplate: await piece(OFFICIAL_BASEPLATE),
-    officialBrick: await piece(OFFICIAL_BRICK),
+    officialBrick,
     officialJumper: await piece(OFFICIAL_JUMPER),
+    sideStudPair: custom(
+      [brickPart, brickPart],
+      [...brickAt, ...turnedOnItsSide(brickAt, BRICK_PAIR_LIFT_LDU)],
+    ),
+    jumperOnBrick: custom([brickPart, jumperPart], [...brickAt, ...lifted(jumperAt, BRICK_LDU)]),
   };
+}
+
+const MATRIX_FLOATS = 12;
+const BRICK_PAIR_LIFT_LDU = 2 * BRICK_LDU;
+
+function lifted(matrix: ReadonlyArray<number>, ldu: number): number[] {
+  return matrix.map((value, k) => (k === 7 ? value + ldu : value));
+}
+
+function turnedOnItsSide(matrix: ReadonlyArray<number>, liftLdu: number): number[] {
+  const [a = 0, b = 0, c = 0, x = 0, d = 0, e = 0, f = 0, y = 0, g = 0, h = 0, i = 0, z = 0] =
+    matrix;
+  return [a, b, c, x, -g, -h, -i, liftLdu - z, d, e, f, y];
 }
 
 function seatedNear(live: LiveWorld, piece: Piece, at: PlacementWindow): LatticePose {
@@ -1966,4 +2013,248 @@ describe("PlacementSearch stranding by removal, on official parts", () => {
       theJumper: stranded(85),
     });
   }, 60_000);
+});
+
+interface CarryWorld {
+  readonly live: LiveWorld;
+  readonly solver: ConnectionSolver;
+}
+
+type CarryEnding = "cancel" | "drop" | "drop, undo and redo" | "throw";
+
+const CARRY_ENDINGS: ReadonlyArray<CarryEnding> = [
+  "cancel",
+  "drop",
+  "throw",
+  "drop, undo and redo",
+];
+const CARRY_MOVES = 20;
+const CARRY_TURN_AT = 10;
+const CARRY_STEPS_LDU = [HALF, STUD_LDU, -HALF, 2 * STUD_LDU, STUD_LDU, -STUD_LDU, 8 * STUD_LDU];
+const DROPPED = "dropped mid-carry";
+
+function droppedBy(run: () => unknown): void {
+  try {
+    run();
+  } catch (error) {
+    if (error instanceof Error && error.message === DROPPED) return;
+    throw error;
+  }
+  throw new Error(`the carry wasn't ${DROPPED}`);
+}
+
+function carriedTo(
+  at: LatticePose,
+  dx: number,
+  dz: number,
+  pivot: LatticePose | null,
+): LatticePose {
+  const moved = { ...at, x: at.x + dx, z: at.z + dz };
+  if (!pivot) return moved;
+  return {
+    x: pivot.x + (moved.z - pivot.z),
+    z: pivot.z - (moved.x - pivot.x),
+    yPlates: moved.yPlates,
+    rot: (moved.rot + 1) % 4,
+  };
+}
+
+function reportLine(report: MateReport): string {
+  const rows: number[][] = [];
+  for (let k = 0; k < report.count; k++) {
+    rows.push([
+      report.connector[k] ?? 0,
+      report.shape[k] ?? 0,
+      report.partnerShape[k] ?? 0,
+      report.sourceMask[k] ?? 0,
+      report.status[k] ?? 0,
+      report.family[k] ?? 0,
+      report.partner[k] ?? 0,
+      report.instance[k] ?? 0,
+      report.partnerInstance[k] ?? 0,
+      report.joint[k] ?? 0,
+      ...report.engagement.subarray(k * 6, (k + 1) * 6),
+    ]);
+  }
+  return JSON.stringify(rows);
+}
+
+class CarryAgainstOracle {
+  readonly subjectLog: string[] = [];
+  readonly oracleLog: string[] = [];
+  private readonly report = new MateReport();
+
+  constructor(
+    readonly subject: CarryWorld,
+    readonly oracle: CarryWorld,
+  ) {}
+
+  carry(members: ReadonlyArray<number>, ending: CarryEnding): void {
+    const held = new Set(members);
+    const from = members.map((id) => this.subject.live.listed.get(id)?.pose ?? ORIGIN);
+    const pivotAt = from[0] ?? ORIGIN;
+    let dx = 0;
+    let dz = 0;
+    let targets = from;
+    for (let move = 0; move < CARRY_MOVES; move++) {
+      const step = CARRY_STEPS_LDU[move % CARRY_STEPS_LDU.length] ?? STUD_LDU;
+      if (move % 2 === 0) dx += step;
+      else dz += step;
+      const pivot = move >= CARRY_TURN_AT ? pivotAt : null;
+      targets = from.map((at) => carriedTo(at, dx, dz, pivot));
+      const throws = ending === "throw" && move === CARRY_MOVES - 1;
+      const asked = targets;
+      const subjectMove = (): void => {
+        this.ask(this.subject, members, asked, this.subjectLog);
+        if (throws) throw new Error(DROPPED);
+      };
+      if (throws) droppedBy(() => this.subject.live.search.withdrawn(held, subjectMove));
+      else this.subject.live.search.withdrawn(held, subjectMove);
+      this.eagerly(members, asked);
+    }
+    if (ending === "drop" || ending === "drop, undo and redo") {
+      this.relay(members, targets);
+      if (ending === "drop, undo and redo") {
+        this.relay(members, from);
+        this.relay(members, targets);
+      }
+    }
+    for (const side of [this.subject, this.oracle]) {
+      const log = side === this.subject ? this.subjectLog : this.oracleLog;
+      this.ask(
+        side,
+        members,
+        members.map((id) => side.live.listed.get(id)?.pose ?? ORIGIN),
+        log,
+      );
+    }
+  }
+
+  private ask(
+    side: CarryWorld,
+    members: ReadonlyArray<number>,
+    at: ReadonlyArray<LatticePose>,
+    log: string[],
+  ): void {
+    members.forEach((id, i) => {
+      const piece = side.live.listed.get(id)?.piece;
+      const pose = at[i];
+      if (!piece || !pose) return;
+      side.live.search.evaluate(piece.connectors, pose, this.report);
+      log.push(`${id} ${JSON.stringify(pose)}: ${reportLine(this.report)}`);
+    });
+  }
+
+  private eagerly(members: ReadonlyArray<number>, at: ReadonlyArray<LatticePose>): void {
+    const { live, solver } = this.oracle;
+    for (const id of members) {
+      const entry = live.listed.get(id);
+      if (entry) solver.remove(entry.piece.connectors, entry.pose, id);
+    }
+    try {
+      this.ask(this.oracle, members, at, this.oracleLog);
+    } finally {
+      for (const id of members) {
+        const entry = live.listed.get(id);
+        if (entry) solver.insert(entry.piece.connectors, entry.pose, id);
+      }
+    }
+  }
+
+  private relay(members: ReadonlyArray<number>, to: ReadonlyArray<LatticePose>): void {
+    for (const side of [this.subject, this.oracle]) {
+      const pieces = members.map((id) => side.live.listed.get(id)?.piece);
+      for (const id of members) {
+        side.live.search.remove(id);
+        side.live.listed.delete(id);
+      }
+      members.forEach((id, i) => {
+        const piece = pieces[i];
+        const pose = to[i];
+        if (piece && pose) side.live.place(id, piece, pose);
+      });
+    }
+  }
+}
+
+const CARRY_GROUPS = [1, 10, 100, 1, 10, 100, 1, 10];
+
+describe("PlacementSearch withdrawals during carries", () => {
+  it.each([1, 2])(
+    "answers carries of 1, 10 and 100 placements of generated stacks, jumpers, side studs, pins, axles, clips, hinges, turntables and joined track, turned mid-carry and dropped, cancelled, undone and redone or thrown out of, exactly as removing and re-inserting them around each move does (seed %i)",
+    (seed) => {
+      const subject = generatedWorld(seed);
+      const pair = new CarryAgainstOracle(subject, generatedWorld(seed));
+      const pick = seeded(seed * 104_729);
+      CARRY_GROUPS.forEach((size, k) => {
+        const members = new Set<number>();
+        drawn(pick, subject.placements, size, members);
+        pair.carry([...members], CARRY_ENDINGS[k % CARRY_ENDINGS.length] ?? "cancel");
+      });
+      expect(pair.subjectLog.length).toBeGreaterThan(0);
+      expect(pair.subjectLog).toEqual(pair.oracleLog);
+    },
+  );
+});
+
+type OfficialParts = Awaited<ReturnType<typeof officialParts>>;
+
+const OFFICIAL_ROWS = 10;
+const OFFICIAL_COLUMNS = 12;
+const OFFICIAL_SPACING_STUDS = 3;
+const STACKED_EVERY = 3;
+
+function officialWorld(parts: OfficialParts): ReadonlyArray<number> {
+  const { live } = parts;
+  live.place(1, parts.officialBaseplate, ORIGIN);
+  const seat = seatedNear(live, parts.officialBrick, window(2 * STUD_LDU, 2 * STUD_LDU, 1));
+  const kinds = [
+    parts.officialBrick,
+    parts.officialJumper,
+    parts.sideStudPair,
+    parts.jumperOnBrick,
+  ];
+  const placed: number[] = [];
+  let id = 2;
+  for (let row = 0; row < OFFICIAL_ROWS; row++) {
+    for (let column = 0; column < OFFICIAL_COLUMNS; column++) {
+      const k = row * OFFICIAL_COLUMNS + column;
+      const turn = k % 4;
+      if (!isRot90(turn)) throw new RangeError(`turn ${turn} is not a quarter turn`);
+      const at = {
+        x: seat.x + column * OFFICIAL_SPACING_STUDS * STUD_LDU + (k % 5 === 0 ? HALF : 0),
+        z: seat.z + row * OFFICIAL_SPACING_STUDS * STUD_LDU,
+        yPlates: seat.yPlates + (k % STACKED_EVERY === 0 ? 3 : 0),
+        rot: turn,
+      };
+      live.place(id, kinds[k % kinds.length] ?? parts.officialBrick, at);
+      placed.push(id++);
+    }
+  }
+  return placed;
+}
+
+describe("PlacementSearch withdrawals during carries, on official parts", () => {
+  it("answers carries of 1, 10 and 100 official 3001s and 3794b jumpers and custom models built from their tables, a 3001 with a 3001 on its side and a 3794b on a 3001, on an official 3811, exactly as removing and re-inserting them around each move does", async () => {
+    const subject = await officialParts();
+    const oracle = await officialParts();
+    const placed = officialWorld(subject);
+    officialWorld(oracle);
+    const pair = new CarryAgainstOracle(subject, oracle);
+    const pick = seeded(20261125);
+    CARRY_GROUPS.forEach((size, k) => {
+      const members = new Set<number>();
+      drawn(pick, placed, size, members);
+      pair.carry([...members], CARRY_ENDINGS[k % CARRY_ENDINGS.length] ?? "cancel");
+    });
+    const side = subject.sideStudPair.connectors;
+    expect({
+      jumperSeatedOnItsBrick: subject.jumperOnBrick.connectors.internalMates > 0,
+      sideStuds: Array.from(side.axis.subarray(0, side.count)).some(
+        (axis) => axis === AXIS_POS_Z || axis === AXIS_NEG_Z,
+      ),
+      carried: pair.subjectLog.length > 0,
+    }).toEqual({ jumperSeatedOnItsBrick: true, sideStuds: true, carried: true });
+    expect(pair.subjectLog).toEqual(pair.oracleLog);
+  }, 120_000);
 });

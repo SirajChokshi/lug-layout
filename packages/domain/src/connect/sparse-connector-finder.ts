@@ -23,6 +23,7 @@ import {
 } from "./lattice-frame.ts";
 import { MateClasses } from "./mate-classes.ts";
 import type { MateFinder } from "./mate-finder.ts";
+import { MODEL_CACHE_CONNECTORS, MODEL_CACHE_MODELS, ModelCache } from "./model-cache.ts";
 import { NO_PROPOSAL_SLOT, ProposalProgress } from "./proposal-progress.ts";
 import {
   ENGAGED_AXIS,
@@ -128,7 +129,7 @@ function firstAtLeast(values: Int32Array, from: number, to: number, value: numbe
 }
 
 class TurnedModel {
-  model: ModelConnectors | null = null;
+  constructor(readonly model: ModelConnectors | null) {}
   order = new Int32Array(0);
   groupKey = new Int32Array(0);
   groupEnd = new Int32Array(0);
@@ -142,9 +143,7 @@ class TurnedModel {
   pairsWith = new Uint8Array(0);
   position = new Int32Array(0);
   axis = new Int8Array(0);
-  next = new Int32Array(0);
   readonly box = new Int32Array(QUARTER_TURNS * BOX_INTS);
-  cells = new IntKeyMap(MODEL_KEY_INTS);
   exactLines = new IntKeyMap(MODEL_KEY_INTS);
   exactStart = new Int32Array(1);
   exactOrder = new Int32Array(0);
@@ -165,7 +164,11 @@ export class SparseConnectorFinder implements MateFinder {
   private readonly chunks = new IntKeyMap(CELL_KEY_INTS);
   private readonly cellKey = new Int32Array(CELL_KEY_INTS);
   private readonly modelKey = new Int32Array(MODEL_KEY_INTS);
-  private readonly turned = new TurnedModel();
+  private turned = new TurnedModel(null);
+  private readonly turnedModels = new ModelCache<TurnedModel>(
+    MODEL_CACHE_CONNECTORS,
+    MODEL_CACHE_MODELS,
+  );
   private slotX = new Int32Array(INITIAL_SLOTS);
   private slotY = new Int32Array(INITIAL_SLOTS);
   private slotZ = new Int32Array(INITIAL_SLOTS);
@@ -252,6 +255,10 @@ export class SparseConnectorFinder implements MateFinder {
       this.slotNext[slot] = this.freeSlot;
       this.freeSlot = slot;
     }
+    this.revision++;
+  }
+
+  placedChanged(): void {
     this.revision++;
   }
 
@@ -955,18 +962,26 @@ export class SparseConnectorFinder implements MateFinder {
   }
 
   private turn(model: ModelConnectors): TurnedModel {
-    return this.turned.model === model ? this.turned : this.turnModel(model);
+    if (this.turned.model === model) return this.turned;
+    const cached = this.turnedModels.get(model);
+    if (cached !== undefined && cached.classCount === this.classes.count) {
+      this.turned = cached;
+    } else {
+      this.turned = this.turnModel(model);
+      this.turnedModels.set(model, this.turned);
+    }
+    if (this.nearby.length < model.count) this.nearby = new Int32Array(model.count);
+    if (this.candidates.length < model.count) this.candidates = new Int32Array(model.count);
+    this.gatheredRevision.fill(-1);
+    return this.turned;
   }
 
   private turnModel(model: ModelConnectors): TurnedModel {
-    const turned = this.turned;
+    const turned = new TurnedModel(model);
     const n = model.count;
     turned.connectorClass = new Int32Array(n);
     turned.position = new Int32Array(QUARTER_TURNS * n * VECTOR_FLOATS);
     turned.axis = new Int8Array(QUARTER_TURNS * n);
-    turned.next = new Int32Array(QUARTER_TURNS * n);
-    turned.cells = new IntKeyMap(MODEL_KEY_INTS);
-    if (this.nearby.length < n) this.nearby = new Int32Array(n);
     for (let i = 0; i < n; i++) {
       turned.connectorClass[i] = this.classes.classOf(model.shape[i] ?? 0, model.gender[i] ?? 0);
     }
@@ -997,20 +1012,12 @@ export class SparseConnectorFinder implements MateFinder {
         ] = 1;
         turned.axesOfTurn[rot] = (turned.axesOfTurn[rot] ?? 0) | (1 << (turned.axis[m] ?? 0));
         this.grow(turned.box, b, x, y, z, i === 0);
-        this.modelKey[0] = rot;
-        this.modelKey[1] = cellOf(x, CELL_SIXTEENTHS);
-        this.modelKey[2] = cellOf(y, CELL_SIXTEENTHS);
-        this.modelKey[3] = cellOf(z, CELL_SIXTEENTHS);
-        turned.next[m] = turned.cells.get(this.modelKey);
-        turned.cells.set(this.modelKey, m);
       }
     }
     this.markPairable(turned);
     this.groupByPhase(turned, n);
     this.indexLines(turned, n);
     turned.lineShared = sharedLines(model);
-    turned.model = model;
-    this.gatheredRevision.fill(-1);
     return turned;
   }
 
@@ -1062,7 +1069,6 @@ export class SparseConnectorFinder implements MateFinder {
       n,
       CELL_SIXTEENTHS,
     );
-    if (this.candidates.length < n) this.candidates = new Int32Array(n);
   }
 
   private groupByPhase(turned: TurnedModel, n: number): void {
