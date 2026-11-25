@@ -2282,16 +2282,10 @@ describe("PlacementSearch withdrawals during carries, on official parts", () => 
   );
 });
 
-class RecordedWorld implements Placing {
-  readonly placed: Array<{
-    readonly id: number;
-    readonly piece: Piece;
-    readonly pose: LatticePose;
-  }> = [];
-
-  place(placement: number, piece: Piece, pose: LatticePose): void {
-    this.placed.push({ id: placement, piece, pose });
-  }
+interface RecordedPlacement {
+  readonly id: number;
+  readonly piece: Piece;
+  readonly pose: LatticePose;
 }
 
 interface Probe {
@@ -2302,13 +2296,16 @@ interface Probe {
 
 interface CanonicalRecipe {
   readonly f: Fixture;
-  readonly placed: RecordedWorld["placed"];
+  readonly placed: ReadonlyArray<RecordedPlacement>;
   readonly probes: ReadonlyArray<Probe>;
   readonly walks: ReadonlyArray<ReadonlyArray<Probe>>;
   readonly items: ReadonlyMap<Piece, string>;
 }
 
 const CANONICAL_SITES = 16;
+const GENERATED_OWNERS = 10;
+const GENERATED_ROWS = 300;
+const GENERATED_CONNECTORS = 40;
 const WITNESS_X = 30_000;
 const FIELD_X = 40_000;
 const FIELDS = 6;
@@ -2317,7 +2314,7 @@ const LARGE_PLATE = 20;
 const FIELD_SPACING = 2000;
 const FIELD_ROWS = 8;
 const FIELD_PIN_ROWS = 4;
-const FIELD_STEPS = 12;
+const FIELD_SPREAD = 12;
 const FIELD_WALK = 24;
 const LONG_PIN = 2 * STUD_LDU;
 const SHORT_PIN = 8;
@@ -2331,7 +2328,7 @@ const WARM_UPS = 40;
 const CLASS_WITNESS_SHALLOW = 6;
 const CLASS_WITNESS_DEEP = 12;
 
-function canonicalPrelude(shapes: SnapShapes): void {
+function internInAnotherOrder(shapes: SnapShapes): void {
   const pin = (length: number): number =>
     shapes.intern(CAP_ROOT, false, [SECTION_ROUND], [6], [length]);
   shapes.intern(0, false, [SECTION_ROUND], [6], [2 * STUD_LDU]);
@@ -2420,23 +2417,12 @@ function twoBorePartner(f: Fixture): Piece {
 
 function contentKey(f: Fixture, piece: Piece): string {
   const model = piece.connectors;
-  const connectors = Array.from({ length: model.count }, (_, k) => {
-    const shape = model.shape[k] ?? 0;
-    const first = f.shapes.firstSection(shape);
-    return [
-      model.gender[k],
-      model.axis[k],
-      ...model.origin.subarray(k * 3, k * 3 + 3),
-      f.shapes.caps(shape),
-      f.shapes.slides(shape),
-      f.shapes.groupName(shape),
-      Array.from({ length: f.shapes.sectionCount(shape) }, (_section, s) => [
-        f.shapes.internedCode(first + s),
-        f.shapes.internedSize(first + s),
-        f.shapes.span(first + s),
-      ]),
-    ];
-  });
+  const connectors = Array.from({ length: model.count }, (_, k) => [
+    model.gender[k],
+    model.axis[k],
+    ...model.origin.subarray(k * 3, k * 3 + 3),
+    shapeContent(f.shapes, model.shape[k] ?? NO_SHAPE),
+  ]);
   return JSON.stringify([
     connectors,
     [...model.trackHeading],
@@ -2477,7 +2463,12 @@ function officialName(parts: OfficialParts, piece: Piece): string {
 }
 
 function canonicalRecipe(f: Fixture, seed: number): CanonicalRecipe {
-  const recorded = new RecordedWorld();
+  const placed: RecordedPlacement[] = [];
+  const recorded: Placing = {
+    place: (placement, piece, pose) => {
+      placed.push({ id: placement, piece, pose });
+    },
+  };
   let id = FIRST_GENERATED_ID;
   const next = (): number => id++;
   const pick = seeded(seed);
@@ -2545,8 +2536,8 @@ function canonicalRecipe(f: Fixture, seed: number): CanonicalRecipe {
     const rows: LatticePose[] = [];
     for (let row = 0; row < FIELD_ROWS; row++) {
       const pose = flat(
-        FIELD_X + field * FIELD_SPACING + pick(FIELD_STEPS) * HALF,
-        pick(FIELD_STEPS) * STUD_LDU,
+        FIELD_X + field * FIELD_SPACING + pick(FIELD_SPREAD) * HALF,
+        pick(FIELD_SPREAD) * STUD_LDU,
       );
       recorded.place(next(), boreRow(f), pose);
       rows.push(pose);
@@ -2566,17 +2557,17 @@ function canonicalRecipe(f: Fixture, seed: number): CanonicalRecipe {
       walks.push(steps);
     }
   }
-  for (const { piece, pose } of recorded.placed)
+  for (const { piece, pose } of placed)
     probes.push({ name: "a placed piece at its pose", piece, pose });
   const items = new Map<Piece, string>();
   const keys = new Map<string, string>();
-  for (const { piece } of [...recorded.placed, ...probes, ...walks.flat()]) {
+  for (const { piece } of [...placed, ...probes, ...walks.flat()]) {
     const key = contentKey(f, piece);
     const item = keys.get(key) ?? `item ${keys.size}`;
     keys.set(key, item);
     items.set(piece, item);
   }
-  return { f, placed: recorded.placed, probes, walks, items };
+  return { f, placed, probes, walks, items };
 }
 
 class CanonicalHistory {
@@ -2608,14 +2599,11 @@ class CanonicalHistory {
     return this.report;
   }
 
-  hover(probe: Probe): string {
-    return hoverLine(
-      mateCounts(this.evaluate(probe), this.recipe.f.shapes, this.studShapes, this.view),
-    );
+  hover(report: MateReport): string {
+    return talliesJson(mateCounts(report, this.recipe.f.shapes, this.studShapes, this.view));
   }
 
-  raw(probe: Probe): string {
-    const report = this.evaluate(probe);
+  raw(report: MateReport): string {
     const rows: unknown[] = [];
     for (let k = 0; k < report.count; k++) {
       const partner = report.partner[k] ?? NO_PARTNER;
@@ -2631,9 +2619,9 @@ class CanonicalHistory {
     return JSON.stringify(rows);
   }
 
-  expected(probe: Probe): string {
-    return hoverLine(
-      specifiedMateCounts(this.evaluate(probe), this.recipe.f.shapes, this.studShapes, this.view),
+  expected(report: MateReport): string {
+    return talliesJson(
+      specifiedMateCounts(report, this.recipe.f.shapes, this.studShapes, this.view),
     );
   }
 }
@@ -2653,7 +2641,7 @@ function shapeContent(shapes: SnapShapes, shape: number): unknown {
   ];
 }
 
-function hoverLine(mates: ReadonlyArray<HoverMateCount>): string {
+function talliesJson(mates: ReadonlyArray<HoverMateCount>): string {
   return JSON.stringify(mates.map((mate) => ({ ...mate, jointIds: [...mate.jointIds] })));
 }
 
@@ -2767,16 +2755,21 @@ function permutation(count: number, pick: (below: number) => number): number[] {
 
 const CANONICAL_SEED = 20261125;
 
+function insertedInOrder(f: Fixture): CanonicalHistory {
+  const history = new CanonicalHistory(canonicalRecipe(f, CANONICAL_SEED));
+  const identity = Array.from({ length: history.recipe.placed.length }, (_, k) => k);
+  history.insert(identity, (position) => history.recipe.placed[position]?.id ?? 0);
+  return history;
+}
+
 function canonicalHistories(): ReadonlyArray<CanonicalHistory> {
   const pick = seeded(CANONICAL_SEED * 31);
-  const inOrder = new CanonicalHistory(canonicalRecipe(fixture(), CANONICAL_SEED));
+  const inOrder = insertedInOrder(fixture());
   const count = inOrder.recipe.placed.length;
   const identity = Array.from({ length: count }, (_, k) => k);
-  inOrder.insert(identity, (position) => inOrder.recipe.placed[position]?.id ?? 0);
   const permuted = new CanonicalHistory(canonicalRecipe(fixture(), CANONICAL_SEED));
   permuted.insert(permutation(count, pick), (position) => 100_000 + position);
-  const edited = new CanonicalHistory(canonicalRecipe(fixture(), CANONICAL_SEED));
-  edited.insert(identity, (position) => edited.recipe.placed[position]?.id ?? 0);
+  const edited = insertedInOrder(fixture());
   let fresh = 200_000;
   for (let cycle = 0; cycle < REMOVE_CYCLES; cycle++) {
     const owners = [...edited.live.listed.keys()];
@@ -2804,7 +2797,7 @@ function canonicalHistories(): ReadonlyArray<CanonicalHistory> {
     if (probe) edited.evaluate(probe);
   }
   const reinterned = new CanonicalHistory(
-    canonicalRecipe(fixture(canonicalPrelude), CANONICAL_SEED),
+    canonicalRecipe(fixture(internInAnotherOrder), CANONICAL_SEED),
   );
   reinterned.insert(identity.toReversed(), (position) => 300_000 + position);
   return [inOrder, permuted, edited, reinterned];
@@ -2817,10 +2810,10 @@ describe("mateCounts' canonical join order", () => {
     if (!inOrder || !permuted || !edited || !reinterned) throw new Error("four histories expected");
     const differences: string[] = [];
     inOrder.recipe.probes.forEach((probe, p) => {
-      const expected = inOrder.hover(probe);
+      const expected = inOrder.hover(inOrder.evaluate(probe));
       histories.forEach((history, h) => {
         const other = history.recipe.probes[p];
-        if (other && history.hover(other) !== expected)
+        if (other && history.hover(history.evaluate(other)) !== expected)
           differences.push(`${probe.name} #${p} in history ${h}`);
       });
     });
@@ -2828,23 +2821,26 @@ describe("mateCounts' canonical join order", () => {
       const p = inOrder.recipe.probes.findIndex((probe) => probe.name === name);
       const left = a.recipe.probes[p];
       const right = b.recipe.probes[p];
-      return left !== undefined && right !== undefined && a.raw(left) !== b.raw(right);
+      return (
+        left !== undefined &&
+        right !== undefined &&
+        a.raw(a.evaluate(left)) !== b.raw(b.evaluate(right))
+      );
     };
     let gatherWitness = false;
+    const unrelated = inOrder.recipe.probes[0];
     inOrder.recipe.walks.forEach((walk) => {
       walk.forEach((step, s) => {
         const before = walk[s - 1];
-        if (!before) return;
+        if (!before || !unrelated) return;
         inOrder.evaluate(before);
-        const warmRaw = inOrder.raw(step);
-        inOrder.evaluate(before);
-        const warmHover = inOrder.hover(step);
-        inOrder.evaluate(inOrder.recipe.probes[0] ?? step);
-        const coldRaw = inOrder.raw(step);
-        inOrder.evaluate(inOrder.recipe.probes[0] ?? step);
-        const coldHover = inOrder.hover(step);
-        if (warmRaw !== coldRaw) gatherWitness = true;
-        if (warmHover !== coldHover) differences.push(`${step.name} warm against cold`);
+        const warm = inOrder.evaluate(step);
+        const warmRaw = inOrder.raw(warm);
+        const warmHover = inOrder.hover(warm);
+        inOrder.evaluate(unrelated);
+        const cold = inOrder.evaluate(step);
+        if (inOrder.raw(cold) !== warmRaw) gatherWitness = true;
+        if (inOrder.hover(cold) !== warmHover) differences.push(`${step.name} warm against cold`);
       });
     });
     const instancesProbe = inOrder.recipe.probes.findIndex((probe) =>
@@ -2881,12 +2877,13 @@ describe("mateCounts' canonical join order", () => {
   }, 120_000);
 
   it("orders every hover's tallies, partners, partner kinds and joint labels as the specification does from all of its rows, changing only their order", () => {
-    const [inOrder] = canonicalHistories();
-    if (!inOrder) throw new Error("a history expected");
-    const mismatches = inOrder.recipe.probes
-      .filter((probe) => inOrder.hover(probe) !== inOrder.expected(probe))
-      .map((probe) => probe.name);
-    const sizes = inOrder.recipe.probes.map((probe) => inOrder.evaluate(probe).count);
+    const inOrder = insertedInOrder(fixture());
+    const mismatches: string[] = [];
+    const sizes = inOrder.recipe.probes.map((probe) => {
+      const report = inOrder.evaluate(probe);
+      if (inOrder.hover(report) !== inOrder.expected(report)) mismatches.push(probe.name);
+      return report.count;
+    });
     expect({
       mismatches,
       spansPowersOfTwo: [3, 17, 65, 257].every((size) => sizes.some((count) => count >= size)),
@@ -2906,7 +2903,10 @@ describe("mateCounts' canonical join order", () => {
       order.map((k) => permutedOwners[k] ?? 0),
       100_000,
     );
-    const permutedAt = order.map((_, k) => reinserted[order.indexOf(k)] ?? 0);
+    const permutedAt = Array.from({ length: order.length }, () => 0);
+    order.forEach((slot, position) => {
+      permutedAt[slot] = reinserted[position] ?? 0;
+    });
     const editedOwners = [...(placed[2] ?? [])];
     for (let cycle = 0; cycle < REMOVE_CYCLES; cycle++) {
       const k = pick(editedOwners.length);
@@ -2919,7 +2919,7 @@ describe("mateCounts' canonical join order", () => {
         const listed = parts.live.listed.get(owner);
         if (!listed) return "unlisted";
         parts.live.search.evaluate(listed.piece.connectors, listed.pose, report);
-        return hoverLine(
+        return talliesJson(
           mateCounts(report, parts.shapes, new Set(), (partner) => {
             const other = parts.live.listed.get(partner);
             if (!other) return null;
@@ -3001,15 +3001,11 @@ describe("mateCounts' canonical join order", () => {
         );
         report.assignFamily(k, family);
       }
-      const shown = hoverLine(mateCounts(report, f.shapes, studShapes, view));
-      if (shown !== hoverLine(specifiedMateCounts(report, f.shapes, studShapes, view))) {
+      const shown = talliesJson(mateCounts(report, f.shapes, studShapes, view));
+      if (shown !== talliesJson(specifiedMateCounts(report, f.shapes, studShapes, view))) {
         mismatches.push(size);
       }
     }
     expect(mismatches).toEqual([]);
   });
 });
-
-const GENERATED_OWNERS = 10;
-const GENERATED_ROWS = 300;
-const GENERATED_CONNECTORS = 40;

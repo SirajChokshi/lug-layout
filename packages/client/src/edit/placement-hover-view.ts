@@ -1,6 +1,5 @@
 import {
   GENDER_MALE,
-  MateReport,
   NO_PARTNER,
   NO_SHAPE,
   SECTION_AXLE,
@@ -12,6 +11,7 @@ import {
   SECTION_SQUARE,
   SOURCE_INFERRED,
   STATUS_UNVERIFIED,
+  type MateReport,
   type SnapShapes,
 } from "@brr/domain";
 import type {
@@ -80,15 +80,12 @@ type PlacedView = (owner: number) => PlacedModelView | null;
 
 const INITIAL_ROWS = 64;
 const UNLABELLED = -1;
-const NO_REPORT = new MateReport(1);
 
 class CanonicalRows {
   order = new Int32Array(INITIAL_ROWS);
   label = new Int32Array(INITIAL_ROWS);
   readonly views: Array<PlacedModelView | null> = [];
   private merged = new Int32Array(INITIAL_ROWS);
-  private report: MateReport = NO_REPORT;
-  private shapes: SnapShapes | null = null;
 
   sort(report: MateReport, shapes: SnapShapes, placedView: PlacedView): void {
     const n = report.count;
@@ -102,15 +99,11 @@ class CanonicalRows {
       const shaped = (report.shape[k] ?? NO_SHAPE) !== NO_SHAPE;
       this.views[k] = shaped && owner !== NO_PARTNER ? placedView(owner) : null;
     }
-    this.report = report;
-    this.shapes = shapes;
-    this.mergeSort(n);
+    this.mergeSort(report, shapes, n);
     this.relabel(report);
-    this.report = NO_REPORT;
-    this.shapes = null;
   }
 
-  private mergeSort(n: number): void {
+  private mergeSort(report: MateReport, shapes: SnapShapes, n: number): void {
     for (let width = 1; width < n; width *= 2) {
       const from = this.order;
       const into = this.merged;
@@ -123,7 +116,7 @@ class CanonicalRows {
         while (left < mid && right < hi) {
           const l = from[left] ?? 0;
           const r = from[right] ?? 0;
-          if (this.compare(r, l) < 0) {
+          if (this.compare(report, shapes, r, l) < 0) {
             into[at++] = r;
             right++;
           } else {
@@ -151,14 +144,14 @@ class CanonicalRows {
     }
   }
 
-  private compare(a: number, b: number): number {
-    const report = this.report;
+  private compare(report: MateReport, shapes: SnapShapes, a: number, b: number): number {
     return (
       (report.family[a] ?? 0) - (report.family[b] ?? 0) ||
       (report.connector[a] ?? 0) - (report.connector[b] ?? 0) ||
-      this.comparePartners(a, b) ||
+      this.comparePartners(report, a, b) ||
       (report.partnerInstance[a] ?? 0) - (report.partnerInstance[b] ?? 0) ||
-      this.comparePartnerShapes(
+      comparePartnerShapes(
+        shapes,
         report.partnerShape[a] ?? NO_SHAPE,
         report.partnerShape[b] ?? NO_SHAPE,
       ) ||
@@ -166,9 +159,9 @@ class CanonicalRows {
     );
   }
 
-  private comparePartners(a: number, b: number): number {
-    const noneA = (this.report.partner[a] ?? NO_PARTNER) === NO_PARTNER;
-    const noneB = (this.report.partner[b] ?? NO_PARTNER) === NO_PARTNER;
+  private comparePartners(report: MateReport, a: number, b: number): number {
+    const noneA = (report.partner[a] ?? NO_PARTNER) === NO_PARTNER;
+    const noneB = (report.partner[b] ?? NO_PARTNER) === NO_PARTNER;
     if (noneA || noneB) return Number(noneB) - Number(noneA);
     const viewA = this.views[a] ?? null;
     const viewB = this.views[b] ?? null;
@@ -183,11 +176,11 @@ class CanonicalRows {
       (viewA.item < viewB.item ? -1 : viewA.item > viewB.item ? 1 : 0)
     );
   }
+}
 
-  private comparePartnerShapes(a: number, b: number): number {
-    if (a === NO_SHAPE || b === NO_SHAPE) return Number(b === NO_SHAPE) - Number(a === NO_SHAPE);
-    return this.shapes?.compare(a, b) ?? 0;
-  }
+function comparePartnerShapes(shapes: SnapShapes, a: number, b: number): number {
+  if (a === NO_SHAPE || b === NO_SHAPE) return Number(b === NO_SHAPE) - Number(a === NO_SHAPE);
+  return shapes.compare(a, b);
 }
 
 const canonicalRows = new CanonicalRows();

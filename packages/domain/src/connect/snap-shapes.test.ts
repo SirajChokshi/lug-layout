@@ -50,10 +50,6 @@ function shapeSpecs(): ShapeSpec[] {
   return specs;
 }
 
-function interned(shapes: SnapShapes, spec: ShapeSpec): number {
-  return shapes.intern(spec.caps, spec.slide, spec.codes, spec.sizes, spec.lengths, spec.group);
-}
-
 describe("SnapShapes", () => {
   it("interns two section lengths equal in Float32 but distinct in Float64 as two shapes, each read back exactly", () => {
     const shapes = new SnapShapes();
@@ -74,10 +70,14 @@ describe("SnapShapes", () => {
     const specs = shapeSpecs();
     const forward = new SnapShapes();
     const backward = new SnapShapes();
-    const forwardIds = specs.map((spec) => interned(forward, spec));
+    const forwardIds = specs.map(({ caps, slide, codes, sizes, lengths, group }) =>
+      forward.intern(caps, slide, codes, sizes, lengths, group),
+    );
     const backwardIds = specs
       .toReversed()
-      .map((spec) => interned(backward, spec))
+      .map(({ caps, slide, codes, sizes, lengths, group }) =>
+        backward.intern(caps, slide, codes, sizes, lengths, group),
+      )
       .toReversed();
     const byContent = (shapes: SnapShapes, ids: ReadonlyArray<number>): number[] =>
       specs.map((_, k) => k).toSorted((a, b) => shapes.compare(ids[a] ?? 0, ids[b] ?? 0));
