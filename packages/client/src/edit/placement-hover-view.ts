@@ -86,10 +86,15 @@ const DIGITS = 1 << DIGIT_BITS;
 const DIGIT_MASK = DIGITS - 1;
 const KEY_BITS = 32;
 
+function noViews(count: number): Array<PlacedModelView | null> {
+  return Array.from({ length: count }, () => null);
+}
+
 class CanonicalRows {
   order = new Int32Array(INITIAL_ROWS);
   label = new Int32Array(INITIAL_ROWS);
-  readonly views: Array<PlacedModelView | null> = [];
+  private views = noViews(INITIAL_ROWS);
+  private resolved = new Uint8Array(INITIAL_ROWS);
   private merged = new Int32Array(INITIAL_ROWS);
   private family = new Int32Array(INITIAL_ROWS);
   private connector = new Int32Array(INITIAL_ROWS);
@@ -102,8 +107,10 @@ class CanonicalRows {
       this.merged = new Int32Array(this.order.length);
       this.family = new Int32Array(this.order.length);
       this.connector = new Int32Array(this.order.length);
+      this.views = noViews(this.order.length);
+      this.resolved = new Uint8Array(this.order.length);
     }
-    const { family, connector, partner, shape } = report;
+    const { family, connector } = report;
     let lowest = 0;
     let highest = 0;
     for (let k = 0; k < n; k++) {
@@ -112,10 +119,8 @@ class CanonicalRows {
       highest = k === 0 ? own : Math.max(highest, own);
       this.order[k] = k;
       this.family[k] = family[k] ?? 0;
-      const owner = partner[k] ?? NO_PARTNER;
-      const shaped = (shape[k] ?? NO_SHAPE) !== NO_SHAPE;
-      this.views[k] = shaped && owner !== NO_PARTNER ? placedView(owner) : null;
     }
+    this.resolved.fill(0, 0, n);
     for (let k = 0; k < n; k++) this.connector[k] = (connector[k] ?? 0) - lowest;
     const spread = highest - lowest;
     for (
@@ -126,8 +131,22 @@ class CanonicalRows {
       this.distribute(this.connector, shift, n);
     }
     this.distribute(this.family, 0, n);
-    this.orderTies(report, shapes, n);
+    this.orderTies(report, shapes, placedView, n);
     this.relabel(report);
+  }
+
+  viewOf(report: MateReport, placedView: PlacedView, row: number): PlacedModelView | null {
+    if (this.resolved[row] === 1) return this.views[row] ?? null;
+    const owner = report.partner[row] ?? NO_PARTNER;
+    const shaped = (report.shape[row] ?? NO_SHAPE) !== NO_SHAPE;
+    const view = shaped && owner !== NO_PARTNER ? placedView(owner) : null;
+    this.views[row] = view;
+    this.resolved[row] = 1;
+    return view;
+  }
+
+  release(count: number): void {
+    this.views.fill(null, 0, count);
   }
 
   private distribute(keys: Int32Array, shift: number, n: number): void {
@@ -156,12 +175,17 @@ class CanonicalRows {
     this.merged = from;
   }
 
-  private orderTies(report: MateReport, shapes: SnapShapes, n: number): void {
+  private orderTies(
+    report: MateReport,
+    shapes: SnapShapes,
+    placedView: PlacedView,
+    n: number,
+  ): void {
     let start = 0;
     for (let i = 1; i <= n; i++) {
       if (i < n && this.sameHead(this.order[i] ?? 0, this.order[start] ?? 0)) continue;
-      if (i - start <= INSERTION_RUN) this.insertionSort(report, shapes, start, i);
-      else this.mergeSort(report, shapes, start, i);
+      if (i - start <= INSERTION_RUN) this.insertionSort(report, shapes, placedView, start, i);
+      else this.mergeSort(report, shapes, placedView, start, i);
       start = i;
     }
   }
@@ -170,12 +194,18 @@ class CanonicalRows {
     return this.family[a] === this.family[b] && this.connector[a] === this.connector[b];
   }
 
-  private insertionSort(report: MateReport, shapes: SnapShapes, lo: number, hi: number): void {
+  private insertionSort(
+    report: MateReport,
+    shapes: SnapShapes,
+    placedView: PlacedView,
+    lo: number,
+    hi: number,
+  ): void {
     const order = this.order;
     for (let i = lo + 1; i < hi; i++) {
       const row = order[i] ?? 0;
       let j = i;
-      while (j > lo && this.compareTies(report, shapes, row, order[j - 1] ?? 0) < 0) {
+      while (j > lo && this.compareTies(report, shapes, placedView, row, order[j - 1] ?? 0) < 0) {
         order[j] = order[j - 1] ?? 0;
         j--;
       }
@@ -183,9 +213,15 @@ class CanonicalRows {
     }
   }
 
-  private mergeSort(report: MateReport, shapes: SnapShapes, lo: number, hi: number): void {
+  private mergeSort(
+    report: MateReport,
+    shapes: SnapShapes,
+    placedView: PlacedView,
+    lo: number,
+    hi: number,
+  ): void {
     for (let run = lo; run < hi; run += INSERTION_RUN) {
-      this.insertionSort(report, shapes, run, Math.min(run + INSERTION_RUN, hi));
+      this.insertionSort(report, shapes, placedView, run, Math.min(run + INSERTION_RUN, hi));
     }
     const order = this.order;
     const merged = this.merged;
@@ -199,7 +235,7 @@ class CanonicalRows {
         while (a < mid && b < end) {
           const fromA = order[a] ?? 0;
           const fromB = order[b] ?? 0;
-          if (this.compareTies(report, shapes, fromB, fromA) < 0) {
+          if (this.compareTies(report, shapes, placedView, fromB, fromA) < 0) {
             merged[at++] = fromB;
             b++;
           } else {
@@ -226,9 +262,15 @@ class CanonicalRows {
     }
   }
 
-  private compareTies(report: MateReport, shapes: SnapShapes, a: number, b: number): number {
+  private compareTies(
+    report: MateReport,
+    shapes: SnapShapes,
+    placedView: PlacedView,
+    a: number,
+    b: number,
+  ): number {
     return (
-      this.comparePartners(report, a, b) ||
+      this.comparePartners(report, placedView, a, b) ||
       (report.partnerInstance[a] ?? 0) - (report.partnerInstance[b] ?? 0) ||
       comparePartnerShapes(
         shapes,
@@ -239,12 +281,17 @@ class CanonicalRows {
     );
   }
 
-  private comparePartners(report: MateReport, a: number, b: number): number {
+  private comparePartners(
+    report: MateReport,
+    placedView: PlacedView,
+    a: number,
+    b: number,
+  ): number {
     const noneA = (report.partner[a] ?? NO_PARTNER) === NO_PARTNER;
     const noneB = (report.partner[b] ?? NO_PARTNER) === NO_PARTNER;
     if (noneA || noneB) return Number(noneB) - Number(noneA);
-    const viewA = this.views[a] ?? null;
-    const viewB = this.views[b] ?? null;
+    const viewA = this.viewOf(report, placedView, a);
+    const viewB = this.viewOf(report, placedView, b);
     if (!viewA || !viewB) return Number(viewA !== null) - Number(viewB !== null);
     const at = viewA.pose;
     const other = viewB.pose;
@@ -304,11 +351,12 @@ export function mateCounts(
         connectorKind(shapes, partnerShape, partnerGender, studShapes),
       );
     }
-    const partner = rows.views[k] ?? null;
+    const partner = rows.viewOf(report, placedView, k);
     if (partner) tally.partners.set(report.partner[k] ?? NO_PARTNER, partner);
     if (((report.sourceMask[k] ?? 0) & SOURCE_INFERRED) !== 0) tally.inferred++;
     if (report.status[k] === STATUS_UNVERIFIED) tally.unverified++;
   }
+  rows.release(report.count);
   return hoverCounts(tallies);
 }
 
