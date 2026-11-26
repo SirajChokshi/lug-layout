@@ -1,3 +1,4 @@
+import { LINK_PROGRESS_SHARE } from "@brr/catalog";
 import { BUNDLE_POINTER_FILE } from "@brr/schema/bundle-pointer";
 import type { BundleSearchHit } from "@brr/schema/catalog-api";
 import { Container } from "inversify";
@@ -8,6 +9,7 @@ import { CATALOG_SEARCH } from "../tokens.ts";
 import type { ICatalogSearch } from "./catalog-search.ts";
 import { PaletteIndex } from "./palette-index.ts";
 import { paletteResults } from "./palette-results.ts";
+import { silentPeers } from "./silent-peers.test-support.ts";
 
 const workerBase = "https://catalog.test";
 const bundleBase = "https://bundle.test";
@@ -110,6 +112,7 @@ function catalogSearchWith(config: {
       ...(config.baseUrl === undefined ? {} : { catalogApiBaseUrl: config.baseUrl }),
     }),
   );
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
   return container.get(CATALOG_SEARCH);
 }
 

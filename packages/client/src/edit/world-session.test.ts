@@ -1,3 +1,4 @@
+import { LINK_PROGRESS_SHARE } from "@brr/catalog";
 import { EditHistory, World, addShards, type AppliedEdit, type PlacementTarget } from "@brr/domain";
 import {
   SCENE_BACKEND,
@@ -38,6 +39,7 @@ import type {
   StoredContents,
   WorldContents,
 } from "./world-session.ts";
+import { silentPeers } from "../catalog/silent-peers.test-support.ts";
 
 const BASEPLATE = "ldraw:3811@2";
 const BASEPLATE_LDU = 640;
@@ -264,6 +266,7 @@ class ViewRecordingRepository extends FailingSaveRepository {
 async function sessionWithFailingSaves() {
   const container = new Container();
   container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+  container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
   container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
   const repository = new FailingSaveRepository();
   container.rebind(WORLD_REPOSITORY).toConstantValue(repository);
@@ -328,6 +331,7 @@ describe("camera saving", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     const container = new Container();
     container.load(...mainThreadModules({ bundleBaseUrl: "unused", disclaimer: "disclaimer" }));
+    container.rebind(LINK_PROGRESS_SHARE).toConstantValue(silentPeers);
     container.rebind(SCENE_BACKEND).toConstantValue(new StubSceneBackend());
     const repository = new ViewRecordingRepository();
     container.rebind(WORLD_REPOSITORY).toConstantValue(repository);

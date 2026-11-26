@@ -1,4 +1,5 @@
 import { AssetResponseError } from "./asset-response-error.ts";
+import { AssetStalledError } from "./asset-stalled-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
@@ -64,11 +65,14 @@ import type {
   StudPrimitiveAsset,
 } from "./part-bundle.ts";
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
+import type { ILinkProgress } from "./link-progress/link-progress.ts";
 import {
   ASSET_FETCHER,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
+  LINK_PROGRESS,
+  LINK_SILENCE_LIMIT_MS,
 } from "./tokens.ts";
 
 const MATRIX_FLOATS = 12;
@@ -141,23 +145,103 @@ function connectorIndexPaths(
   };
 }
 
-@injectable()
-export class HttpAssetFetcher implements IAssetFetcher {
-  constructor(@inject(BUNDLE_BASE_URL) private readonly baseUrl: string) {}
+export const DEFAULT_LINK_SILENCE_LIMIT_MS = 50_000;
 
-  private async get(path: string): Promise<Response> {
-    const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new AssetResponseError(url, response.status);
-    return response;
+const utf8 = new TextDecoder();
+
+class SilenceWatch {
+  readonly signal: AbortSignal;
+  readonly stalled: Promise<never>;
+  private timer: ReturnType<typeof setTimeout>;
+
+  constructor(url: string, limitMs: number, link: ILinkProgress) {
+    const controller = new AbortController();
+    const { promise, reject } = Promise.withResolvers<never>();
+    this.signal = controller.signal;
+    this.stalled = promise;
+    const check = (): void => {
+      const remainingMs = limitMs - link.silenceMs();
+      if (remainingMs > 0) {
+        this.timer = setTimeout(check, Math.ceil(remainingMs));
+        return;
+      }
+      reject(new AssetStalledError(url, limitMs));
+      controller.abort();
+    };
+    this.timer = setTimeout(check, limitMs);
   }
 
-  async bytes(path: string): Promise<ArrayBuffer> {
-    return (await this.get(path)).arrayBuffer();
+  stop(): void {
+    clearTimeout(this.timer);
+  }
+}
+
+function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer {
+  const only = chunks.length === 1 ? chunks[0] : undefined;
+  if (
+    only?.buffer instanceof ArrayBuffer &&
+    only.byteOffset === 0 &&
+    only.byteLength === only.buffer.byteLength
+  ) {
+    return only.buffer;
+  }
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
+}
+
+async function download(
+  url: string,
+  signal: AbortSignal,
+  link: ILinkProgress,
+): Promise<ArrayBuffer> {
+  const response = await fetch(url, { signal });
+  link.markProgress();
+  if (!response.ok) throw new AssetResponseError(url, response.status);
+  if (response.body === null) return new ArrayBuffer(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    link.markProgress();
+    chunks.push(read.value);
+    length += read.value.byteLength;
+  }
+  return joined(chunks, length);
+}
+
+@injectable()
+export class HttpAssetFetcher implements IAssetFetcher {
+  constructor(
+    @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
+    @inject(LINK_SILENCE_LIMIT_MS) private readonly linkSilenceLimitMs: number,
+    @inject(LINK_PROGRESS) private readonly link: ILinkProgress,
+  ) {
+    if (!Number.isInteger(linkSilenceLimitMs) || linkSilenceLimitMs <= 0) {
+      throw new Error(
+        `a link silence limit of ${linkSilenceLimitMs} ms is not a positive whole number of milliseconds`,
+      );
+    }
+  }
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.get(path);
   }
 
   async text(path: string): Promise<string> {
-    return (await this.get(path)).text();
+    return utf8.decode(await this.get(path));
+  }
+
+  private get(path: string): Promise<ArrayBuffer> {
+    const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
+    const watch = new SilenceWatch(url, this.linkSilenceLimitMs, this.link);
+    return Promise.race([watch.stalled, download(url, watch.signal, this.link)]).finally(() =>
+      watch.stop(),
+    );
   }
 }
 
