@@ -27,3 +27,6 @@ export const LIBRARY_PART_CATALOG: ServiceIdentifier<ILibraryPartCatalog> = Symb
 export const FETCH_POOL_POLICY: ServiceIdentifier<FetchPoolPolicy> = Symbol.for(
   "brr.catalog.FetchPoolPolicy",
 );
+export const ASSET_SILENCE_LIMIT_MS: ServiceIdentifier<number> = Symbol.for(
+  "brr.catalog.AssetSilenceLimitMs",
+);

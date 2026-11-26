@@ -1,8 +1,10 @@
 export { AssetResponseError } from "./asset-response-error.ts";
+export { AssetStalledError } from "./asset-stalled-error.ts";
 export type { ICatalogApi } from "./catalog-api-client.ts";
 export { catalogModule } from "./catalog.module.ts";
 export { DIRECT_COLOR_ALPHA, directColorSrgb, isDirectColor } from "./colors.ts";
 export { DEFAULT_FETCH_POOL_POLICY, type FetchPoolPolicy } from "./fetch-pool.ts";
+export { DEFAULT_ASSET_SILENCE_LIMIT_MS } from "./http-part-bundle-loader.ts";
 export type { ILibraryPartCatalog, LibraryPartList } from "./library-part-catalog.ts";
 export {
   ConnectorRecords,
@@ -57,6 +59,7 @@ export type {
 } from "./part-bundle.ts";
 export {
   ASSET_FETCHER,
+  ASSET_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   CATALOG_API,

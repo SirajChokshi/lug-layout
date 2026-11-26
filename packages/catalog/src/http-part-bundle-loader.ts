@@ -1,4 +1,5 @@
 import { AssetResponseError } from "./asset-response-error.ts";
+import { AssetStalledError } from "./asset-stalled-error.ts";
 import {
   ConnectorRecords,
   type ConnectorIndexPaths,
@@ -66,6 +67,7 @@ import type {
 import { FetchPool, type FetchLane, type FetchPoolPolicy } from "./fetch-pool.ts";
 import {
   ASSET_FETCHER,
+  ASSET_SILENCE_LIMIT_MS,
   BUNDLE_BASE_URL,
   BUNDLE_MANIFEST_FILE,
   FETCH_POOL_POLICY,
@@ -141,23 +143,99 @@ function connectorIndexPaths(
   };
 }
 
-@injectable()
-export class HttpAssetFetcher implements IAssetFetcher {
-  constructor(@inject(BUNDLE_BASE_URL) private readonly baseUrl: string) {}
+export const DEFAULT_ASSET_SILENCE_LIMIT_MS = 30_000;
 
-  private async get(path: string): Promise<Response> {
-    const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new AssetResponseError(url, response.status);
-    return response;
+const utf8 = new TextDecoder();
+
+class SilenceWatch {
+  readonly signal: AbortSignal;
+  readonly stalled: Promise<never>;
+  private readonly limitMs: number;
+  private readonly stall: () => void;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(url: string, limitMs: number) {
+    const controller = new AbortController();
+    const { promise, reject } = Promise.withResolvers<never>();
+    this.signal = controller.signal;
+    this.stalled = promise;
+    this.limitMs = limitMs;
+    this.stall = () => {
+      reject(new AssetStalledError(url, limitMs));
+      controller.abort();
+    };
+    this.progressed();
   }
 
-  async bytes(path: string): Promise<ArrayBuffer> {
-    return (await this.get(path)).arrayBuffer();
+  progressed(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(this.stall, this.limitMs);
+  }
+
+  stop(): void {
+    clearTimeout(this.timer);
+  }
+}
+
+function joined(chunks: ReadonlyArray<Uint8Array>, length: number): ArrayBuffer {
+  const only = chunks.length === 1 ? chunks[0] : undefined;
+  if (
+    only?.buffer instanceof ArrayBuffer &&
+    only.byteOffset === 0 &&
+    only.byteLength === only.buffer.byteLength
+  ) {
+    return only.buffer;
+  }
+  const body = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body.buffer;
+}
+
+async function download(url: string, watch: SilenceWatch): Promise<ArrayBuffer> {
+  const response = await fetch(url, { signal: watch.signal });
+  watch.progressed();
+  if (!response.ok) throw new AssetResponseError(url, response.status);
+  if (response.body === null) return new ArrayBuffer(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    watch.progressed();
+    chunks.push(read.value);
+    length += read.value.byteLength;
+  }
+  return joined(chunks, length);
+}
+
+@injectable()
+export class HttpAssetFetcher implements IAssetFetcher {
+  constructor(
+    @inject(BUNDLE_BASE_URL) private readonly baseUrl: string,
+    @inject(ASSET_SILENCE_LIMIT_MS) private readonly silenceLimitMs: number,
+  ) {
+    if (!Number.isInteger(silenceLimitMs) || silenceLimitMs <= 0) {
+      throw new Error(
+        `an asset silence limit of ${silenceLimitMs} ms is not a positive whole number of milliseconds`,
+      );
+    }
+  }
+
+  bytes(path: string): Promise<ArrayBuffer> {
+    return this.get(path);
   }
 
   async text(path: string): Promise<string> {
-    return (await this.get(path)).text();
+    return utf8.decode(await this.get(path));
+  }
+
+  private get(path: string): Promise<ArrayBuffer> {
+    const url = `${this.baseUrl.replace(/\/$/u, "")}/${path}`;
+    const watch = new SilenceWatch(url, this.silenceLimitMs);
+    return Promise.race([watch.stalled, download(url, watch)]).finally(() => watch.stop());
   }
 }
 
