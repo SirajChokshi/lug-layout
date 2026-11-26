@@ -1,4 +1,9 @@
-import { catalogModule, LINK_PROGRESS, LINK_PROGRESS_SHARE, reportingFetch } from "@brr/catalog";
+import {
+  LINK_PROGRESS,
+  LINK_PROGRESS_SHARE,
+  linkProgressModule,
+  reportingFetch,
+} from "@brr/catalog/link-progress";
 import { LdrawMirror, ModelImportEngine } from "@brr/import";
 import { openLinkProgressBroadcast, type RpcPort } from "@brr/rpc";
 import { assetCacheModule } from "@brr/storage";
@@ -48,5 +53,5 @@ function importWorkerModule(port: RpcPort): ContainerModule {
 }
 
 export function importWorkerModules(port: RpcPort): ContainerModule[] {
-  return [importWorkerModule(port), assetCacheModule, catalogModule];
+  return [importWorkerModule(port), assetCacheModule, linkProgressModule];
 }

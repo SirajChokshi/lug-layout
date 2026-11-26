@@ -7,12 +7,11 @@ import {
   HttpPartBundleLoader,
 } from "./http-part-bundle-loader.ts";
 import { HttpLibraryPartCatalog } from "./library-part-catalog.ts";
-import { LinkProgress } from "./link-progress.ts";
+import { bindLinkProgress } from "./link-progress.module.ts";
 import {
   CATALOG_API,
   FETCH_POOL_POLICY,
   LIBRARY_PART_CATALOG,
-  LINK_PROGRESS,
   LINK_SILENCE_LIMIT_MS,
   NETWORK_ASSET_FETCHER,
   PART_BUNDLE_LOADER,
@@ -21,7 +20,7 @@ import {
 export const catalogModule = new ContainerModule(({ bind }) => {
   bind(FETCH_POOL_POLICY).toConstantValue(DEFAULT_FETCH_POOL_POLICY);
   bind(LINK_SILENCE_LIMIT_MS).toConstantValue(DEFAULT_LINK_SILENCE_LIMIT_MS);
-  bind(LINK_PROGRESS).to(LinkProgress).inSingletonScope();
+  bindLinkProgress(bind);
   bind(NETWORK_ASSET_FETCHER).to(HttpAssetFetcher).inSingletonScope();
   bind(PART_BUNDLE_LOADER).to(HttpPartBundleLoader).inSingletonScope();
   bind(CATALOG_API).to(HttpCatalogApi).inSingletonScope();

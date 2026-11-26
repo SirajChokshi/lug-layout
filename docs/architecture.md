@@ -741,7 +741,7 @@ export class LayoutService implements ILayoutService {
 ```
 
 - tsconfig sets `experimentalDecorators: true` and **`emitDecoratorMetadata: false`**. Vite's esbuild can't emit decorator metadata anyway, so nothing may depend on type reflection. A lint rule rejects `@inject()` without a token and rejects class-as-identifier bindings. Classes from pure packages are bound with `toDynamicValue(ctx => new RuleEngine(ctx.get(PROFILE_REGISTRY)))`, which needs no decorators. This is also the fallback for every binding if §11 item 28 finds problems.
-- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). The one exception is `storage`'s `assetCacheModule`, the asset cache alone, which the import worker loads instead of `storageModule`. Composition roots load the modules they need, and tests load modules with fakes substituted.
+- Bindings are grouped into one `ContainerModule` per package (`clientModule`, `storageModule`, `renderModule`, …). The two exceptions are `storage`'s `assetCacheModule`, the asset cache alone, which the import worker loads instead of `storageModule`, and `catalog`'s `linkProgressModule`, the link progress clock alone, which it loads instead of `catalogModule`. Composition roots load the modules they need, and tests load modules with fakes substituted.
 - Services are singletons by default and are resolved once at startup or when a tool activates. **Nothing is resolved from a container in a hot path.**
 
 ### 14.4 Per-worker containers
