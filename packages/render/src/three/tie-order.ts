@@ -6,20 +6,21 @@ export interface RenderSortKey {
   readonly z: number | null;
 }
 
-function difference(a: number | null, b: number | null): number {
-  return (a ?? 0) - (b ?? 0);
+function signOfDifference(a: number | null, b: number | null): number {
+  const difference = (a ?? 0) - (b ?? 0);
+  return difference > 0 ? 1 : difference < 0 ? -1 : 0;
 }
 
 export function opaqueSort(a: RenderSortKey, b: RenderSortKey): number {
-  if (a.groupOrder !== b.groupOrder) return difference(a.groupOrder, b.groupOrder);
-  if (a.renderOrder !== b.renderOrder) return difference(a.renderOrder, b.renderOrder);
-  return a.z === b.z ? 0 : difference(a.z, b.z);
+  if (a.groupOrder !== b.groupOrder) return signOfDifference(a.groupOrder, b.groupOrder);
+  if (a.renderOrder !== b.renderOrder) return signOfDifference(a.renderOrder, b.renderOrder);
+  return a.z === b.z ? 0 : signOfDifference(a.z, b.z);
 }
 
 export function transparentSort(a: RenderSortKey, b: RenderSortKey): number {
-  if (a.groupOrder !== b.groupOrder) return difference(a.groupOrder, b.groupOrder);
-  if (a.renderOrder !== b.renderOrder) return difference(a.renderOrder, b.renderOrder);
-  return a.z === b.z ? 0 : difference(b.z, a.z);
+  if (a.groupOrder !== b.groupOrder) return signOfDifference(a.groupOrder, b.groupOrder);
+  if (a.renderOrder !== b.renderOrder) return signOfDifference(a.renderOrder, b.renderOrder);
+  return a.z === b.z ? 0 : signOfDifference(b.z, a.z);
 }
 
 export class KeyOrderedChildren {
