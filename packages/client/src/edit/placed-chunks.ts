@@ -36,7 +36,7 @@ import {
 import { CellWindowIndex } from "./cell-window-index.ts";
 import { BOX_FLOATS, type LocalBox } from "./local-box.ts";
 import { partBoxGridOf } from "./part-box-grid.ts";
-import { planShapeOf } from "./plan-shapes.ts";
+import { PlanShapes } from "./plan-shapes.ts";
 import {
   FOOTPRINT_ANTI_STUD,
   FOOTPRINT_FLAT,
@@ -484,6 +484,7 @@ class PlacedEntry implements PlacedModel {
     readonly placeable: Placeable,
     chunkOrigins: Map<number, readonly [number, number]>,
     carriedTrack: CarriedTrackSource,
+    planShapes: PlanShapes,
   ) {
     this.pose = new LatticePose(handle.x, handle.z, handle.rot);
     this.x = handle.x;
@@ -496,7 +497,7 @@ class PlacedEntry implements PlacedModel {
     this.markCells(chunkOrigins);
     this.box = this.worldBox();
     const carried = carriedTrack(placeable, handle);
-    this.shape = planShapeOf(placeable, handle.rot, carried?.instances ?? NO_INSTANCES);
+    this.shape = planShapes.of(placeable, handle.rot, carried?.instances ?? NO_INSTANCES);
     this.carried =
       carried === null
         ? null
@@ -1091,6 +1092,7 @@ export class PlacedChunks {
   private readonly byColumnChunk = new Map<number, Set<PlacedEntry>>();
   private readonly byBoxChunk = new Map<number, Map<number, PlacedEntry[]>>();
   private readonly chunkOrigins = new Map<number, readonly [number, number]>();
+  private readonly planShapes = new PlanShapes();
   private readonly chunkStuds = new Map<number, ChunkStuds>();
   private nextId = 0;
   private touchEpoch = 0;
@@ -1172,16 +1174,42 @@ export class PlacedChunks {
     this.farModels.delete(previous);
     const touched = new Set<number>();
     const removed: PlacedModel[] = [];
-    const added: PlacedModel[] = [];
-    for (const entry of this.entries.filter((placed) => placed.placeable === previous)) {
-      const detached = this.detach(entry.handle);
-      detached.addRebuildKeys(touched, this.hasAntiStudCovers);
-      removed.push(detached);
-      const replaced = this.insert(detached.placement, detached.handle, next);
-      replaced.addRebuildKeys(touched, this.hasAntiStudCovers);
+    const added: PlacedEntry[] = [];
+    for (let index = 0; index < this.entries.length; index++) {
+      const entry = this.entries[index];
+      if (entry?.placeable !== previous) continue;
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
+      const replaced = new PlacedEntry(
+        entry.id,
+        entry.placement,
+        entry.handle,
+        next,
+        this.chunkOrigins,
+        this.carriedTrack,
+        this.planShapes,
+      );
+      this.entries[index] = replaced;
+      removed.push(entry);
       added.push(replaced);
     }
+    if (added.length === 0) return { added, removed, report: this.rebuild(touched) };
+    this.changes++;
+    this.reindex();
+    for (const entry of added) {
+      if (this.farModelOf(entry.placeable) !== null) this.showFarModel(entry);
+      entry.addRebuildKeys(touched, this.hasAntiStudCovers);
+    }
     return { added, removed, report: this.rebuild(touched) };
+  }
+
+  private reindex(): void {
+    this.live.clear();
+    this.byChunk.clear();
+    this.byFootprintChunk.clear();
+    this.byAntiStudChunk.clear();
+    this.byColumnChunk.clear();
+    this.byBoxChunk.clear();
+    for (const entry of this.entries) this.index(entry);
   }
 
   touching(box: WorldBox, out: PlacedModel[]): void {
@@ -1321,11 +1349,17 @@ export class PlacedChunks {
       placeable,
       this.chunkOrigins,
       this.carriedTrack,
+      this.planShapes,
     );
     this.entries.push(entry);
     this.changes++;
-    this.live.add(entry);
     if (this.farModelOf(placeable) !== null) this.showFarModel(entry);
+    this.index(entry);
+    return entry;
+  }
+
+  private index(entry: PlacedEntry): void {
+    this.live.add(entry);
     const { chunks } = entry;
     for (let row = 0; row < chunks.length; row++) {
       const key = chunks.keyAt(row);
@@ -1344,7 +1378,6 @@ export class PlacedChunks {
       if (models) models.push(entry);
       else column.set(cz, [entry]);
     });
-    return entry;
   }
 
   private forBoxChunks(entry: PlacedEntry, visit: (chunkX: number, chunkZ: number) => void): void {

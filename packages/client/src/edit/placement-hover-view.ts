@@ -46,7 +46,7 @@ export function connectorKind(
   shapes: SnapShapes,
   shape: number,
   gender: number,
-  studShapes: ReadonlySet<number>,
+  studShapes: Pick<ReadonlySet<number>, "has">,
 ): ConnectorKindView {
   const male = gender === GENDER_MALE;
   const first = shapes.firstSection(shape);
@@ -269,7 +269,7 @@ const canonicalRows = new CanonicalRows();
 export function mateCounts(
   report: MateReport,
   shapes: SnapShapes,
-  studShapes: ReadonlySet<number>,
+  studShapes: Pick<ReadonlySet<number>, "has">,
   placedView: PlacedView,
 ): ReadonlyArray<HoverMateCount> {
   const rows = canonicalRows;

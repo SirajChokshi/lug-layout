@@ -5,6 +5,7 @@ import {
   ModelImportEngine,
   type FetchFunction,
   type ImportResult,
+  type PartConnectorSource,
   type RollingDiagnosticsRows,
 } from "@brr/import";
 import type { BundleLod } from "@brr/schema/bundle";
@@ -30,8 +31,13 @@ export function pinnedOmrModel(file: string): Promise<string> {
   return readFile(new URL(file, pinnedOmr), "utf8");
 }
 
+const NO_CONNECTOR_RECORDS: PartConnectorSource = { read: async () => ({ kind: "unlisted" }) };
+
 export class InThreadModelImporter implements IModelImporter {
-  constructor(private readonly loader: IPartBundleLoader) {}
+  constructor(
+    private readonly loader: IPartBundleLoader,
+    private readonly connectors: PartConnectorSource = NO_CONNECTOR_RECORDS,
+  ) {}
 
   async importText(
     fileName: string,
@@ -43,7 +49,7 @@ export class InThreadModelImporter implements IModelImporter {
     const engine = new ModelImportEngine(
       new BrickCompiler(await WebAssembly.compile(wasm)),
       new LdrawMirror(context.source, pinnedMirror),
-      { read: async () => ({ kind: "unlisted" }) },
+      this.connectors,
       null,
       () => 0,
       [],

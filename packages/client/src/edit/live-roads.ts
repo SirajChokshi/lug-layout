@@ -34,17 +34,23 @@ export function roadPlacementOf(
   };
 }
 
+function roadPlacementFor(model: PlacedModel): RoadPlacement {
+  const surface = model.placeable.road;
+  if (!surface) throw new Error(`model ${model.id} has no road surface`);
+  return roadPlacementOf(model.id, model, surface);
+}
+
 function keptThenAdded(
   before: ReadonlyArray<PlacedModel>,
   after: ReadonlyArray<PlacedModel>,
-  removed: ReadonlySet<PlacedModel>,
+  removed: ReadonlySet<number>,
 ): number {
   let b = 0;
   let a = 0;
   while (b < before.length) {
     const model = before[b++];
-    if (!model || removed.has(model)) continue;
-    if (after[a] !== model) return -1;
+    if (!model || removed.has(model.id)) continue;
+    if (after[a]?.id !== model.id) return -1;
     a++;
   }
   return a;
@@ -52,7 +58,7 @@ function keptThenAdded(
 
 export class LiveRoads {
   private readonly network = new RoadNetwork([]);
-  private readonly placementOf = new WeakMap<PlacedModel, RoadPlacement>();
+  private readonly placementOf = new Map<number, RoadPlacement>();
   private readonly extentOf = new WeakMap<RoadPlacement, CellExtent>();
   private roadModels: ReadonlyArray<PlacedModel> = [];
   private livePlacements: ReadonlyArray<RoadPlacement> = [];
@@ -76,14 +82,23 @@ export class LiveRoads {
   }
 
   refresh(roadModels: ReadonlyArray<PlacedModel>): void {
-    const kept = new Set(roadModels);
-    const removed = new Set(this.roadModels.filter((model) => !kept.has(model)));
+    const byId = new Map(roadModels.map((model) => [model.id, model]));
+    const removed = new Set<number>();
+    for (const model of this.roadModels) {
+      const now = byId.get(model.id);
+      if (now === undefined) {
+        removed.add(model.id);
+        this.placementOf.delete(model.id);
+      } else if (now !== model) {
+        this.placementOf.set(model.id, roadPlacementFor(now));
+      }
+    }
     const keptCount = keptThenAdded(this.roadModels, roadModels, removed);
     if (keptCount <= 0) {
       this.network.clear();
       for (const model of roadModels) this.network.add(this.placementFor(model));
     } else {
-      for (const model of removed) this.network.remove(model.id);
+      for (const id of removed) this.network.remove(id);
       for (let i = keptCount; i < roadModels.length; i++) {
         const model = roadModels[i];
         if (model) this.network.add(this.placementFor(model));
@@ -165,12 +180,10 @@ export class LiveRoads {
   }
 
   private placementFor(model: PlacedModel): RoadPlacement {
-    let placement = this.placementOf.get(model);
+    let placement = this.placementOf.get(model.id);
     if (!placement) {
-      const surface = model.placeable.road;
-      if (!surface) throw new Error(`model ${model.id} has no road surface`);
-      placement = roadPlacementOf(model.id, model, surface);
-      this.placementOf.set(model, placement);
+      placement = roadPlacementFor(model);
+      this.placementOf.set(model.id, placement);
     }
     return placement;
   }
